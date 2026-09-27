@@ -400,6 +400,116 @@ class SimulatedInstantSchemeAdapterTest {
     }
 
     // ------------------------------------------------------------------
+    // The return payment (P7-TSK-010, ADR-0059 §3)
+    // ------------------------------------------------------------------
+
+    @Test
+    @DisplayName("a return rides its own path with OUR reference as header AND body field,"
+            + " citing the ORIGINAL's scheme reference - and the acceptance carries the"
+            + " return's own reference and cycle")
+    void acceptedReturn() {
+        scheme.succeedsWith(SimulatedInstantSchemeAdapter.RETURNS_PATH, 200, ACCEPTED_BODY);
+
+        PushAnswer answer =
+                adapter().sendReturn(
+                        new PushRail.ReturnPayment(
+                                OUR_REF, new ProviderReference("scheme_orig_9"), TEN_EUR));
+
+        assertThat(answer.verdict()).isEqualTo(PushAnswer.Verdict.ACCEPTED);
+        assertThat(answer.schemeReference()).contains(new ProviderReference("scheme_tx_1"));
+        assertThat(answer.settlementCycle()).contains("CYC-2026-09-26-01");
+        assertThat(answer.evidence().orElseThrow())
+                .isEqualTo(ACCEPTED_BODY.getBytes(StandardCharsets.UTF_8));
+        assertThat(scheme.headerValues(
+                        SimulatedInstantSchemeAdapter.RETURNS_PATH,
+                        SimulatedInstantSchemeAdapter.IDEMPOTENCY_KEY_HEADER))
+                .containsExactly(OUR_REF.value());
+        String body = scheme.bodyValues(SimulatedInstantSchemeAdapter.RETURNS_PATH).get(0);
+        assertThat(body)
+                .as("the destination is BY REFERENCE - the original's scheme reference, so"
+                        + " the platform never learns the payer's account (INV-RAIL-03)")
+                .contains("\"originalReference\":\"scheme_orig_9\"")
+                .contains("\"endToEndReference\":\"" + OUR_REF.value() + "\"")
+                .contains("\"amountMinor\":\"1000\"");
+    }
+
+    @Test
+    @DisplayName("a rejected return is knowledge; a refused connection on the return is"
+            + " NOTHING_SENT - the dispatching operations speak one classification")
+    void rejectedAndRefusedReturns() throws IOException {
+        scheme.succeedsWith(
+                SimulatedInstantSchemeAdapter.RETURNS_PATH, 200,
+                "{\"status\":\"rejected\",\"reason\":\"AC04\"}");
+        PushAnswer rejected =
+                adapter().sendReturn(
+                        new PushRail.ReturnPayment(OUR_REF, DESTINATION, TEN_EUR));
+        assertThat(rejected.verdict()).isEqualTo(PushAnswer.Verdict.REJECTED);
+        assertThat(rejected.evidence()).isPresent();
+
+        int deadPort;
+        try (ServerSocket socket = new ServerSocket(0)) {
+            deadPort = socket.getLocalPort();
+        }
+        SimulatedInstantSchemeAdapter dead =
+                new SimulatedInstantSchemeAdapter(
+                        URI.create("http://127.0.0.1:" + deadPort),
+                        Duration.ofMillis(400),
+                        KEY);
+        assertThat(
+                        dead.sendReturn(
+                                        new PushRail.ReturnPayment(
+                                                OUR_REF, DESTINATION, TEN_EUR))
+                                .verdict())
+                .isEqualTo(PushAnswer.Verdict.NOTHING_SENT);
+    }
+
+    @Test
+    @DisplayName("a return re-send carries the SAME end-to-end reference on the wire - the"
+            + " dedupe premise the resolution sweep's re-drive rests on (INV-PAY-04)")
+    void aReturnResendCarriesTheSameReference() {
+        scheme.succeedsWith(SimulatedInstantSchemeAdapter.RETURNS_PATH, 200, ACCEPTED_BODY);
+
+        PushRail.ReturnPayment request =
+                new PushRail.ReturnPayment(OUR_REF, DESTINATION, TEN_EUR);
+        adapter().sendReturn(request);
+        adapter().sendReturn(request);
+
+        assertThat(scheme.headerValues(
+                        SimulatedInstantSchemeAdapter.RETURNS_PATH,
+                        SimulatedInstantSchemeAdapter.IDEMPOTENCY_KEY_HEADER))
+                .containsExactly(OUR_REF.value(), OUR_REF.value());
+    }
+
+    @Test
+    @DisplayName("the return inquiry speaks the same totality on its own path - ACCEPTED"
+            + " with reference and cycle, the explicit 'unrecognised' word, and a 404 that"
+            + " is a status code, not an answer")
+    void returnInquiry() {
+        scheme.succeedsWith(
+                SimulatedInstantSchemeAdapter.RETURN_STATUS_PATH + OUR_REF.value(), 200,
+                ACCEPTED_BODY);
+        PushInquiryAnswer resolved = adapter().inquireReturn(OUR_REF);
+        assertThat(resolved.verdict()).isEqualTo(PushInquiryAnswer.Verdict.ACCEPTED);
+        assertThat(resolved.schemeReference()).contains(new ProviderReference("scheme_tx_1"));
+        assertThat(resolved.settlementCycle()).contains("CYC-2026-09-26-01");
+
+        scheme.reset();
+        scheme.succeedsWith(
+                SimulatedInstantSchemeAdapter.RETURN_STATUS_PATH + OUR_REF.value(), 200,
+                "{\"status\":\"unrecognised\"}");
+        assertThat(adapter().inquireReturn(OUR_REF).verdict())
+                .as("the explicit word alone licenses the sweep's re-drive")
+                .isEqualTo(PushInquiryAnswer.Verdict.UNRECOGNISED);
+
+        scheme.reset();
+        scheme.succeedsWith(
+                SimulatedInstantSchemeAdapter.RETURN_STATUS_PATH + OUR_REF.value(), 404,
+                "{\"error\":\"not found\"}");
+        assertThat(adapter().inquireReturn(OUR_REF).verdict())
+                .isEqualTo(PushInquiryAnswer.Verdict.INDETERMINATE);
+    }
+
+    // ------------------------------------------------------------------
     // The reference's own shape (ISO 20022's bound)
     // ------------------------------------------------------------------
 

@@ -804,7 +804,9 @@ class PaymentConservationDatabaseTest {
         return new PaymentRefund(
                 runner, executor(), intents, attempts, refunds, evidence, holdService(),
                 adapter(), outcomes(), new JdbcAuditWriter(), IDS, CLOCK,
-                com.finapp.payments.PaymentRails.of(java.util.List.of(SimulatedCardPspAdapter.RAIL)));
+                com.finapp.payments.PaymentRails.of(java.util.List.of(SimulatedCardPspAdapter.RAIL)),
+                // A card-only suite: the push rail is absent, as on a card-only deployment.
+                java.util.Optional.empty());
     }
 
     private PaymentOutcomes outcomes() {

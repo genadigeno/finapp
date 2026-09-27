@@ -49,6 +49,19 @@ public interface PushRail {
     PushInquiryAnswer inquireInitiation(EndToEndReference ourReference);
 
     /**
+     * Sends a RETURN of an executed pay-in (`P7-TSK-010`, ADR-0062 §1's declared
+     * {@code RETURN_PAYMENT}): a new outbound push carrying OUR minted reference and citing
+     * the ORIGINAL's scheme reference — the scheme routes the money back to the payer's
+     * account, which the platform never held and never learns ({@code INV-RAIL-03}). Not a
+     * reversal: the original stays final, and this transfer has its own lifecycle
+     * ({@code INV-REV-01}).
+     */
+    PushAnswer sendReturn(ReturnPayment request);
+
+    /** The scheme's status investigation of a return, by our reference. */
+    PushInquiryAnswer inquireReturn(EndToEndReference ourReference);
+
+    /**
      * The grant exchange's ask. The grant is an opaque, single-use value minted by the rail
      * provider; it is never logged, never stored, and spent on this one call.
      */
@@ -76,6 +89,22 @@ public interface PushRail {
     record PayInInitiation(EndToEndReference reference, Money amount) {
         public PayInInitiation {
             Objects.requireNonNull(reference, "reference must not be null");
+            Objects.requireNonNull(amount, "amount must not be null");
+        }
+    }
+
+    /**
+     * A return of an executed pay-in (`P7-TSK-010`): destination-by-reference — the
+     * original's scheme transaction reference is the only address a return carries.
+     */
+    record ReturnPayment(
+            EndToEndReference reference,
+            ProviderReference originalSchemeReference,
+            Money amount) {
+        public ReturnPayment {
+            Objects.requireNonNull(reference, "reference must not be null");
+            Objects.requireNonNull(
+                    originalSchemeReference, "originalSchemeReference must not be null");
             Objects.requireNonNull(amount, "amount must not be null");
         }
     }

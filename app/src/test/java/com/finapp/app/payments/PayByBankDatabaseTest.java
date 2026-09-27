@@ -630,6 +630,475 @@ class PayByBankDatabaseTest {
     }
 
     // -----------------------------------------------------------------
+    // The return payment (P7-TSK-010, ADR-0059 §3)
+    // -----------------------------------------------------------------
+
+    @Test
+    @DisplayName("the return chain holds: an EXECUTED pay-in refunds as a NEW push citing"
+            + " the original's scheme reference - EXACTLY ONE entry DR wallet / CR"
+            + " INSTANT_CLEARING, the key replayed byte for byte, and the return's own"
+            + " confirmation echo never parks (P7-TSK-010)")
+    void theReturnChainHolds() throws Exception {
+        String scheme = "sch-ret-orig-" + suffix();
+        Executed paid = executedPayIn("5.00", scheme);
+        String operator = operatorToken();
+
+        provider.succeedsWith(
+                SimulatedInstantSchemeAdapter.RETURNS_PATH, 200,
+                "{\"status\":\"accepted\",\"reference\":\"sch-ret-tx-1\","
+                        + "\"cycle\":\"C9\"}");
+        String key = someKey();
+        HttpResponse<String> returned =
+                refund(operator, paid.paymentId(), "5.00", "USD", "goods returned", key);
+        assertThat(returned.statusCode()).isEqualTo(201);
+        assertThat(field(returned.body(), "status")).isEqualTo("COMPLETED");
+        String refundId = field(returned.body(), "id");
+
+        // The row: COMPLETED with the RETURN's own scheme reference - never the original's.
+        assertThat(oneString(
+                        "SELECT status || '|' || provider_reference"
+                                + " FROM payments.refund WHERE id = ?",
+                        UUID.fromString(refundId)))
+                .isEqualTo("COMPLETED|sch-ret-tx-1");
+
+        // THE WIRE: our minted reference as the Idempotency-Key, the ORIGINAL's scheme
+        // reference as the destination-by-reference in the body (INV-RAIL-03: the
+        // platform never learns the payer's account), inside the e2e bound.
+        String ourReference =
+                oneString(
+                        "SELECT provider_idempotency_reference FROM payments.refund"
+                                + " WHERE id = ?",
+                        UUID.fromString(refundId));
+        assertThat(ourReference).matches("[a-f0-9]{32}");
+        assertThat(provider.headerValues(
+                        SimulatedInstantSchemeAdapter.RETURNS_PATH,
+                        SimulatedInstantSchemeAdapter.IDEMPOTENCY_KEY_HEADER))
+                .containsExactly(ourReference);
+        assertThat(provider.bodyValues(SimulatedInstantSchemeAdapter.RETURNS_PATH).get(0))
+                .contains("\"originalReference\":\"" + scheme + "\"")
+                .contains("\"endToEndReference\":\"" + ourReference + "\"");
+
+        // EXACTLY ONE posting - the refund's own key, the capture-inverse pair on the
+        // INSTANT rail's declared position (INV-RAIL-04) - and the wallet explains it.
+        assertThat(count("SELECT count(*) FROM ledger.journal_entry WHERE idempotency_scope"
+                        + " = 'ledger.post:payment-refund:" + refundId + "'"))
+                .isEqualTo(1);
+        assertThat(oneString(
+                        "SELECT string_agg(l.direction || ':' || a.purpose, ',' ORDER BY"
+                                + " l.direction) FROM ledger.journal_line l"
+                                + " JOIN ledger.journal_entry e ON e.id = l.entry_id"
+                                + " JOIN ledger.ledger_account a ON a.id = l.ledger_account_id"
+                                + " WHERE e.idempotency_scope ="
+                                + " 'ledger.post:payment-refund:" + refundId + "'"))
+                .isEqualTo("CREDIT:INSTANT_CLEARING,DEBIT:CUSTOMER_WALLET");
+        assertThat(get("/v1/me/accounts/" + paid.fixture().product() + "/balance",
+                        paid.fixture().token()).body())
+                .contains("\"settled\":\"0.00\"");
+
+        // The replay: the recorded judgement byte for byte, no second wire call, no
+        // second entry (INV-IDEM-03).
+        HttpResponse<String> replay =
+                refund(operator, paid.paymentId(), "5.00", "USD", "goods returned", key);
+        assertThat(replay.statusCode()).isEqualTo(201);
+        assertThat(field(replay.body(), "id")).isEqualTo(refundId);
+        assertThat(provider.requestCount(SimulatedInstantSchemeAdapter.RETURNS_PATH))
+                .isEqualTo(1);
+
+        // THE RETURN'S OWN ECHO: the scheme confirming OUR return's reference attributes
+        // to the refund, parks nothing and credits nothing (the park guard's half).
+        assertThat(executedCallback(ourReference, "sch-ret-tx-1", "C9", "5.00", "USD"))
+                .isEqualTo(204);
+        assertThat(count("SELECT count(*) FROM payments.unmatched_confirmation WHERE"
+                        + " scheme_reference = 'sch-ret-tx-1'"))
+                .isZero();
+        assertThat(count("SELECT count(*) FROM ledger.journal_entry WHERE idempotency_scope"
+                        + " LIKE 'ledger.post:unmatched-confirmation:%sch-ret-tx-1'"))
+                .isZero();
+    }
+
+    @Test
+    @DisplayName("a partial return is bounded by the EXECUTED amount for every writer"
+            + " (V018): to the cent legal, one cent past refused 422 with nothing"
+            + " reserved, and a waiting pay-in has nothing to return (409)")
+    void aPartialReturnIsBoundedByTheExecution() throws Exception {
+        Executed paid = executedPayIn("6.00", "sch-ret-bound-" + suffix());
+        String operator = operatorToken();
+        provider.succeedsWith(
+                SimulatedInstantSchemeAdapter.RETURNS_PATH, 200,
+                "{\"status\":\"accepted\",\"reference\":\"sch-ret-b-" + suffix()
+                        + "\",\"cycle\":\"C9\"}");
+
+        assertThat(field(refund(operator, paid.paymentId(), "4.00", "USD", "partial one",
+                                someKey()).body(),
+                        "status"))
+                .isEqualTo("COMPLETED");
+        HttpResponse<String> past =
+                refund(operator, paid.paymentId(), "2.50", "USD", "one too far", someKey());
+        assertThat(past.statusCode()).isEqualTo(422);
+        assertThat(past.body()).contains("payments.RefundExceedsCaptured");
+
+        // The freed remainder to the cent - the bound is <= against the EXECUTED amount.
+        provider.succeedsWith(
+                SimulatedInstantSchemeAdapter.RETURNS_PATH, 200,
+                "{\"status\":\"accepted\",\"reference\":\"sch-ret-b2-" + suffix()
+                        + "\",\"cycle\":\"C9\"}");
+        assertThat(field(refund(operator, paid.paymentId(), "2.00", "USD", "the rest",
+                                someKey()).body(),
+                        "status"))
+                .isEqualTo("COMPLETED");
+        assertThat(get("/v1/me/accounts/" + paid.fixture().product() + "/balance",
+                        paid.fixture().token()).body())
+                .contains("\"settled\":\"0.00\"");
+
+        // A pay-in the payer never executed has nothing to return: 409, nothing written.
+        Fixture waiting = bankFixture();
+        schemeInitiates("https://payer-psp.example/authorize/" + suffix());
+        String waitingId = field(confirmedPayment(waiting, "3.00").body(), "id");
+        HttpResponse<String> premature =
+                refund(operator, waitingId, "3.00", "USD", "nothing arrived", someKey());
+        assertThat(premature.statusCode()).isEqualTo(409);
+        assertThat(premature.body()).contains("payments.NotRefundable");
+        assertThat(count("SELECT count(*) FROM payments.refund WHERE attempt_id = '"
+                        + attemptIdOf(waitingId) + "'::uuid"))
+                .isZero();
+    }
+
+    @Test
+    @DisplayName("the lost return answer is honestly UNKNOWN with the hold standing and"
+            + " nothing posted; its echo never parks; the return sweep's inquiry completes"
+            + " it to EXACTLY ONE entry and a second sweep converges quietly (INV-LIFE-03)")
+    void aLostReturnAnswerResolvesBySweep() throws Exception {
+        Executed paid = executedPayIn("5.00", "sch-ret-lost-" + suffix());
+        String operator = operatorToken();
+
+        provider.neverResponds(SimulatedInstantSchemeAdapter.RETURNS_PATH);
+        HttpResponse<String> returned =
+                refund(operator, paid.paymentId(), "5.00", "USD", "lost answer", someKey());
+        assertThat(returned.statusCode()).isEqualTo(201);
+        assertThat(field(returned.body(), "status")).isEqualTo("UNKNOWN");
+        String refundId = field(returned.body(), "id");
+        String ourReference =
+                oneString(
+                        "SELECT provider_idempotency_reference FROM payments.refund"
+                                + " WHERE id = ?",
+                        UUID.fromString(refundId));
+
+        // Nothing posted, the hold STANDING: the wallet still holds the money but cannot
+        // spend what the return may yet take (INV-BAL-04 with INV-LIFE-03).
+        assertThat(count("SELECT count(*) FROM ledger.journal_entry WHERE idempotency_scope"
+                        + " = 'ledger.post:payment-refund:" + refundId + "'"))
+                .isZero();
+        String balances =
+                get("/v1/me/accounts/" + paid.fixture().product() + "/balance",
+                        paid.fixture().token()).body();
+        assertThat(balances).contains("\"settled\":\"5.00\"");
+        assertThat(balances).contains("\"available\":\"0.00\"");
+
+        // The echo window: a confirmation naming the IN-FLIGHT return's reference parks
+        // nothing and moves nothing - the refund is the sweep's to conclude.
+        assertThat(executedCallback(ourReference, "sch-ret-echo-" + suffix(), "C9", "5.00",
+                        "USD"))
+                .isEqualTo(204);
+        assertThat(count("SELECT count(*) FROM payments.unmatched_confirmation WHERE"
+                        + " rail = 'instant' AND scheme_reference LIKE 'sch-ret-echo-%'"))
+                .isZero();
+        assertThat(oneString("SELECT status FROM payments.refund WHERE id = ?",
+                        UUID.fromString(refundId)))
+                .isEqualTo("UNKNOWN");
+
+        // The scheme answers the inquiry; the sweep applies it on the LOCKED row.
+        provider.reset();
+        provider.succeedsWith(
+                SimulatedInstantSchemeAdapter.RETURN_STATUS_PATH + ourReference, 200,
+                "{\"status\":\"accepted\",\"reference\":\"sch-ret-l2-" + suffix()
+                        + "\",\"cycle\":\"C9\"}");
+        assertThat(wideReturnSweep().applied()).isGreaterThanOrEqualTo(1);
+        assertThat(oneString("SELECT status FROM payments.refund WHERE id = ?",
+                        UUID.fromString(refundId)))
+                .isEqualTo("COMPLETED");
+        assertThat(count("SELECT count(*) FROM ledger.journal_entry WHERE idempotency_scope"
+                        + " = 'ledger.post:payment-refund:" + refundId + "'"))
+                .isEqualTo(1);
+        assertThat(get("/v1/me/accounts/" + paid.fixture().product() + "/balance",
+                        paid.fixture().token()).body())
+                .contains("\"settled\":\"0.00\"");
+
+        // The second sweep converges quietly: the row is terminal, nothing re-applies.
+        wideReturnSweep();
+        assertThat(count("SELECT count(*) FROM ledger.journal_entry WHERE idempotency_scope"
+                        + " = 'ledger.post:payment-refund:" + refundId + "'"))
+                .isEqualTo(1);
+    }
+
+    @Test
+    @DisplayName("the sweep partition and the re-drive: the card leg never sees a return,"
+            + " and an UNRECOGNISED return re-drives with the SAME reference under a"
+            + " renewed permit - the scheme's dedupe converging (INV-PAY-04, ADR-0057)")
+    void anUnrecognisedReturnRedrivesWithTheSameReference() throws Exception {
+        Executed paid = executedPayIn("5.00", "sch-ret-redrive-" + suffix());
+        String operator = operatorToken();
+
+        provider.neverResponds(SimulatedInstantSchemeAdapter.RETURNS_PATH);
+        String refundId =
+                field(refund(operator, paid.paymentId(), "5.00", "USD", "redrive",
+                                someKey()).body(),
+                        "id");
+        com.finapp.payments.RefundId id =
+                com.finapp.payments.RefundId.of(UUID.fromString(refundId));
+        String ourReference =
+                oneString(
+                        "SELECT provider_idempotency_reference FROM payments.refund"
+                                + " WHERE id = ?",
+                        UUID.fromString(refundId));
+
+        // THE PARTITION, asserted at the query: the card sweeper's candidate read
+        // excludes the push refund it could only mis-resolve, the return sweep's
+        // includes it (P7-TSK-010's one schema-visible decision).
+        Instant wide = Instant.now(CLOCK).plusSeconds(60);
+        assertThat(transactions.inTransaction(
+                                uow -> refundsBean.findSweepable(uow, wide, wide, 2_000))
+                        .stream()
+                        .map(com.finapp.payments.Refund::id))
+                .doesNotContain(id);
+        assertThat(transactions.inTransaction(
+                                uow ->
+                                        refundsBean.findSweepableReturns(
+                                                uow, wide, wide, 2_000))
+                        .stream()
+                        .map(com.finapp.payments.Refund::id))
+                .contains(id);
+
+        // The scheme explicitly never saw our reference; the re-drive rides the SAME one.
+        provider.reset();
+        provider.succeedsWith(
+                SimulatedInstantSchemeAdapter.RETURN_STATUS_PATH + ourReference, 200,
+                "{\"status\":\"unrecognised\"}");
+        provider.succeedsWith(
+                SimulatedInstantSchemeAdapter.RETURNS_PATH, 200,
+                "{\"status\":\"accepted\",\"reference\":\"sch-ret-r2-" + suffix()
+                        + "\",\"cycle\":\"C9\"}");
+        assertThat(wideReturnSweep().applied()).isGreaterThanOrEqualTo(1);
+
+        assertThat(oneString("SELECT status FROM payments.refund WHERE id = ?",
+                        UUID.fromString(refundId)))
+                .isEqualTo("COMPLETED");
+        assertThat(provider.headerValues(
+                        SimulatedInstantSchemeAdapter.RETURNS_PATH,
+                        SimulatedInstantSchemeAdapter.IDEMPOTENCY_KEY_HEADER))
+                .as("the re-drive presents the SAME end-to-end reference the first send"
+                        + " carried - the dedupe premise, read back from the wire")
+                .containsExactly(ourReference);
+        assertThat(count("SELECT count(*) FROM ledger.journal_entry WHERE idempotency_scope"
+                        + " = 'ledger.post:payment-refund:" + refundId + "'"))
+                .isEqualTo(1);
+    }
+
+    @Test
+    @DisplayName("a re-drive's refused connection is NEVER knowledge: the return stays"
+            + " UNKNOWN with its hold standing and nothing posted - concluding FAILED"
+            + " would release money an earlier send may have moved (ADR-0057 §3)")
+    void aRedrivesRefusedConnectionConcludesNothing() throws Exception {
+        Executed paid = executedPayIn("5.00", "sch-ret-dead-" + suffix());
+        String operator = operatorToken();
+
+        provider.neverResponds(SimulatedInstantSchemeAdapter.RETURNS_PATH);
+        String refundId =
+                field(refund(operator, paid.paymentId(), "5.00", "USD", "dead re-drive",
+                                someKey()).body(),
+                        "id");
+        String ourReference =
+                oneString(
+                        "SELECT provider_idempotency_reference FROM payments.refund"
+                                + " WHERE id = ?",
+                        UUID.fromString(refundId));
+
+        // The scheme's inquiry says UNRECOGNISED - but the RE-SEND meets a refused
+        // connection (a second engine whose send port is dead, the withdrawal idiom).
+        provider.reset();
+        provider.succeedsWith(
+                SimulatedInstantSchemeAdapter.RETURN_STATUS_PATH + ourReference, 200,
+                "{\"status\":\"unrecognised\"}");
+        int deadPort;
+        try (java.net.ServerSocket socket = new java.net.ServerSocket(0)) {
+            deadPort = socket.getLocalPort();
+        }
+        PushRail deadSends =
+                new SplitRail(
+                        instantRailBean,
+                        new SimulatedInstantSchemeAdapter(
+                                URI.create("http://127.0.0.1:" + deadPort),
+                                Duration.ofMillis(300),
+                                "0123456789abcdef0123456789abcdef"
+                                        .getBytes(StandardCharsets.US_ASCII)));
+        new com.finapp.payments.ReturnResolution(
+                        refundsBean,
+                        attempts,
+                        intents,
+                        outcomes,
+                        deadSends,
+                        evidenceBean,
+                        new com.finapp.payments.ReturnResolution.Config(
+                                Duration.ofMillis(50), Duration.ofMillis(50), 2_000),
+                        ids,
+                        Clock.offset(CLOCK, Duration.ofSeconds(5)),
+                        transactions)
+                .sweep();
+
+        assertThat(oneString("SELECT status FROM payments.refund WHERE id = ?",
+                        UUID.fromString(refundId)))
+                .as("a re-drive is never the first send: its refused connection proves"
+                        + " nothing about the sends before it")
+                .isEqualTo("UNKNOWN");
+        assertThat(oneString(
+                        "SELECT h.status FROM ledger.hold h JOIN payments.refund r"
+                                + " ON r.hold_reference = h.id WHERE r.id = ?",
+                        UUID.fromString(refundId)))
+                .isEqualTo("ACTIVE");
+        assertThat(count("SELECT count(*) FROM ledger.journal_entry WHERE idempotency_scope"
+                        + " = 'ledger.post:payment-refund:" + refundId + "'"))
+                .isZero();
+    }
+
+    /** Inquiries answered by the live stub, sends refused at a dead port (ADR-0057's split). */
+    private record SplitRail(PushRail inquiries, PushRail sends) implements PushRail {
+        @Override
+        public String schemeName() {
+            return inquiries.schemeName();
+        }
+
+        @Override
+        public com.finapp.payments.ExchangeAnswer exchange(GrantExchange request) {
+            return inquiries.exchange(request);
+        }
+
+        @Override
+        public com.finapp.payments.PushAnswer send(CreditTransfer request) {
+            return sends.send(request);
+        }
+
+        @Override
+        public com.finapp.payments.PushInquiryAnswer inquire(
+                com.finapp.payments.EndToEndReference ourReference) {
+            return inquiries.inquire(ourReference);
+        }
+
+        @Override
+        public com.finapp.payments.InitiationAnswer initiate(PayInInitiation request) {
+            return sends.initiate(request);
+        }
+
+        @Override
+        public com.finapp.payments.PushInquiryAnswer inquireInitiation(
+                com.finapp.payments.EndToEndReference ourReference) {
+            return inquiries.inquireInitiation(ourReference);
+        }
+
+        @Override
+        public com.finapp.payments.PushAnswer sendReturn(ReturnPayment request) {
+            return sends.sendReturn(request);
+        }
+
+        @Override
+        public com.finapp.payments.PushInquiryAnswer inquireReturn(
+                com.finapp.payments.EndToEndReference ourReference) {
+            return inquiries.inquireReturn(ourReference);
+        }
+    }
+
+    /** An executed pay-in: the fixture, its payment and the attempt's stored facts. */
+    private record Executed(Fixture fixture, String paymentId, String attemptId) {}
+
+    /** Registers, confirms and executes a pay-in of {@code amount} under {@code scheme}. */
+    private Executed executedPayIn(String amount, String scheme) throws Exception {
+        Fixture f = bankFixture();
+        schemeInitiates("https://payer-psp.example/authorize/" + suffix());
+        String paymentId = field(confirmedPayment(f, amount).body(), "id");
+        String attemptId = attemptIdOf(paymentId);
+        assertThat(executedCallback(referenceOf(attemptId), scheme, "C7", amount, "USD"))
+                .isEqualTo(204);
+        assertThat(oneString("SELECT status FROM payments.payment_attempt WHERE id = ?",
+                        UUID.fromString(attemptId)))
+                .isEqualTo("EXECUTED");
+        return new Executed(f, paymentId, attemptId);
+    }
+
+    /** An operator session holding {@code PAYMENT_REFUND} (the refund endpoint's fixture). */
+    private String operatorToken() throws Exception {
+        String login = someLogin();
+        assertThat(register(login).statusCode()).isEqualTo(201);
+        UUID identity =
+                oneUuid("SELECT id FROM identity.identity WHERE login_identifier = ?", login);
+        try (com.finapp.platform.correlation.CorrelationContext.Scope flow =
+                        com.finapp.platform.correlation.CorrelationContext.enter(
+                                com.finapp.sharedkernel.correlation.Correlation.startingWith(
+                                        com.finapp.sharedkernel.correlation.CorrelationId
+                                                .generate(ids)));
+                com.finapp.platform.security.SecurityContext.Scope actor =
+                        com.finapp.platform.security.SecurityContext.enterSystem();
+                Connection app = DatabaseRoles.application()) {
+            app.setAutoCommit(false);
+            authorizationBean.assign(
+                    app,
+                    com.finapp.identity.IdentityId.of(identity),
+                    com.finapp.identity.RoleName.LEDGER_OPERATOR,
+                    com.finapp.identity.IdentityId.of(identity),
+                    "test fixture");
+            app.commit();
+        }
+        return tokenFrom(authenticate(login).body());
+    }
+
+    @Autowired private com.finapp.identity.Authorization authorizationBean;
+    @Autowired private com.finapp.payments.RefundStore<Connection> refundsBean;
+
+    /** The refund endpoint's own helper, verbatim (the operator surface's URL). */
+    private HttpResponse<String> refund(
+            String token,
+            String paymentId,
+            String amount,
+            String currency,
+            String reason,
+            String idempotencyKey)
+            throws Exception {
+        HttpRequest.Builder request =
+                HttpRequest.newBuilder()
+                        .uri(URI.create("http://localhost:" + port + "/v1/payments/"
+                                + paymentId + "/refund"))
+                        .header("Content-Type", "application/json")
+                        .header("Authorization", "Bearer " + token)
+                        .POST(HttpRequest.BodyPublishers.ofString(
+                                "{\"amount\":\"" + amount + "\",\"currency\":\"" + currency
+                                        + "\",\"reason\":\"" + reason + "\"}"));
+        if (idempotencyKey != null) {
+            request.header(IdempotencyKeyHeader.NAME, idempotencyKey);
+        }
+        return send(request.build());
+    }
+
+    /**
+     * The wired return sweep with a batch wide enough to reach THIS test's row however
+     * many rows other suites left behind (the shared-database citizenship lesson) — on a
+     * clock five seconds AHEAD, so a row that moved milliseconds ago is deterministically
+     * inside the candidacy bounds (the expiry sweeper's offset idiom; the bounds pace
+     * production, they are not this test's subject).
+     */
+    private com.finapp.payments.ReturnResolution.SweepResult wideReturnSweep() {
+        return new com.finapp.payments.ReturnResolution(
+                        refundsBean,
+                        attempts,
+                        intents,
+                        outcomes,
+                        instantRailBean,
+                        evidenceBean,
+                        new com.finapp.payments.ReturnResolution.Config(
+                                Duration.ofMillis(50), Duration.ofMillis(50), 2_000),
+                        ids,
+                        Clock.offset(CLOCK, Duration.ofSeconds(5)),
+                        transactions)
+                .sweep();
+    }
+
+    // -----------------------------------------------------------------
     // Fixtures and helpers (the WithdrawalDatabaseTest idiom)
     // -----------------------------------------------------------------
 

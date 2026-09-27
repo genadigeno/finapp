@@ -82,6 +82,27 @@ public final class MeteredPushRail implements PushRail {
         }
     }
 
+    @Override
+    public PushAnswer sendReturn(ReturnPayment request) {
+        Instant started = Instant.now(clock);
+        try {
+            return delegate.sendReturn(request);
+        } finally {
+            // The return IS the refund on this rail (P7-TSK-010): the existing vocabulary.
+            record(PaymentMeters.Operation.REFUND, started);
+        }
+    }
+
+    @Override
+    public PushInquiryAnswer inquireReturn(EndToEndReference ourReference) {
+        Instant started = Instant.now(clock);
+        try {
+            return delegate.inquireReturn(ourReference);
+        } finally {
+            record(PaymentMeters.Operation.QUERY, started);
+        }
+    }
+
     private void record(PaymentMeters.Operation operation, Instant started) {
         meters.providerCall(operation, Duration.between(started, Instant.now(clock)));
     }

@@ -77,6 +77,11 @@ class PaymentsMigrationTest {
     private static final String PAY_BY_BANK =
             "db/migration/payments/V017__the_pay_by_bank_pay_in.sql";
 
+    /** V018: the return payment (P7-TSK-010). Holds the refund bound's CURRENT definition
+     * (V004 became applied history when the bound went per-model). */
+    private static final String RETURN =
+            "db/migration/payments/V018__the_return_payment.sql";
+
     @Test
     @DisplayName("the intent's status CHECKs are generated from the machine, on all three columns")
     void intentStatusChecksMatchTheEnum() {
@@ -510,13 +515,48 @@ class PaymentsMigrationTest {
     }
 
     @Test
-    @DisplayName("the refund bound trigger holds its registered advisory-lock namespace")
+    @DisplayName("the refund bound trigger holds its registered advisory-lock namespace"
+            + " - in V004's applied history AND in V018's current definition")
     void refundBoundTakesTheRegisteredNamespace() {
         // Namespace 3, registered in DISTRIBUTED_EXECUTION.md beside the relay's (1) and
         // V009's (2). A migration quietly changing the namespace would collide with a sibling
         // component silently, and only under load.
         assertThat(migration(REFUND))
                 .contains("pg_advisory_xact_lock(3, hashtext(NEW.attempt_id::text))");
+        assertThat(migration(RETURN))
+                .as("V018 REPLACED the function (P7-TSK-010): the serializer must survive"
+                        + " the handoff byte for byte")
+                .contains("pg_advisory_xact_lock(3, hashtext(NEW.attempt_id::text))");
+    }
+
+    @Test
+    @DisplayName("V018's refund bound is per-model: the card arm is V004's judgement"
+            + " verbatim, the push arm judges EXECUTED against the intent's frozen ask, and"
+            + " a model without a refund producer is refused outright (P7-TSK-010)")
+    void returnBoundDispatchesOnTheModel() {
+        String v018 = migration(RETURN);
+        // The card arm: V004's own sentences, surviving the handoff.
+        assertThat(v018)
+                .contains("attempt_model = 'TWO_STEP'")
+                .contains("only a CAPTURED attempt has anything to return (INV-PAY-05)")
+                .contains("captured currency and scale (INV-PAY-05, INV-MON-03)")
+                .contains("past its captured amount (INV-PAY-05)");
+        // The push arm: EXECUTED is the money-arrived state, the intent triple the base.
+        assertThat(v018)
+                .contains("attempt_model = 'PUSH'")
+                .contains("only an EXECUTED pay-in has anything to return (INV-PAY-05,"
+                        + " P7-TSK-010)")
+                .contains("FROM payments.payment_intent intent")
+                .contains("executed currency and scale (INV-PAY-05, INV-MON-03)")
+                .contains("past its executed amount (INV-PAY-05)");
+        // No third arm is invented: the BOOK refund is its own producer's task.
+        assertThat(v018)
+                .contains("whose refund producer is not yet shipped (P7-TSK-011, ADR-0059)");
+        // Every refusal keeps the marker and the CHECK-violation code the callers map.
+        assertThat(v018).contains("payments_refund_is_bounded:");
+        assertThat(v018.split("ERRCODE = '23514'", -1))
+                .as("all eight RAISEs carry the constraint-violation code")
+                .hasSize(9);
     }
 
     @Test

@@ -477,10 +477,11 @@ public final class PaymentService {
                     PaymentsErrorCode.NOT_REFUNDABLE,
                     "A refund was refused by the attempt's state",
                     refused.status() == null
-                            ? "the payment was never dispatched and only a captured payment"
-                                    + " can be refunded."
+                            ? "the payment was never dispatched and only a captured card"
+                                    + " payment or an executed pay-in can be refunded."
                             : "the payment is " + refused.status()
-                                    + " and only a captured payment can be refunded.");
+                                    + " and only a captured card payment or an executed"
+                                    + " pay-in can be refunded.");
         } catch (RefundExceedsCaptureException refused) {
             throw new ApiException(
                     PaymentsErrorCode.REFUND_EXCEEDS_CAPTURED,
@@ -490,6 +491,11 @@ public final class PaymentService {
                     PaymentsErrorCode.REFUND_UNFUNDED,
                     "A refund could not reserve what it takes from the account it debits"
                             + " (INV-BAL-04, ADR-0054)");
+        } catch (com.finapp.payments.PushRailUnavailableException unconfigured) {
+            // The attempt is a push pay-in and this deployment configures no adapter
+            // (P7-TSK-010): Tx1 rolled back whole - nothing written, nothing sent, the
+            // key unburned - the confirm catch's reasoning at the refund door.
+            throw providerUnavailable();
         } catch (com.finapp.payments.RefundKeyReusedException reused) {
             // The kernel's own words for a reused key (ApiErrorHandler's
             // IdempotencyConflictException rendering), so a caller cannot tell whether the

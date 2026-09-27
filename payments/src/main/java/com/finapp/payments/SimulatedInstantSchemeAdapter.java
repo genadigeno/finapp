@@ -62,9 +62,12 @@ public final class SimulatedInstantSchemeAdapter implements PushRail {
     public static final String EXCHANGES_PATH = "/grant-exchanges";
     public static final String TRANSFERS_PATH = "/credit-transfers";
     public static final String INITIATIONS_PATH = "/initiations";
+    /** The return's own resource (`P7-TSK-010`): a new transfer, never an edit of one. */
+    public static final String RETURNS_PATH = "/returns";
     /** Inquiry prefixes; our end-to-end reference is the path segment (`INV-PAY-04`). */
     public static final String TRANSFER_STATUS_PATH = "/credit-transfers/";
     public static final String INITIATION_STATUS_PATH = "/initiations/";
+    public static final String RETURN_STATUS_PATH = "/returns/";
 
     /** The dispatch idempotency header, published for the contract tests' wire oracle. */
     public static final String IDEMPOTENCY_KEY_HEADER = SchemeWireClient.IDEMPOTENCY_KEY_HEADER;
@@ -127,6 +130,28 @@ public final class SimulatedInstantSchemeAdapter implements PushRail {
     @Override
     public PushInquiryAnswer inquireInitiation(EndToEndReference ourReference) {
         return client.inquire(INITIATION_STATUS_PATH + ourReference.value());
+    }
+
+    @Override
+    public PushAnswer sendReturn(ReturnPayment request) {
+        // The transfer's own wire discipline (P7-TSK-010): our reference as the
+        // Idempotency-Key header AND the body field, the ORIGINAL's scheme reference as
+        // the destination-by-reference, the total mapping shared with send().
+        return client.send(
+                RETURNS_PATH,
+                request.reference(),
+                "{\"endToEndReference\":\""
+                        + request.reference().value()
+                        + "\",\"originalReference\":\""
+                        + request.originalSchemeReference().value()
+                        + "\","
+                        + amountOf(request.amount())
+                        + "}");
+    }
+
+    @Override
+    public PushInquiryAnswer inquireReturn(EndToEndReference ourReference) {
+        return client.inquire(RETURN_STATUS_PATH + ourReference.value());
     }
 
     /** Minor units as a JSON string — the card wire's `INV-MON-01` stance, same reasons. */

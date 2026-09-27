@@ -68,6 +68,16 @@ public interface RefundStore<T> {
             T unitOfWork, Instant dispatchedBefore, Instant unknownBefore, int limit);
 
     /**
+     * The RETURNS the push rail's own resolution asks about (`P7-TSK-010`): the sweepable
+     * shape verbatim, partitioned to PUSH-model attempts — {@link #findSweepable} feeds the
+     * card sweeper and excludes them, because a resolver that asked the wrong counterparty
+     * about our reference would hear {@code UNRECOGNISED} and re-drive against facts the
+     * row does not carry (the attempt sweep's partition, at the refund).
+     */
+    List<Refund> findSweepableReturns(
+            T unitOfWork, Instant dispatchedBefore, Instant unknownBefore, int limit);
+
+    /**
      * The refunds stuck right now — every {@code UNKNOWN}, and every {@code DISPATCHED} whose
      * latest send permit is past the sweep's own dispatched bound — and the oldest one's wait in
      * seconds (`P5-TSK-017`; widened by the Phase 6 → 7 transition to the payout's shape,

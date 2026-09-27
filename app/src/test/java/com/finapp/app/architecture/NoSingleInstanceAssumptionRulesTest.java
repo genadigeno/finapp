@@ -172,7 +172,16 @@ class NoSingleInstanceAssumptionRulesTest {
                     // instances), and the outcome transitions converge. Register row:
                     // DISTRIBUTED_EXECUTION.md section 3; the races are
                     // PayByBankDatabaseTest's.
-                    "com.finapp.app.payments.PayInResolutionSchedule");
+                    "com.finapp.app.payments.PayInResolutionSchedule",
+                    // P7-TSK-010: the card sweeper's refund leg at the push rail. The
+                    // return inquiry is read-only by OUR reference, the re-drive rides a
+                    // conditionally renewed send permit (V009's arbiter) and the scheme's
+                    // dedupe on that same reference, and the outcome applies through the
+                    // one shared applyRefund on the LOCKED refund row - N schedules, the
+                    // synchronous dispatch and a takeover's re-send are one counted race.
+                    // Register row: DISTRIBUTED_EXECUTION.md section 3; the race is
+                    // PayByBankDatabaseTest's.
+                    "com.finapp.app.payments.ReturnResolutionSchedule");
 
     /** Types that schedule work with no lease, so every instance runs it. */
     private static final Set<String> AMBIENT_SCHEDULERS =

@@ -459,6 +459,60 @@ class PaymentBeans {
         return new PayInResolutionSchedule(payInResolution, pollInterval);
     }
 
+    /**
+     * The return-payment resolution sweep and its schedule (`P7-TSK-010`, ADR-0059 §3) —
+     * present with the rail, leaderless on every instance: the card sweeper's refund leg
+     * asked of the push rail, because each rail's refunds resolve against that rail's own
+     * wire (the partition {@code findSweepableReturns} carries).
+     */
+    @Bean
+    @ConditionalOnProperty("finapp.payments.instant.url")
+    com.finapp.payments.ReturnResolution returnResolution(
+            com.finapp.payments.RefundStore<Connection> refundStore,
+            PaymentAttemptStore<Connection> paymentAttemptStore,
+            PaymentIntentStore<Connection> paymentIntentStore,
+            com.finapp.payments.PaymentOutcomes paymentOutcomes,
+            com.finapp.payments.PushRail instantRail,
+            ProviderEvidenceStore<Connection> providerEvidenceStore,
+            @Value("${finapp.payments.return.sweeper.dispatched-age:PT2M}")
+                    java.time.Duration dispatchedAge,
+            @Value("${finapp.payments.return.sweeper.unknown-age:PT1M}")
+                    java.time.Duration unknownAge,
+            @Value("${finapp.payments.return.sweeper.batch:25}") int batchSize,
+            IdGenerator ids,
+            Clock clock,
+            TransactionRunner paymentTransactionRunner) {
+        return new com.finapp.payments.ReturnResolution(
+                refundStore,
+                paymentAttemptStore,
+                paymentIntentStore,
+                paymentOutcomes,
+                instantRail,
+                providerEvidenceStore,
+                new com.finapp.payments.ReturnResolution.Config(
+                        dispatchedAge, unknownAge, batchSize),
+                ids,
+                clock,
+                paymentTransactionRunner);
+    }
+
+    @Bean
+    @ConditionalOnProperty(
+            name = "finapp.payments.return.sweeper.enabled",
+            havingValue = "true",
+            matchIfMissing = true)
+    // The rail half of the condition rides on the resolution bean (instant-conditional);
+    // the flag is the PaymentSweeperSchedule discipline - the test overlay says false,
+    // a silent deployment gets the sweeper.
+    @org.springframework.boot.autoconfigure.condition.ConditionalOnBean(
+            com.finapp.payments.ReturnResolution.class)
+    ReturnResolutionSchedule returnResolutionSchedule(
+            com.finapp.payments.ReturnResolution returnResolution,
+            @Value("${finapp.payments.return.sweeper.poll:PT30S}")
+                    java.time.Duration pollInterval) {
+        return new ReturnResolutionSchedule(returnResolution, pollInterval);
+    }
+
     @Bean
     com.finapp.payments.RoutingStore<Connection> routingStore() {
         return new com.finapp.payments.JdbcRoutingStore();
@@ -736,7 +790,9 @@ class PaymentBeans {
             AuditWriter<Connection> auditWriter,
             IdGenerator ids,
             Clock clock,
-            com.finapp.payments.PaymentRails paymentRails) {
+            com.finapp.payments.PaymentRails paymentRails,
+            org.springframework.beans.factory.ObjectProvider<com.finapp.payments.PushRail>
+                    pushRail) {
         return new com.finapp.payments.PaymentRefund(
                 paymentTransactionRunner,
                 idempotentExecutor,
@@ -750,7 +806,11 @@ class PaymentBeans {
                 auditWriter,
                 ids,
                 clock,
-                paymentRails);
+                paymentRails,
+                // The push rail exists only where the instant scheme is configured
+                // (P7-TSK-010): the return-payment mode needs it, the card modes never
+                // touch it, and the absent case is the honest 503 at dispatch.
+                java.util.Optional.ofNullable(pushRail.getIfAvailable()));
     }
 
     /**
@@ -845,7 +905,8 @@ class PaymentBeans {
             tools.jackson.databind.ObjectMapper objectMapper,
             Clock clock,
             TransactionTemplate paymentTransactions,
-            DataSource dataSource) {
+            DataSource dataSource,
+            com.finapp.payments.RefundStore<Connection> refundStore) {
         return new InstantCallbackService(
                 instantWebhookSignature,
                 providerEvidenceStore,
@@ -861,7 +922,10 @@ class PaymentBeans {
                 dataSource,
                 // The rail this door serves - bound HERE, the composition root, so the
                 // door holds no rail by name (INV-RAIL-01; the Withdrawals binding).
-                com.finapp.payments.SimulatedInstantSchemeAdapter.RAIL.id());
+                com.finapp.payments.SimulatedInstantSchemeAdapter.RAIL.id(),
+                // The park guard's attribution read (P7-TSK-010): a return's own echo
+                // must never park as unmatched money.
+                refundStore);
     }
 
     /**

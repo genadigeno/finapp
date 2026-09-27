@@ -24,6 +24,14 @@ public final class JdbcRefundStore implements RefundStore<Connection> {
             "id, attempt_id, amount_minor, currency, scale, reason, hold_reference,"
                     + " provider_idempotency_reference, provider_reference, status, created_at";
 
+    /** {@link #COLUMNS}, each qualified as {@code r.<column>} — for the joined reads
+     * (the attempt store's idiom, since the sweepable partition joins the attempt). */
+    private static String qualified() {
+        return java.util.Arrays.stream(COLUMNS.split(", "))
+                .map(column -> "r." + column.strip())
+                .collect(java.util.stream.Collectors.joining(", "));
+    }
+
     @Override
     public void insert(Connection unitOfWork, Refund refund, String dispatchKey) {
         Objects.requireNonNull(dispatchKey, "dispatchKey must not be null (V008)");
@@ -124,13 +132,20 @@ public final class JdbcRefundStore implements RefundStore<Connection> {
         // UNKNOWN - the latest transition, birth as the fallback.
         try (PreparedStatement read =
                 unitOfWork.prepareStatement(
-                        "SELECT " + COLUMNS + " FROM payments.refund r"
+                        "SELECT " + qualified() + " FROM payments.refund r"
+                                + " JOIN payments.payment_attempt a ON a.id = r.attempt_id"
                                 + " LEFT JOIN LATERAL (SELECT max(occurred_at) AS entered"
                                 + "   FROM payments.refund_event e"
                                 + "   WHERE e.refund_id = r.id) h ON true"
-                                + " WHERE (r.status = 'DISPATCHED' AND r.last_dispatched_at <= ?)"
+                                // TWO_STEP only (P7-TSK-010, INV-RAIL-01): this list feeds
+                                // the CARD sweeper, which asks the card provider and
+                                // re-drives against the capture - a push refund carries
+                                // neither, and its resolution is ReturnResolution's own
+                                // (the attempt sweep's partition, at the refund).
+                                + " WHERE a.interaction_model = 'TWO_STEP'"
+                                + " AND ((r.status = 'DISPATCHED' AND r.last_dispatched_at <= ?)"
                                 + "    OR (r.status = 'UNKNOWN'"
-                                + "        AND COALESCE(h.entered, r.created_at) <= ?)"
+                                + "        AND COALESCE(h.entered, r.created_at) <= ?))"
                                 + " ORDER BY r.created_at, r.id"
                                 + " LIMIT ?")) {
             read.setTimestamp(1, Timestamp.from(dispatchedBefore));
@@ -146,6 +161,45 @@ public final class JdbcRefundStore implements RefundStore<Connection> {
         } catch (SQLException failure) {
             throw new PaymentsStorageException(
                     DatabaseFailure.describe("reading sweepable refunds", failure));
+        }
+    }
+
+    @Override
+    public List<Refund> findSweepableReturns(
+            Connection unitOfWork, Instant dispatchedBefore, Instant unknownBefore, int limit) {
+        Objects.requireNonNull(dispatchedBefore, "dispatchedBefore must not be null");
+        Objects.requireNonNull(unknownBefore, "unknownBefore must not be null");
+        if (limit <= 0) {
+            throw new IllegalArgumentException("limit must be positive: " + limit);
+        }
+        // The partition's other half (P7-TSK-010): PUSH-attempt refunds, resolved by the
+        // scheme's own inquiry and re-send - the sweepable shape verbatim otherwise.
+        try (PreparedStatement read =
+                unitOfWork.prepareStatement(
+                        "SELECT " + qualified() + " FROM payments.refund r"
+                                + " JOIN payments.payment_attempt a ON a.id = r.attempt_id"
+                                + " LEFT JOIN LATERAL (SELECT max(occurred_at) AS entered"
+                                + "   FROM payments.refund_event e"
+                                + "   WHERE e.refund_id = r.id) h ON true"
+                                + " WHERE a.interaction_model = 'PUSH'"
+                                + " AND ((r.status = 'DISPATCHED' AND r.last_dispatched_at <= ?)"
+                                + "    OR (r.status = 'UNKNOWN'"
+                                + "        AND COALESCE(h.entered, r.created_at) <= ?))"
+                                + " ORDER BY r.created_at, r.id"
+                                + " LIMIT ?")) {
+            read.setTimestamp(1, Timestamp.from(dispatchedBefore));
+            read.setTimestamp(2, Timestamp.from(unknownBefore));
+            read.setInt(3, limit);
+            try (ResultSet rows = read.executeQuery()) {
+                List<Refund> sweepable = new ArrayList<>();
+                while (rows.next()) {
+                    sweepable.add(rehydrate(rows));
+                }
+                return List.copyOf(sweepable);
+            }
+        } catch (SQLException failure) {
+            throw new PaymentsStorageException(
+                    DatabaseFailure.describe("reading sweepable returns", failure));
         }
     }
 

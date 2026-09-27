@@ -679,6 +679,54 @@ class PaymentsSchemaDatabaseTest {
     }
 
     @Test
+    @DisplayName("the return bound is per-model (V018, P7-TSK-010): a push refund is judged"
+            + " against the EXECUTED intent's amount, a waiting pay-in refused, and a BOOK"
+            + " row refused outright - for every writer")
+    void theReturnBoundIsPerModelForEveryWriter() throws Exception {
+        UUID executedIntent = IDS.next();
+        UUID executed = IDS.next();
+        UUID waitingIntent = IDS.next();
+        UUID waiting = IDS.next();
+        UUID bookIntent = IDS.next();
+        UUID book = IDS.next();
+        try (Connection app = DatabaseRoles.application()) {
+            insertIntent(app, executedIntent, "SUCCEEDED");
+            insertForeignModelRow(app, executed, executedIntent, InteractionModel.PUSH,
+                    "EXECUTED");
+            insertIntent(app, waitingIntent, "PROCESSING");
+            insertForeignModelRow(app, waiting, waitingIntent, InteractionModel.PUSH,
+                    "AWAITING_PAYER");
+            insertIntent(app, bookIntent, "SUCCEEDED");
+            insertForeignModelRow(app, book, bookIntent, InteractionModel.BOOK, "EXECUTED");
+
+            // The push base is the intent's frozen ask (1000): to the penny legal...
+            insertRefund(app, IDS.next(), executed, 999, "EUR");
+            insertRefund(app, IDS.next(), executed, 1, "EUR");
+            // ...one minor unit past it creates money (INV-PAY-05's push half).
+            assertSqlState(CHECK_VIOLATION, () ->
+                    insertRefund(app, IDS.next(), executed, 1, "EUR"));
+
+            // Only an EXECUTED pay-in has anything to return.
+            assertSqlState(CHECK_VIOLATION, () ->
+                    insertRefund(app, IDS.next(), waiting, 1, "EUR"));
+
+            // The execution's currency, or nothing (INV-MON-03).
+            assertSqlState(CHECK_VIOLATION, () ->
+                    insertRefund(app, IDS.next(), executed, 1, "USD"));
+
+            // The BOOK model's refund producer has not shipped: refused outright rather
+            // than judged by a bound invented for it (P7-TSK-011).
+            assertSqlState(CHECK_VIOLATION, () ->
+                    insertRefund(app, IDS.next(), book, 1, "EUR"));
+        }
+        try (Connection migrator = DatabaseRoles.migrator()) {
+            // For every writer - the migrator meets the same push arm.
+            assertSqlState(CHECK_VIOLATION, () ->
+                    insertRefund(migrator, IDS.next(), executed, 1, "EUR"));
+        }
+    }
+
+    @Test
     @DisplayName("ten concurrent partial refunds accept exactly the budget")
     void tenConcurrentPartialRefundsAcceptExactlyTheBudget() throws Exception {
         UUID intent = IDS.next();

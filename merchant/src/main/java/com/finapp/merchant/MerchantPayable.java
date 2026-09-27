@@ -21,24 +21,31 @@ import lombok.RequiredArgsConstructor;
  * <h2>This module reads the buckets because this module wrote the shapes</h2>
  *
  * <p>{@link PositionBreakdown} hands back the payable's lines bucketed by direction and by how
- * each line's entry treated {@code SETTLEMENT_CLEARING} or, failing that,
- * {@code PAYOUT_CLEARING} — the ledger's own vocabulary, nothing more. What those buckets MEAN
- * is ADR-0050 §3's and ADR-0051 §2's entry shapes read backwards, and {@link MerchantSettlement}
+ * each line's entry treated a SALE clearing — {@code SETTLEMENT_CLEARING} for the card rail,
+ * {@code INSTANT_CLEARING} for the push rail (`P7-TSK-010`: the same capture composition and
+ * the same refund composition post to both, so the shapes ARE the same and only the
+ * counterparty account differs, `INV-RAIL-04`) — or, failing that, {@code PAYOUT_CLEARING} —
+ * the ledger's own vocabulary, nothing more. What those buckets MEAN is ADR-0050 §3's and
+ * ADR-0051 §2's entry shapes read backwards, and {@link MerchantSettlement}
  * and {@link MerchantPayoutOutcomes} are the components that compose those shapes. So the
  * interpretation lives here, beside the composers, rather than in a ledger that must not know
  * what a fee is:
  *
  * <pre>
- *   payable line | DEBITS settlement clearing | CREDITS settlement clearing | CREDITS payout clearing | none
- *                | (a capture)                | (a refund)                  | (a payout)              |
- *   CREDIT       | captured                   | fees returned               | other                   | other
- *   DEBIT        | fees                       | refunded                    | paid out                | other
+ *   payable line | DEBITS a sale clearing | CREDITS a sale clearing | CREDITS payout clearing | none
+ *                | (a capture)            | (a refund)              | (a payout)              |
+ *   CREDIT       | captured               | fees returned           | other                   | other
+ *   DEBIT        | fees                   | refunded                | paid out                | other
  * </pre>
  *
  * <p>If a composer ever changes those shapes, this table is the thing that must change with it —
  * and it is one screen away from the code that would have changed, which is the point of putting
- * it here. The precedence (settlement clearing first) is stated, not incidental: no entry this
- * platform composes touches both, and a line is folded once whatever its label.
+ * it here. The precedence (sale clearings first) is stated, not incidental: no entry this
+ * platform composes touches more than one clearing, and a line is folded once whatever its
+ * label. *(Until `P7-TSK-010` the sale column named only {@code SETTLEMENT_CLEARING}, so a
+ * pay-by-bank sale's whole movement fell into {@code other} — summed correctly, explained
+ * wrongly. The return made the mislabel visible: a merchant checking a refunded bank sale
+ * would have read zeros.)*
  *
  * <h2>The terms sum to the position by construction</h2>
  *
@@ -96,7 +103,16 @@ public final class MerchantPayable {
 
     /** The counterparty purposes the drill-down reads, most significant first. */
     static final List<AccountPurpose> COUNTERPARTIES =
-            List.of(AccountPurpose.SETTLEMENT_CLEARING, AccountPurpose.PAYOUT_CLEARING);
+            List.of(
+                    AccountPurpose.SETTLEMENT_CLEARING,
+                    AccountPurpose.INSTANT_CLEARING,
+                    AccountPurpose.PAYOUT_CLEARING);
+
+    /** The clearings a SALE moves through — one per external rail, same entry shapes. */
+    private static boolean saleClearing(AccountPurpose purpose) {
+        return purpose == AccountPurpose.SETTLEMENT_CLEARING
+                || purpose == AccountPurpose.INSTANT_CLEARING;
+    }
 
     @NonNull private final LedgerAccountStore<Connection> accounts;
     @NonNull private final PositionBreakdown<Connection> breakdowns;
@@ -128,8 +144,7 @@ public final class MerchantPayable {
         for (PositionBreakdown.Bucket bucket : breakdown.buckets()) {
             Optional<PositionBreakdown.Counterparty> counterparty = bucket.counterparty();
             boolean credit = bucket.direction() == Direction.CREDIT;
-            if (counterparty.isPresent()
-                    && counterparty.get().purpose() == AccountPurpose.SETTLEMENT_CLEARING) {
+            if (counterparty.isPresent() && saleClearing(counterparty.get().purpose())) {
                 if (counterparty.get().direction() == Direction.DEBIT) {
                     // A capture: money arrived in clearing, the gross was credited, the fee
                     // debited.

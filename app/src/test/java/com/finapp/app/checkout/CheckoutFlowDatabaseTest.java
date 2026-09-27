@@ -2362,6 +2362,78 @@ class CheckoutFlowDatabaseTest {
         assertThat(sessionMeter("completed_late") - lateBefore).isEqualTo(1.0d);
     }
 
+    @Test
+    @DisplayName("P7-TSK-010: a merchant-bound bank checkout returns IN FULL as a NEW push"
+            + " citing the original - funded by its NET, the RETURNED fee coming back, the"
+            + " payable landing at exactly zero, every line on the INSTANT rail's position")
+    void aBankCheckoutReturnsInFull() throws Exception {
+        Merchant merchant = tradingMerchant("0.029", 30L, "RETURNED");
+        Customer payer = bankPayingCustomer();
+        String created = createSession(merchant, AMOUNT_MINOR, someKey()).body();
+        String checkoutId = field(created, "checkoutId");
+        schemeInitiatesPayIn("https://payer-psp.example/authorize/ret-" + UUID.randomUUID());
+        assertThat(confirm(payer, field(created, "sessionToken")).statusCode()).isEqualTo(200);
+        String attemptId = attemptIdForSession(checkoutId);
+        String originalScheme = "sch-chk-ret-" + UUID.randomUUID();
+        assertThat(instantCallback(
+                        "{\"eventId\":\"evt_" + UUID.randomUUID() + "\",\"reference\":\""
+                                + endToEndReferenceOf(attemptId)
+                                + "\",\"status\":\"executed\",\"schemeReference\":\""
+                                + originalScheme + "\",\"settlementCycle\":\"C2\","
+                                + "\"amount\":\"100.00\",\"currency\":\"EUR\"}"))
+                .isEqualTo(204);
+
+        // The return, through the operator surface and the REAL push adapter.
+        provider.succeedsWith(
+                com.finapp.payments.SimulatedInstantSchemeAdapter.RETURNS_PATH,
+                200,
+                "{\"status\":\"accepted\",\"reference\":\"sch-chk-ret-tx-"
+                        + UUID.randomUUID() + "\",\"cycle\":\"C3\"}");
+        HttpResponse<String> returned =
+                refundResponse(intentOfSession(checkoutId), "100.00");
+        assertThat(returned.statusCode()).as(returned.body()).isEqualTo(201);
+        assertThat(field(returned.body(), "status")).isEqualTo("COMPLETED");
+        String refundId = field(returned.body(), "id");
+
+        try (Connection app = DatabaseRoles.application()) {
+            // The wire cited the ORIGINAL's scheme reference (INV-RAIL-03's checkout leg).
+            assertThat(provider.bodyValues(
+                                    com.finapp.payments.SimulatedInstantSchemeAdapter
+                                            .RETURNS_PATH)
+                            .get(0))
+                    .contains("\"originalReference\":\"" + originalScheme + "\"");
+            // The refund entry: the capture's exact FOUR-LINE inverse (ADR-0054, the
+            // RETURNED cell) - gross back onto the INSTANT rail's own position, never
+            // the card PSP's (INV-RAIL-04): DR payable gross / CR clearing gross, and
+            // the fee back DR FEE_REVENUE / CR payable, netting the payable -96.80.
+            try (PreparedStatement read =
+                    app.prepareStatement(
+                            "SELECT string_agg(l.direction || ':' || a.purpose, ','"
+                                    + " ORDER BY l.direction || ':' || a.purpose)"
+                                    + " FROM ledger.journal_line l"
+                                    + " JOIN ledger.journal_entry e ON e.id = l.entry_id"
+                                    + " JOIN ledger.ledger_account a"
+                                    + "   ON a.id = l.ledger_account_id"
+                                    + " WHERE e.idempotency_scope ="
+                                    + " 'ledger.post:payment-refund:" + refundId + "'")) {
+                try (ResultSet row = read.executeQuery()) {
+                    assertThat(row.next()).isTrue();
+                    assertThat(row.getString(1))
+                            .isEqualTo("CREDIT:INSTANT_CLEARING,CREDIT:MERCHANT_PAYABLE,"
+                                    + "DEBIT:FEE_REVENUE,DEBIT:MERCHANT_PAYABLE");
+                }
+            }
+            assertThat(payablePositionMinor(app, merchant))
+                    .as("96.80 - 96.80: the full return of a RETURNED-fee sale lands the"
+                            + " payable at exactly zero (P6-TSK-015's rule, second rail)")
+                    .isZero();
+        }
+        assertThat(payable(merchant).body())
+                .contains("\"refunded\":\"100.00\"")
+                .contains("\"feesReturned\":\"3.20\"")
+                .contains("\"position\":\"0.00\"");
+    }
+
     /** A verified customer whose instrument is a BANK account (P7-TSK-009) - no card. */
     private Customer bankPayingCustomer() throws Exception {
         String login = "chb." + UUID.randomUUID().toString().replace("-", "").substring(0, 12);

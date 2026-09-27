@@ -8363,8 +8363,8 @@ negative payable** — `COMPLETE` (2026-09-23)
 
 # Phase 7 — Cards, Wallets, A2A and Instant Payments
 
-Status: `IN_PROGRESS` — started 2026-09-26 with `P7-TSK-001` (9 of 18 items complete, M7.1 at
-3 of 3, M7.2 at 2 of 2, M7.3 at 3 of 3, M7.4 at 1 of 2) *(read `READY` for two days after the first task started — caught by `P7-TSK-001`'s own
+Status: `IN_PROGRESS` — started 2026-09-26 with `P7-TSK-001` (10 of 18 items complete, M7.1 at
+3 of 3, M7.2 at 2 of 2, M7.3 at 3 of 3, M7.4 at 2 of 2) *(read `READY` for two days after the first task started — caught by `P7-TSK-001`'s own
 gate, the stale-second-copy class this file has now recorded five times)*; entry gate passed
 2026-09-24 by the Phase 6 → 7 transition
 ([`reviews/PHASE_6_TO_7_TRANSITION.md`](reviews/PHASE_6_TO_7_TRANSITION.md)), elaborated to task
@@ -8775,7 +8775,7 @@ Disputes (`P7-TSK-012`…`-014`) · M7.7 Observability and demonstration (`P7-TS
   instruction.
 
 
-**P7-TSK-010 — Refunds on push rails are return payments** — `READY`
+**P7-TSK-010 — Refunds on push rails are return payments** — `COMPLETE` (2026-09-27)
 - **Objective**: a pay-in can be refunded without anyone reversing it — a new outbound push
   referencing the original (`refundMode`).
 - **Bounded context**: Payments (9).
@@ -8798,8 +8798,46 @@ Disputes (`P7-TSK-012`…`-014`) · M7.7 Observability and demonstration (`P7-TS
 - **Testing**: a full and a partial return; a return's lost answer; probes.
 - **Accept**: a pay-by-bank payment refunded by return payment and reconciled.
 - **Definition of done**: `DOD-FIN`, `DOD-TEST`. **Risk**: Medium. **Cx**: M.
+**P7-TSK-010 — Refunds on push rails are return payments** — `COMPLETE` (2026-09-27)
+- **Gate**: the acceptance proven over the deployed chain — a pay-by-bank payment refunded by
+  return payment and reconciled: the operator's refund of an EXECUTED pay-in dispatched
+  through the REAL push adapter as a NEW transfer carrying OUR minted 32-hex reference as the
+  scheme's dedupe key and citing the ORIGINAL's scheme reference as its only address (read
+  back from the wire body, `INV-RAIL-03`), completed with the RETURN's own scheme reference
+  stored, EXACTLY ONE entry `payment-refund:<refundId>` DR wallet / CR `INSTANT_CLEARING`,
+  the key replayed byte for byte with one wire call
+  (`PayByBankDatabaseTest#theReturnChainHolds`); the merchant-bound full return funded by its
+  NET with the RETURNED fee back — the capture's exact four-line inverse on the INSTANT
+  rail's own position, the payable at exactly zero
+  (`CheckoutFlowDatabaseTest#aBankCheckoutReturnsInFull`). The bound is per-model for every
+  writer (payments `V018` replaces the `V004` function, the card arm verbatim, the push arm
+  judging EXECUTED against the intent's frozen ask, the BOOK model refused outright for
+  `P7-TSK-011`; raw negatives as `finapp_app` AND the migrator in
+  `PaymentsSchemaDatabaseTest#theReturnBoundIsPerModelForEveryWriter`). The partial return to
+  the cent, one past it the honest 422, the waiting pay-in the honest 409
+  (`#aPartialReturnIsBoundedByTheExecution`). The lost answer honestly `UNKNOWN` with the
+  hold standing and its echo refused parking; `ReturnResolution` — the card sweeper's refund
+  leg at the push rail, the sweep PARTITIONED by the attempt's model — completes it to one
+  entry, a second sweep converging quietly (`#aLostReturnAnswerResolvesBySweep`); an
+  `UNRECOGNISED` return re-driven under the renewed permit with the SAME reference
+  (`#anUnrecognisedReturnRedrivesWithTheSameReference`); a re-drive's refused connection
+  concluding NOTHING with the hold standing (`#aRedrivesRefusedConnectionConcludesNothing`,
+  ADR-0057 §3). Found and fixed on the way: `MerchantPayable`'s sale-clearing set named only
+  the card's position, so every bank sale read as zeros in the merchant's own drill-down —
+  `INSTANT_CLEARING` joined with the recorded mislabel note (`INV-MER-02`). Also fixed:
+  `P7-TSK-009`'s seven decorated register rows failed `MutationDemonstrationTest`'s row
+  grammar (they landed after that task's fleet run — a gate escape this gate's clean
+  fleet run surfaced; reflowed, guard green), and the `P7-TSK-008` bare-digit needle
+  class fired in `PaymentRefundDatabaseTest` (re-anchored). Eleven probe
+  runs, eleven caught, restores byte-identical (`MUTATION_TESTING.md` §2 +11 rows).
+  Multi-instance PASS — the claim, the attempt lock, `V018`'s advisory-namespace-3 bound, the
+  send permit's conditional renewal, the locked-row outcomes and the posting key are ALL
+  database arbiters; the sweep is enumerated leaderless. Fleet hermetic 1663 tests across 14 modules, 0 failures; 207 targeted database tests across 14 suites, 0 failures; the
+  platform classification guard green. The full battery deliberately skipped on the owner's
+  instruction.
 
-**P7-TSK-011 — The wallet as an instrument: pay a checkout from the wallet** — `PLANNED`
+
+**P7-TSK-011 — The wallet as an instrument: pay a checkout from the wallet** — `READY`
 - **Objective**: the book rail (ADR-0059 §6) — a checkout paid from a platform wallet in one
   transaction, final on posting.
 - **Bounded context**: Payments (9), consuming Accounts (5/6), Checkout (11) and Merchant (12).
@@ -8838,7 +8876,7 @@ Disputes (`P7-TSK-012`…`-014`) · M7.7 Observability and demonstration (`P7-TS
   provider dispute vocabulary confined to the adapter.
 - **Out of scope**: postings (`-013`); evidence (`-014`).
 - **Domain changes**: `Dispute`, its machine, `DisputeStore`, `DisputeReason` categories.
-- **Persistence**: payments `V018` (dispute and history); classification rows.
+- **Persistence**: payments `V019` (dispute and history; planned as `V018` until `P7-TSK-010`'s return bound took that number); classification rows.
 - **API**: dispute notifications at the webhook door; read routes for merchant (tenant-scoped) and
   operator.
 - **Events**: `DisputeOpened`, `ChargebackReceived`, `DisputeResolved`.

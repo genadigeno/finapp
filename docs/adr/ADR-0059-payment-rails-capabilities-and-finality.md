@@ -72,6 +72,16 @@ The second is attempting a reversal on an irrevocable rail. Phase 5's attempt ma
    A merchant can therefore refund an instant payment by return payment, while nobody can reverse
    it.
 
+   *(The `refundMode` dispatch shipped `P7-TSK-010`: one refund command executes two of the
+   declared modes — `PROVIDER_REFUND` against the capture, `RETURN_PAYMENT` as a new push
+   citing the original's scheme reference over `PushRail.sendReturn` — with the eligible
+   state and the bound base per model (`CAPTURED`/captured amount on the card, `EXECUTED`/the
+   intent's frozen ask on the push rail), payments `V018` holding the same per-model bound
+   for every writer and refusing the model whose refund producer has not shipped
+   (`BOOK_REFUND`, `P7-TSK-011`). The return resolves against its own wire: the refund sweep
+   partitioned by the attempt's model, `ReturnResolution` inquiring and re-driving under the
+   send permit with the same reference.)*
+
 4. **Finality is not settlement.** Finality says whether the payee's credit can be taken back.
    Settlement says whether the interbank obligation is discharged. An instant payment is final
    on acceptance and still unsettled until the scheme reports its cycle, so `INV-SET-01` holds

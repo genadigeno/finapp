@@ -647,10 +647,13 @@ class PaymentRefundDatabaseTest {
         assertThat(refundEventCount(result.refund(), "payments.RefundCompleted"))
                 .as("the terminal fact, once, in the committing transaction")
                 .isEqualTo(1);
-        // Identifiers and enumerated names only - never an amount (the needle).
+        // Identifiers and enumerated names only - never an amount (the needle). The amount
+        // needles are quoted-value shaped: a bare "500" matches hex inside a random UUIDv7
+        // (the WithdrawalTest flake class, P7-TSK-008 - met here by a 1-in-4096 draw).
         assertThat(refundEventPayloads(result.refund()))
                 .doesNotContain("5.00")
-                .doesNotContain("500")
+                .doesNotContain("\"500\"")
+                .doesNotContain(":500")
                 .doesNotContain("psp_rfd-wh");
 
         assertThat(webhookCount(registry, "processed"))
@@ -1752,7 +1755,9 @@ class PaymentRefundDatabaseTest {
                 new JdbcAuditWriter(),
                 IDS,
                 CLOCK,
-                com.finapp.payments.PaymentRails.of(java.util.List.of(SimulatedCardPspAdapter.RAIL)));
+                com.finapp.payments.PaymentRails.of(java.util.List.of(SimulatedCardPspAdapter.RAIL)),
+                // A card-only suite: the push rail is absent, as on a card-only deployment.
+                java.util.Optional.empty());
     }
 
     private HoldService holdService() {

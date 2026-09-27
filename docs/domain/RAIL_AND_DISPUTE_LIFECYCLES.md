@@ -207,7 +207,7 @@ Entered at `INQUIRY` or directly at `CHARGED_BACK`. Terminal: `WON`, `LOST`, `AC
 | Dispute won / lost | `WON` / `LOST` | Won: the exact inverse of the principal lines. Lost: excess written off to `DISPUTE_COSTS` | Card PSP | Phase 8 | As above |
 | Pay-in to a wallet (pay-by-bank) | push `EXECUTED` | DR `INSTANT_CLEARING` / CR wallet | Instant scheme | Scheme cycle (Phase 8) | End-to-end reference ↔ scheme reference |
 | Pay-in to a checkout | push `EXECUTED` | DR `INSTANT_CLEARING` gross / CR payable gross; DR payable fee / CR `FEE_REVENUE` fee | Instant scheme | Scheme cycle | As above, plus the order |
-| Return payment (refund of a pay-in) | refund `COMPLETED` | DR wallet or payable / CR `INSTANT_CLEARING` | Instant scheme | Scheme cycle | Return reference ↔ original |
+| Return payment (refund of a pay-in) | refund `COMPLETED` (shipped `P7-TSK-010`: the refund command per `refundMode`, `V018`'s per-model bound, `ReturnResolution`'s partitioned sweep) | DR wallet or payable / CR `INSTANT_CLEARING` (merchant-bound: the capture's four-line inverse, ADR-0054) | Instant scheme | Scheme cycle | Return reference (ours, on the refund row) ↔ original (the attempt's scheme reference, cited on the wire); the return's own scheme reference lands at `COMPLETED` |
 | Withdrawal | withdrawal `COMPLETED` | Release the hold; DR wallet / CR `INSTANT_CLEARING` | Instant scheme | Scheme cycle | End-to-end reference ↔ scheme reference |
 | Wallet pays a checkout | book `EXECUTED` | DR wallet gross / CR payable gross; DR payable fee / CR `FEE_REVENUE` fee — one transaction | None (internal) | None | The entry is the whole record |
 | Book refund of a wallet payment | refund `COMPLETED` | DR payable / CR wallet (fee share per ADR-0054) | None | None | The entry |

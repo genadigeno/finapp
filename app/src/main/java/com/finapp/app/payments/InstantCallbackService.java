@@ -76,6 +76,7 @@ public class InstantCallbackService {
     /** The rail this door serves — the composition root's binding, never a name held here
      * ({@code INV-RAIL-01}: the {@code Withdrawals} constructor's discipline at a door). */
     private final com.finapp.payments.RailId railId;
+    private final com.finapp.payments.RefundStore<Connection> refunds;
 
     public InstantCallbackService(
             WebhookSignature instantWebhookSignature,
@@ -90,7 +91,8 @@ public class InstantCallbackService {
             Clock clock,
             TransactionTemplate paymentTransactions,
             DataSource dataSource,
-            com.finapp.payments.RailId railId) {
+            com.finapp.payments.RailId railId,
+            com.finapp.payments.RefundStore<Connection> refundStore) {
         this.signature =
                 Objects.requireNonNull(
                         instantWebhookSignature, "instantWebhookSignature must not be null");
@@ -113,6 +115,7 @@ public class InstantCallbackService {
                 Objects.requireNonNull(paymentTransactions, "paymentTransactions must not be null");
         this.dataSource = Objects.requireNonNull(dataSource, "dataSource must not be null");
         this.railId = Objects.requireNonNull(railId, "railId must not be null");
+        this.refunds = Objects.requireNonNull(refundStore, "refundStore must not be null");
     }
 
     /**
@@ -206,12 +209,13 @@ public class InstantCallbackService {
                     "A duplicate instant confirmation delivery was absorbed by the inbox;"
                             + " its bytes are retained as evidence (INV-IDEM-04,"
                             + " INV-HIST-02)");
-        } else if ((delivered.attributed() || judged.parked()) && !judged.isUnmappable()) {
+        } else if ((delivered.attributed() || judged.parked() || judged.isReturnEcho())
+                && !judged.isUnmappable()) {
             meters.webhook(com.finapp.app.telemetry.PaymentMeters.WebhookOutcome.PROCESSED);
         } else {
             meters.webhook(com.finapp.app.telemetry.PaymentMeters.WebhookOutcome.UNMAPPABLE);
         }
-        if (!delivered.attributed() && !judged.parked()) {
+        if (!delivered.attributed() && !judged.parked() && !judged.isReturnEcho()) {
             log.warn(
                     "An authenticated instant confirmation named no initiation this platform"
                             + " made and carried no parkable value; retained unattributed and"
@@ -241,6 +245,20 @@ public class InstantCallbackService {
             // money, it PARKS - the books must show value the scheme says moved
             // (ADR-0062 §5); everything else is evidence alone.
             if (!"executed".equals(payload.status())) {
+                return;
+            }
+            // THE RETURN'S OWN ECHO (P7-TSK-010): a return payment travels under a reference
+            // WE minted onto the REFUND row, not the attempt - so its confirmation attributes
+            // to no initiation and would otherwise park money the books already explain. A
+            // reference a refund carries is attributed, not unmatched: evidence only, loud,
+            // and the return's outcome lands through its own resolution sweep on the locked
+            // refund row (never through this door's pay-in machine).
+            if (refundFor(uow, payload.reference()).isPresent()) {
+                judged.returnEcho();
+                log.info(
+                        "An instant confirmation named a return payment's own reference; the"
+                                + " suspense parking is refused and the bytes rest as evidence"
+                                + " - the return sweep concludes the refund (P7-TSK-010)");
                 return;
             }
             Optional<ProviderReference> scheme = schemeReference(payload.schemeReference());
@@ -330,6 +348,7 @@ public class InstantCallbackService {
         private boolean parkedActing;
         private boolean parkedSeen;
         private boolean unreadable;
+        private boolean returnEcho;
 
         void unmappable() {
             unreadable = true;
@@ -337,6 +356,14 @@ public class InstantCallbackService {
 
         boolean isUnmappable() {
             return unreadable;
+        }
+
+        void returnEcho() {
+            returnEcho = true;
+        }
+
+        boolean isReturnEcho() {
+            return returnEcho;
         }
 
         void attempt(PaymentOutcomes.Applied applied) {
@@ -397,6 +424,19 @@ public class InstantCallbackService {
             case "rejected", "expired" -> Optional.of(PushInquiryAnswer.Verdict.REJECTED);
             default -> Optional.empty();
         };
+    }
+
+    /** Shape-total: the refund carrying this reference as its own, or absent — never a throw. */
+    private Optional<com.finapp.payments.Refund> refundFor(Connection uow, String reference) {
+        if (reference == null) {
+            return Optional.empty();
+        }
+        try {
+            return refunds.findByOperationReference(
+                    uow, new com.finapp.payments.ProviderIdempotencyReference(reference));
+        } catch (IllegalArgumentException unusable) {
+            return Optional.empty();
+        }
     }
 
     /** Shape-total: a reference we cannot store is absent, never a throw. */

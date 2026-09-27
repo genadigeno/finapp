@@ -106,6 +106,15 @@ public final class PaymentRefund {
     @NonNull private final PaymentRails rails;
 
     /**
+     * The push rail, when this deployment configures one (`P7-TSK-010`): the
+     * {@code RETURN_PAYMENT} mode's wire — a return is a new outbound push citing the
+     * original's scheme reference, never a provider reversal. Empty refuses the return
+     * branch inside Tx1 with nothing written ({@link PushRailUnavailableException} — the
+     * confirmation's pattern). Last, so no existing positional argument moved.
+     */
+    @NonNull private final Optional<PushRail> pushRail;
+
+    /**
      * What the operator learns — the status honestly, {@code UNKNOWN} included.
      *
      * @param replayed the recorded judgement was rendered; no wire call happened
@@ -134,14 +143,22 @@ public final class PaymentRefund {
             ProviderReference capture,
             boolean send,
             boolean firstSend,
-            Instant permit) {}
+            Instant permit,
+            // The rail-aware half (P7-TSK-010): which wire this refund rides, and - for
+            // the return - the ORIGINAL's scheme reference it cites as its destination.
+            InteractionModel model,
+            Optional<ProviderReference> originalScheme) {}
 
     /**
      * Dispatches (or replays) the refund and applies the provider's answer.
      *
      * @throws UnknownPaymentException the intent names nothing — the caller's one 404
-     * @throws PaymentNotRefundableException no captured attempt — the caller's 409
-     * @throws RefundExceedsCaptureException the bound — the caller's 422
+     * @throws PaymentNotRefundableException no refundable attempt — {@code CAPTURED} on the
+     *     card, {@code EXECUTED} on a push rail (`P7-TSK-010`) — the caller's 409
+     * @throws RefundExceedsCaptureException the bound against the mode's own base — the
+     *     caller's 422
+     * @throws PushRailUnavailableException a return on an unconfigured deployment — nothing
+     *     written, the caller's 503
      * @throws com.finapp.ledger.HoldExceedsAvailableBalanceException the account the refund
      *     debits cannot fund what it will take, now ({@code INV-BAL-04}) — a customer who has
      *     spent the money, or a merchant's payable short of the refund's net (ADR-0054); the
@@ -202,16 +219,11 @@ public final class PaymentRefund {
         // (ADR-0046, P1-TSK-026) - and only under a committed permit: a takeover that found the
         // crashed flight's refund already resolved sends nothing and answers the row's truth.
         // An exception propagates: the dispatch stays committed with its hold standing and
-        // visible - never a fabricated outcome.
+        // visible - never a fabricated outcome. WHICH wire is the stored rail's declared
+        // mode (P7-TSK-010): the card's provider refund against the capture, or the push
+        // rail's RETURN citing the original's scheme reference.
         Optional<ProviderAnswer> answer =
-                dispatch.send()
-                        ? Optional.of(
-                                provider.refund(
-                                        new PaymentProvider.RefundRequest(
-                                                dispatch.refund().providerIdempotencyReference(),
-                                                dispatch.capture(),
-                                                dispatch.refund().amount())))
-                        : Optional.empty();
+                dispatch.send() ? Optional.of(sent(dispatch)) : Optional.empty();
 
         // Tx2: the outcome, applied as the platform - a provider's answer has no session
         // (the enumerated enterSystem() site, refund form).
@@ -272,6 +284,59 @@ public final class PaymentRefund {
 
     private static boolean resolvable(RefundStatus status) {
         return status == RefundStatus.DISPATCHED || status == RefundStatus.UNKNOWN;
+    }
+
+    /**
+     * The one send, on the dispatched rail's own wire (`P7-TSK-010`): a two-step refund
+     * executes against the capture; a push refund is a RETURN — a new transfer citing the
+     * original's scheme reference. The return's answer folds onto the provider vocabulary
+     * verbatim (ACCEPTED is the approval, REJECTED the decline, the connection-refusal and
+     * ambiguity words identical), so {@code judged()}'s permit rule and
+     * {@link PaymentOutcomes#applyRefund} run unchanged — one judgement, whatever the rail.
+     */
+    private ProviderAnswer sent(Dispatch dispatch) {
+        if (dispatch.model() != InteractionModel.PUSH) {
+            return provider.refund(
+                    new PaymentProvider.RefundRequest(
+                            dispatch.refund().providerIdempotencyReference(),
+                            dispatch.capture(),
+                            dispatch.refund().amount()));
+        }
+        PushAnswer returned =
+                pushRail
+                        .orElseThrow(PushRailUnavailableException::new)
+                        .sendReturn(
+                                new PushRail.ReturnPayment(
+                                        new EndToEndReference(
+                                                dispatch.refund()
+                                                        .providerIdempotencyReference()
+                                                        .value()),
+                                        dispatch.originalScheme()
+                                                .orElseThrow(
+                                                        () ->
+                                                                new IllegalStateException(
+                                                                        "an EXECUTED push"
+                                                                            + " attempt carries"
+                                                                            + " its scheme"
+                                                                            + " reference: the"
+                                                                            + " coherence rule"
+                                                                            + " guarantees it")),
+                                        dispatch.refund().amount()));
+        return switch (returned.verdict()) {
+            case ACCEPTED ->
+                    ProviderAnswer.approved(
+                            returned.schemeReference().orElseThrow(),
+                            returned.evidence().orElse(new byte[0]));
+            case REJECTED ->
+                    returned.evidence()
+                            .map(ProviderAnswer::declined)
+                            .orElseGet(() -> ProviderAnswer.declined(new byte[0]));
+            case NOTHING_SENT -> ProviderAnswer.nothingSent();
+            default ->
+                    returned.evidence()
+                            .map(ProviderAnswer::indeterminate)
+                            .orElseGet(ProviderAnswer::indeterminate);
+        };
     }
 
     /**
@@ -376,7 +441,9 @@ public final class PaymentRefund {
                 attempt.captureProviderReference(),
                 permit.isPresent(),
                 false,
-                permit.orElse(null));
+                permit.orElse(null),
+                attempt.interactionModel(),
+                attempt.schemeReference());
     }
 
     /** The claimed dispatch: bound under the attempt lock, hold inside the account lock. */
@@ -398,29 +465,51 @@ public final class PaymentRefund {
         // dispatcher can pass this point until we commit or roll back.
         PaymentAttempt attempt =
                 attempts.lockById(uow, loose.id()).orElseThrow(UnknownPaymentException::new);
-        if (attempt.status() != PaymentAttemptStatus.CAPTURED) {
-            throw new PaymentNotRefundableException(attempt.status());
-        }
 
         // THE RAIL'S REFUND MODE, read from the STORED rail under the lock just taken
-        // (P7-TSK-001, ADR-0059 section 1): this command IS the provider-refund execution -
-        // dispatch against the capture, resolve by query - so any other declared mode reaching
-        // it is a wiring fault, judged before the hold so it writes nothing. The return-payment
-        // and book-refund executions land with their own rails (P7-TSK-010, P7-TSK-011), and
-        // the card descriptor's own coherence makes this branch unreachable today.
+        // (P7-TSK-001, ADR-0059 section 1) - and since P7-TSK-010 this command executes TWO
+        // of the declared modes: PROVIDER_REFUND against the capture, RETURN_PAYMENT as a
+        // new push citing the original. The book refund lands with its rail (P7-TSK-011).
+        // Each mode's ELIGIBLE state is its machine's own terminal, and its BOUND BASE is
+        // that machine's returned-money fact: the captured amount for the card, the
+        // EXECUTED amount for the push - which the attempt row deliberately does not copy,
+        // so the base is the intent's frozen ask, the value the confirmation door proved
+        // equal to what the scheme executed (INV-PAY-05's push half; V018 holds the same
+        // rule for every writer).
         RailCapabilities.RefundMode refundMode =
                 rails.capabilitiesOf(attempt.rail()).refundMode();
-        if (refundMode != RailCapabilities.RefundMode.PROVIDER_REFUND) {
-            throw new IllegalStateException(
-                    "refund mode " + refundMode + " has no execution path yet: this command"
-                            + " executes PROVIDER_REFUND only (ADR-0059)");
-        }
+        Money base =
+                switch (refundMode) {
+                    case PROVIDER_REFUND -> {
+                        if (attempt.status() != PaymentAttemptStatus.CAPTURED) {
+                            throw new PaymentNotRefundableException(attempt.status());
+                        }
+                        yield attempt.capturedAmount();
+                    }
+                    case RETURN_PAYMENT -> {
+                        if (attempt.status() != PaymentAttemptStatus.EXECUTED) {
+                            throw new PaymentNotRefundableException(attempt.status());
+                        }
+                        if (pushRail.isEmpty()) {
+                            // Refused BEFORE the hold: the whole transaction rolls back
+                            // with nothing written, the honest 503 (the confirmation's
+                            // ObjectProvider decision, at the return).
+                            throw new PushRailUnavailableException();
+                        }
+                        yield intent.amount();
+                    }
+                    case BOOK_REFUND ->
+                            throw new IllegalStateException(
+                                    "refund mode " + refundMode + " has no execution path"
+                                            + " yet: the book refund lands with its rail"
+                                            + " (P7-TSK-011, ADR-0059)");
+                };
         Money alreadyRefunded =
-                refunds.sumNonFailedFor(uow, attempt.id(), attempt.capturedAmount().currency());
-        if (!amount.currency().equals(attempt.capturedAmount().currency())
-                || amount.plus(alreadyRefunded).compareTo(attempt.capturedAmount()) > 0) {
+                refunds.sumNonFailedFor(uow, attempt.id(), base.currency());
+        if (!amount.currency().equals(base.currency())
+                || amount.plus(alreadyRefunded).compareTo(base) > 0) {
             // The honest 422 BEFORE any hold is placed: nothing written, nothing reserved.
-            throw new RefundExceedsCaptureException(attempt.capturedAmount().currency());
+            throw new RefundExceedsCaptureException(base.currency());
         }
 
         // WHAT THE REFUND WILL TAKE, NOT ITS GROSS (P6-TSK-015, ADR-0054): asked of the
@@ -444,16 +533,31 @@ public final class PaymentRefund {
         // cannot fund it.
         com.finapp.ledger.Hold hold = holds.place(uow, intent.creditAccount(), reservation);
 
+        // The reference, minted per rail (INV-PAY-04): the card's provider shape, or - for
+        // the return - a 32-hex value that must fit the scheme wire's 35-character
+        // end-to-end bound, judged at mint by the factory (P7-TSK-010).
         Refund refund =
-                Refund.create(
-                        ids,
-                        clock,
-                        attempt,
-                        amount,
-                        alreadyRefunded,
-                        reason,
-                        hold.id(),
-                        new ProviderIdempotencyReference("rfd-" + ids.next()));
+                refundMode == RailCapabilities.RefundMode.RETURN_PAYMENT
+                        ? Refund.createReturn(
+                                ids,
+                                clock,
+                                attempt,
+                                base,
+                                amount,
+                                alreadyRefunded,
+                                reason,
+                                hold.id(),
+                                new ProviderIdempotencyReference(
+                                        ids.next().toString().replace("-", "")))
+                        : Refund.create(
+                                ids,
+                                clock,
+                                attempt,
+                                amount,
+                                alreadyRefunded,
+                                reason,
+                                hold.id(),
+                                new ProviderIdempotencyReference("rfd-" + ids.next()));
         refunds.insert(uow, refund, dispatchKey);
 
         Instant now = Instant.now(clock);
@@ -501,7 +605,9 @@ public final class PaymentRefund {
                 attempt.captureProviderReference(),
                 true,
                 true,
-                permit);
+                permit,
+                attempt.interactionModel(),
+                attempt.schemeReference());
     }
 
     /** The operator and the money's meaning ({@code INV-IDEM-03}); correlation excluded. */

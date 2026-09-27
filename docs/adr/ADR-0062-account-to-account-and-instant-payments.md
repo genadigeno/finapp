@@ -124,6 +124,14 @@ The concepts this phase must keep apart:
    Nothing posts before the scheme's confirmation. Nothing posts twice: each posting is keyed by
    the operation, and each outcome is a conditional transition.
 
+   *(The return row shipped `P7-TSK-010`: the existing refund command and
+   `PaymentOutcomes.applyRefund` unchanged at the seam — the release-and-post commit, the
+   `payment-refund:<refundId>` key, ADR-0054's net reservation for merchant-bound returns —
+   with the clearing side resolved per rail to `INSTANT_CLEARING`, the wire a
+   `sendReturn` citing the original's scheme reference (never an account, `INV-RAIL-03`),
+   and the bound judged against the EXECUTED amount — the intent's frozen ask — in the
+   aggregate and in `V018` for every writer.)*
+
 5. **Pay-by-bank: the payer's PSP decides, and the platform's clock only decides when to ask.**
    - An initiation waits in `AWAITING_PAYER` until the payer's PSP reports it executed, rejected
      or expired. The inquiry sweep asks. It never concludes an expiry by our clock alone

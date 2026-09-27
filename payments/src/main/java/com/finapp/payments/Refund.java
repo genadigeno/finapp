@@ -182,6 +182,84 @@ public final class Refund {
     }
 
     /**
+     * A RETURN of an executed pay-in (`P7-TSK-010`, ADR-0062 §§1/4): the push rail's refund
+     * is a new outbound transfer citing the original, never a reversal of it
+     * ({@code INV-REV-01}), so the eligible state is the push machine's own terminal —
+     * {@code EXECUTED}, not {@code CAPTURED} — and the bound's base is the
+     * <strong>executed</strong> amount, which the attempt row deliberately does not copy:
+     * the caller passes the intent's frozen ask, the value the confirmation door proved
+     * equal to what the scheme executed ({@code INV-PAY-05}'s push half; `V018` holds the
+     * same rule for every writer). The reference must also fit the WIRE it will ride —
+     * ISO 20022's 35 — judged here, at mint, not at send.
+     */
+    public static Refund createReturn(
+            IdGenerator ids,
+            Clock clock,
+            PaymentAttempt attempt,
+            Money executedAmount,
+            Money amount,
+            Money alreadyRefunded,
+            String reason,
+            HoldId holdReference,
+            ProviderIdempotencyReference providerIdempotencyReference) {
+        Objects.requireNonNull(ids, "ids must not be null");
+        Objects.requireNonNull(clock, "clock must not be null");
+        Objects.requireNonNull(attempt, "attempt must not be null");
+        Objects.requireNonNull(executedAmount, "executedAmount must not be null");
+        Objects.requireNonNull(amount, "amount must not be null");
+        Objects.requireNonNull(alreadyRefunded, "alreadyRefunded must not be null");
+        Objects.requireNonNull(
+                providerIdempotencyReference,
+                "providerIdempotencyReference must not be null");
+
+        if (attempt.interactionModel() != InteractionModel.PUSH
+                || attempt.status() != PaymentAttemptStatus.EXECUTED) {
+            throw new IllegalArgumentException(
+                    "a return references an EXECUTED push attempt (INV-PAY-05, ADR-0062"
+                            + " section 4) - attempt " + attempt.id() + " is "
+                            + attempt.interactionModel() + "/" + attempt.status());
+        }
+        if (providerIdempotencyReference.value().length() > EndToEndReference.MAX_LENGTH) {
+            throw new IllegalArgumentException(
+                    "a return's reference rides the scheme wire as the end-to-end reference"
+                            + " and must fit ISO 20022's " + EndToEndReference.MAX_LENGTH
+                            + " characters (P7-TSK-010)");
+        }
+        if (!amount.currency().equals(executedAmount.currency())) {
+            throw new IllegalArgumentException(
+                    "a return must be in the execution's currency; refused "
+                            + amount.currency() + " against " + executedAmount.currency());
+        }
+        if (!alreadyRefunded.currency().equals(executedAmount.currency())) {
+            throw new IllegalArgumentException(
+                    "the returned-so-far sum must be in the execution's currency; refused "
+                            + alreadyRefunded.currency() + " against "
+                            + executedAmount.currency());
+        }
+        if (alreadyRefunded.isNegative()) {
+            throw new IllegalArgumentException(
+                    "the returned-so-far sum cannot be negative; refused a negative sum in "
+                            + alreadyRefunded.currency());
+        }
+        if (amount.plus(alreadyRefunded).compareTo(executedAmount) > 0) {
+            throw new IllegalArgumentException(
+                    "returns are bounded by the execution (INV-PAY-05): refused a return"
+                            + " taking the returned sum past the executed amount in "
+                            + executedAmount.currency());
+        }
+        return new Refund(
+                RefundId.next(ids),
+                attempt.id(),
+                amount,
+                reason,
+                holdReference,
+                providerIdempotencyReference,
+                null,
+                RefundStatus.DISPATCHED,
+                Instant.now(clock));
+    }
+
+    /**
      * A row read back from storage, through the same constructor — row-local coherence refused
      * on read-back; the sum bound is the trigger's (above).
      */

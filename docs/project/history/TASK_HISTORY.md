@@ -1,6 +1,6 @@
 # Task History
 
-The per-task completion records that accumulated behind `## Current Task` - 153 "Previously" blocks, newest first, from `P7-TSK-008` back to project initiation. *(`X-TSK-004` is cross-cutting and completed after the Phase 6 → 7 transition, so it stands second, between `P7-TSK-001` and the transition's record - the transition's block moved here by `P7-TSK-001`'s gate, exactly as an earlier form of this note said it would.)*
+The per-task completion records that accumulated behind `## Current Task` - 154 "Previously" blocks, newest first, from `P7-TSK-009` back to project initiation. *(`X-TSK-004` is cross-cutting and completed after the Phase 6 → 7 transition, so it stands second, between `P7-TSK-001` and the transition's record - the transition's block moved here by `P7-TSK-001`'s gate, exactly as an earlier form of this note said it would.)*
 
 **Archive.** These records were moved verbatim out of
 [`CURRENT_STATE.md`](../CURRENT_STATE.md) on 2026-09-20 so that the canonical description of
@@ -14,6 +14,89 @@ Authoritative backlog: [`BACKLOG.md`](../BACKLOG.md)
 ---
 
 ### Previously
+
+**`P7-TSK-009` — Pay-by-bank: A2A pay-ins for wallets and checkout** — `COMPLETE` (2026-09-27).
+**M7.4, Pay-ins by bank, opens at 1 of 2: money enters through the payer's own PSP,
+authorized there with the payer's SCA, final on the scheme's confirmation — the push
+attempt's inbound life end to end, and the platform's clock deciding only when to ask**
+(ADR-0062 §5 shipped, §3 adapted with the adaptation recorded; `INV-MER-06`'s second rail,
+`INV-RAIL-04`, `INV-REC-05`, `INV-IDEM-04`, `INV-LIFE-03`, `INV-PAY-04`).
+
+| Acceptance criterion | Evidence |
+|---|---|
+| A wallet funded by bank, reconciled | The whole deployed chain over HTTP — the bank account registered through the real grant exchange, the initiation dispatched through the REAL adapter, the payer's handle rendered ONCE to its owner, the signed executed callback landing `AWAITING_PAYER → EXECUTED` with the scheme's reference and cycle stored (Phase 8's keys), **exactly one** entry `payment-execution:<attemptId>` DR `INSTANT_CLEARING` / CR wallet, the balance explained to the cent, the decision pinned `instant` under seeded version 3 (`PayByBankDatabaseTest#theWalletChainHolds`) |
+| A checkout paid by bank, reconciled | The merchant fixture whole: `PAYMENT_PENDING` with the handle on the PAYER's answer and NEVER the merchant's, the executed callback completing the session with ADR-0050's four lines on the INSTANT rail's own position — gross to the payable, the fee out of it, 96.80 on a 100.00 sale (`CheckoutFlowDatabaseTest#aCheckoutIsPaidByBank`) |
+| A late execution lands | The offer expires while the payer deliberates at their PSP; the execution lands anyway — `EXPIRED → COMPLETED_LATE` through the SAME composition seam as the card's late capture, the merchant credited, the order created, the late ending counted in its own meter (`#aBankExecutionLandingAfterExpiryStillProducesTheOrder`) |
+
+**The push machine's inbound edge** (`AWAITING_PAYER → EXECUTED`), added with its producer
+and the drawn machine corrected with provenance: a pay-in's execution is the PAYER's act —
+the platform never dispatches it. The initiation's ambiguity is deliberately NOT a state:
+a lost `initiate()` answer is `AWAITING_PAYER` **without a handle**, resolved by the
+sweep's convergent re-initiate under the scheme's dedupe (both initiate calls proven to
+carry OUR one reference, read back from the wire), and the unavailability conclusions are
+conditional on the handle's absence for every writer — ADR-0062 §3's permit rule adapted,
+because an initiation moves no money and a row the payer can still complete must never be
+failed by our unavailability. The falsifiable twin is in the suite: the same verdict
+against a handle-holding row moves nothing.
+
+**The unattributable confirmation parks** (`INV-REC-05`): a money-carrying statement naming
+no initiation we made posts DR `INSTANT_CLEARING` / CR `SUSPENSE_UNMATCHED` — the seam
+account's FIRST poster, exactly as its javadoc promised, and the `P3-TSK-003` seam test's
+list shrank to `FX_POSITION` with provenance — once under ten fresh-id deliveries (the
+posting key and `UNIQUE (rail, scheme_reference)`, post-then-insert so a crash between them
+replays into the row), audited (`UNMATCHED_CONFIRMATION_PARKED`), alerted loud, aged by the
+new `finapp.payments.unmatched` gauges. Never credited by guesswork — and never credited
+TWICE: the execute arm pre-checks both the cross-attempt claim and the parked reference
+(the `V015` foreign-claim shape), proven with the first record standing.
+
+**One door per rail, one shared judgement**: the instant rail's signed callback door
+(`InstantCallbackService`, its own confined webhook key — the credential `P7-TSK-006`
+deferred here) speaks the payer PSP's three words (`expired` maps to the rejection; the
+scheme's word rests in the evidence, `INV-PAY-03`), authenticates before parsing, dedupes
+through its own inbox consumer, and applies through `PaymentOutcomes.applyExecution` — the
+same arm the `PayInResolution` sweep's inquiry leg uses, so ten fresh-id duplicate
+callbacks credit once, counted, and a lost callback resolves by inquiry to the same one
+entry. A confirmation whose stated amount differs from the initiation's ask moves nothing,
+loudly.
+
+**Found and fixed on the way**: the rail-vocabulary guard refused the door holding
+`SimulatedInstantSchemeAdapter.RAIL` by name (`INV-RAIL-01`) — the rail is now the
+composition root's constructor binding, the `Withdrawals` discipline at a door; the
+confined-credential guard caught `webhook-key`'s relaxed binding collapsing the underscore
+(`FINAPP_PAYMENTS_INSTANT_WEBHOOKKEY`) — the property is dot-separated
+(`finapp.payments.instant.webhook.key`) so the variable a refusal names really binds; and
+three suites' raw PUSH seeders gained the birth facts `V017` now requires (the `P7-TSK-007`
+seeder-escape class, met at authoring time this time).
+
+**Thirteen probe runs, thirteen caught**, every restore verified byte-identical: the
+inbound edge dropped from the trigger and from the machine (each side's reconciliation
+the catcher), the handle freeze dropped, the suspense arbiter dropped, the seed rule
+bent, the handleless conditional widened (the twin's catch), the amount guard disarmed,
+both scheme-reference claim pre-checks dropped, the parking's posting skipped, the
+executed fact unpublished, the `expired` word freed, the late-completion arm removed
+(`MUTATION_TESTING.md` §2 +13 rows).
+
+Multi-instance **PASS** — every arbiter is the database's: the intent's conditional
+dispatch, the inbox per event id, the row conditionals (`EXECUTED` once; the handle stored
+once behind its NULL predicate; the permit renewed forward behind its expected value — the
+sweep's wire-noise arbiter), the posting keys, the two scheme-reference claims, the parking
+UNIQUE, and the session's locked completion; the sweep is enumerated leaderless; nothing
+lives in process state.
+
+Registers: `AUDITABLE_ACTIONS` +1, `DATA_CLASSIFICATION` +13 rows (the handle at
+`RESTRICTED-PII` — the live capability URL, stored bare of necessity),
+`DISTRIBUTED_EXECUTION` §3 +1 row, `MODULE_ARCHITECTURE` +`PaymentExecuted`,
+`RAIL_AND_DISPUTE_LIFECYCLES` §3 redrawn with the inbound edge and its provenance,
+ADR-0062 §§3/5 annotated, `OwnershipIsScopedTest` +4, `SystemActorCallSitesAreEnumeratedTest`
++2 (and the confirm entry's claim widened), scheduler register +1, secrets register +2
+entries with `CheckoutService`'s claim widened, `ConfinedCredentialVariablesTest` +1,
+`PaymentMeters` +`INITIATE` and +`EXECUTED` and the suspense counter, the pay-in gauges
+(`PayInMetrics`), the OpenAPI baseline regenerated (+the instant callback route; the two
+views gain `authorizationHandle` additively). Verified by targeted tiers from fresh runs —
+the fleet-wide hermetic test task green at **1657 tests across 14 modules, 0
+failures**, and **227 targeted database tests across 19 suites, 0 failures** plus the platform classification guard — the full battery
+deliberately skipped on the owner's instruction, no fleet-wide database or kafka counts
+claimed.
 
 **`P7-TSK-008` — Wallet withdrawal over the instant rail** — `COMPLETE` (2026-09-27).
 **M7.3, External accounts and the instant rail, closes at 3 of 3: money leaves a wallet to

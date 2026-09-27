@@ -262,7 +262,16 @@ class SystemActorCallSitesAreEnumeratedTest {
                         + " the payer PSP's unsolicited statement has no session - the"
                         + " PaymentWebhookService.effect reasoning at the second rail's"
                         + " door, one enumerated site whether the statement lands on the"
-                        + " machine or parks in suspense."));
+                        + " machine or parks in suspense."),
+                    Map.entry(
+                            "com.finapp.payments.ReturnResolution.sweep",
+                    "The return-payment resolution sweep (P7-TSK-010, ADR-0059 section 3):"
+                        + " the PaymentSweeper refund-leg case at the push rail - a"
+                        + " scheduled inquiry or permit-renewed re-drive by our reference"
+                        + " has no person, and the same outcome applied by the synchronous"
+                        + " dispatch is already recorded against the operator who asked."
+                        + " The scope wraps each row's inquire-and-resolve; the candidate"
+                        + " read before it claims nothing."));
 
     @Test
     @DisplayName("no production code claims the system actor without being enumerated")
