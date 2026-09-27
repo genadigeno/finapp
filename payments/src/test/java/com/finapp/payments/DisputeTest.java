@@ -300,6 +300,7 @@ class DisputeTest {
                 stage,
                 chargeback,
                 fee,
+                Optional.empty(),
                 Instant.now(CLOCK));
     }
 }

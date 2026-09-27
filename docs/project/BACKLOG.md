@@ -8363,8 +8363,8 @@ negative payable** — `COMPLETE` (2026-09-23)
 
 # Phase 7 — Cards, Wallets, A2A and Instant Payments
 
-Status: `IN_PROGRESS` — started 2026-09-26 with `P7-TSK-001` (13 of 18 items complete, M7.1 at
-3 of 3, M7.2 at 2 of 2, M7.3 at 3 of 3, M7.4 at 2 of 2, M7.5 at 1 of 1, M7.6 at 2 of 3) *(read `READY` for two days after the first task started — caught by `P7-TSK-001`'s own
+Status: `IN_PROGRESS` — started 2026-09-26 with `P7-TSK-001` (14 of 18 items complete, M7.1 at
+3 of 3, M7.2 at 2 of 2, M7.3 at 3 of 3, M7.4 at 2 of 2, M7.5 at 1 of 1, M7.6 at 3 of 3) *(read `READY` for two days after the first task started — caught by `P7-TSK-001`'s own
 gate, the stale-second-copy class this file has now recorded five times)*; entry gate passed
 2026-09-24 by the Phase 6 → 7 transition
 ([`reviews/PHASE_6_TO_7_TRANSITION.md`](reviews/PHASE_6_TO_7_TRANSITION.md)), elaborated to task
@@ -9118,7 +9118,7 @@ Disputes (`P7-TSK-012`…`-014`) · M7.7 Observability and demonstration (`P7-TS
   process state and nothing is scheduled. Fleet hermetic 1698 tests across 14 modules, 0 failures; 348 targeted database tests across 30 suites, 0 failures; the platform
   classification guard green. The full battery deliberately skipped on the owner's instruction.
 
-**P7-TSK-014 — Representment and dispute evidence** — `READY`
+**P7-TSK-014 — Representment and dispute evidence** — `COMPLETE` (2026-09-27)
 - **Objective**: ADR-0061 §7 — the merchant (or an operator) contests a chargeback with evidence,
   before its deadline, under least privilege.
 - **Bounded context**: Disputes (29), `payments`, with Merchant (12)'s key.
@@ -9156,8 +9156,69 @@ Disputes (`P7-TSK-012`…`-014`) · M7.7 Observability and demonstration (`P7-TS
   `dispute_permits_only_machine_edges` was re-stated there with the share and fee rules, so a
   `V022` that re-states it again carries `V021`'s body forward verbatim (`V020`'s is applied
   history, the migration handoff discipline).
+- **Design corrections to this entry** (the `P6-TSK-001` precedent): the domain type is
+  `DisputeResponse` (REPRESENTMENT or ACCEPTANCE), not `Representment` - acceptance needs every
+  protocol representment has (keyed, dispatched before the call, resolvable, one live answer per
+  dispute); the event is `DisputeResponseSubmitted` with its kind, not `DisputeEvidenceSubmitted`.
+  *Persistence* is payments `V022`: `dispute.respond_by` (the network's deadline, `NULL → value`,
+  riding the chargeback, the dispute machine re-stated with V021's body verbatim),
+  `dispute_evidence` (append-only ciphertext, content-addressed), `dispute_response` and its trail,
+  and the provider evidence's fourth subject. *Idempotency*: responses keyed per RESPONDER (the
+  merchant, or the operator acting); uploads content-addressed (the KYC upload's idempotency).
+  *Security*: an operator acts only for a payment with no merchant (a customer wallet) - ADR-0061
+  §7's rule enforced, `payments.DisputeAnsweredByItsMerchant` otherwise. *Key*: the eleventh
+  confined credential, `FINAPP_PAYMENTS_DISPUTE_EVIDENCE_KEY`.
+- **Gate**: the acceptance proven over the deployed chain - **a representment submitted and won
+  end to end** (`DisputeResponseDatabaseTest#aRepresentmentIsSubmittedAndWonEndToEnd`: two
+  documents attached over the merchant's key, the PSP taking OUR reference with both documents
+  labelled on the wire, the stage still `CHARGED_BACK`, then the network's `under_review` and
+  `won` driving `P7-TSK-013`'s exact inverse), and lost (`#aRepresentmentLostStandsAsTheNetworksWord`);
+  **evidence unreadable across tenants** (`#evidenceIsUnreadableAcrossTenants` - read, upload and
+  both answers the same 404 as an unknown dispute, nothing written; the tenancy battery's four
+  new addressed routes, 12 probed). Also proven: ciphertext at rest with GCM's tag arithmetic and
+  the plaintext's checksum, every read and transmission on the record, a guessed identifier
+  recording nothing (`#evidenceRestsAsCiphertextAndEveryReadIsOnTheRecord`); a tampered document
+  never served and never sent, the dispatch rolled back whole (`#aTamperedDocumentIsNeverServedOrSent`);
+  every refusal - past the deadline, after resolution, at an inquiry, no evidence, a second
+  answer, an upload after the answer, the sixth document - writing and sending nothing
+  (`#everyRefusalWritesNothingAndSendsNothing`); the replay and the conflict, keyed per responder
+  (`#aRetriedKeyReplaysAndAReusedKeyConflicts`); ten racing answers, one response and one send
+  (`#tenRacingAnswersProduceOneResponseAndOneSend`); the lost answer resolved by query
+  (`#aLostAnswerIsUnknownUntilTheSweepResolvesIt`), the never-seen answer re-sent with the SAME
+  reference and documents (`#anUnrecognisedAnswerIsResentWithTheSameReference`), the refused
+  first send failing and freeing the dispute (`#aRefusedFirstSendFailsAndFreesTheDispute`); the
+  deadline alarm (`#theDeadlineAlarmCountsUntilAnAnswerIsTaken`); the operator's narrower reach
+  (`#anOperatorAnswersOnlyAPaymentWithNoMerchant`); the door's deadline rules
+  (`#theDoorRecordsTheDeadlineOnce`); `V022` for every writer
+  (`PaymentsSchemaDatabaseTest#theRepresentmentSchemaBindsEveryWriter`) and pinned to the enums
+  with the V021 handoff byte for byte (`PaymentsMigrationTest#theRepresentmentClausesArePinned`).
+  **The gate's own finds**: M7.6's acceptance names a representment won AND LOST and only the
+  win was demonstrated (`#aRepresentmentLostStandsAsTheNetworksWord` added); a flight dying
+  between its committed dispatch and the call - the restart case - was never exercised
+  (`#aCrashedFlightsDispatchIsFinishedByTheSweep`: the row stays `DISPATCHED` with nothing on the
+  wire, the sweep hears it was never seen and sends the SAME request once); the five-document
+  bound, judged under the lock, had no race proving it (`#tenRacingUploadsAdmitExactlyTheBound`:
+  ten racers, exactly five admitted); and malformed evidence at the boundary had no test
+  (`#malformedEvidenceIsRefusedAtTheBoundary`: a kind outside the closed set, content that is not
+  base64, an empty and an oversized document, each refused with nothing written). **Found in
+  passing**: `payments.ChargebackReattributed`'s
+  description still named only the failed refund - corrected (the `P7-TSK-013` gate's unified
+  rule, its string not re-read). **Found by the gate's own battery, not this task's code, and
+  fixed**: its first run failed `MerchantPayoutDatabaseTest#onlyASettledMerchantCanBeClosed`
+  ("statusChangedAt must not precede createdAt") - the fixture stamped the merchant with the
+  database's `now()` while `close()` stamps from the JVM's clock, and the Docker VM's clock was
+  measured gaining ~55 ms a second between step-backs on a steady host clock; the fixture now
+  stamps from the test's clock (the schema's own one-clock discipline), the battery re-run
+  fresh and green, the wider fixture class chipped. `CURRENT_STATE.md` §Active Work's Phase 7
+  paragraph found reading "6 of 18 ... Next: `P7-TSK-002`" - the stale-second-copy class a
+  seventh time - corrected with provenance. Twenty-six probe runs, twenty-three caught — every one by its intended test — and three survivors recorded as designed: the act's two tenant ranks each dropped alone (the first look's predicate, then the locking read's) and the dispute's row lock dropped alone (the attempt lock is taken first), each survivor's control run beside it and caught (both ranks dropped, both locks dropped); every verdict read from the failing testcases themselves, never the exit code alone, each restore byte-identical (`MUTATION_TESTING.md` §2 +26 rows).
+  Multi-instance PASS - the claim, the attempt-then-dispute row locks, the one-live index, the
+  response conditionals, the permit's conditional forward renewal and the content address are
+  the arbiters, all in PostgreSQL; the sweep is enumerated leaderless; nothing lives in process
+  state. Fleet hermetic 1711 tests across 14 modules, 0 failures; 366 targeted database tests across 31 suites, 0 failures; the platform classification guard green. The full
+  battery deliberately skipped on the owner's instruction.
 
-**P7-TSK-015 — Rail and dispute meters and the dashboard row** — `PLANNED`
+**P7-TSK-015 — Rail and dispute meters and the dashboard row** — `READY`
 - **Objective**: `PHASE_7_PLAN.md` §15 — every rail's health and every dispute's stage visible on a
   running instance.
 - **Bounded context**: Payments (9), `app` telemetry.
@@ -9180,6 +9241,16 @@ Disputes (`P7-TSK-012`…`-014`) · M7.7 Observability and demonstration (`P7-TS
   probes.
 - **Accept**: every §15 series published by a fresh instance.
 - **Definition of done**: `DOD-OBS`, `DOD-TEST`. **Risk**: Low. **Cx**: M.
+- **Design inputs recorded by `P7-TSK-014`** (read at design, not binding decisions):
+  (1) **two §15 series already exist** - `finapp.ledger.negative.positions` (`P7-TSK-013`)
+  and `finapp.payments.dispute.deadline.near` (`P7-TSK-014`), both eager, NaN never zero, a
+  refresh floor, fleet-wide `max()`: adopt them into the dashboard row, never duplicate
+  them; (2) **the card PSP's dispute port is UNMETERED** - `PaymentBeans.disputeResponder`
+  is the card adapter's dispute face, deliberately outside `MeteredPaymentProvider`, so the
+  rail latency and outcome series by operation must decide how an answer (`RESPOND`, and
+  its `QUERY`) is counted; (3) **an `UNKNOWN` dispute response is a stuck state** the
+  resolution sweep works, which `INV-LIFE-03` wants visible beside the withdrawal's
+  (`finapp.payments.withdrawal.unknown.*`'s shape).
 
 **P7-TST-001 — The multi-rail conservation storm** — `PLANNED`
 - **Objective**: every rail and every money path at once, reconciled to the minor unit, with the

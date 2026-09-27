@@ -2187,6 +2187,216 @@
           }
         }
       },
+      "payments.DisputeAlreadyAnswered": {
+        "content": {
+          "application/problem+json": {
+            "schema": {
+              "allOf": [
+                {
+                  "$ref": "#/components/schemas/ProblemDetail"
+                },
+                {
+                  "properties": {
+                    "code": {
+                      "const": "payments.DisputeAlreadyAnswered"
+                    },
+                    "status": {
+                      "const": 409
+                    },
+                    "type": {
+                      "const": "https://finapp.example/problems/payments.DisputeAlreadyAnswered"
+                    }
+                  }
+                }
+              ]
+            }
+          }
+        },
+        "description": "[409] This dispute already has an answer in progress or taken.",
+        "headers": {
+          "X-Client-Correlation-Id": {
+            "$ref": "#/components/headers/X-Client-Correlation-Id"
+          },
+          "X-Correlation-Id": {
+            "$ref": "#/components/headers/X-Correlation-Id"
+          }
+        }
+      },
+      "payments.DisputeAnsweredByItsMerchant": {
+        "content": {
+          "application/problem+json": {
+            "schema": {
+              "allOf": [
+                {
+                  "$ref": "#/components/schemas/ProblemDetail"
+                },
+                {
+                  "properties": {
+                    "code": {
+                      "const": "payments.DisputeAnsweredByItsMerchant"
+                    },
+                    "status": {
+                      "const": 409
+                    },
+                    "type": {
+                      "const": "https://finapp.example/problems/payments.DisputeAnsweredByItsMerchant"
+                    }
+                  }
+                }
+              ]
+            }
+          }
+        },
+        "description": "[409] This payment's merchant answers its own dispute.",
+        "headers": {
+          "X-Client-Correlation-Id": {
+            "$ref": "#/components/headers/X-Client-Correlation-Id"
+          },
+          "X-Correlation-Id": {
+            "$ref": "#/components/headers/X-Correlation-Id"
+          }
+        }
+      },
+      "payments.DisputeDeadlinePassed": {
+        "content": {
+          "application/problem+json": {
+            "schema": {
+              "allOf": [
+                {
+                  "$ref": "#/components/schemas/ProblemDetail"
+                },
+                {
+                  "properties": {
+                    "code": {
+                      "const": "payments.DisputeDeadlinePassed"
+                    },
+                    "status": {
+                      "const": 409
+                    },
+                    "type": {
+                      "const": "https://finapp.example/problems/payments.DisputeDeadlinePassed"
+                    }
+                  }
+                }
+              ]
+            }
+          }
+        },
+        "description": "[409] The network's deadline to answer this dispute has passed.",
+        "headers": {
+          "X-Client-Correlation-Id": {
+            "$ref": "#/components/headers/X-Client-Correlation-Id"
+          },
+          "X-Correlation-Id": {
+            "$ref": "#/components/headers/X-Correlation-Id"
+          }
+        }
+      },
+      "payments.DisputeEvidenceLimitReached": {
+        "content": {
+          "application/problem+json": {
+            "schema": {
+              "allOf": [
+                {
+                  "$ref": "#/components/schemas/ProblemDetail"
+                },
+                {
+                  "properties": {
+                    "code": {
+                      "const": "payments.DisputeEvidenceLimitReached"
+                    },
+                    "status": {
+                      "const": 422
+                    },
+                    "type": {
+                      "const": "https://finapp.example/problems/payments.DisputeEvidenceLimitReached"
+                    }
+                  }
+                }
+              ]
+            }
+          }
+        },
+        "description": "[422] This dispute already holds the most evidence documents one answer can carry.",
+        "headers": {
+          "X-Client-Correlation-Id": {
+            "$ref": "#/components/headers/X-Client-Correlation-Id"
+          },
+          "X-Correlation-Id": {
+            "$ref": "#/components/headers/X-Correlation-Id"
+          }
+        }
+      },
+      "payments.DisputeEvidenceRequired": {
+        "content": {
+          "application/problem+json": {
+            "schema": {
+              "allOf": [
+                {
+                  "$ref": "#/components/schemas/ProblemDetail"
+                },
+                {
+                  "properties": {
+                    "code": {
+                      "const": "payments.DisputeEvidenceRequired"
+                    },
+                    "status": {
+                      "const": 422
+                    },
+                    "type": {
+                      "const": "https://finapp.example/problems/payments.DisputeEvidenceRequired"
+                    }
+                  }
+                }
+              ]
+            }
+          }
+        },
+        "description": "[422] A representment needs at least one evidence document.",
+        "headers": {
+          "X-Client-Correlation-Id": {
+            "$ref": "#/components/headers/X-Client-Correlation-Id"
+          },
+          "X-Correlation-Id": {
+            "$ref": "#/components/headers/X-Correlation-Id"
+          }
+        }
+      },
+      "payments.DisputeNotRespondable": {
+        "content": {
+          "application/problem+json": {
+            "schema": {
+              "allOf": [
+                {
+                  "$ref": "#/components/schemas/ProblemDetail"
+                },
+                {
+                  "properties": {
+                    "code": {
+                      "const": "payments.DisputeNotRespondable"
+                    },
+                    "status": {
+                      "const": 409
+                    },
+                    "type": {
+                      "const": "https://finapp.example/problems/payments.DisputeNotRespondable"
+                    }
+                  }
+                }
+              ]
+            }
+          }
+        },
+        "description": "[409] This dispute takes no evidence or answer at its current stage.",
+        "headers": {
+          "X-Client-Correlation-Id": {
+            "$ref": "#/components/headers/X-Client-Correlation-Id"
+          },
+          "X-Correlation-Id": {
+            "$ref": "#/components/headers/X-Correlation-Id"
+          }
+        }
+      },
       "payments.NoEligibleRail": {
         "content": {
           "application/problem+json": {
@@ -3348,6 +3558,39 @@
         ],
         "type": "object"
       },
+      "DisputeEvidenceUploadRequest": {
+        "properties": {
+          "content": {
+            "maxLength": 699052,
+            "minLength": 0,
+            "type": "string"
+          },
+          "contentType": {
+            "enum": [
+              "JPEG",
+              "PNG",
+              "PDF"
+            ],
+            "type": "string"
+          },
+          "kind": {
+            "enum": [
+              "RECEIPT",
+              "PROOF_OF_DELIVERY",
+              "CUSTOMER_COMMUNICATION",
+              "POLICY",
+              "OTHER"
+            ],
+            "type": "string"
+          }
+        },
+        "required": [
+          "content",
+          "contentType",
+          "kind"
+        ],
+        "type": "object"
+      },
       "DocumentUploadRequest": {
         "properties": {
           "content": {
@@ -3399,6 +3642,51 @@
             "type": "string"
           },
           "sessionToken": {
+            "type": "string"
+          }
+        },
+        "type": "object"
+      },
+      "EvidenceContentView": {
+        "properties": {
+          "content": {
+            "type": "string"
+          },
+          "contentLength": {
+            "format": "int32",
+            "type": "integer"
+          },
+          "contentType": {
+            "type": "string"
+          },
+          "evidenceId": {
+            "type": "string"
+          },
+          "kind": {
+            "type": "string"
+          },
+          "uploadedAt": {
+            "type": "string"
+          }
+        },
+        "type": "object"
+      },
+      "EvidenceView": {
+        "properties": {
+          "contentLength": {
+            "format": "int32",
+            "type": "integer"
+          },
+          "contentType": {
+            "type": "string"
+          },
+          "evidenceId": {
+            "type": "string"
+          },
+          "kind": {
+            "type": "string"
+          },
+          "uploadedAt": {
             "type": "string"
           }
         },
@@ -3664,6 +3952,12 @@
           "disputeId": {
             "type": "string"
           },
+          "evidence": {
+            "items": {
+              "$ref": "#/components/schemas/EvidenceView"
+            },
+            "type": "array"
+          },
           "history": {
             "items": {
               "$ref": "#/components/schemas/StageChangeView"
@@ -3678,6 +3972,15 @@
           },
           "reason": {
             "type": "string"
+          },
+          "respondBy": {
+            "type": "string"
+          },
+          "responses": {
+            "items": {
+              "$ref": "#/components/schemas/ResponseView"
+            },
+            "type": "array"
           },
           "stage": {
             "type": "string"
@@ -3838,6 +4141,45 @@
         ],
         "type": "object"
       },
+      "OperatorDisputeEvidenceUploadRequest": {
+        "properties": {
+          "content": {
+            "maxLength": 699052,
+            "minLength": 0,
+            "type": "string"
+          },
+          "contentType": {
+            "enum": [
+              "JPEG",
+              "PNG",
+              "PDF"
+            ],
+            "type": "string"
+          },
+          "kind": {
+            "enum": [
+              "RECEIPT",
+              "PROOF_OF_DELIVERY",
+              "CUSTOMER_COMMUNICATION",
+              "POLICY",
+              "OTHER"
+            ],
+            "type": "string"
+          },
+          "reason": {
+            "maxLength": 1000,
+            "minLength": 0,
+            "type": "string"
+          }
+        },
+        "required": [
+          "content",
+          "contentType",
+          "kind",
+          "reason"
+        ],
+        "type": "object"
+      },
       "OperatorDisputeList": {
         "properties": {
           "disputes": {
@@ -3847,6 +4189,19 @@
             "type": "array"
           }
         },
+        "type": "object"
+      },
+      "OperatorDisputeResponseRequest": {
+        "properties": {
+          "reason": {
+            "maxLength": 1000,
+            "minLength": 0,
+            "type": "string"
+          }
+        },
+        "required": [
+          "reason"
+        ],
         "type": "object"
       },
       "OperatorDisputeView": {
@@ -3868,6 +4223,12 @@
           },
           "disputeId": {
             "type": "string"
+          },
+          "evidence": {
+            "items": {
+              "$ref": "#/components/schemas/EvidenceView"
+            },
+            "type": "array"
           },
           "excess": {
             "type": "string"
@@ -3892,6 +4253,15 @@
           },
           "reason": {
             "type": "string"
+          },
+          "respondBy": {
+            "type": "string"
+          },
+          "responses": {
+            "items": {
+              "$ref": "#/components/schemas/OperatorResponseView"
+            },
+            "type": "array"
           },
           "stage": {
             "type": "string"
@@ -3921,6 +4291,32 @@
           "currency",
           "reason"
         ],
+        "type": "object"
+      },
+      "OperatorResponseView": {
+        "properties": {
+          "createdAt": {
+            "type": "string"
+          },
+          "failureReason": {
+            "type": "string"
+          },
+          "kind": {
+            "type": "string"
+          },
+          "providerReference": {
+            "type": "string"
+          },
+          "requestedByType": {
+            "type": "string"
+          },
+          "responseId": {
+            "type": "string"
+          },
+          "status": {
+            "type": "string"
+          }
+        },
         "type": "object"
       },
       "OrganisationRegistrationRequest": {
@@ -4499,6 +4895,43 @@
         "required": [
           "reason"
         ],
+        "type": "object"
+      },
+      "ResponseAnswer": {
+        "properties": {
+          "failureReason": {
+            "type": "string"
+          },
+          "kind": {
+            "type": "string"
+          },
+          "responseId": {
+            "type": "string"
+          },
+          "status": {
+            "type": "string"
+          }
+        },
+        "type": "object"
+      },
+      "ResponseView": {
+        "properties": {
+          "createdAt": {
+            "type": "string"
+          },
+          "failureReason": {
+            "type": "string"
+          },
+          "kind": {
+            "type": "string"
+          },
+          "responseId": {
+            "type": "string"
+          },
+          "status": {
+            "type": "string"
+          }
+        },
         "type": "object"
       },
       "RoleAssignmentRequest": {
@@ -6288,6 +6721,148 @@
         }
       }
     },
+    "/v1/merchant/disputes/{disputeId}/acceptance": {
+      "post": {
+        "operationId": "acceptMerchantDispute",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "disputeId",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "in": "header",
+            "name": "Idempotency-Key",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "201": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ResponseAnswer"
+                }
+              }
+            },
+            "description": "Created"
+          }
+        }
+      }
+    },
+    "/v1/merchant/disputes/{disputeId}/evidence": {
+      "post": {
+        "operationId": "uploadMerchantDisputeEvidence",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "disputeId",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/DisputeEvidenceUploadRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "201": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/EvidenceView"
+                }
+              }
+            },
+            "description": "Created"
+          }
+        }
+      }
+    },
+    "/v1/merchant/disputes/{disputeId}/evidence/{evidenceId}": {
+      "get": {
+        "operationId": "viewMerchantDisputeEvidence",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "disputeId",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "in": "path",
+            "name": "evidenceId",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/EvidenceContentView"
+                }
+              }
+            },
+            "description": "OK"
+          }
+        }
+      }
+    },
+    "/v1/merchant/disputes/{disputeId}/representment": {
+      "post": {
+        "operationId": "representMerchantDispute",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "disputeId",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "in": "header",
+            "name": "Idempotency-Key",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "201": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ResponseAnswer"
+                }
+              }
+            },
+            "description": "Created"
+          }
+        }
+      }
+    },
     "/v1/merchant/me": {
       "get": {
         "operationId": "me",
@@ -6444,6 +7019,168 @@
               }
             },
             "description": "OK"
+          }
+        }
+      }
+    },
+    "/v1/operator/disputes/{disputeId}/acceptance": {
+      "post": {
+        "operationId": "acceptDisputeAsOperator",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "disputeId",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "in": "header",
+            "name": "Idempotency-Key",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/OperatorDisputeResponseRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "201": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ResponseAnswer"
+                }
+              }
+            },
+            "description": "Created"
+          }
+        }
+      }
+    },
+    "/v1/operator/disputes/{disputeId}/evidence": {
+      "post": {
+        "operationId": "uploadDisputeEvidenceAsOperator",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "disputeId",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/OperatorDisputeEvidenceUploadRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "201": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/EvidenceView"
+                }
+              }
+            },
+            "description": "Created"
+          }
+        }
+      }
+    },
+    "/v1/operator/disputes/{disputeId}/evidence/{evidenceId}": {
+      "get": {
+        "operationId": "viewDisputeEvidenceAsOperator",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "disputeId",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "in": "path",
+            "name": "evidenceId",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/EvidenceContentView"
+                }
+              }
+            },
+            "description": "OK"
+          }
+        }
+      }
+    },
+    "/v1/operator/disputes/{disputeId}/representment": {
+      "post": {
+        "operationId": "representDisputeAsOperator",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "disputeId",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "in": "header",
+            "name": "Idempotency-Key",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/OperatorDisputeResponseRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "201": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ResponseAnswer"
+                }
+              }
+            },
+            "description": "Created"
           }
         }
       }

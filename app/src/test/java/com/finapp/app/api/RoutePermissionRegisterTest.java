@@ -89,7 +89,13 @@ class RoutePermissionRegisterTest {
                     entry("GET /v1/operator/payments/{intentId}/routing", PermissionName.PAYMENT_ROUTING_ADMINISTER),
                     // Disputes: the operator's reads, each dispute shown audited (Phase 7, ADR-0061)
                     entry("GET /v1/operator/disputes/{disputeId}", PermissionName.DISPUTE_ADMINISTER),
-                    entry("GET /v1/operator/payments/{intentId}/disputes", PermissionName.DISPUTE_ADMINISTER)));
+                    entry("GET /v1/operator/payments/{intentId}/disputes", PermissionName.DISPUTE_ADMINISTER),
+                    // Disputes: answering a chargeback on behalf, for a payment with no merchant,
+                    // reasoned; every evidence read audited (P7-TSK-014, ADR-0061 section 7)
+                    entry("POST /v1/operator/disputes/{disputeId}/evidence", PermissionName.DISPUTE_ADMINISTER),
+                    entry("GET /v1/operator/disputes/{disputeId}/evidence/{evidenceId}", PermissionName.DISPUTE_ADMINISTER),
+                    entry("POST /v1/operator/disputes/{disputeId}/representment", PermissionName.DISPUTE_ADMINISTER),
+                    entry("POST /v1/operator/disputes/{disputeId}/acceptance", PermissionName.DISPUTE_ADMINISTER)));
 
     /** The MVC mapping, by name - actuator registers a second one (the rule test's reason). */
     @Autowired

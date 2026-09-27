@@ -61,6 +61,7 @@ public final class Dispute {
     private final DisputeStage stage;
     private final Optional<ChargebackSplit> chargeback;
     private final Optional<Money> fee;
+    private final Optional<Instant> respondBy;
     private final Instant openedAt;
 
     private Dispute(
@@ -72,6 +73,7 @@ public final class Dispute {
             DisputeStage stage,
             Optional<ChargebackSplit> chargeback,
             Optional<Money> fee,
+            Optional<Instant> respondBy,
             Instant openedAt) {
         this.id = Objects.requireNonNull(id, "id must not be null");
         this.provider = Objects.requireNonNull(provider, "provider must not be null");
@@ -82,6 +84,7 @@ public final class Dispute {
         this.stage = Objects.requireNonNull(stage, "stage must not be null");
         this.chargeback = Objects.requireNonNull(chargeback, "chargeback must not be null");
         this.fee = Objects.requireNonNull(fee, "fee must not be null");
+        this.respondBy = Objects.requireNonNull(respondBy, "respondBy must not be null");
         this.openedAt = Objects.requireNonNull(openedAt, "openedAt must not be null");
         // Every rule V020's and V021's CHECKs hold is held here too, so a corrupt row is
         // refused at read rather than acted on (the Withdrawal constructor's stance). The
@@ -104,6 +107,12 @@ public final class Dispute {
                 throw new IllegalArgumentException(
                         "a dispute fee is positive and in the chargeback's currency and scale");
             }
+        }
+        if (respondBy.isPresent() && chargeback.isEmpty()) {
+            // The representment deadline rides the chargeback (P7-TSK-014, V022's coherence
+            // CHECK): an inquiry has nothing to represent against.
+            throw new IllegalArgumentException(
+                    "a respond-by deadline is stated with a chargeback, never on an inquiry");
         }
     }
 
@@ -137,6 +146,9 @@ public final class Dispute {
                 entry,
                 chargeback,
                 fee,
+                // The deadline arrives by withRespondBy - the same statement's fact, recorded
+                // once (P7-TSK-014).
+                Optional.empty(),
                 // The column's own microsecond resolution (the P7-TSK-004 clock lesson).
                 at.truncatedTo(ChronoUnit.MICROS));
     }
@@ -151,10 +163,11 @@ public final class Dispute {
             DisputeStage stage,
             Optional<ChargebackSplit> chargeback,
             Optional<Money> fee,
+            Optional<Instant> respondBy,
             Instant openedAt) {
         return new Dispute(
                 id, provider, providerReference, attemptId, reason, stage, chargeback, fee,
-                openedAt);
+                respondBy, openedAt);
     }
 
     /**
@@ -182,6 +195,7 @@ public final class Dispute {
                 next,
                 entersChargeback ? arriving : chargeback,
                 fee,
+                respondBy,
                 openedAt);
     }
 
@@ -204,6 +218,7 @@ public final class Dispute {
                 stage,
                 Optional.of(chargeback.orElseThrow().reattributed(moved, counterpartyPostable)),
                 fee,
+                respondBy,
                 openedAt);
     }
 
@@ -225,6 +240,32 @@ public final class Dispute {
                 stage,
                 chargeback,
                 Optional.of(charged),
+                respondBy,
+                openedAt);
+    }
+
+    /**
+     * The network's representment deadline, recorded once ({@code NULL → value}, `V022` for every
+     * writer; `P7-TSK-014`): stated with the chargeback, so only a charged-back dispute carries
+     * one. The platform's clock uses it to refuse its OWN late dispatch and to raise the alarm —
+     * never to decide an outcome (ADR-0061 §7).
+     */
+    public Dispute withRespondBy(Instant deadline) {
+        Objects.requireNonNull(deadline, "deadline must not be null");
+        if (respondBy.isPresent()) {
+            throw new IllegalStateException("a recorded respond-by deadline never changes");
+        }
+        return new Dispute(
+                id,
+                provider,
+                providerReference,
+                attemptId,
+                reason,
+                stage,
+                chargeback,
+                fee,
+                // The column's own microsecond resolution (the P7-TSK-004 clock lesson).
+                Optional.of(deadline.truncatedTo(ChronoUnit.MICROS)),
                 openedAt);
     }
 
@@ -276,6 +317,11 @@ public final class Dispute {
     /** The PSP's dispute fee, once reported — only ever on a charged-back dispute. */
     public Optional<Money> fee() {
         return fee;
+    }
+
+    /** The network's representment deadline, once stated — only ever on a charged-back dispute. */
+    public Optional<Instant> respondBy() {
+        return respondBy;
     }
 
     public Instant openedAt() {

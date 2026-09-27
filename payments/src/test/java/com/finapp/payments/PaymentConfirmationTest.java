@@ -902,6 +902,13 @@ class PaymentConfirmationTest {
         }
 
         @Override
+        public void appendForDisputeResponse(
+                Connection uow, DisputeResponseId response, EvidenceKind kind,
+                byte[] payload, Instant recordedAt) {
+            payloads.add(payload.clone());
+        }
+
+        @Override
         public List<byte[]> payloadsFor(Connection uow, PaymentAttemptId attempt) {
             return List.copyOf(payloads);
         }

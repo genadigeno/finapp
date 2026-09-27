@@ -621,7 +621,8 @@ class PaymentBeans {
     }
 
     /** The dispute read surfaces (`P7-TSK-012`): the merchant's, tenant-scoped in the
-     * statement, and the operator's, audited per dispute shown. */
+     * statement, and the operator's, audited per dispute shown — and, since `P7-TSK-014`, the
+     * evidence and response acts behind the same controllers. */
     @Bean
     DisputeOperations disputeOperations(
             com.finapp.payments.DisputeStore<Connection> disputeStore,
@@ -631,13 +632,231 @@ class PaymentBeans {
             Clock clock,
             com.finapp.ledger.LedgerAccountStore<Connection> ledgerAccountStore,
             TransactionTemplate paymentTransactions,
-            DataSource dataSource) {
+            DataSource dataSource,
+            com.finapp.payments.DisputeEvidenceStore<Connection> disputeEvidenceStore,
+            com.finapp.payments.DisputeResponseStore<Connection> disputeResponseStore,
+            com.finapp.payments.DisputeEvidenceAccess disputeEvidenceAccess,
+            // The response command exists only where the card PSP is configured: absent, the
+            // response routes answer the honest 503 and nothing is claimed (the refund's
+            // ObjectProvider decision) - evidence and reads keep working.
+            org.springframework.beans.factory.ObjectProvider<com.finapp.payments.DisputeResponses>
+                    disputeResponses) {
         return new DisputeOperations(
                 new com.finapp.payments.DisputeReads(
-                        disputeStore, paymentIntentStore, auditWriter, idGenerator, clock),
+                        disputeStore,
+                        paymentIntentStore,
+                        auditWriter,
+                        idGenerator,
+                        clock,
+                        disputeEvidenceStore,
+                        disputeResponseStore),
                 ledgerAccountStore,
                 paymentTransactions,
-                dataSource);
+                dataSource,
+                disputeEvidenceAccess,
+                disputeResponses);
+    }
+
+    /**
+     * The dispute evidence store (`P7-TSK-014`, {@code INV-DSP-03}) — {@link
+     * com.finapp.payments.EvidenceCipher}'s class holding the DISPUTE-evidence key, built here and
+     * never exposed as a bean: a second cipher bean of the same type would make every existing
+     * consumer's parameter name select its key (the java-lombok rule's named hazard). The key is
+     * decoded through the confinement, the marked local default loopback-only.
+     */
+    @Bean
+    com.finapp.payments.DisputeEvidenceStore<Connection> disputeEvidenceStore(
+            @Value("${finapp.payments.dispute.evidence.key:" + com.finapp.app.mfa.MfaKey.MARKED_LOCAL_DEFAULT + "}")
+                    String configuredKey,
+            @Value("${finapp.payments.dispute.evidence.key-version:1}") int keyVersion,
+            SecureRandom paymentsRandomness,
+            Environment environment) {
+        boolean loopback = DatabaseEndpoint.isEntirelyLoopback(DatabaseEndpoint.url(environment));
+        return new com.finapp.payments.JdbcDisputeEvidenceStore(
+                new EvidenceCipher(
+                        DisputeEvidenceKey.decode(configuredKey, loopback),
+                        keyVersion,
+                        paymentsRandomness));
+    }
+
+    @Bean
+    com.finapp.payments.DisputeResponseStore<Connection> disputeResponseStore() {
+        return new com.finapp.payments.JdbcDisputeResponseStore();
+    }
+
+    /** The evidence paths (`P7-TSK-014`): unconditional - they call nothing outside. */
+    @Bean
+    com.finapp.payments.DisputeEvidenceAccess disputeEvidenceAccess(
+            TransactionRunner paymentTransactionRunner,
+            com.finapp.payments.DisputeStore<Connection> disputeStore,
+            PaymentAttemptStore<Connection> paymentAttemptStore,
+            PaymentIntentStore<Connection> paymentIntentStore,
+            com.finapp.ledger.LedgerAccountStore<Connection> ledgerAccountStore,
+            com.finapp.payments.DisputeEvidenceStore<Connection> disputeEvidenceStore,
+            com.finapp.payments.DisputeResponseStore<Connection> disputeResponseStore,
+            AuditWriter<Connection> auditWriter,
+            IdGenerator ids,
+            Clock clock) {
+        return new com.finapp.payments.DisputeEvidenceAccess(
+                paymentTransactionRunner,
+                disputeStore,
+                paymentAttemptStore,
+                paymentIntentStore,
+                ledgerAccountStore,
+                disputeEvidenceStore,
+                disputeResponseStore,
+                auditWriter,
+                ids,
+                clock);
+    }
+
+    /**
+     * Where a dispute response's outcome lands (`P7-TSK-014`) — shared by the command and the
+     * resolution sweep; unconditional, it calls nothing outside.
+     */
+    @Bean
+    com.finapp.payments.DisputeResponseOutcomes disputeResponseOutcomes(
+            com.finapp.payments.DisputeResponseStore<Connection> disputeResponseStore,
+            com.finapp.payments.DisputeStore<Connection> disputeStore,
+            com.finapp.payments.DisputeEvidenceStore<Connection> disputeEvidenceStore,
+            AuditWriter<Connection> auditWriter,
+            OutboxWriter<Connection> outboxWriter,
+            IdGenerator ids,
+            Clock clock) {
+        return new com.finapp.payments.DisputeResponseOutcomes(
+                disputeResponseStore,
+                disputeStore,
+                disputeEvidenceStore,
+                auditWriter,
+                outboxWriter,
+                ids,
+                clock);
+    }
+
+    /**
+     * The card PSP's dispute port (`P7-TSK-014`, ADR-0061 §7) — the card adapter's second face,
+     * present exactly where the card PSP is: the same endpoint, timeout and confined API key as
+     * {@link #paymentProvider}. Not metered here: the dispute meters are `P7-TSK-015`'s.
+     */
+    @Bean
+    @ConditionalOnProperty("finapp.payments.provider.url")
+    com.finapp.payments.DisputeResponder disputeResponder(
+            @Value("${finapp.payments.provider.url}") java.net.URI url,
+            @Value("${finapp.payments.provider.timeout:PT2S}") java.time.Duration timeout,
+            @Value("${finapp.payments.provider.key:" + com.finapp.app.mfa.MfaKey.MARKED_LOCAL_DEFAULT + "}")
+                    String configuredKey,
+            Environment environment) {
+        boolean loopback = DatabaseEndpoint.isEntirelyLoopback(DatabaseEndpoint.url(environment));
+        SimulatedCardPspAdapter adapter =
+                new SimulatedCardPspAdapter(
+                        url, timeout, ProviderApiKey.decode(configuredKey, loopback));
+        // Exposed as ITS DISPUTE FACE ONLY: the adapter is a PaymentProvider too, and a second
+        // bean assignable to that type would make every existing PaymentProvider injection
+        // point resolve by parameter name - the hazard java-lombok.md names.
+        return new com.finapp.payments.DisputeResponder() {
+            @Override
+            public String providerName() {
+                return adapter.providerName();
+            }
+
+            @Override
+            public com.finapp.payments.ProviderAnswer respond(
+                    com.finapp.payments.DisputeResponder.DisputeResponseRequest request) {
+                return adapter.respond(request);
+            }
+
+            @Override
+            public com.finapp.payments.QueryAnswer query(
+                    com.finapp.payments.ProviderIdempotencyReference ourReference) {
+                return adapter.query(ourReference);
+            }
+        };
+    }
+
+    /** The response command (`P7-TSK-014`) — present with the card PSP it answers through. */
+    @Bean
+    @ConditionalOnProperty("finapp.payments.provider.url")
+    com.finapp.payments.DisputeResponses disputeResponses(
+            TransactionRunner paymentTransactionRunner,
+            IdempotentExecutor idempotentExecutor,
+            com.finapp.payments.DisputeStore<Connection> disputeStore,
+            PaymentAttemptStore<Connection> paymentAttemptStore,
+            PaymentIntentStore<Connection> paymentIntentStore,
+            com.finapp.ledger.LedgerAccountStore<Connection> ledgerAccountStore,
+            com.finapp.payments.DisputeEvidenceStore<Connection> disputeEvidenceStore,
+            com.finapp.payments.DisputeResponseStore<Connection> disputeResponseStore,
+            com.finapp.payments.DisputeResponder disputeResponder,
+            com.finapp.payments.DisputeResponseOutcomes disputeResponseOutcomes,
+            ProviderEvidenceStore<Connection> providerEvidenceStore,
+            AuditWriter<Connection> auditWriter,
+            IdGenerator ids,
+            Clock clock) {
+        return new com.finapp.payments.DisputeResponses(
+                paymentTransactionRunner,
+                idempotentExecutor,
+                disputeStore,
+                paymentAttemptStore,
+                paymentIntentStore,
+                ledgerAccountStore,
+                disputeEvidenceStore,
+                disputeResponseStore,
+                disputeResponder,
+                disputeResponseOutcomes,
+                providerEvidenceStore,
+                auditWriter,
+                ids,
+                clock);
+    }
+
+    /**
+     * The dispute-response resolution sweep and its schedule (`P7-TSK-014`) — present with the
+     * card PSP, leaderless on every instance: every stranded or ambiguous response resolved by
+     * query on our reference, the SAME request re-sent where the PSP never saw it.
+     */
+    @Bean
+    @ConditionalOnProperty("finapp.payments.provider.url")
+    com.finapp.payments.DisputeResponseResolution disputeResponseResolution(
+            com.finapp.payments.DisputeResponseStore<Connection> disputeResponseStore,
+            com.finapp.payments.DisputeStore<Connection> disputeStore,
+            com.finapp.payments.DisputeResponseOutcomes disputeResponseOutcomes,
+            com.finapp.payments.DisputeResponder disputeResponder,
+            ProviderEvidenceStore<Connection> providerEvidenceStore,
+            @Value("${finapp.payments.dispute-response.sweeper.dispatched-age:PT2M}")
+                    java.time.Duration dispatchedAge,
+            @Value("${finapp.payments.dispute-response.sweeper.unknown-age:PT1M}")
+                    java.time.Duration unknownAge,
+            @Value("${finapp.payments.dispute-response.sweeper.batch:25}") int batchSize,
+            IdGenerator ids,
+            Clock clock,
+            TransactionRunner paymentTransactionRunner) {
+        return new com.finapp.payments.DisputeResponseResolution(
+                disputeResponseStore,
+                disputeStore,
+                disputeResponseOutcomes,
+                disputeResponder,
+                providerEvidenceStore,
+                new com.finapp.payments.DisputeResponseResolution.Config(
+                        dispatchedAge, unknownAge, batchSize),
+                ids,
+                clock,
+                paymentTransactionRunner);
+    }
+
+    @Bean
+    @ConditionalOnProperty(
+            name = "finapp.payments.dispute-response.sweeper.enabled",
+            havingValue = "true",
+            matchIfMissing = true)
+    // The provider half of the condition rides on the resolution bean; the flag is the
+    // PaymentSweeperSchedule discipline - the test overlay says false, a silent deployment
+    // gets the sweeper.
+    @org.springframework.boot.autoconfigure.condition.ConditionalOnBean(
+            com.finapp.payments.DisputeResponseResolution.class)
+    DisputeResponseResolutionSchedule disputeResponseResolutionSchedule(
+            com.finapp.payments.DisputeResponseResolution disputeResponseResolution,
+            @Value("${finapp.payments.dispute-response.sweeper.poll:PT30S}")
+                    java.time.Duration pollInterval) {
+        return new DisputeResponseResolutionSchedule(disputeResponseResolution, pollInterval);
     }
 
     @Bean

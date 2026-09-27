@@ -215,16 +215,18 @@ public enum PaymentsAuditAction implements AuditableAction {
 
     /**
      * The platform re-attributed part of a chargeback's excess to the payment's counterparty
-     * (`P7-TSK-013`, ADR-0061 §3): a refund the chargeback had counted failed, so the value it
-     * assumed returned never was, and its share of the excess comes back — under the attempt
-     * lock, in the refund's failure transaction, as the platform (the resolver's enumerated
-     * {@code enterSystem()} site). One record per dispute moved; the entry it posted references
-     * the dispute.
+     * (`P7-TSK-013`, ADR-0061 §3): an event freed headroom — a capture landing, a counted refund
+     * failing, a sibling chargeback won — so the excess comes back, oldest dispute first, under
+     * the attempt lock, in the freeing event's own transaction. One record per dispute moved,
+     * naming its cause; the entry it posted references the dispute. *(Its description named only
+     * the failed refund until `P7-TSK-014` found it stale — the P7-TSK-013 gate unified the rule
+     * and this string was not re-read.)*
      */
     CHARGEBACK_REATTRIBUTED(
             "payments.ChargebackReattributed",
-            "The platform re-attributed part of a chargeback's excess to the counterparty after a"
-                    + " counted refund failed; the record names the dispute, the refund and"
+            "The platform re-attributed part of a chargeback's excess to the counterparty after an"
+                    + " event freed headroom - a capture landing, a counted refund failing, a"
+                    + " sibling chargeback won; the record names the dispute, the cause and"
                     + " where the share landed, never an amount.",
             false),
 
@@ -238,6 +240,65 @@ public enum PaymentsAuditAction implements AuditableAction {
             "payments.DisputeFeeRecorded",
             "The platform recorded the dispute fee the PSP reported and posted it as a dispute"
                     + " cost; the record names the dispute and its attempt, never an amount.",
+            false),
+
+    /**
+     * A responder attached a document to a dispute (`P7-TSK-014`, ADR-0061 §7,
+     * {@code INV-DSP-03}): the merchant over its key, or an operator for a payment with no
+     * merchant, whose reason the record carries. Encrypted under the dispute-evidence key before
+     * it is stored; a re-upload of the same bytes converges on the one document and says so.
+     */
+    DISPUTE_EVIDENCE_UPLOADED(
+            "payments.DisputeEvidenceUploaded",
+            "A dispute evidence document was uploaded; the record names the dispute, the"
+                    + " document, its kind, its format and its size, never its content.",
+            false),
+
+    /**
+     * Somebody read a dispute evidence document's content (`P7-TSK-014`, {@code INV-DSP-03} —
+     * {@code INV-KYC-06}'s regime restated): the trail of who looked is the control, committed
+     * with the read or neither happens. A read of a document that does not exist records nothing.
+     */
+    DISPUTE_EVIDENCE_READ(
+            "payments.DisputeEvidenceRead",
+            "A dispute evidence document's content was read; the record names the document and"
+                    + " its dispute.",
+            false),
+
+    /**
+     * Evidence content left the platform for the card PSP (`P7-TSK-014`): every wire send of a
+     * representment's documents — the dispatching flight's (the responder's act) and every
+     * re-send a takeover or the resolution sweep makes (the platform's) — committed before the
+     * bytes are sent, so no transmission is off the record.
+     */
+    DISPUTE_EVIDENCE_TRANSMITTED(
+            "payments.DisputeEvidenceTransmitted",
+            "Dispute evidence was transmitted to the PSP with a response; the record names the"
+                    + " response, its dispute and the documents sent, never their content.",
+            false),
+
+    /**
+     * A responder answered a chargeback (`P7-TSK-014`, ADR-0061 §7): a representment or an
+     * acceptance, judged under the attempt and dispute locks and committed with our minted
+     * reference before the PSP is asked ({@code INV-PAY-04}). The merchant's act over its key,
+     * or an operator's for a payment with no merchant, reasoned.
+     */
+    DISPUTE_RESPONSE_DISPATCHED(
+            "payments.DisputeResponseDispatched",
+            "A dispute response was dispatched; the record names the dispute, the response, its"
+                    + " kind, the documents it carries and our reference.",
+            false),
+
+    /**
+     * The PSP's word landed on a dispute response (`P7-TSK-014`): applied by the dispatching
+     * flight, a takeover or the resolution sweep — the platform's act whichever resolver wins, on
+     * the locked row, acting once. {@code SUBMITTED} means the PSP took the answer; the dispute's
+     * stage stays the network's word.
+     */
+    DISPUTE_RESPONSE_OUTCOME_APPLIED(
+            "payments.DisputeResponseOutcomeApplied",
+            "A dispute response outcome was applied on the locked row; the record names the"
+                    + " response, its dispute, the status and the failure class.",
             false);
 
     private final String code;

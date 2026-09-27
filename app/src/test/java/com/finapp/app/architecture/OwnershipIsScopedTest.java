@@ -447,6 +447,122 @@ class OwnershipIsScopedTest {
                                         + " lockOwnedBy's owner predicate. A boolean leaves, and"
                                         + " no row of anybody's.")),
                     Map.entry(
+                            "com.finapp.payments.JdbcDisputeStore.lockForCounterparties",
+                            new Entry(
+                                    Scope.OWNER_SCOPED,
+                                    "POST /v1/merchant/disputes/{disputeId}/evidence,"
+                                        + " .../representment and .../acceptance (P7-TSK-014) - the locking"
+                                        + " twin of findForCounterparties: the identifier comes from the"
+                                        + " path, and credit_account_id = ANY (?) in the LOCKING statement"
+                                        + " is the tenant check (INV-MER-01), the accounts the authenticated"
+                                        + " merchant's own payables from the ledger's owner_ref-scoped read."
+                                        + " FOR UPDATE OF d, taken after the dispute's attempt. Another"
+                                        + " tenant's dispute is one 404.")),
+                    Map.entry(
+                            "com.finapp.payments.JdbcDisputeStore.lockForResponder",
+                            new Entry(
+                                    Scope.ADMINISTERED,
+                                    "P7-TSK-014. The operator's act on a dispute (evidence,"
+                                        + " representment, acceptance on behalf) names SOMEBODY ELSE'S"
+                                        + " contested payment by design:"
+                                        + " @RequiresPermission(DISPUTE_ADMINISTER) stands in for the"
+                                        + " ownership predicate, the act is reasoned and audited, and"
+                                        + " DisputeActs narrows it further to a payment whose credited"
+                                        + " account the operator's policy reaches (a customer wallet - no"
+                                        + " merchant), refusing the rest. No merchant surface reaches it:"
+                                        + " theirs is lockForCounterparties.")),
+                    Map.entry(
+                            "com.finapp.payments.JdbcDisputeEvidenceStore.readContentForCounterparties",
+                            new Entry(
+                                    Scope.OWNER_SCOPED,
+                                    "GET /v1/merchant/disputes/{disputeId}/evidence/{evidenceId}"
+                                        + " (P7-TSK-014) - both identifiers from the path, and"
+                                        + " credit_account_id = ANY (?) in the statement is the tenant check"
+                                        + " (INV-MER-01): the document's dispute must contest a payment that"
+                                        + " credited the authenticated merchant's own payable. Another"
+                                        + " tenant's document, unknown and malformed are one 404; every"
+                                        + " content read is audited (DISPUTE_EVIDENCE_READ).")),
+                    Map.entry(
+                            "com.finapp.payments.JdbcDisputeEvidenceStore.readContent",
+                            new Entry(
+                                    Scope.ADMINISTERED,
+                                    "P7-TSK-014. The operator's read of a dispute document's content,"
+                                        + " across tenants by permission (INV-DSP-03: the payment's merchant"
+                                        + " and operators holding the dispute permission):"
+                                        + " @RequiresPermission(DISPUTE_ADMINISTER) stands in for the"
+                                        + " predicate, and every content read writes DISPUTE_EVIDENCE_READ"
+                                        + " in its own transaction. No merchant surface reaches it: theirs"
+                                        + " is readContentForCounterparties.")),
+                    Map.entry(
+                            "com.finapp.payments.JdbcDisputeEvidenceStore.findByContent",
+                            new Entry(
+                                    Scope.ADMINISTERED,
+                                    "P7-TSK-014. The upload's content address, read only for a dispute"
+                                        + " DisputeActs.lockForAct locked earlier in the same transaction"
+                                        + " through a scoped (lockForCounterparties) or permissioned"
+                                        + " (lockForResponder) statement - never a request's raw identifier.")),
+                    Map.entry(
+                            "com.finapp.payments.JdbcDisputeEvidenceStore.countFor",
+                            new Entry(
+                                    Scope.ADMINISTERED,
+                                    "P7-TSK-014. The document bound's count, for a dispute"
+                                        + " DisputeActs.lockForAct locked earlier in the same transaction"
+                                        + " through a scoped or permissioned statement - never a request's"
+                                        + " raw identifier; a number leaves, no row.")),
+                    Map.entry(
+                            "com.finapp.payments.JdbcDisputeEvidenceStore.listFor",
+                            new Entry(
+                                    Scope.ADMINISTERED,
+                                    "P7-TSK-014. A dispute's document metadata, read only for a"
+                                        + " dispute a scoped or permissioned read returned earlier in the"
+                                        + " same transaction - DisputeReads (findForCounterparties with its"
+                                        + " tenant predicate, or the audited operator reads) or the response"
+                                        + " dispatch's locked act - never a request's raw identifier; no"
+                                        + " content leaves.")),
+                    Map.entry(
+                            "com.finapp.payments.JdbcDisputeEvidenceStore.contentsOf",
+                            new Entry(
+                                    Scope.ADMINISTERED,
+                                    "P7-TSK-014. The documents a response transmits: the ids are the"
+                                        + " response row's own frozen evidence list - a response this flight"
+                                        + " dispatched under the locked act, one its claim's dispatch key"
+                                        + " converged on (scoped by the responder's claim scope), or a sweep"
+                                        + " candidate - and every read of them writes"
+                                        + " DISPUTE_EVIDENCE_TRANSMITTED before the bytes leave.")),
+                    Map.entry(
+                            "com.finapp.payments.JdbcDisputeResponseStore.findLive",
+                            new Entry(
+                                    Scope.ADMINISTERED,
+                                    "P7-TSK-014. Whether a live answer stands, for a dispute"
+                                        + " DisputeActs.lockForAct locked earlier in the same transaction"
+                                        + " through a scoped or permissioned statement - a boolean decision,"
+                                        + " no row returned to any surface.")),
+                    Map.entry(
+                            "com.finapp.payments.JdbcDisputeResponseStore.listFor",
+                            new Entry(
+                                    Scope.ADMINISTERED,
+                                    "P7-TSK-014. A dispute's answers, read only for a dispute a scoped"
+                                        + " or permissioned DisputeReads read returned earlier in the same"
+                                        + " transaction - never a request's raw identifier.")),
+                    Map.entry(
+                            "com.finapp.payments.JdbcDisputeResponseStore.lockForOutcome",
+                            new Entry(
+                                    Scope.ADMINISTERED,
+                                    "P7-TSK-014, the JdbcRefundStore.lockForOutcome reasoning: the"
+                                        + " lock every resolver takes before applying the PSP's word. Its id"
+                                        + " comes only from this flight's committed dispatch, a takeover's"
+                                        + " dispatch-key convergence read (scoped by the responder's claim"
+                                        + " scope), or a candidate the sweep read - never a request's raw"
+                                        + " identifier.")),
+                    Map.entry(
+                            "com.finapp.payments.JdbcDisputeResponseStore.renewSendPermit",
+                            new Entry(
+                                    Scope.ADMINISTERED,
+                                    "P7-TSK-014, JdbcRefundStore.renewSendPermit's twin: the"
+                                        + " conditional forward-only permit, for a response a takeover's"
+                                        + " scoped dispatch-key read or the sweep's candidate list named -"
+                                        + " never a request's raw identifier; the conditional IS the permit.")),
+                    Map.entry(
                             "com.finapp.payments.JdbcPaymentAttemptStore.openInitiation",
                             new Entry(
                                     Scope.ADMINISTERED,
@@ -2108,6 +2224,17 @@ class OwnershipIsScopedTest {
                                     + ".aPayoutPaysOnlyItsOwnMerchantsDestination"),
                     Map.entry(
                             "com.finapp.payments.JdbcDisputeStore.findForCounterparties",
+                            "com.finapp.app.merchant.MerchantTenancyBatteryDatabaseTest"
+                                    + ".everyAddressedRouteAnswersAnotherTenantsResourceAsUnknown"),
+                    // P7-TSK-014: the upload's and the answer's LOCKING read, and the document
+                    // read - each merchant route probed A-on-B by the same battery.
+                    Map.entry(
+                            "com.finapp.payments.JdbcDisputeStore.lockForCounterparties",
+                            "com.finapp.app.merchant.MerchantTenancyBatteryDatabaseTest"
+                                    + ".everyAddressedRouteAnswersAnotherTenantsResourceAsUnknown"),
+                    Map.entry(
+                            "com.finapp.payments.JdbcDisputeEvidenceStore"
+                                    + ".readContentForCounterparties",
                             "com.finapp.app.merchant.MerchantTenancyBatteryDatabaseTest"
                                     + ".everyAddressedRouteAnswersAnotherTenantsResourceAsUnknown"),
                     Map.entry(

@@ -7,6 +7,7 @@ import com.finapp.app.kyc.DocumentKey;
 import com.finapp.app.merchant.PayoutEvidenceKey;
 import com.finapp.app.merchant.PayoutProviderKey;
 import com.finapp.app.mfa.MfaKey;
+import com.finapp.app.payments.DisputeEvidenceKey;
 import com.finapp.app.payments.InstantSchemeKey;
 import com.finapp.app.payments.InstantWebhookKey;
 import com.finapp.app.payments.PaymentEvidenceKey;
@@ -50,17 +51,20 @@ class ConfinedCredentialVariablesTest {
 
     /** The property each credential's bean reads, by the class that declares its spec. */
     private static final Map<Class<?>, String> PROPERTY_READ =
-            Map.of(
-                    MfaKey.class, "finapp.mfa.key",
-                    DocumentKey.class, "finapp.doc.key",
-                    CallbackKey.class, "finapp.kyc.callback.key",
-                    PaymentEvidenceKey.class, "finapp.payments.evidence.key",
-                    PaymentWebhookKey.class, "finapp.payments.webhook.key",
-                    ProviderApiKey.class, "finapp.payments.provider.key",
-                    InstantSchemeKey.class, "finapp.payments.instant.key",
-                    InstantWebhookKey.class, "finapp.payments.instant.webhook.key",
-                    PayoutEvidenceKey.class, "finapp.merchant.payout.evidence.key",
-                    PayoutProviderKey.class, "finapp.merchant.payout.provider.key");
+            // Map.ofEntries since the eleventh credential (P7-TSK-014): Map.of stops at ten.
+            Map.ofEntries(
+                    Map.entry(MfaKey.class, "finapp.mfa.key"),
+                    Map.entry(DocumentKey.class, "finapp.doc.key"),
+                    Map.entry(CallbackKey.class, "finapp.kyc.callback.key"),
+                    Map.entry(PaymentEvidenceKey.class, "finapp.payments.evidence.key"),
+                    Map.entry(PaymentWebhookKey.class, "finapp.payments.webhook.key"),
+                    Map.entry(ProviderApiKey.class, "finapp.payments.provider.key"),
+                    Map.entry(InstantSchemeKey.class, "finapp.payments.instant.key"),
+                    Map.entry(InstantWebhookKey.class, "finapp.payments.instant.webhook.key"),
+                    Map.entry(PayoutEvidenceKey.class, "finapp.merchant.payout.evidence.key"),
+                    Map.entry(PayoutProviderKey.class, "finapp.merchant.payout.provider.key"),
+                    // P7-TSK-014: dispute evidence, its own key (one key per concern).
+                    Map.entry(DisputeEvidenceKey.class, "finapp.payments.dispute.evidence.key"));
 
     @Test
     @DisplayName("the variable a refusal names is the relaxed-binding form of the property read")

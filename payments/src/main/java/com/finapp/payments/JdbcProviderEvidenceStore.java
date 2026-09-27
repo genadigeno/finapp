@@ -45,6 +45,7 @@ public final class JdbcProviderEvidenceStore implements ProviderEvidenceStore<Co
                 attempt.map(id -> id.value()).orElse(null),
                 refund.map(id -> id.value()).orElse(null),
                 null,
+                null,
                 kind,
                 payload,
                 recordedAt);
@@ -58,7 +59,18 @@ public final class JdbcProviderEvidenceStore implements ProviderEvidenceStore<Co
             byte[] payload,
             Instant recordedAt) {
         Objects.requireNonNull(withdrawal, "withdrawal must not be null");
-        appendRow(unitOfWork, null, null, withdrawal.value(), kind, payload, recordedAt);
+        appendRow(unitOfWork, null, null, withdrawal.value(), null, kind, payload, recordedAt);
+    }
+
+    @Override
+    public void appendForDisputeResponse(
+            Connection unitOfWork,
+            DisputeResponseId response,
+            EvidenceKind kind,
+            byte[] payload,
+            Instant recordedAt) {
+        Objects.requireNonNull(response, "response must not be null");
+        appendRow(unitOfWork, null, null, null, response.value(), kind, payload, recordedAt);
     }
 
     private void appendRow(
@@ -66,6 +78,7 @@ public final class JdbcProviderEvidenceStore implements ProviderEvidenceStore<Co
             java.util.UUID attemptId,
             java.util.UUID refundId,
             java.util.UUID withdrawalId,
+            java.util.UUID disputeResponseId,
             EvidenceKind kind,
             byte[] payload,
             Instant recordedAt) {
@@ -75,21 +88,23 @@ public final class JdbcProviderEvidenceStore implements ProviderEvidenceStore<Co
         try (PreparedStatement insert =
                 unitOfWork.prepareStatement(
                         "INSERT INTO payments.provider_evidence"
-                                + " (id, attempt_id, refund_id, withdrawal_id, kind,"
+                                + " (id, attempt_id, refund_id, withdrawal_id,"
+                                + " dispute_response_id, kind,"
                                 + " content_ciphertext, content_nonce, key_version,"
                                 + " checksum_sha256, content_length, recorded_at)"
-                                + " VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)")) {
+                                + " VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)")) {
             insert.setObject(1, ids.next());
             insert.setObject(2, attemptId);
             insert.setObject(3, refundId);
             insert.setObject(4, withdrawalId);
-            insert.setString(5, kind.name());
-            insert.setBytes(6, encrypted.ciphertext());
-            insert.setBytes(7, encrypted.nonce());
-            insert.setInt(8, encrypted.keyVersion());
-            insert.setBytes(9, sha256(payload));
-            insert.setInt(10, payload.length);
-            insert.setTimestamp(11, Timestamp.from(recordedAt));
+            insert.setObject(5, disputeResponseId);
+            insert.setString(6, kind.name());
+            insert.setBytes(7, encrypted.ciphertext());
+            insert.setBytes(8, encrypted.nonce());
+            insert.setInt(9, encrypted.keyVersion());
+            insert.setBytes(10, sha256(payload));
+            insert.setInt(11, payload.length);
+            insert.setTimestamp(12, Timestamp.from(recordedAt));
             insert.executeUpdate();
         } catch (SQLException failure) {
             throw new PaymentsStorageException(

@@ -181,7 +181,15 @@ class NoSingleInstanceAssumptionRulesTest {
                     // synchronous dispatch and a takeover's re-send are one counted race.
                     // Register row: DISTRIBUTED_EXECUTION.md section 3; the race is
                     // PayByBankDatabaseTest's.
-                    "com.finapp.app.payments.ReturnResolutionSchedule");
+                    "com.finapp.app.payments.ReturnResolutionSchedule",
+                    // P7-TSK-014: the dispute-response resolution. The inquiry is read-only
+                    // by OUR reference, a re-send rides a conditionally renewed send permit
+                    // (V022's forward-only permit, the wire-noise arbiter - a response moves
+                    // no money) and the PSP's dedupe on that same reference, and the outcome
+                    // applies through the one shared DisputeResponseOutcomes on the LOCKED
+                    // row. Register row: DISTRIBUTED_EXECUTION.md section 3; the races are
+                    // DisputeResponseDatabaseTest's.
+                    "com.finapp.app.payments.DisputeResponseResolutionSchedule");
 
     /** Types that schedule work with no lease, so every instance runs it. */
     private static final Set<String> AMBIENT_SCHEDULERS =

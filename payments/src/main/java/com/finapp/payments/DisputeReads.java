@@ -37,12 +37,29 @@ public final class DisputeReads {
     @NonNull private final IdGenerator ids;
     @NonNull private final Clock clock;
 
-    /** One dispute as a surface shows it: the row, its payment and its trail. */
-    public record Read(DisputeStore.Found found, List<DisputeStore.StageChange> history) {
+    /** The dispute's documents, metadata only (`P7-TSK-014`) — last, so no positional argument
+     * moved. */
+    @NonNull private final DisputeEvidenceStore<Connection> evidence;
+
+    /** The dispute's answers to the network (`P7-TSK-014`). */
+    @NonNull private final DisputeResponseStore<Connection> responses;
+
+    /**
+     * One dispute as a surface shows it: the row, its payment, its trail — and, since
+     * `P7-TSK-014`, its evidence (metadata only: content is reachable solely through the audited
+     * read) and its responses.
+     */
+    public record Read(
+            DisputeStore.Found found,
+            List<DisputeStore.StageChange> history,
+            List<DisputeEvidence> evidence,
+            List<DisputeResponse> responses) {
 
         public Read {
             Objects.requireNonNull(found, "found must not be null");
             history = List.copyOf(history);
+            evidence = List.copyOf(evidence);
+            responses = List.copyOf(responses);
         }
     }
 
@@ -53,7 +70,7 @@ public final class DisputeReads {
                 .map(
                         found -> {
                             audited(unitOfWork, found.dispute());
-                            return new Read(found, disputes.historyOf(unitOfWork, id));
+                            return read(unitOfWork, found);
                         });
     }
 
@@ -73,10 +90,7 @@ public final class DisputeReads {
                         .map(
                                 found -> {
                                     audited(unitOfWork, found.dispute());
-                                    return new Read(
-                                            found,
-                                            disputes.historyOf(
-                                                    unitOfWork, found.dispute().id()));
+                                    return read(unitOfWork, found);
                                 })
                         .toList());
     }
@@ -94,7 +108,7 @@ public final class DisputeReads {
             return Optional.empty();
         }
         return disputes.findForCounterparties(unitOfWork, id, counterparties)
-                .map(found -> new Read(found, disputes.historyOf(unitOfWork, id)));
+                .map(found -> read(unitOfWork, found));
     }
 
     /** A counterparty's disputes, newest first, at most {@code limit}. */
@@ -105,6 +119,15 @@ public final class DisputeReads {
             return List.of();
         }
         return disputes.listForCounterparties(unitOfWork, counterparties, limit);
+    }
+
+    private Read read(Connection unitOfWork, DisputeStore.Found found) {
+        DisputeId id = found.dispute().id();
+        return new Read(
+                found,
+                disputes.historyOf(unitOfWork, id),
+                evidence.listFor(unitOfWork, id),
+                responses.listFor(unitOfWork, id));
     }
 
     private void audited(Connection unitOfWork, Dispute dispute) {

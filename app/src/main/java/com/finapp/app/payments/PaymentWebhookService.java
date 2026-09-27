@@ -172,7 +172,10 @@ public class PaymentWebhookService {
             Integer scale,
             // The PSP's dispute fee (P7-TSK-013, ADR-0061 section 4), in the amount's own
             // currency and scale: present only on a statement from the chargeback on.
-            String feeMinor) {}
+            String feeMinor,
+            // The network's representment deadline (P7-TSK-014, ADR-0061 section 7), an
+            // ISO-8601 instant - recorded from a statement from the chargeback on.
+            String respondBy) {}
 
     /** Minor units as the wire carries them: digits only, and short enough for a long. */
     private static final Pattern MINOR_UNITS = Pattern.compile("[0-9]{1,18}");
@@ -553,6 +556,11 @@ public class PaymentWebhookService {
                             "A dispute statement for attempt {} reported the PSP's dispute fee"
                                     + " late; recorded and posted once (P7-TSK-013)",
                             attempt.id());
+            case DEADLINE_RECORDED ->
+                    log.info(
+                            "A dispute statement for attempt {} reported the network's respond-by"
+                                    + " deadline late; recorded once (P7-TSK-014)",
+                            attempt.id());
             case UNCHANGED ->
                     log.info(
                             "A repeated dispute statement for attempt {} changed nothing"
@@ -594,6 +602,10 @@ public class PaymentWebhookService {
         if (fee.isEmpty()) {
             return Optional.empty();
         }
+        Optional<Optional<java.time.Instant>> respondBy = respondBy(payload, stage.get());
+        if (respondBy.isEmpty()) {
+            return Optional.empty();
+        }
         try {
             return Optional.of(
                     new DisputeNotice(
@@ -602,7 +614,8 @@ public class PaymentWebhookService {
                             stage.get(),
                             CardDisputeVocabulary.reason(payload.reasonCode()),
                             amount.get(),
-                            fee.get()));
+                            fee.get(),
+                            respondBy.get()));
         } catch (IllegalArgumentException incoherent) {
             // A fee on an inquiry: the statement contradicts itself, so it is not knowledge.
             return Optional.empty();
@@ -625,6 +638,24 @@ public class PaymentWebhookService {
             Money fee = Money.ofMinorUnits(Long.parseLong(payload.feeMinor()), amount.currency());
             return Optional.of(fee.isZero() ? Optional.empty() : Optional.of(fee));
         } catch (RuntimeException unusable) {
+            return Optional.empty();
+        }
+    }
+
+    /**
+     * The network's respond-by deadline (`P7-TSK-014`): absent is no deadline stated; on an
+     * inquiry it is the inquiry's own answer-by date, which the platform does not act on (an
+     * inquiry response is out of scope), so it is dropped - never a refusal; an instant that does
+     * not parse is an unusable statement (the outer Optional empty), the fee's rule.
+     */
+    private static Optional<Optional<java.time.Instant>> respondBy(
+            WebhookPayload payload, com.finapp.payments.DisputeStage stage) {
+        if (payload.respondBy() == null || !stage.isChargedBack()) {
+            return Optional.of(Optional.empty());
+        }
+        try {
+            return Optional.of(Optional.of(java.time.Instant.parse(payload.respondBy())));
+        } catch (java.time.format.DateTimeParseException unusable) {
             return Optional.empty();
         }
     }

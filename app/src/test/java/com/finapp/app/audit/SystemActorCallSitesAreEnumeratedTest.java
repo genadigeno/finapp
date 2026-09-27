@@ -275,7 +275,25 @@ class SystemActorCallSitesAreEnumeratedTest {
                         + " has no person, and the same outcome applied by the synchronous"
                         + " dispatch is already recorded against the operator who asked."
                         + " The scope wraps each row's inquire-and-resolve; the candidate"
-                        + " read before it claims nothing."));
+                        + " read before it claims nothing."),
+                    Map.entry(
+                            "com.finapp.payments.DisputeResponses.respond",
+                    "The dispute response's outcome transaction (P7-TSK-014, ADR-0061 section"
+                        + " 7): the PaymentRefund.refund reasoning, pointed at a chargeback. The"
+                        + " responder who asked - the merchant's key, or the operator with their"
+                        + " reason - is recorded as the asker in the dispatch transaction's own"
+                        + " audit record (and as the actor of the evidence it transmitted); the"
+                        + " PSP's answer is then applied by the platform, because the same answer"
+                        + " applied by the resolution sweep is the platform's act too. The scope"
+                        + " wraps Tx2 only."),
+                    Map.entry(
+                            "com.finapp.payments.DisputeResponseResolution.sweep",
+                    "The dispute-response resolution sweep (P7-TSK-014): the ReturnResolution"
+                        + " case at the card PSP's dispute port - a scheduled inquiry or a"
+                        + " permit-renewed re-send by our reference has no person, and its"
+                        + " re-send's evidence transmission is honestly the platform's. The scope"
+                        + " wraps each row's inquire-and-resolve; the candidate read claims"
+                        + " nothing."));
 
     @Test
     @DisplayName("no production code claims the system actor without being enumerated")

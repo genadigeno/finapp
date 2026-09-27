@@ -213,6 +213,12 @@ class NoFloatingPointMoneyRulesTest {
                     // is a count), so there is no monetary value here to be imprecise about.
                     "com.finapp.app.telemetry.NegativePositionMetrics",
                     "com.finapp.app.telemetry.NegativePositionMetrics$Cached",
+                    // P7-TSK-014. The SAME case again: the COUNT of chargebacks near or past
+                    // their respond-by deadline - a long out of the dispute rows, published
+                    // through the ToDoubleFunction Micrometer's Gauge imposes, NaN the sentinel
+                    // for unreadable. No monetary value here to be imprecise about.
+                    "com.finapp.app.telemetry.DisputeDeadlineMetrics",
+                    "com.finapp.app.telemetry.DisputeDeadlineMetrics$Cached",
                     // P2-TSK-001. The SAME case again, not a new one: counts of published,
                     // failed and dead-lettered events - ints out of RelayPollResult - published
                     // through Counter.increment(double), the only instrument Micrometer offers.

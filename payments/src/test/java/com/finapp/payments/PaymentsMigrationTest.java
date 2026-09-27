@@ -97,6 +97,12 @@ class PaymentsMigrationTest {
     private static final String CHARGEBACK_ACCOUNTING =
             "db/migration/payments/V021__chargeback_accounting.sql";
 
+    /** V022: representment and dispute evidence (P7-TSK-014) - the respond-by deadline, the
+     * evidence table, the response machine, and the CURRENT definition of the dispute machine
+     * (V021 became applied history for it). */
+    private static final String REPRESENTMENT =
+            "db/migration/payments/V022__representment_and_dispute_evidence.sql";
+
     @Test
     @DisplayName("the intent's status CHECKs are generated from the machine, on all three columns")
     void intentStatusChecksMatchTheEnum() {
@@ -1042,6 +1048,113 @@ class PaymentsMigrationTest {
     }
 
     /** From the classpath, the sibling migration tests' idiom. */
+    @Test
+    @DisplayName("V022's representment clauses are generated from the enums and pinned: the"
+            + " evidence kinds, formats and size bound, the response machine's statuses, edges,"
+            + " birth, freeze and one-live rule, the deadline's NULL -> value rule on a dispute"
+            + " machine carried forward from V021 VERBATIM, the fourth evidence subject and the"
+            + " append-only grants (P7-TSK-014)")
+    void theRepresentmentClausesArePinned() {
+        String v022 = migration(REPRESENTMENT);
+        // The evidence: generated lists, the boundary's bound, GCM's arithmetic, the address.
+        assertThat(v022)
+                .contains("CHECK (kind IN (" + DisputeEvidenceKind.sqlValueList() + "))")
+                .contains("CHECK (content_type IN ("
+                        + DisputeEvidenceContentType.sqlValueList() + "))")
+                .contains("CHECK (content_length BETWEEN 1 AND "
+                        + DisputeEvidenceContent.MAX_BYTES + ")")
+                .contains("CHECK (octet_length(content_ciphertext) = content_length + 16)")
+                .contains("UNIQUE (dispute_id, checksum_sha256)")
+                .contains("GRANT SELECT, INSERT ON payments.dispute_evidence TO finapp_app;")
+                .doesNotContain("ON payments.dispute_evidence TO finapp_app;\nGRANT UPDATE")
+                .doesNotContain("GRANT DELETE");
+        // The response: generated lists and the machine's own shape.
+        assertThat(v022)
+                .contains("CHECK (kind IN (" + DisputeResponseKind.sqlValueList() + "))")
+                .contains("CHECK (status IN (" + DisputeResponseStatus.sqlValueList() + "))")
+                .contains("CHECK (failure_reason IN ("
+                        + DisputeResponseFailure.sqlValueList() + "))")
+                .contains("CHECK ((status = 'FAILED') = (failure_reason IS NOT NULL))")
+                .contains("CHECK ((status = 'SUBMITTED') = (provider_reference IS NOT NULL))")
+                .contains("CHECK ((kind = 'REPRESENTMENT') = (cardinality(evidence_ids) > 0))")
+                .contains("CHECK (cardinality(evidence_ids) <= "
+                        + DisputeEvidenceContent.MAX_PER_DISPUTE
+                        + " AND array_position(evidence_ids, NULL) IS NULL)")
+                .contains("IF NEW.status <> '" + DisputeResponseStatus.DISPATCHED.name() + "' THEN");
+        // ONE LIVE ANSWER PER DISPUTE: generated from isLive() - every status but one.
+        java.util.List<DisputeResponseStatus> notLive =
+                java.util.Arrays.stream(DisputeResponseStatus.values())
+                        .filter(status -> !status.isLive())
+                        .toList();
+        assertThat(notLive).hasSize(1);
+        assertThat(v022)
+                .contains("ON payments.dispute_response (dispute_id)\n    WHERE status <> '"
+                        + notLive.get(0).name() + "';");
+        // Every edge IS the enum's; no terminal status is a source.
+        for (DisputeResponseStatus from : DisputeResponseStatus.values()) {
+            if (from.isTerminal()) {
+                assertThat(v022)
+                        .doesNotContain("(OLD.status = '" + from.name() + "' AND NEW.status");
+                continue;
+            }
+            assertThat(v022)
+                    .contains("(OLD.status = '" + from.name() + "' AND NEW.status IN ("
+                            + from.permittedTransitions().stream()
+                                    .sorted()
+                                    .map(to -> "'" + to.name() + "'")
+                                    .collect(Collectors.joining(", "))
+                            + "))");
+        }
+        for (String frozen :
+                java.util.List.of(
+                        "id", "dispute_id", "kind", "provider_idempotency_reference",
+                        "evidence_ids", "requested_by_id", "requested_by_type", "reason",
+                        "dispatch_scope", "dispatch_key", "created_at")) {
+            assertThat(v022).contains("NEW." + frozen + " IS DISTINCT FROM OLD." + frozen);
+        }
+        assertThat(v022)
+                .contains("IF NEW.send_permit < OLD.send_permit THEN")
+                .contains("GRANT UPDATE (status, failure_reason, provider_reference, send_permit)\n"
+                        + "    ON payments.dispute_response TO finapp_app;");
+        // The deadline rides the chargeback and moves only NULL -> value.
+        assertThat(v022)
+                .contains("CHECK (respond_by IS NULL OR chargeback_amount_minor IS NOT NULL)")
+                .contains("IF OLD.respond_by IS NOT NULL AND NEW.respond_by IS DISTINCT FROM"
+                        + " OLD.respond_by THEN")
+                .contains("GRANT UPDATE (respond_by) ON payments.dispute TO finapp_app;");
+        // THE HANDOFF: V022's dispute machine is V021's body VERBATIM plus the deadline's rule.
+        String deadlineRule =
+                "    -- The network's respond-by deadline moves only NULL -> value (P7-TSK-014):"
+                        + " the first\n"
+                        + "    -- statement stands, and a later statement of another date rests"
+                        + " as evidence.\n"
+                        + "    IF OLD.respond_by IS NOT NULL AND NEW.respond_by IS DISTINCT FROM"
+                        + " OLD.respond_by THEN\n"
+                        + "        RAISE EXCEPTION 'a recorded respond-by deadline never changes:"
+                        + " it moves only from NULL to a value (P7-TSK-014, INV-HIST-02)';\n"
+                        + "    END IF;\n";
+        assertThat(disputeMachine(v022)).contains(deadlineRule);
+        assertThat(disputeMachine(v022).replace(deadlineRule, ""))
+                .as("V021's dispute machine, carried forward byte for byte (the handoff"
+                        + " discipline): only the deadline's rule is new")
+                .isEqualTo(disputeMachine(migration(CHARGEBACK_ACCOUNTING)));
+        // The fourth evidence subject.
+        assertThat(v022)
+                .contains("num_nonnulls(attempt_id, refund_id, withdrawal_id, dispute_response_id)"
+                        + " <= 1");
+    }
+
+    /** The dispute machine function's definition, from its CREATE line to its closing $$;. */
+    private static String disputeMachine(String migration) {
+        int start =
+                migration.indexOf(
+                        "CREATE OR REPLACE FUNCTION payments.dispute_permits_only_machine_edges()");
+        assertThat(start).as("the dispute machine is (re-)stated here").isNotNegative();
+        int bodyOpens = migration.indexOf("$$", start);
+        int bodyCloses = migration.indexOf("$$;", bodyOpens + 2);
+        return migration.substring(start, bodyCloses + 3);
+    }
+
     private static String migration(String path) {
         try (InputStream migration =
                 PaymentsMigrationTest.class.getClassLoader().getResourceAsStream(path)) {

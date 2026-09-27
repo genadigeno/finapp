@@ -1,6 +1,8 @@
 package com.finapp.payments;
 
 import com.finapp.sharedkernel.money.Money;
+import java.time.Instant;
+import java.time.temporal.ChronoUnit;
 import java.util.Objects;
 import java.util.Optional;
 
@@ -21,6 +23,9 @@ import java.util.Optional;
  * @param fee the dispute fee the PSP charged the platform (`P7-TSK-013`, ADR-0061 §4) — only on
  *     a statement from the chargeback on (a fee is charged with the funds taken, never on an
  *     inquiry), in the amount's currency and scale
+ * @param respondBy the network's representment deadline (`P7-TSK-014`, ADR-0061 §7) — only on a
+ *     statement from the chargeback on (the door drops an inquiry's own answer-by date: an
+ *     inquiry response is out of scope), truncated to the column's microsecond resolution
  */
 public record DisputeNotice(
         String provider,
@@ -28,7 +33,8 @@ public record DisputeNotice(
         DisputeStage stage,
         DisputeReason reason,
         Money amount,
-        Optional<Money> fee) {
+        Optional<Money> fee,
+        Optional<Instant> respondBy) {
 
     public DisputeNotice {
         Objects.requireNonNull(provider, "provider must not be null");
@@ -37,6 +43,7 @@ public record DisputeNotice(
         Objects.requireNonNull(reason, "reason must not be null");
         Objects.requireNonNull(amount, "amount must not be null");
         Objects.requireNonNull(fee, "fee must not be null");
+        Objects.requireNonNull(respondBy, "respondBy must not be null");
         Dispute.requireProvider(provider);
         if (!amount.isPositive()) {
             throw new IllegalArgumentException("a disputed amount must be positive");
@@ -53,6 +60,24 @@ public record DisputeNotice(
                         "a dispute fee is positive and in the statement's currency and scale");
             }
         }
+        if (respondBy.isPresent() && !stage.isChargedBack()) {
+            throw new IllegalArgumentException(
+                    "a representment deadline is stated with the chargeback, never on an inquiry");
+        }
+        // The column's own microsecond resolution (the P7-TSK-004 clock lesson): a deadline
+        // compared after a round trip must be the value stored.
+        respondBy = respondBy.map(deadline -> deadline.truncatedTo(ChronoUnit.MICROS));
+    }
+
+    /** A statement carrying a fee and no deadline — the `P7-TSK-013` shape. */
+    public DisputeNotice(
+            String provider,
+            ProviderReference reference,
+            DisputeStage stage,
+            DisputeReason reason,
+            Money amount,
+            Optional<Money> fee) {
+        this(provider, reference, stage, reason, amount, fee, Optional.empty());
     }
 
     /** A statement carrying no fee — the `P7-TSK-012` shape. */
@@ -62,7 +87,7 @@ public record DisputeNotice(
             DisputeStage stage,
             DisputeReason reason,
             Money amount) {
-        this(provider, reference, stage, reason, amount, Optional.empty());
+        this(provider, reference, stage, reason, amount, Optional.empty(), Optional.empty());
     }
 
     /** Never an amount, never the reference: a record's generated form would print both

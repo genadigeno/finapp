@@ -210,6 +210,22 @@ the customer has spent the money.
    - The platform's clock only raises the alarm when a deadline nears. It never decides an
      outcome: `WON` and `LOST` come from the network.
 
+   *(Shipped `P7-TSK-014`, payments `V022`: the answer is one aggregate, `DisputeResponse` —
+   REPRESENTMENT or ACCEPTANCE — because acceptance needs every protocol representment has.
+   Dispatched with our reference committed before the call, one LIVE answer per dispute for every
+   writer, the send permit forward-only, an ambiguous answer resolved by query on our reference
+   (`DisputeResponseResolution`, the SAME request re-sent where the PSP never saw it); SUBMITTED
+   means the PSP took it and moves NO stage — the network's `under_review`, `accepted`, `won`,
+   `lost` still arrive by notification, and `P7-TSK-013` posts what each owes. Evidence is
+   `dispute_evidence`: AES-256-GCM under its own key (`FINAPP_PAYMENTS_DISPUTE_EVIDENCE_KEY`), the
+   plaintext's SHA-256, append-only by grant, content-addressed; every content read audited
+   (`payments.DisputeEvidenceRead`) and every wire transmission too
+   (`payments.DisputeEvidenceTransmitted`). The deadline is the network's `respondBy`, recorded
+   once with the chargeback; the platform refuses only its OWN late dispatch and raises
+   `finapp.payments.dispute.deadline.near`. "An operator for a payment with no merchant" is
+   enforced: the operator acts only where the payment credited a customer wallet, reasoned.
+   Every act locks the attempt and then the dispute — the order every delivery keeps.)*
+
 8. **Disputes exist on the card rail only** (ADR-0059's `disputes` capability). A push-rail
    payment has no chargeback. A customer's complaint about one is a refund decision, and a recall
    is out of scope.

@@ -74,6 +74,35 @@ public interface DisputeStore<T> {
     boolean recordFee(T unitOfWork, Dispute before, Dispute after);
 
     /**
+     * Records {@code after}'s respond-by deadline, conditional on none being recorded yet — the
+     * deadline moves only {@code NULL → value} (`V022`, `P7-TSK-014`). {@code false} when one was
+     * recorded first.
+     */
+    boolean recordRespondBy(T unitOfWork, Dispute before, Dispute after);
+
+    /**
+     * The dispute, LOCKED for a responder acting across tenants by permission — the operator
+     * (`P7-TSK-014`). The caller holds the dispute's attempt lock FIRST: every writer that locks a
+     * dispute row takes its attempt before it, the order every delivery keeps.
+     */
+    Optional<Found> lockForResponder(T unitOfWork, DisputeId id);
+
+    /**
+     * The dispute, LOCKED for a counterparty's responder: found only when the disputed payment
+     * credited one of {@code counterparties} — the tenant predicate IN THE LOCKING STATEMENT
+     * ({@code INV-MER-01}). The attempt-first rule of {@link #lockForResponder} holds.
+     */
+    Optional<Found> lockForCounterparties(
+            T unitOfWork, DisputeId id, Set<LedgerAccountId> counterparties);
+
+    /**
+     * How many chargebacks still await an answer the PSP took, with a recorded respond-by
+     * deadline at or before {@code horizon} — near, or already missed (`P7-TSK-014`: the
+     * {@code finapp.payments.dispute.deadline.near} alarm, never a decision).
+     */
+    long countDeadlinesNear(T unitOfWork, Instant horizon);
+
+    /**
      * What the chargebacks STANDING on {@code attempt} attribute to its counterparty, posted or
      * parked — the combined bound's second term (`INV-DSP-01`). Valid only under the attempt's
      * row lock; zero in {@code currency} when none stands.

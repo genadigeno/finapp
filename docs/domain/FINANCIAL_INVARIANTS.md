@@ -1204,9 +1204,18 @@ and by operators holding the dispute permission; it is encrypted at rest under a
 outside the database, and every read and submission is audited with actor, dispute and outcome.
 **Why:** Dispute evidence carries customer details, receipts and correspondence; it is
 `INV-KYC-06`'s class of material with money attached (ADR-0061 §7).
-**Enforce:** `DOMAIN` + `DB-PRIVILEGE`.
+**Enforce:** `DOMAIN` + `DB-PRIVILEGE`. *Since `P7-TSK-014`: one store reaches the content
+(`DisputeEvidenceStore`, holding the dispute-evidence key alone - never the provider-evidence or
+document key), every content read writes `payments.DisputeEvidenceRead` in the read's own
+transaction and every wire transmission to the PSP writes `payments.DisputeEvidenceTransmitted`
+before the bytes leave; the merchant's reads carry the tenant predicate in the statement
+(`INV-MER-01`), the operator's sit behind `DISPUTE_ADMINISTER`; `payments.dispute_evidence` is
+`SELECT, INSERT` only for the application role, GCM's tag arithmetic a `CHECK`, the SHA-256
+verified on every read.*
 **Verify:** Cross-tenant and unprivileged negative tests; a ciphertext-at-rest test; the audit
-record per access.
+record per access. *(`DisputeResponseDatabaseTest` - `#evidenceIsUnreadableAcrossTenants`,
+`#evidenceRestsAsCiphertextAndEveryReadIsOnTheRecord`, `#aTamperedDocumentIsNeverServedOrSent`;
+`MerchantTenancyBatteryDatabaseTest`'s addressed routes; `PaymentsSchemaDatabaseTest#theRepresentmentSchemaBindsEveryWriter`.)*
 **Phase:** 7
 
 ---

@@ -46,6 +46,19 @@ public interface ProviderEvidenceStore<T> {
             Instant recordedAt);
 
     /**
+     * Retains a dispute response's PSP bytes verbatim (`P7-TSK-014`) — the FOURTH subject, its own
+     * door like the withdrawal's. `V022` widens the at-most-one-subject rule to four. The
+     * REQUEST body is never retained here: a representment's request carries the evidence
+     * itself, which rests once, under its own key, in {@code dispute_evidence}.
+     */
+    void appendForDisputeResponse(
+            T unitOfWork,
+            DisputeResponseId response,
+            EvidenceKind kind,
+            byte[] payload,
+            Instant recordedAt);
+
+    /**
      * The attempt's retained payloads, oldest first, decrypted and checksum-verified — a
      * mismatch is corruption and throws rather than yielding bytes that are not the evidence.
      */

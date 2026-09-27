@@ -244,6 +244,38 @@ always the one a chargeback arriving now would take. The stage facts (`Chargebac
 merchant debt or a receivable from the customer, counted by `finapp.ledger.negative.positions`
 and never absorbed.
 
+**Answering a chargeback** (`P7-TSK-014`, ADR-0061 §7; `DisputeResponses`) — the responder's
+answer is a `DisputeResponse`, dispatched through the card PSP, and it moves **no stage and no
+money**: `SUBMITTED` means the PSP took it, and the network's own `under_review`
+(`REPRESENTED`), `accepted`, `won` and `lost` still arrive by notification, each posting what
+this section's table says.
+
+```
+DISPATCHED ──> SUBMITTED
+    │    └───> FAILED     (DECLINED; PROVIDER_UNAVAILABLE only on the first send)
+    └──> UNKNOWN ──> SUBMITTED
+             └─────> FAILED
+```
+
+The list is exactly `DisputeResponseStatus.permittedTransitions()`, generated into `V022`'s
+every-writer trigger; born `DISPATCHED` with our reference; `SUBMITTED` and `FAILED` terminal;
+one LIVE (non-`FAILED`) answer per dispute for every writer. The rules an answer and an upload
+obey, judged under the attempt lock and then the dispute's (every delivery's order):
+
+| Rule | Answer |
+|---|---|
+| The dispute is not `CHARGED_BACK` (an inquiry, represented, resolved) | `payments.DisputeNotRespondable`, nothing written (`INV-LIFE-04`) |
+| A live answer already stands (the evidence set froze with it) | `payments.DisputeAlreadyAnswered` |
+| The network's `respond_by` has passed | `payments.DisputeDeadlinePassed` — the platform refuses its OWN late dispatch; the outcome stays the network's |
+| A representment with no document / a sixth document | `payments.DisputeEvidenceRequired` / `payments.DisputeEvidenceLimitReached` |
+| An operator on a payment with a merchant | `payments.DisputeAnsweredByItsMerchant` — the operator acts only where the payment credited a customer wallet |
+
+The deadline is the network's `respondBy`, recorded once with the chargeback (`NULL → value`,
+the first statement standing; an inquiry's own answer-by date is dropped at the door), and
+`finapp.payments.dispute.deadline.near` counts the chargebacks near or past it with no answer
+the PSP took — the alarm, never a decision. A timed-out answer is honestly `UNKNOWN` until the
+sweep asks the PSP by our reference, re-sending the SAME request where the PSP never saw it.
+
 ## 7. The financial flows, per rail and instrument
 
 `business operation → payment state → ledger effect → external rail → settlement → reconciliation`.

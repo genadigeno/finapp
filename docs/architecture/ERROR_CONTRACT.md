@@ -310,6 +310,12 @@ not-yours and malformed are one `api.NotFound` (the beneficiary reasoning, verba
 | `payments.WithdrawalUnfunded` | 422 | The wallet's available balance cannot cover this withdrawal. |
 | `payments.WalletPaymentUnfunded` | 422 | The wallet's available balance cannot cover this payment. (`P7-TSK-011`: judged under the wallet's lock; nothing written, the same confirmation succeeds after a top-up.) |
 | `payments.WithdrawalCurrencyMismatched` | 422 | A withdrawal is priced in its wallet's own currency. |
+| `payments.DisputeNotRespondable` | 409 | This dispute takes no evidence or answer at its current stage. (`P7-TSK-014`, ADR-0061 section 7: only a `CHARGED_BACK` dispute takes one; an inquiry has nothing to contest, a represented or resolved dispute takes no answer - nothing written.) |
+| `payments.DisputeDeadlinePassed` | 409 | The network's deadline to answer this dispute has passed. (`P7-TSK-014`: the platform refuses its own late dispatch; the outcome stays the network's.) |
+| `payments.DisputeAlreadyAnswered` | 409 | This dispute already has an answer in progress or taken. (`P7-TSK-014`: one live answer per dispute; the evidence set froze with it.) |
+| `payments.DisputeEvidenceRequired` | 422 | A representment needs at least one evidence document. (`P7-TSK-014`) |
+| `payments.DisputeEvidenceLimitReached` | 422 | This dispute already holds the most evidence documents one answer can carry. (`P7-TSK-014`: five, the whole set rides one outbound submission.) |
+| `payments.DisputeAnsweredByItsMerchant` | 409 | This payment's merchant answers its own dispute. (`P7-TSK-014`, ADR-0061 section 7: the operator acts only for a payment with no merchant.) |
 
 The payment surface's vocabulary (`P5-TSK-011`) is **the refusals only** — requests the
 platform declined to judge, with nothing written. A *judged* failure is never an error code: a

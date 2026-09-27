@@ -53,6 +53,8 @@ class DatabaseCredentialGuardStartupTest {
                                                 "--finapp.doc.key=AwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwM=",
                                                 "--finapp.kyc.callback.key=BAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQ=",
                                                 "--finapp.payments.evidence.key=BQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQU=",
+                                                // P7-TSK-014: the dispute evidence key, its own concern.
+                                                "--finapp.payments.dispute.evidence.key=BgYGBgYGBgYGBgYGBgYGBgYGBgYGBgYGBgYGBgYGBgY=",
                                                 "--finapp.payments.provider.key=BQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQU=",
                                                 "--finapp.payments.webhook.key=BQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQU=",
                                                 // P7-TSK-009: the instant scheme's two keys - the test overlay
@@ -90,6 +92,8 @@ class DatabaseCredentialGuardStartupTest {
                                                 "--finapp.doc.key=AwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwM=",
                                                 "--finapp.kyc.callback.key=BAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQ=",
                                                 "--finapp.payments.evidence.key=BQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQU=",
+                                                // P7-TSK-014: the dispute evidence key, its own concern.
+                                                "--finapp.payments.dispute.evidence.key=BgYGBgYGBgYGBgYGBgYGBgYGBgYGBgYGBgYGBgYGBgY=",
                                                 "--finapp.payments.provider.key=BQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQU=",
                                                 "--finapp.payments.webhook.key=BQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQU=",
                                                 // P7-TSK-009: the instant scheme's two keys - the test overlay
@@ -125,6 +129,8 @@ class DatabaseCredentialGuardStartupTest {
                                                 "--finapp.doc.key=AwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwM=",
                                                 "--finapp.kyc.callback.key=BAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQ=",
                                                 "--finapp.payments.evidence.key=BQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQU=",
+                                                // P7-TSK-014: the dispute evidence key, its own concern.
+                                                "--finapp.payments.dispute.evidence.key=BgYGBgYGBgYGBgYGBgYGBgYGBgYGBgYGBgYGBgYGBgY=",
                                                 "--finapp.payments.provider.key=BQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQU=",
                                                 "--finapp.payments.webhook.key=BQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQU=",
                                                 // P7-TSK-009: the instant scheme's two keys - the test overlay
@@ -184,6 +190,8 @@ class DatabaseCredentialGuardStartupTest {
                         "--finapp.doc.key=AwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwM=",
                                                 "--finapp.kyc.callback.key=BAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQ=",
                                                 "--finapp.payments.evidence.key=BQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQU=",
+                                                // P7-TSK-014: the dispute evidence key, its own concern.
+                                                "--finapp.payments.dispute.evidence.key=BgYGBgYGBgYGBgYGBgYGBgYGBgYGBgYGBgYGBgYGBgY=",
                                                 "--finapp.payments.provider.key=BQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQU=",
                                                 "--finapp.payments.webhook.key=BQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQU=",
                                                 // P7-TSK-009: the instant scheme's two keys - the test overlay

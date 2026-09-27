@@ -66,7 +66,9 @@ import java.time.Clock;
 import java.time.Duration;
 import java.time.Instant;
 import java.time.LocalDate;
+import java.time.OffsetDateTime;
 import java.time.ZoneOffset;
+import java.time.temporal.ChronoUnit;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Optional;
@@ -1161,12 +1163,23 @@ class MerchantPayoutDatabaseTest {
 
     private Funded fundedWithoutDestination(String amount) throws Exception {
         MerchantId merchant = MerchantId.next(IDS);
+        // The timestamps come from the SAME clock the domain transitions the merchant with -
+        // production stamps createdAt from the injected Clock, never the database's now(). Two
+        // clocks here made close() stamp a statusChangedAt preceding createdAt whenever the
+        // database's clock ran ahead of the JVM's (found at P7-TSK-014's gate: the Docker VM's
+        // clock measured gaining ~55 ms a second between step-backs), and the domain rightly
+        // refused it.
+        OffsetDateTime created =
+                OffsetDateTime.ofInstant(
+                        Instant.now(CLOCK).truncatedTo(ChronoUnit.MICROS), ZoneOffset.UTC);
         raw(
                 "INSERT INTO merchant.merchant (id, party_ref, legal_name, display_name,"
                         + " settlement_currency, status, created_at, status_changed_at) VALUES"
-                        + " (?, ?, 'Acme GmbH', 'Acme', 'EUR', 'ACTIVE', now(), now())",
+                        + " (?, ?, 'Acme GmbH', 'Acme', 'EUR', 'ACTIVE', ?, ?)",
                 merchant.value(),
-                UUID.randomUUID());
+                UUID.randomUUID(),
+                created,
+                created);
         LedgerAccountId payable =
                 asOperator(
                         uow ->

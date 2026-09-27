@@ -237,7 +237,64 @@ public enum PaymentsErrorCode implements ErrorCode {
     REVERSAL_NOT_SUPPORTED(
             "payments.ReversalNotSupported",
             409,
-            "This payment's rail does not support reversal.");
+            "This payment's rail does not support reversal."),
+
+    /**
+     * The dispute takes no evidence or answer at its stage (`P7-TSK-014`, ADR-0061 §7): an
+     * inquiry has nothing to contest, and a represented or resolved dispute takes no answer
+     * ({@code INV-LIFE-04}). A {@code 409}: well formed, refused by the dispute's state.
+     */
+    DISPUTE_NOT_RESPONDABLE(
+            "payments.DisputeNotRespondable",
+            409,
+            "This dispute takes no evidence or answer at its current stage."),
+
+    /**
+     * The network's respond-by deadline has passed (`P7-TSK-014`): the platform refuses its own
+     * late dispatch — the outcome stays the network's. A {@code 409}.
+     */
+    DISPUTE_DEADLINE_PASSED(
+            "payments.DisputeDeadlinePassed",
+            409,
+            "The network's deadline to answer this dispute has passed."),
+
+    /**
+     * A live answer already stands on the dispute (`P7-TSK-014`) — dispatched, taken or awaiting
+     * the PSP's word — and the evidence set froze with it. A {@code 409}; a new key does not help.
+     */
+    DISPUTE_ALREADY_ANSWERED(
+            "payments.DisputeAlreadyAnswered",
+            409,
+            "This dispute already has an answer in progress or taken."),
+
+    /**
+     * A representment with no evidence to carry (`P7-TSK-014`). A {@code 422}: the remedy — upload
+     * a document first — is the caller's.
+     */
+    DISPUTE_EVIDENCE_REQUIRED(
+            "payments.DisputeEvidenceRequired",
+            422,
+            "A representment needs at least one evidence document."),
+
+    /**
+     * The dispute already holds the documents one answer may carry (`P7-TSK-014`: the whole set
+     * rides one outbound submission). A {@code 422}.
+     */
+    DISPUTE_EVIDENCE_LIMIT_REACHED(
+            "payments.DisputeEvidenceLimitReached",
+            422,
+            "This dispute already holds the most evidence documents one answer can carry."),
+
+    /**
+     * An operator addressed a dispute on a payment with a merchant (`P7-TSK-014`, ADR-0061 §7):
+     * the merchant owns its dispute posture, and the operator acts only for a payment with no
+     * merchant. A {@code 409} — the operator holds the permission; the payment is not theirs to
+     * answer.
+     */
+    DISPUTE_ANSWERED_BY_ITS_MERCHANT(
+            "payments.DisputeAnsweredByItsMerchant",
+            409,
+            "This payment's merchant answers its own dispute.");
 
     private final String code;
     private final int status;

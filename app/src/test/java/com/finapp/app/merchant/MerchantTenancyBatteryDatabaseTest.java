@@ -240,6 +240,43 @@ class MerchantTenancyBatteryDatabaseTest {
                 addressed(
                         World::dispute,
                         (caller, id) -> get("/v1/merchant/disputes/" + id, caller.key())));
+        // P7-TSK-014: answering a chargeback - the same predicate in every statement, the
+        // upload's and the answer's LOCKING reads included; a refused act writes nothing.
+        table.put(
+                "POST /v1/merchant/disputes/{disputeId}/evidence",
+                addressed(
+                        World::dispute,
+                        (caller, id) ->
+                                post(
+                                        "/v1/merchant/disputes/" + id + "/evidence",
+                                        evidenceBody(),
+                                        caller.key(),
+                                        null)));
+        // The document's resource is the PAIR "dispute/evidence" - B's dispute AND B's document
+        // under A's key, the direct attack; an unknown single identifier addresses both.
+        table.put(
+                "GET /v1/merchant/disputes/{disputeId}/evidence/{evidenceId}",
+                addressed(
+                        World::evidence,
+                        (caller, pair) -> {
+                            String[] ids = pair.split("/");
+                            String evidence = ids.length > 1 ? ids[1] : ids[0];
+                            return get(
+                                    "/v1/merchant/disputes/" + ids[0] + "/evidence/" + evidence,
+                                    caller.key());
+                        }));
+        for (String answer : List.of("representment", "acceptance")) {
+            table.put(
+                    "POST /v1/merchant/disputes/{disputeId}/" + answer,
+                    addressed(
+                            World::dispute,
+                            (caller, id) ->
+                                    post(
+                                            "/v1/merchant/disputes/" + id + "/" + answer,
+                                            null,
+                                            caller.key(),
+                                            IDS.next().toString())));
+        }
 
         // AN OPERATOR'S PAIRING: a merchant and one of its resources, both in the path.
         table.put(
@@ -441,7 +478,7 @@ class MerchantTenancyBatteryDatabaseTest {
         }
         assertThat(probed)
                 .as("every addressed route was probed, and there are some")
-                .hasSize(8);
+                .hasSize(12);
     }
 
     @Test
@@ -601,7 +638,9 @@ class MerchantTenancyBatteryDatabaseTest {
             String effectiveDestination,
             String proposedDestination,
             String payout,
-            String dispute) {}
+            String dispute,
+            // P7-TSK-014: one of the dispute's documents, as "disputeId/evidenceId".
+            String evidence) {}
 
     /**
      * A trading merchant with a funded payable, two API keys, the platform's pricing and an open
@@ -666,15 +705,21 @@ class MerchantTenancyBatteryDatabaseTest {
 
         World partial =
                 new World(id.toString(), key, spareKeyId, payable, fundingEntry, null, null, null,
-                        null, null);
+                        null, null, null);
         HttpResponse<String> opened = openSession(partial);
         assertThat(opened.statusCode()).as(opened.body()).isEqualTo(201);
         String session = field(opened.body(), "checkoutId");
         String dispute = disputeOn(payable);
+        // A document on the dispute, attached through the merchant's own route (P7-TSK-014):
+        // the content is encrypted under the dispute key, which only the application holds.
+        HttpResponse<String> attached =
+                post("/v1/merchant/disputes/" + dispute + "/evidence", evidenceBody(), key, null);
+        assertThat(attached.statusCode()).as(attached.body()).isEqualTo(201);
+        String evidence = dispute + "/" + field(attached.body(), "evidenceId");
         if (!full) {
             return new World(
                     id.toString(), key, spareKeyId, payable, fundingEntry, session, null, null,
-                    null, dispute);
+                    null, dispute, evidence);
         }
 
         UUID effective = IDS.next();
@@ -699,12 +744,13 @@ class MerchantTenancyBatteryDatabaseTest {
         World funded =
                 new World(
                         id.toString(), key, spareKeyId, payable, fundingEntry, session,
-                        effective.toString(), proposed.toString(), null, dispute);
+                        effective.toString(), proposed.toString(), null, dispute, evidence);
         HttpResponse<String> paid = payout(funded);
         assertThat(paid.statusCode()).as(paid.body()).isEqualTo(201);
         return new World(
                 id.toString(), key, spareKeyId, payable, fundingEntry, session,
-                effective.toString(), proposed.toString(), field(paid.body(), "id"), dispute);
+                effective.toString(), proposed.toString(), field(paid.body(), "id"), dispute,
+                evidence);
     }
 
     /**
@@ -746,6 +792,18 @@ class MerchantTenancyBatteryDatabaseTest {
         return dispute.toString();
     }
 
+    /** A small PDF-labelled document, distinct per call - a new upload, never a convergence. */
+    private static String evidenceBody() {
+        String content =
+                java.util.Base64.getEncoder()
+                        .encodeToString(
+                                ("tenancy battery evidence " + UUID.randomUUID())
+                                        .getBytes(java.nio.charset.StandardCharsets.UTF_8));
+        return "{\"kind\":\"RECEIPT\",\"contentType\":\"PDF\",\"content\":\""
+                + content
+                + "\"}";
+    }
+
     /**
      * Everything of one tenant's a merchant route can write, as one string: the merchant's
      * standing, keys, destinations, payouts and sessions with their statuses, every history row,
@@ -758,7 +816,20 @@ class MerchantTenancyBatteryDatabaseTest {
                         + " UNION ALL SELECT id FROM merchant.merchant_api_key WHERE merchant_id = ?"
                         + " UNION ALL SELECT id FROM merchant.payout_destination WHERE merchant_id = ?"
                         + " UNION ALL SELECT id FROM merchant.merchant_payout WHERE merchant_id = ?"
-                        + " UNION ALL SELECT id FROM checkout.checkout_session WHERE merchant_ref = ?)"
+                        + " UNION ALL SELECT id FROM checkout.checkout_session WHERE merchant_ref = ?"
+                        // P7-TSK-014: the disputes on the merchant's sales and their answers, so
+                        // an upload's and an answer's audit and outbox rows are the merchant's.
+                        // Never the documents' own ids: an evidence READ writes its audit row
+                        // against the document, and a read must not move the fingerprint.
+                        + " UNION ALL SELECT d.id FROM payments.dispute d"
+                        + "   JOIN payments.payment_attempt a ON a.id = d.attempt_id"
+                        + "   JOIN payments.payment_intent i ON i.id = a.intent_id"
+                        + "   WHERE i.credit_account_id = ?"
+                        + " UNION ALL SELECT r.id FROM payments.dispute_response r"
+                        + "   JOIN payments.dispute d ON d.id = r.dispute_id"
+                        + "   JOIN payments.payment_attempt a ON a.id = d.attempt_id"
+                        + "   JOIN payments.payment_intent i ON i.id = a.intent_id"
+                        + "   WHERE i.credit_account_id = ?)"
                         + " SELECT concat_ws('|',"
                         + " (SELECT status FROM merchant.merchant WHERE id = ?),"
                         + " (SELECT count(*) FROM merchant.merchant_event WHERE merchant_id = ?),"
@@ -784,6 +855,17 @@ class MerchantTenancyBatteryDatabaseTest {
                         + "    WHERE s.merchant_ref = ?),"
                         + " (SELECT count(*) FROM ledger.journal_line WHERE ledger_account_id = ?),"
                         + " (SELECT count(*) FROM ledger.hold WHERE ledger_account_id = ?),"
+                        + " (SELECT count(*) FROM payments.dispute_evidence e"
+                        + "    JOIN payments.dispute d ON d.id = e.dispute_id"
+                        + "    JOIN payments.payment_attempt a ON a.id = d.attempt_id"
+                        + "    JOIN payments.payment_intent i ON i.id = a.intent_id"
+                        + "    WHERE i.credit_account_id = ?),"
+                        + " (SELECT string_agg(r.id::text || ':' || r.status, ',' ORDER BY r.id)"
+                        + "    FROM payments.dispute_response r"
+                        + "    JOIN payments.dispute d ON d.id = r.dispute_id"
+                        + "    JOIN payments.payment_attempt a ON a.id = d.attempt_id"
+                        + "    JOIN payments.payment_intent i ON i.id = a.intent_id"
+                        + "    WHERE i.credit_account_id = ?),"
                         + " (SELECT count(*) FROM platform.audit_record"
                         + "    WHERE target_id IN (SELECT id::text FROM mine)),"
                         + " (SELECT count(*) FROM platform.outbox_event"
@@ -791,12 +873,20 @@ class MerchantTenancyBatteryDatabaseTest {
         UUID merchant = UUID.fromString(world.id());
         try (Connection app = DatabaseRoles.application();
                 PreparedStatement read = app.prepareStatement(sql)) {
+            // In statement order: five merchant ids and two payables in the CTE, ten merchant
+            // ids, then four payables (lines, holds, documents, answers).
             int parameter = 1;
-            for (int i = 0; i < 15; i++) {
+            for (int i = 0; i < 5; i++) {
                 read.setObject(parameter++, merchant);
             }
             read.setObject(parameter++, world.payable().value());
-            read.setObject(parameter, world.payable().value());
+            read.setObject(parameter++, world.payable().value());
+            for (int i = 0; i < 10; i++) {
+                read.setObject(parameter++, merchant);
+            }
+            for (int i = 0; i < 4; i++) {
+                read.setObject(parameter++, world.payable().value());
+            }
             try (ResultSet row = read.executeQuery()) {
                 assertThat(row.next()).isTrue();
                 return row.getString(1);

@@ -20,6 +20,11 @@ import java.util.Set;
  * is <em>ours</em>: the only endpoints that exist are the `P0-TSK-037` harness in tests and
  * whatever a demo stands up (ADR-0049; the Phase 2 verification-provider shape).
  *
+ * <p><strong>Since `P7-TSK-014` it also answers disputes</strong> ({@link DisputeResponder}):
+ * the card PSP is where a chargeback is contested or conceded, so the same adapter binds that
+ * port too — its own path, the same wire discipline (our reference in the
+ * {@code Idempotency-Key} header, the same total verdict mapping, the same operations query).
+ *
  * <h2>Wiring — deliberately none yet</h2>
  *
  * <p>No bean until the first composition-root consumer, `P5-TSK-009` (the `P1-TSK-007`
@@ -31,7 +36,7 @@ import java.util.Set;
  * and the key decoded by {@code com.finapp.app.payments.ProviderApiKey} — the confinement
  * mechanism's fifth credential — passed in as bytes.
  */
-public final class SimulatedCardPspAdapter implements PaymentProvider {
+public final class SimulatedCardPspAdapter implements PaymentProvider, DisputeResponder {
 
     /** The stable provider name: the evidence scope and, from `P5-TSK-017`, the meter tag value. */
     public static final String NAME = "simulated-card";
@@ -75,6 +80,9 @@ public final class SimulatedCardPspAdapter implements PaymentProvider {
     public static final String VOIDS_PATH = "/voids";
     /** Query prefix; the platform-minted reference is the path segment (`INV-PAY-04`). */
     public static final String OPERATIONS_PATH = "/operations/";
+
+    /** A dispute answer's path (`P7-TSK-014`): a representment or an acceptance, never money. */
+    public static final String DISPUTE_RESPONSES_PATH = "/dispute-responses";
 
     /** The dispatch idempotency header (`INV-PAY-04` at the wire), published for tests. */
     public static final String IDEMPOTENCY_KEY_HEADER = PspWireClient.IDEMPOTENCY_KEY_HEADER;
@@ -145,6 +153,40 @@ public final class SimulatedCardPspAdapter implements PaymentProvider {
         // The reference's charset makes it a legal path segment with no escaping machinery -
         // its recorded design property.
         return client.query(OPERATIONS_PATH + ourReference.value());
+    }
+
+    /**
+     * A dispute answer (`P7-TSK-014`, ADR-0061 §7): the network's dispute reference, the answer
+     * in the wire's words, and — for a representment — each document labelled with its kind and
+     * media type, its bytes base64 in the body. The ONE place evidence plaintext legitimately
+     * goes: onto the PSP's wire, for the network's reviewer. Every value is from validated
+     * types (the reference's charset, closed enums, base64's alphabet), so the body needs no
+     * escaping machinery.
+     */
+    @Override
+    public ProviderAnswer respond(DisputeResponseRequest request) {
+        StringBuilder body =
+                new StringBuilder("{\"dispute\":\"")
+                        .append(request.dispute().value())
+                        .append("\",\"answer\":\"")
+                        .append(
+                                request.kind() == DisputeResponseKind.REPRESENTMENT
+                                        ? "represent"
+                                        : "accept")
+                        .append("\",\"evidence\":[");
+        for (int i = 0; i < request.evidence().size(); i++) {
+            DisputeResponder.EvidenceDocument document = request.evidence().get(i);
+            body.append(i == 0 ? "" : ",")
+                    .append("{\"kind\":\"")
+                    .append(document.kind().name().toLowerCase(java.util.Locale.ROOT))
+                    .append("\",\"contentType\":\"")
+                    .append(document.contentType().mediaType())
+                    .append("\",\"content\":\"")
+                    .append(java.util.Base64.getEncoder().encodeToString(document.content().value()))
+                    .append("\"}");
+        }
+        body.append("]}");
+        return client.dispatch(DISPUTE_RESPONSES_PATH, request.reference(), body.toString());
     }
 
     /**

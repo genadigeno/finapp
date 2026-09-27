@@ -602,6 +602,7 @@ them are classified at the ceiling regardless.
 | `withdrawal_event` | `actor_type` | `INTERNAL` | An enumerated population |
 | `withdrawal_event` | `occurred_at` | `INTERNAL` | Application-stamped transition instant |
 | `provider_evidence` | `withdrawal_id` | `INTERNAL` | The evidence's third subject (`P7-TSK-008`); the bytes' own rows above carry the classification that matters |
+| `provider_evidence` | `dispute_response_id` | `INTERNAL` | The evidence's fourth subject (`P7-TSK-014`); the bytes' own rows carry the classification that matters |
 | `routing_decision` | `withdrawal_id` | `INTERNAL` | The decision's second subject (`P7-TSK-008`, ADR-0060 §2) — exactly one of intent and withdrawal, no FK by the refusal-precedes-birth decision `V016` records |
 | `payment_attempt` | `authorized_amount_minor` | `RESTRICTED-FINANCIAL` | The issuer's promised amount — a customer amount |
 | `payment_attempt` | `authorized_currency` | `RESTRICTED-FINANCIAL` | Part of the monetary shape |
@@ -645,6 +646,7 @@ them are classified at the ceiling regardless.
 | `dispute` | `dispute_fee_amount_minor` | `RESTRICTED-FINANCIAL` | An amount — the dispute fee the PSP charged the platform (ADR-0061 §4), a cost of a person's contested payment |
 | `dispute` | `dispute_fee_currency` | `RESTRICTED-FINANCIAL` | Part of the monetary shape |
 | `dispute` | `dispute_fee_scale` | `RESTRICTED-FINANCIAL` | Part of the monetary shape |
+| `dispute` | `respond_by` | `CONFIDENTIAL` | The network's representment deadline on a person's contested payment (`P7-TSK-014`, ADR-0061 §7) - dates the contest, the `opened_at` reasoning; recorded once, it refuses only the platform's own late dispatch and raises the alarm |
 | `dispute` | `opened_at` | `CONFIDENTIAL` | Dates a contest of a person's payment (the `payment_attempt.created_at` reasoning) |
 | `dispute_event` | `id` | `INTERNAL` | A sequence identifier |
 | `dispute_event` | `dispute_id` | `INTERNAL` | The trail's subject |
@@ -653,6 +655,40 @@ them are classified at the ceiling regardless.
 | `dispute_event` | `actor_id` | `CONFIDENTIAL` | Who moved it — the audit actor class (the platform for every notified stage) |
 | `dispute_event` | `actor_type` | `INTERNAL` | An enumerated population |
 | `dispute_event` | `occurred_at` | `INTERNAL` | Application-stamped transition instant |
+| `dispute_evidence` | `id` | `INTERNAL` | A record identifier (`P7-TSK-014`). Generated |
+| `dispute_evidence` | `dispute_id` | `INTERNAL` | The document's dispute - an identifier of a thing |
+| `dispute_evidence` | `kind` | `CONFIDENTIAL` | *Which evidence* a merchant holds about a person's purchase (a delivery note, a chat log) is a fact about that purchase - `kyc_document.document_type`'s reasoning |
+| `dispute_evidence` | `content_type` | `INTERNAL` | A media format. Three values, none about a person |
+| `dispute_evidence` | `content_ciphertext` | `RESTRICTED-PII` | **The document** - receipts, correspondence, delivery records naming a person: classified at the ceiling of what it decrypts to (`kyc_document.content_ciphertext`'s reasoning, ADR-0022), under its own key (`INV-DSP-03`) |
+| `dispute_evidence` | `content_nonce` | `INTERNAL` | Public-by-design cryptographic material; useless without the key |
+| `dispute_evidence` | `key_version` | `INTERNAL` | Which key wrote the row - operational metadata for rotation |
+| `dispute_evidence` | `checksum_sha256` | `RESTRICTED-PII` | **A possession oracle over the content** - `kyc_document.checksum_sha256`'s reasoning verbatim: anyone holding a candidate document can confirm it is this one |
+| `dispute_evidence` | `content_length` | `CONFIDENTIAL` | Weakly identifying; with the kind it narrows a known document - errs up |
+| `dispute_evidence` | `uploaded_by_id` | `CONFIDENTIAL` | Who attached it - the merchant or the operator, the audit actor class (`withdrawal_event.actor_id`) |
+| `dispute_evidence` | `uploaded_by_type` | `INTERNAL` | An enumerated population |
+| `dispute_evidence` | `uploaded_at` | `CONFIDENTIAL` | Dates an act in a person's dispute |
+| `dispute_response` | `id` | `INTERNAL` | An aggregate identifier (`P7-TSK-014`) |
+| `dispute_response` | `dispute_id` | `INTERNAL` | The answered dispute - an identifier of a thing |
+| `dispute_response` | `kind` | `CONFIDENTIAL` | Whether a person's chargeback was contested or conceded - `dispute.stage`'s reasoning |
+| `dispute_response` | `status` | `CONFIDENTIAL` | What happened to the answer - `payment_attempt.status`'s reasoning |
+| `dispute_response` | `failure_reason` | `CONFIDENTIAL` | `payment_attempt.failure_reason`'s reasoning |
+| `dispute_response` | `provider_idempotency_reference` | `CONFIDENTIAL` | OUR reference (`INV-PAY-04`) - the `withdrawal.end_to_end_reference` class: scoped to one operation, the query's key |
+| `dispute_response` | `provider_reference` | `CONFIDENTIAL` | The PSP's submission reference - the `acquirer_reference` class, reconciliation's key; operators only |
+| `dispute_response` | `evidence_ids` | `INTERNAL` | Identifiers of the documents it carried |
+| `dispute_response` | `requested_by_id` | `CONFIDENTIAL` | Who answered - the audit actor class |
+| `dispute_response` | `requested_by_type` | `INTERNAL` | An enumerated population |
+| `dispute_response` | `reason` | `CONFIDENTIAL` | The operator's own words about a person's dispute - `rail_availability.reason`'s reasoning |
+| `dispute_response` | `dispatch_scope` | `INTERNAL` | The claim's scope - `idempotency_record.scope`'s reasoning |
+| `dispute_response` | `dispatch_key` | `INTERNAL` | The idempotency claim whose dispatch transaction created the row - **caller-chosen** key material, `refund.dispatch_key`'s reasoning and §5 |
+| `dispute_response` | `send_permit` | `INTERNAL` | The send permit (ADR-0057 §4) - `withdrawal.last_dispatched_at`'s reasoning |
+| `dispute_response` | `created_at` | `CONFIDENTIAL` | Dates an act in a person's dispute |
+| `dispute_response_event` | `id` | `INTERNAL` | A sequence identifier |
+| `dispute_response_event` | `response_id` | `INTERNAL` | The trail's subject |
+| `dispute_response_event` | `from_status` | `INTERNAL` | The machine's word |
+| `dispute_response_event` | `to_status` | `INTERNAL` | The machine's word |
+| `dispute_response_event` | `actor_id` | `CONFIDENTIAL` | Who moved it - the audit actor class |
+| `dispute_response_event` | `actor_type` | `INTERNAL` | An enumerated population |
+| `dispute_response_event` | `occurred_at` | `INTERNAL` | Application-stamped transition instant |
 | `routing_policy_version` | `id` | `INTERNAL` | An identifier of a thing — **the value a decision pins** (`INV-HIST-04`), the `fee_schedule_version.id` reasoning verbatim |
 | `routing_policy_version` | `version` | `INTERNAL` | An ordinal |
 | `routing_policy_version` | `effective_from` | `CONFIDENTIAL` | When a routing change starts applying — with the rules it dates an operational shift |

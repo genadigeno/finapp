@@ -476,6 +476,21 @@ class OpenApiContractTest {
                         ApiVersion.CURRENT_PREFIX + "/merchant/disputes/{disputeId}",
                         ApiVersion.CURRENT_PREFIX + "/operator/disputes/{disputeId}",
                         ApiVersion.CURRENT_PREFIX + "/operator/payments/{intentId}/disputes",
+                        // P7-TSK-014: answering a chargeback (ADR-0061 section 7) - evidence
+                        // attached and read back on the record, then a keyed representment or
+                        // acceptance; the merchant's four on its key, tenant-scoped, and the
+                        // operator's four behind DISPUTE_ADMINISTER for a payment with no
+                        // merchant, reasoned. The stage stays the network's word.
+                        ApiVersion.CURRENT_PREFIX + "/merchant/disputes/{disputeId}/evidence",
+                        ApiVersion.CURRENT_PREFIX
+                                + "/merchant/disputes/{disputeId}/evidence/{evidenceId}",
+                        ApiVersion.CURRENT_PREFIX + "/merchant/disputes/{disputeId}/representment",
+                        ApiVersion.CURRENT_PREFIX + "/merchant/disputes/{disputeId}/acceptance",
+                        ApiVersion.CURRENT_PREFIX + "/operator/disputes/{disputeId}/evidence",
+                        ApiVersion.CURRENT_PREFIX
+                                + "/operator/disputes/{disputeId}/evidence/{evidenceId}",
+                        ApiVersion.CURRENT_PREFIX + "/operator/disputes/{disputeId}/representment",
+                        ApiVersion.CURRENT_PREFIX + "/operator/disputes/{disputeId}/acceptance",
                         ApiVersion.CURRENT_PREFIX + "/sessions/{id}",
                         ApiVersion.CURRENT_PREFIX + "/sessions/current",
                         ApiVersion.CURRENT_PREFIX + "/me/mfa",

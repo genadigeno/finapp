@@ -284,6 +284,16 @@ class CredentialReachesNoEmittedSinkTest {
                         // in no column, one audited read path (INV-KYC-06). Here because the set
                         // is every schema REACHABLE from a request body.
                         "DocumentUploadRequest",
+                        // P7-TSK-014. The dispute evidence uploads - DocumentUploadRequest's
+                        // shape and reasoning verbatim: the CONTENT is RESTRICTED-PII and what
+                        // protects it is the store (its own key, plaintext in no column, every
+                        // read and transmission audited, INV-DSP-03), never the vocabulary. The
+                        // operator's form adds a REASON, free prose bound for the audit record.
+                        "DisputeEvidenceUploadRequest",
+                        "OperatorDisputeEvidenceUploadRequest",
+                        // P7-TSK-014. Carries only a REASON - the operator's own words for
+                        // answering a chargeback on behalf, bound for the audit record.
+                        "OperatorDisputeResponseRequest",
                         // P1-TSK-030. Carries a display name - RESTRICTED-PII, and the clearest
                         // such column on the platform - which is why it is here and worth a second
                         // look. It is a request body rather than a response field, so the secret

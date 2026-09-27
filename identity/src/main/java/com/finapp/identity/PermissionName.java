@@ -237,7 +237,10 @@ public enum PermissionName {
      * contested payment, its reason and its amount — and, from `P7-TSK-014`, accept one or
      * submit evidence on a payment with no merchant. Names {@code payments.DisputeRead}; ships
      * with its real check sites, {@code GET /v1/operator/disputes/'{disputeId}'} and
-     * {@code GET /v1/operator/payments/'{intentId}'/disputes}.
+     * {@code GET /v1/operator/payments/'{intentId}'/disputes} — and, since `P7-TSK-014`, the
+     * acts: {@code POST .../disputes/'{disputeId}'/evidence}, {@code .../representment} and
+     * {@code .../acceptance} (reasoned, only where the payment credited no merchant) and the
+     * audited content read {@code GET .../evidence/'{evidenceId}'}.
      *
      * <p><strong>Its own permission, because contesting money is not moving it.</strong> A
      * dispute desk answering the network with evidence is a real future split from the desk

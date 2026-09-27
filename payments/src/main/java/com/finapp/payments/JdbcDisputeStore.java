@@ -40,7 +40,7 @@ public final class JdbcDisputeStore implements DisputeStore<Connection> {
 
     private static final String COLUMNS =
             "id, provider, provider_dispute_reference, attempt_id, reason, stage,"
-                    + MONEY_COLUMNS + ", opened_at";
+                    + MONEY_COLUMNS + ", respond_by, opened_at";
 
     /** The read surfaces' shape: the dispute's columns, and the payment its attempt serves. */
     private static final String FOUND =
@@ -50,7 +50,8 @@ public final class JdbcDisputeStore implements DisputeStore<Connection> {
                     + " d.counterparty_share_currency, d.counterparty_share_scale,"
                     + " d.parked_share_amount_minor, d.parked_share_currency,"
                     + " d.parked_share_scale, d.dispute_fee_amount_minor,"
-                    + " d.dispute_fee_currency, d.dispute_fee_scale, d.opened_at, a.intent_id"
+                    + " d.dispute_fee_currency, d.dispute_fee_scale, d.respond_by, d.opened_at,"
+                    + " a.intent_id"
                     + " FROM " + TABLE + " d"
                     + " JOIN payments.payment_attempt a ON a.id = d.attempt_id";
 
@@ -66,7 +67,7 @@ public final class JdbcDisputeStore implements DisputeStore<Connection> {
         try (PreparedStatement insert =
                 unitOfWork.prepareStatement(
                         "INSERT INTO " + TABLE + " (" + COLUMNS + ") VALUES"
-                                + " (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)"
+                                + " (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)"
                                 + " ON CONFLICT ON CONSTRAINT dispute_one_per_provider_reference"
                                 + " DO NOTHING")) {
             insert.setObject(1, opened.id().value());
@@ -76,7 +77,8 @@ public final class JdbcDisputeStore implements DisputeStore<Connection> {
             insert.setString(5, opened.reason().name());
             insert.setString(6, opened.stage().name());
             bindMoney(insert, 7, opened);
-            insert.setTimestamp(19, Timestamp.from(opened.openedAt()));
+            bindRespondBy(insert, 19, opened);
+            insert.setTimestamp(20, Timestamp.from(opened.openedAt()));
             return insert.executeUpdate() == 1;
         } catch (SQLException failure) {
             throw new PaymentsStorageException(
@@ -124,12 +126,13 @@ public final class JdbcDisputeStore implements DisputeStore<Connection> {
                                 + " parked_share_amount_minor = ?, parked_share_currency = ?,"
                                 + " parked_share_scale = ?,"
                                 + " dispute_fee_amount_minor = ?, dispute_fee_currency = ?,"
-                                + " dispute_fee_scale = ?"
+                                + " dispute_fee_scale = ?, respond_by = ?"
                                 + " WHERE id = ? AND stage = ?")) {
             update.setString(1, after.stage().name());
             bindMoney(update, 2, after);
-            update.setObject(14, after.id().value());
-            update.setString(15, before.stage().name());
+            bindRespondBy(update, 14, after);
+            update.setObject(15, after.id().value());
+            update.setString(16, before.stage().name());
             if (update.executeUpdate() != 1) {
                 return false;
             }
@@ -189,6 +192,88 @@ public final class JdbcDisputeStore implements DisputeStore<Connection> {
         } catch (SQLException failure) {
             throw new PaymentsStorageException(
                     DatabaseFailure.describe("recording a dispute fee", failure));
+        }
+    }
+
+    @Override
+    public boolean recordRespondBy(Connection unitOfWork, Dispute before, Dispute after) {
+        Objects.requireNonNull(before, "before must not be null");
+        Objects.requireNonNull(after, "after must not be null");
+        Instant deadline = after.respondBy().orElseThrow();
+        // NULL -> value only (V022 for every writer): conditional on none recorded yet.
+        try (PreparedStatement update =
+                unitOfWork.prepareStatement(
+                        "UPDATE " + TABLE + " SET respond_by = ?"
+                                + " WHERE id = ? AND respond_by IS NULL")) {
+            update.setTimestamp(1, Timestamp.from(deadline));
+            update.setObject(2, after.id().value());
+            return update.executeUpdate() == 1;
+        } catch (SQLException failure) {
+            throw new PaymentsStorageException(
+                    DatabaseFailure.describe("recording a dispute's deadline", failure));
+        }
+    }
+
+    @Override
+    public Optional<Found> lockForResponder(Connection unitOfWork, DisputeId id) {
+        Objects.requireNonNull(id, "id must not be null");
+        // FOR UPDATE OF d: the dispute row only - the attempt is already this transaction's
+        // (the caller locked it FIRST), and the intent row is nobody's business here.
+        try (PreparedStatement select =
+                unitOfWork.prepareStatement(FOUND + " WHERE d.id = ? FOR UPDATE OF d")) {
+            select.setObject(1, id.value());
+            try (ResultSet row = select.executeQuery()) {
+                return row.next() ? Optional.of(found(row)) : Optional.empty();
+            }
+        } catch (SQLException failure) {
+            throw new PaymentsStorageException(
+                    DatabaseFailure.describe("locking a dispute for its responder", failure));
+        }
+    }
+
+    @Override
+    public Optional<Found> lockForCounterparties(
+            Connection unitOfWork, DisputeId id, Set<LedgerAccountId> counterparties) {
+        Objects.requireNonNull(id, "id must not be null");
+        Objects.requireNonNull(counterparties, "counterparties must not be null");
+        // THE TENANT PREDICATE IS IN THE LOCKING STATEMENT (INV-MER-01), FOR UPDATE OF d only.
+        try (PreparedStatement select =
+                unitOfWork.prepareStatement(
+                        FOUND
+                                + " JOIN payments.payment_intent i ON i.id = a.intent_id"
+                                + " WHERE d.id = ? AND i.credit_account_id = ANY (?)"
+                                + " FOR UPDATE OF d")) {
+            select.setObject(1, id.value());
+            select.setArray(2, accounts(unitOfWork, counterparties));
+            try (ResultSet row = select.executeQuery()) {
+                return row.next() ? Optional.of(found(row)) : Optional.empty();
+            }
+        } catch (SQLException failure) {
+            throw new PaymentsStorageException(
+                    DatabaseFailure.describe("locking a counterparty's dispute", failure));
+        }
+    }
+
+    @Override
+    public long countDeadlinesNear(Connection unitOfWork, Instant horizon) {
+        Objects.requireNonNull(horizon, "horizon must not be null");
+        // A chargeback nobody has answered in a way the PSP took, whose deadline falls before the
+        // horizon - near, or already passed (the alarm stays on for a missed deadline until the
+        // network resolves the dispute).
+        try (PreparedStatement select =
+                unitOfWork.prepareStatement(
+                        "SELECT count(*) FROM " + TABLE + " d"
+                                + " WHERE d.stage = 'CHARGED_BACK' AND d.respond_by <= ?"
+                                + " AND NOT EXISTS (SELECT 1 FROM payments.dispute_response r"
+                                + "   WHERE r.dispute_id = d.id AND r.status = 'SUBMITTED')")) {
+            select.setTimestamp(1, Timestamp.from(horizon));
+            try (ResultSet row = select.executeQuery()) {
+                row.next();
+                return row.getLong(1);
+            }
+        } catch (SQLException failure) {
+            throw new PaymentsStorageException(
+                    DatabaseFailure.describe("counting disputes near their deadline", failure));
         }
     }
 
@@ -410,6 +495,11 @@ public final class JdbcDisputeStore implements DisputeStore<Connection> {
         }
     }
 
+    private static void bindRespondBy(PreparedStatement statement, int index, Dispute dispute)
+            throws SQLException {
+        statement.setTimestamp(index, dispute.respondBy().map(Timestamp::from).orElse(null));
+    }
+
     private static Array accounts(Connection unitOfWork, Set<LedgerAccountId> counterparties)
             throws SQLException {
         return unitOfWork.createArrayOf(
@@ -456,6 +546,7 @@ public final class JdbcDisputeStore implements DisputeStore<Connection> {
                 DisputeStage.valueOf(row.getString("stage")),
                 split,
                 fragment(row, "dispute_fee"),
+                Optional.ofNullable(row.getTimestamp("respond_by")).map(Timestamp::toInstant),
                 row.getTimestamp("opened_at").toInstant());
     }
 

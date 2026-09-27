@@ -104,6 +104,9 @@ public final class DisputeNotifications {
         /** The dispute's stage did not move, but the statement carried the PSP's dispute fee,
          * reported late, and this delivery recorded it (`P7-TSK-013`). */
         FEE_RECORDED,
+        /** The dispute's stage did not move, but the statement carried the network's respond-by
+         * deadline, first reported, and this delivery recorded it (`P7-TSK-014`). */
+        DEADLINE_RECORDED,
         /** The dispute already stands at the notified stage: the network repeating itself. */
         UNCHANGED,
         /** The dispute has already passed the notified stage: a late delivery, ordering only. */
@@ -175,7 +178,7 @@ public final class DisputeNotifications {
         if (existing.isEmpty()) {
             List<DisputeStage> opening = DisputeStage.openingPathTo(notice.stage());
             DisputeStage entry = opening.get(0);
-            Dispute born =
+            Dispute opened =
                     Dispute.open(
                             ids,
                             now,
@@ -193,6 +196,12 @@ public final class DisputeNotifications {
                                                     unitOfWork, locked, intent, notice.amount()))
                                     : Optional.empty(),
                             entry.isChargedBack() ? notice.fee() : Optional.empty());
+            Dispute born = opened;
+            if (entry.isChargedBack() && notice.respondBy().isPresent()) {
+                // The representment deadline arrives with the chargeback (P7-TSK-014, ADR-0061
+                // section 7): recorded once, the network's date, never the platform's.
+                born = born.withRespondBy(notice.respondBy().get());
+            }
             if (disputes.insert(unitOfWork, born)) {
                 entered(unitOfWork, born, Optional.empty(), locked, intent, correlation, now);
                 if (born.fee().isPresent()) {
@@ -233,30 +242,25 @@ public final class DisputeNotifications {
             // The same guard at the fee: recorded once, never a second story.
             return Outcome.FACTS_CONTRADICTED;
         }
-        boolean feeArrives = notice.fee().isPresent() && standing.fee().isEmpty();
-
         if (standing.stage() == notice.stage()) {
-            return feeArrives
-                    ? recordFee(unitOfWork, standing, notice, locked, correlation, now)
-                    : Outcome.UNCHANGED;
+            return lateFacts(
+                    unitOfWork, standing, notice, locked, correlation, now, Outcome.UNCHANGED);
         }
         Optional<List<DisputeStage>> ahead = standing.stage().pathTo(notice.stage());
         if (ahead.isPresent()) {
             Dispute reached =
                     walk(unitOfWork, standing, ahead.get(), notice, locked, intent, correlation,
                             now);
-            if (notice.fee().isPresent() && reached.fee().isEmpty()) {
-                // The dispute was charged back before this walk, and the fee arrives now.
-                recordFee(unitOfWork, reached, notice, locked, correlation, now);
-            }
+            // The dispute was charged back before this walk, and a fact arrives now.
+            lateFacts(unitOfWork, reached, notice, locked, correlation, now, Outcome.ADVANCED);
             return Outcome.ADVANCED;
         }
         if (notice.stage().canReach(standing.stage())) {
-            // A late statement still carries a first report of the fee (its stage is charged
-            // back, so the dispute's is too): the fact is new even though the stage is not.
-            return feeArrives
-                    ? recordFee(unitOfWork, standing, notice, locked, correlation, now)
-                    : Outcome.LATE;
+            // A late statement still carries a first report of the fee or the deadline (its
+            // stage is charged back, so the dispute's is too): the fact is new even though the
+            // stage is not.
+            return lateFacts(
+                    unitOfWork, standing, notice, locked, correlation, now, Outcome.LATE);
         }
         return Outcome.STAGE_CONTRADICTED;
     }
@@ -292,6 +296,9 @@ public final class DisputeNotifications {
             if (feeHere) {
                 after = after.withFee(notice.fee().get());
             }
+            if (entersChargeback && notice.respondBy().isPresent()) {
+                after = after.withRespondBy(notice.respondBy().get());
+            }
             if (!disputes.transition(unitOfWork, current, after, now)) {
                 // The row is this transaction's - freshly inserted or locked - so no other
                 // writer can have moved it: a lost conditional here is a wiring fault.
@@ -308,8 +315,44 @@ public final class DisputeNotifications {
         return current;
     }
 
+    /**
+     * The facts a statement reports FIRST on a dispute whose stage it does not move: the PSP's fee
+     * (money, so audited and posted) and the network's respond-by deadline (`P7-TSK-014`: recorded
+     * once, the first statement standing - a later statement of another date moves nothing and
+     * rests as evidence, because the platform takes no extension). {@code otherwise} when neither
+     * is new.
+     */
+    private Outcome lateFacts(
+            Connection unitOfWork,
+            Dispute standing,
+            DisputeNotice notice,
+            PaymentAttempt locked,
+            Correlation correlation,
+            Instant now,
+            Outcome otherwise) {
+        Dispute current = standing;
+        Outcome outcome = otherwise;
+        if (notice.fee().isPresent() && current.fee().isEmpty()) {
+            current = recordFee(unitOfWork, current, notice, locked, correlation, now);
+            outcome = Outcome.FEE_RECORDED;
+        }
+        if (notice.respondBy().isPresent()
+                && current.respondBy().isEmpty()
+                && current.chargeback().isPresent()) {
+            Dispute dated = current.withRespondBy(notice.respondBy().get());
+            if (!disputes.recordRespondBy(unitOfWork, current, dated)) {
+                throw new IllegalStateException(
+                        "dispute " + current.id() + "'s deadline moved under its own lock");
+            }
+            if (outcome == otherwise && otherwise != Outcome.ADVANCED) {
+                outcome = Outcome.DEADLINE_RECORDED;
+            }
+        }
+        return outcome;
+    }
+
     /** The PSP's fee, first reported on a dispute whose stage this statement does not move. */
-    private Outcome recordFee(
+    private Dispute recordFee(
             Connection unitOfWork,
             Dispute standing,
             DisputeNotice notice,
@@ -322,7 +365,7 @@ public final class DisputeNotifications {
                     "dispute " + standing.id() + "'s fee moved under its own lock");
         }
         accounting.feeRecorded(unitOfWork, charged, locked, correlation, now);
-        return Outcome.FEE_RECORDED;
+        return charged;
     }
 
     /**

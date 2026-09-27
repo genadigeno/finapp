@@ -1144,6 +1144,170 @@ class PaymentsSchemaDatabaseTest {
         }
     }
 
+    @Test
+    @DisplayName("V022 binds EVERY writer (P7-TSK-014): the respond-by deadline rides the"
+            + " chargeback and moves only NULL -> value; a dispute response is born DISPATCHED,"
+            + " moves only along its machine, keeps ONE live answer per dispute, its permit"
+            + " forward and its dispatch frozen - for the migrator too; evidence is append-only"
+            + " for the application role; provider evidence names at most one of FOUR subjects")
+    void theRepresentmentSchemaBindsEveryWriter() throws Exception {
+        UUID intent = IDS.next();
+        UUID attempt = IDS.next();
+        UUID inquiry = IDS.next();
+        UUID charged = IDS.next();
+        UUID first = IDS.next();
+        try (Connection app = DatabaseRoles.application()) {
+            insertIntent(app, intent, "SUCCEEDED");
+            insertAttempt(app, attempt, intent, "CAPTURED");
+            insertDispute(app, inquiry, attempt, someDisputeReference(), "INQUIRY");
+            insertDispute(app, charged, attempt, someDisputeReference(), "CHARGED_BACK");
+
+            // The deadline rides the chargeback, and moves only NULL -> value.
+            assertCheckNamed(
+                    () -> updated(app,
+                            "UPDATE payments.dispute SET respond_by = now() WHERE id = ?", inquiry),
+                    "dispute_respond_by_rides_the_chargeback");
+            assertThat(updated(app,
+                            "UPDATE payments.dispute SET respond_by = now() + interval '7 days'"
+                                    + " WHERE id = ?", charged))
+                    .isEqualTo(1);
+            assertSqlState(RAISED, () -> updated(app,
+                    "UPDATE payments.dispute SET respond_by = now() + interval '9 days'"
+                            + " WHERE id = ?", charged));
+            assertSqlState(RAISED, () -> updated(app,
+                    "UPDATE payments.dispute SET respond_by = NULL WHERE id = ?", charged));
+
+            // Born DISPATCHED; the evidence matches the kind; ONE live answer per dispute.
+            assertSqlState(CHECK_VIOLATION,
+                    () -> insertResponse(app, IDS.next(), charged, "SUBMITTED", "ACCEPTANCE"));
+            assertCheckNamed(
+                    () -> insertResponse(app, IDS.next(), charged, "DISPATCHED", "REPRESENTMENT"),
+                    "dispute_response_evidence_matches_kind");
+            insertResponse(app, first, charged, "DISPATCHED", "ACCEPTANCE");
+            assertSqlState(UNIQUE_VIOLATION,
+                    () -> insertResponse(app, IDS.next(), charged, "DISPATCHED", "ACCEPTANCE"));
+
+            // The machine's edges, the outcome's companions, the permit forward.
+            assertThat(updated(app,
+                            "UPDATE payments.dispute_response SET status = 'UNKNOWN' WHERE id = ?",
+                            first))
+                    .isEqualTo(1);
+            assertSqlState(RAISED, () -> updated(app,
+                    "UPDATE payments.dispute_response SET status = 'DISPATCHED' WHERE id = ?",
+                    first));
+            assertCheckNamed(
+                    () -> updated(app,
+                            "UPDATE payments.dispute_response SET status = 'SUBMITTED'"
+                                    + " WHERE id = ?", first),
+                    "dispute_response_provider_reference_matches_status");
+            assertSqlState(RAISED, () -> updated(app,
+                    "UPDATE payments.dispute_response SET send_permit = send_permit"
+                            + " - interval '1 minute' WHERE id = ?", first));
+            assertThat(updated(app,
+                            "UPDATE payments.dispute_response SET send_permit = send_permit"
+                                    + " + interval '1 minute' WHERE id = ?", first))
+                    .isEqualTo(1);
+            assertThat(updated(app,
+                            "UPDATE payments.dispute_response SET status = 'SUBMITTED',"
+                                    + " provider_reference = 'psp_dr_schema' WHERE id = ?", first))
+                    .isEqualTo(1);
+            // Terminal is terminal: no outcome moves, no send follows.
+            assertSqlState(RAISED, () -> updated(app,
+                    "UPDATE payments.dispute_response SET status = 'FAILED',"
+                            + " failure_reason = 'DECLINED', provider_reference = NULL"
+                            + " WHERE id = ?", first));
+            assertSqlState(RAISED, () -> updated(app,
+                    "UPDATE payments.dispute_response SET send_permit = send_permit"
+                            + " + interval '1 minute' WHERE id = ?", first));
+            // The application role may not touch the dispatch at all.
+            assertSqlState(INSUFFICIENT_PRIVILEGE, () -> updated(app,
+                    "UPDATE payments.dispute_response SET dispatch_key = 'other' WHERE id = ?",
+                    first));
+
+            // Evidence is append-only for the application role.
+            UUID document = IDS.next();
+            insertEvidence(app, document, charged);
+            assertSqlState(INSUFFICIENT_PRIVILEGE, () -> updated(app,
+                    "UPDATE payments.dispute_evidence SET kind = 'OTHER' WHERE id = ?", document));
+            assertSqlState(INSUFFICIENT_PRIVILEGE, () -> updated(app,
+                    "DELETE FROM payments.dispute_evidence WHERE id = ?", document));
+
+            // Provider evidence names at most one subject - now of four.
+            assertCheckNamed(
+                    () -> {
+                        try (PreparedStatement insert = app.prepareStatement(
+                                "INSERT INTO payments.provider_evidence (id, attempt_id,"
+                                        + " dispute_response_id, kind, content_ciphertext,"
+                                        + " content_nonce, key_version, checksum_sha256,"
+                                        + " content_length, recorded_at)"
+                                        + " VALUES (?, ?, ?, 'RESPONSE', ?, ?, 1, ?, 1, now())")) {
+                            insert.setObject(1, IDS.next());
+                            insert.setObject(2, attempt);
+                            insert.setObject(3, first);
+                            insert.setBytes(4, new byte[17]);
+                            insert.setBytes(5, new byte[12]);
+                            insert.setBytes(6, new byte[32]);
+                            insert.executeUpdate();
+                        }
+                    },
+                    "provider_evidence_has_at_most_one_subject");
+        }
+
+        // The table's owner is bound too: the dispatch frozen, the edges the machine's.
+        try (Connection migrator = DatabaseRoles.migrator()) {
+            assertSqlState(RAISED, () -> updated(migrator,
+                    "UPDATE payments.dispute_response SET dispatch_key = 'other' WHERE id = ?",
+                    first));
+            assertSqlState(RAISED, () -> updated(migrator,
+                    "UPDATE payments.dispute_response SET evidence_ids ="
+                            + " ARRAY[gen_random_uuid()] WHERE id = ?", first));
+            assertSqlState(RAISED, () -> updated(migrator,
+                    "UPDATE payments.dispute SET respond_by = now() WHERE id = ?", charged));
+        }
+    }
+
+    /** A dispute response row, born as {@code status} says - the birth trigger judges it. */
+    private static int insertResponse(
+            Connection connection, UUID id, UUID dispute, String status, String kind)
+            throws SQLException {
+        try (PreparedStatement insert = connection.prepareStatement(
+                "INSERT INTO payments.dispute_response (id, dispute_id, kind, status,"
+                        + " failure_reason, provider_idempotency_reference, provider_reference,"
+                        + " evidence_ids, requested_by_id, requested_by_type, reason,"
+                        + " dispatch_scope, dispatch_key, send_permit, created_at)"
+                        + " VALUES (?, ?, ?, ?, NULL, ?, ?, '{}', 'schema-test', 'MERCHANT', NULL,"
+                        + " 'dispute.respond:merchant:schema', ?, now(), now())")) {
+            insert.setObject(1, id);
+            insert.setObject(2, dispute);
+            insert.setString(3, kind);
+            insert.setString(4, status);
+            insert.setString(5, "dsr-" + id);
+            insert.setString(6, status.equals("SUBMITTED") ? "psp_dr_" + id : null);
+            insert.setString(7, UUID.randomUUID().toString());
+            return insert.executeUpdate();
+        }
+    }
+
+    /** A syntactically valid evidence row: GCM's tag arithmetic and the key facts satisfied. */
+    private static void insertEvidence(Connection connection, UUID id, UUID dispute)
+            throws SQLException {
+        try (PreparedStatement insert = connection.prepareStatement(
+                "INSERT INTO payments.dispute_evidence (id, dispute_id, kind, content_type,"
+                        + " content_ciphertext, content_nonce, key_version, checksum_sha256,"
+                        + " content_length, uploaded_by_id, uploaded_by_type, uploaded_at)"
+                        + " VALUES (?, ?, 'RECEIPT', 'PDF', ?, ?, 1, ?, 1, 'schema-test',"
+                        + " 'MERCHANT', now())")) {
+            insert.setObject(1, id);
+            insert.setObject(2, dispute);
+            insert.setBytes(3, new byte[17]);
+            insert.setBytes(4, new byte[12]);
+            byte[] checksum = new byte[32];
+            new java.security.SecureRandom().nextBytes(checksum);
+            insert.setBytes(5, checksum);
+            insert.executeUpdate();
+        }
+    }
+
     /** A coherent dispute row: the chargeback's amount present exactly when charged back. */
     private static void insertDispute(
             Connection connection, UUID id, UUID attempt, String reference, String stage)

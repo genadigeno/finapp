@@ -147,6 +147,25 @@ class TelemetryConfiguration {
     }
 
     /**
+     * The deadline alarm (`P7-TSK-014`, ADR-0061 §7): chargebacks near or past the network's
+     * respond-by date with no answer the PSP took — read from the dispute rows at the
+     * cheap-read floor; the scrape is the schedule, no leader, no §3 row.
+     */
+    @Bean
+    DisputeDeadlineMetrics disputeDeadlineMetrics(
+            DataSource dataSource,
+            Clock clock,
+            @org.springframework.beans.factory.annotation.Value(
+                            "${finapp.payments.dispute.deadline-alarm-window:P3D}")
+                    java.time.Duration window,
+            MeterRegistry registry) {
+        com.finapp.payments.DisputeStore<java.sql.Connection> disputes =
+                new com.finapp.payments.JdbcDisputeStore();
+        return new DisputeDeadlineMetrics(
+                disputes::countDeadlinesNear, dataSource::getConnection, clock, window, registry);
+    }
+
+    /**
      * The write path's observer (`P3-TSK-020`): counters and the latency timer behind the
      * {@code ledger} module's {@link com.finapp.ledger.PostingObserver} port — published as
      * the port, so wiring that constructs a journal-write command autowires it and the
