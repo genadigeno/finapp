@@ -50,6 +50,16 @@ import lombok.RequiredArgsConstructor;
  *
  * <p>The idle bound <em>is</em> fresh: the session is demonstrably being used at this moment.
  *
+ * <h2>The database decides both, at one instant ({@code X-TSK-007})</h2>
+ *
+ * <p>The revoke is conditional on the session being <strong>live</strong> by the database's clock,
+ * and the replacement's bounds are stamped from that clock in the same transaction. {@code now()}
+ * is the transaction's start, so the instant that judged the old session live is the instant the
+ * new one's idle bound, {@code LEAST(now() + idle, absolute)}, is measured from. The replacement is
+ * therefore live when written, by construction. A session that expired after the boundary proved
+ * it is not rotated at all. Before this, that case reached the aggregate's constructor and failed
+ * as a {@code 500}, and a rotating instance's clock decided the new idle bound.
+ *
  * <p><strong>Assurance is never inferred.</strong> The caller states the target level. Silently
  * raising it would be {@code INV-IDN-05}'s bypass with extra steps; silently preserving it would
  * make step-up a no-op nobody noticed.
@@ -97,52 +107,36 @@ public final class SessionRotation {
         Objects.requireNonNull(toAssurance, "toAssurance must not be null");
         Objects.requireNonNull(idleTimeout, "idleTimeout must not be null");
 
+        // Business time: revoked_at, the replacement's issued_at and the audit record all carry this
+        // one reading. It decides nothing - the bounds are the database's (X-TSK-007).
         Instant at = Instant.now(clock);
 
-        // Revoke FIRST. The row count is the gate: if another instance got here first, this returns
-        // false and nothing below runs.
+        // Revoke FIRST. The row count is the gate: if another instance got here first, or the
+        // session has expired since the boundary proved it, this returns false and nothing below
+        // runs.
         if (!sessions.revoke(unitOfWork, current.id(), at)) {
             return Optional.empty();
         }
 
         // A token independent of its predecessor. Deriving one from the old would make the stolen
         // identifier a key to its replacement, which is the fixation defence undone.
+        //
+        // The absolute bound is PRESERVED - see the class javadoc: resetting it makes the absolute
+        // lifetime advisory for anybody who can trigger a rotation. The draft names the
+        // predecessor, and the database copies the bound from its row - locked by the revoke above
+        // - then clamps the fresh idle bound to it, the same clamp touch applies.
         SessionToken token = SessionToken.issue(randomness);
         Session replacement =
-                Session.rehydrate(
-                        SessionId.next(ids),
-                        current.identityId(),
-                        token.hash(),
-                        toAssurance,
-                        SessionStatus.ACTIVE,
-                        at,
-                        idleBoundFrom(at, idleTimeout, current.absoluteExpiresAt()),
-                        // PRESERVED. See the class javadoc: resetting it makes the absolute
-                        // lifetime advisory for anybody who can trigger a rotation.
-                        current.absoluteExpiresAt(),
-                        current.device().orElse(null),
-                        null);
-        sessions.insert(unitOfWork, replacement);
+                sessions.insert(
+                        unitOfWork,
+                        Session.replacement(
+                                SessionId.next(ids), current, token, toAssurance, at, idleTimeout));
 
         audit(unitOfWork, at, current, replacement);
         return Optional.of(new Rotated(replacement, token));
     }
 
     // -----------------------------------------------------------------
-
-    /**
-     * The fresh idle bound, clamped to the inherited absolute bound.
-     *
-     * <p>The same clamp {@code JdbcSessionStore.touch} applies, for the same reason and in a second
-     * place because this constructs the row rather than updating it — and {@code Session}'s own
-     * constructor refuses an idle bound beyond the absolute one, so without the clamp a rotation
-     * near the end of a session's life would throw rather than produce a short-lived session.
-     */
-    private static Instant idleBoundFrom(
-            Instant at, Duration idleTimeout, Instant absolute) {
-        Instant extended = at.plus(idleTimeout);
-        return extended.isAfter(absolute) ? absolute : extended;
-    }
 
     private void audit(Connection unitOfWork, Instant at, Session replaced, Session replacement) {
         Correlation correlation =

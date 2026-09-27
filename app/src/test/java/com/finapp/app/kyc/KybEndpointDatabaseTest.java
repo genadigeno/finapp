@@ -574,7 +574,7 @@ class KybEndpointDatabaseTest {
         byte[] bytes = new byte[32];
         RANDOMNESS.nextBytes(bytes);
         String plaintext = Base64.getUrlEncoder().withoutPadding().encodeToString(bytes);
-        Session session =
+        Session.Draft session =
                 Session.issue(
                         IDS,
                         CLOCK,

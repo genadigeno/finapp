@@ -471,7 +471,7 @@ class ConsentEndpointDatabaseTest {
         byte[] bytes = new byte[32];
         RANDOMNESS.nextBytes(bytes);
         String plaintext = java.util.Base64.getUrlEncoder().withoutPadding().encodeToString(bytes);
-        Session session =
+        Session.Draft session =
                 Session.issue(
                         IDS,
                         CLOCK,

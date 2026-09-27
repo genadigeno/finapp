@@ -34,7 +34,7 @@ import org.junit.jupiter.api.Tag;
 import org.junit.jupiter.api.Test;
 
 /**
- * Session issuance, expiry and lookup (`P1-TSK-013`, ADR-0030).
+ * Session issuance, expiry and lookup (`P1-TSK-013`, ADR-0030, `X-TSK-007`).
  *
  * <h2>The two properties this suite exists for</h2>
  *
@@ -45,9 +45,18 @@ import org.junit.jupiter.api.Test;
  * <p><strong>Expired, revoked and never-existed are indistinguishable.</strong> Telling them apart
  * tells somebody holding a stolen identifier whether it was ever real, and which of the two
  * happened — {@code INV-IDN-07}'s reasoning applied to a session.
+ *
+ * <h2>Time passes in the row, never in an argument</h2>
+ *
+ * <p>Until {@code X-TSK-007} these tests handed the lookup an instant from the future to make a
+ * session look old. Nothing takes an instant any more, because liveness is judged at the database's
+ * {@code now()}. So a test ages a session by moving its bounds - and {@code live_from}, which V016's
+ * constraint measures them from - back relative to that {@code now()}. That is the established
+ * fixture shape here ({@code OutboxRelayTest.backDate}), and it survives the local container's
+ * clock stepping backwards, which a real wait would not.
  */
 @Tag("database")
-@DisplayName("session lifecycle (P1-TSK-013)")
+@DisplayName("session lifecycle (P1-TSK-013, X-TSK-007)")
 class SessionLifecycleDatabaseTest {
 
     private static final Clock CLOCK = Clock.system(ZoneOffset.UTC);
@@ -61,12 +70,11 @@ class SessionLifecycleDatabaseTest {
     void anIssuedSessionIsFound() throws SQLException {
         IdentityId identity = givenAnIdentity();
         SessionToken token = SessionToken.issue(RANDOMNESS);
-        Session issued = issue(identity, token, SessionPolicy.current());
 
         try (Connection app = DatabaseRoles.application()) {
-            sessions.insert(app, issued);
+            Session issued = sessions.insert(app, draft(identity, token, SessionPolicy.current()));
 
-            Optional<Session> found = sessions.findLive(app, token, Instant.now(CLOCK));
+            Optional<Session> found = sessions.findLive(app, token);
 
             assertThat(found).isPresent();
             assertThat(found.orElseThrow().id()).isEqualTo(issued.id());
@@ -78,23 +86,24 @@ class SessionLifecycleDatabaseTest {
     @Test
     @DisplayName("the idle bound alone expires a session, with the absolute bound still far away")
     void theIdleBoundIsEnforcedOnItsOwn() throws SQLException {
-        // A short idle bound inside a long absolute one. If the lookup only checked the absolute
-        // bound - the easy half to remember - this session would still be live.
+        // The idle bound moves into the past; the absolute one stays hours ahead. If the lookup only
+        // checked the absolute bound - the easy half to remember - this session would still be live.
         IdentityId identity = givenAnIdentity();
         SessionToken token = SessionToken.issue(RANDOMNESS);
-        SessionPolicy shortIdle =
-                new SessionPolicy(Duration.ofSeconds(1), Duration.ofHours(12));
-        Session issued = issue(identity, token, shortIdle);
 
         try (Connection app = DatabaseRoles.application()) {
-            sessions.insert(app, issued);
+            Session issued = sessions.insert(app, draft(identity, token, SessionPolicy.current()));
+            execute(
+                    app,
+                    "UPDATE identity.session SET live_from = now() - interval '2 hours',"
+                            + " idle_expires_at = now() - interval '1 second' WHERE id = ?",
+                    issued.id().value());
 
-            Instant afterIdle = issued.idleExpiresAt().plusSeconds(1);
-            assertThat(afterIdle)
+            assertThat(secondsUntil(app, issued, "absolute_expires_at"))
                     .as("precondition: the absolute bound has NOT been reached")
-                    .isBefore(issued.absoluteExpiresAt());
+                    .isGreaterThan(3600);
 
-            assertThat(sessions.findLive(app, token, afterIdle))
+            assertThat(sessions.findLive(app, token))
                     .as("idle expiry alone ends the session")
                     .isEmpty();
         }
@@ -104,24 +113,64 @@ class SessionLifecycleDatabaseTest {
     @DisplayName("the absolute bound alone expires a session, however recently it was used")
     void theAbsoluteBoundIsEnforcedOnItsOwn() throws SQLException {
         // The bound that cannot be extended by using the session, which is what makes it the one
-        // that matters against a stolen token.
+        // that matters against a stolen token. Used a moment before its end, so the last touch
+        // clamped the idle bound onto the absolute one - and both have now passed.
         IdentityId identity = givenAnIdentity();
         SessionToken token = SessionToken.issue(RANDOMNESS);
-        SessionPolicy shortAbsolute =
-                new SessionPolicy(Duration.ofSeconds(2), Duration.ofSeconds(2));
-        Session issued = issue(identity, token, shortAbsolute);
+        SessionPolicy policy = SessionPolicy.current();
 
         try (Connection app = DatabaseRoles.application()) {
-            sessions.insert(app, issued);
-            Instant afterAbsolute = issued.absoluteExpiresAt().plusSeconds(1);
+            Session issued = sessions.insert(app, draft(identity, token, policy));
+            execute(
+                    app,
+                    "UPDATE identity.session SET live_from = now() - interval '12 hours',"
+                            + " idle_expires_at = now() - interval '1 second',"
+                            + " absolute_expires_at = now() - interval '1 second' WHERE id = ?",
+                    issued.id().value());
 
             // Touching it does not save it: the touch is conditional on the session being live.
-            assertThat(sessions.touch(app, issued.id(), afterAbsolute, shortAbsolute))
+            assertThat(sessions.touch(app, issued.id(), policy))
                     .as("a session past its absolute bound cannot be extended")
                     .isFalse();
-            assertThat(sessions.findLive(app, token, afterAbsolute))
+            assertThat(sessions.findLive(app, token))
                     .as("and it is gone")
                     .isEmpty();
+        }
+    }
+
+    @Test
+    @DisplayName("the boundary instant itself is not live, judged at the database's own now()")
+    void theBoundIsExclusiveAtTheDatabasesInstant() throws SQLException {
+        // Which side of the boundary counts is the kind of thing nobody writes down and everybody
+        // assumes differently. SessionTest pinned it on isLiveAt until X-TSK-007 removed that; it is
+        // pinned here instead, where it can be exact: now() is one instant for a whole transaction,
+        // so a bound set to now() is compared with exactly itself.
+        IdentityId identity = givenAnIdentity();
+        SessionToken token = SessionToken.issue(RANDOMNESS);
+
+        try (Connection app = DatabaseRoles.application()) {
+            Session issued = sessions.insert(app, draft(identity, token, SessionPolicy.current()));
+            app.setAutoCommit(false);
+            try {
+                execute(
+                        app,
+                        "UPDATE identity.session SET live_from = now() - interval '1 hour',"
+                                + " idle_expires_at = now() + interval '1 hour' WHERE id = ?",
+                        issued.id().value());
+                assertThat(sessions.findLive(app, token))
+                        .as("precondition: an hour inside the bound, this transaction finds it")
+                        .isPresent();
+
+                execute(
+                        app,
+                        "UPDATE identity.session SET idle_expires_at = now() WHERE id = ?",
+                        issued.id().value());
+                assertThat(sessions.findLive(app, token))
+                        .as("expiry is exclusive: at the bound, it is over")
+                        .isEmpty();
+            } finally {
+                app.rollback();
+            }
         }
     }
 
@@ -129,20 +178,24 @@ class SessionLifecycleDatabaseTest {
     @DisplayName("touching extends the idle bound but NEVER past the absolute one")
     void touchingNeverOutlastsTheAbsoluteBound() throws SQLException {
         // Without this, an attacker holding a stolen token and using it steadily would keep the
-        // session alive for ever and the absolute lifetime would be advisory.
+        // session alive for ever and the absolute lifetime would be advisory. Six hours into a
+        // twelve-hour session, an eleven-hour idle timeout would reach five hours past the end.
         IdentityId identity = givenAnIdentity();
         SessionToken token = SessionToken.issue(RANDOMNESS);
         SessionPolicy longIdle = new SessionPolicy(Duration.ofHours(11), Duration.ofHours(12));
-        Session issued = issue(identity, token, longIdle);
 
         try (Connection app = DatabaseRoles.application()) {
-            sessions.insert(app, issued);
+            Session issued = sessions.insert(app, draft(identity, token, longIdle));
+            execute(
+                    app,
+                    "UPDATE identity.session SET live_from = now() - interval '6 hours',"
+                            + " idle_expires_at = now() + interval '1 hour',"
+                            + " absolute_expires_at = now() + interval '6 hours' WHERE id = ?",
+                    issued.id().value());
 
-            // Use it late enough that a naive extension would push the idle bound past the absolute.
-            Instant late = issued.issuedAt().plus(Duration.ofHours(6));
-            assertThat(sessions.touch(app, issued.id(), late, longIdle)).isTrue();
+            assertThat(sessions.touch(app, issued.id(), longIdle)).isTrue();
 
-            Session after = sessions.findLive(app, token, late).orElseThrow();
+            Session after = sessions.findLive(app, token).orElseThrow();
             assertThat(after.idleExpiresAt())
                     .as("the idle bound was clamped to the absolute one, not pushed past it")
                     .isEqualTo(after.absoluteExpiresAt());
@@ -150,25 +203,63 @@ class SessionLifecycleDatabaseTest {
     }
 
     @Test
-    @DisplayName("a policy change does not extend a session already issued")
-    void aPolicyChangeDoesNotReachBackwards() throws SQLException {
-        // INV-HIST-04's reasoning. The bounds are copied onto the row at issue and never re-read,
-        // so a later, more generous policy cannot lengthen a session that already exists.
+    @DisplayName("a touch never pulls the idle bound back")
+    void aTouchNeverMovesTheBoundBack() throws SQLException {
+        // X-TSK-007's GREATEST. now() is a transaction's start, so a touch whose transaction began
+        // first can reach the row after a later one has already extended it. Stated large here so
+        // it is observable: the bound already reaches an hour ahead, as if extended from an
+        // instant thirty minutes after this touch's own, and this touch would write now() plus
+        // thirty minutes. Without the floor it would take that half hour away.
+        IdentityId identity = givenAnIdentity();
+        SessionToken token = SessionToken.issue(RANDOMNESS);
+        SessionPolicy policy = new SessionPolicy(Duration.ofMinutes(30), Duration.ofHours(12));
+
+        try (Connection app = DatabaseRoles.application()) {
+            Session issued = sessions.insert(app, draft(identity, token, policy));
+            execute(
+                    app,
+                    "UPDATE identity.session SET idle_expires_at = now() + interval '1 hour'"
+                            + " WHERE id = ?",
+                    issued.id().value());
+            Instant extended = sessions.findLive(app, token).orElseThrow().idleExpiresAt();
+
+            assertThat(sessions.touch(app, issued.id(), policy))
+                    .as("the session is live, so the touch matches it")
+                    .isTrue();
+
+            assertThat(sessions.findLive(app, token).orElseThrow().idleExpiresAt())
+                    .as("an earlier-judged touch must not undo a later one's extension")
+                    .isEqualTo(extended);
+        }
+    }
+
+    @Test
+    @DisplayName("a generous new policy cannot revive a session that died under the old one")
+    void aPolicyChangeCannotReviveADeadSession() throws SQLException {
+        // INV-HIST-04's reasoning for a session that has ENDED: its bounds were written at issue,
+        // and a later, more generous policy cannot bring it back. This used to be named for a
+        // wider claim - that no policy change extends any session already issued - which the touch
+        // does not keep for a LIVE session's idle bound: it extends by whatever policy the touching
+        // instance holds. That half is recorded against X-TSK-008 rather than claimed here.
         IdentityId identity = givenAnIdentity();
         SessionToken token = SessionToken.issue(RANDOMNESS);
         SessionPolicy strict = new SessionPolicy(Duration.ofSeconds(1), Duration.ofSeconds(2));
-        Session issued = issue(identity, token, strict);
 
         try (Connection app = DatabaseRoles.application()) {
-            sessions.insert(app, issued);
-            Instant afterStrictBounds = issued.absoluteExpiresAt().plusSeconds(1);
+            Session issued = sessions.insert(app, draft(identity, token, strict));
+            execute(
+                    app,
+                    "UPDATE identity.session SET live_from = now() - interval '3 seconds',"
+                            + " idle_expires_at = now() - interval '2 seconds',"
+                            + " absolute_expires_at = now() - interval '1 second' WHERE id = ?",
+                    issued.id().value());
 
             // A far more generous policy arrives. It must change nothing about this session.
             SessionPolicy generous = new SessionPolicy(Duration.ofDays(7), Duration.ofDays(30));
-            assertThat(sessions.touch(app, issued.id(), afterStrictBounds, generous))
+            assertThat(sessions.touch(app, issued.id(), generous))
                     .as("a generous new policy cannot revive a session issued under a strict one")
                     .isFalse();
-            assertThat(sessions.findLive(app, token, afterStrictBounds))
+            assertThat(sessions.findLive(app, token))
                     .as("the session died under the policy it was issued under")
                     .isEmpty();
         }
@@ -180,26 +271,27 @@ class SessionLifecycleDatabaseTest {
         IdentityId identity = givenAnIdentity();
 
         SessionToken expiredToken = SessionToken.issue(RANDOMNESS);
-        SessionPolicy brief = new SessionPolicy(Duration.ofSeconds(1), Duration.ofSeconds(1));
-        Session expiring = issue(identity, expiredToken, brief);
-
         SessionToken revokedToken = SessionToken.issue(RANDOMNESS);
-        Session revoking = issue(identity, revokedToken, SessionPolicy.current());
-
         SessionToken neverExisted = SessionToken.issue(RANDOMNESS);
 
         try (Connection app = DatabaseRoles.application()) {
-            sessions.insert(app, expiring);
-            sessions.insert(app, revoking);
+            Session expiring =
+                    sessions.insert(app, draft(identity, expiredToken, SessionPolicy.current()));
+            Session revoking =
+                    sessions.insert(app, draft(identity, revokedToken, SessionPolicy.current()));
+            execute(
+                    app,
+                    "UPDATE identity.session SET live_from = now() - interval '13 hours',"
+                            + " idle_expires_at = now() - interval '1 hour',"
+                            + " absolute_expires_at = now() - interval '1 hour' WHERE id = ?",
+                    expiring.id().value());
             revoke(app, revoking);
-
-            Instant after = expiring.absoluteExpiresAt().plusSeconds(1);
 
             // Three different situations, one answer. A caller cannot tell which it hit, so nothing
             // downstream can ever report which it hit.
-            assertThat(sessions.findLive(app, expiredToken, after)).as("expired").isEmpty();
-            assertThat(sessions.findLive(app, revokedToken, after)).as("revoked").isEmpty();
-            assertThat(sessions.findLive(app, neverExisted, after)).as("never existed").isEmpty();
+            assertThat(sessions.findLive(app, expiredToken)).as("expired").isEmpty();
+            assertThat(sessions.findLive(app, revokedToken)).as("revoked").isEmpty();
+            assertThat(sessions.findLive(app, neverExisted)).as("never existed").isEmpty();
         }
     }
 
@@ -210,11 +302,10 @@ class SessionLifecycleDatabaseTest {
         // list somebody wrote, so a column added later is inspected without anyone remembering.
         IdentityId identity = givenAnIdentity();
         SessionToken token = SessionToken.issue(RANDOMNESS);
-        Session issued = issue(identity, token, SessionPolicy.current());
         String presented = token.presentedValue().expose();
 
         try (Connection app = DatabaseRoles.application()) {
-            sessions.insert(app, issued);
+            Session issued = sessions.insert(app, draft(identity, token, SessionPolicy.current()));
 
             String wholeRow = wholeRowAsText(app, issued.id().value());
 
@@ -235,13 +326,14 @@ class SessionLifecycleDatabaseTest {
     void touchingIsSafeUnderContention() throws Exception {
         // Each racer gets its own connection - the P0-TST-009 convention. The conditional UPDATE is
         // the coordination: no racer reads then writes, so none can overwrite another's extension
-        // with a stale one.
+        // with a stale one - and since X-TSK-007 none can pull it back either, whichever order
+        // their transactions reach the row in.
         IdentityId identity = givenAnIdentity();
         SessionToken token = SessionToken.issue(RANDOMNESS);
         SessionPolicy policy = new SessionPolicy(Duration.ofMinutes(30), Duration.ofHours(12));
-        Session issued = issue(identity, token, policy);
+        Session issued;
         try (Connection app = DatabaseRoles.application()) {
-            sessions.insert(app, issued);
+            issued = sessions.insert(app, draft(identity, token, policy));
         }
 
         int racers = 10;
@@ -257,8 +349,7 @@ class SessionLifecycleDatabaseTest {
                                     ready.countDown();
                                     go.await(30, TimeUnit.SECONDS);
                                     try (Connection own = DatabaseRoles.application()) {
-                                        return sessions.touch(
-                                                own, issued.id(), Instant.now(CLOCK), policy);
+                                        return sessions.touch(own, issued.id(), policy);
                                     }
                                 }));
             }
@@ -274,10 +365,12 @@ class SessionLifecycleDatabaseTest {
         }
 
         try (Connection app = DatabaseRoles.application()) {
-            Session after = sessions.findLive(app, token, Instant.now(CLOCK)).orElseThrow();
+            Session after = sessions.findLive(app, token).orElseThrow();
+            // Not "isAfter": the local container's clock can step backwards between the insert and
+            // the racers, and then the floor rightly keeps the bound where the insert put it.
             assertThat(after.idleExpiresAt())
-                    .as("the session is still live and its bound moved forward")
-                    .isAfter(issued.issuedAt());
+                    .as("the session is still live and its bound never moved back")
+                    .isAfterOrEqualTo(issued.idleExpiresAt());
             assertThat(after.idleExpiresAt())
                     .as("and never past the absolute bound, however many racers extended it")
                     .isBeforeOrEqualTo(after.absoluteExpiresAt());
@@ -286,8 +379,23 @@ class SessionLifecycleDatabaseTest {
 
     // -----------------------------------------------------------------
 
-    private static Session issue(IdentityId identity, SessionToken token, SessionPolicy policy) {
+    private static Session.Draft draft(IdentityId identity, SessionToken token, SessionPolicy policy) {
         return Session.issue(IDS, CLOCK, identity, token, AssuranceLevel.PASSWORD, policy);
+    }
+
+    /** Whole seconds from the database's now() to one of the session's bounds. */
+    private static long secondsUntil(Connection connection, Session session, String bound)
+            throws SQLException {
+        try (PreparedStatement select =
+                connection.prepareStatement(
+                        "SELECT extract(epoch FROM " + bound + " - now())::bigint"
+                                + " FROM identity.session WHERE id = ?")) {
+            select.setObject(1, session.id().value());
+            try (ResultSet rows = select.executeQuery()) {
+                rows.next();
+                return rows.getLong(1);
+            }
+        }
     }
 
     private static void revoke(Connection connection, Session session) throws SQLException {

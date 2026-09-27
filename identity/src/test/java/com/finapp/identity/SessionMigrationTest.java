@@ -33,6 +33,9 @@ class SessionMigrationTest {
 
     private static final String MIGRATION = "db/migration/identity/V005__create_session.sql";
 
+    private static final String DATABASE_CLOCK =
+            "db/migration/identity/V016__session_bounds_on_database_clock.sql";
+
     @Test
     @DisplayName("the assurance constraint lists exactly the levels the enum declares")
     void assuranceConstraintMatchesTheEnum() {
@@ -82,14 +85,42 @@ class SessionMigrationTest {
         // Without this, a moved or renamed file would make every assertion above pass over an empty
         // string - the failure this repository has met repeatedly.
         assertThat(migration()).contains("CREATE TABLE identity.session");
+        assertThat(read(DATABASE_CLOCK)).contains("ALTER TABLE identity.session");
+    }
+
+    @Test
+    @DisplayName("V016 compares the bounds with the database's own instant, never with issued_at")
+    void theBoundsFollowTheDatabasesInstant() {
+        // X-TSK-007. issued_at is business time and the bounds are the database's, so V005's check
+        // compared two clocks. The rule it kept - a session is never written already expired -
+        // survives on one clock. That it holds against a real row is SessionClockSkewDatabaseTest's.
+        assertThat(read(DATABASE_CLOCK))
+                .contains("DROP CONSTRAINT session_bounds_follow_issue")
+                .contains(
+                        "CHECK (idle_expires_at > live_from AND absolute_expires_at > live_from)");
+    }
+
+    @Test
+    @DisplayName("live_from is the database's by default; business time still has no default")
+    void onlyCoordinationTimeHasADefault() {
+        // The DEFAULT is what lets an old-version INSERT, which names no live_from, land correctly
+        // during a rolling deploy. Business time keeps P0-TSK-013's rule: no DEFAULT, because a
+        // default would be the database quietly deciding a business fact.
+        String v016 = read(DATABASE_CLOCK);
+        assertThat(v016).contains("ALTER COLUMN live_from SET DEFAULT now()");
+        assertThat(v016).doesNotContainPattern("(?i)(issued_at|revoked_at)\\s+SET\\s+DEFAULT");
     }
 
     /** From the classpath, as {@code CredentialMigrationTest} does - one idiom, not two. */
     private static String migration() {
+        return read(MIGRATION);
+    }
+
+    private static String read(String path) {
         try (InputStream migration =
-                SessionMigrationTest.class.getClassLoader().getResourceAsStream(MIGRATION)) {
+                SessionMigrationTest.class.getClassLoader().getResourceAsStream(path)) {
             if (migration == null) {
-                throw new IllegalStateException("Migration not on the test classpath: " + MIGRATION);
+                throw new IllegalStateException("Migration not on the test classpath: " + path);
             }
             return new String(migration.readAllBytes(), StandardCharsets.UTF_8);
         } catch (IOException e) {

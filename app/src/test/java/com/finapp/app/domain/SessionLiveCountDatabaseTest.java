@@ -96,14 +96,15 @@ class SessionLiveCountDatabaseTest {
     void theCountAgreesWithTheLookup() throws SQLException {
         // The property that matters more than any individual case: a gauge that disagreed with
         // findLive would show an operator a number no request could reproduce. Both derive
-        // liveness from the same three clauses, and this is what keeps that true.
+        // liveness from the same three clauses - since X-TSK-007 literally the same constant, at
+        // the database's now() - and this is what keeps that true.
         IdentityId identity = givenAnIdentity();
         Session live = givenALiveSession(identity);
         Session stale = givenALiveSession(identity);
         backDateIdleBound(stale);
 
         try (Connection app = DatabaseRoles.application()) {
-            assertThat(sessions.findLiveFor(app, identity, Instant.now(CLOCK)))
+            assertThat(sessions.findLiveFor(app, identity))
                     .extracting(Session::id)
                     .containsExactly(live.id());
         }
@@ -147,9 +148,9 @@ class SessionLiveCountDatabaseTest {
         givenALiveSession(identity);
 
         try (Connection app = DatabaseRoles.application()) {
-            long before = sessions.countLive(app, Instant.now(CLOCK));
+            long before = sessions.countLive(app);
             givenALiveSession(identity);
-            long after = sessions.countLive(app, Instant.now(CLOCK));
+            long after = sessions.countLive(app);
 
             assertThat(after - before)
                     .as("the store counts the session this suite just created")
@@ -178,7 +179,7 @@ class SessionLiveCountDatabaseTest {
     }
 
     private Session givenALiveSession(IdentityId identity) throws SQLException {
-        Session session =
+        Session.Draft draft =
                 Session.issue(
                         IDS,
                         CLOCK,
@@ -188,24 +189,24 @@ class SessionLiveCountDatabaseTest {
                         SessionPolicy.current(),
                         DeviceDescription.fromUserAgent("probe").orElse(null));
         try (Connection app = DatabaseRoles.application()) {
-            sessions.insert(app, session);
+            return sessions.insert(app, draft);
         }
-        return session;
     }
 
     /**
      * Moves the idle bound into the past.
      *
-     * <p>{@code issued_at} moves with it: {@code session_bounds_follow_issue} refuses a row written
-     * already expired, and that constraint is right — the fixture was wrong when {@code P1-TSK-016}
-     * first met it.
+     * <p>{@code live_from} moves with it: {@code session_bounds_follow_liveness} refuses a row
+     * written already expired, and that constraint is right — the fixture was wrong when
+     * {@code P1-TSK-016} first met V005's version of it. Until {@code X-TSK-007} the constraint was
+     * measured from {@code issued_at}, which is business time, and this moved that instead.
      */
     private void backDateIdleBound(Session session) throws SQLException {
         try (Connection app = DatabaseRoles.application()) {
             execute(
                     app,
                     "UPDATE identity.session"
-                            + " SET issued_at = now() - interval '2 hours',"
+                            + " SET live_from = now() - interval '2 hours',"
                             + "     idle_expires_at = now() - interval '1 hour'"
                             + " WHERE id = ?",
                     session.id().value());

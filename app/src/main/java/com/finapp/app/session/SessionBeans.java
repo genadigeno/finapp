@@ -68,16 +68,19 @@ class SessionBeans {
         return template;
     }
 
+    /**
+     * No {@code Clock}: whether a presented session is live is judged by the database's clock
+     * ({@code X-TSK-007}), so this instance's has nothing to decide.
+     */
     @Bean
     SessionAuthenticationInterceptor sessionAuthenticationInterceptor(
             SessionStore<Connection> sessionStore,
             org.springframework.transaction.support.TransactionTemplate sessionTransactions,
             javax.sql.DataSource dataSource,
-            Clock clock,
             SessionPolicy sessionPolicy,
             com.finapp.identity.Authorization authorization) {
         return new SessionAuthenticationInterceptor(
-                sessionStore, sessionTransactions, dataSource, clock, sessionPolicy, authorization);
+                sessionStore, sessionTransactions, dataSource, sessionPolicy, authorization);
     }
 
     @Bean

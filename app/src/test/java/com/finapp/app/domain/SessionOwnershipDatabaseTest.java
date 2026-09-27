@@ -75,7 +75,7 @@ class SessionOwnershipDatabaseTest {
         Session ofTheirs = givenALiveSession(theirs);
 
         try (Connection app = DatabaseRoles.application()) {
-            List<Session> listed = sessions.findLiveFor(app, mine, Instant.now(CLOCK));
+            List<Session> listed = sessions.findLiveFor(app, mine);
 
             assertThat(listed).extracting(Session::id).contains(ofMine.id());
             assertThat(listed)
@@ -99,7 +99,7 @@ class SessionOwnershipDatabaseTest {
         try (Connection app = DatabaseRoles.application()) {
             sessions.revoke(app, revoked.id(), Instant.now(CLOCK));
 
-            assertThat(sessions.findLiveFor(app, mine, Instant.now(CLOCK)))
+            assertThat(sessions.findLiveFor(app, mine))
                     .as("a listing that disagreed with the lookup about what a session is would"
                             + " show a person a session they cannot use")
                     .extracting(Session::id)
@@ -129,7 +129,7 @@ class SessionOwnershipDatabaseTest {
             // And the assertion that actually matters - the session is still usable by its owner.
             // A test asserting only the return value would pass against an implementation that
             // revoked the row and reported false.
-            assertThat(sessions.findLiveFor(app, theirs, Instant.now(CLOCK)))
+            assertThat(sessions.findLiveFor(app, theirs))
                     .as("their session must still be live: reporting a refusal while having"
                             + " revoked the row would be the worse half of the same defect")
                     .extracting(Session::id)
@@ -148,7 +148,7 @@ class SessionOwnershipDatabaseTest {
                     .as("the positive control: without it the ownership check could refuse"
                             + " everything and every negative test above would still pass")
                     .isTrue();
-            assertThat(sessions.findLiveFor(app, mine, Instant.now(CLOCK))).isEmpty();
+            assertThat(sessions.findLiveFor(app, mine)).isEmpty();
         }
     }
 
@@ -274,7 +274,7 @@ class SessionOwnershipDatabaseTest {
                 DeviceDescription.fromUserAgent("Mozilla/5.0 (Windows NT 10.0) Chrome/141")
                         .orElseThrow();
         SessionToken token = SessionToken.issue(RANDOMNESS);
-        Session issued =
+        Session.Draft issued =
                 Session.issue(
                         IDS, CLOCK, mine, token, AssuranceLevel.PASSWORD,
                         SessionPolicy.current(), device);
@@ -282,7 +282,7 @@ class SessionOwnershipDatabaseTest {
         try (Connection app = DatabaseRoles.application()) {
             sessions.insert(app, issued);
 
-            assertThat(sessions.findLiveFor(app, mine, Instant.now(CLOCK)))
+            assertThat(sessions.findLiveFor(app, mine))
                     .singleElement()
                     .satisfies(
                             session ->
@@ -354,7 +354,7 @@ class SessionOwnershipDatabaseTest {
     }
 
     private Session givenALiveSession(IdentityId identityId) throws SQLException {
-        Session session =
+        Session.Draft draft =
                 Session.issue(
                         IDS,
                         CLOCK,
@@ -363,9 +363,8 @@ class SessionOwnershipDatabaseTest {
                         AssuranceLevel.PASSWORD,
                         SessionPolicy.current());
         try (Connection app = DatabaseRoles.application()) {
-            sessions.insert(app, session);
+            return sessions.insert(app, draft);
         }
-        return session;
     }
 
     private static long auditRecordCount() throws SQLException {

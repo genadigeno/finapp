@@ -520,7 +520,7 @@ class RecoveryAbuseDatabaseTest {
     private void givenASessionFor(IdentityId identity) throws SQLException {
         byte[] bytes = new byte[32];
         RANDOMNESS.nextBytes(bytes);
-        Session session =
+        Session.Draft session =
                 Session.issue(
                         IDS,
                         CLOCK,

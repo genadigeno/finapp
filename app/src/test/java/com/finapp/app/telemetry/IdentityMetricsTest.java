@@ -135,23 +135,23 @@ class IdentityMetricsTest {
         }
 
         @Override
-        public long countLive(Connection unitOfWork, Instant at) {
+        public long countLive(Connection unitOfWork) {
             reads.incrementAndGet();
             return live;
         }
 
         @Override
-        public void insert(Connection unitOfWork, Session session) {
+        public Session insert(Connection unitOfWork, Session.Draft draft) {
             throw new UnsupportedOperationException();
         }
 
         @Override
-        public Optional<Session> findLive(Connection unitOfWork, SessionToken token, Instant at) {
+        public Optional<Session> findLive(Connection unitOfWork, SessionToken token) {
             throw new UnsupportedOperationException();
         }
 
         @Override
-        public List<Session> findLiveFor(Connection unitOfWork, IdentityId identityId, Instant at) {
+        public List<Session> findLiveFor(Connection unitOfWork, IdentityId identityId) {
             throw new UnsupportedOperationException();
         }
 
@@ -179,10 +179,7 @@ class IdentityMetricsTest {
 
         @Override
         public boolean touch(
-                Connection unitOfWork,
-                SessionId sessionId,
-                Instant at,
-                com.finapp.identity.SessionPolicy policy) {
+                Connection unitOfWork, SessionId sessionId, com.finapp.identity.SessionPolicy policy) {
             throw new UnsupportedOperationException();
         }
     }

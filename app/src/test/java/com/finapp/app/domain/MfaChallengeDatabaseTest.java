@@ -110,10 +110,10 @@ class MfaChallengeDatabaseTest {
             // The presented session is dead. Otherwise the pre-elevation identifier would still
             // work, which is the whole defect rotation exists to prevent.
             assertThat(sessions.findLive(
-                            app, SessionToken.of(enrolled.session().plaintext()), Instant.now(CLOCK)))
+                            app, SessionToken.of(enrolled.session().plaintext())))
                     .as("the old identifier must be refused immediately")
                     .isEmpty();
-            assertThat(sessions.findLive(app, SessionToken.of(elevatedToken), Instant.now(CLOCK)))
+            assertThat(sessions.findLive(app, SessionToken.of(elevatedToken)))
                     .get()
                     .satisfies(s -> assertThat(s.assurance()).isEqualTo(AssuranceLevel.MULTI_FACTOR));
         }
@@ -151,7 +151,7 @@ class MfaChallengeDatabaseTest {
                 .isEqualTo(401);
 
         try (Connection app = DatabaseRoles.application()) {
-            assertThat(sessions.findLive(app, SessionToken.of(elevated), Instant.now(CLOCK)))
+            assertThat(sessions.findLive(app, SessionToken.of(elevated)))
                     .as("and the refusal must not disturb the session the first use bought")
                     .isPresent();
         }
@@ -271,7 +271,7 @@ class MfaChallengeDatabaseTest {
 
         try (Connection app = DatabaseRoles.application()) {
             assertThat(sessions.findLive(
-                            app, SessionToken.of(session.plaintext()), Instant.now(CLOCK)))
+                            app, SessionToken.of(session.plaintext())))
                     .get()
                     .satisfies(
                             live ->
@@ -528,7 +528,7 @@ class MfaChallengeDatabaseTest {
         RANDOMNESS.nextBytes(bytes);
         String plaintext = java.util.Base64.getUrlEncoder().withoutPadding().encodeToString(bytes);
 
-        Session session =
+        Session.Draft session =
                 Session.issue(
                         IDS,
                         CLOCK,

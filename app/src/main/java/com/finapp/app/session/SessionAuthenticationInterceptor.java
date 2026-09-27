@@ -12,8 +12,6 @@ import com.finapp.platform.security.SecurityContext;
 import jakarta.servlet.http.HttpServletRequest;
 import jakarta.servlet.http.HttpServletResponse;
 import java.sql.Connection;
-import java.time.Clock;
-import java.time.Instant;
 import java.util.Optional;
 import javax.sql.DataSource;
 import lombok.NonNull;
@@ -79,7 +77,6 @@ public final class SessionAuthenticationInterceptor implements HandlerIntercepto
     @NonNull private final SessionStore<Connection> sessions;
     @NonNull private final TransactionTemplate transactions;
     @NonNull private final DataSource dataSource;
-    @NonNull private final Clock clock;
     @NonNull private final SessionPolicy policy;
     @NonNull private final com.finapp.identity.Authorization authorization;
 
@@ -164,19 +161,22 @@ public final class SessionAuthenticationInterceptor implements HandlerIntercepto
      * <p><strong>Fails closed.</strong> A storage failure propagates: no session, no actor, no
      * request served. Authenticating against an unreadable database is the one outcome worse than
      * an outage.
+     *
+     * <p><strong>No clock here, deliberately</strong> ({@code X-TSK-007}). The lookup and the touch
+     * are both judged at the database's {@code now()}, the start of this transaction, so they are
+     * judged at one instant and this instance's clock takes no part. It used to: the lookup
+     * compared the bounds with this instance's {@code Instant.now(clock)}, so an instance running
+     * fast ended live sessions early and one running slow honoured expired sessions late.
      */
     private Optional<Session> authenticate(SessionToken token) {
-        Instant at = Instant.now(clock);
         return Optional.ofNullable(
                 transactions.execute(
                         status -> {
                             Connection unitOfWork = DataSourceUtils.getConnection(dataSource);
                             try {
-                                Optional<Session> live = sessions.findLive(unitOfWork, token, at);
+                                Optional<Session> live = sessions.findLive(unitOfWork, token);
                                 live.ifPresent(
-                                        session ->
-                                                sessions.touch(
-                                                        unitOfWork, session.id(), at, policy));
+                                        session -> sessions.touch(unitOfWork, session.id(), policy));
                                 return live.orElse(null);
                             } finally {
                                 DataSourceUtils.releaseConnection(unitOfWork, dataSource);

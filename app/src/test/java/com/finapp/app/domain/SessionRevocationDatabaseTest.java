@@ -25,7 +25,6 @@ import java.sql.PreparedStatement;
 import java.sql.ResultSet;
 import java.sql.SQLException;
 import java.time.Clock;
-import java.time.Duration;
 import java.time.Instant;
 import java.time.ZoneOffset;
 import java.util.ArrayList;
@@ -75,7 +74,7 @@ class SessionRevocationDatabaseTest {
     void revocationIsImmediateAcrossInstances() throws Exception {
         IdentityId identity = givenAnIdentity();
         SessionToken token = SessionToken.issue(RANDOMNESS);
-        Session session = issue(identity, token);
+        Session.Draft session = issue(identity, token);
 
         try (SimulatedInstance issuer = SimulatedInstance.inAgreementWithTheServer()) {
             sessions.insert(issuer.connection(), session);
@@ -87,7 +86,7 @@ class SessionRevocationDatabaseTest {
         try (SimulatedInstance a = SimulatedInstance.inAgreementWithTheServer();
                 SimulatedInstance b = SimulatedInstance.inAgreementWithTheServer()) {
 
-            assertThat(sessions.findLive(b.connection(), token, SimulatedInstance.serverNow()))
+            assertThat(sessions.findLive(b.connection(), token))
                     .as("precondition: instance B can see the session before it is revoked")
                     .isPresent();
 
@@ -97,7 +96,7 @@ class SessionRevocationDatabaseTest {
             // B's transaction started before A committed, so it must not read a stale snapshot.
             b.rollback();
 
-            assertThat(sessions.findLive(b.connection(), token, SimulatedInstance.serverNow()))
+            assertThat(sessions.findLive(b.connection(), token))
                     .as("an eventually-revoked session is an unrevoked session")
                     .isEmpty();
         }
@@ -167,7 +166,7 @@ class SessionRevocationDatabaseTest {
         }
 
         try (Connection app = DatabaseRoles.application()) {
-            assertThat(sessions.findLive(app, existing, Instant.now(CLOCK)))
+            assertThat(sessions.findLive(app, existing))
                     .as("the session that existed when the revocation ran is gone")
                     .isEmpty();
             assertThat(liveSessionCount(app, identity))
@@ -230,7 +229,7 @@ class SessionRevocationDatabaseTest {
             assertThat(sessions.revokeAllFor(app, mine, Instant.now(CLOCK))).isEqualTo(3);
 
             assertThat(liveSessionCount(app, mine)).isZero();
-            assertThat(sessions.findLive(app, theirs, Instant.now(CLOCK)))
+            assertThat(sessions.findLive(app, theirs))
                     .as("somebody else's session is untouched")
                     .isPresent();
         }
@@ -241,7 +240,7 @@ class SessionRevocationDatabaseTest {
     void revokeAllExceptSparesOne() throws SQLException {
         IdentityId identity = givenAnIdentity();
         SessionToken kept = SessionToken.issue(RANDOMNESS);
-        Session keeper = issue(identity, kept);
+        Session.Draft keeper = issue(identity, kept);
 
         try (Connection app = DatabaseRoles.application()) {
             sessions.insert(app, keeper);
@@ -251,7 +250,7 @@ class SessionRevocationDatabaseTest {
             assertThat(sessions.revokeAllForExcept(app, identity, keeper.id(), Instant.now(CLOCK)))
                     .isEqualTo(2);
 
-            assertThat(sessions.findLive(app, kept, Instant.now(CLOCK)))
+            assertThat(sessions.findLive(app, kept))
                     .as("the session the password is being changed FROM stays alive")
                     .isPresent();
             assertThat(liveSessionCount(app, identity)).isEqualTo(1);
@@ -265,7 +264,7 @@ class SessionRevocationDatabaseTest {
         // would let a caller tell "that session existed and was live" from "it did not", which is an
         // oracle over somebody else's session identifiers.
         IdentityId identity = givenAnIdentity();
-        Session session = issue(identity, SessionToken.issue(RANDOMNESS));
+        Session.Draft session = issue(identity, SessionToken.issue(RANDOMNESS));
 
         try (Connection app = DatabaseRoles.application()) {
             sessions.insert(app, session);
@@ -281,26 +280,29 @@ class SessionRevocationDatabaseTest {
     }
 
     @Test
-    @DisplayName("revoking an already-expired session is not an error either")
+    @DisplayName("revoking an already-expired session is not an error either, and ends nothing")
     void revokingAnExpiredSessionIsNotAnError() throws SQLException {
+        // Until X-TSK-007 this asserted TRUE: the row was still ACTIVE by status, expiry being
+        // derived, so the revoke transitioned a session that had already ended - contradicting the
+        // port's own javadoc, which says an expired session reports that nothing was done. Its one
+        // caller is rotation, and a rotation of an expired session then reached the aggregate's
+        // constructor and failed as a 500. Now the revoke is judged live on the database's clock:
+        // it does not fail, it ends nothing, and the caller still learns nothing about why.
         IdentityId identity = givenAnIdentity();
-        SessionPolicy brief = new SessionPolicy(Duration.ofSeconds(1), Duration.ofSeconds(1));
-        Session session =
-                Session.issue(
-                        IDS,
-                        CLOCK,
-                        identity,
-                        SessionToken.issue(RANDOMNESS),
-                        AssuranceLevel.PASSWORD,
-                        brief);
 
         try (Connection app = DatabaseRoles.application()) {
-            sessions.insert(app, session);
+            Session session = sessions.insert(app, issue(identity, SessionToken.issue(RANDOMNESS)));
+            execute(
+                    app,
+                    "UPDATE identity.session SET live_from = now() - interval '13 hours',"
+                            + " idle_expires_at = now() - interval '1 hour',"
+                            + " absolute_expires_at = now() - interval '1 hour' WHERE id = ?",
+                    session.id().value());
 
-            // Still ACTIVE by status - expiry is derived - so this DOES transition it. The point is
-            // that it does not fail, and the caller learns nothing about why.
-            assertThat(sessions.revoke(app, session.id(), session.absoluteExpiresAt().plusSeconds(1)))
-                    .isTrue();
+            assertThat(sessions.revoke(app, session.id(), Instant.now(CLOCK)))
+                    .as("an expired session has nothing live to end - the same answer as revoked"
+                            + " or absent")
+                    .isFalse();
         }
     }
 
@@ -308,7 +310,7 @@ class SessionRevocationDatabaseTest {
     @DisplayName("ten instances revoking one session: exactly one transition")
     void oneTransitionUnderContention() throws Exception {
         IdentityId identity = givenAnIdentity();
-        Session session = issue(identity, SessionToken.issue(RANDOMNESS));
+        Session.Draft session = issue(identity, SessionToken.issue(RANDOMNESS));
         try (Connection app = DatabaseRoles.application()) {
             sessions.insert(app, session);
         }
@@ -393,7 +395,7 @@ class SessionRevocationDatabaseTest {
         // that ended nothing writes NOTHING - a record for a caller's guess at a session identifier
         // would put identifiers that were never real into the trail.
         IdentityId identity = givenAnIdentity();
-        Session session = issue(identity, SessionToken.issue(RANDOMNESS));
+        Session.Draft session = issue(identity, SessionToken.issue(RANDOMNESS));
 
         try (CorrelationContext.Scope ignored =
                         CorrelationContext.enter(
@@ -434,7 +436,7 @@ class SessionRevocationDatabaseTest {
         // changed and eleven other sessions were closed" is a different fact from "and none were",
         // and only the first suggests somebody else was using the account.
         IdentityId identity = givenAnIdentity();
-        Session keeper = issue(identity, SessionToken.issue(RANDOMNESS));
+        Session.Draft keeper = issue(identity, SessionToken.issue(RANDOMNESS));
 
         try (CorrelationContext.Scope ignored =
                         CorrelationContext.enter(
@@ -461,7 +463,7 @@ class SessionRevocationDatabaseTest {
 
     // -----------------------------------------------------------------
 
-    private static Session issue(IdentityId identity, SessionToken token) {
+    private static Session.Draft issue(IdentityId identity, SessionToken token) {
         return Session.issue(
                 IDS, CLOCK, identity, token, AssuranceLevel.PASSWORD, SessionPolicy.current());
     }
