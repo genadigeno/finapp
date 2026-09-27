@@ -360,6 +360,17 @@ phase exit and does not displace `P6-TSK-011`). **`BLOCKED` on final acceptance 
   with no further work. The plan and its results are
   [`tasks/CROSS-CUTTING-LOMBOK-REFACTOR.md`](tasks/CROSS-CUTTING-LOMBOK-REFACTOR.md) §21.
 
+**Cross-cutting — `X-TSK-009`, provider receipt after a timeout** (2026-09-27; it belongs to no
+phase and does not displace `P6-TSK-011`). **`IN_PROGRESS`: implemented and demonstrated,
+awaiting the completion gate.**
+- **Done:** `SimulatedTokenisationAdapterTest#aTimeoutIsUnavailable` no longer depends on timing.
+  Before the change it failed in 9 of 10 fresh `test` runs. The test read the provider's count at
+  the instant a 200 ms client timeout fired, before the provider had recorded the request. The
+  harness gains `awaitRequestCount`, a bounded wait for which giving up is a failure. The test now
+  awaits receipt, with a 1 s timeout, and `TESTING.md` §5a records the rule.
+- **Open:** the completion gate, and an owner decision on three tests with the same race and wider
+  margins (listed in the backlog entry).
+
 The last work performed was the **Phase 5 → Phase 6 transition** (2026-09-21):
 Phase 5 confirmed by independent audit, the first fleet-wide full battery of the phase
 (**1323 hermetic / 829 database / 14 kafka, 0 failures** — after finding and repairing the
