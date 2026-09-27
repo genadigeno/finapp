@@ -136,6 +136,13 @@ public record Beneficiary(
         if (!status.canTransitionTo(BeneficiaryStatus.REMOVED)) {
             throw new IllegalBeneficiaryTransitionException(id, status, BeneficiaryStatus.REMOVED);
         }
+        // GREATEST(now(), created_at) - the P1-TSK-031 drift, met in domain code rather than a
+        // fixture: the clock that wrote createdAt may read ahead of this one (another
+        // instance's, or this one stepped back by time sync; ADR-0014: skew is bounded, never
+        // zero), and a legal removal moments after saving must not die on the ordering the
+        // constructor and `V003`'s CHECK are right to refuse. The store's conditional clamps
+        // the same way, in its statement.
+        Instant now = Instant.now(clock);
         return new Beneficiary(
                 id,
                 partyId,
@@ -143,7 +150,7 @@ public record Beneficiary(
                 destinationAccountId,
                 BeneficiaryStatus.REMOVED,
                 createdAt,
-                Optional.of(Instant.now(clock)));
+                Optional.of(now.isBefore(createdAt) ? createdAt : now));
     }
 
     /**

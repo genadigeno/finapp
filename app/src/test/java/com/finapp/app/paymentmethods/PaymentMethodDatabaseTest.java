@@ -198,6 +198,55 @@ class PaymentMethodDatabaseTest {
     }
 
     @Test
+    @DisplayName(
+            "a clock behind birth cannot fail a legal detach: detached_at clamps to created_at"
+                    + " in the statement (the P1-TSK-031 drift; ADR-0014)")
+    void aClockBehindBirthCannotFailALegalDetach() throws Exception {
+        UUID party = UUID.randomUUID();
+        try (Connection app = DatabaseRoles.application()) {
+            app.setAutoCommit(false);
+            PaymentMethod clamped =
+                    attach(app, party, TokenReference.of("tok_behind-" + UUID.randomUUID()));
+            PaymentMethod own =
+                    attach(app, party, TokenReference.of("tok_ahead-" + UUID.randomUUID()));
+            app.commit();
+
+            // The detaching instance's clock reads behind the one that wrote created_at.
+            Instant born = stampsOf(clamped.id().value()).createdAt();
+            assertThat(store.detach(app, clamped.id(), party, born.minusMillis(250))).isTrue();
+            app.commit();
+            assertThat(stampsOf(clamped.id().value()).detachedAt()).isEqualTo(born);
+
+            // A floor, not a pin: a clock past birth stamps its own read.
+            Instant later = stampsOf(own.id().value()).createdAt().plusSeconds(5);
+            assertThat(store.detach(app, own.id(), party, later)).isTrue();
+            app.commit();
+            assertThat(stampsOf(own.id().value()).detachedAt()).isEqualTo(later);
+        }
+    }
+
+    @Test
+    @DisplayName(
+            "an illegal detach under a behind clock is still the conditional's refusal, never"
+                    + " V002's CHECK")
+    void anIllegalDetachUnderABehindClockIsStillTheConditionalsRefusal() throws Exception {
+        UUID party = UUID.randomUUID();
+        try (Connection app = DatabaseRoles.application()) {
+            app.setAutoCommit(false);
+            PaymentMethod saved =
+                    attach(app, party, TokenReference.of("tok_twice-" + UUID.randomUUID()));
+            app.commit();
+            Instant born = stampsOf(saved.id().value()).createdAt();
+            assertThat(store.detach(app, saved.id(), party, born)).isTrue();
+            app.commit();
+
+            assertThat(store.detach(app, saved.id(), party, born.minusSeconds(1))).isFalse();
+            app.commit();
+            assertThat(stampsOf(saved.id().value()).detachedAt()).isEqualTo(born);
+        }
+    }
+
+    @Test
     @DisplayName("raw SQL cannot resurrect, edit or incoherently store a payment method")
     void rawSqlCannotResurrectOrEditARow() throws Exception {
         UUID party = UUID.randomUUID();
@@ -513,6 +562,26 @@ class PaymentMethodDatabaseTest {
             try (ResultSet row = read.executeQuery()) {
                 assertThat(row.next()).isTrue();
                 return row.getString(1);
+            }
+        }
+    }
+
+    /** The row's two instants as stored, at the column's own microsecond resolution. */
+    private record Stamps(Instant createdAt, Instant detachedAt) {}
+
+    private static Stamps stampsOf(UUID id) throws SQLException {
+        try (Connection app = DatabaseRoles.application();
+                PreparedStatement read =
+                        app.prepareStatement(
+                                "SELECT created_at, detached_at FROM paymentmethods.payment_method"
+                                        + " WHERE id = ?")) {
+            read.setObject(1, id);
+            try (ResultSet row = read.executeQuery()) {
+                assertThat(row.next()).isTrue();
+                Timestamp detachedAt = row.getTimestamp(2);
+                return new Stamps(
+                        row.getTimestamp(1).toInstant(),
+                        detachedAt == null ? null : detachedAt.toInstant());
             }
         }
     }

@@ -182,7 +182,13 @@ public final class JdbcBeneficiaryStore implements BeneficiaryStore<Connection> 
                         // removals matches the live row, the rest converge on zero rows. The
                         // machine's one edge is carried by the pair of literals; V003's trigger
                         // holds the same edge for writers that never ran this code.
-                        "UPDATE " + TABLE + " SET status = ?, removed_at = ?"
+                        "UPDATE " + TABLE + " SET status = ?,"
+                                // GREATEST(?, created_at) - the P1-TSK-031 drift, clamped in the
+                                // statement as Beneficiary.remove clamps it in the domain: the
+                                // caller's clock may read behind the one that wrote created_at
+                                // (ADR-0014: skew is bounded, never zero), and a legal removal
+                                // must not die on V003's CHECK.
+                                + " removed_at = GREATEST(?, created_at)"
                                 + " WHERE id = ? AND party_id = ? AND status = ?")) {
             move.setString(1, BeneficiaryStatus.REMOVED.name());
             move.setTimestamp(2, Timestamp.from(at));

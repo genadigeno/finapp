@@ -190,7 +190,13 @@ public final class JdbcPaymentMethodStore implements PaymentMethodStore<Connecti
                         // detaches matches the live row, the rest converge on zero rows. The
                         // machine's one edge is carried by the pair of literals; V002's trigger
                         // holds the same edge for writers that never ran this code.
-                        "UPDATE " + TABLE + " SET status = ?, detached_at = ?"
+                        "UPDATE " + TABLE + " SET status = ?,"
+                                // GREATEST(?, created_at) - the P1-TSK-031 drift, clamped in the
+                                // statement as PaymentMethod.detach clamps it in the domain: the
+                                // caller's clock may read behind the one that wrote created_at
+                                // (ADR-0014: skew is bounded, never zero), and a legal detach
+                                // must not die on V002's CHECK.
+                                + " detached_at = GREATEST(?, created_at)"
                                 + " WHERE id = ? AND party_id = ? AND status = ?")) {
             move.setString(1, PaymentMethodStatus.DETACHED.name());
             move.setTimestamp(2, Timestamp.from(at));

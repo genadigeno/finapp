@@ -166,6 +166,13 @@ public record PaymentMethod(
             throw new IllegalPaymentMethodTransitionException(
                     id, status, PaymentMethodStatus.DETACHED);
         }
+        // GREATEST(now(), created_at) - the P1-TSK-031 drift, met in domain code rather than a
+        // fixture: the clock that wrote createdAt may read ahead of this one (another
+        // instance's, or this one stepped back by time sync; ADR-0014: skew is bounded, never
+        // zero), and a legal detach moments after attaching must not die on the ordering the
+        // constructor and `V002`'s CHECK are right to refuse. The store's conditional clamps
+        // the same way, in its statement.
+        Instant now = Instant.now(clock);
         return new PaymentMethod(
                 id,
                 partyId,
@@ -176,7 +183,7 @@ public record PaymentMethod(
                 expiryYear,
                 PaymentMethodStatus.DETACHED,
                 createdAt,
-                Optional.of(Instant.now(clock)));
+                Optional.of(now.isBefore(createdAt) ? createdAt : now));
     }
 
     /**
