@@ -512,14 +512,16 @@ class PaymentCaptureDatabaseTest {
                                                     new com.finapp.payments.WalletRefundComposition()),
                                             new JdbcAuditWriter(), new JdbcOutboxWriter(),
                                             IDS, CLOCK,
-                                            com.finapp.payments.PaymentRails.of(java.util.List.of(SimulatedCardPspAdapter.RAIL))),
+                                            com.finapp.payments.PaymentRails.of(java.util.List.of(SimulatedCardPspAdapter.RAIL)),
+                new com.finapp.payments.JdbcUnmatchedConfirmationStore()),
                 new com.finapp.payments.JdbcRoutingStore(),
                 com.finapp.payments.PaymentRails.of(java.util.List.of(SimulatedCardPspAdapter.RAIL)),
                 new JdbcAuditWriter(),
                 new JdbcOutboxWriter(),
                 IDS,
                 CLOCK,
-                com.finapp.payments.RoutingTelemetry.NONE)
+                com.finapp.payments.RoutingTelemetry.NONE,
+                java.util.Optional.empty())
                             .confirm(holder.party(), holder.intent());
             assertThat(confirmed.attempt()).contains(PaymentAttemptStatus.AUTHORIZED);
         } finally {
@@ -593,7 +595,8 @@ class PaymentCaptureDatabaseTest {
                         outbox,
                         IDS,
                         CLOCK,
-                        com.finapp.payments.PaymentRails.of(java.util.List.of(SimulatedCardPspAdapter.RAIL)));
+                        com.finapp.payments.PaymentRails.of(java.util.List.of(SimulatedCardPspAdapter.RAIL)),
+                new com.finapp.payments.JdbcUnmatchedConfirmationStore());
         return new PaymentCapture(
                 runner,
                 intents,

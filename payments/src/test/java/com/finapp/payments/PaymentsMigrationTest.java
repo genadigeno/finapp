@@ -71,6 +71,12 @@ class PaymentsMigrationTest {
     private static final String WITHDRAWAL =
             "db/migration/payments/V016__the_wallet_withdrawal.sql";
 
+    /** V017: the pay-by-bank pay-in (P7-TSK-009) - the push attempt's own facts and its
+     * inbound edge, the unmatched parking, routing version 3 seeded. Holds the attempt
+     * trigger's CURRENT definition (V014 became applied history for the push machine). */
+    private static final String PAY_BY_BANK =
+            "db/migration/payments/V017__the_pay_by_bank_pay_in.sql";
+
     @Test
     @DisplayName("the intent's status CHECKs are generated from the machine, on all three columns")
     void intentStatusChecksMatchTheEnum() {
@@ -165,17 +171,27 @@ class PaymentsMigrationTest {
         // the current definition must carry the machine's edges too, or it could drift from
         // the enum while V003 - applied history - still matched.
         assertEdges(migration(ATTEMPT_RAIL), 7, phaseFiveTwoStepEdgeNames());
-        // V012's two-step disjunction is applied history - Phase 5's machine verbatim;
-        // its push and book arms still match the live models, which have not widened.
+        // V012's two-step disjunction is applied history - Phase 5's machine verbatim; its
+        // push arm froze at P7-TSK-009 (the inbound edge widened the live machine), and
+        // its book arm still matches the live model, which has no edges to widen.
         assertEdges(migration(MODEL_MACHINES), 7, phaseFiveTwoStepEdgeNames());
         assertEdges(migration(MODEL_MACHINES), InteractionModel.PUSH.statuses().size(),
-                edgeNames(InteractionModel.PUSH));
+                phaseSevenPushEdgeNames());
         assertEdges(migration(MODEL_MACHINES), InteractionModel.BOOK.statuses().size(),
                 edgeNames(InteractionModel.BOOK));
-        // V014 REPLACED the function (P7-TSK-004: the void joined the two-step machine):
-        // the current definition carries every model's live edges.
+        // V014 REPLACED the function (P7-TSK-004: the void joined the two-step machine); it
+        // in turn became applied history when the push machine gained its inbound edge, so
+        // its two-step and book arms follow the live models and its push arm is frozen.
+        assertEdges(migration(VOID), InteractionModel.TWO_STEP.statuses().size(),
+                edgeNames(InteractionModel.TWO_STEP));
+        assertEdges(migration(VOID), InteractionModel.PUSH.statuses().size(),
+                phaseSevenPushEdgeNames());
+        assertEdges(migration(VOID), InteractionModel.BOOK.statuses().size(),
+                edgeNames(InteractionModel.BOOK));
+        // V017 REPLACED the function (P7-TSK-009: the push machine's inbound edge): the
+        // current definition carries every model's live edges.
         for (InteractionModel model : InteractionModel.values()) {
-            assertEdges(migration(VOID), model.statuses().size(), edgeNames(model));
+            assertEdges(migration(PAY_BY_BANK), model.statuses().size(), edgeNames(model));
         }
     }
 
@@ -185,6 +201,22 @@ class PaymentsMigrationTest {
                 .collect(Collectors.toMap(entry -> entry.getKey().name(),
                         entry -> entry.getValue().stream().map(Enum::name)
                                 .collect(Collectors.toList())));
+    }
+
+    /**
+     * The push machine as `P7-TSK-002` drew it, frozen: V012 and V014 are applied history
+     * written before the inbound edge ({@code AWAITING_PAYER → EXECUTED}) arrived with the
+     * pay-by-bank pay-in (`P7-TSK-009`). Target order is the {@code EnumSet}'s ordinal
+     * iteration, then as now.
+     */
+    private static java.util.Map<String, java.util.List<String>> phaseSevenPushEdgeNames() {
+        return java.util.Map.of(
+                "AWAITING_PAYER", java.util.List.of("FAILED", "EXECUTION_DISPATCHED"),
+                "EXECUTION_DISPATCHED",
+                        java.util.List.of("FAILED", "EXECUTION_UNKNOWN", "EXECUTED"),
+                "EXECUTION_UNKNOWN", java.util.List.of("FAILED", "EXECUTED"),
+                "EXECUTED", java.util.List.of(),
+                "FAILED", java.util.List.of());
     }
 
     /**
@@ -659,6 +691,74 @@ class PaymentsMigrationTest {
                 .contains("1, 'PAY_OUT', 'BANK_ACCOUNT', NULL, NULL, NULL, NULL)")
                 .contains("('019992e0-0000-7000-8000-000000000011', 0, 'card')")
                 .contains("('019992e0-0000-7000-8000-000000000012', 0, 'instant')");
+    }
+
+    @Test
+    @DisplayName("V017's pay-by-bank clauses are generated from the types and pinned: the"
+            + " push facts' shapes and coherence, the permit rules, the same-status licence"
+            + " confined to the push row, the unmatched parking's arbiter and append-only"
+            + " trigger, and the seeded version 3 (P7-TSK-009)")
+    void thePayByBankClausesArePinned() {
+        String migration = migration(PAY_BY_BANK);
+        assertThat(migration)
+                // OUR reference: the type's own bound, unique platform-wide, frozen with
+                // the birth facts.
+                .contains("CHECK (end_to_end_reference ~ '^[A-Za-z0-9-]{1,"
+                        + EndToEndReference.MAX_LENGTH + "}$')")
+                .contains("ADD CONSTRAINT payment_attempt_end_to_end_reference_is_unique")
+                .contains("OR OLD.end_to_end_reference IS DISTINCT FROM"
+                        + " NEW.end_to_end_reference")
+                // The handle: the port constant's bound, frozen once stored.
+                .contains("CHECK (char_length(authorization_handle) BETWEEN 1 AND "
+                        + InitiationAnswer.MAX_HANDLE_LENGTH + ")")
+                .contains("OR (OLD.authorization_handle IS NOT NULL AND"
+                        + " NEW.authorization_handle IS DISTINCT FROM"
+                        + " OLD.authorization_handle)")
+                // The scheme's pair: the provider-reference shape, unique platform-wide,
+                // exactly with EXECUTED, the cycle only beside it.
+                .contains("CHECK (scheme_reference ~ '^[A-Za-z0-9_.:-]{1,"
+                        + ProviderReference.MAX_LENGTH + "}$')")
+                .contains(
+                        "ADD CONSTRAINT payment_attempt_scheme_reference_is_unique"
+                                + " UNIQUE (scheme_reference)")
+                .contains("(scheme_reference IS NOT NULL) = (status = 'EXECUTED')")
+                .contains("(settlement_cycle IS NULL OR scheme_reference IS NOT NULL)")
+                // The push facts exist exactly on push rows, both directions.
+                .contains("CHECK ((interaction_model = 'PUSH') = (end_to_end_reference"
+                        + " IS NOT NULL))")
+                .contains("CHECK ((interaction_model = 'PUSH') = (last_dispatched_at"
+                        + " IS NOT NULL))")
+                .contains(
+                        "ADD CONSTRAINT payment_attempt_foreign_model_carries_no_push_facts")
+                // The permit: never before birth, forward-only for every writer.
+                .contains("CHECK (last_dispatched_at >= created_at)")
+                .contains("an initiation permit only moves forward")
+                // The same-status licence is the push row's alone, and carries nothing but
+                // the handle and the permit.
+                .contains("only a push row records a payload without an edge")
+                .contains("an outcome fact arrives only with its edge")
+                // The unmatched parking: one per (rail, reference), append-only, no grant
+                // beyond SELECT and INSERT.
+                .contains("CREATE TABLE payments.unmatched_confirmation (")
+                .contains("CONSTRAINT unmatched_confirmation_one_per_reference"
+                        + " UNIQUE (rail, scheme_reference)")
+                .contains("CREATE TRIGGER unmatched_confirmation_is_append_only")
+                .contains("BEFORE UPDATE OR DELETE ON payments.unmatched_confirmation")
+                .contains("GRANT SELECT, INSERT ON payments.unmatched_confirmation"
+                        + " TO finapp_app;")
+                // The app writes exactly the push payload columns - no wider grant.
+                .contains("GRANT UPDATE (authorization_handle, scheme_reference,"
+                        + " settlement_cycle, last_dispatched_at)")
+                // The seed: version 3 carries BOTH standing routes forward byte for byte
+                // and adds the bank pay-in (the V016 pin's shape, one version on).
+                .contains("VALUES\n    ('019992e0-0000-7000-8000-000000000020', 3,")
+                .contains("0, 'PAY_IN', 'CARD_TOKEN', NULL, NULL, NULL, NULL)")
+                .contains("1, 'PAY_OUT', 'BANK_ACCOUNT', NULL, NULL, NULL, NULL)")
+                .contains("2, 'PAY_IN', 'BANK_ACCOUNT', NULL, NULL, NULL, NULL)")
+                .contains("('019992e0-0000-7000-8000-000000000021', 0, 'card')")
+                .contains("('019992e0-0000-7000-8000-000000000022', 0, 'instant')")
+                .contains("('019992e0-0000-7000-8000-000000000023', 0, 'instant')")
+                .doesNotContain("GRANT DELETE");
     }
 
     /** From the classpath, the sibling migration tests' idiom. */

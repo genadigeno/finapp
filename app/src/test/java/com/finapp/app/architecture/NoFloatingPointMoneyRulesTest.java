@@ -195,6 +195,16 @@ class NoFloatingPointMoneyRulesTest {
                     // (INV-AUD-02), so there is no monetary value here to be imprecise about.
                     "com.finapp.app.telemetry.MerchantPayoutMetrics",
                     "com.finapp.app.telemetry.MerchantPayoutMetrics$Cached",
+                    // P7-TSK-009. The SAME case again, the PaymentMetrics shape exactly:
+                    // the COUNT of initiations awaiting the payer and of confirmations
+                    // parked in suspense, and the AGE IN SECONDS of each oldest - longs
+                    // from the stores' UnknownReading to the registry boundary, published
+                    // through the ToDoubleFunction Micrometer's Gauge imposes, with NaN
+                    // the sentinel for unreadable. The parked AMOUNTS are deliberately NOT
+                    // published (INV-AUD-02, INV-REC-05's gauge is a count and an age), so
+                    // there is no monetary value here to be imprecise about.
+                    "com.finapp.app.telemetry.PayInMetrics",
+                    "com.finapp.app.telemetry.PayInMetrics$Cached",
                     // P2-TSK-001. The SAME case again, not a new one: counts of published,
                     // failed and dead-lettered events - ints out of RelayPollResult - published
                     // through Counter.increment(double), the only instrument Micrometer offers.

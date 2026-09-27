@@ -361,6 +361,12 @@ class OpenApiContractTest {
                         // final-on-acceptance).
                         ApiVersion.CURRENT_PREFIX + "/me/withdrawals",
                         ApiVersion.CURRENT_PREFIX + "/me/withdrawals/{id}",
+                        // P7-TSK-009: the instant rail's confirmation callback -
+                        // unauthenticated by honest declaration, authenticated in fact by
+                        // the per-rail HMAC over timestamp + "." + raw body (ADR-0062
+                        // section 5) - the third machine-facing route, published
+                        // deliberately.
+                        ApiVersion.CURRENT_PREFIX + "/providers/payments/instant/webhooks",
                         // P5-TSK-011: the payment surface - the keyed create, the
                         // confirmation that answers the intent's real state (honestly
                         // PROCESSING), the window-bounded cancel, and the ownership-scoped

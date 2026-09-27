@@ -87,7 +87,8 @@ class PaymentCaptureTest {
                         InteractionModel.TWO_STEP,
                         new ProviderIdempotencyReference("auth-" + IDS.next()), null,
                         new ProviderReference("psp-auth-1"), AMOUNT, null, null, null, null, null,
-                        PaymentAttemptStatus.AUTHORIZED, Instant.now(CLOCK));
+                        PaymentAttemptStatus.AUTHORIZED, Instant.now(CLOCK),
+                null, null, null, null, null);
         attempts.rows.put(authorized.id().value(), authorized);
     }
 
@@ -134,7 +135,8 @@ class PaymentCaptureTest {
                         (uow, envelope, payload, mediaType) -> events.add(envelope),
                         IDS,
                         CLOCK,
-                        PaymentRails.of(java.util.List.of(SimulatedCardPspAdapter.RAIL)));
+                        PaymentRails.of(java.util.List.of(SimulatedCardPspAdapter.RAIL)),
+                new JdbcUnmatchedConfirmationStore());
         return new PaymentCapture(
                 runner,
                 intents,
@@ -266,7 +268,8 @@ class PaymentCaptureTest {
                     PaymentAttempt.rehydrate(
                             authorized.id(), intent.id(), SimulatedCardPspAdapter.RAIL.id(), InteractionModel.TWO_STEP, authorized.authorizationReference(),
                             null, null, null, null, null, null, null, null,
-                            PaymentAttemptStatus.AUTH_DISPATCHED, authorized.createdAt());
+                            PaymentAttemptStatus.AUTH_DISPATCHED, authorized.createdAt(),
+                null, null, null, null, null);
             case CAPTURE_DISPATCHED ->
                     authorized.dispatchCapture(
                             new ProviderIdempotencyReference("cap-" + IDS.next()));
@@ -413,6 +416,64 @@ class PaymentCaptureTest {
     }
 
     private static final class FakeAttemptStore implements PaymentAttemptStore<Connection> {
+
+        // ------------------------------- the push model (P7-TSK-009): not this suite's subject.
+
+        @Override
+        public java.util.Optional<PaymentAttempt> findByEndToEndReference(
+                Connection uow, EndToEndReference reference) {
+            throw new UnsupportedOperationException("not exercised here");
+        }
+
+        @Override
+        public java.util.Optional<PaymentAttempt> findBySchemeReference(
+                Connection uow, ProviderReference reference) {
+            throw new UnsupportedOperationException("not exercised here");
+        }
+
+        @Override
+        public boolean openInitiation(
+                Connection uow,
+                PaymentAttemptId attempt,
+                com.finapp.sharedkernel.security.Sensitive<String> handle) {
+            throw new UnsupportedOperationException("not exercised here");
+        }
+
+        @Override
+        public boolean execute(
+                Connection uow,
+                PaymentAttemptId attempt,
+                PaymentAttemptStatus from,
+                ProviderReference schemeReference,
+                java.util.Optional<String> settlementCycle) {
+            throw new UnsupportedOperationException("not exercised here");
+        }
+
+        @Override
+        public boolean failHandleless(
+                Connection uow, PaymentAttemptId attempt, PaymentFailureReason reason) {
+            throw new UnsupportedOperationException("not exercised here");
+        }
+
+        @Override
+        public boolean renewInitiationPermit(
+                Connection uow,
+                PaymentAttemptId attempt,
+                java.time.Instant expected,
+                java.time.Instant renewed) {
+            throw new UnsupportedOperationException("not exercised here");
+        }
+
+        @Override
+        public java.util.List<PaymentAttempt> findResolvableInitiations(
+                Connection uow, java.time.Instant contactedBefore, int limit) {
+            throw new UnsupportedOperationException("not exercised here");
+        }
+
+        @Override
+        public UnknownReading awaitingReading(Connection uow) {
+            throw new UnsupportedOperationException("not exercised here");
+        }
 
         @Override
         public java.util.Optional<PaymentAttempt> findByOperationReference(

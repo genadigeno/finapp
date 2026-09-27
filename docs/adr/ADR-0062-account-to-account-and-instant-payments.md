@@ -95,6 +95,17 @@ The concepts this phase must keep apart:
    declared deadline plus the configured margin, both proven on seeded rows and a dead-port
    engine.)*
 
+   *(Adapted for the pay-in INITIATION by `P7-TSK-009`, and the adaptation is recorded
+   because it is deliberate: an initiation moves no money, and re-initiating converges on
+   the scheme's dedupe — an opened initiation answers its existing handle, an unopened one
+   opens late — so this section's danger, "never conclude failure while a later send can
+   follow", becomes "never fail a row that HOLDS a handle": the unavailability conclusions
+   carry `authorization_handle IS NULL` in their conditionals for every writer, no
+   never-opened conclusion exists at all (the age gauge is the operator's standing alert
+   instead of a clock's guess), and the permit (`payment_attempt.last_dispatched_at`,
+   forward-only, conditionally renewed) paces the wire among instances rather than
+   guarding money.)*
+
 4. **Accounting: every accepted push lands in the scheme's own clearing position**
    (`INSTANT_CLEARING`, an operational asset per currency, added with its first poster; ADR-0059
    §4 — *refined by `P7-TSK-006`: the member and its seeded chart rows arrive with the
@@ -122,6 +133,20 @@ The concepts this phase must keep apart:
    - A pay-in confirmation that names no initiation the platform made is retained as evidence,
      parked in `SUSPENSE_UNMATCHED` if it carries money (`INV-REC-05`), and alerted. It is never
      credited by guesswork.
+
+   *(Shipped `P7-TSK-009`: the push attempt's own facts and inbound edge — born
+   `AWAITING_PAYER` with our reference and its initiation permit, the handle stored once and
+   rendered once to its owner, `AWAITING_PAYER → EXECUTED` applied by the rail's SIGNED
+   confirmation callback and by the initiation inquiry sweep through one shared
+   `PaymentOutcomes.applyExecution`, the posting `payment-execution:<attemptId>` through the
+   existing capture composition — a checkout completing `COMPLETED_LATE` when its session
+   expired first, `INV-MER-06`'s second rail proven both orderings — and the unattributable,
+   money-carrying confirmation parked beside its `unmatched-confirmation:<rail>:<reference>`
+   entry in `payments.unmatched_confirmation`, `SUSPENSE_UNMATCHED`'s first poster, aged by
+   the `finapp.payments.unmatched` gauges. Payments `V017`; routing version 3 seeds the
+   `PAY_IN`+`BANK_ACCOUNT` rule beside both standing routes. The payer PSP's `expired` word
+   deliberately maps to the rejection at the door — the core keeps its three failure
+   reasons, and the scheme's own word rests in the retained evidence, `INV-PAY-03`.)*
 
 6. **The wallet withdrawal is hold-then-dispatch on the wallet**, the refund's and the payout's
    discipline:

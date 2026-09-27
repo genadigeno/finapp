@@ -362,12 +362,101 @@ class PaymentBeans {
     }
 
     @Bean
-    @ConditionalOnProperty("finapp.payments.instant.url")
+    @ConditionalOnProperty(
+            name = "finapp.payments.withdrawal.sweeper.enabled",
+            havingValue = "true",
+            matchIfMissing = true)
+    // The rail half of the condition rides on the resolution bean itself (declared above,
+    // instant-conditional): no scheme, no sweep, no schedule. The enabled flag is the
+    // PaymentSweeperSchedule discipline, needed since P7-TSK-009 put the scheme endpoint
+    // in the app test overlay (the published-contract doctrine): a deployment that says
+    // nothing gets the sweeper, and the test overlay says false.
+    @org.springframework.boot.autoconfigure.condition.ConditionalOnBean(
+            com.finapp.payments.WithdrawalResolution.class)
     WithdrawalResolutionSchedule withdrawalResolutionSchedule(
             com.finapp.payments.WithdrawalResolution withdrawalResolution,
             @Value("${finapp.payments.withdrawal.sweeper.poll:PT30S}")
                     java.time.Duration pollInterval) {
         return new WithdrawalResolutionSchedule(withdrawalResolution, pollInterval);
+    }
+
+    // ------------------------------------------------------------------
+    // The pay-by-bank pay-in (P7-TSK-009, ADR-0062 §5).
+    // ------------------------------------------------------------------
+
+    @Bean
+    com.finapp.payments.UnmatchedConfirmationStore<Connection> unmatchedConfirmationStore() {
+        return new com.finapp.payments.JdbcUnmatchedConfirmationStore();
+    }
+
+    /** The suspense parking (`INV-REC-05`) — unconditional: it calls no provider. */
+    @Bean
+    com.finapp.payments.UnmatchedConfirmations unmatchedConfirmations(
+            com.finapp.payments.UnmatchedConfirmationStore<Connection>
+                    unmatchedConfirmationStore,
+            com.finapp.payments.PaymentRails paymentRails,
+            com.finapp.ledger.LedgerAccountStore<Connection> ledgerAccountStore,
+            com.finapp.ledger.PostingService postingService,
+            AuditWriter<Connection> auditWriter,
+            IdGenerator ids,
+            Clock clock) {
+        return new com.finapp.payments.UnmatchedConfirmations(
+                unmatchedConfirmationStore,
+                paymentRails,
+                new com.finapp.ledger.ChartOfAccounts<>(ledgerAccountStore),
+                postingService,
+                auditWriter,
+                ids,
+                clock);
+    }
+
+    /**
+     * The pay-in resolution sweep and its schedule (`P7-TSK-009`, ADR-0062 §5) — present
+     * with the rail, leaderless on every instance: the re-initiate leg recovers a lost
+     * handle by the scheme's dedupe, the inquiry leg asks the payer PSP, and the permit's
+     * conditional renewal paces the wire among instances.
+     */
+    @Bean
+    @ConditionalOnProperty("finapp.payments.instant.url")
+    com.finapp.payments.PayInResolution payInResolution(
+            PaymentAttemptStore<Connection> paymentAttemptStore,
+            PaymentIntentStore<Connection> paymentIntentStore,
+            com.finapp.payments.PaymentOutcomes paymentOutcomes,
+            com.finapp.payments.PushRail instantRail,
+            ProviderEvidenceStore<Connection> providerEvidenceStore,
+            @Value("${finapp.payments.payin.sweeper.initiation-age:PT2M}")
+                    java.time.Duration initiationAge,
+            @Value("${finapp.payments.payin.sweeper.batch:25}") int batchSize,
+            IdGenerator ids,
+            Clock clock,
+            TransactionRunner paymentTransactionRunner) {
+        return new com.finapp.payments.PayInResolution(
+                paymentAttemptStore,
+                paymentIntentStore,
+                paymentOutcomes,
+                instantRail,
+                providerEvidenceStore,
+                new com.finapp.payments.PayInResolution.Config(initiationAge, batchSize),
+                ids,
+                clock,
+                paymentTransactionRunner);
+    }
+
+    @Bean
+    @ConditionalOnProperty(
+            name = "finapp.payments.payin.sweeper.enabled",
+            havingValue = "true",
+            matchIfMissing = true)
+    // The rail half of the condition rides on the resolution bean (instant-conditional);
+    // the flag is the PaymentSweeperSchedule discipline - the test overlay says false,
+    // a silent deployment gets the sweeper.
+    @org.springframework.boot.autoconfigure.condition.ConditionalOnBean(
+            com.finapp.payments.PayInResolution.class)
+    PayInResolutionSchedule payInResolutionSchedule(
+            com.finapp.payments.PayInResolution payInResolution,
+            @Value("${finapp.payments.payin.sweeper.poll:PT30S}")
+                    java.time.Duration pollInterval) {
+        return new PayInResolutionSchedule(payInResolution, pollInterval);
     }
 
     @Bean
@@ -466,7 +555,9 @@ class PaymentBeans {
             OutboxWriter<Connection> outboxWriter,
             IdGenerator ids,
             Clock clock,
-            com.finapp.payments.PaymentRails paymentRails) {
+            com.finapp.payments.PaymentRails paymentRails,
+            com.finapp.payments.UnmatchedConfirmationStore<Connection>
+                    unmatchedConfirmationStore) {
         return new com.finapp.payments.PaymentOutcomes(
                 paymentIntentStore,
                 paymentAttemptStore,
@@ -480,7 +571,10 @@ class PaymentBeans {
                 outboxWriter,
                 ids,
                 clock,
-                paymentRails);
+                paymentRails,
+                // The execute arm's second claim pre-check (P7-TSK-009): a scheme
+                // reference already PARKED must not also credit.
+                unmatchedConfirmationStore);
     }
 
     @Bean
@@ -499,7 +593,9 @@ class PaymentBeans {
             OutboxWriter<Connection> outboxWriter,
             IdGenerator ids,
             Clock clock,
-            com.finapp.payments.RoutingTelemetry routingTelemetry) {
+            com.finapp.payments.RoutingTelemetry routingTelemetry,
+            org.springframework.beans.factory.ObjectProvider<com.finapp.payments.PushRail>
+                    pushRail) {
         return new PaymentConfirmation(
                 paymentTransactionRunner,
                 paymentIntentStore,
@@ -516,7 +612,11 @@ class PaymentBeans {
                 outboxWriter,
                 ids,
                 clock,
-                routingTelemetry);
+                routingTelemetry,
+                // The push dispatch (P7-TSK-009): present exactly when the instant rail
+                // is configured; an Optional because payments cannot name Spring's
+                // ObjectProvider, and the absent case is the bank branch's honest 503.
+                java.util.Optional.ofNullable(pushRail.getIfAvailable()));
     }
 
     /**
@@ -708,6 +808,60 @@ class PaymentBeans {
                 clock,
                 paymentTransactions,
                 dataSource);
+    }
+
+    /**
+     * The instant rail's confirmation verifier and door (`P7-TSK-009`, ADR-0062 §5) — the
+     * card pair's shape at the second rail: its OWN key ({@code InstantWebhookKey}, the
+     * per-rail credential `P7-TSK-006` deferred here), its own consumer name, its own
+     * vocabulary. Conditional with the rail: no scheme, no confirmations.
+     */
+    @Bean
+    @ConditionalOnProperty("finapp.payments.instant.url")
+    com.finapp.payments.WebhookSignature instantWebhookSignature(
+            @Value("${finapp.payments.instant.webhook.key:"
+                            + com.finapp.app.mfa.MfaKey.MARKED_LOCAL_DEFAULT + "}")
+                    String configuredKey,
+            @Value("${finapp.payments.instant.webhook.tolerance:PT5M}")
+                    java.time.Duration tolerance,
+            Environment environment,
+            Clock clock) {
+        boolean loopback = DatabaseEndpoint.isEntirelyLoopback(DatabaseEndpoint.url(environment));
+        return new com.finapp.payments.WebhookSignature(
+                InstantWebhookKey.decode(configuredKey, loopback), tolerance, clock);
+    }
+
+    @Bean
+    @ConditionalOnProperty("finapp.payments.instant.url")
+    InstantCallbackService instantCallbackService(
+            com.finapp.payments.WebhookSignature instantWebhookSignature,
+            ProviderEvidenceStore<Connection> providerEvidenceStore,
+            PaymentAttemptStore<Connection> paymentAttemptStore,
+            PaymentIntentStore<Connection> paymentIntentStore,
+            com.finapp.payments.PaymentOutcomes paymentOutcomes,
+            com.finapp.payments.UnmatchedConfirmations unmatchedConfirmations,
+            com.finapp.app.telemetry.PaymentMeters paymentMeters,
+            com.finapp.platform.inbox.InboxConsumer<Connection> inboxConsumer,
+            tools.jackson.databind.ObjectMapper objectMapper,
+            Clock clock,
+            TransactionTemplate paymentTransactions,
+            DataSource dataSource) {
+        return new InstantCallbackService(
+                instantWebhookSignature,
+                providerEvidenceStore,
+                paymentAttemptStore,
+                paymentIntentStore,
+                paymentOutcomes,
+                unmatchedConfirmations,
+                paymentMeters,
+                inboxConsumer,
+                objectMapper,
+                clock,
+                paymentTransactions,
+                dataSource,
+                // The rail this door serves - bound HERE, the composition root, so the
+                // door holds no rail by name (INV-RAIL-01; the Withdrawals binding).
+                com.finapp.payments.SimulatedInstantSchemeAdapter.RAIL.id());
     }
 
     /**

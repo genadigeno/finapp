@@ -144,7 +144,28 @@ public final class PaymentService {
             String paymentMethodId,
             String createdAt,
             String refunded,
-            String refundPending) {}
+            String refundPending,
+            /**
+             * The payer's authorization handle (`P7-TSK-009`, ADR-0062 §5): present exactly
+             * while the caller's own pay-by-bank attempt awaits them — the capability URL
+             * their client follows to their PSP. Owner-only by construction (the view is
+             * assembled from an ownership-scoped read), additive on the contract, and the
+             * render is a registered {@code expose()} site.
+             */
+            String authorizationHandle) {
+
+        /**
+         * Identifiers and the state only — never the amount
+         * ({@code RESTRICTED-FINANCIAL}) and never the handle (a capability URL in a log
+         * line can complete the payer's flow): the generated rendering would print both,
+         * which is the exact harm the secret-name rule's exemption requires this override
+         * to close (`P7-TSK-009`; {@code PaymentViewRedactsTest} asserts it).
+         */
+        @Override
+        public String toString() {
+            return "PaymentView[" + id + ", " + status + "]";
+        }
+    }
 
     /**
      * Creates (or replays) the caller's payment intent — {@code 201} for the replay as well as
@@ -197,7 +218,9 @@ public final class PaymentService {
                     // Totals fixed at the judgement's zeros, not a re-read: at creation nothing is
                     // dispatched, and the replay must render the original bytes whatever
                     // refunds have done to the rows since (the P5-TSK-011 doctrine).
-                    return view(row, result.status(), null, zeroTotals(row));
+                    // No handle either: at creation nothing is dispatched, and the replay
+                    // renders the original judgement's bytes.
+                    return view(row, result.status(), null, zeroTotals(row), null);
                 });
     }
 
@@ -251,6 +274,13 @@ public final class PaymentService {
                     "A confirmation was refused by the intent's state (" + refused.from() + ")",
                     "the payment is " + refused.from()
                             + " and only a payment awaiting confirmation can be confirmed.");
+        } catch (com.finapp.payments.PushRailUnavailableException unconfigured) {
+            // Routing chose the push rail and this deployment configures no adapter
+            // (P7-TSK-009): Tx1 rolled back whole - nothing written, nothing sent, the
+            // intent still awaits confirmation - and the answer is the same honest 503 an
+            // unconfigured card provider gets (the ObjectProvider decision's second
+            // occurrence).
+            throw providerUnavailable();
         }
 
         // The judgement this call itself committed, counted AFTER the command's own
@@ -397,7 +427,8 @@ public final class PaymentService {
                                 .map(row ->
                                         view(row, row.status(),
                                                 reasonFor(unitOfWork, row),
-                                                liveTotals(unitOfWork, row)))
+                                                liveTotals(unitOfWork, row),
+                                                handleFor(unitOfWork, row)))
                                 .orElseThrow(PaymentService::paymentNotFound));
     }
 
@@ -524,7 +555,8 @@ public final class PaymentService {
                     UUID partyId = partyOf(unitOfWork, current);
                     return intents.listFor(unitOfWork, partyId).stream()
                             .map(row -> view(row, row.status(), reasonFor(unitOfWork, row),
-                                    liveTotals(unitOfWork, row)))
+                                    liveTotals(unitOfWork, row),
+                                    handleFor(unitOfWork, row)))
                             .toList();
                 });
     }
@@ -537,7 +569,26 @@ public final class PaymentService {
         return intents.findOwned(unitOfWork, intentId, partyId)
                 .map(row ->
                         view(row, row.status(), reasonFor(unitOfWork, row),
-                                liveTotals(unitOfWork, row)));
+                                liveTotals(unitOfWork, row),
+                                handleFor(unitOfWork, row)));
+    }
+
+    /**
+     * The payer's authorization handle, exactly while their own push attempt awaits them
+     * (`P7-TSK-009`): the ONE owner-facing render of the capability URL — the registered
+     * {@code expose()} site the {@code InitiationAnswer} javadoc promised. Read behind the
+     * ownership-scoped intent resolution, never on a terminal row: a completed or failed
+     * initiation's handle is history, not an invitation.
+     */
+    private String handleFor(Connection unitOfWork, PaymentIntent row) {
+        if (row.status() != PaymentIntentStatus.PROCESSING) {
+            return null;
+        }
+        return attempts.findForIntent(unitOfWork, row.id())
+                .filter(attempt -> attempt.status() == PaymentAttemptStatus.AWAITING_PAYER)
+                .flatMap(PaymentAttempt::authorizationHandle)
+                .map(com.finapp.sharedkernel.security.Sensitive::expose)
+                .orElse(null);
     }
 
     /**
@@ -556,7 +607,11 @@ public final class PaymentService {
     }
 
     private PaymentView view(
-            PaymentIntent row, PaymentIntentStatus status, String reason, RefundTotals totals) {
+            PaymentIntent row,
+            PaymentIntentStatus status,
+            String reason,
+            RefundTotals totals,
+            String authorizationHandle) {
         return new PaymentView(
                 row.id().value().toString(),
                 status.name(),
@@ -566,7 +621,8 @@ public final class PaymentService {
                 row.paymentMethodId().toString(),
                 row.createdAt().toString(),
                 totals.refunded(),
-                totals.pending());
+                totals.pending(),
+                authorizationHandle);
     }
 
     /**

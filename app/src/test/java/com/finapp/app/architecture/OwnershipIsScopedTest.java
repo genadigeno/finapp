@@ -369,6 +369,47 @@ class OwnershipIsScopedTest {
                                         + " from the conditional transition that just fired"
                                         + " on the locked row.")),
                     Map.entry(
+                            "com.finapp.payments.JdbcPaymentAttemptStore.openInitiation",
+                            new Entry(
+                                    Scope.ADMINISTERED,
+                                    "P7-TSK-009. The initiation handle's one store, behind"
+                                        + " status = AWAITING_PAYER AND handle IS NULL: its"
+                                        + " id comes only from the dispatch this flight's"
+                                        + " Tx1 committed (PaymentConfirmation's Dispatch"
+                                        + " record) or from a sweep candidate read - never"
+                                        + " a request's raw identifier, and the value it"
+                                        + " writes came from the scheme's answer to OUR"
+                                        + " reference, not from any caller.")),
+                    Map.entry(
+                            "com.finapp.payments.JdbcPaymentAttemptStore.execute",
+                            new Entry(
+                                    Scope.ADMINISTERED,
+                                    "P7-TSK-009, the .authorize/.capture reasoning on the"
+                                        + " push machine's inbound edge: a conditional"
+                                        + " transition whose id comes from the SIGNED"
+                                        + " callback's attribution read (by OUR minted"
+                                        + " end-to-end reference - the SIGNED_CALLBACK"
+                                        + " provenance) or the sweep's candidate read;"
+                                        + " the losers of the row count converge.")),
+                    Map.entry(
+                            "com.finapp.payments.JdbcPaymentAttemptStore.failHandleless",
+                            new Entry(
+                                    Scope.ADMINISTERED,
+                                    "P7-TSK-009. The unavailability conclusion's own"
+                                        + " conditional (status AND handle IS NULL in one"
+                                        + " WHERE - ADR-0062 section 3 adapted): its id is"
+                                        + " Tx1's own carried fact or a sweep candidate's,"
+                                        + " never a request value.")),
+                    Map.entry(
+                            "com.finapp.payments.JdbcPaymentAttemptStore.renewInitiationPermit",
+                            new Entry(
+                                    Scope.ADMINISTERED,
+                                    "P7-TSK-009, the JdbcRefundStore.renewSendPermit shape:"
+                                        + " the sweep's wire-noise arbiter, conditional on"
+                                        + " the expected permit value read from the same"
+                                        + " candidate row - no request value can reach"
+                                        + " it.")),
+                    Map.entry(
                             "com.finapp.payments.JdbcRoutingStore.appendStep",
                             new Entry(
                                     Scope.ADMINISTERED,

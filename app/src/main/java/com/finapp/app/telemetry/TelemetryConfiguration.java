@@ -249,6 +249,30 @@ class TelemetryConfiguration {
     }
 
     /**
+     * The pay-by-bank gauges (`P7-TSK-009`): the awaiting-payer age {@code AWAITING_PAYER}
+     * is deliberately excluded from the stuck gauges above, and the suspense parkings —
+     * {@code INV-REC-05}'s standing alert. The {@code paymentMetrics} stance verbatim.
+     */
+    @Bean
+    PayInMetrics payInMetrics(DataSource dataSource, Clock clock, MeterRegistry registry) {
+        com.finapp.payments.PaymentAttemptStore<java.sql.Connection> attempts =
+                new com.finapp.payments.JdbcPaymentAttemptStore();
+        com.finapp.payments.UnmatchedConfirmationStore<java.sql.Connection> unmatched =
+                new com.finapp.payments.JdbcUnmatchedConfirmationStore();
+        return new PayInMetrics(
+                connection -> payInReading(attempts.awaitingReading(connection)),
+                connection -> payInReading(unmatched.parkedReading(connection)),
+                dataSource::getConnection,
+                clock,
+                registry);
+    }
+
+    private static PayInMetrics.Reading payInReading(
+            com.finapp.payments.PaymentAttemptStore.UnknownReading stored) {
+        return new PayInMetrics.Reading(stored.active(), stored.oldestAgeSeconds());
+    }
+
+    /**
      * Wraps the auto-configured connection pool so acquiring a connection is visible in a trace.
      *
      * <p><strong>A {@code BeanPostProcessor} because a {@code @Bean} cannot do this.</strong>

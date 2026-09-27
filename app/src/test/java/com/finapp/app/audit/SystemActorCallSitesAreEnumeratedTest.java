@@ -127,7 +127,11 @@ class SystemActorCallSitesAreEnumeratedTest {
                         + " no person at all, so the attribution must not depend on which"
                         + " resolver won the harmless race (ADR-0046). The person's own acts -"
                         + " create, confirm, cancel - are audited as the person in their own"
-                        + " transactions; only the outcome application enters the platform."),
+                        + " transactions; only the outcome application enters the platform."
+                        + " Since P7-TSK-009 the SAME method holds a second scope for the"
+                        + " push dispatch's Tx2 - the scheme's initiation answer has no"
+                        + " session either, and the claim is this entry's verbatim at the"
+                        + " second machine."),
                     Map.entry(
                             "com.finapp.payments.PaymentCapture.capture",
                     "The capture, end to end (P5-TSK-010): the continuation of a confirmed"
@@ -242,7 +246,23 @@ class SystemActorCallSitesAreEnumeratedTest {
                         + " MerchantPayoutResolution case at the push rail - and the same"
                         + " outcome applied by the synchronous answer is already the"
                         + " platform's act. The scope wraps each row's inquire-and-resolve;"
-                        + " the candidate read before it claims nothing."));
+                        + " the candidate read before it claims nothing."),
+                    Map.entry(
+                            "com.finapp.payments.PayInResolution.sweep",
+                    "The pay-in resolution sweep (P7-TSK-009, ADR-0062 section 5): the"
+                        + " WithdrawalResolution case on the inbound machine - a scheduled"
+                        + " re-initiate or inquiry by our reference has no person, and the"
+                        + " same outcome applied by the callback door is already the"
+                        + " platform's act. The scope wraps each row's contact-and-resolve;"
+                        + " the candidate read and the permit renewal before it claim"
+                        + " nothing."),
+                    Map.entry(
+                            "com.finapp.app.payments.InstantCallbackService.effect",
+                    "The instant confirmation's effect (P7-TSK-009, ADR-0047 section 4):"
+                        + " the payer PSP's unsolicited statement has no session - the"
+                        + " PaymentWebhookService.effect reasoning at the second rail's"
+                        + " door, one enumerated site whether the statement lands on the"
+                        + " machine or parks in suspense."));
 
     @Test
     @DisplayName("no production code claims the system actor without being enumerated")

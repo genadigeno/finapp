@@ -60,8 +60,9 @@ import org.junit.jupiter.api.Test;
  * <p>{@code EQUITY} is deliberately absent here: no {@link AccountPurpose} produces one, so no
  * account of that type can exist to post to. The definition's sign convention is swept over
  * all five types hermetically ({@code BalanceDerivationTest}); this tier covers the four
- * reachable ones over rows. The seam accounts ({@code FX_POSITION}, {@code SUSPENSE_UNMATCHED})
- * are never posted to — the `P3-TSK-003` seam test counts their lines globally.
+ * reachable ones over rows. The seam account {@code FX_POSITION} is never posted to — the
+ * `P3-TSK-003` seam test counts its lines globally ({@code SUSPENSE_UNMATCHED} gained its
+ * first poster at `P7-TSK-009` and left that list).
  */
 @Tag("database")
 @DisplayName("the balance derivation over real postings (P3-TSK-008)")

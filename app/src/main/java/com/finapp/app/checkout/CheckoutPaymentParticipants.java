@@ -99,6 +99,13 @@ public final class CheckoutPaymentParticipants implements PaymentParticipants<Co
         return instruments.instrumentOwnedBy(unitOfWork, callerPartyId, paymentMethodId);
     }
 
+    /** Delegated unchanged (`P7-TSK-009`): the payer's instrument kind is the payer's fact. */
+    @Override
+    public Optional<com.finapp.payments.InstrumentKind> instrumentKindOwnedBy(
+            Connection unitOfWork, UUID callerPartyId, UUID paymentMethodId) {
+        return instruments.instrumentKindOwnedBy(unitOfWork, callerPartyId, paymentMethodId);
+    }
+
     private Wallet asDestination(LedgerAccount payable) {
         // The customer identifier the intent records is the MERCHANT's, because that is whose
         // money this becomes. The paying customer is recorded on the intent's party_id.

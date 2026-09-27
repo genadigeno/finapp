@@ -172,6 +172,19 @@ public enum PaymentsAuditAction implements AuditableAction {
             "A withdrawal outcome was applied on the locked row; the record names the"
                     + " withdrawal, the status, the failure class and the resolver, never"
                     + " an amount or a reference.",
+            false),
+
+    /**
+     * The platform parked a money-carrying confirmation that named no initiation it made
+     * (`P7-TSK-009`, ADR-0062 §5, {@code INV-REC-05}): value moved on the rail with no
+     * commercial home, so it rests in {@code SUSPENSE_UNMATCHED} — aged, alerted, never
+     * credited by guesswork. Acting insert only; a duplicate delivery converges silently.
+     */
+    UNMATCHED_CONFIRMATION_PARKED(
+            "payments.UnmatchedConfirmationParked",
+            "The platform parked an unattributable pay-in confirmation in the unmatched"
+                    + " suspense position; the record names the rail and the suspense entry,"
+                    + " never an amount.",
             false);
 
     private final String code;

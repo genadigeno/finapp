@@ -56,6 +56,16 @@ public interface PaymentParticipants<T> {
     Optional<ProviderReference> bankDestinationOwnedBy(
             T unitOfWork, UUID callerPartyId, UUID paymentMethodId);
 
+    /**
+     * The caller's live instrument, resolved to the routing vocabulary's kind
+     * (`P7-TSK-009`): which dispatch the confirmation performs and which routing input it
+     * judges are the INSTRUMENT's facts, read authoritatively at the act — never a
+     * request's claim. Empty folds unknown, another's, detached and malformed into the one
+     * refusal, exactly as the token and destination reads do.
+     */
+    Optional<InstrumentKind> instrumentKindOwnedBy(
+            T unitOfWork, UUID callerPartyId, UUID paymentMethodId);
+
     /** The wallet's owner, account and currency — what the intent records and judges. */
     record Wallet(UUID customerId, LedgerAccountId account, CurrencyCode currency) {}
 }

@@ -8363,8 +8363,8 @@ negative payable** — `COMPLETE` (2026-09-23)
 
 # Phase 7 — Cards, Wallets, A2A and Instant Payments
 
-Status: `IN_PROGRESS` — started 2026-09-26 with `P7-TSK-001` (8 of 18 items complete, M7.1 at
-3 of 3, M7.2 at 2 of 2, M7.3 at 3 of 3) *(read `READY` for two days after the first task started — caught by `P7-TSK-001`'s own
+Status: `IN_PROGRESS` — started 2026-09-26 with `P7-TSK-001` (9 of 18 items complete, M7.1 at
+3 of 3, M7.2 at 2 of 2, M7.3 at 3 of 3, M7.4 at 1 of 2) *(read `READY` for two days after the first task started — caught by `P7-TSK-001`'s own
 gate, the stale-second-copy class this file has now recorded five times)*; entry gate passed
 2026-09-24 by the Phase 6 → 7 transition
 ([`reviews/PHASE_6_TO_7_TRANSITION.md`](reviews/PHASE_6_TO_7_TRANSITION.md)), elaborated to task
@@ -8721,7 +8721,7 @@ Disputes (`P7-TSK-012`…`-014`) · M7.7 Observability and demonstration (`P7-TS
 - **Definition of done**: `DOD-FIN`, `DOD-API`, `DOD-SEC`, `DOD-TEST`, `DOD-OBS`. **Risk**: High.
   **Cx**: L.
 
-**P7-TSK-009 — Pay-by-bank: A2A pay-ins for wallets and checkout** — `READY`
+**P7-TSK-009 — Pay-by-bank: A2A pay-ins for wallets and checkout** — `COMPLETE` (2026-09-27)
 - **Objective**: money enters through the payer's own PSP, authorized there, final on the scheme's
   confirmation.
 - **Bounded context**: Payments (9), consuming Checkout (11) and Merchant (12) through the existing
@@ -8752,8 +8752,30 @@ Disputes (`P7-TSK-012`…`-014`) · M7.7 Observability and demonstration (`P7-TS
   callbacks; provider success with a lost response; probes.
 - **Accept**: a wallet funded and a checkout paid by bank, each reconciled; a late execution lands.
 - **Definition of done**: `DOD-FIN`, `DOD-API`, `DOD-TEST`. **Risk**: High. **Cx**: L.
+**P7-TSK-009 — Pay-by-bank: A2A pay-ins for wallets and checkout** — `COMPLETE` (2026-09-27)
+- **Gate**: all three acceptance criteria proven over the deployed chain — the wallet funded
+  by bank and explained to the cent (`PayByBankDatabaseTest#theWalletChainHolds`), the
+  checkout paid by bank with ADR-0050's four lines on the INSTANT rail's own position
+  (`CheckoutFlowDatabaseTest#aCheckoutIsPaidByBank`), and the late execution landing
+  `COMPLETED_LATE` through the same composition seam as the card's
+  (`#aBankExecutionLandingAfterExpiryStillProducesTheOrder`, `INV-MER-06`'s second rail).
+  The push machine's inbound edge shipped with its producer and the drawn machine corrected
+  with provenance (payments `V017`; `V012`/`V014` applied history in the reconciliation);
+  ADR-0062 §3 adapted for the initiation with the adaptation recorded (never fail a row that
+  holds a handle; no never-opened conclusion exists; the permit is the wire-noise arbiter);
+  the unattributable confirmation parked once under ten fresh-id deliveries as
+  `SUSPENSE_UNMATCHED`'s first poster (`INV-REC-05`), with both scheme-reference claim
+  pre-checks proven; ten duplicate callbacks credited once; the lost initiate answer
+  recovered by the sweep's convergent re-initiate carrying OUR one reference read back from
+  the wire; the lost callback resolved by inquiry to the same one entry. thirteen probe
+  runs, thirteen caught, restores byte-identical (`MUTATION_TESTING.md` §2 +13 rows).
+  Multi-instance PASS — every arbiter the database's, the sweep enumerated leaderless.
+  Fleet hermetic 1657 across 14 modules, 0 failures; 227 targeted database tests across 19 suites, 0 failures; the platform
+  classification guard green. The full battery deliberately skipped on the owner's
+  instruction.
 
-**P7-TSK-010 — Refunds on push rails are return payments** — `PLANNED`
+
+**P7-TSK-010 — Refunds on push rails are return payments** — `READY`
 - **Objective**: a pay-in can be refunded without anyone reversing it — a new outbound push
   referencing the original (`refundMode`).
 - **Bounded context**: Payments (9).

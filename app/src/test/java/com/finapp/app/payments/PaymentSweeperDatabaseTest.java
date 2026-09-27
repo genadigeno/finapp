@@ -554,10 +554,13 @@ class PaymentSweeperDatabaseTest {
         UUID intent = seedRawIntent(app, "AUTOMATIC");
         execute(app,
                 "INSERT INTO payments.payment_attempt (id, intent_id, status, created_at,"
-                        + " rail, interaction_model)"
+                        // The push birth facts V017 requires (P7-TSK-009).
+                        + " rail, interaction_model, end_to_end_reference,"
+                        + " last_dispatched_at)"
                         + " VALUES (?, ?, 'AWAITING_PAYER', now() - interval '2 hour',"
-                        + " 'push-test', 'PUSH')",
-                attempt, intent);
+                        + " 'push-test', 'PUSH', ?, now() - interval '2 hour')",
+                attempt, intent,
+                java.util.UUID.randomUUID().toString().replace("-", ""));
         if (!status.equals("AWAITING_PAYER")) {
             execute(app, "UPDATE payments.payment_attempt SET status ="
                     + " 'EXECUTION_DISPATCHED' WHERE id = ?", attempt);
@@ -715,7 +718,8 @@ class PaymentSweeperDatabaseTest {
                 new JdbcOutboxWriter(),
                 IDS,
                 CLOCK,
-                com.finapp.payments.RoutingTelemetry.NONE)
+                com.finapp.payments.RoutingTelemetry.NONE,
+                java.util.Optional.empty())
                     .confirm(holder.party(), holder.intent());
             PaymentAttemptId attemptId =
                     runner.inTransaction(
@@ -822,7 +826,8 @@ class PaymentSweeperDatabaseTest {
                 new JdbcOutboxWriter(),
                 IDS,
                 CLOCK,
-                com.finapp.payments.PaymentRails.of(java.util.List.of(SimulatedCardPspAdapter.RAIL)));
+                com.finapp.payments.PaymentRails.of(java.util.List.of(SimulatedCardPspAdapter.RAIL)),
+                new com.finapp.payments.JdbcUnmatchedConfirmationStore());
     }
 
     private SimulatedCardPspAdapter adapter() {

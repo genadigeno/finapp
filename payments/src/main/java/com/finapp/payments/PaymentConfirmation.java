@@ -88,6 +88,16 @@ public final class PaymentConfirmation {
     /** The decision's meterable summary — counts of record stay in the rows. */
     @NonNull private final RoutingTelemetry telemetry;
 
+    /**
+     * The push rail, when this deployment configures one (`P7-TSK-009`): a pay-by-bank
+     * confirmation dispatches an INITIATION through it instead of an authorization —
+     * chosen by routing over the instrument's kind, gated by the declared model, never by
+     * a rail's name ({@code INV-RAIL-01}). Empty refuses the bank branch inside Tx1 with
+     * nothing written ({@link PushRailUnavailableException}). Last, so no existing
+     * positional argument moved (the Lombok field-order rule).
+     */
+    @NonNull private final Optional<PushRail> pushRail;
+
     /** {@code RailSelected} (`P7-TSK-003`): the routed dispatch, published with Tx1. */
     static final String RAIL_SELECTED_EVENT_TYPE = "payments.RailSelected";
 
@@ -107,10 +117,12 @@ public final class PaymentConfirmation {
             boolean converged,
             boolean acting) {}
 
-    /** Tx1's yield: what the call needs, carried across the connectionless gap. */
+    /** Tx1's yield: what the call needs, carried across the connectionless gap. The token
+     * exists exactly for the two-step dispatch; the push initiation carries only our
+     * reference and the amount ({@code INV-RAIL-03}: a pay-in has no destination). */
     private record Dispatch(
             PaymentAttempt attempt,
-            InstrumentToken token,
+            Optional<InstrumentToken> token,
             Money amount,
             RoutingDecisionId decision) {}
 
@@ -158,6 +170,25 @@ public final class PaymentConfirmation {
         }
         Dispatch dispatch = tx1.dispatch().orElseThrow();
 
+        // The push dispatch (P7-TSK-009): the initiation call sits in the same
+        // connectionless gap, and its answer applies through the same Tx2 discipline. A
+        // crash mid-call strands AWAITING_PAYER handle-less, visibly - the pay-in sweep's
+        // subject, exactly as a stranded AUTH_DISPATCHED is the card sweeper's.
+        if (dispatch.attempt().interactionModel() == InteractionModel.PUSH) {
+            InitiationAnswer opened =
+                    pushRail
+                            .orElseThrow(PushRailUnavailableException::new)
+                            .initiate(
+                                    new PushRail.PayInInitiation(
+                                            dispatch.attempt().endToEndReference(),
+                                            dispatch.amount()));
+            try (SecurityContext.Scope ignored = SecurityContext.enterSystem()) {
+                return transactions.inTransaction(
+                        uow -> applyInitiationOutcome(
+                                uow, intentId, dispatch.attempt().id(), opened, correlation));
+            }
+        }
+
         // The provider call - between the transactions, holding no database connection
         // (ADR-0046, P1-TSK-026). An exception here propagates: the dispatch stays committed
         // and visibly stranded, the sweeper's subject - never a fabricated outcome.
@@ -165,7 +196,7 @@ public final class PaymentConfirmation {
                 provider.authorize(
                         new PaymentProvider.AuthorizationRequest(
                                 dispatch.attempt().authorizationReference(),
-                                dispatch.token(),
+                                dispatch.token().orElseThrow(),
                                 dispatch.amount()));
 
         // Tx2: the outcome, applied as the platform - a provider's answer has no session
@@ -198,10 +229,26 @@ public final class PaymentConfirmation {
 
         // The instrument, re-resolved authoritatively at the act (it may have been detached
         // since creation): a refusal here throws with nothing written, the intent untouched.
-        InstrumentToken token =
+        // ITS KIND decides which dispatch this command performs and which routing input it
+        // judges (P7-TSK-009) - the instrument's fact, never the request's claim.
+        InstrumentKind kind =
                 participants
-                        .instrumentOwnedBy(uow, callerPartyId, intent.paymentMethodId())
+                        .instrumentKindOwnedBy(uow, callerPartyId, intent.paymentMethodId())
                         .orElseThrow(UnknownPaymentInstrumentException::new);
+        Optional<InstrumentToken> token = Optional.empty();
+        if (kind == InstrumentKind.CARD_TOKEN) {
+            token =
+                    Optional.of(
+                            participants
+                                    .instrumentOwnedBy(
+                                            uow, callerPartyId, intent.paymentMethodId())
+                                    .orElseThrow(UnknownPaymentInstrumentException::new));
+        } else if (pushRail.isEmpty()) {
+            // Refused BEFORE the arbiter: the whole transaction rolls back with nothing
+            // written and nothing sent, and the intent still awaits confirmation - the
+            // honest 503, retryable once the deployment configures the rail.
+            throw new PushRailUnavailableException();
+        }
 
         // The account the capture will credit, share-locked and still open (the Phase 6 -> 7
         // transition): a customer who closed the wallet since creation must not be charged for a
@@ -228,10 +275,10 @@ public final class PaymentConfirmation {
         RoutingInputs routingInputs =
                 new RoutingInputs(
                         PaymentDirection.PAY_IN,
-                        // The one confirmable instrument today is the tokenised card;
-                        // BANK_ACCOUNT arrives with its own kind at its own task
-                        // (P7-TSK-008), and a pay-in has no destination to reach.
-                        InstrumentKind.CARD_TOKEN,
+                        // The instrument's own kind (P7-TSK-009): the card and the bank
+                        // account judge the same seeded policy; a pay-in has no
+                        // destination to reach on either, so reachability stays empty.
+                        kind,
                         intent.amount(),
                         Optional.empty());
         RoutingPlan plan =
@@ -256,26 +303,33 @@ public final class PaymentConfirmation {
                     intentId, current.status(), PaymentIntentStatus.PROCESSING);
         }
 
-        // The winner: the attempt is born AUTH_DISPATCHED on the CHOSEN rail, its reference
-        // already minted and stored - before anything is sent (INV-PAY-04, ADR-0046).
+        // The winner: the attempt is born on the CHOSEN rail with its reference already
+        // minted and stored - before anything is sent (INV-PAY-04, ADR-0046). Which birth
+        // is the KIND's dispatch: AUTH_DISPATCHED for the card's two-step machine,
+        // AWAITING_PAYER for the push initiation (P7-TSK-009) - and the chosen rail's
+        // DECLARED model must be that dispatch's, or the policy, the declaration and this
+        // command disagree: a wiring fault, loud before anything is written (the
+        // PaymentOutcomes precedent).
         RailId chosen = plan.chosen().orElseThrow();
-        if (rails.capabilitiesOf(chosen).interactionModel() != InteractionModel.TWO_STEP) {
-            // Eligibility rejects a rail whose model cannot carry the instrument, so a
-            // foreign model here means the policy, the declaration and this command
-            // disagree - a wiring fault, loud before anything is written (the
-            // PaymentOutcomes precedent).
+        InteractionModel dispatched =
+                kind == InstrumentKind.CARD_TOKEN
+                        ? InteractionModel.TWO_STEP
+                        : InteractionModel.PUSH;
+        if (rails.capabilitiesOf(chosen).interactionModel() != dispatched) {
             throw new IllegalStateException(
                     "routing chose '" + chosen.value() + "', whose interaction model is not"
-                            + " the two-step machine this command dispatches (P7-TSK-003):"
-                            + " eligibility should have refused it");
+                            + " the " + dispatched + " machine this command dispatches"
+                            + " (P7-TSK-003): eligibility should have refused it");
         }
         PaymentAttempt attempt =
-                PaymentAttempt.create(
-                        ids,
-                        clock,
-                        intentId,
-                        chosen,
-                        new ProviderIdempotencyReference("auth-" + ids.next()));
+                dispatched == InteractionModel.TWO_STEP
+                        ? PaymentAttempt.create(
+                                ids,
+                                clock,
+                                intentId,
+                                chosen,
+                                new ProviderIdempotencyReference("auth-" + ids.next()))
+                        : PaymentAttempt.createPush(ids, clock, intentId, chosen);
         attempts.insert(uow, attempt);
 
         // The decision, pinned beside the attempt it governs (INV-RAIL-02, INV-HIST-04) -
@@ -310,8 +364,7 @@ public final class PaymentConfirmation {
                         Optional.of(
                                 "intent=" + intentId
                                         + ", attempt=" + attempt.id()
-                                        + ", reference="
-                                        + attempt.authorizationReference().value()
+                                        + ", reference=" + dispatchReferenceOf(attempt)
                                         + ", rail=" + attempt.rail().value()
                                         + ", policyVersion=" + policy.version()
                                         + ", decision=" + decision.id())));
@@ -341,6 +394,13 @@ public final class PaymentConfirmation {
                 Optional.of(new Dispatch(attempt, token, intent.amount(), decision.id())),
                 Optional.empty(),
                 Optional.empty());
+    }
+
+    /** The minted reference the dispatch stored, whichever machine's ({@code INV-PAY-04}). */
+    private static String dispatchReferenceOf(PaymentAttempt attempt) {
+        return attempt.interactionModel() == InteractionModel.PUSH
+                ? attempt.endToEndReference().value()
+                : attempt.authorizationReference().value();
     }
 
     /**
@@ -453,6 +513,39 @@ public final class PaymentConfirmation {
         // against a concurrent resolver's key-changing UPDATE (40P01). One transaction
         // either way: retention and outcome still commit together.
         answer.evidence()
+                .ifPresent(
+                        bytes ->
+                                evidence.append(
+                                        uow,
+                                        Optional.of(attemptId),
+                                        Optional.empty(),
+                                        EvidenceKind.RESPONSE,
+                                        bytes,
+                                        Instant.now(clock)));
+        return new ConfirmationResult(
+                applied.intent(), Optional.of(applied.attempt()), false, applied.acting());
+    }
+
+    /**
+     * Tx2 for the push dispatch (`P7-TSK-009`): the verbatim evidence, then the initiation
+     * outcome through the one shared component — same lock-order rule as the card's Tx2
+     * (effect's row work first, the evidence INSERT after).
+     */
+    private ConfirmationResult applyInitiationOutcome(
+            java.sql.Connection uow,
+            PaymentIntentId intentId,
+            PaymentAttemptId attemptId,
+            InitiationAnswer opened,
+            Correlation correlation) {
+        PaymentOutcomes.Applied applied =
+                outcomes.applyInitiation(
+                        uow,
+                        intentId,
+                        attemptId,
+                        opened.outcome(),
+                        opened.authorizationHandle(),
+                        correlation);
+        opened.evidence()
                 .ifPresent(
                         bytes ->
                                 evidence.append(

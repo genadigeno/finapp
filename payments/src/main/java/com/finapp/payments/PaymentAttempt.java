@@ -2,9 +2,12 @@ package com.finapp.payments;
 
 import com.finapp.sharedkernel.id.IdGenerator;
 import com.finapp.sharedkernel.money.Money;
+import com.finapp.sharedkernel.security.Sensitive;
 import java.time.Clock;
 import java.time.Instant;
+import java.time.temporal.ChronoUnit;
 import java.util.Objects;
+import java.util.Optional;
 
 /**
  * The PaymentAttempt: the provider-facing try ({@code P5-TSK-007}, ADR-0045) — the row that owns
@@ -76,6 +79,18 @@ public final class PaymentAttempt {
     private final PaymentAttemptStatus status;
     private final Instant createdAt;
 
+    // ------------------------------------------------------------- the push model's facts
+    // (`P7-TSK-009`, ADR-0062 §5) - in their own columns, exactly as the P7-TSK-002
+    // constructor promised: OUR end-to-end reference minted at birth (INV-PAY-04), the
+    // payer's authorization handle (a capability URL - Sensitive by construction), the
+    // scheme's transaction reference and settlement cycle (Phase 8's keys), and the
+    // initiation permit - the last outbound contact, forward-only for every writer.
+    private final EndToEndReference endToEndReference;
+    private final Sensitive<String> authorizationHandle;
+    private final ProviderReference schemeReference;
+    private final String settlementCycle;
+    private final Instant lastDispatchedAt;
+
     private PaymentAttempt(
             PaymentAttemptId id,
             PaymentIntentId intentId,
@@ -91,7 +106,12 @@ public final class PaymentAttempt {
             ProviderReference voidProviderReference,
             PaymentFailureReason failureReason,
             PaymentAttemptStatus status,
-            Instant createdAt) {
+            Instant createdAt,
+            EndToEndReference endToEndReference,
+            Sensitive<String> authorizationHandle,
+            ProviderReference schemeReference,
+            String settlementCycle,
+            Instant lastDispatchedAt) {
         this.id = Objects.requireNonNull(id, "id must not be null");
         this.intentId = Objects.requireNonNull(intentId, "intentId must not be null");
         this.rail = Objects.requireNonNull(
@@ -113,6 +133,11 @@ public final class PaymentAttempt {
         this.failureReason = failureReason;
         this.status = Objects.requireNonNull(status, "status must not be null");
         this.createdAt = Objects.requireNonNull(createdAt, "createdAt must not be null");
+        this.endToEndReference = endToEndReference;
+        this.authorizationHandle = authorizationHandle;
+        this.schemeReference = schemeReference;
+        this.settlementCycle = settlementCycle;
+        this.lastDispatchedAt = lastDispatchedAt;
 
         // WHICH MACHINE, FIRST (P7-TSK-002, ADR-0059 section 2): the status must be the
         // model's own; the authorization dispatch reference exists exactly on the two-step
@@ -143,6 +168,48 @@ public final class PaymentAttempt {
             throw new IllegalArgumentException(
                     "a " + interactionModel + " attempt carries no two-step fact: its own"
                             + " facts arrive with its rail's task (P7-TSK-002)");
+        }
+
+        // The push model's facts, confined and coherent both ways (P7-TSK-009, ADR-0062
+        // section 5). OUR reference and the initiation permit exist exactly on push rows -
+        // birth facts, the withdrawal's discipline; the scheme's pair arrives exactly with
+        // EXECUTED (a BOOK row is born EXECUTED with no scheme, which is why the pair rule
+        // is model-scoped); the handle rides only a push row, whatever its state - the
+        // initiation it opened is history the terminals keep.
+        if ((interactionModel == InteractionModel.PUSH) != (endToEndReference != null)) {
+            throw new IllegalArgumentException(
+                    "the end-to-end reference exists exactly on the push model (INV-PAY-04):"
+                            + " a push attempt never lacks one, and no other model carries"
+                            + " one");
+        }
+        if ((interactionModel == InteractionModel.PUSH) != (lastDispatchedAt != null)) {
+            throw new IllegalArgumentException(
+                    "the initiation permit exists exactly on the push model - the last"
+                            + " outbound contact is a push birth fact (ADR-0062 section 3)");
+        }
+        if (lastDispatchedAt != null && lastDispatchedAt.isBefore(createdAt)) {
+            throw new IllegalArgumentException(
+                    "an initiation permit never precedes the row's birth");
+        }
+        if (interactionModel != InteractionModel.PUSH
+                && (authorizationHandle != null
+                        || schemeReference != null
+                        || settlementCycle != null)) {
+            throw new IllegalArgumentException(
+                    "a " + interactionModel + " attempt carries no push fact: the handle and"
+                            + " the scheme's pair are the push model's own (P7-TSK-009)");
+        }
+        if (interactionModel == InteractionModel.PUSH
+                && (schemeReference != null) != (status == PaymentAttemptStatus.EXECUTED)) {
+            throw new IllegalArgumentException(
+                    "a push attempt carries the scheme's transaction reference exactly when"
+                            + " EXECUTED - status " + status + " is incoherent with what this"
+                            + " row holds");
+        }
+        if (settlementCycle != null && schemeReference == null) {
+            throw new IllegalArgumentException(
+                    "a settlement cycle rides only an executed push attempt, beside the"
+                            + " scheme's reference");
         }
 
         // Mapped reason <=> FAILED, both directions (the Transfer.failureReason idiom). The
@@ -309,7 +376,33 @@ public final class PaymentAttempt {
                 authorizationReference,
                 null, null, null, null, null, null, null, null,
                 PaymentAttemptStatus.AUTH_DISPATCHED,
-                Instant.now(clock));
+                Instant.now(clock),
+                null, null, null, null, null);
+    }
+
+    /**
+     * A push pay-in, born {@code AWAITING_PAYER} with OUR end-to-end reference already
+     * minted and its initiation permit stamped (`P7-TSK-009`, ADR-0062 §5) — the dispatch
+     * fact commits before the scheme is asked to open the initiation (ADR-0046,
+     * {@code INV-PAY-04}). Instants truncate to the column's microsecond resolution AT MINT
+     * (the `P7-TSK-004` clock-precision class, prevented).
+     */
+    public static PaymentAttempt createPush(
+            IdGenerator ids, Clock clock, PaymentIntentId intentId, RailId rail) {
+        Objects.requireNonNull(ids, "ids must not be null");
+        Objects.requireNonNull(clock, "clock must not be null");
+        Instant born = Instant.now(clock).truncatedTo(ChronoUnit.MICROS);
+        return new PaymentAttempt(
+                PaymentAttemptId.next(ids),
+                intentId,
+                rail,
+                InteractionModel.PUSH,
+                null, null, null, null, null, null, null, null, null,
+                PaymentAttemptStatus.AWAITING_PAYER,
+                born,
+                new EndToEndReference(ids.next().toString().replace("-", "")),
+                null, null, null,
+                born);
     }
 
     /**
@@ -331,12 +424,18 @@ public final class PaymentAttempt {
             ProviderReference voidProviderReference,
             PaymentFailureReason failureReason,
             PaymentAttemptStatus status,
-            Instant createdAt) {
+            Instant createdAt,
+            EndToEndReference endToEndReference,
+            Sensitive<String> authorizationHandle,
+            ProviderReference schemeReference,
+            String settlementCycle,
+            Instant lastDispatchedAt) {
         return new PaymentAttempt(
                 id, intentId, rail, interactionModel, authorizationReference, captureReference,
                 authorizationProviderReference, authorizedAmount, captureProviderReference,
                 capturedAmount, voidReference, voidProviderReference, failureReason,
-                status, createdAt);
+                status, createdAt, endToEndReference, authorizationHandle, schemeReference,
+                settlementCycle, lastDispatchedAt);
     }
 
     /** The issuer's promise arrived: reference and amount together, one fact. */
@@ -346,7 +445,9 @@ public final class PaymentAttempt {
                 id, intentId, rail, interactionModel, authorizationReference, captureReference,
                 providerReference, amount, captureProviderReference, capturedAmount,
                 voidReference, voidProviderReference,
-                failureReason, PaymentAttemptStatus.AUTHORIZED, createdAt);
+                failureReason, PaymentAttemptStatus.AUTHORIZED, createdAt,
+                endToEndReference, authorizationHandle, schemeReference, settlementCycle,
+                lastDispatchedAt);
     }
 
     /** The authorization's outcome is unknown — commit the honest state ({@code INV-LIFE-03}). */
@@ -356,7 +457,9 @@ public final class PaymentAttempt {
                 id, intentId, rail, interactionModel, authorizationReference, captureReference,
                 authorizationProviderReference, authorizedAmount, captureProviderReference,
                 capturedAmount, voidReference, voidProviderReference, failureReason,
-                PaymentAttemptStatus.AUTH_UNKNOWN, createdAt);
+                PaymentAttemptStatus.AUTH_UNKNOWN, createdAt,
+                endToEndReference, authorizationHandle, schemeReference, settlementCycle,
+                lastDispatchedAt);
     }
 
     /** The capture dispatch, its idempotency reference minted by this act ({@code INV-PAY-04}). */
@@ -367,7 +470,9 @@ public final class PaymentAttempt {
                 id, intentId, rail, interactionModel, authorizationReference, reference,
                 authorizationProviderReference, authorizedAmount, captureProviderReference,
                 capturedAmount, voidReference, voidProviderReference, failureReason,
-                PaymentAttemptStatus.CAPTURE_DISPATCHED, createdAt);
+                PaymentAttemptStatus.CAPTURE_DISPATCHED, createdAt,
+                endToEndReference, authorizationHandle, schemeReference, settlementCycle,
+                lastDispatchedAt);
     }
 
     /** The capture's outcome is unknown — the second {@code INV-LIFE-03} state. */
@@ -377,7 +482,9 @@ public final class PaymentAttempt {
                 id, intentId, rail, interactionModel, authorizationReference, captureReference,
                 authorizationProviderReference, authorizedAmount, captureProviderReference,
                 capturedAmount, voidReference, voidProviderReference, failureReason,
-                PaymentAttemptStatus.CAPTURE_UNKNOWN, createdAt);
+                PaymentAttemptStatus.CAPTURE_UNKNOWN, createdAt,
+                endToEndReference, authorizationHandle, schemeReference, settlementCycle,
+                lastDispatchedAt);
     }
 
     /**
@@ -390,7 +497,9 @@ public final class PaymentAttempt {
                 id, intentId, rail, interactionModel, authorizationReference, captureReference,
                 authorizationProviderReference, authorizedAmount, providerReference, amount,
                 voidReference, voidProviderReference,
-                failureReason, PaymentAttemptStatus.CAPTURED, createdAt);
+                failureReason, PaymentAttemptStatus.CAPTURED, createdAt,
+                endToEndReference, authorizationHandle, schemeReference, settlementCycle,
+                lastDispatchedAt);
     }
 
     /** The try failed, at either stage, with the mapped reason — this row's fact. */
@@ -401,7 +510,9 @@ public final class PaymentAttempt {
                 id, intentId, rail, interactionModel, authorizationReference, captureReference,
                 authorizationProviderReference, authorizedAmount, captureProviderReference,
                 capturedAmount, voidReference, voidProviderReference, reason,
-                PaymentAttemptStatus.FAILED, createdAt);
+                PaymentAttemptStatus.FAILED, createdAt,
+                endToEndReference, authorizationHandle, schemeReference, settlementCycle,
+                lastDispatchedAt);
     }
 
     /**
@@ -418,7 +529,9 @@ public final class PaymentAttempt {
                 id, intentId, rail, interactionModel, authorizationReference, captureReference,
                 authorizationProviderReference, authorizedAmount, captureProviderReference,
                 capturedAmount, reference, voidProviderReference, failureReason,
-                PaymentAttemptStatus.VOID_DISPATCHED, createdAt);
+                PaymentAttemptStatus.VOID_DISPATCHED, createdAt,
+                endToEndReference, authorizationHandle, schemeReference, settlementCycle,
+                lastDispatchedAt);
     }
 
     /** The provider released the authorization: the void's acknowledgement, one fact. */
@@ -429,7 +542,9 @@ public final class PaymentAttempt {
                 id, intentId, rail, interactionModel, authorizationReference, captureReference,
                 authorizationProviderReference, authorizedAmount, captureProviderReference,
                 capturedAmount, voidReference, providerReference, failureReason,
-                PaymentAttemptStatus.VOIDED, createdAt);
+                PaymentAttemptStatus.VOIDED, createdAt,
+                endToEndReference, authorizationHandle, schemeReference, settlementCycle,
+                lastDispatchedAt);
     }
 
     /** The void's outcome is unknown — the third {@code INV-LIFE-03} state on this machine. */
@@ -439,7 +554,80 @@ public final class PaymentAttempt {
                 id, intentId, rail, interactionModel, authorizationReference, captureReference,
                 authorizationProviderReference, authorizedAmount, captureProviderReference,
                 capturedAmount, voidReference, voidProviderReference, failureReason,
-                PaymentAttemptStatus.VOID_UNKNOWN, createdAt);
+                PaymentAttemptStatus.VOID_UNKNOWN, createdAt,
+                endToEndReference, authorizationHandle, schemeReference, settlementCycle,
+                lastDispatchedAt);
+    }
+
+    // ------------------------------------------------------------- the push doors (P7-TSK-009)
+
+    /**
+     * The scheme opened the initiation: the payer's authorization handle, stored once
+     * (`P7-TSK-009`). <strong>Not a transition</strong> — the row stays {@code AWAITING_PAYER};
+     * the handle is a payload the freeze rules then hold for every writer. Refused on any
+     * other state, and refused twice: the scheme deduplicates on our reference, so a second
+     * opening carries the same handle and the store's conditional converges instead.
+     */
+    public PaymentAttempt openInitiation(Sensitive<String> handle) {
+        Objects.requireNonNull(handle, "the authorization handle must not be null");
+        if (status != PaymentAttemptStatus.AWAITING_PAYER) {
+            throw new IllegalPaymentAttemptTransitionException(
+                    id, status, PaymentAttemptStatus.AWAITING_PAYER);
+        }
+        if (authorizationHandle != null) {
+            throw new IllegalArgumentException(
+                    "an initiation opens once: the handle is already stored, and a differing"
+                            + " second one would mean the scheme broke its own dedupe");
+        }
+        return new PaymentAttempt(
+                id, intentId, rail, interactionModel, authorizationReference, captureReference,
+                authorizationProviderReference, authorizedAmount, captureProviderReference,
+                capturedAmount, voidReference, voidProviderReference, failureReason,
+                status, createdAt, endToEndReference, handle, schemeReference, settlementCycle,
+                lastDispatchedAt);
+    }
+
+    /**
+     * The payer's PSP executed and the scheme confirmed: the transaction reference and the
+     * settlement cycle arrive with the transition that needs them (Phase 8's keys) — the
+     * inbound edge, {@code AWAITING_PAYER → EXECUTED} (`P7-TSK-009`, ADR-0062 §5).
+     */
+    public PaymentAttempt execute(ProviderReference scheme, Optional<String> cycle) {
+        Objects.requireNonNull(scheme, "the scheme's transaction reference must not be null");
+        Objects.requireNonNull(cycle, "cycle must not be null");
+        requireLegal(PaymentAttemptStatus.EXECUTED);
+        return new PaymentAttempt(
+                id, intentId, rail, interactionModel, authorizationReference, captureReference,
+                authorizationProviderReference, authorizedAmount, captureProviderReference,
+                capturedAmount, voidReference, voidProviderReference, failureReason,
+                PaymentAttemptStatus.EXECUTED, createdAt, endToEndReference,
+                authorizationHandle, scheme, cycle.orElse(null), lastDispatchedAt);
+    }
+
+    /**
+     * The sweep's outbound contact, stamped forward (`P7-TSK-009`, ADR-0062 §3 adapted): the
+     * permit paces re-initiations and inquiries — its conditional renewal is the wire-noise
+     * arbiter among instances, never a money guard, because an initiation moves nothing and
+     * re-initiating converges on the scheme's dedupe. Truncated at mint (the `P7-TSK-004`
+     * clock-precision class). Only a waiting row is ever contacted again.
+     */
+    public PaymentAttempt withInitiationPermit(Instant at) {
+        Objects.requireNonNull(at, "at must not be null");
+        if (status != PaymentAttemptStatus.AWAITING_PAYER) {
+            throw new IllegalPaymentAttemptTransitionException(
+                    id, status, PaymentAttemptStatus.AWAITING_PAYER);
+        }
+        Instant truncated = at.truncatedTo(ChronoUnit.MICROS);
+        if (truncated.isBefore(lastDispatchedAt)) {
+            throw new IllegalArgumentException(
+                    "an initiation permit only moves forward (ADR-0062 section 3)");
+        }
+        return new PaymentAttempt(
+                id, intentId, rail, interactionModel, authorizationReference, captureReference,
+                authorizationProviderReference, authorizedAmount, captureProviderReference,
+                capturedAmount, voidReference, voidProviderReference, failureReason,
+                status, createdAt, endToEndReference, authorizationHandle, schemeReference,
+                settlementCycle, truncated);
     }
 
     /** The machine's one check ({@code INV-LIFE-02}), whichever door the transition arrives by. */
@@ -529,5 +717,34 @@ public final class PaymentAttempt {
 
     public Instant createdAt() {
         return createdAt;
+    }
+
+    /** OUR reference on the push model ({@code INV-PAY-04}): minted at birth, what the
+     * scheme deduplicates on, what the callback and the inquiry attribute by, what Phase 8
+     * joins on. {@code null} on every other model. */
+    public EndToEndReference endToEndReference() {
+        return endToEndReference;
+    }
+
+    /** The payer's authorization handle — a capability URL, {@link Sensitive} end to end;
+     * empty until the scheme opens the initiation. Its {@code expose()} sites are the
+     * store's bind and the owner-facing render, both registered (`P7-TSK-009`). */
+    public Optional<Sensitive<String>> authorizationHandle() {
+        return Optional.ofNullable(authorizationHandle);
+    }
+
+    /** The scheme's transaction reference — exactly when a push row is {@code EXECUTED}. */
+    public Optional<ProviderReference> schemeReference() {
+        return Optional.ofNullable(schemeReference);
+    }
+
+    /** The scheme's settlement-cycle identifier, riding only an executed push row. */
+    public Optional<String> settlementCycle() {
+        return Optional.ofNullable(settlementCycle);
+    }
+
+    /** The initiation permit: the last outbound contact, forward-only (`P7-TSK-009`). */
+    public Instant lastDispatchedAt() {
+        return lastDispatchedAt;
     }
 }

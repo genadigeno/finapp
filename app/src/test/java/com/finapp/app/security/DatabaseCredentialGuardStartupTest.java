@@ -55,6 +55,12 @@ class DatabaseCredentialGuardStartupTest {
                                                 "--finapp.payments.evidence.key=BQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQU=",
                                                 "--finapp.payments.provider.key=BQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQU=",
                                                 "--finapp.payments.webhook.key=BQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQU=",
+                                                // P7-TSK-009: the instant scheme's two keys - the test overlay
+                                                // now supplies instant.url for the published contract's sake,
+                                                // so these contexts construct the instant beans too, and the
+                                                // DATABASE guards must stay the only refusal on trial here.
+                                                "--finapp.payments.instant.key=CAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAg=",
+                                                "--finapp.payments.instant.webhook.key=CQkJCQkJCQkJCQkJCQkJCQkJCQkJCQkJCQkJCQkJCQk=",
                                                 "--finapp.merchant.payout.evidence.key=BgYGBgYGBgYGBgYGBgYGBgYGBgYGBgYGBgYGBgYGBgY=",
                                                 "--finapp.merchant.payout.provider.key=BwcHBwcHBwcHBwcHBwcHBwcHBwcHBwcHBwcHBwcHBwc="))
                 .rootCause()
@@ -86,6 +92,12 @@ class DatabaseCredentialGuardStartupTest {
                                                 "--finapp.payments.evidence.key=BQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQU=",
                                                 "--finapp.payments.provider.key=BQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQU=",
                                                 "--finapp.payments.webhook.key=BQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQU=",
+                                                // P7-TSK-009: the instant scheme's two keys - the test overlay
+                                                // now supplies instant.url for the published contract's sake,
+                                                // so these contexts construct the instant beans too, and the
+                                                // DATABASE guards must stay the only refusal on trial here.
+                                                "--finapp.payments.instant.key=CAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAg=",
+                                                "--finapp.payments.instant.webhook.key=CQkJCQkJCQkJCQkJCQkJCQkJCQkJCQkJCQkJCQkJCQk=",
                                                 "--finapp.merchant.payout.evidence.key=BgYGBgYGBgYGBgYGBgYGBgYGBgYGBgYGBgYGBgYGBgY=",
                                                 "--finapp.merchant.payout.provider.key=BwcHBwcHBwcHBwcHBwcHBwcHBwcHBwcHBwcHBwcHBwc=",
                                                 "--spring.datasource.password=supplied-by-the-deployment"))
@@ -115,6 +127,12 @@ class DatabaseCredentialGuardStartupTest {
                                                 "--finapp.payments.evidence.key=BQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQU=",
                                                 "--finapp.payments.provider.key=BQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQU=",
                                                 "--finapp.payments.webhook.key=BQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQU=",
+                                                // P7-TSK-009: the instant scheme's two keys - the test overlay
+                                                // now supplies instant.url for the published contract's sake,
+                                                // so these contexts construct the instant beans too, and the
+                                                // DATABASE guards must stay the only refusal on trial here.
+                                                "--finapp.payments.instant.key=CAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAg=",
+                                                "--finapp.payments.instant.webhook.key=CQkJCQkJCQkJCQkJCQkJCQkJCQkJCQkJCQkJCQkJCQk=",
                                                 "--finapp.merchant.payout.evidence.key=BgYGBgYGBgYGBgYGBgYGBgYGBgYGBgYGBgYGBgYGBgY=",
                                                 "--finapp.merchant.payout.provider.key=BwcHBwcHBwcHBwcHBwcHBwcHBwcHBwcHBwcHBwcHBwc=",
                                 "--spring.datasource.password=supplied-by-the-deployment",
@@ -168,6 +186,12 @@ class DatabaseCredentialGuardStartupTest {
                                                 "--finapp.payments.evidence.key=BQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQU=",
                                                 "--finapp.payments.provider.key=BQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQU=",
                                                 "--finapp.payments.webhook.key=BQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQU=",
+                                                // P7-TSK-009: the instant scheme's two keys - the test overlay
+                                                // now supplies instant.url for the published contract's sake,
+                                                // so these contexts construct the instant beans too, and the
+                                                // DATABASE guards must stay the only refusal on trial here.
+                                                "--finapp.payments.instant.key=CAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAg=",
+                                                "--finapp.payments.instant.webhook.key=CQkJCQkJCQkJCQkJCQkJCQkJCQkJCQkJCQkJCQkJCQk=",
                                                 "--finapp.merchant.payout.evidence.key=BgYGBgYGBgYGBgYGBgYGBgYGBgYGBgYGBgYGBgYGBgY=",
                                                 "--finapp.merchant.payout.provider.key=BwcHBwcHBwcHBwcHBwcHBwcHBwcHBwcHBwcHBwcHBwc=");
     }

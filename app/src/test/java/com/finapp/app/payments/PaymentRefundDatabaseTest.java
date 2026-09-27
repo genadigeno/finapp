@@ -1172,7 +1172,8 @@ class PaymentRefundDatabaseTest {
                 new JdbcOutboxWriter(),
                 IDS,
                 CLOCK,
-                com.finapp.payments.RoutingTelemetry.NONE)
+                com.finapp.payments.RoutingTelemetry.NONE,
+                java.util.Optional.empty())
                                         .confirm(created.party(), created.intent()))
                 .isInstanceOf(com.finapp.payments.NoWalletForPaymentException.class);
         assertThat(psp.requestCount(SimulatedCardPspAdapter.AUTHORIZATIONS_PATH))
@@ -1247,7 +1248,8 @@ class PaymentRefundDatabaseTest {
                 new JdbcOutboxWriter(),
                 IDS,
                 CLOCK,
-                com.finapp.payments.RoutingTelemetry.NONE)
+                com.finapp.payments.RoutingTelemetry.NONE,
+                java.util.Optional.empty())
                                             .confirm(created.party(), created.intent());
                                 }
                                 return null;
@@ -1646,7 +1648,8 @@ class PaymentRefundDatabaseTest {
                 new JdbcOutboxWriter(),
                 IDS,
                 CLOCK,
-                com.finapp.payments.RoutingTelemetry.NONE)
+                com.finapp.payments.RoutingTelemetry.NONE,
+                java.util.Optional.empty())
                 .confirm(party, created.intent());
         PaymentAttemptId attemptId =
                 runner.inTransaction(
@@ -1834,7 +1837,8 @@ class PaymentRefundDatabaseTest {
                 new JdbcOutboxWriter(),
                 IDS,
                 CLOCK,
-                com.finapp.payments.PaymentRails.of(java.util.List.of(SimulatedCardPspAdapter.RAIL)));
+                com.finapp.payments.PaymentRails.of(java.util.List.of(SimulatedCardPspAdapter.RAIL)),
+                new com.finapp.payments.JdbcUnmatchedConfirmationStore());
     }
 
     private SimulatedCardPspAdapter adapter() {

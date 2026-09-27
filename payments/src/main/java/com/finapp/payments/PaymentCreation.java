@@ -130,8 +130,11 @@ public final class PaymentCreation {
                 participants
                         .walletOwnedBy(unitOfWork, command.callerPartyId())
                         .orElseThrow(NoWalletForPaymentException::new);
+        // Liveness and ownership of the instrument, EITHER kind (P7-TSK-009): the card's
+        // token and the bank account's destination are the confirmation's per-kind reads;
+        // creation only needs the instrument to be the caller's and live.
         participants
-                .instrumentOwnedBy(
+                .instrumentKindOwnedBy(
                         unitOfWork, command.callerPartyId(), command.paymentMethodId())
                 .orElseThrow(UnknownPaymentInstrumentException::new);
         if (!command.amount().currency().equals(wallet.currency())) {

@@ -2,6 +2,7 @@ package com.finapp.payments;
 
 import com.finapp.platform.security.Actor;
 import com.finapp.sharedkernel.money.Money;
+import com.finapp.sharedkernel.security.Sensitive;
 import java.time.Instant;
 import java.util.List;
 import java.util.Optional;
@@ -155,4 +156,74 @@ public interface PaymentAttemptStore<T> {
             PaymentAttemptStatus to,
             Actor actor,
             Instant occurredAt);
+
+    // ------------------------------------------------------- the push model (P7-TSK-009)
+
+    /**
+     * The push attempt OUR end-to-end reference names — the instant callback's and the
+     * inquiry's attribution read, the {@link #findByOperationReference} reasoning on the
+     * second vocabulary: the reference was minted and stored before anything was sent
+     * ({@code INV-PAY-04}), the signature is verified before this runs, and empty is the
+     * unattributable confirmation ADR-0062 §5 parks.
+     */
+    Optional<PaymentAttempt> findByEndToEndReference(T unitOfWork, EndToEndReference reference);
+
+    /**
+     * The push attempt already holding the scheme's transaction reference — the
+     * cross-attempt claim pre-check (`P7-TSK-009`, the `V015` acquirer-reference reasoning):
+     * one scheme execution credits one attempt, and a confirmation naming a reference some
+     * OTHER row already stored is an integration break to record, never a second credit.
+     */
+    Optional<PaymentAttempt> findBySchemeReference(T unitOfWork, ProviderReference reference);
+
+    /**
+     * The initiation handle, stored once ({@code WHERE status = 'AWAITING_PAYER' AND
+     * authorization_handle IS NULL}): the row count arbitrates the callback-vs-sweep and
+     * sweep-vs-sweep races, and a loser converges — the scheme's dedupe means the handle it
+     * held was this one. The one bind-side {@code expose()} of the handle, registered.
+     */
+    boolean openInitiation(T unitOfWork, PaymentAttemptId attempt, Sensitive<String> handle);
+
+    /**
+     * {@code from → EXECUTED}, the scheme's pair arriving with the transition (`P7-TSK-009`,
+     * Phase 8's keys) — the push model's completing conditional, whichever resolver carries it.
+     */
+    boolean execute(
+            T unitOfWork,
+            PaymentAttemptId attempt,
+            PaymentAttemptStatus from,
+            ProviderReference schemeReference,
+            Optional<String> settlementCycle);
+
+    /**
+     * {@code AWAITING_PAYER → FAILED} <strong>only while no handle is stored</strong> — the
+     * refused-connection and refused-initiation conclusions' own conditional (ADR-0062 §3
+     * adapted): a row that holds a handle has an initiation the payer can still complete,
+     * so no unavailability verdict may fail it, whichever instance concluded first.
+     */
+    boolean failHandleless(T unitOfWork, PaymentAttemptId attempt, PaymentFailureReason reason);
+
+    /**
+     * The initiation permit stamped forward, conditionally ({@code last_dispatched_at <=
+     * expected}, resolvable only): the sweep's wire-noise arbiter — the loser skips the
+     * scheme call this tick. Never a money guard (`P7-TSK-009`; the aggregate door says why).
+     */
+    boolean renewInitiationPermit(
+            T unitOfWork, PaymentAttemptId attempt, Instant expected, Instant renewed);
+
+    /**
+     * The pay-in sweep's candidates (`P7-TSK-009`, ADR-0062 §5): push rows resting
+     * {@code AWAITING_PAYER} whose last outbound contact is at or before
+     * {@code contactedBefore} — oldest first, bounded. The payer PSP's clock decides the
+     * outcome; this bound only paces how often we ask.
+     */
+    List<PaymentAttempt> findResolvableInitiations(
+            T unitOfWork, Instant contactedBefore, int limit);
+
+    /**
+     * The pay-in ageing gauge's reading ({@code INV-REC-05}'s sibling discipline, the
+     * `P7-TSK-002` exclusion honoured with its own gauge): how many initiations await the
+     * payer, and the oldest wait in seconds — the server's clock, never an instance's.
+     */
+    UnknownReading awaitingReading(T unitOfWork);
 }

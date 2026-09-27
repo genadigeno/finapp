@@ -36,7 +36,13 @@ import org.springframework.boot.test.web.server.LocalServerPort;
 @Tag("database")
 @SpringBootTest(
         webEnvironment = SpringBootTest.WebEnvironment.RANDOM_PORT,
-        properties = "finapp.payments.provider.url=false")
+        properties = {
+            "finapp.payments.provider.url=false",
+            // The instant scheme too (P7-TSK-009): the overlay supplies it for the
+            // published contract's sake, and THIS suite is the unconfigured deployment -
+            // both rails absent, the same honest 503 story.
+            "finapp.payments.instant.url=false"
+        })
 @DisplayName("the payment surface without a configured provider (P5-TSK-011)")
 class PaymentSurfaceUnconfiguredDatabaseTest {
 

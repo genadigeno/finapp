@@ -115,23 +115,37 @@ against the customer's funds.
 
 ```
 AWAITING_PAYER ──> EXECUTION_DISPATCHED ──> EXECUTION_UNKNOWN ──> EXECUTED
-      │                      │                     │
+      │    │                 │                     │                  ^
+      │    └─────────────────┼─────────────────────┼──────────────────┘
       └──────────────────────┴─────────────────────┴──> FAILED
 ```
 
 `AWAITING_PAYER` exists only for a pay-in: the payer authorizes at the payer PSP, and the attempt
-waits for that PSP's answer — never for our clock. A withdrawal and a return payment are born
-`EXECUTION_DISPATCHED`.
+waits for that PSP's answer — never for our clock. **`AWAITING_PAYER → EXECUTED` is the inbound
+edge** (`P7-TSK-009`, ADR-0062 §5), added with its producer: a pay-in's execution is the PAYER's
+act, reported by the scheme's signed confirmation or the initiation inquiry — the platform never
+dispatches it, so the waiting state concludes directly. This section's first version routed the
+conclusion through `EXECUTION_DISPATCHED`, a state no pay-in ever occupies; the correction is
+recorded here with provenance, exactly as the two-step machine's `AUTHORIZED → FAILED` was. The
+outbound states remain for their own producers: a return payment is born `EXECUTION_DISPATCHED`
+(`P7-TSK-010`).
+
+The pay-in's initiation ambiguity is deliberately NOT a state: an `initiate()` whose answer was
+lost leaves `AWAITING_PAYER` **without a stored handle**, and the resolution is the sweep's
+convergent re-initiate under the scheme's dedupe — one act resolves "opened, answer lost" and
+"never opened" alike, so a state distinguishing them would carry no behaviour. The failing
+conclusions are conditional on the handle's absence for every writer (a row the payer can still
+complete is never failed by our unavailability — ADR-0062 §3, adapted).
 
 **Book (wallet)**: born `EXECUTED` or `FAILED` inside the confirmation's transaction.
 
-**Status (`P7-TSK-004`)**: the three machines are code — `InteractionModel.edges()`
-owns them, payments `V014` regenerates the schema's `CHECK`s and every-writer edge
-trigger from them (`V012` is applied history), and the model is a frozen birth fact on
-every attempt row. The two-step machine runs end to end INCLUDING the void — both
-doors, the declined-capture redirect, the sweep's re-send and query legs; the push and
-book **operations** (doors, payload columns, births) arrive with their rails
-(`P7-TSK-006`, `-009`, `-011`).
+**Status (`P7-TSK-009`)**: the three machines are code — `InteractionModel.edges()`
+owns them, payments `V017` regenerates the every-writer edge trigger from them (`V012`
+and `V014` are applied history), and the model is a frozen birth fact on every attempt
+row. The two-step machine runs end to end INCLUDING the void; the push machine runs its
+INBOUND life end to end — the initiation, the handle, the signed confirmation, the
+inquiry sweep and the suspense parking (`P7-TSK-009`); the outbound push operations and
+the book births arrive with their rails (`P7-TSK-010`, `-011`).
 
 ## 4. The routing decision (ADR-0060)
 

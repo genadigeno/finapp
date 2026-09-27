@@ -1,0 +1,483 @@
+package com.finapp.app.payments;
+
+import com.finapp.payments.EndToEndReference;
+import com.finapp.payments.EvidenceKind;
+import com.finapp.payments.PaymentAttempt;
+import com.finapp.payments.PaymentAttemptStatus;
+import com.finapp.payments.PaymentAttemptStore;
+import com.finapp.payments.PaymentCreation;
+import com.finapp.payments.PaymentIntent;
+import com.finapp.payments.PaymentIntentStore;
+import com.finapp.payments.PaymentOutcomes;
+import com.finapp.payments.ProviderEvidenceStore;
+import com.finapp.payments.ProviderReference;
+import com.finapp.payments.PushInquiryAnswer;
+import com.finapp.payments.SimulatedInstantSchemeAdapter;
+import com.finapp.payments.UnmatchedConfirmations;
+import com.finapp.payments.WebhookSignature;
+import com.finapp.platform.api.ApiException;
+import com.finapp.platform.api.PlatformErrorCode;
+import com.finapp.platform.inbox.InboxConsumer;
+import com.finapp.platform.inbox.InboxKey;
+import com.finapp.platform.security.SecurityContext;
+import com.finapp.sharedkernel.money.CurrencyCode;
+import com.finapp.sharedkernel.money.Money;
+import java.math.BigDecimal;
+import java.sql.Connection;
+import java.time.Clock;
+import java.time.Instant;
+import java.util.Objects;
+import java.util.Optional;
+import java.util.function.Function;
+import java.util.regex.Pattern;
+import javax.sql.DataSource;
+import lombok.extern.slf4j.Slf4j;
+import org.springframework.jdbc.datasource.DataSourceUtils;
+import org.springframework.transaction.support.TransactionTemplate;
+import tools.jackson.databind.ObjectMapper;
+
+/**
+ * The instant rail's signed confirmation callback (`P7-TSK-009`, ADR-0062 §5) — the
+ * {@code PaymentWebhookService} doctrine at the second rail's own door, deliberately a
+ * sibling rather than a generalisation: this vocabulary attributes by OUR end-to-end
+ * reference and speaks the payer PSP's three words, and one door serving two provider
+ * grammars is the god-door the two-vocabulary discipline refuses.
+ *
+ * <p>Authenticate before parsing (the per-rail HMAC over {@code timestamp + "." + raw
+ * bytes}, its own key); evidence for every authenticated delivery ({@code INV-HIST-02});
+ * the inbox's dedupe committed with the effect ({@code INV-IDEM-04}); the anti-stall
+ * acknowledgement for the unparseable and the unattributable (ADR-0047 §5) — except that
+ * here an unattributable statement can CARRY MONEY, and money is never merely
+ * acknowledged: it parks in {@code SUSPENSE_UNMATCHED} inside the delivery's transaction
+ * ({@link UnmatchedConfirmations}, {@code INV-REC-05}), aged and alerted.
+ */
+@Slf4j
+public class InstantCallbackService {
+
+    static final String CONSUMER = "payments.instant-webhook";
+    static final String MESSAGE_TYPE = "payments.InstantConfirmation";
+
+    /** The card door's charset rule, verbatim: the event id keys a durable column. */
+    private static final Pattern EVENT_ID = Pattern.compile("[A-Za-z0-9._:@/+=-]+");
+
+    private final WebhookSignature signature;
+    private final ProviderEvidenceStore<Connection> evidence;
+    private final PaymentAttemptStore<Connection> attempts;
+    private final PaymentIntentStore<Connection> intents;
+    private final PaymentOutcomes outcomes;
+    private final UnmatchedConfirmations unmatched;
+    private final com.finapp.app.telemetry.PaymentMeters meters;
+    private final InboxConsumer<Connection> inbox;
+    private final ObjectMapper json;
+    private final Clock clock;
+    private final TransactionTemplate transactions;
+    private final DataSource dataSource;
+
+    /** The rail this door serves — the composition root's binding, never a name held here
+     * ({@code INV-RAIL-01}: the {@code Withdrawals} constructor's discipline at a door). */
+    private final com.finapp.payments.RailId railId;
+
+    public InstantCallbackService(
+            WebhookSignature instantWebhookSignature,
+            ProviderEvidenceStore<Connection> providerEvidenceStore,
+            PaymentAttemptStore<Connection> paymentAttemptStore,
+            PaymentIntentStore<Connection> paymentIntentStore,
+            PaymentOutcomes paymentOutcomes,
+            UnmatchedConfirmations unmatchedConfirmations,
+            com.finapp.app.telemetry.PaymentMeters paymentMeters,
+            InboxConsumer<Connection> inboxConsumer,
+            ObjectMapper objectMapper,
+            Clock clock,
+            TransactionTemplate paymentTransactions,
+            DataSource dataSource,
+            com.finapp.payments.RailId railId) {
+        this.signature =
+                Objects.requireNonNull(
+                        instantWebhookSignature, "instantWebhookSignature must not be null");
+        this.evidence =
+                Objects.requireNonNull(
+                        providerEvidenceStore, "providerEvidenceStore must not be null");
+        this.attempts =
+                Objects.requireNonNull(paymentAttemptStore, "paymentAttemptStore must not be null");
+        this.intents =
+                Objects.requireNonNull(paymentIntentStore, "paymentIntentStore must not be null");
+        this.outcomes = Objects.requireNonNull(paymentOutcomes, "paymentOutcomes must not be null");
+        this.unmatched =
+                Objects.requireNonNull(
+                        unmatchedConfirmations, "unmatchedConfirmations must not be null");
+        this.meters = Objects.requireNonNull(paymentMeters, "paymentMeters must not be null");
+        this.inbox = Objects.requireNonNull(inboxConsumer, "inboxConsumer must not be null");
+        this.json = Objects.requireNonNull(objectMapper, "objectMapper must not be null");
+        this.clock = Objects.requireNonNull(clock, "clock must not be null");
+        this.transactions =
+                Objects.requireNonNull(paymentTransactions, "paymentTransactions must not be null");
+        this.dataSource = Objects.requireNonNull(dataSource, "dataSource must not be null");
+        this.railId = Objects.requireNonNull(railId, "railId must not be null");
+    }
+
+    /**
+     * The scheme's wire shape — ours end to end (the stub speaks it): the scheme's event
+     * id, OUR end-to-end reference, the payer PSP's word ({@code executed}, {@code
+     * rejected}, {@code expired}), the scheme's transaction reference and settlement
+     * cycle, and the executed amount.
+     */
+    private record CallbackPayload(
+            String eventId,
+            String reference,
+            String status,
+            String schemeReference,
+            String settlementCycle,
+            String amount,
+            String currency) {}
+
+    /**
+     * Accepts one delivery.
+     *
+     * @throws ApiException 401 for every unauthenticated or unfresh shape (one refusal),
+     *     413 for a body outside the evidence bound, 409 for a contended dedupe record
+     *     (unacknowledged, so the scheme redelivers — the inbox's own contract)
+     */
+    public void deliver(byte[] rawBody, String presentedTimestamp, String presentedSignature) {
+        Objects.requireNonNull(rawBody, "rawBody must not be null");
+        if (!signature.matches(presentedTimestamp, rawBody, presentedSignature)) {
+            meters.webhook(com.finapp.app.telemetry.PaymentMeters.WebhookOutcome.REFUSED);
+            throw new ApiException(
+                    PlatformErrorCode.UNAUTHENTICATED,
+                    "An instant confirmation failed signature or freshness verification");
+        }
+        if (rawBody.length == 0 || rawBody.length > ProviderEvidenceStore.MAX_PAYLOAD_BYTES) {
+            meters.webhook(com.finapp.app.telemetry.PaymentMeters.WebhookOutcome.REFUSED);
+            throw new ApiException(
+                    PlatformErrorCode.PAYLOAD_TOO_LARGE,
+                    "An instant confirmation body was empty or exceeded the evidence bound");
+        }
+
+        Optional<CallbackPayload> parsed = parse(rawBody);
+        Optional<String> eventId = parsed.flatMap(payload -> usableEventId(payload.eventId()));
+        if (eventId.isEmpty()) {
+            inOneTransaction(
+                    unitOfWork -> {
+                        retain(unitOfWork, Optional.empty(), rawBody);
+                        return null;
+                    });
+            meters.webhook(com.finapp.app.telemetry.PaymentMeters.WebhookOutcome.UNMAPPABLE);
+            log.warn(
+                    "An authenticated instant confirmation was unparseable or carried no"
+                            + " usable event id; its bytes are retained as evidence and it"
+                            + " is acknowledged (ADR-0047 §5)");
+            return;
+        }
+
+        Optional<EndToEndReference> reference =
+                parsed.flatMap(payload -> mintedShape(payload.reference()));
+        Judged judged = new Judged();
+        Delivered delivered =
+                inOneTransaction(
+                        unitOfWork -> {
+                            Optional<PaymentAttempt> subject =
+                                    reference.flatMap(
+                                            ours ->
+                                                    attempts.findByEndToEndReference(
+                                                            unitOfWork, ours));
+                            InboxConsumer.Outcome consumed =
+                                    inbox.consume(
+                                            unitOfWork,
+                                            new InboxKey(
+                                                    CONSUMER,
+                                                    SimulatedInstantSchemeAdapter.NAME
+                                                            + ":"
+                                                            + eventId.get()),
+                                            MESSAGE_TYPE,
+                                            uow -> effect(uow, subject, parsed.get(), judged));
+                            retain(unitOfWork, subject.map(PaymentAttempt::id), rawBody);
+                            return new Delivered(consumed, subject.isPresent());
+                        });
+
+        if (delivered.consumed() == InboxConsumer.Outcome.CONTENDED) {
+            throw new ApiException(
+                    PlatformErrorCode.CONFLICT,
+                    "An instant confirmation is being processed by another instance; asking"
+                            + " the scheme to redeliver");
+        }
+        judged.countInto(meters);
+        if (delivered.consumed() == InboxConsumer.Outcome.SKIPPED_DUPLICATE) {
+            meters.webhook(com.finapp.app.telemetry.PaymentMeters.WebhookOutcome.DUPLICATE);
+            log.info(
+                    "A duplicate instant confirmation delivery was absorbed by the inbox;"
+                            + " its bytes are retained as evidence (INV-IDEM-04,"
+                            + " INV-HIST-02)");
+        } else if ((delivered.attributed() || judged.parked()) && !judged.isUnmappable()) {
+            meters.webhook(com.finapp.app.telemetry.PaymentMeters.WebhookOutcome.PROCESSED);
+        } else {
+            meters.webhook(com.finapp.app.telemetry.PaymentMeters.WebhookOutcome.UNMAPPABLE);
+        }
+        if (!delivered.attributed() && !judged.parked()) {
+            log.warn(
+                    "An authenticated instant confirmation named no initiation this platform"
+                            + " made and carried no parkable value; retained unattributed and"
+                            + " acknowledged (ADR-0047 §5)");
+        }
+    }
+
+    /**
+     * The delivery's state effect, inside the inbox's transaction, as the platform (the
+     * module's enumerated {@code enterSystem()} site at this door): the payer PSP's word
+     * onto the machine's conditional edges through the ONE shared component — or, for a
+     * money-carrying statement naming nothing we minted, the suspense parking
+     * ({@code INV-REC-05}: recorded, never guessed into a credit).
+     */
+    @SuppressWarnings("try") // The Scope is used for its close side effect.
+    private void effect(
+            Connection uow,
+            Optional<PaymentAttempt> subject,
+            CallbackPayload payload,
+            Judged judged) {
+        try (SecurityContext.Scope ignored = SecurityContext.enterSystem()) {
+            if (subject.isPresent()) {
+                attemptEffect(uow, subject.get(), payload, judged);
+                return;
+            }
+            // Unattributable. With an executed word, a usable scheme reference and usable
+            // money, it PARKS - the books must show value the scheme says moved
+            // (ADR-0062 §5); everything else is evidence alone.
+            if (!"executed".equals(payload.status())) {
+                return;
+            }
+            Optional<ProviderReference> scheme = schemeReference(payload.schemeReference());
+            Optional<Money> carried = money(payload);
+            if (scheme.isEmpty() || carried.isEmpty()) {
+                judged.unmappable();
+                log.warn(
+                        "An authenticated instant confirmation claimed an execution the"
+                                + " platform cannot attribute, with no usable reference or"
+                                + " amount; retained as evidence only (INV-PAY-03's"
+                                + " totality)");
+                return;
+            }
+            UnmatchedConfirmations.Parked parked =
+                    unmatched.park(
+                            uow,
+                            railId,
+                            scheme.get(),
+                            carried.get(),
+                            PaymentCreation.resolvedCorrelation());
+            judged.parked(parked.acting());
+        }
+    }
+
+    private void attemptEffect(
+            Connection uow, PaymentAttempt attempt, CallbackPayload payload, Judged judged) {
+        Optional<PushInquiryAnswer.Verdict> verdict = mappedVerdict(payload);
+        if (verdict.isEmpty()) {
+            judged.unmappable();
+            log.warn(
+                    "An authenticated instant confirmation for attempt {} carried a status"
+                            + " the total mapping refuses to act on; retained as evidence,"
+                            + " nothing transitions (INV-PAY-03)",
+                    attempt.id());
+            return;
+        }
+        if (!pushResolvable(attempt.status())) {
+            log.info(
+                    "An instant confirmation reported on attempt {} in state {} which cannot"
+                            + " move; the statement stands as evidence and changes nothing"
+                            + " (INV-LIFE-04)",
+                    attempt.id(),
+                    attempt.status());
+            return;
+        }
+        PaymentIntent intent =
+                intents.findById(uow, attempt.intentId())
+                        .orElseThrow(
+                                () ->
+                                        new IllegalStateException(
+                                                "an attempt row's intent exists: V003's"
+                                                        + " foreign key holds it"));
+        if (verdict.get() == PushInquiryAnswer.Verdict.ACCEPTED) {
+            // The executed amount must be the initiation's ask, to the unit and the scale:
+            // a scheme executing a DIFFERENT amount is an integration break the books must
+            // not absorb quietly - loud, nothing moves, the bytes rest as evidence.
+            Optional<Money> stated = money(payload);
+            if (stated.isEmpty() || !stated.get().equals(intent.amount())) {
+                judged.unmappable();
+                log.warn(
+                        "An instant confirmation for attempt {} stated no usable amount or"
+                                + " one differing from the initiation's ask; retained as"
+                                + " evidence, nothing transitions - an integration break"
+                                + " reconciliation must see",
+                        attempt.id());
+                return;
+            }
+        }
+        judged.attempt(
+                outcomes.applyExecution(
+                        uow,
+                        intent.id(),
+                        attempt.id(),
+                        attempt.status(),
+                        verdict.get(),
+                        schemeReference(payload.schemeReference()),
+                        Optional.ofNullable(payload.settlementCycle()).filter(c -> !c.isBlank()),
+                        intent.creditAccount(),
+                        intent.amount(),
+                        PaymentCreation.resolvedCorrelation()));
+    }
+
+    /** What this delivery's own conditionals committed — counted after the commit. */
+    private static final class Judged {
+
+        private PaymentAttemptStatus attempt;
+        private boolean parkedActing;
+        private boolean parkedSeen;
+        private boolean unreadable;
+
+        void unmappable() {
+            unreadable = true;
+        }
+
+        boolean isUnmappable() {
+            return unreadable;
+        }
+
+        void attempt(PaymentOutcomes.Applied applied) {
+            if (applied.acting()) {
+                attempt = applied.attempt();
+            }
+        }
+
+        void parked(boolean acting) {
+            parkedSeen = true;
+            parkedActing = acting;
+        }
+
+        boolean parked() {
+            return parkedSeen;
+        }
+
+        void countInto(com.finapp.app.telemetry.PaymentMeters meters) {
+            if (attempt != null) {
+                switch (attempt) {
+                    case EXECUTED ->
+                            meters.attempt(
+                                    com.finapp.app.telemetry.PaymentMeters.Judgement.EXECUTED);
+                    case FAILED ->
+                            meters.attempt(
+                                    com.finapp.app.telemetry.PaymentMeters.Judgement.FAILED);
+                    default -> {
+                        // A callback never commits another push state: nothing was judged.
+                    }
+                }
+            }
+            if (parkedActing) {
+                meters.unmatchedParked();
+            }
+        }
+    }
+
+    /** The push model's resolvable sources at this door — waiting, or an outbound unknown. */
+    private static boolean pushResolvable(PaymentAttemptStatus status) {
+        return status == PaymentAttemptStatus.AWAITING_PAYER
+                || status == PaymentAttemptStatus.EXECUTION_DISPATCHED
+                || status == PaymentAttemptStatus.EXECUTION_UNKNOWN;
+    }
+
+    /**
+     * The total mapping ({@code INV-PAY-03}): the payer PSP's three words act — an
+     * execution only with a scheme reference the row can store — and everything else is
+     * empty, retained without transitioning. {@code expired} maps to the rejection: the
+     * payer's window closed, nothing moved, and the scheme's own word rests in the
+     * evidence where an investigation wants it.
+     */
+    private static Optional<PushInquiryAnswer.Verdict> mappedVerdict(CallbackPayload payload) {
+        return switch (payload.status() == null ? "" : payload.status()) {
+            case "executed" ->
+                    schemeReference(payload.schemeReference()).isPresent()
+                            ? Optional.of(PushInquiryAnswer.Verdict.ACCEPTED)
+                            : Optional.empty();
+            case "rejected", "expired" -> Optional.of(PushInquiryAnswer.Verdict.REJECTED);
+            default -> Optional.empty();
+        };
+    }
+
+    /** Shape-total: a reference we cannot store is absent, never a throw. */
+    private static Optional<ProviderReference> schemeReference(String value) {
+        if (value == null) {
+            return Optional.empty();
+        }
+        try {
+            return Optional.of(new ProviderReference(value));
+        } catch (IllegalArgumentException unusable) {
+            return Optional.empty();
+        }
+    }
+
+    /** Shape-total money: unusable amount or currency is absent, never a throw. */
+    private static Optional<Money> money(CallbackPayload payload) {
+        if (payload.amount() == null || payload.currency() == null) {
+            return Optional.empty();
+        }
+        try {
+            return Optional.of(
+                    Money.of(new BigDecimal(payload.amount()), CurrencyCode.of(payload.currency())));
+        } catch (RuntimeException unusable) {
+            return Optional.empty();
+        }
+    }
+
+    /** Shape only, no read: a reference we never mint names nothing. */
+    private static Optional<EndToEndReference> mintedShape(String reference) {
+        if (reference == null) {
+            return Optional.empty();
+        }
+        try {
+            return Optional.of(new EndToEndReference(reference));
+        } catch (IllegalArgumentException notOurs) {
+            return Optional.empty();
+        }
+    }
+
+    /** Evidence, attributed when the reference resolved ({@code V005}'s recorded rule). */
+    private void retain(
+            Connection unitOfWork,
+            Optional<com.finapp.payments.PaymentAttemptId> attempt,
+            byte[] rawBody) {
+        evidence.append(
+                unitOfWork, attempt, Optional.empty(), EvidenceKind.WEBHOOK, rawBody,
+                Instant.now(clock));
+    }
+
+    /** Total: unparseable is empty, never a throw — the anti-stall class, not a refusal. */
+    private Optional<CallbackPayload> parse(byte[] rawBody) {
+        try {
+            return Optional.of(json.readValue(rawBody, CallbackPayload.class));
+        } catch (tools.jackson.core.JacksonException unparseable) {
+            return Optional.empty();
+        }
+    }
+
+    private static Optional<String> usableEventId(String eventId) {
+        if (eventId == null
+                || eventId.isBlank()
+                || eventId.length()
+                        > InboxKey.MAX_LENGTH - SimulatedInstantSchemeAdapter.NAME.length() - 1
+                || !EVENT_ID.matcher(eventId).matches()) {
+            return Optional.empty();
+        }
+        return Optional.of(eventId);
+    }
+
+    /** The delivery transaction's yield: the dedupe outcome, and whether a row owned it. */
+    private record Delivered(InboxConsumer.Outcome consumed, boolean attributed) {}
+
+    private <R> R inOneTransaction(Function<Connection, R> work) {
+        return transactions.execute(
+                status -> {
+                    Connection unitOfWork = DataSourceUtils.getConnection(dataSource);
+                    try {
+                        return work.apply(unitOfWork);
+                    } finally {
+                        DataSourceUtils.releaseConnection(unitOfWork, dataSource);
+                    }
+                });
+    }
+}

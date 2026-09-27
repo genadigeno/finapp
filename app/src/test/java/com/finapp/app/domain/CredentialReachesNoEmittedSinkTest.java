@@ -600,7 +600,21 @@ class CredentialReachesNoEmittedSinkTest {
                     // its own reasoning that a secret in a URL reaches every access log. It
                     // now travels in a request body, which is why ConfirmSessionRequest
                     // appears in the bounded set below rather than here.
-                    "CreatedSessionView");
+                    "CreatedSessionView",
+                    // P7-TSK-009. The payer's AUTHORIZATION HANDLE on the two views that
+                    // render it to its owner: a capability URL whose whole purpose is to be
+                    // transmitted - the payer's client must follow it to their PSP for SCA -
+                    // and a Sensitive would render as the mask. Narrower than the entries
+                    // above in one way and wider in another, both deliberate: it is present
+                    // only WHILE the payer must act (a concluded payment renders null, and
+                    // the merchant's rendering of the same checkout is proven null in
+                    // CheckoutFlowDatabaseTest), but it CAN be re-shown while the wait
+                    // stands, because the payer who lost the response still has to reach
+                    // their PSP - re-showing to the proven owner is the feature. The logging
+                    // half is closed by both toString overrides (PaymentViewRedactsTest,
+                    // CheckoutRecordsRedactTest).
+                    "PaymentView",
+                    "SessionView");
 
     private static List<String> secretNamedMembersOutsideRequestBodiesIn(String document) {
         tools.jackson.databind.JsonNode root =

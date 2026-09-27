@@ -3923,6 +3923,9 @@
           "amount": {
             "type": "string"
           },
+          "authorizationHandle": {
+            "type": "string"
+          },
           "createdAt": {
             "type": "string"
           },
@@ -4483,6 +4486,9 @@
       "SessionView": {
         "properties": {
           "amount": {
+            "type": "string"
+          },
+          "authorizationHandle": {
             "type": "string"
           },
           "checkoutId": {
@@ -7218,6 +7224,44 @@
             }
           },
           "required": true
+        },
+        "responses": {
+          "204": {
+            "description": "No Content"
+          }
+        }
+      }
+    },
+    "/v1/providers/payments/instant/webhooks": {
+      "post": {
+        "operationId": "deliverInstantConfirmation",
+        "parameters": [
+          {
+            "in": "header",
+            "name": "X-Provider-Timestamp",
+            "required": false,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "in": "header",
+            "name": "X-Provider-Signature",
+            "required": false,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "format": "byte",
+                "type": "string"
+              }
+            }
+          }
         },
         "responses": {
           "204": {

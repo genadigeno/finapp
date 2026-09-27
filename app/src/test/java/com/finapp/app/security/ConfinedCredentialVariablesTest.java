@@ -8,6 +8,7 @@ import com.finapp.app.merchant.PayoutEvidenceKey;
 import com.finapp.app.merchant.PayoutProviderKey;
 import com.finapp.app.mfa.MfaKey;
 import com.finapp.app.payments.InstantSchemeKey;
+import com.finapp.app.payments.InstantWebhookKey;
 import com.finapp.app.payments.PaymentEvidenceKey;
 import com.finapp.app.payments.PaymentWebhookKey;
 import com.finapp.app.payments.ProviderApiKey;
@@ -57,6 +58,7 @@ class ConfinedCredentialVariablesTest {
                     PaymentWebhookKey.class, "finapp.payments.webhook.key",
                     ProviderApiKey.class, "finapp.payments.provider.key",
                     InstantSchemeKey.class, "finapp.payments.instant.key",
+                    InstantWebhookKey.class, "finapp.payments.instant.webhook.key",
                     PayoutEvidenceKey.class, "finapp.merchant.payout.evidence.key",
                     PayoutProviderKey.class, "finapp.merchant.payout.provider.key");
 

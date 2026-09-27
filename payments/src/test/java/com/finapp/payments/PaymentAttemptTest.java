@@ -377,20 +377,23 @@ class PaymentAttemptTest {
         // Absent identity facts are refused whatever the status.
         assertThatThrownBy(() -> PaymentAttempt.rehydrate(
                         PaymentAttemptId.next(IDS), null, SimulatedCardPspAdapter.RAIL.id(), InteractionModel.TWO_STEP, idem(), null, null, null, null, null, null, null,
-                        null, PaymentAttemptStatus.AUTH_DISPATCHED, Instant.now(CLOCK)))
+                        null, PaymentAttemptStatus.AUTH_DISPATCHED, Instant.now(CLOCK),
+                null, null, null, null, null))
                 .as("no intent reference")
                 .isInstanceOf(NullPointerException.class);
         assertThatThrownBy(() -> PaymentAttempt.rehydrate(
                         PaymentAttemptId.next(IDS), PaymentIntentId.next(IDS), SimulatedCardPspAdapter.RAIL.id(), InteractionModel.TWO_STEP, null, null, null,
                         null, null, null, null, null, null, PaymentAttemptStatus.AUTH_DISPATCHED,
-                        Instant.now(CLOCK)))
+                        Instant.now(CLOCK),
+                null, null, null, null, null))
                 .as("no authorization idempotency reference on a two-step row - the"
                         + " model's coherence rule since P7-TSK-002")
                 .isInstanceOf(IllegalArgumentException.class)
                 .hasMessageContaining("two-step");
         assertThatThrownBy(() -> PaymentAttempt.rehydrate(
                         PaymentAttemptId.next(IDS), PaymentIntentId.next(IDS), SimulatedCardPspAdapter.RAIL.id(), InteractionModel.TWO_STEP, idem(), null,
-                        null, null, null, null, null, null, null, null, Instant.now(CLOCK)))
+                        null, null, null, null, null, null, null, null, Instant.now(CLOCK),
+                null, null, null, null, null))
                 .as("no status")
                 .isInstanceOf(NullPointerException.class);
     }
@@ -529,7 +532,8 @@ class PaymentAttemptTest {
                 voidProviderReference,
                 failureReason,
                 status,
-                Instant.now(CLOCK));
+                Instant.now(CLOCK),
+                null, null, null, null, null);
     }
 
     private static ProviderIdempotencyReference idem() {
@@ -566,9 +570,155 @@ class PaymentAttemptTest {
         assertThatThrownBy(() -> PaymentAttempt.rehydrate(
                         PaymentAttemptId.next(IDS), PaymentIntentId.next(IDS), null, InteractionModel.TWO_STEP, idem(),
                         null, null, null, null, null, null, null, null,
-                        PaymentAttemptStatus.AUTH_DISPATCHED, Instant.now(CLOCK)))
+                        PaymentAttemptStatus.AUTH_DISPATCHED, Instant.now(CLOCK),
+                null, null, null, null, null))
                 .as("no rail on read-back: a corrupt row is refused ahead of the schema")
                 .isInstanceOf(NullPointerException.class)
                 .hasMessageContaining("rail");
+    }
+
+    // ------------------------------------------------- the push pay-in (P7-TSK-009)
+
+    /** `MUTATION_TESTING.md` §2 names this method; top-level so the register guard's
+     * simple-name sweep resolves it (the `P7-TSK-007` find, met at authoring time). */
+    @Test
+    @DisplayName("the push machine's inbound edge is pinned: the payer's execution concludes"
+            + " AWAITING_PAYER directly, and nothing else changed (P7-TSK-009)")
+    void theInboundEdgeIsPinned() {
+        var push = InteractionModel.PUSH.edges();
+        assertThat(push.get(PaymentAttemptStatus.AWAITING_PAYER))
+                .containsExactlyInAnyOrder(
+                        PaymentAttemptStatus.EXECUTION_DISPATCHED,
+                        PaymentAttemptStatus.FAILED,
+                        PaymentAttemptStatus.EXECUTED);
+        assertThat(push.get(PaymentAttemptStatus.EXECUTION_DISPATCHED))
+                .containsExactlyInAnyOrder(
+                        PaymentAttemptStatus.EXECUTION_UNKNOWN,
+                        PaymentAttemptStatus.EXECUTED,
+                        PaymentAttemptStatus.FAILED);
+        assertThat(push.get(PaymentAttemptStatus.EXECUTION_UNKNOWN))
+                .containsExactlyInAnyOrder(
+                        PaymentAttemptStatus.EXECUTED, PaymentAttemptStatus.FAILED);
+        assertThat(push.get(PaymentAttemptStatus.EXECUTED)).isEmpty();
+        assertThat(push.get(PaymentAttemptStatus.FAILED)).isEmpty();
+    }
+
+    @Test
+    @DisplayName("a push birth mints OUR reference and its permit, truncated to the column's"
+            + " resolution (INV-PAY-04; the P7-TSK-004 clock-precision class, prevented)")
+    void aPushBirthMintsItsReference() {
+        PaymentAttempt born = pushBorn();
+        assertThat(born.status()).isEqualTo(PaymentAttemptStatus.AWAITING_PAYER);
+        assertThat(born.interactionModel()).isEqualTo(InteractionModel.PUSH);
+        assertThat(born.endToEndReference().value()).matches("[a-f0-9]{32}");
+        assertThat(born.endToEndReference().value().length())
+                .isLessThanOrEqualTo(EndToEndReference.MAX_LENGTH);
+        assertThat(born.lastDispatchedAt()).isEqualTo(born.createdAt());
+        assertThat(born.lastDispatchedAt())
+                .isEqualTo(born.lastDispatchedAt().truncatedTo(java.time.temporal.ChronoUnit.MICROS));
+        assertThat(born.authorizationHandle()).isEmpty();
+        assertThat(born.authorizationReference())
+                .as("no two-step fact rides the push row")
+                .isNull();
+    }
+
+    @Test
+    @DisplayName("the initiation opens once: the handle stores on the waiting row and never"
+            + " twice, never elsewhere (P7-TSK-009)")
+    void theInitiationOpensOnce() {
+        PaymentAttempt born = pushBorn();
+        PaymentAttempt opened =
+                born.openInitiation(
+                        com.finapp.sharedkernel.security.Sensitive.of("https://psp/auth/1"));
+        assertThat(opened.status()).isEqualTo(PaymentAttemptStatus.AWAITING_PAYER);
+        assertThat(opened.authorizationHandle()).isPresent();
+        assertThatThrownBy(() ->
+                        opened.openInitiation(
+                                com.finapp.sharedkernel.security.Sensitive.of("https://psp/2")))
+                .as("one initiation, one handle - the scheme's dedupe premise")
+                .isInstanceOf(IllegalArgumentException.class);
+        assertThatThrownBy(() ->
+                        opened.execute(new ProviderReference("sch-x"), java.util.Optional.empty())
+                                .openInitiation(
+                                        com.finapp.sharedkernel.security.Sensitive.of("h")))
+                .as("a concluded row opens nothing")
+                .isInstanceOf(IllegalPaymentAttemptTransitionException.class);
+    }
+
+    @Test
+    @DisplayName("the execution carries the scheme's pair, and only it does - coherence both"
+            + " ways on rehydrate too (Phase 8's keys)")
+    void theExecutionCarriesTheSchemesPair() {
+        PaymentAttempt executed =
+                pushBorn().execute(
+                        new ProviderReference("sch-exec-1"), java.util.Optional.of("C1"));
+        assertThat(executed.status()).isEqualTo(PaymentAttemptStatus.EXECUTED);
+        assertThat(executed.schemeReference()).isPresent();
+        assertThat(executed.settlementCycle()).contains("C1");
+        // EXECUTED without the scheme's reference, and the reference elsewhere.
+        assertThatThrownBy(() -> pushRehydrated(PaymentAttemptStatus.EXECUTED, null, null))
+                .isInstanceOf(IllegalArgumentException.class)
+                .hasMessageContaining("exactly when");
+        assertThatThrownBy(() ->
+                        pushRehydrated(
+                                PaymentAttemptStatus.AWAITING_PAYER, "sch-elsewhere", null))
+                .isInstanceOf(IllegalArgumentException.class);
+        // A settlement cycle rides only beside the reference.
+        assertThatThrownBy(() ->
+                        pushRehydrated(PaymentAttemptStatus.AWAITING_PAYER, null, "C1"))
+                .isInstanceOf(IllegalArgumentException.class)
+                .hasMessageContaining("settlement cycle");
+        // And the birth facts are required: a push row without its reference or permit.
+        assertThatThrownBy(() -> PaymentAttempt.rehydrate(
+                        PaymentAttemptId.next(IDS), PaymentIntentId.next(IDS),
+                        RailId.of("instant"), InteractionModel.PUSH,
+                        null, null, null, null, null, null, null, null, null,
+                        PaymentAttemptStatus.AWAITING_PAYER, Instant.now(CLOCK),
+                        null, null, null, null, Instant.now(CLOCK)))
+                .isInstanceOf(IllegalArgumentException.class)
+                .hasMessageContaining("end-to-end reference");
+    }
+
+    @Test
+    @DisplayName("the initiation permit only moves forward, and only on the waiting row"
+            + " (ADR-0062 section 3 adapted)")
+    void theInitiationPermitOnlyMovesForward() {
+        PaymentAttempt born = pushBorn();
+        assertThatThrownBy(() -> born.withInitiationPermit(born.lastDispatchedAt().minusSeconds(1)))
+                .isInstanceOf(IllegalArgumentException.class);
+        PaymentAttempt renewed = born.withInitiationPermit(born.lastDispatchedAt().plusSeconds(5));
+        assertThat(renewed.lastDispatchedAt())
+                .isEqualTo(born.lastDispatchedAt().plusSeconds(5));
+        PaymentAttempt done =
+                born.execute(new ProviderReference("sch-perm-1"), java.util.Optional.empty());
+        assertThatThrownBy(() -> done.withInitiationPermit(Instant.now(CLOCK).plusSeconds(60)))
+                .as("a concluded initiation is never contacted again")
+                .isInstanceOf(IllegalPaymentAttemptTransitionException.class);
+    }
+
+    private static PaymentAttempt pushBorn() {
+        return PaymentAttempt.createPush(
+                IDS, CLOCK, PaymentIntentId.next(IDS), RailId.of("instant"));
+    }
+
+    private static PaymentAttempt pushRehydrated(
+            PaymentAttemptStatus status, String schemeReference, String cycle) {
+        Instant born = Instant.now(CLOCK);
+        return PaymentAttempt.rehydrate(
+                PaymentAttemptId.next(IDS),
+                PaymentIntentId.next(IDS),
+                RailId.of("instant"),
+                InteractionModel.PUSH,
+                null, null, null, null, null, null, null, null,
+                status == PaymentAttemptStatus.FAILED
+                        ? PaymentFailureReason.DECLINED
+                        : null,
+                status,
+                born,
+                new EndToEndReference(UUID.randomUUID().toString().replace("-", "")),
+                null,
+                schemeReference == null ? null : new ProviderReference(schemeReference),
+                cycle,
+                born);
     }
 }

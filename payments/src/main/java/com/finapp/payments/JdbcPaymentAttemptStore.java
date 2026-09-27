@@ -4,6 +4,7 @@ import com.finapp.platform.persistence.DatabaseFailure;
 import com.finapp.platform.security.Actor;
 import com.finapp.sharedkernel.money.CurrencyCode;
 import com.finapp.sharedkernel.money.Money;
+import com.finapp.sharedkernel.security.Sensitive;
 import java.sql.Connection;
 import java.sql.PreparedStatement;
 import java.sql.ResultSet;
@@ -24,7 +25,9 @@ public final class JdbcPaymentAttemptStore implements PaymentAttemptStore<Connec
                     + " capture_provider_reference, authorized_amount_minor,"
                     + " authorized_currency, authorized_scale, captured_amount_minor,"
                     + " captured_currency, captured_scale, failure_reason, status, created_at,"
-                    + " rail, interaction_model, void_reference, void_provider_reference";
+                    + " rail, interaction_model, void_reference, void_provider_reference,"
+                    + " end_to_end_reference, authorization_handle, scheme_reference,"
+                    + " settlement_cycle, last_dispatched_at";
 
     /** {@link #COLUMNS}, each qualified as {@code a.<column>} — for the joined reads. */
     private static String qualified() {
@@ -38,7 +41,8 @@ public final class JdbcPaymentAttemptStore implements PaymentAttemptStore<Connec
         try (PreparedStatement insert =
                 unitOfWork.prepareStatement(
                         "INSERT INTO payments.payment_attempt (" + COLUMNS + ")"
-                                + " VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)")) {
+                                + " VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?,"
+                                + " ?, ?, ?, ?, ?, ?, ?)")) {
             insert.setObject(1, attempt.id().value());
             insert.setObject(2, attempt.intentId().value());
             insert.setString(
@@ -77,6 +81,23 @@ public final class JdbcPaymentAttemptStore implements PaymentAttemptStore<Connec
                     attempt.voidProviderReference() == null
                             ? null
                             : attempt.voidProviderReference().value());
+            insert.setString(
+                    20,
+                    attempt.endToEndReference() == null
+                            ? null
+                            : attempt.endToEndReference().value());
+            // Birth never carries a handle: it arrives with the scheme's answer, through
+            // openInitiation's one registered expose site.
+            insert.setString(21, null);
+            insert.setString(
+                    22,
+                    attempt.schemeReference().map(ProviderReference::value).orElse(null));
+            insert.setString(23, attempt.settlementCycle().orElse(null));
+            insert.setTimestamp(
+                    24,
+                    attempt.lastDispatchedAt() == null
+                            ? null
+                            : Timestamp.from(attempt.lastDispatchedAt()));
             insert.executeUpdate();
         } catch (SQLException failure) {
             throw new PaymentsStorageException(
@@ -526,6 +547,198 @@ public final class JdbcPaymentAttemptStore implements PaymentAttemptStore<Connec
         }
     }
 
+    // ------------------------------------------------------- the push model (P7-TSK-009)
+
+    @Override
+    public Optional<PaymentAttempt> findByEndToEndReference(
+            Connection unitOfWork, EndToEndReference reference) {
+        Objects.requireNonNull(reference, "reference must not be null");
+        try (PreparedStatement read =
+                unitOfWork.prepareStatement(
+                        "SELECT " + COLUMNS + " FROM payments.payment_attempt"
+                                + " WHERE end_to_end_reference = ?")) {
+            read.setString(1, reference.value());
+            try (ResultSet row = read.executeQuery()) {
+                return row.next() ? Optional.of(rehydrate(row)) : Optional.empty();
+            }
+        } catch (SQLException failure) {
+            throw new PaymentsStorageException(
+                    DatabaseFailure.describe(
+                            "reading an attempt by end-to-end reference", failure));
+        }
+    }
+
+    @Override
+    public Optional<PaymentAttempt> findBySchemeReference(
+            Connection unitOfWork, ProviderReference reference) {
+        Objects.requireNonNull(reference, "reference must not be null");
+        try (PreparedStatement read =
+                unitOfWork.prepareStatement(
+                        "SELECT " + COLUMNS + " FROM payments.payment_attempt"
+                                + " WHERE scheme_reference = ?")) {
+            read.setString(1, reference.value());
+            try (ResultSet row = read.executeQuery()) {
+                return row.next() ? Optional.of(rehydrate(row)) : Optional.empty();
+            }
+        } catch (SQLException failure) {
+            throw new PaymentsStorageException(
+                    DatabaseFailure.describe(
+                            "reading an attempt by scheme reference", failure));
+        }
+    }
+
+    @Override
+    public boolean openInitiation(
+            Connection unitOfWork, PaymentAttemptId attempt, Sensitive<String> handle) {
+        Objects.requireNonNull(handle, "handle must not be null");
+        try (PreparedStatement update =
+                unitOfWork.prepareStatement(
+                        "UPDATE payments.payment_attempt SET authorization_handle = ?"
+                                + " WHERE id = ? AND status = ? AND authorization_handle"
+                                + " IS NULL")) {
+            // The bind-side expose (P7-TSK-009), registered in
+            // SecretsAreUnwrappedInOnePlaceTest: the capability URL becomes bytes exactly
+            // where the column takes it, and nowhere upstream.
+            update.setString(1, handle.expose());
+            update.setObject(2, attempt.value());
+            update.setString(3, PaymentAttemptStatus.AWAITING_PAYER.name());
+            return update.executeUpdate() == 1;
+        } catch (SQLException failure) {
+            throw new PaymentsStorageException(
+                    DatabaseFailure.describe(
+                            "storing the initiation handle of attempt " + attempt, failure));
+        }
+    }
+
+    @Override
+    public boolean execute(
+            Connection unitOfWork,
+            PaymentAttemptId attempt,
+            PaymentAttemptStatus from,
+            ProviderReference schemeReference,
+            Optional<String> settlementCycle) {
+        requireLegal(attempt, from, PaymentAttemptStatus.EXECUTED);
+        Objects.requireNonNull(schemeReference, "schemeReference must not be null");
+        Objects.requireNonNull(settlementCycle, "settlementCycle must not be null");
+        try (PreparedStatement update =
+                unitOfWork.prepareStatement(
+                        "UPDATE payments.payment_attempt SET status = ?,"
+                                + " scheme_reference = ?, settlement_cycle = ?"
+                                + " WHERE id = ? AND status = ?")) {
+            update.setString(1, PaymentAttemptStatus.EXECUTED.name());
+            update.setString(2, schemeReference.value());
+            update.setString(3, settlementCycle.orElse(null));
+            update.setObject(4, attempt.value());
+            update.setString(5, from.name());
+            return update.executeUpdate() == 1;
+        } catch (SQLException failure) {
+            throw new PaymentsStorageException(
+                    DatabaseFailure.describe("executing attempt " + attempt, failure));
+        }
+    }
+
+    @Override
+    public boolean failHandleless(
+            Connection unitOfWork, PaymentAttemptId attempt, PaymentFailureReason reason) {
+        Objects.requireNonNull(reason, "reason must not be null");
+        try (PreparedStatement update =
+                unitOfWork.prepareStatement(
+                        // The handle predicate IS the safety (ADR-0062 section 3 adapted): a
+                        // row holding a handle has an initiation the payer can complete, so
+                        // no unavailability conclusion may fail it - whichever instance's
+                        // re-initiate raced this verdict, the row count decides.
+                        "UPDATE payments.payment_attempt SET status = ?, failure_reason = ?"
+                                + " WHERE id = ? AND status = ?"
+                                + " AND authorization_handle IS NULL")) {
+            update.setString(1, PaymentAttemptStatus.FAILED.name());
+            update.setString(2, reason.name());
+            update.setObject(3, attempt.value());
+            update.setString(4, PaymentAttemptStatus.AWAITING_PAYER.name());
+            return update.executeUpdate() == 1;
+        } catch (SQLException failure) {
+            throw new PaymentsStorageException(
+                    DatabaseFailure.describe(
+                            "failing the handleless initiation of attempt " + attempt,
+                            failure));
+        }
+    }
+
+    @Override
+    public boolean renewInitiationPermit(
+            Connection unitOfWork, PaymentAttemptId attempt, Instant expected, Instant renewed) {
+        Objects.requireNonNull(expected, "expected must not be null");
+        Objects.requireNonNull(renewed, "renewed must not be null");
+        try (PreparedStatement update =
+                unitOfWork.prepareStatement(
+                        "UPDATE payments.payment_attempt SET last_dispatched_at = ?"
+                                + " WHERE id = ? AND status = ?"
+                                + " AND last_dispatched_at <= ?")) {
+            update.setTimestamp(1, Timestamp.from(renewed));
+            update.setObject(2, attempt.value());
+            update.setString(3, PaymentAttemptStatus.AWAITING_PAYER.name());
+            update.setTimestamp(4, Timestamp.from(expected));
+            return update.executeUpdate() == 1;
+        } catch (SQLException failure) {
+            throw new PaymentsStorageException(
+                    DatabaseFailure.describe(
+                            "renewing the initiation permit of attempt " + attempt, failure));
+        }
+    }
+
+    @Override
+    public List<PaymentAttempt> findResolvableInitiations(
+            Connection unitOfWork, Instant contactedBefore, int limit) {
+        Objects.requireNonNull(contactedBefore, "contactedBefore must not be null");
+        if (limit <= 0) {
+            throw new IllegalArgumentException("limit must be positive: " + limit);
+        }
+        try (PreparedStatement read =
+                unitOfWork.prepareStatement(
+                        "SELECT " + COLUMNS + " FROM payments.payment_attempt"
+                                + " WHERE interaction_model = 'PUSH'"
+                                + " AND status = 'AWAITING_PAYER'"
+                                + " AND last_dispatched_at <= ?"
+                                + " ORDER BY last_dispatched_at, id"
+                                + " LIMIT ?")) {
+            read.setTimestamp(1, Timestamp.from(contactedBefore));
+            read.setInt(2, limit);
+            try (ResultSet rows = read.executeQuery()) {
+                List<PaymentAttempt> resolvable = new ArrayList<>();
+                while (rows.next()) {
+                    resolvable.add(rehydrate(rows));
+                }
+                return List.copyOf(resolvable);
+            }
+        } catch (SQLException failure) {
+            throw new PaymentsStorageException(
+                    DatabaseFailure.describe("reading resolvable initiations", failure));
+        }
+    }
+
+    @Override
+    public UnknownReading awaitingReading(Connection unitOfWork) {
+        // The unknownReading discipline on the pay-in's own gauge (P7-TSK-009): age from
+        // BIRTH, not the permit - the payer has been deciding since the initiation opened,
+        // and a permit renewal must not make an old wait look young. Floor to a whole
+        // second the same way, the server's clock only.
+        try (PreparedStatement read =
+                unitOfWork.prepareStatement(
+                        "SELECT count(*),"
+                                + " GREATEST(0, COALESCE(floor(EXTRACT(EPOCH FROM now()"
+                                + "   - min(created_at)))::bigint, 0))"
+                                + " FROM payments.payment_attempt"
+                                + " WHERE interaction_model = 'PUSH'"
+                                + " AND status = 'AWAITING_PAYER'")) {
+            try (ResultSet row = read.executeQuery()) {
+                row.next();
+                return new UnknownReading(row.getLong(1), row.getLong(2));
+            }
+        } catch (SQLException failure) {
+            throw new PaymentsStorageException(
+                    DatabaseFailure.describe("reading the awaiting-payer gauge", failure));
+        }
+    }
+
     /** The machine's legality in the writer too — an illegal ask is a caller defect, loud. */
     private static void requireLegal(
             PaymentAttemptId attempt, PaymentAttemptStatus from, PaymentAttemptStatus to) {
@@ -559,6 +772,10 @@ public final class JdbcPaymentAttemptStore implements PaymentAttemptStore<Connec
         String voidReference = row.getString("void_reference");
         String voidProviderReference = row.getString("void_provider_reference");
         String reason = row.getString("failure_reason");
+        String endToEnd = row.getString("end_to_end_reference");
+        String handle = row.getString("authorization_handle");
+        String schemeReference = row.getString("scheme_reference");
+        Timestamp lastDispatched = row.getTimestamp("last_dispatched_at");
         return PaymentAttempt.rehydrate(
                 PaymentAttemptId.of(row.getObject("id", UUID.class)),
                 PaymentIntentId.of(row.getObject("intent_id", UUID.class)),
@@ -585,7 +802,12 @@ public final class JdbcPaymentAttemptStore implements PaymentAttemptStore<Connec
                         : new ProviderReference(voidProviderReference),
                 reason == null ? null : PaymentFailureReason.valueOf(reason),
                 PaymentAttemptStatus.valueOf(row.getString("status")),
-                row.getTimestamp("created_at").toInstant());
+                row.getTimestamp("created_at").toInstant(),
+                endToEnd == null ? null : new EndToEndReference(endToEnd),
+                handle == null ? null : Sensitive.of(handle),
+                schemeReference == null ? null : new ProviderReference(schemeReference),
+                row.getString("settlement_cycle"),
+                lastDispatched == null ? null : lastDispatched.toInstant());
     }
 
     private static Money readMoney(

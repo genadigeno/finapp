@@ -15,9 +15,10 @@ import java.util.Objects;
  * The push rail behind the payment meters (`P7-TSK-008`) — {@code MeteredPaymentProvider}'s
  * shape at the second port: latency per operation, tags from the closed vocabulary, and the
  * answer passed through untouched. {@code send} is the {@code WITHDRAW} operation, both
- * inquiries are {@code QUERY}; the grant exchange and the pay-in initiation pass through
- * un-timed, deliberately — they are not payment operations, and their meters (if ever
- * wanted) are a vocabulary decision, not a default.
+ * inquiries are {@code QUERY}, and {@code initiate} is {@code INITIATE} since the pay-in
+ * became a payment operation (`P7-TSK-009` — the vocabulary decision this javadoc said it
+ * would be); the grant exchange stays un-timed, deliberately — an instrument registration
+ * is not a payment operation.
  */
 public final class MeteredPushRail implements PushRail {
 
@@ -63,7 +64,12 @@ public final class MeteredPushRail implements PushRail {
 
     @Override
     public InitiationAnswer initiate(PayInInitiation request) {
-        return delegate.initiate(request);
+        Instant started = Instant.now(clock);
+        try {
+            return delegate.initiate(request);
+        } finally {
+            record(PaymentMeters.Operation.INITIATE, started);
+        }
     }
 
     @Override

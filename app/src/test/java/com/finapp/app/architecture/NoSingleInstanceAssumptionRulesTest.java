@@ -163,7 +163,16 @@ class NoSingleInstanceAssumptionRulesTest {
                     // answer and a takeover's re-send are one counted race. Register row:
                     // DISTRIBUTED_EXECUTION.md section 3; the race is
                     // WithdrawalDatabaseTest's.
-                    "com.finapp.app.payments.WithdrawalResolutionSchedule");
+                    "com.finapp.app.payments.WithdrawalResolutionSchedule",
+                    // P7-TSK-009: the same half on the inbound machine. The re-initiate is
+                    // idempotent at the scheme by OUR reference (the dedupe premise), the
+                    // inquiry is read-only, and every write is a conditional - the handle
+                    // stores once behind its NULL predicate, the permit renews forward
+                    // behind its expected-value predicate (the wire-noise arbiter among
+                    // instances), and the outcome transitions converge. Register row:
+                    // DISTRIBUTED_EXECUTION.md section 3; the races are
+                    // PayByBankDatabaseTest's.
+                    "com.finapp.app.payments.PayInResolutionSchedule");
 
     /** Types that schedule work with no lease, so every instance runs it. */
     private static final Set<String> AMBIENT_SCHEDULERS =

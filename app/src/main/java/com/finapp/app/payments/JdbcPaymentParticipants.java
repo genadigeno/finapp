@@ -131,6 +131,31 @@ public final class JdbcPaymentParticipants implements PaymentParticipants<Connec
                 .map(destination -> new ProviderReference(destination.expose()));
     }
 
+    @Override
+    public Optional<com.finapp.payments.InstrumentKind> instrumentKindOwnedBy(
+            Connection unitOfWork, UUID callerPartyId, UUID paymentMethodId) {
+        PaymentMethodId identifier;
+        try {
+            identifier = PaymentMethodId.of(paymentMethodId);
+        } catch (IllegalArgumentException notAPlatformIdentifier) {
+            return Optional.empty();
+        }
+        // The instrument registry's kind, mapped onto the routing vocabulary (P7-TSK-009):
+        // no secret crosses here - which dispatch a confirmation performs is a
+        // classification, not a credential.
+        return instruments
+                .findOwned(unitOfWork, identifier, callerPartyId)
+                .filter(method -> method.status() == PaymentMethodStatus.ACTIVE)
+                .map(
+                        method ->
+                                switch (method.kind()) {
+                                    case CARD_TOKEN ->
+                                            com.finapp.payments.InstrumentKind.CARD_TOKEN;
+                                    case BANK_ACCOUNT ->
+                                            com.finapp.payments.InstrumentKind.BANK_ACCOUNT;
+                                });
+    }
+
     /** The product's live customer-wallet account; the transfers precedent's read. */
     private Optional<LedgerAccount> walletAccountOf(Connection unitOfWork, UUID productRef) {
         List<LedgerAccount> owned = ledgerAccounts.findAllOwned(unitOfWork, productRef);

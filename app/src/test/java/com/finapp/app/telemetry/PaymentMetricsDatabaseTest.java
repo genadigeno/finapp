@@ -138,6 +138,38 @@ class PaymentMetricsDatabaseTest {
     }
 
     @Test
+    @DisplayName("the pay-in gauges read their own subjects: an awaiting initiation"
+            + " aged from BIRTH, and a parked confirmation aged from its parking"
+            + " (P7-TSK-009, INV-REC-05)")
+    void thePayInGaugesReadTheirOwnSubjects() throws Exception {
+        try (Connection app = DatabaseRoles.application()) {
+            PaymentAttemptStore.UnknownReading awaitingBefore = attempts.awaitingReading(app);
+            seedPushAttempt(app, "AWAITING_PAYER", "2 hour");
+            PaymentAttemptStore.UnknownReading awaitingAfter = attempts.awaitingReading(app);
+            assertThat(awaitingAfter.active() - awaitingBefore.active()).isEqualTo(1);
+            assertThat(awaitingAfter.oldestAgeSeconds())
+                    .as("aged from BIRTH: a permit renewal must never make an old wait"
+                            + " look young (P7-TSK-009)")
+                    .isGreaterThanOrEqualTo(7_100L);
+
+            com.finapp.payments.UnmatchedConfirmationStore<Connection> unmatched =
+                    new com.finapp.payments.JdbcUnmatchedConfirmationStore();
+            PaymentAttemptStore.UnknownReading parkedBefore = unmatched.parkedReading(app);
+            execute(app,
+                    "INSERT INTO payments.unmatched_confirmation (id, rail,"
+                            + " scheme_reference, amount_minor, currency, scale,"
+                            + " received_at, entry_ref) VALUES (?, 'push-test', ?, 750,"
+                            + " 'EUR', 2, now() - interval '1 hour', ?)",
+                    IDS.next(), "sch-gauge-" + IDS.next(), IDS.next());
+            PaymentAttemptStore.UnknownReading parkedAfter = unmatched.parkedReading(app);
+            assertThat(parkedAfter.active() - parkedBefore.active()).isEqualTo(1);
+            assertThat(parkedAfter.oldestAgeSeconds())
+                    .as("the INV-REC-05 ageing: suspense is never a quiet resting place")
+                    .isGreaterThanOrEqualTo(3_500L);
+        }
+    }
+
+    @Test
     @DisplayName("the void states read on the same gauges: VOID_UNKNOWN at any age,"
             + " VOID_DISPATCHED past the bound, a fresh dispatch never (P7-TSK-004)")
     void theVoidStatesReadOnTheSameGauges() throws Exception {
@@ -274,11 +306,14 @@ class PaymentMetricsDatabaseTest {
         execute(
                 app,
                 "INSERT INTO payments.payment_attempt (id, intent_id, status, created_at,"
-                        + " rail, interaction_model)"
+                        // The push birth facts V017 requires (P7-TSK-009).
+                        + " rail, interaction_model, end_to_end_reference,"
+                        + " last_dispatched_at)"
                         + " VALUES (?, ?, 'AWAITING_PAYER', now() - INTERVAL '" + ago
-                        + "', 'push-test', 'PUSH')",
+                        + "', 'push-test', 'PUSH', ?, now() - INTERVAL '" + ago + "')",
                 attempt,
-                intent);
+                intent,
+                IDS.next().toString().replace("-", ""));
         if (status.equals("AWAITING_PAYER")) {
             // Born waiting: no history row, no gauge reading - the payer's clock, not ours.
             return attempt;

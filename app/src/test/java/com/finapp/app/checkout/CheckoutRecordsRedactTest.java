@@ -70,11 +70,17 @@ class CheckoutRecordsRedactTest {
                         "OPEN",
                         "2026-09-24T12:00:00Z",
                         null,
-                        null);
+                        null,
+                        // The payer's authorization handle (P7-TSK-009): a capability URL,
+                        // and the identifiers-only toString below must hold for it too.
+                        "https://payer-psp.example/authorize/opaque-handle");
 
         assertThat(view.toString())
                 .doesNotContain(AMOUNT)
                 .doesNotContain(LINE)
+                // The handle too (P7-TSK-009): the secret-name rule's exemption for the
+                // field is CONDITIONED on this override holding.
+                .doesNotContain("payer-psp")
                 .contains(checkoutId)
                 .contains("OPEN");
     }

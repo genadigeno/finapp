@@ -342,11 +342,11 @@ class PaymentEndpointDatabaseTest {
                                 + " JOIN payments.routing_policy_version v"
                                 + " ON v.id = d.policy_version_id WHERE d.id = ?",
                         UUID.fromString(decisionId)))
-                .as("the pin resolves to the seeded version in force (INV-HIST-04) - version 2"
-                        + " since P7-TSK-008 carried the standing card route forward beside"
-                        + " the bank pay-out (V016's whole-version seed; the newest-effective"
+                .as("the pin resolves to the seeded version in force (INV-HIST-04) - version 3"
+                        + " since P7-TSK-009 carried both standing routes forward beside the"
+                        + " bank pay-in (V017's whole-version seed; the newest-effective"
                         + " resolution is the design, and rule 0 is byte-for-byte V013's)")
-                .isEqualTo("2");
+                .isEqualTo("3");
         assertThat(oneString(
                         "SELECT verdict || '|' || rail_available || '|' || descriptor_version"
                                 + " FROM payments.routing_decision_step WHERE decision_id = ?",
@@ -364,7 +364,7 @@ class PaymentEndpointDatabaseTest {
                                 + " AND target_id = ?",
                         paymentId))
                 .as("the confirmation names the pin it dispatched under")
-                .contains("policyVersion=2") // the seeded version in force since V016 (P7-TSK-008)
+                .contains("policyVersion=3") // the seeded version in force since V017 (P7-TSK-009)
                 .contains("decision=");
 
         // And the decision is frozen for every writer, the migrator included.

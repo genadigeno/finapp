@@ -101,7 +101,8 @@ class PaymentConfirmationTest {
                 (uow, envelope, payload, mediaType) -> events.add(envelope),
                 IDS,
                 CLOCK,
-                RoutingTelemetry.NONE);
+                RoutingTelemetry.NONE,
+                java.util.Optional.empty());
     }
 
     /**
@@ -148,7 +149,8 @@ class PaymentConfirmationTest {
                 (uow, envelope, payload, mediaType) -> events.add(envelope),
                 IDS,
                 CLOCK,
-                PaymentRails.of(java.util.List.of(SimulatedCardPspAdapter.RAIL)));
+                PaymentRails.of(java.util.List.of(SimulatedCardPspAdapter.RAIL)),
+                new JdbcUnmatchedConfirmationStore());
     }
 
     @Test
@@ -351,7 +353,8 @@ class PaymentConfirmationTest {
                         (uow, record) -> auditTrail.add(record),
                         (uow, envelope, payload, mediaType) -> events.add(envelope),
                         IDS, CLOCK,
-                        RoutingTelemetry.NONE);
+                        RoutingTelemetry.NONE,
+                java.util.Optional.empty());
         assertThatThrownBy(() -> withoutInstrument.confirm(party, intent.id()))
                 .isInstanceOf(UnknownPaymentInstrumentException.class);
         assertThat(intents.rows.get(intent.id().value()).status())
@@ -441,6 +444,14 @@ class PaymentConfirmationTest {
             return instrumentPresent
                     ? Optional.of(InstrumentToken.of("tok_test-4242"))
                     : Optional.empty();
+        }
+
+        /** The fake's one instrument is the card (P7-TSK-009's kind read). */
+        @Override
+        public Optional<InstrumentKind> instrumentKindOwnedBy(
+                Connection uow, UUID callerPartyId, UUID paymentMethodId) {
+            return instrumentOwnedBy(uow, callerPartyId, paymentMethodId)
+                    .map(token -> InstrumentKind.CARD_TOKEN);
         }
     }
 
@@ -667,6 +678,64 @@ class PaymentConfirmationTest {
     }
 
     private static final class FakeAttemptStore implements PaymentAttemptStore<Connection> {
+
+        // ------------------------------- the push model (P7-TSK-009): not this suite's subject.
+
+        @Override
+        public java.util.Optional<PaymentAttempt> findByEndToEndReference(
+                Connection uow, EndToEndReference reference) {
+            throw new UnsupportedOperationException("not exercised here");
+        }
+
+        @Override
+        public java.util.Optional<PaymentAttempt> findBySchemeReference(
+                Connection uow, ProviderReference reference) {
+            throw new UnsupportedOperationException("not exercised here");
+        }
+
+        @Override
+        public boolean openInitiation(
+                Connection uow,
+                PaymentAttemptId attempt,
+                com.finapp.sharedkernel.security.Sensitive<String> handle) {
+            throw new UnsupportedOperationException("not exercised here");
+        }
+
+        @Override
+        public boolean execute(
+                Connection uow,
+                PaymentAttemptId attempt,
+                PaymentAttemptStatus from,
+                ProviderReference schemeReference,
+                java.util.Optional<String> settlementCycle) {
+            throw new UnsupportedOperationException("not exercised here");
+        }
+
+        @Override
+        public boolean failHandleless(
+                Connection uow, PaymentAttemptId attempt, PaymentFailureReason reason) {
+            throw new UnsupportedOperationException("not exercised here");
+        }
+
+        @Override
+        public boolean renewInitiationPermit(
+                Connection uow,
+                PaymentAttemptId attempt,
+                java.time.Instant expected,
+                java.time.Instant renewed) {
+            throw new UnsupportedOperationException("not exercised here");
+        }
+
+        @Override
+        public java.util.List<PaymentAttempt> findResolvableInitiations(
+                Connection uow, java.time.Instant contactedBefore, int limit) {
+            throw new UnsupportedOperationException("not exercised here");
+        }
+
+        @Override
+        public UnknownReading awaitingReading(Connection uow) {
+            throw new UnsupportedOperationException("not exercised here");
+        }
 
         @Override
         public java.util.Optional<PaymentAttempt> findByOperationReference(

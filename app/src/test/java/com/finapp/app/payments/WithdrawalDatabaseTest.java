@@ -187,12 +187,13 @@ class WithdrawalDatabaseTest {
         assertThat(get("/v1/me/accounts/" + f.product() + "/balance", f.token()).body())
                 .contains("\"settled\":\"15.00\"");
 
-        // The pinned decision: the withdrawal subject, version 2's bank pay-out rule.
+        // The pinned decision: the withdrawal subject, the bank pay-out rule - version 3
+        // since P7-TSK-009 (V017's whole-version seed carries the rule forward verbatim).
         assertThat(oneString("SELECT chosen_rail || '|' || v.version::text"
                         + " FROM payments.routing_decision d"
                         + " JOIN payments.routing_policy_version v ON v.id = d.policy_version_id"
                         + " WHERE d.withdrawal_id = ?", UUID.fromString(id)))
-                .isEqualTo("instant|2");
+                .isEqualTo("instant|3");
 
         // One initiated fact, one completed fact; the dispatch audited as the PERSON, the
         // outcome as the platform.

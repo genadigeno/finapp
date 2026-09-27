@@ -336,7 +336,8 @@ class RefundTest {
                 CAPTURED, null, null,
                 null,
                 PaymentAttemptStatus.CAPTURED,
-                Instant.now(CLOCK));
+                Instant.now(CLOCK),
+                null, null, null, null, null);
     }
 
     private static PaymentAttempt authorizedAttempt() {
@@ -353,7 +354,8 @@ class RefundTest {
                 null, null, null,
                 null,
                 PaymentAttemptStatus.AUTHORIZED,
-                Instant.now(CLOCK));
+                Instant.now(CLOCK),
+                null, null, null, null, null);
     }
 
     private static ProviderIdempotencyReference idem() {

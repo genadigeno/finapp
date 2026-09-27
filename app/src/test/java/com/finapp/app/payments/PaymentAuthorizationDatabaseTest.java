@@ -497,10 +497,10 @@ class PaymentAuthorizationDatabaseTest {
                     assertThat(row.next()).isTrue();
                     assertThat(row.getInt(1))
                             .as("the future version exists (%s) and routed nothing", scheduled)
-                            // Version 2 since P7-TSK-008: V016's whole-version seed carries
-                            // the standing route; the property under test is unchanged -
+                            // Version 3 since P7-TSK-009: V017's whole-version seed carries
+                            // the standing routes; the property under test is unchanged -
                             // the future version routed NOTHING.
-                            .isEqualTo(2);
+                            .isEqualTo(3);
                 }
             }
         }
@@ -563,7 +563,8 @@ class PaymentAuthorizationDatabaseTest {
                 new JdbcOutboxWriter(),
                 IDS,
                 CLOCK,
-                com.finapp.payments.RoutingTelemetry.NONE);
+                com.finapp.payments.RoutingTelemetry.NONE,
+                java.util.Optional.empty());
     }
 
     /** The shared outcome component over the real stores (`P5-TSK-013`'s extraction). */
@@ -630,7 +631,8 @@ class PaymentAuthorizationDatabaseTest {
                 new JdbcOutboxWriter(),
                 IDS,
                 CLOCK,
-                com.finapp.payments.PaymentRails.of(java.util.List.of(SimulatedCardPspAdapter.RAIL)));
+                com.finapp.payments.PaymentRails.of(java.util.List.of(SimulatedCardPspAdapter.RAIL)),
+                new com.finapp.payments.JdbcUnmatchedConfirmationStore());
     }
 
     private PaymentCancellation cancellation() {
@@ -724,6 +726,14 @@ class PaymentAuthorizationDatabaseTest {
             return callerPartyId.equals(party) && paymentMethodId.equals(instrumentId)
                     ? Optional.of(InstrumentToken.of("tok_dbtest-4242"))
                     : Optional.empty();
+        }
+
+        /** The fixture's one instrument is the card (P7-TSK-009's kind read). */
+        @Override
+        public Optional<com.finapp.payments.InstrumentKind> instrumentKindOwnedBy(
+                Connection uow, UUID callerPartyId, UUID paymentMethodId) {
+            return instrumentOwnedBy(uow, callerPartyId, paymentMethodId)
+                    .map(token -> com.finapp.payments.InstrumentKind.CARD_TOKEN);
         }
     }
 

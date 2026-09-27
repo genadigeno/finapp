@@ -104,7 +104,8 @@ class PaymentClearingTest {
                         new ProviderIdempotencyReference("auth-" + IDS.next()),
                         new ProviderIdempotencyReference("cap-" + IDS.next()),
                         new ProviderReference("psp-auth-1"), AMOUNT, null, null, null, null,
-                        null, PaymentAttemptStatus.CAPTURE_UNKNOWN, Instant.now(CLOCK));
+                        null, PaymentAttemptStatus.CAPTURE_UNKNOWN, Instant.now(CLOCK),
+                null, null, null, null, null);
         assertThat(clearing.record(null, inFlight, reference("arn-early"),
                         reference("nti-early"), correlation))
                 .isEqualTo(PaymentClearing.Outcome.RECORDED);
@@ -125,7 +126,8 @@ class PaymentClearingTest {
                 new ProviderIdempotencyReference("cap-" + IDS.next()),
                 new ProviderReference("psp-auth-" + IDS.next()), AMOUNT,
                 new ProviderReference("psp-cap-" + IDS.next()), AMOUNT, null, null, null,
-                PaymentAttemptStatus.CAPTURED, Instant.now(CLOCK));
+                PaymentAttemptStatus.CAPTURED, Instant.now(CLOCK),
+                null, null, null, null, null);
     }
 
     /** The V015 arbiters, in miniature: one per attempt, one per acquirer reference. */

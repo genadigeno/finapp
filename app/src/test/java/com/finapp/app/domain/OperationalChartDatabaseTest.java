@@ -101,21 +101,25 @@ class OperationalChartDatabaseTest {
     }
 
     @Test
-    @DisplayName("the seams stay seams: nothing has posted to FX_POSITION or SUSPENSE_UNMATCHED")
+    @DisplayName("the seams stay seams: nothing has posted to FX_POSITION"
+            + " (SUSPENSE_UNMATCHED gained its first poster at P7-TSK-009 and left this list)")
     void theSeamsStaySeams() throws Exception {
         // Structurally true today - ledger.journal_line does not exist, so nothing CAN have
         // posted - and SELF-ARMING: the to_regclass guard makes this query live the day
         // P3-TSK-005 creates the table, from which point it asserts that the Phase 8 and
         // Phase 9 seams really are seams (nothing in Phase 3 posts to either; the plan says
         // so in §17, and this is where saying it grows teeth).
+        //
+        // SUSPENSE_UNMATCHED left the list at P7-TSK-009, exactly as its javadoc promised:
+        // the unattributable-confirmation parking is its first poster (ADR-0062 section 5,
+        // INV-REC-05), and PayByBankDatabaseTest now owns the assertion that it is posted
+        // to ONLY by that parking. FX_POSITION stays Phase 9's seam.
         try (Connection app = DatabaseRoles.application()) {
-            for (AccountPurpose seam :
-                    java.util.List.of(
-                            AccountPurpose.FX_POSITION, AccountPurpose.SUSPENSE_UNMATCHED)) {
+            for (AccountPurpose seam : java.util.List.of(AccountPurpose.FX_POSITION)) {
                 for (CurrencyCode currency : SupportedCurrencies.ALL) {
                     UUID accountId = chart.resolve(app, seam, currency).id().value();
                     assertThat(linesReferencing(app, accountId))
-                            .as("no journal line may reference the %s seam in Phase 3", seam)
+                            .as("no journal line may reference the %s seam yet", seam)
                             .isZero();
                 }
             }

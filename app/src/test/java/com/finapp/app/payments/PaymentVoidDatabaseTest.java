@@ -626,7 +626,8 @@ class PaymentVoidDatabaseTest {
                                     new JdbcOutboxWriter(),
                                     IDS,
                                     CLOCK,
-                                    com.finapp.payments.RoutingTelemetry.NONE)
+                                    com.finapp.payments.RoutingTelemetry.NONE,
+                java.util.Optional.empty())
                             .confirm(holder.party(), holder.intent());
             assertThat(confirmed.attempt()).contains(PaymentAttemptStatus.AUTHORIZED);
         } finally {
@@ -693,7 +694,8 @@ class PaymentVoidDatabaseTest {
                 IDS,
                 CLOCK,
                 com.finapp.payments.PaymentRails.of(
-                        java.util.List.of(SimulatedCardPspAdapter.RAIL)));
+                        java.util.List.of(SimulatedCardPspAdapter.RAIL)),
+                new com.finapp.payments.JdbcUnmatchedConfirmationStore());
     }
 
     private PaymentVoid voids(PaymentProvider provider) {

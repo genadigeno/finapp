@@ -92,9 +92,15 @@ public enum InteractionModel {
                         EnumSet.noneOf(PaymentAttemptStatus.class));
             }
             case PUSH -> {
+                // The inbound edge (P7-TSK-009, ADR-0062 section 5): a pay-in's execution
+                // is the PAYER's act, reported by the scheme's confirmation or the
+                // initiation inquiry - the platform never dispatches it, so the waiting
+                // state concludes directly. EXECUTION_DISPATCHED stays the outbound birth
+                // (a return payment's, P7-TSK-010) and is no pay-in's stop.
                 edges.put(PaymentAttemptStatus.AWAITING_PAYER,
                         EnumSet.of(PaymentAttemptStatus.EXECUTION_DISPATCHED,
-                                PaymentAttemptStatus.FAILED));
+                                PaymentAttemptStatus.FAILED,
+                                PaymentAttemptStatus.EXECUTED));
                 edges.put(PaymentAttemptStatus.EXECUTION_DISPATCHED,
                         EnumSet.of(PaymentAttemptStatus.EXECUTION_UNKNOWN,
                                 PaymentAttemptStatus.EXECUTED, PaymentAttemptStatus.FAILED));

@@ -30,6 +30,7 @@ import java.util.List;
 import java.util.Optional;
 import lombok.NonNull;
 import lombok.RequiredArgsConstructor;
+import lombok.extern.slf4j.Slf4j;
 
 /**
  * The one outcome application every resolver shares (`P5-TSK-013`, ADR-0047 §4) — the
@@ -61,6 +62,7 @@ import lombok.RequiredArgsConstructor;
  * savepoint, deliberately ({@code PaymentCapture}'s recorded stance, preserved by the
  * extraction rather than re-decided).
  */
+@Slf4j
 @RequiredArgsConstructor
 public final class PaymentOutcomes {
 
@@ -68,6 +70,15 @@ public final class PaymentOutcomes {
     static final String CAPTURED_EVENT_TYPE = "payments.PaymentCaptured";
     static final String FAILED_EVENT_TYPE = "payments.PaymentFailed";
     static final String UNKNOWN_EVENT_TYPE = "payments.PaymentStateUnknown";
+
+    /** The push pay-in's terminal fact (`P7-TSK-009`): EXECUTED is not CAPTURED, in the
+     * event vocabulary too — no consumer can mistake one rail's completion for another's. */
+    static final String EXECUTED_EVENT_TYPE = "payments.PaymentExecuted";
+
+    /** The push completion's posting key (`P7-TSK-009`): the execution's own operation
+     * name, one entry per attempt whoever resolves it — {@code payment-capture:}'s sibling,
+     * deliberately not its reuse (the vocabulary disjointness, ADR-0059 §2). */
+    static final String EXECUTION_POSTING_PREFIX = "payment-execution:";
 
     /** The void's terminal fact (`P7-TSK-004`): the authorization released, nothing captured. */
     static final String VOIDED_EVENT_TYPE = "payments.AuthorizationVoided";
@@ -95,6 +106,11 @@ public final class PaymentOutcomes {
 
     /** The build's declared rails (`P7-TSK-001`, ADR-0059): the stored rail's key back to capabilities. */
     @NonNull private final PaymentRails rails;
+
+    /** The suspense parkings (`P7-TSK-009`): the execute arm's second claim pre-check —
+     * a scheme reference already PARKED must not also credit, or the money counts twice.
+     * Last, so no existing positional argument moved (the Lombok field-order rule). */
+    @NonNull private final UnmatchedConfirmationStore<Connection> unmatched;
 
     /**
      * What committed (or was found committed by the loser of a harmless race).
@@ -417,6 +433,238 @@ public final class PaymentOutcomes {
         return answered(uow, intentId, attemptId, QueryAnswer.Verdict.UNRECOGNISED.name(),
                 failed.status(), PaymentIntentStatus.FAILED, failed.acting(), platform,
                 correlation, now);
+    }
+
+    /**
+     * Applies an initiation's opening answer (`P7-TSK-009`, ADR-0062 §5) — the pay-by-bank
+     * Tx2, and the sweep's re-initiate leg, one judgement.
+     *
+     * <p>{@code INITIATED} stores the handle once (<strong>not a transition</strong> — the
+     * row stays {@code AWAITING_PAYER}; a loser converges because the scheme's dedupe
+     * means the handle it held was this one). {@code REFUSED} is knowledge: the scheme
+     * would not open it — {@code FAILED(DECLINED)}, the intent with it.
+     * {@code NOTHING_SENT} concludes {@code FAILED(PROVIDER_UNAVAILABLE)} <strong>only
+     * while no handle is stored</strong> (the {@code failHandleless} conditional — ADR-0062
+     * §3 adapted: a row holding a handle has an initiation the payer can still complete,
+     * so no unavailability verdict may fail it, whichever instance re-initiated first).
+     * {@code INDETERMINATE} moves nothing: the modelled unknown is the handle's absence,
+     * and the pay-in sweep's convergent re-initiate resolves it ({@code INV-LIFE-03}).
+     */
+    public Applied applyInitiation(
+            Connection uow,
+            PaymentIntentId intentId,
+            PaymentAttemptId attemptId,
+            InitiationAnswer.Outcome outcome,
+            Optional<com.finapp.sharedkernel.security.Sensitive<String>> authorizationHandle,
+            Correlation correlation) {
+        Actor platform = SecurityContext.require();
+        Instant now = Instant.now(clock);
+
+        PaymentAttemptStatus committedAttempt = PaymentAttemptStatus.AWAITING_PAYER;
+        PaymentIntentStatus committedIntent = PaymentIntentStatus.PROCESSING;
+        boolean acting;
+        switch (outcome) {
+            case INITIATED -> acting =
+                    attempts.openInitiation(uow, attemptId, authorizationHandle.orElseThrow());
+            case REFUSED -> {
+                Failed failed =
+                        failBoth(uow, intentId, attemptId,
+                                PaymentAttemptStatus.AWAITING_PAYER,
+                                PaymentFailureReason.DECLINED, correlation, platform, now);
+                committedAttempt = failed.status();
+                acting = failed.acting();
+                committedIntent = PaymentIntentStatus.FAILED;
+            }
+            case NOTHING_SENT -> {
+                acting = attempts.failHandleless(
+                        uow, attemptId, PaymentFailureReason.PROVIDER_UNAVAILABLE);
+                if (acting) {
+                    attempts.recordTransition(
+                            uow, attemptId, PaymentAttemptStatus.AWAITING_PAYER,
+                            PaymentAttemptStatus.FAILED, platform, now);
+                    if (intents.transition(
+                            uow, intentId, PaymentIntentStatus.PROCESSING,
+                            PaymentIntentStatus.FAILED)) {
+                        intents.recordTransition(
+                                uow, intentId, PaymentIntentStatus.PROCESSING,
+                                PaymentIntentStatus.FAILED, platform, now);
+                    }
+                    announce(uow, FAILED_EVENT_TYPE, intentId, "FAILED",
+                            Optional.of(PaymentFailureReason.PROVIDER_UNAVAILABLE),
+                            correlation, now);
+                }
+                committedAttempt = PaymentAttemptStatus.FAILED;
+                committedIntent = PaymentIntentStatus.FAILED;
+            }
+            default -> {
+                // INDETERMINATE: the honest answer is the standing row - AWAITING_PAYER,
+                // handle-less - and the sweep's re-initiate is its resolution path
+                // (INV-LIFE-03: the unknown IS modelled, as the handle's absence).
+                return answered(uow, intentId, attemptId, outcome.name(),
+                        PaymentAttemptStatus.AWAITING_PAYER, PaymentIntentStatus.PROCESSING,
+                        false, platform, correlation, now);
+            }
+        }
+        return answered(uow, intentId, attemptId, outcome.name(), committedAttempt,
+                committedIntent, acting, platform, correlation, now);
+    }
+
+    /**
+     * Applies the payer PSP's execution answer from {@code from} — the signed callback and
+     * the initiation inquiry, one judgement (`P7-TSK-009`, ADR-0062 §5).
+     *
+     * <p>{@code ACCEPTED}: the conditional {@code EXECUTED} transition, <strong>the
+     * posting</strong> ({@code payment-execution:<attemptId>}, lines composed by the flow
+     * that created the intent — the wallet's two or ADR-0050's four through the existing
+     * capture composition), the composing flow's completion (a checkout order born
+     * {@code COMPLETED} or {@code COMPLETED_LATE} — {@code INV-MER-06}'s second rail) and
+     * the intent's {@code SUCCEEDED}, one commit (ADR-0048). Two claim pre-checks guard the
+     * scheme reference before anything moves: one already stored by ANOTHER attempt, or
+     * already PARKED in suspense, is the integration break made loud — the first record
+     * stands, this statement rests as evidence, nothing credits twice.
+     *
+     * <p>{@code REJECTED} — the payer refused, or their PSP reported the initiation expired
+     * (the scheme's own words rest in the evidence; the core keeps its three reasons,
+     * {@code INV-PAY-03}) — fails both. {@code UNRECOGNISED} on a row we hold a handle for
+     * is the scheme contradicting itself: loud, nothing moves. {@code INDETERMINATE} moves
+     * nothing.
+     */
+    public Applied applyExecution(
+            Connection uow,
+            PaymentIntentId intentId,
+            PaymentAttemptId attemptId,
+            PaymentAttemptStatus from,
+            PushInquiryAnswer.Verdict verdict,
+            Optional<ProviderReference> schemeReference,
+            Optional<String> settlementCycle,
+            LedgerAccountId credit,
+            Money amount,
+            Correlation correlation) {
+        Actor platform = SecurityContext.require();
+        Instant now = Instant.now(clock);
+
+        PaymentAttemptStatus committedAttempt;
+        PaymentIntentStatus committedIntent = PaymentIntentStatus.PROCESSING;
+        boolean acting;
+        switch (verdict) {
+            case ACCEPTED -> {
+                ProviderReference scheme = schemeReference.orElseThrow();
+                RailId rail =
+                        attempts.findById(uow, attemptId)
+                                .orElseThrow(
+                                        () ->
+                                                new IllegalStateException(
+                                                        "an attempt an outcome is applied to"
+                                                                + " exists"))
+                                .rail();
+                // THE CLAIM PRE-CHECKS (P7-TSK-009): one scheme execution credits once,
+                // platform-wide. A reference another attempt stored, or one already parked
+                // in suspense, is the break Phase 8's matching must see - recorded loud,
+                // never compounded into a second credit (the V015 foreign-claim shape).
+                Optional<PaymentAttempt> claimant = attempts.findBySchemeReference(uow, scheme);
+                if (claimant.isPresent() && !claimant.get().id().equals(attemptId)) {
+                    log.warn(
+                            "An execution confirmation for attempt {} named a scheme"
+                                    + " reference already recorded on attempt {}; the first"
+                                    + " record stands and this statement rests as evidence -"
+                                    + " an integration break reconciliation must see",
+                            attemptId,
+                            claimant.get().id());
+                    return answered(uow, intentId, attemptId, verdict.name(), from,
+                            committedIntent, false, platform, correlation, now);
+                }
+                if (unmatched.findByReference(uow, rail, scheme).isPresent()) {
+                    log.warn(
+                            "An execution confirmation for attempt {} named a scheme"
+                                    + " reference already PARKED in suspense; the parking"
+                                    + " stands for the operator to resolve, and this row"
+                                    + " does not also credit (INV-REC-05, P7-TSK-009)",
+                            attemptId);
+                    return answered(uow, intentId, attemptId, verdict.name(), from,
+                            committedIntent, false, platform, correlation, now);
+                }
+
+                acting = attempts.execute(uow, attemptId, from, scheme, settlementCycle);
+                if (acting) {
+                    attempts.recordTransition(
+                            uow, attemptId, from, PaymentAttemptStatus.EXECUTED, platform,
+                            now);
+
+                    // THE POSTING - same connection, atomically with the transition
+                    // (ADR-0048; the capture arm's stance, on the second inbound rail): the
+                    // lines are COMPOSED by the flow that created the intent, the clearing
+                    // is the STORED rail's declared position (INV-RAIL-04), and the key
+                    // makes any duplicate resolver structurally unable to post twice.
+                    LedgerAccount clearing =
+                            chart.resolve(
+                                    uow, clearingPurposeOf(uow, attemptId), amount.currency());
+                    LocalDate today = LocalDate.now(clock.withZone(ZoneOffset.UTC));
+                    CaptureSettlement settlement =
+                            new CaptureSettlement(
+                                    intentId, attemptId, clearing.id(), credit, amount,
+                                    correlation, now);
+                    com.finapp.ledger.PostingResult posted =
+                            postings.post(
+                                    uow,
+                                    new PostingCommand(
+                                            EXECUTION_POSTING_PREFIX + attemptId.value(),
+                                            today,
+                                            today,
+                                            attemptId.value().toString(),
+                                            composition.settle(uow, settlement)));
+                    // The composing flow's second moment (P6-TSK-007): a checkout session
+                    // completes - LATE when it expired first (INV-MER-06's second rail) -
+                    // and its order is born, in THIS transaction.
+                    composition.settled(uow, settlement, posted.entryId().value());
+
+                    if (intents.transition(
+                            uow,
+                            intentId,
+                            PaymentIntentStatus.PROCESSING,
+                            PaymentIntentStatus.SUCCEEDED)) {
+                        intents.recordTransition(
+                                uow,
+                                intentId,
+                                PaymentIntentStatus.PROCESSING,
+                                PaymentIntentStatus.SUCCEEDED,
+                                platform,
+                                now);
+                    }
+                    announce(uow, EXECUTED_EVENT_TYPE, intentId, "EXECUTED",
+                            Optional.empty(), correlation, now);
+                }
+                committedAttempt = PaymentAttemptStatus.EXECUTED;
+                committedIntent = PaymentIntentStatus.SUCCEEDED;
+            }
+            case REJECTED -> {
+                Failed failed =
+                        failBoth(uow, intentId, attemptId, from, PaymentFailureReason.DECLINED,
+                                correlation, platform, now);
+                committedAttempt = failed.status();
+                acting = failed.acting();
+                committedIntent = PaymentIntentStatus.FAILED;
+            }
+            case UNRECOGNISED -> {
+                // A scheme that opened this initiation (we hold its handle) answering that
+                // it never saw our reference is the scheme contradicting itself - an
+                // integration break, loud, moving nothing: failing a row the payer may yet
+                // execute against destroys money (the INV-LIFE-03 argument, inverted).
+                log.warn(
+                        "An initiation inquiry for attempt {} answered UNRECOGNISED although"
+                                + " the initiation was opened; nothing moves and the"
+                                + " statement rests as evidence - an integration break",
+                        attemptId);
+                return answered(uow, intentId, attemptId, verdict.name(), from,
+                        committedIntent, false, platform, correlation, now);
+            }
+            default -> {
+                // INDETERMINATE: ask again next sweep (INV-LIFE-03).
+                return answered(uow, intentId, attemptId, verdict.name(), from,
+                        committedIntent, false, platform, correlation, now);
+            }
+        }
+        return answered(uow, intentId, attemptId, verdict.name(), committedAttempt,
+                committedIntent, acting, platform, correlation, now);
     }
 
     /**

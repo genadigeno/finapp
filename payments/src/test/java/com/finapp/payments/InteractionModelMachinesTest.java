@@ -38,9 +38,13 @@ class InteractionModelMachinesTest {
             + " EXECUTED - each non-terminal also failing")
     void thePushMachineIsPinned() {
         var push = InteractionModel.PUSH.edges();
+        // The inbound edge joined at P7-TSK-009 (ADR-0062 section 5): the payer's execution
+        // concludes the waiting state directly - the platform never dispatches it.
         assertThat(push.get(PaymentAttemptStatus.AWAITING_PAYER))
                 .containsExactlyInAnyOrder(
-                        PaymentAttemptStatus.EXECUTION_DISPATCHED, PaymentAttemptStatus.FAILED);
+                        PaymentAttemptStatus.EXECUTION_DISPATCHED,
+                        PaymentAttemptStatus.FAILED,
+                        PaymentAttemptStatus.EXECUTED);
         assertThat(push.get(PaymentAttemptStatus.EXECUTION_DISPATCHED))
                 .containsExactlyInAnyOrder(
                         PaymentAttemptStatus.EXECUTION_UNKNOWN,
@@ -137,7 +141,8 @@ class InteractionModelMachinesTest {
                         PaymentAttemptId.next(IDS), PaymentIntentId.next(IDS),
                         RailId.of("push-test"), InteractionModel.PUSH, null, null,
                         new ProviderReference("psp-x"), AMOUNT, null, null, null, null, null,
-                        PaymentAttemptStatus.AWAITING_PAYER, Instant.now(CLOCK)))
+                        PaymentAttemptStatus.AWAITING_PAYER, Instant.now(CLOCK),
+                        null, null, null, null, null))
                 .as("a push row holding the issuer's promise")
                 .isInstanceOf(IllegalArgumentException.class)
                 .hasMessageContaining("no two-step fact");
@@ -162,11 +167,15 @@ class InteractionModelMachinesTest {
 
     // ----------------------------------------------------------------- fixtures
 
-    /** A bare foreign-model row; FAILED gets its mapped reason, the one fact every model owes. */
+    /** A bare foreign-model row; FAILED gets its mapped reason, the one fact every model
+     * owes — and a PUSH row its own birth facts (`P7-TSK-009`): the end-to-end reference
+     * and the initiation permit always, the scheme's reference exactly when EXECUTED. */
     private static PaymentAttempt rehydrated(
             InteractionModel model,
             ProviderIdempotencyReference authorizationReference,
             PaymentAttemptStatus status) {
+        java.time.Instant born = Instant.now(CLOCK);
+        boolean push = model == InteractionModel.PUSH;
         return PaymentAttempt.rehydrate(
                 PaymentAttemptId.next(IDS),
                 PaymentIntentId.next(IDS),
@@ -180,7 +189,14 @@ class InteractionModelMachinesTest {
                         ? PaymentFailureReason.PROVIDER_UNAVAILABLE
                         : null,
                 status,
-                Instant.now(CLOCK));
+                born,
+                push ? new EndToEndReference(UUID.randomUUID().toString().replace("-", "")) : null,
+                null,
+                push && status == PaymentAttemptStatus.EXECUTED
+                        ? new ProviderReference("sch-" + UUID.randomUUID())
+                        : null,
+                null,
+                push ? born : null);
     }
 
     private static ProviderIdempotencyReference idem() {

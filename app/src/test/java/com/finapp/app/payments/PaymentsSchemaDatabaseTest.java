@@ -321,6 +321,9 @@ class PaymentsSchemaDatabaseTest {
             case VOID_DISPATCHED -> ", void_reference = 'void-swp-" + IDS.next() + "'";
             case VOIDED -> ", void_provider_reference = 'psp-void-swp-" + IDS.next() + "'";
             case FAILED -> ", failure_reason = 'DECLINED'";
+            // The scheme's reference arrives exactly with the push completion
+            // (P7-TSK-009's stage CHECK); only PUSH edges reach EXECUTED by a move.
+            case EXECUTED -> ", scheme_reference = 'sch-swp-" + IDS.next() + "'";
             default -> "";
         };
     }
@@ -365,12 +368,16 @@ class PaymentsSchemaDatabaseTest {
             assertThatThrownBy(() -> {
                 try (PreparedStatement smuggled = app.prepareStatement(
                         "INSERT INTO payments.payment_attempt (id, intent_id, auth_reference,"
-                                + " status, created_at, rail, interaction_model)"
+                                + " status, created_at, rail, interaction_model,"
+                                // The push birth facts ride along (P7-TSK-009), so the
+                                // smuggled two-step reference stays the ONE violation.
+                                + " end_to_end_reference, last_dispatched_at)"
                                 + " VALUES (?, ?, ?, 'AWAITING_PAYER', now(), 'push-test',"
-                                + " 'PUSH')")) {
+                                + " 'PUSH', ?, now())")) {
                     smuggled.setObject(1, IDS.next());
                     smuggled.setObject(2, intent);
                     smuggled.setString(3, "auth-smuggled-" + IDS.next());
+                    smuggled.setString(4, IDS.next().toString().replace("-", ""));
                     smuggled.executeUpdate();
                 }
             })
@@ -408,12 +415,15 @@ class PaymentsSchemaDatabaseTest {
                         "INSERT INTO payments.payment_attempt (id, intent_id, status,"
                                 + " auth_provider_reference, authorized_amount_minor,"
                                 + " authorized_currency, authorized_scale, created_at, rail,"
-                                + " interaction_model)"
+                                + " interaction_model,"
+                                // The push birth facts ride along (P7-TSK-009).
+                                + " end_to_end_reference, last_dispatched_at)"
                                 + " VALUES (?, ?, 'AWAITING_PAYER', ?, 1000, 'EUR', 2, now(),"
-                                + " 'push-test', 'PUSH')")) {
+                                + " 'push-test', 'PUSH', ?, now())")) {
                     promise.setObject(1, IDS.next());
                     promise.setObject(2, intent);
                     promise.setString(3, "psp-auth-" + IDS.next());
+                    promise.setString(4, IDS.next().toString().replace("-", ""));
                     promise.executeUpdate();
                 }
             })
@@ -441,11 +451,14 @@ class PaymentsSchemaDatabaseTest {
             assertSqlState(UNIQUE_VIOLATION, () -> insertForeignModelRow(
                     app, IDS.next(), intent, InteractionModel.PUSH, "AWAITING_PAYER"));
             // ...and EXECUTED frees it: the third terminal is IN the generated predicate. A
-            // hand-list that missed it would hold the intent's slot forever.
+            // hand-list that missed it would hold the intent's slot forever. The scheme's
+            // reference rides the edge since P7-TSK-009: V017's push stage CHECK requires
+            // it exactly at EXECUTED, for this raw writer too.
             try (PreparedStatement execute = app.prepareStatement(
-                    "UPDATE payments.payment_attempt SET status = 'EXECUTED'"
-                            + " WHERE id = ?")) {
-                execute.setObject(1, running);
+                    "UPDATE payments.payment_attempt SET status = 'EXECUTED',"
+                            + " scheme_reference = ? WHERE id = ?")) {
+                execute.setString(1, "sch-slot-" + IDS.next());
+                execute.setObject(2, running);
                 assertThat(execute.executeUpdate()).isEqualTo(1);
             }
             assertThatCode(() -> insertForeignModelRow(app, IDS.next(), intent,
@@ -601,12 +614,15 @@ class PaymentsSchemaDatabaseTest {
             assertThatThrownBy(() -> {
                 try (PreparedStatement insert = migrator.prepareStatement(
                         "INSERT INTO payments.payment_attempt (id, intent_id, status,"
-                                + " created_at, rail, interaction_model, void_reference)"
+                                + " created_at, rail, interaction_model, void_reference,"
+                                // The push birth facts ride along (P7-TSK-009).
+                                + " end_to_end_reference, last_dispatched_at)"
                                 + " VALUES (?, ?, 'AWAITING_PAYER', now(), 'push-test',"
-                                + " 'PUSH', ?)")) {
+                                + " 'PUSH', ?, ?, now())")) {
                     insert.setObject(1, IDS.next());
                     insert.setObject(2, intent);
                     insert.setString(3, "void-foreign-" + IDS.next());
+                    insert.setString(4, IDS.next().toString().replace("-", ""));
                     insert.executeUpdate();
                 }
             })
@@ -1103,22 +1119,37 @@ class PaymentsSchemaDatabaseTest {
 
     /**
      * A push or book row: no dispatch reference, no two-step fact, the mapped reason iff
-     * FAILED - the foreign models' one coherent shape until their rails land (P7-TSK-002).
+     * FAILED — and since `P7-TSK-009` a PUSH row carries its own birth facts (the
+     * end-to-end reference and the initiation permit), because `V017` requires them of
+     * every writer exactly as the aggregate does.
      */
     private static void insertForeignModelRow(
             Connection connection, UUID id, UUID intent, InteractionModel model, String status)
             throws SQLException {
+        boolean push = model == InteractionModel.PUSH;
         try (PreparedStatement insert = connection.prepareStatement(
                 "INSERT INTO payments.payment_attempt (id, intent_id, status, failure_reason,"
-                        + " created_at, rail, interaction_model)"
-                        + " VALUES (?, ?, ?, ?, ?, ?, ?)")) {
+                        + " created_at, rail, interaction_model, end_to_end_reference,"
+                        + " last_dispatched_at, scheme_reference)"
+                        + " VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)")) {
             insert.setObject(1, id);
             insert.setObject(2, intent);
             insert.setString(3, status);
             insert.setString(4, "FAILED".equals(status) ? "DECLINED" : null);
-            insert.setTimestamp(5, Timestamp.from(Instant.now()));
-            insert.setString(6, model == InteractionModel.PUSH ? "push-test" : "book-test");
+            Timestamp born = Timestamp.from(Instant.now());
+            insert.setTimestamp(5, born);
+            insert.setString(6, push ? "push-test" : "book-test");
             insert.setString(7, model.name());
+            insert.setString(
+                    8, push ? IDS.next().toString().replace("-", "") : null);
+            insert.setTimestamp(9, push ? born : null);
+            // The scheme's reference exactly when a push row is EXECUTED (P7-TSK-009's
+            // stage CHECK), for this raw writer too - unique, the platform-wide arbiter.
+            insert.setString(
+                    10,
+                    push && "EXECUTED".equals(status)
+                            ? "sch-fmr-" + IDS.next()
+                            : null);
             insert.executeUpdate();
         }
     }

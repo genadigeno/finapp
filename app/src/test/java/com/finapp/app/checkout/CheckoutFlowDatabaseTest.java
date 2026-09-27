@@ -89,6 +89,10 @@ class CheckoutFlowDatabaseTest {
     /** 100.00 EUR: 2.9% + 0.30 is 3.20 exactly, and the merchant's net 96.80. */
     private static final long AMOUNT_MINOR = 100_00L;
 
+    /** The instant rail's webhook key (P7-TSK-009): the pay-by-bank confirmations' door. */
+    private static final byte[] INSTANT_WEBHOOK_KEY =
+            "a-checkout-instant-hook-32-byte!".getBytes(java.nio.charset.StandardCharsets.UTF_8);
+
     private static SimulatedProvider provider;
 
     @LocalServerPort private int port;
@@ -140,6 +144,13 @@ class CheckoutFlowDatabaseTest {
         // beside a merchant refund - the refund-beside-a-payout clause, driven for real.
         registry.add("finapp.merchant.payout.provider.url", () -> provider.baseUrl());
         registry.add("finapp.merchant.payout.provider.timeout", () -> "PT0.7S");
+        // P7-TSK-009: the instant scheme and its signed confirmation door, so a checkout
+        // can be paid by bank on the same merchant fixture.
+        registry.add("finapp.payments.instant.url", () -> provider.baseUrl());
+        registry.add("finapp.payments.instant.timeout", () -> "PT0.7S");
+        registry.add(
+                "finapp.payments.instant.webhook.key",
+                () -> java.util.Base64.getEncoder().encodeToString(INSTANT_WEBHOOK_KEY));
     }
 
     @BeforeEach
@@ -2251,6 +2262,169 @@ class CheckoutFlowDatabaseTest {
         // after each row's transaction committed, and this test drives the sweeper directly.
         // Its wiring is CheckoutExpirySweeperScheduleTest's, where the schedule is the
         // subject - asserting it here would assert a path this test does not take.
+    }
+
+    // ----------------------------------------------------------------- pay-by-bank (P7-TSK-009)
+
+    @Test
+    @DisplayName("a checkout paid by bank: the payer's handle rendered on the PAYER's answer"
+            + " and never the merchant's, the executed callback completing the session with"
+            + " ADR-0050's four lines on the INSTANT rail's position (INV-RAIL-04)")
+    void aCheckoutIsPaidByBank() throws Exception {
+        Merchant merchant = tradingMerchant("0.029", 30L);
+        Customer payer = bankPayingCustomer();
+        String created = createSession(merchant, AMOUNT_MINOR, someKey()).body();
+        String checkoutId = field(created, "checkoutId");
+
+        schemeInitiatesPayIn("https://payer-psp.example/authorize/chk-" + UUID.randomUUID());
+        HttpResponse<String> confirmed = confirm(payer, field(created, "sessionToken"));
+        assertThat(confirmed.statusCode()).isEqualTo(200);
+        assertThat(field(confirmed.body(), "status")).isEqualTo("PAYMENT_PENDING");
+        // The handle reaches the PAYER - the one checkout rendering that may carry it.
+        assertThat(field(confirmed.body(), "authorizationHandle"))
+                .startsWith("https://payer-psp.example/authorize/chk-");
+        // The MERCHANT's view of the same session carries NO handle: a merchant able to
+        // follow it could complete or observe the payer's flow (P7-TSK-009).
+        assertThat(merchantView(merchant, checkoutId).body())
+                .contains("\"authorizationHandle\":null");
+
+        // The payer executes at their PSP; the scheme confirms through the signed door.
+        String attemptId = attemptIdForSession(checkoutId);
+        assertThat(instantCallback(
+                        "{\"eventId\":\"evt_" + UUID.randomUUID() + "\",\"reference\":\""
+                                + endToEndReferenceOf(attemptId)
+                                + "\",\"status\":\"executed\",\"schemeReference\":\"sch-chk-"
+                                + UUID.randomUUID() + "\",\"settlementCycle\":\"C2\","
+                                + "\"amount\":\"100.00\",\"currency\":\"EUR\"}"))
+                .isEqualTo(204);
+
+        try (Connection app = DatabaseRoles.application()) {
+            assertThat(sessionStatus(checkoutId)).isEqualTo("COMPLETED");
+            assertThat(linePurposes(app, attemptId))
+                    .as("ADR-0050 section 3's four lines, on the INSTANT rail's own"
+                            + " clearing position - never the card PSP's (INV-RAIL-04,"
+                            + " INV-MER-06's second rail)")
+                    .containsExactlyInAnyOrder(
+                            "DEBIT:INSTANT_CLEARING",
+                            "CREDIT:MERCHANT_PAYABLE",
+                            "DEBIT:MERCHANT_PAYABLE",
+                            "CREDIT:FEE_REVENUE");
+            assertThat(payablePositionMinor(app, merchant))
+                    .as("the merchant credited gross minus fee: 100.00 - 3.20")
+                    .isEqualTo(96_80L);
+            assertThat(orderCountFor(app, merchant)).isEqualTo(1);
+        }
+    }
+
+    @Test
+    @DisplayName("INV-MER-06'S SECOND RAIL: the offer expires while the payer deliberates at"
+            + " their PSP, the execution lands anyway - COMPLETED_LATE, the merchant"
+            + " credited, the order created")
+    void aBankExecutionLandingAfterExpiryStillProducesTheOrder() throws Exception {
+        Merchant merchant = tradingMerchant("0.029", 30L);
+        Customer payer = bankPayingCustomer();
+        String created = createSession(merchant, AMOUNT_MINOR, someKey()).body();
+        String checkoutId = field(created, "checkoutId");
+
+        double lateBefore = sessionMeter("completed_late");
+        schemeInitiatesPayIn("https://payer-psp.example/authorize/late-" + UUID.randomUUID());
+        HttpResponse<String> confirmed = confirm(payer, field(created, "sessionToken"));
+        assertThat(field(confirmed.body(), "status")).isEqualTo("PAYMENT_PENDING");
+
+        // THE CLOCK RUNS OUT while the payer is still at their PSP - the pay-by-bank shape
+        // of the phase's named race: the payer's clock is not ours (ADR-0062 section 5).
+        expirySweeper(Clock.offset(CLOCK, Duration.ofMinutes(31)), Duration.ZERO).sweep();
+        assertThat(sessionStatus(checkoutId)).isEqualTo("EXPIRED");
+
+        // AND THEN THE PAYER EXECUTES. The confirmation lands through the signed door,
+        // reaches checkout through the SAME composition seam as the card's late capture -
+        // so the second rail's late completion is production's own path, not a parallel one.
+        String attemptId = attemptIdForSession(checkoutId);
+        assertThat(instantCallback(
+                        "{\"eventId\":\"evt_" + UUID.randomUUID() + "\",\"reference\":\""
+                                + endToEndReferenceOf(attemptId)
+                                + "\",\"status\":\"executed\",\"schemeReference\":\"sch-late-"
+                                + UUID.randomUUID() + "\",\"amount\":\"100.00\","
+                                + "\"currency\":\"EUR\"}"))
+                .isEqualTo(204);
+
+        try (Connection app = DatabaseRoles.application()) {
+            assertThat(sessionStatus(checkoutId))
+                    .as("landed money is never orphaned by a clock, on the second rail"
+                            + " either (INV-MER-06)")
+                    .isEqualTo("COMPLETED_LATE");
+            assertThat(payablePositionMinor(app, merchant)).isEqualTo(96_80L);
+            assertThat(orderCountFor(app, merchant)).isEqualTo(1);
+            assertThat(historyRow(app, checkoutId, "EXPIRED", "COMPLETED_LATE")).isEqualTo(1);
+            assertThat(orderPaidPayload(app, checkoutId))
+                    .contains("\"completedAs\":\"COMPLETED_LATE\"");
+        }
+        assertThat(sessionMeter("completed_late") - lateBefore).isEqualTo(1.0d);
+    }
+
+    /** A verified customer whose instrument is a BANK account (P7-TSK-009) - no card. */
+    private Customer bankPayingCustomer() throws Exception {
+        String login = "chb." + UUID.randomUUID().toString().replace("-", "").substring(0, 12);
+        assertThat(register(login).statusCode()).isEqualTo(201);
+        try (Connection app = DatabaseRoles.application()) {
+            execute(
+                    app,
+                    "UPDATE party.customer SET status = 'ACTIVE', status_changed_at ="
+                            + " GREATEST(now(), opened_at) WHERE party_id = (SELECT party_id"
+                            + " FROM identity.identity WHERE login_identifier = ?)",
+                    login);
+        }
+        String token = tokenFrom(authenticate(login).body());
+        provider.succeedsWith(
+                com.finapp.payments.SimulatedInstantSchemeAdapter.EXCHANGES_PATH,
+                200,
+                "{\"status\":\"exchanged\",\"destination\":\"dest-chk-" + UUID.randomUUID()
+                        + "\",\"suffix\":\"6819\",\"payee\":\"match\"}");
+        HttpResponse<String> registered =
+                post(
+                        "/v1/me/payment-methods/bank-accounts",
+                        "{\"grant\":\"blg-" + UUID.randomUUID() + "\","
+                                + "\"acknowledgeNoMatch\":false}",
+                        token,
+                        someKey());
+        assertThat(registered.statusCode()).isEqualTo(201);
+        return new Customer(token, field(registered.body(), "id"));
+    }
+
+    private void schemeInitiatesPayIn(String handle) {
+        provider.succeedsWith(
+                com.finapp.payments.SimulatedInstantSchemeAdapter.INITIATIONS_PATH,
+                200,
+                "{\"status\":\"initiated\",\"handle\":\"" + handle + "\"}");
+    }
+
+    private int instantCallback(String body) {
+        return provider.deliverTimestampSignedCallback(
+                URI.create("http://localhost:" + port
+                        + "/v1/providers/payments/instant/webhooks"),
+                body,
+                INSTANT_WEBHOOK_KEY,
+                java.time.Instant.now(CLOCK).getEpochSecond(),
+                1);
+    }
+
+    private HttpResponse<String> merchantView(Merchant merchant, String checkoutId)
+            throws Exception {
+        return get("/v1/checkout/sessions/" + checkoutId, merchant.apiKey());
+    }
+
+    private static String endToEndReferenceOf(String attemptId) throws SQLException {
+        try (Connection app = DatabaseRoles.application();
+                PreparedStatement read =
+                        app.prepareStatement(
+                                "SELECT end_to_end_reference FROM payments.payment_attempt"
+                                        + " WHERE id = ?")) {
+            read.setObject(1, UUID.fromString(attemptId));
+            try (ResultSet row = read.executeQuery()) {
+                assertThat(row.next()).isTrue();
+                return row.getString(1);
+            }
+        }
     }
 
     @Test

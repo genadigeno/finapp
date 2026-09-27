@@ -121,7 +121,15 @@ public class CheckoutService {
             String status,
             String expiresAt,
             String paymentIntentId,
-            String orderId) {
+            String orderId,
+            /**
+             * The payer's authorization handle (`P7-TSK-009`, ADR-0062 §5): present exactly
+             * while this session's pay-by-bank attempt awaits the payer — the capability
+             * URL their client follows to their PSP. Rendered only to the holder of the
+             * session's own credentials; additive on the contract; the render is a
+             * registered {@code expose()} site.
+             */
+            String authorizationHandle) {
 
         /**
          * The identifier and the state only - never the amount, never the line summary
@@ -165,6 +173,10 @@ public class CheckoutService {
      */
     private final com.finapp.payments.PaymentIntentStore<Connection> intents =
             new com.finapp.payments.JdbcPaymentIntentStore();
+
+    /** Stateless, the same reasoning: the payer's rendering reads the attempt's handle. */
+    private final com.finapp.payments.PaymentAttemptStore<Connection> attempts =
+            new com.finapp.payments.JdbcPaymentAttemptStore();
 
     private final PaymentService payments;
     private final PaymentParticipants<Connection> instruments;
@@ -423,7 +435,9 @@ public class CheckoutService {
                 unitOfWork ->
                         checkout
                                 .ownedBySession(unitOfWork, sessionId)
-                                .map(session -> render(unitOfWork, session))
+                                // The payer's own answer: the one rendering that may carry
+                                // the authorization handle (P7-TSK-009).
+                                .map(session -> renderForPayer(unitOfWork, session))
                                 .orElseThrow(CheckoutService::sessionNotFound));
     }
 
@@ -595,7 +609,43 @@ public class CheckoutService {
 
     // -----------------------------------------------------------------
 
+    /** The merchant's rendering: never the payer's authorization handle (`P7-TSK-009`). */
     private SessionView render(Connection unitOfWork, CheckoutSession session) {
+        return render(unitOfWork, session, null);
+    }
+
+    /**
+     * The PAYER's rendering (`P7-TSK-009`, ADR-0062 §5): the one checkout surface that may
+     * carry the authorization handle — the payer holds both credentials and is the person
+     * the capability URL exists for. A merchant's read never comes here: a handle in the
+     * merchant's view is a merchant able to complete or observe the payer's flow, which is
+     * the {@code InitiationAnswer} javadoc's exact warning. The registered {@code expose()}
+     * site beside {@code PaymentService}'s.
+     */
+    private SessionView renderForPayer(Connection unitOfWork, CheckoutSession session) {
+        String handle = null;
+        if (session.status() == CheckoutSessionStatus.PAYMENT_PENDING) {
+            handle =
+                    session.paymentIntentRef()
+                            .flatMap(
+                                    intentRef ->
+                                            attempts.findForIntent(
+                                                    unitOfWork,
+                                                    PaymentIntentId.of(intentRef)))
+                            .filter(
+                                    attempt ->
+                                            attempt.status()
+                                                    == com.finapp.payments.PaymentAttemptStatus
+                                                            .AWAITING_PAYER)
+                            .flatMap(com.finapp.payments.PaymentAttempt::authorizationHandle)
+                            .map(Sensitive::expose)
+                            .orElse(null);
+        }
+        return render(unitOfWork, session, handle);
+    }
+
+    private SessionView render(
+            Connection unitOfWork, CheckoutSession session, String authorizationHandle) {
         return new SessionView(
                 session.id().value().toString(),
                 session.merchantRef().toString(),
@@ -608,7 +658,8 @@ public class CheckoutService {
                 checkout
                         .orderOf(unitOfWork, session.id())
                         .map(order -> order.id().value().toString())
-                        .orElse(null));
+                        .orElse(null),
+                authorizationHandle);
     }
 
     private UUID partyOf(Connection unitOfWork, Session current) {

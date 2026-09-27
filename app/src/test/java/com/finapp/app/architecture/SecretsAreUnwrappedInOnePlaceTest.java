@@ -139,6 +139,11 @@ class SecretsAreUnwrappedInOnePlaceTest {
                     // role at a fourth door, and the only place a checkout token's plaintext
                     // leaves its wrapper. The creating command never holds a bare one: it
                     // carries the value WRAPPED through CheckoutSessionToken.presentedOnce().
+                    // SINCE P7-TSK-009 its claim is two unwraps: the same class also renders
+                    // the payer's authorization handle on the PAYER's confirmation answer -
+                    // and only there; the merchant's rendering never carries it, because a
+                    // handle in a merchant's view is a merchant able to complete or observe
+                    // the payer's flow (the InitiationAnswer javadoc's warning).
                     "com.finapp.app.checkout.CheckoutService",
                     // Derives and verifies. The only component that must see the plaintext at all.
                     "com.finapp.identity.Argon2PasswordDeriver",
@@ -271,6 +276,16 @@ class SecretsAreUnwrappedInOnePlaceTest {
                     // Nothing is held bare, nothing is logged, and a second bridging site is
                     // a review question by construction.
                     "com.finapp.app.payments.JdbcPaymentParticipants",
+                    // P7-TSK-009. The payer's authorization handle, Sensitive end to end
+                    // (a capability URL - a log line holding it can complete or observe
+                    // the payer's flow). Its TWO ends of life: the store binding its
+                    // column (the JdbcPaymentMethodStore claim - the one place the stored
+                    // value must exist bare), and the owner-facing render on the payment
+                    // view (the MfaEnrolmentApplicationService claim: a value whose
+                    // purpose is to be handed to the one caller entitled to it). The
+                    // checkout render is CheckoutService's widened entry above.
+                    "com.finapp.payments.JdbcPaymentAttemptStore",
+                    "com.finapp.app.payments.PaymentService",
                     // P6-TSK-011. The payout destination's reference and grant, wrapped on the
                     // TokenReference idiom: each validates its charset and bank-detail refusal
                     // at construction and re-exposes; their expose() methods are unwrapping

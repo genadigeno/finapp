@@ -613,6 +613,19 @@ them are classified at the ceiling regardless.
 | `payment_attempt` | `created_at` | `CONFIDENTIAL` | Dates a person's financial act |
 | `payment_attempt` | `rail` | `INTERNAL` | An enumerated name of the way the money travels (ADR-0059, `P7-TSK-001`) — it keys into declared capabilities that are code, and says nothing about a person the row's identifiers do not already say |
 | `payment_attempt` | `interaction_model` | `INTERNAL` | Which machine the attempt lives in (ADR-0059 §2, `P7-TSK-002`) — the `rail` row's reasoning: an enumerated name keying into machines that are code |
+| `payment_attempt` | `end_to_end_reference` | `CONFIDENTIAL` | OUR reference on the push model (`P7-TSK-009`, `INV-PAY-04`) — the `withdrawal.end_to_end_reference` row verbatim: scoped to one operation, the callback's attribution key, Phase 8's join |
+| `payment_attempt` | `authorization_handle` | `RESTRICTED-PII` | **The payer's capability URL** (`P7-TSK-009`, ADR-0062 §5): possession can complete or observe one person's live authorization flow — the `session.token_hash` reasoning, and STRONGER, because this is the live value itself, stored bare of necessity: the scheme minted it and the owner must read it back. `Sensitive` end to end; rendered once to its owner on the awaiting view; never in a log, an event or an audit record |
+| `payment_attempt` | `scheme_reference` | `CONFIDENTIAL` | The scheme's transaction reference (`P7-TSK-009`) — the `withdrawal.scheme_reference` / `acquirer_reference` class: Phase 8's match key |
+| `payment_attempt` | `settlement_cycle` | `INTERNAL` | The scheme's cycle identifier — a bucket name, not an identifier of anyone (`P7-TSK-009`) |
+| `payment_attempt` | `last_dispatched_at` | `INTERNAL` | The initiation permit (`P7-TSK-009`, ADR-0062 §3 adapted) — the `withdrawal.last_dispatched_at` reasoning |
+| `unmatched_confirmation` | `id` | `INTERNAL` | A record identifier (`P7-TSK-009`) |
+| `unmatched_confirmation` | `rail` | `INTERNAL` | The rail the statement arrived on — the `payment_attempt.rail` reasoning |
+| `unmatched_confirmation` | `scheme_reference` | `CONFIDENTIAL` | The scheme's transaction reference for money with no commercial home (`INV-REC-05`) — the `acquirer_reference` class, and the parking's arbiter |
+| `unmatched_confirmation` | `amount_minor` | `RESTRICTED-FINANCIAL` | An amount (`INV-AUD-02`) — parked value is still value |
+| `unmatched_confirmation` | `currency` | `INTERNAL` | ISO 4217 |
+| `unmatched_confirmation` | `scale` | `INTERNAL` | The amount's scale |
+| `unmatched_confirmation` | `received_at` | `INTERNAL` | Server clock at parking (ADR-0014) — the age the `INV-REC-05` gauge reads |
+| `unmatched_confirmation` | `entry_ref` | `INTERNAL` | The suspense entry this parking posted — the chain stays walkable by stored id |
 | `routing_policy_version` | `id` | `INTERNAL` | An identifier of a thing — **the value a decision pins** (`INV-HIST-04`), the `fee_schedule_version.id` reasoning verbatim |
 | `routing_policy_version` | `version` | `INTERNAL` | An ordinal |
 | `routing_policy_version` | `effective_from` | `CONFIDENTIAL` | When a routing change starts applying — with the rules it dates an operational shift |

@@ -462,7 +462,8 @@ class PaymentAmbiguityDemonstrationDatabaseTest {
                 new JdbcOutboxWriter(),
                 IDS,
                 CLOCK,
-                com.finapp.payments.RoutingTelemetry.NONE);
+                com.finapp.payments.RoutingTelemetry.NONE,
+                java.util.Optional.empty());
     }
 
     private PaymentCapture capture() {
@@ -558,7 +559,8 @@ class PaymentAmbiguityDemonstrationDatabaseTest {
                 new JdbcOutboxWriter(),
                 IDS,
                 CLOCK,
-                com.finapp.payments.PaymentRails.of(java.util.List.of(SimulatedCardPspAdapter.RAIL)));
+                com.finapp.payments.PaymentRails.of(java.util.List.of(SimulatedCardPspAdapter.RAIL)),
+                new com.finapp.payments.JdbcUnmatchedConfirmationStore());
     }
 
     private SimulatedCardPspAdapter adapter() {

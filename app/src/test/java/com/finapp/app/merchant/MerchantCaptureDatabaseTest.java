@@ -1250,7 +1250,8 @@ class MerchantCaptureDatabaseTest {
                 new JdbcOutboxWriter(),
                 IDS,
                 CLOCK,
-                com.finapp.payments.RoutingTelemetry.NONE)
+                com.finapp.payments.RoutingTelemetry.NONE,
+                java.util.Optional.empty())
                             .confirm(payment.party(), payment.intent());
             assertThat(confirmed.attempt()).contains(PaymentAttemptStatus.AUTHORIZED);
         }
@@ -1371,6 +1372,13 @@ class MerchantCaptureDatabaseTest {
                         uow, callerPartyId, paymentMethodId);
             }
 
+            @Override
+            public Optional<com.finapp.payments.InstrumentKind> instrumentKindOwnedBy(
+                    Connection uow, UUID callerPartyId, UUID paymentMethodId) {
+                return realParticipants.instrumentKindOwnedBy(
+                        uow, callerPartyId, paymentMethodId);
+            }
+
             /** Real too: the credited account's standing is asked of the ledger (the transition). */
             @Override
             public boolean creditable(Connection uow, LedgerAccountId account) {
@@ -1453,7 +1461,8 @@ class MerchantCaptureDatabaseTest {
                 new JdbcOutboxWriter(),
                 IDS,
                 CLOCK,
-                com.finapp.payments.PaymentRails.of(java.util.List.of(SimulatedCardPspAdapter.RAIL)));
+                com.finapp.payments.PaymentRails.of(java.util.List.of(SimulatedCardPspAdapter.RAIL)),
+                new com.finapp.payments.JdbcUnmatchedConfirmationStore());
     }
 
     private PaymentCapture capture() {
