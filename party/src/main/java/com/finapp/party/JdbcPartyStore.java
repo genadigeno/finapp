@@ -195,7 +195,12 @@ public final class JdbcPartyStore implements PartyStore<Connection> {
             throw new IllegalCustomerTransitionException(customerId, from, to);
         }
         String sql =
-                "UPDATE party.customer SET status = ?, status_changed_at = ?"
+                "UPDATE party.customer SET status = ?,"
+                        // GREATEST(?, opened_at) - the P1-TSK-031 drift, clamped in the
+                        // statement: the deciding instance's clock may read behind the one that
+                        // opened the relationship (ADR-0014: skew is bounded, never zero), and a
+                        // legal projection must not die on V002's CHECK.
+                        + " status_changed_at = GREATEST(?, opened_at)"
                         + " WHERE id = ? AND status = ?";
         try (PreparedStatement update = unitOfWork.prepareStatement(sql)) {
             update.setString(1, to.name());

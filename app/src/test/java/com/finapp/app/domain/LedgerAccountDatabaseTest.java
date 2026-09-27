@@ -5,8 +5,11 @@ import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
 import com.finapp.ledger.AccountPurpose;
 import com.finapp.ledger.AccountType;
+import com.finapp.ledger.IllegalLedgerAccountTransitionException;
 import com.finapp.ledger.JdbcLedgerAccountStore;
 import com.finapp.ledger.LedgerAccount;
+import com.finapp.ledger.LedgerAccountId;
+import com.finapp.ledger.LedgerAccountStatus;
 import com.finapp.ledger.LedgerAccountStore;
 import com.finapp.platform.testing.database.DatabaseRoles;
 import com.finapp.sharedkernel.id.IdGenerator;
@@ -17,6 +20,7 @@ import java.sql.PreparedStatement;
 import java.sql.ResultSet;
 import java.sql.SQLException;
 import java.time.Clock;
+import java.time.Instant;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.UUID;
@@ -298,9 +302,115 @@ class LedgerAccountDatabaseTest {
         }
     }
 
+    /**
+     * {@code AccountClosing} closes a product's ledger accounts on the closing instance's clock,
+     * which may read behind the one that created them at opening. The store's conditional driven
+     * directly: what such a clock can break is the statement.
+     */
+    @Test
+    @DisplayName(
+            "a clock behind birth cannot fail a legal close: status_changed_at clamps to"
+                    + " created_at in the statement (the P1-TSK-031 drift; ADR-0014)")
+    void aClockBehindBirthCannotFailALegalClose() throws Exception {
+        try (Connection app = DatabaseRoles.application()) {
+            app.setAutoCommit(false);
+            LedgerAccountId clamped = store.createOrConverge(app, wallet(IDS.next())).account().id();
+            LedgerAccountId own = store.createOrConverge(app, wallet(IDS.next())).account().id();
+            app.commit();
+
+            Instant born = stampsOf(app, clamped).createdAt();
+            assertThat(
+                            store.moveStatus(
+                                    app,
+                                    clamped,
+                                    LedgerAccountStatus.ACTIVE,
+                                    LedgerAccountStatus.CLOSED,
+                                    born.minusMillis(250)))
+                    .isTrue();
+            app.commit();
+            assertThat(stampsOf(app, clamped).statusChangedAt()).isEqualTo(born);
+
+            // A floor, not a pin: a clock past birth stamps its own read.
+            Instant later = stampsOf(app, own).createdAt().plusSeconds(5);
+            assertThat(
+                            store.moveStatus(
+                                    app,
+                                    own,
+                                    LedgerAccountStatus.ACTIVE,
+                                    LedgerAccountStatus.CLOSED,
+                                    later))
+                    .isTrue();
+            app.commit();
+            assertThat(stampsOf(app, own).statusChangedAt()).isEqualTo(later);
+        }
+    }
+
+    @Test
+    @DisplayName(
+            "an illegal move under a behind clock is still the machine's or the conditional's"
+                    + " refusal, never V002's CHECK")
+    void anIllegalMoveUnderABehindClockIsStillRefused() throws Exception {
+        try (Connection app = DatabaseRoles.application()) {
+            app.setAutoCommit(false);
+            LedgerAccountId closed = store.createOrConverge(app, wallet(IDS.next())).account().id();
+            app.commit();
+            Instant born = stampsOf(app, closed).createdAt();
+            assertThat(
+                            store.moveStatus(
+                                    app,
+                                    closed,
+                                    LedgerAccountStatus.ACTIVE,
+                                    LedgerAccountStatus.CLOSED,
+                                    born))
+                    .isTrue();
+            app.commit();
+            Instant behind = born.minusSeconds(1);
+
+            // The machine: CLOSED is terminal (INV-LIFE-04), refused before any SQL.
+            assertThatThrownBy(
+                            () ->
+                                    store.moveStatus(
+                                            app,
+                                            closed,
+                                            LedgerAccountStatus.CLOSED,
+                                            LedgerAccountStatus.ACTIVE,
+                                            behind))
+                    .isInstanceOf(IllegalLedgerAccountTransitionException.class);
+            // The conditional: a stale from-state is zero rows.
+            assertThat(
+                            store.moveStatus(
+                                    app,
+                                    closed,
+                                    LedgerAccountStatus.ACTIVE,
+                                    LedgerAccountStatus.CLOSED,
+                                    behind))
+                    .isFalse();
+            app.commit();
+            assertThat(stampsOf(app, closed).statusChangedAt()).isEqualTo(born);
+        }
+    }
+
     private static LedgerAccount wallet(UUID ownerRef) {
         return LedgerAccount.owned(
                 IDS, CLOCK, AccountType.LIABILITY, AccountPurpose.CUSTOMER_WALLET, GBP, ownerRef);
+    }
+
+    /** The account's two instants as stored, at the column's own microsecond resolution. */
+    private record Stamps(Instant createdAt, Instant statusChangedAt) {}
+
+    private static Stamps stampsOf(Connection connection, LedgerAccountId account)
+            throws SQLException {
+        try (PreparedStatement read =
+                connection.prepareStatement(
+                        "SELECT created_at, status_changed_at FROM ledger.ledger_account"
+                                + " WHERE id = ?")) {
+            read.setObject(1, account.value());
+            try (ResultSet row = read.executeQuery()) {
+                assertThat(row.next()).isTrue();
+                return new Stamps(
+                        row.getTimestamp(1).toInstant(), row.getTimestamp(2).toInstant());
+            }
+        }
     }
 
     private static int update(Connection connection, UUID id, String setClause)

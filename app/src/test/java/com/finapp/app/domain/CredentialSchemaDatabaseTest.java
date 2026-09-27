@@ -179,6 +179,53 @@ class CredentialSchemaDatabaseTest {
         }
     }
 
+    /**
+     * A credential is superseded on the clock of whichever instance serves the change, the
+     * recovery or the login's upgrade - which may read behind the one that created it, moments
+     * earlier. The store's conditional driven directly: what such a clock can break is the
+     * statement.
+     */
+    @Test
+    @DisplayName(
+            "a clock behind birth cannot fail a legal supersession: superseded_at clamps to"
+                    + " created_at in the statement (the P1-TSK-031 drift; ADR-0014)")
+    void aClockBehindBirthCannotFailALegalSupersession() throws SQLException {
+        try (Connection app = DatabaseRoles.application()) {
+            JdbcCredentialStore store = new JdbcCredentialStore();
+            Credential clamped = credentialFor(givenAnIdentity(app));
+            Credential own = credentialFor(givenAnIdentity(app));
+            store.insert(app, clamped);
+            store.insert(app, own);
+
+            Instant born = stampsOf(app, clamped).createdAt();
+            assertThat(store.supersede(app, clamped.id(), born.minusMillis(250))).isTrue();
+            assertThat(stampsOf(app, clamped).supersededAt()).isEqualTo(born);
+
+            // A floor, not a pin: a clock past birth stamps its own read.
+            Instant later = stampsOf(app, own).createdAt().plusSeconds(5);
+            assertThat(store.supersede(app, own.id(), later)).isTrue();
+            assertThat(stampsOf(app, own).supersededAt()).isEqualTo(later);
+        }
+    }
+
+    @Test
+    @DisplayName(
+            "superseding a superseded credential under a behind clock is still the conditional's"
+                    + " refusal, never V003's CHECK")
+    void anIllegalSupersessionUnderABehindClockIsStillTheConditionalsRefusal()
+            throws SQLException {
+        try (Connection app = DatabaseRoles.application()) {
+            JdbcCredentialStore store = new JdbcCredentialStore();
+            Credential credential = credentialFor(givenAnIdentity(app));
+            store.insert(app, credential);
+            Instant born = stampsOf(app, credential).createdAt();
+            assertThat(store.supersede(app, credential.id(), born)).isTrue();
+
+            assertThat(store.supersede(app, credential.id(), born.minusSeconds(1))).isFalse();
+            assertThat(stampsOf(app, credential).supersededAt()).isEqualTo(born);
+        }
+    }
+
     @Test
     @DisplayName("a derivation cannot be rewritten in place, whatever the application role attempts")
     void theDerivationIsFrozen() throws SQLException {
@@ -308,6 +355,25 @@ class CredentialSchemaDatabaseTest {
 
     private static String derivation() {
         return DERIVER.derive(RawPassword.of(PASSWORD)).expose();
+    }
+
+    /** The credential's two instants as stored, at the column's own microsecond resolution. */
+    private record Stamps(Instant createdAt, Instant supersededAt) {}
+
+    private static Stamps stampsOf(Connection connection, Credential credential)
+            throws SQLException {
+        try (PreparedStatement read =
+                connection.prepareStatement(
+                        "SELECT created_at, superseded_at FROM identity.credential WHERE id = ?")) {
+            read.setObject(1, credential.id().value());
+            try (var row = read.executeQuery()) {
+                assertThat(row.next()).isTrue();
+                Timestamp supersededAt = row.getTimestamp(2);
+                return new Stamps(
+                        row.getTimestamp(1).toInstant(),
+                        supersededAt == null ? null : supersededAt.toInstant());
+            }
+        }
     }
 
     private static Credential credentialFor(UUID identity) {

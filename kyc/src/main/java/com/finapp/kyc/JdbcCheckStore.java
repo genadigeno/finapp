@@ -163,7 +163,13 @@ public final class JdbcCheckStore implements CheckStore<Connection> {
         try (PreparedStatement update =
                 unitOfWork.prepareStatement(
                         "UPDATE " + TABLE
-                                + " SET status = ?, status_changed_at = ?"
+                                + " SET status = ?,"
+                                // GREATEST(?, requested_at) - the P1-TSK-031 drift, clamped in
+                                // the statement: a callback completes the check on whichever
+                                // instance the provider reaches, whose clock may read behind the
+                                // one that requested it (ADR-0014: skew is bounded, never zero),
+                                // and a legal answer must not die on V004's CHECK.
+                                + " status_changed_at = GREATEST(?, requested_at)"
                                 + " WHERE id = ? AND status = ?")) {
             update.setString(1, to.name());
             update.setTimestamp(2, Timestamp.from(at));

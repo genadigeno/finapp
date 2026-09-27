@@ -76,7 +76,12 @@ public final class JdbcCredentialStore implements CredentialStore<Connection> {
         // sees status = 'SUPERSEDED' and affects zero rows. The row count IS the outcome, which is
         // what makes a lost update impossible rather than unlikely.
         String sql =
-                "UPDATE " + TABLE + " SET status = ?, superseded_at = ?"
+                "UPDATE " + TABLE + " SET status = ?,"
+                        // GREATEST(?, created_at) - the P1-TSK-031 drift, clamped in the
+                        // statement: the superseding instance's clock may read behind the one that
+                        // created the credential (ADR-0014: skew is bounded, never zero), and a
+                        // legal change, recovery or upgrade must not die on V003's CHECK.
+                        + " superseded_at = GREATEST(?, created_at)"
                         + " WHERE id = ? AND status = ?";
         try (PreparedStatement update = unitOfWork.prepareStatement(sql)) {
             update.setString(1, CredentialStatus.SUPERSEDED.name());

@@ -202,7 +202,13 @@ public final class JdbcIdempotencyRecordStore implements IdempotencyRecordStore<
                         // The lease is released with the outcome: a finished command is not
                         // holding anything, and V004's CHECK makes that structural rather than
                         // a convention.
-                        + "completed_at = ?, lease_expires_at = NULL "
+                        //
+                        // GREATEST(?, created_at) - the P1-TSK-031 drift, clamped in the
+                        // statement: a takeover rewrites created_at on its own clock, and the
+                        // original flight may still complete first on one reading behind it
+                        // (ADR-0014: skew is bounded, never zero) - a legal outcome that must not
+                        // die on V002's CHECK.
+                        + "completed_at = GREATEST(?, created_at), lease_expires_at = NULL "
                         + "WHERE scope = ? AND idempotency_key = ? AND state = ?";
         try (PreparedStatement update = connection.prepareStatement(sql)) {
             update.setString(1, terminalState.name());
