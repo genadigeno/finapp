@@ -82,6 +82,17 @@ public final class JdbcPaymentParticipants implements PaymentParticipants<Connec
                                                                 account.currency())));
     }
 
+    /**
+     * The payer's own wallet (`P7-TSK-011`): on this wiring, exactly
+     * {@link #walletOwnedBy}'s answer — the top-up flow's credit side IS the payer's
+     * wallet. The distinct port method exists for the checkout wiring, whose
+     * {@code walletOwnedBy} deliberately answers the merchant's payable.
+     */
+    @Override
+    public Optional<Wallet> payerWalletOwnedBy(Connection unitOfWork, UUID callerPartyId) {
+        return walletOwnedBy(unitOfWork, callerPartyId);
+    }
+
     @Override
     public Optional<InstrumentToken> instrumentOwnedBy(
             Connection unitOfWork, UUID callerPartyId, UUID paymentMethodId) {

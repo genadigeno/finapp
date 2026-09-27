@@ -78,7 +78,7 @@ class PaymentCaptureTest {
                 PaymentIntent.rehydrate(
                         PaymentIntentId.next(IDS), UUID.randomUUID(), UUID.randomUUID(),
                         UUID.randomUUID(), LedgerAccountId.next(IDS), CaptureMode.AUTOMATIC, AMOUNT,
-                        PaymentIntentStatus.PROCESSING, Instant.now(CLOCK));
+                        PaymentIntentStatus.PROCESSING, Instant.now(CLOCK), null);
         intents.rows.put(intent.id().value(), intent);
         authorized =
                 PaymentAttempt.rehydrate(
@@ -136,7 +136,8 @@ class PaymentCaptureTest {
                         IDS,
                         CLOCK,
                         PaymentRails.of(java.util.List.of(SimulatedCardPspAdapter.RAIL)),
-                new JdbcUnmatchedConfirmationStore());
+                new JdbcUnmatchedConfirmationStore(),
+                        new com.finapp.ledger.JdbcLedgerAccountStore());
         return new PaymentCapture(
                 runner,
                 intents,
@@ -405,7 +406,7 @@ class PaymentCaptureTest {
                     id.value(),
                     PaymentIntent.rehydrate(
                             row.id(), row.partyId(), row.customerId(), row.paymentMethodId(),
-                            row.creditAccount(), CaptureMode.AUTOMATIC, row.amount(), to, row.createdAt()));
+                            row.creditAccount(), CaptureMode.AUTOMATIC, row.amount(), to, row.createdAt(), null));
             return true;
         }
 

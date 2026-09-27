@@ -118,6 +118,17 @@ The second is attempting a reversal on an irrevocable rail. Phase 5's attempt ma
    payments are payments on rails, owned by `payments`; the wallet product acquires no lifecycle
    of its own. A wallet-to-wallet movement between two customers stays Phase 4's `Transfer`.
 
+   *(Shipped `P7-TSK-011`: `BookRail.RAIL` declared standalone — no adapter exists because no
+   wire does — with the coherence rules forcing exactly this combination; the instrument is
+   the INTENT's shape (`payment_method_id` XOR `debit_account_id`, `V019`, the wallet resolved
+   never named — the withdrawal's precedent); the whole payment commits in the confirmation's
+   one transaction through the shared execution settle block — pair-locked in fixed order
+   with availability judged under the wallet's own lock via place-release-post, the
+   transfer's `P4-TST-001` deadlock lesson designed in — and the book refund completes inside
+   the refund claim's own transaction through the same `applyRefund`, the counterpart resolved
+   to the intent's debit wallet where no clearing exists. Routing version 4 seeds the wallet
+   pay-in onto the rail.)*
+
 7. **Provider vocabulary stays behind each adapter** (`INV-PAY-03`, per rail). Scheme message
    types, reason codes, alias and identifier formats, time-outs and operating hours are adapter
    configuration. The core sees our verdicts, our references and the descriptor. This is also

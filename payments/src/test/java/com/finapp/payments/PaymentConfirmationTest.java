@@ -150,7 +150,8 @@ class PaymentConfirmationTest {
                 IDS,
                 CLOCK,
                 PaymentRails.of(java.util.List.of(SimulatedCardPspAdapter.RAIL)),
-                new JdbcUnmatchedConfirmationStore());
+                new JdbcUnmatchedConfirmationStore(),
+                        new com.finapp.ledger.JdbcLedgerAccountStore());
     }
 
     @Test
@@ -428,6 +429,13 @@ class PaymentConfirmationTest {
         }
 
         @Override
+        public Optional<Wallet> payerWalletOwnedBy(Connection uow, UUID callerPartyId) {
+            // These suites confirm method-instrument intents; the book branch never asks.
+            throw new UnsupportedOperationException(
+                    "this suite's confirms never resolve the payer wallet");
+        }
+
+        @Override
         public Optional<ProviderReference> bankDestinationOwnedBy(
                 Connection unitOfWork, UUID callerPartyId, UUID paymentMethodId) {
             return Optional.empty();
@@ -664,7 +672,7 @@ class PaymentConfirmationTest {
             PaymentIntent moved =
                     PaymentIntent.rehydrate(
                             row.id(), row.partyId(), row.customerId(), row.paymentMethodId(),
-                            row.creditAccount(), CaptureMode.AUTOMATIC, row.amount(), to, row.createdAt());
+                            row.creditAccount(), CaptureMode.AUTOMATIC, row.amount(), to, row.createdAt(), null);
             rows.put(id.value(), moved);
             return true;
         }

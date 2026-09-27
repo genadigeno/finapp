@@ -84,6 +84,16 @@ public final class CheckoutPaymentParticipants implements PaymentParticipants<Co
                 .orElse(false);
     }
 
+    /**
+     * Delegated unchanged (`P7-TSK-011`): the PAYER's wallet is the payer's fact, exactly
+     * like the token, the destination and the kind — this class substitutes only the
+     * CREDIT side, and the book instrument's debit side is not it.
+     */
+    @Override
+    public Optional<Wallet> payerWalletOwnedBy(Connection unitOfWork, UUID callerPartyId) {
+        return instruments.payerWalletOwnedBy(unitOfWork, callerPartyId);
+    }
+
     /** Delegated unchanged: the instrument must still be the paying customer's own. */
     @Override
     public Optional<com.finapp.payments.ProviderReference> bankDestinationOwnedBy(

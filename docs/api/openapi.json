@@ -2607,6 +2607,41 @@
           }
         }
       },
+      "payments.WalletPaymentUnfunded": {
+        "content": {
+          "application/problem+json": {
+            "schema": {
+              "allOf": [
+                {
+                  "$ref": "#/components/schemas/ProblemDetail"
+                },
+                {
+                  "properties": {
+                    "code": {
+                      "const": "payments.WalletPaymentUnfunded"
+                    },
+                    "status": {
+                      "const": 422
+                    },
+                    "type": {
+                      "const": "https://finapp.example/problems/payments.WalletPaymentUnfunded"
+                    }
+                  }
+                }
+              ]
+            }
+          }
+        },
+        "description": "[422] The wallet's available balance cannot cover this payment.",
+        "headers": {
+          "X-Client-Correlation-Id": {
+            "$ref": "#/components/headers/X-Client-Correlation-Id"
+          },
+          "X-Correlation-Id": {
+            "$ref": "#/components/headers/X-Correlation-Id"
+          }
+        }
+      },
       "payments.WithdrawalCurrencyMismatched": {
         "content": {
           "application/problem+json": {
@@ -3103,6 +3138,9 @@
       },
       "ConfirmSessionRequest": {
         "properties": {
+          "instrument": {
+            "type": "string"
+          },
           "paymentMethodId": {
             "format": "uuid",
             "type": "string"
@@ -3112,7 +3150,6 @@
           }
         },
         "required": [
-          "paymentMethodId",
           "sessionToken"
         ],
         "type": "object"

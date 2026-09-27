@@ -714,10 +714,20 @@ class PaymentsSchemaDatabaseTest {
             assertSqlState(CHECK_VIOLATION, () ->
                     insertRefund(app, IDS.next(), executed, 1, "USD"));
 
-            // The BOOK model's refund producer has not shipped: refused outright rather
-            // than judged by a bound invented for it (P7-TSK-011).
+            // The BOOK arm (V019, P7-TSK-011): the same executed judgement - to the penny
+            // legal, one past the intent's ask refused, and only EXECUTED has anything to
+            // return. (Until V019 this row was refused outright: the producer had not
+            // shipped, and V018 holds that refusal as applied history.)
+            insertRefund(app, IDS.next(), book, 1000, "EUR");
             assertSqlState(CHECK_VIOLATION, () ->
                     insertRefund(app, IDS.next(), book, 1, "EUR"));
+            UUID failedBookIntent = IDS.next();
+            UUID failedBook = IDS.next();
+            insertIntent(app, failedBookIntent, "FAILED");
+            insertForeignModelRow(app, failedBook, failedBookIntent, InteractionModel.BOOK,
+                    "FAILED");
+            assertSqlState(CHECK_VIOLATION, () ->
+                    insertRefund(app, IDS.next(), failedBook, 1, "EUR"));
         }
         try (Connection migrator = DatabaseRoles.migrator()) {
             // For every writer - the migrator meets the same push arm.
@@ -1104,6 +1114,123 @@ class PaymentsSchemaDatabaseTest {
             default -> throw new IllegalArgumentException(status);
         }
         return attempt;
+    }
+
+    @Test
+    @DisplayName("the intent's instrument-choice XOR and its NULL-SAFE freeze hold for"
+            + " every writer (V019, P7-TSK-011): both and neither refuse at INSERT, and"
+            + " neither instrument column moves after birth - the V012 <> was NULL-blind,"
+            + " which is exactly the edit the recreated trigger must refuse")
+    void theInstrumentChoiceHoldsForEveryWriter() throws Exception {
+        UUID walletIntent = IDS.next();
+        try (Connection app = DatabaseRoles.application()) {
+            insertWalletIntent(app, walletIntent, "REQUIRES_CONFIRMATION");
+
+            // BOTH and NEITHER refuse at the CHECK, whoever writes.
+            assertSqlState(CHECK_VIOLATION, () -> {
+                try (PreparedStatement insert = app.prepareStatement(
+                        "INSERT INTO payments.payment_intent (id, party_id, customer_id,"
+                                + " payment_method_id, credit_account_id, amount_minor,"
+                                + " currency, scale, status, created_at, capture_mode,"
+                                + " debit_account_id)"
+                                + " VALUES (?, ?, ?, ?, ?, 1000, 'EUR', 2,"
+                                + " 'REQUIRES_CONFIRMATION', now(), 'AUTOMATIC', ?)")) {
+                    insert.setObject(1, IDS.next());
+                    insert.setObject(2, IDS.next());
+                    insert.setObject(3, IDS.next());
+                    insert.setObject(4, IDS.next());
+                    insert.setObject(5, IDS.next());
+                    insert.setObject(6, IDS.next());
+                    insert.executeUpdate();
+                }
+            });
+            assertSqlState(CHECK_VIOLATION, () -> {
+                try (PreparedStatement insert = app.prepareStatement(
+                        "INSERT INTO payments.payment_intent (id, party_id, customer_id,"
+                                + " credit_account_id, amount_minor, currency, scale,"
+                                + " status, created_at, capture_mode)"
+                                + " VALUES (?, ?, ?, ?, 1000, 'EUR', 2,"
+                                + " 'REQUIRES_CONFIRMATION', now(), 'AUTOMATIC')")) {
+                    insert.setObject(1, IDS.next());
+                    insert.setObject(2, IDS.next());
+                    insert.setObject(3, IDS.next());
+                    insert.setObject(4, IDS.next());
+                    insert.executeUpdate();
+                }
+            });
+
+            // The app role cannot even REACH the instrument columns: its UPDATE grant
+            // is (status) alone, so the privilege wall refuses first - the freeze's
+            // outer defence, asserted as such.
+            assertSqlState("42501", () -> {
+                try (PreparedStatement update = app.prepareStatement(
+                        "UPDATE payments.payment_intent SET payment_method_id = ?,"
+                                + " debit_account_id = NULL WHERE id = ?")) {
+                    update.setObject(1, IDS.next());
+                    update.setObject(2, walletIntent);
+                    update.executeUpdate();
+                }
+            });
+        }
+        try (Connection migrator = DatabaseRoles.migrator()) {
+            // The NULL-safe freeze, ISOLATED - and isolation needs a LEGAL EDGE: the
+            // intent trigger refuses every non-edge update in its edge clause, so a
+            // status-preserving edit raises P0001 whatever the freeze says (the first
+            // version of this assertion did exactly that, and the P7-TSK-011 gate's
+            // probe caught it surviving a NULL-blind revert). Riding REQUIRES_CONFIRMATION
+            // -> PROCESSING while attaching a method leaves the freeze as the ONLY
+            // clause that can refuse: NULL-safe raises P0001 in the BEFORE trigger;
+            // V012's NULL-blind <> stays silent and the XOR CHECK answers 23514 instead.
+            // The SQLSTATE is the discriminator (the P7-TSK-007 class, at the intent).
+            assertSqlState(RAISED, () -> {
+                try (PreparedStatement update = migrator.prepareStatement(
+                        "UPDATE payments.payment_intent SET status = 'PROCESSING',"
+                                + " payment_method_id = ? WHERE id = ?")) {
+                    update.setObject(1, IDS.next());
+                    update.setObject(2, walletIntent);
+                    update.executeUpdate();
+                }
+            });
+            // And the swap the XOR itself admits (method set, debit cleared) - the
+            // frozen-facts rule, whichever column raises first.
+            assertSqlState(RAISED, () -> {
+                try (PreparedStatement update = migrator.prepareStatement(
+                        "UPDATE payments.payment_intent SET payment_method_id = ?,"
+                                + " debit_account_id = NULL WHERE id = ?")) {
+                    update.setObject(1, IDS.next());
+                    update.setObject(2, walletIntent);
+                    update.executeUpdate();
+                }
+            });
+            assertSqlState(RAISED, () -> {
+                try (PreparedStatement update = migrator.prepareStatement(
+                        "UPDATE payments.payment_intent SET debit_account_id = ?"
+                                + " WHERE id = ?")) {
+                    update.setObject(1, IDS.next());
+                    update.setObject(2, walletIntent);
+                    update.executeUpdate();
+                }
+            });
+        }
+    }
+
+    /** A wallet-instrument intent (P7-TSK-011): debit side set, no method - V019's XOR. */
+    private static void insertWalletIntent(Connection connection, UUID id, String status)
+            throws SQLException {
+        try (PreparedStatement insert = connection.prepareStatement(
+                "INSERT INTO payments.payment_intent (id, party_id, customer_id,"
+                        + " credit_account_id, amount_minor, currency,"
+                        + " scale, status, created_at, capture_mode, debit_account_id)"
+                        + " VALUES (?, ?, ?, ?, 1000, 'EUR', 2, ?, ?, 'AUTOMATIC', ?)")) {
+            insert.setObject(1, id);
+            insert.setObject(2, IDS.next());
+            insert.setObject(3, IDS.next());
+            insert.setObject(4, IDS.next());
+            insert.setString(5, status);
+            insert.setTimestamp(6, Timestamp.from(Instant.now()));
+            insert.setObject(7, IDS.next());
+            insert.executeUpdate();
+        }
     }
 
     private static void insertIntent(Connection connection, UUID id, String status)

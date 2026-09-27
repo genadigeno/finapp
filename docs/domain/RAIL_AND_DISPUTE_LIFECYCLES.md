@@ -209,8 +209,8 @@ Entered at `INQUIRY` or directly at `CHARGED_BACK`. Terminal: `WON`, `LOST`, `AC
 | Pay-in to a checkout | push `EXECUTED` | DR `INSTANT_CLEARING` gross / CR payable gross; DR payable fee / CR `FEE_REVENUE` fee | Instant scheme | Scheme cycle | As above, plus the order |
 | Return payment (refund of a pay-in) | refund `COMPLETED` (shipped `P7-TSK-010`: the refund command per `refundMode`, `V018`'s per-model bound, `ReturnResolution`'s partitioned sweep) | DR wallet or payable / CR `INSTANT_CLEARING` (merchant-bound: the capture's four-line inverse, ADR-0054) | Instant scheme | Scheme cycle | Return reference (ours, on the refund row) ↔ original (the attempt's scheme reference, cited on the wire); the return's own scheme reference lands at `COMPLETED` |
 | Withdrawal | withdrawal `COMPLETED` | Release the hold; DR wallet / CR `INSTANT_CLEARING` | Instant scheme | Scheme cycle | End-to-end reference ↔ scheme reference |
-| Wallet pays a checkout | book `EXECUTED` | DR wallet gross / CR payable gross; DR payable fee / CR `FEE_REVENUE` fee — one transaction | None (internal) | None | The entry is the whole record |
-| Book refund of a wallet payment | refund `COMPLETED` | DR payable / CR wallet (fee share per ADR-0054) | None | None | The entry |
+| Wallet pays a checkout | book `EXECUTED` (shipped `P7-TSK-011`: born EXECUTED in the confirmation's one transaction, availability under the wallet's lock, `book|4` routed) | DR wallet gross / CR payable gross; DR payable fee / CR `FEE_REVENUE` fee — one transaction | None (internal) | None | The entry is the whole record |
+| Book refund of a wallet payment | refund `COMPLETED` (shipped `P7-TSK-011`: dispatch and outcome one transaction, the reference a `bke-` platform marker) | DR payable / CR wallet (fee share per ADR-0054; the counterpart is the intent's own debit wallet) | None | None | The entry |
 | Wallet to wallet | transfer `COMPLETED` | DR source wallet / CR destination wallet (Phase 4) | None | None | The entry |
 
 Every entry balances per currency (`INV-LED-01`); every posting is keyed by its operation so a

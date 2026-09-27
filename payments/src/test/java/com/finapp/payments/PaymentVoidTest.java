@@ -89,7 +89,7 @@ class PaymentVoidTest {
                 PaymentIntent.rehydrate(
                         PaymentIntentId.next(IDS), party, UUID.randomUUID(),
                         UUID.randomUUID(), LedgerAccountId.next(IDS), CaptureMode.AUTOMATIC,
-                        AMOUNT, PaymentIntentStatus.PROCESSING, Instant.now(CLOCK));
+                        AMOUNT, PaymentIntentStatus.PROCESSING, Instant.now(CLOCK), null);
         intents.rows.put(intent.id().value(), intent);
         authorized =
                 PaymentAttempt.rehydrate(
@@ -149,7 +149,8 @@ class PaymentVoidTest {
                         IDS,
                         CLOCK,
                         PaymentRails.of(List.of(SimulatedCardPspAdapter.RAIL)),
-                new JdbcUnmatchedConfirmationStore());
+                new JdbcUnmatchedConfirmationStore(),
+                        new com.finapp.ledger.JdbcLedgerAccountStore());
         return new PaymentVoid(
                 runner,
                 intents,
@@ -561,7 +562,7 @@ class PaymentVoidTest {
                     PaymentIntent.rehydrate(
                             row.id(), row.partyId(), row.customerId(), row.paymentMethodId(),
                             row.creditAccount(), CaptureMode.AUTOMATIC, row.amount(), to,
-                            row.createdAt()));
+                            row.createdAt(), null));
             return true;
         }
 

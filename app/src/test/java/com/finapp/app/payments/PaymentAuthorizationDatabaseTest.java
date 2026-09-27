@@ -497,10 +497,10 @@ class PaymentAuthorizationDatabaseTest {
                     assertThat(row.next()).isTrue();
                     assertThat(row.getInt(1))
                             .as("the future version exists (%s) and routed nothing", scheduled)
-                            // Version 3 since P7-TSK-009: V017's whole-version seed carries
-                            // the standing routes; the property under test is unchanged -
-                            // the future version routed NOTHING.
-                            .isEqualTo(3);
+                            // Version 4 since P7-TSK-011: V019's whole-version seed carries
+                            // the standing routes (3 since P7-TSK-009); the property under
+                            // test is unchanged - the future version routed NOTHING.
+                            .isEqualTo(4);
                 }
             }
         }
@@ -632,7 +632,8 @@ class PaymentAuthorizationDatabaseTest {
                 IDS,
                 CLOCK,
                 com.finapp.payments.PaymentRails.of(java.util.List.of(SimulatedCardPspAdapter.RAIL)),
-                new com.finapp.payments.JdbcUnmatchedConfirmationStore());
+                new com.finapp.payments.JdbcUnmatchedConfirmationStore(),
+                new com.finapp.ledger.JdbcLedgerAccountStore());
     }
 
     private PaymentCancellation cancellation() {
@@ -707,6 +708,12 @@ class PaymentAuthorizationDatabaseTest {
             return callerPartyId.equals(party)
                     ? Optional.of(new Wallet(customerId, wallet, EUR))
                     : Optional.empty();
+        }
+
+        @Override
+        public Optional<Wallet> payerWalletOwnedBy(Connection uow, UUID callerPartyId) {
+            // The top-up wiring's identity: the payer's wallet IS the credit wallet.
+            return walletOwnedBy(uow, callerPartyId);
         }
 
         @Override

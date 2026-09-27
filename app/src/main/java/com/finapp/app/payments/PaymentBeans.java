@@ -210,7 +210,11 @@ class PaymentBeans {
         return com.finapp.payments.PaymentRails.of(
                 java.util.List.of(
                         SimulatedCardPspAdapter.RAIL,
-                        com.finapp.payments.SimulatedInstantSchemeAdapter.RAIL));
+                        com.finapp.payments.SimulatedInstantSchemeAdapter.RAIL,
+                        // The book rail (P7-TSK-011, ADR-0059 section 6): declared
+                        // unconditionally like every rail - no adapter exists because
+                        // no wire does; liveness stays routing's database fact.
+                        com.finapp.payments.BookRail.RAIL));
     }
 
     /**
@@ -628,7 +632,10 @@ class PaymentBeans {
                 paymentRails,
                 // The execute arm's second claim pre-check (P7-TSK-009): a scheme
                 // reference already PARKED must not also credit.
-                unmatchedConfirmationStore);
+                unmatchedConfirmationStore,
+                // The book rail's fixed-order pair lock (P7-TSK-011): the account
+                // rows themselves, beside the chart that resolves positions.
+                ledgerAccountStore);
     }
 
     @Bean

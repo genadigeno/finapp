@@ -154,7 +154,8 @@ public class CheckoutBeans {
             IdGenerator ids,
             Clock clock,
             PlatformTransactionManager transactionManager,
-            DataSource dataSource) {
+            DataSource dataSource,
+            com.finapp.identity.MfaEnrolmentStore<java.sql.Connection> mfaEnrolmentStore) {
         return new CheckoutService(
                 checkoutSessions,
                 checkoutMeters,
@@ -169,7 +170,8 @@ public class CheckoutBeans {
                 ids,
                 clock,
                 new TransactionTemplate(transactionManager),
-                dataSource);
+                dataSource,
+                mfaEnrolmentStore);
     }
 
     @Bean

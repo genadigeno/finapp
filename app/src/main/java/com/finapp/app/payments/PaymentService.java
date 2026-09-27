@@ -281,6 +281,16 @@ public final class PaymentService {
             // unconfigured card provider gets (the ObjectProvider decision's second
             // occurrence).
             throw providerUnavailable();
+        } catch (com.finapp.ledger.HoldExceedsAvailableBalanceException unfunded) {
+            // The wallet payment's own refusal (P7-TSK-011, INV-BAL-04): judged under the
+            // wallet's lock, the whole transaction rolled back - no attempt, no posting,
+            // the intent back to awaiting confirmation (the confirmation converges by state,
+            // it holds no key) - so
+            // the SAME confirmation succeeds after a top-up.
+            throw new ApiException(
+                    PaymentsErrorCode.WALLET_PAYMENT_UNFUNDED,
+                    "A wallet payment was refused under the wallet's lock: the available"
+                            + " balance cannot cover it");
         }
 
         // The judgement this call itself committed, counted AFTER the command's own
@@ -532,6 +542,10 @@ public final class PaymentService {
             case FAILED -> meters.attempt(PaymentMeters.Judgement.FAILED);
             case AUTH_UNKNOWN, CAPTURE_UNKNOWN ->
                     meters.attempt(PaymentMeters.Judgement.UNKNOWN);
+            // The book completion is a synchronous EXECUTED judgement (P7-TSK-011): the
+            // meter vocabulary P7-TSK-009 added for the push door, counted at this seam
+            // because no door or resolver exists to count it elsewhere.
+            case EXECUTED -> meters.attempt(PaymentMeters.Judgement.EXECUTED);
             case AUTH_DISPATCHED, CAPTURE_DISPATCHED -> {
                 // Mid-question: nothing has been judged yet.
             }
@@ -624,7 +638,10 @@ public final class PaymentService {
                 reason,
                 row.amount().toBigDecimal().toPlainString(),
                 row.amount().currency().code(),
-                row.paymentMethodId().toString(),
+                // The wallet instrument names no method (P7-TSK-011): the view says which
+                // shape this payment is, never the account identifier - the caller's own
+                // accounts surface owns that.
+                row.paymentMethodId() == null ? "WALLET" : row.paymentMethodId().toString(),
                 row.createdAt().toString(),
                 totals.refunded(),
                 totals.pending(),

@@ -22,7 +22,7 @@ public final class JdbcPaymentIntentStore implements PaymentIntentStore<Connecti
 
     private static final String COLUMNS =
             "id, party_id, customer_id, payment_method_id, credit_account_id, capture_mode,"
-                    + " amount_minor, currency, scale, status, created_at";
+                    + " amount_minor, currency, scale, status, created_at, debit_account_id";
 
     @Override
     public boolean anyInFlightCrediting(
@@ -53,7 +53,7 @@ public final class JdbcPaymentIntentStore implements PaymentIntentStore<Connecti
         try (PreparedStatement insert =
                 unitOfWork.prepareStatement(
                         "INSERT INTO payments.payment_intent (" + COLUMNS + ")"
-                                + " VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)")) {
+                                + " VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)")) {
             insert.setObject(1, intent.id().value());
             insert.setObject(2, intent.partyId());
             insert.setObject(3, intent.customerId());
@@ -65,6 +65,10 @@ public final class JdbcPaymentIntentStore implements PaymentIntentStore<Connecti
             insert.setShort(9, (short) intent.amount().scale());
             insert.setString(10, intent.status().name());
             insert.setTimestamp(11, Timestamp.from(intent.createdAt()));
+            // The wallet instrument's debit side (P7-TSK-011): present exactly when the
+            // method is absent - V019's XOR holds the pairing for every writer.
+            insert.setObject(
+                    12, intent.debitAccount().map(a -> a.value()).orElse(null));
             insert.executeUpdate();
         } catch (SQLException failure) {
             throw new PaymentsStorageException(
@@ -205,6 +209,9 @@ public final class JdbcPaymentIntentStore implements PaymentIntentStore<Connecti
                         CurrencyCode.of(row.getString("currency")),
                         row.getShort("scale")),
                 PaymentIntentStatus.valueOf(row.getString("status")),
-                row.getTimestamp("created_at").toInstant());
+                row.getTimestamp("created_at").toInstant(),
+                row.getObject("debit_account_id", UUID.class) == null
+                        ? null
+                        : LedgerAccountId.of(row.getObject("debit_account_id", UUID.class)));
     }
 }

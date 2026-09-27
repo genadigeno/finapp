@@ -106,12 +106,20 @@ public final class MerchantPayable {
             List.of(
                     AccountPurpose.SETTLEMENT_CLEARING,
                     AccountPurpose.INSTANT_CLEARING,
+                    // The book rail's sale counterparty (P7-TSK-011): no clearing
+                    // stands between, so the payer's own wallet faces the payable -
+                    // same entry shapes, same direction table.
+                    AccountPurpose.CUSTOMER_WALLET,
                     AccountPurpose.PAYOUT_CLEARING);
 
     /** The clearings a SALE moves through — one per external rail, same entry shapes. */
     private static boolean saleClearing(AccountPurpose purpose) {
         return purpose == AccountPurpose.SETTLEMENT_CLEARING
-                || purpose == AccountPurpose.INSTANT_CLEARING;
+                || purpose == AccountPurpose.INSTANT_CLEARING
+                // The book sale's counterpart is the payer's wallet (P7-TSK-011):
+                // the capture DEBITS it and the refund CREDITS it, exactly the
+                // clearing shapes - and no other payable entry ever faces one.
+                || purpose == AccountPurpose.CUSTOMER_WALLET;
     }
 
     @NonNull private final LedgerAccountStore<Connection> accounts;

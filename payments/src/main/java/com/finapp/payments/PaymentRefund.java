@@ -147,7 +147,12 @@ public final class PaymentRefund {
             // The rail-aware half (P7-TSK-010): which wire this refund rides, and - for
             // the return - the ORIGINAL's scheme reference it cites as its destination.
             InteractionModel model,
-            Optional<ProviderReference> originalScheme) {}
+            Optional<ProviderReference> originalScheme,
+            // The book rail's flag (P7-TSK-011): TRUE exactly when THIS flight's Tx1
+            // completed the whole refund - no wire exists, so the outcome commits with
+            // the dispatch and Tx2 only records the response - and the acting bit must
+            // say so, because the completion really was this call's own.
+            boolean bookCompleted) {}
 
     /**
      * Dispatches (or replays) the refund and applies the provider's answer.
@@ -277,7 +282,13 @@ public final class PaymentRefund {
                                         renderedForm(dispatch.refund().id(), committed),
                                         "text/plain"));
                         return new RefundResult(
-                                dispatch.refund().id(), committed, false, applied.acting());
+                                dispatch.refund().id(),
+                                committed,
+                                false,
+                                // The book completion acted in Tx1 (P7-TSK-011): the row
+                                // reads terminal here, so applied.acting() is false, and
+                                // the flag carries whose act the completion really was.
+                                applied.acting() || dispatch.bookCompleted());
                     });
         }
     }
@@ -434,6 +445,9 @@ public final class PaymentRefund {
                 resolvable(found.status())
                         ? refunds.renewSendPermit(uow, found.id(), Instant.now(clock))
                         : Optional.empty();
+        // A taken-over BOOK refund can never still be resolvable: dispatch and outcome are
+        // one transaction, so a committed row is terminal and the permit renewal above
+        // matched nothing - send stays false and Tx2 answers the row's truth.
         return new Dispatch(
                 found,
                 intentId,
@@ -443,7 +457,8 @@ public final class PaymentRefund {
                 false,
                 permit.orElse(null),
                 attempt.interactionModel(),
-                attempt.schemeReference());
+                attempt.schemeReference(),
+                false);
     }
 
     /** The claimed dispatch: bound under the attempt lock, hold inside the account lock. */
@@ -498,11 +513,30 @@ public final class PaymentRefund {
                         }
                         yield intent.amount();
                     }
-                    case BOOK_REFUND ->
-                            throw new IllegalStateException(
-                                    "refund mode " + refundMode + " has no execution path"
-                                            + " yet: the book refund lands with its rail"
-                                            + " (P7-TSK-011, ADR-0059)");
+                    case BOOK_REFUND -> {
+                        // The book rail's refund (P7-TSK-011, ADR-0059 section 6): the
+                        // eligible subject is the book machine's own EXECUTED, the base is
+                        // the intent's frozen ask - and the PAIR LOCK comes first, in the
+                        // fixed order, because this flow holds the payable (the hold below)
+                        // while its posting touches the wallet: the book payment's cycle,
+                        // other direction (P4-TST-001's measured lesson).
+                        if (attempt.status() != PaymentAttemptStatus.EXECUTED) {
+                            throw new PaymentNotRefundableException(attempt.status());
+                        }
+                        outcomes.lockPairInFixedOrder(
+                                uow,
+                                intent.debitAccount()
+                                        .orElseThrow(
+                                                () ->
+                                                        new IllegalStateException(
+                                                                "a book refund's intent"
+                                                                    + " carries its debit"
+                                                                    + " wallet: V019's XOR"
+                                                                    + " holds it for every"
+                                                                    + " writer")),
+                                intent.creditAccount());
+                        yield intent.amount();
+                    }
                 };
         Money alreadyRefunded =
                 refunds.sumNonFailedFor(uow, attempt.id(), base.currency());
@@ -533,31 +567,47 @@ public final class PaymentRefund {
         // cannot fund it.
         com.finapp.ledger.Hold hold = holds.place(uow, intent.creditAccount(), reservation);
 
-        // The reference, minted per rail (INV-PAY-04): the card's provider shape, or - for
-        // the return - a 32-hex value that must fit the scheme wire's 35-character
-        // end-to-end bound, judged at mint by the factory (P7-TSK-010).
+        // The reference, minted per rail (INV-PAY-04): the card's provider shape; for the
+        // return a 32-hex value that must fit the scheme wire's 35-character end-to-end
+        // bound, judged at mint by the factory (P7-TSK-010); for the book refund a marked
+        // platform value - no wire exists, so the reference is a row fact, never a dedupe
+        // key (the posting key is the once-arbiter, P7-TSK-011).
         Refund refund =
-                refundMode == RailCapabilities.RefundMode.RETURN_PAYMENT
-                        ? Refund.createReturn(
-                                ids,
-                                clock,
-                                attempt,
-                                base,
-                                amount,
-                                alreadyRefunded,
-                                reason,
-                                hold.id(),
-                                new ProviderIdempotencyReference(
-                                        ids.next().toString().replace("-", "")))
-                        : Refund.create(
-                                ids,
-                                clock,
-                                attempt,
-                                amount,
-                                alreadyRefunded,
-                                reason,
-                                hold.id(),
-                                new ProviderIdempotencyReference("rfd-" + ids.next()));
+                switch (refundMode) {
+                    case RETURN_PAYMENT ->
+                            Refund.createReturn(
+                                    ids,
+                                    clock,
+                                    attempt,
+                                    base,
+                                    amount,
+                                    alreadyRefunded,
+                                    reason,
+                                    hold.id(),
+                                    new ProviderIdempotencyReference(
+                                            ids.next().toString().replace("-", "")));
+                    case BOOK_REFUND ->
+                            Refund.createBookRefund(
+                                    ids,
+                                    clock,
+                                    attempt,
+                                    base,
+                                    amount,
+                                    alreadyRefunded,
+                                    reason,
+                                    hold.id(),
+                                    new ProviderIdempotencyReference("bkr-" + ids.next()));
+                    case PROVIDER_REFUND ->
+                            Refund.create(
+                                    ids,
+                                    clock,
+                                    attempt,
+                                    amount,
+                                    alreadyRefunded,
+                                    reason,
+                                    hold.id(),
+                                    new ProviderIdempotencyReference("rfd-" + ids.next()));
+                };
         refunds.insert(uow, refund, dispatchKey);
 
         Instant now = Instant.now(clock);
@@ -598,6 +648,38 @@ public final class PaymentRefund {
                                         new IllegalStateException(
                                                 "a refund inserted in this transaction is"
                                                         + " readable in it"));
+
+        if (refundMode == RailCapabilities.RefundMode.BOOK_REFUND) {
+            // THE BOOK REFUND COMPLETES HERE, IN THIS TRANSACTION (P7-TSK-011, ADR-0059
+            // section 6): no wire exists, so there is no connectionless gap - the
+            // compensating movement, the hold's release, the COMPLETED transition and the
+            // terminal fact commit with the dispatch or roll back with it. The actor is
+            // the OPERATOR in context: no resolver ever finishes a book refund, so no
+            // platform actor is claimed. The stored provider reference is a marked
+            // platform value - the entry is the whole external record (INV-SET-01,
+            // vacuously: nothing external settles).
+            PaymentOutcomes.RefundApplied completed =
+                    outcomes.applyRefund(
+                            uow,
+                            intentId,
+                            refund,
+                            RefundStatus.DISPATCHED,
+                            ProviderAnswer.Verdict.APPROVED,
+                            Optional.of(new ProviderReference("bke-" + ids.next())),
+                            intent.creditAccount(),
+                            correlation);
+            return new Dispatch(
+                    refund,
+                    intentId,
+                    intent.creditAccount(),
+                    null,
+                    false,
+                    false,
+                    permit,
+                    attempt.interactionModel(),
+                    Optional.empty(),
+                    completed.acting());
+        }
         return new Dispatch(
                 refund,
                 intentId,
@@ -607,7 +689,8 @@ public final class PaymentRefund {
                 true,
                 permit,
                 attempt.interactionModel(),
-                attempt.schemeReference());
+                attempt.schemeReference(),
+                false);
     }
 
     /** The operator and the money's meaning ({@code INV-IDEM-03}); correlation excluded. */

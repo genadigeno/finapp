@@ -8363,8 +8363,8 @@ negative payable** — `COMPLETE` (2026-09-23)
 
 # Phase 7 — Cards, Wallets, A2A and Instant Payments
 
-Status: `IN_PROGRESS` — started 2026-09-26 with `P7-TSK-001` (10 of 18 items complete, M7.1 at
-3 of 3, M7.2 at 2 of 2, M7.3 at 3 of 3, M7.4 at 2 of 2) *(read `READY` for two days after the first task started — caught by `P7-TSK-001`'s own
+Status: `IN_PROGRESS` — started 2026-09-26 with `P7-TSK-001` (11 of 18 items complete, M7.1 at
+3 of 3, M7.2 at 2 of 2, M7.3 at 3 of 3, M7.4 at 2 of 2, M7.5 at 1 of 1) *(read `READY` for two days after the first task started — caught by `P7-TSK-001`'s own
 gate, the stale-second-copy class this file has now recorded five times)*; entry gate passed
 2026-09-24 by the Phase 6 → 7 transition
 ([`reviews/PHASE_6_TO_7_TRANSITION.md`](reviews/PHASE_6_TO_7_TRANSITION.md)), elaborated to task
@@ -8837,7 +8837,7 @@ Disputes (`P7-TSK-012`…`-014`) · M7.7 Observability and demonstration (`P7-TS
   instruction.
 
 
-**P7-TSK-011 — The wallet as an instrument: pay a checkout from the wallet** — `READY`
+**P7-TSK-011 — The wallet as an instrument: pay a checkout from the wallet** — `COMPLETE` (2026-09-27)
 - **Objective**: the book rail (ADR-0059 §6) — a checkout paid from a platform wallet in one
   transaction, final on posting.
 - **Bounded context**: Payments (9), consuming Accounts (5/6), Checkout (11) and Merchant (12).
@@ -8864,8 +8864,59 @@ Disputes (`P7-TSK-012`…`-014`) · M7.7 Observability and demonstration (`P7-TS
   probes.
 - **Accept**: a checkout paid from a wallet with the fee split in one entry, and refunded.
 - **Definition of done**: `DOD-FIN`, `DOD-API`, `DOD-TEST`. **Risk**: Medium. **Cx**: M.
+**P7-TSK-011 — The wallet as an instrument: pay a checkout from the wallet** — `COMPLETE` (2026-09-27)
+- **Design corrections to this entry** (the `P6-TSK-001` precedent): *Persistence* is payments
+  `V019`, not "none beyond the model's states" — the instrument is the INTENT's shape
+  (`payment_method_id` XOR `debit_account_id`), the NULL-blind intent freeze had to be
+  recreated NULL-safely, and the book refund was impossible without replacing `V018`'s BOOK
+  refusal; *Idempotency*'s posting key is `payment-execution:<attemptId>`, not
+  `payment-capture:` (`P7-TSK-009`'s EXECUTED-is-not-CAPTURED rule); *API* adds the
+  `instrument` field to the checkout confirmation (the wallet RESOLVED, never named — the
+  withdrawal's precedent) and `payments.WalletPaymentUnfunded`; and `P7-TSK-012`'s planned
+  migration slides to `V020`, with provenance.
+- **Gate**: the acceptance proven over the deployed chain — a checkout paid from a wallet
+  with the fee split in ONE entry and ONE transaction: the attempt born `EXECUTED|BOOK|book`,
+  ADR-0050's four lines with the payer's wallet as the counterpart (no clearing exists to
+  stand between), the order born and the session `COMPLETED` in the same commit, the
+  decision pinned `book|4`, the availability judgement's hold placed and released in that
+  commit, the wallet explained to the cent (`CheckoutFlowDatabaseTest#aCheckoutIsPaidFromTheWallet`);
+  and refunded by BOOK MOVEMENT inside the refund claim's own transaction — the capture's
+  four-line inverse, funded by its net, the payable at zero and the drill-down explaining
+  it (`#aWalletPaymentRefundsByBookMovement`). The unfunded wallet refused `422` with nothing
+  written and the SAME confirmation succeeding after a top-up; ten confirmations converging
+  on one entry and one order; **plan scenario 13 proven** — a wallet payment racing a
+  withdrawal on one wallet admits exactly the affordable set; the instrument choice exactly
+  one and the step-up enforced at MULTI_FACTOR. **Found and fixed on the way**: the
+  confirmation's `creditable` `FOR SHARE` against `executeBook`'s `FOR UPDATE` on the same
+  payable was a ten-racer deadlock (`40P01`, found by the ten-way) — the book branch now
+  verifies liveness under the stronger lock instead; the book-refund-versus-wallet-payment
+  AB/BA cycle is closed by the fixed-order pair lock, with the race ADDED at this gate and
+  its probe verified as a genuine `40P01`; `MerchantPayable` read wallet sales as zeros
+  (`CUSTOMER_WALLET` joined the sale counterparties, the `P7-TSK-010` find's third rail);
+  and a probe-runner hazard — a same-length mutation's restore left a stale compiled class
+  that contaminated two verdicts (voided, redone; the runner now re-stamps mtimes).
+  **The gate's own find**: the book payment wrote no `PaymentOutcomeApplied` record — every
+  other rail audits its acting outcome through `answered()`, so a book payment's money
+  movement was audited only as a dispatch; it now writes the same record under the PERSON
+  (`INV-AUD-01`, asserted and probed); and its second: the one-method completion settled
+  BEFORE the dispatch was recorded, so the trail read effect-before-cause — split into
+  dispatch / record / settle in the one transaction, the order pinned and probed; and its
+  third: the checkout door left no-wallet and currency-mismatch refusals unanswered as
+  "a broken database" — true on the method path, but on the wallet path both are the
+  payer's own conditions, which surfaced as 500s; now `422 payments.NoWallet` /
+  `payments.CurrencyMismatch` on that path only, tested and probed.
+  Fourteen probes, all caught in valid runs (one first aim survived and was re-aimed, two
+  verdicts voided and redone, three re-demonstrated after the split — all recorded;
+  `MUTATION_TESTING.md` §2 +12 rows, the API-refusal probe outside the invariant
+  register).
+  Multi-instance PASS — the derived claim, the intent conditional, the fixed-order pair lock
+  and the availability judgement under the wallet's lock are the arbiters; there is no
+  resolver, sweep or `enterSystem` for this rail. Fleet hermetic 1669 tests across 14 modules, 0 failures; 279 targeted database tests across 21 suites, 0 failures; the
+  platform classification guard green. The full battery deliberately skipped on the
+  owner's instruction.
 
-**P7-TSK-012 — The dispute aggregate, its notifications and its stages** — `PLANNED`
+
+**P7-TSK-012 — The dispute aggregate, its notifications and its stages** — `READY`
 - **Objective**: ADR-0061 §1–§2, §6 — a dispute is its own lifecycle on a card payment, driven by
   authenticated, deduplicated, order-blind notifications.
 - **Bounded context**: Disputes (29), in `payments`.
@@ -8876,7 +8927,7 @@ Disputes (`P7-TSK-012`…`-014`) · M7.7 Observability and demonstration (`P7-TS
   provider dispute vocabulary confined to the adapter.
 - **Out of scope**: postings (`-013`); evidence (`-014`).
 - **Domain changes**: `Dispute`, its machine, `DisputeStore`, `DisputeReason` categories.
-- **Persistence**: payments `V019` (dispute and history; planned as `V018` until `P7-TSK-010`'s return bound took that number); classification rows.
+- **Persistence**: payments `V020` (dispute and history; planned as `V018`, slid to `V019` by `P7-TSK-010`'s return bound and to `V020` by `P7-TSK-011`'s wallet instrument); classification rows.
 - **API**: dispute notifications at the webhook door; read routes for merchant (tenant-scoped) and
   operator.
 - **Events**: `DisputeOpened`, `ChargebackReceived`, `DisputeResolved`.

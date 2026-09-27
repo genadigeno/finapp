@@ -77,10 +77,16 @@ class PaymentsMigrationTest {
     private static final String PAY_BY_BANK =
             "db/migration/payments/V017__the_pay_by_bank_pay_in.sql";
 
-    /** V018: the return payment (P7-TSK-010). Holds the refund bound's CURRENT definition
-     * (V004 became applied history when the bound went per-model). */
+    /** V018: the return payment (P7-TSK-010). The refund bound's definition of record until
+     * V019 took the handoff; the card and push arms live on there verbatim. */
     private static final String RETURN =
             "db/migration/payments/V018__the_return_payment.sql";
+
+    /** V019: the wallet as an instrument (P7-TSK-011). Holds the intent trigger's CURRENT
+     * definition (V012 became applied history for it) and the refund bound's CURRENT
+     * definition (V018 became applied history for the function), plus routing version 4. */
+    private static final String WALLET_INSTRUMENT =
+            "db/migration/payments/V019__the_wallet_as_an_instrument.sql";
 
     @Test
     @DisplayName("the intent's status CHECKs are generated from the machine, on all three columns")
@@ -527,6 +533,44 @@ class PaymentsMigrationTest {
                 .as("V018 REPLACED the function (P7-TSK-010): the serializer must survive"
                         + " the handoff byte for byte")
                 .contains("pg_advisory_xact_lock(3, hashtext(NEW.attempt_id::text))");
+        assertThat(migration(WALLET_INSTRUMENT))
+                .as("and V019's second handoff keeps it again (P7-TSK-011)")
+                .contains("pg_advisory_xact_lock(3, hashtext(NEW.attempt_id::text))");
+    }
+
+    @Test
+    @DisplayName("V019's wallet-instrument clauses are pinned: the intent's XOR, the"
+            + " NULL-SAFE instrument freeze (the P7-TSK-007 trigger class, prevented), the"
+            + " bound's book arm joining the push arm, and routing version 4 carrying the"
+            + " standing rules forward beside the wallet pay-in (P7-TSK-011)")
+    void theWalletInstrumentClausesArePinned() {
+        String v019 = migration(WALLET_INSTRUMENT);
+        // The instrument-choice XOR, for every writer.
+        assertThat(v019)
+                .contains("CONSTRAINT payment_intent_carries_exactly_one_instrument")
+                .contains("CHECK ((payment_method_id IS NULL) <> (debit_account_id IS NULL))");
+        // The recreated intent trigger freezes BOTH instrument columns NULL-safely:
+        // V012's <> was NULL-blind, and with the column nullable that would have left a
+        // wallet intent's absent method editable after birth.
+        assertThat(v019)
+                .contains("OLD.payment_method_id IS DISTINCT FROM NEW.payment_method_id")
+                .contains("OLD.debit_account_id IS DISTINCT FROM NEW.debit_account_id")
+                .contains("REQUIRES_CONFIRMATION -> {PROCESSING, CANCELLED}");
+        // The bound's book arm: the push arm's judgement, both models named.
+        assertThat(v019)
+                .contains("attempt_model IN ('PUSH', 'BOOK')")
+                .contains("only an EXECUTED payment has anything to return (INV-PAY-05,"
+                        + " P7-TSK-010, P7-TSK-011)")
+                .contains("past its executed amount (INV-PAY-05)")
+                .contains("whose refund producer is not yet shipped (ADR-0059)");
+        // Version 4 is WHOLE: rules 0-2 byte for byte, rule 3 the wallet pay-in, and the
+        // book rail bound to it.
+        assertThat(v019)
+                .contains("0, 'PAY_IN', 'CARD_TOKEN', NULL, NULL, NULL, NULL)")
+                .contains("1, 'PAY_OUT', 'BANK_ACCOUNT', NULL, NULL, NULL, NULL)")
+                .contains("2, 'PAY_IN', 'BANK_ACCOUNT', NULL, NULL, NULL, NULL)")
+                .contains("3, 'PAY_IN', 'WALLET', NULL, NULL, NULL, NULL)")
+                .contains("('019992e0-0000-7000-8000-000000000034', 0, 'book')");
     }
 
     @Test

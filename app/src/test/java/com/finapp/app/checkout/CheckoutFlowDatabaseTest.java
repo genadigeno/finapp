@@ -2434,6 +2434,621 @@ class CheckoutFlowDatabaseTest {
                 .contains("\"position\":\"0.00\"");
     }
 
+    // ----------------------------------------------------------------- pay from wallet (P7-TSK-011)
+
+    @Test
+    @DisplayName("P7-TSK-011: a checkout paid FROM THE WALLET completes in ONE transaction -"
+            + " ADR-0050's four lines with the wallet as the counterpart, the order born,"
+            + " the decision pinned book|4, the wallet explained to the cent")
+    void aCheckoutIsPaidFromTheWallet() throws Exception {
+        Merchant merchant = tradingMerchant("0.029", 30L);
+        WalletCustomer payer = walletCustomer("150.00");
+        String created = createSession(merchant, AMOUNT_MINOR, someKey()).body();
+        String checkoutId = field(created, "checkoutId");
+
+        HttpResponse<String> confirmed =
+                confirmFromWallet(payer.token(), field(created, "sessionToken"));
+        assertThat(confirmed.statusCode()).as(confirmed.body()).isEqualTo(200);
+        assertThat(field(confirmed.body(), "status"))
+                .as("final on posting: no PAYMENT_PENDING moment exists on the book rail")
+                .isEqualTo("COMPLETED");
+
+        String attemptId = attemptIdForSession(checkoutId);
+        try (Connection app = DatabaseRoles.application()) {
+            assertThat(oneString(app,
+                            "SELECT status || '|' || interaction_model || '|' || rail"
+                                    + " FROM payments.payment_attempt WHERE id = ?",
+                            UUID.fromString(attemptId)))
+                    .isEqualTo("EXECUTED|BOOK|book");
+            assertThat(linePurposes(app, attemptId))
+                    .as("ADR-0050 section 3's four lines with the PAYER'S WALLET as the"
+                            + " counterpart - no clearing exists to stand between"
+                            + " (ADR-0059 section 6)")
+                    .containsExactlyInAnyOrder(
+                            "DEBIT:CUSTOMER_WALLET",
+                            "CREDIT:MERCHANT_PAYABLE",
+                            "DEBIT:MERCHANT_PAYABLE",
+                            "CREDIT:FEE_REVENUE");
+            assertThat(payablePositionMinor(app, merchant)).isEqualTo(96_80L);
+            assertThat(orderCountFor(app, merchant)).isEqualTo(1);
+            assertThat(count(app,
+                            "SELECT count(*) FROM ledger.journal_entry WHERE"
+                                    + " idempotency_scope = 'ledger.post:payment-execution:"
+                                    + attemptId + "'"))
+                    .isEqualTo(1);
+            // The availability judgement's auditable trace: one hold placed and RELEASED
+            // in the same commit (the withdrawal's protocol, compressed).
+            assertThat(oneString(app,
+                            "SELECT string_agg(status, ',') FROM ledger.hold WHERE"
+                                    + " ledger_account_id = ?",
+                            payer.walletAccountId()))
+                    .isEqualTo("RELEASED");
+            // The decision pinned to version 4's wallet rule (INV-HIST-04).
+            assertThat(oneString(app,
+                            "SELECT chosen_rail || '|' || v.version::text"
+                                    + " FROM payments.routing_decision d"
+                                    + " JOIN payments.routing_policy_version v"
+                                    + " ON v.id = d.policy_version_id"
+                                    + " WHERE d.intent_id = ? AND d.chosen_rail IS NOT NULL",
+                            UUID.fromString(intentOfSession(checkoutId))))
+                    .isEqualTo("book|4");
+            // THE AUDIT, both halves, under the PERSON (the gate's find): the confirmation
+            // says a dispatch happened, the outcome record says what it committed - the
+            // same PaymentOutcomeApplied every rail writes, never a platform actor claimed
+            // for a resolver the book rail does not have.
+            String intentId = intentOfSession(checkoutId);
+            assertThat(oneString(app,
+                            "SELECT actor_type FROM platform.audit_record WHERE operation ="
+                                    + " 'payments.PaymentConfirmed' AND target_id = ?",
+                            intentId))
+                    .isEqualTo("CUSTOMER");
+            assertThat(oneString(app,
+                            "SELECT actor_type || '|' || change_summary FROM"
+                                    + " platform.audit_record WHERE operation ="
+                                    + " 'payments.PaymentOutcomeApplied' AND target_id = ?",
+                            intentId))
+                    .startsWith("CUSTOMER|")
+                    .contains("verdict=BOOK_POSTED")
+                    .contains("attemptStatus=EXECUTED")
+                    .contains("intentStatus=SUCCEEDED");
+            // AND IN CAUSAL ORDER within the one transaction (the gate's second find): the
+            // confirmation before the outcome, RailSelected before PaymentExecuted - keys
+            // minted by the one monotonic UUIDv7 generator, so key order IS mint order.
+            assertThat(oneString(app,
+                            "SELECT string_agg(operation, ',' ORDER BY audit_id)"
+                                    + " FROM platform.audit_record WHERE target_id = ?"
+                                    + " AND operation IN ('payments.PaymentConfirmed',"
+                                    + " 'payments.PaymentOutcomeApplied')",
+                            intentId))
+                    .isEqualTo("payments.PaymentConfirmed,payments.PaymentOutcomeApplied");
+            assertThat(oneString(app,
+                            "SELECT string_agg(event_type, ',' ORDER BY event_id)"
+                                    + " FROM platform.outbox_event WHERE aggregate_id = ?"
+                                    + " AND event_type IN ('payments.RailSelected',"
+                                    + " 'payments.PaymentExecuted')",
+                            UUID.fromString(intentId)))
+                    .isEqualTo("payments.RailSelected,payments.PaymentExecuted");
+        }
+        assertThat(get("/v1/me/accounts/" + payer.product() + "/balance", payer.token())
+                        .body())
+                .contains("\"settled\":\"50.00\"")
+                .contains("\"available\":\"50.00\"");
+    }
+
+    @Test
+    @DisplayName("P7-TSK-011, INV-BAL-04: an unfunded wallet refuses with NOTHING written -"
+            + " no attempt, no entry, the intent still awaiting - and the SAME confirmation succeeds"
+            + " after a top-up")
+    void anUnfundedWalletRefusesWithNothingWritten() throws Exception {
+        Merchant merchant = tradingMerchant("0.029", 30L);
+        WalletCustomer payer = walletCustomer("40.00");
+        String created = createSession(merchant, AMOUNT_MINOR, someKey()).body();
+        String checkoutId = field(created, "checkoutId");
+        String sessionToken = field(created, "sessionToken");
+
+        HttpResponse<String> refused = confirmFromWallet(payer.token(), sessionToken);
+        assertThat(refused.statusCode()).isEqualTo(422);
+        assertThat(refused.body()).contains("payments.WalletPaymentUnfunded");
+
+        try (Connection app = DatabaseRoles.application()) {
+            assertThat(count(app,
+                            "SELECT count(*) FROM payments.payment_attempt WHERE intent_id"
+                                    + " = ?",
+                            UUID.fromString(intentOfSession(checkoutId))))
+                    .as("the whole transaction rolled back: no attempt exists")
+                    .isZero();
+            assertThat(payablePositionMinor(app, merchant)).isZero();
+            assertThat(orderCountFor(app, merchant)).isZero();
+        }
+        assertThat(get("/v1/me/accounts/" + payer.product() + "/balance", payer.token())
+                        .body())
+                .as("the wallet untouched, nothing reserved")
+                .contains("\"available\":\"40.00\"");
+
+        // The top-up, then the SAME confirmation - the derived key converges on the intent
+        // the refusal left awaiting confirmation.
+        fundWallet(payer.token(), "60.00");
+        HttpResponse<String> succeeded = confirmFromWallet(payer.token(), sessionToken);
+        assertThat(succeeded.statusCode()).as(succeeded.body()).isEqualTo(200);
+        assertThat(field(succeeded.body(), "status")).isEqualTo("COMPLETED");
+        try (Connection app = DatabaseRoles.application()) {
+            assertThat(payablePositionMinor(app, merchant)).isEqualTo(96_80L);
+        }
+    }
+
+    @Test
+    @DisplayName("P7-TSK-011: TEN INSTANCES confirming one session from the wallet produce"
+            + " ONE entry, ONE order and ONE debit - the losers converge on the purchase"
+            + " that worked")
+    void tenConcurrentWalletConfirmsProduceOneEntry() throws Exception {
+        Merchant merchant = tradingMerchant("0.029", 30L);
+        WalletCustomer payer = walletCustomer("150.00");
+        String created = createSession(merchant, AMOUNT_MINOR, someKey()).body();
+        String checkoutId = field(created, "checkoutId");
+        String sessionToken = field(created, "sessionToken");
+
+        List<java.util.concurrent.Callable<String>> racers = new ArrayList<>();
+        for (int i = 0; i < 10; i++) {
+            racers.add(
+                    () -> {
+                        HttpResponse<String> answer =
+                                confirmFromWallet(payer.token(), sessionToken);
+                        return answer.statusCode() + "|" + answer.body();
+                    });
+        }
+        ExecutorService pool = Executors.newFixedThreadPool(10);
+        List<String> answers = new ArrayList<>();
+        try {
+            for (Future<String> raced : pool.invokeAll(racers)) {
+                answers.add(raced.get());
+            }
+        } finally {
+            pool.shutdown();
+        }
+        // The card ten-way's own contract (the Phase 6 -> 7 transition): every racer
+        // converges on the one purchase, or is told honestly that one is in flight -
+        // and no racer is told the session left the flow.
+        assertThat(answers)
+                .allSatisfy(
+                        answer -> {
+                            if (!answer.startsWith("200|")) {
+                                assertThat(answer)
+                                        .as("every racer converges, or is honestly"
+                                                + " in-flight: %s", answer)
+                                        .contains("api.IdempotencyInProgress");
+                            }
+                            assertThat(answer).doesNotContain("checkout.");
+                        });
+        assertThat(answers)
+                .as("the purchase itself worked for at least one racer")
+                .anySatisfy(answer -> assertThat(answer).startsWith("200|"));
+
+        String attemptId = attemptIdForSession(checkoutId);
+        try (Connection app = DatabaseRoles.application()) {
+            assertThat(count(app,
+                            "SELECT count(*) FROM ledger.journal_entry WHERE"
+                                    + " idempotency_scope = 'ledger.post:payment-execution:"
+                                    + attemptId + "'"))
+                    .isEqualTo(1);
+            assertThat(orderCountFor(app, merchant)).isEqualTo(1);
+            assertThat(payablePositionMinor(app, merchant)).isEqualTo(96_80L);
+        }
+        assertThat(get("/v1/me/accounts/" + payer.product() + "/balance", payer.token())
+                        .body())
+                .contains("\"settled\":\"50.00\"");
+    }
+
+    @Test
+    @DisplayName("P7-TSK-011, plan scenario 13: a wallet payment and a WITHDRAWAL race one"
+            + " wallet - exactly the affordable set proceeds, available never negative")
+    void walletPaymentAndWithdrawalRaceAdmitsTheAffordableSet() throws Exception {
+        Merchant merchant = tradingMerchant("0.029", 30L);
+        WalletCustomer payer = walletCustomer("100.00");
+        // The withdrawal's instrument: a bank account registered through the real exchange.
+        provider.succeedsWith(
+                com.finapp.payments.SimulatedInstantSchemeAdapter.EXCHANGES_PATH,
+                200,
+                "{\"status\":\"exchanged\",\"destination\":\"dest-w13-" + UUID.randomUUID()
+                        + "\",\"suffix\":\"6819\",\"payee\":\"match\"}");
+        String methodId =
+                field(post("/v1/me/payment-methods/bank-accounts",
+                                "{\"grant\":\"blg-" + UUID.randomUUID()
+                                        + "\",\"acknowledgeNoMatch\":false}",
+                                payer.token(),
+                                someKey())
+                                .body(),
+                        "id");
+        provider.succeedsWith(
+                com.finapp.payments.SimulatedInstantSchemeAdapter.TRANSFERS_PATH,
+                200,
+                "{\"status\":\"accepted\",\"reference\":\"sch-w13-" + UUID.randomUUID()
+                        + "\",\"cycle\":\"C1\"}");
+        String created = createSession(merchant, AMOUNT_MINOR, someKey()).body();
+        String sessionToken = field(created, "sessionToken");
+
+        ExecutorService pool = Executors.newFixedThreadPool(2);
+        Future<HttpResponse<String>> paying =
+                pool.submit(() -> confirmFromWallet(payer.token(), sessionToken));
+        Future<HttpResponse<String>> withdrawing =
+                pool.submit(
+                        () ->
+                                post("/v1/me/withdrawals",
+                                        "{\"paymentMethodId\":\"" + methodId
+                                                + "\",\"amount\":\"100.00\","
+                                                + "\"currency\":\"EUR\"}",
+                                        payer.token(),
+                                        someKey()));
+        HttpResponse<String> paid = paying.get();
+        HttpResponse<String> withdrew = withdrawing.get();
+        pool.shutdown();
+
+        boolean paymentWon = paid.statusCode() == 200;
+        boolean withdrawalWon =
+                withdrew.statusCode() == 201
+                        && field(withdrew.body(), "status").equals("COMPLETED");
+        assertThat(paymentWon ^ withdrawalWon)
+                .as("EXACTLY the affordable set proceeds (INV-BAL-04): payment %s,"
+                                + " withdrawal %s",
+                        paid.statusCode() + "/" + paid.body(),
+                        withdrew.statusCode() + "/" + withdrew.body())
+                .isTrue();
+        if (!paymentWon) {
+            assertThat(paid.body()).contains("payments.WalletPaymentUnfunded");
+        }
+        if (!withdrawalWon) {
+            assertThat(withdrew.body()).contains("payments.WithdrawalUnfunded");
+        }
+        // Whoever won, the wallet explains itself and never went negative.
+        assertThat(get("/v1/me/accounts/" + payer.product() + "/balance", payer.token())
+                        .body())
+                .contains("\"settled\":\"0.00\"")
+                .contains("\"available\":\"0.00\"");
+    }
+
+    @Test
+    @DisplayName("P7-TSK-011: a wallet payment refunds by BOOK MOVEMENT in one transaction -"
+            + " the capture's four-line inverse with the wallet as counterpart, funded by"
+            + " its net, the payable at zero, the reference a platform marker")
+    void aWalletPaymentRefundsByBookMovement() throws Exception {
+        Merchant merchant = tradingMerchant("0.029", 30L, "RETURNED");
+        WalletCustomer payer = walletCustomer("100.00");
+        String created = createSession(merchant, AMOUNT_MINOR, someKey()).body();
+        String checkoutId = field(created, "checkoutId");
+        assertThat(confirmFromWallet(payer.token(), field(created, "sessionToken"))
+                        .statusCode())
+                .isEqualTo(200);
+
+        // Past the executed amount refuses BEFORE anything is held (INV-PAY-05).
+        HttpResponse<String> past = refundResponse(intentOfSession(checkoutId), "100.01");
+        assertThat(past.statusCode()).isEqualTo(422);
+        assertThat(past.body()).contains("payments.RefundExceedsCaptured");
+
+        HttpResponse<String> returned = refundResponse(intentOfSession(checkoutId), "100.00");
+        assertThat(returned.statusCode()).as(returned.body()).isEqualTo(201);
+        assertThat(field(returned.body(), "status")).isEqualTo("COMPLETED");
+        String refundId = field(returned.body(), "id");
+
+        try (Connection app = DatabaseRoles.application()) {
+            assertThat(oneString(app,
+                            "SELECT provider_reference FROM payments.refund WHERE id = ?",
+                            UUID.fromString(refundId)))
+                    .as("the completion's reference is a platform marker: the entry is the"
+                            + " whole external record")
+                    .startsWith("bke-");
+            try (PreparedStatement read =
+                    app.prepareStatement(
+                            "SELECT string_agg(l.direction || ':' || a.purpose, ','"
+                                    + " ORDER BY l.direction || ':' || a.purpose)"
+                                    + " FROM ledger.journal_line l"
+                                    + " JOIN ledger.journal_entry e ON e.id = l.entry_id"
+                                    + " JOIN ledger.ledger_account a"
+                                    + "   ON a.id = l.ledger_account_id"
+                                    + " WHERE e.idempotency_scope ="
+                                    + " 'ledger.post:payment-refund:" + refundId + "'")) {
+                try (ResultSet row = read.executeQuery()) {
+                    assertThat(row.next()).isTrue();
+                    assertThat(row.getString(1))
+                            .isEqualTo("CREDIT:CUSTOMER_WALLET,CREDIT:MERCHANT_PAYABLE,"
+                                    + "DEBIT:FEE_REVENUE,DEBIT:MERCHANT_PAYABLE");
+                }
+            }
+            assertThat(payablePositionMinor(app, merchant)).isZero();
+        }
+        assertThat(get("/v1/me/accounts/" + payer.product() + "/balance", payer.token())
+                        .body())
+                .as("the money came back where it left from")
+                .contains("\"settled\":\"100.00\"");
+        assertThat(payable(merchant).body())
+                .contains("\"refunded\":\"100.00\"")
+                .contains("\"feesReturned\":\"3.20\"")
+                .contains("\"position\":\"0.00\"");
+    }
+
+    @Test
+    @DisplayName("P7-TSK-011: the instrument choice is exactly one (422 for both, neither"
+            + " and an unknown word), and an MFA-enrolled payer pays from the wallet only"
+            + " with a MULTI_FACTOR session - refused with nothing written, elevated"
+            + " succeeds on the SAME session token")
+    void theInstrumentChoiceAndTheStepUp() throws Exception {
+        Merchant merchant = tradingMerchant("0.029", 30L);
+        WalletCustomer payer = walletCustomer("150.00");
+        String created = createSession(merchant, AMOUNT_MINOR, someKey()).body();
+        String sessionToken = field(created, "sessionToken");
+
+        assertThat(post("/v1/checkout/sessions/confirmation",
+                                "{\"sessionToken\":\"" + sessionToken + "\"}",
+                                payer.token(), null)
+                        .statusCode())
+                .as("neither instrument")
+                .isEqualTo(422);
+        assertThat(post("/v1/checkout/sessions/confirmation",
+                                "{\"sessionToken\":\"" + sessionToken
+                                        + "\",\"paymentMethodId\":\"" + UUID.randomUUID()
+                                        + "\",\"instrument\":\"WALLET\"}",
+                                payer.token(), null)
+                        .statusCode())
+                .as("both instruments")
+                .isEqualTo(422);
+        assertThat(post("/v1/checkout/sessions/confirmation",
+                                "{\"sessionToken\":\"" + sessionToken
+                                        + "\",\"instrument\":\"CASH\"}",
+                                payer.token(), null)
+                        .statusCode())
+                .as("an unknown instrument word")
+                .isEqualTo(422);
+
+        // The step-up: enrolled at PASSWORD is refused with nothing written; the SAME
+        // session token succeeds once the payer elevates (the withdrawal's proof, at
+        // this door).
+        com.finapp.sharedkernel.security.Sensitive<String> secret =
+                enrolAndConfirm(payer.token());
+        HttpResponse<String> refused = confirmFromWallet(payer.token(), sessionToken);
+        assertThat(refused.statusCode()).isEqualTo(403);
+        assertThat(refused.body()).contains("identity.AssuranceRequired");
+        try (Connection app = DatabaseRoles.application()) {
+            assertThat(orderCountFor(app, merchant)).isZero();
+            assertThat(payablePositionMinor(app, merchant)).isZero();
+        }
+        String elevated =
+                tokenFrom(
+                        post("/v1/authentications/mfa",
+                                        "{\"code\":\"" + codeNow(secret) + "\"}",
+                                        payer.token(), null)
+                                .body());
+        HttpResponse<String> succeeded = confirmFromWallet(elevated, sessionToken);
+        assertThat(succeeded.statusCode()).as(succeeded.body()).isEqualTo(200);
+        assertThat(field(succeeded.body(), "status")).isEqualTo("COMPLETED");
+    }
+
+    @Test
+    @DisplayName("P7-TSK-011, INV-CON-02: a BOOK REFUND and a NEW WALLET PAYMENT race on the"
+            + " same wallet and payable - the two directions of the AB/BA cycle - and every"
+            + " round completes both, no deadlock (the fixed-order pair lock)")
+    void aBookRefundAndAWalletPaymentRaceWithoutDeadlock() throws Exception {
+        Merchant merchant = tradingMerchant("0.029", 30L, "RETURNED");
+        WalletCustomer payer = walletCustomer("900.00");
+        String operator = operatorSession(RoleName.LEDGER_OPERATOR);
+        for (int round = 0; round < 6; round++) {
+            // A completed wallet payment to refund...
+            String paid = createSession(merchant, AMOUNT_MINOR, someKey()).body();
+            assertThat(confirmFromWallet(payer.token(), field(paid, "sessionToken"))
+                            .statusCode())
+                    .isEqualTo(200);
+            String refundable = intentOfSession(field(paid, "checkoutId"));
+            // ...and a fresh session to pay - released together.
+            String fresh = createSession(merchant, AMOUNT_MINOR, someKey()).body();
+            CountDownLatch start = new CountDownLatch(1);
+            ExecutorService pool = Executors.newFixedThreadPool(2);
+            try {
+                Future<HttpResponse<String>> refunding =
+                        pool.submit(
+                                () -> {
+                                    start.await();
+                                    return refundResponse(refundable, "100.00", operator);
+                                });
+                Future<HttpResponse<String>> paying =
+                        pool.submit(
+                                () -> {
+                                    start.await();
+                                    return confirmFromWallet(
+                                            payer.token(), field(fresh, "sessionToken"));
+                                });
+                start.countDown();
+                HttpResponse<String> refunded = refunding.get(120, TimeUnit.SECONDS);
+                HttpResponse<String> payment = paying.get(120, TimeUnit.SECONDS);
+                assertThat(refunded.statusCode())
+                        .as("round %d: the refund completes (%s)", round, refunded.body())
+                        .isEqualTo(201);
+                assertThat(field(refunded.body(), "status")).isEqualTo("COMPLETED");
+                assertThat(payment.statusCode())
+                        .as("round %d: the payment completes (%s)", round, payment.body())
+                        .isEqualTo(200);
+            } finally {
+                pool.shutdownNow();
+            }
+        }
+        // Every round explained: six payments kept, six refunded - 900 - 6 x 100 x (2 - 1).
+        assertThat(get("/v1/me/accounts/" + payer.product() + "/balance", payer.token())
+                        .body())
+                .contains("\"settled\":\"300.00\"");
+    }
+
+    @Test
+    @DisplayName("P7-TSK-011: the wallet path's own refusals are the PAYER's conditions, not a"
+            + " broken database - no wallet is 422 payments.NoWallet and a wallet in another"
+            + " currency is 422 payments.CurrencyMismatch, each with nothing written")
+    void theWalletPathRefusesItsOwnConditions() throws Exception {
+        Merchant merchant = tradingMerchant("0.029", 30L);
+
+        // A payer with no wallet at all (a card customer who never opened one).
+        Customer walletless = payingCustomer();
+        String first = createSession(merchant, AMOUNT_MINOR, someKey()).body();
+        HttpResponse<String> noWallet =
+                confirmFromWallet(walletless.token(), field(first, "sessionToken"));
+        assertThat(noWallet.statusCode()).as(noWallet.body()).isEqualTo(422);
+        assertThat(noWallet.body()).contains("payments.NoWallet");
+
+        // A payer whose wallet holds another currency: FX is no part of this flow.
+        Customer dollars = payingCustomer();
+        assertThat(post("/v1/me/accounts",
+                                "{\"productType\":\"WALLET\",\"currency\":\"USD\"}",
+                                dollars.token(),
+                                someKey())
+                        .statusCode())
+                .isEqualTo(201);
+        String second = createSession(merchant, AMOUNT_MINOR, someKey()).body();
+        HttpResponse<String> mismatched =
+                confirmFromWallet(dollars.token(), field(second, "sessionToken"));
+        assertThat(mismatched.statusCode()).as(mismatched.body()).isEqualTo(422);
+        assertThat(mismatched.body()).contains("payments.CurrencyMismatch");
+
+        try (Connection app = DatabaseRoles.application()) {
+            assertThat(orderCountFor(app, merchant)).isZero();
+            assertThat(payablePositionMinor(app, merchant)).isZero();
+        }
+        // Both offers are still open to be paid - nothing moved them (the refusal rolled
+        // the opening transaction back whole).
+        assertThat(sessionStatus(field(first, "checkoutId"))).isEqualTo("OPEN");
+        assertThat(sessionStatus(field(second, "checkoutId"))).isEqualTo("OPEN");
+    }
+
+    /** A verified, ACTIVE customer with an EUR wallet funded over the REAL card chain. */
+    private record WalletCustomer(String token, String product, UUID walletAccountId) {}
+
+    private WalletCustomer walletCustomer(String funding) throws Exception {
+        Customer carded = payingCustomer();
+        HttpResponse<String> opened =
+                post("/v1/me/accounts",
+                        "{\"productType\":\"WALLET\",\"currency\":\"EUR\"}",
+                        carded.token(),
+                        someKey());
+        assertThat(opened.statusCode()).isEqualTo(201);
+        String product = field(opened.body(), "id");
+        walletCardMethods.put(carded.token(), carded.methodId());
+        fundWallet(carded.token(), funding);
+        UUID walletAccountId;
+        try (Connection app = DatabaseRoles.application();
+                PreparedStatement read =
+                        app.prepareStatement(
+                                "SELECT id FROM ledger.ledger_account WHERE owner_ref = ?"
+                                        + " AND purpose = 'CUSTOMER_WALLET'")) {
+            read.setObject(1, UUID.fromString(product));
+            try (ResultSet row = read.executeQuery()) {
+                assertThat(row.next()).isTrue();
+                walletAccountId = row.getObject("id", UUID.class);
+            }
+        }
+        return new WalletCustomer(carded.token(), product, walletAccountId);
+    }
+
+    /** The card method each wallet customer funds through (the top-up's instrument). */
+    private final java.util.Map<String, String> walletCardMethods =
+            new java.util.concurrent.ConcurrentHashMap<>();
+
+    /** Funds the wallet by a REAL card top-up through the stubbed PSP (EUR). */
+    private void fundWallet(String token, String amount) throws Exception {
+        providerAuthorises();
+        providerCaptures();
+        String method = walletCardMethods.get(token);
+        String paymentId =
+                field(post("/v1/payments",
+                                "{\"paymentMethodId\":\"" + method + "\",\"amount\":\""
+                                        + amount + "\",\"currency\":\"EUR\"}",
+                                token,
+                                someKey())
+                                .body(),
+                        "id");
+        HttpResponse<String> confirmed =
+                post("/v1/payments/" + paymentId + "/confirmation", null, token, null);
+        assertThat(field(confirmed.body(), "status")).isEqualTo("SUCCEEDED");
+    }
+
+    private HttpResponse<String> confirmFromWallet(String token, String sessionToken)
+            throws Exception {
+        return post(
+                "/v1/checkout/sessions/confirmation",
+                "{\"sessionToken\":\"" + sessionToken + "\",\"instrument\":\"WALLET\"}",
+                token,
+                null);
+    }
+
+    // The wallet block's scalar reads (the PayByBank suite's idiom, connection-passed).
+    private static String oneString(Connection app, String sql, Object argument)
+            throws SQLException {
+        try (PreparedStatement read = app.prepareStatement(sql)) {
+            read.setObject(1, argument);
+            try (ResultSet row = read.executeQuery()) {
+                assertThat(row.next()).as("expected one row: %s", sql).isTrue();
+                return row.getString(1);
+            }
+        }
+    }
+
+    private static long count(Connection app, String sql) throws SQLException {
+        try (PreparedStatement read = app.prepareStatement(sql);
+                ResultSet row = read.executeQuery()) {
+            assertThat(row.next()).isTrue();
+            return row.getLong(1);
+        }
+    }
+
+    private static long count(Connection app, String sql, Object argument)
+            throws SQLException {
+        try (PreparedStatement read = app.prepareStatement(sql)) {
+            read.setObject(1, argument);
+            try (ResultSet row = read.executeQuery()) {
+                assertThat(row.next()).isTrue();
+                return row.getLong(1);
+            }
+        }
+    }
+
+    // The withdrawal suite's MFA idiom, verbatim (P7-TSK-008): enrol, confirm with the
+    // PREVIOUS step's code, elevate with the current one.
+    private com.finapp.sharedkernel.security.Sensitive<String> enrolAndConfirm(
+            String sessionToken) throws Exception {
+        com.finapp.sharedkernel.security.Sensitive<String> secret =
+                com.finapp.sharedkernel.security.Sensitive.of(
+                        secretFrom(post("/v1/me/mfa", null, sessionToken, null).body()));
+        String confirming =
+                com.finapp.identity.Authenticator.codeAt(
+                        secret,
+                        com.finapp.identity.TotpParameters.current(),
+                        java.time.Instant.ofEpochSecond(
+                                (currentStep() - 1)
+                                        * com.finapp.identity.TotpParameters.current()
+                                                .periodSeconds()));
+        assertThat(post("/v1/me/mfa/confirmation", "{\"code\":\"" + confirming + "\"}",
+                                sessionToken, null)
+                        .statusCode())
+                .isEqualTo(204);
+        return secret;
+    }
+
+    private static String codeNow(
+            com.finapp.sharedkernel.security.Sensitive<String> secret) {
+        return com.finapp.identity.Authenticator.codeAt(
+                secret,
+                com.finapp.identity.TotpParameters.current(),
+                java.time.Instant.ofEpochSecond(
+                        currentStep()
+                                * com.finapp.identity.TotpParameters.current()
+                                        .periodSeconds()));
+    }
+
+    private static long currentStep() {
+        return java.time.Instant.now().getEpochSecond()
+                / com.finapp.identity.TotpParameters.current().periodSeconds();
+    }
+
+    private static String secretFrom(String body) {
+        // The secret travels inside the provisioning URI (the withdrawal suite's read).
+        java.util.regex.Matcher matcher =
+                java.util.regex.Pattern.compile("secret=([A-Z2-7]+)").matcher(body);
+        assertThat(matcher.find()).as(body).isTrue();
+        return matcher.group(1);
+    }
+
     /** A verified customer whose instrument is a BANK account (P7-TSK-009) - no card. */
     private Customer bankPayingCustomer() throws Exception {
         String login = "chb." + UUID.randomUUID().toString().replace("-", "").substring(0, 12);

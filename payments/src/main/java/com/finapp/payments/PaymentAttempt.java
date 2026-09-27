@@ -406,6 +406,29 @@ public final class PaymentAttempt {
     }
 
     /**
+     * A book attempt, born {@code EXECUTED} (`P7-TSK-011`, ADR-0059 §6): the book rail has
+     * no wire, so there is nothing to dispatch, nothing to wait for and nothing to
+     * reference — the attempt exists exactly when its posting commits, in the same
+     * transaction, or not at all. No idempotency reference is minted because no external
+     * dedupe exists to present it to: the posting key is the once-arbiter.
+     */
+    public static PaymentAttempt createBook(
+            IdGenerator ids, Clock clock, PaymentIntentId intentId, RailId rail) {
+        Objects.requireNonNull(ids, "ids must not be null");
+        Objects.requireNonNull(clock, "clock must not be null");
+        return new PaymentAttempt(
+                PaymentAttemptId.next(ids),
+                intentId,
+                rail,
+                InteractionModel.BOOK,
+                null, null, null, null, null, null, null, null, null,
+                PaymentAttemptStatus.EXECUTED,
+                Instant.now(clock),
+                null, null, null, null,
+                null);
+    }
+
+    /**
      * A row read back from storage, through the same constructor — so a corrupt row is refused
      * on read-back, ahead of the schema's own {@code CHECK}s.
      */

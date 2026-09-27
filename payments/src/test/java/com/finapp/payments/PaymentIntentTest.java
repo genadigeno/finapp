@@ -171,7 +171,7 @@ class PaymentIntentTest {
                         CaptureMode.AUTOMATIC,
                         Money.ofMinorUnits(-98_76, EUR),
                         PaymentIntentStatus.SUCCEEDED,
-                        Instant.now(CLOCK)))
+                        Instant.now(CLOCK), null))
                 .as("a stored non-positive amount")
                 .isInstanceOf(IllegalArgumentException.class)
                 .hasMessageContaining("EUR")
@@ -182,21 +182,66 @@ class PaymentIntentTest {
         assertThatThrownBy(() -> PaymentIntent.rehydrate(
                         PaymentIntentId.next(IDS), null, IDS.next(), IDS.next(),
                         LedgerAccountId.next(IDS), CaptureMode.AUTOMATIC, AMOUNT,
-                        PaymentIntentStatus.PROCESSING, Instant.now(CLOCK)))
+                        PaymentIntentStatus.PROCESSING, Instant.now(CLOCK), null))
                 .as("a rehydrated row with no party")
                 .isInstanceOf(NullPointerException.class);
         assertThatThrownBy(() -> PaymentIntent.rehydrate(
                         PaymentIntentId.next(IDS), IDS.next(), IDS.next(), IDS.next(),
-                        LedgerAccountId.next(IDS), CaptureMode.AUTOMATIC, AMOUNT, null, Instant.now(CLOCK)))
+                        LedgerAccountId.next(IDS), CaptureMode.AUTOMATIC, AMOUNT, null, Instant.now(CLOCK), null))
                 .as("a rehydrated row with no status")
                 .isInstanceOf(NullPointerException.class);
         assertThatThrownBy(() -> PaymentIntent.rehydrate(
                         PaymentIntentId.next(IDS), IDS.next(), IDS.next(), IDS.next(),
                         LedgerAccountId.next(IDS), null, AMOUNT,
-                        PaymentIntentStatus.PROCESSING, Instant.now(CLOCK)))
+                        PaymentIntentStatus.PROCESSING, Instant.now(CLOCK), null))
                 .as("a rehydrated row with no capture mode - the birth fact V012 backfilled")
                 .isInstanceOf(NullPointerException.class)
                 .hasMessageContaining("captureMode");
+    }
+
+    @Test
+    @DisplayName("the instrument-choice XOR (P7-TSK-011): exactly one of a registered"
+            + " method and the payer's own wallet, at every door and on read-back")
+    void theInstrumentChoiceIsExactlyOne() {
+        // The wallet birth: no method, the debit side frozen, the same machine.
+        PaymentIntent fromWallet =
+                PaymentIntent.createFromWallet(
+                        IDS, CLOCK, IDS.next(), IDS.next(),
+                        LedgerAccountId.next(IDS), LedgerAccountId.next(IDS), AMOUNT);
+        assertThat(fromWallet.status()).isEqualTo(PaymentIntentStatus.REQUIRES_CONFIRMATION);
+        assertThat(fromWallet.paymentMethodId()).isNull();
+        assertThat(fromWallet.debitAccount()).isPresent();
+        assertThat(fromWallet.confirm().debitAccount())
+                .as("the choice survives every transition")
+                .isEqualTo(fromWallet.debitAccount());
+
+        // A method birth carries no debit side.
+        assertThat(intentIn(PaymentIntentStatus.REQUIRES_CONFIRMATION).debitAccount())
+                .isEmpty();
+
+        // BOTH and NEITHER are refused whatever the writer - the raw-SQL-shaped corruption.
+        assertThatThrownBy(() -> PaymentIntent.rehydrate(
+                        PaymentIntentId.next(IDS), IDS.next(), IDS.next(), IDS.next(),
+                        LedgerAccountId.next(IDS), CaptureMode.AUTOMATIC, AMOUNT,
+                        PaymentIntentStatus.PROCESSING, Instant.now(CLOCK),
+                        LedgerAccountId.next(IDS)))
+                .as("a row carrying both instruments")
+                .isInstanceOf(IllegalArgumentException.class)
+                .hasMessageContaining("exactly one instrument");
+        assertThatThrownBy(() -> PaymentIntent.rehydrate(
+                        PaymentIntentId.next(IDS), IDS.next(), IDS.next(), null,
+                        LedgerAccountId.next(IDS), CaptureMode.AUTOMATIC, AMOUNT,
+                        PaymentIntentStatus.PROCESSING, Instant.now(CLOCK), null))
+                .as("a row carrying neither instrument")
+                .isInstanceOf(IllegalArgumentException.class)
+                .hasMessageContaining("exactly one instrument");
+
+        // The method door refuses a null method rather than minting a wallet shape.
+        assertThatThrownBy(() -> PaymentIntent.create(
+                        IDS, CLOCK, IDS.next(), IDS.next(), null,
+                        LedgerAccountId.next(IDS), AMOUNT))
+                .isInstanceOf(NullPointerException.class)
+                .hasMessageContaining("wallet instrument enters by its own door");
     }
 
     @Test
@@ -252,7 +297,7 @@ class PaymentIntentTest {
                 CaptureMode.AUTOMATIC,
                 AMOUNT,
                 status,
-                Instant.now(CLOCK));
+                Instant.now(CLOCK), null);
     }
 
 }

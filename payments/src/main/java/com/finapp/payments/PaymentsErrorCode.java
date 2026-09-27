@@ -202,6 +202,19 @@ public enum PaymentsErrorCode implements ErrorCode {
             "The wallet's available balance cannot cover this withdrawal."),
 
     /**
+     * A wallet payment refused under the wallet's lock (`P7-TSK-011`, {@code INV-BAL-04}):
+     * the withdrawal's refusal at the book rail's door. Nothing is written — the intent
+     * still awaits confirmation and the same confirmation succeeds after a top-up.
+     *
+     * <p>A {@code 422}: coherent request, refused by the caller's own balance. The refusal
+     * names no amount and no balance beyond this sentence's fact.
+     */
+    WALLET_PAYMENT_UNFUNDED(
+            "payments.WalletPaymentUnfunded",
+            422,
+            "The wallet's available balance cannot cover this payment."),
+
+    /**
      * A withdrawal priced in a currency its wallet does not hold (`P7-TSK-008`): the hold,
      * the posting and the scheme dispatch carry one {@code Money}, and FX is no part of
      * this flow.

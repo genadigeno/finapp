@@ -513,7 +513,8 @@ class PaymentCaptureDatabaseTest {
                                             new JdbcAuditWriter(), new JdbcOutboxWriter(),
                                             IDS, CLOCK,
                                             com.finapp.payments.PaymentRails.of(java.util.List.of(SimulatedCardPspAdapter.RAIL)),
-                new com.finapp.payments.JdbcUnmatchedConfirmationStore()),
+                new com.finapp.payments.JdbcUnmatchedConfirmationStore(),
+                new com.finapp.ledger.JdbcLedgerAccountStore()),
                 new com.finapp.payments.JdbcRoutingStore(),
                 com.finapp.payments.PaymentRails.of(java.util.List.of(SimulatedCardPspAdapter.RAIL)),
                 new JdbcAuditWriter(),
@@ -596,7 +597,8 @@ class PaymentCaptureDatabaseTest {
                         IDS,
                         CLOCK,
                         com.finapp.payments.PaymentRails.of(java.util.List.of(SimulatedCardPspAdapter.RAIL)),
-                new com.finapp.payments.JdbcUnmatchedConfirmationStore());
+                new com.finapp.payments.JdbcUnmatchedConfirmationStore(),
+                new com.finapp.ledger.JdbcLedgerAccountStore());
         return new PaymentCapture(
                 runner,
                 intents,

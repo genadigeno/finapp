@@ -701,6 +701,27 @@ class PaymentAttemptTest {
                 IDS, CLOCK, PaymentIntentId.next(IDS), RailId.of("instant"));
     }
 
+    @Test
+    @DisplayName("a book birth is EXECUTED with nothing to reference: no wire exists, so"
+            + " the attempt exists exactly when its posting commits (P7-TSK-011)")
+    void aBookBirthIsExecuted() {
+        PaymentAttempt born =
+                PaymentAttempt.createBook(
+                        IDS, CLOCK, PaymentIntentId.next(IDS), RailId.of("book"));
+        assertThat(born.status()).isEqualTo(PaymentAttemptStatus.EXECUTED);
+        assertThat(born.interactionModel()).isEqualTo(InteractionModel.BOOK);
+        assertThat(born.authorizationReference())
+                .as("no idempotency reference is minted: no external dedupe exists to"
+                        + " present it to - the posting key is the once-arbiter")
+                .isNull();
+        assertThat(born.endToEndReference()).isNull();
+        assertThat(born.schemeReference()).isEmpty();
+        assertThat(born.lastDispatchedAt()).isNull();
+        // The book machine is born terminal: no door moves it anywhere.
+        assertThat(InteractionModel.BOOK.edges().get(PaymentAttemptStatus.EXECUTED)).isEmpty();
+        assertThat(InteractionModel.BOOK.edges().get(PaymentAttemptStatus.FAILED)).isEmpty();
+    }
+
     private static PaymentAttempt pushRehydrated(
             PaymentAttemptStatus status, String schemeReference, String cycle) {
         Instant born = Instant.now(CLOCK);

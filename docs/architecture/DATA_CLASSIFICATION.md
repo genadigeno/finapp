@@ -548,6 +548,7 @@ them are classified at the ceiling regardless.
 | `payment_intent` | `customer_id` | `INTERNAL` | The `customer_account.customer_id` reasoning: an identifier of a thing, not a fact about it |
 | `payment_intent` | `payment_method_id` | `INTERNAL` | An identifier of a thing; what it resolves to is `payment_method`'s to classify |
 | `payment_intent` | `credit_account_id` | `INTERNAL` | A ledger-account identifier by value — `transfer.destination_account_id`'s reasoning *(named `wallet_account_id` until `P7-TSK-002` paid the `P6-TSK-005` rename debt, payments `V012`)* |
+| `payment_intent` | `debit_account_id` | `INTERNAL` | The payer's own wallet account when the instrument IS the wallet (`P7-TSK-011`, the intent's instrument XOR) — `credit_account_id`'s reasoning on the debit side |
 | `payment_intent` | `capture_mode` | `INTERNAL` | An enumerated processing decision (ADR-0059, `P7-TSK-002`) — whether capture follows authorization without a further decision; nothing about a person |
 | `payment_intent` | `amount_minor` | `RESTRICTED-FINANCIAL` | A customer's commanded amount — `transfer.amount_minor`'s reasoning verbatim |
 | `payment_intent` | `currency` | `RESTRICTED-FINANCIAL` | Meaningless without the amount and meaning-giving with it |

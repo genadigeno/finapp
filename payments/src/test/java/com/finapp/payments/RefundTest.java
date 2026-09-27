@@ -265,6 +265,47 @@ class RefundTest {
     }
 
     @Test
+    @DisplayName("a book refund is bounded by the execution exactly as the return is"
+            + " (INV-PAY-05): EXECUTED book subjects only, no wire bound to judge")
+    void aBookRefundIsBoundedByTheExecution() {
+        PaymentAttempt executed = executedBookAttempt();
+
+        Refund refund = Refund.createBookRefund(
+                IDS, CLOCK, executed, CAPTURED, AMOUNT, Money.zero(EUR),
+                "customer complaint upheld", HoldId.next(IDS),
+                new ProviderIdempotencyReference("bkr-" + UUID.randomUUID()));
+        assertThat(refund.status()).isEqualTo(RefundStatus.DISPATCHED);
+        assertThat(refund.attemptId()).isEqualTo(executed.id());
+
+        // The wrong machine and the wrong state refuse: a push subject is refused by
+        // MODEL (the return factory owns it), and only EXECUTED has anything to return.
+        assertThatThrownBy(() -> Refund.createBookRefund(
+                        IDS, CLOCK, executedPushAttempt(), CAPTURED, AMOUNT, Money.zero(EUR),
+                        "wrong machine", HoldId.next(IDS),
+                        new ProviderIdempotencyReference("bkr-" + UUID.randomUUID())))
+                .isInstanceOf(IllegalArgumentException.class)
+                .hasMessageContaining("EXECUTED book");
+        assertThatThrownBy(() -> Refund.createBookRefund(
+                        IDS, CLOCK, failedBookAttempt(), CAPTURED, AMOUNT, Money.zero(EUR),
+                        "nothing executed", HoldId.next(IDS),
+                        new ProviderIdempotencyReference("bkr-" + UUID.randomUUID())))
+                .isInstanceOf(IllegalArgumentException.class)
+                .hasMessageContaining("EXECUTED");
+
+        // The shared bound (the return's own checks, one definition): one unit past the
+        // executed amount refuses, naming the invariant and the currency, never a value.
+        assertThatThrownBy(() -> Refund.createBookRefund(
+                        IDS, CLOCK, executed, CAPTURED, AMOUNT,
+                        Money.ofMinorUnits(78_77, EUR), "one unit too far",
+                        HoldId.next(IDS),
+                        new ProviderIdempotencyReference("bkr-" + UUID.randomUUID())))
+                .isInstanceOf(IllegalArgumentException.class)
+                .hasMessageContaining("EUR")
+                .hasMessageNotContaining("9876")
+                .hasMessageNotContaining("7877");
+    }
+
+    @Test
     @DisplayName("rehydrate routes through the one constructor and refuses the corrupt row")
     void rehydrateRefusesTheCorruptRow() {
         for (RefundStatus status : RefundStatus.values()) {
@@ -429,6 +470,28 @@ class RefundTest {
     /** A pay-in the payer has not executed — nothing has arrived to return. */
     private static PaymentAttempt awaitingPushAttempt() {
         return pushAttempt(PaymentAttemptStatus.AWAITING_PAYER, null);
+    }
+
+    /** An EXECUTED book attempt for 98.76 EUR — the book refund's subject (P7-TSK-011). */
+    private static PaymentAttempt executedBookAttempt() {
+        return bookAttempt(PaymentAttemptStatus.EXECUTED);
+    }
+
+    private static PaymentAttempt failedBookAttempt() {
+        return bookAttempt(PaymentAttemptStatus.FAILED);
+    }
+
+    private static PaymentAttempt bookAttempt(PaymentAttemptStatus status) {
+        return PaymentAttempt.rehydrate(
+                PaymentAttemptId.next(IDS),
+                PaymentIntentId.next(IDS),
+                RailId.of("book"),
+                InteractionModel.BOOK,
+                null, null, null, null, null, null, null, null,
+                status == PaymentAttemptStatus.FAILED ? PaymentFailureReason.DECLINED : null,
+                status,
+                Instant.now(CLOCK),
+                null, null, null, null, null);
     }
 
     private static PaymentAttempt pushAttempt(

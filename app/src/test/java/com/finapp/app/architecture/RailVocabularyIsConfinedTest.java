@@ -50,13 +50,17 @@ class RailVocabularyIsConfinedTest {
     private static final Map<String, String> DECLARED_RAILS =
             Map.of(
                     "card", "SimulatedCardPspAdapter.java",
-                    "instant", "SimulatedInstantSchemeAdapter.java");
+                    "instant", "SimulatedInstantSchemeAdapter.java",
+                    // The book rail (P7-TSK-011): no adapter exists because no wire
+                    // does, so the declaration class IS the declaring file.
+                    "book", "BookRail.java");
 
     /** Each declaration constant, confined to its adapter and the composition root. */
     private static final Map<String, String> DECLARATION_CONSTANTS =
             Map.of(
                     "SimulatedCardPspAdapter.RAIL", "SimulatedCardPspAdapter.java",
-                    "SimulatedInstantSchemeAdapter.RAIL", "SimulatedInstantSchemeAdapter.java");
+                    "SimulatedInstantSchemeAdapter.RAIL", "SimulatedInstantSchemeAdapter.java",
+                    "BookRail.RAIL", "BookRail.java");
 
     /** The composition root may bind the declaration; nothing else may name it. */
     private static final Set<String> CONFIGURATION_FILES = Set.of("PaymentBeans.java");
@@ -136,6 +140,10 @@ class RailVocabularyIsConfinedTest {
                 .contains("SimulatedCardPspAdapter.RAIL");
         assertThat(codeOf("Object rail = SimulatedInstantSchemeAdapter.RAIL;"))
                 .contains("SimulatedInstantSchemeAdapter.RAIL");
+        assertThat(stringLiteralsOf("if (rail.value().equals(\"book\")) { post(); }")
+                        .split("\n"))
+                .contains("book");
+        assertThat(codeOf("Object rail = BookRail.RAIL;")).contains("BookRail.RAIL");
         // Prose is not a control: comments are stripped from both scanners, literals from the
         // code scanner, and only a WHOLE literal matches a name.
         assertThat(stringLiteralsOf("// the \"card\" rail\n/* card */ String s = \"cardigan\";"))

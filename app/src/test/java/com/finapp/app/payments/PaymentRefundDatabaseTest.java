@@ -1843,7 +1843,8 @@ class PaymentRefundDatabaseTest {
                 IDS,
                 CLOCK,
                 com.finapp.payments.PaymentRails.of(java.util.List.of(SimulatedCardPspAdapter.RAIL)),
-                new com.finapp.payments.JdbcUnmatchedConfirmationStore());
+                new com.finapp.payments.JdbcUnmatchedConfirmationStore(),
+                new com.finapp.ledger.JdbcLedgerAccountStore());
     }
 
     private SimulatedCardPspAdapter adapter() {

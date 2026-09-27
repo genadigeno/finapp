@@ -190,6 +190,10 @@ public class CheckoutService {
     private final TransactionTemplate transactions;
     private final DataSource dataSource;
 
+    /** The wallet instrument's assurance read (P7-TSK-011): the withdrawal's step-up policy
+     * at this door - a factor enrolled means a MULTI_FACTOR session pays from the wallet. */
+    private final com.finapp.identity.MfaEnrolmentStore<Connection> enrolments;
+
     public CheckoutService(
             CheckoutSessions checkout,
             CheckoutMeters meters,
@@ -204,7 +208,8 @@ public class CheckoutService {
             IdGenerator ids,
             Clock clock,
             TransactionTemplate transactions,
-            DataSource dataSource) {
+            DataSource dataSource,
+            com.finapp.identity.MfaEnrolmentStore<Connection> enrolments) {
         this.checkout = Objects.requireNonNull(checkout, "checkout must not be null");
         this.meters = Objects.requireNonNull(meters, "meters must not be null");
         this.settlement = Objects.requireNonNull(settlement, "settlement must not be null");
@@ -220,6 +225,7 @@ public class CheckoutService {
         this.clock = Objects.requireNonNull(clock, "clock must not be null");
         this.transactions = Objects.requireNonNull(transactions, "transactions must not be null");
         this.dataSource = Objects.requireNonNull(dataSource, "dataSource must not be null");
+        this.enrolments = Objects.requireNonNull(enrolments, "enrolments must not be null");
     }
 
     // ----------------------------------------------------------------- merchant surface
@@ -360,6 +366,22 @@ public class CheckoutService {
      */
     public SessionView confirm(Session current, ConfirmSessionRequest body) {
         Objects.requireNonNull(body, "body must not be null");
+        // THE INSTRUMENT CHOICE, exactly one (P7-TSK-011): a registered method, or the
+        // payer's own wallet - which the platform RESOLVES, never a named account. A body
+        // saying both or neither is malformed, refused before anything is read.
+        boolean fromWallet = "WALLET".equals(body.instrument());
+        if (body.instrument() != null && !fromWallet) {
+            throw new ApiException(
+                    com.finapp.platform.api.PlatformErrorCode.VALIDATION_FAILED,
+                    "A confirmation named an unknown instrument choice",
+                    "instrument must be \"WALLET\" or absent.");
+        }
+        if (fromWallet == (body.paymentMethodId() != null)) {
+            throw new ApiException(
+                    com.finapp.platform.api.PlatformErrorCode.VALIDATION_FAILED,
+                    "A confirmation names exactly one instrument",
+                    "send paymentMethodId, or instrument=\"WALLET\" - not both, not neither.");
+        }
         // THE ONE UNWRAP ON THE INBOUND PATH: the presented value goes straight into the
         // token type, which hashes it to look the session up and never surrenders it again.
         CheckoutSessionToken presented = CheckoutSessionToken.of(body.sessionToken().expose());
@@ -377,9 +399,11 @@ public class CheckoutService {
         } catch (UnknownPaymentInstrumentException foreign) {
             // The create door's own refusal, answered as that door answers it (the Phase 6 -> 7
             // transition): an instrument that is unknown, detached or somebody else's writes
-            // nothing and spends no key. It was a 500. The wallet and currency refusals are not
-            // caught, deliberately: the participants resolve the payable in the offer's own
-            // currency, which creation priced, so either one is a broken database.
+            // nothing and spends no key. It was a 500. On the METHOD path the wallet and
+            // currency refusals are not answered, deliberately: the participants resolve the
+            // payable in the offer's own currency, which creation priced, so either one is a
+            // broken database. On the WALLET path (P7-TSK-011) both are the payer's own
+            // conditions and are answered below.
             throw new ApiException(
                     PaymentsErrorCode.UNKNOWN_INSTRUMENT,
                     "A checkout confirmation named an instrument that is not the payer's");
@@ -403,6 +427,26 @@ public class CheckoutService {
             // Reachable only for a session opened before the rule existed: the pin re-asserts
             // it, and its transaction rolls back with the intent it would have priced.
             throw saleBelowFee();
+        } catch (com.finapp.payments.NoWalletForPaymentException noWallet) {
+            // ON THE WALLET PATH ONLY (P7-TSK-011) this is the payer's own condition - no
+            // open wallet to pay from - answered as the create door answers it. On the
+            // method path the credit side is the payable in the offer's own currency, so
+            // the refusal still means a broken database and stays loud (the comment above).
+            if (!"WALLET".equals(body.instrument())) {
+                throw noWallet;
+            }
+            throw new ApiException(
+                    PaymentsErrorCode.NO_WALLET,
+                    "A wallet payment was refused: the payer has no open wallet");
+        } catch (com.finapp.payments.PaymentCurrencyMismatchException mismatched) {
+            // Likewise the payer's own condition on the wallet path: a wallet in another
+            // currency cannot pay this offer (FX is no part of this flow) - nothing written.
+            if (!"WALLET".equals(body.instrument())) {
+                throw mismatched;
+            }
+            throw new ApiException(
+                    PaymentsErrorCode.CURRENCY_MISMATCH,
+                    "A wallet payment was refused: the offer is not in the wallet's currency");
         }
 
         // OUTSIDE a transaction: the command runs its own Tx1 / provider call / Tx2
@@ -544,6 +588,15 @@ public class CheckoutService {
         checkout.requireTrading(unitOfWork, session.merchantRef());
 
         UUID payerParty = partyOf(unitOfWork, current);
+        boolean fromWallet = "WALLET".equals(body.instrument());
+        if (fromWallet) {
+            // The wallet instrument's assurance, BEFORE anything is written (P7-TSK-011):
+            // the withdrawal's step-up policy at this door - money leaves the payer's
+            // wallet, so an MFA-enrolled identity pays with a MULTI_FACTOR session. The
+            // refusal rolls this transaction back whole; the derived key converges the
+            // retry after elevation.
+            requireConditionalAssurance(unitOfWork, current);
+        }
         PaymentCreation creation =
                 new PaymentCreation(
                         executor,
@@ -563,15 +616,22 @@ public class CheckoutService {
         PaymentCreation.CreationResult created =
                 creation.create(
                         unitOfWork,
-                        new PaymentCreation.CreatePaymentCommand(
-                                payerParty,
-                                body.paymentMethodId(),
-                                session.amount(),
-                                // The session's OWN identifier as the key: deterministic, so a
-                                // retry that reaches here converges on one intent rather than
-                                // opening a second (INV-IDEM-01 through a derived key) - in its
-                                // own scope, where no client can claim it first.
-                                "checkout:" + session.id().value()));
+                        // The session's OWN identifier as the key: deterministic, so a
+                        // retry that reaches here converges on one intent rather than
+                        // opening a second (INV-IDEM-01 through a derived key) - in its
+                        // own scope, where no client can claim it first. The fingerprint
+                        // carries the instrument choice, so a retry that switches
+                        // instruments meets the conflict it should (INV-IDEM-03).
+                        fromWallet
+                                ? PaymentCreation.CreatePaymentCommand.fromWallet(
+                                        payerParty,
+                                        session.amount(),
+                                        "checkout:" + session.id().value())
+                                : new PaymentCreation.CreatePaymentCommand(
+                                        payerParty,
+                                        body.paymentMethodId(),
+                                        session.amount(),
+                                        "checkout:" + session.id().value()));
 
         // THE PRICE PINNED, in this same transaction (INV-MER-03, INV-HIST-04): the version
         // the SESSION was priced under, carried onto the payment, so a schedule version
@@ -594,6 +654,29 @@ public class CheckoutService {
             throw new LostTheOpen();
         }
         return new Opened(session.id(), created.intent(), false);
+    }
+
+    /**
+     * The withdrawal's conditional assurance, at the wallet-payment door (`P7-TSK-011`):
+     * an identity with a TOTP factor enrolled pays from the wallet only with a
+     * {@code MULTI_FACTOR} session. Enrolment is the condition, not the request.
+     */
+    private void requireConditionalAssurance(Connection unitOfWork, Session current) {
+        boolean hasFactor =
+                enrolments
+                        .findActive(
+                                unitOfWork,
+                                current.identityId(),
+                                com.finapp.identity.MfaFactorType.TOTP)
+                        .isPresent();
+        if (hasFactor
+                && !current.assurance()
+                        .atLeast(com.finapp.identity.AssuranceLevel.MULTI_FACTOR)) {
+            throw new ApiException(
+                    com.finapp.identity.IdentityErrorCode.ASSURANCE_REQUIRED,
+                    "A wallet payment from an MFA-enrolled identity requires a MULTI_FACTOR"
+                            + " session");
+        }
     }
 
     /** The intent a session past {@code OPEN} must carry; its absence is a broken database. */

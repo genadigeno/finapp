@@ -1,6 +1,6 @@
 # Task History
 
-The per-task completion records that accumulated behind `## Current Task` - 154 "Previously" blocks, newest first, from `P7-TSK-009` back to project initiation. *(`X-TSK-004` is cross-cutting and completed after the Phase 6 → 7 transition, so it stands second, between `P7-TSK-001` and the transition's record - the transition's block moved here by `P7-TSK-001`'s gate, exactly as an earlier form of this note said it would.)*
+The per-task completion records that accumulated behind `## Current Task` - 155 "Previously" blocks, newest first, from `P7-TSK-010` back to project initiation. *(`X-TSK-004` is cross-cutting and completed after the Phase 6 → 7 transition, so it stands second, between `P7-TSK-001` and the transition's record - the transition's block moved here by `P7-TSK-001`'s gate, exactly as an earlier form of this note said it would.)*
 
 **Archive.** These records were moved verbatim out of
 [`CURRENT_STATE.md`](../CURRENT_STATE.md) on 2026-09-20 so that the canonical description of
@@ -14,6 +14,72 @@ Authoritative backlog: [`BACKLOG.md`](../BACKLOG.md)
 ---
 
 ### Previously
+
+**`P7-TSK-010` — Refunds on push rails are return payments** — `COMPLETE` (2026-09-27).
+**M7.4, Pay-ins by bank, closes at 2 of 2: a pay-in is refunded without anyone reversing
+it — one refund command executing by the stored rail's declared `refundMode`, the return a
+NEW outbound push citing the original** (ADR-0059 §3's `refundMode` dispatch shipped;
+ADR-0062 §4's return row shipped; `INV-PAY-05`'s push half, `INV-REV-01`, `INV-MER-07`,
+`INV-RAIL-03`, `INV-RAIL-04`, `INV-PAY-04`).
+
+| Acceptance criterion | Evidence |
+|---|---|
+| A pay-by-bank payment refunded by return payment and reconciled | The operator's refund of an EXECUTED pay-in over HTTP through the REAL push adapter: a new transfer carrying OUR minted 32-hex reference as the `Idempotency-Key` AND body field, citing the ORIGINAL's scheme reference as its only address — read back from the wire body (`INV-RAIL-03`: the platform never learns the payer's account) — completed with the RETURN's own scheme reference stored, **exactly one** entry `payment-refund:<refundId>` DR `CUSTOMER_WALLET` / CR `INSTANT_CLEARING`, the wallet at zero explained, the key replayed byte for byte with ONE wire call, and the return's own confirmation echo refused parking (`PayByBankDatabaseTest#theReturnChainHolds`) |
+| The merchant-bound return | The full return of a RETURNED-fee bank sale funded by its NET — the capture's exact four-line inverse on the INSTANT rail's own position, never the card PSP's (`INV-RAIL-04`), the payable landing at exactly zero and the drill-down explaining it: refunded 100.00, feesReturned 3.20 (`CheckoutFlowDatabaseTest#aBankCheckoutReturnsInFull`) |
+| The bound, everywhere | Per-model for EVERY writer: payments `V018` replaces the `V004` bound function under the same advisory namespace 3 — the card arm verbatim, the push arm requiring `EXECUTED` and judging against the intent's frozen ask (the value the confirmation door proved equal to what the scheme executed), the BOOK model refused outright (`P7-TSK-011`) — raw negatives driven as `finapp_app` AND the migrator (`PaymentsSchemaDatabaseTest#theReturnBoundIsPerModelForEveryWriter`); the aggregate and the command refuse first, to the cent legal, one past it the honest 422, the waiting pay-in the honest 409 (`PayByBankDatabaseTest#aPartialReturnIsBoundedByTheExecution`) |
+
+**The dispatch is the refund command unchanged at every seam that matters** — the
+two-transaction claim, the hold under the attempt lock, ADR-0054's net reservation for
+merchant-bound refunds, the one shared `PaymentOutcomes.applyRefund` on the LOCKED row —
+with the wire per rail: `sent()` folds the return's answer onto the provider vocabulary
+verbatim (ACCEPTED→approved, REJECTED→declined, refusal and ambiguity identical), so the
+first-send permit rule and the release-and-post commit run unchanged. The reference is
+minted per rail at Tx1 — the return's 32-hex value judged against ISO 20022's 35 at the
+factory, never at send.
+
+**The resolution is partitioned by the attempt's model** (`ReturnResolution`, the card
+sweeper's refund leg at the push rail): `findSweepable` feeds the card leg and now EXCLUDES
+push refunds — a resolver asking the wrong counterparty would hear `UNRECOGNISED`
+truthfully and re-drive against capture facts the row lacks — and `findSweepableReturns`
+is its exact sibling. The lost answer stays honestly `UNKNOWN` with the hold standing; the
+sweep completes it to ONE entry and a second sweep converges quietly; `UNRECOGNISED`
+re-drives under the conditionally renewed send permit with the SAME reference (the
+scheme's dedupe, read back from the wire); a re-drive's refused connection concludes
+NOTHING (ADR-0057 §3, proven with a split rail whose send port is dead). The callback door
+refuses the return's echo: a confirmation naming a reference some refund carries is
+attributed, not unmatched — evidence only, no park, no credit (`INV-REC-05`'s
+counter-case).
+
+**Found and fixed on the way**: `MerchantPayable`'s sale-clearing set named only
+`SETTLEMENT_CLEARING`, so every bank sale since `P7-TSK-009` read as zeros in the
+merchant's own drill-down — summed correctly, explained wrongly, and the return made it
+visible. `INSTANT_CLEARING` joined the set with the mislabel recorded in the javadoc
+(`INV-MER-02` as a surface); the probe reverting it reddens the checkout return test. Also
+met: the `P7-TSK-008` bare-digit needle class fired in `PaymentRefundDatabaseTest` (a
+`"500"` needle matching hex in a UUIDv7) — re-anchored with the class named. And a
+`P7-TSK-009` gate escape surfaced by this gate's own clean fleet run: that task's seven
+decorated register rows (`` `INV-X` / ADR-… ``) fail `MutationDemonstrationTest`'s row
+grammar — they landed AFTER its fleet run and were never re-checked, so the committed
+tree was red on a clean `app:test`. Reflowed to the grammar (qualifiers into the
+mutation column), and this task's own rows written to it.
+
+**Deliberate**: no new refund column (the design resolved the backlog's "(decided at
+design)" — the rail is the attempt join's fact, the return's settlement cycle rests in the
+RESPONSE evidence until Phase 8 needs a column); `payments.RefundExceedsCaptured` and
+`payments.NotRefundable` keep their names with the detail text widened (the codes are the
+contract, the wording is not); the refund route, permission wall, audit action and events
+unchanged — no OpenAPI delta.
+
+Eleven probe runs, eleven caught, every restore verified byte-identical
+(`MUTATION_TESTING.md` §2 +11 rows). Multi-instance PASS — the claim's unique key, the
+attempt lock, `V018`'s advisory-namespace-3 bound for every writer, the send permit's
+conditional renewal, the locked-row outcomes and the posting key are ALL database
+arbiters; `ReturnResolutionSchedule` is enumerated leaderless
+(`DISTRIBUTED_EXECUTION.md` §3 +1 row, `NoSingleInstanceAssumptionRulesTest` +1,
+`SystemActorCallSitesAreEnumeratedTest` +1). Verified by targeted tiers from fresh runs —
+the fleet-wide hermetic test task green at 1663 tests across 14 modules, 0 failures, and 207 targeted database tests across 14 suites, 0 failures, plus the platform
+classification guard — the full battery deliberately skipped on the owner's instruction,
+no fleet-wide database or kafka counts claimed.
 
 **`P7-TSK-009` — Pay-by-bank: A2A pay-ins for wallets and checkout** — `COMPLETE` (2026-09-27).
 **M7.4, Pay-ins by bank, opens at 1 of 2: money enters through the payer's own PSP,

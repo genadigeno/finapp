@@ -66,6 +66,18 @@ public interface PaymentParticipants<T> {
     Optional<InstrumentKind> instrumentKindOwnedBy(
             T unitOfWork, UUID callerPartyId, UUID paymentMethodId);
 
+    /**
+     * The PAYER's own wallet, whatever this flow's credit wiring (`P7-TSK-011`, ADR-0059
+     * §6): the book instrument's resolution — the party's live {@code ACTIVE} customer's
+     * live wallet product's {@code ACTIVE} ledger account, with its currency. For the
+     * top-up wiring this is {@link #walletOwnedBy}'s own answer; for the checkout wiring,
+     * whose {@code walletOwnedBy} deliberately answers the MERCHANT's payable, this stays
+     * the payer's side. Empty folds no-wallet and not-live into the one refusal, and the
+     * confirmation re-asks it at the act so a wallet closed since creation refuses rather
+     * than posts.
+     */
+    Optional<Wallet> payerWalletOwnedBy(T unitOfWork, UUID callerPartyId);
+
     /** The wallet's owner, account and currency — what the intent records and judges. */
     record Wallet(UUID customerId, LedgerAccountId account, CurrencyCode currency) {}
 }

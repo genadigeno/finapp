@@ -113,6 +113,15 @@ public final class PaymentOutcomes {
     @NonNull private final UnmatchedConfirmationStore<Connection> unmatched;
 
     /**
+     * The ledger's account rows, for the book rail's fixed-order pair lock (`P7-TSK-011`):
+     * a book movement explicitly locks BOTH its participants before judging anything,
+     * because {@code journal_line}'s FK takes {@code FOR KEY SHARE} on its account and the
+     * transfer measured what an unordered {@code FOR UPDATE} against that becomes — 783
+     * deadlocks (`P4-TST-001`). Appended last (the constructor is positional history).
+     */
+    @NonNull private final com.finapp.ledger.LedgerAccountStore<Connection> ledgerAccounts;
+
+    /**
      * What committed (or was found committed by the loser of a harmless race).
      *
      * @param acting whether <strong>this</strong> call's conditional transition fired
@@ -598,40 +607,9 @@ public final class PaymentOutcomes {
                     LedgerAccount clearing =
                             chart.resolve(
                                     uow, clearingPurposeOf(uow, attemptId), amount.currency());
-                    LocalDate today = LocalDate.now(clock.withZone(ZoneOffset.UTC));
-                    CaptureSettlement settlement =
-                            new CaptureSettlement(
-                                    intentId, attemptId, clearing.id(), credit, amount,
-                                    correlation, now);
-                    com.finapp.ledger.PostingResult posted =
-                            postings.post(
-                                    uow,
-                                    new PostingCommand(
-                                            EXECUTION_POSTING_PREFIX + attemptId.value(),
-                                            today,
-                                            today,
-                                            attemptId.value().toString(),
-                                            composition.settle(uow, settlement)));
-                    // The composing flow's second moment (P6-TSK-007): a checkout session
-                    // completes - LATE when it expired first (INV-MER-06's second rail) -
-                    // and its order is born, in THIS transaction.
-                    composition.settled(uow, settlement, posted.entryId().value());
-
-                    if (intents.transition(
-                            uow,
-                            intentId,
-                            PaymentIntentStatus.PROCESSING,
-                            PaymentIntentStatus.SUCCEEDED)) {
-                        intents.recordTransition(
-                                uow,
-                                intentId,
-                                PaymentIntentStatus.PROCESSING,
-                                PaymentIntentStatus.SUCCEEDED,
-                                platform,
-                                now);
-                    }
-                    announce(uow, EXECUTED_EVENT_TYPE, intentId, "EXECUTED",
-                            Optional.empty(), correlation, now);
+                    settleExecution(
+                            uow, intentId, attemptId, clearing.id(), credit, amount,
+                            platform, correlation, now);
                 }
                 committedAttempt = PaymentAttemptStatus.EXECUTED;
                 committedIntent = PaymentIntentStatus.SUCCEEDED;
@@ -794,12 +772,12 @@ public final class PaymentOutcomes {
                     // THE POSTING - same connection, atomically with the transition and the
                     // release (ADR-0048 §4): DR the customer's wallet, CR clearing - the
                     // capture's inverse pair; the key makes any duplicate outcome
-                    // structurally unable to post twice.
-                    LedgerAccount clearing =
-                            chart.resolve(
-                                    uow,
-                                    clearingPurposeOf(uow, refund.attemptId()),
-                                    refund.amount().currency());
+                    // structurally unable to post twice. On the BOOK rail the money's
+                    // counterpart is the intent's own debit wallet - the compensating
+                    // movement returns it where it came from, and no clearing exists to
+                    // stand between (P7-TSK-011, ADR-0059 §6).
+                    com.finapp.ledger.LedgerAccountId counterpart =
+                            refundCounterpartOf(uow, intentId, refund);
                     LocalDate today = LocalDate.now(clock.withZone(ZoneOffset.UTC));
 
                     // WHAT HAD ALREADY BEEN RETURNED, EXCLUDING THIS REFUND (`P6-TSK-014`).
@@ -836,7 +814,7 @@ public final class PaymentOutcomes {
                                                     intentId,
                                                     refund.attemptId(),
                                                     refund.id(),
-                                                    clearing.id(),
+                                                    counterpart,
                                                     wallet,
                                                     refund.amount(),
                                                     refundedBefore,
@@ -1105,6 +1083,237 @@ public final class PaymentOutcomes {
      * dispatch decided ({@code INV-RAIL-04}'s shape, one rail early). Both refusals are wiring
      * faults and fail this transaction loudly before a line posts to a guessed account.
      */
+    /**
+     * The execution's settle block, shared by every producer of an {@code EXECUTED} money
+     * fact (`P7-TSK-011` extracted it from the `P7-TSK-009` acting branch, unchanged): the
+     * {@code payment-execution:<attemptId>} posting through the composing flow — which
+     * completes a checkout session and births its order in THIS transaction — the intent's
+     * conditional {@code PROCESSING → SUCCEEDED}, and the executed fact announced.
+     *
+     * @param counterpart the account facing the credit in the entry: the STORED rail's
+     *     declared clearing position for an external rail ({@code INV-RAIL-04}), or — on
+     *     the book rail — the intent's own debit wallet: the platform pays itself, so the
+     *     counterpart is the payer's account, never a clearing (ADR-0059 §§4/6)
+     */
+    private void settleExecution(
+            Connection uow,
+            PaymentIntentId intentId,
+            PaymentAttemptId attemptId,
+            com.finapp.ledger.LedgerAccountId counterpart,
+            com.finapp.ledger.LedgerAccountId credit,
+            Money amount,
+            Actor actor,
+            Correlation correlation,
+            Instant now) {
+        LocalDate today = LocalDate.now(clock.withZone(ZoneOffset.UTC));
+        CaptureSettlement settlement =
+                new CaptureSettlement(
+                        intentId, attemptId, counterpart, credit, amount, correlation, now);
+        com.finapp.ledger.PostingResult posted =
+                postings.post(
+                        uow,
+                        new PostingCommand(
+                                EXECUTION_POSTING_PREFIX + attemptId.value(),
+                                today,
+                                today,
+                                attemptId.value().toString(),
+                                composition.settle(uow, settlement)));
+        // The composing flow's second moment (P6-TSK-007): a checkout session completes -
+        // LATE when it expired first (INV-MER-06's second rail) - and its order is born,
+        // in THIS transaction.
+        composition.settled(uow, settlement, posted.entryId().value());
+
+        if (intents.transition(
+                uow, intentId, PaymentIntentStatus.PROCESSING, PaymentIntentStatus.SUCCEEDED)) {
+            intents.recordTransition(
+                    uow,
+                    intentId,
+                    PaymentIntentStatus.PROCESSING,
+                    PaymentIntentStatus.SUCCEEDED,
+                    actor,
+                    now);
+        }
+        announce(uow, EXECUTED_EVENT_TYPE, intentId, "EXECUTED",
+                Optional.empty(), correlation, now);
+    }
+
+    /**
+     * The book rail's first half (`P7-TSK-011`, ADR-0059 §6), inside the CALLER's
+     * transaction — the confirmation's — because a book payment is final on posting and has
+     * no other moment: the fixed-order pair lock, liveness and availability judged under the
+     * wallet's own lock, the attempt born {@code EXECUTED}. The caller then records the
+     * dispatch and calls {@link #settleBook} in the SAME transaction, so the trail reads
+     * confirmation-then-outcome as every rail's does (the gate's find: one method that
+     * settled first wrote the outcome's audit and {@code PaymentExecuted} BEFORE the
+     * confirmation's record and {@code RailSelected}). Commits whole or not at all; there is
+     * deliberately no {@code enterSystem} here — the acting person IS the actor, because no
+     * resolver ever finishes a book payment for them.
+     *
+     * <p><strong>The pair lock is load-bearing</strong> (`P4-TST-001`'s 783-deadlock
+     * measurement): a book payment explicitly holds the wallet and its posting takes
+     * {@code FOR KEY SHARE} on the payable; a book refund explicitly holds the payable and
+     * its posting touches the wallet. Unordered, that is the AB/BA cycle the transfer
+     * measured — so both book flows lock both participants first, in
+     * {@code UUID.compareTo} order (every instance agreeing on ONE order is the whole
+     * requirement).
+     *
+     * @throws com.finapp.ledger.HoldExceedsAvailableBalanceException the wallet cannot fund
+     *     the payment now ({@code INV-BAL-04}) — thrown with nothing written, the caller's
+     *     transaction rolls back whole and the intent still awaits confirmation
+     *     (the confirmation is keyless: it converges by the intent's state)
+     */
+    public BookDispatch dispatchBook(Connection uow, PaymentIntent intent, RailId rail) {
+        Money amount = intent.amount();
+        com.finapp.ledger.LedgerAccountId wallet =
+                intent.debitAccount()
+                        .orElseThrow(
+                                () ->
+                                        new IllegalStateException(
+                                                "a book execution's intent carries its debit"
+                                                        + " wallet: V019's XOR holds it for"
+                                                        + " every writer (P7-TSK-011)"));
+
+        lockPairInFixedOrder(uow, wallet, intent.creditAccount());
+        // BOTH rows verified ACTIVE under the locks just taken - the creditable FOR SHARE's
+        // fact at the stronger rank (the confirmation deliberately skips that read on this
+        // branch: SHARE-then-UPDATE on one row across ten racers is the measured cycle).
+        requireActive(uow, wallet);
+        requireActive(uow, intent.creditAccount());
+
+        // AVAILABILITY under the wallet's lock (INV-BAL-04, INV-BAL-05): the withdrawal's
+        // own judgement - place proves affordability against settled minus ACTIVE holds
+        // and throws with nothing written - compressed to one commit: the release frees
+        // the reservation beside the posting that takes the money for good, and the rows
+        // it leaves are the same auditable trace the withdrawal leaves over minutes.
+        com.finapp.ledger.Hold funded = holds.place(uow, wallet, amount);
+
+        PaymentAttempt attempt = PaymentAttempt.createBook(ids, clock, intent.id(), rail);
+        attempts.insert(uow, attempt);
+        return new BookDispatch(attempt, funded.id());
+    }
+
+    /**
+     * The book payment's second half (`P7-TSK-011`), in the SAME transaction as
+     * {@link #dispatchBook} and after the caller has recorded the dispatch - so the audit
+     * trail and the outbox read causally, confirmation before outcome, exactly as every
+     * other rail's do: the funded hold released beside the posting that takes the money
+     * for good, the shared settle block (session completion, order, {@code SUCCEEDED},
+     * {@code PaymentExecuted}), and the outcome's own audit record.
+     */
+    public void settleBook(
+            Connection uow, PaymentIntent intent, BookDispatch dispatched,
+            Correlation correlation) {
+        Actor person = SecurityContext.require();
+        Instant now = Instant.now(clock);
+        Money amount = intent.amount();
+        PaymentAttempt attempt = dispatched.attempt();
+        com.finapp.ledger.LedgerAccountId wallet = intent.debitAccount().orElseThrow();
+        holds.release(uow, dispatched.funded());
+        settleExecution(
+                uow, intent.id(), attempt.id(), wallet, intent.creditAccount(), amount,
+                person, correlation, now);
+        // The outcome audited like every rail's (the P7-TSK-011 gate's find): the card and
+        // push rails record PaymentOutcomeApplied for each acting outcome, and a book
+        // payment's money movement deserves the same record - under the PERSON, whose own
+        // act moved the money, never a platform actor claimed for a resolver that does not
+        // exist. The confirmation's audit says a dispatch happened; this one says what it
+        // committed.
+        appendOutcomeAudit(
+                uow, intent.id(), attempt.id(), "BOOK_POSTED", PaymentAttemptStatus.EXECUTED,
+                PaymentIntentStatus.SUCCEEDED, person, correlation, now);
+    }
+
+    /**
+     * A judged, funded book attempt awaiting its settle (`P7-TSK-011`): the attempt born
+     * {@code EXECUTED} and the hold that proved the wallet could fund it, carried between
+     * the two halves of ONE transaction - never across a commit.
+     */
+    public record BookDispatch(PaymentAttempt attempt, com.finapp.ledger.HoldId funded) {
+        public BookDispatch {
+            java.util.Objects.requireNonNull(attempt, "attempt must not be null");
+            java.util.Objects.requireNonNull(funded, "funded must not be null");
+        }
+    }
+
+    /**
+     * Both participating account rows {@code FOR UPDATE}, in {@code UUID.compareTo} order —
+     * the transfer's `lockBothInFixedOrder`, at the book rail (`P4-TST-001`'s remedy; the
+     * order need not be the database's, only agreed by every instance). Package-private:
+     * {@code PaymentRefund}'s book arm takes the same pair before its payable hold, because
+     * the book refund is the cycle's OTHER direction.
+     */
+    void lockPairInFixedOrder(
+            Connection uow,
+            com.finapp.ledger.LedgerAccountId debit,
+            com.finapp.ledger.LedgerAccountId credit) {
+        boolean debitFirst = debit.value().compareTo(credit.value()) <= 0;
+        lockOrThrow(uow, debitFirst ? debit : credit);
+        if (!debit.equals(credit)) {
+            lockOrThrow(uow, debitFirst ? credit : debit);
+        }
+    }
+
+    private void lockOrThrow(Connection uow, com.finapp.ledger.LedgerAccountId account) {
+        ledgerAccounts
+                .lockForUpdate(uow, account)
+                .orElseThrow(
+                        () ->
+                                new IllegalStateException(
+                                        "account " + account + " resolved and then vanished -"
+                                                + " an invariant is already broken"));
+    }
+
+    /** The locked row's liveness — a closed participant refuses with nothing written. */
+    private void requireActive(Connection uow, com.finapp.ledger.LedgerAccountId account) {
+        boolean active =
+                ledgerAccounts
+                        .lockForUpdate(uow, account)
+                        .map(
+                                row ->
+                                        row.status()
+                                                == com.finapp.ledger.LedgerAccountStatus.ACTIVE)
+                        .orElse(false);
+        if (!active) {
+            throw new NoWalletForPaymentException();
+        }
+    }
+
+    /**
+     * The account facing the refund's debit side (`P7-TSK-010`/`P7-TSK-011`): the STORED
+     * rail's declared clearing position, resolved through the chart — or, on the book
+     * rail, the intent's own debit wallet, because the compensating movement returns the
+     * money where it came from and nothing external stands between (ADR-0059 §§4/6).
+     */
+    private com.finapp.ledger.LedgerAccountId refundCounterpartOf(
+            Connection uow, PaymentIntentId intentId, Refund refund) {
+        RailId rail =
+                attempts.findById(uow, refund.attemptId())
+                        .orElseThrow(
+                                () ->
+                                        new IllegalStateException(
+                                                "a refund outcome is being applied to attempt "
+                                                        + refund.attemptId()
+                                                        + ", which no longer reads back"))
+                        .rail();
+        Optional<AccountPurpose> declared = rails.capabilitiesOf(rail).clearingPurpose();
+        if (declared.isPresent()) {
+            return chart.resolve(uow, declared.get(), refund.amount().currency()).id();
+        }
+        return intents.findById(uow, intentId)
+                .orElseThrow(
+                        () ->
+                                new IllegalStateException(
+                                        "a refund outcome's intent exists: V003's foreign key"
+                                                + " holds the attempt to it"))
+                .debitAccount()
+                .orElseThrow(
+                        () ->
+                                new IllegalStateException(
+                                        "a book refund's intent carries its debit wallet:"
+                                                + " V019's XOR holds it for every writer"
+                                                + " (P7-TSK-011)"));
+    }
+
     private AccountPurpose clearingPurposeOf(
             Connection uow, PaymentAttemptId attemptId) {
         RailId rail =
