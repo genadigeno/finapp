@@ -136,7 +136,13 @@ public final class JdbcAdjustmentProposalStore
                         // under the caller's lock, so an unlocked caller still cannot
                         // decide twice.
                         "UPDATE " + TABLE
-                                + " SET status = ?, decided_by = ?, decided_at = ?,"
+                                + " SET status = ?, decided_by = ?,"
+                                // GREATEST(?, proposed_at) - the P1-TSK-031 drift, clamped in
+                                // the statement: the deciding instance's clock may read behind
+                                // the one that recorded the proposal (ADR-0014: skew is bounded,
+                                // never zero), and a legal approval or rejection must not die on
+                                // V010's CHECK - an approval's posted entry with it.
+                                + " decided_at = GREATEST(?, proposed_at),"
                                 + " journal_entry_id = ?"
                                 + " WHERE id = ? AND status = 'PROPOSED'")) {
             decide.setString(1, to.name());

@@ -49,9 +49,12 @@ import java.sql.Connection;
 import java.sql.PreparedStatement;
 import java.sql.ResultSet;
 import java.sql.SQLException;
+import java.sql.Timestamp;
 import java.time.Clock;
 import java.time.Duration;
+import java.time.Instant;
 import java.time.LocalDate;
+import java.time.ZoneOffset;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.UUID;
@@ -93,6 +96,11 @@ class HoldDatabaseTest {
             new VerifiedAccountHolder(new JdbcPartyStore());
 
     private HoldService holdService() {
+        return holdService(CLOCK);
+    }
+
+    /** The service on {@code clock}, the one Clock an instance injects. */
+    private HoldService holdService(Clock clock) {
         return new HoldService(
                 ledgerAccounts,
                 new JdbcBalanceDerivation(),
@@ -101,7 +109,7 @@ class HoldDatabaseTest {
                 new JdbcAuditWriter(),
                 new JdbcOutboxWriter(),
                 IDS,
-                CLOCK);
+                clock);
     }
 
     @Test
@@ -406,6 +414,80 @@ class HoldDatabaseTest {
     }
 
     // -----------------------------------------------------------------
+    // The clock
+
+    /**
+     * A refund's hold is placed on the refunding instance and released when the outcome is
+     * applied, on whichever instance applies it - whose clock may read behind the placing one.
+     * The release reads its own clock and hands the raw instant to the store's conditional, so
+     * what such a clock can break is the statement, and with it the refund's completion.
+     */
+    @Test
+    @DisplayName("a clock behind placement cannot fail a legal release: released_at clamps to"
+            + " placed_at in the statement (the P1-TSK-031 drift; ADR-0014)")
+    void aClockBehindPlacementCannotFailALegalRelease() throws Exception {
+        Wallet wallet = fundedWallet(1000);
+        try (Connection app = DatabaseRoles.application();
+                SecurityContext.Scope actor = SecurityContext.enter(wallet.actor());
+                CorrelationContext.Scope flow = flow()) {
+            app.setAutoCommit(false);
+            Hold clamped =
+                    holdService().place(app, wallet.account().id(), Money.ofMinorUnits(600, USD));
+            Hold own =
+                    holdService().place(app, wallet.account().id(), Money.ofMinorUnits(400, USD));
+            app.commit();
+
+            Instant born = stampsOf(app, clamped).placedAt();
+            assertThat(
+                            holdService(Clock.fixed(born.minusMillis(250), ZoneOffset.UTC))
+                                    .release(app, clamped.id())
+                                    .orElseThrow()
+                                    .released())
+                    .isTrue();
+            app.commit();
+            assertThat(stampsOf(app, clamped).releasedAt()).isEqualTo(born);
+
+            // A floor, not a pin: a clock past placement stamps its own read.
+            Instant later = stampsOf(app, own).placedAt().plusSeconds(5);
+            assertThat(
+                            holdService(Clock.fixed(later, ZoneOffset.UTC))
+                                    .release(app, own.id())
+                                    .orElseThrow()
+                                    .released())
+                    .isTrue();
+            app.commit();
+            assertThat(stampsOf(app, own).releasedAt()).isEqualTo(later);
+            assertThat(holdsMinorOf(app, wallet.account())).isZero();
+        }
+    }
+
+    @Test
+    @DisplayName("releasing a released hold under a behind clock is still the conditional's"
+            + " refusal - converged, nothing written - never V008's CHECK")
+    void anIllegalReleaseUnderABehindClockIsStillTheConditionalsRefusal() throws Exception {
+        Wallet wallet = fundedWallet(1000);
+        try (Connection app = DatabaseRoles.application();
+                SecurityContext.Scope actor = SecurityContext.enter(wallet.actor());
+                CorrelationContext.Scope flow = flow()) {
+            app.setAutoCommit(false);
+            Hold hold =
+                    holdService().place(app, wallet.account().id(), Money.ofMinorUnits(1000, USD));
+            app.commit();
+            assertThat(holdService().release(app, hold.id()).orElseThrow().released()).isTrue();
+            app.commit();
+            Stamps released = stampsOf(app, hold);
+
+            Clock behind = Clock.fixed(released.placedAt().minusSeconds(1), ZoneOffset.UTC);
+            assertThat(holdService(behind).release(app, hold.id()).orElseThrow().released())
+                    .as("a retry is not a second act")
+                    .isFalse();
+            app.commit();
+            assertThat(stampsOf(app, hold)).isEqualTo(released);
+            assertThat(holdsMinorOf(app, wallet.account())).isZero();
+        }
+    }
+
+    // -----------------------------------------------------------------
     // Fixtures
 
     private record Wallet(UUID party, UUID customer, UUID ownerRef, LedgerAccount account) {
@@ -552,6 +634,24 @@ class HoldDatabaseTest {
             try (ResultSet row = sum.executeQuery()) {
                 row.next();
                 return row.getLong(1);
+            }
+        }
+    }
+
+    /** The hold's two instants as stored, at the column's own microsecond resolution. */
+    private record Stamps(Instant placedAt, Instant releasedAt) {}
+
+    private static Stamps stampsOf(Connection app, Hold hold) throws SQLException {
+        try (PreparedStatement read =
+                app.prepareStatement(
+                        "SELECT placed_at, released_at FROM ledger.hold WHERE id = ?")) {
+            read.setObject(1, hold.id().value());
+            try (ResultSet row = read.executeQuery()) {
+                assertThat(row.next()).isTrue();
+                Timestamp releasedAt = row.getTimestamp(2);
+                return new Stamps(
+                        row.getTimestamp(1).toInstant(),
+                        releasedAt == null ? null : releasedAt.toInstant());
             }
         }
     }

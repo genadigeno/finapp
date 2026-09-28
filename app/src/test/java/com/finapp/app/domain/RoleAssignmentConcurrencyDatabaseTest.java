@@ -14,7 +14,9 @@ import java.sql.Connection;
 import java.sql.PreparedStatement;
 import java.sql.ResultSet;
 import java.sql.SQLException;
+import java.sql.Timestamp;
 import java.time.Clock;
+import java.time.Instant;
 import java.time.ZoneOffset;
 import java.util.List;
 import java.util.UUID;
@@ -164,6 +166,90 @@ class RoleAssignmentConcurrencyDatabaseTest {
     }
 
     // -----------------------------------------------------------------
+    // The clock
+
+    /**
+     * A role is revoked on the clock of whichever instance serves the revocation, which may read
+     * behind the one that granted it - {@code Authorization} reads each from its own instance's
+     * injected Clock. The store's conditional driven directly: what such a clock can break is the
+     * statement.
+     */
+    @Test
+    @DisplayName("a clock behind the grant cannot fail a legal revocation: revoked_at clamps to"
+            + " assigned_at in the statement (the P1-TSK-031 drift; ADR-0014)")
+    void aClockBehindTheGrantCannotFailALegalRevocation() throws Exception {
+        IdentityId clamped = givenAnIdentity();
+        IdentityId own = givenAnIdentity();
+        try (SimulatedInstance granting = SimulatedInstance.inAgreementWithTheServer()) {
+            for (IdentityId identity : List.of(clamped, own)) {
+                assertThat(
+                                roles.assign(
+                                        granting.connection(),
+                                        identity,
+                                        RoleName.ADMINISTRATOR,
+                                        identity,
+                                        granting.clock().instant()))
+                        .isTrue();
+            }
+            granting.commit();
+        }
+
+        Instant born = stampsOf(clamped).assignedAt();
+        try (Connection revoking = DatabaseRoles.application()) {
+            assertThat(
+                            roles.revoke(
+                                    revoking,
+                                    clamped,
+                                    RoleName.ADMINISTRATOR,
+                                    clamped,
+                                    born.minusMillis(250)))
+                    .isTrue();
+        }
+        assertThat(stampsOf(clamped).revokedAt()).isEqualTo(born);
+
+        // A floor, not a pin: a clock past the grant stamps its own read.
+        Instant later = stampsOf(own).assignedAt().plusSeconds(5);
+        try (Connection revoking = DatabaseRoles.application()) {
+            assertThat(roles.revoke(revoking, own, RoleName.ADMINISTRATOR, own, later)).isTrue();
+        }
+        assertThat(stampsOf(own).revokedAt()).isEqualTo(later);
+    }
+
+    @Test
+    @DisplayName("revoking a revoked role under a behind clock is still the conditional's"
+            + " refusal, never V010's CHECK")
+    void anIllegalRevocationUnderABehindClockIsStillTheConditionalsRefusal() throws Exception {
+        IdentityId identity = givenAnIdentity();
+        try (SimulatedInstance granting = SimulatedInstance.inAgreementWithTheServer()) {
+            assertThat(
+                            roles.assign(
+                                    granting.connection(),
+                                    identity,
+                                    RoleName.ADMINISTRATOR,
+                                    identity,
+                                    granting.clock().instant()))
+                    .isTrue();
+            granting.commit();
+        }
+        Instant born = stampsOf(identity).assignedAt();
+
+        try (Connection app = DatabaseRoles.application()) {
+            assertThat(roles.revoke(app, identity, RoleName.ADMINISTRATOR, identity, born))
+                    .isTrue();
+            // Nothing live is zero rows, whatever the clock reads.
+            assertThat(
+                            roles.revoke(
+                                    app,
+                                    identity,
+                                    RoleName.ADMINISTRATOR,
+                                    identity,
+                                    born.minusSeconds(1)))
+                    .isFalse();
+        }
+        assertThat(stampsOf(identity).revokedAt()).isEqualTo(born);
+    }
+
+    // -----------------------------------------------------------------
 
     private interface InstanceWork {
         Void run(SimulatedInstance instance) throws Exception;
@@ -211,6 +297,29 @@ class RoleAssignmentConcurrencyDatabaseTest {
             try (ResultSet rows = count.executeQuery()) {
                 rows.next();
                 return rows.getInt(1);
+            }
+        }
+    }
+
+    /** The assignment's two instants as stored, at the column's own microsecond resolution. */
+    private record Stamps(Instant assignedAt, Instant revokedAt) {}
+
+    private static Stamps stampsOf(IdentityId identity) throws SQLException {
+        try (Connection app = DatabaseRoles.application();
+                PreparedStatement read =
+                        app.prepareStatement(
+                                "SELECT assigned_at, revoked_at FROM identity.role_assignment"
+                                        + " WHERE identity_id = ?")) {
+            read.setObject(1, identity.value());
+            try (ResultSet row = read.executeQuery()) {
+                assertThat(row.next()).isTrue();
+                Timestamp revokedAt = row.getTimestamp(2);
+                Stamps stamps =
+                        new Stamps(
+                                row.getTimestamp(1).toInstant(),
+                                revokedAt == null ? null : revokedAt.toInstant());
+                assertThat(row.next()).as("one assignment per fixture identity").isFalse();
+                return stamps;
             }
         }
     }

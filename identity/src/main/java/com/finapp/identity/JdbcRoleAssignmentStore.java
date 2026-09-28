@@ -98,7 +98,12 @@ public final class JdbcRoleAssignmentStore implements RoleAssignmentStore<Connec
         // Conditional on still being live; the row count is the outcome. Marked, never deleted -
         // the application role holds no DELETE here.
         String sql =
-                "UPDATE " + TABLE + " SET revoked_at = ?, revoked_by = ?"
+                "UPDATE " + TABLE + " SET"
+                        // GREATEST(?, assigned_at) - the P1-TSK-031 drift, clamped in the
+                        // statement: the revoking instance's clock may read behind the one that
+                        // granted the role (ADR-0014: skew is bounded, never zero), and a legal
+                        // revocation must not die on V010's CHECK.
+                        + " revoked_at = GREATEST(?, assigned_at), revoked_by = ?"
                         + " WHERE identity_id = ? AND role_name = ? AND revoked_at IS NULL";
         try (PreparedStatement update = unitOfWork.prepareStatement(sql)) {
             update.setTimestamp(1, Timestamp.from(at));

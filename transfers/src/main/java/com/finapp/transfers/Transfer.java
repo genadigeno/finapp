@@ -270,10 +270,15 @@ public final class Transfer {
         Objects.requireNonNull(actor, "actor must not be null");
         Objects.requireNonNull(clock, "clock must not be null");
         requireTransition(TransferStatus.REVERSED);
+        // GREATEST(now(), initiated_at) - the P1-TSK-031 drift, met in domain code: the
+        // operator's instance may read behind the clock that wrote initiatedAt (ADR-0014: skew
+        // is bounded, never zero), and markReversed persists this stamp verbatim, so a legal
+        // reversal would die on V002's CHECK.
+        Instant now = Instant.now(clock);
         return new Transfer(
                 id, customerId, sourceAccount, destinationAccount, amount, reference,
                 TransferStatus.REVERSED, null, journalEntryId, reversalEntry, actor,
-                Instant.now(clock), initiatedBy, initiatedAt);
+                now.isBefore(initiatedAt) ? initiatedAt : now, initiatedBy, initiatedAt);
     }
 
     /** The machine's one check ({@code INV-LIFE-02}), whichever door the transition arrives by. */
