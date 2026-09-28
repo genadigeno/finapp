@@ -27,6 +27,15 @@ public interface MerchantStore<T> {
     Optional<Merchant> findByIdForUpdate(T unitOfWork, MerchantId id);
 
     /**
+     * The merchant, read {@code FOR SHARE} (the Phase 6 → 7 transition): the standing check a
+     * session's creation and confirmation make. It conflicts with the administrative moves'
+     * {@code FOR UPDATE} and conditional write, so a suspension or close either waits for the
+     * confirmation (and a close then sees its payment in flight) or commits first (and the
+     * confirmation sees the new standing). Unlocked, an offer could be paid into a close.
+     */
+    Optional<Merchant> findByIdForShare(T unitOfWork, MerchantId id);
+
+    /**
      * Applies {@code transitioned}'s status conditionally ({@code WHERE status = ?} on the
      * from-state) and appends the history row when the write landed. The row count converges
      * the racers: {@code false} means another writer moved the row first, and the caller

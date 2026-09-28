@@ -62,7 +62,16 @@ class SecretsAreUnwrappedInOnePlaceTest {
                     "com.finapp.identity.RawPassword.expose()",
                     "com.finapp.payments.InstrumentToken.expose()",
                     "com.finapp.paymentmethods.TokenReference.expose()",
-                    "com.finapp.paymentmethods.TokenisationGrant.expose()");
+                    "com.finapp.paymentmethods.TokenisationGrant.expose()",
+                    // P7-TSK-007: the bank account's opaque destination reference - the
+                    // TokenReference idiom at INV-RAIL-03's boundary, named here so
+                    // unwrapping it is governed like a card token.
+                    "com.finapp.paymentmethods.DestinationReference.expose()",
+                    // P6-TSK-011: the payout destination's bank reference and its one-time
+                    // grant - the paymentmethods pair RESTATED in merchant for bank data
+                    // (ADR-0056), named here so unwrapping them is governed like a card token.
+                    "com.finapp.merchant.PayoutDestinationReference.expose()",
+                    "com.finapp.merchant.PayoutDestinationGrant.expose()");
 
     /**
      * The production classes permitted to unwrap a secret.
@@ -130,6 +139,11 @@ class SecretsAreUnwrappedInOnePlaceTest {
                     // role at a fourth door, and the only place a checkout token's plaintext
                     // leaves its wrapper. The creating command never holds a bare one: it
                     // carries the value WRAPPED through CheckoutSessionToken.presentedOnce().
+                    // SINCE P7-TSK-009 its claim is two unwraps: the same class also renders
+                    // the payer's authorization handle on the PAYER's confirmation answer -
+                    // and only there; the merchant's rendering never carries it, because a
+                    // handle in a merchant's view is a merchant able to complete or observe
+                    // the payer's flow (the InitiationAnswer javadoc's warning).
                     "com.finapp.app.checkout.CheckoutService",
                     // Derives and verifies. The only component that must see the plaintext at all.
                     "com.finapp.identity.Argon2PasswordDeriver",
@@ -240,13 +254,59 @@ class SecretsAreUnwrappedInOnePlaceTest {
                     // which is the one place it legitimately goes - the SimulatedCardPspAdapter
                     // claim one boundary over, for a shorter-lived value.
                     "com.finapp.paymentmethods.SimulatedTokenisationAdapter",
+                    // P7-TSK-007. The bank destination reference, wrapped on the
+                    // TokenReference idiom (INV-RAIL-03): validates its charset and the
+                    // account-number/international-identifier refusals at construction and
+                    // re-exposes; its expose() is an unwrapping method above, so every
+                    // caller is an entry here. The store's entry above already covers its
+                    // columns - writing and converge-binding are the same claim per kind.
+                    "com.finapp.paymentmethods.DestinationReference",
+                    // P7-TSK-007. The bank grant's two legitimate ends of life in app: onto
+                    // the exchange wire through the PushRail port record (the
+                    // SimulatedTokenisationAdapter claim, one rail over - the port carries
+                    // String because payments cannot see a wrapper it would immediately
+                    // hand to the wire), and into the keyed register's canonical form,
+                    // SHA-256-hashed in the same expression and never stored or logged bare
+                    // (the PayoutDestinations claim exactly).
+                    "com.finapp.app.paymentmethods.PaymentMethodService",
                     // P5-TSK-009. The registered bridge across the PCI boundary: the stored
                     // TokenReference comes off in ONE expression and is immediately re-wrapped
                     // as the InstrumentToken the provider port carries - the port app
                     // implements because payments cannot see paymentmethods (INV-PAY-02).
                     // Nothing is held bare, nothing is logged, and a second bridging site is
                     // a review question by construction.
-                    "com.finapp.app.payments.JdbcPaymentParticipants");
+                    "com.finapp.app.payments.JdbcPaymentParticipants",
+                    // P7-TSK-009. The payer's authorization handle, Sensitive end to end
+                    // (a capability URL - a log line holding it can complete or observe
+                    // the payer's flow). Its TWO ends of life: the store binding its
+                    // column (the JdbcPaymentMethodStore claim - the one place the stored
+                    // value must exist bare), and the owner-facing render on the payment
+                    // view (the MfaEnrolmentApplicationService claim: a value whose
+                    // purpose is to be handed to the one caller entitled to it). The
+                    // checkout render is CheckoutService's widened entry above.
+                    "com.finapp.payments.JdbcPaymentAttemptStore",
+                    "com.finapp.app.payments.PaymentService",
+                    // P6-TSK-011. The payout destination's reference and grant, wrapped on the
+                    // TokenReference idiom: each validates its charset and bank-detail refusal
+                    // at construction and re-exposes; their expose() methods are unwrapping
+                    // methods above, so every caller is an entry here.
+                    "com.finapp.merchant.PayoutDestinationReference",
+                    "com.finapp.merchant.PayoutDestinationGrant",
+                    // P6-TSK-011. The reference's store: writing its own column, the one place
+                    // the stored reference must exist bare (the JdbcPaymentMethodStore claim).
+                    "com.finapp.merchant.JdbcPayoutDestinationStore",
+                    // P6-TSK-011. The proposal's idempotency fingerprint: the reference is part
+                    // of what the request MEANS, so it enters the canonical form - which is
+                    // SHA-256-hashed in the same expression and never stored or logged bare.
+                    "com.finapp.merchant.PayoutDestinations",
+                    // P6-TSK-011. The grant onto the exchange wire, the one place it
+                    // legitimately goes - the SimulatedTokenisationAdapter claim for bank data.
+                    "com.finapp.merchant.SimulatedPayoutDestinationTokenisation",
+                    // P6-TSK-012. The destination's reference onto the payout wire - the
+                    // provider's own handle for the account, sent to the provider that issued
+                    // it, which is the one place besides its column it must exist bare. The
+                    // request's toString names neither it nor the amount.
+                    "com.finapp.merchant.SimulatedPayoutProvider");
 
     @Test
     @DisplayName("nothing outside the named set unwraps a secret")

@@ -7,6 +7,7 @@ import java.sql.ResultSet;
 import java.sql.SQLException;
 import java.sql.Savepoint;
 import java.sql.Timestamp;
+import java.sql.Types;
 import java.time.Instant;
 import java.util.Objects;
 import java.util.Optional;
@@ -17,19 +18,25 @@ import java.util.UUID;
  * {@code JdbcBeneficiaryStore} shape: the savepoint converge, SQLState rather than message
  * matching, and refusals described through {@link DatabaseFailure#describe} so no
  * {@code SQLException} — whose constraint-violation {@code DETAIL} carries the whole refused
- * row, <strong>token reference included</strong> — ever reaches a log.
+ * row, <strong>token and destination references included</strong> — ever reaches a log.
  *
- * <p>This class is the token's one production unwrap site besides its own type: writing the
- * column and binding the converge read's parameter are where the bare value must exist, and
- * both are named in {@code SecretsAreUnwrappedInOnePlaceTest} with this claim.
+ * <p>This class is each wrapped reference's one production unwrap site besides its own type:
+ * writing the column and binding the converge read's parameter are where the bare value must
+ * exist, and all four sites are named in {@code SecretsAreUnwrappedInOnePlaceTest} with this
+ * claim.
+ *
+ * <p><strong>The converge read is chosen by the refused row's kind</strong> (`P7-TSK-007`):
+ * a card lost its race on the (party, token) index, a bank account on the
+ * (party, destination) index, and each is handed the live row its own slot holds.
  */
 public final class JdbcPaymentMethodStore implements PaymentMethodStore<Connection> {
 
     private static final String TABLE = "paymentmethods.payment_method";
 
     private static final String COLUMNS =
-            "id, party_id, token_reference, brand, display_suffix, expiry_month, expiry_year,"
-                    + " status, created_at, detached_at";
+            "id, party_id, kind, token_reference, brand, display_suffix, expiry_month,"
+                    + " expiry_year, destination_reference, payee_check,"
+                    + " no_match_acknowledged_at, status, created_at, detached_at";
 
     /** PostgreSQL SQLStates. Locale-independent, unlike the messages. */
     private static final String UNIQUE_VIOLATION = "23505";
@@ -55,17 +62,25 @@ public final class JdbcPaymentMethodStore implements PaymentMethodStore<Connecti
                 }
                 unitOfWork.rollback(beforeInsert);
                 // READ COMMITTED takes a new snapshot per statement, so this read sees the
-                // committed winner that just refused our insert.
-                return findLive(unitOfWork, fresh.partyId(), fresh.token())
-                        .map(existing -> new Attachment(existing, false))
+                // committed winner that just refused our insert - on whichever slot the
+                // fresh row's kind contends for.
+                Optional<PaymentMethod> winner =
+                        fresh.kind() == PaymentMethodKind.CARD_TOKEN
+                                ? findLive(
+                                        unitOfWork, fresh.partyId(), fresh.token().orElseThrow())
+                                : findLiveByDestination(
+                                        unitOfWork,
+                                        fresh.partyId(),
+                                        fresh.destination().orElseThrow());
+                return winner.map(existing -> new Attachment(existing, false))
                         .orElseThrow(
                                 () ->
                                         new PaymentMethodsStorageException(
                                                 "the one-live-payment-method index refused an"
                                                         + " insert but no live row is visible"
-                                                        + " for the (party, token) pair - a"
-                                                        + " concurrent attacher may have rolled"
-                                                        + " back; retry"));
+                                                        + " for the slot - a concurrent"
+                                                        + " attacher may have rolled back;"
+                                                        + " retry"));
             }
         } catch (SQLException failure) {
             throw new PaymentMethodsStorageException(
@@ -78,20 +93,37 @@ public final class JdbcPaymentMethodStore implements PaymentMethodStore<Connecti
         try (PreparedStatement insert =
                 unitOfWork.prepareStatement(
                         "INSERT INTO " + TABLE + " (" + COLUMNS
-                                + ") VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)")) {
+                                + ") VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)")) {
             insert.setObject(1, method.id().value());
             insert.setObject(2, method.partyId());
-            // The one production unwrap besides the type's own: the column is what the token
-            // reference exists to reach.
-            insert.setString(3, method.token().expose());
-            insert.setString(4, method.brand());
-            insert.setString(5, method.displaySuffix());
-            insert.setInt(6, method.expiryMonth());
-            insert.setInt(7, method.expiryYear());
-            insert.setString(8, method.status().name());
-            insert.setTimestamp(9, Timestamp.from(method.createdAt()));
-            insert.setTimestamp(10, method.detachedAt().map(Timestamp::from).orElse(null));
+            insert.setString(3, method.kind().name());
+            // The one production unwrap besides each type's own: the column is what the
+            // wrapped reference exists to reach. Absent facts are the other kind's columns,
+            // NULL by V003's coherence.
+            insert.setString(4, method.token().map(TokenReference::expose).orElse(null));
+            insert.setString(5, method.brand().orElse(null));
+            insert.setString(6, method.displaySuffix());
+            setNullableInt(insert, 7, method.expiryMonth());
+            setNullableInt(insert, 8, method.expiryYear());
+            insert.setString(
+                    9, method.destination().map(DestinationReference::expose).orElse(null));
+            insert.setString(10, method.payeeCheck().map(PayeeCheck::name).orElse(null));
+            insert.setTimestamp(
+                    11, method.noMatchAcknowledgedAt().map(Timestamp::from).orElse(null));
+            insert.setString(12, method.status().name());
+            insert.setTimestamp(13, Timestamp.from(method.createdAt()));
+            insert.setTimestamp(14, method.detachedAt().map(Timestamp::from).orElse(null));
             insert.executeUpdate();
+        }
+    }
+
+    private static void setNullableInt(
+            PreparedStatement statement, int index, Optional<Integer> value)
+            throws SQLException {
+        if (value.isPresent()) {
+            statement.setInt(index, value.get());
+        } else {
+            statement.setNull(index, Types.INTEGER);
         }
     }
 
@@ -101,18 +133,33 @@ public final class JdbcPaymentMethodStore implements PaymentMethodStore<Connecti
         Objects.requireNonNull(unitOfWork, "unitOfWork must not be null");
         Objects.requireNonNull(partyId, "partyId must not be null");
         Objects.requireNonNull(token, "token must not be null");
+        return findLiveBy(unitOfWork, partyId, "token_reference", token.expose());
+    }
+
+    @Override
+    public Optional<PaymentMethod> findLiveByDestination(
+            Connection unitOfWork, UUID partyId, DestinationReference destination) {
+        Objects.requireNonNull(unitOfWork, "unitOfWork must not be null");
+        Objects.requireNonNull(partyId, "partyId must not be null");
+        Objects.requireNonNull(destination, "destination must not be null");
+        return findLiveBy(unitOfWork, partyId, "destination_reference", destination.expose());
+    }
+
+    private static Optional<PaymentMethod> findLiveBy(
+            Connection unitOfWork, UUID partyId, String slotColumn, String slotValue) {
         try (PreparedStatement read =
                 unitOfWork.prepareStatement(
                         "SELECT " + COLUMNS + " FROM " + TABLE
-                                // The partial index's own predicate, generated from the same
+                                // The partial indexes' own predicate, generated from the same
                                 // definition (PaymentMethodStatus.sqlTerminalValueList), so
-                                // "live" here and "guarded there" cannot disagree.
-                                + " WHERE party_id = ? AND token_reference = ?"
+                                // "live" here and "guarded there" cannot disagree. The slot
+                                // column is one of the two class constants, never caller text.
+                                + " WHERE party_id = ? AND " + slotColumn + " = ?"
                                 + " AND status NOT IN ("
                                 + PaymentMethodStatus.sqlTerminalValueList()
                                 + ")")) {
             read.setObject(1, partyId);
-            read.setString(2, token.expose());
+            read.setString(2, slotValue);
             try (ResultSet row = read.executeQuery()) {
                 if (!row.next()) {
                     return Optional.empty();
@@ -211,15 +258,25 @@ public final class JdbcPaymentMethodStore implements PaymentMethodStore<Connecti
     }
 
     private static PaymentMethod rehydrate(ResultSet row) throws SQLException {
+        Timestamp acknowledgedAt = row.getTimestamp("no_match_acknowledged_at");
         Timestamp detachedAt = row.getTimestamp("detached_at");
+        String token = row.getString("token_reference");
+        String destination = row.getString("destination_reference");
+        String payeeCheck = row.getString("payee_check");
+        Integer expiryMonth = row.getObject("expiry_month", Integer.class);
+        Integer expiryYear = row.getObject("expiry_year", Integer.class);
         return PaymentMethod.rehydrate(
                 PaymentMethodId.of(row.getObject("id", UUID.class)),
                 row.getObject("party_id", UUID.class),
-                TokenReference.of(row.getString("token_reference")),
+                PaymentMethodKind.valueOf(row.getString("kind")),
+                token == null ? null : TokenReference.of(token),
                 row.getString("brand"),
                 row.getString("display_suffix"),
-                row.getInt("expiry_month"),
-                row.getInt("expiry_year"),
+                expiryMonth,
+                expiryYear,
+                destination == null ? null : DestinationReference.of(destination),
+                payeeCheck == null ? null : PayeeCheck.valueOf(payeeCheck),
+                acknowledgedAt == null ? null : acknowledgedAt.toInstant(),
                 PaymentMethodStatus.valueOf(row.getString("status")),
                 row.getTimestamp("created_at").toInstant(),
                 detachedAt == null ? null : detachedAt.toInstant());

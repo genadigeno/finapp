@@ -50,7 +50,30 @@ public enum IdentityErrorCode implements ErrorCode {
     ASSURANCE_REQUIRED(
             "identity.AssuranceRequired",
             403,
-            "This operation requires a stronger authentication.");
+            "This operation requires a stronger authentication."),
+
+    /**
+     * A verification would give the identity a second verified contact channel of that kind
+     * (`X-TSK-004`, {@code INV-IDN-06}).
+     *
+     * <p><strong>Refused, not replaced.</strong> The channel already verified is where recovery goes.
+     * Adding a channel needs only a session, so letting a newly verified one displace it would let
+     * whoever holds a stolen password redirect the account's recovery to a mailbox of their own.
+     *
+     * <p><strong>409</strong>: the request is well-formed and its token live; it conflicts with the
+     * account's current state, and repeating it changes nothing until that state does. It was a
+     * {@code 500} until {@code X-TSK-004} - the database's refusal reported as the platform's
+     * failure, which invites a client to retry something that can never succeed.
+     *
+     * <p><strong>Not folded into {@code api.Forbidden}</strong>, which answers every reason a token
+     * is refused. That uniformity stops a caller without a live token from learning whether a
+     * verification is pending. This refusal is reachable only by presenting one, so it discloses
+     * nothing the uniform answer protects - and the customer who typed a second address learns why.
+     */
+    VERIFIED_CHANNEL_ALREADY_EXISTS(
+            "identity.VerifiedChannelAlreadyExists",
+            409,
+            "The account already has a verified contact channel of this kind.");
 
     private final String code;
     private final int status;

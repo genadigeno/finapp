@@ -356,6 +356,19 @@ public final class SimulatedProvider implements AutoCloseable {
                 .collect(java.util.stream.Collectors.toList());
     }
 
+    /**
+     * The bodies every request to this path carried, in arrival order — {@link #headerValues}'
+     * reasoning for the payload: some port properties are facts about the wire that no
+     * assertion on the caller's own records can see (`P7-TSK-010`'s is that a return payment
+     * cites the ORIGINAL's scheme reference as its destination-by-reference, which lives only
+     * in the request body). Returns strings only - the no-WireMock-in-the-signature rule.
+     */
+    public java.util.List<String> bodyValues(String path) {
+        return server.findAll(anyRequestedFor(urlEqualTo(path))).stream()
+                .map(request -> request.getBodyAsString())
+                .collect(java.util.stream.Collectors.toList());
+    }
+
     /** Forgets every stub and every recorded request. */
     public void reset() {
         server.resetAll();

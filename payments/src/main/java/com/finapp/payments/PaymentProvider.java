@@ -14,9 +14,11 @@ import java.util.Objects;
  * {@link ProviderAnswer}/{@link QueryAnswer} plus the raw bytes retained as evidence. Provider
  * wire vocabulary — paths, field names, verdict strings — lives only in an adapter, so swapping
  * a provider is an adapter change and a provider's odd day cannot become the domain's
- * vocabulary. The port is deliberately <strong>one provider wide</strong>: multi-rail routing,
- * capability declaration and per-rail finality modelling are Phase 7's (ADR-0049 §4), and
- * building them against a sample of one is how the sample becomes the design.
+ * vocabulary. Since `P7-TSK-001` this is the <strong>two-step model's operations
+ * contract</strong> (ADR-0059 §2), bound at the composition root to the {@link PaymentRail}
+ * declaration the domain consults ({@code INV-RAIL-01}); it was deliberately one provider wide
+ * until then, because building the abstraction against a sample of one is how the sample
+ * becomes the design (ADR-0049 §4). Its operations are exactly Phase 5's.
  *
  * <h2>The contract is total: provider misbehaviour is a result, never an exception</h2>
  *
@@ -59,6 +61,14 @@ public interface PaymentProvider {
 
     /** Asks the provider to refund against a previously approved capture. */
     ProviderAnswer refund(RefundRequest request);
+
+    /**
+     * Asks the provider to void (release) a previously approved, uncaptured authorization
+     * (`P7-TSK-004`, ADR-0059 §1: the card rail's declared reversal). Idempotent at the
+     * provider by our reference — releasing a released promise is a converged no-op — which
+     * is what lets any instance re-send a stranded void without a permit.
+     */
+    ProviderAnswer voidAuthorization(VoidRequest request);
 
     /**
      * Asks the provider what happened to the operation <strong>our</strong> reference names —
@@ -112,6 +122,19 @@ public interface PaymentProvider {
                     + ", "
                     + amount.currency()
                     + "]";
+        }
+    }
+
+    /**
+     * A void dispatch: our reference and the authorization's provider reference. No amount,
+     * structurally — a void releases the WHOLE promise (partial captures are out of
+     * `P7-TSK-004`'s scope, and a partial release is not a thing the card rail offers).
+     */
+    record VoidRequest(
+            ProviderIdempotencyReference reference, ProviderReference authorization) {
+        public VoidRequest {
+            Objects.requireNonNull(reference, "reference must not be null");
+            Objects.requireNonNull(authorization, "authorization must not be null");
         }
     }
 

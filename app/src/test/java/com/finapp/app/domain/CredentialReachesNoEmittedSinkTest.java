@@ -86,6 +86,8 @@ class CredentialReachesNoEmittedSinkTest {
                     "credential", "credentials", "derivation",
                     "token", "bearer", "authorization",
                     "pan", "cardnumber", "cvv", "cvc", "cvv2", "pin",
+                    // P6-TSK-011: bank data, reconciled with the build rule's vocabulary.
+                    "iban", "accountnumber",
                     "otp", "mfacode", "sessionid");
 
     @Test
@@ -282,6 +284,16 @@ class CredentialReachesNoEmittedSinkTest {
                         // in no column, one audited read path (INV-KYC-06). Here because the set
                         // is every schema REACHABLE from a request body.
                         "DocumentUploadRequest",
+                        // P7-TSK-014. The dispute evidence uploads - DocumentUploadRequest's
+                        // shape and reasoning verbatim: the CONTENT is RESTRICTED-PII and what
+                        // protects it is the store (its own key, plaintext in no column, every
+                        // read and transmission audited, INV-DSP-03), never the vocabulary. The
+                        // operator's form adds a REASON, free prose bound for the audit record.
+                        "DisputeEvidenceUploadRequest",
+                        "OperatorDisputeEvidenceUploadRequest",
+                        // P7-TSK-014. Carries only a REASON - the operator's own words for
+                        // answering a chargeback on behalf, bound for the audit record.
+                        "OperatorDisputeResponseRequest",
                         // P1-TSK-030. Carries a display name - RESTRICTED-PII, and the clearest
                         // such column on the platform - which is why it is here and worth a second
                         // look. It is a request body rather than a response field, so the secret
@@ -339,6 +351,13 @@ class CredentialReachesNoEmittedSinkTest {
                         // payment stores is classified in payments.payment_intent's register
                         // rows, not in this vocabulary.
                         "PaymentCreateRequest",
+                        // P7-TSK-008. Carries the caller's own payment-method identifier
+                        // and an amount as an exact decimal string with its ISO currency -
+                        // the PaymentCreateRequest reasoning at the outbound door: no
+                        // secret (a method id is not the destination, INV-RAIL-03; the
+                        // reference stays behind the boundary). What withdrawing stores is
+                        // classified in payments.withdrawal's register rows.
+                        "WithdrawalRequest",
                         // P5-TSK-015. Carries an amount as an exact decimal string, an ISO
                         // currency code, and a REASON (free prose by an operator, bound for
                         // the audit record's reason column and payments.refund's reason
@@ -346,6 +365,12 @@ class CredentialReachesNoEmittedSinkTest {
                         // secret; here because the set is every schema REACHABLE from a
                         // request body. The TransferReversalRequest shape, at the refund.
                         "RefundRequest",
+                        // P7-TSK-004. Carries only a REASON (free prose by an operator,
+                        // bound for the audit record's reason column - RESTRICTED-FINANCIAL,
+                        // never rendered by any toString). No secret; here because the set
+                        // is every schema REACHABLE from a request body. The RefundRequest
+                        // shape, at the void.
+                        "VoidPaymentRequest",
                         // P3-TSK-017. Carries dates, a reference, a REASON (free prose by a
                         // person, bound for the reason columns - RESTRICTED-FINANCIAL, never
                         // rendered by any toString) and lines of account/direction/amount/
@@ -360,6 +385,13 @@ class CredentialReachesNoEmittedSinkTest {
                         // TokenisationGrant type in the domain, one unwrap at the exchange
                         // wire. Never persisted, never in the trail.
                         "AttachPaymentMethodRequest",
+                        // P7-TSK-007. Carries the rail provider's one-time linking grant -
+                        // the AttachPaymentMethodRequest claim at the bank boundary
+                        // (INV-RAIL-03): Sensitive<String> end to end, one unwrap at the
+                        // exchange wire and into the SHA-256 fingerprint, never persisted,
+                        // never in the trail - plus one boolean, the customer's NO_MATCH
+                        // acknowledgement, which is a fact about consent and no secret.
+                        "RegisterBankAccountRequest",
                         // P6-TSK-003. Carries the operator's assertion of a party identifier,
                         // two business NAMES and an ISO currency code - no secret, and no
                         // person's name (PartyKind.ORGANISATION gates onboarding). Here
@@ -404,7 +436,28 @@ class CredentialReachesNoEmittedSinkTest {
                         // RESTRICTED-PII at its column for that reason. No secret; here
                         // because the set is every schema REACHABLE from a request body, and
                         // no merchant identifier either: the tenant comes from the API key.
-                        "CreateSessionRequest");
+                        "CreateSessionRequest",
+                        // P6-TSK-011. Carries the payout provider's one-time GRANT for a
+                        // merchant's bank account - `destinationToken`, `Sensitive` because a
+                        // grant in a log is a way to where a merchant's money goes for its
+                        // validity window, and in a request body because there is nowhere else a
+                        // client could put it. Never the account itself: a value shaped like one
+                        // is refused before any exchange (ADR-0056). Plus the operator's reason.
+                        "ProposePayoutDestinationRequest",
+                        // P6-TSK-011. The approve / reject / withdraw body: a free-text reason
+                        // and nothing else, the SuspensionRequest shape.
+                        "PayoutDestinationDecisionRequest",
+                        // P6-TSK-012. The merchant's payout: an amount and a currency, and
+                        // deliberately no destination - a payout goes only to the effective one,
+                        // so there is no field a redirecting value could arrive in.
+                        "MerchantPayoutRequest",
+                        // P6-TSK-012. The operator's payout on the merchant's behalf: the same
+                        // two fields plus the free-text reason the audit record requires.
+                        "OperatorPayoutRequest",
+                        // P7-TSK-003: the routing surface's bodies - operator matchers, rail
+                        // names and required reasons, no credential-shaped member anywhere.
+                        "CreateRoutingPolicyVersionRequest",
+                        "SetRailAvailabilityRequest");
     }
 
     @Test
@@ -557,7 +610,21 @@ class CredentialReachesNoEmittedSinkTest {
                     // its own reasoning that a secret in a URL reaches every access log. It
                     // now travels in a request body, which is why ConfirmSessionRequest
                     // appears in the bounded set below rather than here.
-                    "CreatedSessionView");
+                    "CreatedSessionView",
+                    // P7-TSK-009. The payer's AUTHORIZATION HANDLE on the two views that
+                    // render it to its owner: a capability URL whose whole purpose is to be
+                    // transmitted - the payer's client must follow it to their PSP for SCA -
+                    // and a Sensitive would render as the mask. Narrower than the entries
+                    // above in one way and wider in another, both deliberate: it is present
+                    // only WHILE the payer must act (a concluded payment renders null, and
+                    // the merchant's rendering of the same checkout is proven null in
+                    // CheckoutFlowDatabaseTest), but it CAN be re-shown while the wait
+                    // stands, because the payer who lost the response still has to reach
+                    // their PSP - re-showing to the proven owner is the feature. The logging
+                    // half is closed by both toString overrides (PaymentViewRedactsTest,
+                    // CheckoutRecordsRedactTest).
+                    "PaymentView",
+                    "SessionView");
 
     private static List<String> secretNamedMembersOutsideRequestBodiesIn(String document) {
         tools.jackson.databind.JsonNode root =

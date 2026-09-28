@@ -55,12 +55,20 @@ public final class PaymentMeters {
     /** {@code finapp.payments.refund} — acting refund judgements, by outcome. */
     static final String REFUND = "finapp.payments.refund";
 
+    /** {@code finapp.payments.routing.decision} — routing decisions, by rail and outcome. */
+    static final String ROUTING_DECISION = "finapp.payments.routing.decision";
+
+    /** {@code finapp.payments.unmatched.parked} — money parked in suspense (`P7-TSK-009`). */
+    static final String UNMATCHED_PARKED = "finapp.payments.unmatched.parked";
+
     /** What an acting judgement decided about an attempt — the machine's own vocabulary. */
     public enum Judgement {
         AUTHORIZED,
         CAPTURED,
         FAILED,
-        UNKNOWN
+        UNKNOWN,
+        /** The push pay-in's completion (`P7-TSK-009`): EXECUTED is not CAPTURED here either. */
+        EXECUTED
     }
 
     /** What became of a delivery at the webhook door (ADR-0047's own four states). */
@@ -87,13 +95,28 @@ public final class PaymentMeters {
         AUTHORIZE,
         CAPTURE,
         REFUND,
-        QUERY
+        /** The card rail's reversal (`P7-TSK-004`) — the port's fifth method. */
+        VOID,
+        QUERY,
+        /** The push rail's outbound credit transfer (`P7-TSK-008`, ADR-0062 §6). */
+        WITHDRAW,
+        /** The pay-by-bank initiation (`P7-TSK-009`, ADR-0062 §5) — the port's opener. */
+        INITIATE
     }
 
     private final Map<Judgement, Counter> attempts = new EnumMap<>(Judgement.class);
     private final Map<WebhookOutcome, Counter> webhooks = new EnumMap<>(WebhookOutcome.class);
     private final Map<RefundOutcome, Counter> refunds = new EnumMap<>(RefundOutcome.class);
     private final Map<Operation, Timer> latencies = new EnumMap<>(Operation.class);
+    private final Counter unmatchedParked;
+
+    /**
+     * Held for the routing counter alone: its rail tag is the declared directory's names,
+     * which this class cannot enumerate at construction — micrometer dedupes by id, so the
+     * per-call register() resolves to one counter per (rail, outcome). Both tags are
+     * bounded vocabularies (ADR-0060's operational note).
+     */
+    private final MeterRegistry registry;
 
     /**
      * Public because the payment slice's own suites compose the real doors (the
@@ -102,6 +125,12 @@ public final class PaymentMeters {
      * of its own, so it exercises the WIRED counting path rather than a double.
      */
     public PaymentMeters(MeterRegistry registry, String provider) {
+        this.registry = registry;
+        // The routing series exists on a FRESHLY STARTED instance (the P2-TSK-020 lesson:
+        // criterion 6 is judged on a fresh boot at the phase flip, not after traffic): a
+        // zero baseline under neutral tags; the real (rail, outcome) series arrive with
+        // real decisions through routingDecision().
+        routingCounter("none", "none");
         for (Judgement judgement : Judgement.values()) {
             attempts.put(
                     judgement,
@@ -148,6 +177,17 @@ public final class PaymentMeters {
                                         + " instance; rate() and sum() aggregate")
                             .register(registry));
         }
+        unmatchedParked =
+                Counter.builder(UNMATCHED_PARKED)
+                        .description(
+                                "Confirmations carrying money the platform could not"
+                                    + " attribute, parked in SUSPENSE_UNMATCHED (P7-TSK-009,"
+                                    + " INV-REC-05): acting parkings only - a duplicate"
+                                    + " delivery converges and counts nothing. ANY rise is an"
+                                    + " integration break to investigate; the parked-age"
+                                    + " gauge is the standing alert. Per instance; rate() and"
+                                    + " sum() aggregate")
+                        .register(registry);
         for (Operation operation : Operation.values()) {
             latencies.put(
                     operation,
@@ -174,6 +214,28 @@ public final class PaymentMeters {
         attempts.get(judgement).increment();
     }
 
+    /**
+     * One routing decision (`P7-TSK-003`): the chosen rail with outcome {@code chosen}, or
+     * rail {@code none} with the refusal's leading rejection. Telemetry only — the counts
+     * of record are the decision rows.
+     */
+    public void routingDecision(String rail, String outcome) {
+        routingCounter(rail, outcome).increment();
+    }
+
+    private Counter routingCounter(String rail, String outcome) {
+        return Counter.builder(ROUTING_DECISION)
+                .tag("rail", rail)
+                .tag("outcome", lower(outcome))
+                .description(
+                        "Routing decisions by chosen rail and outcome: chosen, or the"
+                            + " refusal's leading rejection reason with rail=none. A refused"
+                            + " confirm records one decision per attempt, so a spike here"
+                            + " with rail=none is a rail outage or a policy gap. Per"
+                            + " instance; rate() and sum() aggregate")
+                .register(registry);
+    }
+
     /** A webhook delivery's fate, after its transaction committed (or refused everything). */
     public void webhook(WebhookOutcome outcome) {
         webhooks.get(outcome).increment();
@@ -187,5 +249,10 @@ public final class PaymentMeters {
     /** One provider call's duration, whatever it answered — the injected clock's measure. */
     public void providerCall(Operation operation, Duration elapsed) {
         latencies.get(operation).record(elapsed);
+    }
+
+    /** An acting suspense parking (`P7-TSK-009`), post-commit — duplicates count nothing. */
+    public void unmatchedParked() {
+        unmatchedParked.increment();
     }
 }

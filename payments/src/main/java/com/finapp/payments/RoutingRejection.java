@@ -1,0 +1,44 @@
+package com.finapp.payments;
+
+import java.util.Arrays;
+import java.util.stream.Collectors;
+
+/**
+ * Why a candidate rail did not carry the payment (`P7-TSK-003`, ADR-0060 §3/§5) — the
+ * recorded, enumerated reason on a {@link RoutingDecision} step. Every value is judged from a
+ * stored or declared fact, so the explanation reproduces from the row alone.
+ *
+ * <p>{@link #NOTHING_SENT} is the one post-dispatch value, and deliberately the only one: a
+ * decision abandons a rail only on <em>knowledge</em> that nothing left the platform
+ * (`INV-RAIL-02`). Ambiguity is not a rejection — an unknown outcome stays on its rail
+ * ({@code INV-LIFE-03}) and no value here can say otherwise.
+ *
+ * <p>{@link #UNDECLARED_BY_BUILD} names the wiring fault safely: a policy may outlive a
+ * build's rail declarations, and a candidate this build does not declare cannot be judged —
+ * recorded and skipped rather than crashing every confirmation on a stale policy (the
+ * {@code PaymentRails} unknown-rail reasoning, softened here because routing has somewhere
+ * lawful to go: the next candidate).
+ */
+public enum RoutingRejection {
+    /** The recorded operator fact says the rail is out of service (ADR-0060 §4). */
+    UNAVAILABLE,
+    /** The rail's declared currencies do not include the payment's. */
+    CURRENCY_UNSUPPORTED,
+    /** The payment exceeds the rail's declared per-currency maximum. */
+    AMOUNT_EXCEEDS_CEILING,
+    /** The rail's interaction model cannot carry the instrument (a card cannot ride a push). */
+    MODEL_CANNOT_CARRY_INSTRUMENT,
+    /** The destination is not reachable on this rail (the grant exchange's fact, ADR-0062). */
+    DESTINATION_UNREACHABLE,
+    /** The dispatch met a refused connection: knowledge that nothing left (ADR-0060 §5). */
+    NOTHING_SENT,
+    /** The policy names a rail this build does not declare — recorded, skipped, loud in logs. */
+    UNDECLARED_BY_BUILD;
+
+    /** The values as a SQL literal list — `V013`'s `CHECK`s are generated from this. */
+    public static String sqlValueList() {
+        return Arrays.stream(values())
+                .map(value -> "'" + value.name() + "'")
+                .collect(Collectors.joining(", "));
+    }
+}

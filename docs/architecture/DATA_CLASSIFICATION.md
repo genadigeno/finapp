@@ -91,8 +91,11 @@ applies to the error-code catalogue, because a second copy drifts while looking 
 
 ## 4. Column register — *Implemented*
 
-Every column in every schema this repository owns — `platform`, `party` and `identity` — at its
-ceiling.
+Every column in every schema this repository owns — twelve at the Phase 6 review: `platform`,
+`party`, `identity`, `kyc`, `consent`, `ledger`, `accounts`, `transfers`, `paymentmethods`,
+`payments`, `merchant` and `checkout` — at its ceiling. The guard derives the schemas from the
+database rather than from this list, so a thirteenth is covered without anyone remembering.
+*(This named only `platform`, `party` and `identity` until the Phase 6 review, `P6-DOC-001`.)*
 `ColumnClassificationTest` fails the build if this table and the live schema disagree in either
 direction — so a migration that adds a column without a classification decision cannot land. That
 guard, not this table, is what makes the scheme "referenced by later data-model tasks".
@@ -503,15 +506,22 @@ one free-text column is the reason the section exists: a person names people.
 | `beneficiary` | `created_at` | `CONFIDENTIAL` | Dates a person's act of saving a destination — `consent_record.recorded_at`'s reasoning |
 | `beneficiary` | `removed_at` | `CONFIDENTIAL` | As `created_at` |
 
-### `paymentmethods.payment_method` — *added by `P5-TSK-004`*
+### `paymentmethods.payment_method` — *added by `P5-TSK-004`; the bank kind by `P7-TSK-007`*
 
 **The PCI boundary's subject** (`INV-PAY-02`): a token reference plus display metadata, every
 column's shape unable to carry a PAN by `CHECK` — which is why the levels below describe
 instrument-linked data and never card data, there being no column that could hold any.
+`P7-TSK-007` extends the same doctrine to bank data (`INV-RAIL-03`): the destination column's
+`CHECK`s refuse account-number, international-identifier and phone shapes, so no column can
+hold a bank identifier either.
 
 | Table | Column | Level | Why |
 |---|---|---|---|
 | `payment_method` | `id` | `INTERNAL` | An aggregate identifier |
+| `payment_method` | `kind` | `INTERNAL` | An enumeration of two values — which registry family the row is, disclosing nothing of the instrument |
+| `payment_method` | `destination_reference` | `RESTRICTED-PII` | **The bank instrument reference itself** (`INV-RAIL-03`) — resolves at the rail provider to a person's account, and paired with the confined scheme credential it is payable-to. `token_reference`'s reasoning verbatim, carried structurally by the wrapped `DestinationReference` |
+| `payment_method` | `payee_check` | `CONFIDENTIAL` | A fact about a person's instrument — the scheme directory's name-check word; `brand`'s tier, and deliberately never the checked name itself, which no column may hold |
+| `payment_method` | `no_match_acknowledged_at` | `CONFIDENTIAL` | Dates a person's explicit consent to a mismatch (ADR-0062 §2) — `consent_record.recorded_at`'s reasoning |
 | `payment_method` | `party_id` | `CONFIDENTIAL` | The `beneficiary.party_id` reasoning: the pairing is the fact — this person holds payment instruments |
 | `payment_method` | `token_reference` | `RESTRICTED-PII` | **The instrument reference itself** — resolves at the provider to a person's card, and paired with the confined API credential it is chargeable. The `document.checksum_sha256` possession-oracle reasoning: never in a log, a message or a rendering, which the wrapped `TokenReference` carries structurally |
 | `payment_method` | `brand` | `CONFIDENTIAL` | A fact about a person's instrument — `beneficiary.created_at`'s tier of disclosure, not an identifier |
@@ -538,7 +548,9 @@ them are classified at the ceiling regardless.
 | `payment_intent` | `party_id` | `CONFIDENTIAL` | The `payment_method.party_id` reasoning: the pairing is the fact — this person pays from a saved instrument |
 | `payment_intent` | `customer_id` | `INTERNAL` | The `customer_account.customer_id` reasoning: an identifier of a thing, not a fact about it |
 | `payment_intent` | `payment_method_id` | `INTERNAL` | An identifier of a thing; what it resolves to is `payment_method`'s to classify |
-| `payment_intent` | `wallet_account_id` | `INTERNAL` | A ledger-account identifier by value — `transfer.destination_account_id`'s reasoning |
+| `payment_intent` | `credit_account_id` | `INTERNAL` | A ledger-account identifier by value — `transfer.destination_account_id`'s reasoning *(named `wallet_account_id` until `P7-TSK-002` paid the `P6-TSK-005` rename debt, payments `V012`)* |
+| `payment_intent` | `debit_account_id` | `INTERNAL` | The payer's own wallet account when the instrument IS the wallet (`P7-TSK-011`, the intent's instrument XOR) — `credit_account_id`'s reasoning on the debit side |
+| `payment_intent` | `capture_mode` | `INTERNAL` | An enumerated processing decision (ADR-0059, `P7-TSK-002`) — whether capture follows authorization without a further decision; nothing about a person |
 | `payment_intent` | `amount_minor` | `RESTRICTED-FINANCIAL` | A customer's commanded amount — `transfer.amount_minor`'s reasoning verbatim |
 | `payment_intent` | `currency` | `RESTRICTED-FINANCIAL` | Meaningless without the amount and meaning-giving with it |
 | `payment_intent` | `scale` | `RESTRICTED-FINANCIAL` | Part of the monetary shape (`INV-MON-05`) |
@@ -557,6 +569,42 @@ them are classified at the ceiling regardless.
 | `payment_attempt` | `capture_reference` | `INTERNAL` | As `auth_reference` |
 | `payment_attempt` | `auth_provider_reference` | `CONFIDENTIAL` | The provider's name for one operation on a person's instrument (the section header's recorded distinction from the token: scoped to its own operation, it authorises nothing new). A fact about a person's payment, handled like `status` |
 | `payment_attempt` | `capture_provider_reference` | `CONFIDENTIAL` | As `auth_provider_reference` |
+| `payment_attempt` | `void_reference` | `INTERNAL` | As `auth_reference` — OUR minted reference for the release, stored before the send (`P7-TSK-004`, `INV-PAY-04`) |
+| `payment_attempt` | `void_provider_reference` | `CONFIDENTIAL` | As `auth_provider_reference` — the provider's acknowledgement of the release (`P7-TSK-004`) |
+| `clearing_record` | `id` | `INTERNAL` | Surrogate identifier (`P7-TSK-005`) |
+| `clearing_record` | `attempt_id` | `INTERNAL` | Foreign key to the cleared capture's attempt |
+| `clearing_record` | `acquirer_reference` | `CONFIDENTIAL` | The acquirer's reference for one cleared card transaction (the ARN class) — the `auth_provider_reference` reasoning: scoped to its own operation, it authorises nothing new, and it is Phase 8's primary match key |
+| `clearing_record` | `network_transaction_id` | `CONFIDENTIAL` | As `acquirer_reference` — the card network's own identifier |
+| `clearing_record` | `recorded_at` | `INTERNAL` | Server clock at recording (ADR-0014) |
+| `withdrawal` | `id` | `INTERNAL` | An aggregate identifier (`P7-TSK-008`) |
+| `withdrawal` | `party_id` | `CONFIDENTIAL` | The pairing is the fact — this person withdraws money (the `payment_intent.party_id` reasoning) |
+| `withdrawal` | `customer_id` | `CONFIDENTIAL` | As `party_id` — the owning relationship, by value (ADR-0029) |
+| `withdrawal` | `wallet_account_id` | `CONFIDENTIAL` | Which ledger account funds it — the intent's `credit_account_id` reasoning |
+| `withdrawal` | `payment_method_id` | `CONFIDENTIAL` | Which registered instrument it pays to — an identifier, never the destination |
+| `withdrawal` | `destination_reference` | `RESTRICTED-PII` | **The platform's copy of the bank instrument reference** (`INV-RAIL-03`) — `paymentmethods.payment_method.destination_reference`'s row verbatim: resolves at the rail provider to a person's account; never in a log, an event or a response |
+| `withdrawal` | `amount_minor` | `RESTRICTED-FINANCIAL` | An amount (`INV-AUD-02`) |
+| `withdrawal` | `currency` | `INTERNAL` | ISO 4217 |
+| `withdrawal` | `scale` | `INTERNAL` | The amount's scale |
+| `withdrawal` | `end_to_end_reference` | `CONFIDENTIAL` | OUR reference on the scheme's wire (`INV-PAY-04`) — the `provider_idempotency_reference` reasoning: scoped to one operation, Phase 8's join key |
+| `withdrawal` | `rail` | `INTERNAL` | The routed rail's stored literal (the `payment_attempt.rail` row's reasoning) |
+| `withdrawal` | `status` | `INTERNAL` | The machine's word |
+| `withdrawal` | `failure_reason` | `INTERNAL` | An enumerated failure class, never provider text |
+| `withdrawal` | `scheme_reference` | `CONFIDENTIAL` | The scheme's transaction reference (the `acquirer_reference` class) — Phase 8's match key |
+| `withdrawal` | `settlement_cycle` | `INTERNAL` | The scheme's cycle identifier — a bucket name, not an identifier of anyone |
+| `withdrawal` | `dispatch_key` | `INTERNAL` | The client's idempotency key, unique per customer (ADR-0057 §5) |
+| `withdrawal` | `hold_reference` | `INTERNAL` | The ledger hold the dispatch placed |
+| `withdrawal` | `created_at` | `CONFIDENTIAL` | Dates a person's act (the `payment_intent.created_at` reasoning) |
+| `withdrawal` | `last_dispatched_at` | `INTERNAL` | The send permit (ADR-0057 §4) |
+| `withdrawal_event` | `id` | `INTERNAL` | A sequence identifier |
+| `withdrawal_event` | `withdrawal_id` | `INTERNAL` | The trail's subject |
+| `withdrawal_event` | `from_status` | `INTERNAL` | The machine's word |
+| `withdrawal_event` | `to_status` | `INTERNAL` | The machine's word |
+| `withdrawal_event` | `actor_id` | `CONFIDENTIAL` | Who moved it — the audit actor class |
+| `withdrawal_event` | `actor_type` | `INTERNAL` | An enumerated population |
+| `withdrawal_event` | `occurred_at` | `INTERNAL` | Application-stamped transition instant |
+| `provider_evidence` | `withdrawal_id` | `INTERNAL` | The evidence's third subject (`P7-TSK-008`); the bytes' own rows above carry the classification that matters |
+| `provider_evidence` | `dispute_response_id` | `INTERNAL` | The evidence's fourth subject (`P7-TSK-014`); the bytes' own rows carry the classification that matters |
+| `routing_decision` | `withdrawal_id` | `INTERNAL` | The decision's second subject (`P7-TSK-008`, ADR-0060 §2) — exactly one of intent and withdrawal, no FK by the refusal-precedes-birth decision `V016` records |
 | `payment_attempt` | `authorized_amount_minor` | `RESTRICTED-FINANCIAL` | The issuer's promised amount — a customer amount |
 | `payment_attempt` | `authorized_currency` | `RESTRICTED-FINANCIAL` | Part of the monetary shape |
 | `payment_attempt` | `authorized_scale` | `RESTRICTED-FINANCIAL` | Part of the monetary shape |
@@ -566,6 +614,123 @@ them are classified at the ceiling regardless.
 | `payment_attempt` | `failure_reason` | `CONFIDENTIAL` | `DECLINED` is a fact about a person's finances, not an enumeration technicality — `transfer.failure_reason`'s reasoning verbatim |
 | `payment_attempt` | `status` | `CONFIDENTIAL` | What happened to a person's payment operation |
 | `payment_attempt` | `created_at` | `CONFIDENTIAL` | Dates a person's financial act |
+| `payment_attempt` | `rail` | `INTERNAL` | An enumerated name of the way the money travels (ADR-0059, `P7-TSK-001`) — it keys into declared capabilities that are code, and says nothing about a person the row's identifiers do not already say |
+| `payment_attempt` | `interaction_model` | `INTERNAL` | Which machine the attempt lives in (ADR-0059 §2, `P7-TSK-002`) — the `rail` row's reasoning: an enumerated name keying into machines that are code |
+| `payment_attempt` | `end_to_end_reference` | `CONFIDENTIAL` | OUR reference on the push model (`P7-TSK-009`, `INV-PAY-04`) — the `withdrawal.end_to_end_reference` row verbatim: scoped to one operation, the callback's attribution key, Phase 8's join |
+| `payment_attempt` | `authorization_handle` | `RESTRICTED-PII` | **The payer's capability URL** (`P7-TSK-009`, ADR-0062 §5): possession can complete or observe one person's live authorization flow — the `session.token_hash` reasoning, and STRONGER, because this is the live value itself, stored bare of necessity: the scheme minted it and the owner must read it back. `Sensitive` end to end; rendered once to its owner on the awaiting view; never in a log, an event or an audit record |
+| `payment_attempt` | `scheme_reference` | `CONFIDENTIAL` | The scheme's transaction reference (`P7-TSK-009`) — the `withdrawal.scheme_reference` / `acquirer_reference` class: Phase 8's match key |
+| `payment_attempt` | `settlement_cycle` | `INTERNAL` | The scheme's cycle identifier — a bucket name, not an identifier of anyone (`P7-TSK-009`) |
+| `payment_attempt` | `last_dispatched_at` | `INTERNAL` | The initiation permit (`P7-TSK-009`, ADR-0062 §3 adapted) — the `withdrawal.last_dispatched_at` reasoning |
+| `unmatched_confirmation` | `id` | `INTERNAL` | A record identifier (`P7-TSK-009`) |
+| `unmatched_confirmation` | `rail` | `INTERNAL` | The rail the statement arrived on — the `payment_attempt.rail` reasoning |
+| `unmatched_confirmation` | `scheme_reference` | `CONFIDENTIAL` | The scheme's transaction reference for money with no commercial home (`INV-REC-05`) — the `acquirer_reference` class, and the parking's arbiter |
+| `unmatched_confirmation` | `amount_minor` | `RESTRICTED-FINANCIAL` | An amount (`INV-AUD-02`) — parked value is still value |
+| `unmatched_confirmation` | `currency` | `INTERNAL` | ISO 4217 |
+| `unmatched_confirmation` | `scale` | `INTERNAL` | The amount's scale |
+| `unmatched_confirmation` | `received_at` | `INTERNAL` | Server clock at parking (ADR-0014) — the age the `INV-REC-05` gauge reads |
+| `unmatched_confirmation` | `entry_ref` | `INTERNAL` | The suspense entry this parking posted — the chain stays walkable by stored id |
+| `dispute` | `id` | `INTERNAL` | An aggregate identifier (`P7-TSK-012`) — from `P7-TSK-013`, the suffix of each stage's posting key |
+| `dispute` | `provider` | `INTERNAL` | The PSP's stable adapter name: the scope its dispute references are unique in |
+| `dispute` | `provider_dispute_reference` | `CONFIDENTIAL` | The PSP's identifier for one dispute on a person's payment — the `acquirer_reference` class: scoped to its own dispute, it authorises nothing, and it is Phase 8's join to the stage entries. Shown to operators only, never to the merchant |
+| `dispute` | `attempt_id` | `INTERNAL` | Foreign key to the contested attempt |
+| `dispute` | `reason` | `CONFIDENTIAL` | The platform's reason category, never the network's code — `FRAUD` is an allegation about a person's payment (`payment_attempt.failure_reason`'s reasoning) |
+| `dispute` | `stage` | `CONFIDENTIAL` | What is happening to a person's payment — `payment_attempt.status`'s reasoning |
+| `dispute` | `chargeback_amount_minor` | `RESTRICTED-FINANCIAL` | An amount (`INV-AUD-02`) — what the network took, present exactly once the funds are taken (`payment_attempt.captured_amount_minor`'s reasoning: the posting's own number, from `P7-TSK-013`) |
+| `dispute` | `chargeback_currency` | `RESTRICTED-FINANCIAL` | Part of the monetary shape (the captured amount's row) |
+| `dispute` | `chargeback_scale` | `RESTRICTED-FINANCIAL` | Part of the monetary shape |
+| `dispute` | `counterparty_share_amount_minor` | `RESTRICTED-FINANCIAL` | An amount (`INV-AUD-02`) — what the chargeback charged the payment's counterparty, the combined bound's judgement (`P7-TSK-013`, `INV-DSP-01`); grows only by re-attribution |
+| `dispute` | `counterparty_share_currency` | `RESTRICTED-FINANCIAL` | Part of the monetary shape — the chargeback's own currency, `CHECK`-held |
+| `dispute` | `counterparty_share_scale` | `RESTRICTED-FINANCIAL` | Part of the monetary shape |
+| `dispute` | `parked_share_amount_minor` | `RESTRICTED-FINANCIAL` | An amount — the counterparty's share parked in `CHARGEBACK_RECOVERABLE` because its account took no postings (ADR-0061 §5): a sum a person or merchant owes, recovered by an operator |
+| `dispute` | `parked_share_currency` | `RESTRICTED-FINANCIAL` | Part of the monetary shape |
+| `dispute` | `parked_share_scale` | `RESTRICTED-FINANCIAL` | Part of the monetary shape |
+| `dispute` | `dispute_fee_amount_minor` | `RESTRICTED-FINANCIAL` | An amount — the dispute fee the PSP charged the platform (ADR-0061 §4), a cost of a person's contested payment |
+| `dispute` | `dispute_fee_currency` | `RESTRICTED-FINANCIAL` | Part of the monetary shape |
+| `dispute` | `dispute_fee_scale` | `RESTRICTED-FINANCIAL` | Part of the monetary shape |
+| `dispute` | `respond_by` | `CONFIDENTIAL` | The network's representment deadline on a person's contested payment (`P7-TSK-014`, ADR-0061 §7) - dates the contest, the `opened_at` reasoning; recorded once, it refuses only the platform's own late dispatch and raises the alarm |
+| `dispute` | `opened_at` | `CONFIDENTIAL` | Dates a contest of a person's payment (the `payment_attempt.created_at` reasoning) |
+| `dispute_event` | `id` | `INTERNAL` | A sequence identifier |
+| `dispute_event` | `dispute_id` | `INTERNAL` | The trail's subject |
+| `dispute_event` | `from_stage` | `CONFIDENTIAL` | `dispute.stage`'s reasoning — history is the same facts, older |
+| `dispute_event` | `to_stage` | `CONFIDENTIAL` | As `from_stage` |
+| `dispute_event` | `actor_id` | `CONFIDENTIAL` | Who moved it — the audit actor class (the platform for every notified stage) |
+| `dispute_event` | `actor_type` | `INTERNAL` | An enumerated population |
+| `dispute_event` | `occurred_at` | `INTERNAL` | Application-stamped transition instant |
+| `dispute_evidence` | `id` | `INTERNAL` | A record identifier (`P7-TSK-014`). Generated |
+| `dispute_evidence` | `dispute_id` | `INTERNAL` | The document's dispute - an identifier of a thing |
+| `dispute_evidence` | `kind` | `CONFIDENTIAL` | *Which evidence* a merchant holds about a person's purchase (a delivery note, a chat log) is a fact about that purchase - `kyc_document.document_type`'s reasoning |
+| `dispute_evidence` | `content_type` | `INTERNAL` | A media format. Three values, none about a person |
+| `dispute_evidence` | `content_ciphertext` | `RESTRICTED-PII` | **The document** - receipts, correspondence, delivery records naming a person: classified at the ceiling of what it decrypts to (`kyc_document.content_ciphertext`'s reasoning, ADR-0022), under its own key (`INV-DSP-03`) |
+| `dispute_evidence` | `content_nonce` | `INTERNAL` | Public-by-design cryptographic material; useless without the key |
+| `dispute_evidence` | `key_version` | `INTERNAL` | Which key wrote the row - operational metadata for rotation |
+| `dispute_evidence` | `checksum_sha256` | `RESTRICTED-PII` | **A possession oracle over the content** - `kyc_document.checksum_sha256`'s reasoning verbatim: anyone holding a candidate document can confirm it is this one |
+| `dispute_evidence` | `content_length` | `CONFIDENTIAL` | Weakly identifying; with the kind it narrows a known document - errs up |
+| `dispute_evidence` | `uploaded_by_id` | `CONFIDENTIAL` | Who attached it - the merchant or the operator, the audit actor class (`withdrawal_event.actor_id`) |
+| `dispute_evidence` | `uploaded_by_type` | `INTERNAL` | An enumerated population |
+| `dispute_evidence` | `uploaded_at` | `CONFIDENTIAL` | Dates an act in a person's dispute |
+| `dispute_response` | `id` | `INTERNAL` | An aggregate identifier (`P7-TSK-014`) |
+| `dispute_response` | `dispute_id` | `INTERNAL` | The answered dispute - an identifier of a thing |
+| `dispute_response` | `kind` | `CONFIDENTIAL` | Whether a person's chargeback was contested or conceded - `dispute.stage`'s reasoning |
+| `dispute_response` | `status` | `CONFIDENTIAL` | What happened to the answer - `payment_attempt.status`'s reasoning |
+| `dispute_response` | `failure_reason` | `CONFIDENTIAL` | `payment_attempt.failure_reason`'s reasoning |
+| `dispute_response` | `provider_idempotency_reference` | `CONFIDENTIAL` | OUR reference (`INV-PAY-04`) - the `withdrawal.end_to_end_reference` class: scoped to one operation, the query's key |
+| `dispute_response` | `provider_reference` | `CONFIDENTIAL` | The PSP's submission reference - the `acquirer_reference` class, reconciliation's key; operators only |
+| `dispute_response` | `evidence_ids` | `INTERNAL` | Identifiers of the documents it carried |
+| `dispute_response` | `requested_by_id` | `CONFIDENTIAL` | Who answered - the audit actor class |
+| `dispute_response` | `requested_by_type` | `INTERNAL` | An enumerated population |
+| `dispute_response` | `reason` | `CONFIDENTIAL` | The operator's own words about a person's dispute - `rail_availability.reason`'s reasoning |
+| `dispute_response` | `dispatch_scope` | `INTERNAL` | The claim's scope - `idempotency_record.scope`'s reasoning |
+| `dispute_response` | `dispatch_key` | `INTERNAL` | The idempotency claim whose dispatch transaction created the row - **caller-chosen** key material, `refund.dispatch_key`'s reasoning and §5 |
+| `dispute_response` | `send_permit` | `INTERNAL` | The send permit (ADR-0057 §4) - `withdrawal.last_dispatched_at`'s reasoning |
+| `dispute_response` | `created_at` | `CONFIDENTIAL` | Dates an act in a person's dispute |
+| `dispute_response_event` | `id` | `INTERNAL` | A sequence identifier |
+| `dispute_response_event` | `response_id` | `INTERNAL` | The trail's subject |
+| `dispute_response_event` | `from_status` | `INTERNAL` | The machine's word |
+| `dispute_response_event` | `to_status` | `INTERNAL` | The machine's word |
+| `dispute_response_event` | `actor_id` | `CONFIDENTIAL` | Who moved it - the audit actor class |
+| `dispute_response_event` | `actor_type` | `INTERNAL` | An enumerated population |
+| `dispute_response_event` | `occurred_at` | `INTERNAL` | Application-stamped transition instant |
+| `routing_policy_version` | `id` | `INTERNAL` | An identifier of a thing — **the value a decision pins** (`INV-HIST-04`), the `fee_schedule_version.id` reasoning verbatim |
+| `routing_policy_version` | `version` | `INTERNAL` | An ordinal |
+| `routing_policy_version` | `effective_from` | `CONFIDENTIAL` | When a routing change starts applying — with the rules it dates an operational shift |
+| `routing_policy_version` | `created_at` | `CONFIDENTIAL` | When the change was decided |
+| `routing_policy_version` | `created_by` | `RESTRICTED-PII` | The acting operator's identity — `audit_record.actor_id`'s model |
+| `routing_policy_version` | `reason` | `CONFIDENTIAL` | The operator's own words about an operational judgement (`fee_schedule`-adjacent: why the platform routes as it does) |
+| `routing_rule` | `id` | `INTERNAL` | An identifier of a thing |
+| `routing_rule` | `policy_version_id` | `INTERNAL` | An identifier of a thing |
+| `routing_rule` | `rule_index` | `INTERNAL` | An ordinal |
+| `routing_rule` | `direction` | `INTERNAL` | A fixed vocabulary (`PaymentDirection`) |
+| `routing_rule` | `instrument_kind` | `INTERNAL` | A fixed vocabulary (`InstrumentKind`) |
+| `routing_rule` | `currency` | `INTERNAL` | An enumeration; part of a matcher with no amount beside it |
+| `routing_rule` | `ceiling_amount_minor` | `CONFIDENTIAL` | An operational bound the platform chose, not a person's amount and not a price — but with the rails it discloses how the platform hedges a rail, which is operational posture |
+| `routing_rule` | `ceiling_currency` | `INTERNAL` | Part of the monetary shape; meaningless without the bound |
+| `routing_rule` | `ceiling_scale` | `INTERNAL` | As `ceiling_currency` |
+| `routing_rule_rail` | `rule_id` | `INTERNAL` | An identifier of a thing |
+| `routing_rule_rail` | `position` | `INTERNAL` | An ordinal |
+| `routing_rule_rail` | `rail` | `INTERNAL` | An enumerated rail name — `payment_attempt.rail`'s reasoning |
+| `rail_availability` | `rail` | `INTERNAL` | An enumerated rail name |
+| `rail_availability` | `available` | `CONFIDENTIAL` | Whether a rail is out of service is operational posture — an outage disclosed is an outage advertised |
+| `rail_availability` | `reason` | `CONFIDENTIAL` | The operator's own words about an incident or a decision |
+| `rail_availability` | `changed_by` | `RESTRICTED-PII` | The acting operator's identity — `audit_record.actor_id`'s model |
+| `rail_availability` | `changed_at` | `CONFIDENTIAL` | Dates the operational act |
+| `routing_decision` | `id` | `INTERNAL` | An identifier of a thing |
+| `routing_decision` | `intent_id` | `INTERNAL` | An identifier of a thing — the payment side of the decision join |
+| `routing_decision` | `policy_version_id` | `INTERNAL` | The pin itself (`INV-HIST-04`): an identifier |
+| `routing_decision` | `direction` | `INTERNAL` | A fixed vocabulary, judged input |
+| `routing_decision` | `instrument_kind` | `INTERNAL` | A fixed vocabulary, judged input |
+| `routing_decision` | `amount_minor` | `RESTRICTED-FINANCIAL` | The judged amount is the intent's commanded amount, snapshotted so the decision recomputes — `payment_intent.amount_minor`'s classification travels with the value |
+| `routing_decision` | `currency` | `RESTRICTED-FINANCIAL` | Meaningless without the amount and meaning-giving with it |
+| `routing_decision` | `scale` | `RESTRICTED-FINANCIAL` | Part of the monetary shape (`INV-MON-05`) |
+| `routing_decision` | `matched_rule_index` | `INTERNAL` | An ordinal into the pinned version |
+| `routing_decision` | `chosen_rail` | `INTERNAL` | An enumerated rail name — which way a payment travelled, said by identifiers the row already carries |
+| `routing_decision` | `created_at` | `CONFIDENTIAL` | Dates a person's financial act (`payment_intent.created_at`'s reasoning) |
+| `routing_decision_step` | `decision_id` | `INTERNAL` | An identifier of a thing |
+| `routing_decision_step` | `step_index` | `INTERNAL` | An ordinal |
+| `routing_decision_step` | `rail` | `INTERNAL` | An enumerated rail name |
+| `routing_decision_step` | `verdict` | `INTERNAL` | A fixed vocabulary (`RoutingStepVerdict`) |
+| `routing_decision_step` | `rejection` | `CONFIDENTIAL` | Why a rail refused a payment: with `UNAVAILABLE` it discloses an outage, the `rail_availability.available` reasoning |
+| `routing_decision_step` | `rail_available` | `CONFIDENTIAL` | The availability observation used — as `rail_availability.available` |
+| `routing_decision_step` | `descriptor_version` | `INTERNAL` | An ordinal of a compiled declaration |
 | `payment_attempt_event` | `id` | `INTERNAL` | A server-assigned ordinal |
 | `payment_attempt_event` | `attempt_id` | `INTERNAL` | An identifier of a thing |
 | `payment_attempt_event` | `from_status` | `CONFIDENTIAL` | History is the same facts, older |
@@ -585,6 +750,7 @@ them are classified at the ceiling regardless.
 | `refund` | `status` | `CONFIDENTIAL` | What happened to a person's refund |
 | `refund` | `created_at` | `CONFIDENTIAL` | Dates a privileged act against a person's account — `transfer.reversed_at`'s reasoning |
 | `refund` | `dispatch_key` | `INTERNAL` | The idempotency claim whose Tx1 created the row (`V008`, `P5-TSK-016`) — **caller-chosen** key material, `idempotency_record.idempotency_key`'s reasoning and §5. *Row added by the Phase 5 → 6 transition: `V008` landed the column without one and no targeted tier runs `ColumnClassificationTest` — found by the transition's fleet-wide battery, the register-decay class in this register* |
+| `refund` | `last_dispatched_at` | `CONFIDENTIAL` | The latest send permit (`V009`, the Phase 6 → 7 transition; ADR-0057 §4's discipline): when the refund was last authorised onto the wire — `merchant_payout.last_dispatched_at`'s reasoning. *Classified in the migration's own change, the lesson of the row above* |
 | `refund_event` | `id` | `INTERNAL` | A server-assigned ordinal |
 | `refund_event` | `refund_id` | `INTERNAL` | An identifier of a thing |
 | `refund_event` | `from_status` | `CONFIDENTIAL` | History is the same facts, older |
@@ -680,6 +846,61 @@ column exists here and none ever will** (`INV-MER-02`); the payable is the ledge
 | `payment_fee_pin` | `gross_scale` | `INTERNAL` | As `gross_currency` |
 | `payment_fee_pin` | `pinned_at` | `CONFIDENTIAL` | When the price was agreed — with `pinned_by`, the provenance of a money decision |
 | `payment_fee_pin` | `pinned_by` | `RESTRICTED-PII` | The acting identity — `audit_record.actor_id`'s reasoning and its model |
+| `payout_destination` | `id` | `INTERNAL` | An identifier of a thing — **the destination's version**: each change is its own row, so this is the value a payout records (`P6-TSK-011`, ADR-0056) |
+| `payout_destination` | `merchant_id` | `INTERNAL` | An identifier of a thing |
+| `payout_destination` | `destination_reference` | `RESTRICTED-PII` | **The provider's reference for a bank account** — `payment_method.token_reference`'s reasoning for bank data: it resolves at the provider to where a merchant's money goes, so it is never in a log, an event payload or an API response, and `PayoutDestinationReference` carries that structurally. Refused by `CHECK` if shaped like an account number, so raw bank details cannot be stored here at all |
+| `payout_destination` | `display_suffix` | `RESTRICTED-PII` | **A partial account identifier** — `payment_method.display_suffix`'s reasoning: four characters an authorised operator reads to know which account they are approving, and its ceiling is still the account it partially names |
+| `payout_destination` | `status` | `CONFIDENTIAL` | Where a counterparty's money is in the middle of being redirected is itself sensitive — a pending change is the fact an attacker would most like to know is cooling off |
+| `payout_destination` | `proposed_by` | `RESTRICTED-PII` | The acting operator's identity — `audit_record.actor_id`'s reasoning and its model |
+| `payout_destination` | `proposed_at` | `CONFIDENTIAL` | Dates a destination change |
+| `payout_destination` | `proposal_reason` | `RESTRICTED-PII` | **Free text written by a person** — `audit_record.reason`'s ceiling; kept on the row so the approver reads what they approve, and never returned by the API |
+| `payout_destination` | `approved_by` | `RESTRICTED-PII` | The second operator's identity — `audit_record.actor_id`'s model |
+| `payout_destination` | `approved_at` | `CONFIDENTIAL` | Dates the four-eyes decision |
+| `payout_destination` | `cooling_off_until` | `CONFIDENTIAL` | When a redirection of money takes effect — the window an attacker would wait out |
+| `payout_destination` | `effective_at` | `CONFIDENTIAL` | When payouts started going to this destination |
+| `payout_destination` | `superseded_at` | `CONFIDENTIAL` | When they stopped |
+| `payout_destination` | `ended_by` | `RESTRICTED-PII` | The operator who rejected or withdrew the change |
+| `payout_destination` | `ended_at` | `CONFIDENTIAL` | Dates a rejection or withdrawal |
+| `payout_destination_event` | `id` | `INTERNAL` | A server-assigned ordinal |
+| `payout_destination_event` | `payout_destination_id` | `INTERNAL` | An identifier of a thing |
+| `payout_destination_event` | `from_status` | `CONFIDENTIAL` | History is the same facts, older |
+| `payout_destination_event` | `to_status` | `CONFIDENTIAL` | As `from_status` |
+| `payout_destination_event` | `actor_id` | `RESTRICTED-PII` | The acting identity, or the platform's for an effectuation — `audit_record.actor_id`'s model |
+| `payout_destination_event` | `actor_type` | `INTERNAL` | Which vocabulary `actor_id` is in |
+| `payout_destination_event` | `occurred_at` | `CONFIDENTIAL` | Dates a move in a destination change |
+| `merchant_payout` | `id` | `INTERNAL` | An aggregate identifier — the payout posting's key carries it (`merchant-payout:<payoutId>`, `P6-TSK-012`) |
+| `merchant_payout` | `merchant_id` | `INTERNAL` | An identifier of a thing |
+| `merchant_payout` | `amount_minor` | `RESTRICTED-FINANCIAL` | Money paid out to a counterparty — `refund.amount_minor`'s reasoning for the merchant's side |
+| `merchant_payout` | `currency` | `RESTRICTED-FINANCIAL` | Part of the monetary shape |
+| `merchant_payout` | `scale` | `RESTRICTED-FINANCIAL` | Part of the monetary shape |
+| `merchant_payout` | `destination_id` | `INTERNAL` | A destination VERSION by identifier (ADR-0056 §9) — what it resolves to is `payout_destination`'s to classify |
+| `merchant_payout` | `hold_reference` | `INTERNAL` | A hold identifier by value; what it resolves to is `ledger.hold`'s to classify |
+| `merchant_payout` | `provider_idempotency_reference` | `INTERNAL` | An operation reference the platform minted (`INV-PAY-04`) |
+| `merchant_payout` | `provider_reference` | `CONFIDENTIAL` | The payout provider's identifier for a payout it accepted — `refund.provider_reference`'s reasoning |
+| `merchant_payout` | `status` | `CONFIDENTIAL` | What happened to a counterparty's payout |
+| `merchant_payout` | `failure_reason` | `CONFIDENTIAL` | Why a counterparty's payout failed — an enumeration, never provider text |
+| `merchant_payout` | `dispatch_key` | `INTERNAL` | The idempotency claim whose dispatch transaction created the row — **caller-chosen** key material, `refund.dispatch_key`'s reasoning and §5 |
+| `merchant_payout` | `requested_by` | `RESTRICTED-PII` | The merchant's identifier, or the acting operator's identity — `audit_record.actor_id`'s model |
+| `merchant_payout` | `requested_by_type` | `INTERNAL` | Which vocabulary `requested_by` is in |
+| `merchant_payout` | `reason` | `RESTRICTED-PII` | **Free text written by a person** — an operator's reason for moving a merchant's money, `refund.reason`'s ceiling; absent on the merchant's own payout |
+| `merchant_payout` | `created_at` | `CONFIDENTIAL` | Dates a counterparty's payout |
+| `merchant_payout` | `last_dispatched_at` | `CONFIDENTIAL` | The latest send permit (ADR-0057 §4): when the payout was last authorised onto the wire |
+| `merchant_payout_event` | `id` | `INTERNAL` | A server-assigned ordinal |
+| `merchant_payout_event` | `payout_id` | `INTERNAL` | An identifier of a thing |
+| `merchant_payout_event` | `from_status` | `CONFIDENTIAL` | History is the same facts, older |
+| `merchant_payout_event` | `to_status` | `CONFIDENTIAL` | As `from_status` |
+| `merchant_payout_event` | `actor_id` | `RESTRICTED-PII` | The platform's identifier for every outcome it applied — `audit_record.actor_id`'s model |
+| `merchant_payout_event` | `actor_type` | `INTERNAL` | Which vocabulary `actor_id` is in |
+| `merchant_payout_event` | `occurred_at` | `CONFIDENTIAL` | Dates a move in a payout; the resolution sweep ages an `UNKNOWN` from it |
+| `payout_evidence` | `id` | `INTERNAL` | An aggregate identifier |
+| `payout_evidence` | `payout_id` | `INTERNAL` | An identifier of a thing |
+| `payout_evidence` | `kind` | `INTERNAL` | An enumeration of wire-artefact kinds — a fact about a message, not a person |
+| `payout_evidence` | `content_ciphertext` | `RESTRICTED-PII` | **The payout provider's raw answer about a counterparty's money.** Classified at the ceiling of what it decrypts to (ADR-0022): untrusted bytes the platform does not control, which a real provider could enrich with an account holder's details — `provider_evidence.content_ciphertext`'s reasoning, and the level governs handling if the encryption is ever broken, mis-keyed or stripped |
+| `payout_evidence` | `content_nonce` | `INTERNAL` | Public-by-design cryptographic material; useless without the key |
+| `payout_evidence` | `key_version` | `INTERNAL` | Which key wrote the row — operational metadata for rotation |
+| `payout_evidence` | `checksum_sha256` | `RESTRICTED-PII` | The possession oracle: anyone holding a candidate answer can confirm this is what the provider said — `provider_evidence.checksum_sha256`'s reasoning |
+| `payout_evidence` | `content_length` | `CONFIDENTIAL` | Weakly identifying alone; a decline's body differs from an acceptance's, so the length leaks the outcome's shape |
+| `payout_evidence` | `recorded_at` | `CONFIDENTIAL` | Dates a counterparty's payout traffic |
 
 ### `checkout` — *added by `P6-TSK-006`*
 

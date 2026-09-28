@@ -1,8 +1,6 @@
 package com.finapp.payments;
 
 import java.util.Arrays;
-import java.util.EnumSet;
-import java.util.Set;
 import java.util.stream.Collectors;
 
 /**
@@ -39,10 +37,12 @@ import java.util.stream.Collectors;
  * {@code CLEARING}/{@code SETTLED} (Phase 8), multi-attempt retry states (one attempt per
  * intent in Phase 5, ADR-0045 §4 — the schema's one-live index keeps the day N arrives).
  *
- * <p>Declared on the enum so the machine is readable in one place and the sweep can be derived
- * rather than remembered. The schema {@code CHECK} and transition trigger are generated from
- * {@link #sqlValueList()}/{@link #permittedTransitions()} by {@code P5-TSK-008}'s reconciliation;
- * until it lands the fragments are pinned by literal in {@code PaymentAttemptTest}.
+ * <p>The machine lived on this enum while there was one machine. Since `P7-TSK-002` the edges
+ * are each {@link InteractionModel}'s own — a status's legal exits are a property of the model
+ * a row lives in, not of the status — and this enum keeps the vocabulary, the terminal set and
+ * the SQL fragments the {@code P5-TSK-008} reconciliation generates from. The push states sit
+ * below the two-step seven; the book machine adds no state of its own (born {@code EXECUTED}
+ * or {@code FAILED}).
  */
 public enum PaymentAttemptStatus {
 
@@ -83,30 +83,71 @@ public enum PaymentAttemptStatus {
     CAPTURED,
 
     /**
-     * The try failed, at either stage, with the mapped {@link PaymentFailureReason} on this row
-     * ({@code INV-PAY-03}). Terminal: no automatic retry in Phase 5 — a failed attempt fails
-     * its intent, and a customer who still wants to pay creates a new intent (ADR-0045 §4).
+     * The try failed, at whatever stage its model has, with the mapped
+     * {@link PaymentFailureReason} on this row ({@code INV-PAY-03}). Terminal in every model:
+     * no automatic retry — a failed attempt fails its intent, and a customer who still wants
+     * to pay creates a new intent (ADR-0045 §4). The one state every model shares, legal
+     * because a terminal has no edges to blur.
      */
-    FAILED;
+    FAILED,
 
-    /** The states reachable from this one. */
-    public Set<PaymentAttemptStatus> permittedTransitions() {
-        return switch (this) {
-            case AUTH_DISPATCHED -> EnumSet.of(AUTHORIZED, FAILED, AUTH_UNKNOWN);
-            case AUTH_UNKNOWN -> EnumSet.of(AUTHORIZED, FAILED);
-            case AUTHORIZED -> EnumSet.of(CAPTURE_DISPATCHED);
-            case CAPTURE_DISPATCHED -> EnumSet.of(CAPTURED, FAILED, CAPTURE_UNKNOWN);
-            case CAPTURE_UNKNOWN -> EnumSet.of(CAPTURED, FAILED);
-            case CAPTURED, FAILED -> EnumSet.noneOf(PaymentAttemptStatus.class);
-        };
-    }
+    // ------------------------------------------------------------------ the PUSH machine
+    // (`P7-TSK-002`, ADR-0059 §2). Appended after the two-step states so every generated
+    // list only extends. Their operations arrive with their rails (`P7-TSK-006`, `-009`).
 
+    /**
+     * A pay-in waiting for the payer's authorization at the payer's own PSP — decided by that
+     * PSP, never by our clock, which is why no sweep bound and no stuck gauge reads it
+     * (`P7-TSK-009` owns its ageing).
+     */
+    AWAITING_PAYER,
+
+    /** The push's execution dispatch is committed (ADR-0046's discipline on the second model). */
+    EXECUTION_DISPATCHED,
+
+    /** The execution's outcome is unknown ({@code INV-LIFE-03}, the push model's own state). */
+    EXECUTION_UNKNOWN,
+
+    /**
+     * The push executed — the payee's credit is final on the rails that carry this model
+     * (ADR-0059 §1), and <strong>{@code EXECUTED} is not {@code CAPTURED}</strong>: no query,
+     * report or reconciliation can mistake one rail's completion for another's. Shared with
+     * the book machine, whose rows are born here. Terminal by structure, in the one-live
+     * index's predicate with the other two.
+     */
+    EXECUTED,
+
+    /**
+     * The void's dispatch is committed (`P7-TSK-004`, ADR-0046's discipline on the card
+     * rail's reversal): our void reference is minted and stored before the provider is
+     * asked to release the authorization ({@code INV-PAY-04}). Entered from
+     * {@code AUTHORIZED} (a cancelled or operator-voided authorization) and from the capture
+     * stages (a DECLINED capture on a rail whose declared reversals contain {@code VOID} -
+     * the promise is released rather than left to lapse against the customer's funds).
+     */
+    VOID_DISPATCHED,
+
+    /** The void's outcome is unknown ({@code INV-LIFE-03}) - resolved by query, like every
+     * ambiguous operation. */
+    VOID_UNKNOWN,
+
+    /**
+     * The authorization is released at the issuer (`INV-REV-03`'s revocable half performed):
+     * the promise is gone, nothing was captured, nothing posts - a terminal with no ledger
+     * effect, in the one-live index's predicate with the other three.
+     */
+    VOIDED;
+
+    /**
+     * Whether no model's machine has an edge out of this state (`P7-TSK-002`: the machines
+     * live on {@link InteractionModel}, so "terminal" is the structural union —
+     * {@code InteractionModelMachinesTest} pins this switch equal to that derivation).
+     */
     public boolean isTerminal() {
-        return permittedTransitions().isEmpty();
-    }
-
-    public boolean canTransitionTo(PaymentAttemptStatus target) {
-        return permittedTransitions().contains(target);
+        return switch (this) {
+            case CAPTURED, FAILED, EXECUTED, VOIDED -> true;
+            default -> false;
+        };
     }
 
     /** The states as a SQL literal list, for {@code P5-TSK-008}'s {@code CHECK}. */

@@ -226,7 +226,7 @@ class AuthenticationLockoutDatabaseTest {
         }
         assertThat(lockedUntil(login)).as("precondition: locked").isNotNull();
 
-        // The lock expires; the window has 59 minutes left.
+        // The lock expires; the window has 58 minutes left.
         expireTheLock(login);
 
         recordOneFailureUnder(shortLock, login);
@@ -442,12 +442,18 @@ class AuthenticationLockoutDatabaseTest {
         }
     }
 
+    /**
+     * Serves the lock while leaving the window live. A minute, not a second: the throttle judges
+     * the lock by the database's clock in a later transaction, and the local container's clock
+     * was measured stepping back 1.7 s at once (X-TSK-005) - a one-second margin let a served lock
+     * read as live again. The window stays well inside its fifteen minutes either way.
+     */
     private void expireTheLock(LoginIdentifier login) throws SQLException {
         try (Connection app = DatabaseRoles.application()) {
             execute(
                     app,
                     "UPDATE identity.authentication_failure SET locked_until = now() - interval"
-                        + " '1 second', window_started_at = now() - interval '2 seconds'"
+                        + " '1 minute', window_started_at = now() - interval '2 minutes'"
                         + " WHERE identity_id = (SELECT id FROM identity.identity"
                         + " WHERE login_identifier = ?)",
                     login.value());

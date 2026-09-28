@@ -3,11 +3,13 @@ package com.finapp.identity;
 /**
  * What an actor may do (`P1-TSK-020`, ADR-0031).
  *
- * <h2>Three values, and none invents a capability</h2>
+ * <h2>Every value names catalogued actions, and none invents a capability</h2>
  *
- * <p>Each names privileged actions `AUDITABLE_ACTIONS.md` already declares - identity suspension,
- * role assignment, and the KYC review actions `P2-TSK-003` catalogued - so the vocabulary follows
- * the registry rather than anticipating it. A permission for an action nobody has catalogued would
+ * <p>Each names privileged actions `AUDITABLE_ACTIONS.md` already declares - from identity
+ * suspension, role assignment and the KYC review actions `P2-TSK-003` catalogued to the ledger,
+ * payment and merchant acts of Phases 3 to 6 - so the vocabulary follows the registry rather than
+ * anticipating it. Which route requires which value is pinned by {@code RoutePermissionRegisterTest}
+ * (`P6-DOC-001`). <em>(This heading said "three values" until then; there are fifteen — thirteen until `P7-TSK-003`, fourteen until `P7-TSK-012`.)</em> A permission for an action nobody has catalogued would
  * be a claim about a capability that does not exist.
  *
  * <p><em>(This javadoc said "two values" and that neither admin endpoint existed - true when
@@ -141,7 +143,9 @@ public enum PermissionName {
     /**
      * Administer an onboarded merchant (`P6-TSK-003`): suspend, reinstate and close - each a
      * reasoned judgement about a counterparty ({@code INV-AUD-03}) - and, from `P6-TSK-002`,
-     * issue and revoke the merchant's API keys. Distinct from {@link #MERCHANT_ONBOARD}
+     * issue and revoke the merchant's API keys, and from `P6-TSK-011` propose, list and withdraw
+     * its payout destinations (approving one is {@link #PAYOUT_DESTINATION_APPROVE}'s).
+     * Distinct from {@link #MERCHANT_ONBOARD}
      * because the checks differ per surface (the state moves demand recorded reasons; the
      * onboarding demands the KYB gate), while one role holds both - one
      * merchant-administering population until a trust decision splits it, the
@@ -169,5 +173,83 @@ public enum PermissionName {
      * Precise vocabulary, coarse bundling — and when a phase does separate them, the
      * separation is expressible without inventing a permission after the fact.
      */
-    FEE_ADMINISTER
+    FEE_ADMINISTER,
+
+    /**
+     * Approve or reject a proposed payout destination (`P6-TSK-011`, ADR-0056 — the plan's
+     * {@code PAYOUT_APPROVE}, named for what it approves: payouts themselves have no approval
+     * step, and a permission read as "approve payouts" is one somebody grants by mistake).
+     * Names {@code merchant.PayoutDestinationApproved} and its siblings; ships with its real
+     * check sites, the {@code .../payout-destinations/'{id}'/approval} and {@code /rejection}
+     * routes.
+     *
+     * <p><strong>Four-eyes is distinct identities, not distinct permissions</strong> — the
+     * {@code P3-TSK-021} shape, where one {@code LEDGER_ADJUST} population both proposes and
+     * approves: an operator may hold this and {@link #MERCHANT_ADMINISTER} together, and the
+     * approval statement refuses the proposer whatever they hold ({@code INV-AUD-04}).
+     *
+     * <p><strong>Held by {@link RoleName#MERCHANT_ADMINISTRATOR} today</strong>, the
+     * {@link #FEE_ADMINISTER} reasoning: its own permission because a treasury desk approving
+     * where money goes is a real future split, one role because nothing has yet taken that
+     * decision.
+     */
+    PAYOUT_DESTINATION_APPROVE,
+
+    /**
+     * Initiate a payout of a merchant's payable on the merchant's behalf (`P6-TSK-012`,
+     * ADR-0057 §6) — the operator route beside the merchant's own API-key route, reasoned and
+     * audited as {@code merchant.MerchantPayoutInitiatedByOperator}. Ships with its real check
+     * site, {@code POST /v1/operator/merchants/'{merchantId}'/payouts}.
+     *
+     * <p><strong>Money leaves the platform, so it is the money-operating population's</strong>:
+     * held by {@link RoleName#LEDGER_OPERATOR} beside {@link #PAYMENT_REFUND}, never by
+     * {@link RoleName#MERCHANT_ADMINISTRATOR} — onboarding opens books and moves nothing through
+     * them, which is the sentence that role's javadoc wrote for this permission's arrival. What
+     * the holder cannot do is choose where the money goes: a payout dispatches only to the
+     * merchant's effective destination, which four-eyes and a cooling-off guard (ADR-0056).
+     */
+    MERCHANT_PAYOUT,
+
+    /**
+     * Administer payment routing (`P7-TSK-003`, ADR-0060): create an immutable routing
+     * policy version, record a rail as in or out of service, and read a payment's routing
+     * explanation. Names {@code payments.PaymentRoutingVersionCreated},
+     * {@code payments.RailAvailabilityChanged} and
+     * {@code payments.PaymentRoutingExplanationRead}; ships with its real check sites, the
+     * {@code /v1/operator/routing-policy} and {@code /v1/operator/rails} routes.
+     *
+     * <p><strong>Its own permission, because how money travels is not whether it moves.</strong>
+     * Deciding the rail a payment rides — and taking one out of service — is a payment
+     * -operations judgement; posting, adjusting and refunding are acts on the money itself.
+     * A routing or treasury-operations desk is a real future split, and this permission is
+     * what makes it a one-line change — the {@link #FEE_ADMINISTER} shape, restated not
+     * re-argued.
+     *
+     * <p><strong>Held by {@link RoleName#LEDGER_OPERATOR} today</strong>, because routing is
+     * the money-operating population's concern (the {@link #MERCHANT_PAYOUT} arrival's
+     * reasoning: it shapes what happens to payments, not to counterparties), and a role for
+     * a split nobody has made is a trust decision nobody took.
+     */
+    PAYMENT_ROUTING_ADMINISTER,
+
+    /**
+     * Administer disputes (`P7-TSK-012`, ADR-0061): read any dispute — somebody else's
+     * contested payment, its reason and its amount — and, from `P7-TSK-014`, accept one or
+     * submit evidence on a payment with no merchant. Names {@code payments.DisputeRead}; ships
+     * with its real check sites, {@code GET /v1/operator/disputes/'{disputeId}'} and
+     * {@code GET /v1/operator/payments/'{intentId}'/disputes} — and, since `P7-TSK-014`, the
+     * acts: {@code POST .../disputes/'{disputeId}'/evidence}, {@code .../representment} and
+     * {@code .../acceptance} (reasoned, only where the payment credited no merchant) and the
+     * audited content read {@code GET .../evidence/'{evidenceId}'}.
+     *
+     * <p><strong>Its own permission, because contesting money is not moving it.</strong> A
+     * dispute desk answering the network with evidence is a real future split from the desk
+     * that posts, refunds and routes — the {@link #PAYMENT_ROUTING_ADMINISTER} shape, restated
+     * not re-argued.
+     *
+     * <p><strong>Held by {@link RoleName#LEDGER_OPERATOR} today</strong>: a chargeback is
+     * money forced back through the rail, and answering it is payment operations — the
+     * money-operating population's concern until a trust decision splits it.
+     */
+    DISPUTE_ADMINISTER
 }

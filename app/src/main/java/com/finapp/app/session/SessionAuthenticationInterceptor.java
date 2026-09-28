@@ -124,7 +124,20 @@ public final class SessionAuthenticationInterceptor implements HandlerIntercepto
         // AFTER the scope is established, deliberately: a denial is audited, and an audit
         // record needs an actor. Checking first would record the refusal as the platform's own
         // action, which is precisely the wrong party (P0-TSK-032).
-        requirePermission(handlerMethod, session);
+        try {
+            requirePermission(handlerMethod, session);
+        } catch (RuntimeException refused) {
+            // ...and closed HERE when the check throws - a denial, or a storage failure reading
+            // the roles - because Spring runs afterCompletion only for an interceptor whose
+            // preHandle RETURNED: HandlerExecutionChain advances its index past an interceptor
+            // only once preHandle completes, so a throwing one is skipped on the way back. Left
+            // to afterCompletion, the denied caller's identity stayed on this pooled worker, and
+            // the next unrelated request on it found an actor it never established - the leak
+            // P0-TSK-032 built this scope to prevent, reachable at will by any session on any
+            // permission route. Found by the Phase 6 -> 7 transition's security audit.
+            closeScope(request);
+            throw refused;
+        }
         return true;
     }
 
@@ -139,8 +152,14 @@ public final class SessionAuthenticationInterceptor implements HandlerIntercepto
     @Override
     public void afterCompletion(
             HttpServletRequest request, HttpServletResponse response, Object handler, Exception ex) {
+        closeScope(request);
+    }
+
+    /** Closes this request's scope once: the attribute goes with it, so no path closes it twice. */
+    private static void closeScope(HttpServletRequest request) {
         Object scope = request.getAttribute(SCOPE_ATTRIBUTE);
         if (scope instanceof SecurityContext.Scope open) {
+            request.removeAttribute(SCOPE_ATTRIBUTE);
             open.close();
         }
     }

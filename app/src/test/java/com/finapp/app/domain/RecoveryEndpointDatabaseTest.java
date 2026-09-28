@@ -9,6 +9,7 @@ import com.finapp.identity.Session;
 import com.finapp.identity.SessionPolicy;
 import com.finapp.identity.SessionStore;
 import com.finapp.identity.SessionToken;
+import com.finapp.identity.SingleUseToken;
 import com.finapp.platform.testing.database.DatabaseRoles;
 import com.finapp.sharedkernel.id.IdGenerator;
 import java.net.URI;
@@ -25,6 +26,8 @@ import java.time.ZoneOffset;
 import java.util.Base64;
 import java.util.List;
 import java.util.UUID;
+import java.util.regex.Matcher;
+import java.util.regex.Pattern;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Tag;
 import org.junit.jupiter.api.Test;
@@ -228,7 +231,69 @@ class RecoveryEndpointDatabaseTest {
         assertThat(response.body()).doesNotContain("not-an-address");
     }
 
+    @Test
+    @DisplayName("verifying a second channel is a 409 saying why, not a 500 (X-TSK-004)")
+    void aSecondVerifiedChannelIsAConflictNotAServerFault() throws Exception {
+        IdentityId identity = givenAnIdentity();
+        String address =
+                "second" + UUID.randomUUID().toString().replace("-", "").substring(0, 10)
+                        + "@example.com";
+        SingleUseToken challenge = givenAPendingChannelFor(identity, address);
+        String body = "{\"token\":\"" + challenge.presentedValue().expose() + "\"}";
+
+        HttpResponse<String> refused = post("/v1/me/channels/verification", body, null);
+
+        // It answered 500 until X-TSK-004: V011's index refused the second verified channel, and the
+        // store reported the database's answer as its own failure. A 500 invites a retry, and this
+        // can never succeed by retrying - the channel already verified is what recovery keeps.
+        assertThat(refused.statusCode()).isEqualTo(409);
+        assertThat(field(refused.body(), "code")).isEqualTo("identity.VerifiedChannelAlreadyExists");
+
+        // It names nobody: not the identity whose channel was kept, not the address that was not.
+        assertThat(refused.body())
+                .doesNotContain(identity.value().toString())
+                .doesNotContain(address);
+
+        // And a retry gets the same answer, because the refusal wrote nothing: the challenge is still
+        // live rather than spent into the uniform 403.
+        HttpResponse<String> retried = post("/v1/me/channels/verification", body, null);
+        assertThat(retried.statusCode()).isEqualTo(409);
+        assertThat(field(retried.body(), "code")).isEqualTo("identity.VerifiedChannelAlreadyExists");
+    }
+
     // -----------------------------------------------------------------
+
+    /**
+     * A second, unverified channel whose live challenge only this test holds.
+     *
+     * <p>Seeded rather than added through the endpoint, because the endpoint discards the challenge:
+     * nothing delivers it before Phase 15, and handing it to the caller would make control prove
+     * nothing.
+     */
+    private static SingleUseToken givenAPendingChannelFor(IdentityId identity, String address)
+            throws SQLException {
+        SingleUseToken challenge = SingleUseToken.issue(RANDOMNESS);
+        try (Connection app = DatabaseRoles.application()) {
+            execute(
+                    app,
+                    "INSERT INTO identity.contact_channel"
+                            + " (id, identity_id, kind, address, verification_token_hash,"
+                            + " verification_expires_at, added_at)"
+                            + " VALUES (?, ?, 'EMAIL', ?, ?, now() + interval '1 day', now())",
+                    IDS.next(),
+                    identity.value(),
+                    address,
+                    challenge.hash().expose());
+        }
+        return challenge;
+    }
+
+    private static String field(String body, String name) {
+        Matcher matcher =
+                Pattern.compile("\"" + Pattern.quote(name) + "\":\"([^\"]+)\"").matcher(body);
+        assertThat(matcher.find()).as("the body must carry %s: %s", name, body).isTrue();
+        return matcher.group(1);
+    }
 
     private HttpResponse<String> post(String path, String body, String token) throws Exception {
         HttpRequest.Builder request =

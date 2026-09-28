@@ -274,5 +274,8 @@ test reports success.
 ```
 
 Needs Docker and nothing else. The harness starts its own PostgreSQL (ADR-0027). Set
-`FINAPP_DB_URL` to point the suite at a long-lived database instead — the deliberate escape hatch
-for inspecting what a test left behind.
+`FINAPP_DB_URL` to point `:platform:databaseTest` at a long-lived database instead — the
+deliberate escape hatch for inspecting what a test left behind. Only the platform module's build
+passes the URL to its test JVM, so every other module's tier, `:app:databaseTest` included,
+starts its own container regardless. *(This read as if the hatch applied to the whole suite
+until the Phase 6 → 7 transition.)*

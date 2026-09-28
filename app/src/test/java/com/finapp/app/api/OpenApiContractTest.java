@@ -348,6 +348,25 @@ class OpenApiContractTest {
                         // grant, INV-PAY-02), list, and the ownership-scoped detach.
                         ApiVersion.CURRENT_PREFIX + "/me/payment-methods",
                         ApiVersion.CURRENT_PREFIX + "/me/payment-methods/{id}",
+                        // P7-TSK-007: the bank-account register through the grant exchange
+                        // (the body carries only the one-time grant and the NO_MATCH
+                        // acknowledgement, INV-RAIL-03), keyed because the grant is
+                        // single-use at the provider; detach and list are the shared
+                        // surface above.
+                        ApiVersion.CURRENT_PREFIX + "/me/payment-methods/bank-accounts",
+                        // P7-TSK-008: the wallet withdrawal - the keyed dispatch answering
+                        // the honest judged status (COMPLETED, FAILED, UNKNOWN with the
+                        // amount held), and the ownership-scoped read. No cancel and no
+                        // reversal route, deliberately (INV-REV-03: the rail declares
+                        // final-on-acceptance).
+                        ApiVersion.CURRENT_PREFIX + "/me/withdrawals",
+                        ApiVersion.CURRENT_PREFIX + "/me/withdrawals/{id}",
+                        // P7-TSK-009: the instant rail's confirmation callback -
+                        // unauthenticated by honest declaration, authenticated in fact by
+                        // the per-rail HMAC over timestamp + "." + raw body (ADR-0062
+                        // section 5) - the third machine-facing route, published
+                        // deliberately.
+                        ApiVersion.CURRENT_PREFIX + "/providers/payments/instant/webhooks",
                         // P5-TSK-011: the payment surface - the keyed create, the
                         // confirmation that answers the intent's real state (honestly
                         // PROCESSING), the window-bounded cancel, and the ownership-scoped
@@ -358,6 +377,7 @@ class OpenApiContractTest {
                         // P5-TSK-015: the privileged refund - PAYMENT_REFUND at the boundary,
                         // the reason and the key required, hold-then-post beneath.
                         ApiVersion.CURRENT_PREFIX + "/payments/{id}/refund",
+                        ApiVersion.CURRENT_PREFIX + "/payments/{id}/void",
                         // P6-TSK-003: the counterparty's operator surface - onboarding behind
                         // MERCHANT_ONBOARD and keyed (a duplicate would be a second merchant
                         // AND a second payable account), the read and the three reasoned
@@ -418,6 +438,59 @@ class OpenApiContractTest {
                         ApiVersion.CURRENT_PREFIX + "/operator/fee-schedules/{id}/versions",
                         ApiVersion.CURRENT_PREFIX
                                 + "/operator/merchants/{merchantId}/fee-schedule",
+                        // P6-TSK-011: the payout destination's operator surface (ADR-0056) -
+                        // propose and withdraw behind MERCHANT_ADMINISTER, approve and reject
+                        // behind PAYOUT_DESTINATION_APPROVE, four-eyes between them. No merchant
+                        // key reaches any of it, and no route returns the provider reference.
+                        ApiVersion.CURRENT_PREFIX
+                                + "/operator/merchants/{merchantId}/payout-destinations",
+                        ApiVersion.CURRENT_PREFIX
+                                + "/operator/merchants/{merchantId}/payout-destinations"
+                                + "/{destinationId}/approval",
+                        ApiVersion.CURRENT_PREFIX
+                                + "/operator/merchants/{merchantId}/payout-destinations"
+                                + "/{destinationId}/rejection",
+                        ApiVersion.CURRENT_PREFIX
+                                + "/operator/merchants/{merchantId}/payout-destinations"
+                                + "/{destinationId}/withdrawal",
+                        // P6-TSK-012: the payout (ADR-0051, ADR-0057) - the merchant's own,
+                        // keyed, with its API key and no identifier but the payout's own; and
+                        // an operator's on its behalf behind MERCHANT_PAYOUT, reasoned. Neither
+                        // body can name a destination: a payout goes only to the effective one.
+                        ApiVersion.CURRENT_PREFIX + "/merchant/payouts",
+                        ApiVersion.CURRENT_PREFIX + "/merchant/payouts/{payoutId}",
+                        ApiVersion.CURRENT_PREFIX + "/operator/merchants/{merchantId}/payouts",
+                        // P7-TSK-003: the routing surface (ADR-0060) - the keyed immutable
+                        // version, the reasoned availability fact, the audited explanation
+                        // read, all behind PAYMENT_ROUTING_ADMINISTER. No PUT and no DELETE
+                        // on the policy: a routing change is a POST of a new version
+                        // effective forward (the fee-schedule sentence, restated).
+                        ApiVersion.CURRENT_PREFIX + "/operator/routing-policy/versions",
+                        ApiVersion.CURRENT_PREFIX + "/operator/rails/{rail}/availability",
+                        ApiVersion.CURRENT_PREFIX + "/operator/payments/{intentId}/routing",
+                        // P7-TSK-012: the dispute reads (ADR-0061) - the merchant's pair on
+                        // its key, tenant-scoped in the statement; the operator's pair behind
+                        // DISPUTE_ADMINISTER, every dispute shown audited. Read-only: the
+                        // stages arrive from the network, and contesting is P7-TSK-014's.
+                        ApiVersion.CURRENT_PREFIX + "/merchant/disputes",
+                        ApiVersion.CURRENT_PREFIX + "/merchant/disputes/{disputeId}",
+                        ApiVersion.CURRENT_PREFIX + "/operator/disputes/{disputeId}",
+                        ApiVersion.CURRENT_PREFIX + "/operator/payments/{intentId}/disputes",
+                        // P7-TSK-014: answering a chargeback (ADR-0061 section 7) - evidence
+                        // attached and read back on the record, then a keyed representment or
+                        // acceptance; the merchant's four on its key, tenant-scoped, and the
+                        // operator's four behind DISPUTE_ADMINISTER for a payment with no
+                        // merchant, reasoned. The stage stays the network's word.
+                        ApiVersion.CURRENT_PREFIX + "/merchant/disputes/{disputeId}/evidence",
+                        ApiVersion.CURRENT_PREFIX
+                                + "/merchant/disputes/{disputeId}/evidence/{evidenceId}",
+                        ApiVersion.CURRENT_PREFIX + "/merchant/disputes/{disputeId}/representment",
+                        ApiVersion.CURRENT_PREFIX + "/merchant/disputes/{disputeId}/acceptance",
+                        ApiVersion.CURRENT_PREFIX + "/operator/disputes/{disputeId}/evidence",
+                        ApiVersion.CURRENT_PREFIX
+                                + "/operator/disputes/{disputeId}/evidence/{evidenceId}",
+                        ApiVersion.CURRENT_PREFIX + "/operator/disputes/{disputeId}/representment",
+                        ApiVersion.CURRENT_PREFIX + "/operator/disputes/{disputeId}/acceptance",
                         ApiVersion.CURRENT_PREFIX + "/sessions/{id}",
                         ApiVersion.CURRENT_PREFIX + "/sessions/current",
                         ApiVersion.CURRENT_PREFIX + "/me/mfa",

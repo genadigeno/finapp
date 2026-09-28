@@ -228,6 +228,39 @@ class PlannedMetersExistTest {
         assertThat(registeredMeters()).containsAll(planned);
     }
 
+    /**
+     * `P6-TSK-013`'s acceptance, performed ahead of the flip — the same shape a fifth time:
+     * every meter Phase 6's plan §15 names is registered in this context, which boots with
+     * nothing configured, no database and NO PAYOUT PROVIDER, so it is exactly the "freshly
+     * started instance" the acceptance names. Between now and the flip this is the only thing
+     * holding the seven series; after it, a harmless second reading of the same table. What this
+     * proves that no per-class test can: the payout counter and BOTH stuck-payout gauges exist
+     * <strong>without</strong> {@code finapp.merchant.payout.provider.url} — the unconditional
+     * {@code MerchantMeters} and {@code MerchantPayoutMetrics} beans, deliberately not sharing
+     * the payout command's condition — and the two series earlier tasks built with their flows
+     * are still the wired beans' own.
+     *
+     * <p>Seven, not six: until this task's design the two gauges shared one plan row, and this
+     * parser reads a row's first name only, so the age gauge would have gone unchecked.
+     */
+    @Test
+    @DisplayName("Phase 6's planned meters are already published, ahead of the phase flip")
+    void phase6PlannedMetersAreAlreadyPublished() {
+        Set<String> planned = new TreeSet<>();
+        for (String line : read(repositoryFile("docs/project/PHASE_6_PLAN.md"))) {
+            Matcher row = PLANNED_METER.matcher(line);
+            if (row.find()) {
+                planned.add(row.group(1));
+            }
+        }
+        assertThat(planned)
+                .as("the Phase 6 plan's §15 table must parse, or this checks nothing")
+                .hasSizeGreaterThanOrEqualTo(7)
+                .contains("finapp.merchant.payout.unknown.age");
+
+        assertThat(registeredMeters()).containsAll(planned);
+    }
+
     @Test
     @DisplayName("the guard is not vacuous: it reads a real plan and a real registry")
     void theGuardHasTeeth() {

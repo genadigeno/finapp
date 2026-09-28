@@ -86,6 +86,22 @@ class TelemetryConfiguration {
     }
 
     /**
+     * The open payout destination changes, as a gauge (`P6-TSK-011`, {@code PHASE_6_PLAN.md}
+     * §15).
+     *
+     * <p>Arrives with the flow it measures — the trigger-reached rule, `P2-TSK-010`'s reasoning.
+     * Same {@code DataSource} reasoning as its siblings.
+     */
+    @Bean
+    MerchantMetrics merchantMetrics(
+            com.finapp.merchant.PayoutDestinationStore<java.sql.Connection> payoutDestinationStore,
+            DataSource dataSource,
+            Clock clock,
+            MeterRegistry registry) {
+        return new MerchantMetrics(payoutDestinationStore, dataSource::getConnection, clock, registry);
+    }
+
+    /**
      * The balance-projection drift, as a gauge (`P3-TSK-010`, ADR-0041 rule 2).
      *
      * <p>The verification job's whole schedule is this gauge's cache floor: a scrape past the
@@ -114,6 +130,39 @@ class TelemetryConfiguration {
                 dataSource::getConnection,
                 clock,
                 registry);
+    }
+
+    /**
+     * The negative-position gauge (`P7-TSK-013`, ADR-0061 §5, plan §15): counterparties below
+     * zero after a chargeback — merchant debt and customer receivables — counted from the
+     * projection at the cheap-read floor; the scrape is the schedule, no leader, no §3 row.
+     */
+    @Bean
+    NegativePositionMetrics negativePositionMetrics(
+            DataSource dataSource, Clock clock, MeterRegistry registry) {
+        com.finapp.ledger.NegativePositions<java.sql.Connection> positions =
+                new com.finapp.ledger.JdbcNegativePositions();
+        return new NegativePositionMetrics(
+                positions::countBelowZero, dataSource::getConnection, clock, registry);
+    }
+
+    /**
+     * The deadline alarm (`P7-TSK-014`, ADR-0061 §7): chargebacks near or past the network's
+     * respond-by date with no answer the PSP took — read from the dispute rows at the
+     * cheap-read floor; the scrape is the schedule, no leader, no §3 row.
+     */
+    @Bean
+    DisputeDeadlineMetrics disputeDeadlineMetrics(
+            DataSource dataSource,
+            Clock clock,
+            @org.springframework.beans.factory.annotation.Value(
+                            "${finapp.payments.dispute.deadline-alarm-window:P3D}")
+                    java.time.Duration window,
+            MeterRegistry registry) {
+        com.finapp.payments.DisputeStore<java.sql.Connection> disputes =
+                new com.finapp.payments.JdbcDisputeStore();
+        return new DisputeDeadlineMetrics(
+                disputes::countDeadlinesNear, dataSource::getConnection, clock, window, registry);
     }
 
     /**
@@ -164,6 +213,40 @@ class TelemetryConfiguration {
     }
 
     /**
+     * The merchant surface's counters (`P6-TSK-013`): fee assessments and payout judgements.
+     * Eager and <strong>unconditional</strong> for the {@code PaymentMeters} reason: the payout
+     * command exists only where a provider is configured, but a deployment without one still
+     * publishes healthy zeros rather than absences an alert cannot evaluate.
+     */
+    @Bean
+    MerchantMeters merchantMeters(MeterRegistry registry) {
+        return new MerchantMeters(registry);
+    }
+
+    /**
+     * The stuck-payout gauges (`P6-TSK-013`): the {@code PaymentMetrics} stance verbatim — the
+     * scrape is the schedule, one floored read-only aggregate per instance, no leader, nothing
+     * written, and NaN rather than a false zero when the database cannot be read — over the
+     * sweep's own dispatched bound, read through the one placeholder the sweep reads. The store
+     * bean is unconditional, so the gauges exist without a configured provider too.
+     */
+    @Bean
+    MerchantPayoutMetrics merchantPayoutMetrics(
+            com.finapp.merchant.MerchantPayoutStore<java.sql.Connection> merchantPayoutStore,
+            DataSource dataSource,
+            Clock clock,
+            MeterRegistry registry,
+            @org.springframework.beans.factory.annotation.Value(
+                            com.finapp.app.merchant.MerchantPayoutBeans.DISPATCHED_AGE)
+                    java.time.Duration dispatchedAge) {
+        return new MerchantPayoutMetrics(
+                connection -> merchantPayoutStore.unknownReading(connection, dispatchedAge),
+                dataSource::getConnection,
+                clock,
+                registry);
+    }
+
+    /**
      * The stuck-payment gauges (`P5-TSK-017`): the {@code LedgerMetrics} stance verbatim —
      * the scrape is the schedule, one floored read-only pair of aggregates per instance, no
      * leader, no ambient schedule, nothing written, and NaN rather than a false zero when the
@@ -171,14 +254,23 @@ class TelemetryConfiguration {
      * because nothing else in this context consumes them as beans.
      */
     @Bean
-    PaymentMetrics paymentMetrics(DataSource dataSource, Clock clock, MeterRegistry registry) {
+    PaymentMetrics paymentMetrics(
+            DataSource dataSource,
+            Clock clock,
+            MeterRegistry registry,
+            // The sweep's own bound, through the one placeholder it reads (the Phase 6 -> 7
+            // transition, the payout's shape): a dispatched or authorized operation is stuck
+            // only once the sweep would have asked about it.
+            @org.springframework.beans.factory.annotation.Value(
+                            com.finapp.app.payments.PaymentSweeperSchedule.DISPATCHED_AGE)
+                    java.time.Duration dispatchedAge) {
         com.finapp.payments.PaymentAttemptStore<java.sql.Connection> attempts =
                 new com.finapp.payments.JdbcPaymentAttemptStore();
         com.finapp.payments.RefundStore<java.sql.Connection> refunds =
                 new com.finapp.payments.JdbcRefundStore();
         return new PaymentMetrics(
-                connection -> reading(attempts.unknownReading(connection)),
-                connection -> reading(refunds.unknownReading(connection)),
+                connection -> reading(attempts.unknownReading(connection, dispatchedAge)),
+                connection -> reading(refunds.unknownReading(connection, dispatchedAge)),
                 dataSource::getConnection,
                 clock,
                 registry);
@@ -187,6 +279,30 @@ class TelemetryConfiguration {
     private static PaymentMetrics.Reading reading(
             com.finapp.payments.PaymentAttemptStore.UnknownReading stored) {
         return new PaymentMetrics.Reading(stored.active(), stored.oldestAgeSeconds());
+    }
+
+    /**
+     * The pay-by-bank gauges (`P7-TSK-009`): the awaiting-payer age {@code AWAITING_PAYER}
+     * is deliberately excluded from the stuck gauges above, and the suspense parkings —
+     * {@code INV-REC-05}'s standing alert. The {@code paymentMetrics} stance verbatim.
+     */
+    @Bean
+    PayInMetrics payInMetrics(DataSource dataSource, Clock clock, MeterRegistry registry) {
+        com.finapp.payments.PaymentAttemptStore<java.sql.Connection> attempts =
+                new com.finapp.payments.JdbcPaymentAttemptStore();
+        com.finapp.payments.UnmatchedConfirmationStore<java.sql.Connection> unmatched =
+                new com.finapp.payments.JdbcUnmatchedConfirmationStore();
+        return new PayInMetrics(
+                connection -> payInReading(attempts.awaitingReading(connection)),
+                connection -> payInReading(unmatched.parkedReading(connection)),
+                dataSource::getConnection,
+                clock,
+                registry);
+    }
+
+    private static PayInMetrics.Reading payInReading(
+            com.finapp.payments.PaymentAttemptStore.UnknownReading stored) {
+        return new PayInMetrics.Reading(stored.active(), stored.oldestAgeSeconds());
     }
 
     /**

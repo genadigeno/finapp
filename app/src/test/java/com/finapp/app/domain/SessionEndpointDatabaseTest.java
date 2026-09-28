@@ -1,6 +1,7 @@
 package com.finapp.app.domain;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
 import com.finapp.identity.AssuranceLevel;
 import com.finapp.identity.DeviceDescription;
@@ -74,6 +75,10 @@ class SessionEndpointDatabaseTest {
      */
     @org.springframework.beans.factory.annotation.Autowired
     private com.finapp.app.session.SessionController controller;
+
+    /** A real permission route's bean, for the same reason: the declaration is read off it. */
+    @org.springframework.beans.factory.annotation.Autowired
+    private com.finapp.app.merchant.MerchantOperationsController merchantOperations;
 
     @org.springframework.beans.factory.annotation.Autowired
     private org.springframework.transaction.support.TransactionTemplate sessionTransactions;
@@ -314,6 +319,61 @@ class SessionEndpointDatabaseTest {
         interceptor.afterCompletion(request, response, handler, new IllegalStateException("boom"));
 
         assertThat(com.finapp.platform.security.SecurityContext.current()).isEmpty();
+    }
+
+    /**
+     * The path the test above cannot reach: the refusal thrown by preHandle ITSELF. Spring runs
+     * afterCompletion only for an interceptor whose preHandle returned, so this test deliberately
+     * does not call it - calling it would prove a cleanup the real chain never performs. Found by
+     * the Phase 6 -> 7 transition's security audit: a denied session's identity stayed on the
+     * pooled worker, and the next request on that thread found an actor it never established.
+     */
+    @Test
+    @DisplayName("a permission denial leaves the thread clean, though Spring never runs this"
+            + " interceptor's afterCompletion when its preHandle throws")
+    @SuppressWarnings("try") // The correlation scope is used for its close side effect.
+    void aPermissionDenialLeavesTheThreadClean() throws Exception {
+        IdentityId withoutRoles = givenAnIdentity();
+        Issued current = givenALiveSession(withoutRoles, null);
+
+        var request =
+                new org.springframework.mock.web.MockHttpServletRequest(
+                        "GET", "/operator/merchants/" + UUID.randomUUID());
+        request.addHeader("Authorization", "Bearer " + current.plaintext());
+        var response = new org.springframework.mock.web.MockHttpServletResponse();
+        var handler =
+                new org.springframework.web.method.HandlerMethod(
+                        merchantOperations,
+                        com.finapp.app.merchant.MerchantOperationsController.class.getMethod(
+                                "viewMerchant", String.class));
+
+        assertThat(com.finapp.platform.security.SecurityContext.current())
+                .as("precondition: nothing established before the interceptor runs")
+                .isEmpty();
+
+        // The correlation scope a real request has from CorrelationFilter, outside this
+        // interceptor: the denial is audited, and its record carries the identifier.
+        try (var flow =
+                com.finapp.platform.correlation.CorrelationContext.enter(
+                        com.finapp.sharedkernel.correlation.Correlation.startingWith(
+                                com.finapp.sharedkernel.correlation.CorrelationId.generate(
+                                        IDS)))) {
+            assertThatThrownBy(() -> interceptor.preHandle(request, response, handler))
+                    .isInstanceOf(com.finapp.platform.api.ApiException.class)
+                    .satisfies(
+                            refusal ->
+                                    assertThat(
+                                                    ((com.finapp.platform.api.ApiException)
+                                                                    refusal)
+                                                            .errorCode())
+                                            .isEqualTo(
+                                                    com.finapp.platform.api.PlatformErrorCode
+                                                            .FORBIDDEN));
+        }
+
+        assertThat(com.finapp.platform.security.SecurityContext.current())
+                .as("a refused request must not leave its caller on the thread for the next one")
+                .isEmpty();
     }
 
     @Test

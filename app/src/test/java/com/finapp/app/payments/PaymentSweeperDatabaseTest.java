@@ -96,6 +96,15 @@ class PaymentSweeperDatabaseTest {
 
     private static final Clock CLOCK = Clock.systemUTC();
     private static final IdGenerator IDS = new IdGenerator(CLOCK, new SecureRandom());
+
+    /**
+     * "Due now" is the smallest positive bound, never zero: since the Phase 6 → 7 transition the
+     * sweep refuses a bound that would let it conclude NEVER_RECEIVED of a request still in flight
+     * (the payout suite's constant, for the payout's same finding at `P6-DOC-001`). A microsecond
+     * is below anything these tests can observe between a dispatch and its sweep.
+     */
+    private static final Duration DUE_NOW = Duration.ofNanos(1_000);
+
     private static final CurrencyCode EUR = CurrencyCode.of("EUR");
     private static final Money AMOUNT = Money.ofMinorUnits(12_00, EUR);
     private static final byte[] PSP_KEY =
@@ -158,7 +167,7 @@ class PaymentSweeperDatabaseTest {
         PaymentAttempt stranded = strandedDispatch(holder);
         queryAnswers(stranded.authorizationReference(), "approved", "psp_q-auth");
 
-        sweeper(Duration.ZERO, Duration.ZERO).sweep();
+        sweeper(DUE_NOW, DUE_NOW).sweep();
 
         // Row-scoped, deliberately: the shared database carries other suites' stranded rows,
         // and the tally is telemetry - the count of record is THIS row and ITS tables.
@@ -177,7 +186,7 @@ class PaymentSweeperDatabaseTest {
         String captureReference = captureReference(attemptId);
         queryAnswers(new ProviderIdempotencyReference(captureReference), "approved", "psp_q-cap");
 
-        sweeper(Duration.ZERO, Duration.ZERO).sweep();
+        sweeper(DUE_NOW, DUE_NOW).sweep();
 
         assertThat(attemptStatus(attemptId)).isEqualTo("CAPTURED");
         assertThat(intentStatus(holder.intent())).isEqualTo("SUCCEEDED");
@@ -186,7 +195,7 @@ class PaymentSweeperDatabaseTest {
         // The second sweep: a terminal is never a candidate, so nothing touches the row and
         // the entry count holds - asserted on the row's own tables (the tally is fleet-wide
         // over a shared test database, so it is telemetry here, not the count of record).
-        sweeper(Duration.ZERO, Duration.ZERO).sweep();
+        sweeper(DUE_NOW, DUE_NOW).sweep();
         assertThat(entriesByReference(attemptId)).isEqualTo(1);
         assertThat(transitionCount(attemptId, "CAPTURED")).isEqualTo(1);
     }
@@ -220,8 +229,8 @@ class PaymentSweeperDatabaseTest {
                                                                                         .generate(
                                                                                                 IDS)))) {
                                                             return sweeper(
-                                                                            Duration.ZERO,
-                                                                            Duration.ZERO)
+                                                                            DUE_NOW,
+                                                                            DUE_NOW)
                                                                     .sweep();
                                                         }
                                                     }))
@@ -240,6 +249,17 @@ class PaymentSweeperDatabaseTest {
         assertThat(entriesByReference(attemptId)).as("one posting, whoever won").isEqualTo(1);
         assertThat(transitionCount(attemptId, "CAPTURED")).isEqualTo(1);
         assertThat(attemptStatus(attemptId)).isEqualTo("CAPTURED");
+        // And ONE outcome record for the one move (the Phase 6 -> 7 transition): the losers
+        // applied nothing and record nothing - before, each appended a record naming the verdict
+        // it held, ten records for one transition.
+        assertThat(
+                        count(
+                                "SELECT count(*) FROM platform.audit_record"
+                                        + " WHERE operation = 'payments.PaymentOutcomeApplied'"
+                                        + " AND change_summary LIKE ?",
+                                "attempt=" + attemptId + ", %attemptStatus=CAPTURED%"))
+                .as("one outcome record for the one CAPTURED transition")
+                .isEqualTo(1);
     }
 
     @Test
@@ -267,7 +287,7 @@ class PaymentSweeperDatabaseTest {
                                             CorrelationContext.enter(
                                                     Correlation.startingWith(
                                                             CorrelationId.generate(IDS)))) {
-                                        return sweeper(Duration.ZERO, Duration.ZERO).sweep();
+                                        return sweeper(DUE_NOW, DUE_NOW).sweep();
                                     }
                                 }));
                 final int n = i;
@@ -323,7 +343,7 @@ class PaymentSweeperDatabaseTest {
                 200,
                 "{\"status\":\"unrecognised\"}");
 
-        sweeper(Duration.ZERO, Duration.ZERO).sweep();
+        sweeper(DUE_NOW, DUE_NOW).sweep();
 
         assertThat(attemptStatus(stranded.id())).isEqualTo("FAILED");
         assertThat(failureReason(stranded.id()))
@@ -344,12 +364,12 @@ class PaymentSweeperDatabaseTest {
                 SimulatedCardPspAdapter.OPERATIONS_PATH
                         + strandedBroken.authorizationReference().value(),
                 500);
-        sweeper(Duration.ZERO, Duration.ZERO).sweep();
+        sweeper(DUE_NOW, DUE_NOW).sweep();
         assertThat(attemptStatus(strandedBroken.id())).isEqualTo("AUTH_UNKNOWN");
 
         // The second sweep: still indeterminate, still AUTH_UNKNOWN, never FAILED - the next
         // tick simply asks again (INV-LIFE-03), and exactly one UNKNOWN transition ever lands.
-        sweeper(Duration.ZERO, Duration.ZERO).sweep();
+        sweeper(DUE_NOW, DUE_NOW).sweep();
         assertThat(attemptStatus(strandedBroken.id())).isEqualTo("AUTH_UNKNOWN");
         assertThat(transitionCount(strandedBroken.id(), "AUTH_UNKNOWN")).isEqualTo(1);
 
@@ -365,7 +385,7 @@ class PaymentSweeperDatabaseTest {
                         + strandedMisrouted.authorizationReference().value(),
                 404,
                 "<html><body>404 Not Found - gateway</body></html>");
-        sweeper(Duration.ZERO, Duration.ZERO).sweep();
+        sweeper(DUE_NOW, DUE_NOW).sweep();
         assertThat(attemptStatus(strandedMisrouted.id())).isEqualTo("AUTH_UNKNOWN");
         assertThat(failureReason(strandedMisrouted.id())).isNull();
     }
@@ -424,6 +444,11 @@ class PaymentSweeperDatabaseTest {
                     }
 
                     @Override
+                    public ProviderAnswer voidAuthorization(VoidRequest request) {
+                        return delegate.voidAuthorization(request);
+                    }
+
+                    @Override
                     public QueryAnswer query(ProviderIdempotencyReference ourReference) {
                         if (ourReference.equals(poisoned.authorizationReference())) {
                             throw new IllegalStateException("poisoned row");
@@ -433,8 +458,13 @@ class PaymentSweeperDatabaseTest {
                 };
         PaymentSweeper sweeper =
                 new PaymentSweeper(
-                        runner, attempts, intents, evidence, throwingForFirst, outcomes(),
-                        IDS, CLOCK, Duration.ZERO, Duration.ZERO, 50);
+                        runner, attempts, intents, new com.finapp.payments.JdbcRefundStore(),
+                        evidence, throwingForFirst, outcomes(),
+                        new PaymentCapture(
+                                runner, intents, attempts, evidence, throwingForFirst, outcomes(),
+                                voids(), new JdbcAuditWriter(), IDS, CLOCK),
+                        voids(),
+                        IDS, CLOCK, DUE_NOW, DUE_NOW, 50);
 
         PaymentSweeper.SweepResult result = sweeper.sweep();
 
@@ -447,9 +477,123 @@ class PaymentSweeperDatabaseTest {
                 .isEqualTo("AUTH_DISPATCHED");
     }
 
+    @Test
+    @DisplayName("the stranded-authorization chain leg honours the capture mode: MANUAL rests,"
+            + " AUTOMATIC moves (P7-TSK-002)")
+    void theChainLegHonoursTheCaptureMode() throws Exception {
+        UUID manualAttempt = IDS.next();
+        UUID automaticAttempt = IDS.next();
+        try (Connection app = DatabaseRoles.application()) {
+            seedAgedAuthorized(app, manualAttempt, "MANUAL");
+            seedAgedAuthorized(app, automaticAttempt, "AUTOMATIC");
+        }
+
+        sweeper(DUE_NOW, DUE_NOW).sweep();
+
+        // Row-scoped, as ever. The MANUAL intent's authorization is a reservation awaiting a
+        // person, and the sweeper is not that person (ADR-0059; the mode is V012's birth
+        // fact): resting is the correct outcome, not a missed row.
+        assertThat(oneString(STATUS_BY_ID, manualAttempt)).isEqualTo("AUTHORIZED");
+        assertThat(count(EVIDENCE_BY_ID, manualAttempt)).as("not even dispatched").isZero();
+        // The AUTOMATIC sibling - same age, same shape, differing in nothing but the mode -
+        // is exactly what the leg is FOR: capture follows authorization without a further
+        // decision, so the leg moved it (whatever the provider then answered).
+        assertThat(oneString(STATUS_BY_ID, automaticAttempt)).isNotEqualTo("AUTHORIZED");
+    }
+
+    @Test
+    @DisplayName("the card sweep is the two-step machine's own: another machine's aged rows"
+            + " rest, never queried (P7-TSK-002, INV-RAIL-01)")
+    void anotherMachinesRowsAreNotSwept() throws Exception {
+        UUID awaiting = IDS.next();
+        UUID unknown = IDS.next();
+        try (Connection app = DatabaseRoles.application()) {
+            seedAgedPushRow(app, awaiting, "AWAITING_PAYER");
+            seedAgedPushRow(app, unknown, "EXECUTION_UNKNOWN");
+        }
+
+        sweeper(DUE_NOW, DUE_NOW).sweep();
+
+        // A push execution has no dispatch reference to query by (V012 binds that fact to
+        // the two-step model), so the card sweep selecting one would already be a crash. Its
+        // ageing and resolution arrive with its rail's sweep (P7-TSK-009).
+        assertThat(oneString(STATUS_BY_ID, awaiting)).isEqualTo("AWAITING_PAYER");
+        assertThat(oneString(STATUS_BY_ID, unknown)).isEqualTo("EXECUTION_UNKNOWN");
+        assertThat(count(EVIDENCE_BY_ID, awaiting) + count(EVIDENCE_BY_ID, unknown))
+                .as("not even queried")
+                .isZero();
+    }
+
     // -----------------------------------------------------------------
     // Fixtures
     // -----------------------------------------------------------------
+
+    private static final String STATUS_BY_ID =
+            "SELECT status FROM payments.payment_attempt WHERE id = ?";
+    private static final String EVIDENCE_BY_ID =
+            "SELECT count(*) FROM payments.provider_evidence WHERE attempt_id = ?";
+
+    /** A raw aged AUTHORIZED attempt on an intent born with {@code captureMode} (V012). */
+    private static void seedAgedAuthorized(Connection app, UUID attempt, String captureMode)
+            throws SQLException {
+        UUID intent = seedRawIntent(app, captureMode);
+        execute(app,
+                "INSERT INTO payments.payment_attempt (id, intent_id, auth_reference,"
+                        + " auth_provider_reference, authorized_amount_minor,"
+                        + " authorized_currency, authorized_scale, status, created_at, rail,"
+                        + " interaction_model)"
+                        + " VALUES (?, ?, ?, ?, 1200, 'EUR', 2, 'AUTHORIZED',"
+                        + " now() - interval '2 hour', 'card', 'TWO_STEP')",
+                attempt, intent,
+                "auth-chain-" + UUID.randomUUID(), "psp-chain-" + UUID.randomUUID());
+    }
+
+    /** A raw aged PUSH-model row: no dispatch reference, no two-step fact (V012's shape). */
+    private static void seedAgedPushRow(Connection app, UUID attempt, String status)
+            throws SQLException {
+        UUID intent = seedRawIntent(app, "AUTOMATIC");
+        execute(app,
+                "INSERT INTO payments.payment_attempt (id, intent_id, status, created_at,"
+                        // The push birth facts V017 requires (P7-TSK-009).
+                        + " rail, interaction_model, end_to_end_reference,"
+                        + " last_dispatched_at)"
+                        + " VALUES (?, ?, 'AWAITING_PAYER', now() - interval '2 hour',"
+                        + " 'push-test', 'PUSH', ?, now() - interval '2 hour')",
+                attempt, intent,
+                java.util.UUID.randomUUID().toString().replace("-", ""));
+        if (!status.equals("AWAITING_PAYER")) {
+            execute(app, "UPDATE payments.payment_attempt SET status ="
+                    + " 'EXECUTION_DISPATCHED' WHERE id = ?", attempt);
+        }
+        if (status.equals("EXECUTION_UNKNOWN")) {
+            execute(app, "UPDATE payments.payment_attempt SET status = 'EXECUTION_UNKNOWN'"
+                    + " WHERE id = ?", attempt);
+        }
+    }
+
+    /** The party -> customer -> intent chain, raw - the metrics suite's seeding idiom. */
+    private static UUID seedRawIntent(Connection app, String captureMode) throws SQLException {
+        // Every identifier a store may rehydrate into a typed id must be a UUIDv7
+        // (ADR-0013) - the chain leg loads these rows through the real stores.
+        UUID party = IDS.next();
+        UUID customer = IDS.next();
+        UUID intent = IDS.next();
+        execute(app,
+                "INSERT INTO party.party (id, kind, display_name, registered_at)"
+                        + " VALUES (?, 'PERSON', 'Sweep Mode Subject', now())",
+                party);
+        execute(app,
+                "INSERT INTO party.customer (id, party_id, status, opened_at,"
+                        + " status_changed_at) VALUES (?, ?, 'ACTIVE', now(), now())",
+                customer, party);
+        execute(app,
+                "INSERT INTO payments.payment_intent (id, party_id, customer_id,"
+                        + " payment_method_id, credit_account_id, amount_minor, currency,"
+                        + " scale, status, created_at, capture_mode)"
+                        + " VALUES (?, ?, ?, ?, ?, 1200, 'EUR', 2, 'PROCESSING', now(), ?)",
+                intent, party, customer, IDS.next(), IDS.next(), captureMode);
+        return intent;
+    }
 
     private record Holder(
             UUID party, Actor person, PaymentIntentId intent, LedgerAccountId wallet) {}
@@ -471,9 +615,9 @@ class PaymentSweeperDatabaseTest {
                             + " now() - interval '1 hour', now() - interval '1 hour')",
                     customer, party);
             execute(app,
-                    "INSERT INTO paymentmethods.payment_method (id, party_id, token_reference,"
+                    "INSERT INTO paymentmethods.payment_method (id, party_id, kind, token_reference,"
                             + " brand, display_suffix, expiry_month, expiry_year, status,"
-                            + " created_at) VALUES (?, ?, ?, 'Visa', '4242', 12, 2030,"
+                            + " created_at) VALUES (?, ?, 'CARD_TOKEN', ?, 'Visa', '4242', 12, 2030,"
                             + " 'ACTIVE', now())",
                     method, party, "tok-sweep-" + UUID.randomUUID());
         }
@@ -504,7 +648,8 @@ class PaymentSweeperDatabaseTest {
                                                     new JdbcAuditWriter(),
                                                     new JdbcOutboxWriter(),
                                                     IDS,
-                                                    CLOCK)
+                                                    CLOCK,
+                                                    PaymentCreation.IDEMPOTENCY_SCOPE)
                                             .create(
                                                     uow,
                                                     new PaymentCreation.CreatePaymentCommand(
@@ -517,7 +662,7 @@ class PaymentSweeperDatabaseTest {
                             uow ->
                                     intents.findById(uow, created.intent())
                                             .orElseThrow()
-                                            .walletAccount());
+                                            .creditAccount());
             return new Holder(party, person, created.intent(), wallet);
         } finally {
             flow.close();
@@ -539,6 +684,7 @@ class PaymentSweeperDatabaseTest {
                                     IDS,
                                     CLOCK,
                                     holder.intent(),
+                                    SimulatedCardPspAdapter.RAIL.id(),
                                     new ProviderIdempotencyReference("swp-" + IDS.next()));
                     attempts.insert(uow, attempt);
                     return attempt;
@@ -559,8 +705,21 @@ class PaymentSweeperDatabaseTest {
                         Correlation.startingWith(CorrelationId.of("cu-" + UUID.randomUUID())));
         try {
             new PaymentConfirmation(
-                            runner, intents, attempts, evidence, participants, adapter(),
-                            outcomes(), new JdbcAuditWriter(), IDS, CLOCK)
+                runner,
+                intents,
+                attempts,
+                evidence,
+                participants,
+                adapter(),
+                outcomes(),
+                new com.finapp.payments.JdbcRoutingStore(),
+                com.finapp.payments.PaymentRails.of(java.util.List.of(SimulatedCardPspAdapter.RAIL)),
+                new JdbcAuditWriter(),
+                new JdbcOutboxWriter(),
+                IDS,
+                CLOCK,
+                com.finapp.payments.RoutingTelemetry.NONE,
+                java.util.Optional.empty())
                     .confirm(holder.party(), holder.intent());
             PaymentAttemptId attemptId =
                     runner.inTransaction(
@@ -570,7 +729,7 @@ class PaymentSweeperDatabaseTest {
                                             .id());
             new PaymentCapture(
                             runner, intents, attempts, evidence, adapter(), outcomes(),
-                            new JdbcAuditWriter(), IDS, CLOCK)
+                            voids(), new JdbcAuditWriter(), IDS, CLOCK)
                     .capture(attemptId);
             assertThat(attemptStatus(attemptId)).isEqualTo("CAPTURE_UNKNOWN");
             psp.reset();
@@ -581,10 +740,24 @@ class PaymentSweeperDatabaseTest {
         }
     }
 
+    /** The void command over the same stores (P7-TSK-004) - the capture idiom's sibling. */
+    private com.finapp.payments.PaymentVoid voids() {
+        return new com.finapp.payments.PaymentVoid(
+                runner, intents, attempts, evidence, adapter(), outcomes(),
+                com.finapp.payments.PaymentRails.of(
+                        java.util.List.of(SimulatedCardPspAdapter.RAIL)),
+                new JdbcAuditWriter(), IDS, CLOCK);
+    }
+
     private PaymentSweeper sweeper(Duration dispatchedAge, Duration unknownAge) {
         return new PaymentSweeper(
-                runner, attempts, intents, evidence, adapter(), outcomes(), IDS, CLOCK,
-                dispatchedAge, unknownAge, 50);
+                runner, attempts, intents, new com.finapp.payments.JdbcRefundStore(), evidence,
+                adapter(), outcomes(),
+                new PaymentCapture(
+                        runner, intents, attempts, evidence, adapter(), outcomes(),
+                        voids(), new JdbcAuditWriter(), IDS, CLOCK),
+                voids(),
+                IDS, CLOCK, dispatchedAge, unknownAge, 50);
     }
 
     /** A registry of this suite's own: the meters' wiring is the telemetry suites'. */
@@ -633,7 +806,9 @@ class PaymentSweeperDatabaseTest {
                         new com.finapp.payments.WalletTopUpComposition(),
                         // No completion: these suites' payments belong to no checkout
                         // session, and the production consumer is wired in CheckoutBeans.
-                        landed -> {}),
+                        landed -> {},
+                        new com.finapp.app.telemetry.MerchantMeters(
+                                new io.micrometer.core.instrument.simple.SimpleMeterRegistry())),
                 // THE REFUND'S MIRROR SEAM (P6-TSK-014), production's own for the same
                 // reason: every refund in this suite falls back to Phase 5's two lines, and
                 // proving that through the real composition is what makes "byte-identical"
@@ -650,7 +825,25 @@ class PaymentSweeperDatabaseTest {
                 new JdbcAuditWriter(),
                 new JdbcOutboxWriter(),
                 IDS,
-                CLOCK);
+                CLOCK,
+                com.finapp.payments.PaymentRails.of(java.util.List.of(SimulatedCardPspAdapter.RAIL)),
+                new com.finapp.payments.JdbcUnmatchedConfirmationStore(),
+                new com.finapp.ledger.JdbcLedgerAccountStore(),
+                // The dispute money (P7-TSK-013), production-shaped: a failed refund here
+                // locks its card attempt first and finds no chargeback.
+                com.finapp.app.payments.ChargebackAccountingFixture.over(
+                        new PostingService(
+                                executor(),
+                                new JdbcJournalEntryStore(IDS),
+                                new JdbcAuditWriter(),
+                                new JdbcOutboxWriter(),
+                                new JdbcBalanceProjection(),
+                                IDS,
+                                CLOCK,
+                                PostingObserver.NONE),
+                        com.finapp.payments.PaymentRails.of(java.util.List.of(SimulatedCardPspAdapter.RAIL)),
+                        IDS,
+                        CLOCK));
     }
 
     private SimulatedCardPspAdapter adapter() {
@@ -678,11 +871,39 @@ class PaymentSweeperDatabaseTest {
                 new com.finapp.payments.JdbcRefundStore(),
                 meters(),
                 outcomes(),
+                new com.finapp.payments.PaymentClearing(
+                        new com.finapp.payments.JdbcClearingRecordStore(),
+                        new com.finapp.platform.outbox.JdbcOutboxWriter(),
+                        IDS,
+                        CLOCK),
                 new InboxConsumer<>(new JdbcInboxRecordStore(), CLOCK, Duration.ofDays(14)),
                 new tools.jackson.databind.ObjectMapper(),
                 CLOCK,
                 template,
-                dataSource);
+                dataSource,
+                new com.finapp.payments.DisputeNotifications(
+                        new com.finapp.payments.JdbcDisputeStore(),
+                        intents,
+                        new JdbcAuditWriter(),
+                        new com.finapp.platform.outbox.JdbcOutboxWriter(),
+                        IDS,
+                        CLOCK,
+                        // P7-TSK-013: the attempt lock first, and the dispute money.
+                        new com.finapp.payments.JdbcPaymentAttemptStore(),
+                        com.finapp.app.payments.ChargebackAccountingFixture.over(
+                                new PostingService(
+                                        executor(),
+                                        new JdbcJournalEntryStore(IDS),
+                                        new JdbcAuditWriter(),
+                                        new JdbcOutboxWriter(),
+                                        new JdbcBalanceProjection(),
+                                        IDS,
+                                        CLOCK,
+                                        PostingObserver.NONE),
+                                com.finapp.payments.PaymentRails.of(
+                                        java.util.List.of(SimulatedCardPspAdapter.RAIL)),
+                                IDS,
+                                CLOCK)));
     }
 
     private void deliverWebhook(PaymentWebhookService webhooks, String body) {

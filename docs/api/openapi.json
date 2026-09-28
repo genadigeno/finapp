@@ -672,7 +672,7 @@
             }
           }
         },
-        "description": "[422] This merchant has no fee schedule, so a checkout cannot be priced.",
+        "description": "[422] This merchant has no fee schedule for this currency, so a checkout cannot be priced.",
         "headers": {
           "X-Client-Correlation-Id": {
             "$ref": "#/components/headers/X-Client-Correlation-Id"
@@ -707,7 +707,42 @@
             }
           }
         },
-        "description": "[409] This merchant cannot open new checkout sessions.",
+        "description": "[409] This merchant is not trading, so a checkout cannot be opened or paid.",
+        "headers": {
+          "X-Client-Correlation-Id": {
+            "$ref": "#/components/headers/X-Client-Correlation-Id"
+          },
+          "X-Correlation-Id": {
+            "$ref": "#/components/headers/X-Correlation-Id"
+          }
+        }
+      },
+      "checkout.SaleBelowFee": {
+        "content": {
+          "application/problem+json": {
+            "schema": {
+              "allOf": [
+                {
+                  "$ref": "#/components/schemas/ProblemDetail"
+                },
+                {
+                  "properties": {
+                    "code": {
+                      "const": "checkout.SaleBelowFee"
+                    },
+                    "status": {
+                      "const": 422
+                    },
+                    "type": {
+                      "const": "https://finapp.example/problems/checkout.SaleBelowFee"
+                    }
+                  }
+                }
+              ]
+            }
+          }
+        },
+        "description": "[422] This amount does not cover the merchant's fee, so it cannot be sold.",
         "headers": {
           "X-Client-Correlation-Id": {
             "$ref": "#/components/headers/X-Client-Correlation-Id"
@@ -918,6 +953,41 @@
           }
         },
         "description": "[401] Authentication failed.",
+        "headers": {
+          "X-Client-Correlation-Id": {
+            "$ref": "#/components/headers/X-Client-Correlation-Id"
+          },
+          "X-Correlation-Id": {
+            "$ref": "#/components/headers/X-Correlation-Id"
+          }
+        }
+      },
+      "identity.VerifiedChannelAlreadyExists": {
+        "content": {
+          "application/problem+json": {
+            "schema": {
+              "allOf": [
+                {
+                  "$ref": "#/components/schemas/ProblemDetail"
+                },
+                {
+                  "properties": {
+                    "code": {
+                      "const": "identity.VerifiedChannelAlreadyExists"
+                    },
+                    "status": {
+                      "const": 409
+                    },
+                    "type": {
+                      "const": "https://finapp.example/problems/identity.VerifiedChannelAlreadyExists"
+                    }
+                  }
+                }
+              ]
+            }
+          }
+        },
+        "description": "[409] The account already has a verified contact channel of this kind.",
         "headers": {
           "X-Client-Correlation-Id": {
             "$ref": "#/components/headers/X-Client-Correlation-Id"
@@ -1277,6 +1347,146 @@
           }
         }
       },
+      "merchant.DestinationChangeNotOpen": {
+        "content": {
+          "application/problem+json": {
+            "schema": {
+              "allOf": [
+                {
+                  "$ref": "#/components/schemas/ProblemDetail"
+                },
+                {
+                  "properties": {
+                    "code": {
+                      "const": "merchant.DestinationChangeNotOpen"
+                    },
+                    "status": {
+                      "const": 409
+                    },
+                    "type": {
+                      "const": "https://finapp.example/problems/merchant.DestinationChangeNotOpen"
+                    }
+                  }
+                }
+              ]
+            }
+          }
+        },
+        "description": "[409] The payout destination change is no longer open to this decision.",
+        "headers": {
+          "X-Client-Correlation-Id": {
+            "$ref": "#/components/headers/X-Client-Correlation-Id"
+          },
+          "X-Correlation-Id": {
+            "$ref": "#/components/headers/X-Correlation-Id"
+          }
+        }
+      },
+      "merchant.DestinationChangePending": {
+        "content": {
+          "application/problem+json": {
+            "schema": {
+              "allOf": [
+                {
+                  "$ref": "#/components/schemas/ProblemDetail"
+                },
+                {
+                  "properties": {
+                    "code": {
+                      "const": "merchant.DestinationChangePending"
+                    },
+                    "status": {
+                      "const": 409
+                    },
+                    "type": {
+                      "const": "https://finapp.example/problems/merchant.DestinationChangePending"
+                    }
+                  }
+                }
+              ]
+            }
+          }
+        },
+        "description": "[409] A payout destination change is already open for this merchant; withdraw it first.",
+        "headers": {
+          "X-Client-Correlation-Id": {
+            "$ref": "#/components/headers/X-Client-Correlation-Id"
+          },
+          "X-Correlation-Id": {
+            "$ref": "#/components/headers/X-Correlation-Id"
+          }
+        }
+      },
+      "merchant.DestinationNotTokenised": {
+        "content": {
+          "application/problem+json": {
+            "schema": {
+              "allOf": [
+                {
+                  "$ref": "#/components/schemas/ProblemDetail"
+                },
+                {
+                  "properties": {
+                    "code": {
+                      "const": "merchant.DestinationNotTokenised"
+                    },
+                    "status": {
+                      "const": 422
+                    },
+                    "type": {
+                      "const": "https://finapp.example/problems/merchant.DestinationNotTokenised"
+                    }
+                  }
+                }
+              ]
+            }
+          }
+        },
+        "description": "[422] The destination grant was refused; obtain a fresh grant and retry.",
+        "headers": {
+          "X-Client-Correlation-Id": {
+            "$ref": "#/components/headers/X-Client-Correlation-Id"
+          },
+          "X-Correlation-Id": {
+            "$ref": "#/components/headers/X-Correlation-Id"
+          }
+        }
+      },
+      "merchant.DestinationTokenisationUnavailable": {
+        "content": {
+          "application/problem+json": {
+            "schema": {
+              "allOf": [
+                {
+                  "$ref": "#/components/schemas/ProblemDetail"
+                },
+                {
+                  "properties": {
+                    "code": {
+                      "const": "merchant.DestinationTokenisationUnavailable"
+                    },
+                    "status": {
+                      "const": 503
+                    },
+                    "type": {
+                      "const": "https://finapp.example/problems/merchant.DestinationTokenisationUnavailable"
+                    }
+                  }
+                }
+              ]
+            }
+          }
+        },
+        "description": "[503] The destination could not be tokenised right now; retry later.",
+        "headers": {
+          "X-Client-Correlation-Id": {
+            "$ref": "#/components/headers/X-Client-Correlation-Id"
+          },
+          "X-Correlation-Id": {
+            "$ref": "#/components/headers/X-Correlation-Id"
+          }
+        }
+      },
       "merchant.FeeCurrencyMismatch": {
         "content": {
           "application/problem+json": {
@@ -1382,6 +1592,41 @@
           }
         }
       },
+      "merchant.NoEffectiveDestination": {
+        "content": {
+          "application/problem+json": {
+            "schema": {
+              "allOf": [
+                {
+                  "$ref": "#/components/schemas/ProblemDetail"
+                },
+                {
+                  "properties": {
+                    "code": {
+                      "const": "merchant.NoEffectiveDestination"
+                    },
+                    "status": {
+                      "const": 409
+                    },
+                    "type": {
+                      "const": "https://finapp.example/problems/merchant.NoEffectiveDestination"
+                    }
+                  }
+                }
+              ]
+            }
+          }
+        },
+        "description": "[409] The merchant has no effective payout destination.",
+        "headers": {
+          "X-Client-Correlation-Id": {
+            "$ref": "#/components/headers/X-Client-Correlation-Id"
+          },
+          "X-Correlation-Id": {
+            "$ref": "#/components/headers/X-Correlation-Id"
+          }
+        }
+      },
       "merchant.NotEligible": {
         "content": {
           "application/problem+json": {
@@ -1443,6 +1688,216 @@
           }
         },
         "description": "[409] A closed merchant cannot be issued an API key.",
+        "headers": {
+          "X-Client-Correlation-Id": {
+            "$ref": "#/components/headers/X-Client-Correlation-Id"
+          },
+          "X-Correlation-Id": {
+            "$ref": "#/components/headers/X-Correlation-Id"
+          }
+        }
+      },
+      "merchant.NotSettled": {
+        "content": {
+          "application/problem+json": {
+            "schema": {
+              "allOf": [
+                {
+                  "$ref": "#/components/schemas/ProblemDetail"
+                },
+                {
+                  "properties": {
+                    "code": {
+                      "const": "merchant.NotSettled"
+                    },
+                    "status": {
+                      "const": 409
+                    },
+                    "type": {
+                      "const": "https://finapp.example/problems/merchant.NotSettled"
+                    }
+                  }
+                }
+              ]
+            }
+          }
+        },
+        "description": "[409] This merchant is still owed money or has a payment in flight, so it cannot be closed.",
+        "headers": {
+          "X-Client-Correlation-Id": {
+            "$ref": "#/components/headers/X-Client-Correlation-Id"
+          },
+          "X-Correlation-Id": {
+            "$ref": "#/components/headers/X-Correlation-Id"
+          }
+        }
+      },
+      "merchant.NotTrading": {
+        "content": {
+          "application/problem+json": {
+            "schema": {
+              "allOf": [
+                {
+                  "$ref": "#/components/schemas/ProblemDetail"
+                },
+                {
+                  "properties": {
+                    "code": {
+                      "const": "merchant.NotTrading"
+                    },
+                    "status": {
+                      "const": 409
+                    },
+                    "type": {
+                      "const": "https://finapp.example/problems/merchant.NotTrading"
+                    }
+                  }
+                }
+              ]
+            }
+          }
+        },
+        "description": "[409] This merchant cannot initiate payouts while suspended or closed.",
+        "headers": {
+          "X-Client-Correlation-Id": {
+            "$ref": "#/components/headers/X-Client-Correlation-Id"
+          },
+          "X-Correlation-Id": {
+            "$ref": "#/components/headers/X-Correlation-Id"
+          }
+        }
+      },
+      "merchant.PayoutCurrencyMismatch": {
+        "content": {
+          "application/problem+json": {
+            "schema": {
+              "allOf": [
+                {
+                  "$ref": "#/components/schemas/ProblemDetail"
+                },
+                {
+                  "properties": {
+                    "code": {
+                      "const": "merchant.PayoutCurrencyMismatch"
+                    },
+                    "status": {
+                      "const": 422
+                    },
+                    "type": {
+                      "const": "https://finapp.example/problems/merchant.PayoutCurrencyMismatch"
+                    }
+                  }
+                }
+              ]
+            }
+          }
+        },
+        "description": "[422] A payout must be in the merchant's settlement currency.",
+        "headers": {
+          "X-Client-Correlation-Id": {
+            "$ref": "#/components/headers/X-Client-Correlation-Id"
+          },
+          "X-Correlation-Id": {
+            "$ref": "#/components/headers/X-Correlation-Id"
+          }
+        }
+      },
+      "merchant.PayoutProviderUnavailable": {
+        "content": {
+          "application/problem+json": {
+            "schema": {
+              "allOf": [
+                {
+                  "$ref": "#/components/schemas/ProblemDetail"
+                },
+                {
+                  "properties": {
+                    "code": {
+                      "const": "merchant.PayoutProviderUnavailable"
+                    },
+                    "status": {
+                      "const": 503
+                    },
+                    "type": {
+                      "const": "https://finapp.example/problems/merchant.PayoutProviderUnavailable"
+                    }
+                  }
+                }
+              ]
+            }
+          }
+        },
+        "description": "[503] Payouts are unavailable right now; retry later.",
+        "headers": {
+          "X-Client-Correlation-Id": {
+            "$ref": "#/components/headers/X-Client-Correlation-Id"
+          },
+          "X-Correlation-Id": {
+            "$ref": "#/components/headers/X-Correlation-Id"
+          }
+        }
+      },
+      "merchant.PayoutUnfunded": {
+        "content": {
+          "application/problem+json": {
+            "schema": {
+              "allOf": [
+                {
+                  "$ref": "#/components/schemas/ProblemDetail"
+                },
+                {
+                  "properties": {
+                    "code": {
+                      "const": "merchant.PayoutUnfunded"
+                    },
+                    "status": {
+                      "const": 409
+                    },
+                    "type": {
+                      "const": "https://finapp.example/problems/merchant.PayoutUnfunded"
+                    }
+                  }
+                }
+              ]
+            }
+          }
+        },
+        "description": "[409] The payable cannot fund this payout.",
+        "headers": {
+          "X-Client-Correlation-Id": {
+            "$ref": "#/components/headers/X-Client-Correlation-Id"
+          },
+          "X-Correlation-Id": {
+            "$ref": "#/components/headers/X-Correlation-Id"
+          }
+        }
+      },
+      "merchant.SelfApprovalRefused": {
+        "content": {
+          "application/problem+json": {
+            "schema": {
+              "allOf": [
+                {
+                  "$ref": "#/components/schemas/ProblemDetail"
+                },
+                {
+                  "properties": {
+                    "code": {
+                      "const": "merchant.SelfApprovalRefused"
+                    },
+                    "status": {
+                      "const": 409
+                    },
+                    "type": {
+                      "const": "https://finapp.example/problems/merchant.SelfApprovalRefused"
+                    }
+                  }
+                }
+              ]
+            }
+          }
+        },
+        "description": "[409] A payout destination change requires a second approver distinct from its proposer.",
         "headers": {
           "X-Client-Correlation-Id": {
             "$ref": "#/components/headers/X-Client-Correlation-Id"
@@ -1522,6 +1977,76 @@
           }
         }
       },
+      "paymentmethods.GrantExchangeRefused": {
+        "content": {
+          "application/problem+json": {
+            "schema": {
+              "allOf": [
+                {
+                  "$ref": "#/components/schemas/ProblemDetail"
+                },
+                {
+                  "properties": {
+                    "code": {
+                      "const": "paymentmethods.GrantExchangeRefused"
+                    },
+                    "status": {
+                      "const": 422
+                    },
+                    "type": {
+                      "const": "https://finapp.example/problems/paymentmethods.GrantExchangeRefused"
+                    }
+                  }
+                }
+              ]
+            }
+          }
+        },
+        "description": "[422] The rail provider refused the grant; obtain a fresh grant and retry.",
+        "headers": {
+          "X-Client-Correlation-Id": {
+            "$ref": "#/components/headers/X-Client-Correlation-Id"
+          },
+          "X-Correlation-Id": {
+            "$ref": "#/components/headers/X-Correlation-Id"
+          }
+        }
+      },
+      "paymentmethods.GrantExchangeUnavailable": {
+        "content": {
+          "application/problem+json": {
+            "schema": {
+              "allOf": [
+                {
+                  "$ref": "#/components/schemas/ProblemDetail"
+                },
+                {
+                  "properties": {
+                    "code": {
+                      "const": "paymentmethods.GrantExchangeUnavailable"
+                    },
+                    "status": {
+                      "const": 503
+                    },
+                    "type": {
+                      "const": "https://finapp.example/problems/paymentmethods.GrantExchangeUnavailable"
+                    }
+                  }
+                }
+              ]
+            }
+          }
+        },
+        "description": "[503] The bank account could not be registered right now; retry later.",
+        "headers": {
+          "X-Client-Correlation-Id": {
+            "$ref": "#/components/headers/X-Client-Correlation-Id"
+          },
+          "X-Correlation-Id": {
+            "$ref": "#/components/headers/X-Correlation-Id"
+          }
+        }
+      },
       "paymentmethods.InstrumentNotTokenised": {
         "content": {
           "application/problem+json": {
@@ -1548,6 +2073,41 @@
           }
         },
         "description": "[422] The tokenisation grant was refused; obtain a fresh grant and retry.",
+        "headers": {
+          "X-Client-Correlation-Id": {
+            "$ref": "#/components/headers/X-Client-Correlation-Id"
+          },
+          "X-Correlation-Id": {
+            "$ref": "#/components/headers/X-Correlation-Id"
+          }
+        }
+      },
+      "paymentmethods.PayeeCheckNoMatch": {
+        "content": {
+          "application/problem+json": {
+            "schema": {
+              "allOf": [
+                {
+                  "$ref": "#/components/schemas/ProblemDetail"
+                },
+                {
+                  "properties": {
+                    "code": {
+                      "const": "paymentmethods.PayeeCheckNoMatch"
+                    },
+                    "status": {
+                      "const": 409
+                    },
+                    "type": {
+                      "const": "https://finapp.example/problems/paymentmethods.PayeeCheckNoMatch"
+                    }
+                  }
+                }
+              ]
+            }
+          }
+        },
+        "description": "[409] The payee check found no match; registering needs the customer's explicit acknowledgement.",
         "headers": {
           "X-Client-Correlation-Id": {
             "$ref": "#/components/headers/X-Client-Correlation-Id"
@@ -1618,6 +2178,251 @@
           }
         },
         "description": "[422] The payment currency must match your account's currency.",
+        "headers": {
+          "X-Client-Correlation-Id": {
+            "$ref": "#/components/headers/X-Client-Correlation-Id"
+          },
+          "X-Correlation-Id": {
+            "$ref": "#/components/headers/X-Correlation-Id"
+          }
+        }
+      },
+      "payments.DisputeAlreadyAnswered": {
+        "content": {
+          "application/problem+json": {
+            "schema": {
+              "allOf": [
+                {
+                  "$ref": "#/components/schemas/ProblemDetail"
+                },
+                {
+                  "properties": {
+                    "code": {
+                      "const": "payments.DisputeAlreadyAnswered"
+                    },
+                    "status": {
+                      "const": 409
+                    },
+                    "type": {
+                      "const": "https://finapp.example/problems/payments.DisputeAlreadyAnswered"
+                    }
+                  }
+                }
+              ]
+            }
+          }
+        },
+        "description": "[409] This dispute already has an answer in progress or taken.",
+        "headers": {
+          "X-Client-Correlation-Id": {
+            "$ref": "#/components/headers/X-Client-Correlation-Id"
+          },
+          "X-Correlation-Id": {
+            "$ref": "#/components/headers/X-Correlation-Id"
+          }
+        }
+      },
+      "payments.DisputeAnsweredByItsMerchant": {
+        "content": {
+          "application/problem+json": {
+            "schema": {
+              "allOf": [
+                {
+                  "$ref": "#/components/schemas/ProblemDetail"
+                },
+                {
+                  "properties": {
+                    "code": {
+                      "const": "payments.DisputeAnsweredByItsMerchant"
+                    },
+                    "status": {
+                      "const": 409
+                    },
+                    "type": {
+                      "const": "https://finapp.example/problems/payments.DisputeAnsweredByItsMerchant"
+                    }
+                  }
+                }
+              ]
+            }
+          }
+        },
+        "description": "[409] This payment's merchant answers its own dispute.",
+        "headers": {
+          "X-Client-Correlation-Id": {
+            "$ref": "#/components/headers/X-Client-Correlation-Id"
+          },
+          "X-Correlation-Id": {
+            "$ref": "#/components/headers/X-Correlation-Id"
+          }
+        }
+      },
+      "payments.DisputeDeadlinePassed": {
+        "content": {
+          "application/problem+json": {
+            "schema": {
+              "allOf": [
+                {
+                  "$ref": "#/components/schemas/ProblemDetail"
+                },
+                {
+                  "properties": {
+                    "code": {
+                      "const": "payments.DisputeDeadlinePassed"
+                    },
+                    "status": {
+                      "const": 409
+                    },
+                    "type": {
+                      "const": "https://finapp.example/problems/payments.DisputeDeadlinePassed"
+                    }
+                  }
+                }
+              ]
+            }
+          }
+        },
+        "description": "[409] The network's deadline to answer this dispute has passed.",
+        "headers": {
+          "X-Client-Correlation-Id": {
+            "$ref": "#/components/headers/X-Client-Correlation-Id"
+          },
+          "X-Correlation-Id": {
+            "$ref": "#/components/headers/X-Correlation-Id"
+          }
+        }
+      },
+      "payments.DisputeEvidenceLimitReached": {
+        "content": {
+          "application/problem+json": {
+            "schema": {
+              "allOf": [
+                {
+                  "$ref": "#/components/schemas/ProblemDetail"
+                },
+                {
+                  "properties": {
+                    "code": {
+                      "const": "payments.DisputeEvidenceLimitReached"
+                    },
+                    "status": {
+                      "const": 422
+                    },
+                    "type": {
+                      "const": "https://finapp.example/problems/payments.DisputeEvidenceLimitReached"
+                    }
+                  }
+                }
+              ]
+            }
+          }
+        },
+        "description": "[422] This dispute already holds the most evidence documents one answer can carry.",
+        "headers": {
+          "X-Client-Correlation-Id": {
+            "$ref": "#/components/headers/X-Client-Correlation-Id"
+          },
+          "X-Correlation-Id": {
+            "$ref": "#/components/headers/X-Correlation-Id"
+          }
+        }
+      },
+      "payments.DisputeEvidenceRequired": {
+        "content": {
+          "application/problem+json": {
+            "schema": {
+              "allOf": [
+                {
+                  "$ref": "#/components/schemas/ProblemDetail"
+                },
+                {
+                  "properties": {
+                    "code": {
+                      "const": "payments.DisputeEvidenceRequired"
+                    },
+                    "status": {
+                      "const": 422
+                    },
+                    "type": {
+                      "const": "https://finapp.example/problems/payments.DisputeEvidenceRequired"
+                    }
+                  }
+                }
+              ]
+            }
+          }
+        },
+        "description": "[422] A representment needs at least one evidence document.",
+        "headers": {
+          "X-Client-Correlation-Id": {
+            "$ref": "#/components/headers/X-Client-Correlation-Id"
+          },
+          "X-Correlation-Id": {
+            "$ref": "#/components/headers/X-Correlation-Id"
+          }
+        }
+      },
+      "payments.DisputeNotRespondable": {
+        "content": {
+          "application/problem+json": {
+            "schema": {
+              "allOf": [
+                {
+                  "$ref": "#/components/schemas/ProblemDetail"
+                },
+                {
+                  "properties": {
+                    "code": {
+                      "const": "payments.DisputeNotRespondable"
+                    },
+                    "status": {
+                      "const": 409
+                    },
+                    "type": {
+                      "const": "https://finapp.example/problems/payments.DisputeNotRespondable"
+                    }
+                  }
+                }
+              ]
+            }
+          }
+        },
+        "description": "[409] This dispute takes no evidence or answer at its current stage.",
+        "headers": {
+          "X-Client-Correlation-Id": {
+            "$ref": "#/components/headers/X-Client-Correlation-Id"
+          },
+          "X-Correlation-Id": {
+            "$ref": "#/components/headers/X-Correlation-Id"
+          }
+        }
+      },
+      "payments.NoEligibleRail": {
+        "content": {
+          "application/problem+json": {
+            "schema": {
+              "allOf": [
+                {
+                  "$ref": "#/components/schemas/ProblemDetail"
+                },
+                {
+                  "properties": {
+                    "code": {
+                      "const": "payments.NoEligibleRail"
+                    },
+                    "status": {
+                      "const": 422
+                    },
+                    "type": {
+                      "const": "https://finapp.example/problems/payments.NoEligibleRail"
+                    }
+                  }
+                }
+              ]
+            }
+          }
+        },
+        "description": "[422] No payment rail can carry this payment right now.",
         "headers": {
           "X-Client-Correlation-Id": {
             "$ref": "#/components/headers/X-Client-Correlation-Id"
@@ -1872,6 +2677,76 @@
           }
         }
       },
+      "payments.ReversalNotSupported": {
+        "content": {
+          "application/problem+json": {
+            "schema": {
+              "allOf": [
+                {
+                  "$ref": "#/components/schemas/ProblemDetail"
+                },
+                {
+                  "properties": {
+                    "code": {
+                      "const": "payments.ReversalNotSupported"
+                    },
+                    "status": {
+                      "const": 409
+                    },
+                    "type": {
+                      "const": "https://finapp.example/problems/payments.ReversalNotSupported"
+                    }
+                  }
+                }
+              ]
+            }
+          }
+        },
+        "description": "[409] This payment's rail does not support reversal.",
+        "headers": {
+          "X-Client-Correlation-Id": {
+            "$ref": "#/components/headers/X-Client-Correlation-Id"
+          },
+          "X-Correlation-Id": {
+            "$ref": "#/components/headers/X-Correlation-Id"
+          }
+        }
+      },
+      "payments.RoutingPolicyNotForward": {
+        "content": {
+          "application/problem+json": {
+            "schema": {
+              "allOf": [
+                {
+                  "$ref": "#/components/schemas/ProblemDetail"
+                },
+                {
+                  "properties": {
+                    "code": {
+                      "const": "payments.RoutingPolicyNotForward"
+                    },
+                    "status": {
+                      "const": 422
+                    },
+                    "type": {
+                      "const": "https://finapp.example/problems/payments.RoutingPolicyNotForward"
+                    }
+                  }
+                }
+              ]
+            }
+          }
+        },
+        "description": "[422] A routing policy version takes effect forward, never backward.",
+        "headers": {
+          "X-Client-Correlation-Id": {
+            "$ref": "#/components/headers/X-Client-Correlation-Id"
+          },
+          "X-Correlation-Id": {
+            "$ref": "#/components/headers/X-Correlation-Id"
+          }
+        }
+      },
       "payments.UnknownInstrument": {
         "content": {
           "application/problem+json": {
@@ -1898,6 +2773,146 @@
           }
         },
         "description": "[422] The payment method does not resolve to an active instrument of yours.",
+        "headers": {
+          "X-Client-Correlation-Id": {
+            "$ref": "#/components/headers/X-Client-Correlation-Id"
+          },
+          "X-Correlation-Id": {
+            "$ref": "#/components/headers/X-Correlation-Id"
+          }
+        }
+      },
+      "payments.UnknownRail": {
+        "content": {
+          "application/problem+json": {
+            "schema": {
+              "allOf": [
+                {
+                  "$ref": "#/components/schemas/ProblemDetail"
+                },
+                {
+                  "properties": {
+                    "code": {
+                      "const": "payments.UnknownRail"
+                    },
+                    "status": {
+                      "const": 422
+                    },
+                    "type": {
+                      "const": "https://finapp.example/problems/payments.UnknownRail"
+                    }
+                  }
+                }
+              ]
+            }
+          }
+        },
+        "description": "[422] The named payment rail is not declared by this platform.",
+        "headers": {
+          "X-Client-Correlation-Id": {
+            "$ref": "#/components/headers/X-Client-Correlation-Id"
+          },
+          "X-Correlation-Id": {
+            "$ref": "#/components/headers/X-Correlation-Id"
+          }
+        }
+      },
+      "payments.WalletPaymentUnfunded": {
+        "content": {
+          "application/problem+json": {
+            "schema": {
+              "allOf": [
+                {
+                  "$ref": "#/components/schemas/ProblemDetail"
+                },
+                {
+                  "properties": {
+                    "code": {
+                      "const": "payments.WalletPaymentUnfunded"
+                    },
+                    "status": {
+                      "const": 422
+                    },
+                    "type": {
+                      "const": "https://finapp.example/problems/payments.WalletPaymentUnfunded"
+                    }
+                  }
+                }
+              ]
+            }
+          }
+        },
+        "description": "[422] The wallet's available balance cannot cover this payment.",
+        "headers": {
+          "X-Client-Correlation-Id": {
+            "$ref": "#/components/headers/X-Client-Correlation-Id"
+          },
+          "X-Correlation-Id": {
+            "$ref": "#/components/headers/X-Correlation-Id"
+          }
+        }
+      },
+      "payments.WithdrawalCurrencyMismatched": {
+        "content": {
+          "application/problem+json": {
+            "schema": {
+              "allOf": [
+                {
+                  "$ref": "#/components/schemas/ProblemDetail"
+                },
+                {
+                  "properties": {
+                    "code": {
+                      "const": "payments.WithdrawalCurrencyMismatched"
+                    },
+                    "status": {
+                      "const": 422
+                    },
+                    "type": {
+                      "const": "https://finapp.example/problems/payments.WithdrawalCurrencyMismatched"
+                    }
+                  }
+                }
+              ]
+            }
+          }
+        },
+        "description": "[422] A withdrawal is priced in its wallet's own currency.",
+        "headers": {
+          "X-Client-Correlation-Id": {
+            "$ref": "#/components/headers/X-Client-Correlation-Id"
+          },
+          "X-Correlation-Id": {
+            "$ref": "#/components/headers/X-Correlation-Id"
+          }
+        }
+      },
+      "payments.WithdrawalUnfunded": {
+        "content": {
+          "application/problem+json": {
+            "schema": {
+              "allOf": [
+                {
+                  "$ref": "#/components/schemas/ProblemDetail"
+                },
+                {
+                  "properties": {
+                    "code": {
+                      "const": "payments.WithdrawalUnfunded"
+                    },
+                    "status": {
+                      "const": 422
+                    },
+                    "type": {
+                      "const": "https://finapp.example/problems/payments.WithdrawalUnfunded"
+                    }
+                  }
+                }
+              ]
+            }
+          }
+        },
+        "description": "[422] The wallet's available balance cannot cover this withdrawal.",
         "headers": {
           "X-Client-Correlation-Id": {
             "$ref": "#/components/headers/X-Client-Correlation-Id"
@@ -2170,6 +3185,23 @@
         ],
         "type": "object"
       },
+      "AvailabilityView": {
+        "properties": {
+          "available": {
+            "type": "boolean"
+          },
+          "changedAt": {
+            "type": "string"
+          },
+          "rail": {
+            "type": "string"
+          },
+          "reason": {
+            "type": "string"
+          }
+        },
+        "type": "object"
+      },
       "BalanceLine": {
         "properties": {
           "available": {
@@ -2316,6 +3348,9 @@
       },
       "ConfirmSessionRequest": {
         "properties": {
+          "instrument": {
+            "type": "string"
+          },
           "paymentMethodId": {
             "format": "uuid",
             "type": "string"
@@ -2325,7 +3360,6 @@
           }
         },
         "required": [
-          "paymentMethodId",
           "sessionToken"
         ],
         "type": "object"
@@ -2432,6 +3466,32 @@
         ],
         "type": "object"
       },
+      "CreateRoutingPolicyVersionRequest": {
+        "properties": {
+          "effectiveFrom": {
+            "format": "date-time",
+            "type": "string"
+          },
+          "reason": {
+            "maxLength": 1000,
+            "minLength": 0,
+            "type": "string"
+          },
+          "rules": {
+            "items": {
+              "$ref": "#/components/schemas/RuleBody"
+            },
+            "maxItems": 50,
+            "minItems": 0,
+            "type": "array"
+          }
+        },
+        "required": [
+          "reason",
+          "rules"
+        ],
+        "type": "object"
+      },
       "CreateSessionRequest": {
         "properties": {
           "amountMinor": {
@@ -2498,6 +3558,39 @@
         ],
         "type": "object"
       },
+      "DisputeEvidenceUploadRequest": {
+        "properties": {
+          "content": {
+            "maxLength": 699052,
+            "minLength": 0,
+            "type": "string"
+          },
+          "contentType": {
+            "enum": [
+              "JPEG",
+              "PNG",
+              "PDF"
+            ],
+            "type": "string"
+          },
+          "kind": {
+            "enum": [
+              "RECEIPT",
+              "PROOF_OF_DELIVERY",
+              "CUSTOMER_COMMUNICATION",
+              "POLICY",
+              "OTHER"
+            ],
+            "type": "string"
+          }
+        },
+        "required": [
+          "content",
+          "contentType",
+          "kind"
+        ],
+        "type": "object"
+      },
       "DocumentUploadRequest": {
         "properties": {
           "content": {
@@ -2550,6 +3643,94 @@
           },
           "sessionToken": {
             "type": "string"
+          }
+        },
+        "type": "object"
+      },
+      "EvidenceContentView": {
+        "properties": {
+          "content": {
+            "type": "string"
+          },
+          "contentLength": {
+            "format": "int32",
+            "type": "integer"
+          },
+          "contentType": {
+            "type": "string"
+          },
+          "evidenceId": {
+            "type": "string"
+          },
+          "kind": {
+            "type": "string"
+          },
+          "uploadedAt": {
+            "type": "string"
+          }
+        },
+        "type": "object"
+      },
+      "EvidenceView": {
+        "properties": {
+          "contentLength": {
+            "format": "int32",
+            "type": "integer"
+          },
+          "contentType": {
+            "type": "string"
+          },
+          "evidenceId": {
+            "type": "string"
+          },
+          "kind": {
+            "type": "string"
+          },
+          "uploadedAt": {
+            "type": "string"
+          }
+        },
+        "type": "object"
+      },
+      "ExplanationView": {
+        "properties": {
+          "amount": {
+            "type": "string"
+          },
+          "chosenRail": {
+            "type": "string"
+          },
+          "currency": {
+            "type": "string"
+          },
+          "decidedAt": {
+            "type": "string"
+          },
+          "direction": {
+            "type": "string"
+          },
+          "instrumentKind": {
+            "type": "string"
+          },
+          "matchedRuleIndex": {
+            "format": "int32",
+            "type": "integer"
+          },
+          "paymentIntentId": {
+            "type": "string"
+          },
+          "policyVersion": {
+            "format": "int32",
+            "type": "integer"
+          },
+          "routingDecisionId": {
+            "type": "string"
+          },
+          "steps": {
+            "items": {
+              "$ref": "#/components/schemas/StepView"
+            },
+            "type": "array"
           }
         },
         "type": "object"
@@ -2720,6 +3901,93 @@
         },
         "type": "object"
       },
+      "MerchantDisputeList": {
+        "properties": {
+          "disputes": {
+            "items": {
+              "$ref": "#/components/schemas/MerchantDisputeSummary"
+            },
+            "type": "array"
+          },
+          "truncated": {
+            "type": "boolean"
+          }
+        },
+        "type": "object"
+      },
+      "MerchantDisputeSummary": {
+        "properties": {
+          "chargebackAmount": {
+            "type": "string"
+          },
+          "chargebackCurrency": {
+            "type": "string"
+          },
+          "disputeId": {
+            "type": "string"
+          },
+          "openedAt": {
+            "type": "string"
+          },
+          "paymentIntentId": {
+            "type": "string"
+          },
+          "reason": {
+            "type": "string"
+          },
+          "stage": {
+            "type": "string"
+          }
+        },
+        "type": "object"
+      },
+      "MerchantDisputeView": {
+        "properties": {
+          "chargebackAmount": {
+            "type": "string"
+          },
+          "chargebackCurrency": {
+            "type": "string"
+          },
+          "disputeId": {
+            "type": "string"
+          },
+          "evidence": {
+            "items": {
+              "$ref": "#/components/schemas/EvidenceView"
+            },
+            "type": "array"
+          },
+          "history": {
+            "items": {
+              "$ref": "#/components/schemas/StageChangeView"
+            },
+            "type": "array"
+          },
+          "openedAt": {
+            "type": "string"
+          },
+          "paymentIntentId": {
+            "type": "string"
+          },
+          "reason": {
+            "type": "string"
+          },
+          "respondBy": {
+            "type": "string"
+          },
+          "responses": {
+            "items": {
+              "$ref": "#/components/schemas/ResponseView"
+            },
+            "type": "array"
+          },
+          "stage": {
+            "type": "string"
+          }
+        },
+        "type": "object"
+      },
       "MerchantFeeScheduleView": {
         "properties": {
           "feeScheduleId": {
@@ -2729,6 +3997,24 @@
             "type": "string"
           }
         },
+        "type": "object"
+      },
+      "MerchantPayoutRequest": {
+        "properties": {
+          "amount": {
+            "minLength": 1,
+            "type": "string"
+          },
+          "currency": {
+            "minLength": 1,
+            "pattern": "[A-Z]{3}",
+            "type": "string"
+          }
+        },
+        "required": [
+          "amount",
+          "currency"
+        ],
         "type": "object"
       },
       "MerchantStandingRequest": {
@@ -2855,6 +4141,184 @@
         ],
         "type": "object"
       },
+      "OperatorDisputeEvidenceUploadRequest": {
+        "properties": {
+          "content": {
+            "maxLength": 699052,
+            "minLength": 0,
+            "type": "string"
+          },
+          "contentType": {
+            "enum": [
+              "JPEG",
+              "PNG",
+              "PDF"
+            ],
+            "type": "string"
+          },
+          "kind": {
+            "enum": [
+              "RECEIPT",
+              "PROOF_OF_DELIVERY",
+              "CUSTOMER_COMMUNICATION",
+              "POLICY",
+              "OTHER"
+            ],
+            "type": "string"
+          },
+          "reason": {
+            "maxLength": 1000,
+            "minLength": 0,
+            "type": "string"
+          }
+        },
+        "required": [
+          "content",
+          "contentType",
+          "kind",
+          "reason"
+        ],
+        "type": "object"
+      },
+      "OperatorDisputeList": {
+        "properties": {
+          "disputes": {
+            "items": {
+              "$ref": "#/components/schemas/OperatorDisputeView"
+            },
+            "type": "array"
+          }
+        },
+        "type": "object"
+      },
+      "OperatorDisputeResponseRequest": {
+        "properties": {
+          "reason": {
+            "maxLength": 1000,
+            "minLength": 0,
+            "type": "string"
+          }
+        },
+        "required": [
+          "reason"
+        ],
+        "type": "object"
+      },
+      "OperatorDisputeView": {
+        "properties": {
+          "attemptId": {
+            "type": "string"
+          },
+          "chargebackAmount": {
+            "type": "string"
+          },
+          "chargebackCurrency": {
+            "type": "string"
+          },
+          "counterpartyShare": {
+            "type": "string"
+          },
+          "disputeFee": {
+            "type": "string"
+          },
+          "disputeId": {
+            "type": "string"
+          },
+          "evidence": {
+            "items": {
+              "$ref": "#/components/schemas/EvidenceView"
+            },
+            "type": "array"
+          },
+          "excess": {
+            "type": "string"
+          },
+          "history": {
+            "items": {
+              "$ref": "#/components/schemas/StageChangeView"
+            },
+            "type": "array"
+          },
+          "openedAt": {
+            "type": "string"
+          },
+          "parkedShare": {
+            "type": "string"
+          },
+          "paymentIntentId": {
+            "type": "string"
+          },
+          "providerDisputeReference": {
+            "type": "string"
+          },
+          "reason": {
+            "type": "string"
+          },
+          "respondBy": {
+            "type": "string"
+          },
+          "responses": {
+            "items": {
+              "$ref": "#/components/schemas/OperatorResponseView"
+            },
+            "type": "array"
+          },
+          "stage": {
+            "type": "string"
+          }
+        },
+        "type": "object"
+      },
+      "OperatorPayoutRequest": {
+        "properties": {
+          "amount": {
+            "minLength": 1,
+            "type": "string"
+          },
+          "currency": {
+            "minLength": 1,
+            "pattern": "[A-Z]{3}",
+            "type": "string"
+          },
+          "reason": {
+            "maxLength": 1000,
+            "minLength": 0,
+            "type": "string"
+          }
+        },
+        "required": [
+          "amount",
+          "currency",
+          "reason"
+        ],
+        "type": "object"
+      },
+      "OperatorResponseView": {
+        "properties": {
+          "createdAt": {
+            "type": "string"
+          },
+          "failureReason": {
+            "type": "string"
+          },
+          "kind": {
+            "type": "string"
+          },
+          "providerReference": {
+            "type": "string"
+          },
+          "requestedByType": {
+            "type": "string"
+          },
+          "responseId": {
+            "type": "string"
+          },
+          "status": {
+            "type": "string"
+          }
+        },
+        "type": "object"
+      },
       "OrganisationRegistrationRequest": {
         "properties": {
           "name": {
@@ -2928,6 +4392,12 @@
           "captured": {
             "type": "string"
           },
+          "chargebacksReversed": {
+            "type": "string"
+          },
+          "chargedBack": {
+            "type": "string"
+          },
           "currency": {
             "type": "string"
           },
@@ -2938,6 +4408,9 @@
             "type": "string"
           },
           "other": {
+            "type": "string"
+          },
+          "paidOut": {
             "type": "string"
           },
           "position": {
@@ -3007,6 +4480,12 @@
           },
           "id": {
             "type": "string"
+          },
+          "kind": {
+            "type": "string"
+          },
+          "payeeCheck": {
+            "type": "string"
           }
         },
         "type": "object"
@@ -3014,6 +4493,9 @@
       "PaymentView": {
         "properties": {
           "amount": {
+            "type": "string"
+          },
+          "authorizationHandle": {
             "type": "string"
           },
           "createdAt": {
@@ -3035,6 +4517,82 @@
             "type": "string"
           },
           "refunded": {
+            "type": "string"
+          },
+          "status": {
+            "type": "string"
+          }
+        },
+        "type": "object"
+      },
+      "PayoutDestinationDecisionRequest": {
+        "properties": {
+          "reason": {
+            "maxLength": 1000,
+            "minLength": 0,
+            "type": "string"
+          }
+        },
+        "required": [
+          "reason"
+        ],
+        "type": "object"
+      },
+      "PayoutDestinationView": {
+        "properties": {
+          "approvedAt": {
+            "type": "string"
+          },
+          "coolingOffUntil": {
+            "type": "string"
+          },
+          "displaySuffix": {
+            "type": "string"
+          },
+          "effectiveAt": {
+            "type": "string"
+          },
+          "id": {
+            "type": "string"
+          },
+          "proposedAt": {
+            "type": "string"
+          },
+          "status": {
+            "type": "string"
+          }
+        },
+        "type": "object"
+      },
+      "PayoutDestinationsView": {
+        "properties": {
+          "effective": {
+            "$ref": "#/components/schemas/PayoutDestinationView"
+          },
+          "pending": {
+            "$ref": "#/components/schemas/PayoutDestinationView"
+          }
+        },
+        "type": "object"
+      },
+      "PayoutView": {
+        "properties": {
+          "amount": {
+            "type": "string"
+          },
+          "createdAt": {
+            "type": "string"
+          },
+          "currency": {
+            "type": "string"
+          },
+          "destinationSuffix": {
+            "type": "string"
+          },
+          "failureReason": {
+            "type": "string"
+          },
+          "id": {
             "type": "string"
           },
           "status": {
@@ -3167,6 +4725,23 @@
         },
         "type": "object"
       },
+      "ProposePayoutDestinationRequest": {
+        "properties": {
+          "destinationToken": {
+            "type": "string"
+          },
+          "reason": {
+            "maxLength": 1000,
+            "minLength": 0,
+            "type": "string"
+          }
+        },
+        "required": [
+          "destinationToken",
+          "reason"
+        ],
+        "type": "object"
+      },
       "PurposeBasisResponse": {
         "properties": {
           "currentText": {
@@ -3255,6 +4830,20 @@
         },
         "type": "object"
       },
+      "RegisterBankAccountRequest": {
+        "properties": {
+          "acknowledgeNoMatch": {
+            "type": "boolean"
+          },
+          "grant": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "grant"
+        ],
+        "type": "object"
+      },
       "RegistrationRequest": {
         "properties": {
           "displayName": {
@@ -3308,6 +4897,43 @@
         ],
         "type": "object"
       },
+      "ResponseAnswer": {
+        "properties": {
+          "failureReason": {
+            "type": "string"
+          },
+          "kind": {
+            "type": "string"
+          },
+          "responseId": {
+            "type": "string"
+          },
+          "status": {
+            "type": "string"
+          }
+        },
+        "type": "object"
+      },
+      "ResponseView": {
+        "properties": {
+          "createdAt": {
+            "type": "string"
+          },
+          "failureReason": {
+            "type": "string"
+          },
+          "kind": {
+            "type": "string"
+          },
+          "responseId": {
+            "type": "string"
+          },
+          "status": {
+            "type": "string"
+          }
+        },
+        "type": "object"
+      },
       "RoleAssignmentRequest": {
         "properties": {
           "reason": {
@@ -3330,6 +4956,74 @@
           "reason",
           "role"
         ],
+        "type": "object"
+      },
+      "RuleBody": {
+        "properties": {
+          "ceilingAmountMinor": {
+            "format": "int64",
+            "minimum": 0,
+            "type": "integer"
+          },
+          "currency": {
+            "maxLength": 3,
+            "minLength": 3,
+            "type": "string"
+          },
+          "direction": {
+            "maxLength": 20,
+            "minLength": 0,
+            "type": "string"
+          },
+          "instrumentKind": {
+            "maxLength": 30,
+            "minLength": 0,
+            "type": "string"
+          },
+          "rails": {
+            "items": {
+              "maxLength": 32,
+              "minLength": 0,
+              "type": "string"
+            },
+            "maxItems": 10,
+            "minItems": 0,
+            "type": "array"
+          }
+        },
+        "required": [
+          "direction",
+          "instrumentKind",
+          "rails"
+        ],
+        "type": "object"
+      },
+      "RuleView": {
+        "properties": {
+          "ceilingAmountMinor": {
+            "format": "int64",
+            "type": "integer"
+          },
+          "currency": {
+            "type": "string"
+          },
+          "direction": {
+            "type": "string"
+          },
+          "instrumentKind": {
+            "type": "string"
+          },
+          "rails": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array"
+          },
+          "ruleIndex": {
+            "format": "int32",
+            "type": "integer"
+          }
+        },
         "type": "object"
       },
       "SectionView": {
@@ -3403,6 +5097,9 @@
           "amount": {
             "type": "string"
           },
+          "authorizationHandle": {
+            "type": "string"
+          },
           "checkoutId": {
             "type": "string"
           },
@@ -3425,6 +5122,37 @@
             "type": "string"
           },
           "status": {
+            "type": "string"
+          }
+        },
+        "type": "object"
+      },
+      "SetRailAvailabilityRequest": {
+        "properties": {
+          "available": {
+            "type": "boolean"
+          },
+          "reason": {
+            "maxLength": 1000,
+            "minLength": 0,
+            "type": "string"
+          }
+        },
+        "required": [
+          "available",
+          "reason"
+        ],
+        "type": "object"
+      },
+      "StageChangeView": {
+        "properties": {
+          "at": {
+            "type": "string"
+          },
+          "from": {
+            "type": "string"
+          },
+          "to": {
             "type": "string"
           }
         },
@@ -3494,6 +5222,31 @@
             "type": "array"
           },
           "opening": {
+            "type": "string"
+          }
+        },
+        "type": "object"
+      },
+      "StepView": {
+        "properties": {
+          "descriptorVersion": {
+            "format": "int32",
+            "type": "integer"
+          },
+          "rail": {
+            "type": "string"
+          },
+          "railAvailable": {
+            "type": "boolean"
+          },
+          "rejection": {
+            "type": "string"
+          },
+          "stepIndex": {
+            "format": "int32",
+            "type": "integer"
+          },
+          "verdict": {
             "type": "string"
           }
         },
@@ -3636,6 +5389,89 @@
             "type": "string"
           },
           "reversedAt": {
+            "type": "string"
+          },
+          "status": {
+            "type": "string"
+          }
+        },
+        "type": "object"
+      },
+      "VersionView": {
+        "properties": {
+          "createdBy": {
+            "type": "string"
+          },
+          "effectiveFrom": {
+            "type": "string"
+          },
+          "routingPolicyVersionId": {
+            "type": "string"
+          },
+          "rules": {
+            "items": {
+              "$ref": "#/components/schemas/RuleView"
+            },
+            "type": "array"
+          },
+          "version": {
+            "format": "int32",
+            "type": "integer"
+          }
+        },
+        "type": "object"
+      },
+      "VoidPaymentRequest": {
+        "properties": {
+          "reason": {
+            "maxLength": 1000,
+            "minLength": 0,
+            "type": "string"
+          }
+        },
+        "required": [
+          "reason"
+        ],
+        "type": "object"
+      },
+      "WithdrawalRequest": {
+        "properties": {
+          "amount": {
+            "minLength": 1,
+            "type": "string"
+          },
+          "currency": {
+            "minLength": 1,
+            "pattern": "[A-Z]{3}",
+            "type": "string"
+          },
+          "paymentMethodId": {
+            "minLength": 1,
+            "type": "string"
+          }
+        },
+        "required": [
+          "amount",
+          "currency",
+          "paymentMethodId"
+        ],
+        "type": "object"
+      },
+      "WithdrawalView": {
+        "properties": {
+          "amount": {
+            "type": "string"
+          },
+          "createdAt": {
+            "type": "string"
+          },
+          "currency": {
+            "type": "string"
+          },
+          "failureReason": {
+            "type": "string"
+          },
+          "id": {
             "type": "string"
           },
           "status": {
@@ -4720,6 +6556,43 @@
         }
       }
     },
+    "/v1/me/payment-methods/bank-accounts": {
+      "post": {
+        "operationId": "registerBankAccount",
+        "parameters": [
+          {
+            "in": "header",
+            "name": "Idempotency-Key",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/RegisterBankAccountRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "201": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PaymentMethodView"
+                }
+              }
+            },
+            "description": "Created"
+          }
+        }
+      }
+    },
     "/v1/me/payment-methods/{id}": {
       "delete": {
         "operationId": "detach",
@@ -4736,6 +6609,256 @@
         "responses": {
           "204": {
             "description": "No Content"
+          }
+        }
+      }
+    },
+    "/v1/me/withdrawals": {
+      "post": {
+        "operationId": "createWithdrawal",
+        "parameters": [
+          {
+            "in": "header",
+            "name": "Idempotency-Key",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/WithdrawalRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "201": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/WithdrawalView"
+                }
+              }
+            },
+            "description": "Created"
+          }
+        }
+      }
+    },
+    "/v1/me/withdrawals/{id}": {
+      "get": {
+        "operationId": "readWithdrawal",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "id",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/WithdrawalView"
+                }
+              }
+            },
+            "description": "OK"
+          }
+        }
+      }
+    },
+    "/v1/merchant/disputes": {
+      "get": {
+        "operationId": "listMerchantDisputes",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/MerchantDisputeList"
+                }
+              }
+            },
+            "description": "OK"
+          }
+        }
+      }
+    },
+    "/v1/merchant/disputes/{disputeId}": {
+      "get": {
+        "operationId": "viewMerchantDispute",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "disputeId",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/MerchantDisputeView"
+                }
+              }
+            },
+            "description": "OK"
+          }
+        }
+      }
+    },
+    "/v1/merchant/disputes/{disputeId}/acceptance": {
+      "post": {
+        "operationId": "acceptMerchantDispute",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "disputeId",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "in": "header",
+            "name": "Idempotency-Key",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "201": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ResponseAnswer"
+                }
+              }
+            },
+            "description": "Created"
+          }
+        }
+      }
+    },
+    "/v1/merchant/disputes/{disputeId}/evidence": {
+      "post": {
+        "operationId": "uploadMerchantDisputeEvidence",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "disputeId",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/DisputeEvidenceUploadRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "201": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/EvidenceView"
+                }
+              }
+            },
+            "description": "Created"
+          }
+        }
+      }
+    },
+    "/v1/merchant/disputes/{disputeId}/evidence/{evidenceId}": {
+      "get": {
+        "operationId": "viewMerchantDisputeEvidence",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "disputeId",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "in": "path",
+            "name": "evidenceId",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/EvidenceContentView"
+                }
+              }
+            },
+            "description": "OK"
+          }
+        }
+      }
+    },
+    "/v1/merchant/disputes/{disputeId}/representment": {
+      "post": {
+        "operationId": "representMerchantDispute",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "disputeId",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "in": "header",
+            "name": "Idempotency-Key",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "201": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ResponseAnswer"
+                }
+              }
+            },
+            "description": "Created"
           }
         }
       }
@@ -4766,6 +6889,70 @@
               "application/json": {
                 "schema": {
                   "$ref": "#/components/schemas/PayableView"
+                }
+              }
+            },
+            "description": "OK"
+          }
+        }
+      }
+    },
+    "/v1/merchant/payouts": {
+      "post": {
+        "operationId": "initiateMerchantPayout",
+        "parameters": [
+          {
+            "in": "header",
+            "name": "Idempotency-Key",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/MerchantPayoutRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "201": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PayoutView"
+                }
+              }
+            },
+            "description": "Created"
+          }
+        }
+      }
+    },
+    "/v1/merchant/payouts/{payoutId}": {
+      "get": {
+        "operationId": "viewMerchantPayout",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "payoutId",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PayoutView"
                 }
               }
             },
@@ -4805,6 +6992,195 @@
               }
             },
             "description": "OK"
+          }
+        }
+      }
+    },
+    "/v1/operator/disputes/{disputeId}": {
+      "get": {
+        "operationId": "viewDisputeAsOperator",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "disputeId",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/OperatorDisputeView"
+                }
+              }
+            },
+            "description": "OK"
+          }
+        }
+      }
+    },
+    "/v1/operator/disputes/{disputeId}/acceptance": {
+      "post": {
+        "operationId": "acceptDisputeAsOperator",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "disputeId",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "in": "header",
+            "name": "Idempotency-Key",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/OperatorDisputeResponseRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "201": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ResponseAnswer"
+                }
+              }
+            },
+            "description": "Created"
+          }
+        }
+      }
+    },
+    "/v1/operator/disputes/{disputeId}/evidence": {
+      "post": {
+        "operationId": "uploadDisputeEvidenceAsOperator",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "disputeId",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/OperatorDisputeEvidenceUploadRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "201": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/EvidenceView"
+                }
+              }
+            },
+            "description": "Created"
+          }
+        }
+      }
+    },
+    "/v1/operator/disputes/{disputeId}/evidence/{evidenceId}": {
+      "get": {
+        "operationId": "viewDisputeEvidenceAsOperator",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "disputeId",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "in": "path",
+            "name": "evidenceId",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/EvidenceContentView"
+                }
+              }
+            },
+            "description": "OK"
+          }
+        }
+      }
+    },
+    "/v1/operator/disputes/{disputeId}/representment": {
+      "post": {
+        "operationId": "representDisputeAsOperator",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "disputeId",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "in": "header",
+            "name": "Idempotency-Key",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/OperatorDisputeResponseRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "201": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ResponseAnswer"
+                }
+              }
+            },
+            "description": "Created"
           }
         }
       }
@@ -5256,6 +7632,384 @@
         }
       }
     },
+    "/v1/operator/merchants/{merchantId}/payout-destinations": {
+      "get": {
+        "operationId": "listPayoutDestinations",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "merchantId",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PayoutDestinationsView"
+                }
+              }
+            },
+            "description": "OK"
+          }
+        }
+      },
+      "post": {
+        "operationId": "proposePayoutDestination",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "merchantId",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "in": "header",
+            "name": "Idempotency-Key",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ProposePayoutDestinationRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "201": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PayoutDestinationView"
+                }
+              }
+            },
+            "description": "Created"
+          }
+        }
+      }
+    },
+    "/v1/operator/merchants/{merchantId}/payout-destinations/{destinationId}/approval": {
+      "post": {
+        "operationId": "approvePayoutDestination",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "merchantId",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "in": "path",
+            "name": "destinationId",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/PayoutDestinationDecisionRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PayoutDestinationView"
+                }
+              }
+            },
+            "description": "OK"
+          }
+        }
+      }
+    },
+    "/v1/operator/merchants/{merchantId}/payout-destinations/{destinationId}/rejection": {
+      "post": {
+        "operationId": "rejectPayoutDestination",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "merchantId",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "in": "path",
+            "name": "destinationId",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/PayoutDestinationDecisionRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PayoutDestinationView"
+                }
+              }
+            },
+            "description": "OK"
+          }
+        }
+      }
+    },
+    "/v1/operator/merchants/{merchantId}/payout-destinations/{destinationId}/withdrawal": {
+      "post": {
+        "operationId": "withdrawPayoutDestination",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "merchantId",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "in": "path",
+            "name": "destinationId",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/PayoutDestinationDecisionRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PayoutDestinationView"
+                }
+              }
+            },
+            "description": "OK"
+          }
+        }
+      }
+    },
+    "/v1/operator/merchants/{merchantId}/payouts": {
+      "post": {
+        "operationId": "initiatePayoutForMerchant",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "merchantId",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "in": "header",
+            "name": "Idempotency-Key",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/OperatorPayoutRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "201": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PayoutView"
+                }
+              }
+            },
+            "description": "Created"
+          }
+        }
+      }
+    },
+    "/v1/operator/payments/{intentId}/disputes": {
+      "get": {
+        "operationId": "listPaymentDisputesAsOperator",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "intentId",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/OperatorDisputeList"
+                }
+              }
+            },
+            "description": "OK"
+          }
+        }
+      }
+    },
+    "/v1/operator/payments/{intentId}/routing": {
+      "get": {
+        "operationId": "viewPaymentRouting",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "intentId",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ExplanationView"
+                }
+              }
+            },
+            "description": "OK"
+          }
+        }
+      }
+    },
+    "/v1/operator/rails/{rail}/availability": {
+      "post": {
+        "operationId": "setRailAvailability",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "rail",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/SetRailAvailabilityRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AvailabilityView"
+                }
+              }
+            },
+            "description": "OK"
+          }
+        }
+      }
+    },
+    "/v1/operator/routing-policy/versions": {
+      "post": {
+        "operationId": "createRoutingPolicyVersion",
+        "parameters": [
+          {
+            "in": "header",
+            "name": "Idempotency-Key",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/CreateRoutingPolicyVersionRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "201": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/VersionView"
+                }
+              }
+            },
+            "description": "Created"
+          }
+        }
+      }
+    },
     "/v1/payments": {
       "get": {
         "operationId": "listPayments",
@@ -5435,6 +8189,43 @@
         }
       }
     },
+    "/v1/payments/{id}/void": {
+      "post": {
+        "operationId": "voidPayment",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "id",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/VoidPaymentRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PaymentView"
+                }
+              }
+            },
+            "description": "OK"
+          }
+        }
+      }
+    },
     "/v1/providers/kyc/callbacks": {
       "post": {
         "operationId": "deliver",
@@ -5458,6 +8249,44 @@
             }
           },
           "required": true
+        },
+        "responses": {
+          "204": {
+            "description": "No Content"
+          }
+        }
+      }
+    },
+    "/v1/providers/payments/instant/webhooks": {
+      "post": {
+        "operationId": "deliverInstantConfirmation",
+        "parameters": [
+          {
+            "in": "header",
+            "name": "X-Provider-Timestamp",
+            "required": false,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "in": "header",
+            "name": "X-Provider-Signature",
+            "required": false,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "format": "byte",
+                "type": "string"
+              }
+            }
+          }
         },
         "responses": {
           "204": {

@@ -24,13 +24,24 @@ public final class JdbcRefundStore implements RefundStore<Connection> {
             "id, attempt_id, amount_minor, currency, scale, reason, hold_reference,"
                     + " provider_idempotency_reference, provider_reference, status, created_at";
 
+    /** {@link #COLUMNS}, each qualified as {@code r.<column>} — for the joined reads
+     * (the attempt store's idiom, since the sweepable partition joins the attempt). */
+    private static String qualified() {
+        return java.util.Arrays.stream(COLUMNS.split(", "))
+                .map(column -> "r." + column.strip())
+                .collect(java.util.stream.Collectors.joining(", "));
+    }
+
     @Override
     public void insert(Connection unitOfWork, Refund refund, String dispatchKey) {
         Objects.requireNonNull(dispatchKey, "dispatchKey must not be null (V008)");
+        // The birth permit is the dispatch itself (V009): the same bound value as created_at, so
+        // the two are stored identically and the CHECK that the permit follows birth holds.
         try (PreparedStatement insert =
                 unitOfWork.prepareStatement(
-                        "INSERT INTO payments.refund (" + COLUMNS + ", dispatch_key)"
-                                + " VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)")) {
+                        "INSERT INTO payments.refund (" + COLUMNS
+                                + ", dispatch_key, last_dispatched_at)"
+                                + " VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)")) {
             insert.setObject(1, refund.id().value());
             insert.setObject(2, refund.attemptId().value());
             insert.setLong(3, refund.amount().minorUnits());
@@ -47,10 +58,148 @@ public final class JdbcRefundStore implements RefundStore<Connection> {
             insert.setString(10, refund.status().name());
             insert.setTimestamp(11, Timestamp.from(refund.createdAt()));
             insert.setString(12, dispatchKey);
+            insert.setTimestamp(13, Timestamp.from(refund.createdAt()));
             insert.executeUpdate();
         } catch (SQLException failure) {
             throw new PaymentsStorageException(
                     DatabaseFailure.describe("inserting refund " + refund.id(), failure));
+        }
+    }
+
+    @Override
+    public Optional<LockedRefund> lockForOutcome(Connection unitOfWork, RefundId refund) {
+        Objects.requireNonNull(refund, "refund must not be null");
+        try (PreparedStatement read =
+                unitOfWork.prepareStatement(
+                        "SELECT " + COLUMNS + ", last_dispatched_at FROM payments.refund"
+                                + " WHERE id = ? FOR UPDATE")) {
+            read.setObject(1, refund.value());
+            try (ResultSet row = read.executeQuery()) {
+                return row.next()
+                        ? Optional.of(
+                                new LockedRefund(
+                                        rehydrate(row),
+                                        row.getTimestamp("last_dispatched_at").toInstant()))
+                        : Optional.empty();
+            }
+        } catch (SQLException failure) {
+            throw new PaymentsStorageException(
+                    DatabaseFailure.describe("locking refund " + refund, failure));
+        }
+    }
+
+    @Override
+    public Optional<Instant> renewSendPermit(Connection unitOfWork, RefundId refund, Instant at) {
+        Objects.requireNonNull(refund, "refund must not be null");
+        Objects.requireNonNull(at, "at must not be null");
+        // The conditional IS the permit (the payout's renewal, V007): a resolver that already
+        // moved the refund out of the resolvable states leaves this matching no row, and then
+        // nothing may be sent. GREATEST keeps the permit forward-only against an instance whose
+        // clock trails the one that wrote the previous permit - V009's trigger refuses a step
+        // back, and a refusal here would be a failed re-drive, not a safer one.
+        try (PreparedStatement update =
+                unitOfWork.prepareStatement(
+                        "UPDATE payments.refund"
+                                + " SET last_dispatched_at ="
+                                + "   GREATEST(last_dispatched_at, CAST(? AS timestamptz))"
+                                + " WHERE id = ? AND status IN ('DISPATCHED', 'UNKNOWN')"
+                                + " RETURNING last_dispatched_at")) {
+            update.setTimestamp(1, Timestamp.from(at));
+            update.setObject(2, refund.value());
+            try (ResultSet row = update.executeQuery()) {
+                return row.next()
+                        ? Optional.of(row.getTimestamp(1).toInstant())
+                        : Optional.empty();
+            }
+        } catch (SQLException failure) {
+            throw new PaymentsStorageException(
+                    DatabaseFailure.describe("renewing refund " + refund + "'s send permit",
+                            failure));
+        }
+    }
+
+    @Override
+    public List<Refund> findSweepable(
+            Connection unitOfWork, Instant dispatchedBefore, Instant unknownBefore, int limit) {
+        Objects.requireNonNull(dispatchedBefore, "dispatchedBefore must not be null");
+        Objects.requireNonNull(unknownBefore, "unknownBefore must not be null");
+        if (limit <= 0) {
+            throw new IllegalArgumentException("limit must be positive: " + limit);
+        }
+        // The two resolvable states, pinned as literals beside RefundStatus's own exact values()
+        // pin - the attempt store's idiom. A DISPATCHED refund has waited since its latest send
+        // permit (a takeover re-drive is a new send); an UNKNOWN one since the move that made it
+        // UNKNOWN - the latest transition, birth as the fallback.
+        try (PreparedStatement read =
+                unitOfWork.prepareStatement(
+                        "SELECT " + qualified() + " FROM payments.refund r"
+                                + " JOIN payments.payment_attempt a ON a.id = r.attempt_id"
+                                + " LEFT JOIN LATERAL (SELECT max(occurred_at) AS entered"
+                                + "   FROM payments.refund_event e"
+                                + "   WHERE e.refund_id = r.id) h ON true"
+                                // TWO_STEP only (P7-TSK-010, INV-RAIL-01): this list feeds
+                                // the CARD sweeper, which asks the card provider and
+                                // re-drives against the capture - a push refund carries
+                                // neither, and its resolution is ReturnResolution's own
+                                // (the attempt sweep's partition, at the refund).
+                                + " WHERE a.interaction_model = 'TWO_STEP'"
+                                + " AND ((r.status = 'DISPATCHED' AND r.last_dispatched_at <= ?)"
+                                + "    OR (r.status = 'UNKNOWN'"
+                                + "        AND COALESCE(h.entered, r.created_at) <= ?))"
+                                + " ORDER BY r.created_at, r.id"
+                                + " LIMIT ?")) {
+            read.setTimestamp(1, Timestamp.from(dispatchedBefore));
+            read.setTimestamp(2, Timestamp.from(unknownBefore));
+            read.setInt(3, limit);
+            try (ResultSet rows = read.executeQuery()) {
+                List<Refund> sweepable = new ArrayList<>();
+                while (rows.next()) {
+                    sweepable.add(rehydrate(rows));
+                }
+                return List.copyOf(sweepable);
+            }
+        } catch (SQLException failure) {
+            throw new PaymentsStorageException(
+                    DatabaseFailure.describe("reading sweepable refunds", failure));
+        }
+    }
+
+    @Override
+    public List<Refund> findSweepableReturns(
+            Connection unitOfWork, Instant dispatchedBefore, Instant unknownBefore, int limit) {
+        Objects.requireNonNull(dispatchedBefore, "dispatchedBefore must not be null");
+        Objects.requireNonNull(unknownBefore, "unknownBefore must not be null");
+        if (limit <= 0) {
+            throw new IllegalArgumentException("limit must be positive: " + limit);
+        }
+        // The partition's other half (P7-TSK-010): PUSH-attempt refunds, resolved by the
+        // scheme's own inquiry and re-send - the sweepable shape verbatim otherwise.
+        try (PreparedStatement read =
+                unitOfWork.prepareStatement(
+                        "SELECT " + qualified() + " FROM payments.refund r"
+                                + " JOIN payments.payment_attempt a ON a.id = r.attempt_id"
+                                + " LEFT JOIN LATERAL (SELECT max(occurred_at) AS entered"
+                                + "   FROM payments.refund_event e"
+                                + "   WHERE e.refund_id = r.id) h ON true"
+                                + " WHERE a.interaction_model = 'PUSH'"
+                                + " AND ((r.status = 'DISPATCHED' AND r.last_dispatched_at <= ?)"
+                                + "    OR (r.status = 'UNKNOWN'"
+                                + "        AND COALESCE(h.entered, r.created_at) <= ?))"
+                                + " ORDER BY r.created_at, r.id"
+                                + " LIMIT ?")) {
+            read.setTimestamp(1, Timestamp.from(dispatchedBefore));
+            read.setTimestamp(2, Timestamp.from(unknownBefore));
+            read.setInt(3, limit);
+            try (ResultSet rows = read.executeQuery()) {
+                List<Refund> sweepable = new ArrayList<>();
+                while (rows.next()) {
+                    sweepable.add(rehydrate(rows));
+                }
+                return List.copyOf(sweepable);
+            }
+        } catch (SQLException failure) {
+            throw new PaymentsStorageException(
+                    DatabaseFailure.describe("reading sweepable returns", failure));
         }
     }
 
@@ -71,32 +220,41 @@ public final class JdbcRefundStore implements RefundStore<Connection> {
     }
 
     @Override
-    public PaymentAttemptStore.UnknownReading unknownReading(Connection unitOfWork) {
+    public PaymentAttemptStore.UnknownReading unknownReading(
+            Connection unitOfWork, java.time.Duration dispatchedBound) {
+        Objects.requireNonNull(dispatchedBound, "dispatchedBound must not be null");
         // The attempt store's reading, one machine across: refunds strand with a STANDING
         // HOLD behind them, so an operator watching parked money needs them in the same
-        // series (P5-TSK-016's UNKNOWN, P5-TSK-017's gauge).
+        // series (P5-TSK-016's UNKNOWN, P5-TSK-017's gauge). Since the Phase 6 -> 7 transition
+        // it is the payout's shape (P6-TSK-013): every UNKNOWN, and every DISPATCHED whose latest
+        // permit is past the sweep's own bound - before which it is mid-question, and after
+        // which a crashed dispatch is exactly as stuck as an unknown one. The SERVER's clock
+        // decides the age (ADR-0014), a whole number of seconds - floor()::bigint, never a
+        // double for JDBC to round (INV-MON-01's discipline) - floored at zero, because an
+        // application clock a moment ahead of the database's must not publish a negative wait.
         try (PreparedStatement read =
                 unitOfWork.prepareStatement(
                         "SELECT count(*),"
-                                // floor()::bigint, never a double: the age is a
-                                // whole number of seconds and EXTRACT would hand
-                                // JDBC a floating-point value to round for us
-                                // (INV-MON-01 is about signatures, and this is the
-                                // discipline behind it - the rule caught it here).
-                                + " COALESCE(floor(EXTRACT(EPOCH FROM now()"
-                                + "   - min(COALESCE(h.entered, r.created_at))))::bigint, 0)"
+                                + " GREATEST(0, COALESCE(floor(EXTRACT(EPOCH FROM now() - min("
+                                + "   CASE WHEN r.status = 'UNKNOWN'"
+                                + "        THEN COALESCE(h.entered, r.created_at)"
+                                + "        ELSE r.last_dispatched_at END)))::bigint, 0))"
                                 + " FROM payments.refund r"
                                 + " LEFT JOIN LATERAL (SELECT max(occurred_at) AS entered"
                                 + "   FROM payments.refund_event e"
                                 + "   WHERE e.refund_id = r.id) h ON true"
-                                + " WHERE r.status = 'UNKNOWN'");
-                ResultSet row = read.executeQuery()) {
-            row.next();
-            return new PaymentAttemptStore.UnknownReading(
-                    row.getLong(1), row.getLong(2));
+                                + " WHERE r.status = 'UNKNOWN'"
+                                + "    OR (r.status = 'DISPATCHED'"
+                                + "        AND r.last_dispatched_at"
+                                + "            <= now() - make_interval(secs => ?))")) {
+            read.setLong(1, dispatchedBound.toSeconds());
+            try (ResultSet row = read.executeQuery()) {
+                row.next();
+                return new PaymentAttemptStore.UnknownReading(row.getLong(1), row.getLong(2));
+            }
         } catch (SQLException failure) {
             throw new PaymentsStorageException(
-                    DatabaseFailure.describe("reading the unknown-refund gauge", failure));
+                    DatabaseFailure.describe("reading the stuck-refund gauge", failure));
         }
     }
 

@@ -21,25 +21,54 @@ import java.util.UUID;
 public final class JdbcPaymentIntentStore implements PaymentIntentStore<Connection> {
 
     private static final String COLUMNS =
-            "id, party_id, customer_id, payment_method_id, wallet_account_id, amount_minor,"
-                    + " currency, scale, status, created_at";
+            "id, party_id, customer_id, payment_method_id, credit_account_id, capture_mode,"
+                    + " amount_minor, currency, scale, status, created_at, debit_account_id";
+
+    @Override
+    public boolean anyInFlightCrediting(
+            Connection unitOfWork, com.finapp.ledger.LedgerAccountId account) {
+        java.util.Objects.requireNonNull(account, "account must not be null");
+        // V010's partial index serves exactly this predicate: the machine's non-terminal states,
+        // generated from its own terminal list so "in flight" has one definition.
+        try (PreparedStatement read =
+                unitOfWork.prepareStatement(
+                        "SELECT EXISTS (SELECT 1 FROM payments.payment_intent"
+                                + " WHERE credit_account_id = ?"
+                                + " AND status NOT IN (" + PaymentIntentStatus.sqlTerminalValueList()
+                                + "))")) {
+            read.setObject(1, account.value());
+            try (java.sql.ResultSet row = read.executeQuery()) {
+                row.next();
+                return row.getBoolean(1);
+            }
+        } catch (SQLException failure) {
+            throw new PaymentsStorageException(
+                    DatabaseFailure.describe(
+                            "reading the payments in flight to account " + account, failure));
+        }
+    }
 
     @Override
     public void insert(Connection unitOfWork, PaymentIntent intent) {
         try (PreparedStatement insert =
                 unitOfWork.prepareStatement(
                         "INSERT INTO payments.payment_intent (" + COLUMNS + ")"
-                                + " VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)")) {
+                                + " VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)")) {
             insert.setObject(1, intent.id().value());
             insert.setObject(2, intent.partyId());
             insert.setObject(3, intent.customerId());
             insert.setObject(4, intent.paymentMethodId());
-            insert.setObject(5, intent.walletAccount().value());
-            insert.setLong(6, intent.amount().minorUnits());
-            insert.setString(7, intent.amount().currency().code());
-            insert.setShort(8, (short) intent.amount().scale());
-            insert.setString(9, intent.status().name());
-            insert.setTimestamp(10, Timestamp.from(intent.createdAt()));
+            insert.setObject(5, intent.creditAccount().value());
+            insert.setString(6, intent.captureMode().name());
+            insert.setLong(7, intent.amount().minorUnits());
+            insert.setString(8, intent.amount().currency().code());
+            insert.setShort(9, (short) intent.amount().scale());
+            insert.setString(10, intent.status().name());
+            insert.setTimestamp(11, Timestamp.from(intent.createdAt()));
+            // The wallet instrument's debit side (P7-TSK-011): present exactly when the
+            // method is absent - V019's XOR holds the pairing for every writer.
+            insert.setObject(
+                    12, intent.debitAccount().map(a -> a.value()).orElse(null));
             insert.executeUpdate();
         } catch (SQLException failure) {
             throw new PaymentsStorageException(
@@ -172,13 +201,17 @@ public final class JdbcPaymentIntentStore implements PaymentIntentStore<Connecti
                 row.getObject("party_id", UUID.class),
                 row.getObject("customer_id", UUID.class),
                 row.getObject("payment_method_id", UUID.class),
-                LedgerAccountId.of(row.getObject("wallet_account_id", UUID.class)),
+                LedgerAccountId.of(row.getObject("credit_account_id", UUID.class)),
+                CaptureMode.valueOf(row.getString("capture_mode")),
                 // The STORED scale, never re-derived (INV-MON-05).
                 Money.ofPersisted(
                         row.getLong("amount_minor"),
                         CurrencyCode.of(row.getString("currency")),
                         row.getShort("scale")),
                 PaymentIntentStatus.valueOf(row.getString("status")),
-                row.getTimestamp("created_at").toInstant());
+                row.getTimestamp("created_at").toInstant(),
+                row.getObject("debit_account_id", UUID.class) == null
+                        ? null
+                        : LedgerAccountId.of(row.getObject("debit_account_id", UUID.class)));
     }
 }

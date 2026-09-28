@@ -60,12 +60,16 @@ class RoleNameTest {
     }
 
     @Test
-    @DisplayName("LEDGER_OPERATOR grants exactly the four money-operating permissions")
-    void ledgerOperatorGrantsExactlyFour() {
-        // One role, four permissions (P3-TSK-007; TRANSFER_REVERSE by P4-TSK-009;
-        // PAYMENT_REFUND by P5-TSK-015): one money-operating population, and the vocabulary
-        // stays precise so the adjustment, reversal and refund endpoints each check their
-        // own. Exact set, so the role quietly gaining ROLE_ASSIGN - the permission that
+    @DisplayName("LEDGER_OPERATOR grants exactly the seven money-operating permissions")
+    void ledgerOperatorGrantsExactlySeven() {
+        // One role, seven permissions (P3-TSK-007; TRANSFER_REVERSE by P4-TSK-009;
+        // PAYMENT_REFUND by P5-TSK-015; MERCHANT_PAYOUT by P6-TSK-012;
+        // PAYMENT_ROUTING_ADMINISTER by P7-TSK-003, how money travels being this desk's
+        // judgement; DISPUTE_ADMINISTER by P7-TSK-012, answering money the rail forced back
+        // being payment operations): one money-operating
+        // population, and the vocabulary stays precise so the adjustment, reversal, refund,
+        // payout, routing and dispute endpoints each check their own. Exact set, so the role quietly
+        // gaining ROLE_ASSIGN - the permission that
         // grants permissions - is a failing test rather than a silent expansion.
         //
         // THIS PIN WAS RED FROM P5-TSK-015 UNTIL P5-DOC-001's post-flip battery, which is
@@ -80,13 +84,17 @@ class RoleNameTest {
                         PermissionName.LEDGER_POST,
                         PermissionName.LEDGER_ADJUST,
                         PermissionName.TRANSFER_REVERSE,
-                        PermissionName.PAYMENT_REFUND);
+                        PermissionName.PAYMENT_REFUND,
+                        PermissionName.MERCHANT_PAYOUT,
+                        PermissionName.PAYMENT_ROUTING_ADMINISTER,
+                        PermissionName.DISPUTE_ADMINISTER);
     }
 
     @Test
-    @DisplayName("MERCHANT_ADMINISTRATOR grants exactly the three counterparty permissions")
-    void merchantAdministratorGrantsExactlyThree() {
-        // One role, three permissions (P6-TSK-003; FEE_ADMINISTER by P6-TSK-004): one
+    @DisplayName("MERCHANT_ADMINISTRATOR grants exactly the four counterparty permissions")
+    void merchantAdministratorGrantsExactlyFour() {
+        // One role, four permissions (P6-TSK-003; FEE_ADMINISTER by P6-TSK-004;
+        // PAYOUT_DESTINATION_APPROVE by P6-TSK-011, four-eyes being distinct identities): one
         // merchant-administering population - the LEDGER_OPERATOR bundling reasoning - while
         // the vocabulary stays precise so the onboarding endpoint, the reasoned state moves
         // and the pricing surfaces each check their own. Exact set, so the role quietly
@@ -103,7 +111,8 @@ class RoleNameTest {
                 .containsExactlyInAnyOrder(
                         PermissionName.MERCHANT_ONBOARD,
                         PermissionName.MERCHANT_ADMINISTER,
-                        PermissionName.FEE_ADMINISTER);
+                        PermissionName.FEE_ADMINISTER,
+                        PermissionName.PAYOUT_DESTINATION_APPROVE);
     }
 
     @Test

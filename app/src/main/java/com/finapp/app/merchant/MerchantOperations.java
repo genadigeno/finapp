@@ -116,6 +116,14 @@ public class MerchantOperations {
                     MerchantErrorCode.ILLEGAL_TRANSITION,
                     "A merchant standing move was refused by the machine",
                     "the merchant's current status does not permit this change.");
+        } catch (com.finapp.merchant.MerchantNotSettledException unsettled) {
+            // The Phase 6 -> 7 transition: a close with money owed or in flight would leave a
+            // liability nothing can pay out. Pay it out, or let the payment finish, then close.
+            throw new ApiException(
+                    MerchantErrorCode.NOT_SETTLED,
+                    "A close was refused: the merchant is owed money or has money in flight",
+                    "pay out what this merchant is owed and let payments in flight finish"
+                            + " before closing it.");
         }
     }
 

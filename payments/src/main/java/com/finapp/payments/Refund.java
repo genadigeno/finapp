@@ -121,9 +121,12 @@ public final class Refund {
 
     /**
      * A new refund, born {@code DISPATCHED}, judged against the captured attempt —
-     * {@code INV-PAY-05}'s domain half. {@code alreadyRefunded} is the sum of this attempt's
-     * non-{@code FAILED} refunds, <strong>read under the command's lock on the attempt row</strong>
-     * ({@code P5-TSK-015}); the concurrent half of the same bound is the schema trigger's.
+     * {@code INV-PAY-05}'s domain half, and since `P7-TSK-013` {@code INV-DSP-01}'s.
+     * {@code alreadyRefunded} is what has already been taken from the counterparty: the sum of
+     * this attempt's non-{@code FAILED} refunds PLUS what the chargebacks standing on it
+     * attribute to the counterparty (the combined bound, ADR-0061 §3), <strong>read under the
+     * command's lock on the attempt row</strong> ({@code P5-TSK-015}); the concurrent half of the
+     * same bound is the schema trigger's.
      */
     public static Refund create(
             IdGenerator ids,
@@ -161,13 +164,14 @@ public final class Refund {
                     "the refunded-so-far sum cannot be negative; refused a negative sum in "
                             + alreadyRefunded.currency());
         }
-        // The bound itself: sum of non-FAILED refunds <= captured, refund-to-the-penny legal.
-        // The message names the fact and the currency, never any amount (INV-AUD-02).
+        // The bound itself: non-FAILED refunds and standing chargebacks <= captured,
+        // refund-to-the-penny legal. The message names the fact and the currency, never any
+        // amount (INV-AUD-02).
         if (amount.plus(alreadyRefunded).compareTo(captured) > 0) {
             throw new IllegalArgumentException(
-                    "refunds are bounded by the capture (INV-PAY-05): refused a refund taking"
-                            + " the refunded sum past the captured amount in "
-                            + captured.currency());
+                    "refunds and chargebacks together are bounded by the capture (INV-PAY-05,"
+                            + " INV-DSP-01): refused a refund taking the counterparty's sum past"
+                            + " the captured amount in " + captured.currency());
         }
         return new Refund(
                 RefundId.next(ids),
@@ -179,6 +183,139 @@ public final class Refund {
                 null,
                 RefundStatus.DISPATCHED,
                 Instant.now(clock));
+    }
+
+    /**
+     * A RETURN of an executed pay-in (`P7-TSK-010`, ADR-0062 §§1/4): the push rail's refund
+     * is a new outbound transfer citing the original, never a reversal of it
+     * ({@code INV-REV-01}), so the eligible state is the push machine's own terminal —
+     * {@code EXECUTED}, not {@code CAPTURED} — and the bound's base is the
+     * <strong>executed</strong> amount, which the attempt row deliberately does not copy:
+     * the caller passes the intent's frozen ask, the value the confirmation door proved
+     * equal to what the scheme executed ({@code INV-PAY-05}'s push half; `V018` holds the
+     * same rule for every writer). The reference must also fit the WIRE it will ride —
+     * ISO 20022's 35 — judged here, at mint, not at send.
+     */
+    public static Refund createReturn(
+            IdGenerator ids,
+            Clock clock,
+            PaymentAttempt attempt,
+            Money executedAmount,
+            Money amount,
+            Money alreadyRefunded,
+            String reason,
+            HoldId holdReference,
+            ProviderIdempotencyReference providerIdempotencyReference) {
+        Objects.requireNonNull(ids, "ids must not be null");
+        Objects.requireNonNull(clock, "clock must not be null");
+        Objects.requireNonNull(attempt, "attempt must not be null");
+        Objects.requireNonNull(executedAmount, "executedAmount must not be null");
+        Objects.requireNonNull(amount, "amount must not be null");
+        Objects.requireNonNull(alreadyRefunded, "alreadyRefunded must not be null");
+        Objects.requireNonNull(
+                providerIdempotencyReference,
+                "providerIdempotencyReference must not be null");
+
+        if (attempt.interactionModel() != InteractionModel.PUSH
+                || attempt.status() != PaymentAttemptStatus.EXECUTED) {
+            throw new IllegalArgumentException(
+                    "a return references an EXECUTED push attempt (INV-PAY-05, ADR-0062"
+                            + " section 4) - attempt " + attempt.id() + " is "
+                            + attempt.interactionModel() + "/" + attempt.status());
+        }
+        if (providerIdempotencyReference.value().length() > EndToEndReference.MAX_LENGTH) {
+            throw new IllegalArgumentException(
+                    "a return's reference rides the scheme wire as the end-to-end reference"
+                            + " and must fit ISO 20022's " + EndToEndReference.MAX_LENGTH
+                            + " characters (P7-TSK-010)");
+        }
+        requireExecutionBounded(executedAmount, amount, alreadyRefunded);
+        return new Refund(
+                RefundId.next(ids),
+                attempt.id(),
+                amount,
+                reason,
+                holdReference,
+                providerIdempotencyReference,
+                null,
+                RefundStatus.DISPATCHED,
+                Instant.now(clock));
+    }
+
+    /**
+     * A BOOK refund of an executed wallet payment (`P7-TSK-011`, ADR-0059 §6): the same
+     * financial object as the return — money going back, bounded by the executed amount,
+     * through the same four-state machine — with no wire at all, so no reference-length
+     * bound applies and the whole refund commits in its dispatch's own transaction, final
+     * on posting. The eligible subject is the book machine's own {@code EXECUTED}; the
+     * bound's base is the intent's frozen ask (`V019` holds the same rule for every
+     * writer).
+     */
+    public static Refund createBookRefund(
+            IdGenerator ids,
+            Clock clock,
+            PaymentAttempt attempt,
+            Money executedAmount,
+            Money amount,
+            Money alreadyRefunded,
+            String reason,
+            HoldId holdReference,
+            ProviderIdempotencyReference providerIdempotencyReference) {
+        Objects.requireNonNull(ids, "ids must not be null");
+        Objects.requireNonNull(clock, "clock must not be null");
+        Objects.requireNonNull(attempt, "attempt must not be null");
+        Objects.requireNonNull(executedAmount, "executedAmount must not be null");
+        Objects.requireNonNull(amount, "amount must not be null");
+        Objects.requireNonNull(alreadyRefunded, "alreadyRefunded must not be null");
+        Objects.requireNonNull(
+                providerIdempotencyReference,
+                "providerIdempotencyReference must not be null");
+
+        if (attempt.interactionModel() != InteractionModel.BOOK
+                || attempt.status() != PaymentAttemptStatus.EXECUTED) {
+            throw new IllegalArgumentException(
+                    "a book refund references an EXECUTED book attempt (INV-PAY-05,"
+                            + " ADR-0059 section 6) - attempt " + attempt.id() + " is "
+                            + attempt.interactionModel() + "/" + attempt.status());
+        }
+        requireExecutionBounded(executedAmount, amount, alreadyRefunded);
+        return new Refund(
+                RefundId.next(ids),
+                attempt.id(),
+                amount,
+                reason,
+                holdReference,
+                providerIdempotencyReference,
+                null,
+                RefundStatus.DISPATCHED,
+                Instant.now(clock));
+    }
+
+    /** The executed-amount bound, shared by the return and the book refund (`INV-PAY-05`). */
+    private static void requireExecutionBounded(
+            Money executedAmount, Money amount, Money alreadyRefunded) {
+        if (!amount.currency().equals(executedAmount.currency())) {
+            throw new IllegalArgumentException(
+                    "a return must be in the execution's currency; refused "
+                            + amount.currency() + " against " + executedAmount.currency());
+        }
+        if (!alreadyRefunded.currency().equals(executedAmount.currency())) {
+            throw new IllegalArgumentException(
+                    "the returned-so-far sum must be in the execution's currency; refused "
+                            + alreadyRefunded.currency() + " against "
+                            + executedAmount.currency());
+        }
+        if (alreadyRefunded.isNegative()) {
+            throw new IllegalArgumentException(
+                    "the returned-so-far sum cannot be negative; refused a negative sum in "
+                            + alreadyRefunded.currency());
+        }
+        if (amount.plus(alreadyRefunded).compareTo(executedAmount) > 0) {
+            throw new IllegalArgumentException(
+                    "returns are bounded by the execution (INV-PAY-05): refused a return"
+                            + " taking the returned sum past the executed amount in "
+                            + executedAmount.currency());
+        }
     }
 
     /**

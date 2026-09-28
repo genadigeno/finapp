@@ -6,6 +6,8 @@ import com.finapp.identity.IdentityStore;
 import com.finapp.identity.MfaEnrolmentStore;
 import com.finapp.identity.MfaFactorType;
 import com.finapp.identity.Session;
+import com.finapp.paymentmethods.DestinationReference;
+import com.finapp.paymentmethods.PayeeCheck;
 import com.finapp.paymentmethods.PaymentMethod;
 import com.finapp.paymentmethods.PaymentMethodId;
 import com.finapp.paymentmethods.PaymentMethodStatus;
@@ -14,6 +16,9 @@ import com.finapp.paymentmethods.PaymentmethodsAuditAction;
 import com.finapp.paymentmethods.PaymentmethodsErrorCode;
 import com.finapp.paymentmethods.TokenisationGrant;
 import com.finapp.paymentmethods.TokenisationProvider;
+import com.finapp.payments.EndToEndReference;
+import com.finapp.payments.ExchangeAnswer;
+import com.finapp.payments.PushRail;
 import com.finapp.platform.api.ApiException;
 import com.finapp.platform.api.PlatformErrorCode;
 import com.finapp.platform.audit.AuditId;
@@ -21,6 +26,10 @@ import com.finapp.platform.audit.AuditOutcome;
 import com.finapp.platform.audit.AuditRecord;
 import com.finapp.platform.audit.AuditWriter;
 import com.finapp.platform.correlation.CorrelationContext;
+import com.finapp.platform.idempotency.IdempotencyKey;
+import com.finapp.platform.idempotency.IdempotentExecutor;
+import com.finapp.platform.idempotency.RequestFingerprint;
+import com.finapp.platform.idempotency.StoredResponse;
 import com.finapp.platform.outbox.EventPayload;
 import com.finapp.platform.outbox.OutboxWriter;
 import com.finapp.platform.security.SecurityContext;
@@ -30,6 +39,7 @@ import com.finapp.sharedkernel.event.EventEnvelope;
 import com.finapp.sharedkernel.event.EventId;
 import com.finapp.sharedkernel.id.IdGenerator;
 import com.finapp.sharedkernel.security.Sensitive;
+import java.nio.charset.StandardCharsets;
 import java.sql.Connection;
 import java.time.Clock;
 import java.time.Instant;
@@ -44,26 +54,40 @@ import org.springframework.jdbc.datasource.DataSourceUtils;
 import org.springframework.transaction.support.TransactionTemplate;
 
 /**
- * The `/v1/me/payment-methods` slice behind {@link PaymentMethodController} (`P5-TSK-005`) —
- * the {@code BeneficiaryService} shape: {@code Session → Identity → Party} per operation, the
- * Party as owner, no live-customer step (an instrument is a Party's convenience; money-gating
- * happens at the intent, `P5-TSK-009`), and attach as the conditional step-up point.
+ * The `/v1/me/payment-methods` slice behind {@link PaymentMethodController} (`P5-TSK-005`;
+ * bank accounts by `P7-TSK-007`) — the {@code BeneficiaryService} shape:
+ * {@code Session → Identity → Party} per operation, the Party as owner, no live-customer step
+ * (an instrument is a Party's convenience; money-gating happens at the intent, `P5-TSK-009`),
+ * and both registration doors as conditional step-up points.
  *
- * <h2>The attach spans a provider call, so it is two transactions</h2>
+ * <h2>Both registrations span a provider call, so each is two transactions</h2>
  *
- * <p>Tx1 resolves the party and <strong>fails fast</strong> on the step-up (read-only, so the
- * refusal writes nothing and a password-session attacker cannot spend tokenisation calls);
- * the exchange then runs <strong>holding no database connection</strong> (the `P1-TSK-026`
- * discipline); Tx2 <strong>re-checks the step-up authoritatively before any write</strong> —
- * the per-decision read at the write is the control, the Tx1 check the fail-fast — then
- * attaches, audits and announces, creating call only.
+ * <p>Tx1 resolves the party and <strong>fails fast</strong> on the step-up (read-only for the
+ * card; for the bank account it also commits the idempotency claim, and a step-up refusal
+ * rolls the claim back with it, so a refused caller's key stays unburned); the exchange then
+ * runs <strong>holding no database connection</strong> (the `P1-TSK-026` discipline); Tx2
+ * <strong>re-checks the step-up authoritatively before any write</strong> — the per-decision
+ * read at the write is the control, the Tx1 check the fail-fast — then attaches, audits and
+ * announces, creating call only.
+ *
+ * <h2>The card is unkeyed, the bank account keyed — a recorded asymmetry</h2>
+ *
+ * <p>The card exchange is grant-idempotent, so the natural-key convergence is its whole retry
+ * story. The bank grant is <strong>single-use at the provider</strong> (ADR-0062 §2), so a
+ * lost-response retry cannot re-exchange: the register is keyed per party
+ * ({@code payment-method-register:<party>}), Tx1 commits the claim beside nothing, and the
+ * replay answers the recorded outcome — refusals included — byte for byte. A crash between
+ * the exchange and Tx2 leaves the claim in progress until the database-owned lease expires;
+ * the takeover re-dispatches, its re-exchange meets the spent grant's {@code REFUSED}, and
+ * the honest failure is recorded — no money and no state were at stake, the customer links
+ * again.
  *
  * <h2>The events are this surface's, in the act's transaction</h2>
  *
  * <p>{@code paymentmethods.PaymentMethodAttached}/{@code Detached} (plan §10) ride the outbox
  * in the transaction that commits the fact ({@code INV-EVT-01}), acting call only; payloads
- * are empty — the identifiers ride the envelope, and brand is not an enumerated name
- * ({@code INV-AUD-02}'s discipline at {@code EventPayload}).
+ * carry the machine's status and the kind — enumerated names, never a reference and never
+ * display metadata ({@code INV-AUD-02}'s discipline at {@code EventPayload}).
  */
 public final class PaymentMethodService {
 
@@ -73,12 +97,21 @@ public final class PaymentMethodService {
     static final int EVENT_VERSION = 1;
     static final String TARGET_TYPE = "payment_method";
 
+    /** The keyed register's claim scope prefix; the principal completes it (ADR-0004). */
+    static final String REGISTER_SCOPE_PREFIX = "payment-method-register:";
+
+    /** The audit reason when consent was the gate — an enumerated constant, never a value
+     * ({@code INV-AUD-02}); the reason field's first use at this surface. */
+    static final String NO_MATCH_ACKNOWLEDGED_REASON = "PAYEE_CHECK_NO_MATCH_ACKNOWLEDGED";
+
     private final PaymentMethodStore<Connection> methods;
     private final ObjectProvider<TokenisationProvider> tokenisation;
+    private final ObjectProvider<PushRail> instantRail;
     private final MfaEnrolmentStore<Connection> enrolments;
     private final IdentityStore<Connection> identities;
     private final AuditWriter<Connection> auditWriter;
     private final OutboxWriter<Connection> outbox;
+    private final IdempotentExecutor executor;
     private final IdGenerator ids;
     private final Clock clock;
     private final TransactionTemplate transactions;
@@ -87,10 +120,12 @@ public final class PaymentMethodService {
     public PaymentMethodService(
             PaymentMethodStore<Connection> methods,
             ObjectProvider<TokenisationProvider> tokenisation,
+            ObjectProvider<PushRail> instantRail,
             MfaEnrolmentStore<Connection> enrolments,
             IdentityStore<Connection> identities,
             AuditWriter<Connection> auditWriter,
             OutboxWriter<Connection> outbox,
+            IdempotentExecutor executor,
             IdGenerator ids,
             Clock clock,
             TransactionTemplate paymentMethodTransactions,
@@ -98,10 +133,12 @@ public final class PaymentMethodService {
         this.methods = Objects.requireNonNull(methods, "methods must not be null");
         this.tokenisation =
                 Objects.requireNonNull(tokenisation, "tokenisation must not be null");
+        this.instantRail = Objects.requireNonNull(instantRail, "instantRail must not be null");
         this.enrolments = Objects.requireNonNull(enrolments, "enrolments must not be null");
         this.identities = Objects.requireNonNull(identities, "identities must not be null");
         this.auditWriter = Objects.requireNonNull(auditWriter, "auditWriter must not be null");
         this.outbox = Objects.requireNonNull(outbox, "outbox must not be null");
+        this.executor = Objects.requireNonNull(executor, "executor must not be null");
         this.ids = Objects.requireNonNull(ids, "ids must not be null");
         this.clock = Objects.requireNonNull(clock, "clock must not be null");
         this.transactions =
@@ -110,22 +147,30 @@ public final class PaymentMethodService {
         this.dataSource = Objects.requireNonNull(dataSource, "dataSource must not be null");
     }
 
-    /** The rendered instrument — display metadata by construction, never the token. */
+    /**
+     * The rendered instrument — display metadata by construction, never a reference. The card
+     * fields are the card kind's and null on a bank account; {@code payeeCheck} the reverse
+     * (`P7-TSK-007`: one list renders both kinds, and what a kind lacks it honestly lacks).
+     */
     public record PaymentMethodView(
             String id,
+            String kind,
             String brand,
             String displaySuffix,
-            int expiryMonth,
-            int expiryYear,
+            Integer expiryMonth,
+            Integer expiryYear,
+            String payeeCheck,
             String createdAt) {
 
         static PaymentMethodView of(PaymentMethod method) {
             return new PaymentMethodView(
                     method.id().value().toString(),
-                    method.brand(),
+                    method.kind().name(),
+                    method.brand().orElse(null),
                     method.displaySuffix(),
-                    method.expiryMonth(),
-                    method.expiryYear(),
+                    method.expiryMonth().orElse(null),
+                    method.expiryYear().orElse(null),
+                    method.payeeCheck().map(PayeeCheck::name).orElse(null),
                     method.createdAt().toString());
         }
     }
@@ -187,7 +232,7 @@ public final class PaymentMethodService {
                     PaymentMethod fresh;
                     try {
                         fresh =
-                                PaymentMethod.attach(
+                                PaymentMethod.attachCard(
                                         PaymentMethodId.next(ids),
                                         partyId,
                                         instrument.token(),
@@ -211,11 +256,245 @@ public final class PaymentMethodService {
                                 unitOfWork,
                                 PaymentmethodsAuditAction.PAYMENT_METHOD_ATTACHED,
                                 ATTACHED_EVENT,
-                                attachment.method().id(),
-                                attachment.method().status());
+                                attachment.method(),
+                                Optional.empty());
                     }
                     return PaymentMethodView.of(attachment.method());
                 });
+    }
+
+    /**
+     * Registers the external bank account the grant links to (`P7-TSK-007`, ADR-0062 §2), or
+     * replays this key's recorded outcome — refusals included.
+     *
+     * <p>The exchange keeps exactly three values ({@code INV-RAIL-03}): the opaque
+     * destination, the four-character suffix, the payee word. Its evidence bytes are
+     * <strong>deliberately dropped</strong> — a provider body can carry the account holder's
+     * name, which is exactly what this boundary refuses to hold. A {@code NO_MATCH} answer
+     * needs {@code acknowledgeNoMatch} or is refused on the record (409, replayable), the
+     * mismatch never stored; the grant being single-use, the acknowledged retry arrives with
+     * a fresh grant under a new key — the recorded cost of refusing a half-registered
+     * pending state.
+     */
+    public PaymentMethodView registerBankAccount(
+            Session current, RegisterBankAccountRequest request, String idempotencyKey) {
+        Objects.requireNonNull(current, "current must not be null");
+        Objects.requireNonNull(request, "request must not be null");
+        Objects.requireNonNull(idempotencyKey, "idempotencyKey must not be null");
+
+        String grant = request.grant().expose();
+        if (grant == null || grant.isBlank()) {
+            throw new ApiException(
+                    PlatformErrorCode.VALIDATION_FAILED,
+                    "A bank-account grant was refused by the domain rule",
+                    "grant must be the rail provider's one-time linking grant.");
+        }
+
+        // Tx1: resolve the party (the claim's scope names the principal, so the reads come
+        // first in the same transaction), fail fast on the step-up, then claim. A step-up
+        // refusal aborts the transaction and takes the claim with it - the key stays
+        // unburned, and no exchange was spent on a refused caller.
+        record Begun(UUID partyId, IdempotencyKey key, IdempotentExecutor.BeginOutcome outcome) {}
+        Begun begun =
+                inOneTransaction(
+                        unitOfWork -> {
+                            UUID partyId = partyOf(unitOfWork, current);
+                            requireConditionalAssurance(unitOfWork, current);
+                            IdempotencyKey key =
+                                    new IdempotencyKey(
+                                            REGISTER_SCOPE_PREFIX + partyId, idempotencyKey);
+                            // The grant is part of what the request MEANS, so it enters the
+                            // canonical form - SHA-256-hashed in the same expression, never
+                            // stored or logged bare (the PayoutDestinations claim).
+                            RequestFingerprint fingerprint =
+                                    RequestFingerprint.sha256(
+                                            ("payment-method-register|"
+                                                            + partyId
+                                                            + "|"
+                                                            + grant
+                                                            + "|"
+                                                            + request.acknowledgeNoMatch())
+                                                    .getBytes(StandardCharsets.UTF_8));
+                            return new Begun(
+                                    partyId,
+                                    key,
+                                    executor.begin(
+                                            unitOfWork,
+                                            key,
+                                            fingerprint,
+                                            claimed ->
+                                                    // Nothing beyond the claim must be durable
+                                                    // before the exchange; a lease takeover
+                                                    // re-runs this and converges by re-reading
+                                                    // the same party.
+                                                    partyId.toString()
+                                                            .getBytes(StandardCharsets.UTF_8)));
+                        });
+        if (begun.outcome().replay().isPresent()) {
+            return parsedReplay(begun.outcome().replay().get());
+        }
+
+        // The exchange, holding no database connection (ADR-0046's discipline; the grant's
+        // one legitimate destination). Our reference is minted fresh: the exchange is not a
+        // send, and the claim - not the reference - is this command's convergence.
+        PushRail rail = instantRail.getIfAvailable();
+        ExchangeAnswer answer =
+                rail == null
+                        ? ExchangeAnswer.nothingSent()
+                        : rail.exchange(
+                                new PushRail.GrantExchange(
+                                        new EndToEndReference(
+                                                ids.next().toString().replace("-", "")),
+                                        grant));
+
+        // Tx2: the authoritative step-up decision, the outcome applied, and the claim
+        // completed IN THE SAME TRANSACTION - a refusal is recorded terminal with its error,
+        // then thrown after the commit so the record survives the 4xx/5xx answer.
+        Outcome outcome =
+                inOneTransaction(
+                        unitOfWork -> {
+                            requireConditionalAssurance(unitOfWork, current);
+                            Outcome judged = judge(unitOfWork, begun.partyId(), request, answer);
+                            executor.complete(
+                                    unitOfWork,
+                                    begun.key(),
+                                    judged.refusal() == null,
+                                    StoredResponse.of(
+                                            judged.stored().getBytes(StandardCharsets.UTF_8),
+                                            "text/plain"));
+                            return judged;
+                        });
+        if (outcome.refusal() != null) {
+            throw refusalFor(outcome.refusal());
+        }
+        return outcome.view();
+    }
+
+    /** Tx2's judged result: a view to answer, or a refusal recorded on the claim. */
+    private record Outcome(PaymentMethodView view, PaymentmethodsErrorCode refusal) {
+
+        String stored() {
+            return refusal != null
+                    ? "ERR|" + refusal.name()
+                    : "OK|"
+                            + view.id()
+                            + "|"
+                            + view.displaySuffix()
+                            + "|"
+                            + view.payeeCheck()
+                            + "|"
+                            + view.createdAt();
+        }
+    }
+
+    /** Maps the exchange's total answer onto the register's outcome, acting only on
+     * {@code EXCHANGED} with consent satisfied. */
+    private Outcome judge(
+            Connection unitOfWork,
+            UUID partyId,
+            RegisterBankAccountRequest request,
+            ExchangeAnswer answer) {
+        return switch (answer.outcome()) {
+            case REFUSED ->
+                    // Knowledge: spent, expired or revoked - the caller's own grant (422).
+                    new Outcome(null, PaymentmethodsErrorCode.GRANT_EXCHANGE_REFUSED);
+            case INDETERMINATE, NOTHING_SENT ->
+                    // No usable answer (or no rail configured): honest retry-later, recorded.
+                    new Outcome(null, PaymentmethodsErrorCode.GRANT_EXCHANGE_UNAVAILABLE);
+            case EXCHANGED -> {
+                PayeeCheck check = payeeCheckOf(answer.payee().orElseThrow());
+                if (check == PayeeCheck.NO_MATCH && !request.acknowledgeNoMatch()) {
+                    // ADR-0062 §2's consent rule, refused ON THE RECORD: the claim stores
+                    // this 409, and nothing of the mismatch is retained (INV-RAIL-03).
+                    yield new Outcome(null, PaymentmethodsErrorCode.PAYEE_CHECK_NO_MATCH);
+                }
+                PaymentMethod fresh;
+                try {
+                    fresh =
+                            PaymentMethod.registerBankAccount(
+                                    PaymentMethodId.next(ids),
+                                    partyId,
+                                    DestinationReference.of(
+                                            answer.destination().orElseThrow().value()),
+                                    answer.displaySuffix().orElseThrow(),
+                                    check,
+                                    request.acknowledgeNoMatch(),
+                                    clock);
+                } catch (IllegalArgumentException unstorable) {
+                    // An answer we refuse to store - a suffix outside the bound, a
+                    // destination in a refused shape (INV-RAIL-03's structural stance) - is
+                    // an exchange that did not yield an instrument. The adapter-prefix
+                    // contract rides DestinationReference's javadoc.
+                    yield new Outcome(null, PaymentmethodsErrorCode.GRANT_EXCHANGE_UNAVAILABLE);
+                }
+                PaymentMethodStore.Attachment attachment =
+                        methods.attachOrConverge(unitOfWork, fresh);
+                if (attachment.created()) {
+                    // Only the creating call is an act; the audit carries the consent
+                    // reason exactly when consent was the gate.
+                    act(
+                            unitOfWork,
+                            PaymentmethodsAuditAction.PAYMENT_METHOD_ATTACHED,
+                            ATTACHED_EVENT,
+                            attachment.method(),
+                            attachment.method().noMatchAcknowledgedAt().isPresent()
+                                    ? Optional.of(NO_MATCH_ACKNOWLEDGED_REASON)
+                                    : Optional.empty());
+                }
+                yield new Outcome(PaymentMethodView.of(attachment.method()), null);
+            }
+        };
+    }
+
+    /** The port's word onto this module's own — exhaustive, so a fifth word is a compile
+     * error here rather than a runtime guess (the PCI build-graph restatement's seam). */
+    private static PayeeCheck payeeCheckOf(ExchangeAnswer.ConfirmationOfPayee payee) {
+        return switch (payee) {
+            case MATCH -> PayeeCheck.MATCH;
+            case CLOSE_MATCH -> PayeeCheck.CLOSE_MATCH;
+            case NO_MATCH -> PayeeCheck.NO_MATCH;
+            case UNAVAILABLE -> PayeeCheck.UNAVAILABLE;
+        };
+    }
+
+    /** A replayed claim, byte for byte: the recorded view, or the recorded refusal re-thrown. */
+    private static PaymentMethodView parsedReplay(StoredResponse response) {
+        String stored = new String(response.body(), StandardCharsets.UTF_8);
+        if (stored.startsWith("ERR|")) {
+            throw refusalFor(PaymentmethodsErrorCode.valueOf(stored.substring(4)));
+        }
+        String[] parts = stored.split("\\|");
+        if (parts.length != 5 || !"OK".equals(parts[0])) {
+            throw new IllegalStateException(
+                    "a payment-method register claim held a response in no known form");
+        }
+        return new PaymentMethodView(
+                parts[1],
+                com.finapp.paymentmethods.PaymentMethodKind.BANK_ACCOUNT.name(),
+                null,
+                parts[2],
+                null,
+                null,
+                parts[3],
+                parts[4]);
+    }
+
+    private static ApiException refusalFor(PaymentmethodsErrorCode code) {
+        return switch (code) {
+            case GRANT_EXCHANGE_REFUSED ->
+                    new ApiException(code, "The rail provider refused the grant");
+            case GRANT_EXCHANGE_UNAVAILABLE ->
+                    new ApiException(code, "The grant exchange could not be completed");
+            case PAYEE_CHECK_NO_MATCH ->
+                    new ApiException(
+                            code,
+                            "The payee check found no match and the request carried no"
+                                    + " acknowledgement");
+            default ->
+                    throw new IllegalStateException(
+                            "a register claim recorded a refusal this surface never issues: "
+                                    + code.name());
+        };
     }
 
     /** The caller's live payment methods, oldest first. */
@@ -246,12 +525,7 @@ public final class PaymentMethodService {
                     if (methods.detach(unitOfWork, method, partyId, Instant.now(clock))) {
                         // The winning detach is the act; a converged retry and a stranger's
                         // attempt moved nothing and record nothing.
-                        act(
-                                unitOfWork,
-                                PaymentmethodsAuditAction.PAYMENT_METHOD_DETACHED,
-                                DETACHED_EVENT,
-                                method,
-                                PaymentMethodStatus.DETACHED);
+                        actOnDetach(unitOfWork, method);
                         return true;
                     }
                     return methods.findOwned(unitOfWork, method, partyId).isPresent();
@@ -297,16 +571,46 @@ public final class PaymentMethodService {
 
     /**
      * The person's own act: the audit record naming the person ({@code SecurityContext
-     * .require()}) and the event, in the act's transaction ({@code INV-EVT-01}). Identifiers
-     * and enumerated names only — never the token, never display metadata
-     * ({@code INV-AUD-02}).
+     * .require()}) and the event, in the act's transaction ({@code INV-EVT-01}). Identifiers,
+     * enumerated names and the enumerated consent reason only — never a reference, never
+     * display metadata ({@code INV-AUD-02}).
      */
     private void act(
             Connection unitOfWork,
             PaymentmethodsAuditAction action,
             String eventType,
+            PaymentMethod method,
+            Optional<String> reason) {
+        append(
+                unitOfWork,
+                action,
+                eventType,
+                method.id(),
+                reason,
+                EventPayload.of()
+                        .with("status", method.status().name())
+                        .with("kind", method.kind().name()));
+    }
+
+    /** The detach's act: the conditional {@code UPDATE} never loaded the row, so the payload
+     * carries the machine's status alone — the shipped `P5-TSK-005` contract unchanged. */
+    private void actOnDetach(Connection unitOfWork, PaymentMethodId method) {
+        append(
+                unitOfWork,
+                PaymentmethodsAuditAction.PAYMENT_METHOD_DETACHED,
+                DETACHED_EVENT,
+                method,
+                Optional.empty(),
+                EventPayload.of().with("status", PaymentMethodStatus.DETACHED.name()));
+    }
+
+    private void append(
+            Connection unitOfWork,
+            PaymentmethodsAuditAction action,
+            String eventType,
             PaymentMethodId method,
-            PaymentMethodStatus status) {
+            Optional<String> reason,
+            EventPayload payload) {
         Correlation correlation = resolvedCorrelation();
         Instant now = Instant.now(clock);
         auditWriter.append(
@@ -318,7 +622,7 @@ public final class PaymentMethodService {
                         action,
                         TARGET_TYPE,
                         method.value().toString(),
-                        Optional.empty(),
+                        reason,
                         AuditOutcome.SUCCEEDED,
                         correlation.correlationId(),
                         Optional.empty()));
@@ -335,10 +639,10 @@ public final class PaymentMethodService {
                         PRODUCER,
                         correlation.correlationId(),
                         correlation.cause().orElseThrow()),
-                // Enumerated names only (INV-AUD-02 at EventPayload): the machine's
-                // status - and never the token, never display metadata, since brand is
-                // provider text rather than an enumerated name.
-                EventPayload.of().with("status", status.name()).toBytes(),
+                // Enumerated names only (INV-AUD-02 at EventPayload): the machine's status
+                // and the kind - and never a reference, never display metadata, since brand
+                // is provider text rather than an enumerated name.
+                payload.toBytes(),
                 EventPayload.MEDIA_TYPE);
     }
 

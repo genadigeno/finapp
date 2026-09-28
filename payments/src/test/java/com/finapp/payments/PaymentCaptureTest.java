@@ -77,15 +77,18 @@ class PaymentCaptureTest {
         intent =
                 PaymentIntent.rehydrate(
                         PaymentIntentId.next(IDS), UUID.randomUUID(), UUID.randomUUID(),
-                        UUID.randomUUID(), LedgerAccountId.next(IDS), AMOUNT,
-                        PaymentIntentStatus.PROCESSING, Instant.now(CLOCK));
+                        UUID.randomUUID(), LedgerAccountId.next(IDS), CaptureMode.AUTOMATIC, AMOUNT,
+                        PaymentIntentStatus.PROCESSING, Instant.now(CLOCK), null);
         intents.rows.put(intent.id().value(), intent);
         authorized =
                 PaymentAttempt.rehydrate(
                         PaymentAttemptId.next(IDS), intent.id(),
+                        SimulatedCardPspAdapter.RAIL.id(),
+                        InteractionModel.TWO_STEP,
                         new ProviderIdempotencyReference("auth-" + IDS.next()), null,
-                        new ProviderReference("psp-auth-1"), AMOUNT, null, null, null,
-                        PaymentAttemptStatus.AUTHORIZED, Instant.now(CLOCK));
+                        new ProviderReference("psp-auth-1"), AMOUNT, null, null, null, null, null,
+                        PaymentAttemptStatus.AUTHORIZED, Instant.now(CLOCK),
+                null, null, null, null, null);
         attempts.rows.put(authorized.id().value(), authorized);
     }
 
@@ -97,13 +100,7 @@ class PaymentCaptureTest {
     private PaymentCapture capture() {
         // The tripwire: a REAL PostingService and chart over stores with no database - any
         // touch explodes, so "nothing posted" is structural in this suite (class javadoc).
-        return new PaymentCapture(
-                runner,
-                intents,
-                attempts,
-                evidence,
-                provider,
-                new PaymentOutcomes(
+        PaymentOutcomes outcomes = new PaymentOutcomes(
                         intents,
                         attempts,
                         new com.finapp.payments.JdbcRefundStore(),
@@ -137,6 +134,33 @@ class PaymentCaptureTest {
                         (uow, record) -> auditTrail.add(record),
                         (uow, envelope, payload, mediaType) -> events.add(envelope),
                         IDS,
+                        CLOCK,
+                        PaymentRails.of(java.util.List.of(SimulatedCardPspAdapter.RAIL)),
+                new JdbcUnmatchedConfirmationStore(),
+                        new com.finapp.ledger.JdbcLedgerAccountStore(),
+                        // No dispute in this suite (P7-TSK-013): a tripwire.
+                        UntouchedChargebacks.over(
+                                attempts, intents,
+                                PaymentRails.of(java.util.List.of(SimulatedCardPspAdapter.RAIL)),
+                                IDS, CLOCK));
+        return new PaymentCapture(
+                runner,
+                intents,
+                attempts,
+                evidence,
+                provider,
+                outcomes,
+                // The redirect's finisher (P7-TSK-004), over the same fakes.
+                new com.finapp.payments.PaymentVoid(
+                        runner,
+                        intents,
+                        attempts,
+                        evidence,
+                        provider,
+                        outcomes,
+                        PaymentRails.of(java.util.List.of(SimulatedCardPspAdapter.RAIL)),
+                        (uow, record) -> auditTrail.add(record),
+                        IDS,
                         CLOCK),
                 (uow, record) -> auditTrail.add(record),
                 IDS,
@@ -163,16 +187,28 @@ class PaymentCaptureTest {
     }
 
     @Test
-    @DisplayName("declined and refused-connection fail both rows; ambiguity posts nothing")
+    @DisplayName("a DECLINED capture on the void-declaring rail RELEASES the promise -"
+            + " redirected into the void and concluded VOIDED (P7-TSK-004); a refused"
+            + " connection fails both rows; ambiguity posts nothing")
     void nonApprovedVerdictsCommitTheirStates() {
         provider.answer = ProviderAnswer.declined("declined-bytes".getBytes());
         PaymentCapture.CaptureResult declined = capture().capture(authorized.id());
-        assertThat(declined.attempt()).isEqualTo(PaymentAttemptStatus.FAILED);
+        // The redirect (capability-gated on the STORED rail): the outcome transaction
+        // committed VOID_DISPATCHED with its minted reference, this port-owning resolver
+        // sent the void, and the release concluded the payment - the authorization is no
+        // longer held against the customer for a capture that will never happen.
+        assertThat(declined.attempt()).isEqualTo(PaymentAttemptStatus.VOIDED);
         assertThat(declined.intent()).isEqualTo(PaymentIntentStatus.FAILED);
-        assertThat(attempts.single().failureReason()).isEqualTo(PaymentFailureReason.DECLINED);
+        assertThat(provider.voidCalls).as("the redirect's send happened").isEqualTo(1);
+        assertThat(attempts.single().voidReference()).isNotNull();
+        assertThat(attempts.single().voidProviderReference()).isNotNull();
+        assertThat(attempts.single().failureReason())
+                .as("VOIDED is a release, not a failure - no mapped reason")
+                .isNull();
         assertThat(intents.rows.get(intent.id().value()).status())
                 .isEqualTo(PaymentIntentStatus.FAILED);
-        assertThat(events).anyMatch(e -> e.eventType().equals("payments.PaymentFailed"));
+        assertThat(events)
+                .anyMatch(e -> e.eventType().equals("payments.AuthorizationVoided"));
 
         reset();
         provider.answer = ProviderAnswer.nothingSent();
@@ -236,9 +272,10 @@ class PaymentCaptureTest {
         return switch (status) {
             case AUTH_DISPATCHED ->
                     PaymentAttempt.rehydrate(
-                            authorized.id(), intent.id(), authorized.authorizationReference(),
-                            null, null, null, null, null, null,
-                            PaymentAttemptStatus.AUTH_DISPATCHED, authorized.createdAt());
+                            authorized.id(), intent.id(), SimulatedCardPspAdapter.RAIL.id(), InteractionModel.TWO_STEP, authorized.authorizationReference(),
+                            null, null, null, null, null, null, null, null,
+                            PaymentAttemptStatus.AUTH_DISPATCHED, authorized.createdAt(),
+                null, null, null, null, null);
             case CAPTURE_DISPATCHED ->
                     authorized.dispatchCapture(
                             new ProviderIdempotencyReference("cap-" + IDS.next()));
@@ -315,6 +352,17 @@ class PaymentCaptureTest {
             throw new UnsupportedOperationException();
         }
 
+        /** The declined-capture redirect's send (P7-TSK-004): scripted like the capture. */
+        ProviderAnswer voidAnswer =
+                ProviderAnswer.approved(new ProviderReference("psp-void-scripted"), "voided".getBytes());
+        int voidCalls;
+
+        @Override
+        public ProviderAnswer voidAuthorization(VoidRequest request) {
+            voidCalls++;
+            return voidAnswer;
+        }
+
         @Override
         public QueryAnswer query(ProviderIdempotencyReference ourReference) {
             throw new UnsupportedOperationException();
@@ -326,6 +374,12 @@ class PaymentCaptureTest {
 
         @Override
         public java.util.List<PaymentIntent> listFor(Connection uow, UUID partyId) {
+            throw new UnsupportedOperationException("not exercised here");
+        }
+
+        @Override
+        public boolean anyInFlightCrediting(
+                Connection uow, com.finapp.ledger.LedgerAccountId account) {
             throw new UnsupportedOperationException("not exercised here");
         }
 
@@ -357,7 +411,7 @@ class PaymentCaptureTest {
                     id.value(),
                     PaymentIntent.rehydrate(
                             row.id(), row.partyId(), row.customerId(), row.paymentMethodId(),
-                            row.walletAccount(), row.amount(), to, row.createdAt()));
+                            row.creditAccount(), CaptureMode.AUTOMATIC, row.amount(), to, row.createdAt(), null));
             return true;
         }
 
@@ -369,6 +423,64 @@ class PaymentCaptureTest {
 
     private static final class FakeAttemptStore implements PaymentAttemptStore<Connection> {
 
+        // ------------------------------- the push model (P7-TSK-009): not this suite's subject.
+
+        @Override
+        public java.util.Optional<PaymentAttempt> findByEndToEndReference(
+                Connection uow, EndToEndReference reference) {
+            throw new UnsupportedOperationException("not exercised here");
+        }
+
+        @Override
+        public java.util.Optional<PaymentAttempt> findBySchemeReference(
+                Connection uow, ProviderReference reference) {
+            throw new UnsupportedOperationException("not exercised here");
+        }
+
+        @Override
+        public boolean openInitiation(
+                Connection uow,
+                PaymentAttemptId attempt,
+                com.finapp.sharedkernel.security.Sensitive<String> handle) {
+            throw new UnsupportedOperationException("not exercised here");
+        }
+
+        @Override
+        public boolean execute(
+                Connection uow,
+                PaymentAttemptId attempt,
+                PaymentAttemptStatus from,
+                ProviderReference schemeReference,
+                java.util.Optional<String> settlementCycle) {
+            throw new UnsupportedOperationException("not exercised here");
+        }
+
+        @Override
+        public boolean failHandleless(
+                Connection uow, PaymentAttemptId attempt, PaymentFailureReason reason) {
+            throw new UnsupportedOperationException("not exercised here");
+        }
+
+        @Override
+        public boolean renewInitiationPermit(
+                Connection uow,
+                PaymentAttemptId attempt,
+                java.time.Instant expected,
+                java.time.Instant renewed) {
+            throw new UnsupportedOperationException("not exercised here");
+        }
+
+        @Override
+        public java.util.List<PaymentAttempt> findResolvableInitiations(
+                Connection uow, java.time.Instant contactedBefore, int limit) {
+            throw new UnsupportedOperationException("not exercised here");
+        }
+
+        @Override
+        public UnknownReading awaitingReading(Connection uow) {
+            throw new UnsupportedOperationException("not exercised here");
+        }
+
         @Override
         public java.util.Optional<PaymentAttempt> findByOperationReference(
                 Connection uow, ProviderIdempotencyReference reference) {
@@ -376,7 +488,14 @@ class PaymentCaptureTest {
         }
 
         @Override
-        public UnknownReading unknownReading(Connection uow) {
+        public UnknownReading unknownReading(
+                Connection uow, java.time.Duration dispatchedBound) {
+            throw new UnsupportedOperationException("not exercised here");
+        }
+
+        @Override
+        public java.util.List<PaymentAttempt> findStrandedAuthorizations(
+                Connection uow, java.time.Instant authorizedBefore, int limit) {
             throw new UnsupportedOperationException("not exercised here");
         }
 
@@ -447,6 +566,26 @@ class PaymentCaptureTest {
         }
 
         @Override
+        public boolean dispatchVoid(
+                Connection uow, PaymentAttemptId id, PaymentAttemptStatus from,
+                ProviderIdempotencyReference reference) {
+            return move(id, from, row -> row.dispatchVoid(reference));
+        }
+
+        @Override
+        public boolean voided(
+                Connection uow, PaymentAttemptId id, PaymentAttemptStatus from,
+                ProviderReference reference) {
+            return move(id, from, row -> row.voided(reference));
+        }
+
+        @Override
+        public boolean markVoidUnknown(Connection uow, PaymentAttemptId id) {
+            return move(id, PaymentAttemptStatus.VOID_DISPATCHED,
+                    PaymentAttempt::voidOutcomeUnknown);
+        }
+
+        @Override
         public boolean authorize(
                 Connection uow, PaymentAttemptId id, PaymentAttemptStatus from,
                 ProviderReference reference, Money amount) {
@@ -490,6 +629,20 @@ class PaymentCaptureTest {
         public void append(
                 Connection uow, Optional<PaymentAttemptId> attempt, Optional<RefundId> refund,
                 EvidenceKind kind, byte[] payload, Instant recordedAt) {
+            payloads.add(payload.clone());
+        }
+
+        @Override
+        public void appendForWithdrawal(
+                Connection uow, WithdrawalId withdrawal, EvidenceKind kind, byte[] payload,
+                Instant recordedAt) {
+            payloads.add(payload.clone());
+        }
+
+        @Override
+        public void appendForDisputeResponse(
+                Connection uow, DisputeResponseId response, EvidenceKind kind,
+                byte[] payload, Instant recordedAt) {
             payloads.add(payload.clone());
         }
 

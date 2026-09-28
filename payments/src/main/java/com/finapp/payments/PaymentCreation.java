@@ -44,6 +44,12 @@ import lombok.RequiredArgsConstructor;
  * scale (the backlog's list; {@code INV-IDEM-03}'s subjects, the actor per ADR-0004). The
  * stored body replays {@code intentId|status}.
  *
+ * <p><strong>A wiring whose keys are derived claims in a scope of its own</strong> (the
+ * Phase 6 → 7 transition): the checkout opens its payment under {@code checkout:<checkoutId>},
+ * and in {@code payment.create} any customer could claim that predictable key first through
+ * the public command, leaving the payer's confirmation a fingerprint it could never match. The
+ * scope is therefore the wiring's decision and a constructor argument, never a default.
+ *
  * <h2>The resolutions are authoritative, and a refusal writes nothing</h2>
  *
  * <p>The wallet (owner, account, currency) and the instrument's liveness come from
@@ -55,7 +61,10 @@ import lombok.RequiredArgsConstructor;
 @RequiredArgsConstructor
 public final class PaymentCreation {
 
-    /** The idempotency scope (ADR-0004): one command type, one scope. */
+    /**
+     * The public command's idempotency scope (ADR-0004): one command type, one scope. The
+     * checkout's derived-key wiring claims in its own ({@code CheckoutService}).
+     */
     public static final String IDEMPOTENCY_SCOPE = "payment.create";
 
     static final String CREATED_EVENT_TYPE = "payments.PaymentIntentCreated";
@@ -71,20 +80,51 @@ public final class PaymentCreation {
     @NonNull private final IdGenerator ids;
     @NonNull private final Clock clock;
 
+    /**
+     * The claim scope - {@link #IDEMPOTENCY_SCOPE} for the public command, a wiring's own where
+     * it derives its keys. Last, so no existing argument moved.
+     */
+    @NonNull private final String scope;
+
     /** The caller's ask: their party, their instrument, the amount, and their retry key. */
     public record CreatePaymentCommand(
-            UUID callerPartyId, UUID paymentMethodId, Money amount, String idempotencyKey) {
+            UUID callerPartyId,
+            UUID paymentMethodId,
+            Money amount,
+            String idempotencyKey,
+            // The book instrument's flag (P7-TSK-011), appended last: true exactly when the
+            // payer pays from their own wallet, and then no method is named at all - the
+            // intent's XOR, at the command.
+            boolean walletInstrument) {
         public CreatePaymentCommand {
             Objects.requireNonNull(callerPartyId, "callerPartyId must not be null");
-            Objects.requireNonNull(paymentMethodId, "paymentMethodId must not be null");
+            if (walletInstrument == (paymentMethodId != null)) {
+                throw new IllegalArgumentException(
+                        "a create command names exactly one instrument: a registered payment"
+                                + " method or the payer's own wallet (P7-TSK-011)");
+            }
             Objects.requireNonNull(amount, "amount must not be null");
             Objects.requireNonNull(idempotencyKey, "idempotencyKey must not be null");
+        }
+
+        /** The registered-method shape every pre-`P7-TSK-011` caller keeps, unchanged. */
+        public CreatePaymentCommand(
+                UUID callerPartyId, UUID paymentMethodId, Money amount, String idempotencyKey) {
+            this(callerPartyId, paymentMethodId, amount, idempotencyKey, false);
+        }
+
+        /** The wallet-instrument shape: no method — the payer's wallet is resolved. */
+        public static CreatePaymentCommand fromWallet(
+                UUID callerPartyId, Money amount, String idempotencyKey) {
+            return new CreatePaymentCommand(callerPartyId, null, amount, idempotencyKey, true);
         }
 
         /** The key and the currency — never the amount ({@code INV-AUD-02}). */
         @Override
         public String toString() {
-            return "CreatePaymentCommand[" + paymentMethodId + ", " + amount.currency() + "]";
+            return "CreatePaymentCommand["
+                    + (walletInstrument ? "WALLET" : String.valueOf(paymentMethodId))
+                    + ", " + amount.currency() + "]";
         }
     }
 
@@ -115,25 +155,48 @@ public final class PaymentCreation {
                 participants
                         .walletOwnedBy(unitOfWork, command.callerPartyId())
                         .orElseThrow(NoWalletForPaymentException::new);
-        participants
-                .instrumentOwnedBy(
-                        unitOfWork, command.callerPartyId(), command.paymentMethodId())
-                .orElseThrow(UnknownPaymentInstrumentException::new);
+        Optional<PaymentParticipants.Wallet> payerWallet = Optional.empty();
+        if (command.walletInstrument()) {
+            // The book instrument (P7-TSK-011): the payer's OWN wallet, resolved - never a
+            // request's claim - and judged in the offer's currency BOTH ways: the credit
+            // side's (below, as every instrument) and the debit wallet's own, because the
+            // ledger refuses a cross-currency line and the refusal belongs here, before
+            // any key is consumed.
+            payerWallet =
+                    Optional.of(
+                            participants
+                                    .payerWalletOwnedBy(unitOfWork, command.callerPartyId())
+                                    .orElseThrow(NoWalletForPaymentException::new));
+            if (!command.amount().currency().equals(payerWallet.get().currency())) {
+                throw new PaymentCurrencyMismatchException(
+                        command.amount().currency(), payerWallet.get().currency());
+            }
+        } else {
+            // Liveness and ownership of the instrument, EITHER registered kind
+            // (P7-TSK-009): the card's token and the bank account's destination are the
+            // confirmation's per-kind reads; creation only needs the instrument to be the
+            // caller's and live.
+            participants
+                    .instrumentKindOwnedBy(
+                            unitOfWork, command.callerPartyId(), command.paymentMethodId())
+                    .orElseThrow(UnknownPaymentInstrumentException::new);
+        }
         if (!command.amount().currency().equals(wallet.currency())) {
             throw new PaymentCurrencyMismatchException(
                     command.amount().currency(), wallet.currency());
         }
 
-        IdempotencyKey key = new IdempotencyKey(IDEMPOTENCY_SCOPE, command.idempotencyKey());
+        IdempotencyKey key = new IdempotencyKey(scope, command.idempotencyKey());
+        Optional<PaymentParticipants.Wallet> payer = payerWallet;
         RequestFingerprint fingerprint =
-                RequestFingerprint.sha256(canonicalForm(command, wallet, actor));
+                RequestFingerprint.sha256(canonicalForm(scope, command, wallet, payer, actor));
 
         IdempotentExecutor.ExecutionOutcome outcome =
                 executor.execute(
                         unitOfWork,
                         key,
                         fingerprint,
-                        uow -> accept(uow, command, wallet, actor, correlation));
+                        uow -> accept(uow, command, wallet, payer, actor, correlation));
 
         String[] body =
                 new String(
@@ -157,17 +220,27 @@ public final class PaymentCreation {
             Connection uow,
             CreatePaymentCommand command,
             PaymentParticipants.Wallet wallet,
+            Optional<PaymentParticipants.Wallet> payerWallet,
             Actor actor,
             Correlation correlation) {
         PaymentIntent intent =
-                PaymentIntent.create(
-                        ids,
-                        clock,
-                        command.callerPartyId(),
-                        wallet.customerId(),
-                        command.paymentMethodId(),
-                        wallet.account(),
-                        command.amount());
+                command.walletInstrument()
+                        ? PaymentIntent.createFromWallet(
+                                ids,
+                                clock,
+                                command.callerPartyId(),
+                                wallet.customerId(),
+                                payerWallet.orElseThrow().account(),
+                                wallet.account(),
+                                command.amount())
+                        : PaymentIntent.create(
+                                ids,
+                                clock,
+                                command.callerPartyId(),
+                                wallet.customerId(),
+                                command.paymentMethodId(),
+                                wallet.account(),
+                                command.amount());
         intents.insert(uow, intent);
 
         Instant now = Instant.now(clock);
@@ -186,8 +259,15 @@ public final class PaymentCreation {
                         // Identifiers and enumerated names - never an amount (INV-AUD-02).
                         Optional.of(
                                 "intent=" + intent.id()
-                                        + ", instrument=" + intent.paymentMethodId()
-                                        + ", wallet=" + intent.walletAccount()
+                                        + ", instrument="
+                                        + intent.debitAccount()
+                                                .map(account -> "WALLET:" + account.value())
+                                                .orElseGet(
+                                                        () ->
+                                                                String.valueOf(
+                                                                        intent
+                                                                                .paymentMethodId()))
+                                        + ", creditAccount=" + intent.creditAccount()
                                         + ", status=" + intent.status())));
         outbox.write(
                 uow,
@@ -210,14 +290,27 @@ public final class PaymentCreation {
                 StoredResponse.of(body.getBytes(StandardCharsets.UTF_8), "text/plain"));
     }
 
-    /** The actor and the money's meaning ({@code INV-IDEM-03}); correlation excluded. */
+    /**
+     * The actor and the money's meaning ({@code INV-IDEM-03}); correlation excluded. The
+     * instrument segment is the method's identifier, or — for the wallet instrument
+     * (`P7-TSK-011`) — {@code WALLET:<resolved account>} in the SAME position, so every
+     * pre-existing method fingerprint is byte-identical and a retry that switches
+     * instruments meets the conflict it should.
+     */
     private static byte[] canonicalForm(
-            CreatePaymentCommand command, PaymentParticipants.Wallet wallet, Actor actor) {
-        return (IDEMPOTENCY_SCOPE
+            String scope,
+            CreatePaymentCommand command,
+            PaymentParticipants.Wallet wallet,
+            Optional<PaymentParticipants.Wallet> payerWallet,
+            Actor actor) {
+        return (scope
                         + "|" + actor.id()
                         + "|" + command.callerPartyId()
                         + "|" + wallet.account().value()
-                        + "|" + command.paymentMethodId()
+                        + "|"
+                        + payerWallet
+                                .map(payer -> "WALLET:" + payer.account().value())
+                                .orElseGet(() -> String.valueOf(command.paymentMethodId()))
                         + "|" + command.amount().minorUnits()
                         + "|" + command.amount().currency().code()
                         + "|" + command.amount().scale())

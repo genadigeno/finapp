@@ -24,7 +24,14 @@ import java.sql.SQLException;
 import java.time.Clock;
 import java.time.Duration;
 import java.time.ZoneOffset;
+import java.util.ArrayList;
+import java.util.List;
 import java.util.UUID;
+import java.util.concurrent.CountDownLatch;
+import java.util.concurrent.ExecutorService;
+import java.util.concurrent.Executors;
+import java.util.concurrent.Future;
+import java.util.concurrent.TimeUnit;
 import java.util.regex.Matcher;
 import java.util.regex.Pattern;
 import org.junit.jupiter.api.DisplayName;
@@ -164,6 +171,74 @@ class MerchantApiKeyDatabaseTest {
                                 "SELECT count(*) FROM merchant.merchant_api_key_event WHERE"
                                         + " key_id = ?",
                                 UUID.fromString(keyId)))
+                .isEqualTo(1);
+    }
+
+    @Test
+    @DisplayName("TEN INSTANCES revoking one live key make ONE revocation - one history row, one"
+            + " audit record, ten 204s, and the key refuses")
+    void tenConcurrentRevocationsMakeOne() throws Exception {
+        // P6-DOC-001: the phase review found the revocation's convergence proven one repeat at a
+        // time (the test above), so the key row's FOR UPDATE - what makes nine racers find the
+        // REVOKED the first one wrote and return having written nothing - had no race test.
+        String admin = administrator();
+        Merchant merchant = onboarded(admin);
+        String key = issueKey(admin, merchant.id());
+        String keyId = key.substring(0, key.indexOf('.'));
+        assertThat(get("/v1/merchant/me", key).statusCode()).isEqualTo(200);
+        int racers = 10;
+
+        CountDownLatch start = new CountDownLatch(1);
+        List<Future<Integer>> results = new ArrayList<>();
+        ExecutorService pool = Executors.newFixedThreadPool(racers);
+        try {
+            for (int i = 0; i < racers; i++) {
+                results.add(
+                        pool.submit(
+                                () -> {
+                                    start.await();
+                                    return delete(
+                                                    "/v1/operator/merchants/" + merchant.id()
+                                                            + "/api-keys/" + keyId,
+                                                    "{\"reason\":\"leaked in a support ticket\"}",
+                                                    admin)
+                                            .statusCode();
+                                }));
+            }
+            start.countDown();
+            for (Future<Integer> result : results) {
+                assertThat(result.get(60, TimeUnit.SECONDS))
+                        .as("a racer that finds the key already REVOKED converges on the same"
+                                + " 204 (MerchantApiKeys.revoke)")
+                        .isEqualTo(204);
+            }
+        } finally {
+            pool.shutdownNow();
+        }
+
+        assertThat(get("/v1/merchant/me", key).statusCode())
+                .as("revoked once, and refused from the next request on")
+                .isEqualTo(401);
+        assertThat(
+                        count(
+                                "SELECT count(*) FROM merchant.merchant_api_key_event WHERE"
+                                        + " key_id = ? AND from_status = 'ACTIVE' AND to_status"
+                                        + " = 'REVOKED'",
+                                UUID.fromString(keyId)))
+                .as("one revocation, however many operators asked at once")
+                .isEqualTo(1);
+        assertThat(
+                        count(
+                                "SELECT count(*) FROM merchant.merchant_api_key_event WHERE"
+                                        + " key_id = ?",
+                                UUID.fromString(keyId)))
+                .as("and no other history")
+                .isEqualTo(1);
+        assertThat(
+                        count(
+                                "SELECT count(*) FROM platform.audit_record WHERE operation ="
+                                        + " 'merchant.MerchantApiKeyRevoked' AND target_id = ?",
+                                keyId))
                 .isEqualTo(1);
     }
 

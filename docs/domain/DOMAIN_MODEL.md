@@ -33,6 +33,11 @@ Settlement
 Refund
 Chargeback
 Dispute
+Payment Rail
+Routing Decision
+A2A Payment
+Instant Payment
+Withdrawal
 
 Merchant
 Checkout Session

@@ -1,12 +1,20 @@
 package com.finapp.app.payments;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
 import com.finapp.paymentmethods.SimulatedTokenisationAdapter;
+import com.finapp.payments.PaymentIntentId;
 import com.finapp.payments.SimulatedCardPspAdapter;
 import com.finapp.platform.api.IdempotencyKeyHeader;
+import com.finapp.platform.correlation.CorrelationContext;
+import com.finapp.platform.security.Actor;
+import com.finapp.platform.security.ActorType;
+import com.finapp.platform.security.SecurityContext;
 import com.finapp.platform.testing.database.DatabaseRoles;
 import com.finapp.platform.testing.provider.SimulatedProvider;
+import com.finapp.sharedkernel.correlation.Correlation;
+import com.finapp.sharedkernel.correlation.CorrelationId;
 import java.net.URI;
 import java.net.http.HttpClient;
 import java.net.http.HttpRequest;
@@ -29,6 +37,7 @@ import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Tag;
 import org.junit.jupiter.api.Test;
+import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.context.SpringBootTest;
 import org.springframework.boot.test.web.server.LocalServerPort;
 import org.springframework.test.context.DynamicPropertyRegistry;
@@ -54,6 +63,7 @@ import org.springframework.test.context.DynamicPropertySource;
 @Tag("database")
 @SpringBootTest(webEnvironment = SpringBootTest.WebEnvironment.RANDOM_PORT)
 @DisplayName("the payment endpoints (P5-TSK-011)")
+@SuppressWarnings("try") // Scopes are used for their close side effect (the established idiom).
 class PaymentEndpointDatabaseTest {
 
     private static final Clock CLOCK = Clock.system(ZoneOffset.UTC);
@@ -62,6 +72,9 @@ class PaymentEndpointDatabaseTest {
     private static SimulatedProvider provider;
 
     @LocalServerPort private int port;
+
+    @Autowired private com.finapp.identity.Authorization authorization;
+    @Autowired private com.finapp.payments.PaymentConfirmation confirmation;
 
     @BeforeAll
     static void startProvider() {
@@ -270,6 +283,104 @@ class PaymentEndpointDatabaseTest {
     // -----------------------------------------------------------------
 
     @Test
+    @DisplayName("routing pins the confirm: rail out is a 422 recorded and retryable, rail"
+            + " back and the SAME payment succeeds with its decision, its step trail and"
+            + " RailSelected (P7-TSK-003, INV-RAIL-02, INV-HIST-04)")
+    void routingPinsTheConfirm() throws Exception {
+        providerAuthorises("psp_auth-routed");
+        providerCaptures("psp_cap-routed");
+        String token = verifiedCustomer(someLogin());
+        openAccount(token);
+        String methodId = attachInstrument(token);
+        HttpResponse<String> created = payment(token, body(methodId, "6.00", "USD"), someKey());
+        assertThat(created.statusCode()).isEqualTo(201);
+        String paymentId = field(created.body(), "id");
+
+        // The operator's recorded fact takes the one rail out; the confirm is refused with
+        // the refusal RECORDED - a decision with no chosen rail - and the intent untouched,
+        // deliberately retryable (ADR-0060 section 3). Written as the application role: the
+        // availability row is the one mutable routing fact, and its route is
+        // RoutingPolicyDatabaseTest's subject.
+        recordAvailability(false, "endpoint suite outage");
+        try {
+            HttpResponse<String> refused = confirm(token, paymentId);
+            assertThat(refused.statusCode()).isEqualTo(422);
+            assertThat(refused.body()).contains("payments.NoEligibleRail");
+            assertThat(routingCount(
+                            "SELECT count(*) FROM payments.routing_decision"
+                                    + " WHERE intent_id = ? AND chosen_rail IS NULL",
+                            UUID.fromString(paymentId)))
+                    .isEqualTo(1);
+            assertThat(oneString(
+                            "SELECT status FROM payments.payment_intent WHERE id = ?",
+                            UUID.fromString(paymentId)))
+                    .isEqualTo("REQUIRES_CONFIRMATION");
+            assertThat(oneString(
+                            "SELECT s.rejection FROM payments.routing_decision_step s"
+                                    + " JOIN payments.routing_decision d"
+                                    + " ON d.id = s.decision_id"
+                                    + " WHERE d.intent_id = ?",
+                            UUID.fromString(paymentId)))
+                    .isEqualTo("UNAVAILABLE");
+        } finally {
+            recordAvailability(true, "endpoint suite restore");
+        }
+
+        // The SAME confirm now succeeds, and the choice is pinned beside the dispatch: one
+        // CHOSEN decision, the seeded version, the availability observation it used, the
+        // declared descriptor version, and the decided fact published.
+        HttpResponse<String> confirmed = confirm(token, paymentId);
+        assertThat(confirmed.statusCode()).isEqualTo(200);
+        assertThat(field(confirmed.body(), "status")).isEqualTo("SUCCEEDED");
+
+        String decisionId = oneString(
+                "SELECT id::text FROM payments.routing_decision"
+                        + " WHERE intent_id = ? AND chosen_rail = 'card'",
+                UUID.fromString(paymentId));
+        assertThat(oneString(
+                        "SELECT v.version::text FROM payments.routing_decision d"
+                                + " JOIN payments.routing_policy_version v"
+                                + " ON v.id = d.policy_version_id WHERE d.id = ?",
+                        UUID.fromString(decisionId)))
+                .as("the pin resolves to the seeded version in force (INV-HIST-04) - version 4"
+                        + " since P7-TSK-011 carried the standing routes forward beside the"
+                        + " wallet pay-in (V019's whole-version seed; the newest-effective"
+                        + " resolution is the design, and rule 0 is byte-for-byte V013's)")
+                .isEqualTo("4");
+        assertThat(oneString(
+                        "SELECT verdict || '|' || rail_available || '|' || descriptor_version"
+                                + " FROM payments.routing_decision_step WHERE decision_id = ?",
+                        UUID.fromString(decisionId)))
+                .isEqualTo("CHOSEN|true|1");
+        assertThat(routingCount(
+                        "SELECT count(*) FROM platform.outbox_event"
+                                + " WHERE event_type = 'payments.RailSelected'"
+                                + " AND aggregate_id = ?",
+                        UUID.fromString(paymentId)))
+                .isEqualTo(1);
+        assertThat(oneString(
+                        "SELECT change_summary FROM platform.audit_record"
+                                + " WHERE operation = 'payments.PaymentConfirmed'"
+                                + " AND target_id = ?",
+                        paymentId))
+                .as("the confirmation names the pin it dispatched under")
+                .contains("policyVersion=4") // the seeded version in force since V019 (P7-TSK-011)
+                .contains("decision=");
+
+        // And the decision is frozen for every writer, the migrator included.
+        try (Connection migrator = DatabaseRoles.migrator();
+                PreparedStatement tamper = migrator.prepareStatement(
+                        "UPDATE payments.routing_decision SET chosen_rail = NULL"
+                                + " WHERE id = ?")) {
+            tamper.setObject(1, UUID.fromString(decisionId));
+            assertThatThrownBy(tamper::executeUpdate)
+                    .isInstanceOf(SQLException.class)
+                    .extracting(failure -> ((SQLException) failure).getSQLState())
+                    .isEqualTo("P0001");
+        }
+    }
+
+    @Test
     @DisplayName("cancellation wins only the confirmation window: cancel converges, a cancelled"
             + " payment refuses confirmation, and a succeeded one refuses cancellation")
     void theCancellationWindowHolds() throws Exception {
@@ -301,6 +412,115 @@ class PaymentEndpointDatabaseTest {
         HttpResponse<String> refusedCancel = delete(token, "/v1/payments/" + succeeded);
         assertThat(refusedCancel.statusCode()).isEqualTo(409);
         assertThat(refusedCancel.body()).contains("payments.NotCancellable");
+    }
+
+    @Test
+    @DisplayName("cancelling a resting AUTHORIZED payment voids it at the provider: the"
+            + " promise released, the surface honest, the retry convergent (P7-TSK-004)")
+    void cancellingAnAuthorizedPaymentReleasesThePromise() throws Exception {
+        String token = verifiedCustomer(someLogin());
+        openAccount(token);
+        String methodId = attachInstrument(token);
+        String id = restingAuthorizedPayment(token, methodId);
+
+        provider.succeedsWith(
+                SimulatedCardPspAdapter.VOIDS_PATH,
+                200,
+                "{\"status\":\"approved\",\"reference\":\"psp_void-cancel\"}");
+        HttpResponse<String> cancelled = delete(token, "/v1/payments/" + id);
+        assertThat(cancelled.statusCode()).as(cancelled.body()).isEqualTo(200);
+        assertThat(field(cancelled.body(), "status")).isEqualTo("FAILED");
+
+        try (Connection app = DatabaseRoles.application();
+                PreparedStatement read =
+                        app.prepareStatement(
+                                "SELECT status, void_provider_reference FROM"
+                                        + " payments.payment_attempt WHERE intent_id = ?")) {
+            read.setObject(1, UUID.fromString(id));
+            try (ResultSet row = read.executeQuery()) {
+                assertThat(row.next()).isTrue();
+                assertThat(row.getString("status")).isEqualTo("VOIDED");
+                assertThat(row.getString("void_provider_reference"))
+                        .isEqualTo("psp_void-cancel");
+            }
+        }
+
+        // The retry converges on the released state - same 200, same truth, and nothing is
+        // sent twice (INV-PAY-04: the machine is the idempotency, no key needed).
+        HttpResponse<String> retried = delete(token, "/v1/payments/" + id);
+        assertThat(retried.statusCode()).isEqualTo(200);
+        assertThat(field(retried.body(), "status")).isEqualTo("FAILED");
+        assertThat(provider.requestCount(SimulatedCardPspAdapter.VOIDS_PATH)).isEqualTo(1);
+    }
+
+    @Test
+    @DisplayName("the operator void surface: PAYMENT_REFUND's holder releases a resting"
+            + " authorization with the reason recorded verbatim; the customer is 403;"
+            + " unknown and malformed are one 404; a succeeded payment is the 409")
+    void theOperatorVoidSurfaceHolds() throws Exception {
+        String token = verifiedCustomer(someLogin());
+        openAccount(token);
+        String methodId = attachInstrument(token);
+        String id = restingAuthorizedPayment(token, methodId);
+        String operator = operatorSession();
+
+        // The customer holds no PAYMENT_REFUND: the wall answers before the machine.
+        assertThat(
+                        post("/v1/payments/" + id + "/void",
+                                        "{\"reason\":\"sneaky\"}", token, false)
+                                .statusCode())
+                .isEqualTo(403);
+
+        provider.succeedsWith(
+                SimulatedCardPspAdapter.VOIDS_PATH,
+                200,
+                "{\"status\":\"approved\",\"reference\":\"psp_void-op\"}");
+        String reason = "authorization stranded by a crashed capture chain";
+        HttpResponse<String> voided =
+                post("/v1/payments/" + id + "/void",
+                        "{\"reason\":\"" + reason + "\"}", operator, false);
+        assertThat(voided.statusCode()).as(voided.body()).isEqualTo(200);
+        assertThat(field(voided.body(), "status")).isEqualTo("FAILED");
+
+        // The operator's words, verbatim, in the regulator-grade record (INV-AUD-03).
+        try (Connection app = DatabaseRoles.application();
+                PreparedStatement read =
+                        app.prepareStatement(
+                                "SELECT reason FROM platform.audit_record"
+                                        + " WHERE operation ="
+                                        + " 'payments.PaymentVoidDispatched'"
+                                        + " AND target_id = ?")) {
+            read.setString(1, id);
+            try (ResultSet row = read.executeQuery()) {
+                assertThat(row.next()).isTrue();
+                assertThat(row.getString("reason")).isEqualTo(reason);
+            }
+        }
+
+        // Unknown and malformed are one 404 - nothing about existence leaks on this wall.
+        assertThat(
+                        post("/v1/payments/" + UUID.randomUUID() + "/void",
+                                        "{\"reason\":\"gone\"}", operator, false)
+                                .statusCode())
+                .isEqualTo(404);
+        assertThat(
+                        post("/v1/payments/not-a-uuid/void",
+                                        "{\"reason\":\"gone\"}", operator, false)
+                                .statusCode())
+                .isEqualTo(404);
+
+        // A captured payment cannot be voided - the machine's 409; money that moved is the
+        // refund's territory (INV-REV-03's two halves stay distinct).
+        providerAuthorises("psp_auth-succeeded");
+        providerCaptures("psp_cap-succeeded");
+        String succeeded =
+                field(payment(token, body(methodId, "2.00", "USD"), someKey()).body(), "id");
+        assertThat(field(confirm(token, succeeded).body(), "status")).isEqualTo("SUCCEEDED");
+        HttpResponse<String> refused =
+                post("/v1/payments/" + succeeded + "/void",
+                        "{\"reason\":\"too late\"}", operator, false);
+        assertThat(refused.statusCode()).isEqualTo(409);
+        assertThat(refused.body()).contains("payments.NotCancellable");
     }
 
     // -----------------------------------------------------------------
@@ -669,6 +889,36 @@ class PaymentEndpointDatabaseTest {
         }
     }
 
+    /** The one mutable routing fact, written as the application role (`P7-TSK-003`). */
+    private static void recordAvailability(boolean available, String reason)
+            throws SQLException {
+        try (Connection app = DatabaseRoles.application();
+                PreparedStatement upsert = app.prepareStatement(
+                        "INSERT INTO payments.rail_availability (rail, available, reason,"
+                                + " changed_by, changed_at)"
+                                + " VALUES ('card', ?, ?, 'endpoint-suite', now())"
+                                + " ON CONFLICT (rail) DO UPDATE SET"
+                                + " available = EXCLUDED.available,"
+                                + " reason = EXCLUDED.reason,"
+                                + " changed_by = EXCLUDED.changed_by,"
+                                + " changed_at = EXCLUDED.changed_at")) {
+            upsert.setBoolean(1, available);
+            upsert.setString(2, reason);
+            upsert.executeUpdate();
+        }
+    }
+
+    private static long routingCount(String sql, Object argument) throws SQLException {
+        try (Connection app = DatabaseRoles.application();
+                PreparedStatement read = app.prepareStatement(sql)) {
+            read.setObject(1, argument);
+            try (ResultSet row = read.executeQuery()) {
+                assertThat(row.next()).isTrue();
+                return row.getLong(1);
+            }
+        }
+    }
+
     private static String oneString(String sql, Object argument) throws SQLException {
         try (Connection app = DatabaseRoles.application();
                 PreparedStatement read = app.prepareStatement(sql)) {
@@ -688,6 +938,89 @@ class PaymentEndpointDatabaseTest {
             }
             statement.executeUpdate();
         }
+    }
+
+    /**
+     * The crash window, honestly produced: the confirmation COMMAND commits {@code
+     * AUTHORIZED} and this "process" goes no further - the resting state the
+     * stranded-authorization sweep leg exists for, and the only reachable one until
+     * {@code CaptureMode.MANUAL}'s producer arrives (its javadoc records that). The
+     * endpoint's own confirm would chain the capture past it.
+     */
+    private String restingAuthorizedPayment(String token, String methodId) throws Exception {
+        // Unique per call: auth_provider_reference is UNIQUE platform-wide, and this
+        // battery shares one database across suites and tests.
+        providerAuthorises(
+                "psp_auth-rest-" + UUID.randomUUID().toString().substring(0, 12));
+        String id = field(payment(token, body(methodId, "3.00", "USD"), someKey()).body(), "id");
+        UUID party;
+        try (Connection app = DatabaseRoles.application();
+                PreparedStatement read =
+                        app.prepareStatement(
+                                "SELECT party_id FROM payments.payment_intent"
+                                        + " WHERE id = ?")) {
+            read.setObject(1, UUID.fromString(id));
+            try (ResultSet row = read.executeQuery()) {
+                assertThat(row.next()).isTrue();
+                party = row.getObject("party_id", UUID.class);
+            }
+        }
+        try (SecurityContext.Scope actor =
+                        SecurityContext.enter(
+                                new Actor(party.toString(), ActorType.CUSTOMER));
+                CorrelationContext.Scope flow =
+                        CorrelationContext.enter(
+                                Correlation.startingWith(
+                                        CorrelationId.of("rest-" + UUID.randomUUID())))) {
+            confirmation.confirm(party, PaymentIntentId.of(UUID.fromString(id)));
+        }
+        try (Connection app = DatabaseRoles.application();
+                PreparedStatement read =
+                        app.prepareStatement(
+                                "SELECT status FROM payments.payment_attempt"
+                                        + " WHERE intent_id = ?")) {
+            read.setObject(1, UUID.fromString(id));
+            try (ResultSet row = read.executeQuery()) {
+                assertThat(row.next()).isTrue();
+                assertThat(row.getString("status")).isEqualTo("AUTHORIZED");
+            }
+        }
+        provider.reset();
+        return id;
+    }
+
+    /** A LEDGER_OPERATOR session - the refund surface's holder (the routing suite's idiom). */
+    private String operatorSession() throws Exception {
+        String login = someLogin();
+        assertThat(register(login).statusCode()).isEqualTo(201);
+        UUID identity;
+        try (Connection app = DatabaseRoles.application();
+                PreparedStatement read =
+                        app.prepareStatement(
+                                "SELECT id FROM identity.identity"
+                                        + " WHERE login_identifier = ?")) {
+            read.setString(1, login);
+            try (ResultSet row = read.executeQuery()) {
+                assertThat(row.next()).isTrue();
+                identity = row.getObject("id", UUID.class);
+            }
+        }
+        try (CorrelationContext.Scope flow =
+                        CorrelationContext.enter(
+                                Correlation.startingWith(
+                                        CorrelationId.of("grant-" + UUID.randomUUID())));
+                SecurityContext.Scope actor = SecurityContext.enterSystem();
+                Connection app = DatabaseRoles.application()) {
+            app.setAutoCommit(false);
+            authorization.assign(
+                    app,
+                    com.finapp.identity.IdentityId.of(identity),
+                    com.finapp.identity.RoleName.LEDGER_OPERATOR,
+                    com.finapp.identity.IdentityId.of(identity),
+                    "test fixture");
+            app.commit();
+        }
+        return tokenFrom(authenticate(login).body());
     }
 
     private static String someLogin() {

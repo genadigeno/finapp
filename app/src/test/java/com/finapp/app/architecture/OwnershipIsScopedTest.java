@@ -64,6 +64,19 @@ import org.junit.jupiter.api.Test;
  *       writing the sentence.
  *   <li><strong>Does not close:</strong> an ownership decision taken somewhere that issues no SQL.
  * </ul>
+ *
+ * <h2>The tenant's packages see further (`P6-TST-001`)</h2>
+ *
+ * <p>Two shapes hid every statement they carried, and both were found in the tenant's own modules.
+ * {@code checkout} holds each cross-module reference by value as a bare {@code UUID} (ADR-0029),
+ * which is not an {@code EntityId}; and a store that hands its statement to a generic helper
+ * ({@code one(unitOfWork, sql, ...)}) splits the two halves this rule looks for, the identifier
+ * in the caller and {@code prepareStatement} in the helper, so neither method carries both. In
+ * {@link #TENANT_PACKAGES} a {@code UUID} parameter is a resource identifier and a same-class
+ * helper's SQL is the caller's own, one hop deep. {@link #tenantColumnsLiveOnlyInTheTenantsPackages}
+ * pins why those two packages are enough: a statement over a tenant column anywhere else fails the
+ * build, because the widening would not see it. Widening the other modules is recorded work, not
+ * this rule's claim.
  */
 @Tag("architecture")
 @DisplayName("every resource-scoped persistence operation is classified (P1-TSK-021)")
@@ -291,6 +304,315 @@ class OwnershipIsScopedTest {
                                         + " PaymentRefundEndpointDatabaseTest's permissionless"
                                         + " refusal. Customer HTTP reads go through findOwned.")),
                     Map.entry(
+                            "com.finapp.payments.JdbcRoutingStore.findVersionById",
+                            new Entry(
+                                    Scope.ADMINISTERED,
+                                    "P7-TSK-003. The identifier never comes from a request: the"
+                                        + " explanation resolves it from the decision row's"
+                                        + " policy_version_id (a NOT NULL foreign key,"
+                                        + " INV-HIST-04), and the keyed creation re-reads the"
+                                        + " id its own executor recorded. Versions are"
+                                        + " platform-wide configuration with no owner to"
+                                        + " scope by.")),
+                    Map.entry(
+                            "com.finapp.payments.JdbcRoutingStore.rulesOf",
+                            new Entry(
+                                    Scope.ADMINISTERED,
+                                    "P7-TSK-003. A private loader: the version id comes only"
+                                        + " from a version row this store just read - never a"
+                                        + " request value; platform configuration has no owner"
+                                        + " to scope by, and its surfaces are permission-walled"
+                                        + " (RoutingPolicyDatabaseTest's refusals).")),
+                    Map.entry(
+                            "com.finapp.payments.JdbcRoutingStore.stepsOf",
+                            new Entry(
+                                    Scope.ADMINISTERED,
+                                    "P7-TSK-003; the subject-general read since P7-TSK-008."
+                                        + " A private loader: the decision id comes only from"
+                                        + " a decision row this store just read. The boundary"
+                                        + " reasoning that lived on the"
+                                        + " findLatestDecisionForIntent entry moved here when"
+                                        + " that method became a one-line delegate the sweep"
+                                        + " no longer sees (P7-TSK-008): the confirmation's"
+                                        + " own Tx2 reads the decision its Tx1 minted; the"
+                                        + " operator's explanation names SOMEBODY ELSE'S"
+                                        + " payment BY DESIGN (the refund's P1-TSK-028"
+                                        + " class), with"
+                                        + " @RequiresPermission(PAYMENT_ROUTING_ADMINISTER)"
+                                        + " standing in for the ownership predicate -"
+                                        + " asserted by RoutingPolicyDatabaseTest's"
+                                        + " permissionless and wrong-role refusals - and"
+                                        + " every read audited"
+                                        + " (PAYMENT_ROUTING_EXPLANATION_READ); the"
+                                        + " withdrawal's arm reads the decision its own"
+                                        + " dispatch pinned.")),
+                    Map.entry(
+                            "com.finapp.payments.JdbcWithdrawalStore.findForUpdate",
+                            new Entry(
+                                    Scope.ADMINISTERED,
+                                    "P7-TSK-008, the JdbcMerchantPayoutStore.findForUpdate"
+                                        + " reasoning at the wallet: the lock every resolver"
+                                        + " takes before applying the scheme's word. Its id"
+                                        + " comes only from a committed dispatch this flight"
+                                        + " made (Withdrawals.withdraw), a takeover's"
+                                        + " dispatch-key convergence read (owner-scoped by"
+                                        + " customer_id = ?), or a candidate the inquiry"
+                                        + " sweep read and then locked the same way - never"
+                                        + " a request's raw identifier: the surface read is"
+                                        + " findOwned, whose statement carries the customer.")),
+                    Map.entry(
+                            "com.finapp.payments.JdbcWithdrawalStore.appendHistory",
+                            new Entry(
+                                    Scope.ADMINISTERED,
+                                    "P7-TSK-008, the JdbcMerchantPayoutStore.appendHistory"
+                                        + " shape: a private trail writer whose id comes only"
+                                        + " from the conditional transition that just fired"
+                                        + " on the locked row.")),
+                    Map.entry(
+                            "com.finapp.payments.JdbcDisputeStore.findForCounterparties",
+                            new Entry(
+                                    Scope.OWNER_SCOPED,
+                                    "GET /v1/merchant/disputes/{disputeId} (P7-TSK-012) - the"
+                                        + " identifier comes from the path, and"
+                                        + " credit_account_id = ANY (?) in the statement is"
+                                        + " the tenant check (INV-MER-01): the accounts are the"
+                                        + " authenticated merchant's own payables, from the"
+                                        + " ledger's owner_ref-scoped read in the same"
+                                        + " transaction. Another tenant's dispute, unknown and"
+                                        + " malformed are one empty answer and one 404.")),
+                    Map.entry(
+                            "com.finapp.payments.JdbcDisputeStore.findById",
+                            new Entry(
+                                    Scope.ADMINISTERED,
+                                    "P7-TSK-012. The operator's read of one dispute names"
+                                        + " SOMEBODY ELSE'S contested payment by design (the"
+                                        + " routing explanation's class):"
+                                        + " @RequiresPermission(DISPUTE_ADMINISTER) stands in"
+                                        + " for the ownership predicate - asserted by"
+                                        + " DisputeNotificationDatabaseTest's wrong-role"
+                                        + " refusal and DenyByDefaultDatabaseTest - and every"
+                                        + " dispute shown is audited (DISPUTE_READ). No merchant"
+                                        + " surface reaches it: theirs is"
+                                        + " findForCounterparties.")),
+                    Map.entry(
+                            "com.finapp.payments.JdbcDisputeStore.listForIntent",
+                            new Entry(
+                                    Scope.ADMINISTERED,
+                                    "P7-TSK-012. The operator's read of one payment's"
+                                        + " disputes, as JdbcDisputeStore.findById: the"
+                                        + " DISPUTE_ADMINISTER wall stands in for the"
+                                        + " predicate and every dispute shown is audited.")),
+                    Map.entry(
+                            "com.finapp.payments.JdbcDisputeStore.historyOf",
+                            new Entry(
+                                    Scope.ADMINISTERED,
+                                    "P7-TSK-012. A dispute's trail, read only for a dispute a"
+                                        + " scoped or permissioned read returned a statement"
+                                        + " earlier in the same transaction - the merchant's"
+                                        + " findForCounterparties (tenant predicate in the"
+                                        + " statement) or the operator's findById/listForIntent"
+                                        + " (the DISPUTE_ADMINISTER wall) - never a request's"
+                                        + " raw identifier.")),
+                    Map.entry(
+                            "com.finapp.payments.JdbcDisputeStore.appendHistory",
+                            new Entry(
+                                    Scope.ADMINISTERED,
+                                    "P7-TSK-012, the JdbcWithdrawalStore.appendHistory shape: a"
+                                        + " private trail writer whose id comes only from the"
+                                        + " conditional transition that just fired on the row"
+                                        + " this delivery inserted or locked - the network's"
+                                        + " reference attributed it behind the signed door.")),
+                    Map.entry(
+                            "com.finapp.payments.JdbcDisputeStore.standing",
+                            new Entry(
+                                    Scope.ADMINISTERED,
+                                    "P7-TSK-013. The combined bound's read (behind"
+                                        + " attributedStanding and standingOn): the chargebacks"
+                                        + " standing on an attempt the caller holds FOR UPDATE -"
+                                        + " reached from the signed door's attribution by OUR"
+                                        + " operation reference, from the refund command's own"
+                                        + " intent read, or from a refund row a resolver locked -"
+                                        + " never a request's identifier, and no surface returns"
+                                        + " what it reads: a sum for the bound, rows for the"
+                                        + " re-attribution.")),
+                    Map.entry(
+                            "com.finapp.payments.JdbcDisputeStore.anyRestorableTo",
+                            new Entry(
+                                    Scope.AUTHORITATIVE_ID,
+                                    "com.finapp.accounts.JdbcCustomerAccountStore.lockOwnedBy",
+                                    "P7-TSK-013, JdbcPaymentIntentStore.anyInFlightCrediting's"
+                                        + " twin: a close asks whether a won chargeback would"
+                                        + " credit the account back, under the close's lock. The"
+                                        + " account is the customer's own, locked by"
+                                        + " lockOwnedBy's owner predicate. A boolean leaves, and"
+                                        + " no row of anybody's.")),
+                    Map.entry(
+                            "com.finapp.payments.JdbcDisputeStore.lockForCounterparties",
+                            new Entry(
+                                    Scope.OWNER_SCOPED,
+                                    "POST /v1/merchant/disputes/{disputeId}/evidence,"
+                                        + " .../representment and .../acceptance (P7-TSK-014) - the locking"
+                                        + " twin of findForCounterparties: the identifier comes from the"
+                                        + " path, and credit_account_id = ANY (?) in the LOCKING statement"
+                                        + " is the tenant check (INV-MER-01), the accounts the authenticated"
+                                        + " merchant's own payables from the ledger's owner_ref-scoped read."
+                                        + " FOR UPDATE OF d, taken after the dispute's attempt. Another"
+                                        + " tenant's dispute is one 404.")),
+                    Map.entry(
+                            "com.finapp.payments.JdbcDisputeStore.lockForResponder",
+                            new Entry(
+                                    Scope.ADMINISTERED,
+                                    "P7-TSK-014. The operator's act on a dispute (evidence,"
+                                        + " representment, acceptance on behalf) names SOMEBODY ELSE'S"
+                                        + " contested payment by design:"
+                                        + " @RequiresPermission(DISPUTE_ADMINISTER) stands in for the"
+                                        + " ownership predicate, the act is reasoned and audited, and"
+                                        + " DisputeActs narrows it further to a payment whose credited"
+                                        + " account the operator's policy reaches (a customer wallet - no"
+                                        + " merchant), refusing the rest. No merchant surface reaches it:"
+                                        + " theirs is lockForCounterparties.")),
+                    Map.entry(
+                            "com.finapp.payments.JdbcDisputeEvidenceStore.readContentForCounterparties",
+                            new Entry(
+                                    Scope.OWNER_SCOPED,
+                                    "GET /v1/merchant/disputes/{disputeId}/evidence/{evidenceId}"
+                                        + " (P7-TSK-014) - both identifiers from the path, and"
+                                        + " credit_account_id = ANY (?) in the statement is the tenant check"
+                                        + " (INV-MER-01): the document's dispute must contest a payment that"
+                                        + " credited the authenticated merchant's own payable. Another"
+                                        + " tenant's document, unknown and malformed are one 404; every"
+                                        + " content read is audited (DISPUTE_EVIDENCE_READ).")),
+                    Map.entry(
+                            "com.finapp.payments.JdbcDisputeEvidenceStore.readContent",
+                            new Entry(
+                                    Scope.ADMINISTERED,
+                                    "P7-TSK-014. The operator's read of a dispute document's content,"
+                                        + " across tenants by permission (INV-DSP-03: the payment's merchant"
+                                        + " and operators holding the dispute permission):"
+                                        + " @RequiresPermission(DISPUTE_ADMINISTER) stands in for the"
+                                        + " predicate, and every content read writes DISPUTE_EVIDENCE_READ"
+                                        + " in its own transaction. No merchant surface reaches it: theirs"
+                                        + " is readContentForCounterparties.")),
+                    Map.entry(
+                            "com.finapp.payments.JdbcDisputeEvidenceStore.findByContent",
+                            new Entry(
+                                    Scope.ADMINISTERED,
+                                    "P7-TSK-014. The upload's content address, read only for a dispute"
+                                        + " DisputeActs.lockForAct locked earlier in the same transaction"
+                                        + " through a scoped (lockForCounterparties) or permissioned"
+                                        + " (lockForResponder) statement - never a request's raw identifier.")),
+                    Map.entry(
+                            "com.finapp.payments.JdbcDisputeEvidenceStore.countFor",
+                            new Entry(
+                                    Scope.ADMINISTERED,
+                                    "P7-TSK-014. The document bound's count, for a dispute"
+                                        + " DisputeActs.lockForAct locked earlier in the same transaction"
+                                        + " through a scoped or permissioned statement - never a request's"
+                                        + " raw identifier; a number leaves, no row.")),
+                    Map.entry(
+                            "com.finapp.payments.JdbcDisputeEvidenceStore.listFor",
+                            new Entry(
+                                    Scope.ADMINISTERED,
+                                    "P7-TSK-014. A dispute's document metadata, read only for a"
+                                        + " dispute a scoped or permissioned read returned earlier in the"
+                                        + " same transaction - DisputeReads (findForCounterparties with its"
+                                        + " tenant predicate, or the audited operator reads) or the response"
+                                        + " dispatch's locked act - never a request's raw identifier; no"
+                                        + " content leaves.")),
+                    Map.entry(
+                            "com.finapp.payments.JdbcDisputeEvidenceStore.contentsOf",
+                            new Entry(
+                                    Scope.ADMINISTERED,
+                                    "P7-TSK-014. The documents a response transmits: the ids are the"
+                                        + " response row's own frozen evidence list - a response this flight"
+                                        + " dispatched under the locked act, one its claim's dispatch key"
+                                        + " converged on (scoped by the responder's claim scope), or a sweep"
+                                        + " candidate - and every read of them writes"
+                                        + " DISPUTE_EVIDENCE_TRANSMITTED before the bytes leave.")),
+                    Map.entry(
+                            "com.finapp.payments.JdbcDisputeResponseStore.findLive",
+                            new Entry(
+                                    Scope.ADMINISTERED,
+                                    "P7-TSK-014. Whether a live answer stands, for a dispute"
+                                        + " DisputeActs.lockForAct locked earlier in the same transaction"
+                                        + " through a scoped or permissioned statement - a boolean decision,"
+                                        + " no row returned to any surface.")),
+                    Map.entry(
+                            "com.finapp.payments.JdbcDisputeResponseStore.listFor",
+                            new Entry(
+                                    Scope.ADMINISTERED,
+                                    "P7-TSK-014. A dispute's answers, read only for a dispute a scoped"
+                                        + " or permissioned DisputeReads read returned earlier in the same"
+                                        + " transaction - never a request's raw identifier.")),
+                    Map.entry(
+                            "com.finapp.payments.JdbcDisputeResponseStore.lockForOutcome",
+                            new Entry(
+                                    Scope.ADMINISTERED,
+                                    "P7-TSK-014, the JdbcRefundStore.lockForOutcome reasoning: the"
+                                        + " lock every resolver takes before applying the PSP's word. Its id"
+                                        + " comes only from this flight's committed dispatch, a takeover's"
+                                        + " dispatch-key convergence read (scoped by the responder's claim"
+                                        + " scope), or a candidate the sweep read - never a request's raw"
+                                        + " identifier.")),
+                    Map.entry(
+                            "com.finapp.payments.JdbcDisputeResponseStore.renewSendPermit",
+                            new Entry(
+                                    Scope.ADMINISTERED,
+                                    "P7-TSK-014, JdbcRefundStore.renewSendPermit's twin: the"
+                                        + " conditional forward-only permit, for a response a takeover's"
+                                        + " scoped dispatch-key read or the sweep's candidate list named -"
+                                        + " never a request's raw identifier; the conditional IS the permit.")),
+                    Map.entry(
+                            "com.finapp.payments.JdbcPaymentAttemptStore.openInitiation",
+                            new Entry(
+                                    Scope.ADMINISTERED,
+                                    "P7-TSK-009. The initiation handle's one store, behind"
+                                        + " status = AWAITING_PAYER AND handle IS NULL: its"
+                                        + " id comes only from the dispatch this flight's"
+                                        + " Tx1 committed (PaymentConfirmation's Dispatch"
+                                        + " record) or from a sweep candidate read - never"
+                                        + " a request's raw identifier, and the value it"
+                                        + " writes came from the scheme's answer to OUR"
+                                        + " reference, not from any caller.")),
+                    Map.entry(
+                            "com.finapp.payments.JdbcPaymentAttemptStore.execute",
+                            new Entry(
+                                    Scope.ADMINISTERED,
+                                    "P7-TSK-009, the .authorize/.capture reasoning on the"
+                                        + " push machine's inbound edge: a conditional"
+                                        + " transition whose id comes from the SIGNED"
+                                        + " callback's attribution read (by OUR minted"
+                                        + " end-to-end reference - the SIGNED_CALLBACK"
+                                        + " provenance) or the sweep's candidate read;"
+                                        + " the losers of the row count converge.")),
+                    Map.entry(
+                            "com.finapp.payments.JdbcPaymentAttemptStore.failHandleless",
+                            new Entry(
+                                    Scope.ADMINISTERED,
+                                    "P7-TSK-009. The unavailability conclusion's own"
+                                        + " conditional (status AND handle IS NULL in one"
+                                        + " WHERE - ADR-0062 section 3 adapted): its id is"
+                                        + " Tx1's own carried fact or a sweep candidate's,"
+                                        + " never a request value.")),
+                    Map.entry(
+                            "com.finapp.payments.JdbcPaymentAttemptStore.renewInitiationPermit",
+                            new Entry(
+                                    Scope.ADMINISTERED,
+                                    "P7-TSK-009, the JdbcRefundStore.renewSendPermit shape:"
+                                        + " the sweep's wire-noise arbiter, conditional on"
+                                        + " the expected permit value read from the same"
+                                        + " candidate row - no request value can reach"
+                                        + " it.")),
+                    Map.entry(
+                            "com.finapp.payments.JdbcRoutingStore.appendStep",
+                            new Entry(
+                                    Scope.ADMINISTERED,
+                                    "P7-TSK-003. The abandonment's append: the decision id is"
+                                        + " Tx1's own carried fact (the Dispatch record),"
+                                        + " minted server-side beside the attempt it governs -"
+                                        + " no request value can reach it (INV-RAIL-02's"
+                                        + " trail).")),
+                    Map.entry(
                             "com.finapp.merchant.JdbcMerchantApiKeyStore.findLiveFor",
                             new Entry(
                                     Scope.ADMINISTERED,
@@ -377,6 +699,66 @@ class OwnershipIsScopedTest {
                                         + " exists because a history row belongs to the merchant"
                                         + " it names.")),
                     Map.entry(
+                            "com.finapp.merchant.JdbcPayoutDestinationStore.appendHistory",
+                            new Entry(
+                                    Scope.ADMINISTERED,
+                                    "P6-TSK-011, on the JdbcMerchantStore.appendHistory reasoning"
+                                        + " restated rather than re-argued: the destination"
+                                        + " identifier reached this insert through the locking"
+                                        + " read's id = ? AND merchant_id = ? pairing, but the"
+                                        + " merchant itself was named by an operator's URL, so the"
+                                        + " provenance is administered, not owned, and cannot be"
+                                        + " cited as AUTHORITATIVE_ID. What stands in for the"
+                                        + " missing predicate: MERCHANT_ADMINISTER or"
+                                        + " PAYOUT_DESTINATION_APPROVE at the boundary with the"
+                                        + " required reason, asserted with nothing written by"
+                                        + " PayoutDestinationEndpointDatabaseTest's permission"
+                                        + " negatives - and, for the platform's effectuation, the"
+                                        + " enumerated system-actor site. The row records a"
+                                        + " transition the conditional WHERE status = ? write"
+                                        + " proved had happened, in the same transaction."
+                                        + " Append-only at the privilege.")),
+                    Map.entry(
+                            "com.finapp.merchant.JdbcMerchantPayoutStore.findByDispatchKey",
+                            new Entry(
+                                    Scope.OWNER_SCOPED,
+                                    "P6-TSK-012. The takeover's convergence read: the payout a"
+                                        + " client key dispatched, found by merchant_id = ? AND"
+                                        + " dispatch_key = ? IN THE STATEMENT, so a key another"
+                                        + " merchant used converges on nothing of this merchant's."
+                                        + " The merchant is the authenticated key's own, or the"
+                                        + " operator's URL under MERCHANT_PAYOUT; the claim's scope"
+                                        + " carries the same merchant, so the two can never"
+                                        + " disagree. Negative:"
+                                        + " MerchantPayoutEndpointDatabaseTest#aClientKeyIsEachMerchantsOwn"
+                                        + " - two merchants, one key, two payouts.")),
+                    Map.entry(
+                            "com.finapp.merchant.JdbcMerchantPayoutStore.appendHistory",
+                            new Entry(
+                                    Scope.ADMINISTERED,
+                                    "P6-TSK-012, the JdbcPayoutDestinationStore.appendHistory"
+                                        + " reasoning restated: the payout identifier reached this"
+                                        + " insert through the locking read's id = ? AND"
+                                        + " merchant_id = ? pairing, in the same transaction as"
+                                        + " the conditional WHERE status = ? write it records. The"
+                                        + " writer is always the platform - an enumerated"
+                                        + " system-actor site applying the provider's answer - so"
+                                        + " the provenance is administered, not owned. Append-only"
+                                        + " at the privilege.")),
+                    Map.entry(
+                            "com.finapp.merchant.JdbcPayoutEvidenceStore.append",
+                            new Entry(
+                                    Scope.ADMINISTERED,
+                                    "P6-TSK-012. The provider's retained answer, written against"
+                                        + " a payout the SAME transaction locked through"
+                                        + " JdbcMerchantPayoutStore.findForUpdate's id = ? AND"
+                                        + " merchant_id = ? - or a candidate the resolution sweep"
+                                        + " read and then locked the same way. Never a merchant's"
+                                        + " read (nothing decrypts it on any request path); the"
+                                        + " writer is the platform's outcome transaction, an"
+                                        + " enumerated system-actor site. Append-only for every"
+                                        + " writer by V007's trigger, SELECT/INSERT at the grant.")),
+                    Map.entry(
                             "com.finapp.checkout.JdbcCheckoutSessionStore.findOwnedBy",
                             new Entry(
                                     Scope.OWNER_SCOPED,
@@ -405,10 +787,13 @@ class OwnershipIsScopedTest {
                                         + " owns it the way a party owns a wallet. What stands in for an ownership predicate is"
                                         + " THE TOKEN - findByToken resolves a session only for the holder of its secret, and that"
                                         + " is the path every customer-facing read will take (P6-TSK-007). This id-addressed read"
-                                        + " is the operator's and the completion's, reached from a payment outcome rather than"
-                                        + " from a URL. ADMINISTERED rather than AUTHORITATIVE_ID because the chain begins outside"
-                                        + " any owner-constrained read, and claiming otherwise would inherit a gap (the P1-TSK-030"
-                                        + " rule).")),
+                                        + " is reached only through findById and findByIdForUpdate, each classified in its own"
+                                        + " entry since P6-TST-001: the confirming customer's render, handed the session its token"
+                                        + " resolved, and the merchant's withdrawal, after findOwnedBy accepted the identifier."
+                                        + " (Until P6-TST-001 this said 'the operator's and the completion's': the completion"
+                                        + " reads by intent, through findByIntentForUpdate, and no operator route reads a"
+                                        + " session.) ADMINISTERED rather than AUTHORITATIVE_ID because the helper serves both"
+                                        + " chains, and an entry citing one read would misstate the other.")),
                     Map.entry(
                             "com.finapp.checkout.JdbcCheckoutSessionStore.appendHistory",
                             new Entry(
@@ -531,6 +916,229 @@ class OwnershipIsScopedTest {
                                         + " a history row belongs to the merchant it names (the JdbcMerchantStore"
                                         + " .appendHistory reasoning, and ADMINISTERED for the same reason - a provenance"
                                         + " that is itself unowned cannot be cited as AUTHORITATIVE_ID).")),
+                    // ------------------------------------------------------ P6-TST-001
+                    // What the widened detector sees in the tenant's packages: statements whose
+                    // identifier is a bare UUID, or reaches the statement through a same-class
+                    // helper. Every one was invisible to this register until then.
+                    Map.entry(
+                            "com.finapp.checkout.JdbcCheckoutSessionStore.findByIntentOwnedBy",
+                            new Entry(
+                                    Scope.OWNER_SCOPED,
+                                    "P6-TSK-009, classified by P6-TST-001. The transaction"
+                                        + " report's checkout read: payment_intent_ref = ? AND"
+                                        + " merchant_ref = ? in the statement, the tenant the"
+                                        + " authenticated key's own. Unreachable over HTTP - the"
+                                        + " report follows only references on the merchant's own"
+                                        + " payable - so its negative drives the store directly:"
+                                        + " CheckoutFlowDatabaseTest"
+                                        + "#theEnrichmentReadIsTenantScopedInItsOwnStatement.")),
+                    Map.entry(
+                            "com.finapp.checkout.JdbcCheckoutSessionStore.findByIntentForUpdate",
+                            new Entry(
+                                    Scope.ADMINISTERED,
+                                    "P6-TSK-007, classified by P6-TST-001. The completion's lock,"
+                                        + " payment_intent_ref = ? and no tenant predicate. The"
+                                        + " intent comes from the capture the platform is applying"
+                                        + " - CheckoutSessions.completed, called by the capture"
+                                        + " composition inside the outcome transaction, an"
+                                        + " enumerated system-actor site - never from a request."
+                                        + " What stands in for the predicate: that site, and the"
+                                        + " capture's conditional transition, won before the"
+                                        + " composition runs; V002's trigger sets the reference"
+                                        + " once.")),
+                    Map.entry(
+                            "com.finapp.checkout.JdbcCheckoutSessionStore.findById",
+                            new Entry(
+                                    Scope.AUTHORITATIVE_ID,
+                                    "com.finapp.checkout.JdbcCheckoutSessionStore.findByToken",
+                                    "P6-TSK-006, classified by P6-TST-001. The public face of"
+                                        + " read, and its one production caller is the confirming"
+                                        + " customer's render (CheckoutSessions.ownedBySession),"
+                                        + " handed the session the same request resolved by its"
+                                        + " token. The token lookup is the proof; this read"
+                                        + " repeats nothing.")),
+                    Map.entry(
+                            "com.finapp.checkout.JdbcCheckoutSessionStore.findByIdForUpdate",
+                            new Entry(
+                                    Scope.AUTHORITATIVE_ID,
+                                    "com.finapp.checkout.JdbcCheckoutSessionStore.findOwnedBy",
+                                    "P6-TSK-008, classified by P6-TST-001. The withdrawal's lock,"
+                                        + " taken on the identifier the merchant's own findOwnedBy"
+                                        + " - id = ? AND merchant_ref = ? - accepted in the same"
+                                        + " transaction (CheckoutSessions.abandon). V002's trigger"
+                                        + " freezes merchant_ref, so the ownership that read"
+                                        + " established still holds under the lock.")),
+                    Map.entry(
+                            "com.finapp.checkout.JdbcOrderStore.findBySession",
+                            new Entry(
+                                    Scope.AUTHORITATIVE_ID,
+                                    "com.finapp.checkout.JdbcCheckoutSessionStore.findOwnedBy",
+                                    "P6-TSK-007, classified by P6-TST-001. The order a session"
+                                        + " produced, read by the session identifier an owner-"
+                                        + " scoped read returned: the merchant's findOwnedBy when"
+                                        + " a session is rendered, findByIntentOwnedBy in the"
+                                        + " transaction report, and the confirming customer's"
+                                        + " token-resolved session. No request names an order.")),
+                    Map.entry(
+                            "com.finapp.checkout.JdbcOrderStore.read",
+                            new Entry(
+                                    Scope.AUTHORITATIVE_ID,
+                                    "com.finapp.checkout.JdbcCheckoutSessionStore.findOwnedBy",
+                                    "P6-TST-001. The helper behind findBySession and findById,"
+                                        + " which complete its WHERE with their own predicate; the"
+                                        + " identifier it carries is findBySession's, whose entry"
+                                        + " is the reasoning. findById has no production caller.")),
+                    Map.entry(
+                            "com.finapp.checkout.JdbcOrderStore.findById",
+                            new Entry(
+                                    Scope.ADMINISTERED,
+                                    "P6-TSK-006, classified by P6-TST-001. An order by its own"
+                                        + " identifier, and no production path calls it: no"
+                                        + " request names an order, and an operator's order"
+                                        + " surface is later work. Classified now so that surface"
+                                        + " meets an entry saying what it must bring - a"
+                                        + " permission at the boundary, or merchant_ref = ? in"
+                                        + " the statement.")),
+                    Map.entry(
+                            "com.finapp.merchant.JdbcFeeScheduleStore.findSchedule",
+                            new Entry(
+                                    Scope.ADMINISTERED,
+                                    "P6-TSK-004, classified by P6-TST-001. The public face of"
+                                        + " readSchedule, which carries the identifier into the"
+                                        + " statement: the platform's own pricing by its own"
+                                        + " identifier, reached only from operator routes under"
+                                        + " FEE_ADMINISTER. readSchedule's entry is the"
+                                        + " reasoning.")),
+                    Map.entry(
+                            "com.finapp.merchant.JdbcMerchantPayoutStore.find",
+                            new Entry(
+                                    Scope.OWNER_SCOPED,
+                                    "P6-TSK-012, classified by P6-TST-001. The read behind"
+                                        + " GET /v1/merchant/payouts/{payoutId}: id = ? AND"
+                                        + " merchant_id = ? IN THE STATEMENT, the merchant the"
+                                        + " authenticated key's own, so another merchant's payout,"
+                                        + " an unknown one and a malformed one are one 404."
+                                        + " Invisible until P6-TST-001: the statement is handed"
+                                        + " to a generic helper, so neither half carried both the"
+                                        + " identifier and prepareStatement. Negative:"
+                                        + " MerchantPayoutEndpointDatabaseTest#oneNotFound.")),
+                    Map.entry(
+                            "com.finapp.merchant.JdbcMerchantPayoutStore.findForUpdate",
+                            new Entry(
+                                    Scope.ADMINISTERED,
+                                    "P6-TSK-012, classified by P6-TST-001. The lock on a payout"
+                                        + " being judged: the dispatch's own payout, minted in the"
+                                        + " command under its merchant (MerchantPayouts), or a"
+                                        + " resolution candidate's (merchant, id) pair the sweep"
+                                        + " read itself (MerchantPayoutResolution) - never an"
+                                        + " identifier from a request. id = ? AND merchant_id = ?"
+                                        + " is in the statement as the pairing's second rank; what"
+                                        + " stands in for an ownership check is that the platform"
+                                        + " holds both halves.")),
+                    Map.entry(
+                            "com.finapp.merchant.JdbcMerchantStore.findById",
+                            new Entry(
+                                    Scope.ADMINISTERED,
+                                    "P6-TSK-003, classified by P6-TST-001. The public face of"
+                                        + " read, and read's reasoning holds: an operator names"
+                                        + " the merchant in the URL under MERCHANT_ADMINISTER. On"
+                                        + " the merchant's own surface the identifier IS the"
+                                        + " authenticated tenant (a checkout opened,"
+                                        + " GET /v1/merchant/me): the key names the row, so there"
+                                        + " is no other merchant it could reach.")),
+                    Map.entry(
+                            "com.finapp.merchant.JdbcMerchantStore.findByIdForUpdate",
+                            new Entry(
+                                    Scope.ADMINISTERED,
+                                    "P6-TSK-003, classified by P6-TST-001. The locking face of"
+                                        + " read: the standing moves, the fee assignment and the"
+                                        + " payout dispatch lock the merchant row an operator's URL"
+                                        + " named or the authenticated key is. read's substitute,"
+                                        + " and FOR UPDATE is the serialisation point, never an"
+                                        + " ownership check.")),
+                    Map.entry(
+                            "com.finapp.merchant.JdbcPaymentFeePinStore.findFor",
+                            new Entry(
+                                    Scope.ADMINISTERED,
+                                    "P6-TSK-005, classified by P6-TST-001. A payment's pinned"
+                                        + " price, by its intent - a bare UUID, so invisible until"
+                                        + " P6-TST-001. Reached from the capture's and the"
+                                        + " refund's compositions inside the outcome transaction,"
+                                        + " and from the pin's own convergence check at"
+                                        + " confirmation; the one request that names an intent is"
+                                        + " the operator's refund, under PAYMENT_REFUND at the"
+                                        + " boundary. A pin names the merchant it prices, and the"
+                                        + " composition refuses a credit to any payable but that"
+                                        + " merchant's.")),
+                    Map.entry(
+                            "com.finapp.merchant.JdbcPayoutDestinationStore.find",
+                            new Entry(
+                                    Scope.AUTHORITATIVE_ID,
+                                    "com.finapp.merchant.JdbcMerchantPayoutStore.find",
+                                    "P6-TSK-011, classified by P6-TST-001. The destination a"
+                                        + " payout names, read with the payout's own (merchant,"
+                                        + " destination) pair after the payout was read owner-"
+                                        + " scoped - JdbcMerchantPayoutStore.find, or"
+                                        + " findByDispatchKey on a replay - and a proposal read"
+                                        + " back in the transaction that minted it. No request"
+                                        + " names a destination here; id = ? AND merchant_id = ?"
+                                        + " is in the statement regardless.")),
+                    Map.entry(
+                            "com.finapp.merchant.JdbcPayoutDestinationStore.findForUpdate",
+                            new Entry(
+                                    Scope.OWNER_SCOPED,
+                                    "P6-TSK-011, classified by P6-TST-001. The decisions' lock -"
+                                        + " approval, rejection, withdrawal - on an operator's"
+                                        + " PAIRING, /merchants/{merchantId}/payout-destinations"
+                                        + "/{destinationId}: id = ? AND merchant_id = ? in the"
+                                        + " statement, so a destination named under another"
+                                        + " merchant's path is the unknown one's 404 and nothing"
+                                        + " moves. The effectuation sweep takes the same lock on a"
+                                        + " candidate it read itself. Negative:"
+                                        + " PayoutDestinationEndpointDatabaseTest#oneNotFound.")),
+                    Map.entry(
+                            "com.finapp.merchant.JdbcPayoutDestinationStore.findEffectiveForShare",
+                            new Entry(
+                                    Scope.OWNER_SCOPED,
+                                    "P6-TSK-012, classified by P6-TST-001. The dispatch's share"
+                                        + " lock on the destination a payout will pay: merchant_id"
+                                        + " = ? AND status = 'EFFECTIVE' in the statement, the"
+                                        + " merchant the authenticated key's own or the one an"
+                                        + " operator's MERCHANT_PAYOUT route names. Without it a"
+                                        + " merchant with no destination of its own would pay out"
+                                        + " to another merchant's account. Negative:"
+                                        + " MerchantTenancyBatteryDatabaseTest"
+                                        + "#aPayoutPaysOnlyItsOwnMerchantsDestination.")),
+                    Map.entry(
+                            "com.finapp.merchant.JdbcPayoutDestinationStore.findEffective",
+                            new Entry(
+                                    Scope.ADMINISTERED,
+                                    "P6-TSK-011, classified by P6-TST-001. The operator's list,"
+                                        + " GET /v1/operator/merchants/{merchantId}/payout-"
+                                        + "destinations under MERCHANT_ADMINISTER: what the named"
+                                        + " merchant's payouts go to. merchant_id = ? in the"
+                                        + " statement confines the answer to that merchant, which"
+                                        + " is a subject an operator named rather than a caller's"
+                                        + " own - the P6-TSK-004 rule, with the permission the"
+                                        + " substitute.")),
+                    Map.entry(
+                            "com.finapp.merchant.JdbcPayoutDestinationStore.findOpen",
+                            new Entry(
+                                    Scope.ADMINISTERED,
+                                    "P6-TSK-011, classified by P6-TST-001. The same list's open"
+                                        + " change, proposed or cooling off, on findEffective's"
+                                        + " reasoning: merchant_id = ? in the statement, the"
+                                        + " merchant an operator named under"
+                                        + " MERCHANT_ADMINISTER.")),
+                    Map.entry(
+                            "com.finapp.merchant.JdbcPayoutDestinationStore.findEffectiveForUpdate",
+                            new Entry(
+                                    Scope.ADMINISTERED,
+                                    "P6-TSK-011, classified by P6-TST-001. The effectuation's"
+                                        + " lock on the destination it supersedes, for the"
+                                        + " merchant of the approved candidate the sweep read and"
+                                        + " locked itself - an enumerated system-actor site,"
+                                        + " never an identifier from a request.")),
                     Map.entry(
                             "com.finapp.payments.JdbcPaymentIntentStore.transition",
                             new Entry(
@@ -593,6 +1201,48 @@ class OwnershipIsScopedTest {
                                     "com.finapp.payments.PaymentCapture.capture",
                                     "As JdbcPaymentAttemptStore.capture - the honest-ambiguity"
                                         + " edge, nothing posted (INV-LIFE-03).")),
+                    Map.entry(
+                            "com.finapp.payments.JdbcClearingRecordStore.findForAttempt",
+                            new Entry(
+                                    Scope.AUTHORITATIVE_ID,
+                                    "com.finapp.payments.PaymentClearing.record",
+                                    "The refused clearing insert's read-back (P7-TSK-005),"
+                                        + " on the identifier the same delivery attributed"
+                                        + " through findByOperationReference over OUR minted"
+                                        + " capture reference (INV-PAY-04 inbound, behind"
+                                        + " the authenticated webhook door) - it tells the"
+                                        + " rail's harmless repetition apart from a foreign"
+                                        + " acquirer-reference claim. No HTTP path takes an"
+                                        + " attempt id.")),
+                    Map.entry(
+                            "com.finapp.payments.JdbcPaymentAttemptStore.dispatchVoid",
+                            new Entry(
+                                    Scope.AUTHORITATIVE_ID,
+                                    "com.finapp.payments.PaymentVoid.voidAuthorized",
+                                    "The void dispatch's conditional write (P7-TSK-004):"
+                                        + " AUTHORIZED -> VOID_DISPATCHED with the minted"
+                                        + " reference, the row count arbitrating the race"
+                                        + " against the capture chain - on the identifier the"
+                                        + " command just read behind the intent's owner-scoped"
+                                        + " read (the customer door) or the operator's"
+                                        + " PAYMENT_REFUND wall. The redirect's writer is the"
+                                        + " outcome transaction, same discipline.")),
+                    Map.entry(
+                            "com.finapp.payments.JdbcPaymentAttemptStore.voided",
+                            new Entry(
+                                    Scope.AUTHORITATIVE_ID,
+                                    "com.finapp.payments.PaymentVoid.completeDispatched",
+                                    "The void outcome's conditional write (P7-TSK-004): the"
+                                        + " same minted identifier, carried across the"
+                                        + " provider call - the release acknowledged, nothing"
+                                        + " posted.")),
+                    Map.entry(
+                            "com.finapp.payments.JdbcPaymentAttemptStore.markVoidUnknown",
+                            new Entry(
+                                    Scope.AUTHORITATIVE_ID,
+                                    "com.finapp.payments.PaymentVoid.completeDispatched",
+                                    "As JdbcPaymentAttemptStore.voided - the honest-ambiguity"
+                                        + " edge, nothing concluded (INV-LIFE-03).")),
                     Map.entry(
                             "com.finapp.payments.JdbcPaymentAttemptStore.authorize",
                             new Entry(
@@ -1065,6 +1715,63 @@ class OwnershipIsScopedTest {
                                         + " lock-free read admits is arbitrated by V009's"
                                         + " trigger under the advisory lock.")),
                     Map.entry(
+                            "com.finapp.ledger.JdbcLedgerAccountStore.lockForShare",
+                            new Entry(
+                                    Scope.NOT_OWNED,
+                                    "The Phase 6 -> 7 transition. lockForUpdate's shared face:"
+                                        + " a payment's confirmation share-locks the account its"
+                                        + " capture will credit, so it serialises with an account"
+                                        + " close's FOR UPDATE. The identifier is the intent's own"
+                                        + " credit account, read after findOwned resolved the"
+                                        + " intent as the caller's - platform-held, never a"
+                                        + " request's; ownership is the commanding surface's, as"
+                                        + " lockForUpdate's.")),
+                    Map.entry(
+                            "com.finapp.merchant.JdbcMerchantStore.findByIdForShare",
+                            new Entry(
+                                    Scope.ADMINISTERED,
+                                    "The Phase 6 -> 7 transition. The share-locking face of"
+                                        + " read, for requireTrading: on the creation the"
+                                        + " authenticated key's own tenant, on the customer's"
+                                        + " confirmation the merchant the SESSION names, which the"
+                                        + " token opened - platform-held on both. FOR SHARE is the"
+                                        + " serialisation point against a close's FOR UPDATE,"
+                                        + " never an ownership check.")),
+                    Map.entry(
+                            "com.finapp.payments.JdbcPaymentIntentStore.anyInFlightCrediting",
+                            new Entry(
+                                    Scope.AUTHORITATIVE_ID,
+                                    "com.finapp.accounts.JdbcCustomerAccountStore.lockOwnedBy",
+                                    "The Phase 6 -> 7 transition: a close asks whether a payment"
+                                        + " in flight will credit the account, under the close's"
+                                        + " lock. The account is the customer's own, locked by"
+                                        + " lockOwnedBy's owner predicate; the merchant close asks"
+                                        + " of the payable an operator's MERCHANT_ADMINISTER route"
+                                        + " named. A boolean leaves, and no row of anybody's.")),
+                    Map.entry(
+                            "com.finapp.payments.JdbcRefundStore.lockForOutcome",
+                            new Entry(
+                                    Scope.AUTHORITATIVE_ID,
+                                    "com.finapp.payments.PaymentRefund.refund",
+                                    "The Phase 6 -> 7 transition. The refund row locked FOR"
+                                        + " UPDATE before an answer is applied - the command's Tx2,"
+                                        + " the sweep and the webhook - so the permit judged and"
+                                        + " the conditional write see one row. The identifier is"
+                                        + " minted by the command's own Tx1, the sweep's own"
+                                        + " candidate, or the webhook's attribution by our minted"
+                                        + " reference - never a request's.")),
+                    Map.entry(
+                            "com.finapp.payments.JdbcRefundStore.renewSendPermit",
+                            new Entry(
+                                    Scope.AUTHORITATIVE_ID,
+                                    "com.finapp.payments.PaymentRefund.refund",
+                                    "The Phase 6 -> 7 transition, payments V009: the send"
+                                        + " permit's conditional renewal before a takeover's or a"
+                                        + " re-drive's own send, forward only and only while the"
+                                        + " refund is resolvable. The identifier is the refund the"
+                                        + " claim's dispatch key converged on, or the sweep's own"
+                                        + " candidate.")),
+                    Map.entry(
                             "com.finapp.ledger.JdbcLedgerAccountStore.lockForUpdate",
                             new Entry(
                                     Scope.NOT_OWNED,
@@ -1500,6 +2207,41 @@ class OwnershipIsScopedTest {
                             "com.finapp.app.checkout.CheckoutFlowDatabaseTest"
                                     + ".aMerchantReadsOnlyItsOwnSession"),
                     Map.entry(
+                            "com.finapp.checkout.JdbcCheckoutSessionStore.findByIntentOwnedBy",
+                            "com.finapp.app.checkout.CheckoutFlowDatabaseTest"
+                                    + ".theEnrichmentReadIsTenantScopedInItsOwnStatement"),
+                    Map.entry(
+                            "com.finapp.merchant.JdbcMerchantPayoutStore.find",
+                            "com.finapp.app.merchant.MerchantPayoutEndpointDatabaseTest"
+                                    + ".oneNotFound"),
+                    Map.entry(
+                            "com.finapp.merchant.JdbcPayoutDestinationStore.findForUpdate",
+                            "com.finapp.app.merchant.PayoutDestinationEndpointDatabaseTest"
+                                    + ".oneNotFound"),
+                    Map.entry(
+                            "com.finapp.merchant.JdbcPayoutDestinationStore.findEffectiveForShare",
+                            "com.finapp.app.merchant.MerchantTenancyBatteryDatabaseTest"
+                                    + ".aPayoutPaysOnlyItsOwnMerchantsDestination"),
+                    Map.entry(
+                            "com.finapp.payments.JdbcDisputeStore.findForCounterparties",
+                            "com.finapp.app.merchant.MerchantTenancyBatteryDatabaseTest"
+                                    + ".everyAddressedRouteAnswersAnotherTenantsResourceAsUnknown"),
+                    // P7-TSK-014: the upload's and the answer's LOCKING read, and the document
+                    // read - each merchant route probed A-on-B by the same battery.
+                    Map.entry(
+                            "com.finapp.payments.JdbcDisputeStore.lockForCounterparties",
+                            "com.finapp.app.merchant.MerchantTenancyBatteryDatabaseTest"
+                                    + ".everyAddressedRouteAnswersAnotherTenantsResourceAsUnknown"),
+                    Map.entry(
+                            "com.finapp.payments.JdbcDisputeEvidenceStore"
+                                    + ".readContentForCounterparties",
+                            "com.finapp.app.merchant.MerchantTenancyBatteryDatabaseTest"
+                                    + ".everyAddressedRouteAnswersAnotherTenantsResourceAsUnknown"),
+                    Map.entry(
+                            "com.finapp.merchant.JdbcMerchantPayoutStore.findByDispatchKey",
+                            "com.finapp.app.merchant.MerchantPayoutEndpointDatabaseTest"
+                                    + ".aClientKeyIsEachMerchantsOwn"),
+                    Map.entry(
                             "com.finapp.merchant.JdbcMerchantApiKeyStore.findOwnedForUpdate",
                             "com.finapp.app.merchant.MerchantApiKeyDatabaseTest"
                                     + ".anotherMerchantsKeyIsTheSame404"),
@@ -1594,6 +2336,14 @@ class OwnershipIsScopedTest {
      * {@code uuid} column named {@code _ref} rather than a typed {@code _id} — the isolation
      * showing up in the schema. Two spellings for one rule is a cost worth naming; the
      * alternative is a module depending on another module to say whose row this is.
+     *
+     * <p>{@code credit_account_id = ANY (?)} is <strong>the third spelling</strong>
+     * (`P7-TSK-012`): {@code payments} cannot see {@code merchant} at all, and a payment's
+     * counterparty is the account it credited — so a merchant's disputes are the disputes on
+     * payments that credited ITS payables, and the set bound here is resolved from the
+     * authenticated merchant through the ledger's {@code owner_ref = ?} read in the same
+     * transaction ({@code MerchantPayable}'s precedent). The spelling differs; the proof is the
+     * same, and the tenancy battery's probe is what shows the right set is bound.
      */
     private static final Set<String> OWNERSHIP_PREDICATES =
             Set.of(
@@ -1602,7 +2352,25 @@ class OwnershipIsScopedTest {
                     "customer_id = ?",
                     "party_id = ?",
                     "merchant_id = ?",
-                    "merchant_ref = ?");
+                    "merchant_ref = ?",
+                    "credit_account_id = ANY (?)");
+
+    /**
+     * The tenant's packages (`P6-TST-001`): where every statement over a tenant column lives, and
+     * where the detector widens to see the two shapes the class javadoc names.
+     *
+     * <p>Two, because {@code merchant_id} and {@code merchant_ref} are only ever written in SQL
+     * here, and {@link #tenantColumnsLiveOnlyInTheTenantsPackages} holds that true. What the
+     * widening does not cover is stated rather than implied: a merchant's LEDGER rows are
+     * reached by {@code owner_ref}, a column the ledger module classifies for every owner
+     * alike, and a customer module's by-value reads are the same blind spot left for later.
+     */
+    private static final Set<String> TENANT_PACKAGES =
+            Set.of("com.finapp.merchant", "com.finapp.checkout");
+
+    /** The tenant columns, as a statement spells them - never as prose about them. */
+    private static final java.util.regex.Pattern TENANT_COLUMN =
+            java.util.regex.Pattern.compile("\\bmerchant_(?:id|ref)\\b");
 
     private record Entry(Scope scope, String authoritativeRead, String reason) {
         Entry(Scope scope, String reason) {
@@ -1896,6 +2664,67 @@ class OwnershipIsScopedTest {
     }
 
     @Test
+    @DisplayName("P6-TST-001: a tenant column is written in SQL only inside the tenant's packages")
+    void tenantColumnsLiveOnlyInTheTenantsPackages() throws IOException {
+        java.util.TreeSet<String> outside = new java.util.TreeSet<>();
+        java.util.TreeSet<String> inside = new java.util.TreeSet<>();
+        for (Path source : productionSources()) {
+            String text = Files.readString(source);
+            if (!TENANT_COLUMN.matcher(stringLiteralsOf(text)).find()) {
+                continue;
+            }
+            String type = typeOf(source, text);
+            if (inTenantPackage(type.substring(0, type.lastIndexOf('.')))) {
+                inside.add(type);
+            } else {
+                outside.add(type);
+            }
+        }
+
+        // The widening in TENANT_PACKAGES is what makes the tenant's UUID reads and helper-split
+        // statements visible to this register. A statement over merchant_id or merchant_ref in
+        // any other package would be one the widening never looks at - invisible exactly as
+        // checkout's reads were until this task. So it fails here and forces the decision:
+        // move the statement into the tenant's store, or widen TENANT_PACKAGES to where it is.
+        //
+        // Literals only, comments stripped by a scanner rather than a regex: a comment naming
+        // the column is prose, and the P1-TSK-021 lesson is that a rule matching prose reports
+        // a control it does not have.
+        assertThat(outside)
+                .as("a tenant column (merchant_id, merchant_ref) in a SQL literal outside "
+                        + TENANT_PACKAGES + " is a tenant statement the widened detector cannot"
+                        + " see")
+                .isEmpty();
+        assertThat(inside)
+                .as("the guard is not vacuous: it finds the tenant's own statements")
+                .contains(
+                        "com.finapp.checkout.JdbcCheckoutSessionStore",
+                        "com.finapp.merchant.JdbcMerchantPayoutStore",
+                        "com.finapp.merchant.JdbcPayoutDestinationStore");
+    }
+
+    @Test
+    @DisplayName("P6-TST-001: the widening has teeth - it sees the UUID reads and the helper-split"
+            + " statements it exists for")
+    void theTenantWideningSeesWhatItWasFor() {
+        // Named rather than counted: the four shapes P6-TSK-009's gate and this task's design
+        // found, each of which the EntityId-only, direct-call-only detector could not see.
+        assertThat(resourceScopedPersistenceMethods())
+                .contains(
+                        // a bare UUID, read directly
+                        "com.finapp.checkout.JdbcCheckoutSessionStore.findByIntentOwnedBy",
+                        "com.finapp.merchant.JdbcPaymentFeePinStore.findFor",
+                        // a typed id, its statement split across a generic helper
+                        "com.finapp.merchant.JdbcMerchantPayoutStore.find",
+                        "com.finapp.merchant.JdbcPayoutDestinationStore.findEffectiveForShare");
+        // ...and the scanner the guard rests on strips comments and keeps text blocks.
+        assertThat(stringLiteralsOf("// merchant_id = ?\n/* merchant_ref */ String x = \"id = ?\";"))
+                .doesNotContain("merchant_");
+        assertThat(stringLiteralsOf("String x = \"\"\"\n  WHERE merchant_id = ?\n  \"\"\";"))
+                .contains("merchant_id = ?");
+    }
+
+    @Test
     @DisplayName("party's ownership surface is classified, and it exists as of P1-TSK-030")
     void partysOwnershipSurfaceIsClassified() {
         // This assertion used to read "party owns no resource-scoped operation", and it was written
@@ -1921,30 +2750,148 @@ class OwnershipIsScopedTest {
      * of the {@code *Store} convention. <em>Resource identifier</em> is an {@code EntityId} subtype
      * other than {@code IdentityId} — so a new aggregate's identifier is in scope the day it is
      * declared, without anyone remembering.
+     *
+     * <p>In {@link #TENANT_PACKAGES} both halves widen (`P6-TST-001`): a bare {@code UUID} is a
+     * resource identifier, and SQL a same-class helper issues is the caller's, one hop deep.
      */
     private static TreeSet<String> resourceScopedPersistenceMethods() {
         TreeSet<String> found = new TreeSet<>();
         for (JavaClass javaClass : productionClasses()) {
             for (JavaMethod method : javaClass.getMethods()) {
-                if (!issuesSql(method)
-                        || !takesAResourceIdentifier(
-                                method, javaClass.getName() + "." + method.getName())) {
+                String qualified = javaClass.getName() + "." + method.getName();
+                if (!issuesSqlInScope(method)
+                        || !takesAResourceIdentifierInScope(method, qualified)) {
                     continue;
                 }
-                found.add(javaClass.getName() + "." + method.getName());
+                found.add(qualified);
             }
         }
         return found;
     }
 
-    /** Whether a named method issues SQL. Absent methods are handled by {@code authoritativeReadsExist}. */
+    /**
+     * Whether a named method issues SQL, as the detector sees it. Absent methods are handled by
+     * {@code authoritativeReadsExist}.
+     */
     private static boolean issuesSql(JavaClasses classes, String qualified) {
         String owner = qualified.substring(0, qualified.lastIndexOf('.'));
         String method = qualified.substring(qualified.lastIndexOf('.') + 1);
         return classes.contain(owner)
                 && classes.get(owner).getMethods().stream()
                         .filter(candidate -> candidate.getName().equals(method))
-                        .anyMatch(OwnershipIsScopedTest::issuesSql);
+                        .anyMatch(OwnershipIsScopedTest::issuesSqlInScope);
+    }
+
+    private static boolean inTenantPackage(String packageName) {
+        return TENANT_PACKAGES.stream()
+                .anyMatch(tenant -> packageName.equals(tenant) || packageName.startsWith(tenant + "."));
+    }
+
+    /**
+     * SQL issued by the method itself or, in a tenant package, by a same-class helper it calls.
+     *
+     * <p>One hop, deliberately: a store's generic helper ({@code one(unitOfWork, sql, ...)}) is
+     * the shape found, and a chain deeper than that is a design to question before it is one to
+     * detect. The helper itself carries no identifier of its own when it takes its parameters as
+     * a varargs array, so it is classified through its callers rather than for them.
+     */
+    private static boolean issuesSqlInScope(JavaMethod method) {
+        if (issuesSql(method)) {
+            return true;
+        }
+        if (!inTenantPackage(method.getOwner().getPackageName())) {
+            return false;
+        }
+        for (JavaMethodCall call : method.getMethodCallsFromSelf()) {
+            if (!call.getTargetOwner().equals(method.getOwner())) {
+                continue;
+            }
+            java.util.Optional<JavaMethod> helper = call.getTarget().resolveMember();
+            if (helper.isPresent() && !helper.get().equals(method) && issuesSql(helper.get())) {
+                return true;
+            }
+        }
+        return false;
+    }
+
+    /** {@link #takesAResourceIdentifier}, and in a tenant package a bare {@code UUID} too. */
+    private static boolean takesAResourceIdentifierInScope(JavaMethod method, String qualified) {
+        if (takesAResourceIdentifier(method, qualified)) {
+            return true;
+        }
+        return inTenantPackage(method.getOwner().getPackageName())
+                && method.getRawParameterTypes().stream()
+                        .anyMatch(parameter -> parameter.getName().equals("java.util.UUID"));
+    }
+
+    /** Every production source file on the platform - the guard reads what the build compiles. */
+    private static List<Path> productionSources() throws IOException {
+        List<Path> sources = new ArrayList<>();
+        try (java.util.stream.Stream<Path> modules = Files.list(repositoryRoot())) {
+            for (Path module : modules.toList()) {
+                Path main = module.resolve("src/main/java");
+                if (!Files.isDirectory(main)) {
+                    continue;
+                }
+                try (java.util.stream.Stream<Path> files = Files.walk(main)) {
+                    files.filter(file -> file.toString().endsWith(".java")).forEach(sources::add);
+                }
+            }
+        }
+        return sources;
+    }
+
+    /** The type a source file declares, from its package line and its file name. */
+    private static String typeOf(Path source, String text) {
+        java.util.regex.Matcher declared =
+                java.util.regex.Pattern.compile("(?m)^package\\s+([\\w.]+);").matcher(text);
+        String name = source.getFileName().toString();
+        return (declared.find() ? declared.group(1) + "." : "")
+                + name.substring(0, name.length() - ".java".length());
+    }
+
+    /**
+     * The contents of every string literal and text block in {@code source}, and nothing else.
+     *
+     * <p>A character scanner rather than a pattern, because the two things a pattern gets wrong
+     * here are the two that matter: a quote inside a comment, and a comment marker inside a
+     * string ({@code "http://"}). Character literals are skipped so {@code '"'} opens nothing.
+     */
+    private static String stringLiteralsOf(String source) {
+        StringBuilder literals = new StringBuilder();
+        int i = 0;
+        int length = source.length();
+        while (i < length) {
+            char c = source.charAt(i);
+            if (c == '/' && i + 1 < length && source.charAt(i + 1) == '/') {
+                int end = source.indexOf('\n', i);
+                i = end < 0 ? length : end;
+            } else if (c == '/' && i + 1 < length && source.charAt(i + 1) == '*') {
+                int end = source.indexOf("*/", i + 2);
+                i = end < 0 ? length : end + 2;
+            } else if (source.startsWith("\"\"\"", i)) {
+                int end = source.indexOf("\"\"\"", i + 3);
+                end = end < 0 ? length : end;
+                literals.append(source, i + 3, end).append('\n');
+                i = Math.min(length, end + 3);
+            } else if (c == '"') {
+                int j = i + 1;
+                while (j < length && source.charAt(j) != '"') {
+                    j += source.charAt(j) == '\\' ? 2 : 1;
+                }
+                literals.append(source, i + 1, Math.min(j, length)).append('\n');
+                i = j + 1;
+            } else if (c == '\'') {
+                int j = i + 1;
+                while (j < length && source.charAt(j) != '\'') {
+                    j += source.charAt(j) == '\\' ? 2 : 1;
+                }
+                i = j + 1;
+            } else {
+                i++;
+            }
+        }
+        return literals.toString();
     }
 
     /** A method handed the owner. {@code IdentityId} is the owner type in every module here. */

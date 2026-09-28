@@ -15,11 +15,14 @@ reviewer can point at.
 **This is a glossary, not a data model.** `DOMAIN_MODEL.md` is explicit that these names "are not
 automatically aggregates or tables". Nothing here declares a class, a table or a lifecycle.
 
-**Nothing here is implemented.** Phase 0 delivers the financial and platform kernel and *zero*
-business capability, so no production class is named for any term below — checked, not assumed.
-The owning module column names where each concept **will** live, per
-[`MODULE_ARCHITECTURE.md`](../architecture/MODULE_ARCHITECTURE.md) §4, which records the phase each
-module arrives in.
+**Written before anything was implemented.** At `P0-DOC-011` no production class existed for any
+term below — Phase 0 delivered the financial and platform kernel and *zero* business capability.
+That is no longer so: Phases 1 to 6 built classes for many of them, Phase 6's merchant, checkout,
+fee and payout terms included. Entries still name no class, except where a class's name collides
+with a term (`MerchantSettlement`, §2 and §5). The owning module column names where each concept lives,
+or **will** live, per [`MODULE_ARCHITECTURE.md`](../architecture/MODULE_ARCHITECTURE.md) §4, which
+records the phase each module arrives in. *(Corrected at the Phase 6 review, `P6-DOC-001`: this
+said "Nothing here is implemented".)*
 
 ---
 
@@ -171,13 +174,19 @@ The same money, two different movements, in opposite directions:
 
 ```
 Customer Payment      customer  ->  platform      gross, at purchase time
-Merchant Settlement   platform  ->  merchant      net of fees, on a payout cycle
+Merchant Settlement   platform  ->  merchant      net of fees, paid out on demand
 ```
 
 Collapsing them is how fees disappear. The amount differs, the timing differs, the counterparty
 differs, and the accounts differ — a customer payment credits a liability to the merchant, and a
 settlement discharges it. `INV-SET-02` requires the gap between them to be a tracked expectation
 that ages, precisely because the two are not the same event.
+
+**There is no payout cycle.** Each payout is initiated on demand — by the merchant over its key,
+or by an operator holding `MERCHANT_PAYOUT` — and bounded by the payable (ADR-0051, ADR-0057
+§6). Nor is the class `MerchantSettlement` this movement: it is the capture-time fee split, the
+entry that credits the payable gross and takes the fee from it (ADR-0050 §3). *(Corrected at the
+Phase 6 review, `P6-DOC-001`: this said "on a payout cycle".)*
 
 ---
 
@@ -390,6 +399,55 @@ arrives with deadlines and evidence requirements a refund does not have.
 opportunity to defend the payment.
 **Owned by:** `payments`
 
+### Payment Rail
+**Is:** a way money travels between institutions — a card network through a processor, an
+instant credit-transfer scheme, or the platform's own books for a wallet payment — described by
+a declared capability descriptor: its interaction model (two-step, push or book), when an
+operation is final, whether and how it can be reversed, how a refund executes, how long an
+unknown outcome may last, and which clearing position a completion posts to (ADR-0059,
+`INV-RAIL-01`).
+**Not:** a PSP, which is a company that operates on a rail, and not a Payment Method, which is
+the customer's instrument. A rail is never branched on by name outside its adapter: the domain
+acts on what the rail declared.
+**Owned by:** `payments`
+
+### Routing Decision
+**Is:** the recorded choice of rail for one payment, made once at confirmation by a pinned,
+versioned routing policy over stored inputs — the instrument, the currency and amount, the
+capabilities each candidate declared, and each rail's recorded availability — with every
+rejected candidate and its reason (ADR-0060, `INV-RAIL-02`, `INV-HIST-04`).
+**Not:** a retry policy, and not load balancing: a decision advances to another rail only on
+knowledge that nothing was sent, never after an ambiguous dispatch.
+**Owned by:** `payments`
+
+### A2A Payment
+**Is:** an account-to-account payment — value moved from a payer's bank account to a payee's
+over a credit-transfer rail, initiated by the payer or by the platform on the payer's authority
+(a pay-by-bank pay-in), or by the platform to a customer's own bank account (a withdrawal)
+(ADR-0062).
+**Not:** a Transfer, which moves value between two ledger accounts on the platform's own books,
+and not a Journal Entry, which is how either is recorded. An A2A payment's settlement happens
+between the institutions; the platform records its clearing position (`INV-RAIL-04`).
+**Owned by:** `payments`
+
+### Instant Payment
+**Is:** an A2A payment on a rail whose scheme confirms acceptance within seconds and makes it
+final on acceptance, with an outcome deadline after which an inquiry is authoritative
+(ADR-0062).
+**Not:** settled when accepted: acceptance is final between payer and payee, while the
+institutions settle later under the scheme's own cycle (`INV-SET-01`). And not reversible — a
+mistaken instant payment is corrected by a new return payment (`INV-REV-03`).
+**Owned by:** `payments`
+
+### Withdrawal
+**Is:** a customer's instruction to move value from their wallet to their own external bank
+account — held on the wallet at dispatch, sent under a send permit, and posted when the rail
+accepts it (ADR-0062).
+**Not:** a Refund, which returns a payment to its payer, and not a Merchant Payout, which pays a
+merchant its payable. The three share the outbound disciplines and have different subjects and
+bounds.
+**Owned by:** `payments`
+
 ### Transaction
 **Is:** the bookkeeping envelope grouping the journal entries produced by one economic event.
 **Not:** a Payment, not a Transfer, and never — in domain prose — a *database* transaction. This is
@@ -402,8 +460,11 @@ the most overloaded word in the vocabulary, which is why prose should prefer the
 **Owned by:** `payments`
 
 ### Merchant Settlement
-**Is:** money flowing from the platform to a merchant, net of fees, on a payout cycle.
-**Not:** a Customer Payment. Different direction, amount, timing and accounts.
+**Is:** money flowing from the platform to a merchant, net of fees — paid out on demand, each
+payout initiated by the merchant or an operator; there is no payout cycle (ADR-0051, ADR-0057 §6).
+**Not:** a Customer Payment. Different direction, amount, timing and accounts. Nor the class
+`MerchantSettlement`, which is the capture-time fee split (ADR-0050 §3), not this outbound flow.
+*(Corrected at the Phase 6 review, `P6-DOC-001`: this said "on a payout cycle".)*
 **Owned by:** `merchant`
 
 ### Checkout Session
@@ -422,7 +483,9 @@ business, outside the platform's books).
 
 ### Fee Schedule
 **Is:** versioned pricing configuration — rate, fixed part, rounding mode, refund-fee
-policy — immutable once effective; change creates a new version effective forward.
+policy — immutable from creation (no `UPDATE` grant, and a trigger refuses every change: merchant
+`V004`); change creates a new version effective forward. *(This read "immutable once effective"
+until the Phase 6 review, `P6-DOC-001`.)*
 **Not:** a fee assessment, which is the historical fact pinned to the version that priced
 it (`INV-MER-03`).
 **Owned by:** `merchant`
@@ -671,8 +734,9 @@ majority spelling.
    module's `Owns:` line, the glossary must agree — it is the authority on ownership (ADR-0012).
    Added during review, which found `Risk Score` attributed to `risk` while the register says
    `credit`.
-7. **Every `INV-*` the glossary cites exists.** Twenty-three citations, none of which any other
-   check would notice going stale.
+7. **Every `INV-*` the glossary cites exists.** Twenty-five distinct invariants, cited twenty-nine
+   times (counted at the Phase 6 review, `P6-DOC-001`; this said "twenty-three citations"), none
+   of which any other check would notice going stale.
 8. Every distinction group has a §2 heading repeating the group exactly, so a group added to
    `CLAUDE.md` fails the build until it is contrasted.
 9. All of the above are actually parsed, so a reformatted document fails loudly rather than

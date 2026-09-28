@@ -232,6 +232,29 @@ public final class JdbcLedgerAccountStore implements LedgerAccountStore<Connecti
     }
 
     @Override
+    public Optional<LedgerAccount> lockForShare(
+            Connection unitOfWork, LedgerAccountId accountId) {
+        Objects.requireNonNull(unitOfWork, "unitOfWork must not be null");
+        Objects.requireNonNull(accountId, "accountId must not be null");
+        try (PreparedStatement read =
+                unitOfWork.prepareStatement(
+                        // FOR SHARE: conflicts with the closer's FOR UPDATE, and with nothing a
+                        // sibling reader or an in-flight posting holds (the interface's reasoning).
+                        "SELECT " + COLUMNS + " FROM " + TABLE + " WHERE id = ? FOR SHARE")) {
+            read.setObject(1, accountId.value());
+            try (ResultSet row = read.executeQuery()) {
+                if (!row.next()) {
+                    return Optional.empty();
+                }
+                return Optional.of(rehydrate(row));
+            }
+        } catch (SQLException failure) {
+            throw new LedgerStorageException(
+                    DatabaseFailure.describe("share-locking account " + accountId, failure));
+        }
+    }
+
+    @Override
     public boolean moveStatus(
             Connection unitOfWork,
             LedgerAccountId accountId,

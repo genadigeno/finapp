@@ -35,7 +35,7 @@ public final class ProviderApiKey {
             new KeySpec(
                     "payment provider API key",
                     "payment provider API key",
-                    "FINAPP_PAYMENT_PROVIDER_KEY",
+                    "FINAPP_PAYMENTS_PROVIDER_KEY",
                     "/payment-provider",
                     KeyLength.AT_LEAST_32,
                     ".");

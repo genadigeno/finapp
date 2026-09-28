@@ -42,7 +42,7 @@ class PaymentEvidenceKeyTest {
                                         ConfinedCredential.MARKED_LOCAL_DEFAULT, false))
                 .isInstanceOf(IllegalStateException.class)
                 .hasMessageContaining("payment evidence encryption key")
-                .hasMessageContaining("FINAPP_PAYMENT_EVIDENCE_KEY");
+                .hasMessageContaining("FINAPP_PAYMENTS_EVIDENCE_KEY");
     }
 
     @Test

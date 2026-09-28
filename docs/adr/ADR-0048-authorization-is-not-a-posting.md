@@ -94,3 +94,10 @@ depends on.
   `P5-TST-003` storms both against the trial-balance and projection sweeps.
 - Phase 6 revisits the treatment for merchant-present flows (fees, payables) under its own
   ADR — question 8's territory, deliberately not decided here.
+- *The Phase 6 → 7 transition*: §4's hold-then-post now carries the send permit (payments
+  `V009`), so a refused connection releases a refund's hold only when it answered the refund's
+  first send; a taken-over refund's refused re-send had released the hold of a refund the first
+  send may already have paid. And the confirmation refuses a payment whose credit account has
+  closed since creation (`payments.NoWallet`), under a share lock the account's close takes
+  `FOR UPDATE` against, while the close refuses with a payment crediting it in flight — so a
+  capture's posting can never meet a closed account.

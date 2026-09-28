@@ -20,7 +20,11 @@ public enum CheckoutErrorCode implements ErrorCode {
     /**
      * The merchant has no fee schedule, so the platform cannot price this offer
      * (`P6-TSK-007`). A {@code 422}: the request is coherent and the remedy is an operator's —
-     * assign the merchant a schedule.
+     * assign the merchant a schedule. Since `P6-TST-001` it also answers an offer in a currency
+     * the merchant's schedule does not price: a schedule prices the settlement currency its
+     * assignment checked, and pricing at creation is what surfaces the mismatch. The title
+     * said only <em>has no fee schedule</em> until `P6-DOC-001`, which the second cause made
+     * untrue; the code, which is what a client keys on, did not change.
      *
      * <p><strong>Refused at creation rather than discovered at capture</strong>, which is the
      * whole point: an unpriced session would reach the capture and fail <em>there</em>, inside
@@ -29,21 +33,39 @@ public enum CheckoutErrorCode implements ErrorCode {
     NOT_PRICEABLE(
             "checkout.NotPriceable",
             422,
-            "This merchant has no fee schedule, so a checkout cannot be priced."),
+            "This merchant has no fee schedule for this currency, so a checkout cannot be"
+                    + " priced."),
+
+    /**
+     * The offer's amount does not cover its fee (`P6-TST-001`, ADR-0058): priced under the
+     * merchant's effective schedule version, the fee meets or exceeds the amount, so the
+     * merchant would be credited nothing or less than nothing. A {@code 422}: the request is
+     * coherent and the remedy is the merchant's - a larger amount, or different terms.
+     *
+     * <p><strong>Refused at the price, like {@link #NOT_PRICEABLE}</strong>: accepted, such a
+     * sale drives the payable below zero at capture and leaves a refund of it nothing to be
+     * funded by. Nothing is written and the key is not spent.
+     */
+    SALE_BELOW_FEE(
+            "checkout.SaleBelowFee",
+            422,
+            "This amount does not cover the merchant's fee, so it cannot be sold."),
 
     /**
      * The merchant is not trading (`P6-TSK-007`). A {@code 409}: the merchant's own state
      * refuses, and the remedy is to read it.
      *
      * <p>Suspension gates <strong>new dispatches</strong>
-     * ({@code CHECKOUT_MERCHANT_LIFECYCLES.md} §5) — which a new checkout session is. It never
-     * touches money already in flight: a session confirmed before the suspension still
-     * completes, and its capture still credits the payable.
+     * ({@code CHECKOUT_MERCHANT_LIFECYCLES.md} §5) — which a new checkout session is, and so is
+     * the confirmation that pays one: `P6-DOC-001` found the confirmation never asked, so a
+     * session opened before a suspension could still be paid after it. It never touches money
+     * already in flight: a session confirmed before the suspension still completes, and its
+     * capture still credits the payable.
      */
     NOT_TRADING(
             "checkout.NotTrading",
             409,
-            "This merchant cannot open new checkout sessions."),
+            "This merchant is not trading, so a checkout cannot be opened or paid."),
 
     /**
      * The offer's deadline has passed (`P6-TSK-007`, ADR-0053 §5 — <em>expiry gates

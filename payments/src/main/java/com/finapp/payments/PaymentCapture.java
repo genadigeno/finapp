@@ -68,8 +68,10 @@ import lombok.RequiredArgsConstructor;
  * <h2>The platform's act, end to end</h2>
  *
  * <p>Capture is the continuation of a confirmed intent — chained by the surface after a
- * synchronous {@code AUTHORIZED} ({@code P5-TSK-011}) or by a resolver ({@code P5-TSK-013}/
- * {@code -014}) — and has no session either way: one enumerated {@code enterSystem()} site
+ * synchronous {@code AUTHORIZED} ({@code P5-TSK-011}), or by the sweeper's stranded leg for an
+ * {@code AUTHORIZED} that nothing chained (the Phase 6 → 7 transition; this said "or by a
+ * resolver" until then, and none did: an authorization resolved by query or webhook stopped at
+ * {@code AUTHORIZED}) — and has no session either way: one enumerated {@code enterSystem()} site
  * wraps the whole command ({@code PHASE_5_PLAN.md} §11). Ambiguity commits
  * {@code CAPTURE_UNKNOWN} with <strong>nothing posted</strong> ({@code INV-LIFE-03});
  * {@code DECLINED} and a refused connection fail the attempt and the intent with it (no retry
@@ -88,6 +90,9 @@ public final class PaymentCapture {
     @NonNull private final ProviderEvidenceStore<Connection> evidence;
     @NonNull private final PaymentProvider provider;
     @NonNull private final PaymentOutcomes outcomes;
+
+    /** The redirect's finisher (`P7-TSK-004`): a declined capture's void, sent by this port-owning resolver. */
+    @NonNull private final PaymentVoid voids;
     @NonNull private final AuditWriter<Connection> audit;
     @NonNull private final IdGenerator ids;
     @NonNull private final Clock clock;
@@ -149,8 +154,26 @@ public final class PaymentCapture {
                                     dispatch.authorization(),
                                     dispatch.amount()));
 
-            return transactions.inTransaction(
-                    uow -> applyCaptureOutcome(uow, dispatch, attemptId, answer, correlation));
+            Outcome outcome =
+                    transactions.inTransaction(
+                            uow ->
+                                    applyCaptureOutcome(
+                                            uow, dispatch, attemptId, answer, correlation));
+            if (outcome.voidToFinish()) {
+                // The declined capture redirected into the void (P7-TSK-004): this
+                // resolver owns a provider port, so it finishes what its outcome
+                // committed - AFTER that commit, on the finisher's own transactions,
+                // holding nothing of this one (ADR-0046; the database race suite caught
+                // the nested form reading its own uncommitted redirect on a second
+                // connection and converging on the stale row).
+                PaymentVoid.VoidResult voided = voids.completeDispatched(attemptId);
+                return new CaptureResult(
+                        voided.intent(),
+                        voided.attempt(),
+                        false,
+                        outcome.result().acting() || voided.acting());
+            }
+            return outcome.result();
         }
     }
 
@@ -211,12 +234,13 @@ public final class PaymentCapture {
                         Optional.of(
                                 "intent=" + attempt.intentId()
                                         + ", attempt=" + attemptId
-                                        + ", reference=" + reference.value())));
+                                        + ", reference=" + reference.value()
+                                        + ", rail=" + attempt.rail().value())));
         return new Tx1Outcome(
                 Optional.of(
                         new Dispatch(
                                 attempt.intentId(),
-                                intent.walletAccount(),
+                                intent.creditAccount(),
                                 reference,
                                 attempt.authorizationProviderReference(),
                                 attempt.authorizedAmount())),
@@ -237,7 +261,10 @@ public final class PaymentCapture {
      * ({@link PaymentOutcomes} — `P5-TSK-013`'s extraction: for APPROVED the transition, THE
      * POSTING and the intent's {@code SUCCEEDED} stay one commit, whichever resolver calls).
      */
-    private CaptureResult applyCaptureOutcome(
+    /** Tx2's yield: the committed answer, and whether a redirected void awaits its send. */
+    private record Outcome(CaptureResult result, boolean voidToFinish) {}
+
+    private Outcome applyCaptureOutcome(
             Connection uow,
             Dispatch dispatch,
             PaymentAttemptId attemptId,
@@ -269,7 +296,9 @@ public final class PaymentCapture {
                                         EvidenceKind.RESPONSE,
                                         bytes,
                                         Instant.now(clock)));
-        return new CaptureResult(
-                applied.intent(), applied.attempt(), false, applied.acting());
+        return new Outcome(
+                new CaptureResult(
+                        applied.intent(), applied.attempt(), false, applied.acting()),
+                applied.voidPending());
     }
 }

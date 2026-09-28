@@ -41,6 +41,14 @@ import org.springframework.context.SmartLifecycle;
 @Slf4j
 public final class PaymentSweeperSchedule implements SmartLifecycle {
 
+    /**
+     * The sweep's dispatched bound, as ONE placeholder (the Phase 6 → 7 transition, the payout's
+     * {@code MerchantPayoutBeans.DISPATCHED_AGE}): the sweep asks nothing about a younger
+     * dispatch, and the stuck-payment gauge counts a dispatched or authorized operation only
+     * past it. Both read this constant, so the two can never disagree about what "stuck" means.
+     */
+    public static final String DISPATCHED_AGE = "${finapp.payments.sweeper.dispatched-age:PT10M}";
+
     private final PaymentSweeper sweeper;
     private final PaymentMeters meters;
     private final Duration pollInterval;
@@ -82,6 +90,9 @@ public final class PaymentSweeperSchedule implements SmartLifecycle {
             // instead - a swept resolution racing a webhook is counted by whichever won,
             // once.
             result.actingJudgements().forEach(this::count);
+            // The refund leg's own acting judgements (the Phase 6 -> 7 transition), counted on
+            // the series the refund door and the webhook already feed.
+            result.refundJudgements().forEach(this::countRefund);
             if (result.candidates() > 0) {
                 // Counts only - identifiers live in the sweeper's own per-row lines.
                 log.info(
@@ -107,6 +118,18 @@ public final class PaymentSweeperSchedule implements SmartLifecycle {
             case AUTH_DISPATCHED, CAPTURE_DISPATCHED -> {
                 // Mid-question: the sweeper never commits one, and counting it would be
                 // throughput for a decision nobody made.
+            }
+        }
+    }
+
+    /** The refund machine's vocabulary, the refund door's own mapping (`PaymentService`). */
+    private void countRefund(com.finapp.payments.RefundStatus status) {
+        switch (status) {
+            case COMPLETED -> meters.refund(PaymentMeters.RefundOutcome.COMPLETED);
+            case FAILED -> meters.refund(PaymentMeters.RefundOutcome.FAILED);
+            case UNKNOWN -> meters.refund(PaymentMeters.RefundOutcome.UNKNOWN);
+            case DISPATCHED -> {
+                // A dispatch is no judgement, and the sweep never commits one.
             }
         }
     }

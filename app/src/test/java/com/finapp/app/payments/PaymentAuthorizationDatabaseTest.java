@@ -31,6 +31,7 @@ import com.finapp.payments.PaymentIntentId;
 import com.finapp.payments.PaymentIntentStatus;
 import com.finapp.payments.PaymentParticipants;
 import com.finapp.payments.PaymentProvider;
+import com.finapp.payments.ProviderReference;
 import com.finapp.payments.ProviderAnswer;
 import com.finapp.payments.ProviderIdempotencyReference;
 import com.finapp.payments.QueryAnswer;
@@ -48,6 +49,7 @@ import java.net.URI;
 import java.nio.charset.StandardCharsets;
 import java.security.SecureRandom;
 import java.sql.Connection;
+import java.time.Instant;
 import java.sql.PreparedStatement;
 import java.sql.ResultSet;
 import java.sql.SQLException;
@@ -296,6 +298,18 @@ class PaymentAuthorizationDatabaseTest {
                 assertThat(result.getLong(1)).isEqualTo(1);
             }
         }
+        // ...and ONE routing decision (P7-TSK-003): the losers computed a plan and wrote
+        // nothing - routing runs before the arbiter, inserts run only after winning it -
+        // with the one-chosen partial index standing behind the code path.
+        try (Connection app = DatabaseRoles.application();
+                PreparedStatement count = app.prepareStatement(
+                        "SELECT count(*) FROM payments.routing_decision WHERE intent_id = ?")) {
+            count.setObject(1, intent.value());
+            try (ResultSet result = count.executeQuery()) {
+                assertThat(result.next()).isTrue();
+                assertThat(result.getLong(1)).isEqualTo(1);
+            }
+        }
     }
 
     @Test
@@ -412,6 +426,87 @@ class PaymentAuthorizationDatabaseTest {
     }
 
     @Test
+    @SuppressWarnings("try") // The Scope is used for its close side effect.
+    @DisplayName("the version in force is the newest EFFECTIVE one: a future version routes"
+            + " nothing until its instant arrives (P7-TSK-003, ADR-0060, INV-HIST-04)")
+    void aFutureVersionRoutesNothingUntilEffective() throws Exception {
+        // An operator ships a version effective in an hour. Every confirm before that
+        // instant must still pin the version in force NOW - newest effective_from not after
+        // the decision, ties to the higher number - or a scheduled change would reroute
+        // payments an hour early.
+        com.finapp.payments.RoutingAdministration administration =
+                new com.finapp.payments.RoutingAdministration(
+                        new IdempotentExecutor(
+                                new JdbcIdempotencyRecordStore(),
+                                CLOCK,
+                                Duration.ofDays(1),
+                                Duration.ofMinutes(5)),
+                        new com.finapp.payments.JdbcRoutingStore(),
+                        com.finapp.payments.PaymentRails.of(
+                                java.util.List.of(SimulatedCardPspAdapter.RAIL)),
+                        new JdbcAuditWriter(),
+                        IDS,
+                        CLOCK);
+        int scheduled;
+        try (SecurityContext.Scope ignored = SecurityContext.enterSystem()) {
+            scheduled = runner.inTransaction(
+                            uow ->
+                                    administration.createVersion(
+                                            uow,
+                                            new com.finapp.payments.RoutingAdministration
+                                                    .NewVersion(
+                                                    java.util.List.of(
+                                                            new com.finapp.payments
+                                                                    .RoutingPolicyVersion.NewRule(
+                                                                    com.finapp.payments
+                                                                            .PaymentDirection
+                                                                            .PAY_IN,
+                                                                    com.finapp.payments
+                                                                            .InstrumentKind
+                                                                            .CARD_TOKEN,
+                                                                    java.util.Optional.empty(),
+                                                                    java.util.Optional.empty(),
+                                                                    java.util.List.of(
+                                                                            SimulatedCardPspAdapter
+                                                                                    .RAIL
+                                                                                    .id()))),
+                                                    java.util.Optional.of(
+                                                            Instant.now(CLOCK)
+                                                                    .plus(Duration.ofHours(1))),
+                                                    "scheduled routing change (test)"),
+                                            "future-" + UUID.randomUUID()))
+                    .version()
+                    .version();
+        }
+        assertThat(scheduled).isGreaterThanOrEqualTo(2);
+
+        psp.succeedsWith(
+                SimulatedCardPspAdapter.AUTHORIZATIONS_PATH, 200,
+                APPROVED_BODY.formatted("future"));
+        PaymentIntentId intent = createIntent();
+        confirmation(adapter()).confirm(party, intent);
+
+        try (Connection app = DatabaseRoles.application()) {
+            try (PreparedStatement read = app.prepareStatement(
+                    "SELECT v.version FROM payments.routing_decision d"
+                            + " JOIN payments.routing_policy_version v"
+                            + " ON v.id = d.policy_version_id"
+                            + " WHERE d.intent_id = ? AND d.chosen_rail IS NOT NULL")) {
+                read.setObject(1, intent.value());
+                try (ResultSet row = read.executeQuery()) {
+                    assertThat(row.next()).isTrue();
+                    assertThat(row.getInt(1))
+                            .as("the future version exists (%s) and routed nothing", scheduled)
+                            // Version 4 since P7-TSK-011: V019's whole-version seed carries
+                            // the standing routes (3 since P7-TSK-009); the property under
+                            // test is unchanged - the future version routed NOTHING.
+                            .isEqualTo(4);
+                }
+            }
+        }
+    }
+
+    @Test
     @DisplayName("a stranger's payment intent is one empty answer (the ownership register's negative test)")
     void aStrangersPaymentIntentIsOneEmptyAnswer() throws Exception {
         PaymentIntentId owned = createIntent();
@@ -443,7 +538,8 @@ class PaymentAuthorizationDatabaseTest {
                         new JdbcAuditWriter(),
                         new JdbcOutboxWriter(),
                         IDS,
-                        CLOCK);
+                        CLOCK,
+                        PaymentCreation.IDEMPOTENCY_SCOPE);
         return runner.inTransaction(
                 uow ->
                         creation.create(
@@ -461,9 +557,14 @@ class PaymentAuthorizationDatabaseTest {
                 participants,
                 provider,
                 outcomes(),
+                new com.finapp.payments.JdbcRoutingStore(),
+                com.finapp.payments.PaymentRails.of(java.util.List.of(SimulatedCardPspAdapter.RAIL)),
                 new JdbcAuditWriter(),
+                new JdbcOutboxWriter(),
                 IDS,
-                CLOCK);
+                CLOCK,
+                com.finapp.payments.RoutingTelemetry.NONE,
+                java.util.Optional.empty());
     }
 
     /** The shared outcome component over the real stores (`P5-TSK-013`'s extraction). */
@@ -510,7 +611,9 @@ class PaymentAuthorizationDatabaseTest {
                         new com.finapp.payments.WalletTopUpComposition(),
                         // No completion: these suites' payments belong to no checkout
                         // session, and the production consumer is wired in CheckoutBeans.
-                        landed -> {}),
+                        landed -> {},
+                        new com.finapp.app.telemetry.MerchantMeters(
+                                new io.micrometer.core.instrument.simple.SimpleMeterRegistry())),
                 // THE REFUND'S MIRROR SEAM (P6-TSK-014), production's own for the same
                 // reason: every refund in this suite falls back to Phase 5's two lines, and
                 // proving that through the real composition is what makes "byte-identical"
@@ -527,7 +630,29 @@ class PaymentAuthorizationDatabaseTest {
                 new JdbcAuditWriter(),
                 new JdbcOutboxWriter(),
                 IDS,
-                CLOCK);
+                CLOCK,
+                com.finapp.payments.PaymentRails.of(java.util.List.of(SimulatedCardPspAdapter.RAIL)),
+                new com.finapp.payments.JdbcUnmatchedConfirmationStore(),
+                new com.finapp.ledger.JdbcLedgerAccountStore(),
+                // The dispute money (P7-TSK-013), production-shaped: a failed refund here
+                // locks its card attempt first and finds no chargeback.
+                com.finapp.app.payments.ChargebackAccountingFixture.over(
+                        new com.finapp.ledger.PostingService(
+                                new com.finapp.platform.idempotency.IdempotentExecutor(
+                                        new com.finapp.platform.idempotency.JdbcIdempotencyRecordStore(),
+                                        CLOCK,
+                                        Duration.ofDays(1),
+                                        Duration.ofMinutes(5)),
+                                new com.finapp.ledger.JdbcJournalEntryStore(IDS),
+                                new JdbcAuditWriter(),
+                                new JdbcOutboxWriter(),
+                                new com.finapp.ledger.JdbcBalanceProjection(),
+                                IDS,
+                                CLOCK,
+                                com.finapp.ledger.PostingObserver.NONE),
+                        com.finapp.payments.PaymentRails.of(java.util.List.of(SimulatedCardPspAdapter.RAIL)),
+                        IDS,
+                        CLOCK));
     }
 
     private PaymentCancellation cancellation() {
@@ -605,11 +730,36 @@ class PaymentAuthorizationDatabaseTest {
         }
 
         @Override
+        public Optional<Wallet> payerWalletOwnedBy(Connection uow, UUID callerPartyId) {
+            // The top-up wiring's identity: the payer's wallet IS the credit wallet.
+            return walletOwnedBy(uow, callerPartyId);
+        }
+
+        @Override
+        public Optional<ProviderReference> bankDestinationOwnedBy(
+                Connection unitOfWork, UUID callerPartyId, UUID paymentMethodId) {
+            return Optional.empty();
+        }
+
+        @Override
+        public boolean creditable(Connection uow, LedgerAccountId account) {
+            return true;
+        }
+
+        @Override
         public Optional<InstrumentToken> instrumentOwnedBy(
                 Connection uow, UUID callerPartyId, UUID paymentMethodId) {
             return callerPartyId.equals(party) && paymentMethodId.equals(instrumentId)
                     ? Optional.of(InstrumentToken.of("tok_dbtest-4242"))
                     : Optional.empty();
+        }
+
+        /** The fixture's one instrument is the card (P7-TSK-009's kind read). */
+        @Override
+        public Optional<com.finapp.payments.InstrumentKind> instrumentKindOwnedBy(
+                Connection uow, UUID callerPartyId, UUID paymentMethodId) {
+            return instrumentOwnedBy(uow, callerPartyId, paymentMethodId)
+                    .map(token -> com.finapp.payments.InstrumentKind.CARD_TOKEN);
         }
     }
 
@@ -631,6 +781,11 @@ class PaymentAuthorizationDatabaseTest {
 
         @Override
         public ProviderAnswer refund(RefundRequest request) {
+            throw new UnsupportedOperationException();
+        }
+
+        @Override
+        public ProviderAnswer voidAuthorization(VoidRequest request) {
             throw new UnsupportedOperationException();
         }
 
@@ -669,8 +824,52 @@ class PaymentAuthorizationDatabaseTest {
         }
 
         @Override
+        public ProviderAnswer voidAuthorization(VoidRequest request) {
+            return delegate.voidAuthorization(request);
+        }
+
+        @Override
         public QueryAnswer query(ProviderIdempotencyReference ourReference) {
             return delegate.query(ourReference);
+        }
+    }
+
+    @Test
+    @DisplayName("the attempt records the rail it was dispatched on, and the dispatch audit"
+            + " names it (P7-TSK-001, ADR-0059)")
+    void theAttemptRecordsItsRail() throws Exception {
+        psp.succeedsWith(
+                SimulatedCardPspAdapter.AUTHORIZATIONS_PATH, 200,
+                APPROVED_BODY.formatted(UUID.randomUUID()));
+        PaymentIntentId intent = createIntent();
+        confirmation(adapter()).confirm(party, intent);
+        try (Connection app = DatabaseRoles.application()) {
+            // The STORED decision every resolver on any instance reads (V011): the domain's
+            // read-back and the raw column agree, and the value is the adapter's declaration,
+            // never a re-derivation from whatever is wired.
+            PaymentAttempt row = attempts.findForIntent(app, intent).orElseThrow();
+            assertThat(row.rail()).isEqualTo(SimulatedCardPspAdapter.RAIL.id());
+            try (PreparedStatement read = app.prepareStatement(
+                    "SELECT rail FROM payments.payment_attempt WHERE id = ?")) {
+                read.setObject(1, row.id().value());
+                try (ResultSet stored = read.executeQuery()) {
+                    assertThat(stored.next()).isTrue();
+                    assertThat(stored.getString("rail"))
+                            .isEqualTo(SimulatedCardPspAdapter.RAIL.id().value());
+                }
+            }
+            try (PreparedStatement audit = app.prepareStatement(
+                    "SELECT count(*) FROM platform.audit_record"
+                            + " WHERE operation = 'payments.PaymentConfirmed'"
+                            + " AND target_id = ? AND change_summary LIKE '%rail=card%'")) {
+                audit.setString(1, intent.value().toString());
+                try (ResultSet counted = audit.executeQuery()) {
+                    assertThat(counted.next()).isTrue();
+                    assertThat(counted.getLong(1))
+                            .as("the dispatch audit names the rail")
+                            .isEqualTo(1);
+                }
+            }
         }
     }
 }

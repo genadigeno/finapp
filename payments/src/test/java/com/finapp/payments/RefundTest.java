@@ -202,6 +202,110 @@ class RefundTest {
     }
 
     @Test
+    @DisplayName("a return is bounded by the execution (INV-PAY-05's push half): EXECUTED"
+            + " only, the wire's reference bound judged at mint, no amount in a refusal")
+    void aReturnIsBoundedByTheExecution() {
+        PaymentAttempt executed = executedPushAttempt();
+
+        Refund returned = Refund.createReturn(
+                IDS, CLOCK, executed, CAPTURED, AMOUNT, Money.zero(EUR),
+                "customer complaint upheld", HoldId.next(IDS), returnIdem());
+        assertThat(returned.status())
+                .as("a return is the same four-state machine, born DISPATCHED")
+                .isEqualTo(RefundStatus.DISPATCHED);
+        assertThat(returned.attemptId()).isEqualTo(executed.id());
+
+        // The eligible state is the push machine's own terminal - EXECUTED, never CAPTURED:
+        // a card attempt is refused by MODEL, a waiting pay-in by STATE.
+        assertThatThrownBy(() -> Refund.createReturn(
+                        IDS, CLOCK, capturedAttempt(), CAPTURED, AMOUNT, Money.zero(EUR),
+                        "wrong machine", HoldId.next(IDS), returnIdem()))
+                .isInstanceOf(IllegalArgumentException.class)
+                .hasMessageContaining("EXECUTED push");
+        assertThatThrownBy(() -> Refund.createReturn(
+                        IDS, CLOCK, awaitingPushAttempt(), CAPTURED, AMOUNT, Money.zero(EUR),
+                        "nothing executed yet", HoldId.next(IDS), returnIdem()))
+                .isInstanceOf(IllegalArgumentException.class)
+                .hasMessageContaining("EXECUTED");
+
+        // The reference rides the scheme wire as the end-to-end reference: the ISO 20022
+        // bound is judged AT MINT, not at send (P7-TSK-010).
+        assertThatThrownBy(() -> Refund.createReturn(
+                        IDS, CLOCK, executed, CAPTURED, AMOUNT, Money.zero(EUR),
+                        "reference too long", HoldId.next(IDS),
+                        new ProviderIdempotencyReference(
+                                "r".repeat(EndToEndReference.MAX_LENGTH + 1))))
+                .isInstanceOf(IllegalArgumentException.class)
+                .hasMessageContaining(String.valueOf(EndToEndReference.MAX_LENGTH));
+
+        // The bound and the currency discipline, against the EXECUTED amount - and the
+        // needle: the refusal names the invariant and the currency, never an amount.
+        assertThatThrownBy(() -> Refund.createReturn(
+                        IDS, CLOCK, executed, CAPTURED, AMOUNT,
+                        Money.ofMinorUnits(78_77, EUR), "one unit too far",
+                        HoldId.next(IDS), returnIdem()))
+                .isInstanceOf(IllegalArgumentException.class)
+                .hasMessageContaining("EUR")
+                .hasMessageNotContaining("9876")
+                .hasMessageNotContaining("7877")
+                .hasMessageNotContaining("2000");
+        assertThatThrownBy(() -> Refund.createReturn(
+                        IDS, CLOCK, executed, CAPTURED, Money.ofMinorUnits(1_00, USD),
+                        Money.zero(EUR), "wrong currency", HoldId.next(IDS), returnIdem()))
+                .isInstanceOf(IllegalArgumentException.class)
+                .hasMessageContaining("USD")
+                .hasMessageContaining("EUR");
+        assertThatThrownBy(() -> Refund.createReturn(
+                        IDS, CLOCK, executed, CAPTURED, AMOUNT,
+                        Money.ofMinorUnits(-1_00, EUR), "negative sum",
+                        HoldId.next(IDS), returnIdem()))
+                .isInstanceOf(IllegalArgumentException.class)
+                .hasMessageContaining("EUR")
+                .hasMessageNotContaining("100");
+    }
+
+    @Test
+    @DisplayName("a book refund is bounded by the execution exactly as the return is"
+            + " (INV-PAY-05): EXECUTED book subjects only, no wire bound to judge")
+    void aBookRefundIsBoundedByTheExecution() {
+        PaymentAttempt executed = executedBookAttempt();
+
+        Refund refund = Refund.createBookRefund(
+                IDS, CLOCK, executed, CAPTURED, AMOUNT, Money.zero(EUR),
+                "customer complaint upheld", HoldId.next(IDS),
+                new ProviderIdempotencyReference("bkr-" + UUID.randomUUID()));
+        assertThat(refund.status()).isEqualTo(RefundStatus.DISPATCHED);
+        assertThat(refund.attemptId()).isEqualTo(executed.id());
+
+        // The wrong machine and the wrong state refuse: a push subject is refused by
+        // MODEL (the return factory owns it), and only EXECUTED has anything to return.
+        assertThatThrownBy(() -> Refund.createBookRefund(
+                        IDS, CLOCK, executedPushAttempt(), CAPTURED, AMOUNT, Money.zero(EUR),
+                        "wrong machine", HoldId.next(IDS),
+                        new ProviderIdempotencyReference("bkr-" + UUID.randomUUID())))
+                .isInstanceOf(IllegalArgumentException.class)
+                .hasMessageContaining("EXECUTED book");
+        assertThatThrownBy(() -> Refund.createBookRefund(
+                        IDS, CLOCK, failedBookAttempt(), CAPTURED, AMOUNT, Money.zero(EUR),
+                        "nothing executed", HoldId.next(IDS),
+                        new ProviderIdempotencyReference("bkr-" + UUID.randomUUID())))
+                .isInstanceOf(IllegalArgumentException.class)
+                .hasMessageContaining("EXECUTED");
+
+        // The shared bound (the return's own checks, one definition): one unit past the
+        // executed amount refuses, naming the invariant and the currency, never a value.
+        assertThatThrownBy(() -> Refund.createBookRefund(
+                        IDS, CLOCK, executed, CAPTURED, AMOUNT,
+                        Money.ofMinorUnits(78_77, EUR), "one unit too far",
+                        HoldId.next(IDS),
+                        new ProviderIdempotencyReference("bkr-" + UUID.randomUUID())))
+                .isInstanceOf(IllegalArgumentException.class)
+                .hasMessageContaining("EUR")
+                .hasMessageNotContaining("9876")
+                .hasMessageNotContaining("7877");
+    }
+
+    @Test
     @DisplayName("rehydrate routes through the one constructor and refuses the corrupt row")
     void rehydrateRefusesTheCorruptRow() {
         for (RefundStatus status : RefundStatus.values()) {
@@ -326,33 +430,95 @@ class RefundTest {
         return PaymentAttempt.rehydrate(
                 PaymentAttemptId.next(IDS),
                 PaymentIntentId.next(IDS),
+                SimulatedCardPspAdapter.RAIL.id(),
+                InteractionModel.TWO_STEP,
                 idem(),
                 idem(),
                 new ProviderReference("psp-auth-1"),
                 CAPTURED,
                 new ProviderReference("psp-cap-1"),
-                CAPTURED,
+                CAPTURED, null, null,
                 null,
                 PaymentAttemptStatus.CAPTURED,
-                Instant.now(CLOCK));
+                Instant.now(CLOCK),
+                null, null, null, null, null);
     }
 
     private static PaymentAttempt authorizedAttempt() {
         return PaymentAttempt.rehydrate(
                 PaymentAttemptId.next(IDS),
                 PaymentIntentId.next(IDS),
+                SimulatedCardPspAdapter.RAIL.id(),
+                InteractionModel.TWO_STEP,
                 idem(),
                 null,
                 new ProviderReference("psp-auth-2"),
                 CAPTURED,
                 null,
-                null,
+                null, null, null,
                 null,
                 PaymentAttemptStatus.AUTHORIZED,
-                Instant.now(CLOCK));
+                Instant.now(CLOCK),
+                null, null, null, null, null);
+    }
+
+    /** An EXECUTED push pay-in for 98.76 EUR — what every return bound is against. */
+    private static PaymentAttempt executedPushAttempt() {
+        return pushAttempt(PaymentAttemptStatus.EXECUTED, "scheme_tx_77");
+    }
+
+    /** A pay-in the payer has not executed — nothing has arrived to return. */
+    private static PaymentAttempt awaitingPushAttempt() {
+        return pushAttempt(PaymentAttemptStatus.AWAITING_PAYER, null);
+    }
+
+    /** An EXECUTED book attempt for 98.76 EUR — the book refund's subject (P7-TSK-011). */
+    private static PaymentAttempt executedBookAttempt() {
+        return bookAttempt(PaymentAttemptStatus.EXECUTED);
+    }
+
+    private static PaymentAttempt failedBookAttempt() {
+        return bookAttempt(PaymentAttemptStatus.FAILED);
+    }
+
+    private static PaymentAttempt bookAttempt(PaymentAttemptStatus status) {
+        return PaymentAttempt.rehydrate(
+                PaymentAttemptId.next(IDS),
+                PaymentIntentId.next(IDS),
+                RailId.of("book"),
+                InteractionModel.BOOK,
+                null, null, null, null, null, null, null, null,
+                status == PaymentAttemptStatus.FAILED ? PaymentFailureReason.DECLINED : null,
+                status,
+                Instant.now(CLOCK),
+                null, null, null, null, null);
+    }
+
+    private static PaymentAttempt pushAttempt(
+            PaymentAttemptStatus status, String schemeReference) {
+        Instant born = Instant.now(CLOCK);
+        return PaymentAttempt.rehydrate(
+                PaymentAttemptId.next(IDS),
+                PaymentIntentId.next(IDS),
+                RailId.of("instant"),
+                InteractionModel.PUSH,
+                null, null, null, null, null, null, null, null, null,
+                status,
+                born,
+                new EndToEndReference(UUID.randomUUID().toString().replace("-", "")),
+                null,
+                schemeReference == null ? null : new ProviderReference(schemeReference),
+                null,
+                born);
     }
 
     private static ProviderIdempotencyReference idem() {
         return new ProviderIdempotencyReference("ref-" + UUID.randomUUID());
+    }
+
+    /** The return's mint (`P7-TSK-010`): 32 hex, inside the wire's 35-character bound. */
+    private static ProviderIdempotencyReference returnIdem() {
+        return new ProviderIdempotencyReference(
+                UUID.randomUUID().toString().replace("-", ""));
     }
 }

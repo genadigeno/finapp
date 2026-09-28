@@ -83,7 +83,9 @@ class AccountsBeans {
             AuditWriter<Connection> auditWriter,
             OutboxWriter<Connection> outboxWriter,
             IdGenerator ids,
-            Clock clock) {
+            Clock clock,
+            com.finapp.payments.PaymentIntentStore<Connection> paymentIntentStore,
+            com.finapp.payments.DisputeStore<Connection> disputeStore) {
         return new AccountClosing(
                 customerAccountStore,
                 ledgerAccountStore,
@@ -91,6 +93,15 @@ class AccountsBeans {
                 // The close judges standing reservations from the authoritative hold rows
                 // (P3-TSK-015); the store is stateless, so a direct instance is the wiring.
                 new JdbcHoldStore(),
+                // THE PAYMENTS IN FLIGHT (the Phase 6 -> 7 transition): accounts cannot see
+                // payments, so the composition root answers the port over the intent store -
+                // and, since P7-TSK-013, over the disputes too: a chargeback whose share was
+                // posted to the account and that the network may still RETURN would credit
+                // it back on a win, and a closed account refuses that credit (V007). So the
+                // account stays open until the dispute can no longer be won.
+                (unitOfWork, account) ->
+                        paymentIntentStore.anyInFlightCrediting(unitOfWork, account)
+                                || disputeStore.anyRestorableTo(unitOfWork, account),
                 auditWriter,
                 outboxWriter,
                 ids,

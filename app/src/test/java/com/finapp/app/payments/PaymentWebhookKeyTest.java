@@ -45,7 +45,7 @@ class PaymentWebhookKeyTest {
                                         ConfinedCredential.MARKED_LOCAL_DEFAULT, false))
                 .isInstanceOf(IllegalStateException.class)
                 .hasMessageContaining("payment webhook signing key")
-                .hasMessageContaining("FINAPP_PAYMENT_WEBHOOK_KEY");
+                .hasMessageContaining("FINAPP_PAYMENTS_WEBHOOK_KEY");
     }
 
     @Test

@@ -9,11 +9,13 @@ import com.finapp.ledger.LedgerAccountStore;
 import com.finapp.party.CustomerStatus;
 import com.finapp.party.PartyId;
 import com.finapp.party.PartyStore;
+import com.finapp.paymentmethods.PaymentMethod;
 import com.finapp.paymentmethods.PaymentMethodId;
 import com.finapp.paymentmethods.PaymentMethodStatus;
 import com.finapp.paymentmethods.PaymentMethodStore;
 import com.finapp.payments.InstrumentToken;
 import com.finapp.payments.PaymentParticipants;
+import com.finapp.payments.ProviderReference;
 import java.sql.Connection;
 import java.util.List;
 import java.util.Objects;
@@ -47,6 +49,17 @@ public final class JdbcPaymentParticipants implements PaymentParticipants<Connec
     @NonNull private final LedgerAccountStore<Connection> ledgerAccounts;
     @NonNull private final PaymentMethodStore<Connection> instruments;
 
+    /** The wallet's ledger account, share-locked: postable only while {@code ACTIVE}. */
+    @Override
+    public boolean creditable(Connection unitOfWork, com.finapp.ledger.LedgerAccountId account) {
+        Objects.requireNonNull(unitOfWork, "unitOfWork must not be null");
+        Objects.requireNonNull(account, "account must not be null");
+        return ledgerAccounts
+                .lockForShare(unitOfWork, account)
+                .map(row -> row.status() == com.finapp.ledger.LedgerAccountStatus.ACTIVE)
+                .orElse(false);
+    }
+
     @Override
     public Optional<Wallet> walletOwnedBy(Connection unitOfWork, UUID callerPartyId) {
         Objects.requireNonNull(unitOfWork, "unitOfWork must not be null");
@@ -69,6 +82,17 @@ public final class JdbcPaymentParticipants implements PaymentParticipants<Connec
                                                                 account.currency())));
     }
 
+    /**
+     * The payer's own wallet (`P7-TSK-011`): on this wiring, exactly
+     * {@link #walletOwnedBy}'s answer — the top-up flow's credit side IS the payer's
+     * wallet. The distinct port method exists for the checkout wiring, whose
+     * {@code walletOwnedBy} deliberately answers the merchant's payable.
+     */
+    @Override
+    public Optional<Wallet> payerWalletOwnedBy(Connection unitOfWork, UUID callerPartyId) {
+        return walletOwnedBy(unitOfWork, callerPartyId);
+    }
+
     @Override
     public Optional<InstrumentToken> instrumentOwnedBy(
             Connection unitOfWork, UUID callerPartyId, UUID paymentMethodId) {
@@ -87,9 +111,60 @@ public final class JdbcPaymentParticipants implements PaymentParticipants<Connec
         return instruments
                 .findOwned(unitOfWork, identifier, callerPartyId)
                 .filter(method -> method.status() == PaymentMethodStatus.ACTIVE)
+                // A BANK_ACCOUNT instrument has no token, so it resolves to no chargeable
+                // instrument HERE - this bridge is the card confirm's (P7-TSK-007: the push
+                // flows present the destination reference at their own doors, P7-TSK-008).
+                .flatMap(PaymentMethod::token)
                 // The registered re-wrapping: off in one expression, wrapped again before it
                 // travels (INV-PAY-02) - the SecretsAreUnwrappedInOnePlaceTest entry.
-                .map(method -> InstrumentToken.of(method.token().expose()));
+                .map(token -> InstrumentToken.of(token.expose()));
+    }
+
+    @Override
+    public Optional<ProviderReference> bankDestinationOwnedBy(
+            Connection unitOfWork, UUID callerPartyId, UUID paymentMethodId) {
+        PaymentMethodId identifier;
+        try {
+            identifier = PaymentMethodId.of(paymentMethodId);
+        } catch (IllegalArgumentException notAPlatformIdentifier) {
+            return Optional.empty();
+        }
+        return instruments
+                .findOwned(unitOfWork, identifier, callerPartyId)
+                .filter(method -> method.status() == PaymentMethodStatus.ACTIVE)
+                // The BANK_ACCOUNT arm of the same bridge (P7-TSK-008): a card resolves to
+                // no push destination, exactly as a bank account resolves to no card token.
+                .flatMap(PaymentMethod::destination)
+                // The second registered re-wrapping across the PCI boundary: off in one
+                // expression, wrapped again before it travels (INV-RAIL-03) - the same
+                // SecretsAreUnwrappedInOnePlaceTest entry, its claim widened to both
+                // references.
+                .map(destination -> new ProviderReference(destination.expose()));
+    }
+
+    @Override
+    public Optional<com.finapp.payments.InstrumentKind> instrumentKindOwnedBy(
+            Connection unitOfWork, UUID callerPartyId, UUID paymentMethodId) {
+        PaymentMethodId identifier;
+        try {
+            identifier = PaymentMethodId.of(paymentMethodId);
+        } catch (IllegalArgumentException notAPlatformIdentifier) {
+            return Optional.empty();
+        }
+        // The instrument registry's kind, mapped onto the routing vocabulary (P7-TSK-009):
+        // no secret crosses here - which dispatch a confirmation performs is a
+        // classification, not a credential.
+        return instruments
+                .findOwned(unitOfWork, identifier, callerPartyId)
+                .filter(method -> method.status() == PaymentMethodStatus.ACTIVE)
+                .map(
+                        method ->
+                                switch (method.kind()) {
+                                    case CARD_TOKEN ->
+                                            com.finapp.payments.InstrumentKind.CARD_TOKEN;
+                                    case BANK_ACCOUNT ->
+                                            com.finapp.payments.InstrumentKind.BANK_ACCOUNT;
+                                });
     }
 
     /** The product's live customer-wallet account; the transfers precedent's read. */

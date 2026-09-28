@@ -1,6 +1,6 @@
 # ADR-0054 — A merchant refund is funded by its net; the only credit it extends is the fee the platform keeps
 
-Status: Proposed
+Status: Accepted (2026-09-24, `P6-DOC-001` — read against the implementation at the phase review; it describes it)
 Date: 2026-09-23
 Phase: 6
 Context: Merchant · Payments · Ledger
@@ -59,9 +59,9 @@ happened.
    net of what it received. The share is the only credit a refund extends: a receivable
    against the merchant, held in the merchant's own payable account rather than reclassified,
    so the payable stays the merchant's single position (`INV-MER-02`). Together with the one
-   pre-existing path below (a capture whose fee exceeds its sale), a merchant's payable goes
-   below zero **only by fee the platform has charged and not collected, never by money the
-   platform paid out**. The invariant is `INV-MER-07`.
+   pre-existing path below (a capture whose fee exceeds its sale, closed at the price by
+   ADR-0058), a merchant's payable goes below zero **only by fee the platform has charged and
+   not collected, never by money the platform paid out**. The invariant is `INV-MER-07`.
 
 4. **Beyond that, a refund is refused as unfunded:** `payments.RefundUnfunded`, a 409 with
    nothing written. The platform extends no general credit to merchants.
@@ -108,10 +108,11 @@ Negative:
   may see the last one refused while a sibling is in flight. A retry after the siblings
   resolve reserves the exact remainder.
 - A capture whose fee meets or exceeds its gross (a large fixed part on a small sale, which
-  nothing refuses today) leaves the payable negative at capture. Its refund reserves the
+  nothing refused when this was written) leaves the payable negative at capture. Its refund reserves the
   one-unit floor and is refused while the payable is negative, conservatively. The real fix is
   deciding whether such a price should be accepted at all; recorded with an owner, not decided
-  here.
+  here. **Decided by ADR-0058 (`P6-TST-001`): such a sale is refused at the price**, so no sale
+  that rule judged reaches this path.
 
 Operational impact: a negative merchant payable is visible in the merchant's own payable view
 (`GET /v1/merchant/payable`, signed) and derivable from the journal. An operator-facing view
@@ -138,4 +139,5 @@ refund by its fee share and recovered before any payout.
 - `P6-TST-002` (the conservation storm): refunds against a drained payable as a counted
   refusal kind; merchant debt from retained fees bounded as this ADR states.
 - A fee meeting or exceeding its gross: refuse it at the price, or let its refund reserve
-  nothing. Recorded by `P6-TSK-015`'s completion with an owner.
+  nothing. Recorded by `P6-TSK-015`'s completion with an owner. **Decided by ADR-0058: refused
+  at the price.**

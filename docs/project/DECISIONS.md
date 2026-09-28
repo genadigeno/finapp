@@ -235,6 +235,16 @@ history that points at it. `identity` references `PartyId` **by value**: no cros
 key, because a database-level FK across a module boundary is coupling Gradle and ArchUnit cannot
 see. &rarr; [ADR-0029](../adr/ADR-0029-party-customer-identity-are-three-aggregates.md)
 
+### Recovery channels
+One **verified** contact channel per identity per kind, held by `V011`'s partial unique index
+(`P1-TSK-023`). An unverified channel never blocks another, so a typo is not a lockout. **A second
+verification is refused, not replaced** (`X-TSK-004`, `INV-IDN-06`). A channel is added with a
+session alone, so a verification that displaced the verified channel would turn a stolen password
+into a durable recovery route, with no step-up and no word to the address replaced. The refusal is
+`409 identity.VerifiedChannelAlreadyExists` and writes nothing; the index is the arbiter, so ten
+instances verifying at once verify one. Changing the verified channel is a flow of its own,
+deferred below. &rarr; [`BACKLOG.md`](BACKLOG.md), `X-TSK-004`
+
 ### Sessions and assurance
 Sessions are **server-side and authoritative in PostgreSQL**, so revocation is immediate by
 construction on every instance (`INV-IDN-03`). A self-contained JWT was rejected on exactly that
@@ -497,6 +507,99 @@ recorded in Phase 5; `INV-REV-03` has no subject until the second rail (Phase 7)
 port stays one provider wide deliberately. Closes unresolved question 9. →
 [ADR-0049](../adr/ADR-0049-first-provider-simulated-card-psp.md)
 
+### Checkout and merchants
+**The fee model: gross to the books, net to the merchant, in one entry.** A merchant-bound
+capture posts, atomically with the attempt's `CAPTURED` transition, DR `SETTLEMENT_CLEARING` /
+CR `MERCHANT_PAYABLE` for the gross and DR `MERCHANT_PAYABLE` / CR `FEE_REVENUE` for the fee.
+Revenue is recognised at capture. The fee is computed once and the net derived by subtraction, so
+no rounding residual exists to strand. The fee schedule version is chosen when the session opens
+and pinned onto the payment, so nothing already offered is repriced. `payments` posts the lines it
+is handed and knows no merchant. Closes unresolved question 8. →
+[ADR-0050](../adr/ADR-0050-fee-model-gross-capture-net-payable.md)
+
+**A payout is hold-then-dispatch on the payable, and nothing is final before settlement.** The
+bound is judged inside the payable account's lock with every in-flight hold counted, so ten
+concurrent payouts dispatch exactly the affordable set. Completion posts DR `MERCHANT_PAYABLE` /
+CR `PAYOUT_CLEARING`, failure releases the hold, and `UNKNOWN` leaves it standing. →
+[ADR-0051](../adr/ADR-0051-merchant-payout-accounting.md)
+
+**A merchant authenticates with a scoped API key, and tenancy is in the statement.** The key is
+hashed, shown once and revoked immediately. `ActorType.MERCHANT` is its own population, and every
+record a merchant command writes names the key that acted. Every merchant-scoped read and write
+carries the merchant derived from the key, idempotency claims included, and another tenant's row is
+the same one refusal as a row that does not exist. →
+[ADR-0052](../adr/ADR-0052-merchant-api-identity.md)
+
+**The checkout session and the order are two aggregates: expiry gates new work, and landed money
+always wins.** A session expires by a leaderless sweeper's conditional transition, never by a
+filter. A capture that lands after expiry moves the session `EXPIRED → COMPLETED_LATE` and still
+creates the order, never an automatic refund. `checkout` depends on `platform` alone, and the
+orchestration lives in `app`. Closes unresolved question 7. →
+[ADR-0053](../adr/ADR-0053-checkout-session-and-order.md)
+
+**A merchant refund is funded by its net, and the only credit it extends is the fee the platform
+keeps.** The refund holds on the payable what its composition will take; under `RETAINED` the
+payable may end below zero by exactly the fee kept, and a negative payable refuses every payout. →
+[ADR-0054](../adr/ADR-0054-merchant-refund-funded-by-its-net.md)
+
+**A payout destination changes by two operators, a conditional step-up and a cancellable
+cooling-off, and bank details never enter.** The proposer is refused as approver at the aggregate,
+in the statement and by `CHECK`, and the refusal is itself a committed audit record. Approval pins
+a cooling-off that the change can be withdrawn during; a leaderless sweep makes it effective.
+Only an opaque provider reference and a four-character suffix are stored. Second subject of
+`INV-AUD-04`. → [ADR-0056](../adr/ADR-0056-payout-destination-four-eyes.md)
+
+**The payout dispatches behind a send permit, fails only on what it knows, and resolves by
+query.** Every send is preceded by a committed permit, so the sweep concludes `NEVER_RECEIVED` only
+past a positive bound, re-judged under the row lock. A refused connection fails a payout only on
+its first send, and a takeover re-sends the stored reference to the destination it was bound to. →
+[ADR-0057](../adr/ADR-0057-payout-dispatch-and-resolution.md)
+
+**A sale that does not cover its fee is refused at the price.** The offer is priced when the
+session opens, under the version it will carry, and `net <= 0` is `checkout.SaleBelowFee` with
+nothing written and the key unspent; the pin re-asserts it, and a capture is never refused.
+Decides ADR-0054's open item. → [ADR-0058](../adr/ADR-0058-a-sale-must-cover-its-fee.md)
+
+### Rails, routing and disputes (Phase 7, `Proposed` at the Phase 6 → 7 transition)
+**A payment rail declares its capabilities, and the domain acts on them, never on a rail's
+name.** Three interaction models — two-step (the card rail), push (credit transfers) and book (the
+platform's own wallet) — each with its own attempt machine; finality, reversal, refund mode,
+outcome deadline, disputes and the clearing position are the descriptor's to declare. Internal
+completion is never settlement; each external rail has its own clearing position. Card issuing is
+external, and the wallet stays in `accounts`. Gives `INV-REV-03` its subject. →
+[ADR-0059](../adr/ADR-0059-payment-rails-capabilities-and-finality.md)
+
+**Routing is a versioned policy, decided once per payment, pinned and explainable.** The decision
+is born in the confirmation's first transaction with every rejected candidate and its reason; it
+advances to another rail only on knowledge that nothing was sent, never after an ambiguous
+dispatch; rail availability is a recorded database fact, never an instance's opinion. The third
+subject of `INV-HIST-04`. → [ADR-0060](../adr/ADR-0060-rail-routing-pinned-and-explainable.md)
+
+**A dispute is its own lifecycle on a card payment, and a chargeback never takes more than the
+capture credited.** Refunds and chargebacks together are bounded by the capture under the attempt
+lock; the excess, and the share of a counterparty that can no longer take a posting, go to
+`CHARGEBACK_RECOVERABLE`; each stage posts once under its own key, and a win mirrors its
+chargeback exactly. Disputes are context 29, merged into `payments`. →
+[ADR-0061](../adr/ADR-0061-disputes-and-chargeback-accounting.md)
+
+**Account-to-account payments run on a provider-neutral push rail, and bank details never
+enter.** External accounts arrive through the grant exchange as opaque references; an instant
+payment is final on acceptance, with the scheme's outcome deadline, and settled on the scheme's
+cycle; every outbound push carries the send permit; pay-by-bank waits in `AWAITING_PAYER` for the
+payer PSP. The merchant payout keeps its own port. →
+[ADR-0062](../adr/ADR-0062-account-to-account-and-instant-payments.md)
+
+### Business stamps under N instances (cross-cutting, `Proposed` by `X-TSK-005`)
+**The order of an aggregate's facts is the database's, and a business stamp never contradicts
+it.** Stamps are still read from the acting instance's clock, but a later fact's stamp is the
+later of that reading and the latest stamp the aggregate already carries. The twenty-one ordering
+`CHECK`s therefore hold by construction on every instance instead of only while clocks agree, and
+they stay as the rank against corrupt writers. Judgements of one instance's stamp by another's
+clock (expiries, cooling-off, sweep bounds, session liveness) stay bounded-skew premises, each
+dominated by its margin. The clamp removes the refusal that was a skewed instance's only symptom,
+so clock offset needs its own signal. Implemented by `X-TSK-006` once accepted. →
+[ADR-0063](../adr/ADR-0063-business-stamps-never-contradict-the-order-of-facts.md), ADR-0014
+
 ### Integration
 External financial providers are accessed through adapters and treated as unreliable.
 Provider vocabulary never enters the domain or a public API contract; unknown provider state
@@ -548,10 +651,11 @@ where later capability is structurally needed earlier, the earlier phase defines
 → [ADR-0007](../adr/ADR-0007-phase-gated-delivery.md), [`EXECUTION_PROTOCOL.md`](EXECUTION_PROTOCOL.md)
 
 ### Invariant governance
-Eighty-seven financial, security and operational invariants are catalogued with stable IDs,
-enforcement mechanisms and verification methods. (This line said "seventy-one" until the
-Phase 1 → 2 transition — stale since `INV-IDN-08` — and now derives its correction from the
-catalogue's own index.) Phases declare the invariants they protect
+One hundred and one financial, security and operational invariants are catalogued with stable
+IDs, enforcement mechanisms and verification methods. (This line said "seventy-one" until the
+Phase 1 → 2 transition — stale since `INV-IDN-08` — and "eighty-seven" from the Phase 4 → 5
+transition until the Phase 6 → 7 one, through two groups it never counted; it takes its number
+from the catalogue's own index.) Phases declare the invariants they protect
 at the entry gate and prove them by test at the exit gate. →
 [`FINANCIAL_INVARIANTS.md`](../domain/FINANCIAL_INVARIANTS.md)
 
@@ -570,3 +674,4 @@ Recorded so these are not mistaken for oversights.
 | Machine-learning risk models | Beyond scope | Versioned rules first; models add reproducibility burden without domain insight |
 | Handling raw card data | Never | Tokenised at the boundary; PCI scope deliberately minimised |
 | A secrets manager (Vault, cloud KMS) | Phase 15 | No deployment, no key material and one local database password. A manager chosen with no real requirement to shape it is the wrong manager; the seam - configuration read from the environment - is established now (ADR-0020) |
+| Changing the verified contact channel | Phase 15, with the notifier | A safe change needs a step-up, a notice to the channel being replaced and a cooling-off - `INV-IDN-06`'s own enforcement - and the notice needs the channel notifier Phase 15 brings. Until then a second verification is refused (`X-TSK-004`, §Recovery channels). Nothing delivers a challenge before that notifier either, so the refusal cannot yet strand a customer. **The flow must spend every pending challenge of the kind**: a refused verification writes nothing, so its challenge stays live until it expires, and a flow that freed the kind without spending them would let a parked challenge verify the moment the verified channel is gone |

@@ -83,6 +83,7 @@ public final class PaymentService {
     private final ObjectProvider<PaymentConfirmation> confirmation;
     private final ObjectProvider<PaymentCapture> capture;
     private final ObjectProvider<PaymentRefund> refund;
+    private final ObjectProvider<com.finapp.payments.PaymentVoid> voids;
     private final PaymentIntentStore<Connection> intents;
     private final PaymentAttemptStore<Connection> attempts;
     private final com.finapp.payments.RefundStore<Connection> refunds;
@@ -96,6 +97,7 @@ public final class PaymentService {
             PaymentCancellation cancellation,
             ObjectProvider<PaymentConfirmation> confirmation,
             ObjectProvider<PaymentCapture> capture,
+            ObjectProvider<com.finapp.payments.PaymentVoid> voids,
             ObjectProvider<PaymentRefund> refund,
             PaymentIntentStore<Connection> intents,
             PaymentAttemptStore<Connection> attempts,
@@ -108,6 +110,7 @@ public final class PaymentService {
         this.cancellation = Objects.requireNonNull(cancellation, "cancellation must not be null");
         this.confirmation = Objects.requireNonNull(confirmation, "confirmation must not be null");
         this.capture = Objects.requireNonNull(capture, "capture must not be null");
+        this.voids = Objects.requireNonNull(voids, "voids must not be null");
         this.refund = Objects.requireNonNull(refund, "refund must not be null");
         this.intents = Objects.requireNonNull(intents, "intents must not be null");
         this.attempts = Objects.requireNonNull(attempts, "attempts must not be null");
@@ -141,7 +144,28 @@ public final class PaymentService {
             String paymentMethodId,
             String createdAt,
             String refunded,
-            String refundPending) {}
+            String refundPending,
+            /**
+             * The payer's authorization handle (`P7-TSK-009`, ADR-0062 §5): present exactly
+             * while the caller's own pay-by-bank attempt awaits them — the capability URL
+             * their client follows to their PSP. Owner-only by construction (the view is
+             * assembled from an ownership-scoped read), additive on the contract, and the
+             * render is a registered {@code expose()} site.
+             */
+            String authorizationHandle) {
+
+        /**
+         * Identifiers and the state only — never the amount
+         * ({@code RESTRICTED-FINANCIAL}) and never the handle (a capability URL in a log
+         * line can complete the payer's flow): the generated rendering would print both,
+         * which is the exact harm the secret-name rule's exemption requires this override
+         * to close (`P7-TSK-009`; {@code PaymentViewRedactsTest} asserts it).
+         */
+        @Override
+        public String toString() {
+            return "PaymentView[" + id + ", " + status + "]";
+        }
+    }
 
     /**
      * Creates (or replays) the caller's payment intent — {@code 201} for the replay as well as
@@ -194,7 +218,9 @@ public final class PaymentService {
                     // Totals fixed at the judgement's zeros, not a re-read: at creation nothing is
                     // dispatched, and the replay must render the original bytes whatever
                     // refunds have done to the rows since (the P5-TSK-011 doctrine).
-                    return view(row, result.status(), null, zeroTotals(row));
+                    // No handle either: at creation nothing is dispatched, and the replay
+                    // renders the original judgement's bytes.
+                    return view(row, result.status(), null, zeroTotals(row), null);
                 });
     }
 
@@ -226,12 +252,45 @@ public final class PaymentService {
             // Detached since creation: nothing written, the intent still awaits confirmation —
             // folded with unknown/not-yours/malformed at create (one refusal, one shape).
             throw unknownInstrument();
+        } catch (NoWalletForPaymentException closed) {
+            // The account this payment credits was closed since creation (the Phase 6 -> 7
+            // transition): nothing written, nothing sent, the intent still cancellable - the
+            // create door's own refusal, because the answer is the same: no account can
+            // receive this payment.
+            throw new ApiException(
+                    PaymentsErrorCode.NO_WALLET,
+                    "A confirmation was refused: the account it credits is no longer open");
+        } catch (com.finapp.payments.NoEligibleRailException refused) {
+            // The refusal IS recorded - a decision with no chosen rail, audited - and the
+            // intent still awaits confirmation, deliberately retryable after an operator
+            // re-enables a rail or ships a version (P7-TSK-003, ADR-0060 section 3).
+            throw new ApiException(
+                    PaymentsErrorCode.NO_ELIGIBLE_RAIL,
+                    "A confirmation was refused: no payment rail can carry this payment"
+                            + " right now");
         } catch (IllegalPaymentIntentTransitionException refused) {
             throw new ApiException(
                     PaymentsErrorCode.NOT_CONFIRMABLE,
                     "A confirmation was refused by the intent's state (" + refused.from() + ")",
                     "the payment is " + refused.from()
                             + " and only a payment awaiting confirmation can be confirmed.");
+        } catch (com.finapp.payments.PushRailUnavailableException unconfigured) {
+            // Routing chose the push rail and this deployment configures no adapter
+            // (P7-TSK-009): Tx1 rolled back whole - nothing written, nothing sent, the
+            // intent still awaits confirmation - and the answer is the same honest 503 an
+            // unconfigured card provider gets (the ObjectProvider decision's second
+            // occurrence).
+            throw providerUnavailable();
+        } catch (com.finapp.ledger.HoldExceedsAvailableBalanceException unfunded) {
+            // The wallet payment's own refusal (P7-TSK-011, INV-BAL-04): judged under the
+            // wallet's lock, the whole transaction rolled back - no attempt, no posting,
+            // the intent back to awaiting confirmation (the confirmation converges by state,
+            // it holds no key) - so
+            // the SAME confirmation succeeds after a top-up.
+            throw new ApiException(
+                    PaymentsErrorCode.WALLET_PAYMENT_UNFUNDED,
+                    "A wallet payment was refused under the wallet's lock: the available"
+                            + " balance cannot cover it");
         }
 
         // The judgement this call itself committed, counted AFTER the command's own
@@ -279,24 +338,108 @@ public final class PaymentService {
     public PaymentView cancel(Session current, PaymentIntentId intentId) {
         Objects.requireNonNull(current, "current must not be null");
         Objects.requireNonNull(intentId, "intentId must not be null");
+        UUID partyId = inOneTransaction(unitOfWork -> partyOf(unitOfWork, current));
+        try {
+            PaymentIntentStatus cancelled = inOneTransaction(
+                    unitOfWork -> {
+                        try {
+                            return cancellation.cancel(unitOfWork, partyId, intentId).status();
+                        } catch (IllegalPaymentIntentTransitionException processing) {
+                            // Not the confirmation window any more: the void's territory,
+                            // judged outside this transaction (P7-TSK-004).
+                            return null;
+                        }
+                    });
+            if (cancelled == null) {
+                cancelAuthorized(partyId, intentId);
+            }
+        } catch (UnknownPaymentException unknown) {
+            throw paymentNotFound();
+        }
         return inOneTransaction(
-                unitOfWork -> {
-                    UUID partyId = partyOf(unitOfWork, current);
-                    try {
-                        cancellation.cancel(unitOfWork, partyId, intentId);
-                    } catch (UnknownPaymentException unknown) {
-                        throw paymentNotFound();
-                    } catch (IllegalPaymentIntentTransitionException refused) {
-                        throw new ApiException(
-                                PaymentsErrorCode.NOT_CANCELLABLE,
-                                "A cancellation was refused by the intent's state ("
-                                        + refused.from() + ")",
-                                "the payment is " + refused.from()
-                                        + " and can no longer be cancelled.");
-                    }
-                    return currentView(unitOfWork, intentId, partyId)
-                            .orElseThrow(PaymentService::paymentNotFound);
-                });
+                unitOfWork ->
+                        currentView(unitOfWork, intentId, partyId)
+                                .orElseThrow(PaymentService::paymentNotFound));
+    }
+
+    /**
+     * Cancellation past the confirmation window (`P7-TSK-004`): an AUTHORIZED, uncaptured
+     * attempt is voided at the provider - the customer withdrawing the promise they made.
+     * Runs the command's own Tx1 / provider call / Tx2 choreography, so it is deliberately
+     * NOT inside a wrapping transaction (the confirm's ADR-0046 posture). The capability is
+     * judged first ({@code INV-REV-03}); a rail without the reversal answers 409 with
+     * nothing written and nothing sent.
+     */
+    private void cancelAuthorized(UUID partyId, PaymentIntentId intentId) {
+        com.finapp.payments.PaymentVoid command = voids.getIfAvailable();
+        if (command == null) {
+            throw providerUnavailable();
+        }
+        try {
+            command.voidAuthorized(Optional.of(partyId), intentId, Optional.empty());
+        } catch (com.finapp.payments.ReversalNotSupportedException notSupported) {
+            throw new ApiException(
+                    PaymentsErrorCode.REVERSAL_NOT_SUPPORTED,
+                    "A cancellation was refused: this payment's rail does not support"
+                            + " reversal",
+                    "the payment's rail does not support reversal; a completed payment can"
+                            + " be refunded instead.");
+        } catch (com.finapp.payments.IllegalPaymentAttemptTransitionException refused) {
+            throw new ApiException(
+                    PaymentsErrorCode.NOT_CANCELLABLE,
+                    "A cancellation was refused by the attempt's state",
+                    "the payment can no longer be cancelled.");
+        } catch (IllegalPaymentIntentTransitionException refused) {
+            throw new ApiException(
+                    PaymentsErrorCode.NOT_CANCELLABLE,
+                    "A cancellation was refused by the intent's state (" + refused.from() + ")",
+                    "the payment is " + refused.from()
+                            + " and can no longer be cancelled.");
+        }
+    }
+
+    /**
+     * The operator's reasoned void (`P7-TSK-004`) - the refund surface's shape: the URL
+     * names somebody else's payment, the wall is
+     * {@code @RequiresPermission(PAYMENT_REFUND)} at the boundary, and the actor and reason
+     * travel into the command's audit record.
+     */
+    public PaymentView operatorVoid(PaymentIntentId intentId, String reason) {
+        Objects.requireNonNull(intentId, "intentId must not be null");
+        Objects.requireNonNull(reason, "reason must not be null");
+        com.finapp.payments.PaymentVoid command = voids.getIfAvailable();
+        if (command == null) {
+            throw providerUnavailable();
+        }
+        try {
+            command.voidAuthorized(Optional.empty(), intentId, Optional.of(reason));
+        } catch (UnknownPaymentException unknown) {
+            throw paymentNotFound();
+        } catch (com.finapp.payments.ReversalNotSupportedException notSupported) {
+            throw new ApiException(
+                    PaymentsErrorCode.REVERSAL_NOT_SUPPORTED,
+                    "A void was refused: this payment's rail does not support reversal",
+                    "the payment's rail does not support reversal.");
+        } catch (com.finapp.payments.IllegalPaymentAttemptTransitionException refused) {
+            throw new ApiException(
+                    PaymentsErrorCode.NOT_CANCELLABLE,
+                    "A void was refused by the attempt's state",
+                    "the payment is not an uncaptured authorization.");
+        } catch (IllegalPaymentIntentTransitionException refused) {
+            throw new ApiException(
+                    PaymentsErrorCode.NOT_CANCELLABLE,
+                    "A void was refused by the intent's state (" + refused.from() + ")",
+                    "the payment is not an uncaptured authorization.");
+        }
+        return inOneTransaction(
+                unitOfWork ->
+                        intents.findById(unitOfWork, intentId)
+                                .map(row ->
+                                        view(row, row.status(),
+                                                reasonFor(unitOfWork, row),
+                                                liveTotals(unitOfWork, row),
+                                                handleFor(unitOfWork, row)))
+                                .orElseThrow(PaymentService::paymentNotFound));
     }
 
     /**
@@ -344,10 +487,11 @@ public final class PaymentService {
                     PaymentsErrorCode.NOT_REFUNDABLE,
                     "A refund was refused by the attempt's state",
                     refused.status() == null
-                            ? "the payment was never dispatched and only a captured payment"
-                                    + " can be refunded."
+                            ? "the payment was never dispatched and only a captured card"
+                                    + " payment or an executed pay-in can be refunded."
                             : "the payment is " + refused.status()
-                                    + " and only a captured payment can be refunded.");
+                                    + " and only a captured card payment or an executed"
+                                    + " pay-in can be refunded.");
         } catch (RefundExceedsCaptureException refused) {
             throw new ApiException(
                     PaymentsErrorCode.REFUND_EXCEEDS_CAPTURED,
@@ -357,6 +501,22 @@ public final class PaymentService {
                     PaymentsErrorCode.REFUND_UNFUNDED,
                     "A refund could not reserve what it takes from the account it debits"
                             + " (INV-BAL-04, ADR-0054)");
+        } catch (com.finapp.payments.PushRailUnavailableException unconfigured) {
+            // The attempt is a push pay-in and this deployment configures no adapter
+            // (P7-TSK-010): Tx1 rolled back whole - nothing written, nothing sent, the
+            // key unburned - the confirm catch's reasoning at the refund door.
+            throw providerUnavailable();
+        } catch (com.finapp.payments.RefundKeyReusedException reused) {
+            // The kernel's own words for a reused key (ApiErrorHandler's
+            // IdempotencyConflictException rendering), so a caller cannot tell whether the
+            // claim or the refund row's key refused it - after the claim's retention the row is
+            // what still remembers the key (V008, the Phase 6 -> 7 transition).
+            throw new ApiException(
+                    com.finapp.platform.api.PlatformErrorCode.CONFLICT,
+                    "A refund key already carries a different refund (INV-IDEM-03)",
+                    "This " + com.finapp.platform.api.IdempotencyKeyHeader.NAME
+                            + " was already used for a different request. Use a new key for a"
+                            + " new action, or resend the original request unchanged.");
         }
         countRefund(result);
         return new RefundView(
@@ -382,6 +542,10 @@ public final class PaymentService {
             case FAILED -> meters.attempt(PaymentMeters.Judgement.FAILED);
             case AUTH_UNKNOWN, CAPTURE_UNKNOWN ->
                     meters.attempt(PaymentMeters.Judgement.UNKNOWN);
+            // The book completion is a synchronous EXECUTED judgement (P7-TSK-011): the
+            // meter vocabulary P7-TSK-009 added for the push door, counted at this seam
+            // because no door or resolver exists to count it elsewhere.
+            case EXECUTED -> meters.attempt(PaymentMeters.Judgement.EXECUTED);
             case AUTH_DISPATCHED, CAPTURE_DISPATCHED -> {
                 // Mid-question: nothing has been judged yet.
             }
@@ -411,7 +575,8 @@ public final class PaymentService {
                     UUID partyId = partyOf(unitOfWork, current);
                     return intents.listFor(unitOfWork, partyId).stream()
                             .map(row -> view(row, row.status(), reasonFor(unitOfWork, row),
-                                    liveTotals(unitOfWork, row)))
+                                    liveTotals(unitOfWork, row),
+                                    handleFor(unitOfWork, row)))
                             .toList();
                 });
     }
@@ -424,7 +589,26 @@ public final class PaymentService {
         return intents.findOwned(unitOfWork, intentId, partyId)
                 .map(row ->
                         view(row, row.status(), reasonFor(unitOfWork, row),
-                                liveTotals(unitOfWork, row)));
+                                liveTotals(unitOfWork, row),
+                                handleFor(unitOfWork, row)));
+    }
+
+    /**
+     * The payer's authorization handle, exactly while their own push attempt awaits them
+     * (`P7-TSK-009`): the ONE owner-facing render of the capability URL — the registered
+     * {@code expose()} site the {@code InitiationAnswer} javadoc promised. Read behind the
+     * ownership-scoped intent resolution, never on a terminal row: a completed or failed
+     * initiation's handle is history, not an invitation.
+     */
+    private String handleFor(Connection unitOfWork, PaymentIntent row) {
+        if (row.status() != PaymentIntentStatus.PROCESSING) {
+            return null;
+        }
+        return attempts.findForIntent(unitOfWork, row.id())
+                .filter(attempt -> attempt.status() == PaymentAttemptStatus.AWAITING_PAYER)
+                .flatMap(PaymentAttempt::authorizationHandle)
+                .map(com.finapp.sharedkernel.security.Sensitive::expose)
+                .orElse(null);
     }
 
     /**
@@ -443,17 +627,25 @@ public final class PaymentService {
     }
 
     private PaymentView view(
-            PaymentIntent row, PaymentIntentStatus status, String reason, RefundTotals totals) {
+            PaymentIntent row,
+            PaymentIntentStatus status,
+            String reason,
+            RefundTotals totals,
+            String authorizationHandle) {
         return new PaymentView(
                 row.id().value().toString(),
                 status.name(),
                 reason,
                 row.amount().toBigDecimal().toPlainString(),
                 row.amount().currency().code(),
-                row.paymentMethodId().toString(),
+                // The wallet instrument names no method (P7-TSK-011): the view says which
+                // shape this payment is, never the account identifier - the caller's own
+                // accounts surface owns that.
+                row.paymentMethodId() == null ? "WALLET" : row.paymentMethodId().toString(),
                 row.createdAt().toString(),
                 totals.refunded(),
-                totals.pending());
+                totals.pending(),
+                authorizationHandle);
     }
 
     /**

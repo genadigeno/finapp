@@ -44,6 +44,13 @@ public final class MerchantAdministration {
     static final String TARGET_TYPE = "merchant";
 
     @NonNull private final MerchantStore<Connection> merchants;
+
+    /** The payable a close must find settled (the Phase 6 → 7 transition): the ledger's. */
+    @NonNull private final com.finapp.ledger.LedgerAccountStore<Connection> ledgerAccounts;
+
+    @NonNull private final com.finapp.ledger.BalanceDerivation<Connection> derivation;
+    @NonNull private final com.finapp.ledger.HoldStore<Connection> holds;
+    @NonNull private final PayableInFlight<Connection> inFlight;
     @NonNull private final AuditWriter<Connection> audit;
     @NonNull private final IdGenerator ids;
     @NonNull private final Clock clock;
@@ -79,6 +86,30 @@ public final class MerchantAdministration {
                 Merchant::close,
                 MerchantAuditAction.MERCHANT_CLOSED,
                 reason);
+    }
+
+    /**
+     * A close requires a settled payable (the Phase 6 → 7 transition's I5 finding): zero, no hold
+     * standing on it, and no payment on its way to it — judged from postings and hold rows under
+     * the payable's own {@code FOR UPDATE}, taken after the merchant row's, the order every payout
+     * dispatch shares. Before this, a merchant owed money could be closed: payouts refuse any
+     * merchant that is not {@code ACTIVE}, {@code CLOSED} is terminal, and captures of sessions
+     * already paying kept crediting it — a liability the platform could never pay out. Phase 3's
+     * account close is the precedent; the confirmation's {@code FOR SHARE} on the merchant row is
+     * the rank beneath the in-flight check.
+     */
+    private void requireSettled(Connection unitOfWork, MerchantId id) {
+        for (com.finapp.ledger.LedgerAccount payable :
+                ledgerAccounts.lockOwnedForUpdate(unitOfWork, id.value())) {
+            if (!derivation
+                            .derive(unitOfWork, payable.id(), com.finapp.ledger.AsOf.latest())
+                            .settled()
+                            .isZero()
+                    || !holds.findActiveFor(unitOfWork, payable.id()).isEmpty()
+                    || inFlight.anyCrediting(unitOfWork, payable.id())) {
+                throw new MerchantNotSettledException();
+            }
+        }
     }
 
     /** The merchant as it stands — the operator's read. */
@@ -118,6 +149,9 @@ public final class MerchantAdministration {
         }
 
         Merchant moved = transition.apply(before, clock);
+        if (target == MerchantStatus.CLOSED) {
+            requireSettled(unitOfWork, id);
+        }
         if (!merchants.transition(unitOfWork, before, moved)) {
             // The lock makes a lost count unreachable in this flow; refusing loudly beats
             // guessing if an unknown writer proves otherwise (INV-CON-01).

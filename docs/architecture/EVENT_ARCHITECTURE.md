@@ -90,8 +90,20 @@ means **no value that reaches the output ever needs escaping**, which is asserte
 assumed.
 
 **The limit is stated:** this is not a general event serialiser and must not become one. An event
-that genuinely needs a nested object, a monetary amount or a list needs the wire-format decision
-taken, not worked around — at which point `EventPayload` is replaced rather than extended.
+that genuinely needs a nested object, a decimal or a list needs the wire-format decision taken, not
+worked around — at which point `EventPayload` is replaced rather than extended.
+
+**A monetary amount has its wire format** (recorded by the Phase 6 review, `P6-DOC-001`, for the
+decision `P6-TSK-005` took without writing it here): its **minor units as a base-10 integer
+string, beside the ISO 4217 code in a sibling field** — `"grossMinor":"10000"`,
+`"currency":"EUR"` — never a decimal and never a floating-point number, the scale being the
+currency's own (ADR-0003). A digit string is an inert value, so `EventPayload`'s guarantees hold:
+nothing needs escaping and nothing personal is carried. Only an event whose fact *is* an amount
+carries one: `merchant.FeeAssessed` (gross, fee and net under the pinned version, so a consumer
+can reproduce the fee from the version alone — `INV-HIST-04` on the wire) and
+`merchant.FeeReturned`. Every other event names identifiers, and a consumer that needs an amount
+reads it from its owner. An amount on the wire is information, never the balance: the ledger stays
+the record (`INV-EVT-02`).
 
 ### Causation at the root of a flow
 

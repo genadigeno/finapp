@@ -1,6 +1,6 @@
 # ADR-0053 — Checkout session and order: two aggregates, expiry gates dispatch, landed money always wins
 
-Status: Proposed
+Status: Accepted (2026-09-24, `P6-DOC-001` — read against the implementation at the phase review; seven passages corrected to it, and the index §3 names built, first)
 Date: 2026-09-21
 Phase: 6
 Context: Checkout · Merchant · Payments
@@ -31,21 +31,37 @@ nobody.
    ("owns no state that outlives a session") is demonstrably not met — the order outlives
    everything. The trigger stays recorded for re-evaluation if Phase 6 proves otherwise.
 3. **One payment intent per session**, created by the session's own confirmation flow and
-   referenced by id — the one-live discipline (partial unique index) with the same shape
-   ADR-0045 pinned for attempts-per-intent. The session holds the intent id; `payments`
-   does not know sessions (references point **from** checkout **into** payments, never
-   back). Retry-after-failure within a session's lifetime re-uses the session's intent
-   exactly as ADR-0045 §4 already allows for attempts.
-4. **The session lifecycle**: `OPEN → PAYMENT_PENDING → COMPLETED | EXPIRED | ABANDONED`.
-   Expiry is a **modelled transition produced by a sweeper** (the `PaymentSweeperSchedule`
-   pattern: leaderless, conditional, idempotent per ADR-0024) — never a `WHERE expires_at <
-   now()` filter pretending to be a state. All three terminal states are earned by
-   producers (the ADR-0044 doctrine).
+   referenced by id — set once by `V002`'s trigger, and unique across sessions by a partial
+   unique index, the shape ADR-0045 pinned for attempts-per-intent. *(The index was named here
+   and never built until the phase review, `P6-DOC-001`, found the capture completing whichever
+   session its unindexed lookup met first; checkout `V003`.)* The session holds the intent id;
+   `payments` does not know sessions (references point **from** checkout **into** payments,
+   never back). **A failed payment is not retried within the session**: the intent fails with
+   its attempt and is terminal (ADR-0045 §4), and the reference is set once, so a retried
+   confirmation answers `payments.NotConfirmable`, the session waits for its expiry, and a
+   customer who still wants to buy needs a new session. *(This said the retry re-used the
+   intent until `P6-DOC-001`; no path does. Retry belongs to attempts-per-intent, which Phase 5
+   left at one.)*
+4. **The session lifecycle**: `OPEN → PAYMENT_PENDING | EXPIRED | ABANDONED`,
+   `PAYMENT_PENDING → COMPLETED | EXPIRED`, `EXPIRED → COMPLETED_LATE`. `ABANDONED` is the
+   merchant's withdrawal of an offer nobody has paid, so it leaves `OPEN` only - a payment in
+   flight has no edge out. `EXPIRED` is terminal unless money lands after it (§5). Expiry is a
+   **modelled transition produced by a sweeper** (the `PaymentSweeperSchedule` pattern:
+   leaderless, conditional, idempotent per ADR-0024) — never a `WHERE expires_at < now()`
+   filter pretending to be a state. Every state is earned by a producer (the ADR-0044
+   doctrine). *(This listed three terminal states and no `COMPLETED_LATE` until the phase
+   review, `P6-DOC-001`; the enum and the trigger are the machine above.)*
 5. **Expiry gates dispatch; landed money always wins.** The race has one rule with two
    halves:
-   - An **expired session refuses to *start* anything**: no new confirmation, no new
-     dispatch. The gate is the session's conditional transition — an expiry and a
-     confirmation racing on one row have exactly one winner (`INV-CON-02`).
+   - An **expired session refuses to *start* anything**: a confirmation after the deadline
+     is refused, by the row's state or by the clock, whichever says so first, and so is one
+     for a merchant that is no longer trading. The gate is the session's conditional
+     transition — an expiry and a confirmation racing on one row have exactly one winner
+     (`INV-CON-02`). **What it gates is new work, not work already admitted**: an intent
+     created before the deadline and stranded undispatched by a crash can still be sent
+     afterwards, by a retried confirmation or the payment's own confirmation route, and if
+     it captures, the half below applies. *(The phase review, `P6-DOC-001`, found this
+     window and the unchecked merchant standing; the second is now refused.)*
    - **Money that landed is never orphaned by a clock.** If the capture completes after
      the session expired (dispatched before expiry; the provider answered late — scenario
      the plan's failure list owns), the payment's success **still produces the order**:
@@ -57,22 +73,27 @@ nobody.
      refunds it through the existing, human-decided refund path.
 6. **The order lifecycle** is deliberately minimal in Phase 6: `PAID → REFUNDED
    (partially/fully, derived from the payment's refund rows, not stored)`. Fulfilment
-   states are the merchant's business, not the platform's books.
+   states are the merchant's business, not the platform's books. The derived standing is
+   not rendered anywhere yet - the merchant's transaction report shows each refund as its
+   own line - so "derived, not stored" is so far a rule with no reader.
 
 ## Consequences
 
-- `checkout → payments` is **refused** in the build graph: checkout commands payments
-  through a port `app` implements (the `InstrumentResolution` precedent), so the module
-  that owns the customer's purchase experience cannot reach provider machinery, and the
-  posting composition seam (ADR-0050 §6) has one home.
+- `checkout → payments` is **refused** in the build graph: `checkout` depends on `platform`
+  alone (`CheckoutModuleIsolationTest`), and the orchestration that commands payments lives
+  in `app` (`CheckoutService`, `CheckoutSessions`), so the module that owns the customer's
+  purchase experience cannot reach provider machinery, and the posting composition seam
+  (ADR-0050 §6) has one home. *(This read "through a port `app` implements" until
+  `P6-DOC-001`; there is no port, the composition root is the orchestrator.)*
 - The session token (customer-facing) is single-purpose and unguessable (ADR-0052 §5);
   possession grants access to that session only.
 - Duplicate session creation is keyed (`INV-IDEM-01`); duplicate completion converges on
   the machine; the expiry sweeper races the webhook exactly as Phase 5's sweeper races it,
   arbitrated by conditional transitions — no new concurrency primitive exists in this
   phase.
-- `COMPLETED_LATE` is a distinct state so the honest condition is countable (a meter and
-  an operator view), rather than laundered into `COMPLETED`.
+- `COMPLETED_LATE` is a distinct state so the honest condition is countable, rather than
+  laundered into `COMPLETED`: `finapp.checkout.session` by outcome and its dashboard panel
+  are the operator's view today, and no operator read route exists.
 
 ## Amendment — `P6-TSK-007`: what a retry of the confirmation answers
 
@@ -109,3 +130,22 @@ own primary key as a storage failure failed nine of ten purchases that had worke
 converges when the merchant, the version and the gross all match, and throws when any of them
 does not — the two halves of `INV-MER-03` at this level: converging is what keeps a retry from
 being an error, and refusing is what keeps it from being a silent repricing.
+
+## Amendment — the Phase 6 → 7 transition: four corrections to what a confirmation does
+
+None of them changes the model; each corrects an answer.
+
+- **The derived key has a scope of its own**, `checkout.payment`. In `payment.create` any
+  customer could claim `checkout:<checkoutId>` first through the public command, and the payer's
+  confirmation would then meet a fingerprint it can never match (ADR-0004's follow-up).
+- **A confirmation that loses the open converges.** Two confirmations that both read `OPEN` meet
+  at the claim; the second replays the first's intent and then finds the session moved — and was
+  answered `checkout.NotConfirmable` naming `EXPIRED`, whatever had moved it. It now rolls back
+  and reads the session again, answering from the state the winner left; one that finds the
+  payment succeeded meanwhile renders the paid session.
+- **A second holder of the token on a session mid-payment gets the session's one `404`.** The
+  payments surface still performs the payer check, as above; its own `404`'s wording told the
+  holder the session was live and being paid, and the confirmation now translates it.
+- **The merchant's standing is read `FOR SHARE`**, so a close committing mid-confirmation is
+  waited for rather than read around — and a close refuses while the merchant is owed money or a
+  payment crediting it is in flight (`merchant.NotSettled`).

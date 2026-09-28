@@ -218,7 +218,7 @@ public final class MerchantSettlement {
      * <h2>The two checked assumptions</h2>
      *
      * <p>The merchant's payable must exist, and the account the refund debits must BE that
-     * payable — {@link #compose}'s second and third assumptions at the reversal, for the same
+     * payable — {@link #settle}'s second and third assumptions at the reversal, for the same
      * reason: a refund taking money out of the wrong account is the defect this method exists
      * to make impossible. Both throw, failing the whole refund transaction, because returning
      * the gross out of somewhere else and calling the refund done is the worse answer.
@@ -307,11 +307,13 @@ public final class MerchantSettlement {
      *
      * <h2>Never below one minor unit</h2>
      *
-     * <p>A hold is positive by definition, and the refund's lifecycle carries one. The net can
-     * only fail to be positive when a capture's fee was at least its gross — a large fixed
-     * part on a tiny payment, which {@link FeeAssessment#exceedsGross} names and nothing
-     * refuses — and then the smallest unit is reserved: conservative, and a refusal the
-     * operator can read rather than a hold the ledger would reject as malformed.
+     * <p>A hold is positive by definition, and the refund's lifecycle carries one. Since
+     * ADR-0058 no sale's fee meets its gross, but the net can still fail to be positive: the
+     * last of a partial series on a sale that nets a unit or two, whose earlier shares rounded
+     * the fee down (60.00 then 40.01 of a 100.01 sale netting 0.01 leaves the last share exactly
+     * 40.01), and any pin written before that rule. Then the smallest unit is reserved:
+     * conservative, and a refusal the operator can read rather than a hold the ledger would
+     * reject as malformed.
      *
      * @param intentRef the refunded payment's intent, by value
      * @param debit the account the refund was going to take the money from — checked to be
@@ -344,6 +346,99 @@ public final class MerchantSettlement {
                             Money smallest = Money.ofMinorUnits(1L, refunded.currency());
                             return net.compareTo(smallest) < 0 ? smallest : net;
                         });
+    }
+
+    /**
+     * The lines charging part of a chargeback to a merchant-bound payment's payable, or empty
+     * when the payment is nobody's merchant's (`P7-TSK-013`, ADR-0061 §4):
+     *
+     * <pre>
+     *   DR MERCHANT_PAYABLE  amount   the merchant bears its sale's chargeback
+     *   CR counterpart       amount   CHARGEBACK_RECOVERABLE (or DISPUTE_COSTS, recovering a
+     *                                 written-off share) - payments' decision
+     * </pre>
+     *
+     * <p><strong>No fee lines, deliberately.</strong> The merchant's processing fee is not
+     * returned by a chargeback: the merchant loses the sale and keeps the fee it was charged for
+     * processing it — ADR-0054's refund policy governs refunds only. The amount is payments'
+     * judgement (the combined bound, {@code INV-DSP-01}); this method checks only that the
+     * account it charges IS the pinned merchant's payable — {@link #refund}'s third assumption
+     * at the dispute, for the same reason: a chargeback taken from the wrong account is the
+     * defect this exists to make impossible, and it throws, failing the delivery loudly.
+     *
+     * @param counterparty the account payments would charge — the payment's credit account
+     * @param counterpart the platform's account facing it
+     * @throws MerchantSettlementException if the counterparty is not the pinned merchant's
+     *     payable, or that payable does not exist
+     */
+    public Optional<List<JournalLine>> chargedBack(
+            Connection unitOfWork,
+            UUID intentRef,
+            LedgerAccountId counterparty,
+            LedgerAccountId counterpart,
+            Money amount) {
+        return chargebackPayable(unitOfWork, intentRef, counterparty, amount)
+                .map(
+                        payable ->
+                                List.of(
+                                        new JournalLine(payable.id(), Direction.DEBIT, amount),
+                                        new JournalLine(counterpart, Direction.CREDIT, amount)));
+    }
+
+    /**
+     * The exact inverse of {@link #chargedBack}, when the network returned the funds
+     * (`P7-TSK-013`): the counterpart debited, the pinned merchant's payable credited — the
+     * same check, the same empty for a payment that is nobody's merchant's.
+     */
+    public Optional<List<JournalLine>> chargebackReturned(
+            Connection unitOfWork,
+            UUID intentRef,
+            LedgerAccountId counterparty,
+            LedgerAccountId counterpart,
+            Money amount) {
+        return chargebackPayable(unitOfWork, intentRef, counterparty, amount)
+                .map(
+                        payable ->
+                                List.of(
+                                        new JournalLine(counterpart, Direction.DEBIT, amount),
+                                        new JournalLine(payable.id(), Direction.CREDIT, amount)));
+    }
+
+    /** The pinned merchant's payable, checked to be the chargeback's counterparty — or empty. */
+    private Optional<LedgerAccount> chargebackPayable(
+            Connection unitOfWork, UUID intentRef, LedgerAccountId counterparty, Money amount) {
+        Objects.requireNonNull(unitOfWork, "unitOfWork must not be null");
+        Objects.requireNonNull(intentRef, "intentRef must not be null");
+        Objects.requireNonNull(counterparty, "counterparty must not be null");
+        Objects.requireNonNull(amount, "amount must not be null");
+        Optional<PaymentFeePin> found = pins.findFor(unitOfWork, intentRef);
+        if (found.isEmpty()) {
+            return Optional.empty();
+        }
+        PaymentFeePin pin = found.get();
+        LedgerAccount payable =
+                ledgerAccounts
+                        .findOwned(
+                                unitOfWork,
+                                pin.merchantId().value(),
+                                AccountPurpose.MERCHANT_PAYABLE,
+                                amount.currency())
+                        .orElseThrow(
+                                () ->
+                                        new MerchantSettlementException(
+                                                "merchant " + pin.merchantId() + " has no "
+                                                        + amount.currency()
+                                                        + " payable account; the capture this"
+                                                        + " chargeback contests could not have"
+                                                        + " posted without one"));
+        if (!payable.id().equals(counterparty)) {
+            throw new MerchantSettlementException(
+                    "the chargeback would charge " + counterparty + " but merchant "
+                            + pin.merchantId() + "'s payable is " + payable.id()
+                            + "; the intent and its fee pin disagree about whose payment this"
+                            + " is");
+        }
+        return Optional.of(payable);
     }
 
     /** What a refund of a merchant-bound payment is priced by, and whose payable it debits. */
@@ -479,14 +574,34 @@ public final class MerchantSettlement {
      * {@link PaymentFeePin#pricesTheSameAs}'s, and it deliberately ignores who pinned and when.
      *
      * <p>This is the fourth checked assumption, and the only one reachable today: the three in
-     * {@link #compose} guard a capture, and this one guards the agreement the capture will be
+     * {@link #settle} guard a capture, and this one guards the agreement the capture will be
      * settled against.
      *
+     * @throws SaleBelowFeeException the fee, priced under the pinned version, meets or exceeds
+     *     the gross (`P6-TST-001`, ADR-0058) - nothing is written
+     * @throws FeeCurrencyMismatchException the gross is not in the currency the pinned version
+     *     prices - nothing is written, and the capture's backstop in {@link #settle} is never
+     *     reached through a pin this method judged
      * @throws MerchantSettlementException this intent is already pinned to a different price
      */
     public void pin(Connection unitOfWork, PaymentFeePin pin) {
         Objects.requireNonNull(unitOfWork, "unitOfWork must not be null");
         Objects.requireNonNull(pin, "pin must not be null");
+        // A SALE MUST COVER ITS FEE (P6-TST-001, ADR-0058), re-asserted where the price is
+        // agreed: the checkout refused it when the session was opened, and this is the rule
+        // for every pin, whoever reached here. Before the insert, so a refusal writes nothing,
+        // and before any money moves - never at capture, where money that landed is recorded.
+        FeeScheduleVersion version =
+                schedules
+                        .findVersion(unitOfWork, pin.versionId())
+                        .orElseThrow(
+                                () ->
+                                        new MerchantSettlementException(
+                                                "a fee pin names version " + pin.versionId()
+                                                        + ", which is not there"));
+        if (!FeeCalculation.assess(pin.gross(), version).net().isPositive()) {
+            throw new SaleBelowFeeException();
+        }
         if (pins.insertIfAbsent(unitOfWork, pin)) {
             return;
         }

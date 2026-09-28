@@ -682,7 +682,7 @@ class PaymentConservationDatabaseTest {
                         app.prepareStatement(
                                 "SELECT a.id, a.intent_id FROM payments.payment_attempt a"
                                         + " JOIN payments.payment_intent i ON i.id = a.intent_id"
-                                        + " WHERE i.wallet_account_id = ANY (?)"
+                                        + " WHERE i.credit_account_id = ANY (?)"
                                         + " ORDER BY a.created_at DESC LIMIT ?")) {
             read.setArray(1, accountArray(app, stormWallets));
             read.setInt(2, RECENT_CAPTURES);
@@ -762,25 +762,51 @@ class PaymentConservationDatabaseTest {
     private PaymentCreation creation() {
         return new PaymentCreation(
                 executor(), participants, intents, new JdbcAuditWriter(),
-                new JdbcOutboxWriter(), IDS, CLOCK);
+                new JdbcOutboxWriter(), IDS, CLOCK,
+                PaymentCreation.IDEMPOTENCY_SCOPE);
     }
 
     private PaymentConfirmation confirmation() {
         return new PaymentConfirmation(
-                runner, intents, attempts, evidence, participants, adapter(), outcomes(),
-                new JdbcAuditWriter(), IDS, CLOCK);
+                runner,
+                intents,
+                attempts,
+                evidence,
+                participants,
+                adapter(),
+                outcomes(),
+                new com.finapp.payments.JdbcRoutingStore(),
+                com.finapp.payments.PaymentRails.of(java.util.List.of(SimulatedCardPspAdapter.RAIL)),
+                new JdbcAuditWriter(),
+                new JdbcOutboxWriter(),
+                IDS,
+                CLOCK,
+                com.finapp.payments.RoutingTelemetry.NONE,
+                java.util.Optional.empty());
     }
 
     private PaymentCapture capture() {
         return new PaymentCapture(
                 runner, intents, attempts, evidence, adapter(), outcomes(),
+                voids(), new JdbcAuditWriter(), IDS, CLOCK);
+    }
+
+    /** The void command over the same stores (P7-TSK-004) - the capture idiom's sibling. */
+    private com.finapp.payments.PaymentVoid voids() {
+        return new com.finapp.payments.PaymentVoid(
+                runner, intents, attempts, evidence, adapter(), outcomes(),
+                com.finapp.payments.PaymentRails.of(
+                        java.util.List.of(SimulatedCardPspAdapter.RAIL)),
                 new JdbcAuditWriter(), IDS, CLOCK);
     }
 
     private PaymentRefund refund() {
         return new PaymentRefund(
                 runner, executor(), intents, attempts, refunds, evidence, holdService(),
-                adapter(), outcomes(), new JdbcAuditWriter(), IDS, CLOCK);
+                adapter(), outcomes(), new JdbcAuditWriter(), IDS, CLOCK,
+                com.finapp.payments.PaymentRails.of(java.util.List.of(SimulatedCardPspAdapter.RAIL)),
+                // A card-only suite: the push rail is absent, as on a card-only deployment.
+                java.util.Optional.empty());
     }
 
     private PaymentOutcomes outcomes() {
@@ -801,7 +827,9 @@ class PaymentConservationDatabaseTest {
                         new com.finapp.payments.WalletTopUpComposition(),
                         // No completion: these suites' payments belong to no checkout
                         // session, and the production consumer is wired in CheckoutBeans.
-                        landed -> {}),
+                        landed -> {},
+                        new com.finapp.app.telemetry.MerchantMeters(
+                                new io.micrometer.core.instrument.simple.SimpleMeterRegistry())),
                 // THE REFUND'S MIRROR SEAM (P6-TSK-014), production's own for the same
                 // reason: every refund in this suite falls back to Phase 5's two lines, and
                 // proving that through the real composition is what makes "byte-identical"
@@ -816,7 +844,17 @@ class PaymentConservationDatabaseTest {
                                 IDS),
                         new com.finapp.payments.WalletRefundComposition()),
                 new JdbcAuditWriter(),
-                new JdbcOutboxWriter(), IDS, CLOCK);
+                new JdbcOutboxWriter(), IDS, CLOCK,
+                com.finapp.payments.PaymentRails.of(java.util.List.of(SimulatedCardPspAdapter.RAIL)),
+                new com.finapp.payments.JdbcUnmatchedConfirmationStore(),
+                new com.finapp.ledger.JdbcLedgerAccountStore(),
+                // The dispute money (P7-TSK-013), production-shaped: a failed refund here
+                // locks its card attempt first and finds no chargeback.
+                com.finapp.app.payments.ChargebackAccountingFixture.over(
+                        postingService(),
+                        com.finapp.payments.PaymentRails.of(java.util.List.of(SimulatedCardPspAdapter.RAIL)),
+                        IDS,
+                        CLOCK));
     }
 
     private HoldService holdService() {
@@ -863,9 +901,9 @@ class PaymentConservationDatabaseTest {
                             + " now() - interval '1 hour', now() - interval '1 hour')",
                     customer, party);
             execute(app,
-                    "INSERT INTO paymentmethods.payment_method (id, party_id, token_reference,"
+                    "INSERT INTO paymentmethods.payment_method (id, party_id, kind, token_reference,"
                             + " brand, display_suffix, expiry_month, expiry_year, status,"
-                            + " created_at) VALUES (?, ?, ?, 'Visa', '4242', 12, 2030,"
+                            + " created_at) VALUES (?, ?, 'CARD_TOKEN', ?, 'Visa', '4242', 12, 2030,"
                             + " 'ACTIVE', now())",
                     method, party, "tok-storm-" + UUID.randomUUID());
         }
@@ -949,7 +987,7 @@ class PaymentConservationDatabaseTest {
                 "SELECT COALESCE(SUM(a.captured_amount_minor), 0)"
                         + " FROM payments.payment_attempt a"
                         + " JOIN payments.payment_intent i ON i.id = a.intent_id"
-                        + " WHERE a.status = 'CAPTURED' AND i.wallet_account_id = ANY (?)");
+                        + " WHERE a.status = 'CAPTURED' AND i.credit_account_id = ANY (?)");
     }
 
     private static long completedRefundMinorFor(Connection app, List<Wallet> wallets)
@@ -960,7 +998,7 @@ class PaymentConservationDatabaseTest {
                 "SELECT COALESCE(SUM(r.amount_minor), 0) FROM payments.refund r"
                         + " JOIN payments.payment_attempt a ON a.id = r.attempt_id"
                         + " JOIN payments.payment_intent i ON i.id = a.intent_id"
-                        + " WHERE r.status = 'COMPLETED' AND i.wallet_account_id = ANY (?)");
+                        + " WHERE r.status = 'COMPLETED' AND i.credit_account_id = ANY (?)");
     }
 
     private static long overRefundedAttempts(Connection app, List<Wallet> wallets)
@@ -972,7 +1010,7 @@ class PaymentConservationDatabaseTest {
                         + "  SELECT a.id FROM payments.payment_attempt a"
                         + "  JOIN payments.payment_intent i ON i.id = a.intent_id"
                         + "  JOIN payments.refund r ON r.attempt_id = a.id"
-                        + "  WHERE i.wallet_account_id = ANY (?) AND r.status <> 'FAILED'"
+                        + "  WHERE i.credit_account_id = ANY (?) AND r.status <> 'FAILED'"
                         + "  GROUP BY a.id, a.captured_amount_minor"
                         + "  HAVING SUM(r.amount_minor) > a.captured_amount_minor) breaches");
     }
@@ -985,7 +1023,7 @@ class PaymentConservationDatabaseTest {
                         "SELECT r.status, count(*) FROM payments.refund r"
                                 + " JOIN payments.payment_attempt a ON a.id = r.attempt_id"
                                 + " JOIN payments.payment_intent i ON i.id = a.intent_id"
-                                + " WHERE i.wallet_account_id = ANY (?) GROUP BY r.status")) {
+                                + " WHERE i.credit_account_id = ANY (?) GROUP BY r.status")) {
             read.setArray(1, accountArray(app, wallets));
             try (ResultSet rows = read.executeQuery()) {
                 while (rows.next()) {

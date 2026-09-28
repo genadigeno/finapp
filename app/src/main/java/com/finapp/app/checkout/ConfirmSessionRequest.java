@@ -35,7 +35,12 @@ import java.util.UUID;
  *     echoed
  * @param paymentMethodId names a {@code paymentmethods} row, never the instrument token
  *     ({@code INV-PAY-02}). Re-resolved authoritatively as the caller's own inside the command,
- *     so naming somebody else's is the same empty answer as naming one that does not exist
+ *     so naming somebody else's is the same empty answer as naming one that does not exist.
+ *     Absent exactly when {@code instrument} says {@code WALLET} (`P7-TSK-011`)
+ * @param instrument the closed instrument-choice vocabulary (`P7-TSK-011`, ADR-0059 §6):
+ *     {@code "WALLET"} pays from the payer's own wallet — which the platform RESOLVES, never
+ *     a named account (the withdrawal's precedent) — and absent means {@code paymentMethodId}
+ *     is required. Exactly one of the two is present; anything else is a 400
  */
 public record ConfirmSessionRequest(
-        @NotNull Sensitive<String> sessionToken, @NotNull UUID paymentMethodId) {}
+        @NotNull Sensitive<String> sessionToken, UUID paymentMethodId, String instrument) {}

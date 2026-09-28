@@ -4,7 +4,9 @@ import com.finapp.app.session.RequiresSession;
 import com.finapp.app.session.SessionAuthenticationInterceptor;
 import com.finapp.app.session.Unauthenticated;
 import com.finapp.identity.EmailAddress;
+import com.finapp.identity.IdentityErrorCode;
 import com.finapp.identity.Session;
+import com.finapp.identity.VerifiedChannelAlreadyExistsException;
 import com.finapp.platform.api.ApiException;
 import com.finapp.platform.api.PlatformErrorCode;
 import jakarta.servlet.http.HttpServletRequest;
@@ -54,12 +56,30 @@ public class ContactChannelController {
         recoveries.addChannel(current(request).identityId(), address(body));
     }
 
-    /** Proves control. One refusal for every reason it could be refused. */
+    /**
+     * Proves control. One refusal for every reason a <em>token</em> could be refused - unknown,
+     * spent, expired, a lost race - and one refusal that is not about the token.
+     *
+     * <p><strong>The second is {@code identity.VerifiedChannelAlreadyExists}</strong> (`X-TSK-004`):
+     * the token was live, and the identity already has a verified channel of that kind, which
+     * {@code INV-IDN-06} keeps. It answered {@code 500} until then. It has its own code because it
+     * discloses nothing the uniform refusal protects: that refusal stops a caller without a live
+     * token learning whether a verification is pending, and this one cannot be reached without one.
+     */
     @PostMapping("/verification")
     @Unauthenticated
     @ResponseStatus(HttpStatus.NO_CONTENT)
     public void verifyChannel(@Valid @RequestBody ContactChannelVerificationRequest body) {
-        if (!recoveries.verifyChannel(body.token())) {
+        boolean verified;
+        try {
+            verified = recoveries.verifyChannel(body.token());
+        } catch (VerifiedChannelAlreadyExistsException refused) {
+            throw new ApiException(
+                    IdentityErrorCode.VERIFIED_CHANNEL_ALREADY_EXISTS,
+                    "A channel verification was refused: the identity already has a verified"
+                            + " channel of that kind");
+        }
+        if (!verified) {
             throw new ApiException(
                     PlatformErrorCode.FORBIDDEN, "A channel verification was refused");
         }

@@ -91,6 +91,9 @@ public final class ContactChannelService {
      * @return the now-verified channel, or empty for <strong>every</strong> reason — unknown token,
      *     already spent, expired, a lost race. One answer, because a caller able to tell them apart
      *     learns whether a verification is pending on an account
+     * @throws VerifiedChannelAlreadyExistsException the identity already has a verified channel of
+     *     this kind, which recovery keeps (`X-TSK-004`, {@code INV-IDN-06}). Nothing is written and
+     *     nothing is audited - a refused verification is not a verification
      */
     public Optional<ContactChannel> verify(
             Connection unitOfWork, com.finapp.sharedkernel.security.Sensitive<String> presented) {

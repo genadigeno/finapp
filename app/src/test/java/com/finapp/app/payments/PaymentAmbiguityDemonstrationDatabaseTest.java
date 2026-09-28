@@ -344,9 +344,9 @@ class PaymentAmbiguityDemonstrationDatabaseTest {
                             + " now() - interval '1 hour', now() - interval '1 hour')",
                     customer, party);
             execute(app,
-                    "INSERT INTO paymentmethods.payment_method (id, party_id, token_reference,"
+                    "INSERT INTO paymentmethods.payment_method (id, party_id, kind, token_reference,"
                             + " brand, display_suffix, expiry_month, expiry_year, status,"
-                            + " created_at) VALUES (?, ?, ?, 'Visa', '4242', 12, 2030,"
+                            + " created_at) VALUES (?, ?, 'CARD_TOKEN', ?, 'Visa', '4242', 12, 2030,"
                             + " 'ACTIVE', now())",
                     method, party, "tok-amb-" + UUID.randomUUID());
         }
@@ -376,7 +376,8 @@ class PaymentAmbiguityDemonstrationDatabaseTest {
                                                     new JdbcAuditWriter(),
                                                     new JdbcOutboxWriter(),
                                                     IDS,
-                                                    CLOCK)
+                                                    CLOCK,
+                                                    PaymentCreation.IDEMPOTENCY_SCOPE)
                                             .create(
                                                     uow,
                                                     new PaymentCreation.CreatePaymentCommand(
@@ -389,7 +390,7 @@ class PaymentAmbiguityDemonstrationDatabaseTest {
                             uow ->
                                     intents.findById(uow, created.intent())
                                             .orElseThrow()
-                                            .walletAccount());
+                                            .creditAccount());
             return new Holder(party, person, created.intent(), wallet);
         } finally {
             flow.close();
@@ -439,6 +440,7 @@ class PaymentAmbiguityDemonstrationDatabaseTest {
                                     IDS,
                                     CLOCK,
                                     holder.intent(),
+                                    SimulatedCardPspAdapter.RAIL.id(),
                                     new ProviderIdempotencyReference("amb-" + IDS.next()));
                     attempts.insert(uow, attempt);
                     return attempt;
@@ -447,20 +449,48 @@ class PaymentAmbiguityDemonstrationDatabaseTest {
 
     private PaymentConfirmation confirmation() {
         return new PaymentConfirmation(
-                runner, intents, attempts, evidence, participants, adapter(),
-                outcomes(), new JdbcAuditWriter(), IDS, CLOCK);
+                runner,
+                intents,
+                attempts,
+                evidence,
+                participants,
+                adapter(),
+                outcomes(),
+                new com.finapp.payments.JdbcRoutingStore(),
+                com.finapp.payments.PaymentRails.of(java.util.List.of(SimulatedCardPspAdapter.RAIL)),
+                new JdbcAuditWriter(),
+                new JdbcOutboxWriter(),
+                IDS,
+                CLOCK,
+                com.finapp.payments.RoutingTelemetry.NONE,
+                java.util.Optional.empty());
     }
 
     private PaymentCapture capture() {
         return new PaymentCapture(
                 runner, intents, attempts, evidence, adapter(), outcomes(),
+                voids(), new JdbcAuditWriter(), IDS, CLOCK);
+    }
+
+    /** The void command over the same stores (P7-TSK-004) - the capture idiom's sibling. */
+    private com.finapp.payments.PaymentVoid voids() {
+        return new com.finapp.payments.PaymentVoid(
+                runner, intents, attempts, evidence, adapter(), outcomes(),
+                com.finapp.payments.PaymentRails.of(
+                        java.util.List.of(SimulatedCardPspAdapter.RAIL)),
                 new JdbcAuditWriter(), IDS, CLOCK);
     }
 
+    /**
+     * Due now: the smallest positive bound, because the sweep refuses zero (the Phase 6 → 7
+     * transition's finding - at zero it could conclude NEVER_RECEIVED of a request in flight).
+     */
     private PaymentSweeper sweeper() {
+        Duration dueNow = Duration.ofNanos(1_000);
         return new PaymentSweeper(
-                runner, attempts, intents, evidence, adapter(), outcomes(), IDS, CLOCK,
-                Duration.ZERO, Duration.ZERO, 50);
+                runner, attempts, intents, new com.finapp.payments.JdbcRefundStore(), evidence,
+                adapter(), outcomes(), capture(), voids(), IDS, CLOCK, dueNow, dueNow,
+                50);
     }
 
     /** A registry of this suite's own: the meters' wiring is the telemetry suites'. */
@@ -509,7 +539,9 @@ class PaymentAmbiguityDemonstrationDatabaseTest {
                         new com.finapp.payments.WalletTopUpComposition(),
                         // No completion: these suites' payments belong to no checkout
                         // session, and the production consumer is wired in CheckoutBeans.
-                        landed -> {}),
+                        landed -> {},
+                        new com.finapp.app.telemetry.MerchantMeters(
+                                new io.micrometer.core.instrument.simple.SimpleMeterRegistry())),
                 // THE REFUND'S MIRROR SEAM (P6-TSK-014), production's own for the same
                 // reason: every refund in this suite falls back to Phase 5's two lines, and
                 // proving that through the real composition is what makes "byte-identical"
@@ -526,7 +558,25 @@ class PaymentAmbiguityDemonstrationDatabaseTest {
                 new JdbcAuditWriter(),
                 new JdbcOutboxWriter(),
                 IDS,
-                CLOCK);
+                CLOCK,
+                com.finapp.payments.PaymentRails.of(java.util.List.of(SimulatedCardPspAdapter.RAIL)),
+                new com.finapp.payments.JdbcUnmatchedConfirmationStore(),
+                new com.finapp.ledger.JdbcLedgerAccountStore(),
+                // The dispute money (P7-TSK-013), production-shaped: a failed refund here
+                // locks its card attempt first and finds no chargeback.
+                com.finapp.app.payments.ChargebackAccountingFixture.over(
+                        new PostingService(
+                                executor(),
+                                new JdbcJournalEntryStore(IDS),
+                                new JdbcAuditWriter(),
+                                new JdbcOutboxWriter(),
+                                new JdbcBalanceProjection(),
+                                IDS,
+                                CLOCK,
+                                PostingObserver.NONE),
+                        com.finapp.payments.PaymentRails.of(java.util.List.of(SimulatedCardPspAdapter.RAIL)),
+                        IDS,
+                        CLOCK));
     }
 
     private SimulatedCardPspAdapter adapter() {
@@ -554,11 +604,39 @@ class PaymentAmbiguityDemonstrationDatabaseTest {
                         new com.finapp.payments.JdbcRefundStore(),
                         meters(),
                         outcomes(),
+                        new com.finapp.payments.PaymentClearing(
+                                new com.finapp.payments.JdbcClearingRecordStore(),
+                                new com.finapp.platform.outbox.JdbcOutboxWriter(),
+                                IDS,
+                                CLOCK),
                         new InboxConsumer<>(new JdbcInboxRecordStore(), CLOCK, Duration.ofDays(14)),
                         new tools.jackson.databind.ObjectMapper(),
                         CLOCK,
                         template,
-                        dataSource);
+                        dataSource,
+                        new com.finapp.payments.DisputeNotifications(
+                                new com.finapp.payments.JdbcDisputeStore(),
+                                intents,
+                                new JdbcAuditWriter(),
+                                new com.finapp.platform.outbox.JdbcOutboxWriter(),
+                                IDS,
+                                CLOCK,
+                                // P7-TSK-013: the attempt lock first, and the dispute money.
+                                new com.finapp.payments.JdbcPaymentAttemptStore(),
+                                com.finapp.app.payments.ChargebackAccountingFixture.over(
+                                        new PostingService(
+                                                executor(),
+                                                new JdbcJournalEntryStore(IDS),
+                                                new JdbcAuditWriter(),
+                                                new JdbcOutboxWriter(),
+                                                new JdbcBalanceProjection(),
+                                                IDS,
+                                                CLOCK,
+                                                PostingObserver.NONE),
+                                        com.finapp.payments.PaymentRails.of(
+                                                java.util.List.of(SimulatedCardPspAdapter.RAIL)),
+                                        IDS,
+                                        CLOCK)));
         String timestamp = Long.toString(Instant.now(CLOCK).getEpochSecond());
         webhooks.deliver(
                 body.getBytes(StandardCharsets.UTF_8),

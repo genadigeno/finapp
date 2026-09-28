@@ -130,6 +130,9 @@ class PaymentIntentTest {
         assertThat(intent.id()).isNotNull();
         assertThat(intent.amount()).isEqualTo(AMOUNT);
         assertThat(intent.createdAt()).isNotNull();
+        // Every intent any current door creates captures without a further decision;
+        // MANUAL's producer arrives with the surface that owns it (P7-TSK-002, ADR-0059).
+        assertThat(intent.captureMode()).isEqualTo(CaptureMode.AUTOMATIC);
 
         // Zero asserts nothing; negative is a credit wearing a debit's clothes. Never a
         // committed outcome — the boundary's 422 (P5-TSK-009) — refused here as defence in
@@ -165,9 +168,10 @@ class PaymentIntentTest {
         assertThatThrownBy(() -> PaymentIntent.rehydrate(
                         PaymentIntentId.next(IDS), IDS.next(), IDS.next(), IDS.next(),
                         LedgerAccountId.next(IDS),
+                        CaptureMode.AUTOMATIC,
                         Money.ofMinorUnits(-98_76, EUR),
                         PaymentIntentStatus.SUCCEEDED,
-                        Instant.now(CLOCK)))
+                        Instant.now(CLOCK), null))
                 .as("a stored non-positive amount")
                 .isInstanceOf(IllegalArgumentException.class)
                 .hasMessageContaining("EUR")
@@ -177,15 +181,67 @@ class PaymentIntentTest {
         // status is not an intent, whoever wrote it.
         assertThatThrownBy(() -> PaymentIntent.rehydrate(
                         PaymentIntentId.next(IDS), null, IDS.next(), IDS.next(),
-                        LedgerAccountId.next(IDS), AMOUNT,
-                        PaymentIntentStatus.PROCESSING, Instant.now(CLOCK)))
+                        LedgerAccountId.next(IDS), CaptureMode.AUTOMATIC, AMOUNT,
+                        PaymentIntentStatus.PROCESSING, Instant.now(CLOCK), null))
                 .as("a rehydrated row with no party")
                 .isInstanceOf(NullPointerException.class);
         assertThatThrownBy(() -> PaymentIntent.rehydrate(
                         PaymentIntentId.next(IDS), IDS.next(), IDS.next(), IDS.next(),
-                        LedgerAccountId.next(IDS), AMOUNT, null, Instant.now(CLOCK)))
+                        LedgerAccountId.next(IDS), CaptureMode.AUTOMATIC, AMOUNT, null, Instant.now(CLOCK), null))
                 .as("a rehydrated row with no status")
                 .isInstanceOf(NullPointerException.class);
+        assertThatThrownBy(() -> PaymentIntent.rehydrate(
+                        PaymentIntentId.next(IDS), IDS.next(), IDS.next(), IDS.next(),
+                        LedgerAccountId.next(IDS), null, AMOUNT,
+                        PaymentIntentStatus.PROCESSING, Instant.now(CLOCK), null))
+                .as("a rehydrated row with no capture mode - the birth fact V012 backfilled")
+                .isInstanceOf(NullPointerException.class)
+                .hasMessageContaining("captureMode");
+    }
+
+    @Test
+    @DisplayName("the instrument-choice XOR (P7-TSK-011): exactly one of a registered"
+            + " method and the payer's own wallet, at every door and on read-back")
+    void theInstrumentChoiceIsExactlyOne() {
+        // The wallet birth: no method, the debit side frozen, the same machine.
+        PaymentIntent fromWallet =
+                PaymentIntent.createFromWallet(
+                        IDS, CLOCK, IDS.next(), IDS.next(),
+                        LedgerAccountId.next(IDS), LedgerAccountId.next(IDS), AMOUNT);
+        assertThat(fromWallet.status()).isEqualTo(PaymentIntentStatus.REQUIRES_CONFIRMATION);
+        assertThat(fromWallet.paymentMethodId()).isNull();
+        assertThat(fromWallet.debitAccount()).isPresent();
+        assertThat(fromWallet.confirm().debitAccount())
+                .as("the choice survives every transition")
+                .isEqualTo(fromWallet.debitAccount());
+
+        // A method birth carries no debit side.
+        assertThat(intentIn(PaymentIntentStatus.REQUIRES_CONFIRMATION).debitAccount())
+                .isEmpty();
+
+        // BOTH and NEITHER are refused whatever the writer - the raw-SQL-shaped corruption.
+        assertThatThrownBy(() -> PaymentIntent.rehydrate(
+                        PaymentIntentId.next(IDS), IDS.next(), IDS.next(), IDS.next(),
+                        LedgerAccountId.next(IDS), CaptureMode.AUTOMATIC, AMOUNT,
+                        PaymentIntentStatus.PROCESSING, Instant.now(CLOCK),
+                        LedgerAccountId.next(IDS)))
+                .as("a row carrying both instruments")
+                .isInstanceOf(IllegalArgumentException.class)
+                .hasMessageContaining("exactly one instrument");
+        assertThatThrownBy(() -> PaymentIntent.rehydrate(
+                        PaymentIntentId.next(IDS), IDS.next(), IDS.next(), null,
+                        LedgerAccountId.next(IDS), CaptureMode.AUTOMATIC, AMOUNT,
+                        PaymentIntentStatus.PROCESSING, Instant.now(CLOCK), null))
+                .as("a row carrying neither instrument")
+                .isInstanceOf(IllegalArgumentException.class)
+                .hasMessageContaining("exactly one instrument");
+
+        // The method door refuses a null method rather than minting a wallet shape.
+        assertThatThrownBy(() -> PaymentIntent.create(
+                        IDS, CLOCK, IDS.next(), IDS.next(), null,
+                        LedgerAccountId.next(IDS), AMOUNT))
+                .isInstanceOf(NullPointerException.class)
+                .hasMessageContaining("wallet instrument enters by its own door");
     }
 
     @Test
@@ -203,7 +259,8 @@ class PaymentIntentTest {
         assertThat(confirmed.partyId()).isEqualTo(created.partyId());
         assertThat(confirmed.customerId()).isEqualTo(created.customerId());
         assertThat(confirmed.paymentMethodId()).isEqualTo(created.paymentMethodId());
-        assertThat(confirmed.walletAccount()).isEqualTo(created.walletAccount());
+        assertThat(confirmed.creditAccount()).isEqualTo(created.creditAccount());
+        assertThat(confirmed.captureMode()).isEqualTo(created.captureMode());
         assertThat(confirmed.amount()).isEqualTo(created.amount());
         assertThat(confirmed.createdAt()).isEqualTo(created.createdAt());
     }
@@ -237,9 +294,10 @@ class PaymentIntentTest {
                 IDS.next(),
                 IDS.next(),
                 LedgerAccountId.next(IDS),
+                CaptureMode.AUTOMATIC,
                 AMOUNT,
                 status,
-                Instant.now(CLOCK));
+                Instant.now(CLOCK), null);
     }
 
 }

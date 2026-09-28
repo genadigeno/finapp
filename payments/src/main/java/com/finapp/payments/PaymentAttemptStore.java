@@ -2,6 +2,7 @@ package com.finapp.payments;
 
 import com.finapp.platform.security.Actor;
 import com.finapp.sharedkernel.money.Money;
+import com.finapp.sharedkernel.security.Sensitive;
 import java.time.Instant;
 import java.util.List;
 import java.util.Optional;
@@ -51,25 +52,42 @@ public interface PaymentAttemptStore<T> {
             T unitOfWork, Instant dispatchedBefore, Instant unknownBefore, int limit);
 
     /**
+     * {@code AUTHORIZED} attempts that have rested there since at or before {@code
+     * authorizedBefore} — oldest first, at most {@code limit} (the Phase 6 → 7 transition).
+     *
+     * <p>Every Phase 5 and 6 payment captures what it authorizes, and only the HTTP surface
+     * chained the capture: an authorization resolved by the sweeper or by a webhook, or one whose
+     * instance crashed between its commit and the chain, rested in {@code AUTHORIZED} with no
+     * resolver and no gauge until the customer happened to retry. The sweep now chains these
+     * captures ({@link PaymentCapture}, which converges), and the gauge counts them.
+     */
+    List<PaymentAttempt> findStrandedAuthorizations(
+            T unitOfWork, Instant authorizedBefore, int limit);
+
+    /**
+     * How many attempts are stuck right now, and how long the oldest has waited (`P5-TSK-017`,
+     * {@code INV-LIFE-03}'s operational face): every {@code *_UNKNOWN}, and — since the Phase 6
+     * → 7 transition, in the payout's shape (`P6-TSK-013`) — every {@code *_DISPATCHED} and
+     * {@code AUTHORIZED} past the sweep's own {@code dispatchedBound}. A dispatch whose instance
+     * crashed mid-call, or an authorization nothing captured, is exactly as stuck as an unknown
+     * one, and counting only the unknown left both invisible whenever the sweep was down.
+     *
+     * <p>Age is measured the sweeper's way — the latest transition row, with birth as the
+     * fallback — so the gauge and the resolver cannot disagree about what "stuck" means.
+     * Counts and seconds only, never an amount ({@code INV-AUD-02}).
+     */
+    UnknownReading unknownReading(T unitOfWork, java.time.Duration dispatchedBound);
+
+    /** A count of stuck operations and the oldest one's wait in seconds. */
+    record UnknownReading(long active, long oldestAgeSeconds) {}
+
+    /**
      * The attempt one of whose minted operation references is {@code reference} — the webhook
      * door's attribution read (`P5-TSK-012`). The identifier presented is one the platform
      * handed the provider before anything was sent ({@code INV-PAY-04}), and the HMAC is
      * verified before this read runs — the {@code SIGNED_CALLBACK} reasoning; empty is the
      * unattributable webhook {@code V005} explicitly admits.
      */
-    /**
-     * How many attempts sit in an honestly-unknown state right now, and how long the oldest
-     * has been there (`P5-TSK-017`, {@code INV-LIFE-03}'s operational face).
-     *
-     * <p>Age is measured the sweeper's way — the latest transition row, with birth as the
-     * fallback — so the gauge and the resolver cannot disagree about what "stuck" means.
-     * Counts and seconds only, never an amount ({@code INV-AUD-02}).
-     */
-    UnknownReading unknownReading(T unitOfWork);
-
-    /** A count of unknown operations and the oldest one's age in seconds. */
-    record UnknownReading(long active, long oldestAgeSeconds) {}
-
     Optional<PaymentAttempt> findByOperationReference(
             T unitOfWork, ProviderIdempotencyReference reference);
 
@@ -90,6 +108,27 @@ public interface PaymentAttemptStore<T> {
 
     /** {@code CAPTURE_DISPATCHED → CAPTURE_UNKNOWN} — the second {@code INV-LIFE-03} state. */
     boolean markCaptureUnknown(T unitOfWork, PaymentAttemptId attempt);
+
+    /**
+     * {@code from → VOID_DISPATCHED}, the void's idempotency reference arriving with the
+     * transition (`P7-TSK-004`, {@code INV-PAY-04}): from {@code AUTHORIZED} (a cancellation,
+     * an operator) or a capture stage (the declined-capture redirect).
+     */
+    boolean dispatchVoid(
+            T unitOfWork,
+            PaymentAttemptId attempt,
+            PaymentAttemptStatus from,
+            ProviderIdempotencyReference reference);
+
+    /** {@code from → VOIDED}, the provider's acknowledgement arriving with the transition. */
+    boolean voided(
+            T unitOfWork,
+            PaymentAttemptId attempt,
+            PaymentAttemptStatus from,
+            ProviderReference providerReference);
+
+    /** {@code VOID_DISPATCHED → VOID_UNKNOWN} ({@code INV-LIFE-03}). */
+    boolean markVoidUnknown(T unitOfWork, PaymentAttemptId attempt);
 
     /** {@code from → AUTHORIZED}, the issuer's promise arriving with the transition. */
     boolean authorize(
@@ -117,4 +156,74 @@ public interface PaymentAttemptStore<T> {
             PaymentAttemptStatus to,
             Actor actor,
             Instant occurredAt);
+
+    // ------------------------------------------------------- the push model (P7-TSK-009)
+
+    /**
+     * The push attempt OUR end-to-end reference names — the instant callback's and the
+     * inquiry's attribution read, the {@link #findByOperationReference} reasoning on the
+     * second vocabulary: the reference was minted and stored before anything was sent
+     * ({@code INV-PAY-04}), the signature is verified before this runs, and empty is the
+     * unattributable confirmation ADR-0062 §5 parks.
+     */
+    Optional<PaymentAttempt> findByEndToEndReference(T unitOfWork, EndToEndReference reference);
+
+    /**
+     * The push attempt already holding the scheme's transaction reference — the
+     * cross-attempt claim pre-check (`P7-TSK-009`, the `V015` acquirer-reference reasoning):
+     * one scheme execution credits one attempt, and a confirmation naming a reference some
+     * OTHER row already stored is an integration break to record, never a second credit.
+     */
+    Optional<PaymentAttempt> findBySchemeReference(T unitOfWork, ProviderReference reference);
+
+    /**
+     * The initiation handle, stored once ({@code WHERE status = 'AWAITING_PAYER' AND
+     * authorization_handle IS NULL}): the row count arbitrates the callback-vs-sweep and
+     * sweep-vs-sweep races, and a loser converges — the scheme's dedupe means the handle it
+     * held was this one. The one bind-side {@code expose()} of the handle, registered.
+     */
+    boolean openInitiation(T unitOfWork, PaymentAttemptId attempt, Sensitive<String> handle);
+
+    /**
+     * {@code from → EXECUTED}, the scheme's pair arriving with the transition (`P7-TSK-009`,
+     * Phase 8's keys) — the push model's completing conditional, whichever resolver carries it.
+     */
+    boolean execute(
+            T unitOfWork,
+            PaymentAttemptId attempt,
+            PaymentAttemptStatus from,
+            ProviderReference schemeReference,
+            Optional<String> settlementCycle);
+
+    /**
+     * {@code AWAITING_PAYER → FAILED} <strong>only while no handle is stored</strong> — the
+     * refused-connection and refused-initiation conclusions' own conditional (ADR-0062 §3
+     * adapted): a row that holds a handle has an initiation the payer can still complete,
+     * so no unavailability verdict may fail it, whichever instance concluded first.
+     */
+    boolean failHandleless(T unitOfWork, PaymentAttemptId attempt, PaymentFailureReason reason);
+
+    /**
+     * The initiation permit stamped forward, conditionally ({@code last_dispatched_at <=
+     * expected}, resolvable only): the sweep's wire-noise arbiter — the loser skips the
+     * scheme call this tick. Never a money guard (`P7-TSK-009`; the aggregate door says why).
+     */
+    boolean renewInitiationPermit(
+            T unitOfWork, PaymentAttemptId attempt, Instant expected, Instant renewed);
+
+    /**
+     * The pay-in sweep's candidates (`P7-TSK-009`, ADR-0062 §5): push rows resting
+     * {@code AWAITING_PAYER} whose last outbound contact is at or before
+     * {@code contactedBefore} — oldest first, bounded. The payer PSP's clock decides the
+     * outcome; this bound only paces how often we ask.
+     */
+    List<PaymentAttempt> findResolvableInitiations(
+            T unitOfWork, Instant contactedBefore, int limit);
+
+    /**
+     * The pay-in ageing gauge's reading ({@code INV-REC-05}'s sibling discipline, the
+     * `P7-TSK-002` exclusion honoured with its own gauge): how many initiations await the
+     * payer, and the oldest wait in seconds — the server's clock, never an instance's.
+     */
+    UnknownReading awaitingReading(T unitOfWork);
 }

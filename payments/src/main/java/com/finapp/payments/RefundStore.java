@@ -27,16 +27,75 @@ public interface RefundStore<T> {
     Optional<Refund> findById(T unitOfWork, RefundId refund);
 
     /**
-     * The refunds sitting {@code UNKNOWN} right now, and the oldest one's age in seconds
-     * (`P5-TSK-017`) — the attempt store's reading, for the machine that strands money
-     * behind a standing hold. Counts and seconds only ({@code INV-AUD-02}).
+     * The refund and its latest send permit, {@code FOR UPDATE} — the one read every outcome
+     * judges from (the Phase 6 → 7 transition). Resolvers that judged from an unlocked read
+     * could lose their conditional to a racing resolver and report the verdict they held rather
+     * than the row's truth, or lose a webhook whose delivery then counted as processed.
      */
-    PaymentAttemptStore.UnknownReading unknownReading(T unitOfWork);
+    Optional<LockedRefund> lockForOutcome(T unitOfWork, RefundId refund);
 
     /**
-     * The newest refund carrying {@code dispatchKey} (`P5-TSK-016`): the takeover re-run's
-     * convergence lookup. Newest first because a key can legitimately reappear after the
-     * claim's retention has swept it — the caller judges the row's facts before converging.
+     * A refund as its outcome transaction sees it: the row, locked, and the permit of its
+     * latest send ({@code V009}) — which a refused connection is judged against.
+     */
+    record LockedRefund(Refund refund, Instant lastDispatchedAt) {
+
+        public LockedRefund {
+            java.util.Objects.requireNonNull(refund, "refund must not be null");
+            java.util.Objects.requireNonNull(lastDispatchedAt, "lastDispatchedAt must not be null");
+        }
+    }
+
+    /**
+     * Commits a new send permit before a re-send of our reference ({@code V009}, ADR-0057 §4's
+     * discipline): a takeover's re-drive, or the resolution sweep's re-drive of a reference the
+     * provider never saw. The conditional IS the permit — a refund some resolver already moved
+     * out of {@code DISPATCHED}/{@code UNKNOWN} matches no row, and then nothing may be sent.
+     *
+     * @return the permit as stored — which an outcome later compares with the locked row's, so
+     *     it is the database's value and never this instance's clock at a finer precision — or
+     *     empty when the refund is no longer resolvable
+     */
+    Optional<Instant> renewSendPermit(T unitOfWork, RefundId refund, Instant at);
+
+    /**
+     * The refunds the resolution sweep asks about (the Phase 6 → 7 transition): {@code
+     * DISPATCHED} whose latest send permit is at or before {@code dispatchedBefore}, and {@code
+     * UNKNOWN} whose move into {@code UNKNOWN} is at or before {@code unknownBefore} — oldest
+     * first, at most {@code limit}. The attempt store's {@code findSweepable}, for the refund.
+     */
+    List<Refund> findSweepable(
+            T unitOfWork, Instant dispatchedBefore, Instant unknownBefore, int limit);
+
+    /**
+     * The RETURNS the push rail's own resolution asks about (`P7-TSK-010`): the sweepable
+     * shape verbatim, partitioned to PUSH-model attempts — {@link #findSweepable} feeds the
+     * card sweeper and excludes them, because a resolver that asked the wrong counterparty
+     * about our reference would hear {@code UNRECOGNISED} and re-drive against facts the
+     * row does not carry (the attempt sweep's partition, at the refund).
+     */
+    List<Refund> findSweepableReturns(
+            T unitOfWork, Instant dispatchedBefore, Instant unknownBefore, int limit);
+
+    /**
+     * The refunds stuck right now — every {@code UNKNOWN}, and every {@code DISPATCHED} whose
+     * latest send permit is past the sweep's own dispatched bound — and the oldest one's wait in
+     * seconds (`P5-TSK-017`; widened by the Phase 6 → 7 transition to the payout's shape,
+     * `P6-TSK-013`: a refund whose instance crashed mid-dispatch is stuck too, and counting only
+     * {@code UNKNOWN} left it invisible whenever the sweep was down). Counts and seconds only
+     * ({@code INV-AUD-02}).
+     */
+    PaymentAttemptStore.UnknownReading unknownReading(
+            T unitOfWork, java.time.Duration dispatchedBound);
+
+    /**
+     * The refund carrying {@code dispatchKey} (`P5-TSK-016`): the takeover re-run's convergence
+     * lookup. One row per key for ever — `V008`'s unique index — so a key is bound to its refund
+     * for longer than the claim that first carried it: the caller converges on the row when its
+     * facts match, and refuses the key when they do not. *(This read "newest first, because a key
+     * can legitimately reappear after the claim's retention" until the Phase 6 → 7 transition,
+     * which found that the unique index forbids exactly that, and that a takeover finding a
+     * refund a webhook had already finished dispatched afresh into it.)*
      */
     Optional<Refund> findByDispatchKey(T unitOfWork, String dispatchKey);
 
@@ -74,8 +133,14 @@ public interface RefundStore<T> {
      * non-failed sum would therefore return the merchant's fee for a refund that never
      * happened, with no producer for taking it back.
      *
-     * <p>Valid under the command's {@code FOR UPDATE} on the attempt row, like its sibling: the
-     * lock is what makes the sum current rather than a write-skew snapshot.
+     * <p><strong>Valid only after the caller has serialised with every other refund of the same
+     * payment.</strong> At dispatch that is the command's {@code FOR UPDATE} on the attempt row.
+     * At completion it is the {@code FOR UPDATE} the hold's release takes on the account the
+     * refund debits ({@code HoldService#release}), which runs before this read and which every
+     * completion of the same payment shares — no completion path holds the attempt lock. *(This
+     * named the attempt lock for both until the Phase 6 → 7 transition's audit, which found the
+     * completion's real serialisation point: moving the release after this read would let two
+     * completions each price their fee share as the first.)*
      */
     Money sumCompletedFor(T unitOfWork, PaymentAttemptId attempt, CurrencyCode currency);
 

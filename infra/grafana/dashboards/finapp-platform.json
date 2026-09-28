@@ -798,6 +798,168 @@
         "legend": { "displayMode": "list", "placement": "bottom", "showLegend": true },
         "tooltip": { "mode": "multi", "sort": "none" }
       }
+    },
+    {
+      "type": "row",
+      "title": "Checkout and merchants \u2014 merchant money",
+      "gridPos": { "h": 1, "w": 24, "x": 0, "y": 90 },
+      "collapsed": false,
+      "panels": []
+    },
+    {
+      "type": "timeseries",
+      "title": "Checkout sessions by outcome",
+      "description": "finapp.checkout.session (P6-TSK-008): how the platform's offers ENDED, counted once per session on the transition that committed it. completed_late is money that landed after the offer expired (INV-MER-06): if it is not rare, the offer window is too short or the provider too slow.",
+      "datasource": { "type": "prometheus", "uid": "finapp-prometheus" },
+      "gridPos": { "h": 7, "w": 8, "x": 0, "y": 91 },
+      "targets": [
+        { "refId": "A", "expr": "sum by (outcome) (rate(finapp_checkout_session_total[5m]))", "legendFormat": "{{outcome}}" }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "custom": { "drawStyle": "line", "lineWidth": 2, "fillOpacity": 8, "showPoints": "never" },
+          "unit": "reqps",
+          "noValue": "no data"
+        },
+        "overrides": []
+      },
+      "options": {
+        "legend": { "displayMode": "list", "placement": "bottom", "showLegend": true },
+        "tooltip": { "mode": "multi", "sort": "none" }
+      }
+    },
+    {
+      "type": "timeseries",
+      "title": "Conversion age by outcome",
+      "description": "finapp.checkout.conversion.age (P6-TSK-013): creation to completion, once per completion. completed measures the customer inside the window; completed_late measures the provider after it - kept apart so the rare late ones cannot swallow the mean.",
+      "datasource": { "type": "prometheus", "uid": "finapp-prometheus" },
+      "gridPos": { "h": 7, "w": 8, "x": 8, "y": 91 },
+      "targets": [
+        { "refId": "A", "expr": "sum by (outcome) (rate(finapp_checkout_conversion_age_seconds_sum[30m])) / sum by (outcome) (rate(finapp_checkout_conversion_age_seconds_count[30m]))", "legendFormat": "{{outcome}} mean" },
+        { "refId": "B", "expr": "max by (outcome) (finapp_checkout_conversion_age_seconds_max)", "legendFormat": "{{outcome}} max" }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "custom": { "drawStyle": "line", "lineWidth": 2, "fillOpacity": 8, "showPoints": "never" },
+          "unit": "s",
+          "noValue": "no data"
+        },
+        "overrides": []
+      },
+      "options": {
+        "legend": { "displayMode": "list", "placement": "bottom", "showLegend": true },
+        "tooltip": { "mode": "multi", "sort": "none" }
+      }
+    },
+    {
+      "type": "timeseries",
+      "title": "Fee assessments",
+      "description": "finapp.merchant.fee.assessed (P6-TSK-013): merchant-bound captures that assessed the platform's fee, once per capture however many resolvers raced it. A count, never an amount (INV-AUD-02).",
+      "datasource": { "type": "prometheus", "uid": "finapp-prometheus" },
+      "gridPos": { "h": 7, "w": 8, "x": 16, "y": 91 },
+      "targets": [
+        { "refId": "A", "expr": "sum(rate(finapp_merchant_fee_assessed_total[5m]))", "legendFormat": "assessed" }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "custom": { "drawStyle": "line", "lineWidth": 2, "fillOpacity": 8, "showPoints": "never" },
+          "unit": "reqps",
+          "noValue": "no data"
+        },
+        "overrides": []
+      },
+      "options": {
+        "legend": { "displayMode": "list", "placement": "bottom", "showLegend": true },
+        "tooltip": { "mode": "multi", "sort": "none" }
+      }
+    },
+    {
+      "type": "timeseries",
+      "title": "Payout judgements by outcome",
+      "description": "finapp.merchant.payout (P6-TSK-013): acting judgements only, counted post-commit at the door that applied them. completed released the hold and posted, failed released it, unknown left the merchant's money reserved until the sweep resolves it. A payout that went unknown and then completed is two judgements.",
+      "datasource": { "type": "prometheus", "uid": "finapp-prometheus" },
+      "gridPos": { "h": 7, "w": 8, "x": 0, "y": 98 },
+      "targets": [
+        { "refId": "A", "expr": "sum by (outcome) (rate(finapp_merchant_payout_total[5m]))", "legendFormat": "{{outcome}}" }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "custom": { "drawStyle": "line", "lineWidth": 2, "fillOpacity": 8, "showPoints": "never" },
+          "unit": "reqps",
+          "noValue": "no data"
+        },
+        "overrides": []
+      },
+      "options": {
+        "legend": { "displayMode": "list", "placement": "bottom", "showLegend": true },
+        "tooltip": { "mode": "multi", "sort": "none" }
+      }
+    },
+    {
+      "type": "timeseries",
+      "title": "Payouts without an answer",
+      "description": "finapp.merchant.payout.unknown.active (P6-TSK-013): every UNKNOWN payout, and every DISPATCHED one past the resolution sweep's own bound - each a merchant's money behind a standing hold. Sustained non-zero means the sweep is not getting there. Fleet-wide: max(), never sum(). No data here means UNREADABLE, never healthy: the gauge publishes NaN rather than a false zero.",
+      "datasource": { "type": "prometheus", "uid": "finapp-prometheus" },
+      "gridPos": { "h": 7, "w": 8, "x": 8, "y": 98 },
+      "targets": [
+        { "refId": "A", "expr": "max(finapp_merchant_payout_unknown_active)", "legendFormat": "unanswered" }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "custom": { "drawStyle": "line", "lineWidth": 2, "fillOpacity": 8, "showPoints": "never" },
+          "unit": "none",
+          "noValue": "UNREADABLE (NaN, not zero)"
+        },
+        "overrides": []
+      },
+      "options": {
+        "legend": { "displayMode": "list", "placement": "bottom", "showLegend": true },
+        "tooltip": { "mode": "multi", "sort": "none" }
+      }
+    },
+    {
+      "type": "timeseries",
+      "title": "Oldest unanswered payout",
+      "description": "finapp.merchant.payout.unknown.age (P6-TSK-013): how long the oldest of those has waited, measured the way the sweep measures it - an UNKNOWN payout from its entry into that state, an overdue dispatch from its latest send permit. The stuck-payout alert's series.",
+      "datasource": { "type": "prometheus", "uid": "finapp-prometheus" },
+      "gridPos": { "h": 7, "w": 8, "x": 16, "y": 98 },
+      "targets": [
+        { "refId": "A", "expr": "max(finapp_merchant_payout_unknown_age)", "legendFormat": "oldest" }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "custom": { "drawStyle": "line", "lineWidth": 2, "fillOpacity": 8, "showPoints": "never" },
+          "unit": "s",
+          "noValue": "UNREADABLE (NaN, not zero)"
+        },
+        "overrides": []
+      },
+      "options": {
+        "legend": { "displayMode": "list", "placement": "bottom", "showLegend": true },
+        "tooltip": { "mode": "multi", "sort": "none" }
+      }
+    },
+    {
+      "type": "timeseries",
+      "title": "Payout destination changes pending",
+      "description": "finapp.merchant.destination.pending (P6-TSK-011): proposals awaiting a second operator, and approvals still cooling off. A change nobody expected, showing up here during its cooling-off, is what this panel exists to make visible. Fleet-wide: max(), never sum().",
+      "datasource": { "type": "prometheus", "uid": "finapp-prometheus" },
+      "gridPos": { "h": 7, "w": 8, "x": 0, "y": 105 },
+      "targets": [
+        { "refId": "A", "expr": "max(finapp_merchant_destination_pending)", "legendFormat": "pending" }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "custom": { "drawStyle": "line", "lineWidth": 2, "fillOpacity": 8, "showPoints": "never" },
+          "unit": "none",
+          "noValue": "UNREADABLE (NaN, not zero)"
+        },
+        "overrides": []
+      },
+      "options": {
+        "legend": { "displayMode": "list", "placement": "bottom", "showLegend": true },
+        "tooltip": { "mode": "multi", "sort": "none" }
+      }
     }
   ]
 }

@@ -49,9 +49,10 @@ public record FeeAssessment(Money gross, Money fee, Money net, FeeScheduleVersio
      * <p>Reachable whenever the fixed part exceeds a small capture — 0.30 on 0.10. The
      * arithmetic does <strong>not</strong> clamp, and that is deliberate: a clamp would make
      * the recorded fee differ from what the pinned version produces on recomputation, breaking
-     * {@code INV-MER-03} for the sake of a number that looks nicer. The real remedy is a
-     * minimum capture amount, which belongs to the checkout session's validation rather than
-     * to arithmetic — see {@code CURRENT_STATE.md} §Known Architectural Debt.
+     * {@code INV-MER-03} for the sake of a number that looks nicer. The remedy is at the price
+     * rather than in the arithmetic: ADR-0058 (`P6-TST-001`) refuses a sale whose fee meets
+     * <em>or</em> exceeds it, when the checkout is opened and again when its fee is pinned, on
+     * {@code !net().isPositive()} - wider than this method, which names only the strict case.
      *
      * <p>Exposed so a consumer can refuse, warn or meter rather than discover it in a
      * statement.

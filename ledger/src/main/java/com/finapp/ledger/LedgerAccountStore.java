@@ -104,6 +104,17 @@ public interface LedgerAccountStore<T> {
     Optional<LedgerAccount> lockForUpdate(T unitOfWork, LedgerAccountId accountId);
 
     /**
+     * One account, read {@code FOR SHARE} — for a decision that must not race the account's
+     * CLOSURE, without serialising against its siblings (the Phase 6 → 7 transition). A payment
+     * confirmation reads the account its capture will credit here: {@code FOR SHARE} conflicts
+     * with the {@code FOR UPDATE} {@link #lockOwnedForUpdate} takes to close the account, so a
+     * close either waits for the confirmation (and then sees the payment in flight and refuses)
+     * or commits first (and the confirmation sees {@code CLOSED} and dispatches nothing). It
+     * does not conflict with other readers or with a posting's {@code FOR KEY SHARE}.
+     */
+    Optional<LedgerAccount> lockForShare(T unitOfWork, LedgerAccountId accountId);
+
+    /**
      * Moves an account {@code from} one status {@code to} another — the conditional whose row
      * count is the outcome, arriving with its first caller exactly as this interface's javadoc
      * deferred it (`P3-TSK-014`'s close). The machine's edge is in the statement

@@ -9,8 +9,8 @@ import lombok.RequiredArgsConstructor;
  *
  * <p><strong>There is no merchant not-found code, deliberately</strong>: an unknown or
  * malformed merchant identifier on any operator route is {@code api.NotFound}, one answer —
- * and when `P6-TSK-002`'s tenant-scoped surfaces arrive, the same one answer folds
- * another-tenant's into it ({@code INV-MER-01}, the {@code P1-TSK-016} oracle reasoning).
+ * and on the tenant-scoped surfaces `P6-TSK-002` built, the same one answer folds another
+ * tenant's into it ({@code INV-MER-01}, the {@code P1-TSK-016} oracle reasoning).
  */
 @RequiredArgsConstructor
 public enum MerchantErrorCode implements ErrorCode {
@@ -89,7 +89,101 @@ public enum MerchantErrorCode implements ErrorCode {
     FEE_CURRENCY_MISMATCH(
             "merchant.FeeCurrencyMismatch",
             422,
-            "The fee schedule's currency does not match.");
+            "The fee schedule's currency does not match."),
+
+    /**
+     * The proposer of a payout destination tried to approve it (`P6-TSK-011`,
+     * {@code INV-AUD-04}). A {@code 409}, the ledger's {@code SelfApprovalRefused} status for the
+     * same control: the request is well formed, and the refusal is the state of the change —
+     * it still waits for a second person. The refusal is audited as {@code DENIED}.
+     */
+    SELF_APPROVAL_REFUSED(
+            "merchant.SelfApprovalRefused",
+            409,
+            "A payout destination change requires a second approver distinct from its proposer."),
+
+    /**
+     * The merchant already has an open payout destination change (`P6-TSK-011`): one change at
+     * a time, so a cooling-off never has to arbitrate between two pending destinations. The
+     * remedy is to withdraw the open change first.
+     */
+    DESTINATION_CHANGE_PENDING(
+            "merchant.DestinationChangePending",
+            409,
+            "A payout destination change is already open for this merchant; withdraw it first."),
+
+    /**
+     * The payout destination change is no longer open to the decision asked of it — approved,
+     * rejected, withdrawn or taken effect since (`P6-TSK-011`). A {@code 409}: the change's
+     * current state, not the request, is what refuses.
+     */
+    DESTINATION_CHANGE_NOT_OPEN(
+            "merchant.DestinationChangeNotOpen",
+            409,
+            "The payout destination change is no longer open to this decision."),
+
+    /**
+     * The payout provider explicitly refused the destination grant — expired, used or unknown
+     * (`P6-TSK-011`, the {@code paymentmethods.InstrumentNotTokenised} shape). The caller's to
+     * renew.
+     */
+    DESTINATION_NOT_TOKENISED(
+            "merchant.DestinationNotTokenised",
+            422,
+            "The destination grant was refused; obtain a fresh grant and retry."),
+
+    /**
+     * The destination could not be tokenised: the provider was unreachable, slow, unintelligible
+     * or unconfigured (`P6-TSK-011`). Nothing was written, and nothing rawer was kept instead.
+     */
+    DESTINATION_TOKENISATION_UNAVAILABLE(
+            "merchant.DestinationTokenisationUnavailable",
+            503,
+            "The destination could not be tokenised right now; retry later."),
+
+    /**
+     * The payable cannot fund the payout (`P6-TSK-012`, {@code INV-MER-05}): judged under the
+     * payable's lock with every in-flight payout held — a payable left negative by a retained
+     * fee refuses every amount (ADR-0054). Nothing is written; a later retry may fit.
+     */
+    PAYOUT_UNFUNDED(
+            "merchant.PayoutUnfunded",
+            409,
+            "The payable cannot fund this payout."),
+
+    /** No {@code EFFECTIVE} payout destination, so there is nowhere to pay (ADR-0056 §9). */
+    NO_EFFECTIVE_DESTINATION(
+            "merchant.NoEffectiveDestination",
+            409,
+            "The merchant has no effective payout destination."),
+
+    /** The merchant is suspended or closed, and suspension gates new dispatches. */
+    NOT_TRADING(
+            "merchant.NotTrading",
+            409,
+            "This merchant cannot initiate payouts while suspended or closed."),
+
+    /**
+     * A close refused while the merchant is owed money or money is in flight (the Phase 6 → 7
+     * transition): a closed merchant can be paid out by nothing.
+     */
+    NOT_SETTLED(
+            "merchant.NotSettled",
+            409,
+            "This merchant is still owed money or has a payment in flight, so it cannot be"
+                    + " closed."),
+
+    /** A payout in a currency other than the merchant's settlement currency (one payable). */
+    PAYOUT_CURRENCY_MISMATCH(
+            "merchant.PayoutCurrencyMismatch",
+            422,
+            "A payout must be in the merchant's settlement currency."),
+
+    /** No payout provider is configured on this instance: nothing was dispatched. */
+    PAYOUT_PROVIDER_UNAVAILABLE(
+            "merchant.PayoutProviderUnavailable",
+            503,
+            "Payouts are unavailable right now; retry later.");
 
     private final String code;
     private final int status;

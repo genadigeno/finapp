@@ -86,6 +86,10 @@ class NoUnwrappedSecretRulesTest {
                     // exist so that a field that would widen it fails the build rather than
                     // arriving quietly.
                     "pan", "cardnumber", "cvv", "cvc", "cvv2", "pin",
+                    // Bank data (P6-TSK-011, ADR-0056): the payout destination keeps bank
+                    // details at the provider, and these make a field that would hold one
+                    // fail the build rather than arrive quietly - the card-data reasoning.
+                    "iban", "accountnumber",
                     // Authentication data.
                     "otp", "mfacode", "sessionid");
 
@@ -353,7 +357,20 @@ class NoUnwrappedSecretRulesTest {
                     // a wire type must carry the value as a String because that is what a
                     // client reads, and the discipline that makes it safe is that it appears
                     // here ONCE and the claim records the session id alone.
-                    "com.finapp.app.checkout.CheckoutService$CreatedSessionView.sessionToken");
+                    "com.finapp.app.checkout.CheckoutService$CreatedSessionView.sessionToken",
+                    // P7-TSK-009: the payer's authorization handle on the two views that
+                    // render it to its OWNER - the ElevatedSession claim at the pay-in
+                    // door: the field exists to be transmitted (the payer's client must
+                    // follow the capability URL to their PSP), and this platform's
+                    // serialiser renders a Sensitive as the mask, so wrapping would hand
+                    // the payer «redacted» for the one value the response is for. The
+                    // discipline that makes it safe: rendered exactly while the payer must
+                    // act, on ownership-scoped answers only (the merchant's rendering is
+                    // proven null in CheckoutFlowDatabaseTest), and the toString harm is
+                    // closed by overrides asserted in CheckoutRecordsRedactTest and
+                    // PaymentViewRedactsTest.
+                    "com.finapp.app.payments.PaymentService$PaymentView.authorizationHandle",
+                    "com.finapp.app.checkout.CheckoutService$SessionView.authorizationHandle");
 
     /** The accessors of {@link #PERMITTED_FIELDS}, for the same reason and no other. */
     private static final Set<String> PERMITTED_ACCESSORS =
@@ -362,7 +379,10 @@ class NoUnwrappedSecretRulesTest {
                     "com.finapp.app.authentication.AuthenticatedSession.sessionToken()",
                     // P6-TSK-002, the field exemption's accessor half - see PERMITTED_FIELDS.
                     "com.finapp.app.merchant.MerchantApiKeyOperations$IssuedKeyView.secret()",
-                    "com.finapp.app.checkout.CheckoutService$CreatedSessionView.sessionToken()");
+                    "com.finapp.app.checkout.CheckoutService$CreatedSessionView.sessionToken()",
+                    // P7-TSK-009, the handle exemptions' accessor halves - see PERMITTED_FIELDS.
+                    "com.finapp.app.payments.PaymentService$PaymentView.authorizationHandle()",
+                    "com.finapp.app.checkout.CheckoutService$SessionView.authorizationHandle()");
 
     @org.junit.jupiter.api.Test
     @org.junit.jupiter.api.DisplayName("every exemption still names a field the rule would otherwise flag")

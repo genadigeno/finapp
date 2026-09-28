@@ -99,7 +99,8 @@ class NoFloatingPointMoneyRulesTest {
             Set.of("float", "double", "java.lang.Float", "java.lang.Double");
 
     /**
-     * Classes exempted from the rule. Deliberately empty.
+     * Classes exempted from the rule - deliberately few, each named with its argument below. (It
+     * opened "deliberately empty", which it has not been since the first metrics exemption.)
      *
      * <p>An exemption belongs here only if the value provably cannot reach a monetary path — a
      * sampling ratio or a latency percentile, never an amount, a rate, a fee or a balance.
@@ -150,6 +151,12 @@ class NoFloatingPointMoneyRulesTest {
                     // ToDoubleFunction Micrometer's Gauge imposes.
                     "com.finapp.app.telemetry.KycMetrics",
                     "com.finapp.app.telemetry.KycMetrics$Cached",
+                    // P6-TSK-011. The SAME case again: a count of OPEN payout destination
+                    // changes - a `long` from count(*) all the way to the registry boundary
+                    // (PayoutDestinationStore.countOpen returns long) - published through the
+                    // ToDoubleFunction Micrometer's Gauge imposes.
+                    "com.finapp.app.telemetry.MerchantMetrics",
+                    "com.finapp.app.telemetry.MerchantMetrics$Cached",
                     // P3-TSK-010. The SAME case again: a count of DRIFTING projection rows -
                     // a `long` from ProjectionVerification.Report all the way to the registry
                     // boundary - published through the ToDoubleFunction Micrometer's Gauge
@@ -179,6 +186,39 @@ class NoFloatingPointMoneyRulesTest {
                     // to be imprecise about.
                     "com.finapp.app.telemetry.PaymentMetrics",
                     "com.finapp.app.telemetry.PaymentMetrics$Cached",
+                    // P6-TSK-013. The SAME case again, the PaymentMetrics shape exactly: the
+                    // COUNT of payouts without an answer past their due and the AGE IN SECONDS
+                    // of the oldest - longs from MerchantPayoutStore.UnknownReading to the
+                    // registry boundary, published through the ToDoubleFunction Micrometer's
+                    // Gauge imposes, with NaN the sentinel for unreadable. The merchant money
+                    // parked behind those payouts' holds is deliberately NOT published
+                    // (INV-AUD-02), so there is no monetary value here to be imprecise about.
+                    "com.finapp.app.telemetry.MerchantPayoutMetrics",
+                    "com.finapp.app.telemetry.MerchantPayoutMetrics$Cached",
+                    // P7-TSK-009. The SAME case again, the PaymentMetrics shape exactly:
+                    // the COUNT of initiations awaiting the payer and of confirmations
+                    // parked in suspense, and the AGE IN SECONDS of each oldest - longs
+                    // from the stores' UnknownReading to the registry boundary, published
+                    // through the ToDoubleFunction Micrometer's Gauge imposes, with NaN
+                    // the sentinel for unreadable. The parked AMOUNTS are deliberately NOT
+                    // published (INV-AUD-02, INV-REC-05's gauge is a count and an age), so
+                    // there is no monetary value here to be imprecise about.
+                    "com.finapp.app.telemetry.PayInMetrics",
+                    "com.finapp.app.telemetry.PayInMetrics$Cached",
+                    // P7-TSK-013. The SAME case again, the PaymentMetrics shape exactly: the
+                    // COUNT of counterparty accounts below zero, per purpose - longs out of
+                    // the ledger's grouped count, published through the ToDoubleFunction
+                    // Micrometer's Gauge imposes, with NaN the sentinel for unreadable. The
+                    // negative BALANCES are deliberately not published (INV-AUD-02: the gauge
+                    // is a count), so there is no monetary value here to be imprecise about.
+                    "com.finapp.app.telemetry.NegativePositionMetrics",
+                    "com.finapp.app.telemetry.NegativePositionMetrics$Cached",
+                    // P7-TSK-014. The SAME case again: the COUNT of chargebacks near or past
+                    // their respond-by deadline - a long out of the dispute rows, published
+                    // through the ToDoubleFunction Micrometer's Gauge imposes, NaN the sentinel
+                    // for unreadable. No monetary value here to be imprecise about.
+                    "com.finapp.app.telemetry.DisputeDeadlineMetrics",
+                    "com.finapp.app.telemetry.DisputeDeadlineMetrics$Cached",
                     // P2-TSK-001. The SAME case again, not a new one: counts of published,
                     // failed and dead-lettered events - ints out of RelayPollResult - published
                     // through Counter.increment(double), the only instrument Micrometer offers.

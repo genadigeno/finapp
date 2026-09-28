@@ -31,14 +31,13 @@ import lombok.RequiredArgsConstructor;
  * request — and the instrument half delegates unchanged, because the token's path is not this
  * class's business and substituting it would weaken a shipped guarantee.
  *
- * <h2>The naming debt this makes visible, stated rather than hidden</h2>
+ * <h2>The naming debt this made visible — paid</h2>
  *
- * <p>The intent records this account in {@code payment_intent.wallet_account_id}, whose own
- * comment already defines it as <em>where the capture will credit</em> — so the meaning is
- * right and the name is narrower than the meaning. Recorded in {@code CURRENT_STATE.md}
- * §Known Architectural Debt at {@code P6-TSK-005}, owned by this task's successor, and bounded
- * by the check that makes a mismatch loud: {@code MerchantSettlement} refuses a capture whose
- * credit account is not the pinned merchant's payable.
+ * <p>The intent records this account in {@code payment_intent.credit_account_id} — named
+ * {@code wallet_account_id} until {@code P7-TSK-002} paid the {@code P6-TSK-005} rename debt
+ * (payments {@code V012}), the meaning always <em>where the capture will credit</em>. The
+ * check that made a mismatch loud stands unchanged: {@code MerchantSettlement} refuses a
+ * capture whose credit account is not the pinned merchant's payable.
  */
 @RequiredArgsConstructor
 public final class CheckoutPaymentParticipants implements PaymentParticipants<Connection> {
@@ -72,11 +71,49 @@ public final class CheckoutPaymentParticipants implements PaymentParticipants<Co
                 .map(this::asDestination);
     }
 
+    /**
+     * The merchant's payable, share-locked: postable only while {@code ACTIVE}. Nothing closes a
+     * payable's ledger account today, so this answers true - asked anyway, because the question
+     * the confirmation asks is about the account, whoever owns it.
+     */
+    @Override
+    public boolean creditable(Connection unitOfWork, com.finapp.ledger.LedgerAccountId account) {
+        return ledgerAccounts
+                .lockForShare(unitOfWork, account)
+                .map(row -> row.status() == com.finapp.ledger.LedgerAccountStatus.ACTIVE)
+                .orElse(false);
+    }
+
+    /**
+     * Delegated unchanged (`P7-TSK-011`): the PAYER's wallet is the payer's fact, exactly
+     * like the token, the destination and the kind — this class substitutes only the
+     * CREDIT side, and the book instrument's debit side is not it.
+     */
+    @Override
+    public Optional<Wallet> payerWalletOwnedBy(Connection unitOfWork, UUID callerPartyId) {
+        return instruments.payerWalletOwnedBy(unitOfWork, callerPartyId);
+    }
+
     /** Delegated unchanged: the instrument must still be the paying customer's own. */
+    @Override
+    public Optional<com.finapp.payments.ProviderReference> bankDestinationOwnedBy(
+            Connection unitOfWork, UUID callerPartyId, UUID paymentMethodId) {
+        // Delegated unchanged (`P7-TSK-008`): the checkout's substitution is the wallet's,
+        // and the bank destination's path is not this class's concern either way.
+        return instruments.bankDestinationOwnedBy(unitOfWork, callerPartyId, paymentMethodId);
+    }
+
     @Override
     public Optional<InstrumentToken> instrumentOwnedBy(
             Connection unitOfWork, UUID callerPartyId, UUID paymentMethodId) {
         return instruments.instrumentOwnedBy(unitOfWork, callerPartyId, paymentMethodId);
+    }
+
+    /** Delegated unchanged (`P7-TSK-009`): the payer's instrument kind is the payer's fact. */
+    @Override
+    public Optional<com.finapp.payments.InstrumentKind> instrumentKindOwnedBy(
+            Connection unitOfWork, UUID callerPartyId, UUID paymentMethodId) {
+        return instruments.instrumentKindOwnedBy(unitOfWork, callerPartyId, paymentMethodId);
     }
 
     private Wallet asDestination(LedgerAccount payable) {

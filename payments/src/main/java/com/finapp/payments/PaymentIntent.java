@@ -6,6 +6,7 @@ import com.finapp.sharedkernel.money.Money;
 import java.time.Clock;
 import java.time.Instant;
 import java.util.Objects;
+import java.util.Optional;
 import java.util.UUID;
 
 /**
@@ -64,27 +65,51 @@ public final class PaymentIntent {
     private final UUID partyId;
     private final UUID customerId;
     private final UUID paymentMethodId;
-    private final LedgerAccountId walletAccount;
+    private final LedgerAccountId creditAccount;
+    private final CaptureMode captureMode;
     private final Money amount;
     private final PaymentIntentStatus status;
     private final Instant createdAt;
+
+    /**
+     * The payer's own wallet ledger account, when the instrument IS the wallet
+     * (`P7-TSK-011`, ADR-0059 §6): the book rail's debit side, frozen at birth. Exactly one
+     * of this and {@link #paymentMethodId} is present — the intent's instrument-choice XOR,
+     * which `V019` holds for every writer. Appended last: field order is positional history.
+     */
+    private final LedgerAccountId debitAccount;
 
     private PaymentIntent(
             PaymentIntentId id,
             UUID partyId,
             UUID customerId,
             UUID paymentMethodId,
-            LedgerAccountId walletAccount,
+            LedgerAccountId creditAccount,
+            CaptureMode captureMode,
             Money amount,
             PaymentIntentStatus status,
-            Instant createdAt) {
+            Instant createdAt,
+            LedgerAccountId debitAccount) {
         this.id = Objects.requireNonNull(id, "id must not be null");
         this.partyId = Objects.requireNonNull(partyId, "partyId must not be null");
         this.customerId = Objects.requireNonNull(customerId, "customerId must not be null");
-        this.paymentMethodId =
-                Objects.requireNonNull(paymentMethodId, "paymentMethodId must not be null");
-        this.walletAccount =
-                Objects.requireNonNull(walletAccount, "walletAccount must not be null");
+        // The instrument-choice XOR (P7-TSK-011): a registered method OR the payer's own
+        // wallet, never both and never neither - the wallet is not a paymentmethods row
+        // (ADR-0059 section 6), so the intent's shape is what carries the choice.
+        if ((paymentMethodId == null) == (debitAccount == null)) {
+            throw new IllegalArgumentException(
+                    "a payment intent carries exactly one instrument: a registered payment"
+                            + " method or the payer's own wallet (P7-TSK-011, ADR-0059"
+                            + " section 6)");
+        }
+        this.paymentMethodId = paymentMethodId;
+        this.debitAccount = debitAccount;
+        this.creditAccount =
+                Objects.requireNonNull(creditAccount, "creditAccount must not be null");
+        this.captureMode = Objects.requireNonNull(
+                captureMode,
+                "captureMode must not be null - whether the authorization is an instruction"
+                        + " or a reservation is a birth fact (P7-TSK-002, ADR-0059)");
         this.amount = Objects.requireNonNull(amount, "amount must not be null");
         this.status = Objects.requireNonNull(status, "status must not be null");
         this.createdAt = Objects.requireNonNull(createdAt, "createdAt must not be null");
@@ -112,19 +137,59 @@ public final class PaymentIntent {
             UUID partyId,
             UUID customerId,
             UUID paymentMethodId,
-            LedgerAccountId walletAccount,
+            LedgerAccountId creditAccount,
             Money amount) {
         Objects.requireNonNull(ids, "ids must not be null");
         Objects.requireNonNull(clock, "clock must not be null");
+        Objects.requireNonNull(
+                paymentMethodId,
+                "paymentMethodId must not be null - the wallet instrument enters by its own"
+                        + " door (P7-TSK-011)");
         return new PaymentIntent(
                 PaymentIntentId.next(ids),
                 partyId,
                 customerId,
                 paymentMethodId,
-                walletAccount,
+                creditAccount,
+                // Every intent any current door creates: capture follows authorization
+                // without a further decision. MANUAL's producer arrives with the surface
+                // that owns that decision (P7-TSK-004's territory), never before.
+                CaptureMode.AUTOMATIC,
                 amount,
                 PaymentIntentStatus.REQUIRES_CONFIRMATION,
-                Instant.now(clock));
+                Instant.now(clock),
+                null);
+    }
+
+    /**
+     * A new intent whose instrument is the payer's own wallet (`P7-TSK-011`, ADR-0059 §6):
+     * the book rail's shape — no registered method, the debit side frozen at birth as the
+     * RESOLVED wallet account, never a request's claim. Same machine, same birth state.
+     */
+    public static PaymentIntent createFromWallet(
+            IdGenerator ids,
+            Clock clock,
+            UUID partyId,
+            UUID customerId,
+            LedgerAccountId debitAccount,
+            LedgerAccountId creditAccount,
+            Money amount) {
+        Objects.requireNonNull(ids, "ids must not be null");
+        Objects.requireNonNull(clock, "clock must not be null");
+        Objects.requireNonNull(
+                debitAccount,
+                "debitAccount must not be null - the wallet IS this intent's instrument");
+        return new PaymentIntent(
+                PaymentIntentId.next(ids),
+                partyId,
+                customerId,
+                null,
+                creditAccount,
+                CaptureMode.AUTOMATIC,
+                amount,
+                PaymentIntentStatus.REQUIRES_CONFIRMATION,
+                Instant.now(clock),
+                debitAccount);
     }
 
     /**
@@ -136,13 +201,15 @@ public final class PaymentIntent {
             UUID partyId,
             UUID customerId,
             UUID paymentMethodId,
-            LedgerAccountId walletAccount,
+            LedgerAccountId creditAccount,
+            CaptureMode captureMode,
             Money amount,
             PaymentIntentStatus status,
-            Instant createdAt) {
+            Instant createdAt,
+            LedgerAccountId debitAccount) {
         return new PaymentIntent(
-                id, partyId, customerId, paymentMethodId, walletAccount, amount, status,
-                createdAt);
+                id, partyId, customerId, paymentMethodId, creditAccount, captureMode, amount,
+                status, createdAt, debitAccount);
     }
 
     /** Confirmed: {@code PROCESSING}, the outcome now a third party's (ADR-0046 dispatches). */
@@ -171,8 +238,8 @@ public final class PaymentIntent {
             throw new IllegalPaymentIntentTransitionException(id, status, target);
         }
         return new PaymentIntent(
-                id, partyId, customerId, paymentMethodId, walletAccount, amount, target,
-                createdAt);
+                id, partyId, customerId, paymentMethodId, creditAccount, captureMode, amount,
+                target, createdAt, debitAccount);
     }
 
     public PaymentIntentId id() {
@@ -191,15 +258,41 @@ public final class PaymentIntent {
 
     /**
      * The instrument reference: the {@code paymentmethods} row's identifier, never the token
-     * and never anything reconstructable ({@code INV-PAY-02}).
+     * and never anything reconstructable ({@code INV-PAY-02}) — or {@code null} exactly when
+     * the instrument is the payer's own wallet ({@link #debitAccount}, `P7-TSK-011`).
+     * Kept nullable rather than {@code Optional} deliberately: fourteen positional callers
+     * predate the choice, and the XOR in the one constructor is the guarantee they rely on.
      */
     public UUID paymentMethodId() {
         return paymentMethodId;
     }
 
-    /** The wallet's ledger account — where the capture will credit (ADR-0048). */
-    public LedgerAccountId walletAccount() {
-        return walletAccount;
+    /**
+     * The payer's own wallet account, present exactly when the instrument IS the wallet
+     * (`P7-TSK-011`, ADR-0059 §6): the book rail's debit side, frozen at birth and
+     * re-verified at the act like every instrument.
+     */
+    public Optional<LedgerAccountId> debitAccount() {
+        return Optional.ofNullable(debitAccount);
+    }
+
+    /**
+     * The ledger account the capture will credit (ADR-0048): the customer's wallet for a
+     * top-up, the merchant's payable for a checkout payment (ADR-0050 §6). Named
+     * {@code walletAccount} until `P7-TSK-002` paid the `P6-TSK-005` debt — the meaning was
+     * always this; the name is now the meaning's.
+     */
+    public LedgerAccountId creditAccount() {
+        return creditAccount;
+    }
+
+    /**
+     * Whether the authorization is an instruction to take the money or a reservation awaiting
+     * a person — a birth fact (`P7-TSK-002`, ADR-0059); the sweeper's stranded-chain leg
+     * captures {@link CaptureMode#AUTOMATIC} intents only.
+     */
+    public CaptureMode captureMode() {
+        return captureMode;
     }
 
     public Money amount() {

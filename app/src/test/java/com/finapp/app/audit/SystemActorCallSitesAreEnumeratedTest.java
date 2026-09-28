@@ -127,7 +127,11 @@ class SystemActorCallSitesAreEnumeratedTest {
                         + " no person at all, so the attribution must not depend on which"
                         + " resolver won the harmless race (ADR-0046). The person's own acts -"
                         + " create, confirm, cancel - are audited as the person in their own"
-                        + " transactions; only the outcome application enters the platform."),
+                        + " transactions; only the outcome application enters the platform."
+                        + " Since P7-TSK-009 the SAME method holds a second scope for the"
+                        + " push dispatch's Tx2 - the scheme's initiation answer has no"
+                        + " session either, and the claim is this entry's verbatim at the"
+                        + " second machine."),
                     Map.entry(
                             "com.finapp.payments.PaymentCapture.capture",
                     "The capture, end to end (P5-TSK-010): the continuation of a confirmed"
@@ -148,7 +152,11 @@ class SystemActorCallSitesAreEnumeratedTest {
                         + " act already (the P5-TSK-009 reasoning, third occurrence), so the"
                         + " attribution must not depend on which resolver wins the harmless"
                         + " race. The scope wraps only the effect: authentication, evidence and"
-                        + " dedupe run before it and claim nothing."),
+                        + " dedupe run before it and claim nothing. Since P7-TSK-012 the same"
+                        + " one site applies the network's dispute stages (ADR-0061 section 6):"
+                        + " an unsolicited chargeback statement has no session either, and the"
+                        + " stage trail and its audit records name the platform whichever"
+                        + " delivery wins the race."),
                     Map.entry(
                             "com.finapp.payments.PaymentSweeper.sweep",
                     "The swept resolution (P5-TSK-014, ADR-0046 section 4): a scheduled"
@@ -170,6 +178,18 @@ class SystemActorCallSitesAreEnumeratedTest {
                                 + " provider's decision. The scope wraps only Tx2, the outcome"
                                 + " application."),
                     Map.entry(
+                            "com.finapp.payments.PaymentVoid.completeDispatched",
+                            "The void outcome's transaction (P7-TSK-004): the dispatch is"
+                                + " audited as its own actor - the cancelling customer or the"
+                                + " reasoned operator - in Tx1, but the provider's answer has"
+                                + " no session (the P5-TSK-009 reasoning, sixth occurrence),"
+                                + " and the same outcome the sweeper's re-send or a racing"
+                                + " finisher may apply is already the platform's act, so"
+                                + " attributing VOIDED/VOID_UNKNOWN/FAILED to the dispatching"
+                                + " caller would record them as the author of the provider's"
+                                + " decision. The scope wraps only Tx2, the outcome"
+                                + " application."),
+                    Map.entry(
                             "com.finapp.checkout.CheckoutExpirySweeper.sweep",
                     "The expiry sweep (P6-TSK-008, ADR-0053 section 4): a deadline passing is"
                         + " the CLEANEST case on the platform of the P5-TSK-009 reasoning,"
@@ -180,7 +200,100 @@ class SystemActorCallSitesAreEnumeratedTest {
                         + " its own state (ABANDONED) and its own required reason, and the two"
                         + " must stay distinguishable in the trail. The scope wraps the whole"
                         + " tick because the candidate read is the platform's too - there is no"
-                        + " other actor anywhere in this path to claim it."));
+                        + " other actor anywhere in this path to claim it."),
+                    Map.entry(
+                            "com.finapp.merchant.PayoutDestinationEffectuation.sweep",
+                    "The payout destination effectuation (P6-TSK-011, ADR-0056 section 3): a"
+                        + " cooling-off elapsing is the expiry sweep's case again, seventh"
+                        + " occurrence - an act with no requester. The decisions were people's"
+                        + " and are recorded as theirs: the proposal and the approval, each its"
+                        + " own audit record with its own actor and reason. Attributing the"
+                        + " EFFECT to the approver would record them as having acted days after"
+                        + " they did, at a moment they chose nothing; the platform making the"
+                        + " approved destination effective when its pinned deadline passes is"
+                        + " exactly what happened. The scope wraps the whole tick for the same"
+                        + " reason as the expiry sweep's."),
+                    Map.entry(
+                            "com.finapp.merchant.MerchantPayouts.initiate",
+                    "The payout's outcome transaction (P6-TSK-012, ADR-0051): the"
+                        + " PaymentRefund.refund reasoning, pointed at a merchant. The request"
+                        + " that asked is recorded as the asker - the merchant's key or the"
+                        + " operator, with their reason - in the dispatch transaction's own"
+                        + " audit record; the provider's answer is then applied by the"
+                        + " platform, because the same answer applied by the resolution sweep"
+                        + " is the platform's act too, and attribution must not depend on"
+                        + " which resolver wins the harmless race. The scope wraps the outcome"
+                        + " transaction only; the dispatch before it runs as the asker."),
+                    Map.entry(
+                            "com.finapp.merchant.MerchantPayoutResolution.sweep",
+                    "The swept payout resolution (P6-TSK-012, ADR-0046 section 4): a"
+                        + " scheduled query by our reference has no person at all - the"
+                        + " PaymentSweeper case, eighth occurrence - and the same outcome"
+                        + " applied by the synchronous answer is already the platform's act."
+                        + " The scope wraps each row's query-and-resolve; the candidate read"
+                        + " before it claims nothing."),
+                    Map.entry(
+                            "com.finapp.payments.Withdrawals.withdraw",
+                    "The withdrawal's outcome transaction (P7-TSK-008, ADR-0062 section 6):"
+                        + " the MerchantPayouts.initiate reasoning, pointed at a customer's"
+                        + " wallet. The person is recorded as the asker in the dispatch"
+                        + " transaction's own audit record; the scheme's answer is then"
+                        + " applied by the platform, because the same answer applied by the"
+                        + " inquiry sweep is the platform's act too, and attribution must"
+                        + " not depend on which resolver wins the harmless race. The scope"
+                        + " wraps the outcome transaction only; the dispatch before it runs"
+                        + " as the person."),
+                    Map.entry(
+                            "com.finapp.payments.WithdrawalResolution.sweep",
+                    "The swept withdrawal inquiry (P7-TSK-008, ADR-0062 section 3): a"
+                        + " scheduled inquiry by our reference has no person at all - the"
+                        + " MerchantPayoutResolution case at the push rail - and the same"
+                        + " outcome applied by the synchronous answer is already the"
+                        + " platform's act. The scope wraps each row's inquire-and-resolve;"
+                        + " the candidate read before it claims nothing."),
+                    Map.entry(
+                            "com.finapp.payments.PayInResolution.sweep",
+                    "The pay-in resolution sweep (P7-TSK-009, ADR-0062 section 5): the"
+                        + " WithdrawalResolution case on the inbound machine - a scheduled"
+                        + " re-initiate or inquiry by our reference has no person, and the"
+                        + " same outcome applied by the callback door is already the"
+                        + " platform's act. The scope wraps each row's contact-and-resolve;"
+                        + " the candidate read and the permit renewal before it claim"
+                        + " nothing."),
+                    Map.entry(
+                            "com.finapp.app.payments.InstantCallbackService.effect",
+                    "The instant confirmation's effect (P7-TSK-009, ADR-0047 section 4):"
+                        + " the payer PSP's unsolicited statement has no session - the"
+                        + " PaymentWebhookService.effect reasoning at the second rail's"
+                        + " door, one enumerated site whether the statement lands on the"
+                        + " machine or parks in suspense."),
+                    Map.entry(
+                            "com.finapp.payments.ReturnResolution.sweep",
+                    "The return-payment resolution sweep (P7-TSK-010, ADR-0059 section 3):"
+                        + " the PaymentSweeper refund-leg case at the push rail - a"
+                        + " scheduled inquiry or permit-renewed re-drive by our reference"
+                        + " has no person, and the same outcome applied by the synchronous"
+                        + " dispatch is already recorded against the operator who asked."
+                        + " The scope wraps each row's inquire-and-resolve; the candidate"
+                        + " read before it claims nothing."),
+                    Map.entry(
+                            "com.finapp.payments.DisputeResponses.respond",
+                    "The dispute response's outcome transaction (P7-TSK-014, ADR-0061 section"
+                        + " 7): the PaymentRefund.refund reasoning, pointed at a chargeback. The"
+                        + " responder who asked - the merchant's key, or the operator with their"
+                        + " reason - is recorded as the asker in the dispatch transaction's own"
+                        + " audit record (and as the actor of the evidence it transmitted); the"
+                        + " PSP's answer is then applied by the platform, because the same answer"
+                        + " applied by the resolution sweep is the platform's act too. The scope"
+                        + " wraps Tx2 only."),
+                    Map.entry(
+                            "com.finapp.payments.DisputeResponseResolution.sweep",
+                    "The dispute-response resolution sweep (P7-TSK-014): the ReturnResolution"
+                        + " case at the card PSP's dispute port - a scheduled inquiry or a"
+                        + " permit-renewed re-send by our reference has no person, and its"
+                        + " re-send's evidence transmission is honestly the platform's. The scope"
+                        + " wraps each row's inquire-and-resolve; the candidate read claims"
+                        + " nothing."));
 
     @Test
     @DisplayName("no production code claims the system actor without being enumerated")

@@ -10,8 +10,10 @@ import java.util.UUID;
  *
  * <p><strong>Attachment converges on the natural key.</strong> "Attach this instrument" means
  * the same thing however many times and however concurrently it is said, so racing and retried
- * attaches land on the one live (party, token) row — the partial unique index arbitrates, and
- * the loser is handed the winner's row rather than an error. A consequence is recorded rather
+ * attaches land on the one live row for the kind's slot — (party, token) for a card,
+ * (party, destination) for a bank account (`P7-TSK-007`) — the kind's partial unique index
+ * arbitrates, and the loser is handed the winner's row rather than an error. A consequence is
+ * recorded rather
  * than discovered: a retry carrying <em>different display metadata</em> converges onto the
  * existing row and its existing metadata — the metadata comes from the tokenisation provider,
  * so divergence is a retry artefact, and updating it is detach-and-reattach, a new aggregate
@@ -36,16 +38,23 @@ public interface PaymentMethodStore<T> {
 
     /**
      * Insert the fresh payment method, or converge onto the live row already holding its
-     * (party, token) slot.
+     * kind's slot — (party, token) for a card, (party, destination) for a bank account.
      */
     Attachment attachOrConverge(T unitOfWork, PaymentMethod fresh);
 
     /**
-     * The live payment method for this party and token, if one stands — the converge read,
-     * whose liveness predicate is generated from
+     * The live payment method for this party and token, if one stands — the card converge
+     * read, whose liveness predicate is generated from
      * {@link PaymentMethodStatus#sqlTerminalValueList()} so it cannot disagree with the index.
      */
     Optional<PaymentMethod> findLive(T unitOfWork, UUID partyId, TokenReference token);
+
+    /**
+     * The live payment method for this party and destination, if one stands — the bank
+     * account's converge read (`P7-TSK-007`), same liveness predicate, same generated source.
+     */
+    Optional<PaymentMethod> findLiveByDestination(
+            T unitOfWork, UUID partyId, DestinationReference destination);
 
     /**
      * The identified payment method in <em>any</em> status, if it is the caller's —

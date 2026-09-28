@@ -159,6 +159,9 @@ public class RecoveryApplicationService {
      *
      * <p>Runs as the platform for the same reason recovery does: the token arrives from a mailbox,
      * and the person reading it may hold no session at all.
+     *
+     * @throws com.finapp.identity.VerifiedChannelAlreadyExistsException the identity already has a
+     *     verified channel of this kind (`X-TSK-004`); the transaction rolls back with nothing written
      */
     public boolean verifyChannel(Sensitive<String> token) {
         Objects.requireNonNull(token, "token must not be null");

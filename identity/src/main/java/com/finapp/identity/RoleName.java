@@ -51,12 +51,18 @@ public enum RoleName {
     KYC_REVIEWER(EnumSet.of(PermissionName.KYC_REVIEW)),
 
     /**
-     * Operates the platform's money and nothing else (`P3-TSK-007`, widened by `P4-TSK-009`):
-     * commands postings, manual adjustments and transfer reversals over the surfaces that check
-     * {@link PermissionName#LEDGER_POST}, {@link PermissionName#LEDGER_ADJUST} and
-     * {@link PermissionName#TRANSFER_REVERSE}.
+     * Operates the platform's money and nothing else (`P3-TSK-007`, widened by `P4-TSK-009`,
+     * `P5-TSK-015`, `P6-TSK-012`, `P7-TSK-003` and `P7-TSK-012`): commands postings, manual
+     * adjustments, transfer reversals, refunds and a merchant's payout on its behalf, routes
+     * payments and administers disputes, over the surfaces that check
+     * {@link PermissionName#LEDGER_POST}, {@link PermissionName#LEDGER_ADJUST},
+     * {@link PermissionName#TRANSFER_REVERSE}, {@link PermissionName#PAYMENT_REFUND},
+     * {@link PermissionName#MERCHANT_PAYOUT}, {@link PermissionName#PAYMENT_ROUTING_ADMINISTER}
+     * and {@link PermissionName#DISPUTE_ADMINISTER}.
      *
-     * <p><strong>One role holding three permissions</strong>, because a role exists when a
+     * <p><strong>One role holding the seven money-operating permissions</strong> (it said three
+     * until `P6-DOC-001`, and five until `P7-TSK-012` - the routing arrival went uncounted
+     * here), because a role exists when a
      * distinct trust decision does and there is one money-operating population — a new role for
      * the reversal would be a trust decision nothing takes (`P4-TSK-009`'s backlog sentence) —
      * while the permission vocabulary stays precise so `P3-TSK-017`'s adjustment endpoint and
@@ -77,7 +83,19 @@ public enum RoleName {
                     PermissionName.TRANSFER_REVERSE,
                     // P5-TSK-015: the refund joins the one money-operating population - the
                     // same reasoning as the reversal's arrival, restated not re-argued.
-                    PermissionName.PAYMENT_REFUND)),
+                    PermissionName.PAYMENT_REFUND,
+                    // P6-TSK-012: the operator-initiated payout joins it too - money leaving
+                    // the platform, the refund's reasoning pointed at the merchant. Where it
+                    // goes stays four-eyes-guarded (ADR-0056); only when it is asked for moves.
+                    PermissionName.MERCHANT_PAYOUT,
+                    // P7-TSK-003: routing joins the one money-operating population - how
+                    // money travels is this desk's judgement (ADR-0060; the permission's own
+                    // javadoc carries the future-split reasoning, the FEE_ADMINISTER shape).
+                    PermissionName.PAYMENT_ROUTING_ADMINISTER,
+                    // P7-TSK-012: disputes join it too - a chargeback is money forced back
+                    // through the rail, and answering it is payment operations (ADR-0061;
+                    // the permission's javadoc carries the future dispute-desk split).
+                    PermissionName.DISPUTE_ADMINISTER)),
 
     /**
      * Administers commercial counterparties and nothing else (`P6-TSK-003`): onboards
@@ -89,7 +107,9 @@ public enum RoleName {
      * ({@link #ADMINISTRATOR}), nor reviewing verification cases ({@link #KYC_REVIEWER} - the
      * KYB decision is an input this role consumes, never one it makes), nor operating the
      * money ({@link #LEDGER_OPERATOR} - onboarding opens books and moves nothing through
-     * them; the payout, when it arrives, is commanded over ITS OWN permission). Holds none of
+     * them; the payout is commanded over ITS OWN permission, {@link
+     * PermissionName#MERCHANT_PAYOUT}, which `P6-TSK-012` gave the money-operating population).
+     * Holds none of
      * the other populations' permissions and they hold neither of these, asserted pairwise
      * and over HTTP in both directions ({@code INV-AUD-03}).
      */
@@ -103,7 +123,11 @@ public enum RoleName {
                     // standing are a real future split; one role because nothing has yet taken
                     // that decision, and a role for a split nobody has made is a trust
                     // decision nobody took.
-                    PermissionName.FEE_ADMINISTER));
+                    PermissionName.FEE_ADMINISTER,
+                    // P6-TSK-011: approving a payout destination joins the same population -
+                    // four-eyes is two distinct identities (P3-TSK-021's shape), and the
+                    // approval statement refuses the proposer whatever roles they hold.
+                    PermissionName.PAYOUT_DESTINATION_APPROVE));
 
     private final Set<PermissionName> permissions;
 

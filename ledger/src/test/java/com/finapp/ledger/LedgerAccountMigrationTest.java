@@ -25,19 +25,21 @@ class LedgerAccountMigrationTest {
     private static final String MIGRATION = "db/migration/ledger/V002__create_ledger_account.sql";
 
     /**
-     * Where the four enum-fed constraints live NOW: `V011` recreated them when
-     * `MERCHANT_PAYABLE` widened two enums (`P6-TSK-003`), because `V002` is applied history
-     * and cannot follow its enums. The reconciliation follows the latest definition — an enum
-     * member added without a fresh recreation migration fails here, which is the entire point.
+     * Where the four enum-fed constraints live NOW: `V014` recreated them when
+     * `CHARGEBACK_RECOVERABLE` and `DISPUTE_COSTS` widened the purpose enum (`P7-TSK-013`), as
+     * `V013` had for `INSTANT_CLEARING`, `V012` for `PAYOUT_CLEARING` and `V011` for
+     * `MERCHANT_PAYABLE`, because applied history cannot follow its enums. The reconciliation
+     * follows the latest definition — an enum member added without a fresh recreation
+     * migration fails here, which is the entire point.
      */
     private static final String LATEST_CHART_RULES =
-            "db/migration/ledger/V011__merchant_payable_joins_the_chart.sql";
+            "db/migration/ledger/V014__dispute_accounts_join_the_chart.sql";
 
     @Test
     @DisplayName("every enum's CHECK lists exactly the values the enum declares")
     void everyValueListMatchesItsEnum() {
         // account_type, normal_balance and status are untouched since V002; owner_kind and
-        // purpose moved to V011 with MERCHANT_PAYABLE.
+        // purpose moved to V011 with MERCHANT_PAYABLE, and to V012 with PAYOUT_CLEARING.
         assertThat(migration())
                 .contains("CHECK (account_type IN (" + AccountType.sqlValueList() + "))")
                 .contains("CHECK (normal_balance IN (" + NormalBalance.sqlValueList() + "))")
@@ -63,7 +65,7 @@ class LedgerAccountMigrationTest {
     }
 
     @Test
-    @DisplayName("V011 recreates exactly the four constraints the widened enums feed")
+    @DisplayName("the latest chart migration recreates exactly the four constraints the enums feed")
     void theRecreationDropsWhatItAdds() {
         // Each ADD must replace a DROP of the same name in the same statement: a recreation
         // that forgets the DROP fails migration outright, but a DROP that forgets its ADD

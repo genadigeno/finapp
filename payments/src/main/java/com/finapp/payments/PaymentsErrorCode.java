@@ -147,7 +147,154 @@ public enum PaymentsErrorCode implements ErrorCode {
     REFUND_UNFUNDED(
             "payments.RefundUnfunded",
             409,
-            "The account cannot fund this refund right now.");
+            "The account cannot fund this refund right now."),
+
+    /**
+     * No declared rail can carry the payment (`P7-TSK-003`, ADR-0060 §3): every candidate of
+     * the matched routing rule was refused — or no rule of the version in force matches the
+     * payment's shape — and the refusal is recorded as a decision with its steps.
+     *
+     * <p>A {@code 422}: coherent request, refused by the platform's own recorded state (a
+     * rail out of service, a ceiling, a shape no rule routes). Nothing was dispatched and the
+     * intent still awaits confirmation, so a retry after the operator acts can succeed —
+     * which is why this is not a terminal judgement on the payment.
+     */
+    NO_ELIGIBLE_RAIL(
+            "payments.NoEligibleRail",
+            422,
+            "No payment rail can carry this payment right now."),
+
+    /**
+     * An operator named a rail this build does not declare (`P7-TSK-003`): an availability
+     * act or a policy rule against a rail that does not exist would be a recorded fact about
+     * nothing, so it is refused before anything is written.
+     *
+     * <p>A {@code 422}: the remedy is the caller's — a declared rail's name.
+     */
+    UNKNOWN_RAIL(
+            "payments.UnknownRail",
+            422,
+            "The named payment rail is not declared by this platform."),
+
+    /**
+     * A routing policy version would take effect in the past (`P7-TSK-003`, `INV-HIST-04`;
+     * the `merchant.FeeScheduleNotForward` shape): it would rewrite the explanations of
+     * decisions already made.
+     *
+     * <p>A {@code 422}: the remedy is the caller's — a forward instant, or none for "now".
+     */
+    ROUTING_POLICY_NOT_FORWARD(
+            "payments.RoutingPolicyNotForward",
+            422,
+            "A routing policy version takes effect forward, never backward."),
+
+    /**
+     * The wallet's available balance cannot cover the withdrawal (`P7-TSK-008`,
+     * {@code INV-BAL-04}): judged under the wallet account's lock, refused with nothing
+     * written and the claim rolled back — a top-up and the same keyed retry can succeed.
+     *
+     * <p>A {@code 422}: coherent request, refused by the caller's own balance. The refusal
+     * names no amount and no balance beyond this sentence's fact.
+     */
+    WITHDRAWAL_UNFUNDED(
+            "payments.WithdrawalUnfunded",
+            422,
+            "The wallet's available balance cannot cover this withdrawal."),
+
+    /**
+     * A wallet payment refused under the wallet's lock (`P7-TSK-011`, {@code INV-BAL-04}):
+     * the withdrawal's refusal at the book rail's door. Nothing is written — the intent
+     * still awaits confirmation and the same confirmation succeeds after a top-up.
+     *
+     * <p>A {@code 422}: coherent request, refused by the caller's own balance. The refusal
+     * names no amount and no balance beyond this sentence's fact.
+     */
+    WALLET_PAYMENT_UNFUNDED(
+            "payments.WalletPaymentUnfunded",
+            422,
+            "The wallet's available balance cannot cover this payment."),
+
+    /**
+     * A withdrawal priced in a currency its wallet does not hold (`P7-TSK-008`): the hold,
+     * the posting and the scheme dispatch carry one {@code Money}, and FX is no part of
+     * this flow.
+     *
+     * <p>A {@code 422}: the remedy is the caller's — the wallet's own currency.
+     */
+    WITHDRAWAL_CURRENCY_MISMATCHED(
+            "payments.WithdrawalCurrencyMismatched",
+            422,
+            "A withdrawal is priced in its wallet's own currency."),
+
+    /**
+     * A reversal was asked of a rail whose declared capabilities do not list it
+     * (`P7-TSK-004`, `INV-REV-03`): refused before anything is written or sent, never
+     * attempted-and-failed at a provider.
+     *
+     * <p>A {@code 409}: well formed, refused by what the rail IS — the remedy, where one
+     * exists, is a refund after completion, not a retry of the impossible.
+     */
+    REVERSAL_NOT_SUPPORTED(
+            "payments.ReversalNotSupported",
+            409,
+            "This payment's rail does not support reversal."),
+
+    /**
+     * The dispute takes no evidence or answer at its stage (`P7-TSK-014`, ADR-0061 §7): an
+     * inquiry has nothing to contest, and a represented or resolved dispute takes no answer
+     * ({@code INV-LIFE-04}). A {@code 409}: well formed, refused by the dispute's state.
+     */
+    DISPUTE_NOT_RESPONDABLE(
+            "payments.DisputeNotRespondable",
+            409,
+            "This dispute takes no evidence or answer at its current stage."),
+
+    /**
+     * The network's respond-by deadline has passed (`P7-TSK-014`): the platform refuses its own
+     * late dispatch — the outcome stays the network's. A {@code 409}.
+     */
+    DISPUTE_DEADLINE_PASSED(
+            "payments.DisputeDeadlinePassed",
+            409,
+            "The network's deadline to answer this dispute has passed."),
+
+    /**
+     * A live answer already stands on the dispute (`P7-TSK-014`) — dispatched, taken or awaiting
+     * the PSP's word — and the evidence set froze with it. A {@code 409}; a new key does not help.
+     */
+    DISPUTE_ALREADY_ANSWERED(
+            "payments.DisputeAlreadyAnswered",
+            409,
+            "This dispute already has an answer in progress or taken."),
+
+    /**
+     * A representment with no evidence to carry (`P7-TSK-014`). A {@code 422}: the remedy — upload
+     * a document first — is the caller's.
+     */
+    DISPUTE_EVIDENCE_REQUIRED(
+            "payments.DisputeEvidenceRequired",
+            422,
+            "A representment needs at least one evidence document."),
+
+    /**
+     * The dispute already holds the documents one answer may carry (`P7-TSK-014`: the whole set
+     * rides one outbound submission). A {@code 422}.
+     */
+    DISPUTE_EVIDENCE_LIMIT_REACHED(
+            "payments.DisputeEvidenceLimitReached",
+            422,
+            "This dispute already holds the most evidence documents one answer can carry."),
+
+    /**
+     * An operator addressed a dispute on a payment with a merchant (`P7-TSK-014`, ADR-0061 §7):
+     * the merchant owns its dispute posture, and the operator acts only for a payment with no
+     * merchant. A {@code 409} — the operator holds the permission; the payment is not theirs to
+     * answer.
+     */
+    DISPUTE_ANSWERED_BY_ITS_MERCHANT(
+            "payments.DisputeAnsweredByItsMerchant",
+            409,
+            "This payment's merchant answers its own dispute.");
 
     private final String code;
     private final int status;

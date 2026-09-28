@@ -43,7 +43,11 @@ class PaymentMetersTest {
         new PaymentMeters(registry, PROVIDER);
 
         assertThat(outcomesOf(registry, PaymentMeters.ATTEMPT))
-                .containsExactlyInAnyOrder("authorized", "captured", "failed", "unknown");
+                .containsExactlyInAnyOrder(
+                        // "executed" since P7-TSK-009: the push pay-in's completion,
+                        // deliberately not "captured" (EXECUTED is not CAPTURED, in the
+                        // meter vocabulary too).
+                        "authorized", "captured", "failed", "unknown", "executed");
         assertThat(outcomesOf(registry, PaymentMeters.WEBHOOK))
                 .containsExactlyInAnyOrder("processed", "duplicate", "refused", "unmappable");
         assertThat(outcomesOf(registry, PaymentMeters.REFUND))
@@ -53,7 +57,15 @@ class PaymentMetersTest {
                         .map(timer -> timer.getId().getTag("operation"))
                         .collect(Collectors.toCollection(TreeSet::new));
         assertThat(operations)
-                .containsExactlyInAnyOrder("authorize", "capture", "refund", "query");
+                .containsExactlyInAnyOrder(
+                        // "initiate" since P7-TSK-009: the pay-in became a payment
+                        // operation, the vocabulary decision the MeteredPushRail javadoc
+                        // reserved.
+                        "authorize", "capture", "refund", "query", "void", "withdraw",
+                        "initiate");
+        assertThat(registry.find(PaymentMeters.UNMATCHED_PARKED).counter())
+                .as("the suspense-parking series exists from the first scrape (P7-TSK-009)")
+                .isNotNull();
 
         assertThat(registry.find(PaymentMeters.ATTEMPT).counters())
                 .allSatisfy(counter -> assertThat(counter.count()).isZero());
@@ -104,6 +116,11 @@ class PaymentMetersTest {
 
                     @Override
                     public ProviderAnswer refund(RefundRequest request) {
+                        throw new UnsupportedOperationException("not exercised here");
+                    }
+
+                    @Override
+                    public ProviderAnswer voidAuthorization(VoidRequest request) {
                         throw new UnsupportedOperationException("not exercised here");
                     }
 

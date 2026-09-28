@@ -90,8 +90,24 @@ public class MerchantBeans {
 
     @Bean
     MerchantAdministration merchantAdministration(
-            AuditWriter<Connection> auditWriter, IdGenerator ids, Clock clock) {
-        return new MerchantAdministration(new JdbcMerchantStore(), auditWriter, ids, clock);
+            AuditWriter<Connection> auditWriter,
+            IdGenerator ids,
+            Clock clock,
+            com.finapp.ledger.LedgerAccountStore<Connection> ledgerAccountStore,
+            com.finapp.ledger.BalanceDerivation<Connection> balanceDerivation,
+            com.finapp.payments.PaymentIntentStore<Connection> paymentIntentStore) {
+        return new MerchantAdministration(
+                new JdbcMerchantStore(),
+                ledgerAccountStore,
+                balanceDerivation,
+                // Stateless, like the close's own (AccountsBeans): a direct instance is the wiring.
+                new com.finapp.ledger.JdbcHoldStore(),
+                // THE PAYMENTS IN FLIGHT (the Phase 6 -> 7 transition): merchant cannot see
+                // payments, so the composition root answers the port over the intent store.
+                paymentIntentStore::anyInFlightCrediting,
+                auditWriter,
+                ids,
+                clock);
     }
 
     @Bean
@@ -195,15 +211,29 @@ public class MerchantBeans {
                 merchantSettlement, new com.finapp.payments.WalletRefundComposition());
     }
 
+    /**
+     * The chargeback's counterparty seam (`P7-TSK-013`, ADR-0061 §4), the refund's shape one
+     * lifecycle later: ask the merchant module (the fee pin decides), fall back to the wallet's
+     * two lines for a payment that is nobody's merchant's.
+     */
+    @Bean
+    com.finapp.payments.DisputeComposition<Connection> disputeComposition(
+            com.finapp.merchant.MerchantSettlement merchantSettlement) {
+        return new MerchantBoundDisputeComposition(
+                merchantSettlement, new com.finapp.payments.WalletDisputeComposition());
+    }
+
     @Bean
     com.finapp.payments.CaptureComposition<Connection> captureComposition(
             com.finapp.merchant.MerchantSettlement merchantSettlement,
             java.util.function.Consumer<MerchantBoundCaptureComposition.Completion>
-                            captureCompletion) {
+                            captureCompletion,
+            com.finapp.app.telemetry.MerchantMeters merchantMeters) {
         return new MerchantBoundCaptureComposition(
                 merchantSettlement,
                 new com.finapp.payments.WalletTopUpComposition(),
-                captureCompletion);
+                captureCompletion,
+                merchantMeters);
     }
 
     @Bean

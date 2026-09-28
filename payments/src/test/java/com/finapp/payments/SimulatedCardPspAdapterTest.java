@@ -422,4 +422,31 @@ class SimulatedCardPspAdapterTest {
 
         assertThat(adapter().query(OUR_REF).verdict()).isEqualTo(QueryAnswer.Verdict.INDETERMINATE);
     }
+
+    @Test
+    @DisplayName("the declared card rail matches ADR-0049's decided semantics, field by field"
+            + " (P7-TSK-001, ADR-0059)")
+    void theDeclaredRailIsAdr0049() {
+        // The descriptor is a SECOND statement of the rail's truth beside the adapter's
+        // behaviour - ADR-0059's own named cost - so it is pinned in the adapter's contract
+        // suite: a drift in either half fails this file. The behavioural halves are already
+        // here (the two-step choreography over the wire) and in the posting suites
+        // (SETTLEMENT_CLEARING in every capture and refund entry).
+        assertThat(SimulatedCardPspAdapter.RAIL.id()).isEqualTo(RailId.of("card"));
+        RailCapabilities card = SimulatedCardPspAdapter.RAIL.capabilities();
+        assertThat(card.interactionModel()).isEqualTo(InteractionModel.TWO_STEP);
+        assertThat(card.finality())
+                .isEqualTo(RailCapabilities.Finality.REVOCABLE_UNTIL_DISPUTE_WINDOW_ENDS);
+        assertThat(card.reversals()).containsExactly(RailCapabilities.Reversal.VOID);
+        assertThat(card.refundMode()).isEqualTo(RailCapabilities.RefundMode.PROVIDER_REFUND);
+        assertThat(card.settlement())
+                .isEqualTo(RailCapabilities.SettlementModel.DEFERRED_VIA_CLEARING);
+        assertThat(card.outcomeDeadline()).isEmpty();
+        assertThat(card.disputes())
+                .isEqualTo(RailCapabilities.DisputeModel.CARD_SCHEME_CHARGEBACKS);
+        assertThat(card.currencies()).isEmpty();
+        assertThat(card.perCurrencyMaximum()).isEmpty();
+        assertThat(card.clearingPurpose())
+                .contains(com.finapp.ledger.AccountPurpose.SETTLEMENT_CLEARING);
+    }
 }

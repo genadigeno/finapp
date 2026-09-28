@@ -141,7 +141,55 @@ class NoSingleInstanceAssumptionRulesTest {
                     // count rather than by anything process-local. Its register row in
                     // DISTRIBUTED_EXECUTION.md section 3 names that justification, and
                     // CheckoutExpiryDatabaseTest drives the N-way race that proves it.
-                    "com.finapp.app.checkout.CheckoutExpirySweeperSchedule");
+                    "com.finapp.app.checkout.CheckoutExpirySweeperSchedule",
+                    // P6-TSK-011: the same half, with no external call either. The payout
+                    // destination effectuation's only writes are conditional transitions on
+                    // locked rows - the approved row, then the effective one it supersedes -
+                    // so N schedules on one due change produce one EFFECTIVE between them.
+                    // Register row: DISTRIBUTED_EXECUTION.md section 3; the N-way race is
+                    // PayoutDestinationDatabaseTest's.
+                    "com.finapp.app.merchant.PayoutDestinationEffectuationSchedule",
+                    // P6-TSK-012: the PaymentSweeperSchedule half again, pointed at payouts.
+                    // The provider query is read-only and idempotent by our reference, and
+                    // every write is a conditional transition on a locked payout row whose
+                    // losers converge - so N schedules, the synchronous answer and a takeover's
+                    // re-send are one counted race. Register row: DISTRIBUTED_EXECUTION.md
+                    // section 3; the ten-sweeper race is MerchantPayoutDatabaseTest's.
+                    "com.finapp.app.merchant.MerchantPayoutResolutionSchedule",
+                    // P7-TSK-008: the MerchantPayoutResolutionSchedule half at the push
+                    // rail. The scheme inquiry is read-only and idempotent by OUR
+                    // reference, and every write is a conditional transition on a locked
+                    // withdrawal row whose losers converge - N schedules, the synchronous
+                    // answer and a takeover's re-send are one counted race. Register row:
+                    // DISTRIBUTED_EXECUTION.md section 3; the race is
+                    // WithdrawalDatabaseTest's.
+                    "com.finapp.app.payments.WithdrawalResolutionSchedule",
+                    // P7-TSK-009: the same half on the inbound machine. The re-initiate is
+                    // idempotent at the scheme by OUR reference (the dedupe premise), the
+                    // inquiry is read-only, and every write is a conditional - the handle
+                    // stores once behind its NULL predicate, the permit renews forward
+                    // behind its expected-value predicate (the wire-noise arbiter among
+                    // instances), and the outcome transitions converge. Register row:
+                    // DISTRIBUTED_EXECUTION.md section 3; the races are
+                    // PayByBankDatabaseTest's.
+                    "com.finapp.app.payments.PayInResolutionSchedule",
+                    // P7-TSK-010: the card sweeper's refund leg at the push rail. The
+                    // return inquiry is read-only by OUR reference, the re-drive rides a
+                    // conditionally renewed send permit (V009's arbiter) and the scheme's
+                    // dedupe on that same reference, and the outcome applies through the
+                    // one shared applyRefund on the LOCKED refund row - N schedules, the
+                    // synchronous dispatch and a takeover's re-send are one counted race.
+                    // Register row: DISTRIBUTED_EXECUTION.md section 3; the race is
+                    // PayByBankDatabaseTest's.
+                    "com.finapp.app.payments.ReturnResolutionSchedule",
+                    // P7-TSK-014: the dispute-response resolution. The inquiry is read-only
+                    // by OUR reference, a re-send rides a conditionally renewed send permit
+                    // (V022's forward-only permit, the wire-noise arbiter - a response moves
+                    // no money) and the PSP's dedupe on that same reference, and the outcome
+                    // applies through the one shared DisputeResponseOutcomes on the LOCKED
+                    // row. Register row: DISTRIBUTED_EXECUTION.md section 3; the races are
+                    // DisputeResponseDatabaseTest's.
+                    "com.finapp.app.payments.DisputeResponseResolutionSchedule");
 
     /** Types that schedule work with no lease, so every instance runs it. */
     private static final Set<String> AMBIENT_SCHEDULERS =

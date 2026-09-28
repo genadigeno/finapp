@@ -41,16 +41,24 @@ OPEN ──────────────► PAYMENT_PENDING ────�
 | State | Meaning | Earned by |
 |---|---|---|
 | `OPEN` | The merchant created the session; the customer has not committed | Session creation (merchant API, keyed) |
-| `PAYMENT_PENDING` | The customer confirmed; a payment intent is dispatched and the provider is deciding | The confirmation (customer, by session token) — the transition that creates/confirms the intent through the port |
+| `PAYMENT_PENDING` | The customer confirmed; a payment intent is dispatched and the provider is deciding | The confirmation (customer, by session token) — the transition that creates the intent, in one transaction with it, before the payment is confirmed — composed by `app` *(this read "creates/confirms the intent through the port" until the Phase 6 review, `P6-DOC-001`; there is no port — ADR-0053)* |
 | `COMPLETED` | The payment captured; the order exists; the merchant is credited | The payment outcome (webhook / sync / sweeper resolution reaching the session's conditional edge) |
 | `COMPLETED_LATE` | The capture landed **after** expiry; the order exists anyway | The payment outcome arriving at an `EXPIRED` row — the modelled race loser's win (`INV-MER-06`) |
 | `EXPIRED` | The clock ran out before money landed | The expiry sweeper (leaderless, conditional) |
-| `ABANDONED` | The merchant or customer explicitly cancelled an `OPEN` session | The cancellation |
+| `ABANDONED` | The merchant withdrew an `OPEN` session nobody had paid for | The merchant's abandonment (merchant API, reasoned) — there is no customer route to it *(this read "the merchant or customer" until the Phase 6 review, `P6-DOC-001`)* |
 
 **The race rule (ADR-0053 §5)**: expiry gates *dispatch* — an expired session starts
 nothing new — but **landed money always wins**: a capture that arrives after expiry moves
 `EXPIRED → COMPLETED_LATE`, credits the merchant per ADR-0050, and is counted and
 operator-visible. Money is never auto-reversed by a clock.
+
+**What refuses to create `OPEN`** (`P6-TST-001`, ADR-0058): the offer is priced when it is
+created, under the version the session will carry, so a session exists only for a sale the
+platform can price and the merchant is paid for. A merchant not trading (`checkout.NotTrading`),
+no schedule, or none in the offer's currency (`checkout.NotPriceable`), and an amount whose fee
+meets or exceeds it (`checkout.SaleBelowFee`) are all refused before the idempotency claim,
+with nothing written. The rule is re-asserted when the confirmation pins the fee, for a session
+opened before it existed, and never at capture: money that landed is recorded as it landed.
 
 **The money at each state**: nothing moves before `PAYMENT_PENDING`; from dispatch to
 outcome the money's state is the *attempt's* (Phase 5's honest `*_UNKNOWN` doctrine
@@ -64,39 +72,83 @@ only derived quality is refund standing — computed from the payment's refund r
 time (the ADR-0045 derivation discipline), never stored. Fulfilment is the merchant's
 business, outside the platform's books.
 
-## 4. The merchant payout — five states
+## 4. The merchant payout — four states
 
 ```
-REQUESTED ──► DISPATCHED ──► COMPLETED
-                  │    │
-                  │    └────► FAILED
-                  └─────────► UNKNOWN ──(query/webhook)──► COMPLETED | FAILED
+DISPATCHED ──► COMPLETED
+    │    └───► FAILED
+    └───────► UNKNOWN ──(query)──► COMPLETED | FAILED
 ```
 
 | State | Meaning | The money |
 |---|---|---|
-| `REQUESTED` | Command accepted, not yet judged against the payable | Nothing held, nothing moved |
-| `DISPATCHED` | Bound judged under the payable's lock; hold placed; our reference minted and committed; the wire call runs after commit | The payout amount is **held** against the payable (`INV-MER-05`) |
+| `DISPATCHED` | Bound judged under the payable's lock; hold placed; our reference minted and committed, with the first send permit; the wire call runs after commit | The payout amount is **held** against the payable (`INV-MER-05`) |
 | `COMPLETED` | The rail accepted irrevocably | Hold released and posting committed atomically: DR payable / CR `PAYOUT_CLEARING`, keyed `merchant-payout:<payoutId>` — instructed, not settled (`INV-SET-01`) |
-| `FAILED` | The rail refused | Hold released, nothing posted; the payable is whole |
-| `UNKNOWN` | The rail's answer is missing or ambiguous | **The hold stands** — money visibly parked until query or webhook resolves it (`INV-LIFE-03`, the standing-hold doctrine) |
+| `FAILED` | The rail refused (`DECLINED`), nothing was sent on the first send (`PROVIDER_UNAVAILABLE`), or the provider has no record past the sweep's bound (`NEVER_RECEIVED`) — the reason on the row | Hold released, nothing posted; the payable is whole |
+| `UNKNOWN` | The rail's answer is missing or ambiguous | **The hold stands** — money visibly parked until a query resolves it (`INV-LIFE-03`, the standing-hold doctrine) |
 
-Dispatch-before-call throughout (ADR-0046's shape); every outcome edge conditional; the
-takeover convergence by dispatch key (`P5-TSK-016`'s contract) applies verbatim.
+**Four states, not the five first planned** (ADR-0057 §1, `P6-TSK-012`): the dispatch
+transaction judges, holds and commits `DISPATCHED` atomically, so the planned `REQUESTED` would
+be a state no committed row could hold — ADR-0044 refuses a state with no producer, and the
+refund, the same shape, has four.
+
+Dispatch-before-call throughout (ADR-0046's shape); every outcome edge conditional on the row
+its resolver locked; the takeover convergence by dispatch key (`P5-TSK-016`'s contract) applies,
+with two refinements the payout needed because it is the first flow with both a re-sending
+takeover and a sweep that can conclude "never received" (ADR-0057 §3–4):
+
+- **a refused connection fails a payout only on its first send** — a re-send's says nothing about
+  the send before it;
+- **every send is preceded by a committed send permit** (`last_dispatched_at`), and
+  `NEVER_RECEIVED` is concluded only when the latest permit is older than the sweep's bound,
+  judged on the locked row — so no send can follow the conclusion.
+
+The query sweep is the resolver of `DISPATCHED` rows a crash stranded and of `UNKNOWN` ones; the
+provider webhook ADR-0051 §5 named is deferred (ADR-0057 §10).
 
 ## 5. The merchant — three states
 
-`ACTIVE → SUSPENDED → ACTIVE` (reversible, operator, reasoned, audited) and `→ CLOSED`
-(terminal). Suspension gates **new** dispatches — sessions, payouts — and never touches
-arrived outcomes or the payable: a suspended merchant's money stays theirs and stays
-explainable.
+`ACTIVE → SUSPENDED → ACTIVE` (reversible, operator, reasoned, audited) and `ACTIVE → CLOSED`
+(terminal). `CLOSED` is reachable **only from `ACTIVE`** — `V002`'s trigger refuses `SUSPENDED →
+CLOSED`, so a suspended merchant is reinstated before it can be closed. Suspension gates **new** work — session
+creation, the customer's confirmation of an open session, payouts — and never touches arrived
+outcomes or the payable: a payment admitted before the suspension still lands, and a suspended
+merchant's money stays theirs and stays explainable. *(Corrected at the Phase 6 review,
+`P6-DOC-001`: this read as closable from either state, and the confirmation has refused a
+non-`ACTIVE` merchant, `checkout.NotTrading`, only since that review.)*
 
 ## 6. The payout destination — a proposal flow, not a field
 
-`PROPOSED → APPROVED → EFFECTIVE` with `REJECTED` and `WITHDRAWN` terminal. The proposer
-and approver are distinct authenticated actors (`INV-AUD-04`, enforced in the statement);
-approval starts the cooling-off clock; only an `EFFECTIVE` destination receives payouts,
-and a dispatch reads the currently effective one in its own transaction. Every step
-audited with actor, reason and correlation. One `EFFECTIVE` destination per merchant
-(partial unique index); a new one taking effect supersedes the old in the same
-transaction.
+Stated in full by `P6-TSK-011` and [ADR-0056](../adr/ADR-0056-payout-destination-four-eyes.md):
+
+```
+PROPOSED ──approve (a second operator, step-up)──► APPROVED ──cooling-off elapsed (the platform)──► EFFECTIVE ──a later one effected──► SUPERSEDED
+   │ reject (an approver) ──► REJECTED               │ withdraw ──► WITHDRAWN
+   └ withdraw ──► WITHDRAWN
+```
+
+| State | Meaning | Produced by |
+|---|---|---|
+| `PROPOSED` | An operator proposed the destination. Nothing pays to it | An operator with `MERCHANT_ADMINISTER`, keyed |
+| `APPROVED` | A second, distinct operator approved it; the cooling-off deadline is pinned on the row. Nothing pays to it yet | An operator with `PAYOUT_DESTINATION_APPROVE` who is not the proposer (`INV-AUD-04`) |
+| `EFFECTIVE` | The destination payouts go to — at most one per merchant | The platform's effectuation sweep, once the deadline has passed |
+| `SUPERSEDED` | A later destination took effect in its place, in the same transaction | The same sweep |
+| `REJECTED` | The second pair of eyes said no | An approver |
+| `WITHDRAWN` | Stopped before it took effect — during the proposal **or the cooling-off** | An operator with `MERCHANT_ADMINISTER` |
+
+- The proposer and approver are distinct authenticated operators, enforced in the domain, in
+  the approval statement and by `CHECK` — a merchant's API key reaches none of this (ADR-0056
+  §1). Each needs a `MULTI_FACTOR` session exactly when they have an active factor.
+- **The cooling-off is a control only because it can be acted on**: `APPROVED → WITHDRAWN` is
+  the edge that stops a change nobody meant. The deadline is `approved_at` plus the configured
+  period (default 72 hours), pinned at approval; the schema refuses an effect before it.
+- **One open change per merchant** (proposed or approved) and **one `EFFECTIVE` destination**,
+  each a partial unique index. The effectuation supersedes the old row before it effects the
+  new one, and both commit together.
+- A payout dispatch reads the currently effective destination in its own transaction; a change
+  still cooling off changes nothing there. Each change is its own immutable row, so the id a
+  payout records is the destination version it was sent to.
+- Every step is audited with actor, reason and correlation — the refused self-approval
+  included, as `DENIED`.
+- The platform holds the provider's opaque reference and a four-character suffix, never bank
+  details.

@@ -1,5 +1,7 @@
 package com.finapp.app.payments;
 
+import com.finapp.payments.DisputeNotice;
+import com.finapp.payments.DisputeNotifications;
 import com.finapp.payments.EvidenceKind;
 import com.finapp.payments.PaymentIntent;
 import com.finapp.payments.PaymentIntentStore;
@@ -13,6 +15,7 @@ import com.finapp.sharedkernel.correlation.Correlation;
 import com.finapp.payments.PaymentAttempt;
 import com.finapp.payments.PaymentAttemptId;
 import com.finapp.payments.PaymentAttemptStore;
+import com.finapp.payments.PaymentClearing;
 import com.finapp.payments.ProviderEvidenceStore;
 import com.finapp.payments.ProviderIdempotencyReference;
 import com.finapp.payments.Refund;
@@ -25,6 +28,8 @@ import com.finapp.platform.api.ApiException;
 import com.finapp.platform.api.PlatformErrorCode;
 import com.finapp.platform.inbox.InboxConsumer;
 import com.finapp.platform.inbox.InboxKey;
+import com.finapp.sharedkernel.money.CurrencyCode;
+import com.finapp.sharedkernel.money.Money;
 import java.sql.Connection;
 import java.time.Clock;
 import java.time.Instant;
@@ -90,11 +95,15 @@ public class PaymentWebhookService {
     private final RefundStore<Connection> refunds;
     private final com.finapp.app.telemetry.PaymentMeters meters;
     private final PaymentOutcomes outcomes;
+    private final PaymentClearing clearing;
     private final InboxConsumer<Connection> inbox;
     private final ObjectMapper json;
     private final Clock clock;
     private final TransactionTemplate transactions;
     private final DataSource dataSource;
+
+    /** The dispute notifications' command (`P7-TSK-012`) — the door's fourth statement kind. */
+    private final DisputeNotifications disputes;
 
     public PaymentWebhookService(
             WebhookSignature webhookSignature,
@@ -104,11 +113,13 @@ public class PaymentWebhookService {
             RefundStore<Connection> refundStore,
             com.finapp.app.telemetry.PaymentMeters paymentMeters,
             PaymentOutcomes paymentOutcomes,
+            PaymentClearing paymentClearing,
             InboxConsumer<Connection> inboxConsumer,
             ObjectMapper objectMapper,
             Clock clock,
             TransactionTemplate paymentTransactions,
-            DataSource dataSource) {
+            DataSource dataSource,
+            DisputeNotifications disputeNotifications) {
         this.signature =
                 Objects.requireNonNull(webhookSignature, "webhookSignature must not be null");
         this.evidence =
@@ -121,12 +132,17 @@ public class PaymentWebhookService {
         this.refunds = Objects.requireNonNull(refundStore, "refundStore must not be null");
         this.meters = Objects.requireNonNull(paymentMeters, "paymentMeters must not be null");
         this.outcomes = Objects.requireNonNull(paymentOutcomes, "paymentOutcomes must not be null");
+        this.clearing =
+                Objects.requireNonNull(paymentClearing, "paymentClearing must not be null");
         this.inbox = Objects.requireNonNull(inboxConsumer, "inboxConsumer must not be null");
         this.json = Objects.requireNonNull(objectMapper, "objectMapper must not be null");
         this.clock = Objects.requireNonNull(clock, "clock must not be null");
         this.transactions =
                 Objects.requireNonNull(paymentTransactions, "paymentTransactions must not be null");
         this.dataSource = Objects.requireNonNull(dataSource, "dataSource must not be null");
+        this.disputes =
+                Objects.requireNonNull(
+                        disputeNotifications, "disputeNotifications must not be null");
     }
 
     /**
@@ -136,7 +152,33 @@ public class PaymentWebhookService {
      * status word — untouched here; `P5-TSK-013`'s total mapping owns it ({@code INV-PAY-03}).
      */
     private record WebhookPayload(
-            String eventId, String operation, String status, String reference) {}
+            String eventId,
+            String operation,
+            String status,
+            String reference,
+            // The clearing statement's own fields (P7-TSK-005): the acquirer reference and
+            // the network transaction identifier, present exactly when status is "cleared".
+            String arn,
+            String networkTransactionId,
+            // The dispute statement's own fields (P7-TSK-012), present when status is
+            // "disputed": the PSP's dispute reference, its stage word and reason code (both
+            // CardDisputeVocabulary's to map), and the disputed amount in the outbound
+            // wire's own shape - minor units as a JSON string, currency, scale.
+            String dispute,
+            String stage,
+            String reasonCode,
+            String amountMinor,
+            String currency,
+            Integer scale,
+            // The PSP's dispute fee (P7-TSK-013, ADR-0061 section 4), in the amount's own
+            // currency and scale: present only on a statement from the chargeback on.
+            String feeMinor,
+            // The network's representment deadline (P7-TSK-014, ADR-0061 section 7), an
+            // ISO-8601 instant - recorded from a statement from the chargeback on.
+            String respondBy) {}
+
+    /** Minor units as the wire carries them: digits only, and short enough for a long. */
+    private static final Pattern MINOR_UNITS = Pattern.compile("[0-9]{1,18}");
 
     /**
      * Accepts one delivery.
@@ -343,6 +385,21 @@ public class PaymentWebhookService {
             ProviderIdempotencyReference operation,
             WebhookPayload payload,
             Judged judged) {
+        if ("cleared".equals(payload.status())) {
+            // The clearing statement (P7-TSK-005, ADR-0059 section 4): evidence, never an
+            // edge - the machine is not consulted, because a notice racing our own capture
+            // outcome, or contradicting a void, is exactly what Phase 8's matching must
+            // see, and this door acknowledges, so a refused notice never returns.
+            clearingEffect(uow, attempt, payload, judged);
+            return;
+        }
+        if ("disputed".equals(payload.status())) {
+            // The dispute statement (P7-TSK-012, ADR-0061 section 6): the dispute's own
+            // machine, never the attempt's - a chargeback contests the payment, it does not
+            // move the operation that took it.
+            disputeEffect(uow, attempt, payload, judged);
+            return;
+        }
         Optional<ProviderAnswer.Verdict> verdict = mappedVerdict(payload);
         if (verdict.isEmpty()) {
             judged.unmappable();
@@ -385,7 +442,7 @@ public class PaymentWebhookService {
                         attempt.status(),
                         verdict.get(),
                         providerReference(payload),
-                        intent.walletAccount(),
+                        intent.creditAccount(),
                         // The capture is the authorized promise, in full (one attempt, no
                         // partial capture until its producer exists - ADR-0045 §4).
                         attempt.authorizedAmount(),
@@ -402,6 +459,232 @@ public class PaymentWebhookService {
     }
 
     /**
+     * The clearing statement recorded (`P7-TSK-005`): the network's references, once per
+     * attempt, in this delivery's transaction — {@code PaymentClearing} and `V015`'s two
+     * unique arbiters own the once; here the statement is shaped and the three outcomes are
+     * told apart. A notice missing either reference is unactionable — not knowledge (the
+     * {@code mappedVerdict} totality rule, applied to the clearing vocabulary) — and an
+     * acquirer reference already claimed by ANOTHER attempt is the integration break made
+     * loud: the first record stands, this delivery's bytes rest as evidence.
+     */
+    private void clearingEffect(
+            Connection uow, PaymentAttempt attempt, WebhookPayload payload, Judged judged) {
+        Optional<ProviderReference> acquirer = networkReference(payload.arn());
+        Optional<ProviderReference> network = networkReference(payload.networkTransactionId());
+        if (acquirer.isEmpty() || network.isEmpty()) {
+            judged.unmappable();
+            log.warn(
+                    "An authenticated clearing webhook for attempt {} carried no usable"
+                            + " network references; retained as evidence, nothing recorded"
+                            + " (INV-PAY-03's totality, P7-TSK-005)",
+                    attempt.id());
+            return;
+        }
+        PaymentClearing.Outcome recorded =
+                clearing.record(
+                        uow,
+                        attempt,
+                        acquirer.get(),
+                        network.get(),
+                        PaymentCreation.resolvedCorrelation());
+        switch (recorded) {
+            case RECORDED ->
+                    log.info(
+                            "A capture's clearing was recorded with its network references"
+                                    + " (attempt {}, INV-SET-01: no posting, no transition)",
+                            attempt.id());
+            case ALREADY_RECORDED ->
+                    log.info(
+                            "A duplicate clearing notice for attempt {} was absorbed by the"
+                                    + " record that stands (INV-IDEM-04)",
+                            attempt.id());
+            case REFERENCE_CLAIMED_ELSEWHERE -> {
+                judged.unmappable();
+                log.warn(
+                        "A clearing notice for attempt {} named an acquirer reference"
+                                + " already recorded for a DIFFERENT attempt; the first"
+                                + " record stands and this statement rests as evidence -"
+                                + " an integration break reconciliation must see",
+                        attempt.id());
+            }
+        }
+    }
+
+    private static Optional<ProviderReference> networkReference(String value) {
+        if (value == null) {
+            return Optional.empty();
+        }
+        try {
+            return Optional.of(new ProviderReference(value));
+        } catch (IllegalArgumentException outOfShape) {
+            return Optional.empty();
+        }
+    }
+
+    /**
+     * The dispute statement applied (`P7-TSK-012`, ADR-0061 §6): the PSP's words translated
+     * through {@link CardDisputeVocabulary}'s total tables, then {@link DisputeNotifications}
+     * owns the once and the order inside this delivery's transaction. A statement missing its
+     * reference, carrying a stage word we cannot read or an amount we cannot parse is
+     * unactionable — not knowledge — and moves nothing; a statement the dispute's record
+     * contradicts moves nothing either, and both are counted as the integration break they
+     * are. A late or repeated stage is ordering, not breakage.
+     */
+    private void disputeEffect(
+            Connection uow, PaymentAttempt attempt, WebhookPayload payload, Judged judged) {
+        Optional<DisputeNotice> notice = disputeNotice(payload);
+        if (notice.isEmpty()) {
+            judged.unmappable();
+            log.warn(
+                    "An authenticated dispute webhook for attempt {} carried no usable"
+                            + " reference, stage or amount; retained as evidence, nothing"
+                            + " recorded (INV-PAY-03's totality, P7-TSK-012)",
+                    attempt.id());
+            return;
+        }
+        DisputeNotifications.Outcome applied =
+                disputes.apply(uow, attempt, notice.get(), PaymentCreation.resolvedCorrelation());
+        switch (applied) {
+            case OPENED, ADVANCED ->
+                    log.info(
+                            "A dispute on attempt {} was {} at the network's word, each stage"
+                                    + " posted once (P7-TSK-012, P7-TSK-013)",
+                            attempt.id(),
+                            applied == DisputeNotifications.Outcome.OPENED ? "opened" : "advanced");
+            case FEE_RECORDED ->
+                    log.info(
+                            "A dispute statement for attempt {} reported the PSP's dispute fee"
+                                    + " late; recorded and posted once (P7-TSK-013)",
+                            attempt.id());
+            case DEADLINE_RECORDED ->
+                    log.info(
+                            "A dispute statement for attempt {} reported the network's respond-by"
+                                    + " deadline late; recorded once (P7-TSK-014)",
+                            attempt.id());
+            case UNCHANGED ->
+                    log.info(
+                            "A repeated dispute statement for attempt {} changed nothing"
+                                    + " (INV-IDEM-04)",
+                            attempt.id());
+            case LATE ->
+                    log.info(
+                            "A dispute statement for attempt {} names a stage the dispute has"
+                                    + " already passed; the statement stands as evidence and"
+                                    + " changes nothing (INV-LIFE-04's ordering)",
+                            attempt.id());
+            case STAGE_CONTRADICTED, FACTS_CONTRADICTED, NOT_DISPUTABLE -> {
+                judged.unmappable();
+                log.warn(
+                        "A dispute statement for attempt {} contradicts what the platform"
+                                + " holds ({}); the record stands and the statement rests as"
+                                + " evidence - an integration break reconciliation must see",
+                        attempt.id(),
+                        applied);
+            }
+        }
+    }
+
+    /**
+     * Total: an unusable statement is empty, never a throw — the anti-stall class. Since
+     * `P7-TSK-013` the statement may carry the PSP's dispute fee: a fee field we cannot read, or
+     * one on an inquiry (a fee is charged with the funds taken), makes the whole statement
+     * unusable rather than half-read.
+     */
+    private static Optional<DisputeNotice> disputeNotice(WebhookPayload payload) {
+        Optional<ProviderReference> reference = networkReference(payload.dispute());
+        Optional<com.finapp.payments.DisputeStage> stage =
+                CardDisputeVocabulary.stage(payload.stage());
+        Optional<Money> amount = disputedAmount(payload);
+        if (reference.isEmpty() || stage.isEmpty() || amount.isEmpty()) {
+            return Optional.empty();
+        }
+        Optional<Optional<Money>> fee = disputeFee(payload, amount.get());
+        if (fee.isEmpty()) {
+            return Optional.empty();
+        }
+        Optional<Optional<java.time.Instant>> respondBy = respondBy(payload, stage.get());
+        if (respondBy.isEmpty()) {
+            return Optional.empty();
+        }
+        try {
+            return Optional.of(
+                    new DisputeNotice(
+                            SimulatedCardPspAdapter.NAME,
+                            reference.get(),
+                            stage.get(),
+                            CardDisputeVocabulary.reason(payload.reasonCode()),
+                            amount.get(),
+                            fee.get(),
+                            respondBy.get()));
+        } catch (IllegalArgumentException incoherent) {
+            // A fee on an inquiry: the statement contradicts itself, so it is not knowledge.
+            return Optional.empty();
+        }
+    }
+
+    /**
+     * The dispute fee in the amount's own currency and scale (`P7-TSK-013`): absent or zero is
+     * no fee (the outer Optional present, the inner empty); digits that do not parse are an
+     * unusable statement (the outer Optional empty).
+     */
+    private static Optional<Optional<Money>> disputeFee(WebhookPayload payload, Money amount) {
+        if (payload.feeMinor() == null) {
+            return Optional.of(Optional.empty());
+        }
+        if (!MINOR_UNITS.matcher(payload.feeMinor()).matches()) {
+            return Optional.empty();
+        }
+        try {
+            Money fee = Money.ofMinorUnits(Long.parseLong(payload.feeMinor()), amount.currency());
+            return Optional.of(fee.isZero() ? Optional.empty() : Optional.of(fee));
+        } catch (RuntimeException unusable) {
+            return Optional.empty();
+        }
+    }
+
+    /**
+     * The network's respond-by deadline (`P7-TSK-014`): absent is no deadline stated; on an
+     * inquiry it is the inquiry's own answer-by date, which the platform does not act on (an
+     * inquiry response is out of scope), so it is dropped - never a refusal; an instant that does
+     * not parse is an unusable statement (the outer Optional empty), the fee's rule.
+     */
+    private static Optional<Optional<java.time.Instant>> respondBy(
+            WebhookPayload payload, com.finapp.payments.DisputeStage stage) {
+        if (payload.respondBy() == null || !stage.isChargedBack()) {
+            return Optional.of(Optional.empty());
+        }
+        try {
+            return Optional.of(Optional.of(java.time.Instant.parse(payload.respondBy())));
+        } catch (java.time.format.DateTimeParseException unusable) {
+            return Optional.empty();
+        }
+    }
+
+    /**
+     * The disputed amount in the outbound wire's own shape, total: digits only, a currency we
+     * know, and exactly that currency's scale — an amount created now from an external
+     * statement, so {@code ofMinorUnits}, never a persisted scale taken on trust.
+     */
+    private static Optional<Money> disputedAmount(WebhookPayload payload) {
+        if (payload.amountMinor() == null
+                || payload.currency() == null
+                || payload.scale() == null
+                || !MINOR_UNITS.matcher(payload.amountMinor()).matches()) {
+            return Optional.empty();
+        }
+        try {
+            CurrencyCode currency = CurrencyCode.of(payload.currency());
+            if (payload.scale() != currency.minorUnits()) {
+                return Optional.empty();
+            }
+            Money amount = Money.ofMinorUnits(Long.parseLong(payload.amountMinor()), currency);
+            return amount.isPositive() ? Optional.of(amount) : Optional.empty();
+        } catch (RuntimeException unusable) {
+            return Optional.empty();
+        }
+    }
+
+    /**
      * The refund's webhook effect (`P5-TSK-016`): the asynchronous completion a real PSP
      * actually sends — the statement mapped through the same total vocabulary onto the
      * refund machine's conditional edges, applied through the ONE shared outcome component,
@@ -412,7 +695,7 @@ public class PaymentWebhookService {
      * names.
      */
     private void refundEffect(
-            Connection uow, Refund refund, WebhookPayload payload, Judged judged) {
+            Connection uow, Refund attributed, WebhookPayload payload, Judged judged) {
         Optional<ProviderAnswer.Verdict> verdict = mappedVerdict(payload);
         if (verdict.isEmpty()) {
             judged.unmappable();
@@ -420,9 +703,21 @@ public class PaymentWebhookService {
                     "An authenticated payment webhook for refund {} carried a status the"
                             + " total mapping refuses to act on; retained as evidence,"
                             + " nothing transitions (INV-PAY-03)",
-                    refund.id());
+                    attributed.id());
             return;
         }
+        // THE LOCKED ROW is the source state (the Phase 6 -> 7 transition). Judged from the
+        // unlocked attribution read, a delivery racing the synchronous call's move into UNKNOWN
+        // applied from DISPATCHED, lost its conditional, and was still counted processed - so the
+        // provider never redelivered the one answer that would have resolved the refund.
+        com.finapp.payments.RefundStore.LockedRefund locked =
+                refunds.lockForOutcome(uow, attributed.id())
+                        .orElseThrow(
+                                () ->
+                                        new IllegalStateException(
+                                                "an attributed refund row exists: the attribution"
+                                                        + " read found it"));
+        Refund refund = locked.refund();
         if (!refundResolvable(refund.status())) {
             log.info(
                     "A payment webhook reported on refund {} in state {} which cannot move;"
@@ -454,7 +749,7 @@ public class PaymentWebhookService {
                         refund.status(),
                         verdict.get(),
                         providerReference(payload),
-                        intent.walletAccount(),
+                        intent.creditAccount(),
                         PaymentCreation.resolvedCorrelation()));
     }
 

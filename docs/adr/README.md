@@ -11,7 +11,11 @@ Detailed architectural decisions. The human-readable index of *what* was decided
   that supersedes the old one; the old one is marked `Superseded by ADR-NNNN`.
 - Status: `Proposed` → `Accepted` → `Superseded`.
 - ADR-0001 through ADR-0028 are `Accepted`, moved there by the Phase 0 review (`P0-DOC-012`),
-  once the decisions have been validated by implementation rather than only by argument.
+  once the decisions have been validated by implementation rather than only by argument. Each
+  later phase's review does the same for its own: ADR-0050…0054 and ADR-0056…0058 by the
+  Phase 6 review (`P6-DOC-001`), which read each against the code and corrected the ones that
+  had drifted before accepting any. ADR-0055 is cross-cutting (`X-TSK-001`), and its own text
+  reserves its acceptance to the owner.
 - A decision found in code but absent from this record is architectural debt.
 
 ## Index
@@ -67,12 +71,20 @@ Detailed architectural decisions. The human-readable index of *what* was decided
 | [0047](ADR-0047-webhook-ingestion.md) | Webhooks: authenticated, freshness-bounded, evidence-first, idempotent | Accepted | 5 | Payments |
 | [0048](ADR-0048-authorization-is-not-a-posting.md) | Authorization is a payment-domain fact; the ledger's first touch is capture | Accepted | 5 | Payments · Ledger |
 | [0049](ADR-0049-first-provider-simulated-card-psp.md) | The first provider is a simulated card-style PSP; nothing is final before settlement | Accepted | 5 | Payments |
-| [0050](ADR-0050-fee-model-gross-capture-net-payable.md) | The fee model: gross capture to the payable, fee assessed in the same entry, net payout | Proposed | 6 | Merchant · Checkout · Payments · Ledger |
-| [0051](ADR-0051-merchant-payout-accounting.md) | Merchant payout: hold-then-dispatch on the payable, nothing final before settlement | Proposed | 6 | Merchant · Ledger |
-| [0052](ADR-0052-merchant-api-identity.md) | Merchant API identity: scoped API keys, tenancy in the statement | Proposed | 6 | Merchant · Identity |
-| [0053](ADR-0053-checkout-session-and-order.md) | Checkout session and order: two aggregates, expiry gates dispatch, landed money always wins | Proposed | 6 | Checkout · Merchant · Payments |
-| [0054](ADR-0054-merchant-refund-funded-by-its-net.md) | A merchant refund is funded by its net; the only credit it extends is the fee the platform keeps | Proposed | 6 | Merchant · Payments · Ledger |
+| [0050](ADR-0050-fee-model-gross-capture-net-payable.md) | The fee model: gross capture to the payable, fee assessed in the same entry, net payout | Accepted | 6 | Merchant · Checkout · Payments · Ledger |
+| [0051](ADR-0051-merchant-payout-accounting.md) | Merchant payout: hold-then-dispatch on the payable, nothing final before settlement | Accepted | 6 | Merchant · Ledger |
+| [0052](ADR-0052-merchant-api-identity.md) | Merchant API identity: scoped API keys under the credential disciplines, tenancy in the statement | Accepted | 6 | Merchant · Identity |
+| [0053](ADR-0053-checkout-session-and-order.md) | Checkout session and order: two aggregates, expiry gates dispatch, landed money always wins | Accepted | 6 | Checkout · Merchant · Payments |
+| [0054](ADR-0054-merchant-refund-funded-by-its-net.md) | A merchant refund is funded by its net; the only credit it extends is the fee the platform keeps | Accepted | 6 | Merchant · Payments · Ledger |
 | [0055](ADR-0055-lombok-compile-time-boilerplate.md) | Lombok is the project-standard boilerplate reducer, at compile time only | Proposed | 6 | Build |
+| [0056](ADR-0056-payout-destination-four-eyes.md) | A payout destination changes by two operators, a conditional step-up and a cancellable cooling-off; bank details never enter | Accepted | 6 | Merchant · Identity · Security |
+| [0057](ADR-0057-payout-dispatch-and-resolution.md) | The payout dispatches behind a send permit, fails only on what it knows, and resolves by query | Accepted | 6 | Merchant · Ledger · Identity |
+| [0058](ADR-0058-a-sale-must-cover-its-fee.md) | A sale that does not cover its fee is refused at the price | Accepted | 6 | Merchant · Checkout |
+| [0059](ADR-0059-payment-rails-capabilities-and-finality.md) | A payment rail declares its capabilities; finality is modelled per rail; the attempt's machine follows the rail's interaction model | Proposed | 7 | Payments · Payment Methods · Accounts · Ledger |
+| [0060](ADR-0060-rail-routing-pinned-and-explainable.md) | Rail routing is a versioned policy, decided once per payment, pinned and explainable from stored data | Proposed | 7 | Payments |
+| [0061](ADR-0061-disputes-and-chargeback-accounting.md) | A dispute is its own lifecycle; a chargeback never takes more than was credited, and every stage posts once | Proposed | 7 | Payments · Merchant · Accounts · Ledger |
+| [0062](ADR-0062-account-to-account-and-instant-payments.md) | Account-to-account payments on a provider-neutral push rail; bank details never enter; instant is final on acceptance | Proposed | 7 | Payments · Payment Methods · Accounts · Ledger |
+| [0063](ADR-0063-business-stamps-never-contradict-the-order-of-facts.md) | The order of an aggregate's facts is the database's; a business stamp never contradicts it | Proposed | 7 | Distributed execution |
 
 ## Anticipated ADRs
 
@@ -91,8 +103,6 @@ Recorded so the decisions are not made implicitly. Each is written at its phase'
 | 5 | Payment intent vs attempt modelling |
 | 5 | Unknown-state handling and reconciliation-by-query sweeper |
 | 5 | Webhook ingestion, signature verification and deduplication |
-| 7 | Rail abstraction and per-rail finality semantics |
-| 7 | Dispute and chargeback financial treatment |
 | 8 | Matching strategy, rule versioning and tolerance model |
 | 8 | Suspense account policy and ageing |
 | 8 | Break resolution authority and four-eyes thresholds |

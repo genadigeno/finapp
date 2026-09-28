@@ -267,22 +267,31 @@ class PaymentCaptureDatabaseTest {
     }
 
     @Test
-    @DisplayName("declined fails both rows with nothing posted; the customer's answer is honest")
-    void declinedFailsBothRows() throws Exception {
+    @DisplayName("a DECLINED capture on the void-declaring rail RELEASES the promise: the"
+            + " redirect concludes VOIDED with nothing posted (P7-TSK-004)")
+    void declinedIsRedirectedIntoTheVoid() throws Exception {
         Holder holder = holder();
         PaymentAttemptId attempt = authorizedAttempt(holder);
         psp.succeedsWith(
                 SimulatedCardPspAdapter.CAPTURES_PATH,
                 200,
                 "{\"status\":\"declined\",\"reason\":\"limit_exceeded\"}");
+        psp.succeedsWith(
+                SimulatedCardPspAdapter.VOIDS_PATH,
+                200,
+                APPROVED_BODY.formatted("void-redirect"));
 
         PaymentCapture.CaptureResult result = capture(adapter()).capture(attempt);
 
-        assertThat(result.attempt()).isEqualTo(PaymentAttemptStatus.FAILED);
+        assertThat(result.attempt()).isEqualTo(PaymentAttemptStatus.VOIDED);
         assertThat(result.intent()).isEqualTo(PaymentIntentStatus.FAILED);
         try (Connection app = DatabaseRoles.application()) {
-            assertThat(attempts.findById(app, attempt).orElseThrow().failureReason())
-                    .isEqualTo(PaymentFailureReason.DECLINED);
+            PaymentAttempt released = attempts.findById(app, attempt).orElseThrow();
+            assertThat(released.voidReference()).isNotNull();
+            assertThat(released.voidProviderReference()).isNotNull();
+            assertThat(released.failureReason())
+                    .as("VOIDED is a release, not a failure - no mapped reason")
+                    .isNull();
             // The ROW, not the result object: the mutation that drops the intent's write
             // while still CLAIMING FAILED in the return value is exactly what an in-memory
             // assertion cannot see (found by this gate's own battery).
@@ -378,9 +387,9 @@ class PaymentCaptureDatabaseTest {
                             + " now() - interval '1 hour', now() - interval '1 hour')",
                     customer, party);
             execute(app,
-                    "INSERT INTO paymentmethods.payment_method (id, party_id, token_reference,"
+                    "INSERT INTO paymentmethods.payment_method (id, party_id, kind, token_reference,"
                             + " brand, display_suffix, expiry_month, expiry_year, status,"
-                            + " created_at) VALUES (?, ?, ?, 'Visa', '4242', 12, 2030,"
+                            + " created_at) VALUES (?, ?, 'CARD_TOKEN', ?, 'Visa', '4242', 12, 2030,"
                             + " 'ACTIVE', now())",
                     method, party, "tok-capture-" + UUID.randomUUID());
         }
@@ -412,7 +421,8 @@ class PaymentCaptureDatabaseTest {
                                                     new JdbcAuditWriter(),
                                                     new JdbcOutboxWriter(),
                                                     IDS,
-                                                    CLOCK)
+                                                    CLOCK,
+                                                    PaymentCreation.IDEMPOTENCY_SCOPE)
                                             .create(
                                                     uow,
                                                     new PaymentCreation.CreatePaymentCommand(
@@ -425,7 +435,7 @@ class PaymentCaptureDatabaseTest {
                             uow ->
                                     intents.findById(uow, created.intent())
                                             .orElseThrow()
-                                            .walletAccount());
+                                            .creditAccount());
             return new Holder(party, person, created.intent(), wallet);
         } finally {
             flow.close();
@@ -446,9 +456,13 @@ class PaymentCaptureDatabaseTest {
         try {
             PaymentConfirmation.ConfirmationResult confirmed =
                     new PaymentConfirmation(
-                                    runner, intents, attempts, evidence, participants,
-                                    adapter(),
-                                    new com.finapp.payments.PaymentOutcomes(
+                runner,
+                intents,
+                attempts,
+                evidence,
+                participants,
+                adapter(),
+                new com.finapp.payments.PaymentOutcomes(
                                             intents, attempts,
                                             new com.finapp.payments.JdbcRefundStore(),
                                             new com.finapp.ledger.HoldService(
@@ -482,7 +496,9 @@ class PaymentCaptureDatabaseTest {
                                                     new com.finapp.payments.WalletTopUpComposition(),
                         // No completion: these suites' payments belong to no checkout
                         // session, and the production consumer is wired in CheckoutBeans.
-                        landed -> {}),
+                        landed -> {},
+                        new com.finapp.app.telemetry.MerchantMeters(
+                                new io.micrometer.core.instrument.simple.SimpleMeterRegistry())),
                                             // THE REFUND'S MIRROR SEAM (P6-TSK-014), production's own: every
                                             // refund here falls back to Phase 5's two lines.
                                             new com.finapp.app.merchant.MerchantBoundRefundComposition(
@@ -495,9 +511,31 @@ class PaymentCaptureDatabaseTest {
                                                             IDS),
                                                     new com.finapp.payments.WalletRefundComposition()),
                                             new JdbcAuditWriter(), new JdbcOutboxWriter(),
-                                            IDS, CLOCK),
-                                    new JdbcAuditWriter(),
-                                    IDS, CLOCK)
+                                            IDS, CLOCK,
+                                            com.finapp.payments.PaymentRails.of(java.util.List.of(SimulatedCardPspAdapter.RAIL)),
+                new com.finapp.payments.JdbcUnmatchedConfirmationStore(),
+                new com.finapp.ledger.JdbcLedgerAccountStore(),
+                // The dispute money (P7-TSK-013), production-shaped: a failed refund here
+                // locks its card attempt first and finds no chargeback.
+                com.finapp.app.payments.ChargebackAccountingFixture.over(
+                        new PostingService(
+                                executor(),
+                                new JdbcJournalEntryStore(IDS),
+                                new JdbcAuditWriter(),
+                                new JdbcOutboxWriter(),
+                                new JdbcBalanceProjection(),
+                                IDS, CLOCK, PostingObserver.NONE),
+                        com.finapp.payments.PaymentRails.of(java.util.List.of(SimulatedCardPspAdapter.RAIL)),
+                        IDS,
+                        CLOCK)),
+                new com.finapp.payments.JdbcRoutingStore(),
+                com.finapp.payments.PaymentRails.of(java.util.List.of(SimulatedCardPspAdapter.RAIL)),
+                new JdbcAuditWriter(),
+                new JdbcOutboxWriter(),
+                IDS,
+                CLOCK,
+                com.finapp.payments.RoutingTelemetry.NONE,
+                java.util.Optional.empty())
                             .confirm(holder.party(), holder.intent());
             assertThat(confirmed.attempt()).contains(PaymentAttemptStatus.AUTHORIZED);
         } finally {
@@ -515,12 +553,7 @@ class PaymentCaptureDatabaseTest {
     }
 
     private PaymentCapture capture(PaymentProvider provider, OutboxWriter<Connection> outbox) {
-        return new PaymentCapture(
-                runner,
-                intents,
-                attempts,
-                evidence,
-                provider,
+        com.finapp.payments.PaymentOutcomes outcomes =
                 new com.finapp.payments.PaymentOutcomes(
                         intents,
                         attempts,
@@ -558,7 +591,9 @@ class PaymentCaptureDatabaseTest {
                                 new com.finapp.payments.WalletTopUpComposition(),
                         // No completion: these suites' payments belong to no checkout
                         // session, and the production consumer is wired in CheckoutBeans.
-                        landed -> {}),
+                        landed -> {},
+                        new com.finapp.app.telemetry.MerchantMeters(
+                                new io.micrometer.core.instrument.simple.SimpleMeterRegistry())),
                         // THE REFUND'S MIRROR SEAM (P6-TSK-014), production's own: every
                         // refund here falls back to Phase 5's two lines.
                         new com.finapp.app.merchant.MerchantBoundRefundComposition(
@@ -573,7 +608,37 @@ class PaymentCaptureDatabaseTest {
                         new JdbcAuditWriter(),
                         outbox,
                         IDS,
-                        CLOCK),
+                        CLOCK,
+                        com.finapp.payments.PaymentRails.of(java.util.List.of(SimulatedCardPspAdapter.RAIL)),
+                new com.finapp.payments.JdbcUnmatchedConfirmationStore(),
+                new com.finapp.ledger.JdbcLedgerAccountStore(),
+                // The dispute money (P7-TSK-013), production-shaped: a failed refund here
+                // locks its card attempt first and finds no chargeback.
+                com.finapp.app.payments.ChargebackAccountingFixture.over(
+                        new PostingService(
+                                executor(),
+                                new JdbcJournalEntryStore(IDS),
+                                new JdbcAuditWriter(),
+                                new JdbcOutboxWriter(),
+                                new JdbcBalanceProjection(),
+                                IDS,
+                                CLOCK,
+                                PostingObserver.NONE),
+                        com.finapp.payments.PaymentRails.of(java.util.List.of(SimulatedCardPspAdapter.RAIL)),
+                        IDS,
+                        CLOCK));
+        return new PaymentCapture(
+                runner,
+                intents,
+                attempts,
+                evidence,
+                provider,
+                outcomes,
+                new com.finapp.payments.PaymentVoid(
+                        runner, intents, attempts, evidence, provider, outcomes,
+                        com.finapp.payments.PaymentRails.of(
+                                java.util.List.of(SimulatedCardPspAdapter.RAIL)),
+                        new JdbcAuditWriter(), IDS, CLOCK),
                 new JdbcAuditWriter(),
                 IDS,
                 CLOCK);
@@ -686,6 +751,11 @@ class PaymentCaptureDatabaseTest {
 
         @Override
         public ProviderAnswer refund(RefundRequest request) {
+            throw new UnsupportedOperationException();
+        }
+
+        @Override
+        public ProviderAnswer voidAuthorization(VoidRequest request) {
             throw new UnsupportedOperationException();
         }
 

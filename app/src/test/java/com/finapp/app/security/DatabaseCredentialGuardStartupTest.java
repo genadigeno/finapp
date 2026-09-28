@@ -53,8 +53,18 @@ class DatabaseCredentialGuardStartupTest {
                                                 "--finapp.doc.key=AwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwM=",
                                                 "--finapp.kyc.callback.key=BAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQ=",
                                                 "--finapp.payments.evidence.key=BQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQU=",
+                                                // P7-TSK-014: the dispute evidence key, its own concern.
+                                                "--finapp.payments.dispute.evidence.key=BgYGBgYGBgYGBgYGBgYGBgYGBgYGBgYGBgYGBgYGBgY=",
                                                 "--finapp.payments.provider.key=BQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQU=",
-                                                "--finapp.payments.webhook.key=BQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQU="))
+                                                "--finapp.payments.webhook.key=BQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQU=",
+                                                // P7-TSK-009: the instant scheme's two keys - the test overlay
+                                                // now supplies instant.url for the published contract's sake,
+                                                // so these contexts construct the instant beans too, and the
+                                                // DATABASE guards must stay the only refusal on trial here.
+                                                "--finapp.payments.instant.key=CAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAg=",
+                                                "--finapp.payments.instant.webhook.key=CQkJCQkJCQkJCQkJCQkJCQkJCQkJCQkJCQkJCQkJCQk=",
+                                                "--finapp.merchant.payout.evidence.key=BgYGBgYGBgYGBgYGBgYGBgYGBgYGBgYGBgYGBgYGBgY=",
+                                                "--finapp.merchant.payout.provider.key=BwcHBwcHBwcHBwcHBwcHBwcHBwcHBwcHBwcHBwcHBwc="))
                 .rootCause()
                 .isInstanceOf(IllegalStateException.class)
                 .hasMessageContaining("Refusing to start");
@@ -82,8 +92,18 @@ class DatabaseCredentialGuardStartupTest {
                                                 "--finapp.doc.key=AwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwM=",
                                                 "--finapp.kyc.callback.key=BAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQ=",
                                                 "--finapp.payments.evidence.key=BQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQU=",
+                                                // P7-TSK-014: the dispute evidence key, its own concern.
+                                                "--finapp.payments.dispute.evidence.key=BgYGBgYGBgYGBgYGBgYGBgYGBgYGBgYGBgYGBgYGBgY=",
                                                 "--finapp.payments.provider.key=BQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQU=",
                                                 "--finapp.payments.webhook.key=BQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQU=",
+                                                // P7-TSK-009: the instant scheme's two keys - the test overlay
+                                                // now supplies instant.url for the published contract's sake,
+                                                // so these contexts construct the instant beans too, and the
+                                                // DATABASE guards must stay the only refusal on trial here.
+                                                "--finapp.payments.instant.key=CAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAg=",
+                                                "--finapp.payments.instant.webhook.key=CQkJCQkJCQkJCQkJCQkJCQkJCQkJCQkJCQkJCQkJCQk=",
+                                                "--finapp.merchant.payout.evidence.key=BgYGBgYGBgYGBgYGBgYGBgYGBgYGBgYGBgYGBgYGBgY=",
+                                                "--finapp.merchant.payout.provider.key=BwcHBwcHBwcHBwcHBwcHBwcHBwcHBwcHBwcHBwcHBwc=",
                                                 "--spring.datasource.password=supplied-by-the-deployment"))
                 .rootCause()
                 .isInstanceOf(IllegalStateException.class)
@@ -109,8 +129,18 @@ class DatabaseCredentialGuardStartupTest {
                                                 "--finapp.doc.key=AwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwM=",
                                                 "--finapp.kyc.callback.key=BAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQ=",
                                                 "--finapp.payments.evidence.key=BQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQU=",
+                                                // P7-TSK-014: the dispute evidence key, its own concern.
+                                                "--finapp.payments.dispute.evidence.key=BgYGBgYGBgYGBgYGBgYGBgYGBgYGBgYGBgYGBgYGBgY=",
                                                 "--finapp.payments.provider.key=BQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQU=",
                                                 "--finapp.payments.webhook.key=BQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQU=",
+                                                // P7-TSK-009: the instant scheme's two keys - the test overlay
+                                                // now supplies instant.url for the published contract's sake,
+                                                // so these contexts construct the instant beans too, and the
+                                                // DATABASE guards must stay the only refusal on trial here.
+                                                "--finapp.payments.instant.key=CAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAg=",
+                                                "--finapp.payments.instant.webhook.key=CQkJCQkJCQkJCQkJCQkJCQkJCQkJCQkJCQkJCQkJCQk=",
+                                                "--finapp.merchant.payout.evidence.key=BgYGBgYGBgYGBgYGBgYGBgYGBgYGBgYGBgYGBgYGBgY=",
+                                                "--finapp.merchant.payout.provider.key=BwcHBwcHBwcHBwcHBwcHBwcHBwcHBwcHBwcHBwcHBwc=",
                                 "--spring.datasource.password=supplied-by-the-deployment",
                                 "--spring.datasource.hikari.data-source-properties.sslmode=verify-full")) {
             assertThat(context.getBean(TransportSecurityGuard.class)).isNotNull();
@@ -160,7 +190,17 @@ class DatabaseCredentialGuardStartupTest {
                         "--finapp.doc.key=AwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwM=",
                                                 "--finapp.kyc.callback.key=BAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQ=",
                                                 "--finapp.payments.evidence.key=BQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQU=",
+                                                // P7-TSK-014: the dispute evidence key, its own concern.
+                                                "--finapp.payments.dispute.evidence.key=BgYGBgYGBgYGBgYGBgYGBgYGBgYGBgYGBgYGBgYGBgY=",
                                                 "--finapp.payments.provider.key=BQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQU=",
-                                                "--finapp.payments.webhook.key=BQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQU=");
+                                                "--finapp.payments.webhook.key=BQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQU=",
+                                                // P7-TSK-009: the instant scheme's two keys - the test overlay
+                                                // now supplies instant.url for the published contract's sake,
+                                                // so these contexts construct the instant beans too, and the
+                                                // DATABASE guards must stay the only refusal on trial here.
+                                                "--finapp.payments.instant.key=CAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAg=",
+                                                "--finapp.payments.instant.webhook.key=CQkJCQkJCQkJCQkJCQkJCQkJCQkJCQkJCQkJCQkJCQk=",
+                                                "--finapp.merchant.payout.evidence.key=BgYGBgYGBgYGBgYGBgYGBgYGBgYGBgYGBgYGBgYGBgY=",
+                                                "--finapp.merchant.payout.provider.key=BwcHBwcHBwcHBwcHBwcHBwcHBwcHBwcHBwcHBwcHBwc=");
     }
 }

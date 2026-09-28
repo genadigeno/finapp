@@ -343,7 +343,10 @@ class IdempotencyFailureModeTest {
             dying.setAutoCommit(false);
             new JdbcIdempotencyRecordStore()
                     .claim(dying, key, fingerprint, CorrelationId.of("dead-instance"), FIXED,
-                            FIXED.plus(RETENTION), Duration.ofSeconds(-1)); // lease already expired
+                            // Already expired - by a minute, not a second: the reclaim judges
+                            // it by the database's clock later, and the local container's clock
+                            // was measured stepping back 1.7 s (X-TSK-005).
+                            FIXED.plus(RETENTION), Duration.ofMinutes(-1));
             dying.commit();
         }
 

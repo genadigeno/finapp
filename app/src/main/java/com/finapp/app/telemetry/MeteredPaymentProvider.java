@@ -80,6 +80,16 @@ public final class MeteredPaymentProvider implements PaymentProvider {
     }
 
     @Override
+    public ProviderAnswer voidAuthorization(VoidRequest request) {
+        Instant started = Instant.now(clock);
+        try {
+            return delegate.voidAuthorization(request);
+        } finally {
+            record(PaymentMeters.Operation.VOID, started);
+        }
+    }
+
+    @Override
     public QueryAnswer query(ProviderIdempotencyReference ourReference) {
         Instant started = Instant.now(clock);
         try {

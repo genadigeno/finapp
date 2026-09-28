@@ -40,7 +40,7 @@ class ProviderApiKeyTest {
                         () -> ProviderApiKey.decode(ConfinedCredential.MARKED_LOCAL_DEFAULT, false))
                 .isInstanceOf(IllegalStateException.class)
                 .hasMessageContaining("payment provider API key")
-                .hasMessageContaining("FINAPP_PAYMENT_PROVIDER_KEY");
+                .hasMessageContaining("FINAPP_PAYMENTS_PROVIDER_KEY");
     }
 
     @Test

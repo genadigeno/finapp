@@ -19,6 +19,8 @@ import com.finapp.merchant.PaymentFeePin;
 import com.finapp.payments.PaymentCreation;
 import com.finapp.payments.PaymentIntentId;
 import com.finapp.payments.PaymentParticipants;
+import com.finapp.payments.PaymentsErrorCode;
+import com.finapp.payments.UnknownPaymentInstrumentException;
 import com.finapp.platform.api.ApiException;
 import com.finapp.platform.api.PlatformErrorCode;
 import com.finapp.platform.audit.AuditWriter;
@@ -27,6 +29,8 @@ import com.finapp.platform.outbox.OutboxWriter;
 import com.finapp.sharedkernel.id.IdGenerator;
 import com.finapp.sharedkernel.money.CurrencyCode;
 import com.finapp.sharedkernel.money.Money;
+import com.finapp.sharedkernel.security.Sensitive;
+import java.io.Serial;
 import java.sql.Connection;
 import java.time.Clock;
 import java.time.Instant;
@@ -69,8 +73,33 @@ import org.springframework.transaction.support.TransactionTemplate;
  *
  * <p>Only a session that left the flow <em>without</em> being paid — abandoned, or expired
  * with nothing captured — refuses, because there is no outcome to converge on.
+ *
+ * <p><strong>A confirmation that LOSES the open converges as well</strong> (the Phase 6 → 7
+ * transition). Two confirmations that both read the session {@code OPEN} meet at the claim;
+ * the second replays the first's intent and then finds the session already moved. Until the
+ * transition it answered {@code checkout.NotConfirmable} naming {@code EXPIRED} whatever had
+ * moved it - a double-click told the customer their offer was dead while their payment went
+ * through. Now the losing transaction rolls back and the call reads the session once more,
+ * answering from the state the winner left: nothing moves a session back to {@code OPEN}, so
+ * the second read never reaches the open again.
  */
 public class CheckoutService {
+
+    /**
+     * The claim scope of the payment a confirmation opens (the Phase 6 → 7 transition).
+     *
+     * <p><strong>Its own scope, never {@code payment.create}</strong>. The key is derived -
+     * {@code checkout:<checkoutId>} - and a derived key is predictable: in the public command's
+     * scope any customer could send {@code POST /v1/payments} with that key first, their own
+     * top-up claiming it, and the payer's confirmation would then meet a fingerprint it could
+     * never match and be refused for as long as the session lived. In a scope that only this
+     * class claims, and with a key no client chooses, there is nothing to squat.
+     *
+     * <p>Moving the scope strands no claim: a confirmation whose transaction committed left the
+     * session {@code PAYMENT_PENDING} or paid, and a retry of either converges before it claims;
+     * one that rolled back left no claim at all.
+     */
+    static final String PAYMENT_IDEMPOTENCY_SCOPE = "checkout.payment";
 
     /**
      * A session as its merchant sees it. Never the token, never after creation.
@@ -92,7 +121,26 @@ public class CheckoutService {
             String status,
             String expiresAt,
             String paymentIntentId,
-            String orderId) {}
+            String orderId,
+            /**
+             * The payer's authorization handle (`P7-TSK-009`, ADR-0062 §5): present exactly
+             * while this session's pay-by-bank attempt awaits the payer — the capability
+             * URL their client follows to their PSP. Rendered only to the holder of the
+             * session's own credentials; additive on the contract; the render is a
+             * registered {@code expose()} site.
+             */
+            String authorizationHandle) {
+
+        /**
+         * The identifier and the state only - never the amount, never the line summary
+         * ({@code INV-AUD-02}), the aggregate's own rule for its own rendering. The line summary
+         * is {@code RESTRICTED-PII}: what one person bought.
+         */
+        @Override
+        public String toString() {
+            return "SessionView[" + checkoutId + ", " + status + "]";
+        }
+    }
 
     /** The creation's answer: the session, and the token exactly once. */
     public record CreatedSessionView(
@@ -100,7 +148,19 @@ public class CheckoutService {
             String status,
             String expiresAt,
             String sessionToken,
-            boolean alreadyCreated) {}
+            boolean alreadyCreated) {
+
+        /**
+         * Masked: the token is the credential that pays this session. The three guards that
+         * exempt this field let it be SERIALISED, never logged, and their exemption rested on
+         * an override this record did not have until the Phase 6 → 7 transition.
+         */
+        @Override
+        public String toString() {
+            return "CreatedSessionView[" + checkoutId + ", " + status + ", alreadyCreated="
+                    + alreadyCreated + ", sessionToken=" + Sensitive.MASK + "]";
+        }
+    }
 
     private final CheckoutSessions checkout;
     private final CheckoutMeters meters;
@@ -114,6 +174,10 @@ public class CheckoutService {
     private final com.finapp.payments.PaymentIntentStore<Connection> intents =
             new com.finapp.payments.JdbcPaymentIntentStore();
 
+    /** Stateless, the same reasoning: the payer's rendering reads the attempt's handle. */
+    private final com.finapp.payments.PaymentAttemptStore<Connection> attempts =
+            new com.finapp.payments.JdbcPaymentAttemptStore();
+
     private final PaymentService payments;
     private final PaymentParticipants<Connection> instruments;
     private final LedgerAccountStore<Connection> ledgerAccounts;
@@ -125,6 +189,10 @@ public class CheckoutService {
     private final Clock clock;
     private final TransactionTemplate transactions;
     private final DataSource dataSource;
+
+    /** The wallet instrument's assurance read (P7-TSK-011): the withdrawal's step-up policy
+     * at this door - a factor enrolled means a MULTI_FACTOR session pays from the wallet. */
+    private final com.finapp.identity.MfaEnrolmentStore<Connection> enrolments;
 
     public CheckoutService(
             CheckoutSessions checkout,
@@ -140,7 +208,8 @@ public class CheckoutService {
             IdGenerator ids,
             Clock clock,
             TransactionTemplate transactions,
-            DataSource dataSource) {
+            DataSource dataSource,
+            com.finapp.identity.MfaEnrolmentStore<Connection> enrolments) {
         this.checkout = Objects.requireNonNull(checkout, "checkout must not be null");
         this.meters = Objects.requireNonNull(meters, "meters must not be null");
         this.settlement = Objects.requireNonNull(settlement, "settlement must not be null");
@@ -156,6 +225,7 @@ public class CheckoutService {
         this.clock = Objects.requireNonNull(clock, "clock must not be null");
         this.transactions = Objects.requireNonNull(transactions, "transactions must not be null");
         this.dataSource = Objects.requireNonNull(dataSource, "dataSource must not be null");
+        this.enrolments = Objects.requireNonNull(enrolments, "enrolments must not be null");
     }
 
     // ----------------------------------------------------------------- merchant surface
@@ -167,7 +237,11 @@ public class CheckoutService {
         Money amount = Money.ofMinorUnits(body.amountMinor(), CurrencyCode.of(body.currency()));
         CheckoutSessions.OpenSessionCommand command =
                 new CheckoutSessions.OpenSessionCommand(
-                        idempotencyKey, merchant.merchantId(), amount, body.lineSummary());
+                        idempotencyKey,
+                        merchant.merchantId(),
+                        merchant.keyId(),
+                        amount,
+                        body.lineSummary());
         try {
             CheckoutSessions.OpenedSession opened =
                     inOneTransaction(unitOfWork -> checkout.open(unitOfWork, command));
@@ -197,9 +271,20 @@ public class CheckoutService {
         } catch (MerchantNotPriceableException refused) {
             throw new ApiException(
                     CheckoutErrorCode.NOT_PRICEABLE,
-                    "A checkout session was refused because the merchant has no fee schedule",
-                    "this merchant has no fee schedule, so a checkout cannot be priced.");
+                    "A checkout session was refused because no fee schedule prices it",
+                    "this merchant has no fee schedule for this currency, so a checkout cannot"
+                            + " be priced.");
+        } catch (com.finapp.merchant.SaleBelowFeeException refused) {
+            throw saleBelowFee();
         }
+    }
+
+    /** `P6-TST-001`, ADR-0058: refused at the price, at creation or when the fee is pinned. */
+    private static ApiException saleBelowFee() {
+        return new ApiException(
+                CheckoutErrorCode.SALE_BELOW_FEE,
+                "A checkout was refused because its fee meets or exceeds its amount",
+                "this amount does not cover the merchant's fee, so it cannot be sold.");
     }
 
     /** The merchant's own session. Unknown, malformed and another's are one 404. */
@@ -237,6 +322,7 @@ public class CheckoutService {
                                         checkout.abandon(
                                                 unitOfWork,
                                                 merchant.merchantId(),
+                                                merchant.keyId(),
                                                 id,
                                                 body.reason());
                                 return new Abandonment(
@@ -280,6 +366,22 @@ public class CheckoutService {
      */
     public SessionView confirm(Session current, ConfirmSessionRequest body) {
         Objects.requireNonNull(body, "body must not be null");
+        // THE INSTRUMENT CHOICE, exactly one (P7-TSK-011): a registered method, or the
+        // payer's own wallet - which the platform RESOLVES, never a named account. A body
+        // saying both or neither is malformed, refused before anything is read.
+        boolean fromWallet = "WALLET".equals(body.instrument());
+        if (body.instrument() != null && !fromWallet) {
+            throw new ApiException(
+                    com.finapp.platform.api.PlatformErrorCode.VALIDATION_FAILED,
+                    "A confirmation named an unknown instrument choice",
+                    "instrument must be \"WALLET\" or absent.");
+        }
+        if (fromWallet == (body.paymentMethodId() != null)) {
+            throw new ApiException(
+                    com.finapp.platform.api.PlatformErrorCode.VALIDATION_FAILED,
+                    "A confirmation names exactly one instrument",
+                    "send paymentMethodId, or instrument=\"WALLET\" - not both, not neither.");
+        }
         // THE ONE UNWRAP ON THE INBOUND PATH: the presented value goes straight into the
         // token type, which hashes it to look the session up and never surrenders it again.
         CheckoutSessionToken presented = CheckoutSessionToken.of(body.sessionToken().expose());
@@ -288,13 +390,28 @@ public class CheckoutService {
         CheckoutSessionId sessionId;
         boolean alreadyPaid;
         try {
-            Opened opened =
-                    inOneTransaction(unitOfWork -> openPayment(unitOfWork, current, presented, body));
+            Opened opened = opened(current, presented, body);
             intent = opened.intent();
             sessionId = opened.session();
             alreadyPaid = opened.alreadyPaid();
         } catch (UnknownCheckoutSessionException unknown) {
             throw sessionNotFound();
+        } catch (UnknownPaymentInstrumentException foreign) {
+            // The create door's own refusal, answered as that door answers it (the Phase 6 -> 7
+            // transition): an instrument that is unknown, detached or somebody else's writes
+            // nothing and spends no key. It was a 500. On the METHOD path the wallet and
+            // currency refusals are not answered, deliberately: the participants resolve the
+            // payable in the offer's own currency, which creation priced, so either one is a
+            // broken database. On the WALLET path (P7-TSK-011) both are the payer's own
+            // conditions and are answered below.
+            throw new ApiException(
+                    PaymentsErrorCode.UNKNOWN_INSTRUMENT,
+                    "A checkout confirmation named an instrument that is not the payer's");
+        } catch (MerchantNotTradingException refused) {
+            throw new ApiException(
+                    CheckoutErrorCode.NOT_TRADING,
+                    "A confirmation was refused by the merchant's standing",
+                    "this merchant is not trading, so this checkout cannot be paid.");
         } catch (CheckoutSessionExpiredException expired) {
             throw new ApiException(
                     CheckoutErrorCode.SESSION_EXPIRED,
@@ -306,6 +423,30 @@ public class CheckoutService {
                     "A confirmation was refused by the session's state (" + refused.status() + ")",
                     "this checkout session is " + refused.status()
                             + " and is not awaiting confirmation.");
+        } catch (com.finapp.merchant.SaleBelowFeeException refused) {
+            // Reachable only for a session opened before the rule existed: the pin re-asserts
+            // it, and its transaction rolls back with the intent it would have priced.
+            throw saleBelowFee();
+        } catch (com.finapp.payments.NoWalletForPaymentException noWallet) {
+            // ON THE WALLET PATH ONLY (P7-TSK-011) this is the payer's own condition - no
+            // open wallet to pay from - answered as the create door answers it. On the
+            // method path the credit side is the payable in the offer's own currency, so
+            // the refusal still means a broken database and stays loud (the comment above).
+            if (!"WALLET".equals(body.instrument())) {
+                throw noWallet;
+            }
+            throw new ApiException(
+                    PaymentsErrorCode.NO_WALLET,
+                    "A wallet payment was refused: the payer has no open wallet");
+        } catch (com.finapp.payments.PaymentCurrencyMismatchException mismatched) {
+            // Likewise the payer's own condition on the wallet path: a wallet in another
+            // currency cannot pay this offer (FX is no part of this flow) - nothing written.
+            if (!"WALLET".equals(body.instrument())) {
+                throw mismatched;
+            }
+            throw new ApiException(
+                    PaymentsErrorCode.CURRENCY_MISMATCH,
+                    "A wallet payment was refused: the offer is not in the wallet's currency");
         }
 
         // OUTSIDE a transaction: the command runs its own Tx1 / provider call / Tx2
@@ -313,15 +454,73 @@ public class CheckoutService {
         // chained by PaymentService exactly as it is for a wallet top-up - one implementation,
         // so the two cannot drift in how they treat an unknown outcome.
         if (!alreadyPaid) {
-            payments.confirm(current, intent);
+            try {
+                payments.confirm(current, intent);
+            } catch (ApiException refused) {
+                if (refused.errorCode() == PlatformErrorCode.NOT_FOUND) {
+                    // THE CALLER IS NOT THE PAYER (the Phase 6 -> 7 transition): a second holder
+                    // of the token on a session mid-payment. The payments surface answers its
+                    // own 404, and its words - "no such payment" - told that holder the token
+                    // was live and the session being paid. The session's one 404 tells nothing.
+                    throw sessionNotFound();
+                }
+                if (refused.errorCode() != PaymentsErrorCode.NOT_CONFIRMABLE
+                        || !paidMeanwhile(sessionId)) {
+                    throw refused;
+                }
+                // The purchase worked between this call's read and its confirm - a concurrent
+                // confirmation's capture landed. NotConfirmable reaches only the payer (the
+                // payments surface resolves the intent as the caller's first), so rendering the
+                // paid session tells nobody anything they do not own.
+            }
         }
 
         return inOneTransaction(
                 unitOfWork ->
                         checkout
                                 .ownedBySession(unitOfWork, sessionId)
-                                .map(session -> render(unitOfWork, session))
+                                // The payer's own answer: the one rendering that may carry
+                                // the authorization handle (P7-TSK-009).
+                                .map(session -> renderForPayer(unitOfWork, session))
                                 .orElseThrow(CheckoutService::sessionNotFound));
+    }
+
+    /**
+     * The confirming transaction - run once more if it lost the open to a concurrent writer.
+     *
+     * <p>The loser's transaction rolls back whole: an intent it opened, the pin it wrote and a
+     * key it claimed. The second run reads the row the winner left, and since nothing moves a
+     * session back to {@code OPEN} it converges or refuses on that state without reaching the
+     * open again - a second loss would be a broken machine, and surfaces as one.
+     */
+    private Opened opened(
+            Session current, CheckoutSessionToken presented, ConfirmSessionRequest body) {
+        try {
+            return inOneTransaction(unitOfWork -> openPayment(unitOfWork, current, presented, body));
+        } catch (LostTheOpen lost) {
+            return inOneTransaction(unitOfWork -> openPayment(unitOfWork, current, presented, body));
+        }
+    }
+
+    /** Whether the session a call is answering has been paid since it was read. */
+    private boolean paidMeanwhile(CheckoutSessionId sessionId) {
+        return inOneTransaction(
+                unitOfWork ->
+                        checkout.ownedBySession(unitOfWork, sessionId)
+                                .map(session -> session.status().isPaid())
+                                .orElse(false));
+    }
+
+    /**
+     * A confirmation lost the open: another writer moved the session between this call's read
+     * and its conditional transition. Thrown to roll the transaction back, never to a caller.
+     */
+    private static final class LostTheOpen extends RuntimeException {
+        @Serial private static final long serialVersionUID = 1L;
+
+        LostTheOpen() {
+            super("the session left OPEN before this confirmation could move it", null, false, false);
+        }
     }
 
     /**
@@ -383,8 +582,21 @@ public class CheckoutService {
             // which the platform honours a dead offer (ADR-0053 section 5).
             throw new CheckoutSessionExpiredException();
         }
+        // The merchant's standing as well as the session's (P6-DOC-001): an offer made while
+        // the merchant traded is not paid after it was suspended. Before anything is written,
+        // so a refusal leaves no intent and no pin.
+        checkout.requireTrading(unitOfWork, session.merchantRef());
 
         UUID payerParty = partyOf(unitOfWork, current);
+        boolean fromWallet = "WALLET".equals(body.instrument());
+        if (fromWallet) {
+            // The wallet instrument's assurance, BEFORE anything is written (P7-TSK-011):
+            // the withdrawal's step-up policy at this door - money leaves the payer's
+            // wallet, so an MFA-enrolled identity pays with a MULTI_FACTOR session. The
+            // refusal rolls this transaction back whole; the derived key converges the
+            // retry after elevation.
+            requireConditionalAssurance(unitOfWork, current);
+        }
         PaymentCreation creation =
                 new PaymentCreation(
                         executor,
@@ -399,18 +611,27 @@ public class CheckoutService {
                         audit,
                         outbox,
                         ids,
-                        clock);
+                        clock,
+                        PAYMENT_IDEMPOTENCY_SCOPE);
         PaymentCreation.CreationResult created =
                 creation.create(
                         unitOfWork,
-                        new PaymentCreation.CreatePaymentCommand(
-                                payerParty,
-                                body.paymentMethodId(),
-                                session.amount(),
-                                // The session's OWN identifier as the key: deterministic, so a
-                                // retry that reaches here converges on one intent rather than
-                                // opening a second (INV-IDEM-01 through a derived key).
-                                "checkout:" + session.id().value()));
+                        // The session's OWN identifier as the key: deterministic, so a
+                        // retry that reaches here converges on one intent rather than
+                        // opening a second (INV-IDEM-01 through a derived key) - in its
+                        // own scope, where no client can claim it first. The fingerprint
+                        // carries the instrument choice, so a retry that switches
+                        // instruments meets the conflict it should (INV-IDEM-03).
+                        fromWallet
+                                ? PaymentCreation.CreatePaymentCommand.fromWallet(
+                                        payerParty,
+                                        session.amount(),
+                                        "checkout:" + session.id().value())
+                                : new PaymentCreation.CreatePaymentCommand(
+                                        payerParty,
+                                        body.paymentMethodId(),
+                                        session.amount(),
+                                        "checkout:" + session.id().value()));
 
         // THE PRICE PINNED, in this same transaction (INV-MER-03, INV-HIST-04): the version
         // the SESSION was priced under, carried onto the payment, so a schedule version
@@ -426,11 +647,36 @@ public class CheckoutService {
                         current.identityId().value().toString()));
 
         if (!checkout.paymentOpened(unitOfWork, session, created.intent().value())) {
-            // An expiry sweeper or a concurrent confirmation moved the row first. The whole
-            // transaction rolls back, so nothing was pinned and no intent exists.
-            throw new CheckoutSessionNotOpenException(CheckoutSessionStatus.EXPIRED);
+            // An expiry sweeper, the merchant's withdrawal or a concurrent confirmation moved
+            // the row first. The whole transaction rolls back - nothing pinned, no intent, the
+            // key unspent unless the winner spent it - and the caller reads the row again
+            // rather than guessing which of the three it was.
+            throw new LostTheOpen();
         }
         return new Opened(session.id(), created.intent(), false);
+    }
+
+    /**
+     * The withdrawal's conditional assurance, at the wallet-payment door (`P7-TSK-011`):
+     * an identity with a TOTP factor enrolled pays from the wallet only with a
+     * {@code MULTI_FACTOR} session. Enrolment is the condition, not the request.
+     */
+    private void requireConditionalAssurance(Connection unitOfWork, Session current) {
+        boolean hasFactor =
+                enrolments
+                        .findActive(
+                                unitOfWork,
+                                current.identityId(),
+                                com.finapp.identity.MfaFactorType.TOTP)
+                        .isPresent();
+        if (hasFactor
+                && !current.assurance()
+                        .atLeast(com.finapp.identity.AssuranceLevel.MULTI_FACTOR)) {
+            throw new ApiException(
+                    com.finapp.identity.IdentityErrorCode.ASSURANCE_REQUIRED,
+                    "A wallet payment from an MFA-enrolled identity requires a MULTI_FACTOR"
+                            + " session");
+        }
     }
 
     /** The intent a session past {@code OPEN} must carry; its absence is a broken database. */
@@ -446,7 +692,43 @@ public class CheckoutService {
 
     // -----------------------------------------------------------------
 
+    /** The merchant's rendering: never the payer's authorization handle (`P7-TSK-009`). */
     private SessionView render(Connection unitOfWork, CheckoutSession session) {
+        return render(unitOfWork, session, null);
+    }
+
+    /**
+     * The PAYER's rendering (`P7-TSK-009`, ADR-0062 §5): the one checkout surface that may
+     * carry the authorization handle — the payer holds both credentials and is the person
+     * the capability URL exists for. A merchant's read never comes here: a handle in the
+     * merchant's view is a merchant able to complete or observe the payer's flow, which is
+     * the {@code InitiationAnswer} javadoc's exact warning. The registered {@code expose()}
+     * site beside {@code PaymentService}'s.
+     */
+    private SessionView renderForPayer(Connection unitOfWork, CheckoutSession session) {
+        String handle = null;
+        if (session.status() == CheckoutSessionStatus.PAYMENT_PENDING) {
+            handle =
+                    session.paymentIntentRef()
+                            .flatMap(
+                                    intentRef ->
+                                            attempts.findForIntent(
+                                                    unitOfWork,
+                                                    PaymentIntentId.of(intentRef)))
+                            .filter(
+                                    attempt ->
+                                            attempt.status()
+                                                    == com.finapp.payments.PaymentAttemptStatus
+                                                            .AWAITING_PAYER)
+                            .flatMap(com.finapp.payments.PaymentAttempt::authorizationHandle)
+                            .map(Sensitive::expose)
+                            .orElse(null);
+        }
+        return render(unitOfWork, session, handle);
+    }
+
+    private SessionView render(
+            Connection unitOfWork, CheckoutSession session, String authorizationHandle) {
         return new SessionView(
                 session.id().value().toString(),
                 session.merchantRef().toString(),
@@ -459,7 +741,8 @@ public class CheckoutService {
                 checkout
                         .orderOf(unitOfWork, session.id())
                         .map(order -> order.id().value().toString())
-                        .orElse(null));
+                        .orElse(null),
+                authorizationHandle);
     }
 
     private UUID partyOf(Connection unitOfWork, Session current) {

@@ -6686,17 +6686,20 @@ Acceptance per milestone in `PHASE_5_PLAN.md` §16.
 
 # Phase 6 — Checkout and Merchant Platform
 
-Status: `READY` — entry gate passed 2026-09-21 by the Phase 5 → 6 transition
+Status: ✅ `COMPLETE` (2026-09-24, ruled by [`reviews/PHASE_6_REVIEW.md`](reviews/PHASE_6_REVIEW.md) — `P6-DOC-001`) — entry gate passed 2026-09-21 by the Phase 5 → 6 transition
 ([`reviews/PHASE_5_TO_6_TRANSITION.md`](reviews/PHASE_5_TO_6_TRANSITION.md)), elaborated to
-task granularity by the same transition. The engineering plan is
-[`PHASE_6_PLAN.md`](PHASE_6_PLAN.md); decisions are ADR-0050…ADR-0053 (`Proposed`); the
-domain statement is
+task granularity by the same transition, closed at 18 of 18 items across seven milestones. The
+engineering plan is [`PHASE_6_PLAN.md`](PHASE_6_PLAN.md); decisions are ADR-0050…ADR-0054 and
+ADR-0056…ADR-0058 (`Accepted` at the review, each read against the code and corrected where it
+had drifted first; ADR-0055 is cross-cutting); the domain statement is
 [`CHECKOUT_MERCHANT_LIFECYCLES.md`](../domain/CHECKOUT_MERCHANT_LIFECYCLES.md). The
-in-scope invariants are whatever the catalogue marks `Phase: 6` — **eight at planning
-time** (the transition's new `INV-MER-01`…06, `INV-HIST-04`'s fees element, and
-`INV-AUD-04` live for the first time) —
+in-scope invariants are whatever the catalogue marks `Phase: 6` — **nine at the gate** (eight at
+planning — the transition's new `INV-MER-01`…06, `INV-HIST-04`'s fees element, and `INV-AUD-04`
+on its second subject, after Phase 3's adjustments — and `INV-MER-07`, added by `P6-TSK-015`) —
 **read from the catalogue at the gate, never from this file**. The financial supplement
-F1–F8 binds; every task that can affect money carries `DOD-FIN`.
+F1–F8 binds; every task that can affect money carries `DOD-FIN`. *(This header read `READY`, four
+ADRs `Proposed` and "`INV-AUD-04` live for the first time" through the whole phase — corrected at
+the review, the `P5-DOC-001` finding about the backlog's own phase header, again.)*
 
 **Milestones**: M6.1 Foundations (`P6-TSK-001`…`-003`) · M6.2 Fee economics
 (`P6-TSK-004`, `-005`) · M6.3 Checkout (`P6-TSK-006`…`-008`, and `-014` — *added by `P6-TSK-005`'s completion
@@ -7589,9 +7592,11 @@ negative payable** — `COMPLETE` (2026-09-23)
   them). **The full battery deliberately skipped on the owner's instruction; no fleet-wide
   database or kafka counts claimed.**
 
-**P6-TSK-011 — The payout destination: step-up, four-eyes, cooling-off** — `READY`
+**P6-TSK-011 — The payout destination: step-up, four-eyes, cooling-off** — `COMPLETE` (2026-09-23)
 - **Objective**: the platform's **first four-eyes primitive** (`INV-AUD-04` live) on the
-  action that redirects merchant money. Bounded context 12 with Identity.
+  action that redirects merchant money. Bounded context 12 with Identity. *(In fact its
+  second subject: `P3-TSK-021` built the first, on manual adjustments. Found by the design
+  below; the objective is kept as written.)*
 - **Scope**: the proposal flow (`CHECKOUT_MERCHANT_LIFECYCLES.md` §6): propose (keyed) →
   approve (a **different** authenticated actor, refused in the statement otherwise;
   step-up on both sides when a factor is enrolled — the `P4-TSK-007` pattern) → effective
@@ -7603,8 +7608,100 @@ negative payable** — `COMPLETE` (2026-09-23)
   propose/approve/supersede races counted to one effective row.
 - **Risk**: High (a wrong destination is money to an attacker). **Cx**: L. **DoD**:
   `DOD-SEC`, `DOD-DOMAIN`
+- **Design decisions (2026-09-23, ADR-0056)**: two distinct **operators**, not
+  merchant-then-operator (a merchant has only a machine key this phase, so it reaches no
+  destination route); `MERCHANT_ADMINISTER` proposes and withdraws, a new
+  `PAYOUT_DESTINATION_APPROVE` (the plan's `PAYOUT_APPROVE`, named precisely) approves and
+  rejects, one role holding both — four-eyes is distinct identities, `P3-TSK-021`'s shape; the
+  cooling-off (default `PT72H`) pinned on the row at approval and **withdrawable** during it;
+  `EFFECTIVE` produced by a leaderless sweep that supersedes the old row first; bank details
+  never enter (grant → provider reference + four-character suffix). **Found by the design**: this
+  is four-eyes' SECOND subject — `P3-TSK-021` built the first on manual adjustments — and the
+  catalogue's "first implemented subject" note is corrected.
+- **Completion gate (2026-09-23)** — eighteen probes, all caught, each restore verified
+  byte-identical:
+  - **Four-eyes, at every rank.** Dropping the aggregate's proposer check fails the hermetic,
+    database and HTTP refusals. Making the refusal's record lie fails the committed-`DENIED`
+    assertion at both levels. Turning `V006`'s self-approval CHECK into a tautology fails the
+    raw-SQL half. Dropping the approval's row lock fails the ten-approver race and the
+    withdrawal-vs-deadline race.
+  - **The accept clauses have teeth.** A dispatch during the cooling-off uses the prior
+    destination: caught once the deadline is gone from every layer (finding 1). The counted
+    races each have their own arbiter, probed: the one-open index, the supersession and the
+    lock.
+  - **The claimed boundaries**, each probed:
+    - the approval granted to a permission the money-operating population holds: a
+      `LEDGER_OPERATOR` approves where the negative test owes 403 (`INV-AUD-03`);
+    - the merchant pairing dropped from the lock's statement: another merchant's path reaches
+      the change where one 404 is owed (`INV-MER-01`);
+    - the refusal echoing the refused value, and the grant printing its own: both caught by the
+      shape tests, and the HTTP response never carried the message (`INV-AUD-02`);
+    - the approval's step-up removed: caught (`INV-IDN-05`);
+    - the international-account shape rule removed: caught on both the grant side and the
+      reference side.
+- **What the gate found, and fixed**:
+  - (1) **A fifth cooling-off layer the design had not counted.** The probe removed the
+    deadline from `isDue`, `effect()`, the constructor and the CHECK, and the timeline test
+    still PASSED, because the sweep's candidate query filters `cooling_off_until <= ?` and never
+    offered the row. Only the raw-SQL test caught that probe. A second probe removed the filter
+    too, and the timeline test failed as the accept clause requires. Both are recorded.
+  - (2) **Two tests were listed as demonstrated but had never failed under a probe**
+    (`theFourEyesFlowOverHttp`, `concurrentApprovalsLeaveOneApproval`). Both were probed, and
+    both are caught.
+  - (3) **ADR-0056 claimed invariants no probe had demonstrated.** `INV-AUD-02`, `INV-AUD-03`
+    and `INV-MER-01` were each probed and caught. `INV-LIFE-01/-02/-04` was withdrawn instead,
+    under `MUTATION_TESTING.md` §3's beneficiary precedent: a destination is not a
+    money-moving operation. The register records those probes without claiming them.
+  - (4) **Three untested claims**: the gauge's registration, a withdrawal racing the deadline,
+    and the merchant-key refusal. Tests were added for all three.
+  - (5) **Three inaccuracies**: "the first four-eyes subject" (in the catalogue,
+    `CURRENT_STATE` and this entry's objective), the plan's permission name, and the lifecycle
+    document's missing `SUPERSEDED`. All corrected.
+  - (6) **The probe runner's console summary cut each failure list at three.** The permission
+    probe's fourth catcher, the negative test itself, was missed on first reading. An
+    instrumented run confirmed it, and the register was then written from the untruncated log.
+- **Findings recorded with owners**:
+  - **One corrupt row would stall the sweep for every merchant.** The candidate read maps every
+    row through the aggregate, which refuses a corrupt row at read. The CHECK probe's cascade
+    surfaced it. It is unreachable while `V006`'s CHECKs mirror every read-time refusal, and is
+    recorded as the sweep's residual (MINOR).
+  - **A proposal refused as a second open change has already spent a provider grant.** The
+    first transaction does not pre-check the one-open rule (MINOR). A pre-check could not
+    arbitrate a race anyway, so the index stays the arbiter.
+  - **The conditional step-up now exists in three copies.** Recorded in `CURRENT_STATE.md`
+    §Known Architectural Debt, to be extracted at the fourth caller (ADR-0056 §Follow-up).
+  - **`P6-TSK-012` inherits the dispatch's read** (its entry): `effectiveFor`, refusal when none
+    is effective, and the destination id recorded.
+- **Multi-instance `PASS`.** Every decision is arbitrated in PostgreSQL:
+  - each destination's decisions by its row lock (probed), with the conditional `status = ?`
+    belt beneath it;
+  - one open change and one effective destination per merchant by partial unique indexes
+    (probed);
+  - the leaderless sweep's instances, racing each other or an operator's withdrawal, as one
+    counted race.
 
-**P6-TSK-012 — The payout: hold-then-dispatch on the payable** — `PLANNED`
+  Nothing rests on one JVM.
+- **Registers**:
+  - `MUTATION_TESTING`: §2 +9 rows, §3 +1 paragraph;
+  - ADR-0056 `Proposed` (its invariant list corrected);
+  - merchant `V006`: two tables, two partial unique indexes, an edge trigger and the frozen
+    proposal;
+  - five operations over four paths, and the OpenAPI baseline;
+  - `PAYOUT_DESTINATION_APPROVE` joins `MERCHANT_ADMINISTRATOR`;
+  - `AUDITABLE_ACTIONS` +6, `ERROR_CONTRACT` +5, `DATA_CLASSIFICATION` +22 rows;
+  - `DISTRIBUTED_EXECUTION` §3 +2 rows, one gauge;
+  - `CHECKOUT_MERCHANT_LIFECYCLES` §6, `PHASE_6_PLAN` §4/§8/§9/§11/§15, the `INV-AUD-04`
+    catalogue note.
+
+  No event, no posting.
+- **Verified by targeted tiers from fresh runs**: the fleet-wide hermetic test task green at
+  **1488 tests across 14 modules, 0 failures**, and **173 targeted database tests across 15
+  suites, 0 failures**: every merchant suite, both checkout suites, the first four-eyes
+  subject's two adjustment suites, deny-by-default, role-assignment concurrency, the MFA-bypass
+  enumeration and column classification. **The full battery deliberately skipped on the owner's
+  instruction; no fleet-wide database or kafka counts claimed.**
+
+**P6-TSK-012 — The payout: hold-then-dispatch on the payable** — `COMPLETE` (2026-09-23)
 - **Objective**: ADR-0051 whole — money leaves the platform under Phase 5's disciplines
   pointed outward. Bounded context 12.
 - **Scope**: initiate (merchant key or operator, keyed) → the bound judged inside the
@@ -7625,10 +7722,129 @@ negative payable** — `COMPLETE` (2026-09-23)
   moves nothing), and `paidOut` splits out of `other` as its own term. **Inherited from `P6-TSK-015`**
   (ADR-0054): a payable left negative by a `RETAINED` fee refuses every payout until later
   captures restore it, and a refund dispatched while a payout is in flight is judged against
-  what the payout's hold leaves.
+  what the payout's hold leaves. **Inherited from `P6-TSK-011`** (ADR-0056 §9): the dispatch reads
+  `PayoutDestinations.effectiveFor` in its own transaction, refuses when the merchant has no
+  `EFFECTIVE` destination, and records the destination id it used (each change is its own
+  immutable row, so the id is the destination version).
 - **Risk**: High (outbound money). **Cx**: XL. **DoD**: `DOD-FIN`, `DOD-SEC`, `DOD-API`
+- **Design decisions (2026-09-23, ADR-0057)**: four states, not five — the planned `REQUESTED`
+  has no producer, since the dispatch transaction judges, holds and commits `DISPATCHED`
+  atomically (ADR-0044) — with `FAILED` recording why (`DECLINED`, `PROVIDER_UNAVAILABLE`,
+  `NEVER_RECEIVED`). **Found by the design**: the payout is the first flow with both a re-sending
+  takeover and a sweep that can conclude "never received", and together they could fail a
+  payout, release its hold and still see it paid. Closed by a **send permit**
+  (`last_dispatched_at`, committed before every send, conditional on the payout still being
+  resolvable), with `NEVER_RECEIVED` concluded only past the permit's bound on the locked row;
+  and a refused connection fails a payout only on its **first** send. The claim is scoped per
+  merchant. The operator initiates over its own route and a new `MERCHANT_PAYOUT` in
+  `LEDGER_OPERATOR` (the populations are disjoint, ADR-0052), with a reason. The destination is
+  share-locked at dispatch and bound by a composite FK and an insert trigger. `PAYOUT_CLEARING`
+  is a credit-normal `LIABILITY` (ledger `V012`). The evidence is encrypted under its own key.
+  The webhook is deferred: the query sweep resolves. Every resolver locks the payout first, so
+  the refund's losing-resolver report is not inherited.
+- **Completion gate (2026-09-23)** — thirty-three mutations in thirty-five runs. Every valid one
+  was caught, and every restore was verified byte-identical, the whole tree compared before and
+  after each run:
+  - **The bound, at every rank.** A hold of one minor unit instead of the payout's amount: six of
+    ten racers dispatched against 100.00, and a refund beside a payout in flight was admitted,
+    in both suites; after a `RETAINED` refund, 93.61 left against a 93.60 remainder. A completion
+    that posts nothing: all ten dispatched. A completion that keeps its hold: five tests.
+    `paidOut` unclassified: the term read zero while the position still summed.
+  - **The send permit, both halves** (ADR-0057 §4). The takeover's conditional renewal
+    neutralised: caught by the new race, with `V007` turning it into a loud P0001. With that
+    clause removed too, the takeover re-sent a payout a resolver had just failed. The resolvers'
+    row lock dropped: caught by the new sweep-side race, and by nothing else. The re-judgement's
+    arithmetic replaced by `true`, and the sweep's candidate filter neutralised: each caught by
+    its own test.
+  - **Ambiguity stays ambiguous.** `firstSend` dropped: a re-send's refused connection failed a
+    payout the first send may have paid.
+  - **The machine.** Born anywhere (the insert trigger dropped); the trigger's status clause
+    alone (a payout to a `PROPOSED` destination stored); a backward edge admitted by `V007`; the
+    aggregate's edge check removed; a terminal state given an edge. Each was caught, the
+    trigger's edges and the terminal states at two ranks.
+  - **The claimed boundaries**, each probed: the operator route's permission widened to
+    `MERCHANT_ADMINISTER`; the tenancy predicate dropped from the read and from the dispatch-key
+    lookup; the claim's scope made constant; the takeover minting a fresh reference; the operator
+    audited as the merchant; the amount dropped from the fingerprint; the replay rendering the
+    current status; the evidence stored in the clear; the amount in the facts, as a decimal
+    (refused by `EventPayload` itself) and in minor units (caught by the needle alone).
+  - **Recorded and not claimed**: the destination's share lock and the merchant row's lock, each
+    caught by the one test written for it (`MUTATION_TESTING.md` §3); and the composite foreign
+    key, which alone refused another merchant's destination (23503) once the trigger's clause
+    was removed.
+- **What the gate found, and fixed**:
+  - (1) **Claims with no test that could fail them.** Both halves of the send permit's race: the
+    takeover's conditional, which the takeover-after-sweep test never reached because an unlocked
+    `isResolvable()` pre-check stops it first; and the resolvers' row lock, which the test named
+    for it (`theBoundIsRejudgedUnderTheLock`) never exercised, being single-threaded. Also the
+    release belt (§12), the two ordering locks (§7, §11), and the sensitive-data needle: no
+    amounts in the facts, no destination reference in facts or records, ciphertext at rest. Every
+    one is now tested and probed.
+  - (2) **`V007`'s edge rule had no behavioural demonstration.** Its only raw-SQL edge
+    assertion, `FAILED → UNKNOWN`, is refused by the recorded-outcome clause before the edge rule
+    runs. `UNKNOWN → DISPATCHED` is the move only the edge rule refuses, and it is now asserted.
+  - (3) **Three inherited clauses were proven only by composition** and are now driven end to
+    end: the refund beside a payout in flight, and the negative payable after a `RETAINED`
+    refund, both through checkout; and timeout → standing hold → query-resolved over HTTP, with
+    the replay after resolution answering the original judgement.
+  - (4) **Invalid probes were found, and not counted.** The candidate-filter probe broke the
+    query instead of removing the filter (42P18: pgjdbc binds a `Timestamp` untyped); it was
+    re-run as `<= ? OR true`. The decimal amount was refused by `EventPayload` before the needle
+    could see it. That is itself a finding: the platform primitive refuses decimals but admits
+    digits, so the minor-unit form is the leak only the needle catches. One run never started
+    (the Testcontainers reaper) and was repeated.
+  - (5) **ADR-0057 corrected**: §4's premise now names the clock skew between instances, and
+    the invariant list separates what is protected here from what is relied on (`INV-LED-01`,
+    `INV-BAL-05`, `INV-EVT-01`).
+- **Findings recorded with owners**:
+  - **A stuck payout is detectable but not alertable on its own** until the payout series exist
+    (`DOD-FIN` 1.11): recorded in `CURRENT_STATE.md` §Partially Satisfied Definition of Done,
+    owned by `P6-TSK-013`.
+  - **The resolvers' lock is not the counted race's arbiter**: the conditional transition is.
+    The lock is what makes the send permit's re-judgement sound (above).
+  - **No operator read route for a payout.** An operator can initiate on a merchant's behalf but
+    reads it only through the merchant's own surface. Out of this task's scope; a candidate for
+    the operator surface when it is built.
+  - **A load-sensitive test outside this task.** `SimulatedTokenisationAdapterTest#aTimeoutIsUnavailable`
+    (`P5-TSK-005`) failed once in a fresh fleet-wide run. Its 200 ms client timeout raced the
+    simulated provider's request journal under build load, and it passed alone and in the repeat.
+    It is offered as its own task: a bounded wait in place of the instant count.
+- **Multi-instance `PASS`.** Every decision is arbitrated in PostgreSQL:
+  - the bound by the payable account's row lock, ten racers counted to the affordable set;
+  - the destination and the merchant's standing by the dispatch's share and row locks, each loser
+    observed Lock-waiting;
+  - each payout's outcome by its row lock and the conditional transition beneath it, ten sweeps
+    to one outcome;
+  - the send permit by its conditional renewal and the resolvers' lock, both halves of the race
+    driven.
 
-**P6-TSK-013 — The meters and the dashboard row** — `PLANNED`
+  Nothing rests on one JVM, and the premise the permit needs — a bound above the clock skew — is
+  stated.
+- **Registers**:
+  - `MUTATION_TESTING`: §2 +28 rows, §3 +1 paragraph;
+  - ADR-0057 `Proposed`, its premise and invariant list corrected by the gate; ADR-0051 refined;
+  - merchant `V007` (the payout, its history and its evidence; the insert and edge triggers; the
+    composite foreign key) and ledger `V012` (`PAYOUT_CLEARING` in three currencies);
+  - three operations over three paths, and the OpenAPI baseline;
+  - `MERCHANT_PAYOUT` joins `LEDGER_OPERATOR`;
+  - `AUDITABLE_ACTIONS` +3, `ERROR_CONTRACT` +5, `DATA_CLASSIFICATION` +33 rows;
+  - `DISTRIBUTED_EXECUTION` §3 +1 row; `MODULE_ARCHITECTURE`;
+  - `CHECKOUT_MERCHANT_LIFECYCLES` §4, `PHASE_6_PLAN` §4/§5/§8/§9/§11;
+  - `CURRENT_STATE` §Partially Satisfied Definition of Done +1 row.
+
+  Three events (`MerchantPayoutInitiated`, `-Completed`, `-Failed`) and one posting.
+- **Verified by targeted tiers from fresh runs**: the fleet-wide hermetic test task green at
+  **1524 tests across 14 modules, 0 failures**, and **256 targeted database tests across 24
+  suites, 0 failures**: every merchant suite, every checkout suite, the payment refund and
+  capture suites, the ledger account, hold and balance suites, both adjustment suites,
+  deny-by-default, role-assignment concurrency, the MFA-bypass enumeration and column
+  classification. The first fleet-wide hermetic run failed one test outside this task,
+  `SimulatedTokenisationAdapterTest#aTimeoutIsUnavailable` (`paymentmethods`, untouched); it
+  passed alone, 7 of 7, and the fleet-wide repeat above is the counted run. **The full battery
+  was deliberately skipped on the owner's instruction; no fleet-wide database or kafka counts
+  are claimed.**
+
+**P6-TSK-013 — The meters and the dashboard row** — `COMPLETE` (2026-09-23)
 - **Objective**: `PHASE_6_PLAN.md` §15's six series, the established conventions.
 - **Scope**: session outcomes (acting only), conversion age, fee assessments (counts,
   never amounts), payout outcomes, stuck-payout gauges (NaN-never-zero, floored,
@@ -7637,6 +7853,83 @@ negative payable** — `COMPLETE` (2026-09-23)
 - **Deps**: `P6-TSK-012`. **Accept**: all six from a freshly started instance with no
   database; the tag vocabulary walks the designed path if it widens at all.
 - **Risk**: Low. **Cx**: M. **DoD**: `DOD-OBS`
+- **Design decisions (2026-09-23)**: two of the six already existed —
+  `finapp.checkout.session` (`P6-TSK-008`) and `finapp.merchant.destination.pending`
+  (`P6-TSK-011`), each built with the flow it measures — so this task builds four and the row.
+  - **Only the acting judgement counts, at the door, after commit.** `Applied.acting` was
+    discarded before it left `merchant`. `MerchantPayouts.Initiated` gains `acting` (the
+    refund's `RefundResult` shape) and `MerchantPayoutResolution.SweepResult` gains
+    `actingJudgements` (the `PaymentSweeper` shape). The app's two doors count post-commit.
+  - **The stuck-payout gauge counts an overdue dispatch too.** `PaymentMetrics` counts only the
+    unknown states, and its database test explains why: a dispatch is mid-question. That holds
+    within the sweep's bound, not past it. With the sweep down, a crashed dispatch stays
+    `DISPATCHED` for ever and an unknown-only gauge reads zero, which is the gap `P6-TSK-012`'s
+    DoD row recorded. So the reading is the sweep's own candidacy with the `UNKNOWN` bound at
+    zero, aged the sweep's way on the server's clock, the bound read through one placeholder
+    the sweep shares.
+  - **Fee assessments and conversion age are counted in the transaction, behind the
+    conditional** — `CheckoutMeters`' stated compromise, for its reason: the capture's
+    transaction belongs to `payments`, which composes only in its acting branch.
+  - **Conversion age by `outcome`**: in-window measures the customer, late measures the
+    provider; one series would let the late ones swallow the mean. No new tag key.
+  - **Found by the design**: §15 gave both stuck-payout gauges one row, and the planned-meters
+    guard reads a row's first name only, so the age gauge would never have been held. Split,
+    as `PHASE_5_PLAN.md` already had it.
+- **Completion gate (2026-09-23)** — twenty probes, all caught, each restore verified
+  byte-identical, the whole tree compared before and after:
+  - **The stuck-payout reading, at each of its three semantics.** The bound neutralised counted
+    the in-flight dispatch (3 where 2 is owed). The overdue-dispatch clause removed - Phase 5's
+    shape - missed the overdue payout (1). An `UNKNOWN` aged from its birth read five days old.
+    Each failed its own assertion in the schema test. NaN-never-zero was probed both ways, and the
+    floor too. This is `INV-LIFE-03`'s "unknown-state age metric" for payouts, and is recorded
+    under it.
+  - **Acting-only at both doors.** Every initiation counted, the acting bit dropped, every applied
+    sweep answer reported as a judgement, the schedule's count removed: each caught.
+  - **The rest.** `DISPATCHED` counted; a top-up counted as a fee assessment; the conversion
+    unsplit, reversed and unclamped; a completion counted without its age; the gauge bean
+    unregistered; the age gauge's plan row removed; a dashboard query naming a series nobody
+    publishes: each caught.
+- **What the gate found, and fixed**:
+  - (1) **The running instance never read the real schema.** Every gauge value test stubbed the
+    reading or called the store directly, so a broken wiring - the pool, the grants, the
+    placeholder - would have passed them all while every scrape read NaN. That left `DOD-OBS`'s
+    "verified against a running instance" unmet. Added
+    `MerchantPayoutDatabaseTest#theWiredGaugesReadTheRealSchema`, probed.
+  - (2) **The conversion age's value was unasserted where it is recorded.** The flow tests counted
+    conversions, so a reversed age read zero and passed. It is now bounded by the test's own span,
+    probed.
+  - (3) **The payout resolution schedule had no lifecycle test**, missing since `P6-TSK-012`, and
+    this task changed the class. A tick that rethrew would end the fixed-delay executor and every
+    resolution with it. Added `MerchantPayoutResolutionScheduleTest`, the
+    `PaymentSweeperScheduleTest` shape, probed.
+  - (4) `NoFloatingPointMoneyRulesTest` refused the gauge's `double` at the registry boundary. It
+    is exempted with its argument - the `PaymentMetrics` case again: counts and seconds as `long`
+    up to the boundary, no amount published.
+- **Findings recorded with owners**:
+  - **Phase 5's stuck-payment gauges have the blind spot the payout gauge closes**: recorded as an
+    input to `P6-DOC-001`, whose review decides.
+  - **Fee assessments and conversions are counted inside the capture's transaction** - the
+    `CheckoutMeters` compromise - so a transaction failing after it overcounts by one. Recorded,
+    not changed.
+  - **The gauge's bound is shared by construction** (one placeholder both beans read), not by a
+    test.
+- **Multi-instance `PASS`.** Counters are per instance, aggregated with `rate()` and `sum()`, and
+  every increment sits behind a conditional only the winner passes: ten racers, one count, probed
+  at both doors. Gauges read the same fleet-wide answer from the shared table on every instance,
+  aggregate with `max()`, are floored at five seconds per instance, read only and decide nothing.
+  Nothing rests on one JVM.
+- **Registers**: `MUTATION_TESTING` §2 +3 rows and §3 +1 paragraph; `PHASE_6_PLAN` §15 (the gauge
+  row split, the kinds made precise); the dashboard's merchant row, seven panels;
+  `NoFloatingPointMoneyRulesTest` +2 exemptions; `CURRENT_STATE`'s partial DoD row for
+  `P6-TSK-012` closed.
+- **Verified by targeted tiers from fresh runs**: the fleet-wide hermetic test task green at **1540 tests across 14 modules, 0 failures**,
+  and **292 targeted database tests across 33 suites, 0 failures**: every merchant, checkout
+  and telemetry suite, the payment refund, capture, authorization, ambiguity, conservation and
+  sweeper suites, the ledger account, hold and balance suites, both adjustment suites,
+  deny-by-default, role-assignment concurrency, the MFA-bypass enumeration and column
+  classification. **The full battery was
+  deliberately skipped on the owner's instruction; no fleet-wide database or kafka counts are
+  claimed.**
 
 **P6-TSK-014 — The merchant refund: gross out of the payable, fee per the pinned policy** — `COMPLETE` (2026-09-22)
 - **Objective**: give `refundFeePolicy` its consumer. ADR-0050's consequences say a refund of
@@ -7717,7 +8010,7 @@ negative payable** — `COMPLETE` (2026-09-23)
   suites, 0 failures** (merchant, payments and checkout). **The full battery deliberately
   skipped on the owner's instruction; no fleet-wide database or kafka counts claimed.**
 
-**P6-TST-001 — The tenancy and fee-conservation battery** — `PLANNED`
+**P6-TST-001 — The tenancy and fee-conservation battery** — `COMPLETE` (2026-09-23)
 - **Objective**: the two gate properties that decay silently, demonstrated in bulk.
 - **Scope**: the cross-tenant negative battery (every merchant endpoint, merchant A on B's
   world: one refusal, zero rows — mechanised so a new endpoint cannot dodge it); the
@@ -7739,8 +8032,123 @@ negative payable** — `COMPLETE` (2026-09-23)
 - **Deps**: `P6-TSK-009`, `-005`. **Accept**: both batteries green from fresh runs; the
   register rows land with performed demonstrations. **Risk**: Medium. **Cx**: M.
   **DoD**: `DOD-TEST`, `DOD-FIN`, `DOD-SEC`
+- **Design and implementation (2026-09-23)**:
+  - **The pricing decision, taken at the price** (ADR-0058, `Proposed`). A sale must net the
+    merchant at least one minor unit. `CheckoutSessions.open` prices the offer under the version
+    the session will carry, before the claim, and refuses `net ≤ 0` as `checkout.SaleBelowFee`
+    (422): nothing written, the key unspent. `MerchantSettlement.pin` re-asserts it for every
+    pin, before the insert. A capture is never refused. The same pricing now refuses an offer in a
+    currency the schedule does not price as `checkout.NotPriceable`; until now it was accepted at
+    creation. The pinned test is rewritten as three: meets and exceeds refused with the key
+    unspent; the smallest covered sale refunded in full under `RETURNED`, landing the payable at
+    exactly zero; and the foreign-currency refusal. The pin's own refusal is driven at the store.
+    `INV-MER-07`'s statement narrows, and ADR-0054's open item is annotated as decided.
+  - **The detector, widened where the blind spots are.** In `com.finapp.merchant` and
+    `com.finapp.checkout`, `OwnershipIsScopedTest` counts a bare `UUID` as a resource identifier,
+    and SQL issued by a same-class helper as the caller's, one hop deep. It newly sees nineteen
+    methods, and each is classified: four `OWNER_SCOPED`, each naming a negative; five
+    `AUTHORITATIVE_ID`; ten `ADMINISTERED`. A guard fails the build if `merchant_id` or
+    `merchant_ref` appears in a SQL literal anywhere else, which is why those two packages suffice.
+    The same widening platform-wide would surface 31 more methods in ten modules: `X-TSK-002`.
+  - **The battery**, `MerchantTenancyBatteryDatabaseTest`. The routes come from the application's
+    handler mapping: 23 of them, 8 on the merchant key and 15 operator paths naming a merchant.
+    The table must equal that set, and each row's kind must be its shape's:
+    - DERIVED 5 — driven: A's reads and writes stay in A's world, and the dispatch pays only A's
+      own destination;
+    - ID_ADDRESSED 3 and PAIRED 4 — probed: A on B's resource is a 404 normalised-identical to
+      an unknown one, both worlds' fingerprints are unchanged, and a positive control follows;
+    - SUBJECT 11 — each declares its permission.
+  - **The fee batch**, `MerchantCaptureDatabaseTest#theFeeBatchConservesEveryMinorUnit`. 360
+    assessments go through the capture's production seam: EUR, GBP and USD; six rounding
+    policies; seven rates; four fixed parts; 150 of the amounts on exact halves, which every
+    rounding policy meets in at least two currencies. Per currency, the
+    books equal an independent formula, the residual read from the books alone is zero, and the
+    trial balance is zero. **Stated limit**: the chart holds only two-minor-unit currencies, so the
+    0- and 3-minor-unit cases rest on `FeeCalculationTest`'s hermetic property sweep (JPY, USD and
+    BHD; 7,200 cases), not on the ledger batch.
+- **Completion gate (2026-09-23)** — thirty-one probes, twenty-nine caught, every restore
+  verified byte-identical and the whole tree compared before and after:
+  - **The refusal at every rank.** The creation's check removed, and narrowed to `net < 0`,
+    each fails the price test (the pin still refuses behind it). The pin's check removed fails
+    the pin's own test, the foreign-currency pin and the pre-rule confirmation. Narrowed, it
+    fails the pin test's *meets* case. The foreign currency rethrown fails as a 500. Either
+    surface mapping removed fails its test. The reservation's floor removed fails the floor's
+    seam test.
+  - **The battery at every kind.** Each addressed statement neutralised, its parameter still
+    bound: the session read, the payout read, the destination pairing, the key pairing and the
+    dispatch's destination read. Each is caught by the battery. A new merchant route, a new
+    operator pairing, and an identifier parameter on a derived route each fail the table. A probe
+    aimed at a path that does not exist fails its positive control. A fingerprint that sees
+    nothing fails its own sensitivity check.
+  - **The detector and its guard.** The UUID widening reverted, the helper widening reverted, a
+    new unclassified UUID read in a tenant store, a tenant statement in the app module, and a
+    helper-split `OWNER_SCOPED` statement losing its predicate: each fails the rule.
+  - **The fee batch.** The version's rounding policy defaulted: caught by the batch and the
+    hermetic policy test. A balanced mis-split of one minor unit per entry: caught by nine tests.
+    It leaves the residual at zero and the independent formula sees it, which is why the batch
+    carries one. The stored rounding policy ignored at read: caught by the batch alone in its
+    suite, and by the schedule suite's round trip (checked, not assumed).
+  - **Two survivors, recorded rather than hidden.** A fingerprint blind to the keys' statuses
+    still moved on a revocation's event row and audit record. That is redundancy, not a gap, and a
+    fingerprint returning a constant was then caught by the sensitivity check alone. The
+    withdrawal's own tenant read removed survives the battery, because the render's owner-scoped
+    read shares the transaction and rolls it back (`P6-TSK-008`'s finding).
+    `theWithdrawalCommandIsTenantScoped` caught it at the command.
+  - **The dispatch's destination read has a second rank.** Unscoped, every payout that picked
+    another merchant's account was refused by `V007`'s own-destination trigger (SQLState `23514`),
+    so the battery sees the defect as a failure rather than as a payment to the wrong account.
+  - **Two first runs did not compile** and are not counted: a probe's edit dropped a brace, and a
+    planted method landed under an `@Override`. The second had also read the previous probe's
+    result file through the runner's one-second slack, which the runner no longer allows.
+- **What the gate found, and fixed**:
+  - (1) **The confirmation's mapping of the pin's refusal had no test.** A session opened before
+    the rule reaches the pin, and a missing catch would have answered 500. Added
+    `CheckoutFlowDatabaseTest#aSessionOpenedBeforeTheRuleIsRefusedAtConfirmation`, the session
+    opened through the store, and probed.
+  - (2) **A register row named a test this task rewrote.** `MUTATION_TESTING` §2's floor row
+    pointed at `aRefundOfASaleWhoseFeeExceededItsGrossIsRefusedHonestly`, and
+    `MutationDemonstrationTest` failed the fleet-wide run on it. The floor is still reachable
+    under the rule, as the last of a partial series on a sale netting one minor unit, and was
+    also misdescribed in `MerchantSettlement.reservation`'s javadoc ("only when a capture's fee
+    was at least its gross"). Added `MerchantCaptureDatabaseTest#theReservationFloorHoldsTheSmallestUnit`,
+    re-pointed the row, re-performed the probe, and corrected the javadoc and ADR-0058's
+    refund claim.
+  - (3) **The battery's fingerprint was unproven.** "Unchanged" would have passed a fingerprint
+    that saw nothing. Every positive control on a writing route must now move it, and no read
+    may, probed. The payout negative now also shows A's world unmoved while B pays.
+  - (4) **Three texts that said what is not so.** `JdbcCheckoutSessionStore.read`'s register
+    reason named callers it no longer has. `FeeAssessment.exceedsGross`'s javadoc pointed at a
+    debt row that does not exist. ADR-0058's draft said nothing priced a foreign offer until
+    confirmation, where the code in fact refuses it (`NoWalletForPaymentException`).
+- **Findings recorded with owners**:
+  - **The detector's widening is the tenant's two packages only**: `X-TSK-002`, and a debt row.
+  - **The ledger batch holds two-minor-unit currencies only**, because the chart does. The 0- and
+    3-minor arithmetic rests on `FeeCalculationTest`'s sweep. A ledger-level batch in JPY or BHD
+    waits for a phase that operates in one: Phase 9's multi-currency accounting.
+  - **`checkout.NotPriceable`'s title predates the currency case** ("has no fee schedule"). The
+    detail and the contract prose carry the case, and retitling is a contract change left to
+    `P6-DOC-001`.
+- **Multi-instance `PASS`.** The refusal is a pure judgement over the offer's amount and an
+  immutable version, read in the creation's own transaction before the claim, so ten instances
+  pricing one offer reach one answer, and the claim arbitrates duplicates. The pin's
+  re-assertion is judged per pin under the same immutable version, so ten confirmations racing
+  one session converge on one intent and one answer. Tenancy is a predicate in each statement,
+  correct on any number of instances by construction. The battery and the batch decide nothing.
+  Nothing rests on one JVM.
+- **Registers**: `MUTATION_TESTING` §2 +14 rows, the floor row re-pointed, §3 +1 paragraph
+  and §4 +1 row; ADR-0058 (`Proposed`) and its index row; ADR-0054 annotated; `INV-MER-07`
+  narrowed; `ERROR_CONTRACT` +1 code; `CHECKOUT_MERCHANT_LIFECYCLES` §2; the OpenAPI baseline
+  (one response component added, nothing removed or changed); `OwnershipIsScopedTest` +19
+  register entries, +4 negatives, +2 tests; `CURRENT_STATE` +1 debt row; `X-TSK-002` created.
+- **Verified by targeted tiers from fresh runs**: the fleet-wide hermetic test task green at **1542 tests across 14 modules, 0 failures**,
+  and **225 targeted database tests across 21 suites, 0 failures**: every checkout suite; the
+  merchant capture, battery, fee-schedule, API-key, endpoint, onboarding, payout and destination
+  suites; the stuck-payout gauges and dashboard queries; the payment capture, refund and
+  conservation suites; the trial balance and deny-by-default. **The full battery was
+  deliberately skipped on the owner's instruction; no fleet-wide database or kafka counts are
+  claimed.**
 
-**P6-TST-002 — The merchant conservation storm** — `PLANNED`
+**P6-TST-002 — The merchant conservation storm** — `COMPLETE` (2026-09-24)
 - **Objective**: the phase's composition demonstration — checkouts, captures-with-fees,
   refunds and payouts at once, conservation as arithmetic (`P5-TST-003`'s discipline on
   the merchant book).
@@ -7753,13 +8161,95 @@ negative payable** — `COMPLETE` (2026-09-23)
   the storm must include the drain); remaining `Phase: 6` register rows. **Input from `P6-TSK-015`**:
   refunds against a drained payable are a third refusal kind (`payments.RefundUnfunded`), and
   merchant debt from `RETAINED` fees must stay bounded by the fees retained on refunded sales
-  (`INV-MER-07`).
+  (`INV-MER-07`). **Input from `P6-TST-001`**: since ADR-0058 a sale below its fee is a
+  refusal at creation, not a negative payable, so the storm's sales must cover their fees
+  and merchant debt has one source, the fee a `RETAINED` refund keeps. The fee batch's
+  fixture onboards merchants in GBP and USD as well as EUR, ready for a multi-currency
+  reading.
 - **Deps**: `P6-TSK-012`, `P6-TST-001`, **`P6-TSK-014`** *(added by `P6-TSK-005`'s gate: without it the `− refunds` term of this item's own conservation identity has no producer)*. **Accept**: the readings reconcile under load;
   both refusal kinds occur as checked facts; every `Phase: 6` invariant row demanded by
   the guard is present.
 - **Risk**: Medium. **Cx**: L. **DoD**: `DOD-TEST`, `DOD-FIN`
+- **Design and implementation (2026-09-24)**: `MerchantConservationStormDatabaseTest`, through
+  the application's own routes. Ten movers run for as long as the sweeper keeps sweeping: three
+  buyers, four refunders and three payers-out.
+  - **The world.** Three merchants in three currencies, covering both refund policies: EUR
+    `RETAINED`, GBP `RETURNED` and USD `RETAINED`.
+  - **The storm.** Buyers confirm sessions they opened two rounds earlier, so sales straddle a
+    **repricing** made half-way through; the oracle prices each sale by its own pin
+    (`INV-MER-03`, `INV-HIST-04` under load). Refunders find their payments in the database
+    whatever state they are in, and every successful refund and payout is replayed once with its
+    key. The sweeper ends the storm (25 rounds, 240 commands, no sleeps). Each round, it checks
+    the trial balance per currency, each payable's projection, each payable's debt bound (read
+    in one snapshot with the refunds that bound it), and each merchant's own payable view
+    explaining itself.
+  - **The readings, against records the ledger never sees.** Each payable view is checked term
+    by term: captured, fees (by pin), refunded, fees returned, paid out and other, plus the
+    position and the ledger's derivation. `PAYOUT_CLEARING`, `SETTLEMENT_CLEARING` and
+    `FEE_REVENUE` are summed over the storm's own entries rather than as deltas, because the
+    application's schedulers may post other suites' leftovers into those shared accounts
+    mid-storm.
+  - **The tally.** No payout or refund is left in flight and no hold is left standing. No
+    merchant is paid past what it is owed: a `RETURNED` payable never goes below zero, and a
+    `RETAINED` one never below minus the fee shares it kept.
+  - **The checked facts.** `merchant.PayoutUnfunded`, `payments.RefundUnfunded`,
+    `payments.RefundExceedsCaptured` and both replays each occur, and at least one sale
+    straddles the repricing.
+  - **Observed in one run**: 42 sales, 7 of them straddling the repricing, 39 refunds completed
+    and 35 payouts completed, all replayed. The refusals: 76 `PayoutUnfunded`, 23
+    `RefundUnfunded`, 36 `RefundExceedsCaptured` and 2 `NotRefundable` (the refund arriving
+    mid-capture). Stable in three consecutive runs of about seven seconds each.
+  - **The register at the flip.** Read with the guard's own rules, all nine `Phase: 6` invariants
+    already have rows, so the flip demands only this item's own section 4 entry.
+- **Completion gate (2026-09-24)** — eleven probes, ten caught, every restore verified
+  byte-identical and the whole tree compared before and after:
+  - **The payout bound and the refund bound, together.** Holds ignored in `AvailableBalance`:
+    caught at round 6, with GBP's `RETURNED` payable at −0.83 while the books still balanced.
+    Only the debt bound sees two commands each judged alone.
+  - **The pin under load.** A capture priced by the version in force was caught at round 14:
+    EUR's payable was 0.30 off the pinned books, one straddling sale's fee difference. The
+    single-threaded mid-flight test caught it too. A refund's terms priced the same way were
+    caught at round 14 (GBP 5.09 against 5.00) and by the seam test. This is `INV-HIST-04`'s
+    first performed mutation.
+  - **The counterparts and the tally.** A payout credited to `SETTLEMENT_CLEARING` was caught at
+    round 2, by the `PAYOUT_CLEARING` reading alone. A payout's hold left standing was caught by
+    the tally alone: eight EUR holds at the end.
+  - **Duplicates.** With a refund's claim forgotten, the replay became a second refund, refused
+    where the replay's 201 is owed. A payout's claim forgotten SURVIVED, held by the schema's
+    `UNIQUE (merchant_id, dispatch_key)` and the convergence read. With both ranks broken, the
+    replay dispatched a second payout and was caught.
+  - **The storm's own teeth.** With no repricing, the storm refuses to pass. With no payers-out,
+    there was no `PayoutUnfunded` and not one `RefundUnfunded` across 74 completed refunds. With
+    the snapshot read under `READ COMMITTED`, the reconciliation failed at round 9.
+  - **The flip, simulated.** With Phase 6 marked `COMPLETE`, the register guard demanded exactly
+    this item's section 4 row, and passed once it landed. The derived meter guard passed both
+    times. `CURRENT_STATE.md` was restored byte-identically.
+- **What the gate found, and fixed**:
+  - (1) **The storm reconciled only at rest.** The acceptance reads *the readings reconcile under
+    load*, and mid-storm the storm checked only the trial balance, the projections, the debt bound
+    and the views' internal sums. Each capture, refund and payout commits its posting with its
+    own status. So one `REPEATABLE READ` snapshot per round now reconciles each payable to the
+    independent books, and `PAYOUT_CLEARING` to the completed payouts. Probed.
+  - (2) **`P6-TST-001` routed three findings to `P6-DOC-001` without writing them into its
+    entry** (the stale-second-copy class). They were `checkout.NotPriceable`'s title, the ledger
+    batch's two-minor-unit limit, and the `INV-HIST-04` row demonstrated without a mutation. The
+    last is now answered by this storm. All three are written into the entry.
+  - (3) Every captured sale must now have its checkout order (`INV-MER-06` at volume), and the
+    storm closes its HTTP client.
+- **Multi-instance `PASS`.** The storm asks the ten-instance question of the whole merchant book:
+  ten movers, each command on its own pooled connection, contending in the database. The beans
+  they share hold no correctness state, which `NoSingleInstanceAssumptionRulesTest` enforces.
+  Every bound held under the contest, every duplicate converged, and no outcome occurred that was
+  not a domain one: no deadlock and no 500.
+- **Registers**: `MUTATION_TESTING` section 2 +7 rows, section 3 +1 paragraph and section 4 +1
+  row; `P6-DOC-001`'s entry +2 inputs. No production code changed.
+- **Verified by targeted tiers from fresh runs**: the fleet-wide hermetic test task green at **1542 tests across 14 modules, 0 failures**,
+  and **103 targeted database tests across 8 suites, 0 failures**: the storm, the tenancy
+  battery, the capture, checkout-flow and both payout suites, `P5-TST-003`'s storm and the
+  trial balance. **The full battery was deliberately skipped on the owner's instruction; no
+  fleet-wide database or kafka counts are claimed.**
 
-**P6-DOC-001 — Phase 6 review record** — `PLANNED`
+**P6-DOC-001 — Phase 6 review record** — `COMPLETE` (2026-09-24)
 - **Scope**: the exit review per `PHASE_GATES.md` §4 and §5 Phase 6 (original bullets plus
   the transition's extension, **read from the gate at review time**), F1–F8 re-assessed,
   the ten-instances question over the phase's contended decisions, assess → corrections →
@@ -7770,9 +8260,1055 @@ negative payable** — `COMPLETE` (2026-09-23)
   targeted runs never included the suite. The post-flip battery cannot be green until it is fixed.
 - **Input from `P6-TSK-015`'s gate**: `DECISIONS.md` carries no Phase 6 section. ADR-0050…0054
   are indexed only in `docs/adr/README.md`, which is the omission `P2-DOC-001` found once
-  before and corrected at its review.
+  before and corrected at its review. *(`P6-TSK-011` adds ADR-0056 to the same set: the Phase 6
+  section owes it too; `P6-TSK-012` adds ADR-0057.)*
+- **Input from `P6-TSK-012`'s design**: three recorded disagreements between the documents and
+  the code, owned here because each spans the phase rather than one task. (1) ADR-0052 §2 says
+  every merchant-API audit record names the key that acted; the payout's records do, the checkout
+  session's do not yet. (2) Every idempotency scope is a constant, so two merchants reusing one
+  key value collide as `api.Conflict` on `checkout.session`; the payout scopes its claim per
+  merchant, as ADR-0004 intends. (3) `PHASE_6_PLAN.md` §10 says event payloads carry "never
+  amounts", but `merchant.FeeAssessed` and `merchant.FeeReturned` carry them, with a test
+  asserting it. The review decides which side each document is on.
+- **Input from `P6-TSK-013`'s design**: Phase 5's stuck-payment gauges
+  (`finapp.payments.unknown.*`) count only the unknown states, so a payment attempt or a
+  refund whose instance crashed mid-dispatch is invisible to them whenever the sweeper is not
+  running. The payout gauges now count a dispatch overdue past the sweep's own bound; whether
+  the payment gauges should follow is the review's call, since Phase 5 made its choice
+  deliberately and recorded why.
+- **Input from `P6-TST-001`'s gate** *(written by `P6-TST-002`'s gate, which found these routed
+  here but never recorded)*:
+  - `checkout.NotPriceable`'s title still reads *has no fee schedule*, although the code now
+    also answers an offer in an unpriced currency. Retitling is a contract change.
+  - The ledger-level fee batch runs only two-minor-unit currencies, because the chart holds no
+    others. A JPY or BHD batch waits for a phase that operates in one (Phase 9).
+  - `INV-HIST-04`'s single row was demonstrated rather than mutated. `P6-TST-002`'s performed
+    mutation now answers it.
+- **Input from `P6-TST-002`**: the flip was simulated. The register guard demands nothing
+  more, and the derived meter guard passes. The storm runs its ten movers in one JVM, so two
+  application instances in two JVMs are not driven, and its prices only ever rise. Whether the
+  review wants either is its call.
 - **Deps**: everything above. **Accept**: the review's verdict flips the status; the
   post-flip battery green. **Risk**: Low. **Cx**: M. **DoD**: `DOD-DOC`
+- **The review (2026-09-24)** — [`reviews/PHASE_6_REVIEW.md`](reviews/PHASE_6_REVIEW.md). Eight
+  areas, twelve universal criteria, F1–F8 re-assessed, sixteen phase-specific criteria (6 + the
+  10 the transition added, read from the gate), and the ten-instances question over
+  sixteen contended decisions — every one `PASS` or `Met`, several only after the
+  corrections below. **Verdict: Phase 6 `COMPLETE`.**
+- **The inputs, decided**:
+  - `X-TSK-001`'s red chart test: two stale copies of the owner-kind filter (the resolver and the
+    test), fixed with the seed guard's own `requiresOwnerRef()`. The recorded fix would have
+    dropped the seeded `SUSPENSE_UNMATCHED` from the test.
+  - `DECISIONS.md` gains its Phase 6 section.
+  - ADR-0052 §2 wins: the session's audit records name the key.
+  - ADR-0004 wins: the session's claim is scoped per merchant, and every other constant scope
+    is `X-TSK-003`, with the migration hazard recorded.
+  - The code wins on the fee events' amounts: `EVENT_ARCHITECTURE.md` records the wire format,
+    and plan §10 is corrected.
+  - Phase 5's stuck-payment gauges: the payout's shape is right, and the change lands in Phase 7
+    with refund resolution by query.
+  - `checkout.NotPriceable` retitled, a compatible contract change; `NotTrading` retitled with it.
+  - The two-minor-unit batch goes to Phase 9. `INV-HIST-04` is answered by `P6-TST-002`. The
+    storm's one JVM is Phase 16's.
+- **What the assessment found beyond the inputs, and fixed** (six audits, each read-only, each
+  finding verified against the code before it was acted on):
+  - **A suspended merchant's open offer was still payable.** The confirmation never read the
+    merchant's standing, though plan §14 scenario 11 said it refused. It now refuses as
+    `checkout.NotTrading` before anything is written, and a payment admitted earlier still lands.
+  - **One session per intent was never enforced**: ADR-0053's index was never built, and the
+    capture took the first row its unindexed scan met. Now checkout `V003`.
+  - **Every paid order was announced `PAYMENT_PENDING`.** `OrderPaid` was built from the row as
+    read, before its transition.
+  - **A zero never-received bound was accepted.** It is now refused at construction.
+  - **Five of eight confined credentials named variables nothing binds.** They are renamed, and
+    `ConfinedCredentialVariablesTest` pins every pair.
+  - **Nothing pinned which permission a route requires.** `RoutePermissionRegisterTest` now pins
+    all 32 routes, and the tenancy battery's operator rows cite it: seven of eleven had cited
+    negatives that did not exist.
+  - **The cooling-off gate criterion was proven by a read.** A real dispatch inside the window now
+    pays the prior destination.
+  - **Four contended decisions had no race test**: fee-schedule assignment, suspension, key
+    revocation, and expiry against a concurrent capture. Now ten-way.
+  - **Records**: six of eight ADRs had drifted and are corrected before acceptance. Plan,
+    architecture, delivery plan, lifecycles, glossary, invariants (`INV-MER-02`, `-03`), event
+    architecture, four registers and the ADR index are made true. `CURRENT_STATE.md` had two
+    Phase 5 and two Phase 2 paragraphs under the wrong headings. Two deferrals owned by this phase
+    had closed unpaid (a debt row whose trigger fired, and Phase 5's refund sweeping); both are
+    re-owned.
+- **Eighteen probes, seventeen caught, the one survivor a correct second rank**, every restore verified byte-identical. One survived, correctly: the session's conditional transition stands behind its row lock, and with both broken the order's `UNIQUE (session_ref)` caught the race. One was caught a rank below the one broken: the cooling-off read, by `V007`'s trigger.
+- **The flip, performed**: Phase 6 recorded `COMPLETE` armed the register and meter guards, which
+  passed. It was proven non-vacuous against the real status: with `INV-HIST-04`'s rows removed,
+  the guard failed naming it and reporting `(currently 6)`. It was restored byte-identical.
+- **Multi-instance `PASS`**: every contended decision has its arbiter and a counted race.
+- **Verified by the post-flip battery from fresh runs**: the fleet-wide hermetic test task green at **1550 tests across 14 modules, 0 failures**,
+  and **224 targeted database tests across 23 suites, 0 failures**: every merchant, checkout and telemetry suite, the chart suite that was red, the trial balance, deny-by-default and the payment conservation storm.
+  **The full battery was deliberately skipped on the owner's instruction; no fleet-wide
+  database or kafka counts are claimed.**
+- **The completion gate (2026-09-24)** audited the review in its turn. Four findings, each fixed:
+  - (1) **The repository's `README.md` was frozen in mid-Phase 5** ("Phase 5 … `IN_PROGRESS`, 5 of
+    21 items", 87 invariants), under a sentence promising every number was counted from the
+    repository. Every number is now recounted: 7 of 17 phases, 199 of 202 elaborated items, 58
+    ADRs, 94 invariants, 79 migrations, 71 paths and 86 operations, 77 auditable actions, 68 error
+    codes. The stale-second-copy class, at the project's front door.
+  - (2) **The review had passed "destination change requires step-up authorization" without
+    saying how it read it.** The step-up is the platform's conditional one: an operator with no
+    enrolled factor proposes and approves without one. That reading is now stated in the review,
+    and the gap is a debt row owned by Phase 15 (privileged access). Four-eyes and the cancellable
+    cooling-off stand regardless.
+  - (3) The review's ADR table said ADR-0054 was unchanged, although a stale phrase had been dated.
+  - (4) The gate's own payable formula omits fees returned. This is noted, and the gate's words are
+    left as it wrote them.
+
+---
+
+# Phase 7 — Cards, Wallets, A2A and Instant Payments
+
+Status: `IN_PROGRESS` — started 2026-09-26 with `P7-TSK-001` (14 of 18 items complete, M7.1 at
+3 of 3, M7.2 at 2 of 2, M7.3 at 3 of 3, M7.4 at 2 of 2, M7.5 at 1 of 1, M7.6 at 3 of 3) *(read `READY` for two days after the first task started — caught by `P7-TSK-001`'s own
+gate, the stale-second-copy class this file has now recorded five times)*; entry gate passed
+2026-09-24 by the Phase 6 → 7 transition
+([`reviews/PHASE_6_TO_7_TRANSITION.md`](reviews/PHASE_6_TO_7_TRANSITION.md)), elaborated to task
+granularity by the same transition. The engineering plan is [`PHASE_7_PLAN.md`](PHASE_7_PLAN.md);
+decisions are ADR-0059…ADR-0062 (`Proposed`); the domain statement is
+[`RAIL_AND_DISPUTE_LIFECYCLES.md`](../domain/RAIL_AND_DISPUTE_LIFECYCLES.md). The in-scope
+invariants are whatever the catalogue marks `Phase: 7` — **ten at planning** (`INV-RAIL-01`…04,
+`INV-DSP-01`…03, `INV-REV-03`, `INV-SET-01`, and `INV-HIST-04`'s routing element) — **read from the
+catalogue at the gate, never from this file**. The financial supplement F1–F8 binds; every task
+that can affect money carries `DOD-FIN`.
+
+**Every task below states the gate's twenty-two fields**: objective, bounded context,
+dependencies, scope, out of scope, domain changes, persistence, API, events, financial impact,
+invariants, distributed-system concerns, idempotency, consistency, atomicity, security, audit,
+reconciliation, testing, acceptance criteria and definition of done, plus the standing risk and
+complexity. A task's design (`task-design`) may correct its entry, and says so in the entry — the
+`P6-TSK-001` precedent.
+
+**Milestones**: M7.1 Rail foundations (`P7-TSK-001`…`-003`) · M7.2 The card rail completed
+(`P7-TSK-004`, `-005`) · M7.3 External accounts and the instant rail (`P7-TSK-006`…`-008`) · M7.4
+Pay-ins by bank (`P7-TSK-009`, `-010`) · M7.5 The wallet as an instrument (`P7-TSK-011`) · M7.6
+Disputes (`P7-TSK-012`…`-014`) · M7.7 Observability and demonstration (`P7-TSK-015`, `P7-TST-001`,
+`P7-TST-002`) · M7.8 The gate (`P7-DOC-001`). Acceptance per milestone in `PHASE_7_PLAN.md` §16.
+
+**P7-TSK-001 — The rail port, the capability descriptor, and the card rail declared** — `COMPLETE`
+- **Objective**: ADR-0059 §1 made real, with no behaviour change: the payments domain acts on a
+  rail's declared capabilities, and the one rail that exists declares them.
+- **Bounded context**: Payments (9), `payments`.
+- **Dependencies**: Phase 6 `COMPLETE` (the Phase 6 → 7 transition).
+- **Scope**: the `PaymentRail` port and the immutable `RailCapabilities` descriptor (interaction
+  model, finality, reversals, refund mode, settlement, outcome deadline, disputes, currencies and
+  limits, clearing purpose); the simulated card PSP adapter declares the card rail's descriptor
+  from ADR-0049 §2; the `payment_attempt` table gains `rail` (backfilled with the card rail,
+  frozen at birth); the capability check becomes the one place a reversal, a refund mode or a
+  clearing purpose is decided; `INV-RAIL-01`'s static rule refusing rail-name literals outside
+  adapter packages and configuration.
+- **Out of scope**: any second rail; the per-model machines (`-002`); routing (`-003`).
+- **Domain changes**: `PaymentRail`, `RailCapabilities`, `RailId`; `PaymentProvider` becomes the
+  card rail's operations behind the port (its contract unchanged).
+- **Persistence**: payments `V011` — `payment_attempt.rail`, `NOT NULL`, backfilled, frozen by the
+  every-writer trigger; its `DATA_CLASSIFICATION.md` §4 row in the same change.
+- **API**: none; the payment views may carry the rail in a detail object (decided at design).
+- **Events**: none new.
+- **Financial impact**: none; the capture's clearing purpose is read from the descriptor rather
+  than hard-coded, and still resolves to `SETTLEMENT_CLEARING`.
+- **Invariants**: `INV-RAIL-01`, `INV-PAY-03` (per adapter), `INV-LIFE-02`.
+- **Distributed-system concerns**: the descriptor is immutable data per adapter version, shared by
+  every instance through configuration; nothing about a rail lives in process state.
+- **Idempotency**: unchanged — every provider operation still keyed by our reference.
+- **Consistency**: strong; the rail is written with the attempt in the same transaction.
+- **Atomicity**: the attempt and its rail in one insert.
+- **Security**: none new; the adapter's credentials keep their confinement.
+- **Audit**: the dispatch audit records name the rail.
+- **Reconciliation**: the rail joins the attempt's stored identifiers (Phase 8 groups by it).
+- **Testing**: descriptor unit tests; the card adapter's contract test asserting it behaves as its
+  descriptor says; the static rule's planted-violation test; the **full battery green** as the
+  proof of no behaviour change; probes on the static rule and the backfill.
+- **Accept**: the card rail runs as a declared rail; every Phase 5 and 6 suite green unchanged; a
+  planted rail-name branch in the core fails the build.
+- **Definition of done**: `DOD-ARCH`, `DOD-FIN`, `DOD-TEST`, `DOD-DOC`. **Risk**: Low. **Cx**: M.
+- **Gate evidence (2026-09-26)**: the card rail runs as a declared rail — `RailId`,
+  `RailCapabilities` (coherence refused at construction, every impossible combination from
+  ADR-0059 §1's table), the `PaymentRail` declaration and the `PaymentRails` directory;
+  `SimulatedCardPspAdapter.RAIL` declares ADR-0049 §2's semantics field by field, pinned by the
+  adapter's contract suite. `payment_attempt.rail` (`V011`): backfilled `card`, `NOT NULL`,
+  shape-checked, frozen among the birth facts by the replaced every-writer trigger, whose edge
+  conditions the migration test regenerates from the machine against `V011` exactly as against
+  `V003`. The three capability decision points consult the descriptor: both clearing
+  resolutions in `PaymentOutcomes` read the STORED attempt's rail through the directory (an
+  undeclared rail is a loud wiring fault before anything posts), and `PaymentRefund` judges the
+  refund mode on the locked row; the reversal check deliberately lands with the void itself
+  (`P7-TSK-004`), so no dead refusal code shipped. The dispatch audits name the rail.
+  `INV-RAIL-01`'s static rule (`RailVocabularyIsConfinedTest`) scans every module's main
+  sources comment-stripped: a whole-literal rail name outside its declaring adapter and a
+  declaration-constant reference outside the composition root both fail the build, with
+  in-suite planted violations and stale-permit checks. **Design decisions recorded**: the rail
+  is NOT in any API view (a constant column inside a no-behaviour-change task; it joins the
+  views when routing makes it customer-meaningful, `P7-TSK-003`); `interaction_model` is not
+  stored (derivable with one rail; `P7-TSK-002`, which builds the machines that key on it, owns
+  its column); `PaymentRail` is declared data rather than an adapter-implemented interface,
+  because the wired provider bean is the metering decorator and a capability face on the
+  undecorated instance would be one the running system cannot see. **Deviation recorded**: the
+  entry's "full battery green" is met per the owner's standing skip instruction by the
+  fleet-wide hermetic tier (1573 tests across 14 modules, 0 failures, fresh) and 107 targeted
+  database tests across 11 suites (payments schema,
+  authorization, capture, refund, sweeper, webhooks, metrics, conservation, ambiguity, merchant
+  capture, checkout flow, platform column classification), 0 failures — no fleet-wide database
+  or kafka count claimed. **Eight probes, all caught**, restores byte-identical
+  (`MUTATION_TESTING.md` §2): two planted rail-name branches (each family), the descriptor's
+  clearing purpose bent (caught at the posting's own assertions — the money rank), the freeze
+  clause dropped, the backfill disarmed (the textual pin alone can catch it: test databases are
+  born after `V011`, the recorded reason the pin exists), the insert writing no rail, the audit
+  naming none, the refund-mode gate inverted. **Multi-instance PASS**: the descriptor is
+  compiled data identical on every instance; the per-payment fact is the frozen stored `rail`
+  every resolver keys on; no cache, no process state; the migrate-then-deploy sequencing note
+  (`NOT NULL` versus old writers) recorded as V009's precedent.
+
+**P7-TSK-002 — The attempt's machine per interaction model** — `COMPLETE` (2026-09-26)
+- **Objective**: ADR-0059 §2 — three machines under one aggregate root, each under the
+  three-layer discipline, so no rail's completion can be mistaken for another's.
+- **Bounded context**: Payments (9).
+- **Dependencies**: `P7-TSK-001`.
+- **Scope**: `interaction_model` on the attempt (frozen at birth); the push states
+  (`AWAITING_PAYER`, `EXECUTION_DISPATCHED`, `EXECUTION_UNKNOWN`, `EXECUTED`, `FAILED`) and the
+  book states (`EXECUTED`, `FAILED`) beside the two-step machine; generated `CHECK`s and the
+  transition trigger keyed on the model; the sweeper, the stuck gauges and the stranded-chain leg
+  read by model; the intent's **capture mode** (`AUTOMATIC` for every existing intent), so the
+  stranded-chain leg the transition added never captures an authorization meant to rest.
+- **Out of scope**: any operation on the new states (their rails' tasks).
+- **Domain changes**: `InteractionModel`; `PaymentAttempt` permitted transitions per model;
+  `PaymentIntent.captureMode`.
+- **Persistence**: payments `V012`, recreating the attempt's and the intent's every-writer
+  triggers; **the `wallet_account_id` → `credit_account_id` rename lands here**, the recorded debt's
+  trigger; classification rows.
+- **API**: none. **Events**: none new.
+- **Financial impact**: none; the machines gate where postings may happen.
+- **Invariants**: `INV-LIFE-01`, `-02`, `-04`; `INV-RAIL-01`.
+- **Distributed-system concerns**: every transition stays a conditional write whose loser
+  converges; the sweeps' candidate reads are per model and still leaderless.
+- **Idempotency**: unchanged. **Consistency**: strong. **Atomicity**: each transition one row.
+- **Security**: none new. **Audit**: history rows carry the model.
+- **Reconciliation**: none new.
+- **Testing**: exhaustive transition sweeps per model at the aggregate and against raw SQL; the
+  migration reconciliation test generating each model's edges; probes on each layer.
+- **Accept**: an illegal cross-model transition is refused at all three layers; the rename done and
+  every Phase 5 and 6 suite green.
+- **Definition of done**: `DOD-FIN`, `DOD-TEST`, `DOD-DOC`. **Risk**: Medium (the platform's most
+  critical table's triggers are recreated). **Cx**: M.
+- **Completed (2026-09-26)**: all three layers per model. `InteractionModel.edges()` owns the
+  machines (`TWO_STEP` Phase 5's verbatim; `PUSH` with `AWAITING_PAYER` for a pay-in; `BOOK`
+  edgeless — born terminal, never a history row), `permits`/`anyPermits` exact because no
+  non-terminal state name is shared across models (pinned structurally). The aggregate refuses a
+  foreign model's state, payload and door; payments `V012` binds vocabulary and model in one
+  `CHECK`, regenerates the every-writer trigger as each model's own edge disjunction (the book
+  machine contributing none), freezes `interaction_model` and the intent's new `capture_mode`
+  among the birth facts, widens the one-live predicate with `EXECUTED`, and lands the
+  `wallet_account_id → credit_account_id` rename under the recreated intent trigger (the
+  `P6-TSK-005` debt, paid). The sweeps are model-keyed: the card sweep and the
+  stranded-authorization chain leg select `TWO_STEP` only, the chain leg captures `AUTOMATIC`
+  intents only, and the stuck gauges widened (+`EXECUTION_UNKNOWN` at any age,
+  +`EXECUTION_DISPATCHED` past the bound; `AWAITING_PAYER` deliberately excluded — the payer
+  PSP's clock, `P7-TSK-009` owns its ageing). **"History rows carry the model" is carried
+  structurally**: model-exclusive vocabularies and an edgeless book machine make a history row's
+  own states name its machine — `V012`'s recorded decision, no model column on history. The
+  exhaustive raw sweep drives all 154 (model × from × to) pairs as the migrator; thirteen probe
+  runs, twelve caught (the backfill's comment-out form survived the substring pin with the
+  statement text intact — recorded as that pin's stated limit — and the text-changing form
+  caught). The gate also found `CURRENT_STATE.md` §Next Task still naming `P7-TSK-001` — the
+  stale-second-copy class, two tasks late — and the participants javadoc narrating the rename
+  debt as open; both fixed with provenance. Evidence: `CURRENT_STATE.md` §Just completed, `MUTATION_TESTING.md` §2/§3, the change
+  log's dated row.
+
+**P7-TSK-003 — Rail routing: the versioned policy, the pinned decision, rail availability** — `COMPLETE` (2026-09-26)
+- **Objective**: ADR-0060 — every payment routed once, before anything is sent, by a pinned policy
+  version over stored inputs, explainable and recomputable.
+- **Bounded context**: Payments (9).
+- **Dependencies**: `P7-TSK-001`, `-002`.
+- **Scope**: `routing_policy_version` (immutable, effective forward); `rail_availability` (an
+  operator's recorded fact); `routing_decision` and its steps, born in the confirmation's Tx1 and
+  frozen; the pure decision function; fallback only on `NOTHING_SENT` or an eligibility refusal;
+  `payments.NoEligibleRail`; the operator routes (create version, set availability, read a
+  decision's explanation) under `PAYMENT_ROUTING_ADMINISTER`.
+- **Out of scope**: automatic availability from failure rates (Phase 15/16); per-rail pricing.
+- **Domain changes**: `RoutingPolicy`, `RoutingRule`, `RoutingDecision`, `RailAvailability`.
+- **Persistence**: payments `V013`; classification rows.
+- **API**: three operator routes, with the OpenAPI baseline and `RoutePermissionRegisterTest` rows.
+- **Events**: `RailSelected`.
+- **Financial impact**: none on amounts; the rail chosen decides the clearing position.
+- **Invariants**: `INV-RAIL-02`, `INV-HIST-04` (routing element), `INV-PAY-04`.
+- **Distributed-system concerns**: availability read inside the decision's transaction and
+  recorded; ten confirmations of one intent produce one decision (the intent's conditional).
+- **Idempotency**: version creation keyed; availability converges; the decision is one row per
+  payment.
+- **Consistency**: strong; the decision and the attempt commit together.
+- **Atomicity**: the decision, its steps and the attempt in one transaction.
+- **Security**: a new permission on an operator role, negative-tested; reasons required.
+- **Audit**: version creation, availability changes and decision reads audited.
+- **Reconciliation**: the decision joins the payment's chain (why this rail).
+- **Testing**: recomputation over stored inputs across versions; fallback on `NOTHING_SENT`;
+  refusal to fall back on `INDETERMINATE`; a ten-way race; probes on each rule.
+- **Accept**: gate criterion "routing deterministic, version-pinned and explainable from stored
+  data" demonstrable on the card rail alone and re-demonstrated with every later rail.
+- **Definition of done**: `DOD-FIN`, `DOD-API`, `DOD-SEC`, `DOD-TEST`. **Risk**: Medium. **Cx**: L.
+- **Completed (2026-09-26)**: ADR-0060 whole. `RoutingPolicyVersion.decide` is pure over stored
+  and declared facts — the recomputation suite replays it identically and across versions that
+  disagree (`INV-RAIL-02`'s verification); payments `V013` holds the immutable versions (the fee
+  schedule's discipline: `UNIQUE (version)` the minting arbiter AND the queue, ten writers ten
+  gapless numbers, immutability by trigger for every writer), the availability fact, and the
+  pinned decision with its append-only step trail — one CHOSEN per intent by partial index,
+  refused explorations lawfully beneath it. The confirmation ROUTES in Tx1: computed before the
+  arbiter, written only after winning it (ten racers, one decision, counted), the decision and
+  `RailSelected` committed beside the attempt; no eligible rail is a RECORDED refusal
+  (`payments.NoEligibleRail`, the intent untouched and deliberately retryable — proven end to
+  end: rail out, 422 recorded; rail back, the same payment succeeds under the seeded pin). The
+  fallback appends `ABANDONED(NOTHING_SENT)` only on knowledge; `INDETERMINATE` appends nothing
+  (probed). Three operator routes under the new `PAYMENT_ROUTING_ADMINISTER` (held by
+  `LEDGER_OPERATOR` — the decision ADR-0060 left to this design), keyed version creation
+  (`INV-IDEM-01`; the divergence from the unkeyed fee version reasoned at the scope constant),
+  reasoned availability, audited explanation; negatives include the named one (the counterparty
+  administrator cannot reroute money). Fourteen probe runs, thirteen caught; the one survivor
+  analysed — the ORDER-only mutation is extensionally harmless while the `WHERE` stands — and
+  re-run in its falsifiable form (`created_at` for `effective_from`), caught by the
+  future-version test. Evidence: `CURRENT_STATE.md` §Just completed, `MUTATION_TESTING.md`
+  §2/§3, the change log's dated row.
+
+**P7-TSK-004 — The card void: the revocable half of `INV-REV-03`** — `COMPLETE` (2026-09-26)
+- **Objective**: a reversal the card rail honours, performed: an uncaptured authorization is voided
+  at the provider rather than left to lapse.
+- **Bounded context**: Payments (9).
+- **Dependencies**: `P7-TSK-002`.
+- **Scope**: `VOID_DISPATCHED`, `VOID_UNKNOWN`, `VOIDED` on the two-step machine; a void when a
+  capture is declined, when an authorized intent is cancelled, and by an operator; the adapter's
+  void operation; the capability check refusing a void on any rail that does not list it
+  (`payments.ReversalNotSupported`), before anything is written or sent.
+- **Out of scope**: partial captures; manual-capture product flows.
+- **Domain changes**: the void edges; `ReversalNotSupportedException`.
+- **Persistence**: payments `V014` (the void's reference and states); classification rows.
+- **API**: cancel extended to authorized intents; an operator void route.
+- **Events**: `AuthorizationVoided`.
+- **Financial impact**: **none** — orchestration only; nothing was captured.
+- **Invariants**: `INV-REV-03` (the revocable side), `INV-LIFE-03`, `INV-PAY-04`.
+- **Distributed-system concerns**: a void racing a capture on one attempt — the conditional from
+  `AUTHORIZED` admits one; a void's ambiguity resolved by query like every operation.
+- **Idempotency**: our void reference, minted before the send.
+- **Consistency**: strong. **Atomicity**: dispatch-before-call, two transactions.
+- **Security**: the operator void behind a permission; the customer's own intent only.
+- **Audit**: every void audited with actor and reason.
+- **Reconciliation**: the void reference stored beside the authorization's.
+- **Testing**: void on approve, decline, timeout-then-success; a void racing a capture; the
+  refusal on a non-card rail (with a test rail); probes.
+- **Accept**: a declined capture and a cancelled authorization both void; a void against an
+  irrevocable rail is refused by the domain with nothing written or sent.
+- **Definition of done**: `DOD-FIN`, `DOD-API`, `DOD-TEST`. **Risk**: Medium. **Cx**: M.
+
+**P7-TSK-005 — Card clearing evidence** — `COMPLETE` (2026-09-26)
+- **Objective**: the card rail's later facts preserved for Phase 8 — clearing recorded, never
+  mistaken for settlement.
+- **Bounded context**: Payments (9); feeds Settlement (13) in Phase 8.
+- **Dependencies**: `P7-TSK-001`.
+- **Scope**: the PSP's clearing notification through the signed webhook door; the network
+  references (acquirer reference and network transaction identifiers) stored per capture;
+  duplicate and late notices harmless; no ledger effect.
+- **Out of scope**: settlement file ingestion and matching (Phase 8).
+- **Domain changes**: `ClearingRecord`.
+- **Persistence**: payments `V015`; classification rows.
+- **API**: the webhook door's clearing event type.
+- **Events**: `PaymentClearedOnRail`.
+- **Financial impact**: **none** — clearing agrees an obligation; it moves no money
+  (`INV-SET-01`).
+- **Invariants**: `INV-SET-01`, `INV-IDEM-04`, `INV-HIST-02`.
+- **Distributed-system concerns**: ten deliveries of one notice under distinct and identical event
+  ids, one record.
+- **Idempotency**: the inbox; one clearing record per capture (a unique constraint).
+- **Consistency**: evidence first, then the record. **Atomicity**: one transaction per delivery.
+- **Security**: the webhook's signature and freshness window; nothing card-sensitive stored.
+- **Audit**: none beyond evidence (a provider statement is not a privileged act).
+- **Reconciliation**: the references Phase 8 matches a clearing file against.
+- **Testing**: duplicate, late and out-of-order notices; a notice for an unknown capture retained
+  as evidence; probes.
+- **Accept**: clearing recorded once with its references and no posting.
+- **Definition of done**: `DOD-FIN`, `DOD-TEST`. **Risk**: Low. **Cx**: S.
+
+**P7-TSK-006 — The instant rail: a provider-neutral push port and its simulated scheme** — `COMPLETE` (2026-09-26)
+- **Objective**: ADR-0062 §1 — the second rail, with materially different finality, behind a port
+  that keeps every country's specifics in the adapter.
+- **Bounded context**: Payments (9).
+- **Dependencies**: `P7-TSK-001`, `-002`.
+- **Scope**: the push port (`exchange` of a grant, `send`, `inquire`, `initiate`,
+  `inquireInitiation`); the instant rail's descriptor (push, final on acceptance, scheme-reported
+  settlement, the outcome deadline, no disputes); a simulated scheme in the provider harness with
+  fault injection (timeout-then-accept, reject, duplicate and late confirmations, unknown after the
+  deadline); contract tests; the scheme's credentials under the confinement mechanism.
+- **Out of scope**: every business flow over the rail (`-007`…`-010`).
+- **Domain changes**: `PushRail`, our verdicts (`ACCEPTED`, `REJECTED`, `NOTHING_SENT`,
+  `INDETERMINATE`), `EndToEndReference`.
+- **Persistence**: none (adapter only).
+- **API**: none. **Events**: none.
+- **Financial impact**: none yet.
+- **Invariants**: `INV-PAY-03` (per adapter), `INV-RAIL-01`, `INV-LIFE-03`.
+- **Distributed-system concerns**: the adapter holds no state; every instance speaks to the scheme
+  with our references.
+- **Idempotency**: the scheme deduplicates on our end-to-end reference (the simulator enforces it).
+- **Consistency / Atomicity**: not applicable (no writes).
+- **Security**: confined credentials pinned by `ConfinedCredentialVariablesTest`; the webhook key
+  per rail.
+- **Audit**: none.
+- **Reconciliation**: the scheme's transaction reference and settlement cycle identifier carried
+  in every answer.
+- **Testing**: contract tests over every fault; the descriptor's behaviour assertions.
+- **Accept**: the adapter behaves as its descriptor says under every injected fault.
+- **Definition of done**: `DOD-TEST`, `DOD-SEC`, `DOD-DOC`. **Risk**: Medium. **Cx**: M.
+
+**P7-TSK-007 — External bank accounts as payment instruments, through the grant exchange** — `COMPLETE` (2026-09-27)
+- **Objective**: ADR-0062 §2 — a customer's external account is a `BANK_ACCOUNT` payment method
+  known only by an opaque reference; bank details and aliases never enter.
+- **Bounded context**: Payment Methods (10), `paymentmethods`.
+- **Dependencies**: `P7-TSK-006`.
+- **Scope**: register from a grant (holding no connection during the exchange); a display suffix
+  and the confirmation-of-payee result stored; `NO_MATCH` needs the customer's recorded
+  acknowledgement; account-number-, international-identifier- and phone-shaped values refused at
+  the surface, in the domain types and by `CHECK`s; ownership-scoped; step-up when a factor is
+  enrolled; detach.
+- **Out of scope**: risk scoring of the name check (Phase 13).
+- **Domain changes**: the instrument kind; `DestinationReference`; `PayeeCheck`.
+- **Persistence**: paymentmethods `V003`; classification rows (`INV-RAIL-03`'s column sweep).
+- **API**: register and detach routes (customer session), with OpenAPI rows.
+- **Events**: `PaymentMethodAttached` for the new kind.
+- **Financial impact**: none.
+- **Invariants**: `INV-RAIL-03`, `INV-PAY-02` (unchanged), `INV-AUD-02`.
+- **Distributed-system concerns**: a grant is single-use at the provider; a concurrent double
+  registration converges on the claim.
+- **Idempotency**: register keyed per party.
+- **Consistency**: strong. **Atomicity**: one transaction after the exchange.
+- **Security**: step-up; the reference `Sensitive`-wrapped, its `expose()` sites registered; the
+  needle over logs, events and responses.
+- **Audit**: registration and detach audited.
+- **Reconciliation**: the opaque reference joins every push that uses it.
+- **Testing**: shaped-value refusals at each layer; ownership negatives; the needle; probes.
+- **Accept**: a bank account registered and used by reference with no identifier at rest anywhere.
+- **Definition of done**: `DOD-SEC`, `DOD-API`, `DOD-TEST`. **Risk**: Medium. **Cx**: M.
+
+**P7-TSK-008 — Wallet withdrawal over the instant rail** — `COMPLETE` (2026-09-27)
+- **Objective**: money leaves a wallet to the customer's bank account, final on acceptance, and
+  `INV-REV-03` gets its irrevocable subject.
+- **Bounded context**: Payments (9), consuming Ledger (7) and Payment Methods (10).
+- **Dependencies**: `P7-TSK-003`, `-006`, `-007`.
+- **Scope**: the `Withdrawal` aggregate; hold-then-dispatch on the wallet's ledger account under
+  its lock; our end-to-end reference and a send permit committed before the send; completion
+  releases and posts `wallet-withdrawal:<id>` (DR `CUSTOMER_WALLET` / CR `INSTANT_CLEARING`);
+  failure concluded only on the scheme's own refusal, on an unovertaken first send's refused
+  connection, or past the scheme's deadline under the permit rule; the inquiry sweep; a reversal
+  of an accepted withdrawal refused by the domain.
+- **Out of scope**: recall requests; withdrawal limits (Phase 13).
+- **Domain changes**: `Withdrawal`, its machine, `WithdrawalStore`.
+- **Persistence**: payments `V016` (the withdrawal, its history, its evidence); ledger `V013`
+  (`INSTANT_CLEARING`); classification rows.
+- **API**: withdraw (customer session, keyed, step-up when enrolled) and read.
+- **Events**: `WithdrawalInitiated`, `WithdrawalCompleted`, `WithdrawalFailed`.
+- **Financial impact**: **creates financial effects**: the hold, the posting, the release.
+- **Invariants**: `INV-REV-03`, `INV-RAIL-02`, `-04`, `INV-BAL-04`, `INV-PAY-04`, `INV-LIFE-03`.
+- **Distributed-system concerns**: ten withdrawals racing one wallet admit exactly the affordable
+  set; a takeover and the sweep behind the send permit; the permit judged on the locked row.
+- **Idempotency**: keyed per customer; the claim's scope names the principal (ADR-0004).
+- **Consistency**: strong on the wallet; eventual on the scheme's answer.
+- **Atomicity**: dispatch (hold, row, permit) one transaction; outcome (release, post) one.
+- **Security**: ownership of the wallet and the instrument; step-up; the permission-free customer
+  route with its negative tests.
+- **Audit**: dispatch and outcome audited.
+- **Reconciliation**: end-to-end reference ↔ scheme reference ↔ the `INSTANT_CLEARING` entry.
+- **Testing**: the four gate scenarios on this flow; a ten-way race; takeover plus refused
+  connection; the reversal refusal; probes on every rank.
+- **Accept**: a withdrawal completes over the simulated scheme and reconciles; its reversal is
+  refused with nothing written or sent; a lost answer resolves by inquiry to one entry.
+- **Definition of done**: `DOD-FIN`, `DOD-API`, `DOD-SEC`, `DOD-TEST`, `DOD-OBS`. **Risk**: High.
+  **Cx**: L.
+
+**P7-TSK-009 — Pay-by-bank: A2A pay-ins for wallets and checkout** — `COMPLETE` (2026-09-27)
+- **Objective**: money enters through the payer's own PSP, authorized there, final on the scheme's
+  confirmation.
+- **Bounded context**: Payments (9), consuming Checkout (11) and Merchant (12) through the existing
+  capture composition.
+- **Dependencies**: `P7-TSK-003`, `-006`.
+- **Scope**: an initiation (`AWAITING_PAYER`) and the payer's authorization handle; the inquiry
+  sweep asking the payer PSP, never concluding expiry by our clock; confirmation credits the wallet
+  (DR `INSTANT_CLEARING` / CR `CUSTOMER_WALLET`) or the checkout's payable with ADR-0050's fee
+  split; a late execution after a session expired lands `COMPLETED_LATE`; an unattributable
+  confirmation retained and parked in `SUSPENSE_UNMATCHED`.
+- **Out of scope**: recurring or variable pay-ins.
+- **Domain changes**: the push attempt's inbound edges; `PayInInitiation`.
+- **Persistence**: payments `V017`; classification rows.
+- **API**: pay-by-bank as an instrument choice at payment and checkout confirmation; the rail's
+  confirmation callback.
+- **Events**: `PaymentExecuted`.
+- **Financial impact**: **creates financial effects**: the credit, and the fee split for checkout.
+- **Invariants**: `INV-MER-06` (second rail), `INV-RAIL-04`, `INV-REC-05`, `INV-IDEM-04`.
+- **Distributed-system concerns**: a confirmation racing the sweep's inquiry and a duplicate
+  callback — conditional transitions on the locked row; one entry.
+- **Idempotency**: the initiation keyed; the confirmation by the inbox and the conditional.
+- **Consistency**: eventual on the payer PSP; strong once confirmed.
+- **Atomicity**: confirmation, posting and order completion in one transaction.
+- **Security**: the payer's SCA at the payer PSP; the callback signed per rail.
+- **Audit**: initiation and outcome audited.
+- **Reconciliation**: end-to-end reference ↔ scheme reference ↔ entry ↔ order.
+- **Testing**: late execution after expiry; an unattributable confirmation; ten duplicate
+  callbacks; provider success with a lost response; probes.
+- **Accept**: a wallet funded and a checkout paid by bank, each reconciled; a late execution lands.
+- **Definition of done**: `DOD-FIN`, `DOD-API`, `DOD-TEST`. **Risk**: High. **Cx**: L.
+- **Gate**: all three acceptance criteria proven over the deployed chain — the wallet funded
+  by bank and explained to the cent (`PayByBankDatabaseTest#theWalletChainHolds`), the
+  checkout paid by bank with ADR-0050's four lines on the INSTANT rail's own position
+  (`CheckoutFlowDatabaseTest#aCheckoutIsPaidByBank`), and the late execution landing
+  `COMPLETED_LATE` through the same composition seam as the card's
+  (`#aBankExecutionLandingAfterExpiryStillProducesTheOrder`, `INV-MER-06`'s second rail).
+  The push machine's inbound edge shipped with its producer and the drawn machine corrected
+  with provenance (payments `V017`; `V012`/`V014` applied history in the reconciliation);
+  ADR-0062 §3 adapted for the initiation with the adaptation recorded (never fail a row that
+  holds a handle; no never-opened conclusion exists; the permit is the wire-noise arbiter);
+  the unattributable confirmation parked once under ten fresh-id deliveries as
+  `SUSPENSE_UNMATCHED`'s first poster (`INV-REC-05`), with both scheme-reference claim
+  pre-checks proven; ten duplicate callbacks credited once; the lost initiate answer
+  recovered by the sweep's convergent re-initiate carrying OUR one reference read back from
+  the wire; the lost callback resolved by inquiry to the same one entry. thirteen probe
+  runs, thirteen caught, restores byte-identical (`MUTATION_TESTING.md` §2 +13 rows).
+  Multi-instance PASS — every arbiter the database's, the sweep enumerated leaderless.
+  Fleet hermetic 1657 across 14 modules, 0 failures; 227 targeted database tests across 19 suites, 0 failures; the platform
+  classification guard green. The full battery deliberately skipped on the owner's
+  instruction.
+
+
+**P7-TSK-010 — Refunds on push rails are return payments** — `COMPLETE` (2026-09-27)
+- **Objective**: a pay-in can be refunded without anyone reversing it — a new outbound push
+  referencing the original (`refundMode`).
+- **Bounded context**: Payments (9).
+- **Dependencies**: `P7-TSK-009`.
+- **Scope**: the refund command executing by the rail's `refundMode`; the payer's account taken
+  from the original payment's evidence by reference; the refund's hold, permit and outcome as on
+  the card rail; ADR-0054's net reservation for merchant-bound refunds; CR `INSTANT_CLEARING`.
+- **Out of scope**: partial returns beyond the existing bound rules.
+- **Domain changes**: the refund's rail-aware dispatch.
+- **Persistence**: none beyond the refund's rail column (decided at design).
+- **API**: unchanged — the refund route answers per rail.
+- **Events**: the refund's existing facts.
+- **Financial impact**: **creates financial effects**: the return's posting.
+- **Invariants**: `INV-PAY-05`, `INV-REV-01`, `INV-MER-07`, `INV-RAIL-04`.
+- **Distributed-system concerns**: as the refund (the send permit, the combined bound).
+- **Idempotency**: `payment.refund`. **Consistency / Atomicity**: as the refund.
+- **Security**: as the refund (`PAYMENT_REFUND`, reasoned).
+- **Audit**: as the refund.
+- **Reconciliation**: the return's reference ↔ the original's.
+- **Testing**: a full and a partial return; a return's lost answer; probes.
+- **Accept**: a pay-by-bank payment refunded by return payment and reconciled.
+- **Definition of done**: `DOD-FIN`, `DOD-TEST`. **Risk**: Medium. **Cx**: M.
+- **Gate**: the acceptance proven over the deployed chain — a pay-by-bank payment refunded by
+  return payment and reconciled: the operator's refund of an EXECUTED pay-in dispatched
+  through the REAL push adapter as a NEW transfer carrying OUR minted 32-hex reference as the
+  scheme's dedupe key and citing the ORIGINAL's scheme reference as its only address (read
+  back from the wire body, `INV-RAIL-03`), completed with the RETURN's own scheme reference
+  stored, EXACTLY ONE entry `payment-refund:<refundId>` DR wallet / CR `INSTANT_CLEARING`,
+  the key replayed byte for byte with one wire call
+  (`PayByBankDatabaseTest#theReturnChainHolds`); the merchant-bound full return funded by its
+  NET with the RETURNED fee back — the capture's exact four-line inverse on the INSTANT
+  rail's own position, the payable at exactly zero
+  (`CheckoutFlowDatabaseTest#aBankCheckoutReturnsInFull`). The bound is per-model for every
+  writer (payments `V018` replaces the `V004` function, the card arm verbatim, the push arm
+  judging EXECUTED against the intent's frozen ask, the BOOK model refused outright for
+  `P7-TSK-011`; raw negatives as `finapp_app` AND the migrator in
+  `PaymentsSchemaDatabaseTest#theReturnBoundIsPerModelForEveryWriter`). The partial return to
+  the cent, one past it the honest 422, the waiting pay-in the honest 409
+  (`#aPartialReturnIsBoundedByTheExecution`). The lost answer honestly `UNKNOWN` with the
+  hold standing and its echo refused parking; `ReturnResolution` — the card sweeper's refund
+  leg at the push rail, the sweep PARTITIONED by the attempt's model — completes it to one
+  entry, a second sweep converging quietly (`#aLostReturnAnswerResolvesBySweep`); an
+  `UNRECOGNISED` return re-driven under the renewed permit with the SAME reference
+  (`#anUnrecognisedReturnRedrivesWithTheSameReference`); a re-drive's refused connection
+  concluding NOTHING with the hold standing (`#aRedrivesRefusedConnectionConcludesNothing`,
+  ADR-0057 §3). Found and fixed on the way: `MerchantPayable`'s sale-clearing set named only
+  the card's position, so every bank sale read as zeros in the merchant's own drill-down —
+  `INSTANT_CLEARING` joined with the recorded mislabel note (`INV-MER-02`). Also fixed:
+  `P7-TSK-009`'s seven decorated register rows failed `MutationDemonstrationTest`'s row
+  grammar (they landed after that task's fleet run — a gate escape this gate's clean
+  fleet run surfaced; reflowed, guard green), and the `P7-TSK-008` bare-digit needle
+  class fired in `PaymentRefundDatabaseTest` (re-anchored). Eleven probe
+  runs, eleven caught, restores byte-identical (`MUTATION_TESTING.md` §2 +11 rows).
+  Multi-instance PASS — the claim, the attempt lock, `V018`'s advisory-namespace-3 bound, the
+  send permit's conditional renewal, the locked-row outcomes and the posting key are ALL
+  database arbiters; the sweep is enumerated leaderless. Fleet hermetic 1663 tests across 14 modules, 0 failures; 207 targeted database tests across 14 suites, 0 failures; the
+  platform classification guard green. The full battery deliberately skipped on the owner's
+  instruction.
+
+
+**P7-TSK-011 — The wallet as an instrument: pay a checkout from the wallet** — `COMPLETE` (2026-09-27)
+- **Objective**: the book rail (ADR-0059 §6) — a checkout paid from a platform wallet in one
+  transaction, final on posting.
+- **Bounded context**: Payments (9), consuming Accounts (5/6), Checkout (11) and Merchant (12).
+- **Dependencies**: `P7-TSK-002`, `-003`.
+- **Scope**: the wallet as the customer's instrument choice; the book attempt born `EXECUTED` in
+  the confirmation's transaction; availability judged under the wallet's lock; the posting DR
+  `CUSTOMER_WALLET` gross / CR `MERCHANT_PAYABLE` gross, DR payable fee / CR `FEE_REVENUE`, through
+  the capture composition; the order completed in the same transaction; book refunds.
+- **Out of scope**: wallet-to-wallet by alias (Phase 4's transfer covers wallet to wallet).
+- **Domain changes**: the book attempt's execution; `BookRefund`.
+- **Persistence**: none new beyond the model's states.
+- **API**: the checkout confirmation's instrument choice.
+- **Events**: `PaymentExecuted`, `OrderPaid`.
+- **Financial impact**: **creates financial effects**: one balanced entry, fee split included.
+- **Invariants**: `INV-BAL-04`, `INV-BAL-05`, `INV-MER-04`, `INV-MER-03`, `INV-LED-01`.
+- **Distributed-system concerns**: the wallet payment racing a withdrawal and a transfer on one
+  wallet — the account lock; exactly the affordable set proceeds (gate scenario 4).
+- **Idempotency**: the checkout's derived claim; the posting key `payment-capture:<attemptId>`.
+- **Consistency**: strong — one transaction. **Atomicity**: attempt, posting and order together.
+- **Security**: ownership of the wallet; step-up by policy.
+- **Audit**: the payment audited as a confirmation.
+- **Reconciliation**: the entry is the whole record; no external leg.
+- **Testing**: the lock race; insufficient funds refused with nothing written; the book refund;
+  probes.
+- **Accept**: a checkout paid from a wallet with the fee split in one entry, and refunded.
+- **Definition of done**: `DOD-FIN`, `DOD-API`, `DOD-TEST`. **Risk**: Medium. **Cx**: M.
+- **Design corrections to this entry** (the `P6-TSK-001` precedent): *Persistence* is payments
+  `V019`, not "none beyond the model's states" — the instrument is the INTENT's shape
+  (`payment_method_id` XOR `debit_account_id`), the NULL-blind intent freeze had to be
+  recreated NULL-safely, and the book refund was impossible without replacing `V018`'s BOOK
+  refusal; *Idempotency*'s posting key is `payment-execution:<attemptId>`, not
+  `payment-capture:` (`P7-TSK-009`'s EXECUTED-is-not-CAPTURED rule); *API* adds the
+  `instrument` field to the checkout confirmation (the wallet RESOLVED, never named — the
+  withdrawal's precedent) and `payments.WalletPaymentUnfunded`; and `P7-TSK-012`'s planned
+  migration slides to `V020`, with provenance.
+- **Gate**: the acceptance proven over the deployed chain — a checkout paid from a wallet
+  with the fee split in ONE entry and ONE transaction: the attempt born `EXECUTED|BOOK|book`,
+  ADR-0050's four lines with the payer's wallet as the counterpart (no clearing exists to
+  stand between), the order born and the session `COMPLETED` in the same commit, the
+  decision pinned `book|4`, the availability judgement's hold placed and released in that
+  commit, the wallet explained to the cent (`CheckoutFlowDatabaseTest#aCheckoutIsPaidFromTheWallet`);
+  and refunded by BOOK MOVEMENT inside the refund claim's own transaction — the capture's
+  four-line inverse, funded by its net, the payable at zero and the drill-down explaining
+  it (`#aWalletPaymentRefundsByBookMovement`). The unfunded wallet refused `422` with nothing
+  written and the SAME confirmation succeeding after a top-up; ten confirmations converging
+  on one entry and one order; **plan scenario 13 proven** — a wallet payment racing a
+  withdrawal on one wallet admits exactly the affordable set; the instrument choice exactly
+  one and the step-up enforced at MULTI_FACTOR. **Found and fixed on the way**: the
+  confirmation's `creditable` `FOR SHARE` against `executeBook`'s `FOR UPDATE` on the same
+  payable was a ten-racer deadlock (`40P01`, found by the ten-way) — the book branch now
+  verifies liveness under the stronger lock instead; the book-refund-versus-wallet-payment
+  AB/BA cycle is closed by the fixed-order pair lock, with the race ADDED at this gate and
+  its probe verified as a genuine `40P01`; `MerchantPayable` read wallet sales as zeros
+  (`CUSTOMER_WALLET` joined the sale counterparties, the `P7-TSK-010` find's third rail);
+  and a probe-runner hazard — a same-length mutation's restore left a stale compiled class
+  that contaminated two verdicts (voided, redone; the runner now re-stamps mtimes).
+  **The gate's own find**: the book payment wrote no `PaymentOutcomeApplied` record — every
+  other rail audits its acting outcome through `answered()`, so a book payment's money
+  movement was audited only as a dispatch; it now writes the same record under the PERSON
+  (`INV-AUD-01`, asserted and probed); and its second: the one-method completion settled
+  BEFORE the dispatch was recorded, so the trail read effect-before-cause — split into
+  dispatch / record / settle in the one transaction, the order pinned and probed; and its
+  third: the checkout door left no-wallet and currency-mismatch refusals unanswered as
+  "a broken database" — true on the method path, but on the wallet path both are the
+  payer's own conditions, which surfaced as 500s; now `422 payments.NoWallet` /
+  `payments.CurrencyMismatch` on that path only, tested and probed.
+  Fourteen probes, all caught in valid runs (one first aim survived and was re-aimed, two
+  verdicts voided and redone, three re-demonstrated after the split — all recorded;
+  `MUTATION_TESTING.md` §2 +12 rows, the API-refusal probe outside the invariant
+  register).
+  Multi-instance PASS — the derived claim, the intent conditional, the fixed-order pair lock
+  and the availability judgement under the wallet's lock are the arbiters; there is no
+  resolver, sweep or `enterSystem` for this rail. Fleet hermetic 1669 tests across 14 modules, 0 failures; 279 targeted database tests across 21 suites, 0 failures; the
+  platform classification guard green. The full battery deliberately skipped on the
+  owner's instruction.
+
+
+**P7-TSK-012 — The dispute aggregate, its notifications and its stages** — `COMPLETE` (2026-09-27)
+- **Objective**: ADR-0061 §1–§2, §6 — a dispute is its own lifecycle on a card payment, driven by
+  authenticated, deduplicated, order-blind notifications.
+- **Bounded context**: Disputes (29), in `payments`.
+- **Dependencies**: `P7-TSK-001`.
+- **Scope**: the `Dispute` aggregate (`INQUIRY`, `CHARGED_BACK`, `REPRESENTED`, `WON`, `LOST`,
+  `ACCEPTED`, `CLOSED`); `UNIQUE (provider, provider_dispute_reference)`; the card PSP's dispute
+  notifications through the webhook door; later stages applying the intervening ones in order;
+  provider dispute vocabulary confined to the adapter.
+- **Out of scope**: postings (`-013`); evidence (`-014`).
+- **Domain changes**: `Dispute`, its machine, `DisputeStore`, `DisputeReason` categories.
+- **Persistence**: payments `V020` (dispute and history; planned as `V018`, slid to `V019` by `P7-TSK-010`'s return bound and to `V020` by `P7-TSK-011`'s wallet instrument); classification rows.
+- **API**: dispute notifications at the webhook door; read routes for merchant (tenant-scoped) and
+  operator.
+- **Events**: `DisputeOpened`, `ChargebackReceived`, `DisputeResolved`.
+- **Financial impact**: none in this task (the stages exist; their postings are `-013`'s).
+- **Invariants**: `INV-LIFE-01`, `-02`, `-04`, `INV-IDEM-04`, `INV-PAY-03`, `INV-MER-01`.
+- **Distributed-system concerns**: ten duplicate notifications; out-of-order stages.
+- **Idempotency**: the inbox plus the unique dispute reference.
+- **Consistency**: evidence first; conditional stage transitions.
+- **Atomicity**: one delivery, one transaction.
+- **Security**: the signed door; merchant reads tenant-scoped, negative-tested in the tenancy
+  battery.
+- **Audit**: the platform's stage applications recorded.
+- **Reconciliation**: the provider dispute reference stored.
+- **Testing**: every stage and every illegal edge; duplicates; out-of-order; the tenancy battery's
+  new rows; probes.
+- **Accept**: a dispute runs its stages from notifications alone, one row however often notified.
+- **Definition of done**: `DOD-FIN`, `DOD-API`, `DOD-SEC`, `DOD-TEST`. **Risk**: Medium. **Cx**: M.
+- **Design corrections to this entry** (the `P6-TSK-001` precedent): *API*'s operator reads are
+  `GET /v1/operator/disputes/{disputeId}` and `GET /v1/operator/payments/{intentId}/disputes`,
+  behind a new `DISPUTE_ADMINISTER` (held by `LEDGER_OPERATOR`, the money-operating population)
+  with every dispute shown audited as `payments.DisputeRead`; the merchant's pair is
+  `GET /v1/merchant/disputes` (newest 100, `truncated` saying when there were more) and
+  `GET /v1/merchant/disputes/{disputeId}`, the tenant predicate the disputed payment's credit
+  account among the merchant's own payables (`credit_account_id = ANY (?)`, the accounts from
+  the ledger's owner-scoped read — `payments` still never learns what a merchant is); *Audit*
+  is `payments.DisputeStageApplied`, one record per stage applied, the birth included, as the
+  platform; a dispute is recorded against WHATEVER card attempt the network names, whatever its
+  state (the external fact first, ADR-0061 §4 — attribution is `-013`'s bound); evidence stays
+  attributed to the disputed attempt (`V005`'s rule, no fourth subject); the respond-by
+  deadline is `-014`'s, end to end. **The gate corrected the design's own amount rule**: the
+  chargeback's amount ARRIVES with the chargeback (`NULL → value`, the captured amount's
+  discipline) rather than being frozen at birth — see the gate block. `P7-TSK-014`'s planned
+  migration is renumbered `V021`, with provenance.
+- **Gate**: the acceptance proven over the deployed chain — a dispute runs its stages from the
+  card PSP's signed notifications ALONE, one row per `(provider, provider_dispute_reference)`
+  however often notified: every path through the machine delivered in order, each edge a
+  conditional transition with its trail row, its `DisputeStageApplied` record and its facts
+  (`DisputeNotificationDatabaseTest#everyStageRunsFromNotificationsAlone`); ADR-0061 §2's own
+  sentence — a `WON` heard first opens at `CHARGED_BACK` and walks through `REPRESENTED`, the
+  history showing both, the facts in causal order (`#aLaterStageAppliesTheInterveningOnesInOrder`);
+  ten deliveries under ONE event id absorbed by the inbox and ten under FRESH ids arbitrated by
+  the unique reference — one row, one record, one fact each, every statement retained
+  (`#tenIdenticalDeliveriesHaveOneEffect`, `#tenFreshIdDeliveriesHaveOneEffect`); ten racing
+  deliveries of DIFFERENT consistent stages converging on one row at `WON` with a legal,
+  duplicate-free trail (`#aMixedStageRaceConverges`); a late stage quiet and a contradiction
+  loud (`#lateIsQuietAndAContradictionIsLoud`); the door total — an unknown stage word moves
+  nothing, an unknown reason is `UNCATEGORISED` (`#theDoorIsTotal`); every writer bound by
+  `V020` — birth only at an entry stage, only the machine's edges, terminal stages refusing
+  everything, the opening statement frozen inside a legal edge included
+  (`PaymentsSchemaDatabaseTest#theDisputeSchemaBindsEveryWriter`); the merchant's reads
+  tenant-scoped in the statement and probed in the tenancy battery (+2 routes, 8 addressed
+  probes), the operator's refused to another population with nothing recorded; no journal
+  entry anywhere. **The gate's own find**: the design froze the disputed amount at BIRTH, so a
+  dispute opened as an inquiry stored the inquired TRANSACTION amount — and a partial
+  chargeback on its escalation would have been refused as a contradiction, the dispute stuck
+  at `INQUIRY` while the network had taken the funds (refusing to record what the network did,
+  ADR-0061's rejected alternative) and `-013` handed the wrong figure to post. Now the
+  chargeback's amount arrives WITH the chargeback — nullable, present exactly when the funds
+  are taken (`V020`'s coherence `CHECK`, generated), moving only `NULL → value` for every
+  writer — and a late inquiry repeating the transaction's full amount is quiet ordering, not a
+  contradiction (`#theChargebackAmountArrivesWithTheChargeback`, asserted and probed). Also
+  closed at the gate: the external-fact-first decision pinned (a dispute recorded on a
+  `CAPTURE_UNKNOWN`, a `VOIDED` and an `AUTHORIZED` attempt alike, the attempt untouched), the
+  ignored later reason code pinned, a forged dispute statement's one 401 with nothing written,
+  the merchant listing's truncation exercised, the platform asserted as every stage's actor,
+  and the identical-id redelivery loop bounded. **And a pre-existing test-isolation leak the
+  gate's one-invocation battery exposed**: `RoutingPolicyDatabaseTest` published CARD-ONLY
+  routing versions effective NOW into the test JVM's one shared database, and the
+  newest-effective resolution made them the live policy for every later suite — reproduced
+  deterministically (that suite then `WithdrawalDatabaseTest`: nine of ten refused
+  `NoEligibleRail`, and every later version pin read the routing suite's number). Its
+  versions are now published DORMANT (effective 2099) and WHOLE (the standing four rules,
+  version 4's), so neither routing nor any pin can see them; the pair passes in one JVM. This
+  re-diagnoses `P7-TSK-011`'s "cross-clock" `NoEligibleRail` storm — the exact signature, a
+  card-only policy — which that gate chipped as clock skew. 19 probes, all caught in valid runs — every verdict read from the failing testcases themselves, never the exit code alone, each restore byte-identical (`MUTATION_TESTING.md` §2 +19
+  rows). Multi-instance PASS — the inbox's key, the unique reference with its waiting
+  `ON CONFLICT`, the row lock and the conditional stage transitions are the arbiters, all in
+  PostgreSQL; nothing lives in process state and nothing is scheduled. **Design inputs for
+  `P7-TSK-013`, recorded here and on its entry**: take the attempt `FOR UPDATE` FIRST, before
+  the dispute insert (the insert and the evidence each take `FOR KEY SHARE` on the attempt —
+  key-share-then-update across racers is the `P7-TSK-011` deadlock class); decide the posting
+  for a chargeback on an attempt whose capture is still `CAPTURE_DISPATCHED`/`CAPTURE_UNKNOWN`
+  (the bound's `captured` term would read zero); post from `Dispute#chargeback()`, never the
+  notice's figure; the per-stage `entered` seam is where each stage's posting attaches. Fleet
+  hermetic 1689 tests across 14 modules, 0 failures; 270 targeted database tests across 22 suites, 0 failures; the platform classification guard green. The full battery
+  deliberately skipped on the owner's instruction.
+
+**P7-TSK-013 — Chargeback accounting and the combined bound** — `COMPLETE` (2026-09-27)
+- **Objective**: ADR-0061 §3–§5 — a chargeback never takes more from the counterparty than the
+  capture credited it, and every stage posts exactly once.
+- **Bounded context**: Disputes (29), `payments`; Merchant (12) and Accounts (5/6) through the
+  `DisputeComposition` port `app` implements; Ledger (7).
+- **Dependencies**: `P7-TSK-012`.
+- **Scope**: the combined bound under the attempt lock; the chargeback posting (CR
+  `SETTLEMENT_CLEARING`; DR counterparty share; DR `CHARGEBACK_RECOVERABLE` excess); a
+  non-postable counterparty parked in the recoverable; the refund bound extended; a failed counted
+  refund re-attributing its share; the win's exact inverse; the loss's write-off to
+  `DISPUTE_COSTS`; the PSP's dispute fee; `INV-MER-07` amended; the negative-position gauge.
+- **Out of scope**: merchant reserves; dispute-fee pass-through.
+- **Domain changes**: `DisputeComposition`, `ChargebackSplit`.
+- **Persistence**: ledger `V014` (`CHARGEBACK_RECOVERABLE`, `DISPUTE_COSTS`); classification rows.
+- **API**: none new.
+- **Events**: the stage facts carry the split's accounts, never amounts beyond precedent.
+- **Financial impact**: **creates financial effects** at every stage.
+- **Invariants**: `INV-DSP-01`, `-02`, `INV-MER-07`, `INV-LED-01`, `INV-BAL-03`.
+- **Distributed-system concerns**: a refund racing a chargeback on one payment — the attempt lock;
+  duplicate stage notifications — the conditional and the posting key.
+- **Idempotency**: posting keys `dispute-chargeback:`, `dispute-won:`, `dispute-loss:`,
+  `dispute-fee:<id>`.
+- **Consistency**: strong. **Atomicity**: each stage's transition and posting in one transaction.
+- **Security**: none new beyond the stages'.
+- **Audit**: stage postings attributable to the dispute.
+- **Reconciliation**: `SETTLEMENT_CLEARING` stays equal to what the PSP will settle, disputes
+  included.
+- **Testing**: a chargeback on a fully and a partially refunded payment; a refund after a
+  chargeback refused; refunds racing chargebacks; a failed refund re-attributing; won and lost
+  netting; duplicates; probes on every rank.
+- **Accept**: gate criteria "duplicate chargeback notification produces a single financial effect"
+  and "a chargeback on an already-refunded payment does not double-debit", demonstrated and probed.
+- **Definition of done**: `DOD-FIN`, `DOD-TEST`, `DOD-DOC`. **Risk**: High. **Cx**: L.
+- **Design inputs recorded by `P7-TSK-012`** (read at design, not binding decisions):
+  (1) **the lock order** — take the attempt `FOR UPDATE` FIRST, before the dispute insert:
+  the dispute insert and the evidence insert each take `FOR KEY SHARE` on the attempt, and
+  key-share-then-update across two racing deliveries is the `P7-TSK-011` deadlock class;
+  keep the door's effect-before-evidence order; (2) **a chargeback on an attempt whose
+  capture is still `CAPTURE_DISPATCHED`/`CAPTURE_UNKNOWN`** — the dispute is recorded (the
+  external fact first), but the bound's `captured` term would read zero: decide, e.g. answer
+  the delivery unacknowledged until the capture resolves; (3) post from
+  `Dispute#chargeback()` — present exactly when the funds are taken, `NULL → value` —
+  never the notice's figure; (4) `DisputeNotifications`' per-stage `entered` seam runs once
+  per stage applied, in order, inside the delivery's transaction: each stage's posting
+  attaches there, keyed by the dispute and its stage.
+- **Design corrections to this entry** (the `P6-TSK-001` precedent): each financial stage posts
+  TWO entries, not one — the external fact (`dispute-chargeback:<id>`: DR
+  `CHARGEBACK_RECOVERABLE` / CR the rail's clearing; `dispute-won:<id>` its inverse) and the
+  attribution (`dispute-attribution:<id>`, composed by `DisputeComposition`;
+  `dispute-restoration:<id>` its inverse) — whose per-account effect is exactly ADR-0061 §4's
+  table: the first entry never varies with who bears the loss, the counterparty's line always
+  faces the recoverable so the merchant's drill-down NAMES a chargeback (a one-entry chargeback
+  with no excess is line-for-line a retained refund, `P7-TSK-010`'s mislabel class), and the
+  composer composes only the counterparty's part. Beside the listed keys, re-attributions post
+  `dispute-reattribution:<dispute>:<cause>`. *Persistence* gained payments `V021` beside ledger
+  `V014` (the split's two share fragments, the fee, and the combined bound for every writer in
+  both directions under advisory namespace 3 — the refund bound's own). *API* gained no route;
+  two views gained additive fields (the operator dispute view's split and fee; the merchant
+  payable drill-down's `chargedBack` and `chargebacksReversed`); `payments.RefundExceedsCaptured`
+  kept its code and title, its meaning extended. The account close now refuses while a
+  chargeback whose share was posted to the account can still be won (the win's credit would
+  meet a closed account). `P7-TSK-014`'s planned migration is renumbered `V022`, with provenance.
+- **Gate**: the acceptance proven over the deployed chain — **a chargeback on an already-refunded
+  payment does not double-debit**: fully refunded, the counterparty is not touched and the whole
+  chargeback rests in `CHARGEBACK_RECOVERABLE`
+  (`ChargebackAccountingDatabaseTest#aChargebackOnAFullyRefundedPaymentNeverDebitsTheCounterpartyTwice`);
+  partially refunded, it is charged only what the capture left (`#…PartiallyRefunded…`); a
+  refund after a chargeback refused past what remains with nothing written
+  (`#aRefundAfterAChargebackIsRefusedPastWhatRemains`); eight refunds racing a chargeback on
+  one payment serialising on the attempt's lock — counted refunds and attributed share summing
+  to the capture exactly (`#refundsRacingAChargebackKeepTheBound`). **A duplicate chargeback
+  notification produces a single financial effect**: ten concurrent fresh-id deliveries of a
+  won-first chargeback with its fee post one entry per stage key
+  (`#tenFreshIdChargebacksPostOnce`), and the P7-TSK-012 suite's ten-way races now count their
+  entries once each. Resolution: a win nets every account the dispute touched to zero, a
+  re-attribution included (`#aWinNetsTheChargebackToZeroPerAccount`,
+  `#aCountedRefundThatFailsGivesItsShareBack`); a loss writes off ONLY the excess
+  (`#aLossWritesOffOnlyTheExcess`); the fee once, contradicted loudly, reported late recorded
+  then (`#theDisputeFeePostsOnceAndIsGuarded`). A closed wallet's share parked, never refused,
+  and a win returning it from the recoverable (`#aClosedWalletsShareIsParked`); a wallet kept
+  open while a charged share can still be won back, closing once lost
+  (`#aRestorableChargebackKeepsTheWalletOpen`); the merchant drill-down naming chargebacks and
+  their reversals (`#theMerchantDrillDownNamesChargebacks`); the negative-position gauge counting
+  the customer receivable (`#theNegativePositionGaugeCountsTheReceivable`); every writer bound by
+  `V021` (`PaymentsSchemaDatabaseTest#theChargebackAccountingSchemaBindsEveryWriter`); the
+  merchant's checked assumption (`MerchantCaptureDatabaseTest#aChargebackAgainstAnotherAccountIsRefused`).
+  **The gate's own find**: the design had DEFERRED a chargeback on a capture still being resolved
+  (the delivery answered unacknowledged until the capture resolved). That left two holes: a
+  chargeback on an `AUTHORIZED` attempt was recorded as all excess, and a capture landing after
+  it credited the counterparty in full while the platform carried the chargeback; and recording
+  hung on the PSP's retry window, the ADR's rejected "refuse to record" in slow motion. Replaced by
+  ONE rule — every event that frees headroom (`captured − non-failed refunds − standing
+  attributions`) re-attributes the standing excess to the counterparty, oldest dispute first:
+  a CAPTURE LANDING (`ChargebackAccounting#captureLanded`, in the capture's own transaction —
+  `#aChargebackBeforeItsCaptureIsAttributedWhenTheCaptureLands`), a counted refund FAILING
+  (ADR-0061 §3's rule), a sibling chargeback WON (`#aWinGivesASiblingsExcessBack`) — so at every
+  commit the split is the one a chargeback arriving now would take, and no statement waits.
+  Also closed at the gate: the door's reading of an unreadable fee and of a fee on an inquiry
+  (the whole statement unusable), and a win after a re-attribution netting to zero. Twenty-four probe runs, twenty-three caught — every one by its intended test — and one survivor recorded as designed: a stage's accounting applied twice inside one delivery is absorbed by the posting keys (the conditional stage transition is the load-bearing rank), and the re-aimed probe with the keys taken away was caught; every verdict read from the failing testcases themselves, never the exit code alone, each restore byte-identical
+  (`MUTATION_TESTING.md` §2 +24 rows). Multi-instance PASS — the attempt row lock both money
+  paths take (every dispute delivery takes it FIRST, before the dispute insert), the conditional
+  stage transitions, the posting keys and `V021`'s namespace-3 triggers are the arbiters, all in
+  PostgreSQL; the counterparty is share-locked, never SHARE-then-UPDATE; nothing lives in
+  process state and nothing is scheduled. Fleet hermetic 1698 tests across 14 modules, 0 failures; 348 targeted database tests across 30 suites, 0 failures; the platform
+  classification guard green. The full battery deliberately skipped on the owner's instruction.
+
+**P7-TSK-014 — Representment and dispute evidence** — `COMPLETE` (2026-09-27)
+- **Objective**: ADR-0061 §7 — the merchant (or an operator) contests a chargeback with evidence,
+  before its deadline, under least privilege.
+- **Bounded context**: Disputes (29), `payments`, with Merchant (12)'s key.
+- **Dependencies**: `P7-TSK-013`.
+- **Scope**: evidence upload, encrypted under a key outside the database, every access audited;
+  submission as a dispatch-before-call keyed operation; the respond-by deadline tracked and alarmed,
+  never deciding an outcome; accept (not contest); refusal after the deadline or resolution.
+- **Out of scope**: automated evidence assembly; case management (Phase 13).
+- **Domain changes**: `DisputeEvidence`, `Representment`.
+- **Persistence**: payments `V022` (planned as `V019` at the transition, renumbered `V021` by `P7-TSK-012`'s gate and `V022` by `P7-TSK-013`'s — the payments sequence reached `V021` with the chargeback accounting; the stale-plan-number class); classification rows.
+- **API**: merchant routes (tenant-scoped) and operator routes, with OpenAPI and permission rows.
+- **Events**: `DisputeEvidenceSubmitted`.
+- **Financial impact**: none directly (the outcome's posting is `-013`'s).
+- **Invariants**: `INV-DSP-03`, `INV-MER-01`, `INV-LIFE-04`, `INV-PAY-04`.
+- **Distributed-system concerns**: two submissions racing one dispute — the claim and the
+  conditional.
+- **Idempotency**: submission keyed per merchant.
+- **Consistency**: strong. **Atomicity**: dispatch-before-call.
+- **Security**: tenant scoping; the operator permission; encryption; every read audited.
+- **Audit**: every evidence access and submission.
+- **Reconciliation**: the submission reference stored.
+- **Testing**: cross-tenant negatives; the ciphertext at rest; late and post-resolution refusals;
+  probes.
+- **Accept**: a representment submitted and won end to end; evidence unreadable across tenants.
+- **Definition of done**: `DOD-SEC`, `DOD-API`, `DOD-TEST`. **Risk**: Medium. **Cx**: M.
+- **Design inputs recorded by `P7-TSK-013`** (read at design, not binding decisions):
+  (1) **a submission moves no stage and no money** — the network's `REPRESENTED`,
+  `ACCEPTED`, `WON` and `LOST` statements do, and `P7-TSK-013` posts what each one owes;
+  the dispute row's share and fee columns are the notifications' alone (the application
+  role holds `UPDATE` on them, so it is the code, and `V021`'s grow-only trigger behind it,
+  that keeps a submission from writing them); (2) **the lock order** — every
+  dispute delivery takes the attempt `FOR UPDATE` FIRST, then the dispute row: a submission
+  that locks the dispute row takes the attempt first too, or it deadlocks with a racing
+  delivery (the `P7-TSK-011` class); (3) **the machine trigger's body is `V021`'s** —
+  `dispute_permits_only_machine_edges` was re-stated there with the share and fee rules, so a
+  `V022` that re-states it again carries `V021`'s body forward verbatim (`V020`'s is applied
+  history, the migration handoff discipline).
+- **Design corrections to this entry** (the `P6-TSK-001` precedent): the domain type is
+  `DisputeResponse` (REPRESENTMENT or ACCEPTANCE), not `Representment` - acceptance needs every
+  protocol representment has (keyed, dispatched before the call, resolvable, one live answer per
+  dispute); the event is `DisputeResponseSubmitted` with its kind, not `DisputeEvidenceSubmitted`.
+  *Persistence* is payments `V022`: `dispute.respond_by` (the network's deadline, `NULL → value`,
+  riding the chargeback, the dispute machine re-stated with V021's body verbatim),
+  `dispute_evidence` (append-only ciphertext, content-addressed), `dispute_response` and its trail,
+  and the provider evidence's fourth subject. *Idempotency*: responses keyed per RESPONDER (the
+  merchant, or the operator acting); uploads content-addressed (the KYC upload's idempotency).
+  *Security*: an operator acts only for a payment with no merchant (a customer wallet) - ADR-0061
+  §7's rule enforced, `payments.DisputeAnsweredByItsMerchant` otherwise. *Key*: the eleventh
+  confined credential, `FINAPP_PAYMENTS_DISPUTE_EVIDENCE_KEY`.
+- **Gate**: the acceptance proven over the deployed chain - **a representment submitted and won
+  end to end** (`DisputeResponseDatabaseTest#aRepresentmentIsSubmittedAndWonEndToEnd`: two
+  documents attached over the merchant's key, the PSP taking OUR reference with both documents
+  labelled on the wire, the stage still `CHARGED_BACK`, then the network's `under_review` and
+  `won` driving `P7-TSK-013`'s exact inverse), and lost (`#aRepresentmentLostStandsAsTheNetworksWord`);
+  **evidence unreadable across tenants** (`#evidenceIsUnreadableAcrossTenants` - read, upload and
+  both answers the same 404 as an unknown dispute, nothing written; the tenancy battery's four
+  new addressed routes, 12 probed). Also proven: ciphertext at rest with GCM's tag arithmetic and
+  the plaintext's checksum, every read and transmission on the record, a guessed identifier
+  recording nothing (`#evidenceRestsAsCiphertextAndEveryReadIsOnTheRecord`); a tampered document
+  never served and never sent, the dispatch rolled back whole (`#aTamperedDocumentIsNeverServedOrSent`);
+  every refusal - past the deadline, after resolution, at an inquiry, no evidence, a second
+  answer, an upload after the answer, the sixth document - writing and sending nothing
+  (`#everyRefusalWritesNothingAndSendsNothing`); the replay and the conflict, keyed per responder
+  (`#aRetriedKeyReplaysAndAReusedKeyConflicts`); ten racing answers, one response and one send
+  (`#tenRacingAnswersProduceOneResponseAndOneSend`); the lost answer resolved by query
+  (`#aLostAnswerIsUnknownUntilTheSweepResolvesIt`), the never-seen answer re-sent with the SAME
+  reference and documents (`#anUnrecognisedAnswerIsResentWithTheSameReference`), the refused
+  first send failing and freeing the dispute (`#aRefusedFirstSendFailsAndFreesTheDispute`); the
+  deadline alarm (`#theDeadlineAlarmCountsUntilAnAnswerIsTaken`); the operator's narrower reach
+  (`#anOperatorAnswersOnlyAPaymentWithNoMerchant`); the door's deadline rules
+  (`#theDoorRecordsTheDeadlineOnce`); `V022` for every writer
+  (`PaymentsSchemaDatabaseTest#theRepresentmentSchemaBindsEveryWriter`) and pinned to the enums
+  with the V021 handoff byte for byte (`PaymentsMigrationTest#theRepresentmentClausesArePinned`).
+  **The gate's own finds**: M7.6's acceptance names a representment won AND LOST and only the
+  win was demonstrated (`#aRepresentmentLostStandsAsTheNetworksWord` added); a flight dying
+  between its committed dispatch and the call - the restart case - was never exercised
+  (`#aCrashedFlightsDispatchIsFinishedByTheSweep`: the row stays `DISPATCHED` with nothing on the
+  wire, the sweep hears it was never seen and sends the SAME request once); the five-document
+  bound, judged under the lock, had no race proving it (`#tenRacingUploadsAdmitExactlyTheBound`:
+  ten racers, exactly five admitted); and malformed evidence at the boundary had no test
+  (`#malformedEvidenceIsRefusedAtTheBoundary`: a kind outside the closed set, content that is not
+  base64, an empty and an oversized document, each refused with nothing written). **Found in
+  passing**: `payments.ChargebackReattributed`'s
+  description still named only the failed refund - corrected (the `P7-TSK-013` gate's unified
+  rule, its string not re-read). **Found by the gate's own battery, not this task's code, and
+  fixed**: its first run failed `MerchantPayoutDatabaseTest#onlyASettledMerchantCanBeClosed`
+  ("statusChangedAt must not precede createdAt") - the fixture stamped the merchant with the
+  database's `now()` while `close()` stamps from the JVM's clock, and the Docker VM's clock was
+  measured gaining ~55 ms a second between step-backs on a steady host clock; the fixture now
+  stamps from the test's clock (the schema's own one-clock discipline), the battery re-run
+  fresh and green, the wider fixture class chipped. `CURRENT_STATE.md` §Active Work's Phase 7
+  paragraph found reading "6 of 18 ... Next: `P7-TSK-002`" - the stale-second-copy class a
+  seventh time - corrected with provenance. Twenty-six probe runs, twenty-three caught — every one by its intended test — and three survivors recorded as designed: the act's two tenant ranks each dropped alone (the first look's predicate, then the locking read's) and the dispute's row lock dropped alone (the attempt lock is taken first), each survivor's control run beside it and caught (both ranks dropped, both locks dropped); every verdict read from the failing testcases themselves, never the exit code alone, each restore byte-identical (`MUTATION_TESTING.md` §2 +26 rows).
+  Multi-instance PASS - the claim, the attempt-then-dispute row locks, the one-live index, the
+  response conditionals, the permit's conditional forward renewal and the content address are
+  the arbiters, all in PostgreSQL; the sweep is enumerated leaderless; nothing lives in process
+  state. Fleet hermetic 1711 tests across 14 modules, 0 failures; 366 targeted database tests across 31 suites, 0 failures; the platform classification guard green. The full
+  battery deliberately skipped on the owner's instruction.
+
+**P7-TSK-015 — Rail and dispute meters and the dashboard row** — `READY`
+- **Objective**: `PHASE_7_PLAN.md` §15 — every rail's health and every dispute's stage visible on a
+  running instance.
+- **Bounded context**: Payments (9), `app` telemetry.
+- **Dependencies**: `P7-TSK-008`, `-011`, `-013`.
+- **Scope**: the §15 series; eager, NaN never zero, `max()` for fleet-wide gauges; the dashboard's
+  rail and dispute row; the chargeback ratio as an operator report.
+- **Out of scope**: SLO alert rules (Phase 15).
+- **Domain changes**: none. **Persistence**: none.
+- **API**: the operator report route.
+- **Events**: none.
+- **Financial impact**: none.
+- **Invariants**: `INV-LIFE-03` (stuck states alertable), `INV-AUD-02` (no amounts in tags).
+- **Distributed-system concerns**: gauges fleet-wide per floor per instance; counters at the door
+  after commit.
+- **Idempotency / Consistency / Atomicity**: read-only.
+- **Security**: the report route permissioned.
+- **Audit**: report reads audited.
+- **Reconciliation**: none.
+- **Testing**: `PlannedMetersExistTest` rows; the running-instance reads against the real schema;
+  probes.
+- **Accept**: every §15 series published by a fresh instance.
+- **Definition of done**: `DOD-OBS`, `DOD-TEST`. **Risk**: Low. **Cx**: M.
+- **Design inputs recorded by `P7-TSK-014`** (read at design, not binding decisions):
+  (1) **two §15 series already exist** - `finapp.ledger.negative.positions` (`P7-TSK-013`)
+  and `finapp.payments.dispute.deadline.near` (`P7-TSK-014`), both eager, NaN never zero, a
+  refresh floor, fleet-wide `max()`: adopt them into the dashboard row, never duplicate
+  them; (2) **the card PSP's dispute port is UNMETERED** - `PaymentBeans.disputeResponder`
+  is the card adapter's dispute face, deliberately outside `MeteredPaymentProvider`, so the
+  rail latency and outcome series by operation must decide how an answer (`RESPOND`, and
+  its `QUERY`) is counted; (3) **an `UNKNOWN` dispute response is a stuck state** the
+  resolution sweep works, which `INV-LIFE-03` wants visible beside the withdrawal's
+  (`finapp.payments.withdrawal.unknown.*`'s shape).
+
+**P7-TST-001 — The multi-rail conservation storm** — `PLANNED`
+- **Objective**: every rail and every money path at once, reconciled to the minor unit, with the
+  four scenarios the gate names counted, not argued.
+- **Bounded context**: all of Phase 7's.
+- **Dependencies**: `P7-TSK-008`…`-011`, `-013`.
+- **Scope**: card, instant and wallet payments; withdrawals, returns, refunds and chargebacks,
+  concurrently, on shared wallets and payables; per-round snapshots reconciling each clearing
+  position against its own rail's records, each payable and wallet against independent books, and
+  the trial balance per currency; provider success with a lost response; ten-way duplicates;
+  duplicate callbacks; a hold released under racing debits.
+- **Out of scope**: load characterisation (Phase 16).
+- **Domain changes / Persistence / API / Events**: none (test only).
+- **Financial impact**: none (proves conservation).
+- **Invariants**: `INV-RAIL-04`, `INV-DSP-01`, `INV-BAL-03`, `INV-ACC-01`, `INV-CON-01`.
+- **Distributed-system concerns**: the storm is the ten-instance question made concrete.
+- **Idempotency / Consistency / Atomicity**: measured, not implemented.
+- **Security / Audit**: not applicable.
+- **Reconciliation**: the storm is a reconciliation.
+- **Testing**: probes proving each reconciliation can fail.
+- **Accept**: stable over three runs; every term reconciles under load and at rest.
+- **Definition of done**: `DOD-TEST`, `DOD-FIN`. **Risk**: Medium. **Cx**: L.
+
+**P7-TST-002 — The dispute battery** — `PLANNED`
+- **Objective**: every dispute failure scenario the plan names, raced and duplicated.
+- **Bounded context**: Disputes (29).
+- **Dependencies**: `P7-TSK-013`, `-014`.
+- **Scope**: duplicate chargeback notifications ten ways; a chargeback on an already-refunded
+  payment; a refund racing a chargeback; representment after resolution; a second-cycle
+  chargeback; a counterparty no longer postable.
+- **Out of scope**: none beyond the storm's.
+- **Domain changes / Persistence / API / Events**: none (test only).
+- **Financial impact**: none (proves the bound).
+- **Invariants**: `INV-DSP-01`, `-02`, `-03`.
+- **Distributed-system concerns**: every contended stage raced.
+- **Idempotency / Consistency / Atomicity**: measured.
+- **Security**: the tenancy rows re-run.
+- **Audit / Reconciliation**: the stage postings reconciled against the dispute records.
+- **Testing**: probes proving each assertion can fail.
+- **Accept**: the two dispute gate criteria demonstrated under load, probed.
+- **Definition of done**: `DOD-TEST`, `DOD-FIN`. **Risk**: Medium. **Cx**: M.
+
+**P7-DOC-001 — The Phase 7 exit review** — `PLANNED`
+- **Objective**: rule Phase 7 against `PHASE_GATES.md` §3, the supplement and §5's Phase 7
+  criteria, read from the gate.
+- **Bounded context**: all of Phase 7's.
+- **Dependencies**: every Phase 7 item.
+- **Scope**: the review record; every ADR read against the code and accepted or corrected; the
+  register rows for every `Phase: 7` invariant; the flip; the post-flip battery.
+- **Out of scope**: Phase 8's plan (its transition's).
+- **Domain changes / Persistence / API / Events / Financial impact**: corrections only, each
+  probed.
+- **Invariants**: every `Phase: 7` invariant, read from the catalogue.
+- **Distributed-system concerns**: the ten-instance question over every contended decision.
+- **Idempotency / Consistency / Atomicity / Security / Audit / Reconciliation / Testing**: the
+  review's areas.
+- **Accept**: the review's verdict.
+- **Definition of done**: `DOD-DOC`, the gate. **Risk**: Medium. **Cx**: L.
 
 ---
 
@@ -7781,8 +9317,9 @@ negative payable** — `COMPLETE` (2026-09-23)
 Status: items here belong to no phase. They change no roadmap commitment, displace no phase task,
 and gate no phase exit. A cross-cutting task runs between phase tasks when the owner schedules it.
 
-**X-TSK-001 — Lombok adoption and the Phase 1–6 refactor** — `BLOCKED` *(final acceptance only:
-Batches 0–9 applied and verified 2026-09-23; its one failing test predates it. See **Result**)*
+**X-TSK-001 — Lombok adoption and the Phase 1–6 refactor** — `COMPLETE` *(2026-09-24: Batches 0–9
+applied and verified 2026-09-23; criterion 5 met by the Phase 6 → 7 transition's battery. See
+**Result**)*
 - **Context**: every Java module; build tooling. Owner-directed; ADR-0055 (`Proposed`).
 - **Description**: Lombok as the project-standard boilerplate reducer, compile time only. The
   existing Phase 1–6 code is converted module by module, where and only where the result is
@@ -7822,7 +9359,11 @@ Batches 0–9 applied and verified 2026-09-23; its one failing test predates it.
   - Every acceptance criterion holds except the tiers being green.
   - **It unblocks when** `OperationalChartDatabaseTest`'s stale owner-kind filter is fixed in its
     own change (`CURRENT_STATE.md` §Blockers) and a fresh database tier is green. The task is
-    then `COMPLETE` with no further work.
+    then `COMPLETE` with no further work. **The fix landed in the Phase 6 review** (`P6-DOC-001`,
+    2026-09-24) — in two copies, the resolver's guard as well as the test's filter — so only the
+    fresh database tier remained, which the owner's standing instruction skipped. **It ran at the
+    Phase 6 → 7 transition** (2026-09-24): on untouched `82b2179`, 1550 hermetic, 1027 database and
+    14 kafka tests, 0 failures, and again after the transition's repairs, green. `COMPLETE`.
   - Five convertible classes outside the approved set are recorded for a separately approved pass
     (plan appendix D.2).
 - **Deps**: none for Batch 0. The final acceptance's "all tiers green" needs the pre-existing
@@ -7837,6 +9378,250 @@ Batches 0–9 applied and verified 2026-09-23; its one failing test predates it.
   on a mechanical diff, which is why the batches are small. **Cx**: M. **DoD**: `DOD-BUILD`,
   `DOD-ARCH`. Each batch's equivalence gate is its `DOD-FIN`/`DOD-SEC` evidence that nothing
   financial or security-related moved.
+
+**X-TSK-002 — Widen the ownership detector to every module** — `PLANNED`
+- **Context**: `OwnershipIsScopedTest`, every module. Recorded by `P6-TST-001`'s design.
+- **Description**: `P6-TST-001` widened the detector in the tenant's two packages only. There, a
+  bare `UUID` counts as a resource identifier and SQL issued by a same-class helper as the
+  caller's. Applied to every package, the same widening surfaces 31 more methods in ten modules
+  (measured by running it). Among them are the ledger's `findOwned`, `findAllOwned` and
+  `lockOwnedForUpdate`, which read merchant payables by `owner_ref`, and the outbox relay's
+  per-aggregate drains. Each is classified with the register's existing scopes, and the widening
+  becomes unconditional.
+- **Why not in `P6-TST-001`**: reclassifying other modules' reads is not a merchant task's work,
+  as `P6-TSK-009`'s gate also said. In the meantime the tenant-column guard keeps every statement
+  over a tenant column inside the widened packages, and the tenant's ledger rows, reached by
+  `owner_ref`, are covered behaviourally by the battery's derived reads.
+- **Accept**: the widening applies to every package; every newly visible method is classified,
+  each `OWNER_SCOPED` one with a named negative. **Risk**: Low. **Cx**: M.
+  **DoD**: `DOD-TEST`, `DOD-SEC`
+
+**X-TSK-003 — Scope every idempotency claim to its principal** — `PLANNED`
+- **Context**: every module with a keyed command; `platform.idempotency_record`. Recorded by
+  `P6-DOC-001`, ADR-0004.
+- **Description**: ADR-0004 decides that a claim's `scope` "identifies the command type and the
+  owning principal, so keys cannot collide across different commands or across clients". The
+  payout (`merchant.payout:<merchantId>`) and, since the Phase 6 review, the checkout session
+  (`checkout.session:<merchantId>`) do. Every other keyed command claims under a constant:
+  `accounts.open`, `payment.create`, `payment.refund`, `transfer.execute`, `merchant.onboard`,
+  `merchant.api-key.issue`, the payout destination's proposal, registration and the ledger's own
+  posting scopes. The fingerprints name the caller, so a collision is refused as `api.Conflict`
+  and nothing is replayed to the wrong principal. What the constant costs is that one client's
+  key value refuses another's request, and tells the second that the value is taken.
+- **The migration hazard, which is why this is its own item**: moving a command's scope moves its
+  namespace. A retry that spans the deploy looks for its claim under the new scope, misses the
+  one written under the old, and runs again. For a checkout session that is a second offer, which
+  expires unpaid. For `transfer.execute` it is a second money movement, because nothing stands
+  behind the claim. *(This said the refund had no second rank either, until the Phase 6 → 7
+  transition: `V008`'s unique `dispatch_key` is one, and since that transition a retry that
+  misses its claim converges on the refund its key already carries rather than failing on the
+  index. That key is the client's value, unscoped by principal — so this item scopes it with the
+  claim, or a refund's key stays platform-wide after its claim moves.)* So each money-moving scope
+  changes only with a transition path, for example consulting the old scope as well as the new
+  for longer than the claim's retention, and its own duplicate test across the change.
+- **Already moved**: the checkout's payment claim, by the Phase 6 → 7 transition, from
+  `payment.create` to `checkout.payment` — the one scope whose key a client could predict. It
+  needed no transition path: a confirmation whose transaction committed left its session
+  `PAYMENT_PENDING` or paid, and a retry of either converges before it claims.
+- **Accept**: every keyed command's scope names its principal; the ledger's system-issued
+  posting keys are either scoped or recorded as system-only with the reason; each money-moving
+  scope moves behind a tested transition path; a two-principals-one-key-value test per command.
+- **Risk**: Medium, because of the money-moving scopes. **Cx**: M. **DoD**: `DOD-FIN`,
+  `DOD-SEC`, `DOD-TEST`
+
+**X-TSK-004 — A second verified contact channel is refused, not a `500`** — `COMPLETE`
+*(2026-09-24. See **Result**)*
+- **Context**: `identity` (contact channels, `P1-TSK-023`) and `app` (the verification endpoint).
+  Owner-directed, 2026-09-24. Pays the Phase 15 debt row the Phase 6 → 7 transition's audit
+  recorded, *A second verified contact channel answers `500`*.
+- **Description**: verifying a channel for an identity that already has a verified channel of that
+  kind violated `V011`'s partial unique index, and `JdbcContactChannelStore.verify` wrapped the
+  `23505` as `IdentityStorageException`, rendered as `500 api.InternalError`. The verification now
+  runs behind a savepoint, in `JdbcPaymentFeePinStore.insertIfAbsent`'s shape: on `23505` it rolls
+  back to the savepoint and throws `VerifiedChannelAlreadyExistsException`, which the endpoint
+  answers as `409 identity.VerifiedChannelAlreadyExists`. The code is registered in
+  `IdentityErrorCode` and `ERROR_CONTRACT.md` §3. `EmailAddress`'s javadoc stops citing a unique
+  index on the address that `V011` never built.
+- **Reachable?** The add command does not refuse a second channel: `POST /v1/me/channels` inserts
+  an unverified row unconditionally, and the partial index covers verified rows only. Over HTTP the
+  path is **latent** rather than live. Nothing delivers a challenge before Phase 15's notifier
+  (`RecoveryApplicationService.addChannel` discards it and the endpoint answers `202` with no body),
+  so no HTTP caller can verify any channel today. Through the module's API it is live: the database
+  suites verify real challenges. The notifier attaches without changing the add command or the
+  store, so the `500` would go live with it unchanged. Treated as reachable, and the javadoc-only
+  alternative declined for that reason.
+- **Why refuse rather than replace**: `INV-IDN-06` allows recovery only through *"a previously
+  registered and verified channel"*, enforced by *"cooling-off, notification to the registered
+  channel"*. Adding a channel needs only a session. A verification that displaced the verified
+  channel would let a stolen password buy a durable recovery route, with no step-up and no word to
+  the address replaced. `PHASE_1_PLAN.md`'s *"changeable, separately-verified email"* separates the
+  email from the login identifier; it says nothing of replacing a channel on verification. Changing
+  the verified channel safely is its own flow (step-up, notice to the old channel, cooling-off),
+  deferred to Phase 15 with the notifier it needs (`DECISIONS.md` §Deliberately Deferred).
+- **Deps**: none.
+- **Accept**:
+  - a verification that would give an identity a second verified channel of a kind answers
+    `409 identity.VerifiedChannelAlreadyExists`, never `500`;
+  - the refusal writes nothing (both channels' rows unchanged, the pending challenge intact, no
+    audit record), and recovery still reaches the channel verified first;
+  - the refusal leaves the caller's transaction usable;
+  - ten instances verifying ten channels of one identity: exactly one verified, nine refused, no
+    other failure;
+  - the code in `IdentityErrorCode` and `ERROR_CONTRACT.md` §3, the OpenAPI baseline regenerated
+    as a compatible change;
+  - `EmailAddress`'s javadoc true;
+  - each protecting test demonstrated to fail against its mutation, recorded in
+    `MUTATION_TESTING.md`.
+- **Result (2026-09-24)**: every criterion holds, and the gate's multi-instance answer is `PASS`.
+  - `ContactChannelSecondVerificationDatabaseTest` holds the refusal, nothing written, the
+    transaction's survival and the ten-instance race.
+    `RecoveryEndpointDatabaseTest#aSecondVerifiedChannelIsAConflictNotAServerFault` holds the
+    `409`, a body naming neither the identity nor the address, and a retry getting the same answer.
+  - Four mutations, four caught (`MUTATION_TESTING.md`, `INV-IDN-06`). The pre-fix store answers
+    *500*. Without the savepoint's rollback the transaction dies with `25P02`, which only the test
+    built for it sees. Replacing instead of refusing answers *204*. Without the index, ten of ten
+    verify.
+  - Fresh runs: the four recovery and channel database suites (25 tests), the fleet-wide
+    architecture tier, `app`'s unit and slice tiers, `identity`'s unit tier, all 0 failures. The
+    OpenAPI baseline gained one response component, all seven differences `COMPATIBLE`.
+  - Found by the gate and recorded rather than built: the deferred change flow must spend every
+    pending challenge of the kind, because a refused verification leaves its challenge live until
+    it expires (`DECISIONS.md` §Deliberately Deferred).
+- **Risk**: Low. **Cx**: S. **DoD**: `DOD-API`, `DOD-SEC`
+
+**X-TSK-005 — Database fixtures stamp from the clock that judges them; the ordering question decided** — `COMPLETE`
+*(2026-09-27. See **Result**)*
+- **Context**: the database tier (`app` and `platform` suites), and every aggregate that orders two
+  business stamps. Owner-directed, 2026-09-27, chipped by `P7-TSK-014`'s gate: its battery failed
+  `MerchantPayoutDatabaseTest#onlyASettledMerchantCanBeClosed` with *"statusChangedAt must not
+  precede createdAt"*. The fixture had stamped the merchant with the database's `now()`, and
+  `close()` stamped from the JVM's clock.
+- **Description**:
+  1. Audit every fixture that stamps a row with the database's `now()` which the test then
+     transitions, or judges, on another clock. Stamp each from the clock that judges it, and leave
+     deliberately distant times alone.
+  2. Decide, through the repository's process, what production does when instance B's clock trails
+     instance A's inside the skew: record a bounded-skew premise, or change the stamp.
+  3. Run the affected suites fresh and read the verdicts from the JUnit XML.
+- **Deps**: none. It does not displace `P7-TSK-015`.
+- **Accept**:
+  - every `now()` in the database suites mapped to its table and column, and every read that
+    another clock judges (or that a later read of a stepping clock judges) classified, with its
+    margin;
+  - each hazardous fixture stamped from the clock that judges it, or given minutes of margin where
+    only the database judges;
+  - the multi-instance question decided and recorded, nothing implemented beyond the tests;
+  - the affected suites green from fresh runs, their verdicts read from the XML.
+- **Result (2026-09-27)**: every criterion holds.
+  - **Measured first.** A throwaway container answered host pings with its clock, for 539 samples
+    over 30 s at a 1.3 ms half round trip. The host's wall clock was steady (0 µs against its
+    monotonic clock). The VM's clock gained 61 ms a second and was stepped back 1.7 s at once, from
+    650 ms ahead to 1.05 s behind: a sawtooth about 28 s long, ahead 35 % of the time.
+    `CURRENT_STATE.md`'s catalogued entry ("drifts behind", 542 ms) was wrong in direction and a
+    third of the size, and is corrected. A first attempt used BusyBox `date`, which ignores `%N`;
+    the "sawtooth" it drew was whole-second truncation, and it was discarded.
+  - **The audit.** There were 464 database-clock reads in 102 of 125 `app` suites (the chip's
+    "60" predates Phase 7). They were extracted mechanically: every SQL concatenation joined, and
+    each `now()` mapped to its table and column. Then every read another clock judges was followed
+    to its judge. Three shapes were found:
+    1. *A database stamp the domain judges* (`P7-TSK-014`'s shape).
+       `MerchantTenancyBatteryDatabaseTest`'s proposed destination is approved and withdrawn by the
+       positive controls through `PayoutDestination`. That is a `500` whenever the database leads
+       by more than the probe loop's runtime.
+    2. *Two clocks in one statement, masking the constraint under test.*
+       `PayoutDestinationDatabaseTest.insertRaw` stamped `proposed_at` with `now()` and `ended_at`
+       with `Instant.now()`. Whenever the database led, V006's `ended_at >= proposed_at` refused the
+       row with a `23514` of its own, so the bank-detail refusals passed whatever the account CHECK
+       did: the "would still pass if the invariant were removed" anti-pattern, intermittently. The
+       raw self-approval did the same on `approved_at >= proposed_at` whenever the database trailed.
+    3. *Two database reads in two transactions, on a clock that steps back* (`P1-TSK-031`'s
+       shape), sized against the measured 1.7 s:
+       - `AdjustmentProposalSchemaDatabaseTest`, with no margin at all;
+       - `AuthenticationLockoutDatabaseTest.expireTheLock`, with 1 s;
+       - the `-1 s` negative leases, in `PaymentRefundDatabaseTest` (two) and in `platform`'s
+         `IdempotentExecutorTest` and `IdempotencyFailureModeTest`;
+       - `DisputeNotificationDatabaseTest`'s 101-dispute listing, seeded 1 s apart;
+       - gauge ages asserted equal to their back-dating, in `OutboxMetricsDatabaseTest` (two) and
+         `MerchantPayoutMetricsDatabaseTest`, which also counted a 1-second dispatch under a zero
+         bound.
+  - **Clear, with the reason.**
+    - The merchant rows six suites seed at `now()` are never transitioned.
+    - Every identity, customer and account a fixture moves was already back-dated an hour
+      (`P1-TSK-031`), and the rest never move. About fifteen fixture updates already clamp with
+      `GREATEST(now(), …)`.
+    - Refusal tests stamp both sides in one statement, or expect the edge trigger, which fires
+      before any CHECK.
+    - Payment methods are never detached.
+    - Payments' sweep-judged seeds are hours old; deadlines are stamped from the test clock with
+      days of margin; the refund's and the dispute response's permit renewals clamp in production.
+    - Consent orders by sequence, and session liveness is judged on the JVM against JVM-stamped
+      expiries.
+    - Every other offset (hours or days, a few minutes) was left alone, as the chip asked.
+  - **Fixed, in ten suites.** Each row a domain transitions or judges is now stamped from the test's
+    clock. Each row only the database judges is back-dated by minutes, where it had been seconds or
+    nothing. Each gauge's asserted age is now a minute inside its back-dating. Every change carries
+    a comment naming the mechanism.
+  - **Probes** (`MUTATION_TESTING.md`), each restore byte-identical:
+    - V006's account-shape CHECK removed: the new fixture was caught, at the IBAN assertion.
+    - The same removal under the old fixture survived with the database 5 s ahead, and was caught
+      with it 0.5 s ahead over a live lag: the clock's phase decided.
+    - `P6-TSK-011`'s self-approval tautology, re-performed on the fixed fixture: caught.
+  - **Found by this task's own battery, not a clock hazard, and fixed.**
+    `PaymentRefundDatabaseTest#theSweepChainsAStrandedAuthorization` failed (`CAPTURE_UNKNOWN`)
+    whenever `DisputeNotificationDatabaseTest` ran first in the JVM. That suite leaves an
+    `AUTHORIZED` card attempt, which the sweep rightly chains, and one fixed capture body gave both
+    captures `psp_cap-stranded` against `capture_provider_reference UNIQUE`. The second capture,
+    this test's own, was a `23505`. The failure reproduced deterministically, including on
+    unmodified `HEAD`: the pair failed identically with this task's edits removed, and the edits
+    were then restored byte-identical. It is fixed with the harness's own
+    `succeedsWithMintedReference`. Other suites that sweep with a fixed capture body are recorded,
+    not audited (`CURRENT_STATE.md` §Known Architectural Debt).
+  - **Found in passing, and corrected.**
+    - `DISTRIBUTED_EXECUTION.md` §3 said the server's clock decides session liveness; the
+      interceptor judges it at `Instant.now(clock)`.
+    - §5's audit said no client clock decides anything across instances any more. ADR-0063 is the
+      correction.
+    - `CURRENT_STATE.md`'s header still read `P7-TSK-001`, thirteen tasks on: the stale-second-copy
+      class.
+  - **The decision**: change the stamp, don't record a premise.
+    [ADR-0063](../adr/ADR-0063-business-stamps-never-contradict-the-order-of-facts.md), `Proposed`:
+    the database decides the order of an aggregate's facts, and a later fact's stamp is
+    `max(now, latest)`. That honours ADR-0014 as written, turns the platform's three clamps (the
+    supersession, and the refund's and dispute response's renewals) from exceptions into the rule,
+    and leaves the twenty-one ordering CHECKs as corruption guards that hold by construction.
+    Judgements stay bounded-skew premises. `X-TSK-006` carries the implementation.
+  - **Verified** by fresh runs, verdicts read from the XML: the nine affected `app` suites, 106
+    tests, 0 failures, run in the order that exposed the leak (`MerchantPayoutDatabaseTest`,
+    `P7-TSK-014`'s fixture, included); and the two `platform` suites, 23 tests, 0 failures. No
+    fleet-wide count is claimed.
+- **Risk**: Low. **Cx**: M. **DoD**: `DOD-TEST`, `DOD-ARCH`, `DOD-DOC`
+
+**X-TSK-006 — Business stamps never contradict the order of facts (ADR-0063)** — `PLANNED`
+- **Context**: every aggregate that stamps a later fact: the twenty-one tables and ten
+  constructors ADR-0063 lists. Recorded by `X-TSK-005`.
+- **Description**: implement ADR-0063's decision (2). Every transition, terminal stamp and permit
+  renewal stamps `max(now, latest)`. In an aggregate that is `PayoutDestination.supersede`'s form;
+  where a renewal is written in SQL it is `GREATEST(column, ?)`, the refund's form. The schema's
+  CHECKs and the constructors' checks stay. The payout's, withdrawal's and pay-in's renewals change
+  from a quiet refusal to a clamped renewal: a liveness change on money-moving rails, safe under
+  ADR-0057 §4's premise because a later permit only postpones a `NEVER_RECEIVED` conclusion.
+- **Why not in `X-TSK-005`**: it changes domain code in eleven modules and three money-moving send
+  protocols, which is a decision for the owner to accept first. The fixtures no longer depend on it.
+- **Deps**: ADR-0063 accepted by the owner. It displaces no phase task.
+- **Accept**:
+  - every later-fact stamp in the class is `max(now, latest)`, found by reading each transition,
+    not by grep alone;
+  - for each aggregate, a test on a clock trailing the aggregate's latest stamp (`Clock.offset`,
+    or `SimulatedInstance.skewedBy` at the database rank): the transition succeeds and stamps the
+    predecessor's instant, where before the change it was refused;
+  - for the three permit renewals, a takeover on a trailing clock renews (clamped) and re-sends the
+    same reference once, and the sweep's `NEVER_RECEIVED` still waits for its bound: driven, not
+    assumed;
+  - each clamp's removal caught by its test (`MUTATION_TESTING.md`);
+  - `DISTRIBUTED_EXECUTION.md` §3's rows for the class say which clock orders what.
+- **Risk**: Medium. One line per transition, but it touches every aggregate and three
+  money-moving send protocols. **Cx**: M. **DoD**: `DOD-DOMAIN`, `DOD-FIN` (the renewals on
+  money-moving rails), `DOD-TEST`
 
 **X-TSK-007 — Session liveness on the database clock, stamps and judgement both** — `IN_PROGRESS`
 *(designed, approved and implemented 2026-09-27; the completion gate is next. See **Result**)*
@@ -8043,15 +9828,18 @@ Batches 0–9 applied and verified 2026-09-23; its one failing test predates it.
 
 ---
 
-# Phases 7–16 — Epics
+# Phases 8–16 — Epics
 
 Status: `PLANNED` — capabilities elaborated at each phase's entry gate.
 *(The Phase 6 row was elaborated to the section above by the Phase 5 → 6 transition,
-2026-09-21 — the epic wording superseded by the task decomposition.)*
+2026-09-21 — the epic wording superseded by the task decomposition. The Phase 7 row went the same
+way at the Phase 6 → 7 transition, 2026-09-24: rail abstraction and capability model, card rail,
+wallet rail, A2A rail, instant-payment rail, routing policy, finality and irrevocability handling,
+dispute lifecycle, chargeback and representment, and dispute accounting are Phase 7's eighteen
+items above.)*
 
 | Phase | Epics |
 |-------|-------|
-| 7 Cards, Wallets, A2A, Instant | Rail abstraction and capability model; card rail; wallet rail; A2A rail; instant-payment rail; rail routing policy; finality and irrevocability handling; dispute lifecycle; chargeback and representment; dispute accounting |
 | 8 Settlement and Reconciliation | Settlement expectation tracking; settlement file ingestion; evidence retention; matching engine; tolerance and rule versioning; break classification; break lifecycle and investigation; four-eyes resolution; suspense management; reconciliation reporting |
 | 9 FX and Cross-Border | Rate sourcing and staleness; quote lifecycle and rate lock; spread and margin recognition; conversion execution; multi-currency accounting and FX position; rounding residual handling; corridor policy; cross-border payment workflow; FX reconciliation |
 | 10 Credit Decisioning | Credit profile; bureau adapter and evidence; affordability assessment; risk scoring; versioned policy engine; decision recording and immutability; reason codes and adverse action; decision reproducibility; exposure tracking |

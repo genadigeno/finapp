@@ -72,7 +72,8 @@ public enum PaymentsAuditAction implements AuditableAction {
             "payments.PaymentOutcomeApplied",
             "The platform applied a provider outcome to a dispatched payment operation through"
                     + " a conditional transition; the record names the operation and the"
-                    + " committed states, never an amount or a provider code.",
+                    + " committed states, never an amount or a provider code. Acting transitions"
+                    + " only: a resolver that lost the race records nothing.",
             false),
 
     /**
@@ -87,7 +88,218 @@ public enum PaymentsAuditAction implements AuditableAction {
             "An operator dispatched a bounded refund of a captured payment, with the required"
                     + " reason; the record names the refund, the attempt and the intent, never"
                     + " an amount.",
-            true);
+            true),
+
+    /**
+     * An operator created a routing policy version (`P7-TSK-003`, ADR-0060 §1) — the
+     * privileged, reasoned act: how money travels changed, effective forward. The record
+     * names the version and its rule count; ceilings never appear ({@code INV-AUD-02}).
+     */
+    PAYMENT_ROUTING_VERSION_CREATED(
+            "payments.PaymentRoutingVersionCreated",
+            "An operator created an immutable routing policy version, effective forward, with"
+                    + " the required reason; the record names the version number and rule"
+                    + " count, never a ceiling amount.",
+            true),
+
+    /**
+     * An operator took a rail out of service or returned it (`P7-TSK-003`, ADR-0060 §4) —
+     * the recorded fact every instance routes by. Reasoned, always: silence about why a rail
+     * stopped is exactly what an incident review cannot afford.
+     */
+    RAIL_AVAILABILITY_CHANGED(
+            "payments.RailAvailabilityChanged",
+            "An operator recorded a rail as available or out of service, with the required"
+                    + " reason; the record names the rail and the new state.",
+            true),
+
+    /**
+     * The platform routed a payment and no declared rail could carry it (`P7-TSK-003`,
+     * ADR-0060 §3): the refusal behind {@code payments.NoEligibleRail}, recorded with the
+     * decision that explains it. The chosen path needs no action of its own — the winning
+     * confirmation's {@link #PAYMENT_CONFIRMED} names the decision and the rail.
+     */
+    PAYMENT_ROUTING_REFUSED(
+            "payments.PaymentRoutingRefused",
+            "A payment was refused because no declared rail could carry it; the record names"
+                    + " the intent, the decision, the pinned policy version and the step"
+                    + " count, never an amount.",
+            false),
+
+    /**
+     * An operator read a payment's routing explanation (`P7-TSK-003`) — a read of another
+     * person's payment inputs under {@code PAYMENT_ROUTING_ADMINISTER}, audited like every
+     * privileged read of somebody else's facts.
+     */
+    PAYMENT_ROUTING_EXPLANATION_READ(
+            "payments.PaymentRoutingExplanationRead",
+            "An operator read a payment's routing explanation; the record names the intent"
+                    + " and the decision.",
+            false),
+
+    /**
+     * A void was dispatched (`P7-TSK-004`): the release of an uncaptured authorization,
+     * committed with its minted reference before the provider is asked ({@code INV-PAY-04}).
+     * The actor is the customer withdrawing their own authorized payment, the operator (whose
+     * reason is recorded verbatim), or the platform performing the declined-capture redirect;
+     * the outcome that follows is the platform's ({@link #PAYMENT_OUTCOME_APPLIED}).
+     */
+    PAYMENT_VOID_DISPATCHED(
+            "payments.PaymentVoidDispatched",
+            "A void of an uncaptured authorization was dispatched; the record names the"
+                    + " intent, the attempt, the reference and the rail, never an amount.",
+            false),
+
+    /**
+     * A wallet withdrawal was dispatched (`P7-TSK-008`): judged under the wallet's lock,
+     * held, routed and committed with our minted reference before the scheme is asked
+     * ({@code INV-PAY-04}, ADR-0062 §6). The person's own act; every outcome that follows
+     * is the platform's ({@link #WITHDRAWAL_OUTCOME_APPLIED}).
+     */
+    WITHDRAWAL_DISPATCHED(
+            "payments.WithdrawalDispatched",
+            "A wallet withdrawal was dispatched; the record names the withdrawal, the"
+                    + " wallet account, the instrument and the rail, never an amount.",
+            false),
+
+    /**
+     * The scheme's word landed on a withdrawal (`P7-TSK-008`): applied by the dispatching
+     * flight, a takeover or the inquiry sweep — the platform's act whichever resolver wins,
+     * on the locked row, acting once.
+     */
+    WITHDRAWAL_OUTCOME_APPLIED(
+            "payments.WithdrawalOutcomeApplied",
+            "A withdrawal outcome was applied on the locked row; the record names the"
+                    + " withdrawal, the status, the failure class and the resolver, never"
+                    + " an amount or a reference.",
+            false),
+
+    /**
+     * The platform parked a money-carrying confirmation that named no initiation it made
+     * (`P7-TSK-009`, ADR-0062 §5, {@code INV-REC-05}): value moved on the rail with no
+     * commercial home, so it rests in {@code SUSPENSE_UNMATCHED} — aged, alerted, never
+     * credited by guesswork. Acting insert only; a duplicate delivery converges silently.
+     */
+    UNMATCHED_CONFIRMATION_PARKED(
+            "payments.UnmatchedConfirmationParked",
+            "The platform parked an unattributable pay-in confirmation in the unmatched"
+                    + " suspense position; the record names the rail and the suspense entry,"
+                    + " never an amount.",
+            false),
+
+    /**
+     * The platform applied a dispute stage the card PSP notified (`P7-TSK-012`, ADR-0061 §6):
+     * opening the dispute at its entry stage, or moving it along one edge of its machine —
+     * one record per stage applied, so a later stage's intervening ones each stand on the
+     * record. As the platform, through the webhook door's enumerated {@code enterSystem()}
+     * site: an unsolicited network statement has no session. Acting only; a duplicate or
+     * late delivery moves nothing and records nothing.
+     */
+    DISPUTE_STAGE_APPLIED(
+            "payments.DisputeStageApplied",
+            "The platform applied a notified dispute stage through a conditional transition;"
+                    + " the record names the dispute, the attempt and the stages as the"
+                    + " platform's own names, never an amount or a provider code.",
+            false),
+
+    /**
+     * An operator read a dispute (`P7-TSK-012`) — somebody else's contested payment, its
+     * reason and its amount, under {@code DISPUTE_ADMINISTER}: audited per dispute shown, like
+     * every privileged read of another's facts ({@link #PAYMENT_ROUTING_EXPLANATION_READ}'s
+     * reasoning).
+     */
+    DISPUTE_READ(
+            "payments.DisputeRead",
+            "An operator read a dispute; the record names the dispute and its attempt.",
+            false),
+
+    /**
+     * The platform re-attributed part of a chargeback's excess to the payment's counterparty
+     * (`P7-TSK-013`, ADR-0061 §3): an event freed headroom — a capture landing, a counted refund
+     * failing, a sibling chargeback won — so the excess comes back, oldest dispute first, under
+     * the attempt lock, in the freeing event's own transaction. One record per dispute moved,
+     * naming its cause; the entry it posted references the dispute. *(Its description named only
+     * the failed refund until `P7-TSK-014` found it stale — the P7-TSK-013 gate unified the rule
+     * and this string was not re-read.)*
+     */
+    CHARGEBACK_REATTRIBUTED(
+            "payments.ChargebackReattributed",
+            "The platform re-attributed part of a chargeback's excess to the counterparty after an"
+                    + " event freed headroom - a capture landing, a counted refund failing, a"
+                    + " sibling chargeback won; the record names the dispute, the cause and"
+                    + " where the share landed, never an amount.",
+            false),
+
+    /**
+     * The platform recorded the dispute fee the card PSP reported (`P7-TSK-013`, ADR-0061 §4):
+     * once per dispute ({@code NULL → value}), posted {@code DR DISPUTE_COSTS / CR} the rail's
+     * clearing under {@code dispute-fee:<id>} — the platform bears it in Phase 7. As the
+     * platform, through the webhook door's enumerated site.
+     */
+    DISPUTE_FEE_RECORDED(
+            "payments.DisputeFeeRecorded",
+            "The platform recorded the dispute fee the PSP reported and posted it as a dispute"
+                    + " cost; the record names the dispute and its attempt, never an amount.",
+            false),
+
+    /**
+     * A responder attached a document to a dispute (`P7-TSK-014`, ADR-0061 §7,
+     * {@code INV-DSP-03}): the merchant over its key, or an operator for a payment with no
+     * merchant, whose reason the record carries. Encrypted under the dispute-evidence key before
+     * it is stored; a re-upload of the same bytes converges on the one document and says so.
+     */
+    DISPUTE_EVIDENCE_UPLOADED(
+            "payments.DisputeEvidenceUploaded",
+            "A dispute evidence document was uploaded; the record names the dispute, the"
+                    + " document, its kind, its format and its size, never its content.",
+            false),
+
+    /**
+     * Somebody read a dispute evidence document's content (`P7-TSK-014`, {@code INV-DSP-03} —
+     * {@code INV-KYC-06}'s regime restated): the trail of who looked is the control, committed
+     * with the read or neither happens. A read of a document that does not exist records nothing.
+     */
+    DISPUTE_EVIDENCE_READ(
+            "payments.DisputeEvidenceRead",
+            "A dispute evidence document's content was read; the record names the document and"
+                    + " its dispute.",
+            false),
+
+    /**
+     * Evidence content left the platform for the card PSP (`P7-TSK-014`): every wire send of a
+     * representment's documents — the dispatching flight's (the responder's act) and every
+     * re-send a takeover or the resolution sweep makes (the platform's) — committed before the
+     * bytes are sent, so no transmission is off the record.
+     */
+    DISPUTE_EVIDENCE_TRANSMITTED(
+            "payments.DisputeEvidenceTransmitted",
+            "Dispute evidence was transmitted to the PSP with a response; the record names the"
+                    + " response, its dispute and the documents sent, never their content.",
+            false),
+
+    /**
+     * A responder answered a chargeback (`P7-TSK-014`, ADR-0061 §7): a representment or an
+     * acceptance, judged under the attempt and dispute locks and committed with our minted
+     * reference before the PSP is asked ({@code INV-PAY-04}). The merchant's act over its key,
+     * or an operator's for a payment with no merchant, reasoned.
+     */
+    DISPUTE_RESPONSE_DISPATCHED(
+            "payments.DisputeResponseDispatched",
+            "A dispute response was dispatched; the record names the dispute, the response, its"
+                    + " kind, the documents it carries and our reference.",
+            false),
+
+    /**
+     * The PSP's word landed on a dispute response (`P7-TSK-014`): applied by the dispatching
+     * flight, a takeover or the resolution sweep — the platform's act whichever resolver wins, on
+     * the locked row, acting once. {@code SUBMITTED} means the PSP took the answer; the dispute's
+     * stage stays the network's word.
+     */
+    DISPUTE_RESPONSE_OUTCOME_APPLIED(
+            "payments.DisputeResponseOutcomeApplied",
+            "A dispute response outcome was applied on the locked row; the record names the"
+                    + " response, its dispute, the status and the failure class.",
+            false);
 
     private final String code;
     private final String description;

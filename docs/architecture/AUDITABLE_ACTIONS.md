@@ -290,7 +290,7 @@ producer this phase.
 
 | Code | Reason required | What it is |
 |---|---|---|
-| `transfers.TransferExecuted` | No | A transfer execution was judged: COMPLETED with its posting or FAILED with its enumerated reason; the record names the transfer, the accounts and the outcome, never an amount. |
+| `transfers.TransferExecuted` | No | A transfer execution was judged: COMPLETED with its posting or FAILED with its enumerated reason; the record names the transfer, its status, the failure reason or the journal entry, never an amount - the accounts are the transfer row's, which the target names (this said the record names the accounts until the Phase 6 → 7 transition; it never did). |
 | `transfers.BeneficiaryAdded` | No | A party saved a transfer destination; the record names the beneficiary and the destination account by identifier, never the display name. |
 | `transfers.BeneficiaryRemoved` | No | A party removed a saved transfer destination; the removed row survives as evidence. |
 | `transfers.TransferReversed` | **Yes** | An operator reversed a completed transfer with a recorded reason; the record names the transfer, the original entry and the reversal entry, never an amount. |
@@ -321,7 +321,7 @@ levels, the `P4-TSK-005` layering.
 
 | Code | Reason required | What it is |
 |---|---|---|
-| `paymentmethods.PaymentMethodAttached` | No | A party attached a tokenised payment instrument; the record names the payment method by identifier, never the token or the display metadata. |
+| `paymentmethods.PaymentMethodAttached` | No | A party attached a payment instrument — a card token, or a bank account through the grant exchange (`P7-TSK-007`); the record names the payment method by identifier, never a reference or the display metadata. When the customer's `NO_MATCH` acknowledgement was the gate, the reason carries the enumerated constant `PAYEE_CHECK_NO_MATCH_ACKNOWLEDGED` — a consent fact, never a value (ADR-0062 §2). |
 | `paymentmethods.PaymentMethodDetached` | No | A party detached a payment instrument; the detached row survives as evidence. |
 
 Declared with the surface whose design fixes their meaning (`P5-TSK-005`) rather than with the
@@ -338,12 +338,48 @@ identity's second factor (`INV-PAY-02`'s surface, `P4-TSK-007`'s step-up verbati
 | Code | Reason required | What it is |
 |---|---|---|
 | `payments.PaymentIntentCreated` | No | A person created a payment intent; the record names the intent, the instrument and the wallet account by identifier, never an amount. |
-| `payments.PaymentConfirmed` | No | A person confirmed a payment intent; the dispatch committed before the provider call, and the record names the intent and the attempt, never an amount. |
+| `payments.PaymentConfirmed` | No | A person confirmed a payment intent; the dispatch committed before the provider call, and the record names the intent, the attempt and — since `P7-TSK-001` — the rail the dispatch decided, never an amount. |
 | `payments.PaymentCancelled` | No | A person cancelled a payment intent before confirmation; nothing was dispatched and nothing was posted. |
-| `payments.PaymentCaptureDispatched` | No | The platform dispatched a capture for an authorized attempt; the reference was stored before the provider was asked, and the record names the attempt and the intent, never an amount. |
-| `payments.PaymentOutcomeApplied` | No | The platform applied a provider outcome to a dispatched payment operation through a conditional transition; the record names the operation and the committed states, never an amount or a provider code. |
+| `payments.PaymentCaptureDispatched` | No | The platform dispatched a capture for an authorized attempt; the reference was stored before the provider was asked, and the record names the attempt, the intent and — since `P7-TSK-001` — the attempt's stored rail, never an amount. |
+| `payments.PaymentOutcomeApplied` | No | The platform applied a provider outcome to a dispatched payment operation through a conditional transition; the record names the operation and the committed states, never an amount or a provider code. Written only on an acting transition: a resolver that lost the race records nothing (since the Phase 6 → 7 transition; before, every loser wrote one). |
+| `payments.PaymentVoidDispatched` | No | A customer cancelled their authorized payment, or an operator voided it with a reason recorded verbatim; the promise was released at the provider, and the record names the intent, the attempt, the minted void reference and the stored rail, never an amount. |
+| `payments.WithdrawalDispatched` | No | A customer dispatched a wallet withdrawal (`P7-TSK-008`): judged under the wallet's lock, held, routed and committed with our minted reference before the scheme is asked; the record names the withdrawal, the wallet account, the instrument and the rail, never an amount. |
+| `payments.WithdrawalOutcomeApplied` | No | The scheme's word landed on a withdrawal — applied by the dispatching flight, a takeover or the inquiry sweep, the platform's act on the locked row, acting once; the record names the withdrawal, the status, the failure class and the resolver, never an amount or a reference. |
+| `payments.UnmatchedConfirmationParked` | No | The platform parked a money-carrying confirmation that named no initiation it made (`P7-TSK-009`, ADR-0062 §5, `INV-REC-05`): value moved on the rail with no commercial home, so it rests in `SUSPENSE_UNMATCHED` — aged, alerted, never credited by guesswork; acting insert only, a duplicate delivery converges and records nothing; the record names the rail and the suspense entry, never an amount. |
 | `payments.PaymentRefundDispatched` | **Yes** | An operator dispatched a bounded refund of a captured payment, with the required reason; the record names the refund, the attempt and the intent, never an amount. |
-| `merchant.MerchantOnboarded` | No | An operator onboarded a merchant; the record names the merchant, its organisation party and its payable ledger account by identifier. |
+| `payments.PaymentRoutingVersionCreated` | **Yes** | An operator created an immutable routing policy version, effective forward, with the required reason; the record names the version number and rule count, never a ceiling amount. |
+| `payments.RailAvailabilityChanged` | **Yes** | An operator recorded a rail as available or out of service, with the required reason; the record names the rail and the new state. |
+| `payments.PaymentRoutingRefused` | No | A payment was refused because no declared rail could carry it; the record names the intent, the decision, the pinned policy version and the step count, never an amount. |
+| `payments.PaymentRoutingExplanationRead` | No | An operator read a payment's routing explanation; the record names the intent and the decision. |
+| `payments.DisputeStageApplied` | No | The platform applied a dispute stage the card PSP notified (`P7-TSK-012`, ADR-0061 §6) — opening the dispute at its entry stage, or moving it along one edge of its machine; one record per stage applied, so a later stage's intervening ones each stand on the record, in order. As the platform, through the webhook door's enumerated `enterSystem()` site; acting only — a duplicate, late or contradicting delivery moves nothing and records nothing. The record names the dispute, the attempt and the stages as the platform's own names, never an amount or a provider code. |
+| `payments.DisputeRead` | No | An operator read a dispute under `DISPUTE_ADMINISTER` (`P7-TSK-012`) — somebody else's contested payment, its reason and its amount; one record per dispute shown, a refusal records nothing. The record names the dispute and its attempt. |
+| `payments.ChargebackReattributed` | No | The platform moved part of a standing chargeback's excess back to the payment's counterparty (`P7-TSK-013`, ADR-0061 §3): a capture LANDED on an attempt the chargeback was already stated against, a refund the chargeback had counted as non-failed FAILED (its money never went back), or a sibling chargeback was WON (its attribution reversed) — each freeing headroom under the combined bound. Under the attempt lock, in the freeing transaction, as the platform (the resolver's or the webhook door's enumerated `enterSystem()` site); one record per dispute moved, beside the `dispute-reattribution:<dispute>:<cause>` entry that references the dispute. The record names the dispute, the attempt, the cause and whether the share landed on the counterparty or was parked — never an amount. |
+| `payments.DisputeFeeRecorded` | No | The platform recorded the dispute fee the card PSP reported (`P7-TSK-013`, ADR-0061 §4) — once per dispute, with the chargeback's statement or reported later — and posted it `DR DISPUTE_COSTS / CR` the rail's clearing under `dispute-fee:<id>`; the platform bears it in Phase 7. As the platform, through the webhook door's enumerated site. The record names the dispute and its attempt, never an amount. |
+| `payments.DisputeEvidenceUploaded` | No | A responder attached a document to a dispute (`P7-TSK-014`, ADR-0061 section 7, `INV-DSP-03`): the merchant over its key, or an operator for a payment with no merchant with its reason in the record's reason field - encrypted under the dispute-evidence key before it is stored. A re-upload of the same bytes converges on the one document and says `created=false`. The record names the dispute, the document, its kind, format and size, never its content. |
+| `payments.DisputeEvidenceRead` | No | Somebody read a dispute evidence document's content (`P7-TSK-014`, `INV-DSP-03` - `INV-KYC-06`'s regime restated): the merchant within its tenancy or an operator under `DISPUTE_ADMINISTER`, committed in the read's own transaction; a read of a document that does not exist records nothing. The record names the document and its dispute. |
+| `payments.DisputeEvidenceTransmitted` | No | Evidence content left for the card PSP with a representment (`P7-TSK-014`): every wire send - the dispatching flight's, as the responder, and every re-send a takeover or the resolution sweep makes, as the platform - committed before the bytes are sent. The record names the response, its dispute and the documents sent, never their content. |
+| `payments.DisputeResponseDispatched` | No | A responder answered a chargeback (`P7-TSK-014`, ADR-0061 section 7): a representment or an acceptance, judged under the attempt and dispute locks and committed with our minted reference before the PSP is asked (`INV-PAY-04`) - the merchant's act over its key, or an operator's for a payment with no merchant with its reason. The record names the dispute, the response, its kind, the documents it carries and our reference. |
+| `payments.DisputeResponseOutcomeApplied` | No | The PSP's word landed on a dispute response (`P7-TSK-014`): applied by the dispatching flight, a takeover or the resolution sweep - the platform's act whichever wins, on the locked row, acting once. `SUBMITTED` means the PSP took the answer; the dispute's stage stays the network's word. The record names the response, its dispute, the status and the failure class. |
+
+Declared with the commands whose designs fix their meaning (`P5-TSK-009`; the capture's
+dispatch action arrived with its command, `P5-TSK-010`) — exactly as the module's
+`package-info` licence promised; the refund's arrives with `P5-TSK-015`, the phase's one
+reason-required action. The first three are a person's own acts with their own money (the
+`transfers.TransferExecuted` reasoning); **`PaymentCaptureDispatched` and
+`PaymentOutcomeApplied` are the platform's** — enumerated `enterSystem()` sites, because the
+continuation of a confirmed intent and a provider's answer both have no session
+(`PHASE_5_PLAN.md` §11; ADR-0046 §1 requires the initiation's record, and capture's initiator
+is the platform where the authorization's dispatch rode the person's `PaymentConfirmed`).
+Summaries carry identifiers, verdicts and committed states as enumerated names, never provider
+vocabulary (`INV-PAY-03`) and never an amount (`INV-AUD-02`). Each is emitted by the acting
+call only: an idempotent replay, a converging retry and a losing racer moved nothing and
+record nothing.
+
+### `merchant` — `MerchantAuditAction`
+
+| Code | Reason required | What it is |
+|---|---|---|
+| `merchant.MerchantOnboarded` | No | An operator onboarded a merchant; the record names the merchant, its organisation party and its settlement currency by identifier - the payable is found from those two, owner-scoped (this said it named the payable ledger account until the Phase 6 → 7 transition; it never did). |
 | `merchant.MerchantSuspended` | **Yes** | An operator suspended a merchant - new dispatches refuse, landed money still lands; the reason is required. |
 | `merchant.MerchantReinstated` | **Yes** | An operator reinstated a suspended merchant; the reason is required. |
 | `merchant.MerchantClosed` | **Yes** | An operator closed a merchant - terminal; the payable position and its history remain; the reason is required. |
@@ -352,6 +388,51 @@ identity's second factor (`INV-PAY-02`'s surface, `P4-TSK-007`'s step-up verbati
 | `merchant.FeeScheduleCreated` | No | An operator created a fee schedule; the record names the schedule by identifier with its name and currency. |
 | `merchant.FeeScheduleVersionCreated` | **Yes** | An operator created a fee schedule version - immutable, effective forward; the record names the version by identifier with its terms; the reason is required. |
 | `merchant.MerchantFeeScheduleAssigned` | **Yes** | An operator assigned a merchant to a fee schedule; the record names the merchant and both schedules by identifier; the reason is required. |
+| `merchant.PayoutDestinationProposed` | **Yes** | An operator proposed a payout destination for a merchant; the record names the destination and the merchant by identifier, never the bank reference; the reason is required. |
+| `merchant.PayoutDestinationApproved` | **Yes** | A second operator, distinct from the proposer, approved a payout destination and its cooling-off started; the reason is required. |
+| `merchant.PayoutDestinationApprovalRefused` | **Yes** | The proposer of a payout destination tried to approve it and was refused (INV-AUD-04); recorded as DENIED with the attempted reason. |
+| `merchant.PayoutDestinationRejected` | **Yes** | An operator rejected a proposed payout destination - terminal; the reason is required. |
+| `merchant.PayoutDestinationWithdrawn` | **Yes** | An operator withdrew a payout destination change before it took effect - terminal; the reason is required. |
+| `merchant.PayoutDestinationEffective` | No | The platform made an approved payout destination effective once its cooling-off elapsed, superseding the previous one in the same transaction; the record names both by identifier. |
+| `merchant.MerchantPayoutInitiated` | No | A merchant initiated a payout of its payable with its API key; the record names the payout, the destination and the key by identifier. |
+| `merchant.MerchantPayoutInitiatedByOperator` | **Yes** | An operator initiated a payout of a merchant's payable on its behalf; the reason is required. |
+| `merchant.MerchantPayoutOutcomeApplied` | No | The platform applied the payout provider's answer to a payout (completed, failed or unknown); acting transitions only. |
+
+The three pricing actions arrive with `P6-TSK-004`, and their reason split is the
+`MerchantApiKeyIssued`/`Revoked` split restated: **creating a named schedule needs no reason**
+— a container carries no price — while **setting what the platform charges does**, because a
+version can never be edited, only superseded, and an unexplained price change is precisely
+what a reviewer reading a disputed merchant statement needs explained (`INV-AUD-03`).
+`MerchantFeeScheduleAssigned` is emitted by the **moving** call only: an assignment that
+converges on the schedule the merchant is already on changed nothing, and records nothing.
+
+**Five of the six payout destination actions require a reason, and the sixth is the
+platform's** (`P6-TSK-011`, ADR-0056). Proposing, approving, rejecting and withdrawing are each an
+operator's judgement about where a counterparty's money goes, and the trail must be able to say
+why. `merchant.PayoutDestinationApprovalRefused` is the refused self-approval, recorded as
+`DENIED` in a transaction that commits nothing else — it keeps the attempted reason, the only
+record of what the refused actor said they were doing. `merchant.PayoutDestinationEffective`
+needs none: nobody decided anything when the cooling-off elapsed, and the decisions are already
+on the trail as the proposal and the approval. No record ever carries the provider reference or
+its suffix (`INV-AUD-02`).
+
+**One of the three payout actions requires a reason, and it is the operator's**
+(`P6-TSK-012`, ADR-0057). A merchant paying out its own payable with its own key is doing the
+ordinary thing the surface exists for, and the record names the key that acted — the first
+merchant act to carry ADR-0052 §2's key id; the checkout session's records carry it too since
+the Phase 6 review (`P6-DOC-001`), which this sentence denied until the Phase 6 → 7 transition. An
+operator moving a merchant's money on its behalf is a judgement the trail must explain, so
+`merchant.MerchantPayoutInitiatedByOperator` requires it, and the payout row keeps it too.
+`merchant.MerchantPayoutOutcomeApplied` is the platform's: the dispatch's own outcome
+transaction or the resolution sweep, through enumerated `enterSystem()` sites, written only on
+an acting transition — so ten racing resolvers leave one record per move, not ten. No record
+carries the destination's provider reference (`INV-AUD-02`). The ledger's own hold and posting
+records sit beside these, as they do for the refund.
+
+### `checkout` — `CheckoutAuditAction`
+
+| Code | Reason required | What it is |
+|---|---|---|
 | `checkout.CheckoutSessionCreated` | No | A merchant opened a checkout session; the record names the session and the merchant by identifier, never the token and never what was bought. |
 | `checkout.CheckoutSessionConfirmed` | No | A customer confirmed a checkout session; the record names the session and the payment intent by identifier. |
 | `checkout.OrderCreated` | No | A capture completed a checkout session and produced its order; the record names the order, the session and the journal entry that paid for it. |
@@ -378,27 +459,7 @@ facts and an auditor must be able to tell them apart.
 closes the traceable chain in the trail itself: order → entry → ADR-0050 §3's four lines → the
 merchant's payable position.
 
-The three pricing actions arrive with `P6-TSK-004`, and their reason split is the
-`MerchantApiKeyIssued`/`Revoked` split restated: **creating a named schedule needs no reason**
-— a container carries no price — while **setting what the platform charges does**, because a
-version can never be edited, only superseded, and an unexplained price change is precisely
-what a reviewer reading a disputed merchant statement needs explained (`INV-AUD-03`).
-`MerchantFeeScheduleAssigned` is emitted by the **moving** call only: an assignment that
-converges on the schedule the merchant is already on changed nothing, and records nothing.
-
-Declared with the commands whose designs fix their meaning (`P5-TSK-009`; the capture's
-dispatch action arrived with its command, `P5-TSK-010`) — exactly as the module's
-`package-info` licence promised; the refund's arrives with `P5-TSK-015`, the phase's one
-reason-required action. The first three are a person's own acts with their own money (the
-`transfers.TransferExecuted` reasoning); **`PaymentCaptureDispatched` and
-`PaymentOutcomeApplied` are the platform's** — enumerated `enterSystem()` sites, because the
-continuation of a confirmed intent and a provider's answer both have no session
-(`PHASE_5_PLAN.md` §11; ADR-0046 §1 requires the initiation's record, and capture's initiator
-is the platform where the authorization's dispatch rode the person's `PaymentConfirmed`).
-Summaries carry identifiers, verdicts and committed states as enumerated names, never provider
-vocabulary (`INV-PAY-03`) and never an amount (`INV-AUD-02`). Each is emitted by the acting
-call only: an idempotent replay, a converging retry and a losing racer moved nothing and
-record nothing.
+### What is emitted, and what is declared not to be
 
 **The two registration actions are emitted; none of the three `platform` actions is**, and that is
 not an oversight. Two describe the manual procedure

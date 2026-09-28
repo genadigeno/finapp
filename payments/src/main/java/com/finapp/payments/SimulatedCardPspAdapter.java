@@ -1,8 +1,12 @@
 package com.finapp.payments;
 
+import com.finapp.ledger.AccountPurpose;
 import com.finapp.sharedkernel.money.Money;
 import java.net.URI;
 import java.time.Duration;
+import java.util.Map;
+import java.util.Optional;
+import java.util.Set;
 
 /**
  * The simulated card-style PSP — the platform's first {@link PaymentProvider} (`P5-TSK-003`,
@@ -16,6 +20,11 @@ import java.time.Duration;
  * is <em>ours</em>: the only endpoints that exist are the `P0-TSK-037` harness in tests and
  * whatever a demo stands up (ADR-0049; the Phase 2 verification-provider shape).
  *
+ * <p><strong>Since `P7-TSK-014` it also answers disputes</strong> ({@link DisputeResponder}):
+ * the card PSP is where a chargeback is contested or conceded, so the same adapter binds that
+ * port too — its own path, the same wire discipline (our reference in the
+ * {@code Idempotency-Key} header, the same total verdict mapping, the same operations query).
+ *
  * <h2>Wiring — deliberately none yet</h2>
  *
  * <p>No bean until the first composition-root consumer, `P5-TSK-009` (the `P1-TSK-007`
@@ -27,17 +36,53 @@ import java.time.Duration;
  * and the key decoded by {@code com.finapp.app.payments.ProviderApiKey} — the confinement
  * mechanism's fifth credential — passed in as bytes.
  */
-public final class SimulatedCardPspAdapter implements PaymentProvider {
+public final class SimulatedCardPspAdapter implements PaymentProvider, DisputeResponder {
 
     /** The stable provider name: the evidence scope and, from `P5-TSK-017`, the meter tag value. */
     public static final String NAME = "simulated-card";
+
+    /**
+     * The card rail this adapter operates, declared as data (`P7-TSK-001`, ADR-0059 §1) — the
+     * one place the rail's name is written ({@code RailVocabularyIsConfinedTest}), and the
+     * descriptor written from what ADR-0049 §2 already decided: two-step; revocable until the
+     * scheme's dispute window ends, chargebacks being that window; the void of an uncaptured
+     * authorization the one reversal (`P7-TSK-004` enforces it); refunds against the capture
+     * at the provider; settlement deferred through clearing, with {@code SETTLEMENT_CLEARING}
+     * this rail's own position (its meaning narrowed to the card rail by ADR-0059 §4); no
+     * outcome deadline — a card's ambiguity ends only when the provider or a query says so;
+     * and no currency restriction or ceiling declared, because the simulated PSP accepts what
+     * it is sent and eligibility is routing's to judge when it exists (`P7-TSK-003`).
+     */
+    public static final PaymentRail RAIL =
+            new PaymentRail(
+                    RailId.of("card"),
+                    // Declaration version 1 (P7-TSK-003, ADR-0060 §2): routing steps record
+                    // which declaration they judged; bump it when these capabilities change.
+                    1,
+                    new RailCapabilities(
+                            InteractionModel.TWO_STEP,
+                            RailCapabilities.Finality.REVOCABLE_UNTIL_DISPUTE_WINDOW_ENDS,
+                            Set.of(RailCapabilities.Reversal.VOID),
+                            RailCapabilities.RefundMode.PROVIDER_REFUND,
+                            RailCapabilities.SettlementModel.DEFERRED_VIA_CLEARING,
+                            Optional.empty(),
+                            RailCapabilities.DisputeModel.CARD_SCHEME_CHARGEBACKS,
+                            Optional.empty(),
+                            Map.of(),
+                            Optional.of(AccountPurpose.SETTLEMENT_CLEARING)));
 
     // The simulated wire paths - published for tests that stub the provider.
     public static final String AUTHORIZATIONS_PATH = "/authorizations";
     public static final String CAPTURES_PATH = "/captures";
     public static final String REFUNDS_PATH = "/refunds";
+
+    /** The void's own path (`P7-TSK-004`): releasing an authorization, never money. */
+    public static final String VOIDS_PATH = "/voids";
     /** Query prefix; the platform-minted reference is the path segment (`INV-PAY-04`). */
     public static final String OPERATIONS_PATH = "/operations/";
+
+    /** A dispute answer's path (`P7-TSK-014`): a representment or an acceptance, never money. */
+    public static final String DISPUTE_RESPONSES_PATH = "/dispute-responses";
 
     /** The dispatch idempotency header (`INV-PAY-04` at the wire), published for tests. */
     public static final String IDEMPOTENCY_KEY_HEADER = PspWireClient.IDEMPOTENCY_KEY_HEADER;
@@ -92,10 +137,56 @@ public final class SimulatedCardPspAdapter implements PaymentProvider {
     }
 
     @Override
+    public ProviderAnswer voidAuthorization(VoidRequest request) {
+        // No amount on the wire, deliberately: the void releases the whole authorization
+        // the provider reference names (P7-TSK-004).
+        return client.dispatch(
+                VOIDS_PATH,
+                request.reference(),
+                "{\"authorization\":\""
+                        + request.authorization().value()
+                        + "\"}");
+    }
+
+    @Override
     public QueryAnswer query(ProviderIdempotencyReference ourReference) {
         // The reference's charset makes it a legal path segment with no escaping machinery -
         // its recorded design property.
         return client.query(OPERATIONS_PATH + ourReference.value());
+    }
+
+    /**
+     * A dispute answer (`P7-TSK-014`, ADR-0061 §7): the network's dispute reference, the answer
+     * in the wire's words, and — for a representment — each document labelled with its kind and
+     * media type, its bytes base64 in the body. The ONE place evidence plaintext legitimately
+     * goes: onto the PSP's wire, for the network's reviewer. Every value is from validated
+     * types (the reference's charset, closed enums, base64's alphabet), so the body needs no
+     * escaping machinery.
+     */
+    @Override
+    public ProviderAnswer respond(DisputeResponseRequest request) {
+        StringBuilder body =
+                new StringBuilder("{\"dispute\":\"")
+                        .append(request.dispute().value())
+                        .append("\",\"answer\":\"")
+                        .append(
+                                request.kind() == DisputeResponseKind.REPRESENTMENT
+                                        ? "represent"
+                                        : "accept")
+                        .append("\",\"evidence\":[");
+        for (int i = 0; i < request.evidence().size(); i++) {
+            DisputeResponder.EvidenceDocument document = request.evidence().get(i);
+            body.append(i == 0 ? "" : ",")
+                    .append("{\"kind\":\"")
+                    .append(document.kind().name().toLowerCase(java.util.Locale.ROOT))
+                    .append("\",\"contentType\":\"")
+                    .append(document.contentType().mediaType())
+                    .append("\",\"content\":\"")
+                    .append(java.util.Base64.getEncoder().encodeToString(document.content().value()))
+                    .append("\"}");
+        }
+        body.append("]}");
+        return client.dispatch(DISPUTE_RESPONSES_PATH, request.reference(), body.toString());
     }
 
     /**

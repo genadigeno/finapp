@@ -209,10 +209,61 @@ Its stated limit is that it cannot tell whether a justification is **true**, and
 at **method** granularity — which is why the authentication entry is paired with a separate assertion
 that the success branch still establishes a real actor.
 
+**A refused request leaves the thread as it found it** (the Phase 6 → 7 transition).
+`SessionAuthenticationInterceptor` enters the proven identity's scope in `preHandle` and closed it
+only in `afterCompletion` - which Spring never runs for an interceptor whose own `preHandle` threw.
+So a permission denial left the denied identity on the worker thread, and that thread's next
+request, had it established no scope of its own, would have acted as somebody nobody authorised it
+to act as. The scope now closes on the refusal path too, and
+`SessionEndpointDatabaseTest#aPermissionDenialLeavesTheThreadClean` was broken on purpose to prove
+it (`MUTATION_TESTING.md`): the leak bled into the next test on the thread.
+
 The actor is deliberately not part of the correlation context. A correlation identifier names one
 execution and attributes nothing to anybody; an actor names a party. Merging them would put a
 customer identifier into every log line and every span, which is a disclosure into systems with
 different access control and retention (`INV-AUD-02`).
+
+## Who may act
+
+Roles grant permissions and ownership is checked separately (ADR-0031), and both halves of the
+permission model are pinned by the build. **Role → permission** is code, not data: `RoleName`,
+whose exact grants `RoleNameTest` holds, so granting a permission is a reviewed change rather than
+a row somebody inserts. **Route → permission** is `RoutePermissionRegisterTest` — every
+`@RequiresPermission` route (32 at the Phase 6 review) with the permission it declares, derived
+from the handler mapping that actually serves requests, so a route added, removed or
+re-permissioned fails the build until the register says so. That is the half
+`EveryEndpointDeclaresARuleTest` (a rule is declared) and `DenyByDefaultDatabaseTest` (a caller
+without it is refused and audited) could not see: the Phase 6 review found that moving a route to
+another permission the same role holds passed every test. *(Added at the Phase 6 review,
+`P6-DOC-001`.)*
+
+## The merchant's credentials (Phase 6)
+
+Phase 6 added two credentials that are not a person's session, and both follow the session
+token's rules rather than inventing their own. *(Added by the Phase 6 → 7 transition, which found
+this document silent on Phase 6.)*
+
+- **The merchant API key** (ADR-0052) authenticates a merchant's server. It is shown once, stored
+  as a hash beside an opaque lookup prefix and never recoverable (`INV-IDN-01`). The lookup joins
+  the merchant's standing, so a suspended or closed merchant's key stops authenticating at once on
+  every instance, and every merchant act's audit record names the key that acted, so the one to
+  revoke after a leak is identifiable. Tenancy comes from the key, never from a path: no merchant
+  route names a merchant (`INV-MER-01`), and the tenancy battery derives its routes from the
+  handler mapping so a new route cannot dodge it.
+- **The checkout token** is the bearer credential for one offer: shown once, stored as a hash,
+  carried in a request body rather than a URL (`CredentialReachesNoEmittedSinkTest` refused the
+  first design), and never enough alone - the confirmation also demands a customer's own session.
+  A second holder of the token learns nothing a stranger would not: one `404` for a session that is
+  not theirs, whether it is open, mid-payment or paid (mid-payment since the Phase 6 → 7
+  transition, which found the payments surface's own `404` wording leaking the state).
+- **A payout destination never enters as bank details.** The grant exchange keeps them at the
+  provider, and a change needs two operators, a step-up where a factor is enrolled, and a
+  cooling-off before money follows it (ADR-0056, `INV-AUD-04`).
+
+A response that carries either credential renders it masked in `toString`: the exemptions in
+`NoUnwrappedSecretRulesTest` permit serialisation, never logging, and each such override is
+asserted by a test - the checkout's since the Phase 6 → 7 transition, which found the override
+the exemption rested on missing.
 
 ## Signed provider callbacks
 
@@ -267,6 +318,9 @@ The two mechanisms are blind in different directions, which is why both run.
 **A name is not a control.** The marked local default is published deliberately, and
 `DatabaseCredentialGuard` refuses to start the application when it is aimed at a database that is
 not on loopback - closing the one documented way around externalised configuration, which is
-forgetting to set the variable.
+forgetting to set the variable. The eight per-credential confinements (`ConfinedCredential`)
+refuse the same way and name the environment variable to set, and `ConfinedCredentialVariablesTest`
+pins each named variable to the property its configuration actually reads — the Phase 6 review
+found five naming variables nothing bound (`P6-DOC-001`).
 
 Never put secrets, API credentials, private keys, or raw payment credentials in source code.

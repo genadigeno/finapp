@@ -583,6 +583,19 @@ chargebacks, multi-rail routing, FX.
 
 # Phase 6 — Checkout and Merchant Platform
 
+*(**Superseded by [`PHASE_6_PLAN.md`](PHASE_6_PLAN.md) and the implementation**, recorded at
+the Phase 6 review, `P6-DOC-001`: this pre-phase plan is kept as written, and where it
+disagrees with them they are right. Where it now reads wrong: the data model's "Merchant Ledger
+Accounts (payable, fee income, reserve)" are one per-merchant `MERCHANT_PAYABLE` —
+`FEE_REVENUE` is a platform operational account, and there is no reserve. "Merchant CRUD" has
+no update or delete. The checkout has no "expire" route (the leaderless sweeper expires a
+session) and no "hosted-checkout completion callback" (completion runs inside the capture's
+transaction). `CheckoutSessionCreated` was never built (the session's creation is an audit
+record, not an event), and `FeeReturned` is missing. Step-up on a destination change is
+conditional, required only when the operator has an active TOTP factor. Fee accrual and
+per-merchant error rates were not built. The payable reconciles to captured − fees −
+refunded + fees returned − payouts, not captured − fees − payouts.)*
+
 ### 1. Objective
 Introduce the merchant as a distinct commercial party, and the checkout session as the
 customer-facing purchase experience, including fee economics and merchant payouts.
@@ -663,6 +676,15 @@ Settlement file ingestion and matching, disputes, BNPL, multi-currency merchant 
 
 # Phase 7 — Cards, Wallets, A2A and Instant Payments
 
+*(**Elaborated by [`PHASE_7_PLAN.md`](PHASE_7_PLAN.md)** and ADR-0059…0062 at the Phase 6 → 7
+transition, 2026-09-24: eighteen items across eight milestones in `BACKLOG.md`. This section is
+kept as written and made current where it had fallen behind the decisions: an instant rail is
+**final on acceptance and settled on the scheme's cycle**, never "settled immediately" (ADR-0062,
+`INV-SET-01`); the chargeback ratio per merchant is an operator report, never a metric tag
+(ADR-0018's cardinality rule); disputes are context 29, merged into `payments` (ADR-0061); and
+card issuing — cardholders, card accounts, physical and virtual cards — is external (ADR-0059
+§5).)*
+
 ### 1. Objective
 Generalise from one payment provider to multiple rails with genuinely different lifecycles,
 timing and failure semantics — and introduce disputes.
@@ -679,8 +701,8 @@ Phase 5; Phase 6 (disputes are merchant-affecting).
 
 ### 5. Architecture work
 - Rail abstraction that does not flatten real differences: cards have
-  authorization→capture→clearing→settlement; instant rails settle immediately;
-  A2A may be irrevocable on acceptance.
+  authorization→capture→clearing→settlement; instant rails are final on acceptance and
+  settle on the scheme's cycle; A2A may be irrevocable on acceptance.
 - Irrevocability and finality per rail documented explicitly — this drives reversal
   strategy.
 - Rail selection/routing policy, versioned and explainable.
@@ -704,7 +726,8 @@ PCI scope explicitly documented and minimised; dispute evidence access controlle
 
 ### 10. Observability work
 Per-rail success rate, latency and cost; routing decision distribution; dispute rate and
-win rate; chargeback ratio per merchant (a regulatory-relevant metric).
+win rate; the chargeback ratio per merchant (regulatory-relevant — an operator report, since a
+merchant tag is unbounded cardinality).
 
 ### 11. Testing work
 Per-rail lifecycle tests; irrevocable-rail reversal must be rejected, not silently

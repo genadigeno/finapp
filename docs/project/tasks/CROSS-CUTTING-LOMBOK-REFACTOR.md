@@ -1,9 +1,9 @@
 # X-TSK-001 — Lombok adoption and the Phase 1–6 refactor
 
-**Status:** `BLOCKED` on final acceptance only. All ten batches (0–9) were applied and verified
-on 2026-09-23: 152 classes, 0 bytecode differences (§21). Every acceptance criterion holds except
-criterion 5 (all tiers green). That one waits on a pre-existing failure which this task did not
-cause and, by its scope, may not fix (§19).
+**Status:** `COMPLETE` (2026-09-24). All ten batches (0–9) were applied and verified on 2026-09-23:
+152 classes, 0 bytecode differences (§21). Criterion 5 (all tiers green) waited on a pre-existing
+failure this task did not cause and, by its scope, could not fix (§19); the Phase 6 review fixed it,
+and the Phase 6 → 7 transition's full battery met the criterion (§21).
 **Decision:** [ADR-0055](../../adr/ADR-0055-lombok-compile-time-boilerplate.md) (`Proposed`).
 **Rule:** [`.claude/rules/java-lombok.md`](../../../.claude/rules/java-lombok.md).
 **Backlog:** `X-TSK-001` in [`BACKLOG.md`](../BACKLOG.md) §Cross-cutting work.
@@ -333,7 +333,10 @@ already-converted lower modules. One commit per batch.
   been broken since `P6-TSK-003` added the merchant-owned `MERCHANT_PAYABLE` purpose: the test
   skips only customer-owned purposes. The full database tier found it; Phase 6 task work ran only
   targeted suites. **It blocks acceptance criterion 5 and the Phase 6 exit battery.** Recorded in
-  `CURRENT_STATE.md` §Blockers.
+  `CURRENT_STATE.md` §Blockers. **Fixed by the Phase 6 review** (`P6-DOC-001`, 2026-09-24), in
+  two stale copies rather than one: the resolver's guard (`ChartOfAccounts.resolve`) as well as
+  the test's filter, both now `requiresOwnerRef()`. Criterion 5 now waits only on a fresh full
+  database tier.
 - **`SimulatedTokenisationAdapterTest#aTimeoutIsUnavailable` is flaky**, failing about one run in
   three with no change to its module. A batch that meets it re-runs it and says so, rather than
   counting it as a regression.
@@ -391,7 +394,7 @@ jars, no Lombok.
 | 2 | No DO NOT REFACTOR class changed | Met. The diff since `1d9f97d` touches exactly the 152 appendix A and B files |
 | 3 | No annotation beyond the four; nothing generated beyond constructors and loggers | Met: 132 `@RequiredArgsConstructor`, 102 `@NonNull` users, 22 `@Slf4j`, 6 `AccessLevel`. No other Lombok annotation exists in the tree |
 | 4 | Clean compile of every source set under `-Werror` | Met, in the final run |
-| 5 | All tiers green from fresh runs | **Not met.** Hermetic and Kafka are green. The database tier's one failure is §19's, which no task owns yet |
+| 5 | All tiers green from fresh runs | **Met 2026-09-24**, by the Phase 6 → 7 transition's battery: on untouched `82b2179`, 1550 hermetic / 1027 database / 14 kafka, 0 failures, and green again after that transition's repairs. *(Read "Not met" until then: the database tier's one failure was §19's, fixed by the Phase 6 review.)* |
 | 6 | Compile time only | Met for everything that runs: no runtime configuration, nothing in the boot jar. The SBOM does list Lombok (below) |
 | 7 | No test changed | Met |
 | 8 | The rule, ADR-0055 and this plan agree with what was done; one change-log row per batch | Met, with the corrections below |

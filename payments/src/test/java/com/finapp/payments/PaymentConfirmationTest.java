@@ -23,6 +23,7 @@ import java.time.Clock;
 import java.time.Instant;
 import java.util.ArrayList;
 import java.util.HashMap;
+import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.Optional;
@@ -58,6 +59,7 @@ class PaymentConfirmationTest {
     private final ScriptedProvider provider = new ScriptedProvider(runner);
     private final List<AuditRecord> auditTrail = new ArrayList<>();
     private final List<EventEnvelope> events = new ArrayList<>();
+    private final FakeRoutingStore routing = new FakeRoutingStore();
 
     private final UUID party = UUID.randomUUID();
     private PaymentIntent intent;
@@ -93,9 +95,14 @@ class PaymentConfirmationTest {
                 new FakeParticipants(),
                 provider,
                 outcomes(),
+                routing,
+                PaymentRails.of(java.util.List.of(SimulatedCardPspAdapter.RAIL)),
                 (uow, record) -> auditTrail.add(record),
+                (uow, envelope, payload, mediaType) -> events.add(envelope),
                 IDS,
-                CLOCK);
+                CLOCK,
+                RoutingTelemetry.NONE,
+                java.util.Optional.empty());
     }
 
     /**
@@ -141,7 +148,15 @@ class PaymentConfirmationTest {
                 (uow, record) -> auditTrail.add(record),
                 (uow, envelope, payload, mediaType) -> events.add(envelope),
                 IDS,
-                CLOCK);
+                CLOCK,
+                PaymentRails.of(java.util.List.of(SimulatedCardPspAdapter.RAIL)),
+                new JdbcUnmatchedConfirmationStore(),
+                        new com.finapp.ledger.JdbcLedgerAccountStore(),
+                // No dispute in this suite (P7-TSK-013): a tripwire.
+                UntouchedChargebacks.over(
+                        attempts, intents,
+                        PaymentRails.of(java.util.List.of(SimulatedCardPspAdapter.RAIL)),
+                        IDS, CLOCK));
     }
 
     @Test
@@ -229,6 +244,98 @@ class PaymentConfirmationTest {
     }
 
     @Test
+    @DisplayName("the winner pins its decision: chosen rail, pinned version, RailSelected -"
+            + " one Tx1 with the attempt (P7-TSK-003, INV-RAIL-02, INV-HIST-04)")
+    void theWinnerPinsItsDecision() {
+        provider.answer = ProviderAnswer.approved(
+                new ProviderReference("psp-auth-routed"), "body".getBytes());
+        confirmation().confirm(party, intent.id());
+
+        RoutingDecision decision = routing.latestFor(intent.id());
+        assertThat(decision.chosenRail()).contains(SimulatedCardPspAdapter.RAIL.id());
+        assertThat(decision.policyVersionId()).isEqualTo(routing.version.id());
+        assertThat(decision.matchedRuleIndex()).contains(0);
+        assertThat(decision.steps()).hasSize(1);
+        assertThat(decision.steps().get(0).verdict()).isEqualTo(RoutingStepVerdict.CHOSEN);
+        assertThat(decision.steps().get(0).descriptorVersion())
+                .contains(SimulatedCardPspAdapter.RAIL.declarationVersion());
+        assertThat(attempts.single().rail()).isEqualTo(SimulatedCardPspAdapter.RAIL.id());
+        assertThat(events).anyMatch(e -> e.eventType().equals("payments.RailSelected"));
+        assertThat(auditTrail)
+                .as("the confirmation names the pin it dispatched under")
+                .anyMatch(record ->
+                        record.changeSummary()
+                                .map(summary -> summary.contains("policyVersion=1")
+                                        && summary.contains("decision="))
+                                .orElse(false));
+    }
+
+    @Test
+    @DisplayName("no eligible rail: refused AND recorded, the intent untouched and retryable"
+            + " after the operator acts (P7-TSK-003, ADR-0060 section 3)")
+    void noEligibleRailIsRecordedAndRetryable() {
+        routing.availability.put(
+                SimulatedCardPspAdapter.RAIL.id(),
+                new RailAvailability(
+                        SimulatedCardPspAdapter.RAIL.id(), false, "incident", "op-1",
+                        Instant.now(CLOCK)));
+        assertThatThrownBy(() -> confirmation().confirm(party, intent.id()))
+                .isInstanceOf(NoEligibleRailException.class);
+
+        // Refused AND recorded: the decision row is the explanation, the intent untouched,
+        // the provider never asked.
+        RoutingDecision refused = routing.latestFor(intent.id());
+        assertThat(refused.chosenRail()).isEmpty();
+        assertThat(refused.steps()).hasSize(1);
+        assertThat(refused.steps().get(0).rejection())
+                .contains(RoutingRejection.UNAVAILABLE);
+        assertThat(refused.steps().get(0).railAvailable()).isFalse();
+        assertThat(intents.rows.get(intent.id().value()).status())
+                .isEqualTo(PaymentIntentStatus.REQUIRES_CONFIRMATION);
+        assertThat(provider.calls).isZero();
+
+        // The operator re-enables the rail; the SAME confirm now succeeds and pins its
+        // chosen decision - which is why the refusal must not consume the intent.
+        routing.availability.clear();
+        provider.answer = ProviderAnswer.approved(
+                new ProviderReference("psp-auth-after"), "body".getBytes());
+        confirmation().confirm(party, intent.id());
+        assertThat(routing.latestFor(intent.id()).chosenRail())
+                .contains(SimulatedCardPspAdapter.RAIL.id());
+    }
+
+    @Test
+    @DisplayName("NOTHING_SENT appends the abandonment - knowledge, in the outcome's own"
+            + " transaction (INV-RAIL-02)")
+    void nothingSentAppendsTheAbandonment() {
+        provider.answer = ProviderAnswer.nothingSent();
+        confirmation().confirm(party, intent.id());
+
+        RoutingDecision decision = routing.latestFor(intent.id());
+        assertThat(decision.steps()).hasSize(2);
+        assertThat(decision.steps().get(1).verdict()).isEqualTo(RoutingStepVerdict.ABANDONED);
+        assertThat(decision.steps().get(1).rejection())
+                .contains(RoutingRejection.NOTHING_SENT);
+        assertThat(decision.steps().get(1).rail())
+                .isEqualTo(SimulatedCardPspAdapter.RAIL.id());
+    }
+
+    @Test
+    @DisplayName("INDETERMINATE appends nothing: ambiguity is not knowledge, and the attempt"
+            + " stays on its rail (INV-RAIL-02, INV-LIFE-03)")
+    void indeterminateAppendsNothing() {
+        provider.answer = ProviderAnswer.indeterminate("garbage".getBytes());
+        confirmation().confirm(party, intent.id());
+
+        RoutingDecision decision = routing.latestFor(intent.id());
+        assertThat(decision.steps())
+                .as("the trail must not claim knowledge a refused connection never gave")
+                .hasSize(1);
+        assertThat(decision.steps().get(0).verdict()).isEqualTo(RoutingStepVerdict.CHOSEN);
+        assertThat(attempts.single().status()).isEqualTo(PaymentAttemptStatus.AUTH_UNKNOWN);
+    }
+
+    @Test
     @DisplayName("refusals write nothing: unknown intent, stranger's intent, detached instrument, cancelled intent")
     void refusalsWriteNothing() {
         assertThatThrownBy(
@@ -247,8 +354,13 @@ class PaymentConfirmationTest {
                 new PaymentConfirmation(
                         runner, intents, attempts, evidence, noInstrument, provider,
                         outcomes(),
+                        routing,
+                        PaymentRails.of(java.util.List.of(SimulatedCardPspAdapter.RAIL)),
                         (uow, record) -> auditTrail.add(record),
-                        IDS, CLOCK);
+                        (uow, envelope, payload, mediaType) -> events.add(envelope),
+                        IDS, CLOCK,
+                        RoutingTelemetry.NONE,
+                java.util.Optional.empty());
         assertThatThrownBy(() -> withoutInstrument.confirm(party, intent.id()))
                 .isInstanceOf(UnknownPaymentInstrumentException.class);
         assertThat(intents.rows.get(intent.id().value()).status())
@@ -273,6 +385,7 @@ class PaymentConfirmationTest {
         intents.refuseNextTransition = true;
         PaymentAttempt winners =
                 PaymentAttempt.create(IDS, CLOCK, intent.id(),
+                        SimulatedCardPspAdapter.RAIL.id(),
                         new ProviderIdempotencyReference("auth-" + IDS.next()));
         attempts.rows.put(winners.id().value(), winners);
 
@@ -321,11 +434,37 @@ class PaymentConfirmationTest {
         }
 
         @Override
+        public Optional<Wallet> payerWalletOwnedBy(Connection uow, UUID callerPartyId) {
+            // These suites confirm method-instrument intents; the book branch never asks.
+            throw new UnsupportedOperationException(
+                    "this suite's confirms never resolve the payer wallet");
+        }
+
+        @Override
+        public Optional<ProviderReference> bankDestinationOwnedBy(
+                Connection unitOfWork, UUID callerPartyId, UUID paymentMethodId) {
+            return Optional.empty();
+        }
+
+        @Override
+        public boolean creditable(Connection uow, LedgerAccountId account) {
+            return true;
+        }
+
+        @Override
         public Optional<InstrumentToken> instrumentOwnedBy(
                 Connection uow, UUID callerPartyId, UUID paymentMethodId) {
             return instrumentPresent
                     ? Optional.of(InstrumentToken.of("tok_test-4242"))
                     : Optional.empty();
+        }
+
+        /** The fake's one instrument is the card (P7-TSK-009's kind read). */
+        @Override
+        public Optional<InstrumentKind> instrumentKindOwnedBy(
+                Connection uow, UUID callerPartyId, UUID paymentMethodId) {
+            return instrumentOwnedBy(uow, callerPartyId, paymentMethodId)
+                    .map(token -> InstrumentKind.CARD_TOKEN);
         }
     }
 
@@ -369,8 +508,124 @@ class PaymentConfirmationTest {
         }
 
         @Override
+        public ProviderAnswer voidAuthorization(VoidRequest request) {
+            throw new UnsupportedOperationException("this suite scripts no voids");
+        }
+
+        @Override
         public QueryAnswer query(ProviderIdempotencyReference ourReference) {
             throw new UnsupportedOperationException();
+        }
+    }
+
+    /**
+     * An in-memory routing store (`P7-TSK-003`): version 1 routes the card pay-in, exactly
+     * as V013 seeds it; decisions and appended steps are recorded for the assertions.
+     */
+    private static final class FakeRoutingStore implements RoutingStore<Connection> {
+
+        final RoutingPolicyVersion version =
+                RoutingPolicyVersion.rehydrate(
+                        RoutingPolicyVersionId.next(IDS),
+                        1,
+                        List.of(
+                                new RoutingRule(
+                                        RoutingRuleId.next(IDS),
+                                        0,
+                                        PaymentDirection.PAY_IN,
+                                        InstrumentKind.CARD_TOKEN,
+                                        Optional.empty(),
+                                        Optional.empty(),
+                                        List.of(SimulatedCardPspAdapter.RAIL.id()))),
+                        Instant.EPOCH,
+                        Instant.EPOCH,
+                        "test",
+                        "the seeded card route, in memory");
+
+        final Map<RailId, RailAvailability> availability = new HashMap<>();
+        final Map<UUID, RoutingDecision> decisions = new LinkedHashMap<>();
+
+        RoutingDecision latestFor(PaymentIntentId intent) {
+            return findLatestDecisionForIntent(null, intent).orElseThrow();
+        }
+
+        @Override
+        public int nextVersionNumber(Connection uow) {
+            return 2;
+        }
+
+        @Override
+        public boolean insertVersionIfNumberIsFree(Connection uow, RoutingPolicyVersion v) {
+            throw new UnsupportedOperationException("this suite mints no versions");
+        }
+
+        @Override
+        public Optional<RoutingPolicyVersion> findVersionInForce(
+                Connection uow, Instant at) {
+            return Optional.of(version);
+        }
+
+        @Override
+        public Optional<RoutingPolicyVersion> findVersionById(
+                Connection uow, RoutingPolicyVersionId id) {
+            return Optional.of(version).filter(v -> v.id().equals(id));
+        }
+
+        @Override
+        public void recordAvailability(Connection uow, RailAvailability fact) {
+            availability.put(fact.rail(), fact);
+        }
+
+        @Override
+        public Map<RailId, RailAvailability> availabilityByRail(Connection uow) {
+            return new HashMap<>(availability);
+        }
+
+        @Override
+        public void insertDecision(Connection uow, RoutingDecision decision) {
+            decisions.put(decision.id().value(), decision);
+        }
+
+        @Override
+        public Optional<RoutingDecision> findLatestDecisionForWithdrawal(
+                Connection unitOfWork, WithdrawalId withdrawal) {
+            return decisions.values().stream()
+                    .filter(d -> d.subject().withdrawal()
+                            .map(withdrawal::equals)
+                            .orElse(false))
+                    .reduce((first, second) -> second);
+        }
+
+        @Override
+        public Optional<RoutingDecision> findLatestDecisionForIntent(
+                Connection uow, PaymentIntentId intent) {
+            RoutingDecision latest = null;
+            for (RoutingDecision decision : decisions.values()) {
+                if (decision.intentId().equals(intent)) {
+                    latest = decision;
+                }
+            }
+            return Optional.ofNullable(latest);
+        }
+
+        @Override
+        public void appendStep(Connection uow, RoutingDecisionId id, RoutingStep step) {
+            RoutingDecision current = decisions.get(id.value());
+            List<RoutingStep> extended = new ArrayList<>(current.steps());
+            extended.add(step);
+            decisions.put(
+                    id.value(),
+                    RoutingDecision.rehydrate(
+                            current.id(),
+                            current.subject(),
+                            current.policyVersionId(),
+                            current.direction(),
+                            current.instrumentKind(),
+                            current.amount(),
+                            current.matchedRuleIndex(),
+                            current.chosenRail(),
+                            extended,
+                            current.createdAt()));
         }
     }
 
@@ -380,6 +635,12 @@ class PaymentConfirmationTest {
 
         @Override
         public java.util.List<PaymentIntent> listFor(Connection uow, UUID partyId) {
+            throw new UnsupportedOperationException("not exercised here");
+        }
+
+        @Override
+        public boolean anyInFlightCrediting(
+                Connection uow, com.finapp.ledger.LedgerAccountId account) {
             throw new UnsupportedOperationException("not exercised here");
         }
 
@@ -416,7 +677,7 @@ class PaymentConfirmationTest {
             PaymentIntent moved =
                     PaymentIntent.rehydrate(
                             row.id(), row.partyId(), row.customerId(), row.paymentMethodId(),
-                            row.walletAccount(), row.amount(), to, row.createdAt());
+                            row.creditAccount(), CaptureMode.AUTOMATIC, row.amount(), to, row.createdAt(), null);
             rows.put(id.value(), moved);
             return true;
         }
@@ -431,6 +692,64 @@ class PaymentConfirmationTest {
 
     private static final class FakeAttemptStore implements PaymentAttemptStore<Connection> {
 
+        // ------------------------------- the push model (P7-TSK-009): not this suite's subject.
+
+        @Override
+        public java.util.Optional<PaymentAttempt> findByEndToEndReference(
+                Connection uow, EndToEndReference reference) {
+            throw new UnsupportedOperationException("not exercised here");
+        }
+
+        @Override
+        public java.util.Optional<PaymentAttempt> findBySchemeReference(
+                Connection uow, ProviderReference reference) {
+            throw new UnsupportedOperationException("not exercised here");
+        }
+
+        @Override
+        public boolean openInitiation(
+                Connection uow,
+                PaymentAttemptId attempt,
+                com.finapp.sharedkernel.security.Sensitive<String> handle) {
+            throw new UnsupportedOperationException("not exercised here");
+        }
+
+        @Override
+        public boolean execute(
+                Connection uow,
+                PaymentAttemptId attempt,
+                PaymentAttemptStatus from,
+                ProviderReference schemeReference,
+                java.util.Optional<String> settlementCycle) {
+            throw new UnsupportedOperationException("not exercised here");
+        }
+
+        @Override
+        public boolean failHandleless(
+                Connection uow, PaymentAttemptId attempt, PaymentFailureReason reason) {
+            throw new UnsupportedOperationException("not exercised here");
+        }
+
+        @Override
+        public boolean renewInitiationPermit(
+                Connection uow,
+                PaymentAttemptId attempt,
+                java.time.Instant expected,
+                java.time.Instant renewed) {
+            throw new UnsupportedOperationException("not exercised here");
+        }
+
+        @Override
+        public java.util.List<PaymentAttempt> findResolvableInitiations(
+                Connection uow, java.time.Instant contactedBefore, int limit) {
+            throw new UnsupportedOperationException("not exercised here");
+        }
+
+        @Override
+        public UnknownReading awaitingReading(Connection uow) {
+            throw new UnsupportedOperationException("not exercised here");
+        }
+
         @Override
         public java.util.Optional<PaymentAttempt> findByOperationReference(
                 Connection uow, ProviderIdempotencyReference reference) {
@@ -438,7 +757,14 @@ class PaymentConfirmationTest {
         }
 
         @Override
-        public UnknownReading unknownReading(Connection uow) {
+        public UnknownReading unknownReading(
+                Connection uow, java.time.Duration dispatchedBound) {
+            throw new UnsupportedOperationException("not exercised here");
+        }
+
+        @Override
+        public java.util.List<PaymentAttempt> findStrandedAuthorizations(
+                Connection uow, java.time.Instant authorizedBefore, int limit) {
             throw new UnsupportedOperationException("not exercised here");
         }
 
@@ -490,6 +816,27 @@ class PaymentConfirmationTest {
                 Connection uow, PaymentAttemptId id, PaymentAttemptStatus from,
                 ProviderReference reference, Money amount) {
             return move(id, from, row -> row.capture(reference, amount));
+        }
+
+
+        @Override
+        public boolean dispatchVoid(
+                Connection uow, PaymentAttemptId id, PaymentAttemptStatus from,
+                ProviderIdempotencyReference reference) {
+            return move(id, from, row -> row.dispatchVoid(reference));
+        }
+
+        @Override
+        public boolean voided(
+                Connection uow, PaymentAttemptId id, PaymentAttemptStatus from,
+                ProviderReference reference) {
+            return move(id, from, row -> row.voided(reference));
+        }
+
+        @Override
+        public boolean markVoidUnknown(Connection uow, PaymentAttemptId id) {
+            return move(id, PaymentAttemptStatus.VOID_DISPATCHED,
+                    PaymentAttempt::voidOutcomeUnknown);
         }
 
         @Override
@@ -544,6 +891,20 @@ class PaymentConfirmationTest {
         public void append(
                 Connection uow, Optional<PaymentAttemptId> attempt, Optional<RefundId> refund,
                 EvidenceKind kind, byte[] payload, Instant recordedAt) {
+            payloads.add(payload.clone());
+        }
+
+        @Override
+        public void appendForWithdrawal(
+                Connection uow, WithdrawalId withdrawal, EvidenceKind kind, byte[] payload,
+                Instant recordedAt) {
+            payloads.add(payload.clone());
+        }
+
+        @Override
+        public void appendForDisputeResponse(
+                Connection uow, DisputeResponseId response, EvidenceKind kind,
+                byte[] payload, Instant recordedAt) {
             payloads.add(payload.clone());
         }
 
