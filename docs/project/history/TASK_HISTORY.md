@@ -1,6 +1,6 @@
 # Task History
 
-The per-task completion records that accumulated behind `## Current Task` - 164 "Previously" blocks, newest first, from the Phase 7 → 8 transition back to project initiation. *(`X-TSK-004` is cross-cutting and completed after the Phase 6 → 7 transition, so it stands second, between `P7-TSK-001` and the transition's record - the transition's block moved here by `P7-TSK-001`'s gate, exactly as an earlier form of this note said it would.)*
+The per-task completion records that accumulated behind `## Current Task` - 165 "Previously" blocks, newest first, from `P8-TSK-001` back to project initiation. *(`X-TSK-004` is cross-cutting and completed after the Phase 6 → 7 transition, so it stands second, between `P7-TSK-001` and the transition's record - the transition's block moved here by `P7-TSK-001`'s gate, exactly as an earlier form of this note said it would.)*
 
 **Archive.** These records were moved verbatim out of
 [`CURRENT_STATE.md`](../CURRENT_STATE.md) on 2026-09-20 so that the canonical description of
@@ -12,6 +12,46 @@ Current state: [`CURRENT_STATE.md`](../CURRENT_STATE.md) ·
 Authoritative backlog: [`BACKLOG.md`](../BACKLOG.md)
 
 ---
+
+### Previously
+
+**`P8-TSK-001` — The `settlement` and `reconciliation` modules and schemas** — `COMPLETE`
+(2026-09-28). **M8.1 opens at 1 of 3 and Phase 8 is `IN_PROGRESS`**: bounded contexts 13 and 14
+as build-graph facts and privilege floors, before any domain code — ADR-0064's separation made
+structural. Both modules declared after `ledger`, so `ledger → settlement` and
+`ledger → reconciliation` are Gradle cycles, **demonstrated both** ("Circular dependency"
+at configuration, each restore byte-identical); `settlement ↔ reconciliation` refused in BOTH
+directions with no cycle behind either refusal — the two isolation tests are the only controls,
+and all four planted edges (`settlement → reconciliation`, `reconciliation → settlement`,
+`settlement → payments`, `reconciliation → merchant`) were caught by the intended test naming
+the intruder. `V001` in each schema on the sibling shape verbatim: owner `finapp_migrator`,
+`REVOKE ALL FROM PUBLIC`, `USAGE` alone to `finapp_app`, no tables, deliberately no
+`ALTER DEFAULT PRIVILEGES`. **The floors proven live in each module's own database tier** — the
+task wired `testFixtures(platform)` and the image property into both new builds, so the module
+that owns the schema owns the proof of its floor: ACL exactly `{finapp_migrator=UC,
+finapp_app=U}` read whole from `pg_namespace` (an extra grantee is invisible to a per-role
+probe), the owner the migrator, `pg_default_acl` empty, the only table Flyway's history and the
+application role refused on it, `USAGE`-without-`CREATE` exercised as `finapp_app` behind
+`assertCannotBypassPrivileges`. `DatabaseUnderTest` discovered both schemas from the repository
+layout with zero edits and CI's flyway steps are unqualified — the stale-name class checked and
+empty. Eleven sibling isolation tests gain both modules (seven reflowed to the multi-line
+shape); both modules join `app`'s classpath so `ProductionModules` sweeps them, and a planted
+`double` in each was caught naming that module. **The gate's own finds, each fixed**: the floor
+test's text check tripped on the migration's own "deliberately NO `ALTER DEFAULT PRIVILEGES`"
+comment (it now reads only the statements, comments stripped); `:platform:test` first reported
+green from an `UP-TO-DATE` result, not an execution (re-run `--rerun-tasks`, fresh); the probe
+harness had overwritten `app`'s green evidence with its own intended failure (the final code
+re-run whole and fresh); and the reverse-edge cycle had been demonstrated on one side only (now
+both). Multi-instance `PASS` — ten instances booting at once apply each floor once under
+Flyway's schema-history lock, and nothing else exists for two instances to disagree on.
+`INV-LED-04` untouched: the ledger's grants unchanged, and the floor test proves the
+application role cannot even `CREATE` in the new schemas. Eight probe runs, eight caught, every
+verdict read from the failing testcases or Gradle's own refusal, every restore byte-identical.
+No aggregate, bean, endpoint, permission, event or audit action — the deliberately-few licence;
+no `DATA_CLASSIFICATION.md` rows because no columns exist. `MODULE_ARCHITECTURE.md`'s two
+Phase-8 owner entries and ADR-0064's implementation note now say the boundary exists. Verified
+by targeted tiers from fresh runs on the final code: the hermetic tier green fleet-wide across
+sixteen modules, and the two new database tiers green (five floor assertions each).
 
 ### Previously
 

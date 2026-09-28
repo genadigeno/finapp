@@ -460,6 +460,15 @@ facts and an auditor must be able to tell them apart.
 closes the traceable chain in the trail itself: order → entry → ADR-0050 §3's four lines → the
 merchant's payable position.
 
+### `settlement` — `SettlementAuditAction`
+
+| Action | Reason required | What it records, and why |
+|---|---|---|
+| `settlement.SettlementDeliveryRefused` | No | The settlement door refused a delivery (`P8-TSK-002`, ADR-0066 §4): instrument data in screened text, or a delivery over the size or line bound. Written in the refusal's transaction; the change summary names the source, the reason, the content address and the finding's position — **never a value from the file** (`INV-PAY-02`, `INV-RAIL-03`). For a content refusal the `settlement.refused_delivery` metadata row stands beside it; an over-bound delivery leaves this record alone. Alertable from the first file through `finapp.settlement.delivery.refused`. |
+
+The door's own actions (`SettlementFileUploaded`, `SettlementFileAttested`, the audited content
+read) arrive with the door (`P8-TSK-003`); the pull's with the pull (`P8-TSK-021`).
+
 ### What is emitted, and what is declared not to be
 
 **The two registration actions are emitted; none of the three `platform` actions is**, and that is

@@ -89,6 +89,9 @@ dependencies {
     testImplementation(platform(libs.junit.bom))
     testImplementation(libs.junit.jupiter)
     testImplementation(libs.assertj.core)
+    // A real logging backend for the needle tests: "the identifier reaches no log line" is
+    // only a control when something would have written one (version from the Boot BOM).
+    testImplementation("ch.qos.logback:logback-classic")
 
     // The shared database harness (DatabaseUnderTest, DatabaseRoles), for the one database-tier
     // test this task ships: the schema floor proven LIVE, not described (SettlementMigrationTest).

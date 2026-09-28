@@ -7,7 +7,7 @@ Conversation history is not. Read this first in every session
 **History lives in [`history/`](history/)** — per-task records, closed milestones, completed
 capabilities and the change log. This document stays current; the archives stay archived.
 
-Last updated: 2026-09-28 (`P8-TSK-001` — the `settlement` and `reconciliation` modules and schemas; **M8.1 opens at 1 of 3**, next `P8-TSK-002`)
+Last updated: 2026-09-29 (`P8-TSK-002` — the source register, the encrypted file store and the door screen; **M8.1 at 2 of 3**, next `P8-TSK-003`)
 
 ---
 
@@ -377,9 +377,10 @@ adjustment machinery; amounts never enter metrics; a payout return applied from 
 evidence. The transition catalogued nine invariants, taking the platform to **110**, and the
 Phase 8 set is **twenty-two**. 27 backlog items across eight milestones (M8.1–M8.8);
 [`SETTLEMENT_AND_RECONCILIATION_LIFECYCLES.md`](../domain/SETTLEMENT_AND_RECONCILIATION_LIFECYCLES.md)
-states nine machines and one born-once fact. **1 of 27 items complete** (M8.1 at 1 of 3): `P8-TSK-001`
-laid the two modules and their privilege floors; next **`P8-TSK-002` — the source register, the
-encrypted file store and the door screen** — `READY` ([§Current Task](#current-task) is kept current).
+states nine machines and one born-once fact. **2 of 27 items complete** (M8.1 at 2 of 3): the modules
+and floors (`P8-TSK-001`), then the source register, the encrypted file store and the door screen
+(`P8-TSK-002`); next **`P8-TSK-003` — the upload door, attestation and audited evidence access** —
+`READY` ([§Current Task](#current-task) is kept current).
 
 ## Current Milestone
 
@@ -394,52 +395,60 @@ since M0.1". Moved, not edited.)*
 
 ## Current Task
 
-**`P8-TSK-002` — The source register, the encrypted file store and the door screen** — `READY`.
-M8.1's second act: every externally settling position gains exactly one declared source
-(`INV-SET-05`) and settlement evidence can be received — screened before anything is stored,
-encrypted under its own key with the AAD bound, checksummed and append-only — with nothing yet
-parsed and no door open. Its entry and field set are in [`BACKLOG.md`](BACKLOG.md); ADR-0066 is
-its decision. **Not started.**
+**`P8-TSK-003` — The upload door, attestation and audited evidence access** — `READY`.
+M8.1's third act: an operator introduces settlement evidence over HTTP and a second person
+attests it — the upload half of `INV-SET-07` — and whoever investigates can read what arrived,
+the raw content only by a reasoned, audited, checksum-verified read (`INV-REC-10`'s read half).
+Its entry and field set are in [`BACKLOG.md`](BACKLOG.md); ADR-0066 §1, §2 and §7 are its
+decisions. **Not started.**
 
 ### Just completed
 
-**`P8-TSK-001` — The `settlement` and `reconciliation` modules and schemas** — `COMPLETE`
-(2026-09-28). **M8.1 opens at 1 of 3 and Phase 8 is `IN_PROGRESS`**: bounded contexts 13 and 14
-as build-graph facts and privilege floors, before any domain code — ADR-0064's separation made
-structural. Both modules declared after `ledger`, so `ledger → settlement` and
-`ledger → reconciliation` are Gradle cycles, **demonstrated both** ("Circular dependency"
-at configuration, each restore byte-identical); `settlement ↔ reconciliation` refused in BOTH
-directions with no cycle behind either refusal — the two isolation tests are the only controls,
-and all four planted edges (`settlement → reconciliation`, `reconciliation → settlement`,
-`settlement → payments`, `reconciliation → merchant`) were caught by the intended test naming
-the intruder. `V001` in each schema on the sibling shape verbatim: owner `finapp_migrator`,
-`REVOKE ALL FROM PUBLIC`, `USAGE` alone to `finapp_app`, no tables, deliberately no
-`ALTER DEFAULT PRIVILEGES`. **The floors proven live in each module's own database tier** — the
-task wired `testFixtures(platform)` and the image property into both new builds, so the module
-that owns the schema owns the proof of its floor: ACL exactly `{finapp_migrator=UC,
-finapp_app=U}` read whole from `pg_namespace` (an extra grantee is invisible to a per-role
-probe), the owner the migrator, `pg_default_acl` empty, the only table Flyway's history and the
-application role refused on it, `USAGE`-without-`CREATE` exercised as `finapp_app` behind
-`assertCannotBypassPrivileges`. `DatabaseUnderTest` discovered both schemas from the repository
-layout with zero edits and CI's flyway steps are unqualified — the stale-name class checked and
-empty. Eleven sibling isolation tests gain both modules (seven reflowed to the multi-line
-shape); both modules join `app`'s classpath so `ProductionModules` sweeps them, and a planted
-`double` in each was caught naming that module. **The gate's own finds, each fixed**: the floor
-test's text check tripped on the migration's own "deliberately NO `ALTER DEFAULT PRIVILEGES`"
-comment (it now reads only the statements, comments stripped); `:platform:test` first reported
-green from an `UP-TO-DATE` result, not an execution (re-run `--rerun-tasks`, fresh); the probe
-harness had overwritten `app`'s green evidence with its own intended failure (the final code
-re-run whole and fresh); and the reverse-edge cycle had been demonstrated on one side only (now
-both). Multi-instance `PASS` — ten instances booting at once apply each floor once under
-Flyway's schema-history lock, and nothing else exists for two instances to disagree on.
-`INV-LED-04` untouched: the ledger's grants unchanged, and the floor test proves the
-application role cannot even `CREATE` in the new schemas. Eight probe runs, eight caught, every
-verdict read from the failing testcases or Gradle's own refusal, every restore byte-identical.
-No aggregate, bean, endpoint, permission, event or audit action — the deliberately-few licence;
-no `DATA_CLASSIFICATION.md` rows because no columns exist. `MODULE_ARCHITECTURE.md`'s two
-Phase-8 owner entries and ADR-0064's implementation note now say the boundary exists. Verified
-by targeted tiers from fresh runs on the final code: the hermetic tier green fleet-wide across
-sixteen modules, and the two new database tiers green (five floor assertions each).
+**`P8-TSK-002` — The source register, the encrypted file store and the door screen** —
+`COMPLETE` (2026-09-29). **M8.1 stands at 2 of 3**: settlement evidence can now be received —
+screened before anything is stored, encrypted under its own key with the associated data bound,
+checksummed and append-only — and every externally settling position has exactly one declared
+source (`INV-SET-05`), with nothing parsed and no door open. **The register is compiled and
+composed in `app`** (`SettlementBeans`, joining the confinement test's configuration files): the
+rails' positions read off `RailCapabilities.clearingPurpose()`, the payout's off the new
+`merchant.PayoutSettlementDeclaration.CLEARING_PURPOSE` (`MerchantPayoutOutcomes` switched to it —
+still `PAYOUT_CLEARING`, no behaviour change), coverage verified at composition so an uncovered
+settling rail fails the build and every startup (`EverySettlingPositionHasASourceTest`, its
+planted-rail probe in-test), and `settlement`/`reconciliation` may not even NAME a `*_CLEARING`
+purpose (the widened confinement rule). The descriptor refuses incoherence at construction — a
+format for another kind, an empty channel set, a malformed remittance-reference pattern, and the
+position and pattern each present exactly for the report kinds *(a design elaboration: the
+backlog's pattern field became kind-coherent, because the bank statement is where remittances
+land and has none of its own)*. **Settlement `V002`**: `source` seeded by identity alone (no
+position column; retirement one-way, the sequence forward-only, identity frozen, never deleted —
+all by trigger for every writer), `file` born `RECEIVED` with no edge (the generated `CHECK` and
+transition trigger admit exactly the machine that exists; both attestation `CHECK`s stated now),
+the content unique among non-readmissions, `file_chunk`/`file_event`/`file_receipt`/
+`refused_delivery` each `SELECT, INSERT` with an every-writer append-only trigger, the file's
+`UPDATE` column-narrowed, and **no `DELETE` for `finapp_app` anywhere**. **`FileReception`** (the
+one door, channels arriving with `-003`/`-021`/`-022`): source known and `ACTIVE`, the bounds
+(1..8 MiB, 50,000 records by the screen's own walk), the conservative whole-stream screen
+(Luhn-valid 13–19-digit runs with separators collapsed; the international account shape as a
+second, independent pass — the first draft hung it off the digit walk and an identifier separated
+from its closing character escaped, caught by the unit tier), then the content address: the row,
+its AES-256-GCM chunks (fresh 12-byte nonces, the AAD binding `file_id ‖ source_id ‖
+content_sha256 ‖ seq` at fixed widths), a `NEW` receipt, the birth event and the channel's
+passed-in audit action in ONE transaction — or a `DUPLICATE` receipt and nothing else — or a
+refusal that is a RESULT, never an exception, committing exactly its metadata row and
+`settlement.SettlementDeliveryRefused` (catalogued; an over-bound delivery leaves the audit
+record alone). Reads decrypt every chunk under its binding and verify the whole plaintext
+against the stored address before serving a byte. **`FINAPP_SETTLEMENT_FILE_KEY`** is the
+twelfth confined credential (`SettlementFileKey`, suffix `/settlement-file`, `EXACTLY_32`);
+the two ingestion series count after commit (`CommittedReceptionOutcomes`, the
+`CommittedRailOutcomes` shape), eagerly per source, and `source` joined
+`MetricNames.ALLOWED_TAG_KEYS` with its written argument. Proven live in settlement's own
+database tier: round-trips at 1 byte, both chunk boundaries and 8 MiB; the ten-way
+`SimulatedInstance` race (one row, one `NEW`, nine `DUPLICATE`); a PAN and an IBAN each leaving
+only metadata, the needle absent from every settlement column and captured logs; a flipped
+byte, a transplanted chunk and a truncated file each serving nothing; append-only and the
+narrowed grants exercised as both roles. `DATA_CLASSIFICATION.md` §4 +63 rows;
+`AUDITABLE_ACTIONS.md` +1. Multi-instance `PASS` — the content unique is the arbiter, the
+register is compiled data, and the seeded row holds identity and operational state only.
 
 ### Previously
 
@@ -462,9 +471,9 @@ archived verbatim in
 
 ## Active Work
 
-**Phase 8 is `IN_PROGRESS`** (2026-09-28) — 1 of 27 items complete; **M8.1, Evidence intake, at
-1 of 3** — `P8-TSK-001` laid the modules and floors; next `P8-TSK-002` ([§Current Task](#current-task)
-is kept current). Phase 7 is `COMPLETE` — 18 of 18
+**Phase 8 is `IN_PROGRESS`** (2026-09-28) — 2 of 27 items complete; **M8.1, Evidence intake, at
+2 of 3** — the modules and floors, then the register, the file store and the screen; next
+`P8-TSK-003` ([§Current Task](#current-task) is kept current). Phase 7 is `COMPLETE` — 18 of 18
 items, M7.1–M7.8 closed, ruled by `P7-DOC-001` and confirmed after repair by the Phase 7 → 8
 transition ([`reviews/PHASE_7_TO_8_TRANSITION.md`](reviews/PHASE_7_TO_8_TRANSITION.md)). *(This
 paragraph read "6 of 18 items complete; M7.1, Rail foundations, opens at 1 of 3 (`P7-TSK-001`).
@@ -866,9 +875,9 @@ Resolved during initiation:
 
 ## Next Task
 
-**`P8-TSK-002`** — `READY` (the Current Task), marked by `P8-TSK-001`'s completion gate — the
-milestone's own order; `P8-TSK-006` (on nothing within Phase 8) stays the recorded alternative
-if M8.1 must yield.
+**`P8-TSK-003`** — `READY` (the Current Task), marked by `P8-TSK-002`'s completion gate — the
+milestone's own order (`-003` depends on `-002` alone); `P8-TSK-006` (on nothing within Phase 8)
+stays the recorded alternative if M8.1 must yield.
 
 ### Superseded: the Phase 7 → 8 transition lead (read until 2026-09-28)
 

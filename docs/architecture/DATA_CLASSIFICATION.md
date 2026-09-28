@@ -983,6 +983,82 @@ issuance claim records the key id alone rather than the response bytes every oth
 command records (`P6-TSK-002`; the database suite asserts it by sweeping every text column in
 every schema for the issued secret).
 
+### `settlement` — the source register and the evidence intake — *added by `P8-TSK-002`*
+
+**The evidence store's rows** (ADR-0066): the seeded source identities, the received file's
+metadata, its encrypted bytes, its receipts and history, and the refused deliveries. The one
+content column is the chunk ciphertext, `RESTRICTED-PII` at the ceiling of what it decrypts to —
+bank statements name people — and every other column is deliberately metadata: the door screen
+exists so nothing hotter can enter this schema in the clear (`INV-PAY-02`, `INV-RAIL-03`). Actor
+columns hold platform actor identifiers (`audit_record.actor`'s reasoning), and the checksum is
+`INTERNAL` — a fingerprint of bytes, recoverable from nothing.
+
+| Table | Column | Level | Why |
+|---|---|---|---|
+| `source` | `id` | `INTERNAL` | A seeded identifier (`P8-TSK-002`). Generated |
+| `source` | `code` | `INTERNAL` | A compiled register name - `simulated-psp.settlement` - a category, never a person |
+| `source` | `kind` | `INTERNAL` | Which statement family. Four values, none about a person |
+| `source` | `status` | `INTERNAL` | ACTIVE or RETIRED - operational state |
+| `source` | `next_sequence` | `INTERNAL` | The next statement sequence acceptance expects - a counter |
+| `file` | `id` | `INTERNAL` | An aggregate identifier. Generated |
+| `file` | `source_id` | `INTERNAL` | The delivering source - an identifier of a thing |
+| `file` | `received_via` | `INTERNAL` | UPLOAD, PULL or READMISSION - which door |
+| `file` | `status` | `INTERNAL` | The machine's position |
+| `file` | `business_date` | `CONFIDENTIAL` | The date the counterparty claims the statement covers - a fact about the platform's commercial traffic, not about a person |
+| `file` | `format_id` | `INTERNAL` | Which format family parsed it. Four values |
+| `file` | `format_version` | `INTERNAL` | Which frozen version screened it |
+| `file` | `content_sha256` | `INTERNAL` | The content address (INV-HIST-02): a fingerprint, recoverable from nothing |
+| `file` | `content_length` | `INTERNAL` | A byte count |
+| `file` | `line_count` | `INTERNAL` | A record count, by the screen's own walk |
+| `file` | `key_version` | `INTERNAL` | Which key wrote the chunks - rotation metadata |
+| `file` | `received_by` | `CONFIDENTIAL` | Which person delivered an upload (`audit_record.actor`'s reasoning): an actor identifier, needed to hold the attester distinct (INV-SET-07) |
+| `file` | `attested_by` | `CONFIDENTIAL` | Which second person attested - the four-eyes fact itself |
+| `file` | `attested_at` | `INTERNAL` | When the attestation was recorded |
+| `file` | `readmits_file_id` | `INTERNAL` | The original a readmission recovers - an identifier of a thing |
+| `file` | `rejection_code` | `INTERNAL` | Why the parse leg rejected - a closed vocabulary (`P8-TSK-008`) |
+| `file` | `rejection_detail` | `INTERNAL` | At most 500 characters of OUR diagnostic - never content, the schema's own bound |
+| `file` | `parse_failures` | `INTERNAL` | How often our parser failed - our defect's counter |
+| `file` | `next_parse_at` | `INTERNAL` | The backoff's next attempt |
+| `file` | `received_at` | `INTERNAL` | When the door committed it |
+| `file` | `status_changed_at` | `INTERNAL` | When the machine last moved |
+| `file` | `correlation_id` | `INTERNAL` | The flow's correlation - `audit_record.correlation_id`'s reasoning |
+| `file_chunk` | `file_id` | `INTERNAL` | The chunk's file - an identifier of a thing |
+| `file_chunk` | `seq` | `INTERNAL` | The chunk's seat |
+| `file_chunk` | `ciphertext` | `RESTRICTED-PII` | **The evidence bytes** - counterparty statements; a bank statement names people: classified at the ceiling of what it decrypts to (`dispute_evidence.content_ciphertext`'s reasoning), AES-256-GCM under a key held outside the database, the AAD binding file, source, content and seat |
+| `file_chunk` | `nonce` | `INTERNAL` | Public-by-design cryptographic material; useless without the key |
+| `file_chunk` | `plaintext_length` | `INTERNAL` | A byte count |
+| `file_event` | `seq` | `INTERNAL` | The history's server-assigned order |
+| `file_event` | `file_id` | `INTERNAL` | The moved file - an identifier of a thing |
+| `file_event` | `from_status` | `INTERNAL` | The edge's origin, NULL at birth |
+| `file_event` | `to_status` | `INTERNAL` | The edge's destination |
+| `file_event` | `actor` | `CONFIDENTIAL` | Who drove the edge (`audit_record.actor`'s reasoning) |
+| `file_event` | `actor_type` | `INTERNAL` | The actor's kind - a closed vocabulary |
+| `file_event` | `reason` | `INTERNAL` | The edge's stated reason - bounded, ours, never content |
+| `file_event` | `occurred_at` | `INTERNAL` | When the edge was driven |
+| `file_event` | `correlation_id` | `INTERNAL` | The flow's correlation |
+| `file_receipt` | `id` | `INTERNAL` | A record identifier. Generated |
+| `file_receipt` | `file_id` | `INTERNAL` | The delivered file - an identifier of a thing |
+| `file_receipt` | `outcome` | `INTERNAL` | NEW or DUPLICATE - the content address's verdict |
+| `file_receipt` | `channel` | `INTERNAL` | Which door the delivery used |
+| `file_receipt` | `actor` | `CONFIDENTIAL` | Who delivered (`audit_record.actor`'s reasoning) |
+| `file_receipt` | `actor_type` | `INTERNAL` | The actor's kind |
+| `file_receipt` | `received_at` | `INTERNAL` | When the delivery arrived |
+| `file_receipt` | `correlation_id` | `INTERNAL` | The flow's correlation |
+| `refused_delivery` | `id` | `INTERNAL` | A record identifier. Generated |
+| `refused_delivery` | `source_id` | `INTERNAL` | The delivering source - an identifier of a thing |
+| `refused_delivery` | `content_sha256` | `INTERNAL` | The refused bytes' fingerprint - what chains the refusal to a re-presentation, recoverable from nothing |
+| `refused_delivery` | `content_length` | `INTERNAL` | A byte count |
+| `refused_delivery` | `format_id` | `INTERNAL` | Which format's screen refused |
+| `refused_delivery` | `format_version` | `INTERNAL` | Which frozen version refused |
+| `refused_delivery` | `reason` | `INTERNAL` | Why - a closed two-value vocabulary, never the value found |
+| `refused_delivery` | `line_no` | `INTERNAL` | Where the screen found it - a position, not a value |
+| `refused_delivery` | `field_name` | `INTERNAL` | The declared field that failed its class - a NAME bounded to 200 characters, never a value (the schema's own CHECK) |
+| `refused_delivery` | `channel` | `INTERNAL` | Which door the delivery used |
+| `refused_delivery` | `actor` | `CONFIDENTIAL` | Who delivered (`audit_record.actor`'s reasoning) |
+| `refused_delivery` | `actor_type` | `INTERNAL` | The actor's kind |
+| `refused_delivery` | `refused_at` | `INTERNAL` | When the door refused |
+| `refused_delivery` | `correlation_id` | `INTERNAL` | The flow's correlation |
+
 ### `consent.consent_text` and `consent.consent_record` — *added by `P2-TSK-017`*
 
 | Table | Column | Level | Why |

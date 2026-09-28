@@ -62,8 +62,13 @@ class RailVocabularyIsConfinedTest {
                     "SimulatedInstantSchemeAdapter.RAIL", "SimulatedInstantSchemeAdapter.java",
                     "BookRail.RAIL", "BookRail.java");
 
-    /** The composition root may bind the declaration; nothing else may name it. */
-    private static final Set<String> CONFIGURATION_FILES = Set.of("PaymentBeans.java");
+    /**
+     * The composition root may bind the declaration; nothing else may name it.
+     * {@code SettlementBeans} joined with `P8-TSK-002`: the source register reads each rail's
+     * clearing position off its declaration, which is exactly a composition-root binding.
+     */
+    private static final Set<String> CONFIGURATION_FILES =
+            Set.of("PaymentBeans.java", "SettlementBeans.java");
 
     /**
      * Each external rail's clearing position, named only by the declaration that owns it
@@ -173,6 +178,35 @@ class RailVocabularyIsConfinedTest {
                 .as("the guard is not vacuous: each clearing position is found where its rail"
                         + " declares it")
                 .allSatisfy((purpose, found) -> assertThat(found).as(purpose).isTrue());
+    }
+
+    @Test
+    @DisplayName("settlement and reconciliation name no clearing position at all - positions"
+            + " come from declarations, composed in app (P8-TSK-002, INV-SET-05, INV-RAIL-04)")
+    void theSettlementModulesNameNoClearingPosition() {
+        // Wider than CLEARING_POSITIONS on purpose: PAYOUT_CLEARING and every later rail's
+        // position are equally out of reach - the modules that reconcile positions must read
+        // them from the register app composes, or two authorities drift.
+        java.util.regex.Pattern anyClearing =
+                java.util.regex.Pattern.compile("AccountPurpose\\.[A-Z_]*_CLEARING");
+        List<String> outside = new ArrayList<>();
+        int seen = 0;
+        for (Path source : mainSources()) {
+            String path = source.toString().replace('\\', '/');
+            if (!path.contains("/settlement/src/main/java/")
+                    && !path.contains("/reconciliation/src/main/java/")) {
+                continue;
+            }
+            seen++;
+            java.util.regex.Matcher named = anyClearing.matcher(codeOf(read(source)));
+            if (named.find()) {
+                outside.add(named.group() + " in " + source);
+            }
+        }
+        assertThat(seen)
+                .as("the sweep saw the settlement modules' sources - vacuity is not a pass")
+                .isPositive();
+        assertThat(outside).isEmpty();
     }
 
     @Test

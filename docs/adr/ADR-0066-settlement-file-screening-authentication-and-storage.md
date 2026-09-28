@@ -481,5 +481,16 @@ ceiling), ADR-0046 (no connection across a pull), ADR-0008 (the collector SPI).
 - ADR-0036 is annotated at the transition as re-assessed by this ADR for settlement files. The
   drift pass also covers `DATA_ARCHITECTURE.md`:12, which lists settlement files under object
   storage as the target stack; it stays true as a target once a trigger fires.
+- **What is implemented.** `P8-TSK-002` (2026-09-29) delivered the store and the screen halves
+  of this decision: `FileReception.receive` in its fixed order behind the conservative
+  whole-stream screen (point 3's fallback; the field-class screens arrive with each format),
+  the refusal as metadata plus `settlement.SettlementDeliveryRefused` (point 4, the bounds
+  included), the content-address convergence with its receipts (point 5), and the encrypted
+  store behind `SettlementFileStore` — 1 MiB AES-256-GCM chunks under
+  `FINAPP_SETTLEMENT_FILE_KEY` with the associated data of point 6 bound and the
+  whole-plaintext checksum verified on every read. No channel is open yet: the door routes,
+  attestation and the audited content read are `P8-TSK-003`'s, pull `P8-TSK-021`'s,
+  readmission `P8-TSK-022`'s. Everything else here is the decided design, corrected by the
+  tasks that build it.
 - The Phase 8 review reads this ADR against the code before accepting it (`P8-DOC-001`, the
   `P7-DOC-001` precedent).

@@ -210,7 +210,12 @@ public final class MerchantPayoutOutcomes {
                                                 "a payout's merchant has no payable in its"
                                                         + " currency"));
         LedgerAccount clearing =
-                chart.resolve(unitOfWork, AccountPurpose.PAYOUT_CLEARING, locked.amount().currency());
+                chart.resolve(
+                        unitOfWork,
+                        // The declared position (P8-TSK-002): one definition for this poster
+                        // and for settlement's payout source alike (INV-SET-05).
+                        PayoutSettlementDeclaration.CLEARING_PURPOSE,
+                        locked.amount().currency());
         LocalDate today = LocalDate.now(clock.withZone(ZoneOffset.UTC));
         // Only in the acting branch: the posting key's fingerprint carries the dates, so a
         // replay on a later day would conflict rather than converge - and the conditional
