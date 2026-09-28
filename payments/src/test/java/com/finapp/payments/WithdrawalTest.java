@@ -237,15 +237,17 @@ class WithdrawalTest {
     void renderingsCarryIdentifiersOnly() {
         Withdrawal fresh = dispatched();
         assertThat(fresh.toString())
-                // The amount's two renderings, not the bare digits: a UUIDv7 identifier is
-                // hex and contains "25" one run in a few - the fixture-rank flake class
-                // (P7-TSK-004's lesson), found when a rolled id finally collided
-                // (P7-TSK-009's gate).
-                .doesNotContain("25.00")
-                .doesNotContain("2500")
                 .doesNotContain(fresh.destination().value())
                 .doesNotContain(fresh.reference().value())
                 .contains(fresh.id().toString())
                 .contains("DISPATCHED");
+        // The amount's two renderings, not the bare digits: a UUIDv7 identifier is hex and
+        // contains "25" one run in a few - the fixture-rank flake class (P7-TSK-004's lesson),
+        // found when a rolled id finally collided (P7-TSK-009's gate) - and "2500" one run in
+        // thousands (the P7-TSK-008 needle class). So they are judged against what is left
+        // once the identifier is taken out.
+        assertThat(fresh.toString().replace(fresh.id().value().toString(), "<withdrawal>"))
+                .doesNotContain("25.00")
+                .doesNotContain("2500");
     }
 }

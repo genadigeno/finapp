@@ -723,10 +723,16 @@ class DisputeNotificationDatabaseTest {
         Payment sale = capturedCardPayment(merchant.payable().value());
         List<UUID> seeded = new ArrayList<>();
         try (Connection app = DatabaseRoles.application()) {
+            // One transaction, so every row reads ONE now(). Committed one by one, each insert
+            // read the server's clock afresh, and the Docker VM's clock steps back by seconds
+            // every ~27 s (1.6 s at P7-TSK-015's gate, 2.8 s re-measured the same day): a step
+            // between two inserts opens the later dispute before the earlier one, and the
+            // one-second spacing swaps the pair.
+            app.setAutoCommit(false);
             for (int i = 0; i < 101; i++) {
                 UUID dispute = IDS.next();
-                // Each opened a microsecond-distinct instant later than the one before, so
-                // the listing's order is the seeding's.
+                // Each opened a second later than the one before, so the listing's order is
+                // the seeding's.
                 // With the chargeback comes its attribution (V021, P7-TSK-013): none here -
                 // 101 chargebacks on one payment could never all be the payable's, and the
                 // combined bound refuses the raw writer that tried.
@@ -743,6 +749,7 @@ class DisputeNotificationDatabaseTest {
                         dispute, someDisputeReference(), sale.attempt(), (double) i);
                 seeded.add(dispute);
             }
+            app.commit();
         }
         HttpResponse<String> listed = get("/v1/merchant/disputes", merchant.key());
         assertThat(listed.statusCode()).as(listed.body()).isEqualTo(200);

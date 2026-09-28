@@ -143,8 +143,13 @@ class HoldDatabaseTest {
                                                     wallet.account().id(),
                                                     Money.ofMinorUnits(1, USD)))
                     .isInstanceOf(HoldExceedsAvailableBalanceException.class)
-                    .hasMessageNotContaining("1000")
-                    .hasMessageNotContaining("10.00");
+                    // The account is named on purpose, and a random UUIDv7's hex can carry any
+                    // digit run (the P7-TSK-008 needle class): the amounts are judged against
+                    // what is left once the identifier is taken out.
+                    .satisfies(refusal -> assertThat(refusal.getMessage()
+                                    .replace(wallet.account().id().value().toString(), "<account>"))
+                            .doesNotContain("1000")
+                            .doesNotContain("10.00"));
             app.rollback();
             assertThat(activeHoldRowsFor(app, wallet.account())).isEqualTo(1);
             assertThat(holdsMinorOf(app, wallet.account())).isEqualTo(1000);

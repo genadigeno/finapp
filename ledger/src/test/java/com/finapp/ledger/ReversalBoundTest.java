@@ -78,9 +78,15 @@ class ReversalBoundTest {
         assertThatThrownBy(
                         () -> ReversalBound.validate(ORIGINAL, original(), prior, reversalOf(1)))
                 .isInstanceOf(OverReversalException.class)
-                // The refusal names the entry and the account, never an amount (INV-AUD-02).
-                .hasMessageNotContaining("1000")
-                .hasMessageNotContaining("10.00");
+                // The refusal names the entry and the account, never an amount (INV-AUD-02) -
+                // and a random UUIDv7's hex can carry any digit run (the P7-TSK-008 needle
+                // class), so the amount is judged against what is left once they are taken out.
+                .satisfies(refusal -> assertThat(refusal.getMessage()
+                                .replace(ORIGINAL.value().toString(), "<entry>")
+                                .replace(CLEARING.value().toString(), "<clearing>")
+                                .replace(WALLET.value().toString(), "<wallet>"))
+                        .doesNotContain("1000")
+                        .doesNotContain("10.00"));
     }
 
     @Test

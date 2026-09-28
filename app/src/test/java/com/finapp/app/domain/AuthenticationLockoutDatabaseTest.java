@@ -226,7 +226,7 @@ class AuthenticationLockoutDatabaseTest {
         }
         assertThat(lockedUntil(login)).as("precondition: locked").isNotNull();
 
-        // The lock expires; the window has 59 minutes left.
+        // The lock expires; the window has 58 minutes left.
         expireTheLock(login);
 
         recordOneFailureUnder(shortLock, login);
@@ -442,12 +442,22 @@ class AuthenticationLockoutDatabaseTest {
         }
     }
 
+    /**
+     * Serves the lock while leaving the window live, both by the SERVER's clock.
+     *
+     * <p>A minute served, not a second: the throttle judges {@code locked_until <= now()} on the
+     * same clock, and the local Docker VM's clock steps back by seconds every ~27 s (1.6 s at
+     * P7-TSK-015's gate, 2.8 s re-measured the same day) - a step between this update and the
+     * next attempt reads a one-second lock as still live. The window started before the lock
+     * ended, as the table's {@code CHECK} requires - a minute before - and is still live under
+     * every policy this suite uses.
+     */
     private void expireTheLock(LoginIdentifier login) throws SQLException {
         try (Connection app = DatabaseRoles.application()) {
             execute(
                     app,
                     "UPDATE identity.authentication_failure SET locked_until = now() - interval"
-                        + " '1 second', window_started_at = now() - interval '2 seconds'"
+                        + " '1 minute', window_started_at = now() - interval '2 minutes'"
                         + " WHERE identity_id = (SELECT id FROM identity.identity"
                         + " WHERE login_identifier = ?)",
                     login.value());

@@ -64,10 +64,13 @@ class LoginIdentifierTest {
         Identity identity = Identity.create(IDS, CLOCK, UUID.randomUUID(), login);
 
         assertThat(login.toString()).isEqualTo("LoginIdentifier[***]").doesNotContain("ada");
-        assertThat(identity.toString())
+        assertThat(identity.toString()).contains(identity.id().toString());
+        // The identity is named on purpose, and "ada" is three hex digits a random UUIDv7
+        // carries a few runs in a thousand (the P7-TSK-008 needle class): the login is judged
+        // against what is left once the identifier is taken out.
+        assertThat(identity.toString().replace(identity.id().value().toString(), "<identity>"))
                 .as("an identifier in a log is an enumeration aid for anyone who can read logs")
-                .doesNotContain("ada")
-                .contains(identity.id().toString());
+                .doesNotContain("ada");
         assertThat(login.value()).isEqualTo("ada.l");
     }
 

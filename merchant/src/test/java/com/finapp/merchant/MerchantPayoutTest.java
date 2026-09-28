@@ -156,8 +156,14 @@ class MerchantPayoutTest {
         assertThat(payout.toString())
                 .contains(payout.id().toString())
                 .doesNotContain("a private reason")
-                .doesNotContain("2500")
                 .doesNotContain(payout.destinationId().value().toString());
+        // The payout and its merchant are named on purpose, and a random UUIDv7's hex can carry
+        // any digit run (the P7-TSK-008 needle class): the amount is judged against what is
+        // left once the identifiers are taken out.
+        assertThat(payout.toString()
+                        .replace(payout.id().value().toString(), "<payout>")
+                        .replace(payout.merchantId().value().toString(), "<merchant>"))
+                .doesNotContain("2500");
     }
 
     private static MerchantPayout dispatched() {

@@ -419,7 +419,8 @@ lapsed one second before insertion on the server clock that also judges the take
 the Docker VM's clock gains ~77 ms a second and is stepped back ~1.6 s every ~27 s, so a step-back
 between the insert and the takeover read the lease as held: both crashed-flight claims now lapse a
 minute back. The battery was re-run fresh, green; both classes' remaining instances (two platform
-lease fixtures, a dozen short digit needles) are chipped as their own task.
+lease fixtures, a dozen short digit needles) are chipped as their own task — swept the same day,
+test-only: six server-clock fixtures and eighteen needles, the change log has the survey.
 
 Thirty-five probe runs, thirty-four caught - every one by its intended test - and one survivor that
 was the gate's find above, closed and re-run; every verdict read from the failing testcases
@@ -675,17 +676,24 @@ Get-CimInstance Win32_Process -Filter "Name='java.exe'" |
   ForEach-Object { Stop-Process -Id $_.ProcessId -Force }
 ```
 
-**The container clock drifts behind the host and is corrected backwards.** PostgreSQL's
-`now()` is therefore not monotonic across two statements seconds apart: a row written before a
-correction and read after it can have a `now()`-derived timestamp *in the future*. Observed at
-542 ms during `P0-TSK-020`, where it made the relay suite fail about one run in fourteen —
-always as "the relay published nothing", never anywhere near the clock.
+**The container clock runs fast and is corrected backwards.** PostgreSQL's `now()` is therefore
+not monotonic across two statements seconds apart: a row written before a correction and read
+after it can have a `now()`-derived timestamp *in the future*. Observed at 542 ms during
+`P0-TSK-020`, where it made the relay suite fail about one run in fourteen — always as "the relay
+published nothing", never anywhere near the clock. The step is roughly what the VM gained since
+the last one, so it grows with the drift: ~1.6 s every ~27 s at `P7-TSK-015`'s gate (gaining
+~77 ms a second), 2.6–2.8 s every ~27 s when re-measured the same day (gaining ~100 ms a second).
+To measure it, print busybox `adjtimex`'s `time.tv_sec`/`time.tv_usec` twice a second from a
+throwaway `alpine` container — busybox `date +%N` prints no fraction.
 
 This is a property of the local Docker VM, not of the code, and the platform is already built
 for it: coordination timestamps are set **and** compared by the server, so a step affects both
 sides equally and correctness never depends on the step's direction. What it does break is a
-*test* that assumes a row written a moment ago is eligible a moment later. Such fixtures
-back-date the row explicitly rather than relying on the clock (`OutboxRelayTest.backDate`).
+*test* that assumes a row written a moment ago is eligible a moment later — or that a lease, a
+lock or a permit one second in the server's past has lapsed. Such fixtures back-date explicitly,
+by a margin that dwarfs any step: a minute, never a second (`OutboxRelayTest.backDate`, the
+expired-lease and crashed-flight claims, the served lock). A fixture whose rows must keep their
+order reads `now()` once, in one transaction.
 
 A time-dependent test failing intermittently on this machine is worth checking against
 `SELECT now()` before it is treated as a defect.

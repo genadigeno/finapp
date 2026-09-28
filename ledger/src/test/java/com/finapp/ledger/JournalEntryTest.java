@@ -193,9 +193,16 @@ class JournalEntryTest {
                         List.of(
                                 line(Direction.DEBIT, Money.ofMinorUnits(987654, USD)),
                                 line(Direction.CREDIT, Money.ofMinorUnits(987654, USD))));
-        assertThat(entry.toString()).doesNotContain("987654").doesNotContain("9876.54");
+        // The entry and each line's account are named on purpose, and a random UUIDv7's hex can
+        // carry any digit run (the P7-TSK-008 needle class): the needle is judged against what
+        // is left once the identifier is taken out.
+        assertThat(entry.toString().replace(entry.id().value().toString(), "<entry>"))
+                .doesNotContain("987654")
+                .doesNotContain("9876.54");
         for (JournalLine line : entry.lines()) {
-            assertThat(line.toString()).doesNotContain("987654").doesNotContain("9876.54");
+            assertThat(line.toString().replace(line.account().value().toString(), "<account>"))
+                    .doesNotContain("987654")
+                    .doesNotContain("9876.54");
         }
     }
 

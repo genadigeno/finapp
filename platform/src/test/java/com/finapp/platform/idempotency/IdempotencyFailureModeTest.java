@@ -341,9 +341,15 @@ class IdempotencyFailureModeTest {
         RequestFingerprint fingerprint = RequestFingerprint.sha256("crashed".getBytes(StandardCharsets.UTF_8));
         try (Connection dying = DatabaseRoles.bootstrap()) {
             dying.setAutoCommit(false);
+            // The lease already expired: a negative duration, so the database sets it in its OWN
+            // past rather than a client-side timestamp aging it. A minute, not a second: the
+            // takeover is judged by the same server clock, and the Docker VM's clock steps back
+            // by seconds every ~27 s (1.6 s at P7-TSK-015's gate, 2.8 s re-measured the same
+            // day) - a step between this insert and the survivors reads a one-second lease as
+            // still held, and neither recovers.
             new JdbcIdempotencyRecordStore()
                     .claim(dying, key, fingerprint, CorrelationId.of("dead-instance"), FIXED,
-                            FIXED.plus(RETENTION), Duration.ofSeconds(-1)); // lease already expired
+                            FIXED.plus(RETENTION), Duration.ofMinutes(-1));
             dying.commit();
         }
 
