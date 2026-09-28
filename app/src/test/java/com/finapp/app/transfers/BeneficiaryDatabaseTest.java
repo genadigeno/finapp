@@ -187,6 +187,52 @@ class BeneficiaryDatabaseTest {
     }
 
     @Test
+    @DisplayName(
+            "a clock behind birth cannot fail a legal removal: removed_at clamps to created_at"
+                    + " in the statement (the P1-TSK-031 drift; ADR-0014)")
+    void aClockBehindBirthCannotFailALegalRemoval() throws Exception {
+        UUID party = UUID.randomUUID();
+        try (Connection app = DatabaseRoles.application()) {
+            app.setAutoCommit(false);
+            Beneficiary clamped = create(app, party, UUID.randomUUID());
+            Beneficiary own = create(app, party, UUID.randomUUID());
+            app.commit();
+
+            // The removing instance's clock reads behind the one that wrote created_at.
+            Instant born = stampsOf(clamped.id().value()).createdAt();
+            assertThat(store.remove(app, clamped.id(), party, born.minusMillis(250))).isTrue();
+            app.commit();
+            assertThat(stampsOf(clamped.id().value()).removedAt()).isEqualTo(born);
+
+            // A floor, not a pin: a clock past birth stamps its own read.
+            Instant later = stampsOf(own.id().value()).createdAt().plusSeconds(5);
+            assertThat(store.remove(app, own.id(), party, later)).isTrue();
+            app.commit();
+            assertThat(stampsOf(own.id().value()).removedAt()).isEqualTo(later);
+        }
+    }
+
+    @Test
+    @DisplayName(
+            "an illegal removal under a behind clock is still the conditional's refusal, never"
+                    + " V003's CHECK")
+    void anIllegalRemovalUnderABehindClockIsStillTheConditionalsRefusal() throws Exception {
+        UUID party = UUID.randomUUID();
+        try (Connection app = DatabaseRoles.application()) {
+            app.setAutoCommit(false);
+            Beneficiary saved = create(app, party, UUID.randomUUID());
+            app.commit();
+            Instant born = stampsOf(saved.id().value()).createdAt();
+            assertThat(store.remove(app, saved.id(), party, born)).isTrue();
+            app.commit();
+
+            assertThat(store.remove(app, saved.id(), party, born.minusSeconds(1))).isFalse();
+            app.commit();
+            assertThat(stampsOf(saved.id().value()).removedAt()).isEqualTo(born);
+        }
+    }
+
+    @Test
     @DisplayName("raw SQL cannot resurrect, edit or incoherently store a beneficiary")
     void rawSqlCannotResurrectOrEditARow() throws Exception {
         UUID party = UUID.randomUUID();
@@ -403,6 +449,26 @@ class BeneficiaryDatabaseTest {
             try (ResultSet row = read.executeQuery()) {
                 assertThat(row.next()).isTrue();
                 return row.getString(1);
+            }
+        }
+    }
+
+    /** The row's two instants as stored, at the column's own microsecond resolution. */
+    private record Stamps(Instant createdAt, Instant removedAt) {}
+
+    private static Stamps stampsOf(UUID id) throws SQLException {
+        try (Connection app = DatabaseRoles.application();
+                PreparedStatement read =
+                        app.prepareStatement(
+                                "SELECT created_at, removed_at FROM transfers.beneficiary"
+                                        + " WHERE id = ?")) {
+            read.setObject(1, id);
+            try (ResultSet row = read.executeQuery()) {
+                assertThat(row.next()).isTrue();
+                Timestamp removedAt = row.getTimestamp(2);
+                return new Stamps(
+                        row.getTimestamp(1).toInstant(),
+                        removedAt == null ? null : removedAt.toInstant());
             }
         }
     }

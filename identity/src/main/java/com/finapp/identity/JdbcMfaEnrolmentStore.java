@@ -109,7 +109,12 @@ public final class JdbcMfaEnrolmentStore implements MfaEnrolmentStore<Connection
         // and nine are told they lost - and a code presented twice finds nothing pending the second
         // time, which is what makes the state machine the replay defence on this path.
         String sql =
-                "UPDATE " + TABLE + " SET status = 'ACTIVE', confirmed_at = ?"
+                "UPDATE " + TABLE + " SET status = 'ACTIVE',"
+                        // GREATEST(?, created_at) - the P1-TSK-031 drift, clamped in the
+                        // statement: the confirming instance's clock may read behind the one that
+                        // began the enrolment (ADR-0014: skew is bounded, never zero), and a legal
+                        // confirmation must not die on V008's CHECK.
+                        + " confirmed_at = GREATEST(?, created_at)"
                         + " WHERE id = ? AND status = 'PENDING'";
         try (PreparedStatement update = unitOfWork.prepareStatement(sql)) {
             update.setTimestamp(1, Timestamp.from(at));
@@ -157,7 +162,11 @@ public final class JdbcMfaEnrolmentStore implements MfaEnrolmentStore<Connection
         // this would discard an ACTIVE factor, so anyone who reached the enrolment endpoint could
         // disable somebody's second factor without proving anything (INV-IDN-05).
         String sql =
-                "UPDATE " + TABLE + " SET status = 'DISCARDED', discarded_at = ?"
+                "UPDATE " + TABLE + " SET status = 'DISCARDED',"
+                        // GREATEST(?, created_at), as confirm clamps it: a restart must not die on
+                        // V008's CHECK discarding an enrolment another instance began under a
+                        // clock reading ahead of this one.
+                        + " discarded_at = GREATEST(?, created_at)"
                         + " WHERE identity_id = ? AND type = ? AND status = 'PENDING'";
         try (PreparedStatement update = unitOfWork.prepareStatement(sql)) {
             update.setTimestamp(1, Timestamp.from(at));

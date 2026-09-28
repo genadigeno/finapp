@@ -86,6 +86,34 @@ class BeneficiaryTest {
     }
 
     @Test
+    @DisplayName(
+            "a clock behind birth cannot fail a legal removal: the stamp clamps to createdAt"
+                    + " (the P1-TSK-031 drift, met in domain code; ADR-0014)")
+    void aClockBehindBirthCannotFailALegalRemoval() {
+        Beneficiary live = named("Aunt Vera");
+        Clock behind = Clock.fixed(live.createdAt().minusMillis(250), ZoneOffset.UTC);
+
+        Beneficiary removed = live.remove(behind);
+        assertThat(removed.status()).isEqualTo(BeneficiaryStatus.REMOVED);
+        assertThat(removed.removedAt()).contains(live.createdAt());
+
+        // A floor, not a pin: a clock at or past birth stamps its own read.
+        Clock ahead = Clock.fixed(live.createdAt().plusSeconds(5), ZoneOffset.UTC);
+        assertThat(live.remove(ahead).removedAt()).contains(live.createdAt().plusSeconds(5));
+    }
+
+    @Test
+    @DisplayName(
+            "an illegal removal under a behind clock is still the machine's refusal, never the"
+                    + " constructor guard's")
+    void anIllegalRemovalUnderABehindClockIsStillTheMachinesRefusal() {
+        Beneficiary removed = inStatus(BeneficiaryStatus.REMOVED);
+        Clock behind = Clock.fixed(removed.createdAt().minusSeconds(1), ZoneOffset.UTC);
+        assertThatThrownBy(() -> removed.remove(behind))
+                .isInstanceOf(IllegalBeneficiaryTransitionException.class);
+    }
+
+    @Test
     @DisplayName("the display name is present, bounded and free of the five categories")
     void theDisplayNameIsBoundedAndClean() {
         assertThatThrownBy(() -> named(" "))

@@ -104,6 +104,12 @@ public final class MerchantApiKey {
         if (!status.permittedTransitions().contains(MerchantApiKeyStatus.REVOKED)) {
             throw new IllegalMerchantApiKeyTransitionException(status);
         }
+        // GREATEST(now(), issued_at) - the P1-TSK-031 drift, met in domain code rather than a
+        // fixture: the clock that wrote issuedAt may read ahead of this one (another
+        // instance's, or this one stepped back by time sync; ADR-0014: skew is bounded, never
+        // zero), and a revocation moments after issuance must not die on the ordering the
+        // constructor and `V003`'s CHECK are right to refuse.
+        Instant now = Instant.now(clock);
         return new MerchantApiKey(
                 id,
                 merchantId,
@@ -112,7 +118,7 @@ public final class MerchantApiKey {
                 MerchantApiKeyStatus.REVOKED,
                 issuedAt,
                 issuedBy,
-                Instant.now(clock));
+                now.isBefore(issuedAt) ? issuedAt : now);
     }
 
     /**

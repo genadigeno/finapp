@@ -357,6 +357,91 @@ class MfaEnrolmentDatabaseTest {
     }
 
     // -----------------------------------------------------------------
+    // The clock
+
+    @Test
+    @DisplayName(
+            "a clock behind birth cannot fail a legal confirmation or restart: the stamp clamps"
+                    + " to created_at in the statement (the P1-TSK-031 drift; ADR-0014)")
+    void aClockBehindBirthCannotFailALegalMove() throws Exception {
+        IdentityId confirming = givenAnIdentity();
+        IdentityId restarting = givenAnIdentity();
+        beginAndCaptureSecret(confirming);
+        beginAndCaptureSecret(restarting);
+
+        // The store's conditionals driven directly: proving the code is the service's job, and
+        // what a clock reading behind the one that wrote created_at can break is the statement.
+        try (Connection app = DatabaseRoles.application()) {
+            app.setAutoCommit(false);
+            MfaEnrolment confirmed =
+                    enrolments.findPending(app, confirming, MfaFactorType.TOTP).orElseThrow();
+            assertThat(
+                            enrolments.confirm(
+                                    app, confirmed.id(), confirmed.createdAt().minusMillis(250)))
+                    .isTrue();
+            MfaEnrolment discarded =
+                    enrolments.findPending(app, restarting, MfaFactorType.TOTP).orElseThrow();
+            assertThat(
+                            enrolments.discardPending(
+                                    app,
+                                    restarting,
+                                    MfaFactorType.TOTP,
+                                    discarded.createdAt().minusMillis(250)))
+                    .isEqualTo(1);
+            app.commit();
+
+            assertThat(
+                            enrolments.findActive(app, confirming, MfaFactorType.TOTP)
+                                    .orElseThrow()
+                                    .confirmedAt())
+                    .contains(confirmed.createdAt());
+            assertThat(discardedAt(app, discarded)).isEqualTo(discarded.createdAt());
+        }
+
+        // A floor, not a pin: a clock past birth stamps its own read.
+        beginAndCaptureSecret(restarting);
+        try (Connection app = DatabaseRoles.application()) {
+            app.setAutoCommit(false);
+            MfaEnrolment fresh =
+                    enrolments.findPending(app, restarting, MfaFactorType.TOTP).orElseThrow();
+            Instant later = fresh.createdAt().plusSeconds(5);
+            assertThat(enrolments.confirm(app, fresh.id(), later)).isTrue();
+            app.commit();
+            assertThat(
+                            enrolments.findActive(app, restarting, MfaFactorType.TOTP)
+                                    .orElseThrow()
+                                    .confirmedAt())
+                    .contains(later);
+        }
+    }
+
+    @Test
+    @DisplayName(
+            "an illegal confirmation or discard under a behind clock is still the conditional's"
+                    + " refusal, never V008's CHECK")
+    void anIllegalMoveUnderABehindClockIsStillTheConditionalsRefusal() throws Exception {
+        IdentityId identity = givenAnIdentity();
+        Sensitive<String> secret = beginAndCaptureSecret(identity);
+        inAFlow(app -> service().confirm(app, identity, codeFor(secret)));
+
+        try (Connection app = DatabaseRoles.application()) {
+            app.setAutoCommit(false);
+            MfaEnrolment active =
+                    enrolments.findActive(app, identity, MfaFactorType.TOTP).orElseThrow();
+            Instant behind = active.createdAt().minusSeconds(1);
+            assertThat(enrolments.confirm(app, active.id(), behind)).isFalse();
+            assertThat(enrolments.discardPending(app, identity, MfaFactorType.TOTP, behind))
+                    .isZero();
+            app.commit();
+            assertThat(
+                            enrolments.findActive(app, identity, MfaFactorType.TOTP)
+                                    .orElseThrow()
+                                    .confirmedAt())
+                    .isEqualTo(active.confirmedAt());
+        }
+    }
+
+    // -----------------------------------------------------------------
 
     private MfaEnrolmentService service() {
         return new MfaEnrolmentService(
@@ -433,6 +518,19 @@ class MfaEnrolmentDatabaseTest {
             try (var rows = count.executeQuery()) {
                 rows.next();
                 return rows.getLong(1);
+            }
+        }
+    }
+
+    private static Instant discardedAt(Connection app, MfaEnrolment enrolment)
+            throws SQLException {
+        try (PreparedStatement read =
+                app.prepareStatement(
+                        "SELECT discarded_at FROM identity.mfa_enrolment WHERE id = ?")) {
+            read.setObject(1, enrolment.id().value());
+            try (var rows = read.executeQuery()) {
+                assertThat(rows.next()).isTrue();
+                return rows.getTimestamp(1).toInstant();
             }
         }
     }

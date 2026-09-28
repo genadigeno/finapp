@@ -8,6 +8,7 @@ import com.finapp.sharedkernel.id.IdGenerator;
 import java.security.SecureRandom;
 import java.time.Clock;
 import java.time.Instant;
+import java.time.ZoneOffset;
 import java.util.EnumSet;
 import java.util.Optional;
 import java.util.UUID;
@@ -267,6 +268,34 @@ class PaymentMethodTest {
         assertThat(detached.detachedAt()).isPresent();
         assertThat(live.detachedAt()).isEmpty();
         assertThat(live.status()).isEqualTo(PaymentMethodStatus.ACTIVE);
+    }
+
+    @Test
+    @DisplayName(
+            "a clock behind birth cannot fail a legal detach: the stamp clamps to createdAt"
+                    + " (the P1-TSK-031 drift, met in domain code; ADR-0014)")
+    void aClockBehindBirthCannotFailALegalDetach() {
+        PaymentMethod live = attached();
+        Clock behind = Clock.fixed(live.createdAt().minusMillis(250), ZoneOffset.UTC);
+
+        PaymentMethod detached = live.detach(behind);
+        assertThat(detached.status()).isEqualTo(PaymentMethodStatus.DETACHED);
+        assertThat(detached.detachedAt()).contains(live.createdAt());
+
+        // A floor, not a pin: a clock at or past birth stamps its own read.
+        Clock ahead = Clock.fixed(live.createdAt().plusSeconds(5), ZoneOffset.UTC);
+        assertThat(live.detach(ahead).detachedAt()).contains(live.createdAt().plusSeconds(5));
+    }
+
+    @Test
+    @DisplayName(
+            "an illegal detach under a behind clock is still the machine's refusal, never the"
+                    + " constructor guard's")
+    void anIllegalDetachUnderABehindClockIsStillTheMachinesRefusal() {
+        PaymentMethod detached = inState(PaymentMethodStatus.DETACHED);
+        Clock behind = Clock.fixed(detached.createdAt().minusSeconds(1), ZoneOffset.UTC);
+        assertThatThrownBy(() -> detached.detach(behind))
+                .isInstanceOf(IllegalPaymentMethodTransitionException.class);
     }
 
     @Test

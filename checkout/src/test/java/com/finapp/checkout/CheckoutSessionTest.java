@@ -210,6 +210,35 @@ class CheckoutSessionTest {
                 .isInstanceOf(IllegalCheckoutSessionTransitionException.class);
     }
 
+    @Test
+    @DisplayName(
+            "a clock behind birth cannot fail a legal edge: the stamp clamps to createdAt"
+                    + " (the P1-TSK-031 drift, met in domain code; ADR-0014)")
+    void aClockBehindBirthCannotFailALegalEdge() {
+        CheckoutSession session = open();
+        Clock behind = Clock.fixed(session.createdAt().minusMillis(250), ZoneOffset.UTC);
+
+        CheckoutSession pending = session.confirm(behind, UUID.randomUUID());
+        assertThat(pending.status()).isEqualTo(CheckoutSessionStatus.PAYMENT_PENDING);
+        assertThat(pending.statusChangedAt()).isEqualTo(session.createdAt());
+
+        // A floor, not a pin: a clock at or past birth stamps its own read.
+        Clock ahead = Clock.fixed(session.createdAt().plusSeconds(5), ZoneOffset.UTC);
+        assertThat(pending.complete(ahead).statusChangedAt())
+                .isEqualTo(session.createdAt().plusSeconds(5));
+    }
+
+    @Test
+    @DisplayName(
+            "an illegal edge under a behind clock is still the machine's refusal, never the"
+                    + " constructor guard's")
+    void anIllegalEdgeUnderABehindClockIsStillTheMachinesRefusal() {
+        CheckoutSession completed = sessionIn(CheckoutSessionStatus.COMPLETED);
+        Clock behind = Clock.fixed(completed.createdAt().minusSeconds(1), ZoneOffset.UTC);
+        assertThatThrownBy(() -> completed.abandon(behind))
+                .isInstanceOf(IllegalCheckoutSessionTransitionException.class);
+    }
+
     // ----------------------------------------------------------------- coherence
 
     @Test
