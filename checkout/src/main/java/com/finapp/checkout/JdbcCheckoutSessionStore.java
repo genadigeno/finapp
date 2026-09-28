@@ -148,6 +148,21 @@ public final class JdbcCheckoutSessionStore implements CheckoutSessionStore<Conn
     }
 
     @Override
+    public boolean opened(Connection unitOfWork, UUID intentRef) {
+        try (PreparedStatement select =
+                unitOfWork.prepareStatement(
+                        "SELECT 1 FROM checkout.checkout_session WHERE payment_intent_ref = ?")) {
+            select.setObject(1, intentRef);
+            try (ResultSet rows = select.executeQuery()) {
+                return rows.next();
+            }
+        } catch (SQLException failure) {
+            throw new CheckoutStorageException(
+                    DatabaseFailure.describe("asking whether a session opened a payment", failure));
+        }
+    }
+
+    @Override
     public Optional<CheckoutSession> findByIntentOwnedBy(
             Connection unitOfWork, UUID intentRef, UUID merchantRef) {
         try (PreparedStatement select =

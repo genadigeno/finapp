@@ -94,14 +94,20 @@ public final class JdbcRefundStore implements RefundStore<Connection> {
         Objects.requireNonNull(at, "at must not be null");
         // The conditional IS the permit (the payout's renewal, V007): a resolver that already
         // moved the refund out of the resolvable states leaves this matching no row, and then
-        // nothing may be sent. GREATEST keeps the permit forward-only against an instance whose
-        // clock trails the one that wrote the previous permit - V009's trigger refuses a step
-        // back, and a refusal here would be a failed re-drive, not a safer one.
+        // nothing may be sent. EVERY RENEWAL STRICTLY ADVANCES THE PERMIT (the Phase 7 -> 8
+        // transition): the first-send rule concludes FAILED only while the locked row still
+        // carries the first flight's own permit, so a renewal that left it unchanged let a
+        // takeover send while that rule still read "nothing was ever sent" - GREATEST alone did
+        // exactly that for an instance whose clock trails the first flight's (the refund paid
+        // at the PSP, failed on our books, its bound freed for a second). One microsecond past
+        // the stored permit, or this instance's time if later: forward-only for V009's trigger,
+        // never a refused re-drive, never the same value twice.
         try (PreparedStatement update =
                 unitOfWork.prepareStatement(
                         "UPDATE payments.refund"
-                                + " SET last_dispatched_at ="
-                                + "   GREATEST(last_dispatched_at, CAST(? AS timestamptz))"
+                                + " SET last_dispatched_at = GREATEST("
+                                + "   last_dispatched_at + interval '1 microsecond',"
+                                + "   CAST(? AS timestamptz))"
                                 + " WHERE id = ? AND status IN ('DISPATCHED', 'UNKNOWN')"
                                 + " RETURNING last_dispatched_at")) {
             update.setTimestamp(1, Timestamp.from(at));

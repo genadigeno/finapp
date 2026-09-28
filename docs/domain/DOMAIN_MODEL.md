@@ -17,6 +17,7 @@ Account
 Wallet
 Ledger Account
 Bank Account
+Settlement Account
 Balance
 Hold
 Beneficiary
@@ -38,6 +39,10 @@ Routing Decision
 A2A Payment
 Instant Payment
 Withdrawal
+Interaction Model
+Void
+Return Payment
+Dispute Response
 
 Merchant
 Checkout Session
@@ -73,6 +78,10 @@ Chart of Accounts
 Suspense Account
 Reconciliation Batch
 Reconciliation Break
+Settlement Batch
+Remittance
+Settlement Expectation
+Match Decision
 
 Important: these names are not automatically aggregates or tables. Determine domain ownership and lifecycle before implementation.
 
@@ -80,7 +89,9 @@ Every term above is defined in [`GLOSSARY.md`](GLOSSARY.md), with an explicit st
 is **not** and the module that will own it. The glossary also defines the seven terms
 `CLAUDE.md` §Domain Distinctions forbids collapsing but this list never named, and contrasts all
 eight of its groups. `DomainGlossaryTest` fails the build when this list and the glossary stop
-agreeing, in either direction (`P0-DOC-011`).
+agreeing, in either direction (`P0-DOC-011`). *(Settlement Account, Settlement Batch, Remittance,
+Settlement Expectation and Match Decision were added by the Phase 7 → 8 transition — ADR-0064,
+ADR-0065, ADR-0067 and ADR-0068 — each keeping a distinction Phase 8 could collapse.)*
 
 ---
 

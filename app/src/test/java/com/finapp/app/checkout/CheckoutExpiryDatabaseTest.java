@@ -349,7 +349,9 @@ class CheckoutExpiryDatabaseTest {
                 IDS,
                 clock,
                 grace,
-                batchSize);
+                batchSize,
+                // This suite's sessions carry no real intents: the cancel is the flow suite's.
+                com.finapp.checkout.UndispatchedPayments.none());
     }
 
     /** One transaction per call, on the application role — the production runner's contract. */

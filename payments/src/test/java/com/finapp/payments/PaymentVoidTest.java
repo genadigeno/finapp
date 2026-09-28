@@ -155,7 +155,8 @@ class PaymentVoidTest {
                         UntouchedChargebacks.over(
                                 attempts, intents, PaymentRails.of(List.of(SimulatedCardPspAdapter.RAIL)),
                                 IDS, CLOCK),
-                        com.finapp.payments.RailOutcomeObserver.NONE);
+                        com.finapp.payments.RailOutcomeObserver.NONE,
+                        new com.finapp.payments.JdbcSchemeExecutionClaimStore());
         return new PaymentVoid(
                 runner,
                 intents,
@@ -287,6 +288,24 @@ class PaymentVoidTest {
                 .findFirst()
                 .orElseThrow();
         assertThat(dispatched.reason()).contains("suspected fraud on the card");
+    }
+
+    @Test
+    @DisplayName("the operator door without a reason is refused by the domain itself - nothing"
+            + " written, nothing sent (P7-DOC-001, INV-AUD-03)")
+    void theOperatorDoorRequiresAReason() {
+        provider.answer =
+                ProviderAnswer.approved(new ProviderReference("psp-void-1"), "ok".getBytes());
+        for (Optional<String> missing : List.of(Optional.<String>empty(), Optional.of("   "))) {
+            assertThatThrownBy(
+                            () -> voids().voidAuthorized(Optional.empty(), intent.id(), missing))
+                    .isInstanceOf(IllegalArgumentException.class)
+                    .hasMessageContaining("reasoned");
+        }
+        assertThat(runner.committed).as("nothing written").isZero();
+        assertThat(provider.voidCalls).as("nothing sent").isZero();
+        assertThat(attempts.single().status()).isEqualTo(PaymentAttemptStatus.AUTHORIZED);
+        assertThat(auditTrail).isEmpty();
     }
 
     @Test
@@ -809,6 +828,13 @@ class PaymentVoidTest {
         @Override
         public void appendForDisputeResponse(
                 Connection uow, DisputeResponseId response, EvidenceKind kind,
+                byte[] payload, Instant recordedAt) {
+            payloads.add(payload.clone());
+        }
+
+        @Override
+        public void appendForUnmatched(
+                Connection uow, java.util.UUID unmatchedConfirmation, EvidenceKind kind,
                 byte[] payload, Instant recordedAt) {
             payloads.add(payload.clone());
         }

@@ -302,6 +302,17 @@ settlement clearing.
 **Not:** a customer account. Mixing the two is how a shortfall becomes invisible. See §2.
 **Owned by:** `ledger`
 
+### Settlement Account
+**Is:** the platform's own account at its settlement bank, where counterparties' remittances
+arrive and payouts leave — mirrored per currency in the ledger by the operational account
+`CASH_AT_BANK`, which only the bank's own statement posts, and known externally only by the
+bank's opaque account reference (`INV-SET-06`, `INV-RAIL-03`, ADR-0065).
+**Not:** a Wallet (customers' stored value), a customer's Bank Account, or a clearing position — a
+clearing position is what a counterparty owes, the settlement account is cash the platform holds
+(ADR-0042). Nor is it adjusted to fit: `CASH_AT_BANK` mirrors the statements, and a gap or an
+opening mismatch is a break, never an adjustment.
+**Owned by:** `ledger` (the `CASH_AT_BANK` position); the bank's account reference is configuration
+
 ### Balance
 **Is:** a monetary position for a ledger account, derived from its postings.
 **Not:** an independent authority. `INV-BAL-01` and ADR-0009 make every balance either the
@@ -370,16 +381,38 @@ access-control sense; see §2.
 **Owned by:** `payments`
 
 ### Clearing
-**Is:** the exchange of transaction records between institutions to establish what is owed.
-**Not:** Settlement. Clearing agrees the obligation; settlement discharges it.
-**Owned by:** `settlement`
+**Is:** the exchange of transaction records between institutions to establish what is owed. The
+platform keeps its evidence — the card network's clearing notice for one capture (its acquirer
+reference and network transaction identifiers, no amount) and a push confirmation's settlement
+cycle — and, apart from it, each counterparty's *clearing position*: the ledger account holding
+what that counterparty owes, or is owed, while value is in flight (`INV-RAIL-04`).
+**Not:** Settlement. Clearing agrees the obligation and moves nothing; settlement discharges it,
+from the counterparty's report and then the bank's statement (ADR-0065). And not the platform's
+*clearing record* as a settlement source: `payments` records it once, with no ledger effect
+(`P7-TSK-005`), and in Phase 8 it feeds matching as a key — the acquirer reference an alias of its
+capture — never as evidence of payment. A second, different clearing of one capture is its own
+outcome, `SECOND_PRESENTMENT`, loud and counted unmappable, the first record standing and its
+references kept only in the retained provider evidence — there is no clearing-notice table and no
+cleared amount; Phase 8 records the cleared amount at its first evidence hop, as the PSP report's
+line, not in a new `payments` table (ADR-0059 §5, ADR-0065). *(Owner corrected by the Phase 7 → 8
+transition: this said `settlement`, which owns the counterparties' reports and the bank's
+statements, never the clearing exchange's evidence or the positions. The record's owner was named
+by the Phase 7 review; the second presentment is the transition gate's repair, recorded here by
+its consistency review.)*
+**Owned by:** `payments` (the clearing evidence); `ledger` (the clearing positions)
 
 ### Settlement
-**Is:** the actual movement of funds that discharges an obligation.
+**Is:** the actual movement of funds that discharges an obligation. The platform recognises it
+from external evidence in two hops on the counterparty's own clearing position: *reported* when
+the counterparty's accepted batch recognises its fees, allocates its lines to our settlement
+expectations and opens the Remittance; *final* when the bank's statement moves the cash against
+that position (ADR-0065).
 **Not:** Capture, Clearing, or Reconciliation. `INV-SET-01` keeps internal completion and
-settlement as separate states; `INV-SET-03` requires late settlement to be processed rather than
-discarded.
-**Owned by:** `settlement`
+settlement as separate states — at the last hop too, because a counterparty's report of payment
+is not cash (`INV-SET-06`). `INV-SET-03` requires late settlement to be processed rather than
+discarded. Reconciliation compares the evidence with our expectations; it does not recognise it
+(ADR-0064). *(Extended by the Phase 7 → 8 transition, ADR-0064 and ADR-0065.)*
+**Owned by:** `settlement` (the recognition); `reconciliation` (the allocation)
 
 ### Refund
 **Is:** a new, forward movement returning value to the payer, referencing the original payment.
@@ -416,8 +449,10 @@ acts on what the rail declared.
 versioned routing policy over stored inputs — the instrument, the currency and amount, the
 capabilities each candidate declared, and each rail's recorded availability — with every
 rejected candidate and its reason (ADR-0060, `INV-RAIL-02`, `INV-HIST-04`).
-**Not:** a retry policy, and not load balancing: a decision advances to another rail only on
-knowledge that nothing was sent, never after an ambiguous dispatch.
+**Not:** a retry policy, and not load balancing. Phase 7 has no cross-rail fallback after
+dispatch: a candidate is rejected inside the decision before anything is sent, and a dispatch
+answered "nothing sent" fails the payment. Were an advance ever built, it would move only on
+knowledge that nothing was sent, never after an ambiguous dispatch (ADR-0060 §5).
 **Owned by:** `payments`
 
 ### A2A Payment
@@ -447,6 +482,42 @@ accepts it (ADR-0062).
 merchant its payable. The three share the outbound disciplines and have different subjects and
 bounds.
 **Owned by:** `payments`
+
+### Interaction Model
+**Is:** how a rail conducts a payment, declared by the rail and frozen on the attempt at birth:
+`TWO_STEP` (authorize, then capture - the card), `PUSH` (one credit transfer the payer's side
+executes - the instant scheme) or `BOOK` (one movement on the platform's own ledger - the
+wallet). It owns the attempt's machine: which states a payment on that rail can occupy and which
+edges it can take (ADR-0059 §2, `INV-RAIL-01`).
+**Not:** a Payment Rail, which declares one, and not a status: `EXECUTED` on a push attempt and
+`CAPTURED` on a card attempt are different machines' completions, and a completion is read
+together with its model.
+**Owned by:** `payments`
+
+### Void
+**Is:** the release of a card authorization that was never captured - the promise withdrawn,
+by the customer, an operator with a reason, or the platform when a capture is declined - on a
+rail whose declaration lists it (ADR-0059 §3, `INV-REV-03`). No money moved, so nothing posts.
+**Not:** a Refund, which returns captured money as a new movement, and not a Reversal of an
+irrevocable payment, which the domain refuses before anything is written or sent.
+**Owned by:** `payments`
+
+### Return Payment
+**Is:** a refund executed on a push rail as a NEW credit transfer back to the payer, citing the
+original's scheme reference - the declared `refundMode` of a rail that cannot reverse
+(ADR-0059 §3, `P7-TSK-010`).
+**Not:** a reversal or a recall of the original, which stays final (`INV-REV-03`), and not a
+separate aggregate: it is a Refund row, bounded and resolved exactly as every refund is.
+**Owned by:** `payments`
+
+### Dispute Response
+**Is:** the platform's answer to a chargeback - a representment carrying evidence, or an
+acceptance - dispatched once through the card PSP under our own minted reference, one live
+answer per dispute (ADR-0061 §7, `P7-TSK-014`).
+**Not:** a stage of the Dispute: the PSP taking the answer moves no stage and no money; the
+network's verdict still arrives by notification and stays the network's word.
+**Owned by:** `payments`
+
 
 ### Transaction
 **Is:** the bookkeeping envelope grouping the journal entries produced by one economic event.
@@ -492,7 +563,14 @@ it (`INV-MER-03`).
 
 ### Merchant Payable
 **Is:** what the platform owes a merchant — the merchant's payable **ledger account
-position**: captured − fees − refunds − payouts (`INV-MER-02`).
+position**: captured − fees − refunds + fees returned − payouts − chargebacks + chargebacks
+reversed + payouts returned ± reconciliation attributions (`INV-MER-02`; the last two terms are
+Phase 8's, ADR-0073: payouts returned built by `P8-TSK-019`, and reconciliation attributions —
+every payable line of a reconciliation resolution's adjustment entry, whatever it faces — by
+`P8-TSK-015`). *(Amended by the Phase 7 → 8 transition: this read "captured − fees − refunds −
+payouts", which had lacked the fee-return term since the Phase 6 review amended `INV-MER-02`, and
+the chargeback terms since `P7-TSK-013`. The Phase 8 terms' owners and the attribution rule were
+settled by the transition's consistency review, A12 and A13.)*
 **Not:** a stored balance field. It exists nowhere except as postings.
 **Owned by:** `ledger` (the position); `merchant` (the account's purpose)
 
@@ -500,7 +578,10 @@ position**: captured − fees − refunds − payouts (`INV-MER-02`).
 **Is:** a distinct money movement paying the merchant's net payable outward, with its own
 lifecycle, hold, idempotency and provider ambiguity handling (ADR-0051).
 **Not:** settlement of the customer's payment, and not automatic — initiated, bounded by
-the payable, and final only at Phase 8's settlement.
+the payable, and final only at Phase 8's settlement: the payout provider's report, then the
+platform's bank debit (ADR-0065). `COMPLETED` means instructed. A beneficiary bank's return is a
+new operation, the payout return, and the payout stays `COMPLETED` (ADR-0073). *(Extended by the
+Phase 7 → 8 transition.)*
 **Owned by:** `merchant`
 
 ---
@@ -641,7 +722,7 @@ requires it to be posted as revenue explicitly rather than concealed inside the 
 
 ---
 
-## 9. Ledger and reconciliation
+## 9. Ledger, settlement and reconciliation
 
 ### Journal Entry
 **Is:** a balanced set of journal lines recording one financial event, immutable once committed.
@@ -662,24 +743,93 @@ unit that commits.
 **Owned by:** `ledger`
 
 ### Suspense Account
-**Is:** a ledger account holding value whose final destination is not yet determined.
+**Is:** a ledger account holding value whose final destination is not yet determined —
+`SUSPENSE_UNMATCHED`, where reconciliation parks value nothing explains, a Phase 7 unmatched
+confirmation included. Each unit in it is a tracked suspense item owned by exactly one break,
+entering only in the transaction that records that break (`INV-REC-09`, ADR-0070).
 **Not:** a permanent home. `INV-REC-05` requires suspense to be aged, reported and alerted on —
-ageing suspense is an unrecognised loss or liability.
-**Owned by:** `ledger`
+ageing suspense is an unrecognised loss or liability. Value leaves it only by evidence (an unpark
+or an offset), by an approved four-eyes resolution of a kind its break's type admits — a
+recognised gain only after the pinned minimum age, and never for value owed to a merchant or a
+customer, nor for a currency break (ADR-0069's per-type table) — or by repudiating the batch that
+parked it. Nor is it a tolerance: a difference too small to chase is still a break, never absorbed
+(`INV-REC-08`). *(Extended by the Phase 7 → 8 transition, ADR-0070; which resolutions may leave
+it was settled by its consistency review, A1: ADR-0069's per-type table is the one authority.)*
+**Owned by:** `ledger` (the account and its lines); `reconciliation` (the suspense items)
 
 ### Reconciliation Batch
-**Is:** one run comparing a set of internal records against one external source, with its own
-metadata and matching rule version.
-**Not:** a Settlement Batch (which is the external file or cycle being compared against), and not
-Settlement itself.
+**Is:** one run of the matcher over one accepted settlement batch — created in that batch's
+acceptance transaction, pinning its rule set, business date and acceptance sequence, and completed
+only when every item it holds is disposed of — or a `REPROCESS` run over residual items under a
+newer rule set (ADR-0068).
+**Not:** a Settlement Batch (which is the counterparty's unit of evidence the run compares against
+our settlement expectations), and not Settlement itself. A blocked run is never skipped: it holds
+its source, visibly, until a person requeues it. *(Made concrete by the Phase 7 → 8 transition,
+ADR-0068: this read "one run comparing a set of internal records against one external source".)*
 **Owned by:** `reconciliation`
 
 ### Reconciliation Break
-**Is:** a classified discrepancy between internal and external records — missing on either side, or
-differing in amount, currency, fee or timing.
-**Not:** an error to be cleared. A break has a lifecycle, its evidence is preserved on both sides
-(`INV-REC-01`), and it is resolved by a compensating posting with a reason code — never by editing
-either record (`INV-REC-03`).
+**Is:** a classified discrepancy between internal and external records — missing on either side,
+differing in amount, currency, fee, timing or direction, or duplicated — of one of fourteen closed
+types, with a subject, a value at issue fixed when it is raised, and a severity set by its type,
+its age and a pinned value threshold (ADR-0069). One break is open per type and subject; a
+recurrence after resolution is a new break.
+**Not:** an error to be cleared. A break has a lifecycle and is never deleted, its evidence is
+preserved on both sides (`INV-REC-01`), and it closes only by a new record — never by editing
+either side (`INV-REC-03`): by evidence, when a later allocation or offset leaves nothing at issue
+(`EVIDENCED`, the only resolution no person decides, `INV-REC-02`), or by a person's
+template-bound, reason-coded resolution of a kind its type admits — four-eyes whenever value is at
+issue or it posts — whose compensating entry goes through the ledger's adjustment machinery
+(ADR-0071). *(Extended by the Phase 7 → 8 transition, ADR-0069 and ADR-0071.)*
+**Owned by:** `reconciliation`
+
+### Settlement Batch
+**Is:** a counterparty's settlement unit as it delivered it — a PSP's day, an instant scheme's
+cycle, a payout provider's day, or one bank statement per currency — carried by exactly one
+settlement file, single-currency, and identified among live batches by source, external batch
+reference and currency. It is recognised at most once, and its acceptance posts only what the
+platform had not already recorded: the counterparty's fees, or the bank's cash (`INV-SET-04`,
+ADR-0065).
+**Not:** a Reconciliation Batch, which is the platform's run over it, and not Settlement itself:
+a counterparty's batch reports what it settled and what it will remit, and the value stays in
+that counterparty's clearing position until the bank's statement moves the cash
+(`INV-SET-06`).
+**Owned by:** `settlement`
+
+### Remittance
+**Is:** the net funds movement a counterparty's accepted batch implies — what it reported in,
+less what it reported out, less its fees (N = T_in − T_out − F, positive when the counterparty
+pays the platform) — opened as one `REMITTANCE` settlement expectation on that counterparty's own
+clearing position, which only the bank's statement discharges (ADR-0065).
+**Not:** cash, and not Settlement: until the bank's statement shows the funds, a remittance is a
+counterparty's promise, and the platform's cash does not move on it (`INV-SET-06`). Nor an
+instruction: the platform originates no settlement movement; it expects one.
+**Owned by:** `reconciliation` (the `REMITTANCE` expectation); the remittance reference is
+`settlement`'s evidence
+
+### Settlement Expectation
+**Is:** the platform's record that one completed operation's clearing posting should be settled
+by its counterparty — the immutable facts of that journal line (kind, operation reference,
+account, direction, amount, entry) copied and opened in the same transaction that posted it,
+dated by the pinned rule set's lag, and aged until external evidence is allocated to it
+(`INV-SET-02`, ADR-0067). A counterparty batch's net opens one too: its Remittance.
+**Not:** Settlement — the expectation says value *should* settle; settlement is the evidence that
+it did — and not a balance: its amount is a copy of a posted line, and the ledger stays the only
+balance authority (`INV-BAL-01`). An overdue expectation is not a lost one: it can still settle,
+and meanwhile ageing raises a break and leaves its value in the position.
+**Owned by:** `reconciliation`
+
+### Match Decision
+**Is:** one evaluation of one external item by the matcher — its pinned rule set, the rule and
+key that fired, the outcome, its rank among claimants, the timing and fee comparisons it applied,
+and a stored snapshot of every candidate expectation it saw — together with the allocations it
+produced: append-only amounts from that item to those expectations, never more than either side
+holds (`INV-REC-04`, `INV-REC-07`, ADR-0068).
+**Not:** an opinion to be re-derived: replay re-runs the decision over its own stored snapshot
+and must reproduce it, so "why were these two records matched?" is answered from the decision's
+rows, never from today's state (`INV-HIST-04`). And not a Resolution: a `MANUAL_MATCH` resolution
+may cause one, but the decision only allocates, and it is never edited — a batch repudiation adds
+counter-allocations beside it.
 **Owned by:** `reconciliation`
 
 ---
@@ -734,9 +884,10 @@ majority spelling.
    module's `Owns:` line, the glossary must agree — it is the authority on ownership (ADR-0012).
    Added during review, which found `Risk Score` attributed to `risk` while the register says
    `credit`.
-7. **Every `INV-*` the glossary cites exists.** Twenty-five distinct invariants, cited twenty-nine
-   times (counted at the Phase 6 review, `P6-DOC-001`; this said "twenty-three citations"), none
-   of which any other check would notice going stale.
+7. **Every `INV-*` the glossary cites exists.** Thirty-eight distinct invariants, cited
+   fifty-four times (recounted at the Phase 7 → 8 transition; this said twenty-five and
+   twenty-nine, counted at the Phase 6 review, `P6-DOC-001`, and Phase 7's entries had already
+   made it stale), none of which any other check would notice going stale.
 8. Every distinction group has a §2 heading repeating the group exactly, so a group added to
    `CLAUDE.md` fails the build until it is contrasted.
 9. All of the above are actually parsed, so a reformatted document fails loudly rather than

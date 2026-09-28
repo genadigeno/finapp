@@ -423,6 +423,266 @@ name — the things Phase 7's review will be judged on:*
 - Suspense balances are aged, reported and alertable.
 - Matching job crash mid-batch resumes without duplicate or lost matches.
 
+*Extended by the Phase 7 → 8 transition (2026-09-28): the seven criteria above predate
+ADR-0064…0073 and said nothing measurable about how evidence enters and is authenticated, how it is
+normalised, how a clearing position is discharged and cash recognised, the expectation every
+settling completion opens, who owns suspense, late settlement, replay or the ten-instance question
+— the things Phase 8's review will be judged on. Each of the seven is made measurable by one
+criterion below and stays in force beside it: the first by Break types, the second by Duplicates,
+the third by Break immutability, the fourth by Deterministic matching, the fifth by Controlled
+resolution, the sixth by Suspense and adjustment, the seventh by Crash recovery. A criterion that
+rests on a deferral candidate — `P8-TSK-021`, `-019`, `-023`, cut in that order if the phase must
+shrink (O6; like each of O1–O7, a transition decision the owner may revisit) — is met by the task,
+or by the deferral recorded with an owner. Before they were adopted, the same transition's
+consistency review aligned the criteria with the ADRs and with what the Phase 7 gate repaired
+before this phase opens: Controlled resolution and Suspense and adjustment (ADR-0069's per-type table the
+one authority on which kinds a break type admits, the gain's exclusions among them, A1; Phase 7's
+parkings keyed on what they now record), Settlement recognition (the operation-anchored
+payout-return rule, A4; the return's order and item lock, A6; a statement cause closing only
+`EVIDENCED`, A3; a return that cannot apply), Break types (the scheme execution claim and the
+second presentment), Expectations (the Phase 7 parkings' suspense lines known only once adopted,
+A7), Late settlement (the recovery's resolutions, A2), Replay and reprocessing (repudiation "if not
+deferred", C12; the reopened items and the released suspense item, A9 and A10 — the reopening
+confined to another batch's bank item, the batch's own items leaving by `→ REPUDIATED`, by the
+transition's re-check, R2; readmission, A11),
+Multi-instance and concurrency (the pre-lock of shared ledger rows) and Security (the provider
+transport guard extended to the pull sources):*
+
+- **Ingestion.** All four sources — `simulated-psp.settlement`, `simulated-scheme.cycle-report`,
+  `simulated-payout.settlement` and `simulated-bank.statement` — ingest by operator upload with a
+  second person's attestation, and by pull over the source's own confined credential where the
+  source declares it. Stored bytes equal received bytes by SHA-256, verified on every read; every
+  chunk is AES-256-GCM with its AAD bound to file, source, checksum and position, so a tampered or
+  swapped chunk is refused with nothing served (`INV-REC-10`, `INV-HIST-02`). A PAN or IBAN shape
+  in a free-text field — or in a field whose value fails its declared class, which is screened as
+  free text — stores only a `settlement.refused_delivery` metadata row (a planted test), a
+  Luhn-valid 15-digit network transaction id in its reference field is not refused, and every
+  refusal is audited and alertable (`finapp.settlement.delivery.refused`); a file above 8 MiB or
+  50,000 lines is refused at the door with nothing stored. An unattested upload is never accepted,
+  and self-attestation is refused at the domain and the `CHECK` (`INV-SET-07`).
+- **Duplicates.** The same file delivered ten ways — sequentially, by upload and by racing pulls —
+  is exactly one file, one batch, one run and one recognition entry, with ten `file_receipt` rows
+  (nine `DUPLICATE`) and no extra decision or park (`INV-SET-04`); a different file declaring an
+  accepted batch or statement sequence is `REJECTED(CONFLICTING_BATCH)`, retained and alerted,
+  never applied; each line repeated within one file or across files raises exactly one
+  `DUPLICATE_EXTERNAL`, the first matched and the repeat parked. Every arbiter is a domain unique,
+  independent of `platform.idempotency_record` retention (`INV-IDEM-02`).
+- **Normalization.** Every format version — `SIM_PSP_CSV`, `SIM_SCHEME_JSON`, `SIM_PAYOUT_CSV` and
+  `SIM_STATEMENT_TAGGED`, each v1 — has a golden file and a fault test per field; a malformed line,
+  a trailer mismatch, an unknown currency or a scale mismatch rejects the whole file with at most
+  100 content-free `ingestion_error` rows, and no line of it drives matching or posting
+  (`INV-SET-07`). Provider vocabulary appears nowhere outside its adapter under
+  `com.finapp.settlement.format.<format>` — `SettlementVocabularyIsConfinedTest` green with a
+  planted violation refused (`INV-PAY-03`'s discipline); an unknown well-formed line type becomes
+  `OTHER_IN` or `OTHER_OUT` and so an item, never dropped; `format_id` and `format_version` are
+  recorded on every file and batch, and the re-parse verification reproduces a stored file's
+  fingerprints under its recorded version.
+- **Deterministic matching.** Every `match_decision` stores `rule_set_id NOT NULL`, the rule's
+  priority, the matched key kind, the applied timing and fee tolerances, and one `match_candidate`
+  row per candidate it saw (a schema scan); every allocation passes through `allocate(E)` in
+  claimant order `(source_sequence, line_no)`, and the shuffled-order property test yields
+  identical allocations. Decision replay is `IDENTICAL` over every storm and battery run, an item
+  awaiting its rematch reported as `PENDING_REMATCH` and never as divergence; the
+  replay-perturbation probe is caught as `DIVERGED` with a CRITICAL `PROCESSING_ERROR` break;
+  activating a new rule-set version leaves every earlier decision replaying `IDENTICAL` and no
+  position changed (`INV-REC-04`, `INV-REC-07`, `INV-HIST-04`). A fee exactly at its tolerance
+  raises nothing and one minor unit beyond raises `FEE_MISMATCH`; a one-minor-unit principal
+  difference raises a break in both directions, and a tolerance on an amount is unstorable
+  (`INV-REC-08`).
+- **Break types.** Each of the fourteen types `RECONCILIATION_MODEL.md` §8 catalogues —
+  `MISSING_EXTERNAL`, `MISSING_INTERNAL`, `UNKNOWN_EXTERNAL`, `AMOUNT_MISMATCH`,
+  `CURRENCY_MISMATCH`, `FEE_MISMATCH`, `DUPLICATE_EXTERNAL`, `DUPLICATE_INTERNAL`,
+  `AMBIGUOUS_MATCH`, `TIMING_DIFFERENCE`, `REVERSAL_MISMATCH`, `REFUND_MISMATCH`,
+  `SETTLEMENT_MISMATCH` and `PROCESSING_ERROR` — is raised by its detector in a counted test, its
+  severity deterministic: the base by type and direction, one level per ageing band crossed, one
+  more at the pinned `high_value_minor` (1,000.00 per currency in rule set v1, O7; ADR-0069). Every
+  unallocated remainder either waits in a counted grace (`UNMATCHED` until `grace_until`, judged on
+  the database clock) or parks with its break in its own transaction; no run completes with an
+  item `PENDING`; one break is open per (type, subject), a recurrence a new break naming
+  `follows_break_id`; a reference collision is a `DUPLICATE_INTERNAL`, never a failed payment. An
+  instant scheme line is typed through Phase 7's `payments.scheme_execution_claim` (payments
+  `V023`): its reference's one claim names the one internal explanation. A scheme reference no
+  claim holds names no completed execution: after grace it types `MISSING_INTERNAL` when its other
+  references name an operation still in flight, and `UNKNOWN_EXTERNAL` otherwise. A second,
+  different network clearing of one capture — Phase 7's `SECOND_PRESENTMENT`, kept only in the
+  retained evidence — reaches the matcher as the PSP report's own line and parks with its break,
+  `DUPLICATE_EXTERNAL`, an `AMOUNT_MISMATCH` excess or `UNKNOWN_EXTERNAL`, never absorbed
+  (ADR-0065; `INV-REC-02`).
+- **Break immutability.** `finapp_app` holds no `DELETE` grant on any table of either schema and no
+  `UPDATE` on decisions, candidates, allocations, notes, evidence links, releases or parks —
+  privilege tests for every writer, and a refusing trigger on `break` (`INV-REC-01`); a break's
+  status, type, severity, assignee and `residual_version` move only along trigger-checked edges,
+  severity only upward. Resolution is always a new `resolution` row plus, for a posting kind, a
+  compensating `ADJUSTMENT` entry through the ledger; an allocation is undone only by a
+  repudiation's append-only counter-allocation (`INV-REC-07`).
+- **Investigation.** Assignment, notes, evidence links and reclassification are append-only and
+  audited, a note's body never in a log, event or audit record; reclassification happens only in
+  `OPEN` and `INVESTIGATING`, with a reason; a note holding a Luhn-valid 13–19-digit run or an IBAN
+  shape is refused (`INV-PAY-02`). Every break's `/trace` reaches the raw file, the settlement line,
+  the decision and its candidates, the journal entry and `payments.provider_evidence` by
+  identifiers alone, with no timestamp join, and raw content is read only through the reasoned,
+  audited content read (`INV-REC-01`).
+- **Controlled resolution.** Four-eyes whenever value is at issue or the resolution posts —
+  self-approval refused at the domain, at `resolution`'s `CHECK` and at ledger `V010` beneath; only
+  a zero-value, zero-posting `ACKNOWLEDGE` is single-person, and only the platform resolves
+  `EVIDENCED`. A break admits only the kinds its type's row in ADR-0069's per-type table lists,
+  every other kind refused (`reconciliation.ResolutionKindNotAllowed`). Reason codes are closed at
+  both ranks — `ResolutionReasonCode`'s subset per kind, and ledger `V015`'s `reason_code` with an
+  uncoded new proposal refused by trigger (`INV-REV-04`); an approval after an allocation, park,
+  release or reclassification moved the subject is refused `409 reconciliation.ResolutionStale`,
+  the resolution left `PROPOSED`; approval or `DELETE` of a `RECONCILIATION`-origin proposal
+  through `/v1/ledger/adjustments` is refused `409 ledger.AdjustmentOriginMismatch`; a free
+  adjustment on a reconciled position is refused at the domain and the database (`422
+  ledger.AdjustmentOnReconciledPosition`). Every posting kind's lines are proven derived from the
+  subject's current remainder, and ten racing approvals produce one entry (`INV-REC-03`,
+  `INV-AUD-04`).
+- **Suspense and adjustment.** Suspense is aged (`finapp.reconciliation.suspense.age`, NaN never
+  zero), reported (`/reports/reconciliation/suspense`, audited, CREDIT and DEBIT items gross, never
+  netted) and alertable. Value enters `SUSPENSE_UNMATCHED` only in the transaction that records its
+  owning break and leaves only by evidence, an approved resolution or a repudiation (`INV-REC-09`);
+  the suspense proof and `finapp.reconciliation.suspense.unowned` read 0 at rest. Phase 7's
+  unmatched confirmations are adopted exactly once under a ten-way backfill, each with its CREDIT
+  suspense item and `UNKNOWN_EXTERNAL` break (`PARKED_ON_RECEIPT`), keyed on the parking's stored
+  `cause`, `named_reference` and, exactly when attributed, `attempt_id` (payments `V023`) — an
+  attributed parking (`ATTEMPT_CONCLUDED`, `AMOUNT_MISMATCH`) resolved by a four-eyes
+  `TRANSFER_TO_ACCOUNT` crediting the named attempt's counterparty, never by a guess — and
+  `finapp.payments.unmatched.active` and `.age` are described as "parked, ever". `RECOGNISE_GAIN`
+  is refused before `gain_min_age_days` (90 in rule set v1, O5) and on every break type
+  ADR-0069's per-type table excludes it from — `REVERSAL_MISMATCH`, `REFUND_MISMATCH`,
+  `CURRENCY_MISMATCH` — and `RECONCILIATION_LOSSES` and `RECONCILIATION_GAINS` are posted only by
+  approved resolutions (`INV-REC-05`).
+- **Settlement recognition.** Each clearing position is discharged only by its own source, whose
+  position is read from the counterparty's own declaration, and `EverySettlingPositionHasASource`
+  fails on a planted uncovered rail (`INV-SET-05`). A report's recognition posts only the
+  counterparty's fees (DR `PROCESSING_COSTS`) and opens one `REMITTANCE` expectation on the same
+  position — dated from the batch's stored `accepted_on`, last in its transaction, at most 16 lines;
+  a bank line matching no declared remittance pattern, or two, parks at recognition with an
+  `UNKNOWN_EXTERNAL` break (`BANK_LINE_UNATTRIBUTED`). `CASH_AT_BANK` is posted only by recognising
+  an accepted bank statement or repudiating one — a static rule with a planted violation — and,
+  whenever the chain of statements is unbroken, equals the latest statement's closing balance; the
+  simulated bank opens at zero (O4), and a gap or a non-zero opening raises `SETTLEMENT_MISMATCH`
+  with nothing posted to fit, closed only `EVIDENCED` (`INV-SET-06`). A returned payout is applied
+  once by the return worker — the posting first, then the append-only `payout_return` row naming
+  its entry, its money bound to the payout's by a composite foreign key — the payout staying
+  `COMPLETED`. Its `PAYOUT_RETURNED` line is never key-matched against the OUTBOUND payout's
+  expectation: rule set v1 declares that rule operation-anchored, so the line waits `UNMATCHED`,
+  no break raised by the matcher, until the worker reaches the payout through its stored provider
+  reference and allocates it to the return's own expectation by `UNIQUE (kind, operation_ref)`;
+  the worker raced against the grace leg on one item converges both ways (the item re-read under a
+  share lock); and a return that cannot apply — a closed merchant's payable among the causes —
+  parks as `REVERSAL_MISMATCH` (`RETURN_NOT_APPLICABLE`) for a four-eyes `TRANSFER_TO_ACCOUNT` to
+  an account that can take it (O2). The chain completion → reported → cash — `/settlement-status`
+  answering `PENDING`, `REPORTED`, `CASH_CONFIRMED` — is demonstrated for card, instant and payout
+  (`INV-SET-01`).
+- **Expectations.** Every externally settling completion's posting key (`PHASE_8_PLAN.md` §12.2)
+  opens exactly one expectation in its own completing transaction, its amount equal to its clearing
+  journal line (the expectation-opener register), and a book-rail completion opens none
+  (`SettlementModel.NONE`); a forced failure inside the port rolls the completion back and its
+  redelivery completes both, and the Phase 7 storm and dispute battery stay green (ADR-0067). After
+  the opening-position backfill, `finapp.reconciliation.position.proof` and
+  `finapp.reconciliation.line.unattributed` read 0 at rest on the clearing purposes, and
+  `line.unattributed` under `SUSPENSE_UNMATCHED` reads 0 once `P8-TSK-020` has adopted Phase 7's
+  parkings — a line is known when an expectation names its `(journal_entry_id,
+  ledger_account_id)`, a suspense item owns it, or its entry is a batch's recognition, a park's, a
+  resolution's, a repudiation's or a payout return's (ADR-0067 §9) — and a planted missing
+  expectation and a raw-SQL clearing line each flip them (`INV-REC-06`, `INV-SET-02`); an overdue
+  expectation raises exactly one `MISSING_EXTERNAL` under ten ageing sweepers and alerts
+  (`finapp.reconciliation.expectation.overdue`), NaN never zero.
+- **Late settlement.** Nothing is refused as stale (`INV-SET-03`): a late line allocates like any
+  other and resolves its overdue break `EVIDENCED` with the timing recorded; a late internal record
+  — a capture the sweeper resolves after the PSP settled it, a chargeback posted after its report
+  line — is found by the rematch leg, unparked, and resolves its break `EVIDENCED`; a late
+  earlier-dated file is accepted in arrival order; a line arriving after its expectation was written
+  off parks as a recovery (`DUPLICATE_EXTERNAL`) for a four-eyes resolution — `RECOGNISE_GAIN` once
+  past the minimum age, or `TRANSFER_TO_ACCOUNT`.
+- **Replay and reprocessing.** Re-acceptance on a later clock day converges on every key —
+  `settlement-batch:`, `recon-suspense:`, `merchant-payout-return:` — because every Phase 8 posting
+  is dated from stored rows (`INV-SET-04`); a `REPROCESS` run touches residual items only
+  (`UNMATCHED`, `PARKED`), its decisions new rows and never edits; readmission and requeue are
+  reasoned and audited under `RECONCILIATION_ADMINISTER`, a readmitted file inheriting its
+  original's pull or attestation and an unattested original's readmission accepted only once a
+  person distinct from the readmitter and from the original's uploader attests it (`INV-SET-07`); a batch repudiation, if not deferred, restores
+  cash, remittances and suspense exactly, by `ReversalService` on the recognition entry and
+  append-only counter-allocations (`INV-REV-01`): the repudiated batch's own items leave `MATCHED`
+  by `→ REPUDIATED`; a bank item of another batch whose allocation named the repudiated batch's
+  remittance expectation reopens `MATCHED → UNMATCHED`, that allocation counter-allocated in the
+  same transaction, to wait for the genuine one; a `BANK_UNATTRIBUTED` item a posting resolution
+  had already released is answered by a new opposite-side item with its `PROCESSING_ERROR` break
+  (`INV-REC-09`); and a payout return applied from it stands, its reopened expectation ageing into
+  `MISSING_EXTERNAL`. The genuine file — readmitted if it was rejected `CONFLICTING_BATCH` beside
+  the repudiated batch — is then accepted normally.
+- **Crash recovery.** A crash mid-parse, between parse and accept, mid-acceptance after the posting
+  call, mid-chunk with the connection killed, and between acceptance and the first chunk each
+  resumes on another instance with no duplicate or lost decision, allocation, park, entry or event,
+  counted in the tables. Our own parser failure leaves the file `RECEIVED`, backed off and visible,
+  never `REJECTED`; a poisoned item is `ERRORED` and parked with a `PROCESSING_ERROR` break while
+  its run completes; a poisoned run is `BLOCKED` with a CRITICAL break, holds its source visibly and
+  resumes only on a reasoned requeue.
+- **Multi-instance and concurrency.** Every contention in `PHASE_8_PLAN.md` §7 names its PostgreSQL
+  arbiter and has a counted ten-way race, and the allocation and parking lock-bypass variants — the
+  try-lock removed — are caught by the uniques and deferred Σ triggers alone: at most one positive
+  allocation per (item, expectation), no over-allocation. Advisory namespace `4` is registered in
+  `DISTRIBUTED_EXECUTION.md` §3 and pinned by `ReconciliationMigrationTest`; it orders allocation
+  and arbitrates nothing. The lock order is `DISTRIBUTED_EXECUTION.md` §3's row, and every
+  transaction posting several entries over shared hot rows — a resolution's `ADJUSTMENT` beside its
+  unpark, a repudiation's reversal beside its unparks — pre-locks their union in the balance
+  projection's order before its first posting (`PostingService.lockBalancesInOrder`, the rule the
+  Phase 7 → 8 gate wrote for dispute postings), raced on shared rows with no deadlock. The five
+  schedules — `SettlementIntakeSchedule`, `ReconciliationSchedule`,
+  `ReconciliationSweepSchedule`, `PayoutReturnSchedule` and `SettlementPullSchedule` — are
+  registered with their arguments in
+  `NoSingleInstanceAssumptionRulesTest.LEASE_PROTECTED_SCHEDULERS` and the scheduler register, and
+  every window is judged in SQL on the database clock. The ten-instance answer is `PASS`, resting on
+  those tests and never claimed by construction.
+- **Atomicity and consistency.** Each local transaction — receiving a file, refusing a delivery,
+  attesting, parsing, accepting with the recognition posting last, opening an expectation inside
+  the completing transaction, allocating a chunk, the rematch and grace legs, ageing, proposing,
+  approving, applying a payout return — is proven all-or-nothing by failure injection; file → run →
+  matched → aged → resolved is an eventually consistent workflow whose every hand-off is a
+  committed row and every leg idempotent and leaderless. The position, suspense, cash and
+  completeness proofs and the trial balance read 0 per currency in every storm round, in one
+  `REPEATABLE READ` snapshot, and again at rest.
+- **Security.** Four permissions — `SETTLEMENT_INGEST`, `RECONCILIATION_INVESTIGATE`,
+  `RECONCILIATION_RESOLVE`, `RECONCILIATION_ADMINISTER` — and two pairwise-disjoint roles,
+  `RECONCILIATION_OPERATOR` and `RECONCILIATION_CONTROLLER` (O1; `RoleNameTest`'s exact grants),
+  every route with a negative test and a `RoutePermissionRegisterTest` row; self-attestation,
+  self-approval and self-activation refused at every rank. `ConfinedCredentialVariablesTest` pins
+  sixteen confined credentials — the eleven before Phase 8, `FINAPP_SETTLEMENT_FILE_KEY` and the
+  four report keys; twelve if `P8-TSK-021` is deferred — and every pull source URL passes
+  `ProviderTransportGuard` (`https` or `sftp` off loopback, startup refused otherwise).
+  `INV-PAY-02`'s column sweep and `INV-RAIL-03`'s needle extend over both new schemas and a
+  settlement flow and are absent from every new table and captured log; every content read is
+  audited with its reason (`INV-REC-10`).
+- **Audit.** Every privileged and platform act has a catalogued action in `AUDITABLE_ACTIONS.md`,
+  with `requiresReason` wherever a person judges — a content read, a decline, a readmission, a
+  reclassification, a proposal, a rejection, a requeue, a reprocess, a rule set, the backfill.
+  Platform acts — `SettlementFileReceivedByPull`, `SettlementFileRejected`,
+  `SettlementBatchAccepted`, one `ReconciliationRunCompleted` per run, `BreakRaised`,
+  `BreakResolvedByEvidence`, `PayoutReturnApplied` — are audited acting-only, and losers record
+  nothing; change summaries carry identifiers only; every report read writes
+  `reconciliation.ReportRead`, naming the report and period only. The operator actor-type debt
+  (operators audited as `CUSTOMER`, Phase 15's) is assessed at the review; it does not weaken
+  four-eyes, because the resolution rows hold both people.
+- **Observability.** `PHASE_8_PLAN.md` §15's series are published by a freshly started instance
+  (`PlannedMetersExistTest`, armed by the phase's flip to `COMPLETE`), gauges eager, NaN when
+  unreadable and never zero, aggregated with `max()`; the tag keys `source` and `severity` join
+  `MetricNames` with their written arguments; no amount appears in any tag or value — unmatched
+  value, the suspense balance and provider costs are audited operator reports (ADR-0072); every
+  "must be 0" gauge, source silence, overdue expectations, suspense age, break age per severity,
+  refused deliveries and blocked runs alert; dashboards query only published series.
+- **Testing.** The settlement and reconciliation storm (`P8-TST-001`) and the break and resolution
+  battery (`P8-TST-002`) green and probed — in every storm round each seeded fault produces exactly
+  its break type and no other, and the meters' tally equals the tables'; the owner's ten scenarios
+  in `PHASE_8_PLAN.md` §13 each a counted test; each of §14's forty-four failure scenarios a test
+  or a documented, accepted rationale; the full battery green fleet-wide at the exit review,
+  counted from fresh results.
+- **Documentation.** Every `Phase: 8` invariant in `FINANCIAL_INVARIANTS.md` — **read from the
+  catalogue, not from the phase plan** — has a mutation-register row, the nine this transition
+  catalogues (`INV-SET-04`…`-07`, `INV-REC-06`…`-10`) included; ADR-0064…0073 read against the
+  code and accepted or amended; `RECONCILIATION_MODEL.md` and
+  `SETTLEMENT_AND_RECONCILIATION_LIFECYCLES.md` match the build; the `DELIVERY_PLAN.md` Phase 8
+  addendum, the glossary, `DOMAIN_MODEL.md` and `MODULE_ARCHITECTURE.md` §4 and §5 are current.
+
 ### Phase 9 — FX and Cross-Border Payments
 - Trial balance is zero **per currency**, including after conversions.
 - Rounding residual is explicitly posted to a designated account; no value is created or

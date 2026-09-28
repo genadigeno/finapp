@@ -197,6 +197,13 @@ taggedTiers.forEach { (taskName, tierTag) ->
             // Never cached: the point is to exercise real infrastructure, and a cached
             // "up to date" result would mean it had not.
             outputs.upToDateWhen { false }
+            // An explicit heap, not Gradle's 512 MiB test-worker default (the Phase 7 -> 8
+            // transition): one JVM runs the whole tier, Spring caches up to 32 application
+            // contexts (each with its pool, schedulers and Kafka producer), and Phase 7's
+            // suites added contexts of their own. Late in the fleet-wide run ten concurrent
+            // registrations - Argon2id at 19 MiB each - met OutOfMemoryError and answered 500,
+            // three failures no targeted tier could see. DatabaseTierHeapDatabaseTest holds it.
+            maxHeapSize = "2g"
         }
     }
 }

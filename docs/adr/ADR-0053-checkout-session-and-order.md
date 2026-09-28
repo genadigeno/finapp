@@ -1,6 +1,6 @@
 # ADR-0053 — Checkout session and order: two aggregates, expiry gates dispatch, landed money always wins
 
-Status: Accepted (2026-09-24, `P6-DOC-001` — read against the implementation at the phase review; seven passages corrected to it, and the index §3 names built, first)
+Status: Accepted (2026-09-24, `P6-DOC-001` — read against the implementation at the phase review; seven passages corrected to it, and the index §3 names built, first. Amended by the Phase 7 → 8 transition's gate, 2026-09-28: §5's undispatched window closed)
 Date: 2026-09-21
 Phase: 6
 Context: Checkout · Merchant · Payments
@@ -61,7 +61,19 @@ nobody.
      created before the deadline and stranded undispatched by a crash can still be sent
      afterwards, by a retried confirmation or the payment's own confirmation route, and if
      it captures, the half below applies. *(The phase review, `P6-DOC-001`, found this
-     window and the unchecked merchant standing; the second is now refused.)*
+     window and the unchecked merchant standing; the second is now refused.)* *(The Phase 7 →
+     8 transition's gate CLOSED the window: a crash, an unfunded wallet or a rail out of service
+     left an intent undispatched under a `PAYMENT_PENDING` session, and a retried confirmation
+     or the public payment route sent it past the deadline, past the merchant's suspension and
+     past the wallet's step-up - an expired offer paid days later, a suspended merchant
+     credited, and the merchant's close blocked for ever by an intent only the payer could
+     end. Now: a retry at the session's door over an intent still awaiting confirmation asks
+     the fresh open's three questions again (deadline, standing, step-up); the public route
+     refuses a checkout's intent - it is confirmed through its session only - after resolving
+     it as the caller's own; and the expiry sweep cancels an undispatched intent in the
+     session's expiring transaction, taking the intent's row first, conditionally, the order a
+     wallet confirmation takes them. What stays admitted is work that WAS dispatched: the half
+     below.)*
    - **Money that landed is never orphaned by a clock.** If the capture completes after
      the session expired (dispatched before expiry; the provider answered late — scenario
      the plan's failure list owns), the payment's success **still produces the order**:

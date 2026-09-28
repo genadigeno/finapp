@@ -169,6 +169,7 @@ public final class ChargebackAccounting {
         switch (dispute.stage()) {
             case CHARGED_BACK -> {
                 ChargebackSplit split = dispute.split().orElseThrow();
+                counterpartyFirst(unitOfWork, intent);
                 LedgerAccountId recoverable = recoverableAccount(unitOfWork, split.amount());
                 // THE EXTERNAL FACT: the rail's clearing moves by exactly what the network
                 // took, whoever bears it.
@@ -192,6 +193,7 @@ public final class ChargebackAccounting {
             }
             case WON -> {
                 ChargebackSplit split = dispute.split().orElseThrow();
+                counterpartyFirst(unitOfWork, intent);
                 LedgerAccountId recoverable = recoverableAccount(unitOfWork, split.amount());
                 post(unitOfWork, WON_KEY + dispute.id().value(), dispute,
                         List.of(
@@ -478,6 +480,53 @@ public final class ChargebackAccounting {
                 now);
     }
 
+    /**
+     * The counterparty's account, share-locked BEFORE a stage's first posting (`P7-TST-001`'s
+     * find). Every path that holds a counterparty's account {@code FOR UPDATE} — a hold placed or
+     * released for a refund, a withdrawal, a wallet payment — takes that account before any balance
+     * row, and every single-entry posting takes the account's key share at its line insert before
+     * any balance row. A stage whose FIRST entry touches only the rail's clearing and the
+     * recoverable takes those balance rows first and the counterparty after — the one order
+     * nothing else takes: in the multi-rail storm a win's restoration, waiting on the counterparty
+     * a refund of another payment held while that refund waited on the clearing's balance row the
+     * win's first entry held, deadlocked ({@code 40P01}, a 500 at the card door). Taken first, the
+     * counterparty is where the two meet, and one waits for the other before either holds a
+     * balance row. Share, never upgraded: chargebacks on one account still run side by side. The
+     * chargeback's own split already takes it ({@link #postable}); re-taking it in the same
+     * transaction is a no-op that keeps the rule stated where the postings are.
+     */
+    private void counterpartyFirst(Connection unitOfWork, PaymentIntent intent) {
+        ledgerAccounts.lockForShare(unitOfWork, intent.creditAccount());
+    }
+
+    /**
+     * The platform's three dispute rows — the rail's clearing, the recoverable and the costs —
+     * taken in the projection's own order BEFORE any dispute posting (the Phase 7 -&gt; 8
+     * transition). Each entry locks its own rows in that order, but a delivery posting SEVERAL
+     * entries does not: a loss (recoverable, costs) followed by a first-reported fee (costs,
+     * clearing) reached back to the clearing, which sorts first and which every chargeback, win
+     * and capture takes first - one deadlock ({@code 40P01}, a 500 at the card door) the review's
+     * seeded-accounts rule did not cover. Taken here, every dispute delivery meets every other
+     * writer of these rows at the clearing, before either holds anything past it. After
+     * {@link #counterpartyFirst} where a stage takes it: the counterparty's ACCOUNT row before
+     * any balance row stays the rule. Re-taking in the same transaction is a no-op.
+     */
+    private void platformRowsInOrder(Connection unitOfWork, Dispute dispute, Money inCurrency) {
+        PaymentAttempt attempt =
+                attempts.findById(unitOfWork, dispute.attemptId())
+                        .orElseThrow(
+                                () ->
+                                        new IllegalStateException(
+                                                "a dispute's attempt exists: V020's foreign key"
+                                                        + " holds it"));
+        postings.lockBalancesInOrder(
+                unitOfWork,
+                List.of(
+                        clearingAccount(unitOfWork, attempt, inCurrency),
+                        recoverableAccount(unitOfWork, inCurrency),
+                        costsAccount(unitOfWork, inCurrency)));
+    }
+
     /** Whether the counterparty's account takes postings now — share-locked, never upgraded. */
     private boolean postable(Connection unitOfWork, LedgerAccountId account) {
         return ledgerAccounts
@@ -519,6 +568,7 @@ public final class ChargebackAccounting {
 
     private void post(
             Connection unitOfWork, String key, Dispute dispute, List<JournalLine> lines) {
+        platformRowsInOrder(unitOfWork, dispute, lines.get(0).amount());
         LocalDate today = LocalDate.now(clock.withZone(ZoneOffset.UTC));
         // The entry references the DISPUTE: every stage posting is attributable to it (the
         // backlog's audit line), and reconciliation joins dispute to entries by it.

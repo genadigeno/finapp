@@ -66,12 +66,54 @@ public interface PushRail {
      * provider; it is never logged, never stored, and spent on this one call.
      */
     record GrantExchange(EndToEndReference reference, String grant) {
+
+        /** The bound a grant is held to - the destination reference's own ({@code V016}). */
+        public static final int MAX_GRANT_LENGTH = 128;
+
+        private static final java.util.regex.Pattern GRANT_SHAPE =
+                java.util.regex.Pattern.compile("[A-Za-z0-9_.:-]{1," + MAX_GRANT_LENGTH + "}");
+        private static final java.util.regex.Pattern LETTERLESS =
+                java.util.regex.Pattern.compile("[0-9_.:-]+");
+        private static final java.util.regex.Pattern INTERNATIONAL_ACCOUNT_SHAPE =
+                java.util.regex.Pattern.compile("[A-Za-z]{2}[0-9]{2}[A-Za-z0-9]{1,30}");
+
         public GrantExchange {
             Objects.requireNonNull(reference, "reference must not be null");
             Objects.requireNonNull(grant, "grant must not be null");
-            if (grant.isBlank()) {
-                throw new IllegalArgumentException("a grant must not be blank");
+            if (!wellShaped(grant)) {
+                throw new IllegalArgumentException(
+                        "a grant must be 1-" + MAX_GRANT_LENGTH + " characters of"
+                                + " [A-Za-z0-9_.:-], carry a letter, and never take a bank"
+                                + " identifier's shape (INV-RAIL-03)");
             }
+        }
+
+        /**
+         * The grant's shape rule (the Phase 7 -&gt; 8 transition) — the card grant's discipline
+         * at the bank door, which had only a non-blank check while the grant travelled into the
+         * provider's request under the platform's credential. The {@code V016} destination
+         * trio, verbatim: the provider-reference charset (no quote, no backslash, nothing a
+         * request body could be steered by), a letter somewhere (a letterless value is an
+         * account number's shape), and never an international account identifier's shape
+         * ({@code INV-RAIL-03}: bank details are refused at every layer they could reach).
+         * The rule names itself and never the value.
+         */
+        public static boolean wellShaped(String grant) {
+            return grant != null
+                    && GRANT_SHAPE.matcher(grant).matches()
+                    && !LETTERLESS.matcher(grant).matches()
+                    && !(grant.length() <= 34
+                            && INTERNATIONAL_ACCOUNT_SHAPE.matcher(grant).matches());
+        }
+
+        /**
+         * Names our reference and never the grant (`P7-DOC-001`): the generated form printed
+         * it, so "never logged" rested on nobody logging the record - the payout port's rule,
+         * held here too ({@code security.md}).
+         */
+        @Override
+        public String toString() {
+            return "GrantExchange[reference=" + reference + ", grant=<redacted>]";
         }
     }
 
@@ -82,6 +124,17 @@ public interface PushRail {
             Objects.requireNonNull(reference, "reference must not be null");
             Objects.requireNonNull(destination, "destination must not be null");
             Objects.requireNonNull(amount, "amount must not be null");
+        }
+
+        /**
+         * Names our reference only (`P7-DOC-001`): the customer's destination reference and
+         * the amount stay out of any log line the request reaches - the payout request's form
+         * ({@code INV-RAIL-03}'s sinks include logs).
+         */
+        @Override
+        public String toString() {
+            return "CreditTransfer[reference=" + reference
+                    + ", destination=<redacted>, amount=<redacted>]";
         }
     }
 

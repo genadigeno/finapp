@@ -135,8 +135,11 @@ public final class JdbcPaymentParticipants implements PaymentParticipants<Connec
                 // The BANK_ACCOUNT arm of the same bridge (P7-TSK-008): a card resolves to
                 // no push destination, exactly as a bank account resolves to no card token.
                 .flatMap(PaymentMethod::destination)
-                // The second registered re-wrapping across the PCI boundary: off in one
-                // expression, wrapped again before it travels (INV-RAIL-03) - the same
+                // The second registered unwrapping across the PCI boundary: off in one
+                // expression, and from here the destination travels as the opaque
+                // ProviderReference inside records whose toString redacts it
+                // (PushRail.CreditTransfer, Withdrawal - INV-RAIL-03; "wrapped again" was
+                // this comment's claim until the Phase 7 review found it false) - the same
                 // SecretsAreUnwrappedInOnePlaceTest entry, its claim widened to both
                 // references.
                 .map(destination -> new ProviderReference(destination.expose()));

@@ -112,6 +112,7 @@ class ChargebackAccountingDatabaseTest {
     @Autowired private PaymentRefund paymentRefund;
     @Autowired private AccountOpening accountOpening;
     @Autowired private AccountClosing accountClosing;
+    @Autowired private com.finapp.merchant.MerchantAdministration administration;
     @Autowired private MeterRegistry registry;
 
     @BeforeAll
@@ -307,6 +308,122 @@ class ChargebackAccountingDatabaseTest {
         assertThat(balance(payment.credit())).as("never below what it was credited").isZero();
     }
 
+    /**
+     * `P7-TST-001`'s find, made deterministic enough to fail without its fix. A win posts its
+     * external fact first — the clearing's and the recoverable's balance rows — and only then
+     * restores the counterparty's share; a refund of ANOTHER payment to the same counterparty
+     * holds that account {@code FOR UPDATE} (its hold's release) and then posts to the clearing.
+     * Opposite orders over the same two rows: the multi-rail storm met it as a 40P01 and a 500
+     * at the card door. The win now share-locks the counterparty before its first posting.
+     */
+    @Test
+    @DisplayName("a WIN restoring its share races refunds of the same counterparty's other payments"
+            + " and every round completes - the counterparty share-locked before the win's first"
+            + " posting, the order every hold keeps (a 40P01 in the multi-rail storm)")
+    void aWinRacingRefundsOfTheSameCounterpartyNeverDeadlocks() throws Exception {
+        LedgerAccountId wallet = wallet();
+        provider.succeedsWithMintedReference(SimulatedCardPspAdapter.REFUNDS_PATH, "psp_wr");
+        int rounds = 8;
+        for (int round = 0; round < rounds; round++) {
+            int thisRound = round;
+            Payment disputed = captured(wallet);
+            String reference = someDisputeReference();
+            assertThat(deliver(chargeback(disputed, reference, "needs_response", 1000, null))
+                            .statusCode())
+                    .isEqualTo(204);
+            List<Payment> refundable =
+                    List.of(captured(wallet), captured(wallet), captured(wallet));
+            CountDownLatch open = new CountDownLatch(1);
+            ExecutorService pool = Executors.newFixedThreadPool(4);
+            try {
+                List<Future<?>> racers = new ArrayList<>();
+                racers.add(pool.submit((Callable<Void>) () -> {
+                    open.await();
+                    HttpResponse<String> won =
+                            deliver(chargeback(disputed, reference, "won", 1000, null));
+                    assertThat(won.statusCode())
+                            .as("round %s: the win applies - a deadlock is a 500 (%s)",
+                                    thisRound, won.body())
+                            .isEqualTo(204);
+                    return null;
+                }));
+                for (Payment payment : refundable) {
+                    racers.add(pool.submit((Callable<Void>) () -> {
+                        open.await();
+                        assertThat(refund(payment, 1000, null).status())
+                                .as("round %s: the refund completes", thisRound)
+                                .isEqualTo(RefundStatus.COMPLETED);
+                        return null;
+                    }));
+                }
+                open.countDown();
+                for (Future<?> racer : racers) {
+                    racer.get();
+                }
+            } finally {
+                pool.shutdownNow();
+            }
+            assertThat(split(disputeId(reference))[0])
+                    .as("round %s: the share was the whole chargeback, and the win restored it",
+                            thisRound)
+                    .isEqualTo(1000);
+        }
+        // Every round explained: the disputed payment kept (charged back and won back), each
+        // refunded payment returned in full.
+        assertThat(balance(wallet)).isEqualTo(rounds * 1000L);
+    }
+
+    @Test
+    @DisplayName("a LOSS that first reports the fee - two entries, the cost's row before the"
+            + " clearing's - races chargebacks and wins on OTHER payments and every round"
+            + " completes: the platform's rows taken in order before any dispute posting (the"
+            + " Phase 7 -> 8 transition's 40P01)")
+    void aLossWithAFirstReportedFeeRacingOtherDisputesNeverDeadlocks() throws Exception {
+        int rounds = 8;
+        for (int round = 0; round < rounds; round++) {
+            int thisRound = round;
+            // The loss's own dispute: refunded first, so its chargeback stands with an EXCESS
+            // the loss writes off - and no fee yet, so the loss statement reports it first.
+            Payment losing = captured(wallet());
+            refund(losing, 300, "psp_rf-" + IDS.next());
+            String lostReference = someDisputeReference();
+            deliver(chargeback(losing, lostReference, "needs_response", 1000, null));
+            // Two standing chargebacks to be WON, and three payments to be charged back.
+            List<Payment> winning = List.of(captured(wallet()), captured(wallet()));
+            List<String> winReferences = new ArrayList<>();
+            for (Payment payment : winning) {
+                String reference = someDisputeReference();
+                deliver(chargeback(payment, reference, "needs_response", 1000, null));
+                deliver(chargeback(payment, reference, "under_review", 1000, null));
+                winReferences.add(reference);
+            }
+            List<Payment> charging =
+                    List.of(captured(wallet()), captured(wallet()), captured(wallet()));
+
+            List<String> bodies = new ArrayList<>();
+            bodies.add(chargeback(losing, lostReference, "lost", 1000, 150L));
+            for (int i = 0; i < winning.size(); i++) {
+                bodies.add(chargeback(winning.get(i), winReferences.get(i), "won", 1000, null));
+            }
+            for (Payment payment : charging) {
+                bodies.add(chargeback(payment, someDisputeReference(), "needs_response", 1000,
+                        null));
+            }
+            List<Integer> statuses = race(bodies.size(), bodies::get);
+            assertThat(statuses)
+                    .as("round %s: every delivery applies - a deadlock is a 500", thisRound)
+                    .containsOnly(204);
+
+            UUID lost = disputeId(lostReference);
+            assertThat(lines(lost))
+                    .as("round %s: the loss wrote off exactly the excess, the fee posted once",
+                            thisRound)
+                    .contains(
+                            "dispute-loss|DEBIT:DISPUTE_COSTS:300",
+                            "dispute-fee|DEBIT:DISPUTE_COSTS:150");
+        }
+    }
+
     // -----------------------------------------------------------------
     // Re-attribution (ADR-0061 section 3's last rule)
     // -----------------------------------------------------------------
@@ -453,6 +570,107 @@ class ChargebackAccountingDatabaseTest {
         assertThat(balance(payment.credit())).as("10.00 - 3.00 refunded").isEqualTo(700);
     }
 
+    /**
+     * PHASE_GATES section 5's atomicity bullet by failure injection (the Phase 7 review): "a
+     * dispute stage, its posting and its history commit together". The win posts two entries;
+     * the SECOND is made to fail - its posting key already claimed under another fingerprint -
+     * AFTER the first has been written inside the same transaction. The delivery must leave
+     * nothing: not the first entry, not the stage, not the trail row, the stage record, the
+     * fact or the inbox record, so the network's redelivery - same event id - is not absorbed
+     * as a duplicate but applies the stage once, whole.
+     */
+    @Test
+    @DisplayName("a stage fails whole: its second posting refused after its first was written,"
+            + " nothing of the stage survives - and the redelivery of the same event applies it"
+            + " once")
+    void aStageFailsWholeAndItsRedeliveryAppliesIt() throws Exception {
+        Payment payment = captured(wallet());
+        String reference = someDisputeReference();
+        deliver(chargeback(payment, reference, "needs_response", 1000, null));
+        deliver(chargeback(payment, reference, "under_review", 1000, null));
+        UUID dispute = disputeId(reference);
+        String stageBefore = stage(dispute);
+        List<String> linesBefore = lines(dispute);
+        long trailBefore = count("SELECT count(*) FROM payments.dispute_event WHERE dispute_id = ?",
+                dispute);
+        long recordsBefore = count("SELECT count(*) FROM platform.audit_record WHERE target_id = ?",
+                dispute.toString());
+        long factsBefore = count("SELECT count(*) FROM platform.outbox_event WHERE aggregate_id = ?",
+                dispute);
+
+        // THE INJECTION: the restoration's posting key held by another request's claim.
+        String restorationKey = "dispute-restoration:" + dispute;
+        try (CorrelationContext.Scope flow =
+                        CorrelationContext.enter(
+                                Correlation.startingWith(CorrelationId.generate(IDS)));
+                Connection app = DatabaseRoles.application()) {
+            app.setAutoCommit(false);
+            Instant now = Instant.now(CLOCK);
+            new com.finapp.platform.idempotency.JdbcIdempotencyRecordStore()
+                    .claim(
+                            app,
+                            new com.finapp.platform.idempotency.IdempotencyKey(
+                                    PostingService.IDEMPOTENCY_SCOPE, restorationKey),
+                            com.finapp.platform.idempotency.RequestFingerprint.sha256(
+                                    "somebody else's posting".getBytes(StandardCharsets.UTF_8)),
+                            CorrelationId.of("injected-" + dispute),
+                            now,
+                            now.plus(Duration.ofDays(1)),
+                            Duration.ofMinutes(10));
+            app.commit();
+        }
+
+        String eventId = "evt_" + UUID.randomUUID();
+        String won =
+                chargeback(payment, reference, "won", 1000, null)
+                        .replaceFirst("\"eventId\":\"evt_[^\"]+\"", "\"eventId\":\"" + eventId + "\"");
+        HttpResponse<String> failed = deliver(won);
+        assertThat(failed.statusCode())
+                .as("unacknowledged, so the network redelivers: %s", failed.body())
+                .isGreaterThanOrEqualTo(400);
+        assertThat(stage(dispute)).isEqualTo(stageBefore);
+        assertThat(lines(dispute))
+                .as("the win's FIRST entry was written in the failed transaction - and is gone")
+                .isEqualTo(linesBefore);
+        assertThat(count("SELECT count(*) FROM payments.dispute_event WHERE dispute_id = ?",
+                        dispute))
+                .isEqualTo(trailBefore);
+        assertThat(count("SELECT count(*) FROM platform.audit_record WHERE target_id = ?",
+                        dispute.toString()))
+                .isEqualTo(recordsBefore);
+        assertThat(count("SELECT count(*) FROM platform.outbox_event WHERE aggregate_id = ?",
+                        dispute))
+                .isEqualTo(factsBefore);
+        assertThat(count("SELECT count(*) FROM platform.inbox_message WHERE dedupe_key = ?",
+                        SimulatedCardPspAdapter.NAME + ":" + eventId))
+                .as("the inbox record rolled back with the effect: a redelivery is not a duplicate")
+                .isZero();
+
+        // THE REDELIVERY, the injection lifted: the same event, applied once and whole.
+        try (Connection root = DatabaseRoles.bootstrap()) {
+            execute(
+                    root,
+                    "DELETE FROM platform.idempotency_record"
+                            + " WHERE scope = ? AND idempotency_key = ?",
+                    PostingService.IDEMPOTENCY_SCOPE,
+                    restorationKey);
+        }
+        HttpResponse<String> applied = deliver(won);
+        assertThat(applied.statusCode()).as(applied.body()).isBetween(200, 299);
+        assertThat(stage(dispute)).isEqualTo("WON");
+        assertThat(operations(dispute))
+                .containsExactly(
+                        "dispute-chargeback", "dispute-attribution", "dispute-won",
+                        "dispute-restoration");
+        assertThat(nets(dispute).values()).as("zero on every account").containsOnly(0L);
+        assertThat(count("SELECT count(*) FROM payments.dispute_event WHERE dispute_id = ?",
+                        dispute))
+                .isEqualTo(trailBefore + 1);
+        assertThat(count("SELECT count(*) FROM platform.inbox_message WHERE dedupe_key = ?",
+                        SimulatedCardPspAdapter.NAME + ":" + eventId))
+                .isEqualTo(1);
+    }
+
     @Test
     @DisplayName("a loss writes off ONLY the excess to DISPUTE_COSTS: the counterparty's share"
             + " stands as its debt, the recoverable is emptied")
@@ -580,6 +798,63 @@ class ChargebackAccountingDatabaseTest {
 
         deliver(chargeback(payment, reference, "lost", 1000, null));
         assertThat(close(customer)).as("no win can follow a loss").isTrue();
+    }
+
+    @Test
+    @DisplayName("a MERCHANT cannot close while a chargeback charged to its payable may still be"
+            + " WON, and its close closes the payable: a chargeback filed afterwards parks in the"
+            + " recoverable instead of charging a terminal merchant (the Phase 7 -> 8 transition)")
+    void aRestorableChargebackKeepsTheMerchantOpen() throws Exception {
+        com.finapp.merchant.MerchantId merchant = com.finapp.merchant.MerchantId.of(IDS.next());
+        Instant created = Instant.now(CLOCK).minusSeconds(3600);
+        try (Connection app = DatabaseRoles.application()) {
+            execute(app,
+                    "INSERT INTO merchant.merchant (id, party_ref, legal_name, display_name,"
+                            + " settlement_currency, status, created_at, status_changed_at)"
+                            + " VALUES (?, ?, 'Disputed GmbH', 'Disputed', 'EUR', 'ACTIVE', ?, ?)",
+                    merchant.value(), IDS.next(), java.sql.Timestamp.from(created),
+                    java.sql.Timestamp.from(created));
+        }
+        LedgerAccountId payable =
+                asActor(uow -> ledgerAccountStore
+                        .createOrConverge(
+                                uow,
+                                LedgerAccount.owned(
+                                        IDS, CLOCK, AccountType.LIABILITY,
+                                        AccountPurpose.MERCHANT_PAYABLE, EUR, merchant.value()))
+                        .account()
+                        .id());
+        // One sale disputed to zero; another sold and paid out, undisputed so far.
+        Payment disputed = captured(payable);
+        Payment later = captured(payable);
+        spend(payable, 1000);
+        String reference = someDisputeReference();
+        deliver(chargeback(disputed, reference, "needs_response", 1000, null));
+        assertThat(balance(payable)).as("settled to zero by the chargeback").isZero();
+
+        assertThatThrownBy(() -> asActor(uow -> administration.close(uow, merchant, "ended")))
+                .as("a win would credit a closed merchant nothing can ever pay out")
+                .isInstanceOf(com.finapp.merchant.MerchantNotSettledException.class);
+
+        deliver(chargeback(disputed, reference, "lost", 1000, null));
+        assertThat(asActor(uow -> administration.close(uow, merchant, "ended")).status())
+                .as("no win can follow a loss")
+                .isEqualTo(com.finapp.merchant.MerchantStatus.CLOSED);
+        LedgerAccountStatus payableStatus =
+                asActor(uow -> ledgerAccountStore.lockForShare(uow, payable).orElseThrow()
+                        .status());
+        assertThat(payableStatus)
+                .as("the close closes the payable: every later writer is the ledger's to refuse")
+                .isEqualTo(LedgerAccountStatus.CLOSED);
+
+        // The network charges back the OTHER sale after the close: its share parks.
+        String afterClose = someDisputeReference();
+        assertThat(deliver(chargeback(later, afterClose, "needs_response", 1000, null))
+                        .statusCode())
+                .isEqualTo(204);
+        UUID dispute = disputeId(afterClose);
+        assertThat(split(dispute)).as("share, parked, excess").isEqualTo(new long[] {0, 1000, 0});
+        assertThat(balance(payable)).as("a closed merchant is charged nothing").isZero();
     }
 
     // -----------------------------------------------------------------

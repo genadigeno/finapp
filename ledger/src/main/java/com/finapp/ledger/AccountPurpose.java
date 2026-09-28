@@ -14,11 +14,14 @@ import lombok.RequiredArgsConstructor;
  * never a walk over a tree.
  *
  * <p><strong>A closed enum, and adding a member is a reviewed act</strong> that arrives with the
- * capability needing it — the {@code ConsentPurpose} shape. Four of the six have <em>no producer
- * in Phase 3</em>, deliberately: they are the recorded seams ({@code ROADMAP.md} §Seam register)
- * — {@code SETTLEMENT_CLEARING} and {@code SUSPENSE_UNMATCHED} for Phase 8, {@code FX_POSITION}
- * for Phase 9, {@code FEE_REVENUE} for Phase 6 — and value parked in suspense must be trackable
- * before anything can park value there ({@code INV-REC-05}).
+ * capability needing it — the {@code ConsentPurpose} shape. In Phase 3 four of the first six had
+ * <em>no producer</em>, deliberately: they were the recorded seams ({@code ROADMAP.md} §Seam
+ * register), and value parked in suspense had to be trackable before anything could park value
+ * there ({@code INV-REC-05}). Since then each arrived with its producer — {@code FEE_REVENUE} in
+ * Phase 6, {@code SETTLEMENT_CLEARING} with the card capture, {@code SUSPENSE_UNMATCHED} with the
+ * instant rail's parking (Phase 7) — and the clearings and dispute accounts joined with theirs;
+ * {@code FX_POSITION} still waits for Phase 9. (This read "Four of the six have no producer"
+ * until the Phase 7 -&gt; 8 transition's gate.)
  *
  * <p>The owner kind is derived here, one function ({@code OwnerKind}'s javadoc says why), and
  * the schema {@code CHECK} generated from {@link #sqlOwnerKindRule()} holds the stored pair to
@@ -39,7 +42,14 @@ public enum AccountPurpose {
      */
     MERCHANT_PAYABLE(OwnerKind.MERCHANT),
 
-    /** Value in flight between the platform and an external counterparty. Phase 8's seam. */
+    /**
+     * The CARD rail's value in flight: what the card PSP owes the platform for captures, net of
+     * refunds, chargebacks and fees, until its clearing reports discharge it. Phase 8's seam.
+     * ADR-0059 section 4 narrowed this member to the card rail - every external rail has its
+     * own position, and the instant scheme's is {@link #INSTANT_CLEARING} - and the Phase 7
+     * review carried the narrowing into this javadoc, which still read "an external
+     * counterparty". Which rail posts where is the rail's declaration, never this name.
+     */
     SETTLEMENT_CLEARING(OwnerKind.OPERATIONAL),
 
     /**

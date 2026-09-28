@@ -98,4 +98,57 @@ public final class PaymentCancellation {
         throw new IllegalPaymentIntentTransitionException(
                 intentId, current, PaymentIntentStatus.CANCELLED);
     }
+
+    /**
+     * Cancels an intent that was opened and NEVER dispatched, as the platform (the Phase 7
+     * -&gt; 8 transition) — the composing flow's own ending for a payment it abandoned: a
+     * checkout session expiring over an intent still {@code REQUIRES_CONFIRMATION}. The gate
+     * found such an intent confirmable indefinitely (a crash between the session's open and
+     * the dispatch, an unfunded wallet, a rail out of service) and blocking its merchant's
+     * close for ever, because only the payer's own cancel could end it.
+     *
+     * <p>The conditional transition is the arbiter against a racing confirmation: exactly one
+     * of {@code PROCESSING} and {@code CANCELLED} lands. Nothing was dispatched, so nothing is
+     * owed and nothing posts; the act is audited as the platform with its cause.
+     *
+     * @return whether THIS call cancelled it — false when it had left
+     *     {@code REQUIRES_CONFIRMATION} (dispatched, or already ended)
+     */
+    public boolean cancelUndispatched(
+            Connection unitOfWork, PaymentIntentId intentId, String cause) {
+        Objects.requireNonNull(unitOfWork, "unitOfWork must not be null");
+        Objects.requireNonNull(intentId, "intentId must not be null");
+        Objects.requireNonNull(cause, "cause must not be null");
+        Actor platform = SecurityContext.require();
+        Correlation correlation = PaymentCreation.resolvedCorrelation();
+        if (!intents.transition(
+                unitOfWork,
+                intentId,
+                PaymentIntentStatus.REQUIRES_CONFIRMATION,
+                PaymentIntentStatus.CANCELLED)) {
+            return false;
+        }
+        Instant now = Instant.now(clock);
+        intents.recordTransition(
+                unitOfWork,
+                intentId,
+                PaymentIntentStatus.REQUIRES_CONFIRMATION,
+                PaymentIntentStatus.CANCELLED,
+                platform,
+                now);
+        audit.append(
+                unitOfWork,
+                new AuditRecord(
+                        AuditId.next(ids),
+                        platform,
+                        now,
+                        PaymentsAuditAction.PAYMENT_CANCELLED,
+                        PaymentCreation.TARGET_TYPE,
+                        intentId.value().toString(),
+                        Optional.of(cause),
+                        AuditOutcome.SUCCEEDED,
+                        correlation.correlationId(),
+                        Optional.of("intent=" + intentId + ", status=CANCELLED, undispatched")));
+        return true;
+    }
 }

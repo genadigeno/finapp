@@ -34,7 +34,10 @@ import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Tag;
 import org.junit.jupiter.api.Test;
+import org.junit.jupiter.api.extension.ExtendWith;
 import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.boot.test.system.CapturedOutput;
+import org.springframework.boot.test.system.OutputCaptureExtension;
 import org.springframework.boot.test.context.SpringBootTest;
 import org.springframework.boot.test.web.server.LocalServerPort;
 import org.springframework.test.context.DynamicPropertyRegistry;
@@ -58,6 +61,7 @@ import org.springframework.test.context.DynamicPropertySource;
  */
 @Tag("database")
 @SpringBootTest(webEnvironment = SpringBootTest.WebEnvironment.RANDOM_PORT)
+@ExtendWith(OutputCaptureExtension.class)
 @DisplayName("pay-by-bank pay-ins over the instant rail (P7-TSK-009)")
 @SuppressWarnings("try") // Scopes are used for their close side effect (the idiom).
 class PayByBankDatabaseTest {
@@ -202,8 +206,9 @@ class PayByBankDatabaseTest {
     }
 
     @Test
-    @DisplayName("ten duplicate callbacks under ten fresh event ids credit ONCE: one entry,"
-            + " one executed fact, the rest converged on the row (INV-IDEM-04)")
+    @DisplayName("ten CONCURRENT duplicate callbacks - five under one event id, five fresh -"
+            + " credit ONCE: one inbox record for the shared id, one entry, one EXECUTED edge,"
+            + " one executed fact and one acting audit record (INV-IDEM-04, P7-DOC-001)")
     void tenDuplicateCallbacksCreditOnce() throws Exception {
         Fixture f = bankFixture();
         schemeInitiates("https://payer-psp.example/authorize/" + suffix());
@@ -211,12 +216,51 @@ class PayByBankDatabaseTest {
         String attemptId = attemptIdOf(paymentId);
         String reference = referenceOf(attemptId);
         String scheme = "sch-dup-" + suffix();
+        String shared = "evt_shared_" + suffix();
 
-        for (int delivery = 0; delivery < 10; delivery++) {
-            assertThat(executedCallback(reference, scheme, "C1", "4.00", "USD"))
-                    .isEqualTo(204);
+        // The gate's third scenario as written (PHASE_7_PLAN section 13.3): ten deliveries AT
+        // ONCE under identical AND distinct event ids - the inbox's rank and the conditional's.
+        // The review found them delivered one after another, under fresh ids only.
+        java.util.concurrent.CountDownLatch open = new java.util.concurrent.CountDownLatch(1);
+        java.util.concurrent.ExecutorService pool =
+                java.util.concurrent.Executors.newFixedThreadPool(10);
+        try {
+            java.util.List<java.util.concurrent.Future<Integer>> answers =
+                    new java.util.ArrayList<>();
+            for (int delivery = 0; delivery < 10; delivery++) {
+                String eventId = delivery < 5 ? shared : "evt_" + suffix();
+                String body =
+                        "{\"eventId\":\"" + eventId + "\",\"reference\":\"" + reference
+                                + "\",\"status\":\"executed\",\"schemeReference\":\"" + scheme
+                                + "\",\"settlementCycle\":\"C1\",\"amount\":\"4.00\","
+                                + "\"currency\":\"USD\"}";
+                answers.add(pool.submit(() -> {
+                    open.await();
+                    // The door's one 409 is the inbox's contended record: redelivered, as the
+                    // scheme would, until acknowledged.
+                    for (int attempt = 0; attempt < 200; attempt++) {
+                        int status = callback(body);
+                        if (status != 409) {
+                            return status;
+                        }
+                        Thread.sleep(20);
+                    }
+                    return 409;
+                }));
+            }
+            open.countDown();
+            for (java.util.concurrent.Future<Integer> answer : answers) {
+                assertThat(answer.get()).isEqualTo(204);
+            }
+        } finally {
+            pool.shutdownNow();
         }
 
+        assertThat(count("SELECT count(*) FROM platform.inbox_message WHERE consumer ="
+                        + " 'payments.instant-webhook' AND dedupe_key = '"
+                        + SimulatedInstantSchemeAdapter.NAME + ":" + shared + "'"))
+                .as("the five identical deliveries are one inbox record")
+                .isEqualTo(1);
         assertThat(count("SELECT count(*) FROM ledger.journal_entry WHERE idempotency_scope"
                         + " = 'ledger.post:payment-execution:" + attemptId + "'"))
                 .isEqualTo(1);
@@ -224,6 +268,126 @@ class PayByBankDatabaseTest {
         assertThat(count("SELECT count(*) FROM payments.payment_attempt_event WHERE"
                         + " attempt_id = '" + attemptId + "'::uuid AND to_status = 'EXECUTED'"))
                 .isEqualTo(1);
+        assertThat(count("SELECT count(*) FROM platform.audit_record WHERE operation ="
+                        + " 'payments.PaymentOutcomeApplied' AND target_id = '" + paymentId
+                        + "' AND change_summary LIKE '%EXECUTED%'"))
+                .as("resolvers record acting transitions only: one record for ten deliveries")
+                .isEqualTo(1);
+    }
+
+    @Test
+    @DisplayName("INV-RAIL-03 through the money paths: a bank account's destination and its"
+            + " grant reach no response, no audit record, no event and no log line across the"
+            + " registration, a pay-in funding the wallet and a withdrawal out of it (P7-DOC-001)")
+    void theDestinationReachesNoSink(CapturedOutput output) throws Exception {
+        String token = verifiedCustomer(someLogin());
+        String product = openAccount(token);
+        String needle = "dest-NEEDLE-" + suffix();
+        String grant = "blg-GRANT-" + suffix();
+        provider.succeedsWith(
+                SimulatedInstantSchemeAdapter.EXCHANGES_PATH,
+                200,
+                "{\"status\":\"exchanged\",\"destination\":\"" + needle
+                        + "\",\"suffix\":\"6819\",\"payee\":\"match\"}");
+        HttpResponse<String> registered =
+                post("/v1/me/payment-methods/bank-accounts",
+                        "{\"grant\":\"" + grant + "\",\"acknowledgeNoMatch\":false}", token, true);
+        assertThat(registered.statusCode()).isEqualTo(201);
+        Fixture f = new Fixture(token, field(registered.body(), "id"), product);
+
+        // A pay-in funds the wallet; its confirmation delivered twice under one event id.
+        schemeInitiates("https://payer-psp.example/authorize/" + suffix());
+        String paymentId = field(confirmedPayment(f, "5.00").body(), "id");
+        String executed =
+                "{\"eventId\":\"evt_" + suffix() + "\",\"reference\":\""
+                        + referenceOf(attemptIdOf(paymentId))
+                        + "\",\"status\":\"executed\",\"schemeReference\":\"sch-needle-"
+                        + suffix() + "\",\"settlementCycle\":\"C1\",\"amount\":\"5.00\","
+                        + "\"currency\":\"USD\"}";
+        assertThat(callback(executed)).isEqualTo(204);
+        assertThat(callback(executed)).isEqualTo(204);
+
+        // A withdrawal to the registered destination: the one path that SENDS it.
+        provider.succeedsWith(
+                SimulatedInstantSchemeAdapter.TRANSFERS_PATH,
+                200,
+                "{\"status\":\"accepted\",\"reference\":\"sch-w-{{request.headers.Idempotency-Key}}"
+                        + "\",\"cycle\":\"C2\"}");
+        HttpResponse<String> withdrawn =
+                post("/v1/me/withdrawals", body(f.methodId(), "2.00", "USD"), token, true);
+        assertThat(withdrawn.statusCode()).as(withdrawn.body()).isEqualTo(201);
+        String read = get("/v1/me/withdrawals/" + field(withdrawn.body(), "id"), token).body();
+
+        assertThat(output.getAll())
+                .as("precondition: the flow's own log lines were captured, or nothing is read")
+                .contains("A duplicate instant confirmation delivery was absorbed");
+        for (String secret : java.util.List.of(needle, grant)) {
+            assertThat(output.getAll()).as("no log line carries %s", secret)
+                    .doesNotContain(secret);
+            assertThat(registered.body() + withdrawn.body() + read)
+                    .as("no response carries %s", secret)
+                    .doesNotContain(secret);
+            assertThat(count("SELECT count(*) FROM platform.audit_record WHERE"
+                            + " coalesce(change_summary, '') || coalesce(reason, '') LIKE '%"
+                            + secret + "%'"))
+                    .as("no audit record carries %s", secret)
+                    .isZero();
+            assertThat(count("SELECT count(*) FROM platform.outbox_event WHERE"
+                            + " convert_from(payload, 'UTF8') LIKE '%" + secret + "%'"))
+                    .as("no event carries %s", secret)
+                    .isZero();
+        }
+        assertThat(count("SELECT count(*) FROM paymentmethods.payment_method"
+                        + " WHERE destination_reference = '" + needle + "'"))
+                .as("the one place the opaque destination rests: its instrument's own column")
+                .isEqualTo(1);
+
+        // AND THE WALLET'S STATEMENT RECONCILES LINE BY LINE TO THE JOURNAL (PHASE_GATES
+        // section 5's wallet bullet; the Phase 7 review found it proven only over Phase 3's
+        // synthetic postings): every journal line on this wallet - the pay-in's credit under
+        // payment-execution:, the withdrawal's debit under wallet-withdrawal: - is exactly one
+        // statement line naming its entry, direction and amount, and the statement has no other.
+        String wallet = oneString(
+                "SELECT l.ledger_account_id::text FROM ledger.journal_line l"
+                        + " JOIN ledger.journal_entry e ON e.id = l.entry_id"
+                        + " JOIN ledger.ledger_account a ON a.id = l.ledger_account_id"
+                        + " WHERE e.idempotency_scope = 'ledger.post:payment-execution:"
+                        + attemptIdOf(paymentId) + "' AND a.purpose = 'CUSTOMER_WALLET'");
+        String period = "?from=" + java.time.LocalDate.now(java.time.ZoneOffset.UTC).minusDays(1)
+                + "&to=" + java.time.LocalDate.now(java.time.ZoneOffset.UTC).plusDays(1);
+        String statement = get("/v1/me/accounts/" + product + "/statement" + period, token).body();
+        java.util.List<String> journal = new java.util.ArrayList<>();
+        try (Connection app = DatabaseRoles.application();
+                PreparedStatement lines = app.prepareStatement(
+                        "SELECT e.id::text, e.idempotency_scope, l.direction, l.amount_minor,"
+                                + " l.scale FROM ledger.journal_line l"
+                                + " JOIN ledger.journal_entry e ON e.id = l.entry_id"
+                                + " WHERE l.ledger_account_id = ?::uuid ORDER BY e.id")) {
+            lines.setString(1, wallet);
+            try (ResultSet row = lines.executeQuery()) {
+                while (row.next()) {
+                    String entry = row.getString(1);
+                    journal.add(row.getString(2).split(":")[1]);
+                    int at = statement.indexOf("\"" + entry + "\"");
+                    assertThat(at).as("the statement names entry %s", entry).isNotNegative();
+                    assertThat(statement.indexOf("\"" + entry + "\"", at + 1))
+                            .as("entry %s is one statement line", entry)
+                            .isNegative();
+                    String line = statement.substring(
+                            statement.lastIndexOf('{', at), statement.indexOf('}', at) + 1);
+                    assertThat(line)
+                            .contains("\"direction\":\"" + row.getString(3) + "\"")
+                            .contains("\"amount\":\"" + java.math.BigDecimal.valueOf(
+                                    row.getLong(4), row.getInt(5)).toPlainString() + "\"");
+                }
+            }
+        }
+        assertThat(journal)
+                .as("the wallet's journal: the pay-in's credit and the withdrawal's debit")
+                .containsExactly("payment-execution", "wallet-withdrawal");
+        assertThat(statement.split("\"entryId\"", -1).length - 1)
+                .as("the statement carries no line the journal does not")
+                .isEqualTo(journal.size());
     }
 
     @Test
@@ -301,6 +465,17 @@ class PayByBankDatabaseTest {
                         + " 'payments.UnmatchedConfirmationParked' AND target_id = '"
                         + scheme + "'"))
                 .isEqualTo(1);
+        // What Phase 8 resolves it with (the Phase 7 -> 8 transition): why it parked and the
+        // reference it named - and all ten deliveries' bytes addressed to the parking.
+        assertThat(oneString("SELECT cause || '|' || coalesce(attempt_id::text, '-') || '|'"
+                        + " || named_reference FROM payments.unmatched_confirmation WHERE"
+                        + " scheme_reference = ?", scheme))
+                .isEqualTo("UNATTRIBUTED|-|" + foreign);
+        assertThat(count("SELECT count(*) FROM payments.provider_evidence e"
+                        + " JOIN payments.unmatched_confirmation u"
+                        + "   ON u.id = e.unmatched_confirmation_id"
+                        + " WHERE u.scheme_reference = '" + scheme + "'"))
+                .isEqualTo(10);
 
         // Moneyless, or unusable money: retained and acknowledged, nothing parked.
         String moneyless = "sch-moneyless-" + suffix();
@@ -316,22 +491,121 @@ class PayByBankDatabaseTest {
     }
 
     @Test
-    @DisplayName("a confirmation whose stated amount differs from the initiation's ask moves"
-            + " NOTHING - retained loud, the integration break reconciliation must see")
-    void aMismatchedAmountMovesNothing() throws Exception {
+    @DisplayName("a confirmation whose stated amount differs from the initiation's ask credits"
+            + " NOTHING: the value the scheme executed parks (AMOUNT_MISMATCH, attributed) and"
+            + " the pay-in fails DECLINED - booked, alerted, never asked forever (the Phase 7"
+            + " -> 8 transition)")
+    void aMismatchedAmountParksTheExecutedValueAndFailsThePayIn() throws Exception {
         Fixture f = bankFixture();
         schemeInitiates("https://payer-psp.example/authorize/" + suffix());
         String paymentId = field(confirmedPayment(f, "5.00").body(), "id");
         String attemptId = attemptIdOf(paymentId);
+        String scheme = "sch-mismatch-" + suffix();
 
-        assertThat(executedCallback(
-                        referenceOf(attemptId), "sch-mismatch-" + suffix(), "C1", "9.99",
-                        "USD"))
+        assertThat(executedCallback(referenceOf(attemptId), scheme, "C1", "4.99", "USD"))
                 .isEqualTo(204);
 
+        assertThat(oneString("SELECT status || '|' || failure_reason FROM"
+                        + " payments.payment_attempt WHERE id = ?", UUID.fromString(attemptId)))
+                .isEqualTo("FAILED|DECLINED");
+        assertThat(count("SELECT count(*) FROM ledger.journal_entry WHERE idempotency_scope"
+                        + " = 'ledger.post:payment-execution:" + attemptId + "'"))
+                .as("the initiation's ask is never credited")
+                .isZero();
+        // The value that DID move rests in suspense, attributed, at the EXECUTED amount.
+        assertThat(oneString("SELECT cause || '|' || attempt_id::text || '|' || named_reference"
+                        + " || '|' || settlement_cycle || '|' || amount_minor::text"
+                        + " FROM payments.unmatched_confirmation WHERE scheme_reference = ?",
+                        scheme))
+                .isEqualTo("AMOUNT_MISMATCH|" + attemptId + "|" + referenceOf(attemptId)
+                        + "|C1|499");
+        assertThat(oneString("SELECT subject_kind FROM payments.scheme_execution_claim"
+                        + " WHERE rail = 'instant' AND scheme_reference = ?", scheme))
+                .isEqualTo("UNMATCHED");
+    }
+
+    @Test
+    @DisplayName("the inquiry sweep judges the executed amount too (C2 of the Phase 7 -> 8"
+            + " transition): a mismatched acceptance parks and fails, never crediting the ask;"
+            + " an acceptance without a usable amount moves nothing")
+    void theInquirySweepJudgesTheExecutedAmount() throws Exception {
+        // An acceptance with NO amount: unactionable - the row waits, nothing posts.
+        Fixture f = bankFixture();
+        schemeInitiates("https://payer-psp.example/authorize/" + suffix());
+        String waiting = attemptIdOf(field(confirmedPayment(f, "7.00").body(), "id"));
+        provider.succeedsWith(
+                SimulatedInstantSchemeAdapter.INITIATION_STATUS_PATH + referenceOf(waiting),
+                200,
+                "{\"status\":\"accepted\",\"reference\":\"sch-noamt-" + suffix() + "\"}");
+
+        // A MISMATCHED acceptance: the value parks, the pay-in fails, the ask never credits.
+        schemeInitiates("https://payer-psp.example/authorize/" + suffix());
+        String paymentId = field(confirmedPayment(f, "9.00").body(), "id");
+        String mismatched = attemptIdOf(paymentId);
+        String scheme = "sch-sweep-mm-" + suffix();
+        provider.succeedsWith(
+                SimulatedInstantSchemeAdapter.INITIATION_STATUS_PATH + referenceOf(mismatched),
+                200,
+                "{\"status\":\"accepted\",\"reference\":\"" + scheme + "\",\"cycle\":\"C5\","
+                        + "\"amount\":\"8.00\",\"currency\":\"USD\"}");
+        Thread.sleep(80); // past the tiny candidacy bound
+
+        // And at the door: an attributed 'executed' statement carrying NO amount reaches the
+        // applier (the door's own shape check marks it unmappable) and moves nothing either -
+        // the applier's no-amount rule, which the adapter's INDETERMINATE shields on the sweep.
+        assertThat(callback(
+                        "{\"eventId\":\"evt_" + suffix() + "\",\"reference\":\""
+                                + referenceOf(waiting) + "\",\"status\":\"executed\","
+                                + "\"schemeReference\":\"sch-nomoney-" + suffix() + "\"}"))
+                .isEqualTo(204);
+
+        wideSweep();
+
         assertThat(oneString("SELECT status FROM payments.payment_attempt WHERE id = ?",
-                        UUID.fromString(attemptId)))
+                        UUID.fromString(waiting)))
+                .as("an acceptance the applier cannot judge moves nothing, at the door or"
+                        + " the sweep")
                 .isEqualTo("AWAITING_PAYER");
+        assertThat(count("SELECT count(*) FROM ledger.journal_entry WHERE idempotency_scope"
+                        + " = 'ledger.post:payment-execution:" + waiting + "'"))
+                .isZero();
+
+        assertThat(oneString("SELECT status || '|' || failure_reason FROM"
+                        + " payments.payment_attempt WHERE id = ?", UUID.fromString(mismatched)))
+                .isEqualTo("FAILED|DECLINED");
+        assertThat(count("SELECT count(*) FROM ledger.journal_entry WHERE idempotency_scope"
+                        + " = 'ledger.post:payment-execution:" + mismatched + "'"))
+                .as("the sweep never credits an ask the scheme did not execute")
+                .isZero();
+        assertThat(oneString("SELECT cause || '|' || amount_minor::text FROM"
+                        + " payments.unmatched_confirmation WHERE scheme_reference = ?", scheme))
+                .isEqualTo("AMOUNT_MISMATCH|800");
+        assertThat(field(get("/v1/payments/" + paymentId, f.token()).body(), "status"))
+                .isEqualTo("FAILED");
+    }
+
+    @Test
+    @DisplayName("an initiation the payer PSP reports EXPIRED ends through the sweep (the"
+            + " Phase 7 -> 8 transition): FAILED(DECLINED), nothing posted - never asked"
+            + " forever with its intent PROCESSING")
+    void anExpiredInitiationEndsThroughTheSweep() throws Exception {
+        Fixture f = bankFixture();
+        schemeInitiates("https://payer-psp.example/authorize/" + suffix());
+        String paymentId = field(confirmedPayment(f, "4.00").body(), "id");
+        String attemptId = attemptIdOf(paymentId);
+        provider.succeedsWith(
+                SimulatedInstantSchemeAdapter.INITIATION_STATUS_PATH + referenceOf(attemptId),
+                200,
+                "{\"status\":\"expired\"}");
+        Thread.sleep(80);
+
+        wideSweep();
+
+        assertThat(oneString("SELECT status || '|' || failure_reason FROM"
+                        + " payments.payment_attempt WHERE id = ?", UUID.fromString(attemptId)))
+                .isEqualTo("FAILED|DECLINED");
+        assertThat(field(get("/v1/payments/" + paymentId, f.token()).body(), "status"))
+                .isEqualTo("FAILED");
         assertThat(count("SELECT count(*) FROM ledger.journal_entry WHERE idempotency_scope"
                         + " = 'ledger.post:payment-execution:" + attemptId + "'"))
                 .isZero();
@@ -380,6 +654,380 @@ class PayByBankDatabaseTest {
                 .as("a parked reference stays the operator's to resolve (INV-REC-05)")
                 .isEqualTo("AWAITING_PAYER");
     }
+
+    // -----------------------------------------------------------------
+    // One scheme execution, one money fact (the Phase 7 -> 8 transition, V023)
+    // -----------------------------------------------------------------
+
+    @Test
+    @DisplayName("a WITHDRAWAL's own confirmation echoed to the pay-in door never parks - by"
+            + " our reference, or restated without it: the value went OUT (C1 of the Phase 7"
+            + " -> 8 transition)")
+    void aWithdrawalsOwnConfirmationNeverParks(CapturedOutput output) throws Exception {
+        Fixture f = bankFixture();
+        // Fund the wallet over the pay-in itself.
+        schemeInitiates("https://payer-psp.example/authorize/" + suffix());
+        String funding = attemptIdOf(field(confirmedPayment(f, "20.00").body(), "id"));
+        assertThat(executedCallback(
+                        referenceOf(funding), "sch-fund-" + suffix(), "C1", "20.00", "USD"))
+                .isEqualTo(204);
+        // Withdraw 5.00; the scheme accepts, minting its reference from our key.
+        provider.succeedsWith(
+                SimulatedInstantSchemeAdapter.TRANSFERS_PATH,
+                200,
+                "{\"status\":\"accepted\",\"reference\":\"sch-wd-"
+                        + "{{request.headers.Idempotency-Key}}\",\"cycle\":\"C9\"}");
+        HttpResponse<String> withdrawn =
+                post("/v1/me/withdrawals", body(f.methodId(), "5.00", "USD"), f.token(), true);
+        assertThat(withdrawn.statusCode()).as(withdrawn.body()).isEqualTo(201);
+        assertThat(field(withdrawn.body(), "status")).isEqualTo("COMPLETED");
+        UUID withdrawal = UUID.fromString(field(withdrawn.body(), "id"));
+        String ours =
+                oneString("SELECT end_to_end_reference FROM payments.withdrawal WHERE id = ?",
+                        withdrawal);
+        String theirs =
+                oneString("SELECT scheme_reference FROM payments.withdrawal WHERE id = ?",
+                        withdrawal);
+
+        // The echo, by OUR reference - recognised as the withdrawal's own at the door, before
+        // any parking is attempted (the claim below is the second rank, not the first) - and
+        // restated under a reference we never minted.
+        assertThat(executedCallback(ours, theirs, "C9", "5.00", "USD")).isEqualTo(204);
+        assertThat(output.getOut())
+                .as("the door names the withdrawal's echo as what it is")
+                .contains("named a withdrawal's own reference");
+        assertThat(callback(
+                        "{\"eventId\":\"evt_" + suffix() + "\",\"reference\":\""
+                                + UUID.randomUUID().toString().replace("-", "")
+                                + "\",\"status\":\"executed\",\"schemeReference\":\"" + theirs
+                                + "\",\"amount\":\"5.00\",\"currency\":\"USD\"}"))
+                .isEqualTo(204);
+
+        assertThat(count("SELECT count(*) FROM payments.unmatched_confirmation WHERE"
+                        + " scheme_reference = '" + theirs + "'"))
+                .as("value that went OUT is never booked as value that came in")
+                .isZero();
+        assertThat(count("SELECT count(*) FROM ledger.journal_entry WHERE idempotency_scope"
+                        + " = 'ledger.post:unmatched-confirmation:instant:" + theirs + "'"))
+                .isZero();
+        assertThat(oneString("SELECT subject_kind || '|' || subject_id::text FROM"
+                        + " payments.scheme_execution_claim WHERE rail = 'instant' AND"
+                        + " scheme_reference = ?", theirs))
+                .isEqualTo("WITHDRAWAL|" + withdrawal);
+        assertThat(count("SELECT count(*) FROM payments.provider_evidence WHERE"
+                        + " withdrawal_id = '" + withdrawal + "' AND kind = 'WEBHOOK'"))
+                .as("the echo's bytes rest addressed to the withdrawal it echoes")
+                .isEqualTo(1);
+        // The wallet explains itself: 20 in, 5 out.
+        assertThat(get("/v1/me/accounts/" + f.product() + "/balance", f.token()).body())
+                .contains("\"settled\":\"15.00\"");
+    }
+
+    @Test
+    @DisplayName("a credited execution restated WITHOUT our reference never parks beside its"
+            + " credit (the gate's sequential find): one arrival, one money fact")
+    void aCreditedExecutionRestatedUnattributedNeverParks() throws Exception {
+        Fixture f = bankFixture();
+        schemeInitiates("https://payer-psp.example/authorize/" + suffix());
+        String attemptId = attemptIdOf(field(confirmedPayment(f, "3.00").body(), "id"));
+        String scheme = "sch-credited-" + suffix();
+        assertThat(executedCallback(referenceOf(attemptId), scheme, "C1", "3.00", "USD"))
+                .isEqualTo(204);
+
+        assertThat(callback(
+                        "{\"eventId\":\"evt_" + suffix() + "\",\"status\":\"executed\","
+                                + "\"schemeReference\":\"" + scheme
+                                + "\",\"amount\":\"3.00\",\"currency\":\"USD\"}"))
+                .isEqualTo(204);
+
+        assertThat(count("SELECT count(*) FROM payments.unmatched_confirmation WHERE"
+                        + " scheme_reference = '" + scheme + "'"))
+                .isZero();
+        assertThat(count("SELECT count(*) FROM ledger.journal_entry WHERE idempotency_scope"
+                        + " = 'ledger.post:payment-execution:" + attemptId + "'"))
+                .isEqualTo(1);
+        assertThat(oneString("SELECT subject_kind FROM payments.scheme_execution_claim WHERE"
+                        + " rail = 'instant' AND scheme_reference = ?", scheme))
+                .isEqualTo("PAY_IN");
+    }
+
+    @Test
+    @DisplayName("ten racing deliveries of ONE execution - five by our reference, five without"
+            + " it, all fresh event ids - make exactly ONE money fact: a credit or a parking,"
+            + " never both (the gate's concurrent find, V023's arbiter)")
+    void tenRacingDeliveriesOfOneExecutionMakeOneMoneyFact() throws Exception {
+        for (int round = 0; round < 3; round++) {
+            Fixture f = bankFixture();
+            schemeInitiates("https://payer-psp.example/authorize/" + suffix());
+            String attemptId = attemptIdOf(field(confirmedPayment(f, "6.00").body(), "id"));
+            String reference = referenceOf(attemptId);
+            String scheme = "sch-race-mix-" + suffix();
+            String foreign = UUID.randomUUID().toString().replace("-", "");
+
+            java.util.concurrent.CountDownLatch start = new java.util.concurrent.CountDownLatch(1);
+            java.util.concurrent.ExecutorService pool =
+                    java.util.concurrent.Executors.newFixedThreadPool(10);
+            java.util.List<java.util.concurrent.Future<Integer>> answers =
+                    new java.util.ArrayList<>();
+            for (int racer = 0; racer < 10; racer++) {
+                String named = racer % 2 == 0 ? reference : foreign;
+                String body =
+                        "{\"eventId\":\"evt_" + suffix() + "\",\"reference\":\"" + named
+                                + "\",\"status\":\"executed\",\"schemeReference\":\""
+                                + scheme + "\",\"settlementCycle\":\"C2\","
+                                + "\"amount\":\"6.00\",\"currency\":\"USD\"}";
+                answers.add(pool.submit(() -> {
+                    start.await();
+                    return callback(body);
+                }));
+            }
+            start.countDown();
+            for (java.util.concurrent.Future<Integer> answer : answers) {
+                assertThat(answer.get(60, java.util.concurrent.TimeUnit.SECONDS))
+                        .as("every racer is acknowledged - never a 5xx")
+                        .isEqualTo(204);
+            }
+            pool.shutdown();
+
+            long credited = count("SELECT count(*) FROM ledger.journal_entry WHERE"
+                    + " idempotency_scope = 'ledger.post:payment-execution:" + attemptId + "'");
+            long parked = count("SELECT count(*) FROM ledger.journal_entry WHERE"
+                    + " idempotency_scope = 'ledger.post:unmatched-confirmation:instant:"
+                    + scheme + "'");
+            assertThat(credited + parked)
+                    .as("round %d: one execution, one money fact (credited %d, parked %d)",
+                            round, credited, parked)
+                    .isEqualTo(1);
+            assertThat(count("SELECT count(*) FROM payments.scheme_execution_claim WHERE"
+                            + " rail = 'instant' AND scheme_reference = '" + scheme + "'"))
+                    .isEqualTo(1);
+            assertThat(oneString("SELECT status FROM payments.payment_attempt WHERE id = ?",
+                            UUID.fromString(attemptId)))
+                    .as("the row agrees with the one fact")
+                    .isEqualTo(credited == 1 ? "EXECUTED" : "AWAITING_PAYER");
+        }
+    }
+
+    @Test
+    @DisplayName("value stated on an attempt that cannot move PARKS (the Phase 7 -> 8"
+            + " transition): an execution on a FAILED attempt, and a SECOND execution under"
+            + " another scheme reference on an EXECUTED one - attributed, audited, its evidence"
+            + " addressed to the parking; the same execution repeated is evidence alone")
+    void valueOnAConcludedAttemptParks() throws Exception {
+        // FAILED: the payer PSP said expired, then the payer's execution arrives.
+        Fixture f = bankFixture();
+        schemeInitiates("https://payer-psp.example/authorize/" + suffix());
+        String failed = attemptIdOf(field(confirmedPayment(f, "8.00").body(), "id"));
+        assertThat(callback(
+                        "{\"eventId\":\"evt_" + suffix() + "\",\"reference\":\""
+                                + referenceOf(failed) + "\",\"status\":\"expired\"}"))
+                .isEqualTo(204);
+        String late = "sch-late-" + suffix();
+        assertThat(executedCallback(referenceOf(failed), late, "C3", "8.00", "USD"))
+                .isEqualTo(204);
+        assertThat(oneString("SELECT status FROM payments.payment_attempt WHERE id = ?",
+                        UUID.fromString(failed)))
+                .isEqualTo("FAILED");
+        assertThat(oneString("SELECT cause || '|' || attempt_id::text || '|' || named_reference"
+                        + " || '|' || settlement_cycle FROM payments.unmatched_confirmation"
+                        + " WHERE scheme_reference = ?", late))
+                .isEqualTo("ATTEMPT_CONCLUDED|" + failed + "|" + referenceOf(failed) + "|C3");
+        assertThat(count("SELECT count(*) FROM platform.audit_record WHERE operation ="
+                        + " 'payments.UnmatchedConfirmationParked' AND target_id = '" + late
+                        + "' AND change_summary LIKE '%cause=ATTEMPT_CONCLUDED%'"))
+                .isEqualTo(1);
+        assertThat(count("SELECT count(*) FROM payments.provider_evidence e"
+                        + " JOIN payments.unmatched_confirmation u"
+                        + "   ON u.id = e.unmatched_confirmation_id"
+                        + " WHERE u.scheme_reference = '" + late + "'"))
+                .as("the parking's raw statement is found by stored identifier")
+                .isEqualTo(1);
+
+        // EXECUTED under S1; a second execution under S2 parks, S1 repeated does not.
+        schemeInitiates("https://payer-psp.example/authorize/" + suffix());
+        String executed = attemptIdOf(field(confirmedPayment(f, "2.50").body(), "id"));
+        String first = "sch-first-" + suffix();
+        String second = "sch-second-" + suffix();
+        assertThat(executedCallback(referenceOf(executed), first, "C4", "2.50", "USD"))
+                .isEqualTo(204);
+        assertThat(executedCallback(referenceOf(executed), first, "C4", "2.50", "USD"))
+                .isEqualTo(204);
+        assertThat(executedCallback(referenceOf(executed), second, "C4", "2.50", "USD"))
+                .isEqualTo(204);
+        assertThat(count("SELECT count(*) FROM payments.unmatched_confirmation WHERE"
+                        + " scheme_reference = '" + first + "'"))
+                .as("the rail repeating itself is evidence")
+                .isZero();
+        assertThat(oneString("SELECT cause || '|' || attempt_id::text FROM"
+                        + " payments.unmatched_confirmation WHERE scheme_reference = ?", second))
+                .isEqualTo("ATTEMPT_CONCLUDED|" + executed);
+        assertThat(count("SELECT count(*) FROM ledger.journal_entry WHERE idempotency_scope"
+                        + " = 'ledger.post:payment-execution:" + executed + "'"))
+                .isEqualTo(1);
+    }
+
+    @Test
+    @DisplayName("a fresh-id duplicate of a parked execution on a LATER DAY, or stating another"
+            + " amount, converges on the parking without posting (the gate's poison-delivery"
+            + " find): one entry, one row, the delivery never refused")
+    void aLaterDaysDuplicateConvergesWithoutPosting() throws Exception {
+        String scheme = "sch-dayline-" + suffix();
+        java.time.Instant today = java.time.Instant.parse("2026-09-28T23:59:30Z");
+        com.finapp.payments.UnmatchedConfirmations.Parked first =
+                parkAt(Clock.fixed(today, ZoneOffset.UTC), scheme, "7.50");
+        com.finapp.payments.UnmatchedConfirmations.Parked tomorrow =
+                parkAt(Clock.fixed(today.plus(Duration.ofMinutes(2)), ZoneOffset.UTC), scheme,
+                        "7.50");
+        com.finapp.payments.UnmatchedConfirmations.Parked contradicting =
+                parkAt(Clock.fixed(today.plus(Duration.ofDays(3)), ZoneOffset.UTC), scheme,
+                        "9.99");
+
+        assertThat(first.acting()).isTrue();
+        assertThat(tomorrow.acting()).isFalse();
+        assertThat(contradicting.acting()).isFalse();
+        assertThat(tomorrow.parking()).isEqualTo(first.parking());
+        assertThat(contradicting.parking()).isEqualTo(first.parking());
+        assertThat(count("SELECT count(*) FROM ledger.journal_entry WHERE idempotency_scope"
+                        + " = 'ledger.post:unmatched-confirmation:instant:" + scheme + "'"))
+                .isEqualTo(1);
+        assertThat(count("SELECT count(*) FROM payments.unmatched_confirmation WHERE"
+                        + " scheme_reference = '" + scheme + "'"))
+                .isEqualTo(1);
+    }
+
+    @Test
+    @DisplayName("a resolver whose read was STALE - the attempt concluded since - still parks the"
+            + " value the statement carries, on the locked row, never acknowledging it away"
+            + " (the Phase 7 -> 8 transition, the doors' unlocked-read race)")
+    void aStaleReadOfAConcludedAttemptStillParks() throws Exception {
+        Fixture f = bankFixture();
+        schemeInitiates("https://payer-psp.example/authorize/" + suffix());
+        String paymentId = field(confirmedPayment(f, "3.50").body(), "id");
+        String attemptId = attemptIdOf(paymentId);
+        // Another resolver concludes it FAILED ...
+        assertThat(callback(
+                        "{\"eventId\":\"evt_" + suffix() + "\",\"reference\":\""
+                                + referenceOf(attemptId) + "\",\"status\":\"rejected\"}"))
+                .isEqualTo(204);
+        // ... while this one still believed it waiting: the applier locks, sees FAILED, parks.
+        String scheme = "sch-stale-" + suffix();
+        try (com.finapp.platform.security.SecurityContext.Scope platform =
+                        com.finapp.platform.security.SecurityContext.enterSystem();
+                com.finapp.platform.correlation.CorrelationContext.Scope correlation =
+                        com.finapp.platform.correlation.CorrelationContext.enter(
+                                com.finapp.sharedkernel.correlation.Correlation.startingWith(
+                                        com.finapp.sharedkernel.correlation.CorrelationId
+                                                .generate(ids)))) {
+            transactions.inTransaction(
+                    uow -> {
+                        com.finapp.payments.PaymentIntent intent =
+                                intents.findById(uow, PaymentIntentId.of(UUID.fromString(paymentId)))
+                                        .orElseThrow();
+                        return outcomes.applyExecution(
+                                uow,
+                                intent.id(),
+                                com.finapp.payments.PaymentAttemptId.of(UUID.fromString(attemptId)),
+                                com.finapp.payments.PaymentAttemptStatus.AWAITING_PAYER,
+                                com.finapp.payments.PushInquiryAnswer.Verdict.ACCEPTED,
+                                java.util.Optional.of(new com.finapp.payments.ProviderReference(scheme)),
+                                java.util.Optional.of("C6"),
+                                intent.creditAccount(),
+                                intent.amount(),
+                                java.util.Optional.of(intent.amount()),
+                                com.finapp.payments.PaymentCreation.resolvedCorrelation());
+                    });
+        }
+        assertThat(oneString("SELECT status FROM payments.payment_attempt WHERE id = ?",
+                        UUID.fromString(attemptId)))
+                .isEqualTo("FAILED");
+        assertThat(oneString("SELECT cause || '|' || attempt_id::text FROM"
+                        + " payments.unmatched_confirmation WHERE scheme_reference = ?", scheme))
+                .isEqualTo("ATTEMPT_CONCLUDED|" + attemptId);
+    }
+
+    @Test
+    @DisplayName("the door answers every authenticated statement totally: a zero amount, or a"
+            + " currency this rail cannot park, is unmappable - acknowledged, its evidence kept,"
+            + " nothing parked - never an exception that rolls the evidence back (the Phase 7"
+            + " -> 8 transition)")
+    void anUnparkableStatementIsUnmappableNotAStall() throws Exception {
+        String zero = "sch-zero-" + suffix();
+        String foreignCurrency = "sch-chf-" + suffix();
+        long evidenceBefore = count("SELECT count(*) FROM payments.provider_evidence");
+        assertThat(callback(
+                        "{\"eventId\":\"evt_" + suffix() + "\",\"reference\":\"nobody"
+                                + suffix() + "\",\"status\":\"executed\",\"schemeReference\":\""
+                                + zero + "\",\"amount\":\"0.00\",\"currency\":\"USD\"}"))
+                .isEqualTo(204);
+        assertThat(callback(
+                        "{\"eventId\":\"evt_" + suffix() + "\",\"reference\":\"nobody"
+                                + suffix() + "\",\"status\":\"executed\",\"schemeReference\":\""
+                                + foreignCurrency + "\",\"amount\":\"5.00\",\"currency\":\"CHF\"}"))
+                .isEqualTo(204);
+        assertThat(count("SELECT count(*) FROM payments.unmatched_confirmation WHERE"
+                        + " scheme_reference IN ('" + zero + "', '" + foreignCurrency + "')"))
+                .isZero();
+        assertThat(count("SELECT count(*) FROM payments.provider_evidence") - evidenceBefore)
+                .as("both deliveries' bytes retained, neither rolled back")
+                .isGreaterThanOrEqualTo(2);
+    }
+
+    /** Parks through a parking engine on {@code clock} - the wired parts, another day. */
+    private com.finapp.payments.UnmatchedConfirmations.Parked parkAt(
+            Clock clock, String scheme, String amount) {
+        com.finapp.payments.UnmatchedConfirmations engine =
+                new com.finapp.payments.UnmatchedConfirmations(
+                        unmatchedStoreBean,
+                        railsBean,
+                        new com.finapp.ledger.ChartOfAccounts<>(ledgerAccountStore),
+                        new com.finapp.ledger.PostingService(
+                                new com.finapp.platform.idempotency.IdempotentExecutor(
+                                        new com.finapp.platform.idempotency
+                                                .JdbcIdempotencyRecordStore(),
+                                        clock, Duration.ofDays(1), Duration.ofMinutes(5)),
+                                new com.finapp.ledger.JdbcJournalEntryStore(ids),
+                                auditWriterBean,
+                                new com.finapp.platform.outbox.JdbcOutboxWriter(),
+                                new com.finapp.ledger.JdbcBalanceProjection(),
+                                ids,
+                                clock,
+                                com.finapp.ledger.PostingObserver.NONE),
+                        auditWriterBean,
+                        ids,
+                        clock,
+                        new com.finapp.payments.JdbcSchemeExecutionClaimStore(),
+                        com.finapp.payments.RailOutcomeObserver.NONE);
+        try (com.finapp.platform.security.SecurityContext.Scope platform =
+                        com.finapp.platform.security.SecurityContext.enterSystem();
+                com.finapp.platform.correlation.CorrelationContext.Scope correlation =
+                        com.finapp.platform.correlation.CorrelationContext.enter(
+                                com.finapp.sharedkernel.correlation.Correlation.startingWith(
+                                        com.finapp.sharedkernel.correlation.CorrelationId
+                                                .generate(ids)))) {
+            return transactions.inTransaction(
+                    uow ->
+                            engine.park(
+                                    uow,
+                                    new com.finapp.payments.UnmatchedConfirmations.Parking(
+                                            SimulatedInstantSchemeAdapter.RAIL.id(),
+                                            new com.finapp.payments.ProviderReference(scheme),
+                                            com.finapp.sharedkernel.money.Money.of(
+                                                    new java.math.BigDecimal(amount),
+                                                    com.finapp.sharedkernel.money.CurrencyCode
+                                                            .of("USD")),
+                                            com.finapp.payments.UnmatchedConfirmation.Attribution
+                                                    .unattributed(
+                                                            java.util.Optional.empty(),
+                                                            java.util.Optional.empty()),
+                                            com.finapp.payments.PaymentCreation
+                                                    .resolvedCorrelation())));
+        }
+    }
+
+    @Autowired
+    private com.finapp.payments.UnmatchedConfirmationStore<Connection> unmatchedStoreBean;
+
+    @Autowired private com.finapp.ledger.LedgerAccountStore<Connection> ledgerAccountStore;
 
     // -----------------------------------------------------------------
     // The sweep's two legs, and the refused connection
@@ -455,7 +1103,7 @@ class PayByBankDatabaseTest {
                 SimulatedInstantSchemeAdapter.INITIATION_STATUS_PATH + reference,
                 200,
                 "{\"status\":\"accepted\",\"reference\":\"sch-inq-" + suffix()
-                        + "\",\"cycle\":\"C4\"}");
+                        + "\",\"cycle\":\"C4\",\"amount\":\"8.00\",\"currency\":\"USD\"}");
         Thread.sleep(80);
         double executedBefore =
                 com.finapp.app.telemetry.RailOutcomeCounts.railOutcome(meterRegistry, com.finapp.payments.SimulatedInstantSchemeAdapter.RAIL.id(), "payment", "executed");
@@ -601,6 +1249,13 @@ class PayByBankDatabaseTest {
         schemeInitiates("https://payer-psp.example/authorize/" + suffix());
         String paymentId = field(confirmedPayment(f, "5.00").body(), "id");
         long wired = provider.requestCount(SimulatedInstantSchemeAdapter.INITIATIONS_PATH);
+        // Nothing written, counted (P7-DOC-001, section 14.6): the withdrawal reversal's
+        // counters - no audit record, no fact, no entry, no history row on either machine.
+        long audits = count("SELECT count(*) FROM platform.audit_record");
+        long events = count("SELECT count(*) FROM platform.outbox_event");
+        long entries = count("SELECT count(*) FROM ledger.journal_entry");
+        long history = count("SELECT count(*) FROM payments.payment_intent_event")
+                + count("SELECT count(*) FROM payments.payment_attempt_event");
 
         HttpRequest cancel =
                 HttpRequest.newBuilder()
@@ -609,12 +1264,24 @@ class PayByBankDatabaseTest {
                         .header("Authorization", "Bearer " + f.token())
                         .DELETE()
                         .build();
-        assertThat(send(cancel).statusCode()).isEqualTo(409);
+        HttpResponse<String> refused = send(cancel);
+        assertThat(refused.statusCode()).isEqualTo(409);
+        // THE CAPABILITY's refusal, by its own code (P7-DOC-001: with the declaration's gate
+        // removed the push machine still refused - no void edge leaves AWAITING_PAYER - as
+        // payments.NotCancellable, and a bare 409 could not tell the two ranks apart).
+        assertThat(refused.body()).contains("payments.ReversalNotSupported");
         assertThat(provider.requestCount(SimulatedInstantSchemeAdapter.INITIATIONS_PATH))
                 .isEqualTo(wired);
         assertThat(oneString("SELECT status FROM payments.payment_attempt WHERE intent_id"
                         + " = ?", UUID.fromString(paymentId)))
                 .isEqualTo("AWAITING_PAYER");
+        assertThat(count("SELECT count(*) FROM platform.audit_record")).isEqualTo(audits);
+        assertThat(count("SELECT count(*) FROM platform.outbox_event")).isEqualTo(events);
+        assertThat(count("SELECT count(*) FROM ledger.journal_entry")).isEqualTo(entries);
+        assertThat(count("SELECT count(*) FROM payments.payment_intent_event")
+                        + count("SELECT count(*) FROM payments.payment_attempt_event"))
+                .as("no machine moved")
+                .isEqualTo(history);
     }
 
     @Test
@@ -856,6 +1523,94 @@ class PayByBankDatabaseTest {
         assertThat(count("SELECT count(*) FROM ledger.journal_entry WHERE idempotency_scope"
                         + " = 'ledger.post:payment-refund:" + refundId + "'"))
                 .isEqualTo(1);
+    }
+
+    /**
+     * Section 7's last row, for the two instant sweeps no test raced (`P7-DOC-001`; A3's find):
+     * ten instances sweeping at once over one resolvable row - the registered leaderless
+     * pattern, counted rather than asserted.
+     */
+    @Test
+    @DisplayName("ten concurrent initiation sweeps over one lost callback execute it ONCE: one"
+            + " EXECUTED edge, one entry, one executed fact, one acting record")
+    void tenConcurrentInitiationSweepsExecuteOnce() throws Exception {
+        Fixture f = bankFixture();
+        schemeInitiates("https://payer-psp.example/authorize/" + suffix());
+        String paymentId = field(confirmedPayment(f, "6.00").body(), "id");
+        String attemptId = attemptIdOf(paymentId);
+        provider.succeedsWith(
+                SimulatedInstantSchemeAdapter.INITIATION_STATUS_PATH + referenceOf(attemptId),
+                200,
+                "{\"status\":\"accepted\",\"reference\":\"sch-race-" + suffix()
+                        + "\",\"cycle\":\"C4\",\"amount\":\"6.00\",\"currency\":\"USD\"}");
+        Thread.sleep(80); // past the tiny candidacy bound
+
+        tenAtOnce(this::wideSweep);
+
+        assertThat(count("SELECT count(*) FROM payments.payment_attempt_event WHERE"
+                        + " attempt_id = '" + attemptId + "'::uuid AND to_status = 'EXECUTED'"))
+                .isEqualTo(1);
+        assertThat(count("SELECT count(*) FROM ledger.journal_entry WHERE idempotency_scope"
+                        + " = 'ledger.post:payment-execution:" + attemptId + "'"))
+                .isEqualTo(1);
+        assertThat(outboxCount("payments.PaymentExecuted", paymentId)).isEqualTo(1);
+        assertThat(count("SELECT count(*) FROM platform.audit_record WHERE operation ="
+                        + " 'payments.PaymentOutcomeApplied' AND target_id = '" + paymentId
+                        + "' AND change_summary LIKE '%EXECUTED%'"))
+                .isEqualTo(1);
+    }
+
+    @Test
+    @DisplayName("ten concurrent return sweeps over one lost return answer complete it ONCE:"
+            + " one COMPLETED edge, one entry, one completed fact")
+    void tenConcurrentReturnSweepsCompleteOnce() throws Exception {
+        Executed paid = executedPayIn("5.00", "sch-ret-race-" + suffix());
+        String operator = operatorToken();
+        provider.neverResponds(SimulatedInstantSchemeAdapter.RETURNS_PATH);
+        HttpResponse<String> returned =
+                refund(operator, paid.paymentId(), "5.00", "USD", "raced sweeps", someKey());
+        assertThat(field(returned.body(), "status")).isEqualTo("UNKNOWN");
+        String refundId = field(returned.body(), "id");
+        String ourReference =
+                oneString("SELECT provider_idempotency_reference FROM payments.refund"
+                        + " WHERE id = ?", UUID.fromString(refundId));
+        provider.reset();
+        provider.succeedsWith(
+                SimulatedInstantSchemeAdapter.RETURN_STATUS_PATH + ourReference, 200,
+                "{\"status\":\"accepted\",\"reference\":\"sch-ret-race2-" + suffix()
+                        + "\",\"cycle\":\"C9\"}");
+
+        tenAtOnce(this::wideReturnSweep);
+
+        assertThat(count("SELECT count(*) FROM payments.refund_event WHERE refund_id = '"
+                        + refundId + "'::uuid AND to_status = 'COMPLETED'"))
+                .isEqualTo(1);
+        assertThat(count("SELECT count(*) FROM ledger.journal_entry WHERE idempotency_scope"
+                        + " = 'ledger.post:payment-refund:" + refundId + "'"))
+                .isEqualTo(1);
+        assertThat(outboxCount("payments.RefundCompleted", refundId)).isEqualTo(1);
+    }
+
+    /** Ten calls released behind one gate, every one awaited. */
+    private static void tenAtOnce(java.util.concurrent.Callable<?> sweep) throws Exception {
+        java.util.concurrent.CountDownLatch open = new java.util.concurrent.CountDownLatch(1);
+        java.util.concurrent.ExecutorService pool =
+                java.util.concurrent.Executors.newFixedThreadPool(10);
+        try {
+            java.util.List<java.util.concurrent.Future<?>> running = new java.util.ArrayList<>();
+            for (int i = 0; i < 10; i++) {
+                running.add(pool.submit(() -> {
+                    open.await();
+                    return sweep.call();
+                }));
+            }
+            open.countDown();
+            for (java.util.concurrent.Future<?> call : running) {
+                call.get();
+            }
+        } finally {
+            pool.shutdownNow();
+        }
     }
 
     @Test

@@ -50,6 +50,14 @@ the capability needing it.
 **Suspense accounts exist from Phase 3**, unused, as the Phase 8 seam (`INV-REC-05`). Value
 parked there must be trackable and ageable before anything can park value there.
 
+*(Annotated at the Phase 7 → 8 transition: ADR-0065, `Proposed`, adds four purposes the way this
+ADR says a purpose is added — each with the capability needing it, by the reviewed ceremony
+ledger `V011`–`V014` set (ledger `V016`–`V018`). They are `PROCESSING_COSTS` (EXPENSE, `P8-TSK-009`),
+`RECONCILIATION_LOSSES` (EXPENSE) and `RECONCILIATION_GAINS` (REVENUE, both `P8-TSK-015`), and
+`CASH_AT_BANK` (ASSET, `P8-TSK-016`). Suspense stopped being unused in Phase 7 — the instant rail's
+unmatched confirmations park there — and ADR-0070 gives every suspense item an owning break
+(`INV-REC-09`).)*
+
 ## Why
 
 **Why not a tree.** An account hierarchy is the shape every accounting textbook draws, and it

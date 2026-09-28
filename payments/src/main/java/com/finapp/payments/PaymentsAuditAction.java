@@ -42,8 +42,9 @@ public enum PaymentsAuditAction implements AuditableAction {
      */
     PAYMENT_CANCELLED(
             "payments.PaymentCancelled",
-            "A person cancelled a payment intent before confirmation; nothing was dispatched"
-                    + " and nothing was posted.",
+            "A person cancelled a payment intent before confirmation - or the platform"
+                    + " cancelled one a checkout session opened and never dispatched, as the"
+                    + " session expired; nothing was dispatched and nothing was posted.",
             false),
 
     /**
@@ -140,9 +141,12 @@ public enum PaymentsAuditAction implements AuditableAction {
     /**
      * A void was dispatched (`P7-TSK-004`): the release of an uncaptured authorization,
      * committed with its minted reference before the provider is asked ({@code INV-PAY-04}).
-     * The actor is the customer withdrawing their own authorized payment, the operator (whose
-     * reason is recorded verbatim), or the platform performing the declined-capture redirect;
-     * the outcome that follows is the platform's ({@link #PAYMENT_OUTCOME_APPLIED}).
+     * The actor is the customer withdrawing their own authorized payment, or the operator
+     * (whose reason is recorded verbatim); the outcome that follows is the platform's
+     * ({@link #PAYMENT_OUTCOME_APPLIED}). The platform's declined-capture redirect does NOT
+     * write this record: it moves the attempt into the void inside the capture outcome's own
+     * transaction, recorded by that outcome's {@link #PAYMENT_OUTCOME_APPLIED} (the Phase 7
+     * review corrected this javadoc; the catalogue row always said so).
      */
     PAYMENT_VOID_DISPATCHED(
             "payments.PaymentVoidDispatched",

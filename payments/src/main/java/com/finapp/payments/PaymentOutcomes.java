@@ -107,9 +107,9 @@ public final class PaymentOutcomes {
     /** The build's declared rails (`P7-TSK-001`, ADR-0059): the stored rail's key back to capabilities. */
     @NonNull private final PaymentRails rails;
 
-    /** The suspense parkings (`P7-TSK-009`): the execute arm's second claim pre-check —
-     * a scheme reference already PARKED must not also credit, or the money counts twice.
-     * Last, so no existing positional argument moved (the Lombok field-order rule). */
+    /** The suspense parkings (`P7-TSK-009`): since the Phase 7 -&gt; 8 transition the store
+     * behind {@link #parking()} - a mismatched execution parks its value - while the
+     * execution claim ({@link #claims}) replaced the unlocked pre-check it once served. */
     @NonNull private final UnmatchedConfirmationStore<Connection> unmatched;
 
     /**
@@ -136,6 +136,14 @@ public final class PaymentOutcomes {
      * history).
      */
     @NonNull private final RailOutcomeObserver observer;
+
+    /**
+     * The one-money-fact arbiter (the Phase 7 -&gt; 8 transition, {@code V023}): the execute arm
+     * and a return's completion claim their scheme execution before money moves, so a credit,
+     * a parking, a withdrawal and a return can never both explain one execution. Appended last
+     * (the constructor is positional history).
+     */
+    @NonNull private final SchemeExecutionClaimStore<Connection> claims;
 
     /**
      * What committed (or was found committed by the loser of a harmless race).
@@ -379,41 +387,11 @@ public final class PaymentOutcomes {
                 // THE REDIRECT (P7-TSK-004, ADR-0059): on a rail whose DECLARED reversals
                 // contain VOID - judged from the stored rail, never a name (INV-RAIL-01) -
                 // a declined capture releases the standing authorization instead of leaving
-                // it to lapse against the customer's funds. The redirect commits
-                // VOID_DISPATCHED with its minted reference (INV-PAY-04) in THIS outcome
-                // transaction; the send is the caller's, and the sweeper's void leg
-                // finishes any redirect whose caller has no provider port (the webhook
-                // door). A two-step rail that declares no VOID keeps the Phase 5
-                // conclusion: FAILED(DECLINED), the intent with it.
-                RailId railOfRow =
-                        attempts.findById(uow, attemptId)
-                                .orElseThrow(
-                                        () ->
-                                                new IllegalStateException(
-                                                        "an attempt an outcome is applied to"
-                                                                + " exists"))
-                                .rail();
-                if (rails.capabilitiesOf(railOfRow)
-                        .reversals()
-                        .contains(RailCapabilities.Reversal.VOID)) {
-                    ProviderIdempotencyReference voidReference =
-                            new ProviderIdempotencyReference("void-" + ids.next());
-                    acting = attempts.dispatchVoid(uow, attemptId, from, voidReference);
-                    if (acting) {
-                        attempts.recordTransition(
-                                uow,
-                                attemptId,
-                                from,
-                                PaymentAttemptStatus.VOID_DISPATCHED,
-                                platform,
-                                now);
-                    }
-                    Applied redirected =
-                            answered(uow, intentId, attemptId, verdict.name(),
-                                    PaymentAttemptStatus.VOID_DISPATCHED,
-                                    PaymentIntentStatus.PROCESSING, acting, platform,
-                                    correlation, now);
-                    return acting ? redirected.withVoidPending() : redirected;
+                // it to lapse against the customer's funds. A two-step rail that declares no
+                // VOID keeps the Phase 5 conclusion: FAILED(DECLINED), the intent with it.
+                if (declaresVoid(uow, attemptId)) {
+                    return redirectToVoid(uow, intentId, attemptId, from, verdict.name(),
+                            platform, correlation, now);
                 }
                 Failed failed =
                         failBoth(uow, intentId, attemptId, from, PaymentFailureReason.DECLINED,
@@ -423,6 +401,16 @@ public final class PaymentOutcomes {
                 committedIntent = PaymentIntentStatus.FAILED;
             }
             case NOTHING_SENT -> {
+                // A CAPTURE THAT NEVER LEFT (the Phase 7 -> 8 transition): nothing was
+                // captured, and the issuer's authorization still stands. Failing the payment
+                // alone left it held against the customer's funds until it lapsed - a
+                // retry took a second hold for one purchase. On a rail that declares VOID the
+                // capture redirects into the void exactly as a decline does; elsewhere the
+                // Phase 5 conclusion stands.
+                if (declaresVoid(uow, attemptId)) {
+                    return redirectToVoid(uow, intentId, attemptId, from, verdict.name(),
+                            platform, correlation, now);
+                }
                 Failed failed =
                         failBoth(uow, intentId, attemptId, from,
                                 PaymentFailureReason.PROVIDER_UNAVAILABLE, correlation,
@@ -477,6 +465,65 @@ public final class PaymentOutcomes {
         return answered(uow, intentId, attemptId, QueryAnswer.Verdict.UNRECOGNISED.name(),
                 failed.status(), PaymentIntentStatus.FAILED, failed.acting(), platform,
                 correlation, now);
+    }
+
+    /**
+     * The sweeper's answer for a CAPTURE the provider says it never received (the Phase 7
+     * -&gt; 8 transition): nothing was captured and the authorization stands, so on a rail
+     * that declares {@code VOID} the capture redirects into the void — the declined
+     * capture's redirect, for the same reason — and the payment concludes when the void
+     * does. The gate found {@link #applyUnrecognised} failing the payment here and nothing
+     * ever releasing the authorization. A rail declaring no void keeps
+     * {@code FAILED(NEVER_RECEIVED)}.
+     */
+    public Applied applyCaptureNeverReceived(
+            Connection uow,
+            PaymentIntentId intentId,
+            PaymentAttemptId attemptId,
+            PaymentAttemptStatus from,
+            Correlation correlation) {
+        if (!declaresVoid(uow, attemptId)) {
+            return applyUnrecognised(uow, intentId, attemptId, from, correlation);
+        }
+        return redirectToVoid(uow, intentId, attemptId, from,
+                QueryAnswer.Verdict.UNRECOGNISED.name(), SecurityContext.require(),
+                correlation, Instant.now(clock));
+    }
+
+    /** Whether the attempt's STORED rail declares the void (INV-RAIL-01: data, never a name). */
+    private boolean declaresVoid(Connection uow, PaymentAttemptId attemptId) {
+        return rails.capabilitiesOf(railOf(uow, attemptId))
+                .reversals()
+                .contains(RailCapabilities.Reversal.VOID);
+    }
+
+    /**
+     * The redirect (P7-TSK-004, ADR-0059): {@code VOID_DISPATCHED} with its minted reference
+     * ({@code INV-PAY-04}) committed in THIS outcome transaction; the send is the caller's,
+     * and the sweeper's void leg finishes any redirect whose caller has no provider port (the
+     * webhook door).
+     */
+    private Applied redirectToVoid(
+            Connection uow,
+            PaymentIntentId intentId,
+            PaymentAttemptId attemptId,
+            PaymentAttemptStatus from,
+            String verdict,
+            Actor platform,
+            Correlation correlation,
+            Instant now) {
+        ProviderIdempotencyReference voidReference =
+                new ProviderIdempotencyReference("void-" + ids.next());
+        boolean acting = attempts.dispatchVoid(uow, attemptId, from, voidReference);
+        if (acting) {
+            attempts.recordTransition(
+                    uow, attemptId, from, PaymentAttemptStatus.VOID_DISPATCHED, platform, now);
+        }
+        Applied redirected =
+                answered(uow, intentId, attemptId, verdict,
+                        PaymentAttemptStatus.VOID_DISPATCHED, PaymentIntentStatus.PROCESSING,
+                        acting, platform, correlation, now);
+        return acting ? redirected.withVoidPending() : redirected;
     }
 
     /**
@@ -562,16 +609,35 @@ public final class PaymentOutcomes {
      * that created the intent — the wallet's two or ADR-0050's four through the existing
      * capture composition), the composing flow's completion (a checkout order born
      * {@code COMPLETED} or {@code COMPLETED_LATE} — {@code INV-MER-06}'s second rail) and
-     * the intent's {@code SUCCEEDED}, one commit (ADR-0048). Two claim pre-checks guard the
-     * scheme reference before anything moves: one already stored by ANOTHER attempt, or
-     * already PARKED in suspense, is the integration break made loud — the first record
-     * stands, this statement rests as evidence, nothing credits twice.
+     * the intent's {@code SUCCEEDED}, one commit (ADR-0048). Before anything moves, on the
+     * attempt's LOCKED row (the Phase 7 -&gt; 8 transition):
+     *
+     * <ul>
+     *   <li><strong>The executed amount is judged HERE</strong>, for both producers: the gate
+     *       found it judged only at the callback door, so a refused mismatch was executed at
+     *       the initiation's ask two minutes later by the inquiry sweep — value created or
+     *       unbooked. An answer carrying no usable amount moves nothing (ask again); one
+     *       carrying a DIFFERENT amount parks the value the scheme executed in suspense
+     *       ({@code AMOUNT_MISMATCH}, attributed to this attempt) and fails the pay-in
+     *       {@code DECLINED} — the payment as asked did not happen, the value that did is
+     *       booked and alerted, and nothing is asked forever.
+     *   <li><strong>The scheme execution is CLAIMED</strong> ({@link SchemeExecutionClaim},
+     *       {@code V023}): one already explained by another attempt, a withdrawal, a return
+     *       or a parking is the integration break made loud — the first record stands, this
+     *       statement rests as evidence, nothing credits twice, under any interleaving (the
+     *       gate found the two unlocked pre-checks this replaces guarding one direction,
+     *       sequentially).
+     * </ul>
      *
      * <p>{@code REJECTED} — the payer refused, or their PSP reported the initiation expired
      * (the scheme's own words rest in the evidence; the core keeps its three reasons,
      * {@code INV-PAY-03}) — fails both. {@code UNRECOGNISED} on a row we hold a handle for
      * is the scheme contradicting itself: loud, nothing moves. {@code INDETERMINATE} moves
      * nothing.
+     *
+     * @param amount the initiation's ask — what the posting credits
+     * @param executed the amount the scheme says it executed, when the answer carried a usable
+     *     one; judged against {@code amount} to the unit and the scale
      */
     public Applied applyExecution(
             Connection uow,
@@ -583,6 +649,7 @@ public final class PaymentOutcomes {
             Optional<String> settlementCycle,
             LedgerAccountId credit,
             Money amount,
+            Optional<Money> executed,
             Correlation correlation) {
         Actor platform = SecurityContext.require();
         Instant now = Instant.now(clock);
@@ -593,37 +660,63 @@ public final class PaymentOutcomes {
         switch (verdict) {
             case ACCEPTED -> {
                 ProviderReference scheme = schemeReference.orElseThrow();
-                RailId rail =
-                        attempts.findById(uow, attemptId)
+                // THE LOCKED ROW (the Phase 7 -> 8 transition): every resolver of this attempt
+                // - the door, the sweep, a duplicate of either - judges and claims on the one
+                // row it holds, so the claim below always names the execution this row then
+                // takes, and a row another resolver already moved converges on its truth.
+                PaymentAttempt locked =
+                        attempts.lockById(uow, attemptId)
                                 .orElseThrow(
                                         () ->
                                                 new IllegalStateException(
                                                         "an attempt an outcome is applied to"
-                                                                + " exists"))
-                                .rail();
-                // THE CLAIM PRE-CHECKS (P7-TSK-009): one scheme execution credits once,
-                // platform-wide. A reference another attempt stored, or one already parked
-                // in suspense, is the break Phase 8's matching must see - recorded loud,
-                // never compounded into a second credit (the V015 foreign-claim shape).
-                Optional<PaymentAttempt> claimant = attempts.findBySchemeReference(uow, scheme);
-                if (claimant.isPresent() && !claimant.get().id().equals(attemptId)) {
-                    log.warn(
-                            "An execution confirmation for attempt {} named a scheme"
-                                    + " reference already recorded on attempt {}; the first"
-                                    + " record stands and this statement rests as evidence -"
-                                    + " an integration break reconciliation must see",
-                            attemptId,
-                            claimant.get().id());
+                                                                + " exists"));
+                if (locked.status() != from) {
+                    // The caller's read was stale (the door's attribution read and the sweep's
+                    // candidate list are unlocked). A row another resolver CONCLUDED since then
+                    // still received value by this statement: it parks, never dropped (the
+                    // Phase 7 -> 8 transition - the gate found such a race acknowledged and the
+                    // provider's answer lost). A row still waiting converges on its truth.
+                    if (!pushResolvable(locked.status())) {
+                        concludedExecution(uow, locked, scheme, settlementCycle, executed,
+                                correlation);
+                    }
                     return answered(uow, intentId, attemptId, verdict.name(), from,
                             committedIntent, false, platform, correlation, now);
                 }
-                if (unmatched.findByReference(uow, rail, scheme).isPresent()) {
+                RailId rail = locked.rail();
+
+                // THE EXECUTED AMOUNT, JUDGED HERE FOR EVERY PRODUCER.
+                if (executed.isEmpty()) {
+                    log.warn(
+                            "An execution answer for attempt {} carried no usable executed"
+                                    + " amount; nothing moves and the statement rests as"
+                                    + " evidence - asked again",
+                            attemptId);
+                    return answered(uow, intentId, attemptId, verdict.name(), from,
+                            committedIntent, false, platform, correlation, now);
+                }
+                if (!executed.get().equals(amount)) {
+                    return mismatchedExecution(uow, intentId, locked, from, verdict, scheme,
+                            settlementCycle, executed.get(), correlation, platform, now);
+                }
+
+                // THE CLAIM (V023): one scheme execution, one money fact, platform-wide.
+                SchemeExecutionClaim standing =
+                        claims.claim(
+                                uow,
+                                new SchemeExecutionClaim(
+                                        rail, scheme, SchemeExecutionClaim.Subject.PAY_IN,
+                                        attemptId.value(), now));
+                if (!standing.heldBy(SchemeExecutionClaim.Subject.PAY_IN, attemptId.value())) {
                     log.warn(
                             "An execution confirmation for attempt {} named a scheme"
-                                    + " reference already PARKED in suspense; the parking"
-                                    + " stands for the operator to resolve, and this row"
-                                    + " does not also credit (INV-REC-05, P7-TSK-009)",
-                            attemptId);
+                                    + " reference already explained by {} {}; the first"
+                                    + " record stands and this statement rests as evidence -"
+                                    + " an integration break reconciliation must see",
+                            attemptId,
+                            standing.subject(),
+                            standing.subjectId());
                     return answered(uow, intentId, attemptId, verdict.name(), from,
                             committedIntent, false, platform, correlation, now);
                 }
@@ -678,6 +771,118 @@ public final class PaymentOutcomes {
         }
         return answered(uow, intentId, attemptId, verdict.name(), committedAttempt,
                 committedIntent, acting, platform, correlation, now);
+    }
+
+    /**
+     * A waiting pay-in's scheme executed an amount other than its ask (the Phase 7 -&gt; 8
+     * transition): the executed value parks ({@code AMOUNT_MISMATCH}, attributed to the
+     * attempt) and the pay-in fails {@code DECLINED} in the same commit — unless the
+     * execution is already explained elsewhere, when nothing moves (the scheme contradicting
+     * itself, loud).
+     */
+    private Applied mismatchedExecution(
+            Connection uow,
+            PaymentIntentId intentId,
+            PaymentAttempt locked,
+            PaymentAttemptStatus from,
+            PushInquiryAnswer.Verdict verdict,
+            ProviderReference scheme,
+            Optional<String> settlementCycle,
+            Money executed,
+            Correlation correlation,
+            Actor platform,
+            Instant now) {
+        PaymentAttemptId attemptId = locked.id();
+        UnmatchedConfirmations.Parked parked =
+                parking().park(
+                        uow,
+                        new UnmatchedConfirmations.Parking(
+                                locked.rail(),
+                                scheme,
+                                executed,
+                                UnmatchedConfirmation.Attribution.of(
+                                        UnmatchedConfirmation.Cause.AMOUNT_MISMATCH,
+                                        attemptId,
+                                        locked.endToEndReference(),
+                                        settlementCycle),
+                                correlation));
+        if (parked.parking().isEmpty()) {
+            log.warn(
+                    "An execution answer for attempt {} stated an amount other than the"
+                            + " initiation's ask under a scheme reference already explained"
+                            + " elsewhere; nothing moves and the statement rests as evidence",
+                    attemptId);
+            return answered(uow, intentId, attemptId, verdict.name(), from,
+                    PaymentIntentStatus.PROCESSING, false, platform, correlation, now);
+        }
+        log.warn(
+                "An execution answer for attempt {} stated an amount other than the"
+                        + " initiation's ask; the executed value is parked in suspense and the"
+                        + " pay-in fails DECLINED - an integration break reconciliation must"
+                        + " see (the Phase 7 -> 8 transition)",
+                attemptId);
+        Failed failed =
+                failBoth(uow, intentId, attemptId, from, PaymentFailureReason.DECLINED,
+                        correlation, platform, now);
+        return answered(uow, intentId, attemptId, verdict.name(), failed.status(),
+                PaymentIntentStatus.FAILED, failed.acting(), platform, correlation, now);
+    }
+
+    /**
+     * An execution stated on an attempt that has already concluded (the Phase 7 -&gt; 8
+     * transition): executed under that same scheme reference it is the rail repeating itself;
+     * otherwise — a FAILED attempt, or another scheme reference on an EXECUTED one — value
+     * arrived that the attempt's story does not explain, and it parks
+     * ({@code ATTEMPT_CONCLUDED}, attributed). Without a usable amount nothing can park: loud.
+     */
+    private void concludedExecution(
+            Connection uow,
+            PaymentAttempt locked,
+            ProviderReference scheme,
+            Optional<String> settlementCycle,
+            Optional<Money> executed,
+            Correlation correlation) {
+        if (locked.status() == PaymentAttemptStatus.EXECUTED
+                && locked.schemeReference().equals(Optional.of(scheme))) {
+            return;
+        }
+        if (executed.isEmpty()) {
+            log.warn(
+                    "An execution was stated on concluded attempt {} ({}) with no usable amount;"
+                            + " nothing can park and the statement rests as evidence",
+                    locked.id(),
+                    locked.status());
+            return;
+        }
+        parking().park(
+                uow,
+                new UnmatchedConfirmations.Parking(
+                        locked.rail(),
+                        scheme,
+                        executed.get(),
+                        UnmatchedConfirmation.Attribution.of(
+                                UnmatchedConfirmation.Cause.ATTEMPT_CONCLUDED,
+                                locked.id(),
+                                locked.endToEndReference(),
+                                settlementCycle),
+                        correlation));
+    }
+
+    /** The push model's resolvable sources — waiting, or an outbound unknown. */
+    private static boolean pushResolvable(PaymentAttemptStatus status) {
+        return status == PaymentAttemptStatus.AWAITING_PAYER
+                || status == PaymentAttemptStatus.EXECUTION_DISPATCHED
+                || status == PaymentAttemptStatus.EXECUTION_UNKNOWN;
+    }
+
+    /**
+     * The suspense parking, over this class's own collaborators (the Phase 7 -&gt; 8
+     * transition): stateless, so built where it is needed rather than widening the positional
+     * constructor by a second parameter carrying the same parts.
+     */
+    private UnmatchedConfirmations parking() {
+        return new UnmatchedConfirmations(
+                unmatched, rails, chart, postings, audit, ids, clock, claims, observer);
     }
 
     /**
@@ -803,6 +1008,7 @@ public final class PaymentOutcomes {
                     refunds.recordTransition(
                             uow, refund.id(), from, RefundStatus.COMPLETED, platform, now);
                     holds.release(uow, refund.holdReference());
+                    claimReturn(uow, refund, providerReference.orElseThrow(), now);
 
                     // THE POSTING - same connection, atomically with the transition and the
                     // release (ADR-0048 §4): DR the customer's wallet, CR clearing - the
@@ -1014,6 +1220,38 @@ public final class PaymentOutcomes {
         // outcome leaves through this branch, whichever door or resolver carried it.
         observer.attemptJudged(railOf(uow, attemptId), committedAttempt);
         return new Applied(committedIntent, committedAttempt, true);
+    }
+
+    /**
+     * A completed return claims its scheme execution (the Phase 7 -&gt; 8 transition,
+     * {@code V023}) — on a push rail only, where a scheme reference is an execution the
+     * pay-in door could otherwise mistake for inbound value. The return happened whatever the
+     * claim answers (the scheme said so, by our reference): a claim standing elsewhere is a
+     * parking made in good faith of this return's own echo, recorded loud for the operator,
+     * never a reason to refuse the completion.
+     */
+    private void claimReturn(
+            Connection uow, Refund refund, ProviderReference theirs, Instant now) {
+        RailId rail = railOf(uow, refund.attemptId());
+        if (rails.capabilitiesOf(rail).interactionModel() != InteractionModel.PUSH) {
+            return;
+        }
+        SchemeExecutionClaim standing =
+                claims.claim(
+                        uow,
+                        new SchemeExecutionClaim(
+                                rail, theirs, SchemeExecutionClaim.Subject.RETURN,
+                                refund.id().value(), now));
+        if (!standing.heldBy(SchemeExecutionClaim.Subject.RETURN, refund.id().value())) {
+            log.warn(
+                    "Return {} completed under a scheme reference already explained by {} {};"
+                            + " the return stands, and the earlier record is an integration"
+                            + " break for the operator (one scheme execution, one money fact -"
+                            + " V023)",
+                    refund.id(),
+                    standing.subject(),
+                    standing.subjectId());
+        }
     }
 
     /** The stored rail of {@code attemptId} — data read off the row, never a name (INV-RAIL-01). */

@@ -158,8 +158,8 @@ class PaymentMetricsDatabaseTest {
             execute(app,
                     "INSERT INTO payments.unmatched_confirmation (id, rail,"
                             + " scheme_reference, amount_minor, currency, scale,"
-                            + " received_at, entry_ref) VALUES (?, 'push-test', ?, 750,"
-                            + " 'EUR', 2, now() - interval '1 hour', ?)",
+                            + " received_at, entry_ref, cause) VALUES (?, 'push-test', ?, 750,"
+                            + " 'EUR', 2, now() - interval '1 hour', ?, 'UNATTRIBUTED')",
                     IDS.next(), "sch-gauge-" + IDS.next(), IDS.next());
             PaymentAttemptStore.UnknownReading parkedAfter = unmatched.parkedReading(app);
             assertThat(parkedAfter.active() - parkedBefore.active()).isEqualTo(1);

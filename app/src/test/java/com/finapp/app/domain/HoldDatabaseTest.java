@@ -167,6 +167,38 @@ class HoldDatabaseTest {
     }
 
     @Test
+    @DisplayName("a release stamped by an instance whose clock TRAILS the placing one's still"
+            + " lands - never before its placement, never a CHECK failure that fails the"
+            + " completion releasing it (the Phase 7 -> 8 transition)")
+    void aTrailingClocksReleaseStillLands() throws Exception {
+        Wallet wallet = fundedWallet(500);
+        try (Connection app = DatabaseRoles.application();
+                SecurityContext.Scope actor = SecurityContext.enter(wallet.actor());
+                CorrelationContext.Scope flow = flow()) {
+            app.setAutoCommit(false);
+            Hold placed =
+                    holdService(Clock.offset(CLOCK, java.time.Duration.ofSeconds(90)))
+                            .place(app, wallet.account().id(), Money.ofMinorUnits(500, USD));
+            app.commit();
+
+            HoldService.Release release =
+                    holdService(CLOCK).release(app, placed.id()).orElseThrow();
+            app.commit();
+            assertThat(release.released()).isTrue();
+            try (PreparedStatement read =
+                    app.prepareStatement(
+                            "SELECT released_at >= placed_at FROM ledger.hold WHERE id = ?")) {
+                read.setObject(1, placed.id().value());
+                try (ResultSet row = read.executeQuery()) {
+                    assertThat(row.next()).isTrue();
+                    assertThat(row.getBoolean(1)).isTrue();
+                }
+            }
+            assertThat(holdsMinorOf(app, wallet.account())).isZero();
+        }
+    }
+
+    @Test
     @DisplayName("release restores availability exactly, and a second release converges with"
             + " nothing written")
     void releaseRestoresAvailabilityExactly() throws Exception {

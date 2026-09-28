@@ -160,7 +160,8 @@ class CheckoutExpirySweeperScheduleTest {
                 IDS,
                 CLOCK,
                 Duration.ofMinutes(10),
-                50);
+                50,
+                com.finapp.checkout.UndispatchedPayments.none());
     }
 
     private static CheckoutSessionStore<Connection> sessions() {

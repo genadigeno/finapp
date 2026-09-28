@@ -306,7 +306,7 @@ not-yours and malformed are one `api.NotFound` (the beneficiary reasoning, verba
 | `payments.NoEligibleRail` | 422 | No payment rail can carry this payment right now. |
 | `payments.UnknownRail` | 422 | The named payment rail is not declared by this platform. |
 | `payments.RoutingPolicyNotForward` | 422 | A routing policy version takes effect forward, never backward. |
-| `payments.ReversalNotSupported` | 409 | The payment's rail does not support reversal. |
+| `payments.ReversalNotSupported` | 409 | This payment's rail does not support reversal. |
 | `payments.WithdrawalUnfunded` | 422 | The wallet's available balance cannot cover this withdrawal. |
 | `payments.WalletPaymentUnfunded` | 422 | The wallet's available balance cannot cover this payment. (`P7-TSK-011`: judged under the wallet's lock; nothing written, the same confirmation succeeds after a top-up.) |
 | `payments.WithdrawalCurrencyMismatched` | 422 | A withdrawal is priced in its wallet's own currency. |

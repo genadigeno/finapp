@@ -89,6 +89,31 @@ public final class JdbcBalanceProjection implements BalanceProjection<Connection
     }
 
     @Override
+    public void lockInOrder(
+            Connection unitOfWork, java.util.Collection<LedgerAccountId> accounts) {
+        Objects.requireNonNull(unitOfWork, "unitOfWork must not be null");
+        Objects.requireNonNull(accounts, "accounts must not be null");
+        List<LedgerAccountId> ordered = new ArrayList<>(new java.util.LinkedHashSet<>(accounts));
+        // apply()'s comparator, verbatim: the order is the whole point.
+        ordered.sort(Comparator.comparing(LedgerAccountId::value));
+        try (PreparedStatement lock =
+                unitOfWork.prepareStatement(
+                        "SELECT 1 FROM " + BALANCE_TABLE
+                                + " WHERE ledger_account_id = ? FOR UPDATE")) {
+            for (LedgerAccountId account : ordered) {
+                lock.setObject(1, account.value());
+                try (ResultSet row = lock.executeQuery()) {
+                    // Held until the transaction ends; an absent row holds nothing.
+                    row.next();
+                }
+            }
+        } catch (SQLException failure) {
+            throw new LedgerStorageException(
+                    DatabaseFailure.describe("locking projection rows in order", failure));
+        }
+    }
+
+    @Override
     public void adjustHolds(
             Connection unitOfWork,
             LedgerAccountId account,

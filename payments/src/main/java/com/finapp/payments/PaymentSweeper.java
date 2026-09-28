@@ -500,6 +500,32 @@ public final class PaymentSweeper {
         // the dispatch-before-call shape inverted into read-before-ask).
         QueryAnswer answer = provider.query(reference);
 
+        // A VOID THE PROVIDER NEVER RECEIVED IS RE-SENT, NEVER CONCLUDED (the Phase 7 -> 8
+        // transition): the void exists to release a standing authorization, and a re-send of
+        // our stored reference is harmless by definition - the reason the VOID_DISPATCHED leg
+        // above is permit-free. The gate found this answer failing the payment
+        // FAILED(NEVER_RECEIVED) with the authorization left held against the customer.
+        if (voidStage && answer.verdict() == QueryAnswer.Verdict.UNRECOGNISED) {
+            answer.evidence()
+                    .ifPresent(
+                            bytes ->
+                                    transactions.inTransaction(
+                                            uow -> {
+                                                evidence.append(
+                                                        uow,
+                                                        Optional.of(candidate.id()),
+                                                        Optional.empty(),
+                                                        EvidenceKind.QUERY_RESULT,
+                                                        bytes,
+                                                        Instant.now(clock));
+                                                return null;
+                                            }));
+            PaymentVoid.VoidResult resent = voids.resendUnknown(candidate.id());
+            return new Resolution(
+                    !resent.converged(),
+                    resent.acting() ? Optional.of(resent.attempt()) : Optional.empty());
+        }
+
         Correlation correlation = PaymentCreation.resolvedCorrelation();
         return transactions.inTransaction(
                 uow -> {
@@ -526,6 +552,20 @@ public final class PaymentSweeper {
                                                 uow, authStage, current, intent,
                                                 answer, correlation);
                                 case UNRECOGNISED -> {
+                                    if (!authStage) {
+                                        // A capture the provider never received leaves the
+                                        // authorization standing: on a rail declaring VOID
+                                        // it redirects into the void, sent after this
+                                        // transaction (the Phase 7 -> 8 transition).
+                                        yield submitted(
+                                                outcomes.applyCaptureNeverReceived(
+                                                        uow,
+                                                        intent.id(),
+                                                        current.id(),
+                                                        current.status(),
+                                                        correlation),
+                                                current.id());
+                                    }
                                     PaymentOutcomes.Applied applied =
                                             outcomes.applyUnrecognised(
                                                     uow,

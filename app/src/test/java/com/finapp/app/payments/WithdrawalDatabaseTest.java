@@ -84,6 +84,8 @@ import org.springframework.test.context.DynamicPropertySource;
  */
 @Tag("database")
 @SpringBootTest(webEnvironment = SpringBootTest.WebEnvironment.RANDOM_PORT)
+@org.junit.jupiter.api.extension.ExtendWith(
+        org.springframework.boot.test.system.OutputCaptureExtension.class)
 @DisplayName("the wallet withdrawal over the instant rail (P7-TSK-008)")
 @SuppressWarnings("try") // Scopes are used for their close side effect (the idiom).
 class WithdrawalDatabaseTest {
@@ -211,6 +213,22 @@ class WithdrawalDatabaseTest {
         String read = get("/v1/me/withdrawals/" + id, f.token()).body();
         assertThat(field(read, "status")).isEqualTo("COMPLETED");
         assertThat(read).doesNotContain(f.destination());
+
+        // THE CHAIN, identifier to identifier (PHASE_7_PLAN section 12, the gate's
+        // reconciliation-readiness bullet; P7-DOC-001): from the scheme's transaction
+        // reference to our withdrawal, our end-to-end reference and the one entry - joins on
+        // stored identifiers only, never a timestamp.
+        String schemeReference =
+                oneString("SELECT scheme_reference FROM payments.withdrawal WHERE id = ?",
+                        UUID.fromString(id));
+        assertThat(count("SELECT count(*) FROM payments.withdrawal w"
+                        + " JOIN ledger.journal_entry e"
+                        + "   ON e.idempotency_scope = 'ledger.post:wallet-withdrawal:'"
+                        + "      || w.id::text"
+                        + " WHERE w.scheme_reference = '" + schemeReference + "'"
+                        + " AND w.end_to_end_reference IS NOT NULL"))
+                .as("the scheme's reference reaches exactly one withdrawal and its one entry")
+                .isEqualTo(1);
     }
 
     @Test
@@ -259,6 +277,22 @@ class WithdrawalDatabaseTest {
                         + " (SELECT customer_id FROM payments.withdrawal WHERE id = '" + id
                         + "'::uuid) AND dispatch_key = '" + raceKey + "'"))
                 .isEqualTo(1);
+        // ...and the rest of the promise the comment above made, now counted rather than
+        // claimed (P7-DOC-001): one entry, one completed fact, one send of our reference.
+        String raced =
+                oneString("SELECT id::text || '|' || end_to_end_reference FROM"
+                        + " payments.withdrawal WHERE dispatch_key = '" + raceKey + "'");
+        String racedId = raced.split("\\|")[0];
+        String racedReference = raced.split("\\|")[1];
+        assertThat(count("SELECT count(*) FROM ledger.journal_entry WHERE idempotency_scope"
+                        + " = 'ledger.post:wallet-withdrawal:" + racedId + "'"))
+                .isEqualTo(1);
+        assertThat(outboxCount("payments.WithdrawalCompleted", racedId)).isEqualTo(1);
+        assertThat(provider.headerValues(SimulatedInstantSchemeAdapter.TRANSFERS_PATH,
+                        "Idempotency-Key"))
+                .as("ten racers, one send of our one reference (INV-PAY-04)")
+                .filteredOn(racedReference::equals)
+                .hasSize(1);
     }
 
     @Test
@@ -376,6 +410,132 @@ class WithdrawalDatabaseTest {
         resolution.sweep();
         assertThat(count("SELECT count(*) FROM ledger.journal_entry"
                         + " WHERE idempotency_scope = 'ledger.post:wallet-withdrawal:" + id + "'"))
+                .isEqualTo(1);
+        // Resolvers record acting transitions only (the gate's audit bullet; P7-DOC-001): the
+        // converging second sweep wrote no second record of the completion.
+        assertThat(count("SELECT count(*) FROM platform.audit_record WHERE operation ="
+                        + " 'payments.WithdrawalOutcomeApplied' AND target_id = '" + id
+                        + "' AND change_summary LIKE '%status=COMPLETED%'"))
+                .isEqualTo(1);
+    }
+
+    /**
+     * The takeover path itself (`P7-DOC-001`, section 14.4; A3's find): a retry under the same
+     * key finds its claim lapsed and its withdrawal committed, renews the send permit and
+     * re-sends OUR stored reference - and when that re-send's connection is refused, NOTHING is
+     * concluded: the first send may have been paid, so the hold stands and the row stays
+     * resolvable. The first-send rule was proven before only on a seeded row's answer.
+     */
+    @Test
+    @DisplayName("a takeover's re-send that meets a refused connection concludes NOTHING: the"
+            + " permit renewed, our same reference, the row DISPATCHED and the hold ACTIVE"
+            + " (section 14.4, ADR-0057 section 3)")
+    void aTakeoversRefusedConnectionConcludesNothing() throws Exception {
+        Fixture f = fundedFixture("20.00");
+        Instant stranded = Instant.now(CLOCK).minus(Duration.ofHours(1));
+        Seeded seeded = seedDispatched(f, "3.00", stranded);
+        String key = "seed-" + seeded.reference();
+        try (Connection other = DatabaseRoles.application()) {
+            other.setAutoCommit(false);
+            new com.finapp.platform.idempotency.JdbcIdempotencyRecordStore()
+                    .claim(
+                            other,
+                            new com.finapp.platform.idempotency.IdempotencyKey(
+                                    "payments.withdrawal:" + f.customerId(), key),
+                            com.finapp.platform.idempotency.RequestFingerprint.sha256(
+                                    ("payments.withdrawal|" + f.customerId() + "|"
+                                                    + f.methodId() + "|300|USD|2")
+                                            .getBytes(java.nio.charset.StandardCharsets.UTF_8)),
+                            CorrelationId.of("crashed-withdrawal"),
+                            Instant.now(CLOCK),
+                            Instant.now(CLOCK).plus(Duration.ofDays(1)),
+                            // Lapsed a minute ago on the server clock (the P7-TSK-015 lesson).
+                            Duration.ofMinutes(-1));
+            other.commit();
+        }
+
+        Actor person = new Actor(UUID.randomUUID().toString(), ActorType.CUSTOMER);
+        Withdrawals.Initiated retried;
+        try (SecurityContext.Scope actor = SecurityContext.enter(person);
+                CorrelationContext.Scope scope =
+                        CorrelationContext.enter(
+                                Correlation.startingWith(CorrelationId.generate(ids)))) {
+            retried =
+                    offlineEngine()
+                            .withdraw(
+                                    key,
+                                    Money.of(new BigDecimal("3.00"), CurrencyCode.of("USD")),
+                                    uow -> resolvedOf(f));
+        }
+
+        assertThat(retried.id()).isEqualTo(seeded.id());
+        assertThat(retried.status())
+                .as("a refused connection on a re-send is not knowledge that nothing was paid")
+                .isEqualTo(WithdrawalStatus.DISPATCHED);
+        assertThat(oneString("SELECT status || '|' || end_to_end_reference FROM"
+                        + " payments.withdrawal WHERE id = ?", seeded.id().value()))
+                .isEqualTo("DISPATCHED|" + seeded.reference());
+        assertThat(oneString("SELECT (last_dispatched_at > created_at)::text FROM"
+                        + " payments.withdrawal WHERE id = ?", seeded.id().value()))
+                .as("the takeover renewed the send permit before its re-send")
+                .isEqualTo("true");
+        assertThat(oneString("SELECT h.status FROM ledger.hold h JOIN payments.withdrawal w"
+                        + " ON w.hold_reference = h.id WHERE w.id = ?", seeded.id().value()))
+                .as("the hold stands: the customer may already have the money")
+                .isEqualTo("ACTIVE");
+        assertThat(count("SELECT count(*) FROM ledger.journal_entry WHERE idempotency_scope"
+                        + " = 'ledger.post:wallet-withdrawal:" + seeded.id().value() + "'"))
+                .isZero();
+    }
+
+    /**
+     * Section 7's last row for the withdrawal sweep (`P7-DOC-001`; A3's find): ten instances
+     * sweeping at once over one resolvable withdrawal - the registered leaderless pattern,
+     * counted rather than asserted.
+     */
+    @Test
+    @DisplayName("ten concurrent withdrawal sweeps over one lost answer resolve it ONCE: one"
+            + " COMPLETED edge, one entry, one completed fact, one acting record")
+    void tenConcurrentSweepsResolveOneWithdrawalOnce() throws Exception {
+        Fixture f = fundedFixture("20.00");
+        Seeded seeded = seedDispatched(f, "4.00", Instant.now(CLOCK).minus(Duration.ofHours(1)));
+        String id = seeded.id().value().toString();
+        provider.succeedsWith(
+                SimulatedInstantSchemeAdapter.TRANSFER_STATUS_PATH + seeded.reference(),
+                200,
+                "{\"status\":\"accepted\",\"reference\":\"sch-sweep-" + suffix()
+                        + "\",\"cycle\":\"C5\"}");
+
+        java.util.concurrent.CountDownLatch open = new java.util.concurrent.CountDownLatch(1);
+        ExecutorService pool = Executors.newFixedThreadPool(10);
+        try {
+            List<Future<?>> sweeps = new ArrayList<>();
+            for (int i = 0; i < 10; i++) {
+                sweeps.add(pool.submit(() -> {
+                    open.await();
+                    return resolution.sweep();
+                }));
+            }
+            open.countDown();
+            for (Future<?> sweep : sweeps) {
+                sweep.get();
+            }
+        } finally {
+            pool.shutdownNow();
+        }
+
+        assertThat(oneString("SELECT status FROM payments.withdrawal WHERE id = ?",
+                        seeded.id().value()))
+                .isEqualTo("COMPLETED");
+        assertThat(count("SELECT count(*) FROM payments.withdrawal_event WHERE withdrawal_id ="
+                        + " '" + id + "'::uuid AND to_status = 'COMPLETED'"))
+                .isEqualTo(1);
+        assertThat(count("SELECT count(*) FROM ledger.journal_entry WHERE idempotency_scope"
+                        + " = 'ledger.post:wallet-withdrawal:" + id + "'"))
+                .isEqualTo(1);
+        assertThat(outboxCount("payments.WithdrawalCompleted", id)).isEqualTo(1);
+        assertThat(count("SELECT count(*) FROM platform.audit_record WHERE operation ="
+                        + " 'payments.WithdrawalOutcomeApplied' AND target_id = '" + id + "'"))
                 .isEqualTo(1);
     }
 
@@ -694,6 +854,48 @@ class WithdrawalDatabaseTest {
     // -----------------------------------------------------------------
     // Fixtures
     // -----------------------------------------------------------------
+
+    @Test
+    @DisplayName("an ACCEPTED answer beside a withdrawal the platform holds FAILED moves nothing"
+            + " and is LOUD - a break about money, never absorbed silently (the Phase 7 -> 8"
+            + " transition)")
+    void anAcceptanceBesideAFailedWithdrawalIsLoud(
+            org.springframework.boot.test.system.CapturedOutput output) throws Exception {
+        Fixture f = fundedFixture("10.00");
+        Seeded seeded = seedDispatched(f, "2.00", Instant.now(CLOCK));
+        try (SecurityContext.Scope platform = SecurityContext.enterSystem();
+                CorrelationContext.Scope correlation =
+                        CorrelationContext.enter(
+                                Correlation.startingWith(CorrelationId.generate(ids)))) {
+            transactions.inTransaction(
+                    uow -> {
+                        Withdrawal locked =
+                                withdrawalStore.findForUpdate(uow, seeded.id()).orElseThrow();
+                        return outcomes.applySendAnswer(
+                                uow, locked, com.finapp.payments.PushAnswer.rejected(new byte[] {1}),
+                                true, locked.lastDispatchedAt(),
+                                com.finapp.payments.PaymentCreation.resolvedCorrelation());
+                    });
+            WithdrawalOutcomes.Applied applied =
+                    transactions.inTransaction(
+                            uow -> {
+                                Withdrawal locked =
+                                        withdrawalStore.findForUpdate(uow, seeded.id())
+                                                .orElseThrow();
+                                return outcomes.applySendAnswer(
+                                        uow, locked,
+                                        com.finapp.payments.PushAnswer.accepted(
+                                                new ProviderReference("sch-late-" + suffix()),
+                                                java.util.Optional.empty(), new byte[] {1}),
+                                        false, locked.lastDispatchedAt(),
+                                        com.finapp.payments.PaymentCreation.resolvedCorrelation());
+                            });
+            assertThat(applied.status()).isEqualTo(WithdrawalStatus.FAILED);
+            assertThat(applied.acting()).isFalse();
+        }
+        assertThat(output.getOut())
+                .contains("which the platform holds FAILED - value may have left");
+    }
 
     private record Fixture(
             String token,

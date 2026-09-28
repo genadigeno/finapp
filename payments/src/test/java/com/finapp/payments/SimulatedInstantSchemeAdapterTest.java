@@ -390,13 +390,85 @@ class SimulatedInstantSchemeAdapterTest {
     }
 
     @Test
-    @DisplayName("the initiation inquiry speaks the same totality on its own path")
+    @DisplayName("the grant's shape rule and the body's escaping (the Phase 7 -> 8 transition):"
+            + " a grant that could close its quote, or that takes a bank identifier's shape, is"
+            + " refused by the port record; every body value is a JSON string literal")
+    void grantsAreShapedAndBodiesEscaped() {
+        for (String hostile :
+                List.of(
+                        "g\",\"endToEndReference\":\"x",
+                        "blg\\x",
+                        "blg\nx",
+                        "DE89370400440532013000",
+                        "12345678",
+                        "a".repeat(129),
+                        "")) {
+            assertThatThrownBy(() -> new GrantExchange(OUR_REF, hostile))
+                    .as(hostile)
+                    .isInstanceOf(IllegalArgumentException.class)
+                    .hasMessageNotContaining(hostile.isEmpty() ? "\u0000" : hostile);
+        }
+        assertThat(new GrantExchange(OUR_REF, "blg-0123abcd-ef").grant())
+                .isEqualTo("blg-0123abcd-ef");
+
+        assertThat(SchemeWireClient.jsonString("a\"b\\c\n"))
+                .isEqualTo("\"a\\\"b\\\\c\\u000a\"");
+    }
+
+    @Test
+    @DisplayName("the initiation inquiry speaks its own vocabulary (the Phase 7 -> 8 transition):"
+            + " an acceptance carries the EXECUTED amount the applier judges, one without it is"
+            + " unactionable, and 'expired' is the rejection the callback door already maps")
     void initiationInquiry() {
+        String path = SimulatedInstantSchemeAdapter.INITIATION_STATUS_PATH + OUR_REF.value();
         scheme.succeedsWith(
-                SimulatedInstantSchemeAdapter.INITIATION_STATUS_PATH + OUR_REF.value(), 200,
-                ACCEPTED_BODY);
+                path, 200,
+                "{\"status\":\"accepted\",\"reference\":\"scheme_tx_1\","
+                        + "\"cycle\":\"CYC-1\",\"amount\":\"12.50\",\"currency\":\"EUR\"}");
+        PushInquiryAnswer executed = adapter().inquireInitiation(OUR_REF);
+        assertThat(executed.verdict()).isEqualTo(PushInquiryAnswer.Verdict.ACCEPTED);
+        assertThat(executed.executed())
+                .contains(Money.of(new java.math.BigDecimal("12.50"), CurrencyCode.of("EUR")));
+        assertThat(executed.schemeReference()).contains(new ProviderReference("scheme_tx_1"));
+
+        // Without a usable amount the acceptance is unactionable - the applier could judge
+        // nothing (the approved-without-reference rule, for the amount).
+        for (String body :
+                java.util.List.of(
+                        ACCEPTED_BODY,
+                        "{\"status\":\"accepted\",\"reference\":\"scheme_tx_1\","
+                                + "\"amount\":\"12.50\"}",
+                        "{\"status\":\"accepted\",\"reference\":\"scheme_tx_1\","
+                                + "\"amount\":\"twelve\",\"currency\":\"EUR\"}",
+                        "{\"status\":\"accepted\",\"reference\":\"scheme_tx_1\","
+                                + "\"amount\":\"-1.00\",\"currency\":\"EUR\"}")) {
+            scheme.reset();
+            scheme.succeedsWith(path, 200, body);
+            assertThat(adapter().inquireInitiation(OUR_REF).verdict())
+                    .as(body)
+                    .isEqualTo(PushInquiryAnswer.Verdict.INDETERMINATE);
+        }
+
+        // 'expired' and 'rejected' are the rejection; 'unrecognised' the explicit word.
+        for (String word : java.util.List.of("expired", "rejected")) {
+            scheme.reset();
+            scheme.succeedsWith(path, 200, "{\"status\":\"" + word + "\"}");
+            assertThat(adapter().inquireInitiation(OUR_REF).verdict())
+                    .as(word)
+                    .isEqualTo(PushInquiryAnswer.Verdict.REJECTED);
+        }
+        scheme.reset();
+        scheme.succeedsWith(path, 200, "{\"status\":\"unrecognised\"}");
         assertThat(adapter().inquireInitiation(OUR_REF).verdict())
-                .isEqualTo(PushInquiryAnswer.Verdict.ACCEPTED);
+                .isEqualTo(PushInquiryAnswer.Verdict.UNRECOGNISED);
+
+        // The TRANSFER inquiry keeps its own words: an expiry there is no rejection.
+        scheme.reset();
+        scheme.succeedsWith(
+                SimulatedInstantSchemeAdapter.TRANSFER_STATUS_PATH + OUR_REF.value(), 200,
+                "{\"status\":\"expired\"}");
+        assertThat(adapter().inquire(OUR_REF).verdict())
+                .isEqualTo(PushInquiryAnswer.Verdict.INDETERMINATE);
     }
 
     // ------------------------------------------------------------------

@@ -1,5 +1,6 @@
 package com.finapp.payments;
 
+import com.finapp.sharedkernel.money.Money;
 import java.io.IOException;
 import java.net.ConnectException;
 import java.net.URI;
@@ -53,6 +54,9 @@ final class SchemeWireClient {
     private static final Pattern SUFFIX_FIELD = Pattern.compile("\"suffix\"\\s*:\\s*\"([^\"]*)\"");
     private static final Pattern PAYEE_FIELD = Pattern.compile("\"payee\"\\s*:\\s*\"([^\"]*)\"");
     private static final Pattern HANDLE_FIELD = Pattern.compile("\"handle\"\\s*:\\s*\"([^\"]*)\"");
+    private static final Pattern AMOUNT_FIELD = Pattern.compile("\"amount\"\\s*:\\s*\"([^\"]*)\"");
+    private static final Pattern CURRENCY_FIELD =
+            Pattern.compile("\"currency\"\\s*:\\s*\"([^\"]*)\"");
 
     private final HttpClient http;
     private final URI baseUrl;
@@ -71,6 +75,32 @@ final class SchemeWireClient {
         }
         this.key = Objects.requireNonNull(key, "key must not be null").clone();
         this.http = HttpClient.newBuilder().connectTimeout(timeout).build();
+    }
+
+    /**
+     * A JSON string literal of {@code value}, escaped (the Phase 7 -&gt; 8 transition): every
+     * string the adapter writes into a body goes through here, so no value - a shape rule
+     * weakened later, a provider-minted reference - can close its quote and write a field the
+     * platform never meant to send under its credential (the gate found the customer's grant
+     * concatenated raw into the exchange's body).
+     */
+    static String jsonString(String value) {
+        StringBuilder out = new StringBuilder(value.length() + 2).append('"');
+        for (int i = 0; i < value.length(); i++) {
+            char c = value.charAt(i);
+            switch (c) {
+                case '"' -> out.append("\\\"");
+                case '\\' -> out.append("\\\\");
+                default -> {
+                    if (c < 0x20) {
+                        out.append(String.format("\\u%04x", (int) c));
+                    } else {
+                        out.append(c);
+                    }
+                }
+            }
+        }
+        return out.append('"').toString();
     }
 
     /** POSTs a send; total — every misbehaviour is a {@link PushAnswer}. */
@@ -139,6 +169,89 @@ final class SchemeWireClient {
             case "refused" -> InitiationAnswer.refused(received.bytes());
             default -> InitiationAnswer.indeterminate(received.bytes());
         };
+    }
+
+    /**
+     * GETs the payer PSP's view of an INITIATION our reference names (the Phase 7 -&gt; 8
+     * transition) — the transfers' words plus one: {@code accepted}
+     * carries the scheme reference AND the executed amount the applier judges (one missing
+     * either is unactionable, {@code INDETERMINATE}); {@code rejected} and {@code expired} are
+     * the rejection, exactly as the callback door maps them (the gate found {@code expired}
+     * read as {@code INDETERMINATE} here, so an initiation whose expiry callback was lost was
+     * asked forever and its intent never ended); {@code unrecognised} is the explicit word.
+     */
+    PushInquiryAnswer inquireInitiation(String path) {
+        Fetched fetched = fetch(path);
+        if (fetched.answer().isPresent()) {
+            return fetched.answer().get();
+        }
+        String text = fetched.text();
+        byte[] received = fetched.bytes();
+        return switch (statusOf(text)) {
+            case "accepted" -> {
+                Optional<ProviderReference> scheme = referenceOf(text);
+                Optional<Money> amount = executedOf(text);
+                yield scheme.isPresent() && amount.isPresent()
+                        ? PushInquiryAnswer.executed(
+                                scheme.get(),
+                                fieldOf(text, CYCLE_FIELD).filter(SchemeWireClient::cycleFits),
+                                amount.get(),
+                                received)
+                        : PushInquiryAnswer.indeterminate(received);
+            }
+            case "rejected", "expired" -> PushInquiryAnswer.rejected(received);
+            case "unrecognised" -> PushInquiryAnswer.unrecognised(received);
+            default -> PushInquiryAnswer.indeterminate(received);
+        };
+    }
+
+    /** An inquiry's usable body, or the answer its transport or status already decided. */
+    private record Fetched(Optional<PushInquiryAnswer> answer, byte[] bytes, String text) {}
+
+    private Fetched fetch(String path) {
+        HttpRequest request =
+                HttpRequest.newBuilder(baseUrl.resolve(path))
+                        .timeout(timeout)
+                        .header("Authorization", "Bearer " + Base64.getEncoder().encodeToString(key))
+                        .GET()
+                        .build();
+        HttpResponse<byte[]> response;
+        try {
+            response = http.send(request, HttpResponse.BodyHandlers.ofByteArray());
+        } catch (IOException nothingUsable) {
+            return new Fetched(Optional.of(PushInquiryAnswer.indeterminate()), null, "");
+        } catch (InterruptedException interrupted) {
+            Thread.currentThread().interrupt();
+            return new Fetched(Optional.of(PushInquiryAnswer.indeterminate()), null, "");
+        }
+        byte[] received = response.body();
+        if (received.length == 0 || received.length > MAX_EVIDENCE_BYTES) {
+            return new Fetched(Optional.of(PushInquiryAnswer.indeterminate()), null, "");
+        }
+        if (response.statusCode() != 200) {
+            return new Fetched(
+                    Optional.of(PushInquiryAnswer.indeterminate(received)), received, "");
+        }
+        return new Fetched(
+                Optional.empty(), received, new String(received, StandardCharsets.UTF_8));
+    }
+
+    /** Shape-total money: an unusable amount or currency is absent, never a throw. */
+    private static Optional<Money> executedOf(String text) {
+        Optional<String> amount = fieldOf(text, AMOUNT_FIELD);
+        Optional<String> currency = fieldOf(text, CURRENCY_FIELD);
+        if (amount.isEmpty() || currency.isEmpty()) {
+            return Optional.empty();
+        }
+        try {
+            Money money =
+                    Money.of(
+                            new java.math.BigDecimal(amount.get()),
+                            com.finapp.sharedkernel.money.CurrencyCode.of(currency.get()));
+            return money.isPositive() ? Optional.of(money) : Optional.empty();
+        } catch (RuntimeException unusable) {
+            return Optional.empty();
+        }
     }
 
     /** GETs the scheme's view of the operation our reference names; same totality. */

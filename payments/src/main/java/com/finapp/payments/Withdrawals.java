@@ -55,6 +55,14 @@ import java.util.UUID;
  * refuses — deliberately retryable under a NEW key once an operator repairs availability
  * (the `P7-TSK-003` refusal, keyed; the recorded asymmetry rides the claim). An unfunded
  * wallet, by contrast, aborts the whole transaction: transient state, same key retries.
+ *
+ * <p>The refusal's record is those two rows, deliberately without an audit record of its own
+ * (the Phase 7 review's reading): the frozen decision carries the time, the pinned version,
+ * the inputs and every step's rejection, and the failed claim carries the actor - its scope is
+ * the owning customer's - and the correlation. Nothing moved and no state changed, so there is
+ * no act to attribute beyond what those rows already attribute. A card or bank pay-in's
+ * refusal IS audited ({@code PaymentsAuditAction.PAYMENT_ROUTING_REFUSED}) because its claim
+ * belongs to the intent's creation, not to the confirmation that was refused.
  */
 public final class Withdrawals {
 
@@ -122,6 +130,19 @@ public final class Withdrawals {
             Objects.requireNonNull(walletCurrency, "walletCurrency must not be null");
             Objects.requireNonNull(paymentMethodId, "paymentMethodId must not be null");
             Objects.requireNonNull(destination, "destination must not be null");
+        }
+
+        /**
+         * Identifiers and the currency - never the destination (the Phase 7 -&gt; 8 transition,
+         * {@code INV-RAIL-03}): the generated form printed the customer's bank destination
+         * reference, and the review's claim that it travelled only in redacting records was
+         * false for this one.
+         */
+        @Override
+        public String toString() {
+            return "Resolved[party=" + partyId + ", customer=" + customerId
+                    + ", wallet=" + walletAccountId + ", currency=" + walletCurrency
+                    + ", method=" + paymentMethodId + ", destination=<redacted>]";
         }
     }
 
@@ -338,8 +359,11 @@ public final class Withdrawals {
     /**
      * {@code INV-REV-03}, judged before anything else exists: on a rail whose declaration
      * is final-on-acceptance with no reversal capability, the refusal costs zero
-     * transactions, zero wire calls and writes nothing. The surface that will one day ask
-     * (a Phase 13 recall) meets the same gate; today's callers are the acceptance tests.
+     * transactions, zero wire calls and writes nothing. Today's callers are the acceptance
+     * tests. A recall is NOT a caller of this gate: it is a request the payee's PSP may refuse,
+     * a new operation with its own lifecycle, never a reversal (ADR-0059's rejected
+     * alternative; the Phase 7 review corrected this javadoc, which named one as the future
+     * caller, and recorded recalls as deliberately deferred in {@code DECISIONS.md}).
      */
     public void reverse(WithdrawalId id) {
         Objects.requireNonNull(id, "id must not be null");

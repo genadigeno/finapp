@@ -65,6 +65,20 @@ class RailVocabularyIsConfinedTest {
     /** The composition root may bind the declaration; nothing else may name it. */
     private static final Set<String> CONFIGURATION_FILES = Set.of("PaymentBeans.java");
 
+    /**
+     * Each external rail's clearing position, named only by the declaration that owns it
+     * (`P7-DOC-001`, {@code INV-RAIL-04}): every posting in {@code payments} reads its clearing
+     * off the stored rail's declared {@code clearingPurpose}. The Phase 7 review found the
+     * withdrawal's completion naming {@code INSTANT_CLEARING} itself - right only while one push
+     * rail exists, and invisible to the rail-name rule above because a purpose is not a name.
+     * Scoped to {@code payments}, the module that ACTS on rails: the merchant drill-down's
+     * read-side labelling of entry shapes decides nothing a rail does.
+     */
+    private static final Map<String, String> CLEARING_POSITIONS =
+            Map.of(
+                    "AccountPurpose.SETTLEMENT_CLEARING", "SimulatedCardPspAdapter.java",
+                    "AccountPurpose.INSTANT_CLEARING", "SimulatedInstantSchemeAdapter.java");
+
     @Test
     @DisplayName("no rail-name literal exists outside its declaring adapter")
     void railNameLiteralsAreConfined() {
@@ -128,6 +142,40 @@ class RailVocabularyIsConfinedTest {
     }
 
     @Test
+    @DisplayName("a rail's clearing position is named in payments only by its declaring adapter"
+            + " - every posting reads it off the stored rail (P7-DOC-001, INV-RAIL-04)")
+    void clearingPositionsAreNamedOnlyByTheirDeclarations() {
+        List<String> outside = new ArrayList<>();
+        Map<String, Boolean> declared = new java.util.TreeMap<>();
+        CLEARING_POSITIONS.keySet().forEach(purpose -> declared.put(purpose, false));
+        for (Path source : mainSources()) {
+            if (!source.toString().replace('\\', '/').contains("/payments/src/main/java/")) {
+                continue;
+            }
+            String fileName = source.getFileName().toString();
+            String code = codeOf(read(source));
+            for (Map.Entry<String, String> purpose : CLEARING_POSITIONS.entrySet()) {
+                if (!code.contains(purpose.getKey())) {
+                    continue;
+                }
+                if (purpose.getValue().equals(fileName)) {
+                    declared.put(purpose.getKey(), true);
+                } else {
+                    outside.add(purpose.getKey() + " in " + source);
+                }
+            }
+        }
+        assertThat(outside)
+                .as("a clearing position named outside its rail's declaration is a posting"
+                        + " that stops following the rail it was made on (INV-RAIL-01, -04)")
+                .isEmpty();
+        assertThat(declared)
+                .as("the guard is not vacuous: each clearing position is found where its rail"
+                        + " declares it")
+                .allSatisfy((purpose, found) -> assertThat(found).as(purpose).isTrue());
+    }
+
+    @Test
     @DisplayName("the scanners reject their violations and ignore prose")
     void scannersRejectTheirViolations() {
         // A planted branch, in each family the rule claims to see - both rails.
@@ -144,6 +192,10 @@ class RailVocabularyIsConfinedTest {
                         .split("\n"))
                 .contains("book");
         assertThat(codeOf("Object rail = BookRail.RAIL;")).contains("BookRail.RAIL");
+        assertThat(codeOf("chart.resolve(uow, AccountPurpose.INSTANT_CLEARING, eur);"))
+                .contains("AccountPurpose.INSTANT_CLEARING");
+        assertThat(codeOf("// posts to AccountPurpose.INSTANT_CLEARING"))
+                .doesNotContain("AccountPurpose.INSTANT_CLEARING");
         // Prose is not a control: comments are stripped from both scanners, literals from the
         // code scanner, and only a WHOLE literal matches a name.
         assertThat(stringLiteralsOf("// the \"card\" rail\n/* card */ String s = \"cardigan\";"))

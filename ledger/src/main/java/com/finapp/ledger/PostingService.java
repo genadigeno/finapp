@@ -66,6 +66,7 @@ public final class PostingService {
     private final IdGenerator ids;
     private final Clock clock;
     private final PostingObserver observer;
+    private final BalanceProjection<Connection> projection;
 
     public PostingService(
             IdempotentExecutor executor,
@@ -84,6 +85,18 @@ public final class PostingService {
         this.ids = Objects.requireNonNull(ids, "ids must not be null");
         this.clock = Objects.requireNonNull(clock, "clock must not be null");
         this.observer = Objects.requireNonNull(observer, "observer must not be null");
+        this.projection = Objects.requireNonNull(projection, "projection must not be null");
+    }
+
+    /**
+     * Takes the projection rows of {@code accounts} in the one order every entry takes them
+     * (the Phase 7 -&gt; 8 transition, {@link BalanceProjection#lockInOrder}): for a caller about
+     * to post several entries over the platform's shared rows in one transaction, called before
+     * the first of them.
+     */
+    public void lockBalancesInOrder(
+            Connection unitOfWork, java.util.Collection<LedgerAccountId> accounts) {
+        projection.lockInOrder(unitOfWork, accounts);
     }
 
     /**

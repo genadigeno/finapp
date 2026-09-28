@@ -411,28 +411,129 @@ class PaymentWebhookTransitionDatabaseTest {
         assertThat(clearedEventCount(captured.intentId()))
                 .as("only the acting insert announces")
                 .isEqualTo(1);
+
+        // THE CHAIN, identifier to identifier (PHASE_7_PLAN section 12, the gate's
+        // reconciliation-readiness bullet; P7-DOC-001): from the network's acquirer reference
+        // to our attempt, our capture reference and the capture's one journal entry - joins on
+        // stored identifiers only, never a timestamp, each link exactly one path.
+        assertThat(strings(
+                        "SELECT a.capture_reference || '|' || e.idempotency_scope"
+                                + " FROM payments.clearing_record c"
+                                + " JOIN payments.payment_attempt a ON a.id = c.attempt_id"
+                                + " JOIN ledger.journal_entry e"
+                                + "   ON e.idempotency_scope = 'ledger.post:payment-capture:'"
+                                + "      || a.id::text"
+                                + " WHERE c.acquirer_reference = ?",
+                        arn))
+                .containsExactly(captured.captureReference() + "|ledger.post:payment-capture:"
+                        + captured.attemptId());
     }
 
     @Test
-    @DisplayName("ten deliveries of one clearing notice under ten FRESH event ids record it"
-            + " exactly once - the table's arbiter, not the inbox, decides this race")
+    @DisplayName("a SECOND presentment - the same capture cleared under OTHER network references -"
+            + " is a break, never the rail repeating itself: the first record stands, nothing"
+            + " announces, and the delivery is counted unmappable (the Phase 7 -> 8 transition)")
+    void aSecondPresentmentIsABreakNotARepeat() throws Exception {
+        Flow captured = capturedFlow();
+        String arn = "arn-first-" + suffix();
+        String nti = "nti-first-" + suffix();
+        assertThat(deliverWebhook(
+                        clearingBody(someEvent(), captured.captureReference(), arn, nti))
+                .statusCode())
+                .isEqualTo(204);
+        double unmappableBefore = unmappableWebhooks();
+
+        assertThat(deliverWebhook(
+                        clearingBody(someEvent(), captured.captureReference(),
+                                "arn-second-" + suffix(), "nti-second-" + suffix()))
+                .statusCode())
+                .as("acknowledged - the anti-stall doctrine - but not absorbed")
+                .isEqualTo(204);
+
+        assertThat(clearingCount(captured.attemptId())).isEqualTo(1);
+        assertThat(oneString(
+                        "SELECT acquirer_reference || '|' || network_transaction_id"
+                                + " FROM payments.clearing_record WHERE attempt_id = ?",
+                        captured.attemptId()))
+                .as("the first record stands")
+                .isEqualTo(arn + "|" + nti);
+        assertThat(clearedEventCount(captured.intentId())).isEqualTo(1);
+        assertThat(unmappableWebhooks() - unmappableBefore)
+                .as("a second presentment is counted where reconciliation will look")
+                .isEqualTo(1.0d);
+    }
+
+    @Test
+    @DisplayName("a clearing for a payment our books hold VOIDED is recorded - reconciliation needs"
+            + " its references - but counted unmappable, never a normal clearing (the Phase 7"
+            + " -> 8 transition)")
+    void aClearingOfAVoidedPaymentIsABreak() throws Exception {
+        providerAuthorises("psp_auth-" + suffix());
+        provider.succeedsWith(
+                SimulatedCardPspAdapter.CAPTURES_PATH, 200, "{\"status\":\"declined\"}");
+        provider.succeedsWith(
+                SimulatedCardPspAdapter.VOIDS_PATH, 200,
+                "{\"status\":\"approved\",\"reference\":\"psp_v-" + suffix() + "\"}");
+        Flow voided = confirmedFlow("3.00");
+        assertThat(attemptStatus(voided.intentId())).isEqualTo("VOIDED");
+        String captureReference =
+                oneString("SELECT capture_reference FROM payments.payment_attempt WHERE id = ?",
+                        voided.attemptId());
+        double unmappableBefore = unmappableWebhooks();
+
+        assertThat(deliverWebhook(
+                        clearingBody(someEvent(), captureReference, "arn-v-" + suffix(),
+                                "nti-v-" + suffix()))
+                .statusCode())
+                .isEqualTo(204);
+        assertThat(clearingCount(voided.attemptId())).isEqualTo(1);
+        assertThat(unmappableWebhooks() - unmappableBefore).isEqualTo(1.0d);
+    }
+
+    private double unmappableWebhooks() {
+        io.micrometer.core.instrument.Counter counter =
+                meterRegistry.find("finapp.payments.webhook").tag("outcome", "unmappable")
+                        .counter();
+        return counter == null ? 0.0d : counter.count();
+    }
+
+    @org.springframework.beans.factory.annotation.Autowired
+    private io.micrometer.core.instrument.MeterRegistry meterRegistry;
+
+    @Test
+    @DisplayName("ten concurrent deliveries of one clearing notice - five under one event id,"
+            + " five fresh - record it exactly once: the inbox absorbs the repeats and the"
+            + " table's arbiter decides the rest (P7-DOC-001's five-and-five, section 13.3)")
     void tenClearingDeliveriesRecordOnce() throws Exception {
         Flow captured = capturedFlow();
         String arn = "arn-race-" + suffix();
         String nti = "nti-race-" + suffix();
+        String shared = someEvent();
 
         java.util.List<java.util.concurrent.Callable<Integer>> deliveries =
                 new java.util.ArrayList<>();
         for (int i = 0; i < 10; i++) {
+            String event = i < 5 ? shared : someEvent();
             deliveries.add(
-                    () ->
-                            deliverWebhook(
+                    () -> {
+                        // The card door's one 409 is the inbox's contended record
+                        // (api.Conflict): redelivered until acknowledged, as the PSP would.
+                        for (int attempt = 0; attempt < 200; attempt++) {
+                            java.net.http.HttpResponse<String> answer =
+                                    deliverWebhook(
                                             clearingBody(
-                                                    someEvent(),
+                                                    event,
                                                     captured.captureReference(),
                                                     arn,
-                                                    nti))
-                                    .statusCode());
+                                                    nti));
+                            if (answer.statusCode() != 409
+                                    || !answer.body().contains("\"code\":\"api.Conflict\"")) {
+                                return answer.statusCode();
+                            }
+                            Thread.sleep(20);
+                        }
+                        return 409;
+                    });
         }
         java.util.concurrent.ExecutorService pool =
                 java.util.concurrent.Executors.newFixedThreadPool(10);
@@ -446,6 +547,11 @@ class PaymentWebhookTransitionDatabaseTest {
 
         assertThat(clearingCount(captured.attemptId())).isEqualTo(1);
         assertThat(clearedEventCount(captured.intentId())).isEqualTo(1);
+        assertThat(count("SELECT count(*) FROM platform.inbox_message WHERE consumer = ?"
+                        + " AND dedupe_key = ?",
+                        "payments.provider-webhook", "simulated-card:" + shared))
+                .as("the five identical deliveries are one inbox record")
+                .isEqualTo(1);
     }
 
     @Test
@@ -845,6 +951,23 @@ class PaymentWebhookTransitionDatabaseTest {
                 assertThat(row.next()).isTrue();
                 return row.getLong(1);
             }
+        }
+    }
+
+    private static java.util.List<String> strings(String sql, Object... arguments)
+            throws SQLException {
+        try (Connection app = DatabaseRoles.application();
+                PreparedStatement read = app.prepareStatement(sql)) {
+            for (int i = 0; i < arguments.length; i++) {
+                read.setObject(i + 1, arguments[i]);
+            }
+            java.util.List<String> values = new java.util.ArrayList<>();
+            try (ResultSet row = read.executeQuery()) {
+                while (row.next()) {
+                    values.add(row.getString(1));
+                }
+            }
+            return values;
         }
     }
 

@@ -55,10 +55,11 @@ class PaymentClearingTest {
             + " ALREADY_RECORDED with nothing published twice (INV-IDEM-04)")
     void recordsOnceAndAbsorbsRepetition() {
         PaymentAttempt captured = capturedAttempt();
+        ProviderReference arn = reference("arn-1");
+        ProviderReference nti = reference("nti-1");
 
         PaymentClearing.Outcome first =
-                clearing.record(null, captured, reference("arn-1"), reference("nti-1"),
-                        correlation);
+                clearing.record(null, captured, arn, nti, correlation);
         assertThat(first).isEqualTo(PaymentClearing.Outcome.RECORDED);
         assertThat(clearings.findForAttempt(null, captured.id())).isPresent();
         assertThat(events).hasSize(1);
@@ -66,10 +67,17 @@ class PaymentClearingTest {
         assertThat(events.get(0).aggregateId()).isEqualTo(captured.intentId());
 
         PaymentClearing.Outcome repeated =
-                clearing.record(null, captured, reference("arn-1"), reference("nti-1"),
-                        correlation);
+                clearing.record(null, captured, arn, nti, correlation);
         assertThat(repeated).isEqualTo(PaymentClearing.Outcome.ALREADY_RECORDED);
         assertThat(events).as("only the acting insert announces").hasSize(1);
+
+        // The same capture under OTHER references is a second presentment (the Phase 7 -> 8
+        // transition): never the rail repeating itself, and never recorded or announced.
+        assertThat(clearing.record(null, captured, reference("arn-2"), nti, correlation))
+                .isEqualTo(PaymentClearing.Outcome.SECOND_PRESENTMENT);
+        assertThat(clearing.record(null, captured, arn, reference("nti-2"), correlation))
+                .isEqualTo(PaymentClearing.Outcome.SECOND_PRESENTMENT);
+        assertThat(events).hasSize(1);
     }
 
     @Test

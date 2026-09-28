@@ -99,8 +99,9 @@ public final class MerchantAdministration {
      * the rank beneath the in-flight check.
      */
     private void requireSettled(Connection unitOfWork, MerchantId id) {
-        for (com.finapp.ledger.LedgerAccount payable :
-                ledgerAccounts.lockOwnedForUpdate(unitOfWork, id.value())) {
+        java.util.List<com.finapp.ledger.LedgerAccount> payables =
+                ledgerAccounts.lockOwnedForUpdate(unitOfWork, id.value());
+        for (com.finapp.ledger.LedgerAccount payable : payables) {
             if (!derivation
                             .derive(unitOfWork, payable.id(), com.finapp.ledger.AsOf.latest())
                             .settled()
@@ -108,6 +109,27 @@ public final class MerchantAdministration {
                     || !holds.findActiveFor(unitOfWork, payable.id()).isEmpty()
                     || inFlight.anyCrediting(unitOfWork, payable.id())) {
                 throw new MerchantNotSettledException();
+            }
+        }
+        // THE PAYABLE STOPS ACCEPTING POSTINGS (the Phase 7 -> 8 transition; V007 judges the
+        // status this commits) - the customer account's close, for the merchant: a chargeback
+        // the network files after the close then parks its share in CHARGEBACK_RECOVERABLE for
+        // an operator (ADR-0061 section 5) instead of charging a terminal merchant nothing can
+        // ever collect from, and every later writer is refused by the ledger rather than
+        // trusted to ask. The caller holds each row's lock, so a zero count is loud.
+        for (com.finapp.ledger.LedgerAccount payable : payables) {
+            if (payable.status() != com.finapp.ledger.LedgerAccountStatus.ACTIVE) {
+                continue;
+            }
+            if (!ledgerAccounts.moveStatus(
+                    unitOfWork,
+                    payable.id(),
+                    com.finapp.ledger.LedgerAccountStatus.ACTIVE,
+                    com.finapp.ledger.LedgerAccountStatus.CLOSED,
+                    Instant.now(clock))) {
+                throw new MerchantStorageException(
+                        "a closing merchant's payable was not ACTIVE under its own lock - an"
+                                + " invariant is already broken");
             }
         }
     }

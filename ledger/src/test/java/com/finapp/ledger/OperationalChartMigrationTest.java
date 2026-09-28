@@ -135,6 +135,44 @@ class OperationalChartMigrationTest {
         }
     }
 
+    /**
+     * The lock-order rule the Phase 7 review ruled on (`P7-DOC-001`; `DISTRIBUTED_EXECUTION.md`
+     * §3): the balance projection takes an entry's rows sorted by account id, and a chargeback
+     * stage posts TWO entries - the external fact on the clearing and the recoverable, then the
+     * attribution on the counterparty. Its order agrees with every single-entry posting that
+     * touches a seeded account and the same counterparty (a capture, a refund) ONLY because every
+     * seeded account's id sorts before every id a running instance mints. Runtime ids are UUIDv7
+     * from the instance's clock, so the rule holds when every seed's embedded timestamp precedes
+     * any clock a deployment runs on: seeds are hand-picked below this ceiling - `V013` and
+     * `V014` already did, `01a0e000-0000-7000-8000-00000000000b` style - and a seed authored
+     * with a fresh generator's id fails here instead of reversing a lock order in production.
+     */
+    @Test
+    @DisplayName("every seeded account sorts before any account a running instance can mint -"
+            + " the chargeback stage's lock order rests on it")
+    void everySeededIdSortsBeforeEveryRuntimeId() {
+        long ceilingMillis = java.time.Instant.parse("2026-09-28T00:00:00Z").toEpochMilli();
+        for (MatchResult row : rows()) {
+            java.util.UUID id = java.util.UUID.fromString(row.group(1));
+            long embeddedMillis = id.getMostSignificantBits() >>> 16;
+            assertThat(embeddedMillis)
+                    .as("seed %s (%s) must embed a timestamp before the ceiling, or a running"
+                                    + " instance can mint an account that sorts before it",
+                            row.group(1), row.group(6))
+                    .isLessThan(ceilingMillis);
+        }
+        // The runtime side of the same comparison, from the platform's own generator.
+        java.util.UUID minted =
+                new com.finapp.sharedkernel.id.IdGenerator(
+                                java.time.Clock.systemUTC(), new java.security.SecureRandom())
+                        .next();
+        for (MatchResult row : rows()) {
+            assertThat(java.util.UUID.fromString(row.group(1)))
+                    .as("a freshly minted id sorts after seed %s", row.group(1))
+                    .isLessThan(minted);
+        }
+    }
+
     @Test
     @DisplayName("the guard can actually read the migration")
     void theGuardIsNotVacuous() {

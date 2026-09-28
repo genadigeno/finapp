@@ -52,4 +52,14 @@ public interface BalanceProjection<T> {
      *     scale ({@code INV-MON-03}); the placing or releasing flow fails wholly
      */
     void adjustHolds(T unitOfWork, LedgerAccountId account, com.finapp.sharedkernel.money.Money delta, java.time.Instant at);
+
+    /**
+     * Locks the projection rows of {@code accounts} {@code FOR UPDATE}, one at a time in
+     * {@link #apply}'s own order (the Phase 7 -&gt; 8 transition) — for a transaction about to
+     * post SEVERAL entries over the same hot rows: each entry locks its own rows in that order,
+     * but two entries in one transaction do not, and a later entry reaching back to a row that
+     * sorts first against a transaction that took it first is a deadlock. A row not yet
+     * projected is skipped — nothing exists to hold, and its first posting inserts it.
+     */
+    void lockInOrder(T unitOfWork, java.util.Collection<LedgerAccountId> accounts);
 }

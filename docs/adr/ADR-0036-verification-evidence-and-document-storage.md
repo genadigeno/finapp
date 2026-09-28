@@ -75,3 +75,11 @@ Operational impact: table growth is a debt-register concern with the existing re
 The object-storage trigger above; Phase 15 owns retention and the regulatory deletion question
 for documents (deletion of PII vs immutability of evidence — a tension recorded, not resolved
 here).
+
+*(Re-assessed for settlement files at the Phase 7 → 8 transition by ADR-0066, `Proposed`: the
+same choice — bytes verbatim in PostgreSQL behind a port, encrypted under a key of their own, the
+object-storage trigger unchanged — with what a settlement file adds. It is screened at the door,
+so a refused delivery keeps metadata only (`INV-PAY-02`, `INV-RAIL-03` taking precedence over
+`INV-HIST-02` for it). It is chunked, each chunk binding its file, source, checksum and position as
+associated data, and every content access is audited (`INV-REC-10`). The associated data this
+ADR's cipher does not bind is `X-TSK-010`'s.)*

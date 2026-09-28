@@ -3,8 +3,9 @@
 Written by the Phase 6 → 7 transition (2026-09-24), the `PAYMENT_LIFECYCLES.md` and
 `CHECKOUT_MERCHANT_LIFECYCLES.md` precedent: the document that names a phase's model is written
 before the phase's first task, from the decisions in ADR-0059…0062, and corrected by the tasks
-that implement it. **Until Phase 7's first task lands, nothing in this document is implemented**;
-every statement is the decided design.
+that implement it. *(It read "until Phase 7's first task lands, nothing in this document is
+implemented" until the Phase 7 review, `P7-DOC-001`: every section below is shipped, and the
+review read each against the code - the machines are exactly the code's transition tables.)*
 
 Related: [ADR-0059](../adr/ADR-0059-payment-rails-capabilities-and-finality.md) (rails,
 capabilities, finality, the three machines) ·
@@ -88,8 +89,8 @@ settlement (on the scheme's cycle) and return (a new payment).
 ## 3. The attempt's three machines (ADR-0059 §2)
 
 **Two-step (card)** — Phase 5's machine, extended by the void (`P7-TSK-004`, shipped;
-the lists are exactly `InteractionModel.edges()`, which `V014` regenerates into the
-schema):
+the lists are exactly `InteractionModel.edges()`, regenerated into the schema's edge trigger
+by `V014` and, latest, `V017`):
 
 ```
 AUTH_DISPATCHED    -> AUTH_UNKNOWN | AUTHORIZED | FAILED
@@ -105,11 +106,14 @@ terminals: CAPTURED, VOIDED, FAILED
 
 Two edges deserve their provenance. `AUTHORIZED -> FAILED`, drawn in this section's first
 version, was removed by the implementing task: no producer exists — abandoning a promise
-is the void's own act, and a declined or never-received void lands `FAILED` from the void
-states, carrying its mapped reason. `CAPTURE_* -> VOID_DISPATCHED` is the
-**declined-capture redirect**: on a rail whose declared reversals contain `VOID`, a
-declined capture releases the standing authorization instead of leaving it to lapse
-against the customer's funds.
+is the void's own act, and a declined void lands `FAILED` from the void states, carrying its
+mapped reason. `CAPTURE_* -> VOID_DISPATCHED` is the **capture redirect**: on a rail whose
+declared reversals contain `VOID`, a declined capture releases the standing authorization
+instead of leaving it to lapse against the customer's funds. *(The Phase 7 → 8 transition's gate
+widened the redirect to a capture that never left - a refused connection - and to one the
+provider says it never received, and made a never-received VOID a re-send by its stored
+reference, concluded by that answer (`VOID_UNKNOWN` → `VOIDED` | `FAILED`), never
+`FAILED(NEVER_RECEIVED)`: each had failed the payment with the authorization standing.)*
 
 **Push (instant, A2A)**:
 
@@ -126,9 +130,26 @@ edge** (`P7-TSK-009`, ADR-0062 §5), added with its producer: a pay-in's executi
 act, reported by the scheme's signed confirmation or the initiation inquiry — the platform never
 dispatches it, so the waiting state concludes directly. This section's first version routed the
 conclusion through `EXECUTION_DISPATCHED`, a state no pay-in ever occupies; the correction is
-recorded here with provenance, exactly as the two-step machine's `AUTHORIZED → FAILED` was. The
-outbound states remain for their own producers: a return payment is born `EXECUTION_DISPATCHED`
-(`P7-TSK-010`).
+recorded here with provenance, exactly as the two-step machine's `AUTHORIZED → FAILED` was.
+**The outbound states have no producer.** *(This read "the outbound states remain for their
+own producers: a return payment is born `EXECUTION_DISPATCHED` (`P7-TSK-010`)" until the Phase
+7 review: a return is a refund row in the refund's own four-state machine - payments `V018`
+changed no refund state - and a withdrawal is its own aggregate, §5. `EXECUTION_DISPATCHED`
+and `EXECUTION_UNKNOWN` are declared, carried by the generated constraints and written by
+nothing; a scheme's timeout lands the withdrawal's or the refund's `UNKNOWN`. They stay
+reserved for an outbound push that is an attempt, which no Phase 7 flow is - Known
+Architectural Debt under ADR-0044's no-state-without-a-producer rule, recorded in
+`CURRENT_STATE.md`.)*
+
+**One scheme execution, one money fact** *(the Phase 7 → 8 transition, payments `V023`)*: every
+producer of a scheme execution on a rail — the pay-in's `EXECUTED`, the withdrawal's
+`COMPLETED`, the return's `COMPLETED` and the suspense parking — claims its
+`(rail, scheme reference)` in `payments.scheme_execution_claim` before any money moves, and the
+primary key decides between them for every instance. The executed amount is judged by the ONE
+applier for the callback and the inquiry alike: a mismatch parks the executed value
+(`AMOUNT_MISMATCH`) and fails the pay-in `DECLINED`; an `expired` inquiry answer fails it; a
+statement of value on a concluded attempt parks (`ATTEMPT_CONCLUDED`); and a withdrawal's or a
+return's own confirmation is recognised at the door as the echo it is.
 
 The pay-in's initiation ambiguity is deliberately NOT a state: an `initiate()` whose answer was
 lost leaves `AWAITING_PAYER` **without a stored handle**, and the resolution is the sweep's
@@ -137,15 +158,20 @@ convergent re-initiate under the scheme's dedupe — one act resolves "opened, a
 conclusions are conditional on the handle's absence for every writer (a row the payer can still
 complete is never failed by our unavailability — ADR-0062 §3, adapted).
 
-**Book (wallet)**: born `EXECUTED` or `FAILED` inside the confirmation's transaction.
+**Book (wallet)**: born `EXECUTED` inside the confirmation's transaction. *(It read "born
+`EXECUTED` or `FAILED`" until the review: an unaffordable wallet payment rolls the whole
+transaction back - `WalletPaymentUnfunded`, nothing written - so `FAILED`, in the model's
+state set, is never born.)*
 
 **Status (`P7-TSK-009`)**: the three machines are code — `InteractionModel.edges()`
 owns them, payments `V017` regenerates the every-writer edge trigger from them (`V012`
 and `V014` are applied history), and the model is a frozen birth fact on every attempt
 row. The two-step machine runs end to end INCLUDING the void; the push machine runs its
 INBOUND life end to end — the initiation, the handle, the signed confirmation, the
-inquiry sweep and the suspense parking (`P7-TSK-009`); the outbound push operations and
-the book births arrive with their rails (`P7-TSK-010`, `-011`).
+inquiry sweep and the suspense parking (`P7-TSK-009`); the book birth runs in the
+confirmation's one transaction (`P7-TSK-011`); and the outbound pushes - the withdrawal
+(`P7-TSK-008`) and the return (`P7-TSK-010`) - run as their own aggregates, not as push
+attempts.
 
 ## 4. The routing decision (ADR-0060)
 
@@ -154,12 +180,18 @@ seeded with version 1 — the standing card pay-in route), availability is a rec
 fact read inside the decision's transaction, and every confirmation pins its decision — the
 version, the judged inputs, every candidate's step — in the same Tx1 as the attempt it
 governs, publishing `RailSelected`. No eligible rail is a recorded refusal (`payments.NoEligibleRail`,
-retryable by design). The fallback trail advances only on `NOTHING_SENT`; the cross-rail
-re-dispatch arrives with the rails that can carry one (`P7-TSK-006`, `-009`).
+retryable by design). **Phase 7 has no cross-rail fallback after dispatch** *(this read "the
+cross-rail re-dispatch arrives with the rails that can carry one (`P7-TSK-006`, `-009`)" until
+the Phase 7 review; both shipped without one)*: the only fallback is candidate rejection inside
+the decision, before anything is sent. A card authorization answered `NOTHING_SENT` appends its
+`ABANDONED` step and the payment fails; a pay-in initiation's or a withdrawal's `NOTHING_SENT`
+fails it with no step. No Phase 7 policy offers one instrument two eligible rails.
 
 `policy version` + `stored inputs` → `ordered candidates, each with its reason` → `CHOSEN`.
-Pinned before dispatch, frozen, recomputable. It advances only on `NOTHING_SENT` or an
-eligibility refusal, and never after an ambiguous dispatch.
+Pinned before dispatch, frozen, recomputable - from its own stored row, proven by
+`PaymentEndpointDatabaseTest#routingPinsTheConfirm` since the review. Were it ever to advance, it
+would advance only on `NOTHING_SENT` or an eligibility refusal, and never after an ambiguous
+dispatch.
 
 ## 5. The withdrawal (ADR-0062 §6) — *shipped `P7-TSK-008`*
 
@@ -242,7 +274,15 @@ sibling chargeback won — re-attributes the standing excess to the counterparty
 always the one a chargeback arriving now would take. The stage facts (`ChargebackReceived`, `DisputeResolved`) name the split's accounts —
 `counterpartyAccountId`, `recoverableAccountId` — never an amount. A counterparty below zero is
 merchant debt or a receivable from the customer, counted by `finapp.ledger.negative.positions`
-and never absorbed.
+and never absorbed. **The lock order**: the attempt first, then the counterparty's account
+share-locked BEFORE the stage's first posting, then the balance rows the postings touch — the
+order every hold keeps (the account before any balance row). Posting the external fact first
+and reaching the counterparty only after deadlocked a win against a refund of another payment to
+the same counterparty (`P7-TST-001`'s multi-rail storm, a `40P01`). *(The Phase 7 → 8
+transition's gate added the balance rows' own order across entries: a stage posting several
+entries - a loss that first reports the fee - takes the platform's three rows (the rail's
+clearing, the recoverable, the costs) in the projection's order before its first posting, since
+the loss-then-fee order reached back to the clearing every chargeback takes first.)*
 
 **Answering a chargeback** (`P7-TSK-014`, ADR-0061 §7; `DisputeResponses`) — the responder's
 answer is a `DisputeResponse`, dispatched through the card PSP, and it moves **no stage and no

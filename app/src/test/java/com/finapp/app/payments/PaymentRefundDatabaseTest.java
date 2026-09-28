@@ -1182,6 +1182,97 @@ class PaymentRefundDatabaseTest {
     }
 
     @Test
+    @DisplayName("a takeover whose clock TRAILS the first flight's still strictly advances the"
+            + " permit, so the first flight's refused connection proves nothing - never FAILED"
+            + " under a permit a takeover sent under (the Phase 7 -> 8 transition)")
+    void aTrailingTakeoversRenewalStillAdvancesThePermit() throws Exception {
+        Captured captured = capturedPayment();
+        java.util.concurrent.atomic.AtomicReference<Instant[]> permits =
+                new java.util.concurrent.atomic.AtomicReference<>();
+        com.finapp.payments.PaymentProvider takenOverThenRefused =
+                new com.finapp.payments.PaymentProvider() {
+                    @Override
+                    public String providerName() {
+                        return "taken-over-then-refused";
+                    }
+
+                    @Override
+                    public com.finapp.payments.ProviderAnswer authorize(
+                            AuthorizationRequest request) {
+                        throw new UnsupportedOperationException();
+                    }
+
+                    @Override
+                    public com.finapp.payments.ProviderAnswer capture(CaptureRequest request) {
+                        throw new UnsupportedOperationException();
+                    }
+
+                    @Override
+                    public com.finapp.payments.ProviderAnswer refund(RefundRequest request) {
+                        // A takeover on an instance whose clock runs 90 s BEHIND this flight's
+                        // renews the permit through the real store while this flight stalls.
+                        try (Connection other = DatabaseRoles.application()) {
+                            other.setAutoCommit(false);
+                            com.finapp.payments.JdbcRefundStore store =
+                                    new com.finapp.payments.JdbcRefundStore();
+                            com.finapp.payments.Refund row =
+                                    store.findByOperationReference(other, request.reference())
+                                            .orElseThrow();
+                            Instant before;
+                            try (java.sql.PreparedStatement read =
+                                    other.prepareStatement(
+                                            "SELECT last_dispatched_at FROM payments.refund"
+                                                    + " WHERE id = ?")) {
+                                read.setObject(1, row.id().value());
+                                try (java.sql.ResultSet found = read.executeQuery()) {
+                                    found.next();
+                                    before = found.getTimestamp(1).toInstant();
+                                }
+                            }
+                            Instant renewed =
+                                    store.renewSendPermit(
+                                                    other, row.id(), before.minusSeconds(90))
+                                            .orElseThrow();
+                            other.commit();
+                            permits.set(new Instant[] {before, renewed});
+                        } catch (SQLException failure) {
+                            throw new IllegalStateException(failure);
+                        }
+                        return com.finapp.payments.ProviderAnswer.nothingSent();
+                    }
+
+                    @Override
+                    public com.finapp.payments.ProviderAnswer voidAuthorization(
+                            VoidRequest request) {
+                        throw new UnsupportedOperationException();
+                    }
+
+                    @Override
+                    public com.finapp.payments.QueryAnswer query(
+                            com.finapp.payments.ProviderIdempotencyReference ourReference) {
+                        throw new UnsupportedOperationException();
+                    }
+                };
+
+        PaymentRefund.RefundResult result =
+                refundCommand(takenOverThenRefused)
+                        .refund(
+                                captured.intent(),
+                                Money.ofMinorUnits(5_00, EUR),
+                                "trailing takeover",
+                                "trail-" + UUID.randomUUID());
+
+        assertThat(permits.get()[1])
+                .as("the trailing renewal moved the permit forward, never left it where it was")
+                .isAfter(permits.get()[0]);
+        assertThat(result.status())
+                .as("a takeover may have been paid under the renewed permit: nothing concluded")
+                .isEqualTo(RefundStatus.UNKNOWN);
+        assertThat(activeHoldCount(captured.wallet())).isEqualTo(1);
+        assertThat(refundEntryCount(captured.attempt())).isZero();
+    }
+
+    @Test
     @DisplayName("a takeover that finds its refund already finished sends NOTHING and answers the"
             + " row's truth - no second hold, no second row, and the claim completes")
     void aTakeoverFindingAFinishedRefundSendsNothing() throws Exception {
@@ -2000,7 +2091,8 @@ class PaymentRefundDatabaseTest {
                         com.finapp.payments.PaymentRails.of(java.util.List.of(SimulatedCardPspAdapter.RAIL)),
                         IDS,
                         CLOCK),
-                observer);
+                observer,
+                new com.finapp.payments.JdbcSchemeExecutionClaimStore());
     }
 
     private SimulatedCardPspAdapter adapter() {

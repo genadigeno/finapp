@@ -188,6 +188,11 @@ public final class PaymentCapture {
                 // stranded cases are the sweeper's, never a second wire operation.
                 case CAPTURE_DISPATCHED, CAPTURE_UNKNOWN, CAPTURED, FAILED ->
                         new Tx1Outcome(Optional.empty(), Optional.of(converged(uow, attempt)));
+                // A void won the race for the authorization (the Phase 7 -> 8 transition): the
+                // promise is being released, so there is nothing to capture - the truth, never
+                // a 500 on the confirmation that chained this capture or a failed sweep row.
+                case VOID_DISPATCHED, VOID_UNKNOWN, VOIDED ->
+                        new Tx1Outcome(Optional.empty(), Optional.of(converged(uow, attempt)));
                 // Commanding a capture on an unauthorized attempt is a caller defect, loud.
                 default ->
                         throw new IllegalPaymentAttemptTransitionException(

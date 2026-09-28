@@ -229,7 +229,8 @@ class PaymentSweeperScheduleTest {
                         com.finapp.payments.PaymentRails.of(java.util.List.of(com.finapp.payments.SimulatedCardPspAdapter.RAIL)),
                         ids(),
                         java.time.Clock.systemUTC()),
-                        com.finapp.payments.RailOutcomeObserver.NONE);
+                        com.finapp.payments.RailOutcomeObserver.NONE,
+                        new com.finapp.payments.JdbcSchemeExecutionClaimStore());
         com.finapp.payments.PaymentVoid voids =
                 new com.finapp.payments.PaymentVoid(
                         runner, intents, attempts, evidence, provider, outcomes,

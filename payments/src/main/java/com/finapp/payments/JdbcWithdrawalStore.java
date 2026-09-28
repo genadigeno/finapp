@@ -118,6 +118,25 @@ public final class JdbcWithdrawalStore implements WithdrawalStore<Connection> {
     }
 
     @Override
+    public Optional<Withdrawal> findByEndToEndReference(
+            Connection unitOfWork, EndToEndReference reference) {
+        Objects.requireNonNull(reference, "reference must not be null");
+        try (PreparedStatement select =
+                unitOfWork.prepareStatement(
+                        "SELECT " + COLUMNS + " FROM " + TABLE
+                                + " WHERE end_to_end_reference = ?")) {
+            select.setString(1, reference.value());
+            try (ResultSet row = select.executeQuery()) {
+                return row.next() ? Optional.of(map(row)) : Optional.empty();
+            }
+        } catch (SQLException failure) {
+            throw new PaymentsStorageException(
+                    DatabaseFailure.describe(
+                            "reading a withdrawal by its end-to-end reference", failure));
+        }
+    }
+
+    @Override
     public boolean renewSendPermit(Connection unitOfWork, Withdrawal before, Instant at) {
         Objects.requireNonNull(before, "before must not be null");
         Objects.requireNonNull(at, "at must not be null");

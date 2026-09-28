@@ -57,6 +57,13 @@ public interface CheckoutSessionStore<T> {
     Optional<CheckoutSession> findByIntentForUpdate(T unitOfWork, java.util.UUID intentRef);
 
     /**
+     * Whether a session opened {@code intentRef} (the Phase 7 -> 8 transition) - the public
+     * payment door's refusal of a checkout's intent. Not locking: it decides a refusal, and a
+     * session's intent reference never changes once written.
+     */
+    boolean opened(T unitOfWork, java.util.UUID intentRef);
+
+    /**
      * The session that opened {@code intentRef}, <strong>if it is this merchant's</strong>
      * (`P6-TSK-009`) — the merchant transaction report's enrichment read.
      *
