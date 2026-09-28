@@ -1,6 +1,6 @@
 # ADR-0062 — Account-to-account payments run on a provider-neutral push rail; bank details and aliases never enter; an instant payment is final on acceptance and settled on the scheme's cycle
 
-Status: Proposed (2026-09-24, the Phase 6 → 7 transition)
+Status: Accepted (2026-09-28, `P7-DOC-001` — read against the implementation at the phase review; eight passages corrected or added to it, and one defect in the code fixed, first)
 Date: 2026-09-24
 Phase: 7
 Context: Payments · Payment Methods · Accounts · Ledger
@@ -43,7 +43,10 @@ The concepts this phase must keep apart:
    - `inquire(ourReference)`: the scheme's status investigation;
    - `initiate(payIn)` for pay-by-bank: returns an authorization handle the payer's client follows
      to the payer's PSP;
-   - `inquireInitiation(ourReference)`.
+   - `inquireInitiation(ourReference)`;
+   - `sendReturn(returnTransfer)` and `inquireReturn(ourReference)`: a return payment citing the
+     original's scheme reference, and its investigation *(added by `P7-TSK-010`; missing from
+     this list until the phase review, `P7-DOC-001`)*.
 
    Identifier schemes, alias types, message formats, reason codes, time-outs, limits and operating
    hours are adapter configuration. The core sees our verdicts (`ACCEPTED`, `REJECTED`,
@@ -51,7 +54,11 @@ The concepts this phase must keep apart:
    stored value. Phase 7 builds one simulated scheme behind the harness (ADR-0008, the programme's
    no-real-connectivity rule), with fault injection and contract tests *(shipped
    `P7-TSK-006`: `PushRail`, `SimulatedInstantSchemeAdapter` and its contract battery)*. A
-   second scheme is an adapter plus routing rules.
+   second scheme is an adapter plus routing rules *(and, the review found, per-rail wiring: the
+   composition root wires the one push rail's id into the withdrawal command, its resolution,
+   the callback door and the scheme key, and `Withdrawals` refuses a routing choice naming any
+   other push rail - a second scheme needs per-rail operation lookup there and its own
+   clearing position, ADR-0059 §1 and §4)*.
 
 2. **Bank details and aliases never enter the platform** (ADR-0056 §7, generalised).
    - The customer's client obtains a grant at the rail provider: by linking an account, or by
@@ -59,7 +66,10 @@ The concepts this phase must keep apart:
    - The platform exchanges the grant, holding no database connection, and stores only three
      things: the opaque reference, the display suffix, and the confirmation-of-payee result.
    - Values shaped like an account number, an international account identifier or a phone number
-     are refused at the surface, in the domain types and by `CHECK`s (`INV-RAIL-03`).
+     are refused at the surface, in the domain types and by `CHECK`s (`INV-RAIL-03`). *(The
+     refusing domain type is `paymentmethods`' `DestinationReference`; past that boundary the
+     reference travels as the opaque `ProviderReference`, already refused at registration and
+     redacted in every port record that carries it - the phase review, `P7-DOC-001`.)*
    - An external account the customer pays from, or withdraws to, becomes a payment method of
      kind `BANK_ACCOUNT` in `paymentmethods`, the instrument registry. It is ownership-scoped,
      with step-up on registration when a factor is enrolled (the beneficiary pattern).
@@ -77,7 +87,10 @@ The concepts this phase must keep apart:
    body can carry the payee's name, which is exactly what this section forbids at rest.)*
 
 3. **Final on acceptance; the scheme bounds its own ambiguity.** A send whose answer is lost is
-   `EXECUTION_UNKNOWN` (`INV-LIFE-03`), with its hold standing. The scheme declares an outcome
+   `UNKNOWN` (`INV-LIFE-03`), with its hold standing - the withdrawal's `UNKNOWN`, or the
+   return's, a refund row's *(this read `EXECUTION_UNKNOWN` until the review: the outbound sends
+   are their own aggregates, and the attempt's `EXECUTION_*` states have no producer - ADR-0059
+   §2)*. The scheme declares an outcome
    deadline (ADR-0059's `outcomeDeadline`). Once that deadline has passed since the **latest**
    send, the status inquiry is authoritative: executed, or never executed. This is where an
    instant rail differs materially from a card rail, whose unknowns only a provider's answer ends.
@@ -105,6 +118,13 @@ The concepts this phase must keep apart:
    instead of a clock's guess), and the permit (`payment_attempt.last_dispatched_at`,
    forward-only, conditionally renewed) paces the wire among instances rather than
    guarding money.)*
+
+   *(And for the RETURN, recorded by the review because it too is deliberate: a return never
+   concludes "never executed" and never reads the declared deadline. On `UNRECOGNISED`,
+   `ReturnResolution` conditionally renews the send permit and re-sends the SAME reference on
+   every tick until the scheme answers executed or rejected. That is safe - the counterparty's
+   hold stands throughout and the scheme dedupes on our reference - and it trades a clock's
+   conclusion for a repeated, idempotent question.)*
 
 4. **Accounting: every accepted push lands in the scheme's own clearing position**
    (`INSTANT_CLEARING`, an operational asset per currency, added with its first poster; ADR-0059
@@ -214,7 +234,14 @@ Operational impact: per-rail meters; the withdrawal's stuck gauge in the payout'
 one dispatched-bound placeholder; the instant scheme's latency published under its own name.)*
 Security impact: grants and references are wrapped (`Sensitive`), their `expose()` sites
 registered; strong customer authentication for pay-ins happens at the payer's PSP; step-up
-applies on instrument registration and on withdrawal, when a factor is enrolled.
+applies on instrument registration and on withdrawal, when a factor is enrolled. *(The review,
+`P7-DOC-001`, found the wrapping ending at the `paymentmethods` boundary: past its two
+registered `expose()` sites, the grant and the destination travelled inside `payments` in port
+records - `PushRail.GrantExchange`, `PushRail.CreditTransfer`, `ExchangeAnswer` - whose
+generated `toString` printed them. Nothing logged them, so the gap was latent; it is closed at
+the records - each now redacts the grant, the destination, the display suffix and the amount
+in its `toString`, the payout port's precedent - held by `PushRailRecordsRedactTest`, and
+`INV-RAIL-03`'s needle now runs through a withdrawal and a pay-in, logs included.)*
 Financial impact: `INSTANT_CLEARING` per currency; the withdrawal's hold on the wallet.
 
 ## Invariants / Constraints
@@ -225,8 +252,14 @@ Financial impact: `INSTANT_CLEARING` per currency; the withdrawal's hold on the 
 
 ## Follow-up
 
-- `P7-TSK-006` (bank-account instruments and the grant exchange), `P7-TSK-007` (the instant rail
-  adapter and its simulator), `P7-TSK-008` (wallet withdrawal), `P7-TSK-009` (pay-by-bank pay-in),
-  `P7-TSK-010` (returns on push rails).
+- `P7-TSK-006` (the instant rail adapter and its simulator), `P7-TSK-007` (bank-account
+  instruments and the grant exchange), `P7-TSK-008` (wallet withdrawal), `P7-TSK-009`
+  (pay-by-bank pay-in), `P7-TSK-010` (returns on push rails). *(The first two were swapped here
+  until the review.)*
 - Recall requests and batch credit-transfer rails with return windows are out of Phase 7, and
-  recorded.
+  recorded *(in `DECISIONS.md` §Deliberately Deferred since the review, with the payouts'
+  convergence of §7)*.
+- A return keeps only the scheme's transaction reference (`refund.provider_reference`); the
+  settlement cycle the withdrawal and the pay-in store is not kept for it on either return
+  path. Phase 8's input, recorded by the review: a return's cycle comes from the scheme's
+  settlement report, or the refund gains the column.

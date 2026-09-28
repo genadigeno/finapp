@@ -560,19 +560,22 @@ session opens, under the version it will carry, and `net <= 0` is `checkout.Sale
 nothing written and the key unspent; the pin re-asserts it, and a capture is never refused.
 Decides ADR-0054's open item. → [ADR-0058](../adr/ADR-0058-a-sale-must-cover-its-fee.md)
 
-### Rails, routing and disputes (Phase 7, `Proposed` at the Phase 6 → 7 transition)
+### Rails, routing and disputes (Phase 7, `Proposed` at the Phase 6 → 7 transition; `Accepted` at the Phase 7 review, `P7-DOC-001`, each read against the code with its corrected passages marked in place)
 **A payment rail declares its capabilities, and the domain acts on them, never on a rail's
 name.** Three interaction models — two-step (the card rail), push (credit transfers) and book (the
 platform's own wallet) — each with its own attempt machine; finality, reversal, refund mode,
 outcome deadline, disputes and the clearing position are the descriptor's to declare. Internal
 completion is never settlement; each external rail has its own clearing position. Card issuing is
-external, and the wallet stays in `accounts`. Gives `INV-REV-03` its subject. →
+external, and the wallet stays in `accounts`. Gives `INV-REV-03` its subject. A rail's money
+semantics are frozen per rail name - a change is a new rail - so a payment is always read under
+the semantics it was made under (ruled at the review). →
 [ADR-0059](../adr/ADR-0059-payment-rails-capabilities-and-finality.md)
 
 **Routing is a versioned policy, decided once per payment, pinned and explainable.** The decision
-is born in the confirmation's first transaction with every rejected candidate and its reason; it
-advances to another rail only on knowledge that nothing was sent, never after an ambiguous
-dispatch; rail availability is a recorded database fact, never an instance's opinion. The third
+is born in the confirmation's first transaction with every rejected candidate and its reason;
+Phase 7 has no cross-rail fallback after dispatch, and any future advance moves only on knowledge
+that nothing was sent, never after an ambiguous dispatch; rail availability is a recorded
+database fact, never an instance's opinion. The third
 subject of `INV-HIST-04`. → [ADR-0060](../adr/ADR-0060-rail-routing-pinned-and-explainable.md)
 
 **A dispute is its own lifecycle on a card payment, and a chargeback never takes more than the
@@ -662,5 +665,10 @@ Recorded so these are not mistaken for oversights.
 | Jurisdiction-specific compliance | Per phase | Jurisdiction-neutral core; specifics behind policy/configuration/adapters |
 | Machine-learning risk models | Beyond scope | Versioned rules first; models add reproducibility burden without domain insight |
 | Handling raw card data | Never | Tokenised at the boundary; PCI scope deliberately minimised |
+| Instant-payment recall requests; batch credit-transfer rails with return windows | A later payments phase, when a rail that needs them is added | A recall is a request the payee's PSP may refuse, days later - a new operation with its own lifecycle, never a reversal (ADR-0059's rejected alternative); a batch rail's return window is a second finality model. Neither exists in any Phase 7 rail (ADR-0062's follow-up; recorded here by the Phase 7 review) |
+| Moving the merchant payout onto the push rail | A second outbound rail, or Phase 8 needing one evidence shape for every outbound credit transfer | Two outbound disciplines coexist by design: the payout keeps its own port (ADR-0057) and the push rail can implement it in `app` without a `merchant` change (ADR-0062 §7) |
+| Automatic rail availability from observed failure rates | Phase 15 | Availability is an operator's recorded, audited fact read inside each decision; automation must write the same fact, never an instance's opinion (ADR-0060 §4 - "Phase 15 or 16" until the Phase 7 review settled one owner) |
+| A per-rail cost meter | Phase 8 | No Phase 7 rail reports a cost; the processor's fees arrive with its settlement evidence (ADR-0060 §6, annotated at the review) |
+| Dispute-fee pass-through to merchants | A merchant-risk phase (Phase 13's neighbourhood) | The PSP's dispute fee posts to `DISPUTE_COSTS`; charging it on is a commercial term with its own consent and statement consequences (ADR-0061's follow-up; recorded here by the review, with reserves the Known Architectural Debt row in `CURRENT_STATE.md`) |
 | A secrets manager (Vault, cloud KMS) | Phase 15 | No deployment, no key material and one local database password. A manager chosen with no real requirement to shape it is the wrong manager; the seam - configuration read from the environment - is established now (ADR-0020) |
 | Changing the verified contact channel | Phase 15, with the notifier | A safe change needs a step-up, a notice to the channel being replaced and a cooling-off - `INV-IDN-06`'s own enforcement - and the notice needs the channel notifier Phase 15 brings. Until then a second verification is refused (`X-TSK-004`, §Recovery channels). Nothing delivers a challenge before that notifier either, so the refusal cannot yet strand a customer. **The flow must spend every pending challenge of the kind**: a refused verification writes nothing, so its challenge stays live until it expires, and a flow that freed the kind without spending them would let a parked challenge verify the moment the verified channel is gone |

@@ -1,6 +1,7 @@
 package com.finapp.app.payments;
 
 import com.finapp.platform.api.IdempotencyKeyHeader;
+import com.finapp.platform.api.RequiresIdempotencyKey;
 import com.finapp.app.session.RequiresPermission;
 import com.finapp.identity.PermissionName;
 import jakarta.validation.Valid;
@@ -45,6 +46,10 @@ public class RoutingPolicyController {
             path = "/operator/routing-policy/versions",
             consumes = MediaType.APPLICATION_JSON_VALUE)
     @RequiresPermission(PermissionName.PAYMENT_ROUTING_ADMINISTER)
+    // The keyed contract's own gate (P7-DOC-001): without it a missing key met Spring's
+    // generic 400 instead of api.IdempotencyKeyRequired, and the key's charset went
+    // unchecked - the one keyed handler the review found without it.
+    @RequiresIdempotencyKey
     @ResponseStatus(HttpStatus.CREATED)
     public RoutingPolicyOperations.VersionView createRoutingPolicyVersion(
             @RequestHeader(IdempotencyKeyHeader.NAME) String idempotencyKey,

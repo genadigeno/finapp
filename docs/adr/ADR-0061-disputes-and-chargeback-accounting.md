@@ -1,6 +1,6 @@
 # ADR-0061 — A dispute is its own lifecycle on a card payment; a chargeback never takes more from the counterparty than it was credited, and every stage posts once
 
-Status: Proposed (2026-09-24, the Phase 6 → 7 transition)
+Status: Accepted (2026-09-28, `P7-DOC-001` — read against the implementation at the phase review; seven passages corrected to it, and the risks it said were recorded recorded, first)
 Date: 2026-09-24
 Phase: 7
 Context: Payments (Disputes) · Merchant · Accounts · Ledger
@@ -43,7 +43,9 @@ the customer has spent the money.
    contests.
 
    *(Shipped `P7-TSK-012`: `payments.dispute` in `V020`, the unique key the opening's arbiter
-   under ten fresh-id deliveries; the network's opening statement — provider, reference,
+   under ten fresh-id deliveries *(since `P7-TSK-013` the attempt row lock every delivery takes
+   first serialises the deliveries on one attempt, and the key arbitrates only a reference named
+   against another attempt - corrected by the phase review, `P7-DOC-001`)*; the network's opening statement — provider, reference,
    attempt, reason category — frozen for every writer, and the chargeback's amount D arriving
    WITH the chargeback (`NULL → value`, the captured amount's discipline): an inquiry states
    only the transaction it asks about, and a chargeback may take less, so the figure point 4
@@ -59,6 +61,8 @@ the customer has spent the money.
      the chargeback's principal lines.
    - `LOST` or `ACCEPTED` (not contested): terminal. The chargeback's debit stands, and any
      recoverable excess is written off (point 4).
+   - `CLOSED`: an inquiry the issuer closed without a chargeback. Terminal, no effect. *(Missing
+     from this list until the review; `INQUIRY → CLOSED` is in the machine from `V020`.)*
 
    Terminal is terminal (`INV-LIFE-04`). A second-cycle chargeback is a new dispute notification
    judged by the same bound, never a reopened row. A representment after resolution is refused.
@@ -114,7 +118,9 @@ the customer has spent the money.
    the PSP's retry window; recording at once and re-attributing when the capture lands closes both).
    Oldest dispute first, from the recoverable while contested and from `DISPUTE_COSTS` once a loss
    wrote the excess off — so at every commit the split is the one a chargeback arriving now would
-   take, and the closing sentence above holds.)*
+   take, and the closing sentence above holds - widened by the review to what the recoverable
+   also carries: the value the network took twice, **or took uncredited** (a chargeback on an
+   attempt that captured nothing), **plus parked shares** (point 5).)*
 
 4. **Accounting, the external fact first.** The notification states what the PSP did, so the
    card rail's clearing position moves by exactly that; everything else is the platform's
@@ -162,7 +168,10 @@ the customer has spent the money.
      because `INV-MER-05` bounds a payout by the payable.
    - A customer wallet driven negative by a charged-back top-up the customer spent is a
      **receivable from the customer**, recorded and never silently written off. Collection is
-     Phase 11's and Phase 13's.
+     Phase 11's and Phase 13's. *(No phase plan named it until the review, which recorded it as
+     Known Architectural Debt in `CURRENT_STATE.md` - merchant debt with no reserve and customer
+     receivables with no collection - owned by Phase 13 and triggered by the negative-position
+     gauge reading above zero in operation.)*
 
    Both positions are counted by a gauge.
 
@@ -185,7 +194,10 @@ the customer has spent the money.
    `finapp.ledger.negative.positions`, per purpose, and `INV-MER-07`'s amendment is in force.)*
 
    *(`P7-TST-001`, the multi-rail storm, found the lock order one step short and closed it: every
-   stage now share-locks the counterparty BEFORE its first posting. A win's external fact had
+   stage that posts to the counterparty - `CHARGED_BACK` and `WON`; `LOST`, `ACCEPTED` and the
+   fee never touch it, and a re-attribution locks it through its postability read - now
+   share-locks the counterparty BEFORE its first posting *(this read "every stage" until the
+   review)*. A win's external fact had
    taken the clearing's and the recoverable's balance rows before its restoration touched the
    counterparty, while a refund of another payment to the same counterparty held that account for
    its hold's release and waited on the clearing - a `40P01`, a 500 at the card door, the PSP's
@@ -193,8 +205,12 @@ the customer has spent the money.
 
 6. **Notifications are authenticated, deduplicated and order-blind.** Dispute notifications
    arrive through the card rail's signed webhook door (ADR-0047): authenticated before parsing,
-   deduplicated by the inbox (`INV-IDEM-04`), evidence retained verbatim before the effect
-   (`INV-HIST-02`), applied through conditional stage transitions. Provider dispute vocabulary
+   deduplicated by the inbox (`INV-IDEM-04`), evidence retained verbatim in the effect's own
+   transaction (`INV-HIST-02`), applied through conditional stage transitions. *(This read
+   "before the effect" until the review: the door runs the effect first and inserts the
+   evidence after it, in the same transaction, a deliberate lock-order rule - the evidence
+   insert takes a key-share lock on the attempt row the effect locks - so the evidence and the
+   effect commit together or not at all.)* Provider dispute vocabulary
    (reason codes, stage words) stays in the adapter (`INV-PAY-03`); the core sees our stages and
    our reason categories.
 
@@ -228,7 +244,8 @@ the customer has spent the money.
    plaintext's SHA-256, append-only by grant, content-addressed; every content read audited
    (`payments.DisputeEvidenceRead`) and every wire transmission too
    (`payments.DisputeEvidenceTransmitted`). The deadline is the network's `respondBy`, recorded
-   once with the chargeback; the platform refuses only its OWN late dispatch and raises
+   once with the chargeback, or first reported on a later statement - still `NULL → value`
+   (added by the review); the platform refuses only its OWN late dispatch and raises
    `finapp.payments.dispute.deadline.near`. "An operator for a payment with no merchant" is
    enforced: the operator acts only where the payment credited a customer wallet, reasoned.
    Every act locks the attempt and then the dispute — the order every delivery keeps.)*
@@ -264,7 +281,8 @@ Positive:
 
 Negative:
 - A second source of merchant debt, bounded by the credit. Reserves are out of scope; they are
-  recorded as a risk with an owner.
+  recorded as a risk with an owner *(true since the review, `P7-DOC-001`: the Known
+  Architectural Debt row in `CURRENT_STATE.md`, owned by Phase 13)*.
 - Refund failure paths gain a re-attribution step when a chargeback stands.
 
 Operational impact: dispute counts by stage and outcome; respond-by alarms; the negative-position
@@ -290,4 +308,8 @@ exactly what it resolves), `INV-DSP-03` (dispute evidence), `INV-IDEM-04`, `INV-
   and the combined bound), `P7-TSK-014` (representment and evidence), `P7-TST-002` (the dispute
   battery).
 - Merchant reserves and dispute-fee pass-through: candidates for a merchant-risk phase, recorded
-  in `CURRENT_STATE.md`.
+  in `CURRENT_STATE.md`. *(They were not, until the review: reserves and receivable collection
+  are the Known Architectural Debt row, fee pass-through a `DECISIONS.md` Deliberately Deferred
+  row - the substance was in `PHASE_7_PLAN.md` §17 and the backlog alone.)*
+- The phase review read this ADR against the code (`P7-DOC-001`): every decision holds in the
+  code; seven passages corrected above with provenance.

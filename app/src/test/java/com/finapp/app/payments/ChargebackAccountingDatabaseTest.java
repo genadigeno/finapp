@@ -518,6 +518,107 @@ class ChargebackAccountingDatabaseTest {
         assertThat(balance(payment.credit())).as("10.00 - 3.00 refunded").isEqualTo(700);
     }
 
+    /**
+     * PHASE_GATES section 5's atomicity bullet by failure injection (the Phase 7 review): "a
+     * dispute stage, its posting and its history commit together". The win posts two entries;
+     * the SECOND is made to fail - its posting key already claimed under another fingerprint -
+     * AFTER the first has been written inside the same transaction. The delivery must leave
+     * nothing: not the first entry, not the stage, not the trail row, the stage record, the
+     * fact or the inbox record, so the network's redelivery - same event id - is not absorbed
+     * as a duplicate but applies the stage once, whole.
+     */
+    @Test
+    @DisplayName("a stage fails whole: its second posting refused after its first was written,"
+            + " nothing of the stage survives - and the redelivery of the same event applies it"
+            + " once")
+    void aStageFailsWholeAndItsRedeliveryAppliesIt() throws Exception {
+        Payment payment = captured(wallet());
+        String reference = someDisputeReference();
+        deliver(chargeback(payment, reference, "needs_response", 1000, null));
+        deliver(chargeback(payment, reference, "under_review", 1000, null));
+        UUID dispute = disputeId(reference);
+        String stageBefore = stage(dispute);
+        List<String> linesBefore = lines(dispute);
+        long trailBefore = count("SELECT count(*) FROM payments.dispute_event WHERE dispute_id = ?",
+                dispute);
+        long recordsBefore = count("SELECT count(*) FROM platform.audit_record WHERE target_id = ?",
+                dispute.toString());
+        long factsBefore = count("SELECT count(*) FROM platform.outbox_event WHERE aggregate_id = ?",
+                dispute);
+
+        // THE INJECTION: the restoration's posting key held by another request's claim.
+        String restorationKey = "dispute-restoration:" + dispute;
+        try (CorrelationContext.Scope flow =
+                        CorrelationContext.enter(
+                                Correlation.startingWith(CorrelationId.generate(IDS)));
+                Connection app = DatabaseRoles.application()) {
+            app.setAutoCommit(false);
+            Instant now = Instant.now(CLOCK);
+            new com.finapp.platform.idempotency.JdbcIdempotencyRecordStore()
+                    .claim(
+                            app,
+                            new com.finapp.platform.idempotency.IdempotencyKey(
+                                    PostingService.IDEMPOTENCY_SCOPE, restorationKey),
+                            com.finapp.platform.idempotency.RequestFingerprint.sha256(
+                                    "somebody else's posting".getBytes(StandardCharsets.UTF_8)),
+                            CorrelationId.of("injected-" + dispute),
+                            now,
+                            now.plus(Duration.ofDays(1)),
+                            Duration.ofMinutes(10));
+            app.commit();
+        }
+
+        String eventId = "evt_" + UUID.randomUUID();
+        String won =
+                chargeback(payment, reference, "won", 1000, null)
+                        .replaceFirst("\"eventId\":\"evt_[^\"]+\"", "\"eventId\":\"" + eventId + "\"");
+        HttpResponse<String> failed = deliver(won);
+        assertThat(failed.statusCode())
+                .as("unacknowledged, so the network redelivers: %s", failed.body())
+                .isGreaterThanOrEqualTo(400);
+        assertThat(stage(dispute)).isEqualTo(stageBefore);
+        assertThat(lines(dispute))
+                .as("the win's FIRST entry was written in the failed transaction - and is gone")
+                .isEqualTo(linesBefore);
+        assertThat(count("SELECT count(*) FROM payments.dispute_event WHERE dispute_id = ?",
+                        dispute))
+                .isEqualTo(trailBefore);
+        assertThat(count("SELECT count(*) FROM platform.audit_record WHERE target_id = ?",
+                        dispute.toString()))
+                .isEqualTo(recordsBefore);
+        assertThat(count("SELECT count(*) FROM platform.outbox_event WHERE aggregate_id = ?",
+                        dispute))
+                .isEqualTo(factsBefore);
+        assertThat(count("SELECT count(*) FROM platform.inbox_message WHERE dedupe_key = ?",
+                        SimulatedCardPspAdapter.NAME + ":" + eventId))
+                .as("the inbox record rolled back with the effect: a redelivery is not a duplicate")
+                .isZero();
+
+        // THE REDELIVERY, the injection lifted: the same event, applied once and whole.
+        try (Connection root = DatabaseRoles.bootstrap()) {
+            execute(
+                    root,
+                    "DELETE FROM platform.idempotency_record"
+                            + " WHERE scope = ? AND idempotency_key = ?",
+                    PostingService.IDEMPOTENCY_SCOPE,
+                    restorationKey);
+        }
+        HttpResponse<String> applied = deliver(won);
+        assertThat(applied.statusCode()).as(applied.body()).isBetween(200, 299);
+        assertThat(stage(dispute)).isEqualTo("WON");
+        assertThat(operations(dispute))
+                .containsExactly(
+                        "dispute-chargeback", "dispute-attribution", "dispute-won",
+                        "dispute-restoration");
+        assertThat(nets(dispute).values()).as("zero on every account").containsOnly(0L);
+        assertThat(count("SELECT count(*) FROM payments.dispute_event WHERE dispute_id = ?",
+                        dispute))
+                .isEqualTo(trailBefore + 1);
+        assertThat(count("SELECT count(*) FROM platform.inbox_message WHERE dedupe_key = ?",
+                        SimulatedCardPspAdapter.NAME + ":" + eventId))
+                .isEqualTo(1);
+    }
+
     @Test
     @DisplayName("a loss writes off ONLY the excess to DISPUTE_COSTS: the counterparty's share"
             + " stands as its debt, the recoverable is emptied")

@@ -34,7 +34,22 @@ Gate definitions and the phase status model live in
 | 15 | Production Hardening | Security hardening, SLOs, runbooks, operational readiness |
 | 16 | Scale, Resilience and Disaster Recovery | Load characterisation, degradation modes, backup/restore, DR |
 
-**Current position (2026-09-24).** **Phases 0 through 6 are `COMPLETE`.** Phase 6 closed on
+**Current position (2026-09-28).** **Phases 0 through 7 are `COMPLETE`.** Phase 7 closed on its
+exit review (`P7-DOC-001` — 8 areas, 12 universal criteria, F1–F8 re-assessed and met, 21
+phase-specific criteria, the ten-instances question over every contended decision, ADR-0059…0062
+read against the code, corrected where they had drifted, and `Accepted`). The review found a
+withdrawal posting to a clearing position it named, a "recorded" capability descriptor that was
+one integer while every resolver read the running build — ruled: a rail's money semantics are
+frozen per rail name — bank details printable by three port records, an unstated lock order, and
+nineteen gate claims with partial tests, and fixed and probed each. **Money moves on three rails
+the domain tells apart by their declarations** — card, instant credit transfer and the platform's
+own books — every payment routed once and explainable, every external rail's money in flight on
+its own clearing position, bank details never entering, and a chargeback never taking more than
+the capture credited. The fleet-wide battery was skipped by the owner's standing instruction and
+is the Phase 7 → 8 transition's to run. **Phase 8 — Settlement and Reconciliation — is next**,
+behind that transition.
+
+**Phase 6** closed on
 its exit review (`P6-DOC-001` — 8 areas, 12 universal criteria, F1–F8 re-assessed and met, 16
 phase-specific criteria, the ten-instances question over every contended decision,
 ADR-0050…0054 and ADR-0056…0058 read against the code, corrected where they had drifted, and
@@ -45,15 +60,16 @@ the platform does not own can sell through it and be paid**: 18 of 18 backlog it
 taken in the capture's one entry, refunds funded by the net, payouts bounded by the ledger and
 sent to a destination no one person can change, and tenancy in every statement.
 
-**Phase 7 — Cards, Wallets, A2A and Instant Payments — is `READY`**, its entry gate passed by
-the Phase 6 → 7 transition (2026-09-24). The transition's independent audit confirmed Phase 6
+**Phase 7 — Cards, Wallets, A2A and Instant Payments** opened `READY` behind its entry gate,
+passed by the Phase 6 → 7 transition (2026-09-24). The transition's independent audit confirmed Phase 6
 only after repairing what the review had missed — a taken-over refund that released a hold a first
 send may have paid, a wallet that could be closed beneath a card capture, and nine important
 defects besides — and ran the full battery fleet-wide before and after. Phase 7 is planned in
 `PHASE_7_PLAN.md` on ADR-0059…0062: rails that declare their capabilities, routing that is pinned
 and explainable, disputes whose chargebacks can never debit a merchant twice, and account-to-account
 and instant payments that keep bank details out of the platform. Eighteen items across eight
-milestones; first task `P7-TSK-001`. `X-TSK-003` carries the remaining idempotency-scope work.
+milestones, all eighteen `COMPLETE` by 2026-09-28. `X-TSK-003` carries the remaining
+idempotency-scope work.
 
 *(This section read "Phase 6 … is `READY`, first task `P6-TSK-001`" through the whole of Phase 6
 — frozen at the Phase 5 → 6 transition, the stale-second-copy class this section has now fallen

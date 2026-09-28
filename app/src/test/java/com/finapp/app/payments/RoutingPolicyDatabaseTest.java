@@ -108,6 +108,23 @@ class RoutingPolicyDatabaseTest {
                         reason))
                 .isEqualTo(1);
 
+        // The keyed contract's own refusal (P7-DOC-001, A5's find): without a key the route
+        // answers api.IdempotencyKeyRequired - not the framework's anonymous 400 - and a key
+        // outside the platform's charset is refused by the same gate. Nothing written.
+        long versions = count("SELECT count(*) FROM payments.routing_policy_version WHERE"
+                + " reason = ?", reason + " unkeyed");
+        HttpResponse<String> unkeyed =
+                post(VERSIONS_PATH, versionBody(reason + " unkeyed", null), operator, null);
+        assertThat(unkeyed.statusCode()).as(unkeyed.body()).isEqualTo(422);
+        assertThat(unkeyed.body()).contains("\"code\":\"api.IdempotencyKeyRequired\"");
+        HttpResponse<String> misshapen =
+                post(VERSIONS_PATH, versionBody(reason + " unkeyed", null), operator,
+                        "not a key!");
+        assertThat(misshapen.statusCode()).as(misshapen.body()).isBetween(400, 422);
+        assertThat(count("SELECT count(*) FROM payments.routing_policy_version WHERE"
+                        + " reason = ?", reason + " unkeyed"))
+                .isEqualTo(versions);
+
         // Immutable for EVERY writer, the migrator included - the version and its rules.
         try (Connection migrator = DatabaseRoles.migrator()) {
             assertRaised(migrator,

@@ -6,10 +6,11 @@ rather than by convention.
 
 **Phase 0 delivered no business capability, and that was deliberate** — money representation,
 idempotency, outbox, audit and correlation cannot be retrofitted once financial history exists.
-Six phases on, money exists and moves: a double-entry ledger, balances explainable from the
+Seven phases on, money exists and moves: a double-entry ledger, balances explainable from the
 postings, holds, customer-visible internal transfers, payments through a third party that can
-fail in every way a third party can, and merchants who sell through the platform and are paid
-out. Where the project stands is summarised
+fail in every way a third party can, merchants who sell through the platform and are paid out,
+and three payment rails the domain tells apart by what each declares — cards, instant credit
+transfers and the platform's own wallets — with disputes and chargebacks posted exactly once. Where the project stands is summarised
 immediately below, and described canonically in
 [`docs/project/CURRENT_STATE.md`](docs/project/CURRENT_STATE.md).
 
@@ -17,15 +18,15 @@ immediately below, and described canonically in
 
 ## Where the project is
 
-**Phases 0 through 6 are `COMPLETE`, and Phase 7 is `READY`.** Phase 6 — Checkout and Merchant
-Platform — closed on 2026-09-24, ruled by its exit review
-([`docs/project/reviews/PHASE_6_REVIEW.md`](docs/project/reviews/PHASE_6_REVIEW.md)) and confirmed
-the same day by the Phase 6 → 7 transition's independent audit
-([`docs/project/reviews/PHASE_6_TO_7_TRANSITION.md`](docs/project/reviews/PHASE_6_TO_7_TRANSITION.md))
-— after that audit found and repaired two critical defects and nine important ones the review had
-not, broke every repair on purpose to prove its test, and ran the full battery before and after.
-Phase 7 — Cards, Wallets, A2A and Instant Payments — is planned, decided and broken into eighteen
-items; its first task, `P7-TSK-001`, has not started.
+**Phases 0 through 7 are `COMPLETE`.** Phase 7 — Cards, Wallets, A2A and Instant Payments —
+closed on 2026-09-28, ruled by its exit review
+([`docs/project/reviews/PHASE_7_REVIEW.md`](docs/project/reviews/PHASE_7_REVIEW.md)), which found
+and fixed a withdrawal posting to a clearing position it named, a capability descriptor stored as
+one integer while every resolver read the running build, bank details printable by three port
+records and nineteen gate claims with partial tests — and broke every fix on purpose to prove its
+test. The fleet-wide database battery was skipped by the owner's standing instruction and is the
+next act's to run. **Next: the Phase 7 → 8 transition**, then Phase 8 — Settlement and
+Reconciliation.
 
 Every number below is counted from this repository rather than recalled: items from
 [`docs/project/BACKLOG.md`](docs/project/BACKLOG.md), decisions from [`docs/adr/`](docs/adr/README.md),
@@ -35,28 +36,30 @@ the surface from [`docs/api/openapi.json`](docs/api/openapi.json).
 description of where the project is; this section is the summary of it.
 
 ```
-Programme    ███████░░░░░░░░░░   7 of 17 phases complete
-Backlog      ████████████████░░  200 of 220 elaborated items complete — Phase 7's 18 and 2 cross-cutting open
+Programme    ████████░░░░░░░░░   8 of 17 phases complete
+Backlog      ██████████████████  219 of 221 elaborated items complete — 2 cross-cutting open
 Phase 6      ██████████████████  18 of 18 items, 7 of 7 milestones closed
-Phase 7      ░░░░░░░░░░░░░░░░░░  0 of 18 items, 0 of 8 milestones — READY, first task P7-TSK-001
+Phase 7      ██████████████████  18 of 18 items, 8 of 8 milestones closed
 ```
 
 | | |
 |---|---|
-| 🔨 **Current work** | Phase 7 is `READY`. Next: **`P7-TSK-001`** — the rail port, the capability descriptor, and the card rail declared |
-| 💰 **Business capability** | Money exists and moves: accounts, a double-entry ledger, explainable balances, holds, internal transfers, payments and refunds through an unreliable provider, and merchants who sell through checkout, are charged their fee in the capture's own entry, refund out of their payable and are paid out under the bound |
-| 📐 **Decisions** | 62 ADRs — 57 `Accepted`; ADR-0055 (Lombok, cross-cutting, its acceptance the owner's) and ADR-0059…0062 (Phase 7) `Proposed` |
+| 🔨 **Current work** | Phase 7 is `COMPLETE`. Next: **the Phase 7 → 8 transition** — an independent audit, the fleet-wide battery, and Phase 8 initialised |
+| 💰 **Business capability** | Money exists and moves: accounts, a double-entry ledger, explainable balances, holds, internal transfers, payments and refunds through an unreliable provider, merchants who sell through checkout and are paid out under the bound, and three rails — cards that authorize, void, clear and are charged back; instant credit transfers final on acceptance, for pay-ins, withdrawals and returns; and wallet payments on the platform's own books |
+| 📐 **Decisions** | 62 ADRs — 61 `Accepted`; ADR-0055 (Lombok, cross-cutting, its acceptance the owner's) `Proposed` |
 | 🔒 **Invariants** | 101 catalogued; each in scope for a completed phase has a test *demonstrated to fail* when the invariant is broken |
-| 🗄️ **Schema** | 81 forward-only migrations across 12 schema-owning modules |
-| 🌐 **API** | 71 published paths, 86 operations, compared byte for byte against the running application on every build |
-| 🧾 **Audit and errors** | 77 auditable actions, 69 error codes, both reconciled with the code by the build |
-| 🧩 **Code** | 14 Gradle modules; 758 production, 382 test and 7 test-fixture source files |
-| 📦 **History** | 299 commits, 2026-08-31 to 2026-09-24 |
+| 🗄️ **Schema** | 96 forward-only migrations across 12 schema-owning modules |
+| 🌐 **API** | 92 published paths, 107 operations, compared byte for byte against the running application on every build |
+| 🧾 **Audit and errors** | 95 auditable actions, 86 error codes, both reconciled with the code by the build |
+| 🧩 **Code** | 14 Gradle modules; 903 production, 424 test and 7 test-fixture source files |
+| 📦 **History** | 318 commits, 2026-08-31 to 2026-09-28 |
 
 *(This section read "Phase 5 … `IN_PROGRESS`, 5 of 21 items" from 2026-09-20 until the Phase 6
 review's completion gate, `P6-DOC-001` — frozen through the rest of Phase 5, its review, the
 Phase 5 → 6 transition and the whole of Phase 6, the stale-second-copy class. Every number above
-was recounted from the repository at that gate, and again at the Phase 6 → 7 transition.)*
+was recounted from the repository at that gate, and again at the Phase 6 → 7 transition. It then
+read "Phase 7 is `READY` … 0 of 18 items" through the whole of Phase 7 — frozen at the transition,
+the same class again — until the Phase 7 review, `P7-DOC-001`, recounted every number here.)*
 
 ---
 
@@ -77,7 +80,7 @@ vocabulary are [`docs/project/PHASE_GATES.md`](docs/project/PHASE_GATES.md).
 | 4 | Internal Transfers | COMPLETE 2026-09-19 | The first end-to-end money movement on the ledger |
 | 5 | Payment Infrastructure | COMPLETE 2026-09-21 | Payment intent/attempt, provider adapters, auth/capture, refunds, webhooks |
 | 6 | Checkout and Merchant Platform | COMPLETE 2026-09-24 | Merchants, checkout sessions, fees, merchant payouts |
-| 7 | Cards, Wallets, A2A and Instant Payments | READY | Multi-rail abstraction, disputes and chargebacks |
+| 7 | Cards, Wallets, A2A and Instant Payments | COMPLETE 2026-09-28 | Multi-rail abstraction, disputes and chargebacks |
 | 8 | Settlement and Reconciliation | PLANNED | Settlement ingestion, matching, breaks, suspense, investigation |
 | 9 | FX and Cross-Border Payments | PLANNED | Quotes, rate locks, multi-currency conversion, cross-border workflow |
 | 10 | Credit Decisioning | PLANNED | Credit profile, bureau adapters, versioned policy, explainable decisions |

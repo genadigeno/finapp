@@ -8,9 +8,10 @@ interaction model), [ADR-0060](../adr/ADR-0060-rail-routing-pinned-and-explainab
 [ADR-0061](../adr/ADR-0061-disputes-and-chargeback-accounting.md) (disputes and chargeback
 accounting) and [ADR-0062](../adr/ADR-0062-account-to-account-and-instant-payments.md)
 (account-to-account and instant payments). The domain-facing statement of the lifecycles is
-[`RAIL_AND_DISPUTE_LIFECYCLES.md`](../domain/RAIL_AND_DISPUTE_LIFECYCLES.md). Until Phase 7's
-first task lands, **nothing in this plan is implemented**: every statement is the decided design,
-corrected by the tasks that build it.
+[`RAIL_AND_DISPUTE_LIFECYCLES.md`](../domain/RAIL_AND_DISPUTE_LIFECYCLES.md). *(It read "until
+Phase 7's first task lands, nothing in this plan is implemented" until the Phase 7 review,
+`P7-DOC-001`: every item is built, and the review corrected the passages below to the code, each
+with its provenance.)*
 
 ## 1. Objective
 
@@ -41,7 +42,9 @@ who the money is for. Phase 7 changes **how it travels** and holds everything el
 - **Every outbound push reuses the payout's disciplines** (ADR-0057): hold-then-dispatch, the
   send permit, and a failure concluded only on knowledge. The Phase 6 → 7 transition brought the
   send permit to the refund (payments `V009`), so every re-sending flow on the platform now
-  carries one before a second rail inherits the shape.
+  carries one before a second rail inherits the shape - every one but the card void, which
+  re-sends without a permit deliberately: a void releases a promise and moves no money, and the
+  provider dedupes on our reference (`DISTRIBUTED_EXECUTION.md` §3; noted by the review).
 - **Bank details never enter** (ADR-0056 §7). The payout destination's grant exchange is the
   template for every external account the platform pays or is paid from (ADR-0062 §2).
 - **The ledger is the only balance authority** (ADR-0002, ADR-0009, ADR-0042). A wallet balance,
@@ -73,7 +76,8 @@ Cardholder, Card Account, Physical Card and Virtual Card are external.
 | `RoutingPolicy` / `RoutingDecision` | `payments` | create version, set rail availability (operator); decide (the platform) | Versions immutable; a decision is one row per payment, frozen |
 | `Refund` | `payments` | refund — provider refund, return payment or book refund by the rail's `refundMode` | Keyed (`payment.refund`); send permit (`V009`) |
 | `Withdrawal` | `payments` | withdraw (customer); outcomes by the platform | Keyed per customer; hold-then-dispatch; send permit |
-| `Dispute` | `payments` | opened, charged back, represented, resolved (by notification); submit evidence and accept (merchant or operator) | Unique on (provider, provider dispute reference); stages conditional; each posting keyed by dispute and stage |
+| `Dispute` | `payments` | opened, charged back, represented, resolved (by notification) | Unique on (provider, provider dispute reference); stages conditional; each posting keyed by dispute and stage |
+| `DisputeResponse` | `payments` | represent with evidence, or accept (merchant, or operator for a payment with no merchant); outcomes by the platform | Keyed per responder (`dispute.respond:`); our `dsr-` reference minted before the call; one live answer per dispute; send permit *(the aggregate `P7-TSK-014` built - the review added the row; evidence documents converge on their content address, unkeyed)* |
 | `PaymentMethod` (`BANK_ACCOUNT`) | `paymentmethods` | register via grant, detach | Register keyed per party; detach converges |
 
 ## 5. The lifecycles
@@ -81,11 +85,15 @@ Cardholder, Card Account, Physical Card and Virtual Card are external.
 Stated in full in `RAIL_AND_DISPUTE_LIFECYCLES.md`:
 - the two-step attempt: Phase 5's seven states, plus `VOID_DISPATCHED`, `VOID_UNKNOWN` and
   `VOIDED`;
-- the push attempt: `AWAITING_PAYER`, `EXECUTION_DISPATCHED`, `EXECUTION_UNKNOWN`, `EXECUTED`,
-  `FAILED`;
-- the book attempt: `EXECUTED`, `FAILED`;
+- the push attempt: `AWAITING_PAYER → EXECUTED | FAILED`, the pay-in *(`EXECUTION_DISPATCHED`
+  and `EXECUTION_UNKNOWN` are declared and produced by nothing - the outbound pushes are the
+  withdrawal and the return's refund row; corrected by the review, ADR-0059 §2)*;
+- the book attempt: born `EXECUTED` *(`FAILED` declared, never born - an unaffordable wallet
+  payment writes nothing)*;
 - the withdrawal: `DISPATCHED`, `UNKNOWN`, `COMPLETED`, `FAILED`;
-- the dispute: `INQUIRY`, `CHARGED_BACK`, `REPRESENTED`, `WON`, `LOST`, `ACCEPTED`, `CLOSED`.
+- the dispute: `INQUIRY`, `CHARGED_BACK`, `REPRESENTED`, `WON`, `LOST`, `ACCEPTED`, `CLOSED`;
+- the dispute response: `DISPATCHED → SUBMITTED | FAILED | UNKNOWN`, `UNKNOWN → SUBMITTED |
+  FAILED` *(added by the review)*.
 
 Every machine gets the three-layer enforcement: an exhaustive aggregate sweep; a generated
 schema `CHECK` and a transition trigger binding every writer, keyed on the interaction model for
@@ -120,8 +128,8 @@ arbiter:
 | Contention | Arbiter |
 |---|---|
 | Duplicate confirmations routing one intent | The intent's conditional `REQUIRES_CONFIRMATION → PROCESSING`; the decision row is born in the winner's Tx1, and the one-live-attempt index (`V003`) refuses a second attempt |
-| A fallback racing an ambiguous dispatch | None can occur: a decision advances only on `NOTHING_SENT` or an eligibility refusal, both before any send (`INV-RAIL-02`), and the attempt is `FAILED(PROVIDER_UNAVAILABLE)` before the next is born |
-| Rail availability changing mid-routing | The availability row is read inside the decision's transaction and recorded with it; a change after the decision reroutes nothing in flight |
+| A fallback racing an ambiguous dispatch | None can occur: Phase 7 has no cross-rail fallback after dispatch - `NOTHING_SENT` fails the payment (`FAILED(PROVIDER_UNAVAILABLE)`, the card path appending its `ABANDONED` step) and no next attempt is born; the only fallback is candidate rejection inside the decision, before any send (`INV-RAIL-02`) *(the row read as though an advance existed until the review)* |
+| Rail availability changing mid-routing | The availability row is read inside the decision's transaction and recorded with it; a change after the decision reroutes nothing in flight *(demonstrated by the review: `PaymentSweeperDatabaseTest#anAvailabilityChangeReroutesNothingInFlight`)* |
 | Concurrent wallet debits (withdrawal, wallet payment, transfer, refund of a top-up) | The wallet's ledger account `FOR UPDATE`, availability derived in-lock with holds (`INV-BAL-04`, `INV-CON-01`) — the transfer's and the refund's existing arbiter |
 | Concurrent wallet credits (pay-in, top-up capture, transfer in) | None needed for correctness: credits raise no availability question; each is keyed by its own operation and posted once |
 | A hold released while another balance-affecting operation runs | The account lock both take (`HoldService` release and placement, the transfer's lock, the posting's key-share); the release's conditional makes a second release converge |
@@ -131,7 +139,8 @@ arbiter:
 | A dispute stage racing a refund of ANOTHER payment to the same counterparty | The counterparty's account, share-locked before the stage's first posting - the account every hold takes before any balance row *(added by `P7-TST-001`, whose storm met the missing lock as a `40P01` on a win)* |
 | Duplicate chargeback notifications | `UNIQUE (provider, provider_dispute_reference)`, the stage's conditional transition, and the posting key per stage (`INV-DSP-02`) |
 | A pay-in confirmation racing its initiation's expiry | Nothing expires by our clock alone: the payer PSP's answer decides, and a late execution lands (`INV-MER-06`'s second rail) |
-| Concurrent sweeps (attempts, refunds, withdrawals, initiations) | None needed — the registered leaderless pattern: queries idempotent, writes conditional, sends permitted |
+| Concurrent sweeps (attempts, refunds, withdrawals, initiations, returns, dispute answers) | None needed — the registered leaderless pattern: queries idempotent, writes conditional, sends permitted *(ten-way races per sweep since the review: withdrawals, initiations and returns joined the attempts' and refunds')* |
+| A confirmation racing a cancel, a detach or a merchant's withdrawal of the offer | The intent's conditional transition (cancel), the instrument resolved at the act inside Tx1 (detach - two serial orders, no arbiter needed), the session's conditional open behind the withdrawal's row lock (abandon) *(raced by the review, paying the Phase 6 → 7 transition's debt row)* |
 
 Nothing lives in process memory; no routing input is instance-local (ADR-0060 §4).
 
@@ -142,10 +151,15 @@ the same change (the `refund.dispatch_key` lesson, and payments `V009`'s own pra
 
 - `payments.payment_attempt` gains `rail` and `interaction_model` (frozen at birth), and the
   card void's columns.
-- `payments.routing_policy_version`, `payments.rail_availability`, `payments.routing_decision`
-  and its steps.
+- `payments.routing_policy_version`, its `routing_rule` and `routing_rule_rail`,
+  `payments.rail_availability`, `payments.routing_decision` and its steps.
 - `payments.withdrawal` and its history.
-- `payments.dispute`, its stage history, and its evidence (encrypted).
+- `payments.clearing_record` (`V015`), the card clearing evidence.
+- The pay-in's columns on `payment_attempt` and `payments.unmatched_confirmation` (`V017`);
+  `payment_intent.debit_account_id`, the wallet instrument (`V019`).
+- `payments.dispute`, its stage history, and its evidence (encrypted); the split, fee and
+  `respond_by` columns (`V021`, `V022`); `payments.dispute_response` and its history (`V022`).
+  *(The review added the lines above that the plan had not named.)*
 - `paymentmethods.payment_method` gains the `BANK_ACCOUNT` kind: an opaque reference, a display
   suffix and the confirmation-of-payee result, never an account number (`INV-RAIL-03`).
 - The ledger chart gains `INSTANT_CLEARING`, `CHARGEBACK_RECOVERABLE` and `DISPUTE_COSTS`, each
@@ -165,12 +179,13 @@ Rail-agnostic payments with rail-specific detail objects (`DELIVERY_PLAN.md` §7
 |---|---|---|---|---|
 | Create / confirm a payment (instrument: card, bank or wallet) | Customer session | Keyed / converges | Own intent; step-up by policy | Routed at confirm; card and pay-by-bank complete asynchronously (`PROCESSING`), wallet synchronously |
 | Void (reverse) an authorization | Customer or operator | Converges by machine | Own intent / `PAYMENT_REFUND` | Asynchronous; refused as `payments.ReversalNotSupported` on an irrevocable rail |
-| Refund | Operator (`PAYMENT_REFUND`) or merchant | Keyed | Reasoned | Per `refundMode`: provider refund, return payment or book refund |
+| Refund | Operator (`PAYMENT_REFUND`) *(the plan also named "merchant" until the review: no merchant refund route exists)* | Keyed | Reasoned | Per `refundMode`: provider refund, return payment or book refund |
 | Register a bank account (grant) | Customer session | Keyed | Own party; step-up when a factor is enrolled | The grant exchange runs holding no connection |
-| Withdraw to a bank account | Customer session | Keyed per customer | Own wallet and instrument; step-up when enrolled | Hold committed; `DISPATCHED` → final on the scheme's answer |
+| Withdraw to a bank account; read one | Customer session | Keyed per customer; the read owner-scoped | Own wallet and instrument; step-up when enrolled | Hold committed; `DISPATCHED` → final on the scheme's answer |
 | Routing policy versions; rail availability | Operator (`PAYMENT_ROUTING_ADMINISTER`) | Keyed / converges | Reasoned, audited | — |
 | A payment's routing explanation | Operator | Read | `PAYMENT_ROUTING_ADMINISTER` | — |
-| Disputes: list, read, submit evidence, accept | Merchant key (tenant-scoped) or operator | Keyed | `INV-MER-01`; operator permission | Evidence submission is a dispatch-before-call operation |
+| Disputes: list, read, upload and read evidence, represent, accept | Merchant key (tenant-scoped) or operator | Represent and accept keyed; an evidence upload converges on its content address | `INV-MER-01`; operator permission (`DISPUTE_ADMINISTER`) | The answer is a dispatch-before-call operation |
+| The chargeback-ratio report | Operator | Read | `MERCHANT_ADMINISTER`, audited | — |
 | Rail callbacks: instant confirmations, card clearing, dispute notifications | Signed webhook door, per rail key | Inbox | `SIGNED_CALLBACK` | Evidence first, then conditional effect |
 
 Every financial command states its idempotency, authorization, state validation, error
@@ -182,9 +197,14 @@ the task that raises them.
 Terminal facts publish (ADR-0044's doctrine): `RailSelected`, `PaymentClearedOnRail`,
 `PaymentExecuted` (push and book), `AuthorizationVoided`, `WithdrawalInitiated`,
 `WithdrawalCompleted`, `WithdrawalFailed`, `DisputeOpened`, `ChargebackReceived`,
-`DisputeEvidenceSubmitted`, `DisputeResolved`. Every event carries the full envelope
-(`INV-EVT-03`); none carries an account identifier, an alias, a token or an amount beyond the
-recorded fee-events precedent; `UNKNOWN` publishes nothing.
+`DisputeResponseSubmitted`, `DisputeResolved`. Every event carries the full envelope
+(`INV-EVT-03`); none carries a bank-account identifier, an alias, a token or an amount beyond the
+recorded fee-events precedent; `UNKNOWN` publishes nothing - except the void's `VOID_UNKNOWN`,
+which publishes `PaymentStateUnknown`, the card rail's standing unknown fact. *(Three corrections
+by the review: the fact is `DisputeResponseSubmitted`, never `DisputeEvidenceSubmitted`; the
+dispute facts carry the counterparty's and the recoverable's LEDGER account identifiers by
+design - `MODULE_ARCHITECTURE.md`'s payments facts - so the rule is about bank identifiers; and
+the void's unknown is the one that publishes.)*
 
 ## 11. Security and audit
 
@@ -210,9 +230,9 @@ rail needs for Phase 8 is preserved:
 | Chain | References preserved |
 |---|---|
 | Card transaction ↔ processor ↔ network ↔ settlement | Our authorization, capture, void and refund references; the PSP's references; the network's clearing references (acquirer reference and network transaction identifiers) from the clearing notification; the capture's journal entry |
-| Wallet transaction ↔ ledger | The journal entry keyed by the operation (`payment-capture:`, `wallet-withdrawal:`, `transfer:`, `payment-refund:`); a wallet statement line is a view over those |
+| Wallet transaction ↔ ledger | The journal entry keyed by the operation (`payment-capture:`, `payment-execution:` - pay-by-bank credits and wallet-pays-checkout debits - `wallet-withdrawal:`, `transfer:`, `payment-refund:`, and `dispute-attribution:`, `dispute-restoration:`, `dispute-reattribution:` when the counterparty is a wallet); a wallet statement line is a view over those *(the review added the four prefixes the plan had not named)* |
 | A2A payment ↔ rail ↔ settlement | Our end-to-end reference; the scheme's transaction reference; the settlement cycle the scheme reports (Phase 8 ingests it); the `INSTANT_CLEARING` entry |
-| Instant payment ↔ rail transaction ↔ settlement | As A2A, plus the directory resolution's opaque destination reference |
+| Instant payment ↔ rail transaction ↔ settlement | As A2A, plus the `BANK_ACCOUNT` instrument's opaque destination reference from its grant exchange *(the plan named a "directory resolution" until the review; none exists)*. A return keeps the scheme's transaction reference but not its cycle - Phase 8's recorded input (ADR-0062's follow-up) |
 | Dispute ↔ chargeback ↔ settlement | The provider dispute reference, each stage's entry, and the dispute fee's entry |
 
 `SETTLEMENT_CLEARING` stays the card rail's, `INSTANT_CLEARING` the scheme's
@@ -244,10 +264,16 @@ sinks); and mutation probes recorded in `MUTATION_TESTING.md` for every `Phase: 
 
 Each has a test or a documented, accepted rationale (exit criterion 4):
 
-1. A rail is unavailable before dispatch: routing falls back on `NOTHING_SENT` only, recorded.
+1. A rail is unavailable before dispatch: the decision rejects it - `UNAVAILABLE`, recorded as
+   its step - and takes the next eligible candidate, or refuses `NoEligibleRail` with the refusal
+   recorded and audited; a dispatch answered `NOTHING_SENT` fails the payment, the card path
+   appending its `ABANDONED` step. *(This read "routing falls back on `NOTHING_SENT` only,
+   recorded" until the review: Phase 7 has no cross-rail fallback after dispatch - ADR-0060 §5.)*
 2. A rail becomes unavailable mid-flight: the attempt is `UNKNOWN` on its rail; no fallback.
-3. The instant scheme times out: `EXECUTION_UNKNOWN`; the inquiry past the scheme's deadline is
-   authoritative.
+3. The instant scheme times out: the withdrawal's or the return's `UNKNOWN`; past the scheme's
+   deadline the withdrawal's inquiry is authoritative, and a return re-sends its same reference
+   until the scheme answers. *(This read `EXECUTION_UNKNOWN` until the review: that attempt state
+   has no producer - ADR-0059 §2, ADR-0062 §3.)*
 4. A takeover re-sends a withdrawal and the connection is refused: nothing concluded (the permit).
 5. Card clearing arrives days later, twice: recorded once, no ledger effect.
 6. A void is attempted on an instant payment: refused by the domain, nothing written or sent.
@@ -288,9 +314,17 @@ fresh), 9 as `ANSWERED_AFTER`, 10 as `CLOSED_WALLET` - beside their single-flow 
 | `finapp.payments.dispute.response.unknown.active` | Stuck dispute answers: every `UNKNOWN`, and `DISPATCHED` past the sweep's bound |
 | `finapp.payments.dispute.response.unknown.age` | The oldest one's age, in the withdrawal's shape |
 | `finapp.ledger.negative.positions` | Counterparties below zero after a chargeback (merchant debt, customer receivable) |
+| `finapp.payments.payin.awaiting` | Pay-in initiations awaiting the payer (`P7-TSK-009`) |
+| `finapp.payments.payin.awaiting.age` | The oldest wait, seconds from birth |
+| `finapp.payments.unmatched.active` | Confirmations parked in suspense, never matched |
+| `finapp.payments.unmatched.age` | The oldest parking's age |
+| `finapp.payments.unmatched.parked` | Money parked in suspense, counted |
 
 The chargeback ratio per merchant is an operator report, never a metric tag (ADR-0018).
 Everything is eager, NaN never zero, and aggregated with `max()` for fleet-wide gauges.
+
+*(The five pay-in and suspense rows were added by the Phase 7 review: `P7-TSK-009` shipped them
+and this table never named them.)*
 
 *(The two `dispute.response.unknown` rows were added at `P7-TSK-015`'s design: `P7-TSK-014` gave
 the dispute answer a modelled `UNKNOWN` state after this table was written, and `INV-LIFE-03`'s own
@@ -331,6 +365,10 @@ network (the programme's non-goal).
 - **Routing that cannot be explained.** Mitigated by the pinned decision and its recomputation
   test (`INV-RAIL-02`).
 - **A second balance authority for wallets.** Mitigated by construction: no balance column, and
-  the pending figure is a view over in-flight payments (ADR-0059 §6).
+  what is in flight is the wallet's holds - `settled`, `holds` and `available` are the balance's
+  three figures, each derived from postings and hold rows under the account's lock (ADR-0059 §6;
+  the storm asserts the holds equal the debits in flight). *(This read "the pending figure is a
+  view over in-flight payments" until the review: no pending figure exists, and ADR-0059 §6 does
+  not name one.)*
 - **Scope.** Eighteen items across eight milestones; each rail lands as its own vertical slice,
   so a milestone that slips does not strand the others.

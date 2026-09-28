@@ -109,4 +109,19 @@ public record ExchangeAnswer(
                 Optional.empty(),
                 Optional.empty());
     }
+
+    /**
+     * The outcome and the name check, never the destination reference or the suffix
+     * (`P7-DOC-001`): the generated form printed both, so a log line naming the answer would
+     * have carried the customer's bank destination ({@code INV-RAIL-03}'s sinks include logs).
+     */
+    @Override
+    public String toString() {
+        return "ExchangeAnswer[outcome=" + outcome
+                + ", destination=" + (destination.isPresent() ? "<redacted>" : "none")
+                + ", displaySuffix=" + (displaySuffix.isPresent() ? "<redacted>" : "none")
+                + ", payee=" + payee.map(Enum::name).orElse("none")
+                + ", evidence=" + evidence.map(bytes -> bytes.length + " bytes").orElse("none")
+                + "]";
+    }
 }

@@ -8363,13 +8363,16 @@ negative payable** — `COMPLETE` (2026-09-23)
 
 # Phase 7 — Cards, Wallets, A2A and Instant Payments
 
-Status: `IN_PROGRESS` — started 2026-09-26 with `P7-TSK-001` (17 of 18 items complete, M7.1 at
-3 of 3, M7.2 at 2 of 2, M7.3 at 3 of 3, M7.4 at 2 of 2, M7.5 at 1 of 1, M7.6 at 3 of 3, M7.7 at 3 of 3) *(read `READY` for two days after the first task started — caught by `P7-TSK-001`'s own
-gate, the stale-second-copy class this file has now recorded five times)*; entry gate passed
+Status: `COMPLETE` (2026-09-28) — ruled by `P7-DOC-001`'s exit review
+([`reviews/PHASE_7_REVIEW.md`](reviews/PHASE_7_REVIEW.md)); started 2026-09-26 with `P7-TSK-001`
+(18 of 18 items complete, M7.1 at 3 of 3, M7.2 at 2 of 2, M7.3 at 3 of 3, M7.4 at 2 of 2, M7.5 at
+1 of 1, M7.6 at 3 of 3, M7.7 at 3 of 3, M7.8 at 1 of 1) *(read `READY` for two days after the
+first task started — caught by `P7-TSK-001`'s own gate, the stale-second-copy class this file has
+now recorded five times)*; entry gate passed
 2026-09-24 by the Phase 6 → 7 transition
 ([`reviews/PHASE_6_TO_7_TRANSITION.md`](reviews/PHASE_6_TO_7_TRANSITION.md)), elaborated to task
 granularity by the same transition. The engineering plan is [`PHASE_7_PLAN.md`](PHASE_7_PLAN.md);
-decisions are ADR-0059…ADR-0062 (`Proposed`); the domain statement is
+decisions are ADR-0059…ADR-0062 (`Accepted` at the exit review); the domain statement is
 [`RAIL_AND_DISPUTE_LIFECYCLES.md`](../domain/RAIL_AND_DISPUTE_LIFECYCLES.md). The in-scope
 invariants are whatever the catalogue marks `Phase: 7` — **ten at planning** (`INV-RAIL-01`…04,
 `INV-DSP-01`…03, `INV-REV-03`, `INV-SET-01`, and `INV-HIST-04`'s routing element) — **read from the
@@ -9441,7 +9444,7 @@ Disputes (`P7-TSK-012`…`-014`) · M7.7 Observability and demonstration (`P7-TS
   admitted answer's reasoned dispatch record, were asserted nowhere - both now are. Multi-instance
   PASS. Fleet hermetic 1732 tests across 14 modules, 0 failures; 396 targeted database tests across 38 suites, 0 failures; the platform classification guard green; the document-reading guards re-run after the records landed. The full battery deliberately skipped on the owner's instruction.
 
-**P7-DOC-001 — The Phase 7 exit review** — `READY`
+**P7-DOC-001 — The Phase 7 exit review** — `COMPLETE` (2026-09-28)
 - **Objective**: rule Phase 7 against `PHASE_GATES.md` §3, the supplement and §5's Phase 7
   criteria, read from the gate.
 - **Bounded context**: all of Phase 7's.
@@ -9480,6 +9483,38 @@ Disputes (`P7-TSK-012`…`-014`) · M7.7 Observability and demonstration (`P7-TS
   crediting the same counterparty is consistent only because every runtime account's UUIDv7
   identifier sorts after the chart's seeded clearing (a fixed 2026-09-13 identifier); the review
   should confirm that dependency as a rule or remove it.
+- **Gate**: the review's verdict — **Phase 7 `COMPLETE`**, recorded in
+  [`reviews/PHASE_7_REVIEW.md`](reviews/PHASE_7_REVIEW.md): eight review areas `PASS` (six only
+  after corrections), twelve universal criteria `PASS` (7 with the deviation recorded, 10 met by
+  this review's own acceptance of ADR-0059…0062), F1–F8 `Met` re-assessed at the gate, and
+  twenty-one Phase 7 criteria `PASS` (5 original + 16 from the transition; four read against the
+  code - the descriptor as its recorded version under the frozen-semantics rule, the pending
+  figure as the holds, `EXECUTION_UNKNOWN` as the withdrawal's and the return's `UNKNOWN`, and the
+  fallback rule holding with nothing to advance to); the ten-instance question `PASS`. **The design
+  inputs decided**: (1) accepted as evidence, "debits the merchant nothing twice" read against the
+  battery's wallets and the storm's merchant payables both; (2) confirmed; (3) accepted as
+  observation, the inbox now asserted directly by this review's own 5 + 5 races; (4) **confirmed
+  as a rule and guarded** (`OperationalChartMigrationTest#everySeededIdSortsBeforeEveryRuntimeId`,
+  `DISTRIBUTED_EXECUTION.md` §3). **Six read-only audits, their findings corrected and probed**:
+  the withdrawal posting to a named clearing purpose (fixed from its stored rail; a static
+  clearing-position rule); the stored descriptor only a version (ruled: money semantics frozen per
+  `RailId`, `RailMoneySemanticsArePinnedTest`); bank details printable by three port records
+  (redacted, `PushRailRecordsRedactTest`); the operator void unreasoned at the domain and the
+  routing-version handler unkeyed (both fixed); the confirmation-race debt row closed unpaid
+  (three deterministic races); nineteen gate claims with partial or missing tests (each closed in
+  its owning suite, the wallet statement's line-by-line reconciliation among them); reserves
+  "recorded with an owner" recorded nowhere (a Phase 13 debt row); drift in all four ADRs and
+  every Phase 7 document (corrected with provenance); register decay (re-owned, recounted,
+  widened, struck, recorded). **Twenty-four probe runs over twenty-three breaks, twenty-three
+  caught at once**, each verdict read from the failing testcases, each restore byte-identical;
+  **the one survivor** - the void's capability gate dropped, the push machine refusing in its
+  place under the same 409 - **found a test weaker than its name**, tightened to the capability's
+  own code and caught (`MUTATION_TESTING.md` §2 +23 rows, §3 +1 note). **The flip** surfaced
+  nothing and was proven non-vacuous: `INV-SET-01`'s rows removed, the guard failed `(currently
+  7)` naming exactly it, the register restored byte-identical. **The gate's own find**: the
+  confirmation's push branch lacks `Withdrawals`' guard against a routing choice naming another
+  push rail - safe while one is declared, recorded for the phase adding a second (a
+  composition-root parameter). **The post-flip battery**: the fleet-wide hermetic test task green at 1740 tests across 14 modules, 0 failures, and 408 targeted database tests across 38 suites, 0 failures (every Phase 7 suite, the multi-rail storm and the dispute battery among them), plus the platform classification guard - the full battery deliberately skipped on the owner's instruction, no fleet-wide database or kafka counts claimed. Multi-instance PASS.
 
 ---
 

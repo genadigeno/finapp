@@ -2363,6 +2363,54 @@ class CheckoutFlowDatabaseTest {
     }
 
     @Test
+    @DisplayName("PHASE_7_PLAN section 14.14: the merchant is suspended while the payer is at"
+            + " their PSP - the pay-by-bank payment admitted before the suspension lands, the"
+            + " merchant credited, the order created (the Phase 6 rule, on the second rail)")
+    void aBankPaymentAdmittedBeforeTheSuspensionLands() throws Exception {
+        Merchant merchant = tradingMerchant("0.029", 30L);
+        Customer payer = bankPayingCustomer();
+        String created = createSession(merchant, AMOUNT_MINOR, someKey()).body();
+        String checkoutId = field(created, "checkoutId");
+
+        // Admitted while the merchant trades: the initiation opened, the payer handed off.
+        schemeInitiatesPayIn("https://payer-psp.example/authorize/sus-" + UUID.randomUUID());
+        HttpResponse<String> confirmed = confirm(payer, field(created, "sessionToken"));
+        assertThat(confirmed.statusCode()).as(confirmed.body()).isEqualTo(200);
+        assertThat(field(confirmed.body(), "status")).isEqualTo("PAYMENT_PENDING");
+
+        suspend(merchant);
+        // The suspension stops NEW work - the merchant's key stops authenticating, so a second
+        // offer is refused - but not money already moving toward an offer made while trading.
+        assertThat(createSession(merchant, AMOUNT_MINOR, someKey()).statusCode()).isEqualTo(401);
+
+        // AND THEN THE PAYER EXECUTES: the scheme confirms through the signed door.
+        String attemptId = attemptIdForSession(checkoutId);
+        assertThat(instantCallback(
+                        "{\"eventId\":\"evt_" + UUID.randomUUID() + "\",\"reference\":\""
+                                + endToEndReferenceOf(attemptId)
+                                + "\",\"status\":\"executed\",\"schemeReference\":\"sch-sus-"
+                                + UUID.randomUUID() + "\",\"settlementCycle\":\"C2\","
+                                + "\"amount\":\"100.00\",\"currency\":\"EUR\"}"))
+                .isEqualTo(204);
+
+        try (Connection app = DatabaseRoles.application()) {
+            assertThat(sessionStatus(checkoutId)).isEqualTo("COMPLETED");
+            assertThat(linePurposes(app, attemptId))
+                    .as("the suspended merchant's sale posts the same four lines, on the"
+                            + " INSTANT rail's own position")
+                    .containsExactlyInAnyOrder(
+                            "DEBIT:INSTANT_CLEARING",
+                            "CREDIT:MERCHANT_PAYABLE",
+                            "DEBIT:MERCHANT_PAYABLE",
+                            "CREDIT:FEE_REVENUE");
+            assertThat(payablePositionMinor(app, merchant))
+                    .as("the money it was owed before the suspension is still owed to it")
+                    .isEqualTo(96_80L);
+            assertThat(orderCountFor(app, merchant)).isEqualTo(1);
+        }
+    }
+
+    @Test
     @DisplayName("P7-TSK-010: a merchant-bound bank checkout returns IN FULL as a NEW push"
             + " citing the original - funded by its NET, the RETURNED fee coming back, the"
             + " payable landing at exactly zero, every line on the INSTANT rail's position")
@@ -3338,6 +3386,112 @@ class CheckoutFlowDatabaseTest {
         assertThat(refused.statusCode()).isEqualTo(409);
         assertThat(refused.body()).contains("checkout.NotAbandonable");
         assertThat(sessionStatus(field(created, "checkoutId"))).isEqualTo("PAYMENT_PENDING");
+    }
+
+    /**
+     * The third confirmation interleaving the Phase 6 -> 7 transition left unraced, paid by the
+     * Phase 7 review. A withdrawal that holds the session row - its move made, not committed -
+     * makes the confirmation's conditional open wait; the open then finds the row gone from
+     * OPEN, the confirming transaction rolls back whole (no intent, no pin) and its re-read
+     * answers the machine's refusal. Then both are launched together, round after round:
+     * whichever lands first, each round tells exactly one story.
+     */
+    @Test
+    @DisplayName("a withdrawal racing a confirmation: the confirmation waits on the session row,"
+            + " loses the open whole - nothing opened, pinned or dispatched - and every raced"
+            + " round tells exactly one story")
+    void aWithdrawalRacingAConfirmationLeavesOneStory() throws Exception {
+        Merchant merchant = tradingMerchant("0.029", 30L);
+        Customer customer = payingCustomer();
+        providerAuthorises();
+        providerCaptures();
+
+        String held = createSession(merchant, AMOUNT_MINOR, someKey()).body();
+        CheckoutSessionId heldId = CheckoutSessionId.of(UUID.fromString(field(held, "checkoutId")));
+        ExecutorService pool = Executors.newSingleThreadExecutor();
+        try (CorrelationContext.Scope flow =
+                        CorrelationContext.enter(
+                                Correlation.startingWith(CorrelationId.generate(IDS)));
+                SecurityContext.Scope actor = SecurityContext.enterSystem();
+                Connection withdrawer = DatabaseRoles.application()) {
+            withdrawer.setAutoCommit(false);
+            assertThat(
+                            sessions.abandon(
+                                    withdrawer,
+                                    MerchantId.of(UUID.fromString(merchant.id())),
+                                    keyIdOf(merchant),
+                                    heldId,
+                                    "withdrawn mid-confirmation"))
+                    .isTrue();
+            Future<HttpResponse<String>> confirming =
+                    pool.submit(() -> confirm(customer, field(held, "sessionToken")));
+            awaitLockWaitOn("checkout.checkout_session", "SET status");
+            withdrawer.commit();
+
+            HttpResponse<String> refused = confirming.get(60, TimeUnit.SECONDS);
+            assertThat(refused.statusCode()).as(refused.body()).isEqualTo(409);
+            assertThat(refused.body()).contains("checkout.NotConfirmable");
+        } finally {
+            pool.shutdownNow();
+        }
+        assertThat(statusAndIntentOf(heldId.value()))
+                .as("withdrawn, carrying no intent: the lost open rolled back whole")
+                .isEqualTo("ABANDONED:null");
+        assertThat(intentsCrediting(merchant)).isZero();
+        try (Connection app = DatabaseRoles.application()) {
+            assertThat(
+                            count(
+                                    app,
+                                    "SELECT count(*) FROM merchant.payment_fee_pin pin"
+                                            + " WHERE pin.merchant_id = ?",
+                                    UUID.fromString(merchant.id())))
+                    .as("no fee pinned for the payment that never opened")
+                    .isZero();
+        }
+        assertThat(provider.requestCount(SimulatedCardPspAdapter.AUTHORIZATIONS_PATH)).isZero();
+
+        // RACED: both launched together, six rounds. Whichever reaches the row first, one
+        // story per round - withdrawn with nothing opened, or paid with the withdrawal refused.
+        int paid = 0;
+        for (int round = 0; round < 6; round++) {
+            providerAuthorises();
+            providerCaptures();
+            String created = createSession(merchant, AMOUNT_MINOR, someKey()).body();
+            String checkoutId = field(created, "checkoutId");
+            long intentsBefore = intentsCrediting(merchant);
+            List<HttpResponse<String>> answers =
+                    concurrently(
+                            List.of(
+                                    () -> confirm(customer, field(created, "sessionToken")),
+                                    () -> abandon(merchant, checkoutId, "raced round " + checkoutId)));
+            HttpResponse<String> confirmed = answers.get(0);
+            HttpResponse<String> withdrawn = answers.get(1);
+            String status = sessionStatus(checkoutId);
+            if ("ABANDONED".equals(status)) {
+                assertThat(withdrawn.statusCode()).as(withdrawn.body()).isEqualTo(200);
+                assertThat(confirmed.statusCode()).as(confirmed.body()).isEqualTo(409);
+                assertThat(confirmed.body()).contains("checkout.NotConfirmable");
+                assertThat(statusAndIntentOf(UUID.fromString(checkoutId)))
+                        .isEqualTo("ABANDONED:null");
+                assertThat(intentsCrediting(merchant)).isEqualTo(intentsBefore);
+            } else {
+                paid++;
+                assertThat(confirmed.statusCode()).as(confirmed.body()).isEqualTo(200);
+                assertThat(withdrawn.statusCode()).as(withdrawn.body()).isEqualTo(409);
+                assertThat(withdrawn.body()).contains("checkout.NotAbandonable");
+                assertThat(status).isIn("PAYMENT_PENDING", "COMPLETED");
+                assertThat(intentsCrediting(merchant)).isEqualTo(intentsBefore + 1);
+            }
+            try (Connection app = DatabaseRoles.application()) {
+                assertThat(historyRow(app, checkoutId, "OPEN", "ABANDONED")
+                                + historyRow(app, checkoutId, "OPEN", "PAYMENT_PENDING"))
+                        .as("exactly one edge out of OPEN, whichever won")
+                        .isEqualTo(1);
+            }
+        }
+        assertThat(provider.requestCount(SimulatedCardPspAdapter.AUTHORIZATIONS_PATH))
+                .as("one authorization per round the confirmation won, none otherwise")
+                .isEqualTo(paid);
     }
 
     @Test

@@ -572,11 +572,11 @@ public final class PaymentConfirmation {
         if (applied.acting() && answer.verdict() == ProviderAnswer.Verdict.NOTHING_SENT) {
             // The fallback's one lawful advance-input (INV-RAIL-02): a refused connection
             // is knowledge that nothing left. The trail records the abandonment in the same
-            // transaction as the FAILED conclusion; the card-only policy has no further
-            // candidate wired to a provider, so the payment concludes exactly as before and
-            // the cross-rail advance arrives with the rails that can carry one
-            // (P7-TSK-006, -009). An INDETERMINATE answer appends nothing, structurally -
-            // the attempt stays *_UNKNOWN on its rail (INV-LIFE-03).
+            // transaction as the FAILED conclusion, and the payment concludes FAILED: Phase 7
+            // has no cross-rail fallback after dispatch (ADR-0060 section 5 as corrected by
+            // the phase review) - no policy offers a card payment a second eligible rail, so
+            // there is nothing to advance to. An INDETERMINATE answer appends nothing,
+            // structurally - the attempt stays *_UNKNOWN on its rail (INV-LIFE-03).
             RoutingDecision advanced =
                     routing.findLatestDecisionForIntent(uow, intentId)
                             .filter(decision -> decision.id().equals(decisionId))

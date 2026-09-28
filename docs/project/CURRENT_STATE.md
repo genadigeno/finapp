@@ -308,9 +308,21 @@ before repair and after. The status did not move; the review's verdict now rests
 phase.
 
 **Phase 7 — Cards, Wallets, A2A and Instant Payments**
-Status: **`IN_PROGRESS`** (started 2026-09-26 with `P7-TSK-001`; entry gate passed 2026-09-24,
-all twelve criteria, by the Phase 6 → 7 transition ([`reviews/PHASE_6_TO_7_TRANSITION.md`](reviews/PHASE_6_TO_7_TRANSITION.md)). Planned
-in [`PHASE_7_PLAN.md`](PHASE_7_PLAN.md); decisions in ADR-0059…0062 (`Proposed`): a payment rail
+Status: ✅ **`COMPLETE`** (2026-09-28) — **all twelve universal criteria, all eight F1–F8
+supplement criteria re-assessed at the gate, and all twenty-one phase-specific criteria hold**
+(5 original + 16 added by the Phase 6 → 7 transition, counted from the gate at review time),
+ruled by the exit review ([`reviews/PHASE_7_REVIEW.md`](reviews/PHASE_7_REVIEW.md), `P7-DOC-001`)
+— criterion 7 and the Testing bullet's fleet-wide battery **with the deviation recorded** (the
+owner's standing instruction; the Phase 7 → 8 transition inherits the run). Six read-only audits
+found a withdrawal posting to a clearing position it named, a "recorded descriptor" that was one
+integer while every resolver read the build (ruled: a rail's money semantics are frozen per
+`RailId`), bank details printable by three port records, an unstated lock-order dependency
+(ruled and guarded), a debt row closed unpaid, nineteen gate claims with a partial or missing
+test and drift in all four ADRs — every one corrected and probed (twenty-four runs, twenty-three
+caught at once, the survivor a test weaker than its name, tightened and caught), and ADR-0059…0062
+`Accepted`. (Started 2026-09-26 with `P7-TSK-001`; entry gate passed 2026-09-24,
+all twelve criteria, by the Phase 6 → 7 transition ([`reviews/PHASE_6_TO_7_TRANSITION.md`](reviews/PHASE_6_TO_7_TRANSITION.md)).) Planned
+in [`PHASE_7_PLAN.md`](PHASE_7_PLAN.md); decisions in ADR-0059…0062 (`Accepted` at the review): a payment rail
 declares its capabilities and the domain acts on them, never on a rail's name — three interaction
 models (two-step, push, book), finality modelled per rail, and each external rail its own clearing
 position; routing is a versioned policy decided once per payment, pinned and explainable, and
@@ -322,15 +334,15 @@ on acceptance and settled on the scheme's cycle. Card issuing is external, and t
 platform to **101 invariants**; the in-scope set is whatever the catalogue marks `Phase: 7`, **ten**
 at planning. 18 backlog items across eight milestones (M7.1–M7.8);
 [`RAIL_AND_DISPUTE_LIFECYCLES.md`](../domain/RAIL_AND_DISPUTE_LIFECYCLES.md) states the machines;
-context 29, Disputes, merged into `payments`. **17 of 18 items complete** (2026-09-28):
-M7.1–M7.7 closed — the rails declared and routed, the card rail completed, the instant rail,
+context 29, Disputes, merged into `payments`. **18 of 18 items complete** (2026-09-28):
+M7.1–M7.8 closed — the rails declared and routed, the card rail completed, the instant rail,
 pay-ins by bank with their returns, the wallet as an instrument, **disputes end to end**
-with `P7-TSK-014`, and **observability and demonstration** with the rail and dispute meters
+with `P7-TSK-014`, **observability and demonstration** with the rail and dispute meters
 (`P7-TSK-015`), the multi-rail conservation storm (`P7-TST-001`) and the dispute battery
-(`P7-TST-002`); next **`P7-DOC-001`**, the exit review, `READY` ([§Current
-Task](#current-task) is kept current). *(This sentence said "first task `P7-TSK-001`
-complete, next `P7-TSK-002` `READY`" until `P7-TSK-012`'s gate found it ten tasks stale —
-the stale-second-copy class a sixth time.)*
+(`P7-TST-002`), and **the gate** with `P7-DOC-001`, the exit review; next **the Phase 7 → 8
+transition**, `READY` ([§Current Task](#current-task) is kept current). *(This sentence said
+"first task `P7-TSK-001` complete, next `P7-TSK-002` `READY`" until `P7-TSK-012`'s gate found
+it ten tasks stale — the stale-second-copy class a sixth time.)*
 
 ## Current Milestone
 
@@ -345,84 +357,64 @@ since M0.1". Moved, not edited.)*
 
 ## Current Task
 
-**`P7-DOC-001` — The Phase 7 exit review** — `READY`.
-M7.8, the gate: rule Phase 7 against `PHASE_GATES.md` §3, the financial supplement and §5's
-Phase 7 criteria as extended by the Phase 6 → 7 transition, read from the gate - the review
-record; every ADR (0059…0062) read against the code and accepted or corrected; a
-`MUTATION_TESTING.md` register row for every invariant the catalogue marks `Phase: 7`; the flip;
-the post-flip battery. Corrections only, each probed. **Design inputs recorded by `P7-TST-002`**
-on its entry: the two dispute criteria now have their evidence under load
-(`DisputeBatteryDatabaseTest`, probed); §14's dispute scenarios 7-10 each have a test; the
-inbox absorbed every identical-event-id race without a contended `409`, and the refund's side of
-the combined bound is forced rather than raced; and a lock order that holds by construction - a
-chargeback stage's two entries against a single-entry capture on the same counterparty, consistent
-only because every runtime account's identifier sorts after the chart's seeded clearing - for the
-review's ten-instance reading to confirm as a rule or remove. Its entry is in
-[`BACKLOG.md`](BACKLOG.md); it runs the three-command loop, design first. **Not started.**
+**The Phase 7 → Phase 8 transition** — `READY`.
+Phase 7 is `COMPLETE` (2026-09-28, [`reviews/PHASE_7_REVIEW.md`](reviews/PHASE_7_REVIEW.md)). The
+next act is the transition the programme runs between every two phases: an independent audit of
+Phase 7 against its gate by readers who did not build it, **the fleet-wide battery this phase's
+instruction skipped** (the Testing bullet's clause the review recorded as a deviation), and Phase 8
+— Settlement and Reconciliation — initialised behind its own entry gate: its plan, its ADRs, its
+invariants and its backlog. It inherits from the review: the full battery, the return's missing
+settlement cycle, the per-rail cost meter, the confirmation's missing second-push-rail guard, and
+`X-TSK-003`. **Not started.**
 
 ### Just completed
 
-**`P7-TST-002` — The dispute battery** — `COMPLETE` (2026-09-28).
-**M7.7, Observability and demonstration, closes at 3 of 3: every dispute failure scenario the plan
-names, raced and duplicated - each stage's notification ten ways, thirteen scenarios twice over, all
-at once on shared wallets - and every dispute reconciled at rest against its own record; the two
-dispute gate criteria demonstrated under load and probed** (`INV-DSP-01`, `INV-DSP-02`,
-`INV-DSP-03`).
+**`P7-DOC-001` — The Phase 7 exit review** — `COMPLETE` (2026-09-28). **M7.8, the gate,
+closes at 1 of 1, and with it Phase 7: ruled `COMPLETE` against all twelve universal criteria,
+the financial supplement F1–F8 re-assessed at the gate, and all twenty-one Phase 7 criteria (5
+original + 16 added by the Phase 6 → 7 transition), in
+[`reviews/PHASE_7_REVIEW.md`](reviews/PHASE_7_REVIEW.md)** — criterion 7 and the Testing bullet's
+fleet-wide battery with the deviation recorded (the owner's standing instruction; the Phase 7 → 8
+transition inherits the run).
 
 | Acceptance criterion | Evidence |
 |---|---|
-| The two dispute gate criteria demonstrated under load | `DisputeBatteryDatabaseTest#theDisputeBatteryHoldsUnderLoad`: a chargeback on an already fully refunded payment charges the counterparty nothing - all of it rests in `CHARGEBACK_RECOVERABLE` (`REFUNDED_FIRST`, twice, then lost and won) - and every stage posts once however often notified: one row per network reference, one trail row per edge, one record and one fact per stage, and each dispute's journal lines exactly the lines its own record implies, with four runners over shared wallets racing refunds, answers and other disputes' stages; stable over three fresh runs on the final code and again inside the gate's battery |
-| Probed | Fifteen probes on the final code, fifteen caught - fourteen by the battery itself, each naming its scenario (the per-dispute reconciliation, THE GATE'S CRITERION's own assertion, the second cycle's split, the record counts, the door's tally, or the schema rank behind a domain break), and the win's missing counterparty lock by the chargeback suite's race, which the battery met in three runs of seven (`MUTATION_TESTING.md` §2 +15 rows, §3 +1 note, §4 +1 row) |
+| The review's verdict | Eight areas `PASS` (six only after corrections), twelve universal criteria `PASS`, F1–F8 `Met`, twenty-one Phase 7 criteria `PASS`, the ten-instance question `PASS` |
+| Every ADR read against the code and accepted or corrected | ADR-0059 (nine passages, one rule made, one code defect fixed), 0060 (ten), 0061 (seven), 0062 (eight, one code defect fixed), each `Accepted` only after its corrections; ADR-0045's follow-up annotated as paid |
+| A register row for every `Phase: 7` invariant | Ten invariants, every one with rows; demanded by `MutationDemonstrationTest` from the flip, which surfaced nothing and was proven non-vacuous (`INV-SET-01`'s rows removed → the guard failed `(currently 7)` naming exactly it; restored byte-identical) |
+| Corrections only, each probed | Twenty-four probe runs over twenty-three breaks, twenty-three caught at once; the survivor (the void's capability gate dropped, the push machine refusing in its place under the same 409) found a test weaker than its name — tightened to the capability's own code and caught. `MUTATION_TESTING.md` §2 +23 rows, §3 +1 note |
+| The post-flip battery | the fleet-wide hermetic test task green at 1740 tests across 14 modules, 0 failures, and 408 targeted database tests across 38 suites, 0 failures (every Phase 7 suite, the multi-rail storm and the dispute battery among them), plus the platform classification guard - the full battery deliberately skipped on the owner's instruction, no fleet-wide database or kafka counts claimed |
 
-**The battery**: thirteen scenarios, each twice - won (represented implied or stated), lost, the
-verdict heard first, an inquiry escalated to a partial chargeback then accepted or won, an inquiry
-closed (a late inquiry quiet), refunded first (§14.7), the bound raced both ways, a second cycle
-after a loss and after a win, a closed wallet's share parked (§14.10), the PSP's fee with the
-chargeback or reported late, ten answers after resolution refused (§14.9), answers racing the
-network's verdict and each other, and a win or a chargeback racing refunds of the counterparty's
-OTHER payments (`P7-TST-001`'s lock order) - every notification delivered ten ways, five under one
-event id and five fresh, each redelivered until acknowledged. **At rest**: every dispute against its
-own record; `INV-DSP-01` on every attempt; the dispute accounts, the clearing and the counterparties'
-standing shares read whole against the dispute rows; every shared wallet against its book from the
-refund and dispute rows; nothing posted to a closed wallet; every refund and every answer sent once,
-by our reference, each answer's transmission of evidence on the record (`INV-DSP-03`); and the
-door's own tally - the inbox absorbed exactly the four repeats of each statement's shared event id,
-the six others each reached the dispute, nothing contradicted, nothing refused.
-
-**Found while building it**: the refund race never raced - the in-process refunds reached the
-attempt lock before the door's HTTP deliveries in every run, so the refund's side of the combined
-bound (a refund judged beside a STANDING chargeback) was exercised by nothing, and a probe dropping
-it would have survived. Every racer now waits behind one gate, and the refund's way is FORCED: a
-partial chargeback of 6.00 stands, then four refunds of 3.00 race - exactly one fits. And a contested
-answer that could pass vacuously is forced too: five answers racing only each other on a standing
-chargeback admit exactly one. **The gate's own finds**: the redelivery loop read every `409` as the inbox's contention - a
-posting refused inside the effect (`409 ledger.AccountNotPostable`) was redelivered for a
-minute and caught only by the loop's time bound; only `api.Conflict` is redelivered now. The
-win's counterparty lock taken away went unseen by the battery with one win-against-refunds race
-a run - its lock-order scenario now races over eight rounds and met the deadlock itself in three
-runs of seven, the chargeback suite's race its deterministic catcher. And a refused answer's
-absence from the audit record, and an admitted answer's reasoned dispatch record, were asserted
-nowhere - both now are.
-
-Fifteen probes on the final code, fifteen caught - fourteen by the battery itself; every
-verdict read from the failing testcases, never the exit code alone, each restore byte-identical.
-The per-dispute reconciliation caught a win's 9.99 against its record's 10.00 and a loss writing
-off a share the counterparty bore; with the bound blind to refunds at both ranks, THE GATE'S
-CRITERION's own assertion caught the refunded payment charged again; the record counts caught a
-stage re-entered per delivery (twelve records for two stages); the door's tally caught the inbox
-gone (no duplicate absorbed where 372 were due); the domain-rank breaks met the schema rank
-behind them, and the refund's bound dropped at both of its ranks still met a third
-(`MUTATION_TESTING.md` §2 +15 rows, §3 +1 note, §4 +1 row). Multi-instance PASS - four runners and ten-way deliveries over shared counterparties
-are the ten-instance question made concrete for disputes; every arbiter is PostgreSQL's (the inbox's
-key, the attempt row lock, the conditional stage transitions, the posting keys, `V021`'s triggers,
-the one-live index). Test only: no domain, persistence, API or event change. Verified by targeted
-tiers from fresh runs — the fleet-wide hermetic test task green at 1732 tests across 14 modules, 0 failures, and 396 targeted database tests across 38 suites, 0 failures, plus the platform classification guard, and the document-reading guards re-run fresh after the records landed — the full battery deliberately skipped on the owner's
-instruction, no fleet-wide database or kafka counts claimed.
-
+**What the six audits found and the review did** (each in the review record's first table):
+the withdrawal's completion posting to a clearing purpose it NAMED — resolved from its stored rail,
+and a static rule makes a clearing purpose nameable only by its rail's declaration; the stored
+"descriptor" was one integer while every resolver read the build — **ruled: a rail's money
+semantics are frozen per `RailId`**, guarded by `RailMoneySemanticsArePinnedTest`; three push-rail
+port records printed bank details in their `toString` — redacted, `PushRailRecordsRedactTest`; the
+chargeback stage's lock order held only because seeded chart ids sort first — **confirmed as a
+rule**, `OperationalChartMigrationTest#everySeededIdSortsBeforeEveryRuntimeId`, written into
+`DISTRIBUTED_EXECUTION.md` §3; the confirmation-race debt row closed unpaid by its owner — paid,
+three deterministic races; nineteen gate claims with partial or missing tests — each closed in its
+owning suite (stage atomicity by failure injection, the stored-row recomputation, ten-way sweeps,
+5 + 5 callbacks with the inbox asserted, `INV-RAIL-03`'s needle through the money paths with logs
+captured, `INV-PAY-02`'s sweep over every schema, §14.14 on the bank rail, the wallet statement
+reconciled line by line, the withdrawal takeover driven, the operator's dispute negatives, the
+routing explanation and refusal audits, the decision's Tx1 co-commit, availability after the
+decision, the void's counters, identifier chain walks, acting-only audit counts); reserves and
+receivable collection "recorded with an owner" and recorded nowhere — now a debt row owned by
+Phase 13; the operator void unreasoned at the domain and the routing-version handler unkeyed —
+both fixed; drift in every Phase 7 document and five javadoc comments — corrected with
+provenance; register decay — the step-up row's fired trigger re-owned, the scope and sweep rows
+recounted and widened, a stale blocker struck, two producerless states recorded, six stranded flake
+commits recorded. **The gate's own find**: the confirmation's push branch lacks `Withdrawals`'
+guard against a routing choice naming another push rail — safe while one push rail is declared,
+recorded for the phase that adds a second (a composition-root parameter, not an edit here).
+Multi-instance **PASS**. The narrative is in [`history/TASK_HISTORY.md`](history/TASK_HISTORY.md)
+at the next archival; the entry is in [`BACKLOG.md`](BACKLOG.md).
 
 ### Previously
 
-The per-task completion records — 161 blocks, from `P7-TST-001` back to project initiation
+The per-task completion records — 162 blocks, from `P7-TST-002` back to project initiation
 (`X-TSK-004` cross-cutting, standing between `P7-TSK-001` and the Phase 6 → 7 transition) —
 are archived in [`history/TASK_HISTORY.md`](history/TASK_HISTORY.md).
 *(This pointer read "130 blocks, from `P6-TSK-005`" through four archivals — corrected by
@@ -441,13 +433,13 @@ archived verbatim in
 
 ## Active Work
 
-**Phase 7 is `IN_PROGRESS`** (started 2026-09-26) — 17 of 18 items complete; **M7.1–M7.7
-closed**, M7.7 Observability and demonstration with `P7-TST-002`. **Next: `P7-DOC-001`**,
-the exit review ([§Current Task](#current-task) is kept current). *(This paragraph read "6 of 18 items complete; M7.1, Rail
-foundations, opens at 1 of 3 (`P7-TSK-001`). Next: `P7-TSK-002`" — its count last touched by
-`P7-TSK-006`, its milestone and pointer never after `P7-TSK-001` — until `P7-TSK-014`'s gate found
-it: the stale-second-copy class a seventh time, in the section `P7-TSK-012`'s repair of the
-current-phase sentence did not reach.)*
+**Phase 7 is `COMPLETE`** (2026-09-28) — 18 of 18 items across eight milestones, **M7.1–M7.8
+closed**, ruled by `P7-DOC-001`'s exit review ([`reviews/PHASE_7_REVIEW.md`](reviews/PHASE_7_REVIEW.md)).
+**Next: the Phase 7 → 8 transition** ([§Current Task](#current-task) is kept current). *(This
+paragraph read "6 of 18 items complete; M7.1, Rail foundations, opens at 1 of 3 (`P7-TSK-001`).
+Next: `P7-TSK-002`" — its count last touched by `P7-TSK-006`, its milestone and pointer never after
+`P7-TSK-001` — until `P7-TSK-014`'s gate found it: the stale-second-copy class a seventh time, in
+the section `P7-TSK-012`'s repair of the current-phase sentence did not reach.)*
 
 **Phase 6 is `COMPLETE`** (2026-09-24) — 18 of 18 items across seven milestones, ruled by
 `P6-DOC-001`'s exit review and confirmed after repair by the transition's independent audit: M6.1 `CLOSED` at 3 of 3; M6.2 at 2 of 2 (`P6-TSK-004`, `-005`); M6.3
@@ -477,11 +469,17 @@ rather than a `500`. The refusal writes nothing, and recovery stays on the chann
 (`INV-IDN-06`). The narrative is in [`history/TASK_HISTORY.md`](history/TASK_HISTORY.md), the entry
 in [`BACKLOG.md`](BACKLOG.md).
 
-The last work performed was **`P7-TSK-001`** (2026-09-26): the rail port and capability
-descriptor (ADR-0059 §1 made real with no behaviour change), the card rail declared by its
-adapter, `payment_attempt.rail` as a frozen birth fact (payments `V011`), the capability
-decision points moved onto the stored rail's declaration, and `INV-RAIL-01`'s static rule —
-eight probes, all caught. Before that, **`X-TSK-004`** (2026-09-24, above), and before it, **the Phase 6 → Phase 7
+The last work performed was **`P7-DOC-001`, the Phase 7 exit review** (2026-09-28): six read-only
+audits, the corrections they called for made and probed — twenty-four runs, twenty-three caught at
+once, the survivor a test tightened and caught — before the flip; ADR-0059…0062 `Accepted`; the
+post-flip battery the fleet-wide hermetic test task green at 1740 tests across 14 modules, 0 failures, and 408 targeted database tests across 38 suites, 0 failures (every Phase 7 suite, the multi-rail storm and the dispute battery among them), plus the platform classification guard - the full battery deliberately skipped on the owner's instruction, no fleet-wide database or kafka counts claimed. Before it, Phase 7's seventeen tasks
+(2026-09-26 to 2026-09-28, `P7-TSK-001` to `P7-TST-002` — each recorded in
+[`history/TASK_HISTORY.md`](history/TASK_HISTORY.md)); the first was **`P7-TSK-001`**: the rail
+port and capability descriptor (ADR-0059 §1 made real with no behaviour change), the card rail
+declared by its adapter, `payment_attempt.rail` as a frozen birth fact (payments `V011`), the
+capability decision points moved onto the stored rail's declaration, and `INV-RAIL-01`'s static
+rule — eight probes, all caught. *(This line named `P7-TSK-001` as the last work until the Phase 7
+review found it sixteen tasks stale.)* Before that, **`X-TSK-004`** (2026-09-24, above), and before it, **the Phase 6 → Phase 7
 transition** (2026-09-24): Phase 6 audited
 independently, two CRITICAL and nine IMPORTANT defects repaired and probed (thirty-three probes, all
 caught), the full battery fleet-wide before repair and after, and Phase 7 initialised — ADR-0059…0062
@@ -522,8 +520,21 @@ documentation reflecting reality must not leave its own document stale.)*
 **None.** The full battery ran fleet-wide at the Phase 6 → 7 transition, green before its repairs
 and after them, so `X-TSK-001`'s last criterion is met and nothing waits on a database tier.
 
-**Still flaky, unchanged** (it passed in both of the transition's batteries): `SimulatedTokenisationAdapterTest#aTimeoutIsUnavailable` fails about
-one run in three with no change to its module (seen by `X-TSK-001`). Not counted as a regression.
+~~**Still flaky, unchanged**: `SimulatedTokenisationAdapterTest#aTimeoutIsUnavailable` fails about
+one run in three with no change to its module (seen by `X-TSK-001`).~~ — **resolved** by
+`P7-TSK-007` (`0f9c72a`), which bounded the await; the entry stood unstruck until the Phase 7
+review, `P7-DOC-001`, read it against the test.
+
+**Flake fixes stranded on unmerged branches** (found by the Phase 7 review, recorded, not merged -
+the owner's standing instruction: another session's branch is merged by its own session). None
+of `816f850` (`claude/reverent-galileo-77fca4`, the flake sweep `P7-TSK-015` chipped), `effd89f`
+(`claude/xenodochial-bell-b49823`, `X-TSK-005` with ADR-0063 and a planned `X-TSK-006`),
+`47c5d36` (needle anchoring), `647c088` (a fixture fix), `bb86186` (`X-TSK-007`) or `52992cd`
+(a superseded deflake) is an ancestor of this branch or of `master`. Two flaky patterns they
+address stand here: `DisputeNotificationDatabaseTest`'s bounded-listing test seeds 101 disputes
+one server-second apart in autocommit under a comment that still says "microsecond-distinct",
+and `WithdrawalTest` asserts `doesNotContain("2500")` against a `toString` carrying a UUIDv7 (the
+short-needle class). Neither has failed in this review's runs; each is its branch's to land.
 
 *Earlier blockers, resolved:*
 
@@ -701,7 +712,7 @@ carries, what triggers paying it down, and the owning phase.
 
 | Deferred | Why | Risk carried | Trigger | Owning phase |
 |---|---|---|---|---|
-| **One corrupt (non-UUIDv7) `payment_attempt.id` stalls every instance's whole card sweep** — `findSweepable` rehydrates typed ids while LISTING candidates, so the refusal (`EntityId`, ADR-0013) throws before the per-row containment (`P5-TSK-014`'s one-failing-row discipline) ever starts. Surfaced by `P7-TSK-003`'s battery when raw test fixtures minted v4 ids and poisoned every later suite's sweep | No domain writer can produce one — `EntityId` refuses at birth and every store insert goes through it — so the exposure is a raw writer (migrator, operator SQL) corrupting an id, which today would also be caught by nothing else | Bounded: the sweep crashes loudly and repeatedly rather than resolving wrongly; money is not misjudged, it is unattended — the same failure a poisoned row causes, one rank earlier | The fixtures now mint v7 (the immediate repair); the candidate list should skip-and-count an unrehydratable row exactly as the per-row loop does | Phase 15 |
+| **One corrupt (non-UUIDv7) `payment_attempt.id` stalls every instance's whole card sweep** — `findSweepable` rehydrates typed ids while LISTING candidates, so the refusal (`EntityId`, ADR-0013) throws before the per-row containment (`P5-TSK-014`'s one-failing-row discipline) ever starts. Surfaced by `P7-TSK-003`'s battery when raw test fixtures minted v4 ids and poisoned every later suite's sweep | No domain writer can produce one — `EntityId` refuses at birth and every store insert goes through it — so the exposure is a raw writer (migrator, operator SQL) corrupting an id, which today would also be caught by nothing else | Bounded: the sweep crashes loudly and repeatedly rather than resolving wrongly; money is not misjudged, it is unattended — the same failure a poisoned row causes, one rank earlier. *(The Phase 7 review widened this row: Phase 7's four new sweeps list the same way - `JdbcWithdrawalStore`'s, `JdbcDisputeResponseStore`'s, `JdbcRefundStore.findSweepableReturns` and `JdbcPaymentAttemptStore.findResolvableInitiations` - so one corrupt id stalls that sweep likewise.)* | The fixtures now mint v7 (the immediate repair); every candidate list should skip-and-count an unrehydratable row exactly as the per-row loop does | Phase 15 |
 | **`payment_intent.wallet_account_id` holds a merchant payable for a merchant-bound payment.** The column's own comment defines it as *the wallet's ledger account - where the capture will credit*, so its MEANING is right and its NAME is narrower than its meaning (`P6-TSK-005`) | Renaming a column of applied history needs a new migration plus the every-writer trigger's recreation on the platform's most critical table, and the first PRODUCTION writer of a merchant-bound intent does not exist yet - `P6-TSK-007` brings it. Renaming before its real consumer exists would be guessing at what the consumer wants to call it | **Naming only, and bounded**: nothing reads it as a wallet - the capture credits whatever account it names, and the settlement REFUSES a capture whose credit account is not the pinned merchant's payable, so a mismatch is loud rather than silent. The cost is a reader of the schema being misled | **Re-owned by the Phase 6 review (`P6-DOC-001`)**: `P6-TSK-007`, this row's trigger, completed without the rename. The next migration that must recreate `payment_intent`'s every-writer trigger anyway carries the rename with it | **PAID — `P7-TSK-002`** (payments `V012` renamed the column under the recreated trigger; every reader, writer, test and register row follows the new name, the old one kept only in applied history and provenance notes) |
 | **Every session actor is audited as `CUSTOMER`, including operators.** `SessionAuthenticationInterceptor` enters `new Actor(identityId, ActorType.CUSTOMER)` for every authenticated session, so an operator's privileged acts — a manual adjustment, a transfer reversal, a refund, a merchant suspension, an API-key revocation — are recorded with the wrong actor TYPE. Found at `P6-TSK-002`'s implementation, while asserting that issuance names its operator: the test expected `EMPLOYEE` and the trail said `CUSTOMER` | The identifier is right — `actor_id` is the acting identity, so every record still names the person and `INV-AUD-01`'s attributability holds. What is wrong is the vocabulary that says which POPULATION acted, which is the field an auditor filters on to answer *what did staff do*. Correcting it means deriving the type from the identity's roles at authentication time and touches every audited session path on the platform — not a merchant task's to change, and not a change to make without its own negative tests | **Bounded but real**: no record is missing and none names the wrong person; a report separating staff activity from customers' cannot be built from `actor_type` alone today, and `ActorType.EMPLOYEE`'s own javadoc (*a human acting in an operational or administrative capacity*) describes a value nothing currently produces | An audit-completeness review, or the first report that must distinguish staff from customers | Phase 15 (audit completeness verification) |
 | ~~**Broker adapter behind `EventPublisher`.**~~ - **closed 2026-09-09** by `P2-TSK-001`. `KafkaEventPublisher` publishes every outbox event to Kafka - payload bytes verbatim, envelope as record headers, aggregate as the record key, one topic per producing module - and `OutboxRelaySchedule` polls on every instance, safely, because the per-aggregate advisory lock is the lease (`DISTRIBUTED_EXECUTION.md` §3). Delivery is at-least-once with `finapp.eventId` as the consumer dedupe key, and the crash duplicate is DEMONSTRATED in `KafkaOutboxDeliveryKafkaTest` rather than hidden. | - | - | - | - |
@@ -728,15 +739,16 @@ carries, what triggers paying it down, and the owning phase.
 | **`POST /v1/registrations` is unauthenticated and unthrottled.** Anyone who can reach the port can create Parties, Customers and Identities without limit | There is no rate-limiting mechanism anywhere on the platform. `P1-TSK-011` builds one for **authentication** - failure counting and lockout keyed on an identity - and none of that applies to an endpoint whose whole point is that no identity exists yet. Building a second, differently-shaped mechanism here before that one exists would be designing the general case from one example | **Resource exhaustion, not disclosure - and `P1-TSK-026` made it materially worse, which is recorded rather than left for somebody to notice.** Every response is still identical whatever is sent, so flooding discloses nothing (`INV-IDN-07` holds). What changed is the cost: a required password means **every** request now performs an Argon2id derivation, ~46 ms of CPU and ~19 MiB, *before* anything can refuse it (ADR-0032) - so this endpoint has become the same CPU-and-memory amplifier `POST /v1/authentications` already is, and unlike that one it needs no existing account. It also still fills three tables and the outbox, and the idempotency key does not help since a flooder generates a fresh one. Bounded today only by the fact that nothing is deployed | **Re-owned by `P1-DOC-002` (2026-09-09)**: `P1-TSK-011`'s mechanism is keyed on an identity, and an unauthenticated endpoint has none - the only usable key is the source, so this row's missing input is per-source rate limiting's missing input, a deployment topology and a trusted-proxy declaration. Merged with that row's trigger | Phase 15 |
 | **Dead-letter tooling.** Resolving an abandoned event is a manual `UPDATE` | The mechanism is needed now; the tooling is a Phase 15 concern | An operator resolving a stalled aggregate acts by hand against a live table. Acceptable only because the outbox is transport, not financial history (`INV-EVT-02`) — the same action against a ledger table would not be. The procedure is documented in `EVENT_ARCHITECTURE.md` §Handling an abandoned event | Abandonment occurring in practice | Phase 15 |
 | **The ownership detector is widened in the tenant's two packages only.** In `com.finapp.merchant` and `com.finapp.checkout`, `OwnershipIsScopedTest` counts a bare `UUID` as a resource identifier and a same-class helper's SQL as the caller's (`P6-TST-001`); everywhere else it still keys on `EntityId` and on direct `prepareStatement` calls | Applied platform-wide, the same widening surfaces 31 more methods in ten modules, and reclassifying other modules' reads is not a merchant task's work (`P6-TSK-009`'s gate said the same) | A by-value read or a helper-split statement outside the tenant packages ships unclassified. Bounded: the tenant-column guard keeps every `merchant_id` / `merchant_ref` statement inside the widened packages, and each customer module's behavioural negatives still run | `X-TSK-002` scheduled, or a new by-value read on a customer-facing surface | Cross-cutting (`X-TSK-002`) |
-| **The conditional step-up is a private six-line method in three services.** `BeneficiaryService`, `PaymentMethodService` and, from `P6-TSK-011`, `PayoutDestinationOperations` each restate `P4-TSK-007`'s *`MULTI_FACTOR` exactly when a factor is active* | Extracting it would have meant refactoring two unrelated services inside a task about payout destinations (the smallest-coherent-change rule); three identical copies of a security check are a maintainability risk, not a correctness one today | A fix to one copy that misses the others: a step-up rule that differs by surface | A fourth caller, or any change to the rule itself - then extract one component and move all callers in one change | Phase 6 or whichever phase meets the trigger |
-
-| **Every idempotency scope but three is a constant.** ADR-0004 says a claim's scope names the command and the owning principal; the payout and, since the Phase 6 review, the checkout session do, and since the Phase 6 → 7 transition the checkout's payment claims in its own `checkout.payment` rather than the public `payment.create` (its key is derived, so a client could predict it); and `accounts.open`, `payment.create`, `payment.refund`, `transfer.execute`, `merchant.onboard`, `merchant.api-key.issue`, the destination proposal and registration do not | Changing a scope moves a command's namespace, so a retry that spans the deploy misses its claim and runs again: a second offer for a session, but a second money movement for a transfer, which has no second rank behind its claim. *(This said "for a refund or a transfer" until the Phase 6 → 7 transition: the refund's `V008` dispatch key is a second rank, and a retry that misses its claim now converges on the refund its key carries — but that key is unscoped by principal, which `X-TSK-003` must account for.)* Each money-moving scope needs a transition path and its own test, which is not a phase review's to build (`P6-DOC-001`) | **Interference, not leakage**: the fingerprints name the caller, so nothing is replayed to the wrong principal; one client's key value refuses another's request as `api.Conflict`, and tells the second the value is taken | `X-TSK-003` scheduled, or the first client-visible collision | Cross-cutting (`X-TSK-003`) |
+| **The conditional step-up is a private six-line method in FIVE services.** `BeneficiaryService`, `PaymentMethodService`, `PayoutDestinationOperations` (`P6-TSK-011`), `WithdrawalService` (`P7-TSK-008`) and `CheckoutService`'s wallet door (`P7-TSK-011`) each restate `P4-TSK-007`'s *`MULTI_FACTOR` exactly when a factor is active* - the row said three until the Phase 7 review, `P7-DOC-001`, found that its trigger fired twice in Phase 7 and was paid by neither task | Extracting it would have meant refactoring unrelated services inside a task about payout destinations, withdrawals or wallet payments (the smallest-coherent-change rule); five identical copies of a security check are a maintainability risk, not a correctness one - each surface's own step-up test pins its copy (`BankAccountRegistrationDatabaseTest#theStepUpGateLeavesTheKeyUnburned`, `WithdrawalDatabaseTest#theSecurityNegativesHold`, the Phase 4 and Phase 6 suites) | A fix to one copy that misses the others: a step-up rule that differs by surface | **Re-owned by the review**: any change to the rule itself, or a sixth caller - then extract one component and move all callers in one change, each surface's existing step-up test the equivalence proof. A review is not where five services are refactored | Phase 15 (value-based step-up arrives with Phase 13's policy; the extraction is due no later than the first change it makes) |
+| **Most idempotency scopes are constants.** ADR-0004 says a claim's scope names the command and the owning principal. *(Recounted by the Phase 7 review, `P7-DOC-001`, where the row said "every scope but three": Phase 7 added three principal-scoped claims - `payments.withdrawal:`+customer, `payment-method-register:`+party and `dispute.respond:`+actor - and one constant, `payments.routing.version`, an operator's act that moves no money.)* The payout and, since the Phase 6 review, the checkout session do, and since the Phase 6 → 7 transition the checkout's payment claims in its own `checkout.payment` rather than the public `payment.create` (its key is derived, so a client could predict it); and `accounts.open`, `payment.create`, `payment.refund`, `transfer.execute`, `merchant.onboard`, `merchant.api-key.issue`, the destination proposal and registration do not | Changing a scope moves a command's namespace, so a retry that spans the deploy misses its claim and runs again: a second offer for a session, but a second money movement for a transfer, which has no second rank behind its claim. *(This said "for a refund or a transfer" until the Phase 6 → 7 transition: the refund's `V008` dispatch key is a second rank, and a retry that misses its claim now converges on the refund its key carries — but that key is unscoped by principal, which `X-TSK-003` must account for.)* Each money-moving scope needs a transition path and its own test, which is not a phase review's to build (`P6-DOC-001`) | **Interference, not leakage**: the fingerprints name the caller, so nothing is replayed to the wrong principal; one client's key value refuses another's request as `api.Conflict`, and tells the second the value is taken | `X-TSK-003` scheduled, or the first client-visible collision | Cross-cutting (`X-TSK-003`) |
 | ~~**Payments' stuck-dispatch blindness, and refund resolution by query.**~~ — **paid 2026-09-24** by the Phase 6 → 7 transition, which found the gap behind a CRITICAL defect and could not leave it: the sweep resolves refunds by query and re-drives one the provider never saw under a send permit, chains a stranded `AUTHORIZED` to capture, and both stuck gauges count a `DISPATCHED` operation (and an `AUTHORIZED` one) past the sweep's bound. *As recorded:* **Payments' stuck-dispatch blindness, and refund resolution by query.** Phase 5's gauges (`finapp.payments.unknown.*`) count only `*_UNKNOWN`, so a payment or refund whose instance crashed mid-dispatch is invisible whenever the sweep is down; and an `UNKNOWN` refund is resolved only by webhook — Phase 5 deferred refund sweeping to "Phase 6 or a sweeper extension", and Phase 6 built the payout's sweep but not the refund's | The payout's gauge and sweep are the shape both should take (`P6-TSK-013`, `P6-TSK-012`), but they are Phase 5's components, and a phase review is not where their machinery changes (`P6-DOC-001`) | **An unalerted stuck refund**: its hold stands, so the money is parked and visible in the balance but not paged; a crashed payment dispatch is equally silent until an instance's sweep runs | The Phase 6 → 7 transition's planning, or the first stuck refund in practice | Phase 7 |
 | **The step-up on a payout destination change is conditional.** An operator with no enrolled factor proposes and approves a destination without one — `P4-TSK-007`'s pattern (ADR-0056 §3), which the Phase 6 gate's "requires step-up authorization" was read against at the review (`P6-DOC-001`) | A factor is optional for every identity on the platform, and requiring one of privileged roles is a policy across every operator surface, not a destination task's | **A weaker second rank, not an open door**: two distinct operators, the 72-hour cancellable cooling-off and the audit trail stand regardless, so one compromised operator cannot redirect a merchant's money alone | A privileged-access review, or the first operator population with money-redirecting rights and no factor | Phase 15 |
-| **A refused step-up is not audited.** `403 AssuranceRequired` on a payout destination's proposal or approval, as on the Phase 4 surfaces that share the conditional step-up, leaves no audit record | Recording refusals below the permission check is an audit-completeness question across every step-up surface, not a destination task's | **An attempt without its trail**: an operator without a second factor trying a four-eyes act is refused but not recorded; the permission refusals above it are | Audit completeness verification | Phase 15 |
+| **A refused step-up is not audited.** `403 AssuranceRequired` on a payout destination's proposal or approval, as on the Phase 4 surfaces that share the conditional step-up, leaves no audit record - nor, since Phase 7, on a bank-account registration, a withdrawal or a wallet payment (the review widened the row) | Recording refusals below the permission check is an audit-completeness question across every step-up surface, not a destination task's | **An attempt without its trail**: an operator without a second factor trying a four-eyes act is refused but not recorded; the permission refusals above it are | Audit completeness verification | Phase 15 |
 | ~~**A second verified contact channel answers `500`.**~~ - **closed 2026-09-24** by `X-TSK-004`, pulled forward from Phase 15 at the owner's direction. *(Found by the Phase 6 → 7 transition's audit, in Phase 1's code.)* The decision this row left open is taken: **refused, not replaced** (`INV-IDN-06`). A channel is added with a session alone, so a verification that displaced the verified one would let a stolen password redirect recovery, with no step-up and no word to the address replaced. The store now verifies behind a savepoint and answers the index's `23505` with `VerifiedChannelAlreadyExistsException`, which the endpoint returns as `409 identity.VerifiedChannelAlreadyExists`. The refusal writes nothing, and ten instances racing verify exactly one. `EmailAddress`'s javadoc no longer cites a unique index on the address; `V011`'s column comment still does, and stays, because an applied migration is not edited. **The path was latent over HTTP** (nothing delivers a challenge before Phase 15's notifier) and live through the module's API, so it would have gone live with the notifier unchanged. Changing the verified channel is deferred to Phase 15 with that notifier (`DECISIONS.md` §Deliberately Deferred) | - | - | - | - |
-| **Three interleavings on the confirmation have no race test.** An instrument detached, an intent cancelled and a session abandoned while a confirmation runs are each arbitrated by a conditional transition or an in-lock re-read, and none is driven as a race (found by the Phase 6 → 7 transition's audit) | Each arbiter is one already proven elsewhere; the races are coverage, not correctness, and a phase transition is not where tests for them are designed | **An arbiter nobody broke on purpose here**: a regression in one would pass until a storm met it | Phase 7's multi-rail storm (`P7-TST-001`), which drives confirmations under all three | Phase 7 |
-| **A poisoned row can delay a sweep.** The payments and payout sweeps take the oldest candidates first and log a failing row and continue, but a row that fails every tick stays at the head of the queue and takes a slot of every batch | Skipping a failing row needs a failure count or a backoff column, a schema change on the platform's most contended tables | **Delay, not loss**: every other row is still reached, one batch slot short, and the failing row is logged every tick | A row failing repeatedly in practice, or Phase 15's runbooks | Phase 15 |
+| ~~**Three interleavings on the confirmation have no race test.**~~ — **paid 2026-09-28** by the Phase 7 review, `P7-DOC-001`, where the owning task had closed without paying it (the storm drove none of the three). Each is raced deterministically, the loser observed waiting on its lock: a cancel and a confirm on the intent row, both ways (`PaymentAuthorizationDatabaseTest#aCancelAndAConfirmRacingTheWindowHaveOneWinner`); a detach landing mid-confirmation and before it (`PaymentEndpointDatabaseTest#aDetachRacingAConfirmationIsJudgedAtTheAct` - two serial orders, the instrument judged at the act); and a merchant's withdrawal of the offer holding the session row, then six raced rounds each telling one story (`CheckoutFlowDatabaseTest#aWithdrawalRacingAConfirmationLeavesOneStory`). Each probed (`MUTATION_TESTING.md` §2) | — | — | — | — |
+| **A poisoned row can delay a sweep.** The payments and payout sweeps - and Phase 7's withdrawal, pay-in initiation, return and dispute-answer sweeps (the review widened the row) - take the oldest candidates first and log a failing row and continue, but a row that fails every tick stays at the head of the queue and takes a slot of every batch | Skipping a failing row needs a failure count or a backoff column, a schema change on the platform's most contended tables | **Delay, not loss**: every other row is still reached, one batch slot short, and the failing row is logged every tick | A row failing repeatedly in practice, or Phase 15's runbooks | Phase 15 |
+| **Chargeback debt has no reserve, and a customer's receivable no collection.** A merchant payable driven negative by a chargeback after a payout is merchant debt, recovered only from later captures before any payout (`INV-MER-07` as amended); a customer wallet driven negative by a charged-back top-up the customer spent is a receivable, recorded and never written off (ADR-0061 §5). No reserve is held against either and nothing collects the receivable. ADR-0061 said both were "recorded with an owner"; neither was, until the Phase 7 review, `P7-DOC-001` | Reserves are a merchant-risk capability with their own policy, statements and consent; collection needs dunning and a customer-contact channel. Both are out of Phase 7 (`PHASE_7_PLAN.md` §17) | **Credit risk, bounded and visible, not a correctness break**: a counterparty is never charged more than it was credited (`INV-DSP-01`), every negative position is on the books and counted by `finapp.ledger.negative.positions`, and nothing is absorbed. What is missing is the recovery | The negative-position gauge reading above zero in operation, or the first payout blocked by a chargeback's debt | Phase 13 |
+| **Two push-attempt states have no producer.** `EXECUTION_DISPATCHED` and `EXECUTION_UNKNOWN` are declared in the `PUSH` machine and carried by the generated `CHECK`s and edge trigger, and no code writes them: the outbound pushes are the withdrawal and the return's refund row (ADR-0059 §2 as corrected by the Phase 7 review) | Removing a state from applied schema history is a migration on the platform's most critical table for no behaviour; the states cost nothing while unwritten, and the gauges read them harmlessly | **ADR-0044's rule bent**: a state without a producer invites a reader to believe it can occur. The ADR, the lifecycle document, the plan and the enum's javadoc now all say "reserved, no producer" | The first outbound push that is an attempt (a rail whose sends belong to an intent), or the next migration recreating the attempt's edge trigger - then either produce them or drop them | The phase adding the next push rail |
 
 None of these is financial-correctness debt.
 
@@ -815,10 +827,10 @@ Resolved during initiation:
 
 ## Next Task
 
-**`P7-DOC-001` — The Phase 7 exit review** — see
-[§Current Task](#current-task), which this section mirrors. *(It named `P7-TSK-001` from the
-transition's initialisation until `P7-TSK-002`'s gate found it stale — the stale-second-copy
-class in the very section built to mirror rather than lag; kept current since.)*
+**The Phase 7 → Phase 8 transition** — see [§Current Task](#current-task), which this section
+mirrors. *(It named `P7-TSK-001` from the transition's initialisation until `P7-TSK-002`'s gate
+found it stale — the stale-second-copy class in the very section built to mirror rather than lag;
+kept current since.)*
 
 ### Superseded: the Phase 6 → 7 transition lead (read until 2026-09-24)
 

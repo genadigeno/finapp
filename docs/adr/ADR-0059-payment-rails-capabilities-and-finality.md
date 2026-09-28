@@ -1,6 +1,6 @@
 # ADR-0059 — A payment rail declares its capabilities, finality is modelled per rail, and the attempt's machine follows the rail's interaction model
 
-Status: Proposed (2026-09-24, the Phase 6 → 7 transition)
+Status: Accepted (2026-09-28, `P7-DOC-001` — read against the implementation at the phase review; nine passages corrected to it, one rule made where the text promised more than the code held, and one defect in the code fixed, first)
 Date: 2026-09-24
 Phase: 7
 Context: Payments · Payment Methods · Accounts · Ledger
@@ -46,31 +46,69 @@ The second is attempting a reversal on an irrevocable rail. Phase 5's attempt ma
    | `disputes` | card-scheme chargebacks | none | none |
    | currencies and per-currency maximum | adapter configuration | the scheme's limits | the platform's |
 
-   The descriptor is immutable per adapter version and recorded with every routing decision
-   (ADR-0060). What the domain knew when it decided is therefore stored, not re-derived from
-   whatever the adapter says today. **No core code branches on a rail's name**: a second instant
-   scheme is an adapter and a routing rule, never a core change.
+   *(Every Phase 7 declaration leaves the last row unrestricted - no currency set, no maximum,
+   compiled constants: the row says where a restriction would come from, not one that exists.)*
+
+   The descriptor is immutable per adapter version, and every routing step records the
+   **version** of the declaration it judged (ADR-0060). *(This read "recorded with every routing
+   decision … stored, not re-derived from whatever the adapter says today" until the phase
+   review, `P7-DOC-001`, found that only `descriptor_version` is stored, and that every resolver -
+   the clearing account, the refund mode, the void gate - re-derives the capabilities from the
+   running build through `PaymentRails.capabilitiesOf`. The review's ruling closes the gap that
+   opens: **a rail's money semantics are frozen per `RailId`**. The interaction model, finality,
+   reversals, refund mode, settlement, disputes and clearing position of a declared rail never
+   change under its name; a change to any of them is a new `RailId`, so a payment already made
+   is always read under the semantics it was made under. `RailMoneySemanticsArePinnedTest`
+   freezes each rail's tuple and its declaration version, and fails an edit that does not also
+   mint a new rail.)* **No core code branches on a rail's name.** *(This went on "a second
+   instant scheme is an adapter and a routing rule, never a core change" until the review: Phase
+   7 wires one adapter per interaction model - one card provider, one push rail - and
+   `Withdrawals` refuses, loudly, a routing choice naming a push rail other than the wired one.
+   A second rail of the same model needs per-rail operation lookup in the composition root and,
+   by §4, its own clearing position: an adapter, a routing rule and that wiring, still no core
+   branch on a name. The confirmation's push branch initiates on the wired rail for the same
+   reason - the directory declares exactly one push rail, so routing cannot choose another -
+   and `Withdrawals`' guard is the pattern the phase adding a second scheme carries there.)*
 
 2. **The attempt's machine follows the interaction model — three machines, one aggregate root.**
-   `TWO_STEP` keeps Phase 5's seven states verbatim, plus the void edges the card-reversal task
-   adds. `PUSH` has its own vocabulary: an initiation `AWAITING_PAYER` (a pay-by-bank payment
-   waiting for the payer's authorization at the payer's own PSP), `EXECUTION_DISPATCHED`,
-   `EXECUTION_UNKNOWN`, `EXECUTED`, `FAILED`. `BOOK` is born `EXECUTED` or `FAILED` inside the
-   confirmation's own transaction (ADR-0043's property), so it has no dispatch and no unknown.
+   `TWO_STEP` keeps Phase 5's seven states verbatim, plus the void *(the card-reversal task,
+   `P7-TSK-004`, added three states - `VOID_DISPATCHED`, `VOID_UNKNOWN`, `VOIDED` - with the edge
+   `AUTHORIZED → VOID_DISPATCHED` and the declined-capture redirect `CAPTURE_DISPATCHED |
+   CAPTURE_UNKNOWN → VOID_DISPATCHED`; a declined or never-received void lands `FAILED` from the
+   void states, and the drawn `AUTHORIZED → FAILED` edge, which had no producer, was
+   deliberately not implemented - recorded here by the phase review, `P7-DOC-001`)*. `PUSH` has
+   its own vocabulary: an initiation `AWAITING_PAYER` (a pay-by-bank payment waiting for the
+   payer's authorization at the payer's own PSP), `EXECUTION_DISPATCHED`, `EXECUTION_UNKNOWN`,
+   `EXECUTED`, `FAILED`. *(The review: Phase 7's push attempt is the pay-in alone,
+   `AWAITING_PAYER → EXECUTED | FAILED`. `EXECUTION_DISPATCHED` and `EXECUTION_UNKNOWN` are
+   declared, carried by the generated `CHECK`s and triggers, and **produced by nothing**: the
+   platform's outbound pushes are their own aggregates - the withdrawal (`DISPATCHED → UNKNOWN →
+   COMPLETED | FAILED`, ADR-0062 §3) and the return payment, a refund row in the refund's own
+   four-state machine (`P7-TSK-010`). The two states stay reserved for an outbound push that is
+   an attempt, which no Phase 7 flow is.)* `BOOK` is born `EXECUTED` inside the confirmation's
+   own transaction (ADR-0043's property), so it has no dispatch and no unknown *(this read "born
+   `EXECUTED` or `FAILED`" until the review: `FAILED` is in the model's state set, but an
+   unaffordable wallet payment rolls its whole transaction back - `WalletPaymentUnfunded`,
+   nothing written - so no book attempt is ever born failed)*.
    The attempt's rail and model are frozen at birth. The generated `CHECK`s and every-writer
    triggers key each permitted transition on the model (the three-layer discipline, three
-   times). **No state name is shared across models**: `EXECUTED` is not `CAPTURED`, so no query,
-   report or reconciliation can mistake one rail's completion for another's. The intent's machine
-   (`REQUIRES_CONFIRMATION → PROCESSING → SUCCEEDED | FAILED | CANCELLED`) is the customer's
-   view and stays rail-agnostic.
+   times). **No non-terminal state name is shared across models**: `EXECUTED` is not
+   `CAPTURED`, so every edge's from-state names its machine. *(This read "No state name is
+   shared across models" until the review: the terminals are shared - `FAILED` by all three
+   models, `EXECUTED` by `PUSH` and `BOOK` - and have no edges to blur. A query, report or
+   reconciliation that reads a completion therefore filters on the attempt's
+   `interaction_model` or rail, never on the status alone; no Phase 7 statement mixes them.)*
+   The intent's machine (`REQUIRES_CONFIRMATION → PROCESSING → SUCCEEDED | FAILED`, and
+   `REQUIRES_CONFIRMATION → CANCELLED`) is the customer's view and stays rail-agnostic.
 
 3. **`INV-REV-03` is enforced at the capability, before anything is written or sent.** A reversal
    (a void, or a cancellation after dispatch) of an attempt whose rail does not list it in
    `reversals` is refused by the domain: `payments.ReversalNotSupported`, `409`, nothing written,
    nothing sent. It is never attempted and failed at the provider. **A refund is not a
    reversal** (`INV-REV-01`): it is a new forward movement, executed in the rail's `refundMode`.
-   A merchant can therefore refund an instant payment by return payment, while nobody can reverse
-   it.
+   An instant payment can therefore be refunded by return payment, while nobody can reverse it.
+   *(This read "A merchant can therefore refund" until the review: every refund is an operator's
+   act under `PAYMENT_REFUND`, whoever the payment's merchant.)*
 
    *(The `refundMode` dispatch shipped `P7-TSK-010`: one refund command executes two of the
    declared modes — `PROVIDER_REFUND` against the capture, `RETURN_PAYMENT` as a new push
@@ -80,13 +118,17 @@ The second is attempting a reversal on an irrevocable rail. Phase 5's attempt ma
    for every writer and refusing the model whose refund producer has not shipped
    (`BOOK_REFUND`, `P7-TSK-011`). The return resolves against its own wire: the refund sweep
    partitioned by the attempt's model, `ReturnResolution` inquiring and re-driving under the
-   send permit with the same reference.)*
+   send permit with the same reference.)* *(And since, recorded by the review: `P7-TSK-011`
+   shipped the third mode, `BOOK_REFUND`, completing inside the refund claim's own transaction,
+   payments `V019` lifting `V018`'s refusal of it; `P7-TSK-013` restated the bound as the
+   combined refunds-plus-chargebacks bound, `V021` holding it for every writer - ADR-0061 §3.)*
 
 4. **Finality is not settlement.** Finality says whether the payee's credit can be taken back.
    Settlement says whether the interbank obligation is discharged. An instant payment is final
    on acceptance and still unsettled until the scheme reports its cycle, so `INV-SET-01` holds
    on every rail without an exception. **Each external rail has its own clearing position**: the
-   card PSP's is `SETTLEMENT_CLEARING` (its meaning narrowed to the card rail by this ADR), and
+   card PSP's is `SETTLEMENT_CLEARING` (its meaning narrowed to the card rail by this ADR, and
+   carried into `AccountPurpose`'s javadoc by the review), and
    the instant scheme's is `INSTANT_CLEARING`, added by the task that first posts to it (the
    member's own doctrine, `AccountPurpose`) *(refined by `P7-TSK-006`: the member and its
    seeds arrive with the descriptor that must name it — ledger `V013` — and the first
@@ -165,7 +207,11 @@ Positive:
 - The gate's "materially different finality semantics" is a property of stored data and three
   machines, not a claim about adapters.
 - Every Phase 5 and Phase 6 behaviour on the card rail is unchanged, and the full battery is the
-  proof. The card rail's descriptor is written from what ADR-0049 §2 already decided.
+  proof. The card rail's descriptor is written from what ADR-0049 §2 already decided. *(The
+  review, `P7-DOC-001`: two card behaviours changed by later decisions, each recorded where it
+  was made - a declined capture now releases the authorization by void (`P7-TSK-004`), and the
+  refund bound counts standing chargebacks (ADR-0061 §3). The Phase 7 tasks were verified by
+  targeted tiers on the owner's instruction; the review records that deviation.)*
 
 Negative:
 - The attempt table carries three machines. Its generated constraints grow, and every sweep and
@@ -195,4 +241,8 @@ three-layer discipline), `INV-BAL-01` (the wallet has no second balance), `INV-R
   rail. `P7-TSK-002` builds the per-model machines. The card void, the instant rail and the
   wallet rail each land with their own task (`PHASE_7_PLAN.md` §16).
 - The Phase 7 review reads this ADR against the code before accepting it — the
-  `P6-DOC-001` precedent.
+  `P6-DOC-001` precedent. *(Done, `P7-DOC-001`: the passages above corrected with provenance;
+  the withdrawal's completion found posting to a named clearing purpose rather than its rail's
+  declared one - fixed, `WithdrawalOutcomes` resolving it from the withdrawal's stored rail, and
+  held by `RailVocabularyIsConfinedTest`'s clearing-position rule; the money-semantics freeze
+  ruled and guarded.)*

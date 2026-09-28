@@ -340,6 +340,18 @@ class PaymentEndpointDatabaseTest {
                                     + " WHERE d.intent_id = ?",
                             UUID.fromString(paymentId)))
                     .isEqualTo("UNAVAILABLE");
+            // ...and the refusal is on the record as the person's act (ADR-0060 section 3;
+            // the Phase 7 review found it asserted nowhere): one PaymentRoutingRefused naming
+            // the refused decision.
+            assertThat(oneString(
+                            "SELECT change_summary FROM platform.audit_record"
+                                    + " WHERE operation = 'payments.PaymentRoutingRefused'"
+                                    + " AND target_id = ?",
+                            paymentId))
+                    .contains("decision=RoutingDecisionId(" + oneString(
+                            "SELECT id::text FROM payments.routing_decision"
+                                    + " WHERE intent_id = ? AND chosen_rail IS NULL",
+                            UUID.fromString(paymentId)) + ")");
         } finally {
             recordAvailability(true, "endpoint suite restore");
         }
@@ -396,7 +408,118 @@ class PaymentEndpointDatabaseTest {
                     .extracting(failure -> ((SQLException) failure).getSQLState())
                     .isEqualTo("P0001");
         }
+
+        // RECOMPUTED FROM WHAT WAS STORED (the gate's routing-explainability bullet,
+        // INV-RAIL-02, INV-HIST-04; P7-DOC-001 - recomputation was proven only in memory): each
+        // stored decision, the refusal and the choice, re-decided under ITS pinned version over
+        // ITS stored inputs and the availability each of its steps recorded, reproduces the
+        // rail chosen, the rule matched and every rejection.
+        try (Connection app = DatabaseRoles.application();
+                PreparedStatement decisions = app.prepareStatement(
+                        "SELECT id FROM payments.routing_decision WHERE intent_id = ?")) {
+            decisions.setObject(1, UUID.fromString(paymentId));
+            int recomputed = 0;
+            try (ResultSet row = decisions.executeQuery()) {
+                while (row.next()) {
+                    assertRecomputesFromStorage(app, row.getObject(1, UUID.class));
+                    recomputed++;
+                }
+            }
+            assertThat(recomputed).as("the refused decision and the chosen one").isEqualTo(2);
+        }
+
+        // The explanation's success path, and the read on the record (A5's find: only its 404
+        // and 403 were ever exercised).
+        String operator = operatorSession();
+        long reads = routingCount(
+                "SELECT count(*) FROM platform.audit_record WHERE operation ="
+                        + " 'payments.PaymentRoutingExplanationRead' AND target_id = ?",
+                paymentId);
+        HttpResponse<String> explained =
+                get("/v1/operator/payments/" + paymentId + "/routing", operator);
+        assertThat(explained.statusCode()).as(explained.body()).isEqualTo(200);
+        assertThat(explained.body()).contains(decisionId).contains("card");
+        assertThat(routingCount(
+                        "SELECT count(*) FROM platform.audit_record WHERE operation ="
+                                + " 'payments.PaymentRoutingExplanationRead' AND target_id = ?",
+                        paymentId))
+                .isEqualTo(reads + 1);
     }
+
+    /**
+     * Re-decides the stored decision {@code decision} under its pinned version from storage
+     * alone - inputs from its columns, availability from its steps - and compares plan to row.
+     */
+    private void assertRecomputesFromStorage(Connection app, UUID decision) throws Exception {
+        com.finapp.payments.RoutingInputs inputs;
+        java.util.Optional<Integer> matched;
+        java.util.Optional<com.finapp.payments.RailId> chosen;
+        com.finapp.payments.RoutingPolicyVersionId versionId;
+        try (PreparedStatement read = app.prepareStatement(
+                "SELECT direction, instrument_kind, amount_minor, currency, scale,"
+                        + " matched_rule_index, chosen_rail, policy_version_id"
+                        + " FROM payments.routing_decision WHERE id = ?")) {
+            read.setObject(1, decision);
+            try (ResultSet row = read.executeQuery()) {
+                assertThat(row.next()).isTrue();
+                inputs = new com.finapp.payments.RoutingInputs(
+                        com.finapp.payments.PaymentDirection.valueOf(row.getString(1)),
+                        com.finapp.payments.InstrumentKind.valueOf(row.getString(2)),
+                        com.finapp.sharedkernel.money.Money.ofPersisted(
+                                row.getLong(3),
+                                com.finapp.sharedkernel.money.CurrencyCode.of(row.getString(4)),
+                                row.getShort(5)),
+                        // A pay-in has no destination to reach: not stored, never judged.
+                        java.util.Optional.empty());
+                matched = row.getObject(6) == null
+                        ? java.util.Optional.empty()
+                        : java.util.Optional.of(row.getInt(6));
+                chosen = java.util.Optional.ofNullable(row.getString(7))
+                        .map(com.finapp.payments.RailId::of);
+                versionId = com.finapp.payments.RoutingPolicyVersionId.of(
+                        row.getObject(8, UUID.class));
+            }
+        }
+        java.util.List<String> storedSteps = new java.util.ArrayList<>();
+        java.util.Map<com.finapp.payments.RailId, com.finapp.payments.RailAvailability>
+                recorded = new java.util.HashMap<>();
+        try (PreparedStatement read = app.prepareStatement(
+                "SELECT rail, verdict, rejection, rail_available, descriptor_version"
+                        + " FROM payments.routing_decision_step WHERE decision_id = ?"
+                        + " ORDER BY step_index")) {
+            read.setObject(1, decision);
+            try (ResultSet row = read.executeQuery()) {
+                while (row.next()) {
+                    storedSteps.add(row.getString(1) + "|" + row.getString(2) + "|"
+                            + row.getString(3) + "|" + row.getBoolean(4) + "|"
+                            + row.getObject(5));
+                    com.finapp.payments.RailId rail =
+                            com.finapp.payments.RailId.of(row.getString(1));
+                    recorded.put(rail, new com.finapp.payments.RailAvailability(
+                            rail, row.getBoolean(4), "as the step recorded it",
+                            "recomputation", java.time.Instant.now(CLOCK)));
+                }
+            }
+        }
+        com.finapp.payments.RoutingPolicyVersion pinned =
+                routingStore.findVersionById(app, versionId).orElseThrow();
+        com.finapp.payments.RoutingPlan plan = pinned.decide(inputs, paymentRails, recorded);
+
+        assertThat(plan.chosen()).as("decision %s: the rail chosen", decision).isEqualTo(chosen);
+        assertThat(plan.matchedRuleIndex()).as("decision %s: the rule matched", decision)
+                .isEqualTo(matched);
+        assertThat(plan.steps().stream()
+                        .map(step -> step.rail().value() + "|" + step.verdict() + "|"
+                                + step.rejection().map(Enum::name).orElse(null) + "|"
+                                + step.railAvailable() + "|"
+                                + step.descriptorVersion().orElse(null))
+                        .toList())
+                .as("decision %s: every step and every rejection", decision)
+                .containsExactlyElementsOf(storedSteps);
+    }
+
+    @Autowired private com.finapp.payments.RoutingStore<Connection> routingStore;
+    @Autowired private com.finapp.payments.PaymentRails paymentRails;
 
     @Test
     @DisplayName("cancellation wins only the confirmation window: cancel converges, a cancelled"
@@ -430,6 +553,216 @@ class PaymentEndpointDatabaseTest {
         HttpResponse<String> refusedCancel = delete(token, "/v1/payments/" + succeeded);
         assertThat(refusedCancel.statusCode()).isEqualTo(409);
         assertThat(refusedCancel.body()).contains("payments.NotCancellable");
+    }
+
+    /**
+     * The instrument interleaving the Phase 6 -> 7 transition left unraced, paid by the Phase 7
+     * review. The confirmation resolves the instrument at the act - one read inside its Tx1 -
+     * and a detach is a prospective registry change with no rule about payments in flight, so
+     * the two have exactly two serial orders and no arbiter between them. Both are forced: a
+     * detach that lands BETWEEN the act's read and its commit (the intent row held, the confirm
+     * observed waiting on it) leaves a payment confirmed on the instrument it resolved, charged
+     * exactly once; a detach that lands first refuses the confirm with nothing written, the
+     * intent still cancellable, and every later use of the method refused.
+     */
+    @Test
+    @DisplayName("a detach racing a confirmation: judged at the act - landing mid-confirmation it"
+            + " charges once on the instrument resolved, landing first it refuses with nothing"
+            + " written")
+    void aDetachRacingAConfirmationIsJudgedAtTheAct() throws Exception {
+        providerAuthorises("psp_auth-detach");
+        providerCaptures("psp_cap-detach");
+        String token = verifiedCustomer(someLogin());
+        openAccount(token);
+        String methodId = attachInstrument(token);
+        String midway =
+                field(payment(token, body(methodId, "3.00", "USD"), someKey()).body(), "id");
+        String later =
+                field(payment(token, body(methodId, "4.00", "USD"), someKey()).body(), "id");
+
+        // MID-CONFIRMATION: the confirm has read the instrument ACTIVE and routed; the held
+        // intent row stops it at the conditional transition while the detach commits.
+        java.util.concurrent.ExecutorService pool =
+                java.util.concurrent.Executors.newSingleThreadExecutor();
+        try (Connection holder = DatabaseRoles.application()) {
+            holder.setAutoCommit(false);
+            try (PreparedStatement lock =
+                    holder.prepareStatement(
+                            "SELECT id FROM payments.payment_intent WHERE id = ? FOR UPDATE")) {
+                lock.setObject(1, UUID.fromString(midway));
+                lock.executeQuery().close();
+            }
+            java.util.concurrent.Future<HttpResponse<String>> confirming =
+                    pool.submit(() -> confirm(token, midway));
+            awaitLockWaitOn("payment_intent", "SET status");
+            HttpResponse<String> detached = delete(token, "/v1/me/payment-methods/" + methodId);
+            assertThat(detached.statusCode()).as(detached.body()).isEqualTo(204);
+            holder.rollback();
+
+            HttpResponse<String> confirmed =
+                    confirming.get(60, java.util.concurrent.TimeUnit.SECONDS);
+            assertThat(confirmed.statusCode()).as(confirmed.body()).isEqualTo(200);
+            assertThat(field(confirmed.body(), "status")).isEqualTo("SUCCEEDED");
+        } finally {
+            pool.shutdownNow();
+        }
+        assertThat(provider.requestCount(SimulatedCardPspAdapter.AUTHORIZATIONS_PATH))
+                .as("the one payment the act admitted, sent once")
+                .isEqualTo(1);
+        assertThat(routingCount(
+                        "SELECT count(*) FROM payments.payment_attempt WHERE intent_id = ?",
+                        UUID.fromString(midway)))
+                .isEqualTo(1);
+        assertThat(routingCount(
+                        "SELECT count(*) FROM ledger.journal_entry WHERE idempotency_scope = ?",
+                        "ledger.post:payment-capture:" + attemptIdFor(midway)))
+                .as("the capture posted once")
+                .isEqualTo(1);
+
+        // DETACH FIRST: the confirm of an intent created while the method was live refuses
+        // with nothing written - no attempt, no decision, nothing sent - and the intent still
+        // awaits confirmation, so the customer can cancel it.
+        HttpResponse<String> refused = confirm(token, later);
+        assertThat(refused.statusCode()).as(refused.body()).isEqualTo(422);
+        assertThat(refused.body()).contains("payments.UnknownInstrument");
+        assertThat(provider.requestCount(SimulatedCardPspAdapter.AUTHORIZATIONS_PATH))
+                .isEqualTo(1);
+        assertThat(routingCount(
+                        "SELECT count(*) FROM payments.payment_attempt WHERE intent_id = ?",
+                        UUID.fromString(later)))
+                .isZero();
+        assertThat(routingCount(
+                        "SELECT count(*) FROM payments.routing_decision WHERE intent_id = ?",
+                        UUID.fromString(later)))
+                .isZero();
+        assertThat(oneString(
+                        "SELECT status FROM payments.payment_intent WHERE id = ?",
+                        UUID.fromString(later)))
+                .isEqualTo("REQUIRES_CONFIRMATION");
+        HttpResponse<String> cancelled = delete(token, "/v1/payments/" + later);
+        assertThat(cancelled.statusCode()).as(cancelled.body()).isEqualTo(200);
+        assertThat(field(cancelled.body(), "status")).isEqualTo("CANCELLED");
+
+        // And the detached method opens no new payment.
+        HttpResponse<String> reuse = payment(token, body(methodId, "5.00", "USD"), someKey());
+        assertThat(reuse.statusCode()).as(reuse.body()).isEqualTo(422);
+        assertThat(reuse.body()).contains("payments.UnknownInstrument");
+    }
+
+    /**
+     * INV-PAY-02's Verify clause over the WHOLE schema set, Phase 7's tables included (the Phase
+     * 7 review: the per-table sweep covered the payment-method row alone). A card payment runs
+     * end to end - attach, route, authorize, capture - and then every text-like column of every
+     * base table in every schema is read: the client's tokenisation grant appears in none, and
+     * the provider's token in exactly one, the payment method's own reference. Encrypted
+     * columns (bytea) are out of the sweep by construction: the retained provider answers and
+     * dispute evidence are ciphertext under their own keys (INV-KYC-06's regime).
+     */
+    @Test
+    @DisplayName("INV-PAY-02, swept over every column of every schema after a routed card payment:"
+            + " the grant rests nowhere, the token only on its payment method")
+    void instrumentInputRestsNowhereButItsReference() throws Exception {
+        providerAuthorises("psp_auth-sweep");
+        providerCaptures("psp_cap-sweep");
+        String token = verifiedCustomer(someLogin());
+        openAccount(token);
+        String suffix = UUID.randomUUID().toString().substring(0, 8);
+        String grant = "ctok_sweep" + suffix;
+        String instrument = "tok_sweep" + suffix;
+        provider.succeedsWith(
+                SimulatedTokenisationAdapter.TOKENISATIONS_PATH,
+                200,
+                "{\"status\":\"tokenised\",\"token\":\"" + instrument + "\",\"brand\":\"Visa\","
+                        + "\"last4\":\"4242\",\"expiryMonth\":12,\"expiryYear\":2030}");
+        HttpResponse<String> attached =
+                post("/v1/me/payment-methods", "{\"clientToken\":\"" + grant + "\"}", token,
+                        false);
+        assertThat(attached.statusCode()).as(attached.body()).isEqualTo(201);
+        String methodId = field(attached.body(), "id");
+        String paymentId =
+                field(payment(token, body(methodId, "6.00", "USD"), someKey()).body(), "id");
+        HttpResponse<String> confirmed = confirm(token, paymentId);
+        assertThat(field(confirmed.body(), "status")).isEqualTo("SUCCEEDED");
+        assertThat(attached.body() + confirmed.body()).doesNotContain(grant).doesNotContain(instrument);
+        // The positive control: the token DID travel - to the provider, the one place it must.
+        assertThat(provider.bodyValues(SimulatedCardPspAdapter.AUTHORIZATIONS_PATH))
+                .anySatisfy(sent -> assertThat(sent).contains(instrument));
+
+        assertThat(columnsHolding(grant)).as("the grant is spent at the boundary").isEmpty();
+        assertThat(columnsHolding(instrument))
+                .as("the token rests on its payment method and nowhere else")
+                .containsExactly("paymentmethods.payment_method.token_reference");
+    }
+
+    /** Every {@code schema.table.column} of a text-like type in a base table holding {@code needle}. */
+    private static List<String> columnsHolding(String needle) throws SQLException {
+        List<String> holding = new java.util.ArrayList<>();
+        try (Connection root = DatabaseRoles.bootstrap()) {
+            List<String[]> columns = new java.util.ArrayList<>();
+            try (PreparedStatement query =
+                    root.prepareStatement(
+                            "SELECT c.table_schema, c.table_name, c.column_name"
+                                    + " FROM information_schema.columns c"
+                                    + " JOIN information_schema.tables t"
+                                    + "   ON t.table_schema = c.table_schema"
+                                    + "  AND t.table_name = c.table_name"
+                                    + " WHERE t.table_type = 'BASE TABLE'"
+                                    + "   AND c.table_schema NOT IN ('pg_catalog',"
+                                    + "       'information_schema', 'pg_toast')"
+                                    + "   AND c.data_type IN ('text', 'character varying',"
+                                    + "       'character', 'json', 'jsonb')"
+                                    + " ORDER BY 1, 2, 3");
+                    ResultSet rows = query.executeQuery()) {
+                while (rows.next()) {
+                    columns.add(new String[] {rows.getString(1), rows.getString(2),
+                            rows.getString(3)});
+                }
+            }
+            assertThat(columns).as("the derived sweep has subjects").hasSizeGreaterThan(100);
+            for (String[] column : columns) {
+                String qualified = column[0] + "." + column[1] + "." + column[2];
+                try (PreparedStatement probe =
+                        root.prepareStatement(
+                                "SELECT EXISTS (SELECT 1 FROM \"" + column[0] + "\".\""
+                                        + column[1] + "\" WHERE \"" + column[2]
+                                        + "\"::text LIKE ?)")) {
+                    probe.setString(1, "%" + needle + "%");
+                    try (ResultSet found = probe.executeQuery()) {
+                        found.next();
+                        if (found.getBoolean(1)) {
+                            holding.add(qualified);
+                        }
+                    }
+                }
+            }
+        }
+        return holding;
+    }
+
+    /** Until a backend waits on a lock for a statement touching {@code table} with {@code marker}. */
+    private static void awaitLockWaitOn(String table, String marker) throws Exception {
+        long deadline = System.nanoTime() + Duration.ofSeconds(30).toNanos();
+        try (Connection observer = DatabaseRoles.application();
+                PreparedStatement select =
+                        observer.prepareStatement(
+                                "SELECT count(*) FROM pg_stat_activity"
+                                        + " WHERE wait_event_type = 'Lock'"
+                                        + " AND query LIKE ? AND query LIKE ?")) {
+            select.setString(1, "%" + table + "%");
+            select.setString(2, "%" + marker + "%");
+            while (System.nanoTime() < deadline) {
+                try (ResultSet row = select.executeQuery()) {
+                    row.next();
+                    if (row.getLong(1) >= 1) {
+                        return;
+                    }
+                }
+                Thread.sleep(25);
+            }
+        }
+        throw new AssertionError(
+                "no statement ever waited on " + table + " " + marker
+                        + " - the interleaving this test forces never happened");
     }
 
     @Test

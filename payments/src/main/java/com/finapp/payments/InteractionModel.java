@@ -37,15 +37,21 @@ public enum InteractionModel {
      * One push executes the payment — a credit transfer, decided by the payer's PSP, the
      * scheme and the payee's PSP. {@code AWAITING_PAYER} exists only for a pay-in: the payer
      * authorizes at their own PSP, and the attempt waits for that PSP's answer, never for our
-     * clock. Its operations arrive with its rails (`P7-TSK-006`, `-009`).
+     * clock. <strong>Phase 7's push attempt is the pay-in alone</strong> (`P7-TSK-009`):
+     * {@code AWAITING_PAYER -> EXECUTED | FAILED}. {@code EXECUTION_DISPATCHED} and
+     * {@code EXECUTION_UNKNOWN} are declared - the generated constraints carry them - and
+     * produced by nothing: the platform's outbound pushes are their own aggregates, the
+     * {@code Withdrawal} and the return payment's {@code Refund} row, each with its own
+     * DISPATCHED/UNKNOWN machine (ADR-0059 section 2 as corrected by the Phase 7 review).
      */
     PUSH,
 
     /**
-     * One book movement on the platform's own ledger, born {@code EXECUTED} or {@code FAILED}
-     * inside the confirmation's transaction (ADR-0043's property): no dispatch, no unknown,
+     * One book movement on the platform's own ledger, born {@code EXECUTED} inside the
+     * confirmation's transaction (ADR-0043's property): no dispatch, no unknown,
      * <strong>no edges</strong> — and therefore never a history row. The wallet rail
-     * (`P7-TSK-011`).
+     * (`P7-TSK-011`). {@code FAILED} is in the model's state set but never born: an
+     * unaffordable wallet payment rolls its whole transaction back, nothing written.
      */
     BOOK;
 
@@ -95,8 +101,10 @@ public enum InteractionModel {
                 // The inbound edge (P7-TSK-009, ADR-0062 section 5): a pay-in's execution
                 // is the PAYER's act, reported by the scheme's confirmation or the
                 // initiation inquiry - the platform never dispatches it, so the waiting
-                // state concludes directly. EXECUTION_DISPATCHED stays the outbound birth
-                // (a return payment's, P7-TSK-010) and is no pay-in's stop.
+                // state concludes directly. EXECUTION_DISPATCHED is reserved for an outbound
+                // push that is an attempt, which no Phase 7 flow is (a return payment is a
+                // refund row, P7-TSK-010 - this comment said otherwise until the Phase 7
+                // review), and is no pay-in's stop.
                 edges.put(PaymentAttemptStatus.AWAITING_PAYER,
                         EnumSet.of(PaymentAttemptStatus.EXECUTION_DISPATCHED,
                                 PaymentAttemptStatus.FAILED,

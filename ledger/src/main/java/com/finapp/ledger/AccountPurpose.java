@@ -39,7 +39,14 @@ public enum AccountPurpose {
      */
     MERCHANT_PAYABLE(OwnerKind.MERCHANT),
 
-    /** Value in flight between the platform and an external counterparty. Phase 8's seam. */
+    /**
+     * The CARD rail's value in flight: what the card PSP owes the platform for captures, net of
+     * refunds, chargebacks and fees, until its clearing reports discharge it. Phase 8's seam.
+     * ADR-0059 section 4 narrowed this member to the card rail - every external rail has its
+     * own position, and the instant scheme's is {@link #INSTANT_CLEARING} - and the Phase 7
+     * review carried the narrowing into this javadoc, which still read "an external
+     * counterparty". Which rail posts where is the rail's declaration, never this name.
+     */
     SETTLEMENT_CLEARING(OwnerKind.OPERATIONAL),
 
     /**

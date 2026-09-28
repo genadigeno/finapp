@@ -290,6 +290,24 @@ class PaymentVoidTest {
     }
 
     @Test
+    @DisplayName("the operator door without a reason is refused by the domain itself - nothing"
+            + " written, nothing sent (P7-DOC-001, INV-AUD-03)")
+    void theOperatorDoorRequiresAReason() {
+        provider.answer =
+                ProviderAnswer.approved(new ProviderReference("psp-void-1"), "ok".getBytes());
+        for (Optional<String> missing : List.of(Optional.<String>empty(), Optional.of("   "))) {
+            assertThatThrownBy(
+                            () -> voids().voidAuthorized(Optional.empty(), intent.id(), missing))
+                    .isInstanceOf(IllegalArgumentException.class)
+                    .hasMessageContaining("reasoned");
+        }
+        assertThat(runner.committed).as("nothing written").isZero();
+        assertThat(provider.voidCalls).as("nothing sent").isZero();
+        assertThat(attempts.single().status()).isEqualTo(PaymentAttemptStatus.AUTHORIZED);
+        assertThat(auditTrail).isEmpty();
+    }
+
+    @Test
     @DisplayName("an ambiguous answer commits VOID_UNKNOWN - no acknowledgement invented,"
             + " the intent untouched, the bytes retained")
     void anAmbiguousAnswerCommitsUnknown() {

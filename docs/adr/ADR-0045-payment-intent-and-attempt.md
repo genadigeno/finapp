@@ -112,4 +112,9 @@ named Phase 5 as their home.
   *(Phase 6 did not revisit `VOIDED`: an expired session stops new dispatches and lets a landed
   capture complete late (ADR-0053 §5), and nothing voids an authorization. The Phase 6 → 7
   transition re-owned the edge to `P7-TSK-004`, the card rail's void, where the revocable rail's
-  declared capability makes it a decision rather than a guess — ADR-0059.)*
+  declared capability makes it a decision rather than a guess — ADR-0059.)* *(Paid, recorded by
+  the Phase 7 review, `P7-DOC-001`: `VOIDED` shipped with `P7-TSK-004` - payments `V014`, the
+  void trio and the declined-capture redirect. Phase 7 did NOT revisit multi-attempt: routing
+  decides once, before the one attempt, and no cross-rail fallback creates a second - ADR-0060
+  §5 as corrected - so the one-live-attempt rule and one attempt per intent in practice both
+  stand, the retry-per-intent question unchanged for a later phase.)*

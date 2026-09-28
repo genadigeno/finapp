@@ -371,7 +371,11 @@ access-control sense; see §2.
 
 ### Clearing
 **Is:** the exchange of transaction records between institutions to establish what is owed.
-**Not:** Settlement. Clearing agrees the obligation; settlement discharges it.
+**Not:** Settlement. Clearing agrees the obligation; settlement discharges it. And not the
+platform's *clearing record*: the card network's clearing notice for one capture - its acquirer
+reference and network transaction identifiers - is evidence `payments` records once, with no
+ledger effect (`P7-TSK-005`), for `settlement` to reconcile against (Phase 8). *(The record's
+owner was named by the Phase 7 review.)*
 **Owned by:** `settlement`
 
 ### Settlement
@@ -416,8 +420,10 @@ acts on what the rail declared.
 versioned routing policy over stored inputs — the instrument, the currency and amount, the
 capabilities each candidate declared, and each rail's recorded availability — with every
 rejected candidate and its reason (ADR-0060, `INV-RAIL-02`, `INV-HIST-04`).
-**Not:** a retry policy, and not load balancing: a decision advances to another rail only on
-knowledge that nothing was sent, never after an ambiguous dispatch.
+**Not:** a retry policy, and not load balancing. Phase 7 has no cross-rail fallback after
+dispatch: a candidate is rejected inside the decision before anything is sent, and a dispatch
+answered "nothing sent" fails the payment. Were an advance ever built, it would move only on
+knowledge that nothing was sent, never after an ambiguous dispatch (ADR-0060 §5).
 **Owned by:** `payments`
 
 ### A2A Payment
@@ -447,6 +453,42 @@ accepts it (ADR-0062).
 merchant its payable. The three share the outbound disciplines and have different subjects and
 bounds.
 **Owned by:** `payments`
+
+### Interaction Model
+**Is:** how a rail conducts a payment, declared by the rail and frozen on the attempt at birth:
+`TWO_STEP` (authorize, then capture - the card), `PUSH` (one credit transfer the payer's side
+executes - the instant scheme) or `BOOK` (one movement on the platform's own ledger - the
+wallet). It owns the attempt's machine: which states a payment on that rail can occupy and which
+edges it can take (ADR-0059 §2, `INV-RAIL-01`).
+**Not:** a Payment Rail, which declares one, and not a status: `EXECUTED` on a push attempt and
+`CAPTURED` on a card attempt are different machines' completions, and a completion is read
+together with its model.
+**Owned by:** `payments`
+
+### Void
+**Is:** the release of a card authorization that was never captured - the promise withdrawn,
+by the customer, an operator with a reason, or the platform when a capture is declined - on a
+rail whose declaration lists it (ADR-0059 §3, `INV-REV-03`). No money moved, so nothing posts.
+**Not:** a Refund, which returns captured money as a new movement, and not a Reversal of an
+irrevocable payment, which the domain refuses before anything is written or sent.
+**Owned by:** `payments`
+
+### Return Payment
+**Is:** a refund executed on a push rail as a NEW credit transfer back to the payer, citing the
+original's scheme reference - the declared `refundMode` of a rail that cannot reverse
+(ADR-0059 §3, `P7-TSK-010`).
+**Not:** a reversal or a recall of the original, which stays final (`INV-REV-03`), and not a
+separate aggregate: it is a Refund row, bounded and resolved exactly as every refund is.
+**Owned by:** `payments`
+
+### Dispute Response
+**Is:** the platform's answer to a chargeback - a representment carrying evidence, or an
+acceptance - dispatched once through the card PSP under our own minted reference, one live
+answer per dispute (ADR-0061 §7, `P7-TSK-014`).
+**Not:** a stage of the Dispute: the PSP taking the answer moves no stage and no money; the
+network's verdict still arrives by notification and stays the network's word.
+**Owned by:** `payments`
+
 
 ### Transaction
 **Is:** the bookkeeping envelope grouping the journal entries produced by one economic event.

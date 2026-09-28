@@ -95,6 +95,13 @@ public final class PaymentVoid {
         Objects.requireNonNull(ownerParty, "ownerParty must not be null");
         Objects.requireNonNull(intentId, "intentId must not be null");
         Objects.requireNonNull(reason, "reason must not be null");
+        if (ownerParty.isEmpty() && reason.filter(words -> !words.isBlank()).isEmpty()) {
+            // The operator door judges somebody else's payment, so its reason IS the record
+            // (INV-AUD-03) - refused here and not only by the request body's validation
+            // (P7-DOC-001: the dispute acts' rule, DisputeActs.reasonOf, applied to the void).
+            throw new IllegalArgumentException(
+                    "an operator's void of somebody else's payment is reasoned");
+        }
         Actor actor = SecurityContext.require();
         Correlation correlation = PaymentCreation.resolvedCorrelation();
 

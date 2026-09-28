@@ -578,7 +578,7 @@ them are classified at the ceiling regardless.
 | `withdrawal` | `id` | `INTERNAL` | An aggregate identifier (`P7-TSK-008`) |
 | `withdrawal` | `party_id` | `CONFIDENTIAL` | The pairing is the fact — this person withdraws money (the `payment_intent.party_id` reasoning) |
 | `withdrawal` | `customer_id` | `CONFIDENTIAL` | As `party_id` — the owning relationship, by value (ADR-0029) |
-| `withdrawal` | `wallet_account_id` | `CONFIDENTIAL` | Which ledger account funds it — the intent's `credit_account_id` reasoning |
+| `withdrawal` | `wallet_account_id` | `INTERNAL` | Which ledger account funds it — the intent's `credit_account_id` reasoning *(classified `CONFIDENTIAL` until the Phase 7 review, `P7-DOC-001`, which found the level contradicting the reasoning it cites: a ledger-account identifier by value is `INTERNAL` on the intent, its debit side and the transfer alike)* |
 | `withdrawal` | `payment_method_id` | `CONFIDENTIAL` | Which registered instrument it pays to — an identifier, never the destination |
 | `withdrawal` | `destination_reference` | `RESTRICTED-PII` | **The platform's copy of the bank instrument reference** (`INV-RAIL-03`) — `paymentmethods.payment_method.destination_reference`'s row verbatim: resolves at the rail provider to a person's account; never in a log, an event or a response |
 | `withdrawal` | `amount_minor` | `RESTRICTED-FINANCIAL` | An amount (`INV-AUD-02`) |

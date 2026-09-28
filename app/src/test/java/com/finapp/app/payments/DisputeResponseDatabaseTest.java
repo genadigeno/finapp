@@ -984,6 +984,45 @@ class DisputeResponseDatabaseTest {
                                 merchantAdministrator(), someKey())
                         .statusCode())
                 .isEqualTo(403);
+        // And on each of the other three privileged dispute acts (P7-DOC-001: the gate names
+        // "evidence on behalf" and the answer; the review found only the acceptance had its own
+        // negative) - each refused whole, nothing written, nothing read on the record.
+        String evidenceId = field(attached.body(), "evidenceId");
+        long documents = count("SELECT count(*) FROM payments.dispute_evidence WHERE dispute_id = ?",
+                topUp);
+        long answers = count("SELECT count(*) FROM payments.dispute_response WHERE dispute_id = ?",
+                topUp);
+        long reads = audits(topUp, "payments.DisputeEvidenceRead")
+                + count("SELECT count(*) FROM platform.audit_record WHERE target_id = ?"
+                        + " AND operation = 'payments.DisputeEvidenceRead'", evidenceId);
+        assertThat(post(operatorPath(topUp, "evidence"),
+                                "{\"kind\":\"OTHER\",\"contentType\":\"PDF\",\"content\":\""
+                                        + Base64.getEncoder().encodeToString(bytes("no role"))
+                                        + "\",\"reason\":\"no role\"}",
+                                merchantAdministrator(), null)
+                        .statusCode())
+                .as("evidence on behalf without DISPUTE_ADMINISTER")
+                .isEqualTo(403);
+        assertThat(get(operatorPath(topUp, "evidence/" + evidenceId), merchantAdministrator())
+                        .statusCode())
+                .as("reading evidence without DISPUTE_ADMINISTER")
+                .isEqualTo(403);
+        assertThat(post(operatorPath(topUp, "representment"), "{\"reason\":\"no role\"}",
+                                merchantAdministrator(), someKey())
+                        .statusCode())
+                .as("a representment on behalf without DISPUTE_ADMINISTER")
+                .isEqualTo(403);
+        assertThat(count("SELECT count(*) FROM payments.dispute_evidence WHERE dispute_id = ?",
+                        topUp))
+                .isEqualTo(documents);
+        assertThat(count("SELECT count(*) FROM payments.dispute_response WHERE dispute_id = ?",
+                        topUp))
+                .isEqualTo(answers);
+        assertThat(audits(topUp, "payments.DisputeEvidenceRead")
+                        + count("SELECT count(*) FROM platform.audit_record WHERE target_id = ?"
+                                + " AND operation = 'payments.DisputeEvidenceRead'", evidenceId))
+                .as("a refused read is no read")
+                .isEqualTo(reads);
     }
 
     @Test

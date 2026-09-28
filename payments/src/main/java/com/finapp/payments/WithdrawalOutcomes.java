@@ -48,7 +48,8 @@ import lombok.RequiredArgsConstructor;
  *
  * <ul>
  *   <li><strong>Accepted</strong> — irrevocably (ADR-0062 §3): the hold released and DEBIT
- *       the customer's wallet / CREDIT {@code INSTANT_CLEARING} posted in one transaction,
+ *       the customer's wallet / CREDIT the stored rail's declared clearing position (the
+ *       instant scheme's {@code INSTANT_CLEARING}) posted in one transaction,
  *       keyed {@code wallet-withdrawal:<id>} — instructed and accepted, not settled
  *       ({@code INV-SET-01}); the scheme's reference and cycle land on the row, Phase 8's
  *       keys.
@@ -95,6 +96,14 @@ public final class WithdrawalOutcomes {
     /** Where each acting judgement is reported (`P7-TSK-015`, {@link RailOutcomeObserver}).
      * Appended last (the constructor is positional). */
     @NonNull private final RailOutcomeObserver observer;
+
+    /**
+     * The rail directory the completion's clearing position is read from (`P7-DOC-001`): the
+     * STORED rail's declared {@code clearingPurpose}, never a purpose named here - the review
+     * found this class alone naming {@code INSTANT_CLEARING}, correct only while exactly one push
+     * rail exists ({@code INV-RAIL-01}, {@code INV-RAIL-04}). Appended last, as above.
+     */
+    @NonNull private final PaymentRails rails;
 
     /** The committed status after an answer, and whether THIS call's transition fired —
      * the row's truth, never the verdict's. */
@@ -216,7 +225,18 @@ public final class WithdrawalOutcomes {
 
         LedgerAccount clearing =
                 chart.resolve(
-                        unitOfWork, AccountPurpose.INSTANT_CLEARING, locked.amount().currency());
+                        unitOfWork,
+                        rails.capabilitiesOf(locked.railId())
+                                .clearingPurpose()
+                                .orElseThrow(
+                                        () ->
+                                                new IllegalStateException(
+                                                        "rail '" + locked.railId().value()
+                                                                + "' carried a withdrawal but"
+                                                                + " declares no clearing"
+                                                                + " position: its coherence"
+                                                                + " rules refuse that pairing")),
+                        locked.amount().currency());
         LocalDate today = LocalDate.now(clock.withZone(ZoneOffset.UTC));
         // Only in the acting branch, keyed by the operation: a double-complete is a
         // conflict, never a second entry (INV-PAY-04's posting face).

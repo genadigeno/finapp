@@ -200,6 +200,74 @@ class PaymentSweeperDatabaseTest {
         assertThat(transitionCount(attemptId, "CAPTURED")).isEqualTo(1);
     }
 
+    /**
+     * Section 7's third row (`P7-DOC-001`; A3's find): rail availability changing after the
+     * decision reroutes nothing in flight. A payment whose capture answer was lost, its rail
+     * then taken out of service: the sweep still resolves it on ITS rail by query, and the
+     * decision it was routed by stands alone - availability is an input to NEW decisions only.
+     */
+    @Test
+    @DisplayName("a rail taken out of service after the decision reroutes nothing in flight:"
+            + " the lost capture resolves on its own rail, one decision, unchanged")
+    void anAvailabilityChangeReroutesNothingInFlight() throws Exception {
+        Holder holder = holder();
+        PaymentAttemptId attemptId = captureUnknownAttempt(holder);
+        String decisionBefore = decisionsOf(holder.intent());
+        queryAnswers(new ProviderIdempotencyReference(captureReference(attemptId)),
+                "approved", "psp_q-avail");
+        setCardAvailability(false, "sweeper suite outage");
+        try {
+            sweeper(DUE_NOW, DUE_NOW).sweep();
+        } finally {
+            setCardAvailability(true, "sweeper suite restore");
+        }
+
+        assertThat(attemptStatus(attemptId)).isEqualTo("CAPTURED");
+        assertThat(entriesByReference(attemptId)).isEqualTo(1);
+        assertThat(decisionsOf(holder.intent()))
+                .as("the one decision it was routed by, unchanged, and no second one")
+                .isEqualTo(decisionBefore)
+                .contains("card|");
+    }
+
+    /** Every routing decision of {@code intent}: chosen rail and its steps, as recorded. */
+    private static String decisionsOf(PaymentIntentId intent) throws SQLException {
+        try (Connection app = DatabaseRoles.application();
+                PreparedStatement read = app.prepareStatement(
+                        "SELECT d.chosen_rail || '|' || string_agg(s.verdict || ':'"
+                                + " || s.rail_available, ',' ORDER BY s.step_index)"
+                                + " FROM payments.routing_decision d"
+                                + " JOIN payments.routing_decision_step s ON s.decision_id = d.id"
+                                + " WHERE d.intent_id = ? GROUP BY d.id, d.chosen_rail")) {
+            read.setObject(1, intent.value());
+            StringBuilder decisions = new StringBuilder();
+            try (ResultSet row = read.executeQuery()) {
+                while (row.next()) {
+                    decisions.append(row.getString(1)).append(';');
+                }
+            }
+            return decisions.toString();
+        }
+    }
+
+    private static void setCardAvailability(boolean available, String reason)
+            throws SQLException {
+        try (Connection app = DatabaseRoles.application();
+                PreparedStatement upsert = app.prepareStatement(
+                        "INSERT INTO payments.rail_availability (rail, available, reason,"
+                                + " changed_by, changed_at)"
+                                + " VALUES ('card', ?, ?, 'sweeper-suite', now())"
+                                + " ON CONFLICT (rail) DO UPDATE SET"
+                                + " available = EXCLUDED.available,"
+                                + " reason = EXCLUDED.reason,"
+                                + " changed_by = EXCLUDED.changed_by,"
+                                + " changed_at = EXCLUDED.changed_at")) {
+            upsert.setBoolean(1, available);
+            upsert.setString(2, reason);
+            upsert.executeUpdate();
+        }
+    }
+
     @Test
     @DisplayName("ten concurrent sweepers race to ONE winner counted: one entry, one CAPTURED"
             + " transition, the losers converged")

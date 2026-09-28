@@ -232,6 +232,20 @@ class PaymentAuthorizationDatabaseTest {
             assertThat(stranded.status()).isEqualTo(PaymentAttemptStatus.AUTH_DISPATCHED);
             assertThat(stranded.authorizationReference()).isNotNull();
             assertThat(evidence.payloadsFor(app, stranded.id())).isEmpty();
+            // The routing decision survived WITH the dispatch - one chosen decision naming the
+            // stranded attempt's own rail: committed in Tx1 beside the attempt it governs, or
+            // not at all (the gate's multi-instance bullet; P7-DOC-001).
+            try (java.sql.PreparedStatement read = app.prepareStatement(
+                    "SELECT chosen_rail FROM payments.routing_decision WHERE intent_id = ?")) {
+                read.setObject(1, intent.value());
+                List<String> chosen = new ArrayList<>();
+                try (java.sql.ResultSet row = read.executeQuery()) {
+                    while (row.next()) {
+                        chosen.add(row.getString(1));
+                    }
+                }
+                assertThat(chosen).containsExactly(stranded.rail().value());
+            }
         }
 
         // The retry CONVERGES: no second dispatch, no provider call - the stranded case is
@@ -404,6 +418,98 @@ class PaymentAuthorizationDatabaseTest {
     }
 
     @Test
+    @DisplayName("a cancel and a confirm racing the window: whichever holds the intent row wins,"
+            + " and the loser - observed waiting on it - writes nothing and sends nothing"
+            + " (the Phase 6 -> 7 transition's interleaving, paid by the Phase 7 review)")
+    void aCancelAndAConfirmRacingTheWindowHaveOneWinner() throws Exception {
+        psp.succeedsWith(
+                SimulatedCardPspAdapter.AUTHORIZATIONS_PATH, 200,
+                APPROVED_BODY.formatted("window"));
+        ExecutorService pool = Executors.newFixedThreadPool(2);
+        try {
+            // THE CANCEL HOLDS THE ROW: the confirm - its instrument resolved and its plan
+            // computed - blocks on the conditional transition, reads CANCELLED when the cancel
+            // commits, and its Tx1 rolls back whole: routed before the arbiter, written only
+            // after winning it.
+            PaymentIntentId cancelledFirst = createIntent();
+            Future<PaymentConfirmation.ConfirmationResult> losingConfirm;
+            try (Connection held = DatabaseRoles.application()) {
+                held.setAutoCommit(false);
+                assertThat(cancellation().cancel(held, party, cancelledFirst).status())
+                        .isEqualTo(PaymentIntentStatus.CANCELLED);
+                losingConfirm =
+                        pool.submit(
+                                inScopes(
+                                        () -> confirmation(adapter())
+                                                .confirm(party, cancelledFirst)));
+                awaitLockWaitOn("payment_intent", "SET status");
+                held.commit();
+            }
+            assertThatThrownBy(losingConfirm::get)
+                    .hasCauseInstanceOf(
+                            com.finapp.payments.IllegalPaymentIntentTransitionException.class);
+            assertThat(psp.requestCount(SimulatedCardPspAdapter.AUTHORIZATIONS_PATH)).isZero();
+            assertThat(intentStatus(cancelledFirst)).isEqualTo("CANCELLED");
+            assertThat(countFor("payments.payment_attempt", "intent_id", cancelledFirst))
+                    .isZero();
+            assertThat(countFor("payments.routing_decision", "intent_id", cancelledFirst))
+                    .isZero();
+            assertThat(intentEdges(cancelledFirst))
+                    .containsExactly("REQUIRES_CONFIRMATION>CANCELLED");
+
+            // THE CONFIRM HOLDS THE ROW: its Tx1 paused just before commit, the cancel blocks
+            // on the same conditional, reads PROCESSING when the confirm commits, and is the
+            // machine's refusal - no CANCELLED edge, no cancellation audit - while the one
+            // dispatch goes to the wire once.
+            PaymentIntentId confirmedFirst = createIntent();
+            java.util.concurrent.CountDownLatch atCommit =
+                    new java.util.concurrent.CountDownLatch(1);
+            java.util.concurrent.CountDownLatch release =
+                    new java.util.concurrent.CountDownLatch(1);
+            PaymentConfirmation paused =
+                    confirmation(adapter(), new PausingFirstCommit(atCommit, release));
+            Future<PaymentConfirmation.ConfirmationResult> winningConfirm =
+                    pool.submit(inScopes(() -> paused.confirm(party, confirmedFirst)));
+            assertThat(atCommit.await(30, java.util.concurrent.TimeUnit.SECONDS)).isTrue();
+            Future<PaymentCancellation.CancellationResult> losingCancel =
+                    pool.submit(
+                            inScopes(
+                                    () -> runner.inTransaction(
+                                            uow -> cancellation()
+                                                    .cancel(uow, party, confirmedFirst))));
+            awaitLockWaitOn("payment_intent", "SET status");
+            release.countDown();
+            assertThat(winningConfirm.get().converged()).isFalse();
+            assertThatThrownBy(losingCancel::get)
+                    .hasCauseInstanceOf(
+                            com.finapp.payments.IllegalPaymentIntentTransitionException.class);
+            assertThat(psp.requestCount(SimulatedCardPspAdapter.AUTHORIZATIONS_PATH))
+                    .isEqualTo(1);
+            assertThat(intentStatus(confirmedFirst)).isEqualTo("PROCESSING");
+            assertThat(countFor("payments.payment_attempt", "intent_id", confirmedFirst))
+                    .isEqualTo(1);
+            assertThat(countFor("payments.routing_decision", "intent_id", confirmedFirst))
+                    .isEqualTo(1);
+            assertThat(intentEdges(confirmedFirst))
+                    .containsExactly("REQUIRES_CONFIRMATION>PROCESSING");
+            try (Connection app = DatabaseRoles.application();
+                    PreparedStatement audits =
+                            app.prepareStatement(
+                                    "SELECT count(*) FROM platform.audit_record"
+                                            + " WHERE target_id = ? AND operation = ?")) {
+                audits.setString(1, confirmedFirst.value().toString());
+                audits.setString(2, "payments.PaymentCancelled");
+                try (ResultSet row = audits.executeQuery()) {
+                    row.next();
+                    assertThat(row.getLong(1)).isZero();
+                }
+            }
+        } finally {
+            pool.shutdownNow();
+        }
+    }
+
+    @Test
     @DisplayName("the histories carry the audit actor model: the person's act and the platform's")
     void historiesCarryTheActorModel() throws Exception {
         psp.succeedsWith(
@@ -549,8 +655,12 @@ class PaymentAuthorizationDatabaseTest {
     }
 
     private PaymentConfirmation confirmation(PaymentProvider provider) {
+        return confirmation(provider, runner);
+    }
+
+    private PaymentConfirmation confirmation(PaymentProvider provider, TransactionRunner through) {
         return new PaymentConfirmation(
-                runner,
+                through,
                 intents,
                 attempts,
                 evidence,
@@ -688,6 +798,140 @@ class PaymentAuthorizationDatabaseTest {
                     actors.add(rows.getString(1) + "|" + rows.getString(2));
                 }
                 return actors;
+            }
+        }
+    }
+
+    /** {@code work} under this thread's own actor and correlation (ThreadLocals are per thread). */
+    private <R> Callable<R> inScopes(Callable<R> work) {
+        return () -> {
+            SecurityContext.Scope actor = SecurityContext.enter(person);
+            CorrelationContext.Scope correlation =
+                    CorrelationContext.enter(
+                            Correlation.startingWith(
+                                    CorrelationId.of("window-" + UUID.randomUUID())));
+            try {
+                return work.call();
+            } finally {
+                correlation.close();
+                actor.close();
+            }
+        };
+    }
+
+    /** Until a backend waits on a lock for a statement touching {@code table} with {@code marker}. */
+    private static void awaitLockWaitOn(String table, String marker)
+            throws SQLException, InterruptedException {
+        long deadline = System.nanoTime() + Duration.ofSeconds(30).toNanos();
+        try (Connection observer = DatabaseRoles.application();
+                PreparedStatement select =
+                        observer.prepareStatement(
+                                "SELECT count(*) FROM pg_stat_activity"
+                                        + " WHERE wait_event_type = 'Lock'"
+                                        + " AND query LIKE ? AND query LIKE ?")) {
+            select.setString(1, "%" + table + "%");
+            select.setString(2, "%" + marker + "%");
+            while (System.nanoTime() < deadline) {
+                try (ResultSet row = select.executeQuery()) {
+                    row.next();
+                    if (row.getLong(1) >= 1) {
+                        return;
+                    }
+                }
+                Thread.sleep(25);
+            }
+        }
+        throw new AssertionError(
+                "no statement ever waited on " + table + " " + marker
+                        + " - the interleaving this test forces never happened");
+    }
+
+    private static String intentStatus(PaymentIntentId intent) throws SQLException {
+        try (Connection app = DatabaseRoles.application();
+                PreparedStatement read =
+                        app.prepareStatement(
+                                "SELECT status FROM payments.payment_intent WHERE id = ?")) {
+            read.setObject(1, intent.value());
+            try (ResultSet row = read.executeQuery()) {
+                assertThat(row.next()).isTrue();
+                return row.getString(1);
+            }
+        }
+    }
+
+    private static long countFor(String table, String column, PaymentIntentId intent)
+            throws SQLException {
+        try (Connection app = DatabaseRoles.application();
+                PreparedStatement count =
+                        app.prepareStatement(
+                                "SELECT count(*) FROM " + table + " WHERE " + column + " = ?")) {
+            count.setObject(1, intent.value());
+            try (ResultSet row = count.executeQuery()) {
+                row.next();
+                return row.getLong(1);
+            }
+        }
+    }
+
+    /** The intent's recorded edges, {@code from>to}, in server order. */
+    private static List<String> intentEdges(PaymentIntentId intent) throws SQLException {
+        try (Connection app = DatabaseRoles.application();
+                PreparedStatement read =
+                        app.prepareStatement(
+                                "SELECT from_status, to_status FROM payments.payment_intent_event"
+                                        + " WHERE intent_id = ? ORDER BY id")) {
+            read.setObject(1, intent.value());
+            try (ResultSet rows = read.executeQuery()) {
+                List<String> edges = new ArrayList<>();
+                while (rows.next()) {
+                    edges.add(rows.getString(1) + ">" + rows.getString(2));
+                }
+                return edges;
+            }
+        }
+    }
+
+    /**
+     * The production runner's shape, its FIRST transaction held open just before commit until
+     * released - the confirm's Tx1 holding the intent row while a racer arrives.
+     */
+    private static final class PausingFirstCommit implements TransactionRunner {
+        private final java.util.concurrent.CountDownLatch atCommit;
+        private final java.util.concurrent.CountDownLatch release;
+        private final java.util.concurrent.atomic.AtomicBoolean first =
+                new java.util.concurrent.atomic.AtomicBoolean(true);
+
+        PausingFirstCommit(
+                java.util.concurrent.CountDownLatch atCommit,
+                java.util.concurrent.CountDownLatch release) {
+            this.atCommit = atCommit;
+            this.release = release;
+        }
+
+        @Override
+        public <R> R inTransaction(Function<Connection, R> work) {
+            try (Connection unitOfWork = DatabaseRoles.application()) {
+                try {
+                    unitOfWork.setAutoCommit(false);
+                    R result = work.apply(unitOfWork);
+                    if (first.getAndSet(false)) {
+                        atCommit.countDown();
+                        if (!release.await(30, java.util.concurrent.TimeUnit.SECONDS)) {
+                            throw new IllegalStateException("never released");
+                        }
+                    }
+                    unitOfWork.commit();
+                    return result;
+                } catch (RuntimeException failure) {
+                    unitOfWork.rollback();
+                    throw failure;
+                } catch (InterruptedException interrupted) {
+                    Thread.currentThread().interrupt();
+                    unitOfWork.rollback();
+                    throw new IllegalStateException("interrupted before commit", interrupted);
+                }
+            } catch (SQLException failure) {
+                throw new IllegalStateException("transaction plumbing failed", failure);
             }
         }
     }

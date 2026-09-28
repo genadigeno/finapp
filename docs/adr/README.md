@@ -80,10 +80,10 @@ Detailed architectural decisions. The human-readable index of *what* was decided
 | [0056](ADR-0056-payout-destination-four-eyes.md) | A payout destination changes by two operators, a conditional step-up and a cancellable cooling-off; bank details never enter | Accepted | 6 | Merchant · Identity · Security |
 | [0057](ADR-0057-payout-dispatch-and-resolution.md) | The payout dispatches behind a send permit, fails only on what it knows, and resolves by query | Accepted | 6 | Merchant · Ledger · Identity |
 | [0058](ADR-0058-a-sale-must-cover-its-fee.md) | A sale that does not cover its fee is refused at the price | Accepted | 6 | Merchant · Checkout |
-| [0059](ADR-0059-payment-rails-capabilities-and-finality.md) | A payment rail declares its capabilities; finality is modelled per rail; the attempt's machine follows the rail's interaction model | Proposed | 7 | Payments · Payment Methods · Accounts · Ledger |
-| [0060](ADR-0060-rail-routing-pinned-and-explainable.md) | Rail routing is a versioned policy, decided once per payment, pinned and explainable from stored data | Proposed | 7 | Payments |
-| [0061](ADR-0061-disputes-and-chargeback-accounting.md) | A dispute is its own lifecycle; a chargeback never takes more than was credited, and every stage posts once | Proposed | 7 | Payments · Merchant · Accounts · Ledger |
-| [0062](ADR-0062-account-to-account-and-instant-payments.md) | Account-to-account payments on a provider-neutral push rail; bank details never enter; instant is final on acceptance | Proposed | 7 | Payments · Payment Methods · Accounts · Ledger |
+| [0059](ADR-0059-payment-rails-capabilities-and-finality.md) | A payment rail declares its capabilities, finality is modelled per rail, and the attempt's machine follows the rail's interaction model | Accepted | 7 | Payments · Payment Methods · Accounts · Ledger |
+| [0060](ADR-0060-rail-routing-pinned-and-explainable.md) | Rail routing is a versioned policy, decided once per payment, pinned, and explainable from stored data | Accepted | 7 | Payments |
+| [0061](ADR-0061-disputes-and-chargeback-accounting.md) | A dispute is its own lifecycle on a card payment; a chargeback never takes more from the counterparty than it was credited, and every stage posts once | Accepted | 7 | Payments · Merchant · Accounts · Ledger |
+| [0062](ADR-0062-account-to-account-and-instant-payments.md) | Account-to-account payments run on a provider-neutral push rail; bank details and aliases never enter; an instant payment is final on acceptance and settled on the scheme's cycle | Accepted | 7 | Payments · Payment Methods · Accounts · Ledger |
 
 ## Anticipated ADRs
 

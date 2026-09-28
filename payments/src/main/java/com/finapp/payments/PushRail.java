@@ -73,6 +73,16 @@ public interface PushRail {
                 throw new IllegalArgumentException("a grant must not be blank");
             }
         }
+
+        /**
+         * Names our reference and never the grant (`P7-DOC-001`): the generated form printed
+         * it, so "never logged" rested on nobody logging the record - the payout port's rule,
+         * held here too ({@code security.md}).
+         */
+        @Override
+        public String toString() {
+            return "GrantExchange[reference=" + reference + ", grant=<redacted>]";
+        }
     }
 
     /** An outbound push to a destination the exchange named — by its opaque reference only. */
@@ -82,6 +92,17 @@ public interface PushRail {
             Objects.requireNonNull(reference, "reference must not be null");
             Objects.requireNonNull(destination, "destination must not be null");
             Objects.requireNonNull(amount, "amount must not be null");
+        }
+
+        /**
+         * Names our reference only (`P7-DOC-001`): the customer's destination reference and
+         * the amount stay out of any log line the request reaches - the payout request's form
+         * ({@code INV-RAIL-03}'s sinks include logs).
+         */
+        @Override
+        public String toString() {
+            return "CreditTransfer[reference=" + reference
+                    + ", destination=<redacted>, amount=<redacted>]";
         }
     }
 

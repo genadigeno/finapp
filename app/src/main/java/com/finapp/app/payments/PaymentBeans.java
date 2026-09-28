@@ -266,7 +266,8 @@ class PaymentBeans {
             OutboxWriter<Connection> outboxWriter,
             IdGenerator ids,
             Clock clock,
-            com.finapp.payments.RailOutcomeObserver railOutcomeObserver) {
+            com.finapp.payments.RailOutcomeObserver railOutcomeObserver,
+            com.finapp.payments.PaymentRails paymentRails) {
         return new com.finapp.payments.WithdrawalOutcomes(
                 withdrawalStore,
                 holdService,
@@ -277,7 +278,9 @@ class PaymentBeans {
                 ids,
                 clock,
                 // Each acting judgement reported where it is written (P7-TSK-015).
-                railOutcomeObserver);
+                railOutcomeObserver,
+                // The completion posts to its stored rail's declared clearing (P7-DOC-001).
+                paymentRails);
     }
 
     /**

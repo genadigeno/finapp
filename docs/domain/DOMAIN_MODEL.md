@@ -38,6 +38,10 @@ Routing Decision
 A2A Payment
 Instant Payment
 Withdrawal
+Interaction Model
+Void
+Return Payment
+Dispute Response
 
 Merchant
 Checkout Session

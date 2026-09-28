@@ -710,7 +710,9 @@ Phase 5; Phase 6 (disputes are merchant-affecting).
 
 ### 6. Data-model work
 Rail, Rail Capability descriptor, Card Payment detail, Wallet Payment detail, A2A Payment
-detail, Dispute, Dispute Evidence, Chargeback, Representment.
+detail, Dispute, Dispute Evidence, Chargeback, Representment. *(Built as `DisputeResponse` - a
+representment OR an acceptance, one aggregate because both need the same dispatch protocol -
+`P7-TSK-014`; noted by the Phase 7 review.)*
 
 ### 7. API work
 Rail-agnostic payment API with rail-specific detail objects; dispute notification, evidence
@@ -718,14 +720,16 @@ submission, dispute status.
 
 ### 8. Event work
 `RailSelected`, `PaymentClearedOnRail`, `DisputeOpened`, `DisputeEvidenceSubmitted`,
-`ChargebackReceived`, `DisputeResolved`.
+`ChargebackReceived`, `DisputeResolved`. *(Built as `DisputeResponseSubmitted` for the evidence
+fact - the Phase 7 review.)*
 
 ### 9. Security work
 No storage of raw PAN, CVV or track data anywhere; card detail tokenised at the boundary;
 PCI scope explicitly documented and minimised; dispute evidence access controlled.
 
 ### 10. Observability work
-Per-rail success rate, latency and cost; routing decision distribution; dispute rate and
+Per-rail success rate, latency and cost *(cost not built: no Phase 7 rail reports one - owned by
+Phase 8 with the processor's fees, the Phase 7 review)*; routing decision distribution; dispute rate and
 win rate; the chargeback ratio per merchant (regulatory-relevant — an operator report, since a
 merchant tag is unbounded cardinality).
 

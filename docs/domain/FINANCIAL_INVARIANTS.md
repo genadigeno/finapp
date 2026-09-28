@@ -923,7 +923,11 @@ every merchant the customer ever used.
 fields) + `DOMAIN` (no type exists to carry a PAN) + `PROCESS` (schema review: no column
 may be classified to admit one).
 **Verify:** `information_schema`-derived column sweeps asserting instrument input appears in
-no column of any row; the module isolation tests holding the `paymentmethods` boundary.
+no column of any row; the module isolation tests holding the `paymentmethods` boundary. *(The
+sweep covered the payment-method row alone until the Phase 7 review, `P7-DOC-001`:
+`PaymentEndpointDatabaseTest#instrumentInputRestsNowhereButItsReference` now reads every
+text-like column of every base table in every schema after a routed card payment - the grant in
+none, the token in its payment method's reference alone.)*
 **Phase:** 5
 
 ### INV-PAY-03 — Provider vocabulary is confined behind the adapter
@@ -1125,7 +1129,13 @@ dispatch is a second payment — `INV-PAY-04`'s double effect reached through ro
 is frozen by trigger, and has one open step).
 **Verify:** Recomputation tests over stored inputs across policy versions; a fallback test on
 `NOTHING_SENT` and a refusal test on `INDETERMINATE`; a ten-way race confirming one decision
-and one dispatch per payment.
+and one dispatch per payment. *(The Phase 7 review, `P7-DOC-001`: recomputation from a STORED
+row - `PaymentEndpointDatabaseTest#routingPinsTheConfirm` re-decides a refused and a chosen
+decision from their own columns, pinned version and recorded availability; "fallback" reads as
+the `ABANDONED` step on `NOTHING_SENT`, Phase 7 having no cross-rail advance (ADR-0060 §5 as
+corrected); an availability change after the decision reroutes nothing in flight -
+`PaymentSweeperDatabaseTest#anAvailabilityChangeReroutesNothingInFlight`; and the decision
+commits with its attempt - `PaymentAuthorizationDatabaseTest#aCrashMidCallStrandsTheDispatchVisibly`.)*
 **Phase:** 7
 
 ### INV-RAIL-03 — Bank account identifiers and payment aliases never enter the platform
@@ -1139,7 +1149,11 @@ holding them would put bank data and personal identifiers in scope for no gain �
 reasoning for bank data (ADR-0056 §7, ADR-0062 §2).
 **Enforce:** `DOMAIN` + `DB-CONSTRAINT` + `STATIC` (the wrapping rule's vocabulary).
 **Verify:** Shaped-value refusal tests at each layer; the `information_schema` column sweep; a
-needle test over logs, events and responses.
+needle test over logs, events and responses. *(The needle covered the registration alone until
+the Phase 7 review, `P7-DOC-001`: `PayByBankDatabaseTest#theDestinationReachesNoSink` carries a
+registered destination and its grant through a pay-in funding the wallet and a withdrawal out
+of it, and asserts both absent from the captured log output, every response, every audit record
+and every event, the destination resting on its instrument alone.)*
 **Phase:** 7
 
 ### INV-RAIL-04 — Every external rail's value in flight has its own clearing position
@@ -1227,7 +1241,11 @@ verified on every read.*
 **Verify:** Cross-tenant and unprivileged negative tests; a ciphertext-at-rest test; the audit
 record per access. *(`DisputeResponseDatabaseTest` - `#evidenceIsUnreadableAcrossTenants`,
 `#evidenceRestsAsCiphertextAndEveryReadIsOnTheRecord`, `#aTamperedDocumentIsNeverServedOrSent`;
-`MerchantTenancyBatteryDatabaseTest`'s addressed routes; `PaymentsSchemaDatabaseTest#theRepresentmentSchemaBindsEveryWriter`.)*
+`MerchantTenancyBatteryDatabaseTest`'s addressed routes; `PaymentsSchemaDatabaseTest#theRepresentmentSchemaBindsEveryWriter`;
+and, the operator's own unprivileged negatives added by the Phase 7 review,
+`#anOperatorAnswersOnlyAPaymentWithNoMerchant` - a merchant administrator refused on the
+operator's evidence upload, evidence read and representment, nothing written and no read
+recorded.)*
 *Under load (`P7-TST-002`): `DisputeBatteryDatabaseTest` - answers racing the network's verdict
 and each other, every admitted answer's one transmission on the record, and answers and
 documents after resolution refused with nothing written or sent.*

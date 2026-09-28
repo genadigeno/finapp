@@ -411,28 +411,58 @@ class PaymentWebhookTransitionDatabaseTest {
         assertThat(clearedEventCount(captured.intentId()))
                 .as("only the acting insert announces")
                 .isEqualTo(1);
+
+        // THE CHAIN, identifier to identifier (PHASE_7_PLAN section 12, the gate's
+        // reconciliation-readiness bullet; P7-DOC-001): from the network's acquirer reference
+        // to our attempt, our capture reference and the capture's one journal entry - joins on
+        // stored identifiers only, never a timestamp, each link exactly one path.
+        assertThat(strings(
+                        "SELECT a.capture_reference || '|' || e.idempotency_scope"
+                                + " FROM payments.clearing_record c"
+                                + " JOIN payments.payment_attempt a ON a.id = c.attempt_id"
+                                + " JOIN ledger.journal_entry e"
+                                + "   ON e.idempotency_scope = 'ledger.post:payment-capture:'"
+                                + "      || a.id::text"
+                                + " WHERE c.acquirer_reference = ?",
+                        arn))
+                .containsExactly(captured.captureReference() + "|ledger.post:payment-capture:"
+                        + captured.attemptId());
     }
 
     @Test
-    @DisplayName("ten deliveries of one clearing notice under ten FRESH event ids record it"
-            + " exactly once - the table's arbiter, not the inbox, decides this race")
+    @DisplayName("ten concurrent deliveries of one clearing notice - five under one event id,"
+            + " five fresh - record it exactly once: the inbox absorbs the repeats and the"
+            + " table's arbiter decides the rest (P7-DOC-001's five-and-five, section 13.3)")
     void tenClearingDeliveriesRecordOnce() throws Exception {
         Flow captured = capturedFlow();
         String arn = "arn-race-" + suffix();
         String nti = "nti-race-" + suffix();
+        String shared = someEvent();
 
         java.util.List<java.util.concurrent.Callable<Integer>> deliveries =
                 new java.util.ArrayList<>();
         for (int i = 0; i < 10; i++) {
+            String event = i < 5 ? shared : someEvent();
             deliveries.add(
-                    () ->
-                            deliverWebhook(
+                    () -> {
+                        // The card door's one 409 is the inbox's contended record
+                        // (api.Conflict): redelivered until acknowledged, as the PSP would.
+                        for (int attempt = 0; attempt < 200; attempt++) {
+                            java.net.http.HttpResponse<String> answer =
+                                    deliverWebhook(
                                             clearingBody(
-                                                    someEvent(),
+                                                    event,
                                                     captured.captureReference(),
                                                     arn,
-                                                    nti))
-                                    .statusCode());
+                                                    nti));
+                            if (answer.statusCode() != 409
+                                    || !answer.body().contains("\"code\":\"api.Conflict\"")) {
+                                return answer.statusCode();
+                            }
+                            Thread.sleep(20);
+                        }
+                        return 409;
+                    });
         }
         java.util.concurrent.ExecutorService pool =
                 java.util.concurrent.Executors.newFixedThreadPool(10);
@@ -446,6 +476,11 @@ class PaymentWebhookTransitionDatabaseTest {
 
         assertThat(clearingCount(captured.attemptId())).isEqualTo(1);
         assertThat(clearedEventCount(captured.intentId())).isEqualTo(1);
+        assertThat(count("SELECT count(*) FROM platform.inbox_message WHERE consumer = ?"
+                        + " AND dedupe_key = ?",
+                        "payments.provider-webhook", "simulated-card:" + shared))
+                .as("the five identical deliveries are one inbox record")
+                .isEqualTo(1);
     }
 
     @Test
@@ -845,6 +880,23 @@ class PaymentWebhookTransitionDatabaseTest {
                 assertThat(row.next()).isTrue();
                 return row.getLong(1);
             }
+        }
+    }
+
+    private static java.util.List<String> strings(String sql, Object... arguments)
+            throws SQLException {
+        try (Connection app = DatabaseRoles.application();
+                PreparedStatement read = app.prepareStatement(sql)) {
+            for (int i = 0; i < arguments.length; i++) {
+                read.setObject(i + 1, arguments[i]);
+            }
+            java.util.List<String> values = new java.util.ArrayList<>();
+            try (ResultSet row = read.executeQuery()) {
+                while (row.next()) {
+                    values.add(row.getString(1));
+                }
+            }
+            return values;
         }
     }
 

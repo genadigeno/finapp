@@ -500,7 +500,10 @@ class PaymentVoidDatabaseTest {
                                     voids(adapter())
                                             .voidAuthorized(
                                                     Optional.empty(), ghost,
-                                                    Optional.empty()))
+                                                    // The operator door is always reasoned
+                                                    // (P7-DOC-001: the domain refuses it
+                                                    // unreasoned before looking anything up).
+                                                    Optional.of("reversing a ghost")))
                     .isInstanceOf(UnknownPaymentException.class);
         }
         Holder other = holder();
