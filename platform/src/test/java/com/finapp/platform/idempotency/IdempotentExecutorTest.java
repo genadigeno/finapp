@@ -852,6 +852,12 @@ class IdempotentExecutorTest {
      * in its own past. That is deliberate: a test that aged the claim by supplying an old
      * client-side {@code created_at} would be exercising the very client-clock staleness this
      * task removed, and would keep passing if the lease were reintroduced on a caller's clock.
+     *
+     * <p>A minute in that past, not a second. The takeover is judged by the same server clock,
+     * and the local Docker VM's clock steps back by seconds every ~27 s (1.6 s at P7-TSK-015's
+     * gate, 2.8 s re-measured the same day): a step landing between this insert and the
+     * takeover reads a one-second lease as still held, and the takeover fails with
+     * {@code IdempotencyInProgressException}. An abandoned claim is old.
      */
     private static void insertExpiredLeaseClaim(IdempotencyKey key, RequestFingerprint fingerprint)
             throws SQLException {

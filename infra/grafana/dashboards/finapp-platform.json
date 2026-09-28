@@ -960,6 +960,231 @@
         "legend": { "displayMode": "list", "placement": "bottom", "showLegend": true },
         "tooltip": { "mode": "multi", "sort": "none" }
       }
+    },
+    {
+      "type": "row",
+      "title": "Rails and disputes — how money travels, and how it comes back",
+      "gridPos": { "h": 1, "w": 24, "x": 0, "y": 112 },
+      "collapsed": false,
+      "panels": []
+    },
+    {
+      "type": "timeseries",
+      "title": "Rail judgements by rail and type",
+      "description": "finapp.payments.rail.outcome (P7-TSK-015): every acting judgement - payments, refunds, withdrawals, dispute answers - by the rail that produced it, counted once however many doors and sweeps raced for it, after its transaction committed. A rail's success rate is its successes over its decided outcomes; a rise in unknown on one rail is that rail answering ambiguously. Per instance: sum().",
+      "datasource": { "type": "prometheus", "uid": "finapp-prometheus" },
+      "gridPos": { "h": 7, "w": 8, "x": 0, "y": 113 },
+      "targets": [
+        { "refId": "A", "expr": "sum by (rail, type, outcome) (rate(finapp_payments_rail_outcome_total[5m]))", "legendFormat": "{{rail}} {{type}} {{outcome}}" }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "custom": { "drawStyle": "line", "lineWidth": 2, "fillOpacity": 8, "showPoints": "never" },
+          "unit": "none"
+        },
+        "overrides": []
+      },
+      "options": {
+        "legend": { "displayMode": "list", "placement": "bottom", "showLegend": true },
+        "tooltip": { "mode": "multi", "sort": "none" }
+      }
+    },
+    {
+      "type": "timeseries",
+      "title": "Rail latency by operation",
+      "description": "finapp.payments.rail.latency (P7-TSK-015): every call a rail's port makes, EVERY outcome - timeouts and refused connections included - by rail and operation. A rail whose max climbs is a rail in trouble before its outcomes say so. The instant scheme is timed under its own name since P7-TSK-015 (it was published as the card PSP's).",
+      "datasource": { "type": "prometheus", "uid": "finapp-prometheus" },
+      "gridPos": { "h": 7, "w": 8, "x": 8, "y": 113 },
+      "targets": [
+        { "refId": "A", "expr": "max by (rail, operation) (finapp_payments_rail_latency_seconds_max)", "legendFormat": "{{rail}} {{operation}} max" },
+        { "refId": "B", "expr": "sum by (rail) (rate(finapp_payments_rail_latency_seconds_sum[5m])) / sum by (rail) (rate(finapp_payments_rail_latency_seconds_count[5m]))", "legendFormat": "{{rail}} mean" }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "custom": { "drawStyle": "line", "lineWidth": 2, "fillOpacity": 8, "showPoints": "never" },
+          "unit": "s"
+        },
+        "overrides": []
+      },
+      "options": {
+        "legend": { "displayMode": "list", "placement": "bottom", "showLegend": true },
+        "tooltip": { "mode": "multi", "sort": "none" }
+      }
+    },
+    {
+      "type": "timeseries",
+      "title": "Routing decisions",
+      "description": "finapp.payments.routing.decision (P7-TSK-003): decisions by chosen rail, or rail=none with the refusal's leading rejection reason. A spike with rail=none is a rail outage or a policy gap. Per instance: sum().",
+      "datasource": { "type": "prometheus", "uid": "finapp-prometheus" },
+      "gridPos": { "h": 7, "w": 8, "x": 16, "y": 113 },
+      "targets": [
+        { "refId": "A", "expr": "sum by (rail, outcome) (rate(finapp_payments_routing_decision_total[5m]))", "legendFormat": "{{rail}} {{outcome}}" }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "custom": { "drawStyle": "line", "lineWidth": 2, "fillOpacity": 8, "showPoints": "never" },
+          "unit": "none"
+        },
+        "overrides": []
+      },
+      "options": {
+        "legend": { "displayMode": "list", "placement": "bottom", "showLegend": true },
+        "tooltip": { "mode": "multi", "sort": "none" }
+      }
+    },
+    {
+      "type": "timeseries",
+      "title": "Withdrawals without an answer",
+      "description": "finapp.payments.withdrawal.unknown.active (P7-TSK-015): every UNKNOWN withdrawal, and every DISPATCHED one past the resolution sweep's own bound - each a customer's money behind a standing hold. Sustained non-zero means the sweep is not getting there. Fleet-wide: max(), never sum(). No data here means UNREADABLE, never healthy.",
+      "datasource": { "type": "prometheus", "uid": "finapp-prometheus" },
+      "gridPos": { "h": 7, "w": 8, "x": 0, "y": 120 },
+      "targets": [
+        { "refId": "A", "expr": "max(finapp_payments_withdrawal_unknown_active)", "legendFormat": "unanswered" }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "custom": { "drawStyle": "line", "lineWidth": 2, "fillOpacity": 8, "showPoints": "never" },
+          "unit": "none",
+          "noValue": "UNREADABLE (NaN, not zero)"
+        },
+        "overrides": []
+      },
+      "options": {
+        "legend": { "displayMode": "list", "placement": "bottom", "showLegend": true },
+        "tooltip": { "mode": "multi", "sort": "none" }
+      }
+    },
+    {
+      "type": "timeseries",
+      "title": "Oldest unanswered withdrawal",
+      "description": "finapp.payments.withdrawal.unknown.age (P7-TSK-015): how long the oldest of those has waited, measured the way the sweep measures it. The stuck-withdrawal alert's series.",
+      "datasource": { "type": "prometheus", "uid": "finapp-prometheus" },
+      "gridPos": { "h": 7, "w": 8, "x": 8, "y": 120 },
+      "targets": [
+        { "refId": "A", "expr": "max(finapp_payments_withdrawal_unknown_age)", "legendFormat": "oldest" }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "custom": { "drawStyle": "line", "lineWidth": 2, "fillOpacity": 8, "showPoints": "never" },
+          "unit": "s",
+          "noValue": "UNREADABLE (NaN, not zero)"
+        },
+        "overrides": []
+      },
+      "options": {
+        "legend": { "displayMode": "list", "placement": "bottom", "showLegend": true },
+        "tooltip": { "mode": "multi", "sort": "none" }
+      }
+    },
+    {
+      "type": "timeseries",
+      "title": "Disputes by stage",
+      "description": "finapp.payments.dispute (P7-TSK-015): disputes standing at each stage now. The open stages (inquiry, charged_back, represented) are the workload; the terminal ones (won, lost, accepted, closed) are the outcomes and only grow - the win rate is won / (won + lost). The chargeback ratio per merchant is the operator report, never a tag. Fleet-wide: max().",
+      "datasource": { "type": "prometheus", "uid": "finapp-prometheus" },
+      "gridPos": { "h": 7, "w": 8, "x": 16, "y": 120 },
+      "targets": [
+        { "refId": "A", "expr": "max by (stage) (finapp_payments_dispute)", "legendFormat": "{{stage}}" }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "custom": { "drawStyle": "line", "lineWidth": 2, "fillOpacity": 8, "showPoints": "never" },
+          "unit": "none",
+          "noValue": "UNREADABLE (NaN, not zero)"
+        },
+        "overrides": []
+      },
+      "options": {
+        "legend": { "displayMode": "list", "placement": "bottom", "showLegend": true },
+        "tooltip": { "mode": "multi", "sort": "none" }
+      }
+    },
+    {
+      "type": "timeseries",
+      "title": "Chargebacks near their deadline",
+      "description": "finapp.payments.dispute.deadline.near (P7-TSK-014): chargebacks awaiting an answer the PSP took whose network respond-by date is inside the alarm window or already missed. The alarm, never a decision. Fleet-wide: max().",
+      "datasource": { "type": "prometheus", "uid": "finapp-prometheus" },
+      "gridPos": { "h": 7, "w": 8, "x": 0, "y": 127 },
+      "targets": [
+        { "refId": "A", "expr": "max(finapp_payments_dispute_deadline_near)", "legendFormat": "near or missed" }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "custom": { "drawStyle": "line", "lineWidth": 2, "fillOpacity": 8, "showPoints": "never" },
+          "unit": "none",
+          "noValue": "UNREADABLE (NaN, not zero)"
+        },
+        "overrides": []
+      },
+      "options": {
+        "legend": { "displayMode": "list", "placement": "bottom", "showLegend": true },
+        "tooltip": { "mode": "multi", "sort": "none" }
+      }
+    },
+    {
+      "type": "timeseries",
+      "title": "Dispute answers without a word",
+      "description": "finapp.payments.dispute.response.unknown.active (P7-TSK-015, INV-LIFE-03): every UNKNOWN dispute answer, and every DISPATCHED one past the resolution sweep's bound - an answer the network's deadline may overtake. Fleet-wide: max().",
+      "datasource": { "type": "prometheus", "uid": "finapp-prometheus" },
+      "gridPos": { "h": 7, "w": 8, "x": 8, "y": 127 },
+      "targets": [
+        { "refId": "A", "expr": "max(finapp_payments_dispute_response_unknown_active)", "legendFormat": "unanswered" }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "custom": { "drawStyle": "line", "lineWidth": 2, "fillOpacity": 8, "showPoints": "never" },
+          "unit": "none",
+          "noValue": "UNREADABLE (NaN, not zero)"
+        },
+        "overrides": []
+      },
+      "options": {
+        "legend": { "displayMode": "list", "placement": "bottom", "showLegend": true },
+        "tooltip": { "mode": "multi", "sort": "none" }
+      }
+    },
+    {
+      "type": "timeseries",
+      "title": "Oldest unanswered dispute answer",
+      "description": "finapp.payments.dispute.response.unknown.age (P7-TSK-015): how long the oldest of those has waited, measured the way the sweep measures it.",
+      "datasource": { "type": "prometheus", "uid": "finapp-prometheus" },
+      "gridPos": { "h": 7, "w": 8, "x": 16, "y": 127 },
+      "targets": [
+        { "refId": "A", "expr": "max(finapp_payments_dispute_response_unknown_age)", "legendFormat": "oldest" }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "custom": { "drawStyle": "line", "lineWidth": 2, "fillOpacity": 8, "showPoints": "never" },
+          "unit": "s",
+          "noValue": "UNREADABLE (NaN, not zero)"
+        },
+        "overrides": []
+      },
+      "options": {
+        "legend": { "displayMode": "list", "placement": "bottom", "showLegend": true },
+        "tooltip": { "mode": "multi", "sort": "none" }
+      }
+    },
+    {
+      "type": "timeseries",
+      "title": "Counterparties below zero",
+      "description": "finapp.ledger.negative.positions (P7-TSK-013): accounts a chargeback drove below zero, by purpose - merchant debt and customer receivables. A count, never an amount. Fleet-wide: max().",
+      "datasource": { "type": "prometheus", "uid": "finapp-prometheus" },
+      "gridPos": { "h": 7, "w": 8, "x": 0, "y": 134 },
+      "targets": [
+        { "refId": "A", "expr": "max by (purpose) (finapp_ledger_negative_positions)", "legendFormat": "{{purpose}}" }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "custom": { "drawStyle": "line", "lineWidth": 2, "fillOpacity": 8, "showPoints": "never" },
+          "unit": "none",
+          "noValue": "UNREADABLE (NaN, not zero)"
+        },
+        "overrides": []
+      },
+      "options": {
+        "legend": { "displayMode": "list", "placement": "bottom", "showLegend": true },
+        "tooltip": { "mode": "multi", "sort": "none" }
+      }
     }
   ]
 }

@@ -209,7 +209,9 @@ Negative:
 - The simulated scheme is the only scheme. Contract tests stand in for rulebook conformance.
 
 Operational impact: per-rail meters; the withdrawal's stuck gauge in the payout's shape
-(`UNKNOWN`, plus `DISPATCHED` past the deadline); the pay-in initiation age gauge.
+(`UNKNOWN`, plus `DISPATCHED` past the deadline); the pay-in initiation age gauge. *(Shipped
+`P7-TSK-015`: `finapp.payments.withdrawal.unknown.active` and `.age`, over the withdrawal sweep's
+one dispatched-bound placeholder; the instant scheme's latency published under its own name.)*
 Security impact: grants and references are wrapped (`Sensitive`), their `expose()` sites
 registered; strong customer authentication for pay-ins happens at the payer's PSP; step-up
 applies on instrument registration and on withdrawal, when a factor is enrolled.

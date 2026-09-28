@@ -219,6 +219,14 @@ class NoFloatingPointMoneyRulesTest {
                     // for unreadable. No monetary value here to be imprecise about.
                     "com.finapp.app.telemetry.DisputeDeadlineMetrics",
                     "com.finapp.app.telemetry.DisputeDeadlineMetrics$Cached",
+                    // P7-TSK-015. The SAME case again, twice: disputes COUNTED per stage, and a
+                    // stuck-operation pair's count and oldest wait in whole seconds - longs out
+                    // of the rows, published through the ToDoubleFunction Micrometer's Gauge
+                    // imposes, NaN the sentinel for unreadable. No monetary value in either.
+                    "com.finapp.app.telemetry.DisputeStageMetrics",
+                    "com.finapp.app.telemetry.DisputeStageMetrics$Cached",
+                    "com.finapp.app.telemetry.StuckOperationMetrics",
+                    "com.finapp.app.telemetry.StuckOperationMetrics$Cached",
                     // P2-TSK-001. The SAME case again, not a new one: counts of published,
                     // failed and dead-lettered events - ints out of RelayPollResult - published
                     // through Counter.increment(double), the only instrument Micrometer offers.

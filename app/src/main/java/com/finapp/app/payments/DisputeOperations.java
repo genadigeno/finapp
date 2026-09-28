@@ -65,6 +65,17 @@ import org.springframework.transaction.support.TransactionTemplate;
  * (ADR-0061 §7: the merchant owns its dispute posture), reasoned. Only the operator's view carries
  * the attempt, the network's dispute reference and the PSP's submission reference —
  * reconciliation's keys, nobody else's business.
+ *
+ * <h2>The chargeback ratio is a report, never a tag (`P7-TSK-015`)</h2>
+ *
+ * <p>A merchant's chargebacks over its card sales for a calendar month — the number the card
+ * schemes' monitoring programmes judge — for every merchant at once, under
+ * {@code MERCHANT_ADMINISTER}: the desk that rules on a merchant's standing reads it, while a
+ * dispute's details stay behind {@code DISPUTE_ADMINISTER}. {@code payments} counts per credited
+ * account (never learning what a merchant is) and puts the read on the record; this class
+ * attributes each account to its merchant through the ledger's batch read and ranks them. A
+ * merchant tag on a meter would be unbounded cardinality and a tenant's data in a system with
+ * other access control (ADR-0018).
  */
 @RequiredArgsConstructor
 public class DisputeOperations {
@@ -80,6 +91,17 @@ public class DisputeOperations {
      */
     static final Set<AccountPurpose> OPERATOR_REACH = Set.of(AccountPurpose.CUSTOMER_WALLET);
 
+    /** The chargeback-ratio report's bound (`P7-TSK-015`): the worst this many merchants, and
+     * {@code truncated} says when there were more. */
+    static final int RATIO_REPORT_BOUND = 100;
+
+    /** A report period's shape: a calendar month, {@code YYYY-MM}. */
+    private static final java.util.regex.Pattern MONTH =
+            java.util.regex.Pattern.compile("[0-9]{4}-[0-9]{2}");
+
+    /** The earliest month a report may name - before any record this platform can hold. */
+    static final java.time.YearMonth EARLIEST_REPORT_MONTH = java.time.YearMonth.of(2000, 1);
+
     @NonNull private final DisputeReads reads;
     @NonNull private final LedgerAccountStore<Connection> ledgerAccounts;
     @NonNull private final TransactionTemplate transactions;
@@ -90,6 +112,30 @@ public class DisputeOperations {
 
     /** The response command, present where the card PSP is configured (`P7-TSK-014`). */
     @NonNull private final ObjectProvider<DisputeResponses> responses;
+
+    /** The declared rails (`P7-TSK-015`): which rails can be charged back is their capability,
+     * never a name. Last, so no positional argument moved. */
+    @NonNull private final com.finapp.payments.PaymentRails rails;
+
+    /** The report's default period is the clock's current UTC month (ADR-0014). */
+    @NonNull private final java.time.Clock clock;
+
+    /**
+     * The chargeback-ratio report (`P7-TSK-015`): one calendar month, UTC, every merchant with a
+     * card sale or a chargeback in it, worst first. {@code ratio} is chargebacks over sales to four
+     * places, half up, and absent when there were no sales — chargebacks against no sales are
+     * ranked first, never shown as zero or infinity.
+     */
+    public record ChargebackRatioReport(
+            String month,
+            String windowStart,
+            String windowEnd,
+            List<MerchantChargebackRatio> merchants,
+            boolean truncated) {}
+
+    /** One merchant's month: counts, and the ratio — never an amount, never a customer. */
+    public record MerchantChargebackRatio(
+            String merchantId, long sales, long chargebacks, String ratio) {}
 
     /** One move on a dispute's trail, in the platform's own stage names. */
     public record StageChangeView(String from, String to, String at) {}
@@ -596,6 +642,147 @@ public class DisputeOperations {
                 PlatformErrorCode.NOT_FOUND,
                 "No dispute evidence visible to the caller matches the requested identifiers",
                 "no such dispute evidence.");
+    }
+
+    /**
+     * The chargeback-ratio report for {@code month} ({@code YYYY-MM}; the clock's current UTC month
+     * when absent), read and put on the record in one transaction (`P7-TSK-015`). Only rails whose
+     * declared dispute model is card chargebacks count, as data ({@code INV-RAIL-01}); only accounts
+     * whose purpose is a merchant's payable are a merchant's (a wallet top-up's chargeback is the
+     * operator's desk, not a merchant's ratio).
+     */
+    public ChargebackRatioReport chargebackRatioReport(String month) {
+        java.time.YearMonth period = month == null ? currentMonth() : parsedMonth(month);
+        java.time.Instant from = period.atDay(1).atStartOfDay(java.time.ZoneOffset.UTC).toInstant();
+        java.time.Instant to =
+                period.plusMonths(1).atDay(1).atStartOfDay(java.time.ZoneOffset.UTC).toInstant();
+        Set<com.finapp.payments.RailId> chargebackRails =
+                rails.declaredIds().stream()
+                        .filter(
+                                rail ->
+                                        rails.capabilitiesOf(rail).disputes()
+                                                == com.finapp.payments.RailCapabilities
+                                                        .DisputeModel.CARD_SCHEME_CHARGEBACKS)
+                        .collect(Collectors.toSet());
+        return inOneTransaction(
+                unitOfWork -> {
+                    List<DisputeStore.CreditedCounts> counts =
+                            reads.chargebackCountsForOperator(
+                                    unitOfWork, chargebackRails, from, to, period.toString());
+                    java.util.Map<LedgerAccountId, UUID> merchantOf =
+                            ledgerAccounts
+                                    .findAllById(
+                                            unitOfWork,
+                                            counts.stream()
+                                                    .map(DisputeStore.CreditedCounts::creditAccount)
+                                                    .toList())
+                                    .stream()
+                                    .filter(
+                                            account ->
+                                                    account.purpose()
+                                                                    == AccountPurpose.MERCHANT_PAYABLE
+                                                            && account.ownerRef().isPresent())
+                                    .collect(
+                                            Collectors.toMap(
+                                                    LedgerAccount::id,
+                                                    account -> account.ownerRef().get()));
+                    // A merchant may hold one payable per currency: its month is their sum.
+                    java.util.Map<UUID, long[]> byMerchant = new java.util.HashMap<>();
+                    for (DisputeStore.CreditedCounts account : counts) {
+                        UUID merchant = merchantOf.get(account.creditAccount());
+                        if (merchant == null) {
+                            continue;
+                        }
+                        long[] sums = byMerchant.computeIfAbsent(merchant, key -> new long[2]);
+                        sums[0] += account.sales();
+                        sums[1] += account.chargebacks();
+                    }
+                    List<MerchantChargebackRatio> ranked =
+                            byMerchant.entrySet().stream()
+                                    .map(
+                                            entry ->
+                                                    new MerchantChargebackRatio(
+                                                            entry.getKey().toString(),
+                                                            entry.getValue()[0],
+                                                            entry.getValue()[1],
+                                                            ratioOf(
+                                                                    entry.getValue()[1],
+                                                                    entry.getValue()[0])))
+                                    .sorted(DisputeOperations::worstFirst)
+                                    .toList();
+                    return new ChargebackRatioReport(
+                            period.toString(),
+                            from.toString(),
+                            to.toString(),
+                            ranked.subList(0, Math.min(ranked.size(), RATIO_REPORT_BOUND)),
+                            ranked.size() > RATIO_REPORT_BOUND);
+                });
+    }
+
+    private java.time.YearMonth currentMonth() {
+        return java.time.YearMonth.now(clock.withZone(java.time.ZoneOffset.UTC));
+    }
+
+    /**
+     * The period asked for, bounded at the boundary (the gate's own find): a calendar month from
+     * {@link #EARLIEST_REPORT_MONTH} to the current one. A month that has not happened yet holds
+     * nothing to report, and a year the regex admits but no record can carry (9999-12's window ends
+     * in year 10000) must be refused here, never discovered by the database driver.
+     */
+    private java.time.YearMonth parsedMonth(String month) {
+        if (MONTH.matcher(month).matches()) {
+            try {
+                java.time.YearMonth period = java.time.YearMonth.parse(month);
+                if (!period.isBefore(EARLIEST_REPORT_MONTH) && !period.isAfter(currentMonth())) {
+                    return period;
+                }
+            } catch (java.time.format.DateTimeParseException unparseable) {
+                // Falls through to the refusal: 2026-13 has the shape and no meaning.
+            }
+        }
+        throw new ApiException(
+                PlatformErrorCode.VALIDATION_FAILED,
+                "A chargeback-ratio report was asked for a period that is not a reportable"
+                        + " calendar month",
+                "'month' must be a calendar month, YYYY-MM, from " + EARLIEST_REPORT_MONTH
+                        + " to the current month.");
+    }
+
+    /** Chargebacks over sales to four places, half up — BigDecimal, never a double; none without sales. */
+    private static String ratioOf(long chargebacks, long sales) {
+        if (sales == 0) {
+            return null;
+        }
+        return java.math.BigDecimal.valueOf(chargebacks)
+                .divide(java.math.BigDecimal.valueOf(sales), 4, java.math.RoundingMode.HALF_UP)
+                .toPlainString();
+    }
+
+    /**
+     * Worst first: chargebacks against no sales, then the highest ratio, then the most chargebacks,
+     * then the merchant id — a total order, so the bound cuts the same merchants every time.
+     */
+    private static int worstFirst(MerchantChargebackRatio left, MerchantChargebackRatio right) {
+        boolean leftUndefined = left.ratio() == null && left.chargebacks() > 0;
+        boolean rightUndefined = right.ratio() == null && right.chargebacks() > 0;
+        if (leftUndefined != rightUndefined) {
+            return leftUndefined ? -1 : 1;
+        }
+        java.math.BigDecimal leftRatio =
+                left.ratio() == null ? java.math.BigDecimal.ZERO : new java.math.BigDecimal(left.ratio());
+        java.math.BigDecimal rightRatio =
+                right.ratio() == null
+                        ? java.math.BigDecimal.ZERO
+                        : new java.math.BigDecimal(right.ratio());
+        int byRatio = rightRatio.compareTo(leftRatio);
+        if (byRatio != 0) {
+            return byRatio;
+        }
+        int byChargebacks = Long.compare(right.chargebacks(), left.chargebacks());
+        if (byChargebacks != 0) {
+            return byChargebacks;
+        }
+        return left.merchantId().compareTo(right.merchantId());
     }
 
     private static ApiException paymentNotFound() {

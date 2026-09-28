@@ -193,9 +193,13 @@ class ReversalDatabaseTest {
                                                             "rev-c-" + IDS.next(),
                                                             1)))
                     .isInstanceOf(OverReversalException.class)
-                    // Anchored by a non-hex char: bare needles can match a random UUIDv7's hex.
-                    .hasMessageNotContaining(" 1000")
-                    .hasMessageNotContaining("10.00");
+                    // The bound names the original entry and the account, and a random UUIDv7's
+                    // hex can carry any digit run (the P7-TSK-008 needle class): the amounts are
+                    // judged against what is left once the identifiers are taken out.
+                    .satisfies(refusal -> assertThat(
+                                    withoutIdentifiers(refusal.getMessage(), fixture))
+                            .doesNotContain("1000")
+                            .doesNotContain("10.00"));
             app.rollback();
             assertThat(reversalRowsOf(app, fixture.original())).isEqualTo(reversalsBefore);
         }
@@ -506,6 +510,13 @@ class ReversalDatabaseTest {
     private static ReversalCommand command(Fixture fixture, String key, long minor) {
         return new ReversalCommand(
                 key, fixture.original(), DATE, DATE, "reversal-probe", swapped(fixture, minor));
+    }
+
+    /** A refusal with the fixture's identifiers taken out, so a needle judges only the rest. */
+    private static String withoutIdentifiers(String message, Fixture fixture) {
+        return message.replace(fixture.original().value().toString(), "<entry>")
+                .replace(fixture.clearing().id().value().toString(), "<clearing>")
+                .replace(fixture.wallet().id().value().toString(), "<wallet>");
     }
 
     private static JournalLine line(LedgerAccount account, Direction direction, long minor) {

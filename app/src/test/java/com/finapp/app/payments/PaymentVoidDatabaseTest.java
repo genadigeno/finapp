@@ -712,7 +712,8 @@ class PaymentVoidDatabaseTest {
                         com.finapp.payments.PaymentRails.of(
                                 java.util.List.of(SimulatedCardPspAdapter.RAIL)),
                         IDS,
-                        CLOCK));
+                        CLOCK),
+                com.finapp.payments.RailOutcomeObserver.NONE);
     }
 
     private PaymentVoid voids(PaymentProvider provider) {

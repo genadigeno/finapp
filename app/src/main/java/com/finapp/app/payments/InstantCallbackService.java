@@ -327,8 +327,7 @@ public class InstantCallbackService {
                 return;
             }
         }
-        judged.attempt(
-                outcomes.applyExecution(
+        outcomes.applyExecution(
                         uow,
                         intent.id(),
                         attempt.id(),
@@ -338,13 +337,16 @@ public class InstantCallbackService {
                         Optional.ofNullable(payload.settlementCycle()).filter(c -> !c.isBlank()),
                         intent.creditAccount(),
                         intent.amount(),
-                        PaymentCreation.resolvedCorrelation()));
+                        PaymentCreation.resolvedCorrelation());
     }
 
-    /** What this delivery's own conditionals committed — counted after the commit. */
+    /**
+     * What this delivery's own conditionals committed that the DOOR counts — the parking and
+     * the delivery's fate — after the commit. The execution's judgement is the applier's to
+     * report since `P7-TSK-015` ({@code RailOutcomeObserver}), counted once it commits.
+     */
     private static final class Judged {
 
-        private PaymentAttemptStatus attempt;
         private boolean parkedActing;
         private boolean parkedSeen;
         private boolean unreadable;
@@ -366,12 +368,6 @@ public class InstantCallbackService {
             return returnEcho;
         }
 
-        void attempt(PaymentOutcomes.Applied applied) {
-            if (applied.acting()) {
-                attempt = applied.attempt();
-            }
-        }
-
         void parked(boolean acting) {
             parkedSeen = true;
             parkedActing = acting;
@@ -382,19 +378,6 @@ public class InstantCallbackService {
         }
 
         void countInto(com.finapp.app.telemetry.PaymentMeters meters) {
-            if (attempt != null) {
-                switch (attempt) {
-                    case EXECUTED ->
-                            meters.attempt(
-                                    com.finapp.app.telemetry.PaymentMeters.Judgement.EXECUTED);
-                    case FAILED ->
-                            meters.attempt(
-                                    com.finapp.app.telemetry.PaymentMeters.Judgement.FAILED);
-                    default -> {
-                        // A callback never commits another push state: nothing was judged.
-                    }
-                }
-            }
             if (parkedActing) {
                 meters.unmatchedParked();
             }

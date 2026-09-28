@@ -8363,8 +8363,8 @@ negative payable** — `COMPLETE` (2026-09-23)
 
 # Phase 7 — Cards, Wallets, A2A and Instant Payments
 
-Status: `IN_PROGRESS` — started 2026-09-26 with `P7-TSK-001` (14 of 18 items complete, M7.1 at
-3 of 3, M7.2 at 2 of 2, M7.3 at 3 of 3, M7.4 at 2 of 2, M7.5 at 1 of 1, M7.6 at 3 of 3) *(read `READY` for two days after the first task started — caught by `P7-TSK-001`'s own
+Status: `IN_PROGRESS` — started 2026-09-26 with `P7-TSK-001` (15 of 18 items complete, M7.1 at
+3 of 3, M7.2 at 2 of 2, M7.3 at 3 of 3, M7.4 at 2 of 2, M7.5 at 1 of 1, M7.6 at 3 of 3, M7.7 at 1 of 3) *(read `READY` for two days after the first task started — caught by `P7-TSK-001`'s own
 gate, the stale-second-copy class this file has now recorded five times)*; entry gate passed
 2026-09-24 by the Phase 6 → 7 transition
 ([`reviews/PHASE_6_TO_7_TRANSITION.md`](reviews/PHASE_6_TO_7_TRANSITION.md)), elaborated to task
@@ -9218,7 +9218,7 @@ Disputes (`P7-TSK-012`…`-014`) · M7.7 Observability and demonstration (`P7-TS
   state. Fleet hermetic 1711 tests across 14 modules, 0 failures; 366 targeted database tests across 31 suites, 0 failures; the platform classification guard green. The full
   battery deliberately skipped on the owner's instruction.
 
-**P7-TSK-015 — Rail and dispute meters and the dashboard row** — `READY`
+**P7-TSK-015 — Rail and dispute meters and the dashboard row** — `COMPLETE` (2026-09-28)
 - **Objective**: `PHASE_7_PLAN.md` §15 — every rail's health and every dispute's stage visible on a
   running instance.
 - **Bounded context**: Payments (9), `app` telemetry.
@@ -9251,8 +9251,59 @@ Disputes (`P7-TSK-012`…`-014`) · M7.7 Observability and demonstration (`P7-TS
   its `QUERY`) is counted; (3) **an `UNKNOWN` dispute response is a stuck state** the
   resolution sweep works, which `INV-LIFE-03` wants visible beside the withdrawal's
   (`finapp.payments.withdrawal.unknown.*`'s shape).
+- **Design corrections to this entry** (the `P6-TSK-001` precedent): *Distributed-system
+  concerns* read "counters at the door after commit" - the counters moved to the APPLIERS, because
+  door counting had lost every door added since `P5-TSK-017` that did not copy it (pay-in sweep
+  executions, return sweep outcomes, voids, withdrawals, dispute answers): the three appliers
+  report each acting judgement through the payments port `RailOutcomeObserver`, and app's
+  `CommittedRailOutcomes` counts it after the commit. *Domain changes: none* holds for behaviour;
+  the port is the one addition. *Persistence: none* holds for the schema; the stores gained
+  read-only queries (the two stuck readings, the stage count, the report's counts, the ledger's
+  batch account read). *Invariants* gain `INV-AUD-03` (the report's permission) and `INV-AUD-01`
+  (its audit).
+- **Gate**: the acceptance proven over the deployed chain - **every §15 series published by a
+  fresh instance** (`PlannedMetersExistTest#phase7PlannedMetersAreAlreadyPublished`, the plan's
+  two new answer rows among them), the running instance's stuck pairs and stage gauge read against
+  the real schema (`WithdrawalDatabaseTest#theStuckReadingCountsWhatTheSweepWould`,
+  `DisputeResponseDatabaseTest#theStuckAnswerReadingCountsWhatTheSweepWould`,
+  `#aRepresentmentIsSubmittedAndWonEndToEnd`), and the dashboard's "Rails and disputes" row
+  resolving (`DashboardQueriesResolveTest`). Also proven: each applier's judgement counted once
+  after its commit at every door and resolver that carries it (the endpoint, pay-by-bank,
+  withdrawal, dispute-answer, refund and wallet-checkout suites' deltas); never counted on
+  rollback, never thrown into a committed operation, mid-question statuses never judgements
+  (`CommittedRailOutcomesTest`); every judgement writer confined to its applier
+  (`JudgementWritersAreConfinedTest`); the rail series following each rail's declarations, the
+  push rail timed under its own name and the dispute port timed on every answer
+  (`PaymentMetersTest`); NaN never zero (`StuckOperationMetricsTest`, `DisputeStageMetricsTest`);
+  the report counted and ranked, bounded, guarded and audited (`ChargebackRatioReportDatabaseTest`,
+  five tests). **The gate's own finds**: the report accepted any four-digit year (`9999-12`
+  pushing its window's end into year 10000) and future months - the range is now 2000-01 to the
+  current month, the rest the one 422; no test read the running instance's stage gauge against
+  the real schema - asserted; and **a converged application was demonstrated nowhere**: the probe
+  moving the refund report ahead of the acting exit survived, because the ten-webhook race it
+  aimed at no longer reaches the applier - the door's locked read stops the nine losers first,
+  and that test's comment still credited the acting bit (corrected) - closed by
+  `PaymentRefundDatabaseTest#aConvergedRefundApplicationCountsNothing` (the one reachable
+  converged refund: an ambiguous answer on a row another resolver already moved into `UNKNOWN`)
+  and `PaymentSweeperDatabaseTest#aConvergedCaptureIsCountedOnce` (the sweep's unlocked read),
+  both re-probed and caught. **Found by the gate's own battery, not this task's code, and
+  fixed**: its first run failed `BalanceDerivationDatabaseTest#aMixedScaleHistoryRefusesLoudly`
+  (the never-a-sum needle `777` matched a random account identifier - the `P7-TSK-008` needle
+  class; the identifier is now taken out before the amounts are judged) and
+  `PaymentRefundDatabaseTest#aTakeoversRefusedConnectionProvesNothing` (the crashed flight's claim
+  lapsed one second before insertion on the server clock that also judges the takeover, and the
+  Docker VM's clock was measured stepping back ~1.6 s every ~27 s while gaining ~77 ms a second:
+  both crashed-flight claims now lapse a minute back); the battery re-run fresh and green, both
+  classes' remaining instances chipped. Thirty-five probe runs, thirty-four caught - every one by its
+  intended test - and the one survivor that was that find, closed and re-run; every verdict read
+  from the failing testcases themselves, never the exit code alone, each restore byte-identical
+  (`MUTATION_TESTING.md` §2 +9 rows, §3 +1 paragraph). Multi-instance PASS - the meters decide
+  nothing: counters per instance count only what a commit made true, gauges read the shared
+  database behind a refresh floor and aggregate with `max()`, the report is one read-only
+  transaction. Fleet hermetic 1731 tests across 14 modules, 0 failures; 393 targeted database tests across 36 suites, 0 failures; the platform classification guard green. The full
+  battery deliberately skipped on the owner's instruction.
 
-**P7-TST-001 — The multi-rail conservation storm** — `PLANNED`
+**P7-TST-001 — The multi-rail conservation storm** — `READY`
 - **Objective**: every rail and every money path at once, reconciled to the minor unit, with the
   four scenarios the gate names counted, not argued.
 - **Bounded context**: all of Phase 7's.
@@ -9273,6 +9324,14 @@ Disputes (`P7-TSK-012`…`-014`) · M7.7 Observability and demonstration (`P7-TS
 - **Testing**: probes proving each reconciliation can fail.
 - **Accept**: stable over three runs; every term reconciles under load and at rest.
 - **Definition of done**: `DOD-TEST`, `DOD-FIN`. **Risk**: Medium. **Cx**: L.
+- **Design inputs recorded by `P7-TSK-015`** (read at design, not binding decisions):
+  (1) **the meters are a second, independent tally** - every acting judgement is counted
+  exactly once after its commit (`finapp.payments.rail.outcome` by rail, type and outcome), so
+  a round can hold the series' deltas against the rows it created, beside the books; (2)
+  **no per-door accounting is needed** - `JudgementWritersAreConfinedTest` pins every
+  judgement to one of three appliers; (3) **the meters are per instance** - read the
+  registry deltas in the storm's own JVM, and aggregate across simulated instances only
+  where the storm runs them in separate contexts.
 
 **P7-TST-002 — The dispute battery** — `PLANNED`
 - **Objective**: every dispute failure scenario the plan names, raced and duplicated.

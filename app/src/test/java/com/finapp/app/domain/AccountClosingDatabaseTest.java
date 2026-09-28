@@ -87,6 +87,9 @@ class AccountClosingDatabaseTest {
     /** PostgreSQL SQLState: check_violation — V007's trigger refuses with it. */
     private static final String CHECK_VIOLATION = "23514";
 
+    /** Any UUID's text: a refusal can name an identifier minted out of this test's sight. */
+    private static final String ANY_UUID = "[0-9a-f]{8}(-[0-9a-f]{4}){3}-[0-9a-f]{12}";
+
     private final CustomerAccountStore<Connection> accounts = new JdbcCustomerAccountStore();
     private final LedgerAccountStore<Connection> ledgerAccounts = new JdbcLedgerAccountStore();
     private final AccountHolderVerification<Connection> holders =
@@ -146,10 +149,13 @@ class AccountClosingDatabaseTest {
             assertThatThrownBy(
                             () -> closing().close(app, holder.customer(), holder.account()))
                     .isInstanceOf(AccountNotEmptyException.class)
-                    // The message names account and currency, never the amount (INV-AUD-02).
-                    // Anchored by a non-hex char: bare needles can match a random UUIDv7's hex.
-                    .hasMessageNotContaining(" 500")
-                    .hasMessageNotContaining("5.00");
+                    // The message names account and currency, never the amount (INV-AUD-02) -
+                    // and a random UUIDv7's hex can carry any digit run (the P7-TSK-008 needle
+                    // class), so the amount is judged once the account is taken out.
+                    .satisfies(refusal -> assertThat(refusal.getMessage()
+                                    .replace(holder.account().value().toString(), "<account>"))
+                            .doesNotContain("500")
+                            .doesNotContain("5.00"));
             app.rollback();
 
             assertThat(productStatusOf(app, holder.account()))
@@ -179,8 +185,12 @@ class AccountClosingDatabaseTest {
             long linesBefore = lineCountFor(app, walletOf(app, holder));
             assertThatThrownBy(() -> credit(app, holder, 700))
                     .isInstanceOf(LedgerAccountNotPostableException.class)
-                    // Anchored by a non-hex char: bare needles can match a random UUIDv7's hex.
-                    .hasMessageNotContaining(" 700");
+                    // The refusal names the entry the posting minted, which this test never
+                    // sees, and a random UUIDv7's hex can carry any digit run (the P7-TSK-008
+                    // needle class): the amount is judged once every identifier is taken out.
+                    .satisfies(refusal -> assertThat(
+                                    refusal.getMessage().replaceAll(ANY_UUID, "<id>"))
+                            .doesNotContain("700"));
             app.rollback();
             assertThat(lineCountFor(app, walletOf(app, holder))).isEqualTo(linesBefore);
 

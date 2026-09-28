@@ -49,9 +49,10 @@ class MerchantPayoutMetricsDatabaseTest {
 
             // In flight: dispatched a minute ago. Mid-question - the P5-TSK-017 control, and the
             // reason the gauge would alert on healthy traffic if it counted every dispatch. A
-            // minute, not a second: the unbounded reading below must count it by the database's
-            // clock in a later statement, and the local container's clock was measured stepping
-            // back 1.7 s at once (X-TSK-005) - a second-old permit could read as not yet sent.
+            // minute, not a second: the unbounded reading below must find its permit in the past
+            // of the same server clock that wrote it, and the Docker VM's clock steps back by
+            // seconds every ~27 s (1.6 s at P7-TSK-015's gate, 2.8 s re-measured the same day).
+            // Still nine minutes inside the bound.
             payout(app, merchant, destination, "1 minute");
             // Overdue: dispatched two hours ago and never answered. What an unknown-only gauge
             // misses when the sweep is not running - a merchant's money held with nothing saying so.

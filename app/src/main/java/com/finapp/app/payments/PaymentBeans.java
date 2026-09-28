@@ -170,7 +170,10 @@ class PaymentBeans {
                 new SimulatedCardPspAdapter(
                         url, timeout, ProviderApiKey.decode(configuredKey, loopback)),
                 paymentMeters,
-                clock);
+                clock,
+                // The rail these calls serve (P7-TSK-015): bound here, the one place a
+                // declaration may be named (INV-RAIL-01).
+                SimulatedCardPspAdapter.RAIL.id());
     }
 
     @Bean
@@ -240,7 +243,8 @@ class PaymentBeans {
                 new com.finapp.payments.SimulatedInstantSchemeAdapter(
                         url, timeout, InstantSchemeKey.decode(configuredKey, loopback)),
                 paymentMeters,
-                clock);
+                clock,
+                com.finapp.payments.SimulatedInstantSchemeAdapter.RAIL.id());
     }
 
     // ------------------------------------------------------------------
@@ -261,7 +265,8 @@ class PaymentBeans {
             AuditWriter<Connection> auditWriter,
             OutboxWriter<Connection> outboxWriter,
             IdGenerator ids,
-            Clock clock) {
+            Clock clock,
+            com.finapp.payments.RailOutcomeObserver railOutcomeObserver) {
         return new com.finapp.payments.WithdrawalOutcomes(
                 withdrawalStore,
                 holdService,
@@ -270,7 +275,9 @@ class PaymentBeans {
                 auditWriter,
                 outboxWriter,
                 ids,
-                clock);
+                clock,
+                // Each acting judgement reported where it is written (P7-TSK-015).
+                railOutcomeObserver);
     }
 
     /**
@@ -341,7 +348,7 @@ class PaymentBeans {
             com.finapp.payments.PushRail instantRail,
             com.finapp.payments.PaymentRails paymentRails,
             ProviderEvidenceStore<Connection> providerEvidenceStore,
-            @Value("${finapp.payments.withdrawal.sweeper.dispatched-age:PT10M}")
+            @Value(WithdrawalResolutionSchedule.DISPATCHED_AGE)
                     java.time.Duration dispatchedAge,
             @Value("${finapp.payments.withdrawal.sweeper.unknown-age:PT2M}")
                     java.time.Duration unknownAge,
@@ -640,7 +647,8 @@ class PaymentBeans {
             // response routes answer the honest 503 and nothing is claimed (the refund's
             // ObjectProvider decision) - evidence and reads keep working.
             org.springframework.beans.factory.ObjectProvider<com.finapp.payments.DisputeResponses>
-                    disputeResponses) {
+                    disputeResponses,
+            com.finapp.payments.PaymentRails paymentRails) {
         return new DisputeOperations(
                 new com.finapp.payments.DisputeReads(
                         disputeStore,
@@ -654,7 +662,11 @@ class PaymentBeans {
                 paymentTransactions,
                 dataSource,
                 disputeEvidenceAccess,
-                disputeResponses);
+                disputeResponses,
+                // The chargeback-ratio report (P7-TSK-015): which rails can be charged back is
+                // their declared capability; the default period is the clock's month.
+                paymentRails,
+                clock);
     }
 
     /**
@@ -722,7 +734,9 @@ class PaymentBeans {
             AuditWriter<Connection> auditWriter,
             OutboxWriter<Connection> outboxWriter,
             IdGenerator ids,
-            Clock clock) {
+            Clock clock,
+            PaymentAttemptStore<Connection> paymentAttemptStore,
+            com.finapp.payments.RailOutcomeObserver railOutcomeObserver) {
         return new com.finapp.payments.DisputeResponseOutcomes(
                 disputeResponseStore,
                 disputeStore,
@@ -730,13 +744,18 @@ class PaymentBeans {
                 auditWriter,
                 outboxWriter,
                 ids,
-                clock);
+                clock,
+                // The disputed payment's stored rail, and where its judgement is reported
+                // (P7-TSK-015).
+                paymentAttemptStore,
+                railOutcomeObserver);
     }
 
     /**
      * The card PSP's dispute port (`P7-TSK-014`, ADR-0061 §7) — the card adapter's second face,
      * present exactly where the card PSP is: the same endpoint, timeout and confined API key as
-     * {@link #paymentProvider}. Not metered here: the dispute meters are `P7-TSK-015`'s.
+     * {@link #paymentProvider}. Metered since `P7-TSK-015`: an answer is the {@code RESPOND}
+     * operation and the sweep's question {@code QUERY}, under the card PSP and the card rail.
      */
     @Bean
     @ConditionalOnProperty("finapp.payments.provider.url")
@@ -745,7 +764,9 @@ class PaymentBeans {
             @Value("${finapp.payments.provider.timeout:PT2S}") java.time.Duration timeout,
             @Value("${finapp.payments.provider.key:" + com.finapp.app.mfa.MfaKey.MARKED_LOCAL_DEFAULT + "}")
                     String configuredKey,
-            Environment environment) {
+            Environment environment,
+            com.finapp.app.telemetry.PaymentMeters paymentMeters,
+            Clock clock) {
         boolean loopback = DatabaseEndpoint.isEntirelyLoopback(DatabaseEndpoint.url(environment));
         SimulatedCardPspAdapter adapter =
                 new SimulatedCardPspAdapter(
@@ -753,7 +774,7 @@ class PaymentBeans {
         // Exposed as ITS DISPUTE FACE ONLY: the adapter is a PaymentProvider too, and a second
         // bean assignable to that type would make every existing PaymentProvider injection
         // point resolve by parameter name - the hazard java-lombok.md names.
-        return new com.finapp.payments.DisputeResponder() {
+        com.finapp.payments.DisputeResponder face = new com.finapp.payments.DisputeResponder() {
             @Override
             public String providerName() {
                 return adapter.providerName();
@@ -771,6 +792,8 @@ class PaymentBeans {
                 return adapter.query(ourReference);
             }
         };
+        return new com.finapp.app.telemetry.MeteredDisputeResponder(
+                face, paymentMeters, clock, SimulatedCardPspAdapter.RAIL.id());
     }
 
     /** The response command (`P7-TSK-014`) — present with the card PSP it answers through. */
@@ -821,7 +844,7 @@ class PaymentBeans {
             com.finapp.payments.DisputeResponseOutcomes disputeResponseOutcomes,
             com.finapp.payments.DisputeResponder disputeResponder,
             ProviderEvidenceStore<Connection> providerEvidenceStore,
-            @Value("${finapp.payments.dispute-response.sweeper.dispatched-age:PT2M}")
+            @Value(DisputeResponseResolutionSchedule.DISPATCHED_AGE)
                     java.time.Duration dispatchedAge,
             @Value("${finapp.payments.dispute-response.sweeper.unknown-age:PT1M}")
                     java.time.Duration unknownAge,
@@ -923,7 +946,8 @@ class PaymentBeans {
             com.finapp.payments.PaymentRails paymentRails,
             com.finapp.payments.UnmatchedConfirmationStore<Connection>
                     unmatchedConfirmationStore,
-            com.finapp.payments.ChargebackAccounting chargebackAccounting) {
+            com.finapp.payments.ChargebackAccounting chargebackAccounting,
+            com.finapp.payments.RailOutcomeObserver railOutcomeObserver) {
         return new com.finapp.payments.PaymentOutcomes(
                 paymentIntentStore,
                 paymentAttemptStore,
@@ -946,7 +970,10 @@ class PaymentBeans {
                 ledgerAccountStore,
                 // The combined bound's refund half (P7-TSK-013): a failed refund's share of
                 // a chargeback's excess returns to the counterparty in its own transaction.
-                chargebackAccounting);
+                chargebackAccounting,
+                // Every acting judgement reported where it is written, counted once its
+                // transaction commits (P7-TSK-015).
+                railOutcomeObserver);
     }
 
     @Bean
@@ -1069,7 +1096,6 @@ class PaymentBeans {
             PaymentIntentStore<Connection> paymentIntentStore,
             PaymentAttemptStore<Connection> paymentAttemptStore,
             com.finapp.payments.RefundStore<Connection> refundStore,
-            com.finapp.app.telemetry.PaymentMeters paymentMeters,
             com.finapp.identity.IdentityStore<Connection> identityStore,
             TransactionTemplate paymentTransactions,
             DataSource dataSource) {
@@ -1083,7 +1109,6 @@ class PaymentBeans {
                 paymentIntentStore,
                 paymentAttemptStore,
                 refundStore,
-                paymentMeters,
                 identityStore,
                 paymentTransactions,
                 dataSource);
@@ -1310,10 +1335,9 @@ class PaymentBeans {
             com.finapp.payments.PaymentSweeper.class)
     PaymentSweeperSchedule paymentSweeperSchedule(
             com.finapp.payments.PaymentSweeper paymentSweeper,
-            com.finapp.app.telemetry.PaymentMeters paymentMeters,
             @Value("${finapp.payments.sweeper.poll-interval:PT30S}")
                     java.time.Duration pollInterval) {
-        return new PaymentSweeperSchedule(paymentSweeper, paymentMeters, pollInterval);
+        return new PaymentSweeperSchedule(paymentSweeper, pollInterval);
     }
 
     @Bean

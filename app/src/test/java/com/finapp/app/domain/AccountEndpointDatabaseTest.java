@@ -304,12 +304,14 @@ class AccountEndpointDatabaseTest {
         creditOverLedger(fundedAccount, 800);
         HttpResponse<String> refused = delete("/me/accounts/" + fundedAccount, funded.session());
         assertThat(refused.statusCode()).isEqualTo(409);
-        assertThat(refused.body())
-                .contains("accounts.AccountNotEmpty")
-                // Anchored by a non-hex char: bare needles can match a random UUIDv7's hex.
-                .doesNotContain(":800")
-                .doesNotContain("\"800\"")
-                .doesNotContain(" 800")
+        assertThat(refused.body()).contains("accounts.AccountNotEmpty");
+        // The account (the instance) and the flow are named on purpose, and a random UUIDv7's
+        // hex can carry any digit run (the P7-TSK-008 needle class): the amount is judged
+        // against what is left once they are taken out.
+        assertThat(refused.body()
+                        .replace(fundedAccount, "<account>")
+                        .replace(field(refused.body(), "correlationId"), "<flow>"))
+                .doesNotContain("800")
                 .doesNotContain("8.00");
     }
 

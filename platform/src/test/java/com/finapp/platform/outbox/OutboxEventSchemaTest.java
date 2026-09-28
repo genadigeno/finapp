@@ -153,15 +153,17 @@ class OutboxEventSchemaTest {
 
         try (PreparedStatement select =
                 connection.prepareStatement(
-                        "SELECT next_attempt_at <= now() + INTERVAL '1 second' FROM " + TABLE
+                        "SELECT next_attempt_at <= now() + INTERVAL '1 minute' FROM " + TABLE
                                 + " WHERE event_id = ?")) {
             select.setObject(1, eventId);
             try (ResultSet rows = select.executeQuery()) {
                 rows.next();
-                // A tolerance, not a strict comparison: the local Docker VM's clock is corrected
-                // in steps of a few hundred milliseconds, so "written a moment ago is due now" is
-                // not reliably true of the server clock. What must hold is that the default is a
-                // point in the present, not a point in the future.
+                // A tolerance, not a strict comparison: the local Docker VM's clock steps back by
+                // seconds every ~27 s (1.6 s at P7-TSK-015's gate, 2.8 s re-measured the same day
+                // - the one-second tolerance this had assumed steps of a few hundred
+                // milliseconds), so "written a moment ago is due now" is not reliably true of the
+                // server clock. What must hold is that the default is a point in the present, not
+                // a point in the future.
                 assertThat(rows.getBoolean(1)).isTrue();
             }
         }

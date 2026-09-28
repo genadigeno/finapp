@@ -122,11 +122,15 @@ class BeneficialOwnerTest {
                         OptionalInt.of(2_500),
                         Optional.of(ControlRole.DIRECTOR));
         // The stake and role are CONFIDENTIAL facts about a person (DATA_CLASSIFICATION §4);
-        // a log line renders the row's identity, never its content.
-        // Anchored by a non-hex char: bare needles can match a random UUIDv7's hex.
-        assertThat(owner.toString())
-                .doesNotContain("=2500")
-                .doesNotContain(" 2500")
+        // a log line renders the row's identity, never its content. The identity is four
+        // random UUIDv7s whose hex can carry any digit run (the P7-TSK-008 needle class), so
+        // the stake is judged against what is left once they are taken out.
+        assertThat(owner.toString()
+                        .replace(owner.id().value().toString(), "<owner>")
+                        .replace(owner.caseId().value().toString(), "<case>")
+                        .replace(owner.ownerPartyId().toString(), "<party>")
+                        .replace(owner.verificationCaseId().value().toString(), "<verification>"))
+                .doesNotContain("2500")
                 .doesNotContain("DIRECTOR");
     }
 }

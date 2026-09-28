@@ -262,6 +262,74 @@ class PaymentSweeperDatabaseTest {
                 .isEqualTo(1);
     }
 
+    /**
+     * The losers above, one at a time and counted (`P7-TSK-015`'s gate). Every attempt judgement
+     * is reported from the applier's acting branch, after the one {@code if (!acting)} exit, and
+     * the race above reaches that exit nine times - but through {@code RailOutcomeObserver.NONE},
+     * over a shared database whose other candidates the ten sweeps also resolve, so it cannot
+     * count. Two resolvers that both read {@code CAPTURE_UNKNOWN} apply the provider's one
+     * approval in turn over a registry this test owns: exactly the sweep's unlocked read, made
+     * deterministic.
+     */
+    @Test
+    @DisplayName("a converged attempt application counts nothing: two resolvers who both read"
+            + " CAPTURE_UNKNOWN apply the one approval in turn - the first moves the row and is"
+            + " counted, the second finds it moved and is not")
+    void aConvergedCaptureIsCountedOnce() throws Exception {
+        Holder holder = holder();
+        PaymentAttemptId attemptId = captureUnknownAttempt(holder);
+        io.micrometer.core.instrument.simple.SimpleMeterRegistry registry =
+                new io.micrometer.core.instrument.simple.SimpleMeterRegistry();
+        PaymentOutcomes metered =
+                outcomes(
+                        new com.finapp.app.telemetry.CommittedRailOutcomes(
+                                new com.finapp.app.telemetry.PaymentMeters(
+                                        registry, SimulatedCardPspAdapter.NAME)));
+        PaymentAttempt read =
+                runner.inTransaction(uow -> attempts.findById(uow, attemptId).orElseThrow());
+        java.util.Optional<com.finapp.payments.ProviderReference> approval =
+                java.util.Optional.of(new com.finapp.payments.ProviderReference("psp_q-converged"));
+
+        List<Boolean> acting = new java.util.ArrayList<>();
+        try (SecurityContext.Scope platform = SecurityContext.enterSystem()) {
+            for (int resolver = 0; resolver < 2; resolver++) {
+                // Each resolver in its own flow, correlated as a sweep's resolution is.
+                try (CorrelationContext.Scope flow =
+                        CorrelationContext.enter(
+                                Correlation.startingWith(CorrelationId.generate(IDS)))) {
+                    Correlation correlation = PaymentCreation.resolvedCorrelation();
+                    acting.add(
+                            runner.inTransaction(
+                                            uow ->
+                                                    metered.applyCapture(
+                                                            uow,
+                                                            holder.intent(),
+                                                            attemptId,
+                                                            read.status(),
+                                                            ProviderAnswer.Verdict.APPROVED,
+                                                            approval,
+                                                            holder.wallet(),
+                                                            read.authorizedAmount(),
+                                                            correlation))
+                                    .acting());
+                }
+            }
+        }
+
+        assertThat(acting).as("one conditional fired; the second found the row moved")
+                .containsExactly(true, false);
+        assertThat(attemptStatus(attemptId)).isEqualTo("CAPTURED");
+        assertThat(entriesByReference(attemptId)).isEqualTo(1);
+        assertThat(
+                        com.finapp.app.telemetry.RailOutcomeCounts.railOutcome(
+                                registry, SimulatedCardPspAdapter.RAIL.id(), "payment",
+                                "captured"))
+                .as("one capture, counted once - the converged resolver made no judgement")
+                .isEqualTo(1);
+        assertThat(com.finapp.app.telemetry.RailOutcomeCounts.attempt(registry, "captured"))
+                .isEqualTo(1);
+    }
+
     @Test
     @DisplayName("a sweeper racing the webhook produces ONE effect - the same conditional edge,"
             + " whichever resolver wins")
@@ -768,6 +836,11 @@ class PaymentSweeperDatabaseTest {
     }
 
     private PaymentOutcomes outcomes() {
+        return outcomes(com.finapp.payments.RailOutcomeObserver.NONE);
+    }
+
+    /** The applier reporting its acting judgements to {@code observer} (`P7-TSK-015`). */
+    private PaymentOutcomes outcomes(com.finapp.payments.RailOutcomeObserver observer) {
         return new PaymentOutcomes(
                 intents,
                 attempts,
@@ -843,7 +916,8 @@ class PaymentSweeperDatabaseTest {
                                 PostingObserver.NONE),
                         com.finapp.payments.PaymentRails.of(java.util.List.of(SimulatedCardPspAdapter.RAIL)),
                         IDS,
-                        CLOCK));
+                        CLOCK),
+                observer);
     }
 
     private SimulatedCardPspAdapter adapter() {

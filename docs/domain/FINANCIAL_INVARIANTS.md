@@ -307,7 +307,11 @@ success or failure by assumption.
 **Why:** `CLAUDE.md` — never assume a timeout means the operation failed. This is the single
 most expensive assumption in payments.
 **Enforce:** `DOMAIN`.
-**Verify:** Provider-timeout-then-success contract tests; unknown-state age metric.
+**Verify:** Provider-timeout-then-success contract tests; unknown-state age metric. *(Every Phase 7
+machine with a modelled unknown has its age metric since `P7-TSK-015`: attempts of every model and
+refunds of every rail in `finapp.payments.unknown.*`, withdrawals in
+`finapp.payments.withdrawal.unknown.*`, dispute answers in `finapp.payments.dispute.response.unknown.*`
+— each counting every `UNKNOWN` and every dispatch past its sweep's own bound, NaN when unreadable.)*
 **Phase:** 5
 
 ### INV-LIFE-04 — Terminal states are terminal

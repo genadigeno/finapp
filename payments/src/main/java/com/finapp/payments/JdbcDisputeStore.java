@@ -278,6 +278,98 @@ public final class JdbcDisputeStore implements DisputeStore<Connection> {
     }
 
     @Override
+    public java.util.Map<DisputeStage, Long> countByStage(Connection unitOfWork) {
+        java.util.EnumMap<DisputeStage, Long> counts = new java.util.EnumMap<>(DisputeStage.class);
+        for (DisputeStage stage : DisputeStage.values()) {
+            counts.put(stage, 0L);
+        }
+        try (PreparedStatement select =
+                unitOfWork.prepareStatement(
+                        "SELECT stage, count(*) FROM " + TABLE + " GROUP BY stage")) {
+            try (ResultSet rows = select.executeQuery()) {
+                while (rows.next()) {
+                    counts.put(DisputeStage.valueOf(rows.getString(1)), rows.getLong(2));
+                }
+            }
+            return java.util.Collections.unmodifiableMap(counts);
+        } catch (SQLException failure) {
+            throw new PaymentsStorageException(
+                    DatabaseFailure.describe("counting disputes by stage", failure));
+        }
+    }
+
+    @Override
+    public List<CreditedCounts> chargebackCountsByCreditAccount(
+            Connection unitOfWork, Set<RailId> rails, Instant from, Instant to) {
+        Objects.requireNonNull(rails, "rails must not be null");
+        Objects.requireNonNull(from, "from must not be null");
+        Objects.requireNonNull(to, "to must not be null");
+        if (!from.isBefore(to)) {
+            throw new IllegalArgumentException("a report window ends after it starts");
+        }
+        if (rails.isEmpty()) {
+            return List.of();
+        }
+        // Two counts per credited account, FULL-joined so an account with chargebacks and no
+        // sales in the window (or the reverse) still reports. A sale is the CAPTURED transition's
+        // own history row; a chargeback is dated by its move into CHARGED_BACK, or by its opening
+        // when it opened there (a birth writes no trail row). Both sides filter on the attempt's
+        // STORED rail against the caller's data - never a rail name here (INV-RAIL-01).
+        try (PreparedStatement select =
+                unitOfWork.prepareStatement(
+                        "WITH sales AS ("
+                                + "  SELECT i.credit_account_id AS account, count(*) AS n"
+                                + "  FROM payments.payment_attempt_event e"
+                                + "  JOIN payments.payment_attempt a ON a.id = e.attempt_id"
+                                + "  JOIN payments.payment_intent i ON i.id = a.intent_id"
+                                + "  WHERE e.to_status = 'CAPTURED' AND a.rail = ANY (?)"
+                                + "    AND e.occurred_at >= ? AND e.occurred_at < ?"
+                                + "  GROUP BY i.credit_account_id),"
+                                + " chargebacks AS ("
+                                + "  SELECT i.credit_account_id AS account, count(*) AS n"
+                                + "  FROM " + TABLE + " d"
+                                + "  JOIN payments.payment_attempt a ON a.id = d.attempt_id"
+                                + "  JOIN payments.payment_intent i ON i.id = a.intent_id"
+                                + "  LEFT JOIN LATERAL (SELECT min(t.occurred_at) AS at"
+                                + "    FROM payments.dispute_event t"
+                                + "    WHERE t.dispute_id = d.id AND t.to_stage = 'CHARGED_BACK') c"
+                                + "    ON true"
+                                + "  WHERE d.chargeback_amount_minor IS NOT NULL"
+                                + "    AND a.rail = ANY (?)"
+                                + "    AND COALESCE(c.at, d.opened_at) >= ?"
+                                + "    AND COALESCE(c.at, d.opened_at) < ?"
+                                + "  GROUP BY i.credit_account_id)"
+                                + " SELECT COALESCE(s.account, b.account), COALESCE(s.n, 0),"
+                                + "   COALESCE(b.n, 0)"
+                                + " FROM sales s FULL JOIN chargebacks b ON b.account = s.account"
+                                + " ORDER BY 1")) {
+            Array railIds =
+                    unitOfWork.createArrayOf(
+                            "text", rails.stream().map(RailId::value).sorted().toArray());
+            select.setArray(1, railIds);
+            select.setTimestamp(2, Timestamp.from(from));
+            select.setTimestamp(3, Timestamp.from(to));
+            select.setArray(4, railIds);
+            select.setTimestamp(5, Timestamp.from(from));
+            select.setTimestamp(6, Timestamp.from(to));
+            List<CreditedCounts> counts = new ArrayList<>();
+            try (ResultSet rows = select.executeQuery()) {
+                while (rows.next()) {
+                    counts.add(
+                            new CreditedCounts(
+                                    LedgerAccountId.of(rows.getObject(1, UUID.class)),
+                                    rows.getLong(2),
+                                    rows.getLong(3)));
+                }
+            }
+            return List.copyOf(counts);
+        } catch (SQLException failure) {
+            throw new PaymentsStorageException(
+                    DatabaseFailure.describe("counting chargebacks per credited account", failure));
+        }
+    }
+
+    @Override
     public Money attributedStanding(
             Connection unitOfWork, PaymentAttemptId attempt, CurrencyCode currency) {
         Objects.requireNonNull(attempt, "attempt must not be null");

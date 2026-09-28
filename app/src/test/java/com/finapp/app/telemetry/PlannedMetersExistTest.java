@@ -261,6 +261,36 @@ class PlannedMetersExistTest {
         assertThat(registeredMeters()).containsAll(planned);
     }
 
+    /**
+     * `P7-TSK-015`'s acceptance, performed ahead of the flip — the same shape a sixth time:
+     * every meter Phase 7's plan §15 names is registered in this context, which boots with nothing
+     * configured, no database and NO RAIL ENDPOINT, so it is exactly the "freshly started instance"
+     * the acceptance names. What this proves that no per-class test can: the rail series exist
+     * before any rail is configured or called (registered from the unconditional rail directory's
+     * declarations), and the stuck-state gauges and the dispute gauges are the wired beans' eager
+     * registrations. Ten rows, and both {@code .age} rows among them (the Phase 6 lesson: this
+     * parser reads a row's first name only).
+     */
+    @Test
+    @DisplayName("Phase 7's planned meters are already published, ahead of the phase flip")
+    void phase7PlannedMetersAreAlreadyPublished() {
+        Set<String> planned = new TreeSet<>();
+        for (String line : read(repositoryFile("docs/project/PHASE_7_PLAN.md"))) {
+            Matcher row = PLANNED_METER.matcher(line);
+            if (row.find()) {
+                planned.add(row.group(1));
+            }
+        }
+        assertThat(planned)
+                .as("the Phase 7 plan's §15 table must parse, or this checks nothing")
+                .hasSizeGreaterThanOrEqualTo(10)
+                .contains(
+                        "finapp.payments.withdrawal.unknown.age",
+                        "finapp.payments.dispute.response.unknown.age");
+
+        assertThat(registeredMeters()).containsAll(planned);
+    }
+
     @Test
     @DisplayName("the guard is not vacuous: it reads a real plan and a real registry")
     void theGuardHasTeeth() {

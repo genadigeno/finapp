@@ -491,6 +491,10 @@ class OpenApiContractTest {
                                 + "/operator/disputes/{disputeId}/evidence/{evidenceId}",
                         ApiVersion.CURRENT_PREFIX + "/operator/disputes/{disputeId}/representment",
                         ApiVersion.CURRENT_PREFIX + "/operator/disputes/{disputeId}/acceptance",
+                        // P7-TSK-015. The chargeback-ratio report: every merchant's card sales
+                        // and chargebacks for a month, behind MERCHANT_ADMINISTER, audited -
+                        // a report because a merchant tag would be unbounded (ADR-0018).
+                        ApiVersion.CURRENT_PREFIX + "/operator/reports/chargeback-ratio",
                         ApiVersion.CURRENT_PREFIX + "/sessions/{id}",
                         ApiVersion.CURRENT_PREFIX + "/sessions/current",
                         ApiVersion.CURRENT_PREFIX + "/me/mfa",

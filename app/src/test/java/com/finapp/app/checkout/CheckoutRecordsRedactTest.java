@@ -96,7 +96,10 @@ class CheckoutRecordsRedactTest {
                         Money.ofMinorUnits(AMOUNT_MINOR, CurrencyCode.of("EUR")),
                         LINE);
 
-        assertThat(command.toString())
+        // The acting key is named on purpose (ADR-0052 section 2), and a random UUIDv7's hex can
+        // carry any digit run (the P7-TSK-008 needle class): the amount is judged against what
+        // is left once the identifier is taken out.
+        assertThat(command.toString().replace(command.key().value().toString(), "<key>"))
                 .doesNotContain(AMOUNT)
                 .doesNotContain(Long.toString(AMOUNT_MINOR))
                 .doesNotContain(LINE)

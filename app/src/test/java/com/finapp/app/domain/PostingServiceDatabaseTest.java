@@ -72,6 +72,9 @@ class PostingServiceDatabaseTest {
     private static final CurrencyCode USD = CurrencyCode.of("USD");
     private static final LocalDate DATE = LocalDate.of(2026, 9, 13);
 
+    /** Any UUID's text: a refusal can name an identifier minted out of this test's sight. */
+    private static final String ANY_UUID = "[0-9a-f]{8}(-[0-9a-f]{4}){3}-[0-9a-f]{12}";
+
     private final LedgerAccountStore<Connection> accounts = new JdbcLedgerAccountStore();
 
     private PostingService service() {
@@ -387,8 +390,12 @@ class PostingServiceDatabaseTest {
                     // original LedgerStorageException expectation - the stopgap-superseded
                     // precedent. The refusal is amount-free and still the schema's own.
                     .isInstanceOf(com.finapp.ledger.UnknownPostingAccountException.class)
-                    // Anchored by a non-hex char: bare needles can match a random UUIDv7's hex.
-                    .hasMessageNotContaining(" 500");
+                    // It names the entry the posting minted, which this test never sees, and a
+                    // random UUIDv7's hex can carry any digit run (the P7-TSK-008 needle
+                    // class): the amount is judged once every identifier is taken out.
+                    .satisfies(refusal -> assertThat(
+                                    refusal.getMessage().replaceAll(ANY_UUID, "<id>"))
+                            .doesNotContain("500"));
             app.rollback();
         }
     }

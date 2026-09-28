@@ -72,6 +72,7 @@ class PayByBankDatabaseTest {
     @LocalServerPort private int port;
 
     @Autowired private com.finapp.payments.PaymentOutcomes outcomes;
+    @Autowired private io.micrometer.core.instrument.MeterRegistry meterRegistry;
     @Autowired private com.finapp.payments.PaymentAttemptStore<Connection> attempts;
     @Autowired private com.finapp.payments.PaymentIntentStore<Connection> intents;
     @Autowired private TransactionRunner transactions;
@@ -456,6 +457,9 @@ class PayByBankDatabaseTest {
                 "{\"status\":\"accepted\",\"reference\":\"sch-inq-" + suffix()
                         + "\",\"cycle\":\"C4\"}");
         Thread.sleep(80);
+        double executedBefore =
+                com.finapp.app.telemetry.RailOutcomeCounts.railOutcome(meterRegistry, com.finapp.payments.SimulatedInstantSchemeAdapter.RAIL.id(), "payment", "executed");
+        double legacyBefore = com.finapp.app.telemetry.RailOutcomeCounts.attempt(meterRegistry, "executed");
         // The wide-batch engine, for the recovery test's shared-database reason.
         PayInResolution.SweepResult swept = wideSweep();
         assertThat(swept.resolved()).isGreaterThanOrEqualTo(1);
@@ -467,6 +471,14 @@ class PayByBankDatabaseTest {
                         + " = 'ledger.post:payment-execution:" + attemptId + "'"))
                 .isEqualTo(1);
 
+        // COUNTED where it was written (P7-TSK-015): the sweep's execution - counted NOWHERE
+        // until the appliers reported their judgements - once, on the instant rail, in the
+        // rail series and the legacy series together.
+        assertThat(com.finapp.app.telemetry.RailOutcomeCounts.railOutcome(meterRegistry, com.finapp.payments.SimulatedInstantSchemeAdapter.RAIL.id(), "payment", "executed")
+                        - executedBefore)
+                .isEqualTo(1);
+        assertThat(com.finapp.app.telemetry.RailOutcomeCounts.attempt(meterRegistry, "executed") - legacyBefore).isEqualTo(1);
+
         // A second sweep finds nothing to move: the entry count is the proof.
         Thread.sleep(80);
         wideSweep();
@@ -474,6 +486,10 @@ class PayByBankDatabaseTest {
                         + " = 'ledger.post:payment-execution:" + attemptId + "'"))
                 .isEqualTo(1);
         assertThat(outboxCount("payments.PaymentExecuted", paymentId)).isEqualTo(1);
+        assertThat(com.finapp.app.telemetry.RailOutcomeCounts.railOutcome(meterRegistry, com.finapp.payments.SimulatedInstantSchemeAdapter.RAIL.id(), "payment", "executed")
+                        - executedBefore)
+                .as("the converging second sweep judged nothing, so counted nothing")
+                .isEqualTo(1);
     }
 
     @Test
@@ -772,10 +788,18 @@ class PayByBankDatabaseTest {
         String operator = operatorToken();
 
         provider.neverResponds(SimulatedInstantSchemeAdapter.RETURNS_PATH);
+        double unknownBefore =
+                com.finapp.app.telemetry.RailOutcomeCounts.railOutcome(meterRegistry, com.finapp.payments.SimulatedInstantSchemeAdapter.RAIL.id(), "refund", "unknown");
+        double completedBefore =
+                com.finapp.app.telemetry.RailOutcomeCounts.railOutcome(meterRegistry, com.finapp.payments.SimulatedInstantSchemeAdapter.RAIL.id(), "refund", "completed");
         HttpResponse<String> returned =
                 refund(operator, paid.paymentId(), "5.00", "USD", "lost answer", someKey());
         assertThat(returned.statusCode()).isEqualTo(201);
         assertThat(field(returned.body(), "status")).isEqualTo("UNKNOWN");
+        // The honest unknown IS a judgement, counted on the return's own rail (P7-TSK-015).
+        assertThat(com.finapp.app.telemetry.RailOutcomeCounts.railOutcome(meterRegistry, com.finapp.payments.SimulatedInstantSchemeAdapter.RAIL.id(), "refund", "unknown")
+                        - unknownBefore)
+                .isEqualTo(1);
         String refundId = field(returned.body(), "id");
         String ourReference =
                 oneString(
@@ -813,6 +837,10 @@ class PayByBankDatabaseTest {
                 "{\"status\":\"accepted\",\"reference\":\"sch-ret-l2-" + suffix()
                         + "\",\"cycle\":\"C9\"}");
         assertThat(wideReturnSweep().applied()).isGreaterThanOrEqualTo(1);
+        // The return sweep's completion - counted nowhere before P7-TSK-015 - once.
+        assertThat(com.finapp.app.telemetry.RailOutcomeCounts.railOutcome(meterRegistry, com.finapp.payments.SimulatedInstantSchemeAdapter.RAIL.id(), "refund", "completed")
+                        - completedBefore)
+                .isEqualTo(1);
         assertThat(oneString("SELECT status FROM payments.refund WHERE id = ?",
                         UUID.fromString(refundId)))
                 .isEqualTo("COMPLETED");

@@ -206,6 +206,42 @@ public final class JdbcWithdrawalStore implements WithdrawalStore<Connection> {
         }
     }
 
+    @Override
+    public PaymentAttemptStore.UnknownReading unknownReading(
+            Connection unitOfWork, java.time.Duration dispatchedBound) {
+        Objects.requireNonNull(dispatchedBound, "dispatchedBound must not be null");
+        // findSweepable's own expressions with the UNKNOWN bound at zero - the payout store's
+        // reading statement for statement (P6-TSK-013): an UNKNOWN withdrawal has waited since
+        // the move that made it UNKNOWN, a DISPATCHED one since its latest permit, counted only
+        // once that permit is past the bound. The SERVER's clock decides the age, never an
+        // instance's (ADR-0014), a whole number of seconds - floor()::bigint, never a double -
+        // floored at zero, so an application clock a moment ahead cannot publish a negative wait.
+        try (PreparedStatement read =
+                unitOfWork.prepareStatement(
+                        "SELECT count(*),"
+                                + " GREATEST(0, COALESCE(floor(EXTRACT(EPOCH FROM now() - min("
+                                + "   CASE WHEN w.status = 'UNKNOWN'"
+                                + "        THEN COALESCE(h.entered, w.created_at)"
+                                + "        ELSE w.last_dispatched_at END)))::bigint, 0))"
+                                + " FROM " + TABLE + " w"
+                                + " LEFT JOIN LATERAL (SELECT max(occurred_at) AS entered"
+                                + "   FROM payments.withdrawal_event e"
+                                + "   WHERE e.withdrawal_id = w.id) h ON true"
+                                + " WHERE w.status = 'UNKNOWN'"
+                                + "    OR (w.status = 'DISPATCHED'"
+                                + "        AND w.last_dispatched_at"
+                                + "            <= now() - make_interval(secs => ?))")) {
+            read.setLong(1, dispatchedBound.toSeconds());
+            try (ResultSet row = read.executeQuery()) {
+                row.next();
+                return new PaymentAttemptStore.UnknownReading(row.getLong(1), row.getLong(2));
+            }
+        } catch (SQLException failure) {
+            throw new PaymentsStorageException(
+                    DatabaseFailure.describe("reading the stuck-withdrawal gauge", failure));
+        }
+    }
+
     // -----------------------------------------------------------------
 
     private Optional<Withdrawal> one(

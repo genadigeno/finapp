@@ -175,7 +175,9 @@ Negative:
   says.
 
 Operational impact: per-rail meters (the rail as a bounded tag); per-rail stuck-state gauges
-in the payout's shape.
+in the payout's shape. *(Shipped `P7-TSK-015`: `finapp.payments.rail.outcome` and
+`.rail.latency`, their series registered from each declaration's capabilities - never a rail's
+name; the stuck gauges per machine, not per rail, because the machines own the unknown.)*
 Security impact: none by itself. The PCI boundary is unchanged, and bank data follows ADR-0062.
 Financial impact: each external rail gets its own clearing position; the wallet rail posts in
 the confirmation's own transaction.

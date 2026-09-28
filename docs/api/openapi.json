@@ -3327,6 +3327,29 @@
         ],
         "type": "object"
       },
+      "ChargebackRatioReport": {
+        "properties": {
+          "merchants": {
+            "items": {
+              "$ref": "#/components/schemas/MerchantChargebackRatio"
+            },
+            "type": "array"
+          },
+          "month": {
+            "type": "string"
+          },
+          "truncated": {
+            "type": "boolean"
+          },
+          "windowEnd": {
+            "type": "string"
+          },
+          "windowStart": {
+            "type": "string"
+          }
+        },
+        "type": "object"
+      },
       "CheckView": {
         "properties": {
           "id": {
@@ -3897,6 +3920,25 @@
           },
           "direction": {
             "type": "string"
+          }
+        },
+        "type": "object"
+      },
+      "MerchantChargebackRatio": {
+        "properties": {
+          "chargebacks": {
+            "format": "int64",
+            "type": "integer"
+          },
+          "merchantId": {
+            "type": "string"
+          },
+          "ratio": {
+            "type": "string"
+          },
+          "sales": {
+            "format": "int64",
+            "type": "integer"
           }
         },
         "type": "object"
@@ -7965,6 +8007,33 @@
               "application/json": {
                 "schema": {
                   "$ref": "#/components/schemas/AvailabilityView"
+                }
+              }
+            },
+            "description": "OK"
+          }
+        }
+      }
+    },
+    "/v1/operator/reports/chargeback-ratio": {
+      "get": {
+        "operationId": "readChargebackRatioReport",
+        "parameters": [
+          {
+            "in": "query",
+            "name": "month",
+            "required": false,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ChargebackRatioReport"
                 }
               }
             },

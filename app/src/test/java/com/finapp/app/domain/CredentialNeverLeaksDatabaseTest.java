@@ -71,9 +71,15 @@ class CredentialNeverLeaksDatabaseTest {
             assertThat(wholeRow)
                     .as("INV-IDN-01: no stored representation may contain the input")
                     .doesNotContain(PLAINTEXT);
+            // The row names the credential and its identity on purpose, and "8f31d7" is a
+            // hex-only fragment a random UUIDv7 can carry (the P7-TSK-008 needle class): the
+            // fragments are judged against what is left once the identifiers are taken out.
+            String withoutIdentifiers =
+                    wholeRow.replace(identity.toString(), "<identity>")
+                            .replace(credential.id().value().toString(), "<credential>");
             for (String fragment : PLAINTEXT.split("-")) {
                 if (fragment.length() >= 5) {
-                    assertThat(wholeRow)
+                    assertThat(withoutIdentifiers)
                             .as("not even a fragment of it: '%s'", fragment)
                             .doesNotContain(fragment);
                 }

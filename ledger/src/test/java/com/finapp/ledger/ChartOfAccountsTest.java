@@ -104,6 +104,12 @@ class ChartOfAccountsTest {
         }
 
         @Override
+        public List<LedgerAccount> findAllById(
+                Object unitOfWork, java.util.Collection<LedgerAccountId> ids) {
+            throw new UnsupportedOperationException("the chart never reads a batch");
+        }
+
+        @Override
         public List<LedgerAccount> lockOwnedForUpdate(Object unitOfWork, UUID ownerRef) {
             throw new UnsupportedOperationException("the chart never locks");
         }

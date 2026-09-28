@@ -52,8 +52,12 @@ class HoldTest {
         assertThat(HoldStatus.RELEASED.isTerminal()).isTrue();
         assertThatThrownBy(() -> released.release(CLOCK))
                 .isInstanceOf(IllegalHoldTransitionException.class)
-                // Anchored by a non-hex char: bare needles can match a random UUIDv7's hex.
-                .hasMessageNotContaining(" 500");
+                // The hold is named on purpose, and a random UUIDv7's hex can carry any digit
+                // run - "500" a few runs in a thousand (the P7-TSK-008 needle class): the amount
+                // is judged against what is left once the identifier is taken out.
+                .satisfies(refusal -> assertThat(refusal.getMessage()
+                                .replace(released.id().value().toString(), "<hold>"))
+                        .doesNotContain("500"));
     }
 
     @Test
@@ -112,10 +116,13 @@ class HoldTest {
         // needle - a distinctive minor-unit value - must appear nowhere.
         Hold hold =
                 Hold.place(HoldId.next(IDS), ACCOUNT, Money.ofMinorUnits(987654, USD), CLOCK);
-        // Anchored by a non-hex char: bare needles can match a random UUIDv7's hex.
-        assertThat(hold.toString())
-                .doesNotContain("=987654")
-                .doesNotContain(" 987654")
+        // The hold and its account are named on purpose, and a random UUIDv7's hex can carry any
+        // digit run (the P7-TSK-008 needle class): the needle is judged against what is left
+        // once the identifiers are taken out.
+        assertThat(hold.toString()
+                        .replace(hold.id().value().toString(), "<hold>")
+                        .replace(ACCOUNT.value().toString(), "<account>"))
+                .doesNotContain("987654")
                 .doesNotContain("9876.54");
     }
 }

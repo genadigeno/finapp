@@ -130,6 +130,14 @@ public final class PaymentOutcomes {
     @NonNull private final ChargebackAccounting chargebacks;
 
     /**
+     * Where each acting judgement is reported (`P7-TSK-015`, {@link RailOutcomeObserver}): in the
+     * acting branch only, inside this transaction, with the stored rail and the committed status
+     * - the listener decides when to count. Appended last (the constructor is positional
+     * history).
+     */
+    @NonNull private final RailOutcomeObserver observer;
+
+    /**
      * What committed (or was found committed by the loser of a harmless race).
      *
      * @param acting whether <strong>this</strong> call's conditional transition fired
@@ -138,7 +146,8 @@ public final class PaymentOutcomes {
      *     could not tell them apart would count one judgement N times under a race — the
      *     plan's own "replays/converges never throughput". Never financial truth: the rows
      *     are the record, and an acting call can still be rolled back by the transaction's
-     *     owner, which is why the counting seam is the door, post-commit.
+     *     owner, which is why the count waits for the commit — since `P7-TSK-015` at the
+     *     {@link RailOutcomeObserver} this class reports to, no longer at each door.
      */
     public record Applied(
             PaymentIntentStatus intent,
@@ -924,6 +933,9 @@ public final class PaymentOutcomes {
                                 "refund=" + refund.id()
                                         + ", verdict=" + verdict
                                         + ", refundStatus=" + committed)));
+        // The acting refund judgement on the refunded attempt's rail (P7-TSK-015) - the one
+        // exit every refund outcome leaves through, card, push and book alike.
+        observer.refundJudged(railOf(uow, refund.attemptId()), committed);
         return new RefundApplied(committed, true);
     }
 
@@ -998,7 +1010,20 @@ public final class PaymentOutcomes {
         }
         appendOutcomeAudit(uow, intentId, attemptId, verdict, committedAttempt, committedIntent,
                 platform, correlation, now);
+        // The acting judgement, reported where it is written (P7-TSK-015): every attempt
+        // outcome leaves through this branch, whichever door or resolver carried it.
+        observer.attemptJudged(railOf(uow, attemptId), committedAttempt);
         return new Applied(committedIntent, committedAttempt, true);
+    }
+
+    /** The stored rail of {@code attemptId} — data read off the row, never a name (INV-RAIL-01). */
+    private RailId railOf(Connection uow, PaymentAttemptId attemptId) {
+        return attempts.findById(uow, attemptId)
+                .orElseThrow(
+                        () ->
+                                new IllegalStateException(
+                                        "an attempt an outcome was applied to exists"))
+                .rail();
     }
 
     /** Verdict and committed states as enumerated names — never an amount, never provider vocabulary. */
@@ -1261,6 +1286,9 @@ public final class PaymentOutcomes {
         appendOutcomeAudit(
                 uow, intent.id(), attempt.id(), "BOOK_POSTED", PaymentAttemptStatus.EXECUTED,
                 PaymentIntentStatus.SUCCEEDED, person, correlation, now);
+        // Born EXECUTED inside this transaction, so this IS the acting judgement (P7-TSK-015):
+        // the book rail's only outcome, reported like every other rail's.
+        observer.attemptJudged(attempt.rail(), PaymentAttemptStatus.EXECUTED);
     }
 
     /**

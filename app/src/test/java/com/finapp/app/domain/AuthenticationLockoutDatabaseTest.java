@@ -443,10 +443,14 @@ class AuthenticationLockoutDatabaseTest {
     }
 
     /**
-     * Serves the lock while leaving the window live. A minute, not a second: the throttle judges
-     * the lock by the database's clock in a later transaction, and the local container's clock
-     * was measured stepping back 1.7 s at once (X-TSK-005) - a one-second margin let a served lock
-     * read as live again. The window stays well inside its fifteen minutes either way.
+     * Serves the lock while leaving the window live, both by the SERVER's clock.
+     *
+     * <p>A minute served, not a second: the throttle judges {@code locked_until <= now()} on the
+     * same clock, and the local Docker VM's clock steps back by seconds every ~27 s (1.6 s at
+     * P7-TSK-015's gate, 2.8 s re-measured the same day) - a step between this update and the
+     * next attempt reads a one-second lock as still live. The window started before the lock
+     * ended, as the table's {@code CHECK} requires - a minute before - and is still live under
+     * every policy this suite uses.
      */
     private void expireTheLock(LoginIdentifier login) throws SQLException {
         try (Connection app = DatabaseRoles.application()) {

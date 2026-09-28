@@ -2586,6 +2586,8 @@ class CheckoutFlowDatabaseTest {
         String created = createSession(merchant, AMOUNT_MINOR, someKey()).body();
         String checkoutId = field(created, "checkoutId");
         String sessionToken = field(created, "sessionToken");
+        double executedBefore =
+                com.finapp.app.telemetry.RailOutcomeCounts.railOutcome(meterRegistry, com.finapp.payments.BookRail.RAIL.id(), "payment", "executed");
 
         List<java.util.concurrent.Callable<String>> racers = new ArrayList<>();
         for (int i = 0; i < 10; i++) {
@@ -2636,6 +2638,11 @@ class CheckoutFlowDatabaseTest {
         assertThat(get("/v1/me/accounts/" + payer.product() + "/balance", payer.token())
                         .body())
                 .contains("\"settled\":\"50.00\"");
+        // TEN racers, ONE judgement counted (P7-TSK-015): the book payment's EXECUTED is
+        // reported where it is written and counted after its commit - the losers wrote none.
+        assertThat(com.finapp.app.telemetry.RailOutcomeCounts.railOutcome(meterRegistry, com.finapp.payments.BookRail.RAIL.id(), "payment", "executed")
+                        - executedBefore)
+                .isEqualTo(1);
     }
 
     @Test

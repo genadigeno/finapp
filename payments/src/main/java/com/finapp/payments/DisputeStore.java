@@ -103,6 +103,40 @@ public interface DisputeStore<T> {
     long countDeadlinesNear(T unitOfWork, Instant horizon);
 
     /**
+     * How many disputes stand at each stage now (`P7-TSK-015`) — the
+     * {@code finapp.payments.dispute} gauge's one read, every stage present, zero where none
+     * stands. The open stages are the workload; the terminal ones ARE the outcomes (won, lost,
+     * accepted, closed), and only ever grow. Counts, never identifiers.
+     */
+    java.util.Map<DisputeStage, Long> countByStage(T unitOfWork);
+
+    /**
+     * What the chargeback-ratio report counts, per credited account, over {@code [from, to)}
+     * (`P7-TSK-015`; `PHASE_7_PLAN.md` §15, ADR-0018's report-not-tag rule). Only attempts on
+     * {@code rails} count — the caller passes the rails whose declared dispute model is card
+     * chargebacks, as data ({@code INV-RAIL-01}). A <em>sale</em> is a capture whose
+     * {@code CAPTURED} transition was recorded in the window; a <em>chargeback</em> is a dispute
+     * whose funds were taken (a chargeback amount stands), dated by its move into
+     * {@code CHARGED_BACK} — or its opening, when it opened there. Accounts with neither in the
+     * window are absent. {@code payments} never learns what a merchant is: the caller attributes
+     * the accounts. Cross-tenant by design — an operator report's read.
+     */
+    List<CreditedCounts> chargebackCountsByCreditAccount(
+            T unitOfWork, Set<RailId> rails, Instant from, Instant to);
+
+    /** One credited account's counts in a report window — counts, never amounts. */
+    record CreditedCounts(LedgerAccountId creditAccount, long sales, long chargebacks) {
+
+        public CreditedCounts {
+            java.util.Objects.requireNonNull(creditAccount, "creditAccount must not be null");
+            if (sales < 0 || chargebacks < 0) {
+                throw new IllegalArgumentException(
+                        "counts are never negative: " + sales + ", " + chargebacks);
+            }
+        }
+    }
+
+    /**
      * What the chargebacks STANDING on {@code attempt} attribute to its counterparty, posted or
      * parked — the combined bound's second term (`INV-DSP-01`). Valid only under the attempt's
      * row lock; zero in {@code currency} when none stands.

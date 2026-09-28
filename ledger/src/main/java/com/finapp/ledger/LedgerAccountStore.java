@@ -78,6 +78,21 @@ public interface LedgerAccountStore<T> {
     java.util.List<LedgerAccount> findAllOwned(T unitOfWork, UUID ownerRef);
 
     /**
+     * The accounts among {@code ids} that exist, in id order — the lock-free batch read, arrived
+     * with its first caller (`P7-TSK-015`): the chargeback-ratio report counts per credited
+     * account in {@code payments} (which never learns what a merchant is) and needs each
+     * account's purpose and owner to attribute the counts to merchants, in ONE statement rather
+     * than one read per account. No lock: a report decides nothing, and an account's owner and
+     * purpose are frozen at its birth. <strong>Cross-owner by design</strong> — its one caller is
+     * that operator report, under {@code MERCHANT_ADMINISTER}; no customer or merchant surface
+     * reaches it. {@code OwnershipIsScopedTest}'s detector keys on an {@code EntityId} parameter
+     * and does not see a collection of them, so this sentence is the classification: an
+     * administered read, the {@code ADMINISTERED} scope's reasoning.
+     */
+    java.util.List<LedgerAccount> findAllById(
+            T unitOfWork, java.util.Collection<LedgerAccountId> ids);
+
+    /**
      * Every ledger account owned by {@code ownerRef}, read {@code FOR UPDATE} in a fixed order
      * (`P3-TSK-014`).
      *

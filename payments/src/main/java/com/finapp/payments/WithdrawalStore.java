@@ -54,4 +54,15 @@ public interface WithdrawalStore<T> {
      */
     List<Withdrawal> findSweepable(
             T unitOfWork, Instant dispatchedBefore, Instant unknownBefore, int limit);
+
+    /**
+     * How many withdrawals wait past their due for the scheme's word, and how long the oldest has
+     * waited (`P7-TSK-015`) — the stuck-withdrawal gauges' one read, the payout's shape verbatim:
+     * {@link #findSweepable}'s candidacy with the {@code UNKNOWN} bound at zero. Every
+     * {@code UNKNOWN} withdrawal counts, and every {@code DISPATCHED} one whose send permit is
+     * older than the sweep's own {@code dispatchedBound} — before which it is mid-question. Each
+     * is a customer's money behind a standing hold. A count and an age, never an amount.
+     */
+    PaymentAttemptStore.UnknownReading unknownReading(
+            T unitOfWork, java.time.Duration dispatchedBound);
 }

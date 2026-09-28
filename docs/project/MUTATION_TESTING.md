@@ -467,6 +467,15 @@ so the guard was silently not checking that the tests they name exist.
 | `INV-EVT-01` | `DisputeResponseDatabaseTest#aRepresentmentIsSubmittedAndWonEndToEnd` | Recorded | `DisputeResponseSubmitted` unpublished from the `SUBMITTED` conditional (`P7-TSK-014`) | Caught — the fact never reached the outbox with the state change |
 | `INV-IDEM-01` | `DisputeResponseDatabaseTest#aRetriedKeyReplaysAndAReusedKeyConflicts` | Recorded | The claim scope stripped of the responder (`dispute.respond:<type>:` without the id) (`P7-TSK-014`) | Caught — another merchant choosing the same key string met the first merchant's claim: the scope carries the owning principal (ADR-0004), or two tenants' keys collide |
 | `INV-PAY-04` | `DisputeResponseDatabaseTest#aRepresentmentIsSubmittedAndWonEndToEnd` | Recorded | The FIRST send minting a fresh reference instead of presenting the one Tx1 committed (`DisputeResponses.respond`) (`P7-TSK-014`) | Caught — the wire's `Idempotency-Key` was not the stored reference: a resolution by query would ask about an operation the PSP never saw |
+| `INV-LIFE-03` | `WithdrawalDatabaseTest#theStuckReadingCountsWhatTheSweepWould` | Recorded | **The unknown-state age metric the catalogue's Verify line names, for withdrawals (`P7-TSK-015`).** The dispatched bound neutralised in `JdbcWithdrawalStore.unknownReading` (`OR true`, its parameter still bound) | Caught — the dispatch still mid-question counted beside the overdue one, which puts healthy traffic in the stuck-withdrawal alert. The reading shares the sweep's one placeholder, so the gauge and the sweep cannot disagree about when an answer was due |
+| `INV-LIFE-03` | `DisputeResponseDatabaseTest#theStuckAnswerReadingCountsWhatTheSweepWould`, `DisputeResponseDatabaseTest#aLostAnswerIsUnknownUntilTheSweepResolvesIt` | Recorded | **And for dispute answers, the one Phase 7 machine whose `UNKNOWN` had no metric at all (`P7-TSK-015`).** The reading made blind to `UNKNOWN` (`r.status = 'NONE'` in `JdbcDisputeResponseStore.unknownReading`) | Caught by both — the lost answer, honestly `UNKNOWN`, never showed as stuck: a merchant's contest in limbo while the network's respond-by date runs, invisible exactly when the sweep is not getting there |
+| `INV-LIFE-03` | `DisputeResponseDatabaseTest#theStuckAnswerReadingCountsWhatTheSweepWould` | Recorded | The answer reading's dispatched bound neutralised (`OR true` on the send-permit clause) (`P7-TSK-015`) | Caught — the answer still mid-question counted beside the overdue dispatch and the `UNKNOWN` answer, three where two are owed |
+| `INV-LIFE-03` | `StuckOperationMetricsTest#unreadableIsNaNNeverZero`, `StuckOperationMetricsTest#anUnopenableConnectionIsNaN` | Recorded | An unreadable database published as zero and zero instead of NaN, in the one parameterised pair both machines share (`P7-TSK-015`) | Caught, both ways a reading can fail — the `P6-TSK-013` row's finding re-performed on the shared implementation: zero says "nothing is stuck" at the moment nothing can be known, and silences both alerts when the platform is least healthy |
+| `INV-LIFE-03` | `PlannedMetersExistTest#phase7PlannedMetersAreAlreadyPublished`, `DisputeResponseDatabaseTest#theStuckAnswerReadingCountsWhatTheSweepWould` | Recorded | The answer pair's active gauge registered under another name (`finapp.payments.dispute.response.stuck.active`) (`P7-TSK-015`) | Caught at both ranks — the plan's §15 row named a series no fresh instance publishes, and the running instance's gauge was not there where the wired reading is asserted a number (`DOD-OBS`'s "verified against a running instance") |
+| `INV-AUD-02` | `MetricConventionTest#tagsCannotCarryUnboundedValues` | Recorded | The written argument for the new `stage` tag key withdrawn (`"stageX"` for `"stage"` in `MetricNames`' allowed keys) (`P7-TSK-015`) | Caught — the dispute gauge's `stage` tag refused as a key nobody argued for: the vocabulary widens only with its written reason (seven closed stages under one plan series), never silently |
+| `INV-AUD-02` | `PaymentMetersTest#theRailTagsAreBounded`, `MetricConventionTest#tagsCannotCarryUnboundedValues` | Recorded | A per-merchant tag riding the rail outcome counter (`.tag("merchant", ...)`) (`P7-TSK-015`) | Caught by both — the rail series' key set is asserted exactly, and the convention guard refused the key. The chargeback ratio is an operator REPORT because a merchant tag is unbounded cardinality and a per-tenant disclosure on every scrape (ADR-0018) |
+| `INV-AUD-03` | `ChargebackRatioReportDatabaseTest#theReportIsGuarded`, `ChargebackRatioReportDatabaseTest#theMonthIsCountedAndRanked` | Recorded | The report route behind `DISPUTE_ADMINISTER` instead of `MERCHANT_ADMINISTER` (`P7-TSK-015`) | Caught by four tests — the dispute desk read the ratio report where its one 403 is owed, and the merchant desk was refused wherever it reads (`#theReportIsBounded` and `#theDefaultPeriodIsTheCurrentMonth` too): a standing judgement about merchants is the merchant desk's, proven from the attacker's direction |
+| `INV-AUD-01` | `ChargebackRatioReportDatabaseTest#theMonthIsCountedAndRanked` | Recorded | The report read's audit record skipped (`if (counts == null)` around the append in `DisputeReads.chargebackCountsForOperator`) (`P7-TSK-015`) | Caught — the read left no `payments.ChargebackRatioRead`: a cross-tenant view of every merchant's standing is an operator read of consequence, on the record naming the period and never a merchant |
 
 ## 3. What the register does not claim
 
@@ -715,6 +724,56 @@ restore verified byte-identical):
   `PaymentOutcomes.answered`, and only the attempt's was broken on purpose
   (`concurrentSweepersRaceToOneWinner`).
 - **`INV-SET-01` at the clearing recorder is structural, not mutational** (`P7-TSK-005`). `PaymentClearing`'s dependency list contains no ledger, no outcome component and no machine door, so no single-fragment mutation of shipped code can make a clearing post or transition; the behavioural pins stand in front of the structure — every clearing test asserts the journal count and the attempt's state byte-unchanged, including on the unconcluded attempt a racing notice attached to. The falsifiable rank arrives with Phase 8's settlement matching, where a posting exists to protect.
+
+**The rail and dispute meters' other controls are demonstrated and deliberately not claimed**
+(`P7-TSK-015`). Counting each acting judgement exactly once where it is written, after its commit,
+the rail series following the declarations, the stage gauge and the report's arithmetic are
+observability and reporting disciplines, not catalogued invariants, so none is claimed under an
+`INV-*` row. Each was probed all the same, and each was caught by the test named:
+- each applier's report removed - attempts: `PaymentEndpointDatabaseTest#theAcceptanceChainHolds`,
+  `#cancellingAnAuthorizedPaymentReleasesThePromise` and `PayByBankDatabaseTest#aLostCallbackIsResolvedByInquiry`;
+  refunds: `PaymentRefundDatabaseTest#tenConcurrentRefundWebhooksProduceOneEffect` and
+  `PayByBankDatabaseTest#aLostReturnAnswerResolvesBySweep`; withdrawals:
+  `WithdrawalDatabaseTest#aLostAnswerResolvesByInquiryToOneEntry`; dispute answers:
+  `DisputeResponseDatabaseTest#aRepresentmentIsSubmittedAndWonEndToEnd` and
+  `#aLostAnswerIsUnknownUntilTheSweepResolvesIt`; the book payment:
+  `CheckoutFlowDatabaseTest#tenConcurrentWalletConfirmsProduceOneEntry`;
+- a CONVERGED application reported as a judgement - refunds:
+  `PaymentRefundDatabaseTest#aConvergedRefundApplicationCountsNothing`; attempts:
+  `PaymentSweeperDatabaseTest#aConvergedCaptureIsCountedOnce`. **Neither test existed before the
+  gate, and the first probe survived**: it was aimed at the ten-webhook race, whose nine losers no
+  longer reach the refund applier at all - the door's locked read (the Phase 6 → 7 transition)
+  finds the refund finished and applies nothing, so that test's own comment still credited an
+  acting bit it can no longer exercise (corrected). The one converged refund application left
+  reachable is an ambiguous answer on a row another resolver already moved into `UNKNOWN`; the
+  attempt's is the sweep's unlocked read, which the ten-sweeper race reaches nine times but through
+  `RailOutcomeObserver.NONE`. Both now run deterministically over a registry the test owns, and
+  both probes were re-run and caught;
+- a judgement writer called outside its applier: `JudgementWritersAreConfinedTest#everyJudgementWriterCallIsItsAppliers`;
+- counted before the commit: `CommittedRailOutcomesTest#aJudgementCountsOnlyOnceItsTransactionCommits`
+  and `#aRolledBackJudgementCountsNothing`;
+- a failing meter rethrown into a committed operation: `CommittedRailOutcomesTest#aFailingMeterNeverPropagates`;
+- `AWAITING_PAYER` counted as a judgement: `CommittedRailOutcomesTest#aMidQuestionStatusCountsNothing`;
+- `VOID_UNKNOWN` left uncounted: `CommittedRailOutcomesTest#everyUnknownIsAJudgement`;
+- the withdrawal series registered on every rail rather than the push rails that declare it:
+  `PaymentMetersTest#theRailSeriesFollowTheDeclarations`;
+- the push rail timed under the card PSP's name again - the mislabel this task found, restored:
+  `PaymentMetersTest#thePushRailIsTimedUnderItsOwnName`;
+- the dispute port timed only when it answers: `PaymentMetersTest#theDisputePortIsTimed`;
+- every dispute counted at one stage: `DisputeResponseDatabaseTest#aRepresentmentIsSubmittedAndWonEndToEnd`;
+- the stage gauge's unreadable reading published as zeros: `DisputeStageMetricsTest#unreadableIsNaNNeverZero`;
+- the report counting a wallet as a merchant, the window's end made inclusive, a chargeback dated
+  by the dispute's opening rather than its escalation, inquiries counted as chargebacks, and an
+  undefined ratio not ranked first: `ChargebackRatioReportDatabaseTest#theMonthIsCountedAndRanked`,
+  five probes;
+- the report unbounded: `ChargebackRatioReportDatabaseTest#theReportIsBounded`;
+- the rail filter dropped: `ChargebackRatioReportDatabaseTest#theRailFilterIsTheCallersData`;
+- the reportable range unbounded (a pre-2000 month, a future one, `9999-12`):
+  `ChargebackRatioReportDatabaseTest#theReportIsGuarded`.
+
+The range's refusal and the wired stage gauge's reading were also the gate's own additions: the
+report first accepted any four-digit year, `9999-12` pushing its window's end into year 10000, and
+no test read the running instance's stage gauge against the real schema.
 
 ---
 

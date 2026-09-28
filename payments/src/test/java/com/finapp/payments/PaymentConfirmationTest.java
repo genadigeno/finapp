@@ -156,7 +156,8 @@ class PaymentConfirmationTest {
                 UntouchedChargebacks.over(
                         attempts, intents,
                         PaymentRails.of(java.util.List.of(SimulatedCardPspAdapter.RAIL)),
-                        IDS, CLOCK));
+                        IDS, CLOCK),
+                com.finapp.payments.RailOutcomeObserver.NONE);
     }
 
     @Test

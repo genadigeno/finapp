@@ -150,7 +150,11 @@ public enum PermissionName {
      * onboarding demands the KYB gate), while one role holds both - one
      * merchant-administering population until a trust decision splits it, the
      * {@code LEDGER_OPERATOR} reasoning. Ships with its real check sites, the
-     * {@code /v1/operator/merchants/'{id}'/*} state moves.
+     * {@code /v1/operator/merchants/'{id}'/*} state moves — and, from `P7-TSK-015`, the
+     * chargeback-ratio report {@code GET /v1/operator/reports/chargeback-ratio}: every merchant's
+     * card sales and chargebacks for a month, the evidence the standing judgement rests on
+     * (the card schemes' monitoring number), audited per report ({@code payments.ChargebackRatioRead}).
+     * A dispute's own details stay behind {@link #DISPUTE_ADMINISTER}.
      */
     MERCHANT_ADMINISTER,
 

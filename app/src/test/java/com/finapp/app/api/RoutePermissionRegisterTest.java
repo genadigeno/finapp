@@ -95,7 +95,10 @@ class RoutePermissionRegisterTest {
                     entry("POST /v1/operator/disputes/{disputeId}/evidence", PermissionName.DISPUTE_ADMINISTER),
                     entry("GET /v1/operator/disputes/{disputeId}/evidence/{evidenceId}", PermissionName.DISPUTE_ADMINISTER),
                     entry("POST /v1/operator/disputes/{disputeId}/representment", PermissionName.DISPUTE_ADMINISTER),
-                    entry("POST /v1/operator/disputes/{disputeId}/acceptance", PermissionName.DISPUTE_ADMINISTER)));
+                    entry("POST /v1/operator/disputes/{disputeId}/acceptance", PermissionName.DISPUTE_ADMINISTER),
+                    // The chargeback-ratio report (P7-TSK-015): the standing desk's evidence,
+                    // across every merchant, audited per report served
+                    entry("GET /v1/operator/reports/chargeback-ratio", PermissionName.MERCHANT_ADMINISTER)));
 
     /** The MVC mapping, by name - actuator registers a second one (the rule test's reason). */
     @Autowired
