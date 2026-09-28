@@ -1,4 +1,4 @@
-package com.finapp.merchant;
+package com.finapp.reconciliation;
 
 import static org.assertj.core.api.Assertions.assertThat;
 
@@ -11,36 +11,38 @@ import org.junit.jupiter.api.Tag;
 import org.junit.jupiter.api.Test;
 
 /**
- * The structural guarantees the {@code merchant} module exists to provide (P6-TSK-001).
+ * The structural guarantees the {@code reconciliation} module exists to provide (P8-TSK-001).
  *
  * <p>Assertions about the <strong>build</strong>, not about behaviour — the
  * {@code PartyModuleIsolationTest} idiom, and the moment they fail is the moment the damage is
  * cheap to undo.
  *
- * <p><strong>The one edge this module is defined by is the one it is allowed.</strong>
- * {@code INV-MER-02}: the merchant payable is a ledger <em>position</em> — captured minus fees
- * minus refunds minus payouts — read and posted to through the ledger's APIs (ADR-0050's
- * one-entry capture, ADR-0051's hold-then-dispatch payout), commanded and never written
- * ({@code INV-LED-04}), and stored nowhere as a column. So {@code merchant} depends on
- * {@code ledger}, and {@code ledger} never depends on {@code merchant}: the accounting must not
- * be shaped by the commercial traffic built over it. This test pins the <em>positive</em> half
- * (the edge exists, so the asymmetry is a fact about the build graph and the reverse edge is a
- * Gradle cycle); {@code LedgerModuleIsolationTest} forbids the negative half from its own side.
+ * <p><strong>The one edge this module is defined by is the one it is allowed.</strong> An
+ * approved resolution's compensating entry goes through the ledger's adjustment machinery, and
+ * the position proof reads balances through the ledger's API — commanded and read, never
+ * written ({@code INV-LED-04}, ADR-0071). So {@code reconciliation} depends on {@code ledger},
+ * and {@code ledger} never depends on {@code reconciliation}: the accounting must not be shaped
+ * by the comparison built over it. This test pins the <em>positive</em> half (the edge exists,
+ * so the asymmetry is a fact about the build graph and the reverse edge is a Gradle cycle);
+ * {@code LedgerModuleIsolationTest} forbids the negative half from its own side.
  *
- * <p><strong>{@code checkout} and {@code payments} are refusals with no cycle behind them.</strong>
- * A session references its merchant by identifier through a port {@code app} implements — the
- * counterparty's lifecycle must not be shaped by the purchase experience. And the fee
- * assessment rides the capture through the ADR-0050 §6 composition seam in {@code app}, so the
- * module that prices the platform's service never compiles against provider machinery. Both
- * would configure cleanly if added; this test is the only control.
+ * <p><strong>{@code settlement} is a refusal with no cycle behind it — and it is the refusal
+ * this phase is built on.</strong> Reconciliation owns what the platform EXPECTED; settlement
+ * owns what the counterparties SAY happened (ADR-0064). If the matcher could compile against
+ * evidence rows, or a resolution reach into a batch, the two authorities would share a writer —
+ * exactly the shared-mutable-ownership CLAUDE.md forbids. The edge would configure cleanly if
+ * added; this test and its twin are the only controls, and every hand-off — the intake's copy,
+ * the openers' calls — goes through a port {@code app} composes. {@code payments} and
+ * {@code merchant} are refused for the same shape of reason: an expectation names the
+ * completion that opened it by identifier and posting key, never by type.
  */
 @Tag("architecture")
-@DisplayName("merchant module isolation (P6-TSK-001)")
-class MerchantModuleIsolationTest {
+@DisplayName("reconciliation module isolation (P8-TSK-001)")
+class ReconciliationModuleIsolationTest {
 
     @Test
-    @DisplayName("merchant sees no sibling business module but ledger — checkout and payments "
-            + "included, whose refusals have no cycle behind them — and not the composition root")
+    @DisplayName("reconciliation sees no sibling business module but ledger — settlement included, "
+            + "whose refusal has no cycle behind it — and not the composition root")
     void seesNoSiblingButLedgerAndNoCompositionRoot() {
         for (String forbidden :
                 List.of(
@@ -53,26 +55,27 @@ class MerchantModuleIsolationTest {
                         "payments",
                         "paymentmethods",
                         "checkout",
+                        "merchant",
                         "settlement",
-                        "reconciliation",
                         "app")) {
             assertThat(classpathEntries())
-                    .as("merchant must not depend on %s", forbidden)
+                    .as("reconciliation must not depend on %s", forbidden)
                     .noneMatch(entry -> isBuildOutputOf(entry, forbidden));
         }
     }
 
     @Test
-    @DisplayName("merchant does depend on ledger, platform and sharedkernel — the documented direction")
+    @DisplayName("reconciliation does depend on ledger, platform and sharedkernel — the documented "
+            + "direction")
     void dependsOnLedgerPlatformAndSharedkernel() {
         // The non-vacuity half of the guard above — without it, the forbidden-list assertion
         // passes over a classpath containing nothing at all — and the positive half of
-        // INV-MER-02's asymmetry: merchant -> ledger -> platform -> sharedkernel is pinned as
-        // the documented direction, so the ledger edge quietly disappearing (which would make
+        // ADR-0071's asymmetry: reconciliation -> ledger -> platform -> sharedkernel is pinned
+        // as the documented direction, so the ledger edge quietly disappearing (which would make
         // the asymmetry an accident rather than a structure) is a failure here.
         for (String required : List.of("ledger", "platform", "sharedkernel")) {
             assertThat(classpathEntries())
-                    .as("merchant must depend on %s", required)
+                    .as("reconciliation must depend on %s", required)
                     .anyMatch(entry -> isBuildOutputOf(entry, required));
         }
     }

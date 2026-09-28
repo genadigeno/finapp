@@ -56,6 +56,8 @@ class PaymentsModuleIsolationTest {
                         "paymentmethods",
                         "checkout",
                         "merchant",
+                        "settlement",
+                        "reconciliation",
                         "app")) {
             assertThat(classpathEntries())
                     .as("payments must not depend on %s", forbidden)

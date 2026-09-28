@@ -37,7 +37,20 @@ class AccountsModuleIsolationTest {
     @Test
     @DisplayName("accounts sees no sibling business module but ledger, and not the composition root")
     void seesNoSiblingButLedgerAndNoCompositionRoot() {
-        for (String forbidden : List.of("party", "identity", "kyc", "consent", "transfers", "payments", "paymentmethods", "checkout", "merchant", "app")) {
+        for (String forbidden :
+                List.of(
+                        "party",
+                        "identity",
+                        "kyc",
+                        "consent",
+                        "transfers",
+                        "payments",
+                        "paymentmethods",
+                        "checkout",
+                        "merchant",
+                        "settlement",
+                        "reconciliation",
+                        "app")) {
             assertThat(classpathEntries())
                     .as("accounts must not depend on %s", forbidden)
                     .noneMatch(entry -> isBuildOutputOf(entry, forbidden));

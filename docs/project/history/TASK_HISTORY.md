@@ -1,6 +1,6 @@
 # Task History
 
-The per-task completion records that accumulated behind `## Current Task` - 163 "Previously" blocks, newest first, from `P7-DOC-001` back to project initiation. *(`X-TSK-004` is cross-cutting and completed after the Phase 6 → 7 transition, so it stands second, between `P7-TSK-001` and the transition's record - the transition's block moved here by `P7-TSK-001`'s gate, exactly as an earlier form of this note said it would.)*
+The per-task completion records that accumulated behind `## Current Task` - 164 "Previously" blocks, newest first, from the Phase 7 → 8 transition back to project initiation. *(`X-TSK-004` is cross-cutting and completed after the Phase 6 → 7 transition, so it stands second, between `P7-TSK-001` and the transition's record - the transition's block moved here by `P7-TSK-001`'s gate, exactly as an earlier form of this note said it would.)*
 
 **Archive.** These records were moved verbatim out of
 [`CURRENT_STATE.md`](../CURRENT_STATE.md) on 2026-09-20 so that the canonical description of
@@ -12,6 +12,26 @@ Current state: [`CURRENT_STATE.md`](../CURRENT_STATE.md) ·
 Authoritative backlog: [`BACKLOG.md`](../BACKLOG.md)
 
 ---
+
+### Previously
+
+**The Phase 7 → Phase 8 transition** — `COMPLETE` (2026-09-28),
+[`reviews/PHASE_7_TO_8_TRANSITION.md`](reviews/PHASE_7_TO_8_TRANSITION.md). **Phase 7
+`COMPLETE`, confirmed after repair; Phase 8 `READY`.** The integrated audit found two CRITICAL and
+twelve IMPORTANT Phase 7 defects and repaired every one before the boundary — payments `V023`
+(`scheme_execution_claim`: one money fact per scheme execution; the parking's named reference,
+cycle, cause and attempt; the fifth evidence subject), the executed amount judged by the one
+applier, the inquiry's own vocabulary, the void redirect for a capture never sent or received and
+a re-sent never-received void, the merchant close asking the dispute store and closing its
+payable, the grant's shape rule and escaped bodies, the undispatched checkout intent re-checked,
+refused at the public door and cancelled at expiry, the dispute rows pre-locked in order
+(`PostingService.lockBalancesInOrder`), strictly advancing permits, `ProviderTransportGuard`, and
+`SECOND_PRESENTMENT` — plus the MINOR correctness, concurrency and security findings, and the
+harness's heap. Thirty-four probe runs over thirty-three breaks, thirty-three caught at once.
+Multi-instance **`FAIL` as found, `PASS` after repair**. Phase 8 initialised: its plan, ten ADRs,
+its lifecycles and model, nine invariants, its gate extension, its registers and its backlog, with
+`P8-TSK-001` `READY`. The full record is the transition document; this block moves to
+[`history/TASK_HISTORY.md`](history/TASK_HISTORY.md) when the next task completes.
 
 ### Previously
 

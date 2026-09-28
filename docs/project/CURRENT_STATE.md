@@ -7,7 +7,7 @@ Conversation history is not. Read this first in every session
 **History lives in [`history/`](history/)** — per-task records, closed milestones, completed
 capabilities and the change log. This document stays current; the archives stay archived.
 
-Last updated: 2026-09-28 (the Phase 7 → Phase 8 transition — **Phase 7 `COMPLETE`, confirmed after repair; Phase 8 `READY`**, first task `P8-TSK-001` `READY`)
+Last updated: 2026-09-28 (`P8-TSK-001` — the `settlement` and `reconciliation` modules and schemas; **M8.1 opens at 1 of 3**, next `P8-TSK-002`)
 
 ---
 
@@ -364,7 +364,7 @@ repaired first) and after: `build databaseTest kafkaTest` again, fleet-wide: `bu
 review's verdict now rests on a corrected phase.
 
 **Phase 8 — Settlement and Reconciliation**
-Status: 🟢 **`READY`** (2026-09-28) — entry gate: all twelve criteria hold, by the Phase 7 → 8
+Status: 🔵 **`IN_PROGRESS`** (2026-09-28, `P8-TSK-001`) — entry gate: all twelve criteria hold, by the Phase 7 → 8
 transition ([`reviews/PHASE_7_TO_8_TRANSITION.md`](reviews/PHASE_7_TO_8_TRANSITION.md) §13).
 Planned in [`PHASE_8_PLAN.md`](PHASE_8_PLAN.md); decisions in ADR-0064…0073 (`Proposed`; ADR-0063
 reserved by an unmerged branch): settlement holds evidence and reconciliation holds expectations;
@@ -377,8 +377,9 @@ adjustment machinery; amounts never enter metrics; a payout return applied from 
 evidence. The transition catalogued nine invariants, taking the platform to **110**, and the
 Phase 8 set is **twenty-two**. 27 backlog items across eight milestones (M8.1–M8.8);
 [`SETTLEMENT_AND_RECONCILIATION_LIFECYCLES.md`](../domain/SETTLEMENT_AND_RECONCILIATION_LIFECYCLES.md)
-states nine machines and one born-once fact. **0 of 27 items complete**; first task **`P8-TSK-001` — the
-`settlement` and `reconciliation` modules and schemas** — `READY`, not started.
+states nine machines and one born-once fact. **1 of 27 items complete** (M8.1 at 1 of 3): `P8-TSK-001`
+laid the two modules and their privilege floors; next **`P8-TSK-002` — the source register, the
+encrypted file store and the door screen** — `READY` ([§Current Task](#current-task) is kept current).
 
 ## Current Milestone
 
@@ -393,33 +394,52 @@ since M0.1". Moved, not edited.)*
 
 ## Current Task
 
-**`P8-TSK-001` — The `settlement` and `reconciliation` modules and schemas** — `READY`.
-The first Phase 8 task, opening **M8.1 — Evidence intake**: build-graph facts and privilege
-floors only, before any domain code — the two modules and their per-schema Flyway, `V001` in each
-(owner `finapp_migrator`, `USAGE` alone to `finapp_app`, no tables), the isolation tests with their
-planted probes. Its entry and field set
-are in [`BACKLOG.md`](BACKLOG.md); [`PHASE_8_PLAN.md`](PHASE_8_PLAN.md) §19 states it. **Not
-started.**
+**`P8-TSK-002` — The source register, the encrypted file store and the door screen** — `READY`.
+M8.1's second act: every externally settling position gains exactly one declared source
+(`INV-SET-05`) and settlement evidence can be received — screened before anything is stored,
+encrypted under its own key with the AAD bound, checksummed and append-only — with nothing yet
+parsed and no door open. Its entry and field set are in [`BACKLOG.md`](BACKLOG.md); ADR-0066 is
+its decision. **Not started.**
 
 ### Just completed
 
-**The Phase 7 → Phase 8 transition** — `COMPLETE` (2026-09-28),
-[`reviews/PHASE_7_TO_8_TRANSITION.md`](reviews/PHASE_7_TO_8_TRANSITION.md). **Phase 7
-`COMPLETE`, confirmed after repair; Phase 8 `READY`.** The integrated audit found two CRITICAL and
-twelve IMPORTANT Phase 7 defects and repaired every one before the boundary — payments `V023`
-(`scheme_execution_claim`: one money fact per scheme execution; the parking's named reference,
-cycle, cause and attempt; the fifth evidence subject), the executed amount judged by the one
-applier, the inquiry's own vocabulary, the void redirect for a capture never sent or received and
-a re-sent never-received void, the merchant close asking the dispute store and closing its
-payable, the grant's shape rule and escaped bodies, the undispatched checkout intent re-checked,
-refused at the public door and cancelled at expiry, the dispute rows pre-locked in order
-(`PostingService.lockBalancesInOrder`), strictly advancing permits, `ProviderTransportGuard`, and
-`SECOND_PRESENTMENT` — plus the MINOR correctness, concurrency and security findings, and the
-harness's heap. Thirty-four probe runs over thirty-three breaks, thirty-three caught at once.
-Multi-instance **`FAIL` as found, `PASS` after repair**. Phase 8 initialised: its plan, ten ADRs,
-its lifecycles and model, nine invariants, its gate extension, its registers and its backlog, with
-`P8-TSK-001` `READY`. The full record is the transition document; this block moves to
-[`history/TASK_HISTORY.md`](history/TASK_HISTORY.md) when the next task completes.
+**`P8-TSK-001` — The `settlement` and `reconciliation` modules and schemas** — `COMPLETE`
+(2026-09-28). **M8.1 opens at 1 of 3 and Phase 8 is `IN_PROGRESS`**: bounded contexts 13 and 14
+as build-graph facts and privilege floors, before any domain code — ADR-0064's separation made
+structural. Both modules declared after `ledger`, so `ledger → settlement` and
+`ledger → reconciliation` are Gradle cycles, **demonstrated both** ("Circular dependency"
+at configuration, each restore byte-identical); `settlement ↔ reconciliation` refused in BOTH
+directions with no cycle behind either refusal — the two isolation tests are the only controls,
+and all four planted edges (`settlement → reconciliation`, `reconciliation → settlement`,
+`settlement → payments`, `reconciliation → merchant`) were caught by the intended test naming
+the intruder. `V001` in each schema on the sibling shape verbatim: owner `finapp_migrator`,
+`REVOKE ALL FROM PUBLIC`, `USAGE` alone to `finapp_app`, no tables, deliberately no
+`ALTER DEFAULT PRIVILEGES`. **The floors proven live in each module's own database tier** — the
+task wired `testFixtures(platform)` and the image property into both new builds, so the module
+that owns the schema owns the proof of its floor: ACL exactly `{finapp_migrator=UC,
+finapp_app=U}` read whole from `pg_namespace` (an extra grantee is invisible to a per-role
+probe), the owner the migrator, `pg_default_acl` empty, the only table Flyway's history and the
+application role refused on it, `USAGE`-without-`CREATE` exercised as `finapp_app` behind
+`assertCannotBypassPrivileges`. `DatabaseUnderTest` discovered both schemas from the repository
+layout with zero edits and CI's flyway steps are unqualified — the stale-name class checked and
+empty. Eleven sibling isolation tests gain both modules (seven reflowed to the multi-line
+shape); both modules join `app`'s classpath so `ProductionModules` sweeps them, and a planted
+`double` in each was caught naming that module. **The gate's own finds, each fixed**: the floor
+test's text check tripped on the migration's own "deliberately NO `ALTER DEFAULT PRIVILEGES`"
+comment (it now reads only the statements, comments stripped); `:platform:test` first reported
+green from an `UP-TO-DATE` result, not an execution (re-run `--rerun-tasks`, fresh); the probe
+harness had overwritten `app`'s green evidence with its own intended failure (the final code
+re-run whole and fresh); and the reverse-edge cycle had been demonstrated on one side only (now
+both). Multi-instance `PASS` — ten instances booting at once apply each floor once under
+Flyway's schema-history lock, and nothing else exists for two instances to disagree on.
+`INV-LED-04` untouched: the ledger's grants unchanged, and the floor test proves the
+application role cannot even `CREATE` in the new schemas. Eight probe runs, eight caught, every
+verdict read from the failing testcases or Gradle's own refusal, every restore byte-identical.
+No aggregate, bean, endpoint, permission, event or audit action — the deliberately-few licence;
+no `DATA_CLASSIFICATION.md` rows because no columns exist. `MODULE_ARCHITECTURE.md`'s two
+Phase-8 owner entries and ADR-0064's implementation note now say the boundary exists. Verified
+by targeted tiers from fresh runs on the final code: the hermetic tier green fleet-wide across
+sixteen modules, and the two new database tiers green (five floor assertions each).
 
 ### Previously
 
@@ -442,8 +462,9 @@ archived verbatim in
 
 ## Active Work
 
-**Phase 8 is `READY`** (2026-09-28) — 0 of 27 items; **M8.1, Evidence intake, opens with
-`P8-TSK-001`** ([§Current Task](#current-task) is kept current). Phase 7 is `COMPLETE` — 18 of 18
+**Phase 8 is `IN_PROGRESS`** (2026-09-28) — 1 of 27 items complete; **M8.1, Evidence intake, at
+1 of 3** — `P8-TSK-001` laid the modules and floors; next `P8-TSK-002` ([§Current Task](#current-task)
+is kept current). Phase 7 is `COMPLETE` — 18 of 18
 items, M7.1–M7.8 closed, ruled by `P7-DOC-001` and confirmed after repair by the Phase 7 → 8
 transition ([`reviews/PHASE_7_TO_8_TRANSITION.md`](reviews/PHASE_7_TO_8_TRANSITION.md)). *(This
 paragraph read "6 of 18 items complete; M7.1, Rail foundations, opens at 1 of 3 (`P7-TSK-001`).
@@ -845,9 +866,9 @@ Resolved during initiation:
 
 ## Next Task
 
-**`P8-TSK-001`** — `READY` (the Current Task). Its completion gate marks exactly one next task
-`READY`: by the plan's dependencies `P8-TSK-002` (on `-001` alone) or `P8-TSK-006` (on nothing
-within Phase 8).
+**`P8-TSK-002`** — `READY` (the Current Task), marked by `P8-TSK-001`'s completion gate — the
+milestone's own order; `P8-TSK-006` (on nothing within Phase 8) stays the recorded alternative
+if M8.1 must yield.
 
 ### Superseded: the Phase 7 → 8 transition lead (read until 2026-09-28)
 

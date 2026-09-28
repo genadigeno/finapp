@@ -440,7 +440,10 @@ An expectation's amount is a copy, never a balance. Balances stay derived from t
   - The boundary itself does not change.
 
   The automated payout return is owner decision O2, settled the same way.
-- **Nothing is implemented yet.** Until `P8-TSK-001` lands, nothing in this ADR is implemented.
-  Every statement is the decided design, corrected by the tasks that build it.
+- **What is implemented.** `P8-TSK-001` laid the boundary this ADR decides: the two modules with
+  no build edge between them in either direction, each with its migrator-owned schema floor
+  (`REVOKE ALL FROM PUBLIC`, `USAGE` alone to `finapp_app`, no tables, no default privileges),
+  the floors proven live and the refusals probed with planted edges. Everything else in this ADR
+  is the decided design, corrected by the tasks that build it.
 - **Acceptance.** The Phase 8 review (`P8-DOC-001`) reads this ADR against the code before
   accepting it, following the `P7-DOC-001` precedent.

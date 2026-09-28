@@ -37,7 +37,21 @@ class IdentityModuleIsolationTest {
         // dependency direction had been inverted. `consent` matters especially: consent is not
         // authentication and not authorization (INV-IDN-04), and an edge from here onto it is
         // the first step toward a session standing in for a lawful basis.
-        for (String forbidden : List.of("party", "kyc", "consent", "ledger", "accounts", "transfers", "payments", "paymentmethods", "checkout", "merchant", "app")) {
+        for (String forbidden :
+                List.of(
+                        "party",
+                        "kyc",
+                        "consent",
+                        "ledger",
+                        "accounts",
+                        "transfers",
+                        "payments",
+                        "paymentmethods",
+                        "checkout",
+                        "merchant",
+                        "settlement",
+                        "reconciliation",
+                        "app")) {
             assertThat(classpathEntries())
                     .as("identity must not depend on %s", forbidden)
                     .noneMatch(entry -> isBuildOutputOf(entry, forbidden));

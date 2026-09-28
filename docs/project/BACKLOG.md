@@ -9523,7 +9523,7 @@ Disputes (`P7-TSK-012`…`-014`) · M7.7 Observability and demonstration (`P7-TS
 
 # Phase 8 — Settlement and Reconciliation
 
-Status: `READY` — entry gate passed 2026-09-28 by the Phase 7 → 8 transition
+Status: `IN_PROGRESS` — started 2026-09-28 with `P8-TSK-001` (1 of 27 items complete, M8.1 at 1 of 3); entry gate passed 2026-09-28 by the Phase 7 → 8 transition
 ([`reviews/PHASE_7_TO_8_TRANSITION.md`](reviews/PHASE_7_TO_8_TRANSITION.md)), elaborated to task
 granularity by the same transition: twenty-seven items (`P8-TSK-001`…`-024`, `P8-TST-001`,
 `P8-TST-002`, `P8-DOC-001`) across eight milestones, with `P8-TSK-001` marked `READY`. The
@@ -9586,7 +9586,7 @@ Two cross-cutting tasks recorded by the same transition sit under *Cross-cutting
 nothing here: `X-TSK-008` (an AAD bound in the four existing ciphers) and `X-TSK-009` (the
 posting-date documentation reconciled with the Phase 5–7 practice, with no retrofit).
 
-**P8-TSK-001 — The `settlement` and `reconciliation` modules and schemas** — `READY`
+**P8-TSK-001 — The `settlement` and `reconciliation` modules and schemas** — `COMPLETE` (2026-09-28)
 - **Objective**: bounded contexts 13 and 14 as build-graph facts before any domain code — two
   guarded modules with no edge between them, and their privilege floors only (ADR-0064; the
   `P5-TSK-001` and `P6-TSK-001` precedent that a phase's first task lays floors only).
@@ -9648,7 +9648,7 @@ posting-date documentation reconciled with the Phase 5–7 practice, with no ret
   planted probe caught.
 - **Definition of done**: `DOD-BUILD`, `DOD-ARCH`, `DOD-SEC`. **Risk**: Low. **Cx**: S.
 
-**P8-TSK-002 — The source register, the encrypted file store and the door screen** — `PLANNED`
+**P8-TSK-002 — The source register, the encrypted file store and the door screen** — `READY`
 - **Objective**: every externally settling position has exactly one declared source, composed from
   its counterparty's own declaration (`INV-SET-05`), and settlement evidence can be received —
   screened before anything is stored, encrypted under its own key with the AAD bound, checksummed

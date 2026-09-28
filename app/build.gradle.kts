@@ -74,6 +74,12 @@ dependencies {
     implementation(project(":checkout"))
     implementation(project(":merchant"))
 
+    // The Phase 8 settlement modules (P8-TSK-001), on the classpath for the same reason: a
+    // module not on app's classpath is a module ProductionModules sweeps no rule over. Their
+    // hand-offs never touch each other directly - every port between them is composed here.
+    implementation(project(":settlement"))
+    implementation(project(":reconciliation"))
+
     implementation(libs.spring.boot.starter)
     implementation(libs.spring.boot.starter.web)
     implementation(libs.spring.boot.starter.validation)
