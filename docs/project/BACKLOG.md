@@ -8363,8 +8363,8 @@ negative payable** — `COMPLETE` (2026-09-23)
 
 # Phase 7 — Cards, Wallets, A2A and Instant Payments
 
-Status: `IN_PROGRESS` — started 2026-09-26 with `P7-TSK-001` (16 of 18 items complete, M7.1 at
-3 of 3, M7.2 at 2 of 2, M7.3 at 3 of 3, M7.4 at 2 of 2, M7.5 at 1 of 1, M7.6 at 3 of 3, M7.7 at 2 of 3) *(read `READY` for two days after the first task started — caught by `P7-TSK-001`'s own
+Status: `IN_PROGRESS` — started 2026-09-26 with `P7-TSK-001` (17 of 18 items complete, M7.1 at
+3 of 3, M7.2 at 2 of 2, M7.3 at 3 of 3, M7.4 at 2 of 2, M7.5 at 1 of 1, M7.6 at 3 of 3, M7.7 at 3 of 3) *(read `READY` for two days after the first task started — caught by `P7-TSK-001`'s own
 gate, the stale-second-copy class this file has now recorded five times)*; entry gate passed
 2026-09-24 by the Phase 6 → 7 transition
 ([`reviews/PHASE_6_TO_7_TRANSITION.md`](reviews/PHASE_6_TO_7_TRANSITION.md)), elaborated to task
@@ -9369,7 +9369,7 @@ Disputes (`P7-TSK-012`…`-014`) · M7.7 Observability and demonstration (`P7-TS
   1732 tests across 14 modules, 0 failures; 395 targeted database tests across 37 suites, 0 failures; the platform classification guard green. The full battery deliberately skipped
   on the owner's instruction.
 
-**P7-TST-002 — The dispute battery** — `READY`
+**P7-TST-002 — The dispute battery** — `COMPLETE` (2026-09-28)
 - **Objective**: every dispute failure scenario the plan names, raced and duplicated.
 - **Bounded context**: Disputes (29).
 - **Dependencies**: `P7-TSK-013`, `-014`.
@@ -9400,8 +9400,48 @@ Disputes (`P7-TSK-012`…`-014`) · M7.7 Observability and demonstration (`P7-TS
   written** - the storm's dispute-accounts reading (`CHARGEBACK_RECOVERABLE` plus
   `DISPUTE_COSTS` against each dispute's amount, posted share and fee) is the stage
   postings' reconciliation the entry asks for.
+- **Corrections to this entry** (the `P6-TSK-001` precedent): *Domain changes / Persistence / API
+  / Events: none (test only)* held - no production line changed. *Invariants* gain the battery's
+  demonstrations beside its three subjects: `INV-LIFE-04` (the stage guard refusing every answer
+  after resolution), `INV-IDEM-04` (the card door's inbox, counted by its own tally) and
+  `INV-CON-02` (the counterparty-first lock order, raced over rounds).
+- **Gate**: the acceptance proven over the deployed chain - **the two dispute gate criteria
+  demonstrated under load** (`DisputeBatteryDatabaseTest#theDisputeBatteryHoldsUnderLoad`:
+  thirteen scenarios twice over, four runners over shared wallets, every notification ten ways -
+  five under one event id, five fresh - each redelivered until acknowledged; a chargeback on an
+  already fully refunded payment charges the counterparty nothing and rests whole in
+  `CHARGEBACK_RECOVERABLE`; every stage posts once - one row per network reference, one trail row
+  per edge, one record and one fact per stage, each dispute's journal lines exactly the lines its
+  own record implies), **and probed**: fifteen probes on the final code, fifteen caught - fourteen by the battery itself, each naming its scenario, and the win's missing counterparty lock by the chargeback suite's race, which the battery met in three runs of seven; every verdict read from the failing testcases themselves, never the exit code alone, each restore byte-identical. Every scope item has its scenario: ten-way
+  duplicates on every stage (inquiry, chargeback, representment, win, loss, acceptance, closure);
+  a chargeback on an already-refunded payment (`REFUNDED_FIRST`, §14.7); a refund racing a
+  chargeback, the bound judged BOTH ways (`REFUND_RACING`); a representment after resolution
+  (`ANSWERED_AFTER`, §14.9 - ten answers and documents at once, all refused, nothing written,
+  nothing on the record, nothing sent); a second-cycle chargeback after a loss and after a win
+  (`SECOND_CYCLE`); a counterparty no longer postable (`CLOSED_WALLET`, §14.10 - parked, never
+  refused, and a win returning it from the recoverable). **The stage postings reconciled against
+  the dispute records**, per dispute and whole: `CHARGEBACK_RECOVERABLE` plus `DISPUTE_COSTS`, the
+  clearing and the counterparties' standing shares against the dispute rows; every shared wallet
+  against its book from the refund and dispute rows; `INV-DSP-01` on every attempt; the trial
+  balance over the battery's entries; every refund and answer sent once by our reference, each
+  answer's transmission on the record (`INV-DSP-03`); the door's own tally. **The tenancy rows
+  re-run**: `MerchantTenancyBatteryDatabaseTest` and `DisputeResponseDatabaseTest` inside the
+  gate's battery. **Found while building it**: the refund race never raced - the in-process
+  refunds reached the attempt lock before the door's HTTP deliveries in every run, so the refund's
+  side of the bound was exercised by nothing; every racer now waits behind one gate and the
+  refund's way is forced (a standing partial chargeback, then four refunds: exactly one fits), and
+  five answers racing only each other must admit exactly one. **The gate's own finds**: the
+  redelivery loop read EVERY `409` as the inbox's contention, so a posting refused inside the
+  effect (`ledger.AccountNotPostable`) was redelivered for a minute and caught only by the loop's
+  time bound - only `api.Conflict` is redelivered now; the win's counterparty lock taken away
+  went unseen by the battery (one win-against-refunds race a run; the chargeback suite's race
+  caught it alone) - the lock-order scenario now runs eight rounds per instance, and the battery
+  met the deadlock itself in three runs of seven (a race's verdict; the chargeback suite's race stays its
+  deterministic catcher); and a refused answer's absence from the audit record, and an
+  admitted answer's reasoned dispatch record, were asserted nowhere - both now are. Multi-instance
+  PASS. Fleet hermetic 1732 tests across 14 modules, 0 failures; 396 targeted database tests across 38 suites, 0 failures; the platform classification guard green; the document-reading guards re-run after the records landed. The full battery deliberately skipped on the owner's instruction.
 
-**P7-DOC-001 — The Phase 7 exit review** — `PLANNED`
+**P7-DOC-001 — The Phase 7 exit review** — `READY`
 - **Objective**: rule Phase 7 against `PHASE_GATES.md` §3, the supplement and §5's Phase 7
   criteria, read from the gate.
 - **Bounded context**: all of Phase 7's.
@@ -9417,6 +9457,29 @@ Disputes (`P7-TSK-012`…`-014`) · M7.7 Observability and demonstration (`P7-TS
   review's areas.
 - **Accept**: the review's verdict.
 - **Definition of done**: `DOD-DOC`, the gate. **Risk**: Medium. **Cx**: L.
+- **Design inputs recorded by `P7-TST-002`** (read at design, not binding decisions):
+  (1) **the dispute criteria have their evidence under load** - `PHASE_GATES.md` §5's
+  "duplicate chargeback notification produces correct, single financial effects" and "chargeback
+  on an already-refunded payment is handled without double-debiting", and the supplement's
+  Disputes bullet, are demonstrated by `DisputeBatteryDatabaseTest` (every stage's notification
+  ten ways; `REFUNDED_FIRST`; the bound raced both ways; a win's exact inverse; a loss of exactly
+  the excess) beside `ChargebackAccountingDatabaseTest`'s single-flow tests, probed, rows in
+  `MUTATION_TESTING.md` §2 - with customer WALLETS as the counterparties: the split is judged in
+  `payments` whoever holds the account, and a merchant's payable enters only through
+  `MerchantBoundDisputeComposition`'s two lines, which the multi-rail storm drives under load on
+  its sales; the review reads "debits the merchant nothing twice" against both; (2) **§14's
+  dispute scenarios 7-10 each have a test** - 7 `REFUNDED_FIRST`, 8 every scenario's ten-way
+  deliveries, 9 `ANSWERED_AFTER`, 10 `CLOSED_WALLET` - for exit criterion 4's accounting; (3)
+  **observed, not designed**: across every battery run the inbox's bounded claim wait absorbed
+  every identical-event-id race without one contended `409`, and the in-process refunds reached
+  the attempt lock before the door's HTTP deliveries in most runs - so the refund's side of the
+  combined bound is FORCED (`REFUND_RACING#1`), never left to the race; (4) **a lock order that
+  holds by construction, for the ten-instance reading**: the balance projection sorts account
+  rows WITHIN an entry, and a chargeback stage posts TWO entries - the clearing and the
+  recoverable first, the counterparty second - so its order against a single-entry capture
+  crediting the same counterparty is consistent only because every runtime account's UUIDv7
+  identifier sorts after the chart's seeded clearing (a fixed 2026-09-13 identifier); the review
+  should confirm that dependency as a rule or remove it.
 
 ---
 

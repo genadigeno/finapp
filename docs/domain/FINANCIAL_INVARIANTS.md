@@ -1181,7 +1181,11 @@ chargeback arriving now would take.*
 **Verify:** A chargeback on a fully and a partially refunded payment; a refund after a
 chargeback refused; refunds racing a chargeback counted in the tables; a counted refund that
 later fails re-attributing its share. *(All in `ChargebackAccountingDatabaseTest`; the raw-writer
-ranks in `PaymentsSchemaDatabaseTest`; the arithmetic swept in `ChargebackSplitTest`.)*
+ranks in `PaymentsSchemaDatabaseTest`; the arithmetic swept in `ChargebackSplitTest`.)* *Under
+load (`P7-TST-002`): `DisputeBatteryDatabaseTest` - the bound raced both ways (the
+chargeback's, whatever the interleaving; the refund's, forced beside a standing partial
+chargeback), a second cycle after a loss and after a win, a parked share on a closed wallet,
+and every battery attempt read against the bound at rest.*
 **Phase:** 7
 
 ### INV-DSP-02 — Every dispute stage posts once, and a resolution reverses exactly what it resolves
@@ -1199,7 +1203,11 @@ provider_dispute_reference)`). *Since `P7-TSK-013` the keys are `dispute-chargeb
 whose per-account effect is ADR-0061 §4's table — plus `dispute-reattribution:<dispute>:<cause>`;
 each behind the stage's conditional transition, so a duplicate finds both taken.*
 **Verify:** Ten-way duplicate notification races counted in the tables; out-of-order stage
-delivery; a win netting its chargeback to zero per account.
+delivery; a win netting its chargeback to zero per account. *Under load (`P7-TST-002`):
+`DisputeBatteryDatabaseTest` - every stage of thirteen scenarios delivered ten ways (five under
+one event id, five fresh), each dispute's journal lines exactly the lines its own record
+implies, one trail row per edge, one record and one fact per stage, a win leaving nothing but
+its fee, a loss writing off exactly the excess.*
 **Phase:** 7
 
 ### INV-DSP-03 — Dispute evidence is least-privilege, encrypted, and every access audited
@@ -1220,6 +1228,9 @@ verified on every read.*
 record per access. *(`DisputeResponseDatabaseTest` - `#evidenceIsUnreadableAcrossTenants`,
 `#evidenceRestsAsCiphertextAndEveryReadIsOnTheRecord`, `#aTamperedDocumentIsNeverServedOrSent`;
 `MerchantTenancyBatteryDatabaseTest`'s addressed routes; `PaymentsSchemaDatabaseTest#theRepresentmentSchemaBindsEveryWriter`.)*
+*Under load (`P7-TST-002`): `DisputeBatteryDatabaseTest` - answers racing the network's verdict
+and each other, every admitted answer's one transmission on the record, and answers and
+documents after resolution refused with nothing written or sent.*
 **Phase:** 7
 
 ---

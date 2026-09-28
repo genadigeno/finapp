@@ -269,6 +269,11 @@ Each has a test or a documented, accepted rationale (exit criterion 4):
     auto-capture intents (the transition's stranded-chain leg, kept correct when manual capture
     arrives).
 
+*Scenarios 7-10 under load (`P7-TST-002`): `DisputeBatteryDatabaseTest` - 7 as
+`REFUNDED_FIRST`, 8 as every scenario's ten-way deliveries (five under one event id, five
+fresh), 9 as `ANSWERED_AFTER`, 10 as `CLOSED_WALLET` - beside their single-flow tests in
+`ChargebackAccountingDatabaseTest` and `DisputeResponseDatabaseTest`.*
+
 ## 15. Observability
 
 | Series | What it answers |

@@ -322,11 +322,12 @@ on acceptance and settled on the scheme's cycle. Card issuing is external, and t
 platform to **101 invariants**; the in-scope set is whatever the catalogue marks `Phase: 7`, **ten**
 at planning. 18 backlog items across eight milestones (M7.1–M7.8);
 [`RAIL_AND_DISPUTE_LIFECYCLES.md`](../domain/RAIL_AND_DISPUTE_LIFECYCLES.md) states the machines;
-context 29, Disputes, merged into `payments`. **16 of 18 items complete** (2026-09-28):
-M7.1–M7.6 closed — the rails declared and routed, the card rail completed, the instant rail,
-pay-ins by bank with their returns, the wallet as an instrument, and **disputes end to end**
-with `P7-TSK-014` — and **M7.7 at 2 of 3**: the rail and dispute meters (`P7-TSK-015`) and
-the multi-rail conservation storm (`P7-TST-001`); next **`P7-TST-002`** `READY` ([§Current
+context 29, Disputes, merged into `payments`. **17 of 18 items complete** (2026-09-28):
+M7.1–M7.7 closed — the rails declared and routed, the card rail completed, the instant rail,
+pay-ins by bank with their returns, the wallet as an instrument, **disputes end to end**
+with `P7-TSK-014`, and **observability and demonstration** with the rail and dispute meters
+(`P7-TSK-015`), the multi-rail conservation storm (`P7-TST-001`) and the dispute battery
+(`P7-TST-002`); next **`P7-DOC-001`**, the exit review, `READY` ([§Current
 Task](#current-task) is kept current). *(This sentence said "first task `P7-TSK-001`
 complete, next `P7-TSK-002` `READY`" until `P7-TSK-012`'s gate found it ten tasks stale —
 the stale-second-copy class a sixth time.)*
@@ -344,90 +345,84 @@ since M0.1". Moved, not edited.)*
 
 ## Current Task
 
-**`P7-TST-002` — The dispute battery** — `READY`.
-`PHASE_7_PLAN.md` §13–§14: every dispute failure scenario the plan names, raced and duplicated —
-duplicate chargeback notifications ten ways, a chargeback on an already-refunded payment, a refund
-racing a chargeback, a representment after resolution, a second-cycle chargeback, a counterparty
-no longer postable — the two dispute gate criteria demonstrated under load, the stage postings
-reconciled against the dispute records (`INV-DSP-01`, `-02`, `-03`). Test only: no domain,
-persistence, API or event change. **Design inputs recorded by `P7-TST-001`** on its entry: the
-multi-rail storm already drives chargebacks, wins, losses and fees under load, and races four
-refunds against one full chargeback per burst - the battery's subject is what the storm does not
-reach; every dispute stage now share-locks the counterparty BEFORE its first posting (the storm's
-`40P01` find), so a win or loss racing refunds of the counterparty's other payments belongs in the
-battery; and the storm's dispute-accounts reading (`CHARGEBACK_RECOVERABLE` + `DISPUTE_COSTS`
-against each dispute's own amount, share and fee) is reusable as the stage postings'
-reconciliation. Its entry is in [`BACKLOG.md`](BACKLOG.md); it runs the three-command loop, design
-first. **Not started.**
+**`P7-DOC-001` — The Phase 7 exit review** — `READY`.
+M7.8, the gate: rule Phase 7 against `PHASE_GATES.md` §3, the financial supplement and §5's
+Phase 7 criteria as extended by the Phase 6 → 7 transition, read from the gate - the review
+record; every ADR (0059…0062) read against the code and accepted or corrected; a
+`MUTATION_TESTING.md` register row for every invariant the catalogue marks `Phase: 7`; the flip;
+the post-flip battery. Corrections only, each probed. **Design inputs recorded by `P7-TST-002`**
+on its entry: the two dispute criteria now have their evidence under load
+(`DisputeBatteryDatabaseTest`, probed); §14's dispute scenarios 7-10 each have a test; the
+inbox absorbed every identical-event-id race without a contended `409`, and the refund's side of
+the combined bound is forced rather than raced; and a lock order that holds by construction - a
+chargeback stage's two entries against a single-entry capture on the same counterparty, consistent
+only because every runtime account's identifier sorts after the chart's seeded clearing - for the
+review's ten-instance reading to confirm as a rule or remove. Its entry is in
+[`BACKLOG.md`](BACKLOG.md); it runs the three-command loop, design first. **Not started.**
 
 ### Just completed
 
-**`P7-TST-001` — The multi-rail conservation storm** — `COMPLETE` (2026-09-28).
-**M7.7, Observability and demonstration, reaches 2 of 3: every rail and every money path at once
-on shared wallets and payables - card, instant and wallet payments, withdrawals, transfers,
-refunds, returns and chargebacks, with lost answers, duplicate commands and duplicate callbacks -
-reconciled to the minor unit in every round and again at rest; the gate's four scenarios counted,
-not argued; and the storm found a deadlock no single-flow suite could** (`INV-RAIL-04`,
-`INV-DSP-01`, `INV-BAL-03`, `INV-ACC-01`, `INV-CON-01`, `INV-CON-02`).
+**`P7-TST-002` — The dispute battery** — `COMPLETE` (2026-09-28).
+**M7.7, Observability and demonstration, closes at 3 of 3: every dispute failure scenario the plan
+names, raced and duplicated - each stage's notification ten ways, thirteen scenarios twice over, all
+at once on shared wallets - and every dispute reconciled at rest against its own record; the two
+dispute gate criteria demonstrated under load and probed** (`INV-DSP-01`, `INV-DSP-02`,
+`INV-DSP-03`).
 
 | Acceptance criterion | Evidence |
 |---|---|
-| Stable over three runs | `MultiRailConservationStormDatabaseTest#conservationHoldsAcrossEveryRail`, three fresh runs on the final code - one inside the gate's battery, two alone - after fourteen consecutive passes before the gate's own changes |
-| Every term reconciles under load and at rest | Thirty rounds, each reading in ONE `REPEATABLE READ` snapshot, then again at rest: each external rail's clearing position against its own rail's records, the dispute accounts against each dispute's amount, share and fee, every wallet and payable against independent books (the payable's fees priced from each sale's pin by exact decimal arithmetic), holds against the debits in flight, available never negative, the combined bound on every card attempt, the trial balance per currency |
+| The two dispute gate criteria demonstrated under load | `DisputeBatteryDatabaseTest#theDisputeBatteryHoldsUnderLoad`: a chargeback on an already fully refunded payment charges the counterparty nothing - all of it rests in `CHARGEBACK_RECOVERABLE` (`REFUNDED_FIRST`, twice, then lost and won) - and every stage posts once however often notified: one row per network reference, one trail row per edge, one record and one fact per stage, and each dispute's journal lines exactly the lines its own record implies, with four runners over shared wallets racing refunds, answers and other disputes' stages; stable over three fresh runs on the final code and again inside the gate's battery |
+| Probed | Fifteen probes on the final code, fifteen caught - fourteen by the battery itself, each naming its scenario (the per-dispute reconciliation, THE GATE'S CRITERION's own assertion, the second cycle's split, the record counts, the door's tally, or the schema rank behind a domain break), and the win's missing counterparty lock by the chargeback suite's race, which the battery met in three runs of seven (`MUTATION_TESTING.md` §2 +15 rows, §3 +1 note, §4 +1 row) |
 
-**The storm**: eleven movers over four customers' wallets and three merchants' payables in EUR -
-card and pay-in top-ups, checkouts paid by card, by bank and from the wallet, withdrawals,
-transfers round a ring, an operator refunding whatever the database shows in whatever state, the
-rails' callbacks (every instant confirmation three times - twice under one event id, once fresh -
-every clearing notice twice), the card network disputing sales (full and partial, some with fees,
-each notification three times, then won or lost), two resolvers racing the four sweeps, and
-ten-way bursts on a confirmation, a withdrawal, a refund and a chargeback, and four partial refunds
-racing one full chargeback for a sale's headroom. The storm's clearing and dispute readings are
-summed over its own entries, never as deltas.
+**The battery**: thirteen scenarios, each twice - won (represented implied or stated), lost, the
+verdict heard first, an inquiry escalated to a partial chargeback then accepted or won, an inquiry
+closed (a late inquiry quiet), refunded first (§14.7), the bound raced both ways, a second cycle
+after a loss and after a win, a closed wallet's share parked (§14.10), the PSP's fee with the
+chargeback or reported late, ten answers after resolution refused (§14.9), answers racing the
+network's verdict and each other, and a win or a chargeback racing refunds of the counterparty's
+OTHER payments (`P7-TST-001`'s lock order) - every notification delivered ten ways, five under one
+event id and five fresh, each redelivered until acknowledged. **At rest**: every dispute against its
+own record; `INV-DSP-01` on every attempt; the dispute accounts, the clearing and the counterparties'
+standing shares read whole against the dispute rows; every shared wallet against its book from the
+refund and dispute rows; nothing posted to a closed wallet; every refund and every answer sent once,
+by our reference, each answer's transmission of evidence on the record (`INV-DSP-03`); and the
+door's own tally - the inbox absorbed exactly the four repeats of each statement's shared event id,
+the six others each reached the dispute, nothing contradicted, nothing refused.
 
-**The four scenarios, counted**: every capture of 20.07, withdrawal of 12.07 and pay-in of 15.07
-loses its answer on purpose - by a new harness choice, `SimulatedProvider.losesTheResponseWhenTheBodyContains`
-- and each is resolved at rest to EXACTLY ONE entry through the ambiguity it was lost into; every
-burst leaves exactly the one row its successful racers were answered with; every duplicated
-callback one effect; the availability reading holds in every snapshot while withdrawals complete
-beside wallet payments and transfers. **The meters, a second tally**: every
-`finapp.payments.rail.outcome` count the storm's instance made equals the judgements the tables
-committed, rail by rail, type by type, outcome by outcome (`P7-TSK-015`'s input, adopted).
+**Found while building it**: the refund race never raced - the in-process refunds reached the
+attempt lock before the door's HTTP deliveries in every run, so the refund's side of the combined
+bound (a refund judged beside a STANDING chargeback) was exercised by nothing, and a probe dropping
+it would have survived. Every racer now waits behind one gate, and the refund's way is FORCED: a
+partial chargeback of 6.00 stands, then four refunds of 3.00 race - exactly one fits. And a contested
+answer that could pass vacuously is forced too: five answers racing only each other on a standing
+chargeback admit exactly one. **The gate's own finds**: the redelivery loop read every `409` as the inbox's contention - a
+posting refused inside the effect (`409 ledger.AccountNotPostable`) was redelivered for a
+minute and caught only by the loop's time bound; only `api.Conflict` is redelivered now. The
+win's counterparty lock taken away went unseen by the battery with one win-against-refunds race
+a run - its lock-order scenario now races over eight rounds and met the deadlock itself in three
+runs of seven, the chargeback suite's race its deterministic catcher. And a refused answer's
+absence from the audit record, and an admitted answer's reasoned dispatch record, were asserted
+nowhere - both now are.
 
-**Found by the storm, and fixed**: a dispute WIN deadlocked (`40P01`, a 500 at the card door) with
-a refund of ANOTHER payment to the same counterparty - the win's first entry took the clearing's
-and the recoverable's balance rows before its restoration touched the counterparty, while the
-refund held that account for its hold's release and waited on the clearing. Every stage now
-share-locks the counterparty BEFORE its first posting (`ChargebackAccounting`), held by
-`ChargebackAccountingDatabaseTest#aWinRacingRefundsOfTheSameCounterpartyNeverDeadlocks`, and the
-lock order is written into `RAIL_AND_DISPUTE_LIFECYCLES.md` §6, `DISTRIBUTED_EXECUTION.md` §3,
-`PHASE_7_PLAN.md` §7 and ADR-0061. **Found in the harness**: an honest `UNKNOWN` refund - its
-answer lost to a transport failure no one chose - stood at rest while the providers answered only
-the storm's chosen losses; they now answer every inquiry truthfully, by reference. **The gate's
-own finds**: a contested boundary happened by luck (a run with no failed transfer) - each is now
-forced by a never-affordable amount; every money path was observed but asserted nowhere - returns,
-book and card refunds, wins, losses and fees are now required from the tables; and the bursts
-asserted "at most one row" - now exactly the row every successful racer was answered with, and
-one for all of them. **And the tally over-assumed**: inside the gate's battery a burst's payment
-the provider never received failed honestly, and the tally called it a missing order - every
-burst's order and every lost answer is now judged by what the provider received (completed with
-one entry, or failed with none), the chosen losses required to have happened.
-
-Ten probe runs, ten caught, each by its intended test and, for the storm's own readings, in the
-round the break first reached them (`SETTLEMENT_CLEARING` 188.50 against 212.50, a wallet at
--4959.00, `INSTANT_CLEARING` 80.00 against 56.00, a wallet read without its snapshot); every
-verdict read from the failing testcases, never the exit code alone, each restore byte-identical
-(`MUTATION_TESTING.md` §2 +9 rows, §3 +1 note, §4 +1 register row). Multi-instance PASS - the
-storm is the ten-instance question made concrete, and the one lock order it found wanting is
-fixed and raced. Test-only apart from that fix: no persistence, API or event change. Verified by
-targeted tiers from fresh runs — the fleet-wide hermetic test task green at 1732 tests across 14 modules, 0 failures, and 395 targeted database tests across 37 suites, 0 failures,
-plus the platform classification guard — the full battery deliberately skipped on the owner's
+Fifteen probes on the final code, fifteen caught - fourteen by the battery itself; every
+verdict read from the failing testcases, never the exit code alone, each restore byte-identical.
+The per-dispute reconciliation caught a win's 9.99 against its record's 10.00 and a loss writing
+off a share the counterparty bore; with the bound blind to refunds at both ranks, THE GATE'S
+CRITERION's own assertion caught the refunded payment charged again; the record counts caught a
+stage re-entered per delivery (twelve records for two stages); the door's tally caught the inbox
+gone (no duplicate absorbed where 372 were due); the domain-rank breaks met the schema rank
+behind them, and the refund's bound dropped at both of its ranks still met a third
+(`MUTATION_TESTING.md` §2 +15 rows, §3 +1 note, §4 +1 row). Multi-instance PASS - four runners and ten-way deliveries over shared counterparties
+are the ten-instance question made concrete for disputes; every arbiter is PostgreSQL's (the inbox's
+key, the attempt row lock, the conditional stage transitions, the posting keys, `V021`'s triggers,
+the one-live index). Test only: no domain, persistence, API or event change. Verified by targeted
+tiers from fresh runs — the fleet-wide hermetic test task green at 1732 tests across 14 modules, 0 failures, and 396 targeted database tests across 38 suites, 0 failures, plus the platform classification guard, and the document-reading guards re-run fresh after the records landed — the full battery deliberately skipped on the owner's
 instruction, no fleet-wide database or kafka counts claimed.
 
 
 ### Previously
 
-The per-task completion records — 160 blocks, from `P7-TSK-015` back to project initiation
+The per-task completion records — 161 blocks, from `P7-TST-001` back to project initiation
 (`X-TSK-004` cross-cutting, standing between `P7-TSK-001` and the Phase 6 → 7 transition) —
 are archived in [`history/TASK_HISTORY.md`](history/TASK_HISTORY.md).
 *(This pointer read "130 blocks, from `P6-TSK-005`" through four archivals — corrected by
@@ -446,9 +441,9 @@ archived verbatim in
 
 ## Active Work
 
-**Phase 7 is `IN_PROGRESS`** (started 2026-09-26) — 16 of 18 items complete; **M7.1–M7.6
-closed**, and M7.7 Observability and demonstration at 2 of 3 with `P7-TST-001`. **Next:
-`P7-TST-002`** ([§Current Task](#current-task) is kept current). *(This paragraph read "6 of 18 items complete; M7.1, Rail
+**Phase 7 is `IN_PROGRESS`** (started 2026-09-26) — 17 of 18 items complete; **M7.1–M7.7
+closed**, M7.7 Observability and demonstration with `P7-TST-002`. **Next: `P7-DOC-001`**,
+the exit review ([§Current Task](#current-task) is kept current). *(This paragraph read "6 of 18 items complete; M7.1, Rail
 foundations, opens at 1 of 3 (`P7-TSK-001`). Next: `P7-TSK-002`" — its count last touched by
 `P7-TSK-006`, its milestone and pointer never after `P7-TSK-001` — until `P7-TSK-014`'s gate found
 it: the stale-second-copy class a seventh time, in the section `P7-TSK-012`'s repair of the
@@ -820,7 +815,7 @@ Resolved during initiation:
 
 ## Next Task
 
-**`P7-TST-002` — The dispute battery** — see
+**`P7-DOC-001` — The Phase 7 exit review** — see
 [§Current Task](#current-task), which this section mirrors. *(It named `P7-TSK-001` from the
 transition's initialisation until `P7-TSK-002`'s gate found it stale — the stale-second-copy
 class in the very section built to mirror rather than lag; kept current since.)*

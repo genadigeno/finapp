@@ -1,6 +1,6 @@
 # Task History
 
-The per-task completion records that accumulated behind `## Current Task` - 160 "Previously" blocks, newest first, from `P7-TSK-015` back to project initiation. *(`X-TSK-004` is cross-cutting and completed after the Phase 6 → 7 transition, so it stands second, between `P7-TSK-001` and the transition's record - the transition's block moved here by `P7-TSK-001`'s gate, exactly as an earlier form of this note said it would.)*
+The per-task completion records that accumulated behind `## Current Task` - 161 "Previously" blocks, newest first, from `P7-TST-001` back to project initiation. *(`X-TSK-004` is cross-cutting and completed after the Phase 6 → 7 transition, so it stands second, between `P7-TSK-001` and the transition's record - the transition's block moved here by `P7-TSK-001`'s gate, exactly as an earlier form of this note said it would.)*
 
 **Archive.** These records were moved verbatim out of
 [`CURRENT_STATE.md`](../CURRENT_STATE.md) on 2026-09-20 so that the canonical description of
@@ -14,6 +14,68 @@ Authoritative backlog: [`BACKLOG.md`](../BACKLOG.md)
 ---
 
 ### Previously
+
+**`P7-TST-001` — The multi-rail conservation storm** — `COMPLETE` (2026-09-28).
+**M7.7, Observability and demonstration, reaches 2 of 3: every rail and every money path at once
+on shared wallets and payables - card, instant and wallet payments, withdrawals, transfers,
+refunds, returns and chargebacks, with lost answers, duplicate commands and duplicate callbacks -
+reconciled to the minor unit in every round and again at rest; the gate's four scenarios counted,
+not argued; and the storm found a deadlock no single-flow suite could** (`INV-RAIL-04`,
+`INV-DSP-01`, `INV-BAL-03`, `INV-ACC-01`, `INV-CON-01`, `INV-CON-02`).
+
+| Acceptance criterion | Evidence |
+|---|---|
+| Stable over three runs | `MultiRailConservationStormDatabaseTest#conservationHoldsAcrossEveryRail`, three fresh runs on the final code - one inside the gate's battery, two alone - after fourteen consecutive passes before the gate's own changes |
+| Every term reconciles under load and at rest | Thirty rounds, each reading in ONE `REPEATABLE READ` snapshot, then again at rest: each external rail's clearing position against its own rail's records, the dispute accounts against each dispute's amount, share and fee, every wallet and payable against independent books (the payable's fees priced from each sale's pin by exact decimal arithmetic), holds against the debits in flight, available never negative, the combined bound on every card attempt, the trial balance per currency |
+
+**The storm**: eleven movers over four customers' wallets and three merchants' payables in EUR -
+card and pay-in top-ups, checkouts paid by card, by bank and from the wallet, withdrawals,
+transfers round a ring, an operator refunding whatever the database shows in whatever state, the
+rails' callbacks (every instant confirmation three times - twice under one event id, once fresh -
+every clearing notice twice), the card network disputing sales (full and partial, some with fees,
+each notification three times, then won or lost), two resolvers racing the four sweeps, and
+ten-way bursts on a confirmation, a withdrawal, a refund and a chargeback, and four partial refunds
+racing one full chargeback for a sale's headroom. The storm's clearing and dispute readings are
+summed over its own entries, never as deltas.
+
+**The four scenarios, counted**: every capture of 20.07, withdrawal of 12.07 and pay-in of 15.07
+loses its answer on purpose - by a new harness choice, `SimulatedProvider.losesTheResponseWhenTheBodyContains`
+- and each is resolved at rest to EXACTLY ONE entry through the ambiguity it was lost into; every
+burst leaves exactly the one row its successful racers were answered with; every duplicated
+callback one effect; the availability reading holds in every snapshot while withdrawals complete
+beside wallet payments and transfers. **The meters, a second tally**: every
+`finapp.payments.rail.outcome` count the storm's instance made equals the judgements the tables
+committed, rail by rail, type by type, outcome by outcome (`P7-TSK-015`'s input, adopted).
+
+**Found by the storm, and fixed**: a dispute WIN deadlocked (`40P01`, a 500 at the card door) with
+a refund of ANOTHER payment to the same counterparty - the win's first entry took the clearing's
+and the recoverable's balance rows before its restoration touched the counterparty, while the
+refund held that account for its hold's release and waited on the clearing. Every stage now
+share-locks the counterparty BEFORE its first posting (`ChargebackAccounting`), held by
+`ChargebackAccountingDatabaseTest#aWinRacingRefundsOfTheSameCounterpartyNeverDeadlocks`, and the
+lock order is written into `RAIL_AND_DISPUTE_LIFECYCLES.md` §6, `DISTRIBUTED_EXECUTION.md` §3,
+`PHASE_7_PLAN.md` §7 and ADR-0061. **Found in the harness**: an honest `UNKNOWN` refund - its
+answer lost to a transport failure no one chose - stood at rest while the providers answered only
+the storm's chosen losses; they now answer every inquiry truthfully, by reference. **The gate's
+own finds**: a contested boundary happened by luck (a run with no failed transfer) - each is now
+forced by a never-affordable amount; every money path was observed but asserted nowhere - returns,
+book and card refunds, wins, losses and fees are now required from the tables; and the bursts
+asserted "at most one row" - now exactly the row every successful racer was answered with, and
+one for all of them. **And the tally over-assumed**: inside the gate's battery a burst's payment
+the provider never received failed honestly, and the tally called it a missing order - every
+burst's order and every lost answer is now judged by what the provider received (completed with
+one entry, or failed with none), the chosen losses required to have happened.
+
+Ten probe runs, ten caught, each by its intended test and, for the storm's own readings, in the
+round the break first reached them (`SETTLEMENT_CLEARING` 188.50 against 212.50, a wallet at
+-4959.00, `INSTANT_CLEARING` 80.00 against 56.00, a wallet read without its snapshot); every
+verdict read from the failing testcases, never the exit code alone, each restore byte-identical
+(`MUTATION_TESTING.md` §2 +9 rows, §3 +1 note, §4 +1 register row). Multi-instance PASS - the
+storm is the ten-instance question made concrete, and the one lock order it found wanting is
+fixed and raced. Test-only apart from that fix: no persistence, API or event change. Verified by
+targeted tiers from fresh runs — the fleet-wide hermetic test task green at 1732 tests across 14 modules, 0 failures, and 395 targeted database tests across 37 suites, 0 failures,
+plus the platform classification guard — the full battery deliberately skipped on the owner's
+instruction, no fleet-wide database or kafka counts claimed.
 
 **`P7-TSK-015` — Rail and dispute meters and the dashboard row** — `COMPLETE` (2026-09-28).
 **M7.7, Observability and demonstration, opens at 1 of 3: every rail's health and every dispute's
