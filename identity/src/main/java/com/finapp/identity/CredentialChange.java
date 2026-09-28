@@ -170,8 +170,9 @@ public final class CredentialChange {
         Optional<SessionRotation.Rotated> rotated =
                 rotation.rotate(unitOfWork, current, current.assurance(), idleTimeout);
 
-        // The change committed either way. If the caller's session was concurrently killed there is
-        // no session to hand back - reported as Refused, which the boundary renders 401: the
+        // The change committed either way. If the caller's session was concurrently killed, or
+        // expired since the boundary proved it (X-TSK-007), there is no session to hand back -
+        // reported as Refused, which the boundary renders 401: the
         // caller's session IS gone, so re-authenticating (with the NEW password, which now works)
         // is exactly right, and the change is durable, audited and announced regardless.
         audit(unitOfWork, at, identityId, AuditOutcome.SUCCEEDED,

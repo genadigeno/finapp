@@ -127,7 +127,12 @@ class MfaBypassPathsAreEnumeratedTest {
                     "com.finapp.identity.SessionIssue.issue",
                     "com.finapp.identity.SessionStore.insert",
                     "com.finapp.identity.JdbcSessionStore.insert",
-                    "com.finapp.identity.SessionRotation.rotate");
+                    "com.finapp.identity.SessionRotation.rotate",
+                    // Added by `X-TSK-007`: the draft a rotation writes, at a level its caller
+                    // states. Package-private, and its one caller is SessionRotation.rotate - but
+                    // a method that decides a session at a stated assurance is an origin whoever
+                    // may call it, so a second caller must arrive here to be enumerated.
+                    "com.finapp.identity.Session.replacement");
 
     @Test
     @DisplayName("no production path creates or elevates a session without being enumerated")

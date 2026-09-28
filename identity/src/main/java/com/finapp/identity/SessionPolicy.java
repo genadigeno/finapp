@@ -11,7 +11,12 @@ import java.util.Objects;
  * <p>The values are copied onto the session when it is issued and never read again for that session.
  * That is {@code INV-HIST-04}'s reasoning: <strong>changing this must not retroactively extend
  * sessions issued under the old policy</strong>. Shortening the idle timeout protects sessions
- * issued from that moment onward; it must not lengthen anything, and it cannot.
+ * issued from that moment onward; it must not lengthen anything.
+ *
+ * <p><strong>That holds for the absolute bound and not yet for the idle one.</strong> The touch
+ * extends a live session by the idle timeout of the policy the <em>touching</em> instance holds, so
+ * a deploy that lengthens it lengthens sessions already issued, up to their absolute bound. Found by
+ * {@code X-TSK-007} and recorded against {@code X-TSK-008}. This said "and it cannot" until then.
  *
  * <p>Constants rather than configuration, for the reason {@link LockoutPolicy} gives: a control
  * whose strength is a deployment setting is one nobody can reason about.

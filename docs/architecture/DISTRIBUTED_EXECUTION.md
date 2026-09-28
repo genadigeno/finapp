@@ -73,7 +73,7 @@ cannot affect correctness.
 | `AuditWriter` / `JdbcAuditWriter` | none | Writes on the caller's connection and opens nothing of its own; insert-only, so there is no lost update to have | Delegates to the row |
 | `identity.authentication_failure` | durable | **One row per identity, updated by one atomic statement** — `INSERT … ON CONFLICT DO UPDATE … RETURNING`, so the post-increment count is produced *by the write*. There is no read-then-write to lose, which is what `INV-CON-03` means by a limit that is not bypassable: with a read-then-count, ten concurrent attempts at the threshold all read nine and all proceed. Every window and expiry decision uses the **server's** `now()` (`V004`, ADR-0014) | **Yes** |
 | `AuthenticationThrottle` | none — all state in the row | Keys off the login identifier and resolves it in a subselect *inside the same statement*, so an absent account and a present one run the same query shape — the two-query alternative is a timing difference that discloses existence | Delegates to the row |
-| `identity.session` | durable | **The authority, and there is no cache in front of it.** Every request that presents a token reads this table, so a revoked session is refused on the next request on every instance by construction (`INV-IDN-03`) rather than by a cache being told. Liveness is decided by the **server's** clock in the lookup predicate. `NoProcessLocalSessionStateTest` fails the build if any production type grows a field holding sessions — the shape ADR-0024's four patterns cannot see, and transition risk **R7** | **Yes** |
+| `identity.session` | durable | **The authority, and there is no cache in front of it.** Every request that presents a token reads this table, so a revoked session is refused on the next request on every instance by construction (`INV-IDN-03`) rather than by a cache being told. **Liveness is decided by the database's clock, on both sides** (`X-TSK-007`). Every statement asking whether a session is live uses one predicate, `JdbcSessionStore.LIVE`, judged at `now()`. The bounds it judges are stamped from the same clock: `now()` plus the policy at issue, the predecessor's absolute bound copied from its row at rotation, and `GREATEST(idle, LEAST(now() + idle, absolute))` on touch. `issued_at` and `revoked_at` are business time from the injected `Clock` and decide nothing. *(Until `X-TSK-007` this row claimed the server's clock while both halves were instance clocks - see §4, "Found again".)* `NoProcessLocalSessionStateTest` fails the build if any production type grows a field holding sessions — the shape ADR-0024's four patterns cannot see, and transition risk **R7**. `SessionTimeIsTheDatabasesTest` fails it if a liveness method takes an instant again | **Yes** |
 | `SessionStore` / `JdbcSessionStore` | none — all state in the row | Reads and writes on the caller's connection and keeps nothing between calls. Extending the idle bound is a conditional `UPDATE … WHERE` clamped by `LEAST(…, absolute_expires_at)`, so a touch can neither resurrect a revoked session nor outlast the absolute bound | Delegates to the row |
 | `SessionRevocation` | none — all state in the row | Bulk revocation takes `SELECT … FROM identity.identity … FOR UPDATE`, and a session insert takes `FOR KEY SHARE` on the same row **through its foreign key**. The two conflict, so a session cannot be issued concurrently with a revocation and survive it (`PHASE_1_PLAN.md` §8). Only the revoking side needs an explicit lock — an explicit one on the issuing side was written, found redundant by a surviving mutation, and removed rather than left to read as the mechanism | Delegates to the row |
 | `kyc.kyc_case` | durable | **A partial unique index over the non-terminal states** is the one-open-case arbiter — a rule *across aggregates of the same type*, which only the database can settle between two concurrent transactions (`P1-TSK-005`'s reasoning). Ten instances opening for one customer produce one row and nine **converged** callers, not nine errors, because "ensure my case exists" is what both doors mean. A decision frees the slot, so a successor case is insertable (`INV-LIFE-04`). `case_kind` is unwritable at **`DB-PRIVILEGE`**: `V008` revokes the table-wide `UPDATE` and re-grants exactly `(status, status_changed_at)`, because a `KYB → KYC` flip is the one write that would silently disarm the ownership gate | **Yes** |
@@ -331,6 +331,51 @@ The no-floating-point rule rejected `setDouble(lease.toMillis() / 1000.0d)` on t
 path. It was right to: a floating-point duration deciding whether a command may run twice is the
 same category of mistake as floating-point money. Replaced with integer milliseconds.
 
+### Found again, 2026-09-27: session liveness (`X-TSK-007`)
+
+**The same defect, twenty-six days later, in the table this register described correctly and the
+code did not.** `identity.session`'s row said liveness was decided by the server's clock, and
+`JdbcSessionStore`'s javadoc said `now()` was in the predicate. In fact every lookup compared the
+bounds with an instant the *asking* instance read from its own `Clock`, and the bounds were stamped
+from the *issuing* instance's. With the writer at `s_w` and the judge at `s_j` from true time, a
+session lived
+
+```
+policy + s_w - s_j
+```
+
+A fast issuer's sessions outlived the absolute lifetime, which is the bound ADR-0030 keeps against a
+stolen token, by its skew. A slow issuer's were dead on arrival once its skew passed the thirty-minute
+idle timeout. A fast judge ended live sessions early, and a slow one honoured expired sessions late.
+A slow instance's touch moved a fast one's idle extension backwards. Every test passed, for §4's
+reason: one JVM, one clock.
+
+**Both halves had to move, which is the lesson worth keeping.** Judging on the database's clock
+alone leaves `s_w`: the bounds still carry the issuer's skew. Stamping alone leaves `s_j`. ADR-0014's
+wording, *"the database supplies both sides of the comparison"*, is exact, and a fix that moves one
+side is half a fix.
+
+**Business time did not move.** `issued_at` and `revoked_at` stay on the injected `Clock`, because
+they are the same readings the login, rotation and revocation audit records carry. So every place the
+schema compared `issued_at` with a bound was now a comparison of two clocks. V005's
+`session_bounds_follow_issue` was one, and it would have refused every login on an instance more than
+the idle timeout fast. The lifetime metric was another: it measured `revoked_at - issued_at`, the
+revoker's clock minus the issuer's. V016 added `live_from`, the database's own instant for the row, and
+both now measure from it. `V004` kept `created_at` business time while the lease moved, and this is
+the same split.
+
+**The rotation found a third, smaller thing.** The replacement's absolute bound was copied from the
+`Session` the caller held, a copy read in an earlier transaction. It is now copied from the
+predecessor's row, which the rotation's revoke has just locked. A mutation found this: it removed the
+revoke's liveness check against a row whose bounds had moved, and the rotation inherited a bound the
+row no longer had.
+
+**It is not the last instance.** Two families remain, recorded as `X-TSK-008`. The first is
+predicates that compare a stored bound with a caller's instant: recovery tokens, contact-channel
+verification, checkout expiry, the fee schedule in force and payout-destination cooling-off. The
+second is `CHECK`s that order two business timestamps written by different instances; these refuse a
+legitimate operation under skew. The routing-policy instance is `X-TSK-005`.
+
 ---
 
 ## 4a. The connection budget
@@ -418,6 +463,21 @@ is a lost update waiting for load.
 **Atomicity is claimed only where it exists.** A local transaction is atomic within its own
 boundary. Anything crossing a broker or a provider is eventually consistent and must say so.
 
+**Time decided across instances is the database's, on both sides** (ADR-0014, `X-TSK-007`). A
+bound that one instance writes and another judges is stamped from `now()` and judged against
+`now()`. A caller supplies durations, never instants, and anything reported back is read from the
+stored row. Where a caller legitimately asks for an instant, such as a routing version's activation
+time (`X-TSK-005`), it is floored at `now()` in the statement that stores it. Business time
+(`created_at`, `issued_at`, `revoked_at` and the audit record's `occurredAt`) stays on the injected
+`Clock` and is compared with no coordination bound. Two consequences follow:
+
+- The database clock is load-bearing, which is to say the **primary's**. A read replica has its own
+  clock, so no liveness, lease or eligibility judgement is ever routed to one. Phase 16's
+  read-replica routing policy inherits this constraint.
+- A failover to a primary with a different clock moves every such boundary by the same step, once.
+  That is an operational event bounded by NTP on the database hosts, not the per-request divergence
+  N application clocks produce.
+
 **Concurrency tests need genuine concurrency.** Separate connections, and separate clocks where
 a clock is involved. A test that shares one connection serialises itself; a test that shares one
 clock cannot see skew. Both look like concurrency tests and prove much less.
@@ -471,7 +531,9 @@ abandonment, leases and retention are all decided by the *server's* clock (§3),
 participates in a cross-instance decision. The single place one did was the idempotency lease —
 which was the defect ADR-0014 was written for, and is now server-side. A test sharing a clock is
 therefore not a finding; a test sharing a clock **where a client clock decides something** would
-be, and there is nowhere left for that to happen.
+be, and there is nowhere left for that to happen. *(Corrected 2026-09-27: session liveness was such
+a place until `X-TSK-007`, and the `X-TSK-008` families still are. The audit swept the platform
+module's tests; the later modules' stores were never swept for it.)*
 
 ---
 

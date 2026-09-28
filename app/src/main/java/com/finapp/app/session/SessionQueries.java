@@ -8,8 +8,6 @@ import com.finapp.platform.correlation.CorrelationContext;
 import io.micrometer.core.instrument.MeterRegistry;
 import io.micrometer.core.instrument.Timer;
 import java.sql.Connection;
-import java.time.Clock;
-import java.time.Instant;
 import java.util.List;
 import java.util.Objects;
 import javax.sql.DataSource;
@@ -69,7 +67,6 @@ public class SessionQueries {
     private final SessionRevocation revocation;
     private final TransactionTemplate transactions;
     private final DataSource dataSource;
-    private final Clock clock;
     private final Timer lifetime;
 
     public SessionQueries(
@@ -77,14 +74,12 @@ public class SessionQueries {
             SessionRevocation revocation,
             TransactionTemplate sessionTransactions,
             DataSource dataSource,
-            Clock clock,
             MeterRegistry meters) {
         this.sessions = Objects.requireNonNull(sessions, "sessions must not be null");
         this.revocation = Objects.requireNonNull(revocation, "revocation must not be null");
         this.transactions =
                 Objects.requireNonNull(sessionTransactions, "sessionTransactions must not be null");
         this.dataSource = Objects.requireNonNull(dataSource, "dataSource must not be null");
-        this.clock = Objects.requireNonNull(clock, "clock must not be null");
         this.lifetime =
                 Timer.builder(SESSION_LIFETIME_TIMER)
                         .description(
@@ -96,14 +91,18 @@ public class SessionQueries {
                                 Objects.requireNonNull(meters, "meters must not be null"));
     }
 
-    /** Every live session belonging to the authenticated identity. */
+    /**
+     * Every live session belonging to the authenticated identity.
+     *
+     * <p>Live by the database's clock ({@code X-TSK-007}): this instance's clock used to decide
+     * which sessions the listing showed, so two instances could list the same person differently.
+     */
     public List<SessionSummary> listOwnedBy(Session current) {
         Objects.requireNonNull(current, "current must not be null");
-        Instant at = Instant.now(clock);
 
         List<Session> live =
                 inATransaction(
-                        unitOfWork -> sessions.findLiveFor(unitOfWork, current.identityId(), at));
+                        unitOfWork -> sessions.findLiveFor(unitOfWork, current.identityId()));
         return live.stream().map(session -> SessionSummary.of(session, current)).toList();
     }
 

@@ -674,9 +674,14 @@ never eventually consistent.
 **Why:** An eventually-revoked session is an unrevoked session. "Log out everywhere" after a
 suspected compromise is worthless if it takes effect when a cache expires.
 **Enforce:** `DOMAIN` — authoritative session state in the database, checked per request; no
-process-local session cache (ADR-0030, ADR-0024).
+process-local session cache (ADR-0030, ADR-0024). Expiry, the other way a session ends, is the same
+fact on every instance for the same reason. Both bounds are stamped from the database's clock and
+judged against it, so no instance's clock can lengthen or shorten a session (`X-TSK-007`, ADR-0030
+amendment). `SessionTimeIsTheDatabasesTest` fails the build if a liveness method takes an instant.
 **Verify:** Multi-instance test: revoke on one instance, assert refusal on another (`P0-TST-009`
-convention).
+convention). Skewed-instance tests: instances an hour fast and an hour slow against the server
+issue, rotate, judge and measure one session alike (`SessionClockSkewDatabaseTest`,
+`SessionClockSkewEndpointDatabaseTest`).
 **Phase:** 1
 
 ### INV-IDN-04 — Authentication is not authorization, and neither is consent

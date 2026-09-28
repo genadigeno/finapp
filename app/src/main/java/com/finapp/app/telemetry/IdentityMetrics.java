@@ -104,7 +104,9 @@ final class IdentityMetrics {
         }
         Cached fresh;
         try (Connection connection = connections.open()) {
-            fresh = new Cached(clock.instant(), sessions.countLive(connection, clock.instant()));
+            // The clock times the cache only. Which sessions count as live is the database's
+            // question, judged at its own now() (X-TSK-007).
+            fresh = new Cached(clock.instant(), sessions.countLive(connection));
         } catch (Exception unreadable) {
             // Never the exception's message at INFO and never a session identifier: this runs on
             // every scrape, so a noisy failure would fill the log faster than anything a person

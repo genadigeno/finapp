@@ -68,14 +68,17 @@ public final class SessionIssue {
      *
      * @param device what the session was established from. Optional and never scored — a label its
      *     owner recognises their own sessions by ({@code V005})
-     * @return the session and the one copy of its token
+     * @return the session <strong>as the database stored it</strong>, and the one copy of its
+     *     token. Its bounds were stamped from the database's clock ({@code X-TSK-007}), so the
+     *     expiry a client is told is the one every instance will judge, however far this
+     *     instance's clock has drifted
      */
     public Issued issue(Connection unitOfWork, IdentityId identityId, DeviceDescription device) {
         Objects.requireNonNull(unitOfWork, "unitOfWork must not be null");
         Objects.requireNonNull(identityId, "identityId must not be null");
 
         SessionToken token = SessionToken.issue(randomness);
-        Session session =
+        Session.Draft draft =
                 Session.issue(
                         ids,
                         clock,
@@ -87,8 +90,7 @@ public final class SessionIssue {
                         AssuranceLevel.PASSWORD,
                         policy,
                         device);
-        sessions.insert(unitOfWork, session);
-        return new Issued(session, token);
+        return new Issued(sessions.insert(unitOfWork, draft), token);
     }
 
     /**

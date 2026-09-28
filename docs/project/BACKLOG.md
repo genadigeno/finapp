@@ -7838,6 +7838,136 @@ Batches 0–9 applied and verified 2026-09-23; its one failing test predates it.
   `DOD-ARCH`. Each batch's equivalence gate is its `DOD-FIN`/`DOD-SEC` evidence that nothing
   financial or security-related moved.
 
+**X-TSK-007 — Session liveness on the database clock, stamps and judgement both** — `IN_PROGRESS`
+*(designed, approved and implemented 2026-09-27; the completion gate is next. See **Result**)*
+- **Context**: `identity` (`JdbcSessionStore`, `SessionStore`, `Session`, `SessionIssue`,
+  `SessionRotation`, a new `V016`) and `app` (`SessionAuthenticationInterceptor`,
+  `SessionQueries`, `IdentityMetrics`). Owner-directed, 2026-09-27. ADR-0014, ADR-0030. The
+  sibling of the routing-policy fix (`X-TSK-005`), and designed to its rule.
+- **Description**: ADR-0014 says that where time is decided across instances *"the database
+  supplies both sides of the comparison"*. The `identity.session` register row says liveness *"is
+  decided by the server's clock in the lookup predicate"*, and `JdbcSessionStore`'s javadoc says
+  `now()` is in the predicate. Neither is true. `findLive`, `findLiveFor`, `countLive` and `touch`
+  compare the bounds with an `Instant` the calling instance read from its own `Clock`
+  (`SessionAuthenticationInterceptor.authenticate`, `SessionQueries.listOwnedBy`,
+  `IdentityMetrics`). Both bounds are stamped by the issuing instance's clock (`Session.issue`,
+  `SessionRotation`) and extended by the touching instance's (`touch`). The fix moves both halves
+  onto the database clock:
+  - **Judgement.** One predicate, `status = 'ACTIVE' AND idle_expires_at > now() AND
+    absolute_expires_at > now()`, shared by `findLive`, `findLiveFor`, `countLive`, `touch` and
+    rotation's `revoke`. The liveness methods take no caller instant.
+  - **Stamps.** The database writes `now() + lifetime` at issue. A rotation's replacement inherits
+    the absolute bound verbatim, copied from the predecessor's row, which the rotation's revoke has
+    locked, and gets `LEAST(now() + idle, absolute)`. `touch` writes
+    `GREATEST(idle_expires_at, LEAST(now() + idle, absolute_expires_at))`: clamped as before, and
+    now never moved backwards. Durations bind as integer milliseconds (`INV-MON-01`). What callers
+    get back is the stored row (`RETURNING`), so the `expiresAt` in login, step-up and
+    password-change responses is the bound the database will judge.
+  - **Business time stays business time.** `issued_at` and `revoked_at` remain the injected
+    `Clock`'s, so the row and its audit records stay on one timeline. Neither decides anything.
+  - **`V016`.** Adds `live_from`, the database's own instant for the row (`DEFAULT now()`,
+    backfilled from `issued_at`). `session_bounds_follow_issue` would now compare two clocks, so it
+    is replaced by `session_bounds_follow_liveness` over `live_from`. The owner-revocation lifetime
+    metric becomes `now() - live_from`, which makes `SessionStore.revokeOwned`'s *"by the server's
+    clock"* true. Today it subtracts two instances' clocks.
+- **Why**: skew changes what a session is, and the direction decides the harm. A fast issuer
+  (+s) issues sessions that outlive the absolute lifetime by s, which is the bound ADR-0030 keeps
+  against a stolen token. A slow issuer's sessions are dead on arrival once s passes the idle
+  timeout. A fast judge ends live sessions early, and a slow judge honours expired ones late. A slow
+  toucher moves the idle bound backwards. Judging on the database clock alone leaves the stamp
+  errors, and stamping alone leaves the judge's. ADR-0014 allows no argument that depends on s
+  being small.
+- **Found beside it, not in scope**, recorded as **`X-TSK-008`** (owner's decision, 2026-09-27): the
+  same caller-instant judgement in five more stores; `CHECK`s that order two instances' business
+  timestamps; `touch` extending by the current policy rather than the issuing one; and bulk
+  revocation counting expired sessions.
+- **Deps**: none. Independent of `X-TSK-005`, and consistent with it: judged on the database
+  clock, stamped against it, and reported from the stored row.
+- **Accept**:
+  - no session query or write compares a bound with a caller-supplied instant, shown by a build
+    rule over `SessionStore`'s signatures and `JdbcSessionStore`'s SQL;
+  - with instances skewed ±1 h against the database (`SimulatedInstance`, preconditions asserting
+    the skew): a fast issuer's session lives exactly the policy on the database clock, a slow
+    issuer's is live on arrival, a slow instance refuses a session expired on the database clock
+    and a fast one serves a live one (over HTTP), a skewed rotator neither shifts nor resets the
+    absolute bound, and a lifetime measured across a fast issuer and a slow revoker is the true
+    one;
+  - ten concurrent touches leave the idle bound at the latest and never past the absolute one; a
+    touch whose transaction began earlier never moves it back; an expired session cannot be
+    rotated;
+  - `V016` is forward-only, keeps existing rows valid, and accepts an old-version insert during a
+    rolling deploy;
+  - each mutation in the design is demonstrated caught and registered under `INV-IDN-03` in
+    `MUTATION_TESTING.md`; the register row, ADR-0030 and `JdbcSessionStore`'s javadoc are true.
+- **Risk**: Medium. The lookup under every authenticated request changes, and about thirty test
+  files carry session fixtures. Behaviour on an unskewed fleet is unchanged. **Cx**: M.
+  **DoD**: `DOD-SEC`, `DOD-DOMAIN`, and §1.3 for `V016`.
+- **Result (2026-09-27, implemented; the gate has not run)**:
+  - **Decisions**: every decision in the approved design, plus one found while implementing. The
+    replacement's absolute bound was copied from the caller's `Session`, and a mutation of the
+    revoke showed that copy going stale. It is now copied from the predecessor's row. Also
+    `SessionAbsoluteBound` is top-level: nested inside `Session`, `NoProcessLocalSessionStateTest`
+    read the draft's field as a retained session.
+  - **Tests**: `SessionClockSkewDatabaseTest` (8), `SessionClockSkewEndpointDatabaseTest` (3, the
+    application `Clock` bean an hour off the database) and `SessionTimeIsTheDatabasesTest` (3) are
+    new. The session suites now age a session by moving its row against the database's `now()`
+    rather than by passing a future instant. Nineteen endpoint suites changed one declaration each.
+  - **Mutations**: eleven, all caught and registered under `INV-IDN-03`, including the defect
+    itself restored: over HTTP the slow instance served an expired session and the fast one refused
+    a live one. One of them (the listing's own predicate) is caught by the build rule alone, which
+    is correct: `V005`'s `idle <= absolute` makes the absolute clause unobservable in behaviour.
+  - **Branch**: implemented on master's base. Moving this worktree onto the main line was refused
+    as a shared-resource change, so the merge with `claude/audit-context-efficiency-50b206` is the
+    owner's. Check its identity migrations for a `V016` before merging.
+
+**X-TSK-008 — Time decided across instances, beyond the session** — `PLANNED`
+- **Context**: `identity` (recovery requests, contact channels), `checkout`, `merchant` (fee
+  schedules, payout destinations) and every schema with a `CHECK` ordering two timestamps. Recorded
+  by `X-TSK-007`'s design, 2026-09-27, on the owner's decision. ADR-0014.
+- **Description**: two families of the defect `X-TSK-007` removed from sessions, plus two session
+  leftovers it found and deliberately did not change.
+  - **Judged against a caller's instant.** A stored bound that one instance wrote is compared with
+    an instant another read from its own `Clock`:
+    - `JdbcRecoveryRequestStore.consume`: `expires_at > ?`, a recovery token's life;
+    - `JdbcContactChannelStore.verify`: `verification_expires_at > ?`, whose comment says the server
+      decides;
+    - `JdbcCheckoutSessionStore`'s expiry sweep: `expires_at <= ?`;
+    - `JdbcFeeScheduleStore`: `effective_from <= ?`, the version in force - `X-TSK-005`'s shape;
+    - `JdbcPayoutDestinationStore`: `cooling_off_until <= ?`, a security control, from `P6-TSK-011`
+      on the main line.
+
+    Each wants `X-TSK-007`'s treatment: stamped from `now()`, judged against `now()`, and business
+    time left alone. A requested instant is floored at `now()`, as `X-TSK-005` floors
+    `effective_from`.
+  - **`CHECK`s that order two instances' business timestamps**, such as `status_changed_at` after
+    the row's creation in seven schemas, `revoked_at >= issued_at` on `merchant_api_key`,
+    `released_at >= placed_at` on the ledger hold, and `last_dispatched_at >= created_at` on
+    payouts and refunds. Each compares two instances' clocks inside a constraint. Under skew a
+    legitimate operation by a slower instance soon after a faster one is refused as a `500`: a key
+    revocation, a hold release, a dispatch. Decide per column whether the order is a business rule
+    (then one clock must write both) or a coherence hope (then it goes). The
+    `Merchant.transitioned` skew fix in progress elsewhere appears to be the Java form of this
+    family.
+  - **Session leftovers.**
+    - `touch` extends by the policy the touching instance holds, not the one the session was
+      issued under, so a rolling deploy that lengthens the idle timeout lengthens live sessions.
+      That contradicts `SessionPolicy`'s `INV-HIST-04` claim. Storing the idle timeout on the row
+      would make the claim true.
+    - Bulk revocation (`revokeAllFor`, `revokeAllForExcept`) and `revokeOwned` act on `ACTIVE` rather
+      than live rows. Expired sessions are therefore stamped `revoked_at` after they ended, and
+      counted in the audit record's `sessionsRevoked`, which an investigator reads as other
+      sessions in use.
+- **Why**: ADR-0014 allows no correctness argument that depends on skew being small, and
+  `X-TSK-007` showed the register describing such code as correct.
+- **Deps**: none. Consistent with `X-TSK-005` and `X-TSK-007`. The routing store is `X-TSK-005`'s,
+  not this item's.
+- **Accept**: each site either judges and stamps on the database's clock, with a skewed-instance
+  test whose precondition asserts the skew, or is recorded here with the reason it may stay. A build
+  rule in the shape of `SessionTimeIsTheDatabasesTest` covers every store. The session leftovers
+  are decided and, where changed, tested.
+- **Risk**: Medium. The `CHECK` family touches money-moving tables. **Cx**: L. Split it when it is
+  scheduled. **DoD**: `DOD-SEC`, `DOD-FIN` for the money-moving sites, `DOD-DOMAIN`.
+
 ---
 
 # Phases 7–16 — Epics

@@ -75,10 +75,10 @@ class SessionRotationDatabaseTest {
                                             SessionPolicy.current().idleTimeout())
                                     .orElseThrow();
 
-                    assertThat(sessions.findLive(app, fixture.token(), Instant.now(CLOCK)))
+                    assertThat(sessions.findLive(app, fixture.token()))
                             .as("the identifier the attacker might have stolen is dead")
                             .isEmpty();
-                    assertThat(sessions.findLive(app, rotated.token(), Instant.now(CLOCK)))
+                    assertThat(sessions.findLive(app, rotated.token()))
                             .as("and the customer is still logged in, under a new one")
                             .isPresent();
                 });
@@ -147,7 +147,7 @@ class SessionRotationDatabaseTest {
                     // out. A replacement issued beside a still-live original is not a rotation.
                     assertThat(
                                     sessions.findLive(
-                                            app, fixture.token(), Instant.now(CLOCK)))
+                                            app, fixture.token()))
                             .as("the old session must be gone, not merely superseded in name")
                             .isEmpty();
                 });
@@ -176,18 +176,26 @@ class SessionRotationDatabaseTest {
                     assertThat(rotated.session().absoluteExpiresAt())
                             .as("a step-up must not extend how long you can stay logged in")
                             .isEqualTo(fixture.session().absoluteExpiresAt());
-                    assertThat(rotated.session().idleExpiresAt())
+                    // Measured within the replacement's own row, on one clock (X-TSK-007): its
+                    // idle bound is the database's now() at the rotation plus the idle timeout.
+                    // Comparing it with issuedAt, as this once did, compared two clocks.
+                    assertThat(
+                                    Duration.between(
+                                            liveFrom(app, rotated.session()),
+                                            rotated.session().idleExpiresAt()))
                             .as("the idle bound IS fresh - the session is being used right now")
-                            .isAfter(fixture.session().issuedAt());
+                            .isEqualTo(SessionPolicy.current().idleTimeout());
                 });
     }
 
     @Test
     @DisplayName("rotating near the end of a life clamps the idle bound rather than throwing")
     void theIdleBoundIsClampedToTheInheritedAbsoluteBound() throws SQLException {
-        // Session's own constructor refuses an idle bound beyond the absolute one, so without the
-        // clamp a rotation late in a session's life would throw instead of producing a short-lived
-        // session - a step-up that fails because the customer had been logged in a while.
+        // The database's session_idle_bound_within_absolute refuses an idle bound beyond the
+        // absolute one, so without the clamp - LEAST(now() + idle, absolute) in the insert since
+        // X-TSK-007 - a rotation late in a session's life would throw instead of producing a
+        // short-lived session: a step-up that fails because the customer had been logged in a
+        // while.
         Fixture fixture =
                 givenALiveSession(
                         AssuranceLevel.PASSWORD,
@@ -235,6 +243,51 @@ class SessionRotationDatabaseTest {
                     assertThat(liveSessionCount(app, fixture.identityId()))
                             .as("and no orphan session was created")
                             .isZero();
+                });
+    }
+
+    @Test
+    @DisplayName("a session that expired after the boundary proved it is not rotated")
+    void anExpiredSessionCannotBeRotated() throws SQLException {
+        // X-TSK-007. The boundary proves a session live in its own transaction; the rotation runs in
+        // a later one, and the session can expire in between. Rotation's revoke used to check ACTIVE
+        // alone, so it ended the expired session and built a replacement inheriting a bound already
+        // in the past - which the aggregate's constructor refused, as a 500. The revoke is now judged
+        // live at the database's now(), the instant the replacement would be stamped from, so an
+        // expired session is refused before anything is written.
+        Fixture fixture = givenALiveSession(AssuranceLevel.PASSWORD);
+        try (Connection app = DatabaseRoles.application()) {
+            execute(
+                    app,
+                    "UPDATE identity.session SET live_from = now() - interval '13 hours',"
+                            + " idle_expires_at = now() - interval '1 second',"
+                            + " absolute_expires_at = now() - interval '1 second' WHERE id = ?",
+                    fixture.session().id().value());
+        }
+
+        inAFlow(
+                app -> {
+                    assertThat(
+                                    rotation()
+                                            .rotate(
+                                                    app,
+                                                    fixture.session(),
+                                                    AssuranceLevel.MULTI_FACTOR,
+                                                    SessionPolicy.current().idleTimeout()))
+                            .as("nothing live to rotate, so nothing issued - and no 500")
+                            .isEmpty();
+                    assertThat(liveSessionCount(app, fixture.identityId()))
+                            .as("the expired row was not ended either: it ended by expiry, and a"
+                                    + " revoked_at stamped now would misdate that")
+                            .isEqualTo(1);
+                    assertThat(
+                                    count(
+                                            app,
+                                            "SELECT count(*) FROM identity.session"
+                                                    + " WHERE identity_id = ?",
+                                            fixture.identityId().value()))
+                            .as("and no replacement row exists, live or dead")
+                            .isEqualTo(1);
                 });
     }
 
@@ -361,14 +414,14 @@ class SessionRotationDatabaseTest {
         SessionToken attackerChosen = SessionToken.of("a-value-the-attacker-picked");
 
         try (Connection app = DatabaseRoles.application()) {
-            assertThat(sessions.findLive(app, attackerChosen, Instant.now(CLOCK)))
+            assertThat(sessions.findLive(app, attackerChosen))
                     .as("a token nobody issued matches nothing, and says nothing about why")
                     .isEmpty();
         }
 
         // And a session issued for that identity does NOT answer to the planted value: the token is
         // generated, never taken from the caller.
-        Session issued =
+        Session.Draft issued =
                 Session.issue(
                         IDS,
                         CLOCK,
@@ -379,7 +432,7 @@ class SessionRotationDatabaseTest {
         try (Connection app = DatabaseRoles.application()) {
             sessions.insert(app, issued);
 
-            assertThat(sessions.findLive(app, attackerChosen, Instant.now(CLOCK)))
+            assertThat(sessions.findLive(app, attackerChosen))
                     .as("the planted identifier is still worthless after a real login")
                     .isEmpty();
         }
@@ -438,11 +491,28 @@ class SessionRotationDatabaseTest {
             throws SQLException {
         IdentityId identity = givenAnIdentity();
         SessionToken token = SessionToken.issue(RANDOMNESS);
-        Session session = Session.issue(IDS, CLOCK, identity, token, assurance, policy);
+        Session session;
         try (Connection app = DatabaseRoles.application()) {
-            sessions.insert(app, session);
+            // The STORED session: its bounds are the database's, and the absolute one is what a
+            // rotation must carry forward verbatim.
+            session =
+                    sessions.insert(
+                            app, Session.issue(IDS, CLOCK, identity, token, assurance, policy));
         }
         return new Fixture(identity, session, token);
+    }
+
+    /** The database's own instant for the row (V016). */
+    private static Instant liveFrom(Connection connection, Session session) throws SQLException {
+        try (PreparedStatement select =
+                connection.prepareStatement(
+                        "SELECT live_from FROM identity.session WHERE id = ?")) {
+            select.setObject(1, session.id().value());
+            try (ResultSet rows = select.executeQuery()) {
+                rows.next();
+                return rows.getTimestamp(1).toInstant();
+            }
+        }
     }
 
     private static Connection transactional() throws SQLException {

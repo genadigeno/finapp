@@ -19,15 +19,34 @@ import java.util.OptionalLong;
  * ever measured to be a bottleneck. That is an additive change behind this interface, and it is not
  * the same thing as an implementation that answers from memory.
  *
+ * <h2>Time is the database's, and the signatures say so ({@code X-TSK-007})</h2>
+ *
+ * <p>Whether a session is live is decided across instances: one wrote the bounds and another asks.
+ * ADR-0014 makes the database supply both sides of that comparison, so the bounds are stamped from
+ * its {@code now()} and judged against its {@code now()}. <strong>No method that decides liveness
+ * takes an instant.</strong> A parameter would be a caller's clock, and a caller's clock deciding
+ * was the defect. {@code SessionTimeIsTheDatabasesTest} fails the build if one reappears.
+ *
+ * <p>The {@code Instant} the revocations still take is <strong>business time</strong>, recorded as
+ * {@code revoked_at} beside the audit record carrying the same reading, and it decides nothing.
+ *
  * @param <T> the unit of work. A JDBC {@link java.sql.Connection} (ADR-0033)
  */
 public interface SessionStore<T> {
 
-    /** Writes a newly issued session on the caller's unit of work. */
-    void insert(T unitOfWork, Session session);
+    /**
+     * Writes a decided session on the caller's unit of work, and returns it as stored.
+     *
+     * <p><strong>The database stamps both bounds</strong> from its own {@code now()} and the draft's
+     * lifetimes: a new sitting gets {@code now()} plus each lifetime, and a rotation's replacement
+     * inherits its absolute bound verbatim, copied from the predecessor's row, with the idle bound
+     * clamped to it. The returned session is read back from the row, so its bounds are the ones
+     * every instance will judge, whichever instance's clock issued it.
+     */
+    Session insert(T unitOfWork, Session.Draft draft);
 
     /**
-     * The session a token identifies, if it may be used at {@code at}.
+     * The session a token identifies, if it is live now, by the database's clock.
      *
      * <p><strong>One answer for four different situations</strong> — no such token, revoked,
      * idle-expired, absolutely expired. A caller that could tell them apart would eventually report
@@ -35,19 +54,24 @@ public interface SessionStore<T> {
      * tells somebody holding a stolen identifier which of the two happened. It also tells them the
      * identifier was real, which is the more valuable fact.
      */
-    Optional<Session> findLive(T unitOfWork, SessionToken token, Instant at);
+    Optional<Session> findLive(T unitOfWork, SessionToken token);
 
     /**
-     * Ends one session. Terminal ({@code INV-LIFE-04}).
+     * Ends one <strong>live</strong> session. Terminal ({@code INV-LIFE-04}).
      *
-     * <p>Conditional on the session still being {@code ACTIVE}, so two instances revoking the same
-     * session produce one transition and the second is told it lost.
+     * <p>Conditional on the session still being live by the database's clock, so two instances
+     * revoking the same session produce one transition and the second is told it lost. Its one caller
+     * is rotation, which must not mint a replacement from a session that has already expired: the
+     * replacement inherits the absolute bound, and an expired one would be inherited dead. Before
+     * {@code X-TSK-007} this checked {@code ACTIVE} alone, so such a rotation reached the aggregate's
+     * constructor and failed as a {@code 500}.
      *
      * <p><strong>Revoking a session that is already revoked, expired or absent is not an error.</strong>
      * It reports that nothing was done. Making it fail would let a caller distinguish <em>"that
      * session existed and was live"</em> from <em>"it did not"</em>, which is an oracle over
      * somebody else's session identifiers.
      *
+     * @param at business time, recorded as {@code revoked_at}
      * @return whether a live session was ended
      */
     boolean revoke(T unitOfWork, SessionId sessionId, java.time.Instant at);
@@ -61,8 +85,9 @@ public interface SessionStore<T> {
      *
      * <p>Live is derived from the bounds and the status, exactly as {@link #findLive} derives it —
      * a listing that showed expired sessions would contradict the lookup about what a session is.
+     * "Newest" is by {@code issued_at}, the business time the listing also displays.
      */
-    java.util.List<Session> findLiveFor(T unitOfWork, IdentityId identityId, Instant at);
+    java.util.List<Session> findLiveFor(T unitOfWork, IdentityId identityId);
 
     /**
      * Revokes one session <strong>only if it belongs to the given identity</strong>.
@@ -91,6 +116,11 @@ public interface SessionStore<T> {
      * reasoning, because a duration computed by subtracting a server timestamp from a client's
      * clock measures the difference between two machines as much as it measures the session.
      *
+     * <p><strong>Until {@code X-TSK-007} that sentence was false.</strong> The duration was
+     * {@code revoked_at - issued_at}: the revoking instance's clock minus the issuing instance's,
+     * the two-machine difference described above, and able to come out negative. It is now
+     * {@code now() - live_from}, both read from the database.
+     *
      * @return the ended session's lifetime in whole seconds, or empty if nothing was ended.
      *     <strong>Empty does not say which of "no such session" and "not yours" was true</strong>,
      *     deliberately: a caller that could tell them apart could enumerate other people's session
@@ -109,9 +139,10 @@ public interface SessionStore<T> {
      * is no {@code EXPIRED} status and no sweep, so {@code status = 'ACTIVE'} counts sessions
      * <em>nobody can use</em> — and it would be wrong in the reassuring direction, reporting live
      * customers indefinitely. The predicate is {@link #findLive}'s, so the gauge and the lookup
-     * cannot disagree about what a session is.
+     * cannot disagree about what a session is. Judged at the database's {@code now()}, every
+     * instance publishes the same figure whatever its own clock says.
      */
-    long countLive(T unitOfWork, Instant at);
+    long countLive(T unitOfWork);
 
     /**
      * Ends every live session of an identity — <em>"log out everywhere"</em>.
@@ -161,18 +192,26 @@ public interface SessionStore<T> {
             T unitOfWork, IdentityId identityId, SessionId spare, java.time.Instant at);
 
     /**
-     * Extends the idle bound of a live session, never past its absolute bound.
+     * Extends the idle bound of a live session, never past its absolute bound, and never backwards.
      *
      * <p>Conditional: it moves the row only while the session is still live, and its row count is
      * the outcome. Two instances touching the same session at once is the normal case (ADR-0014),
      * and neither may resurrect a session the other has just revoked.
      *
-     * <p><strong>Nothing calls this per request yet.</strong> The idle bound is meaningless without
-     * it — a session whose idle bound is never extended dies at the idle timeout regardless of use,
-     * which collapses two bounds into one — so it belongs to the aggregate that owns the bound. The
-     * per-request call arrives with the authenticated endpoints (`P1-TSK-016`, `P1-TSK-020`).
+     * <p><strong>The new bound is the database's {@code now()} plus the idle timeout</strong>, clamped
+     * to the absolute bound, and never below the bound already stored ({@code X-TSK-007}). The floor
+     * is what keeps it monotonic: {@code now()} is a transaction's start, so a touch whose transaction
+     * began first can reach the row last, and it must not undo a later one's extension. Before
+     * {@code X-TSK-007} the new bound came from the touching instance's clock, so a slow instance
+     * moved a fast one's extension back by the difference between them.
+     *
+     * <p>The idle timeout is the {@code policy} passed here, which is the caller's current one and
+     * not necessarily the one the session was issued under (recorded against {@code X-TSK-008}).
+     *
+     * <p>The interceptor calls this on every authenticated request (`P1-TSK-016`), in the transaction
+     * of the lookup that proved the session, so both are judged at the same instant.
      *
      * @return whether a live session was extended
      */
-    boolean touch(T unitOfWork, SessionId sessionId, Instant at, SessionPolicy policy);
+    boolean touch(T unitOfWork, SessionId sessionId, SessionPolicy policy);
 }

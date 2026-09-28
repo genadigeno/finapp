@@ -21,7 +21,6 @@ import java.sql.Connection;
 import java.sql.PreparedStatement;
 import java.sql.SQLException;
 import java.time.Clock;
-import java.time.Duration;
 import java.time.Instant;
 import java.time.ZoneOffset;
 import java.util.List;
@@ -192,15 +191,16 @@ class SessionEndpointDatabaseTest {
 
         // Back-date the idle bound so an extension is observable without waiting. The absolute
         // bound is untouched, so this stays a live session under a policy that has not changed.
-        Instant before = Instant.now(CLOCK).plus(Duration.ofMinutes(1));
+        // Relative to the database's now(), which judges it, rather than to this JVM's clock.
         try (Connection app = DatabaseRoles.application();
                 PreparedStatement age =
                         app.prepareStatement(
-                                "UPDATE identity.session SET idle_expires_at = ? WHERE id = ?")) {
-            age.setTimestamp(1, java.sql.Timestamp.from(before));
-            age.setObject(2, current.session().id().value());
+                                "UPDATE identity.session SET idle_expires_at = now() + interval"
+                                        + " '1 minute' WHERE id = ?")) {
+            age.setObject(1, current.session().id().value());
             age.executeUpdate();
         }
+        Instant before = idleBoundOf(current);
 
         assertThat(get("/v1/sessions", current).statusCode()).isEqualTo(200);
 
@@ -351,7 +351,6 @@ class SessionEndpointDatabaseTest {
                         new FailingSessionStore(),
                         sessionTransactions,
                         dataSource,
-                        CLOCK,
                         SessionPolicy.current(),
                         authorization);
 
@@ -385,19 +384,18 @@ class SessionEndpointDatabaseTest {
     /** A store whose reads fail, standing in for a database that cannot be reached. */
     private static final class FailingSessionStore implements SessionStore<Connection> {
         @Override
-        public void insert(Connection unitOfWork, Session session) {
+        public Session insert(Connection unitOfWork, Session.Draft draft) {
             throw new UnsupportedOperationException();
         }
 
         @Override
-        public java.util.Optional<Session> findLive(
-                Connection unitOfWork, SessionToken token, Instant at) {
+        public java.util.Optional<Session> findLive(Connection unitOfWork, SessionToken token) {
             throw new IllegalStateException("the database is unreachable");
         }
 
         @Override
         public java.util.List<Session> findLiveFor(
-                Connection unitOfWork, com.finapp.identity.IdentityId identityId, Instant at) {
+                Connection unitOfWork, com.finapp.identity.IdentityId identityId) {
             throw new IllegalStateException("the database is unreachable");
         }
 
@@ -408,7 +406,7 @@ class SessionEndpointDatabaseTest {
         }
 
         @Override
-        public long countLive(Connection unitOfWork, Instant at) {
+        public long countLive(Connection unitOfWork) {
             throw new IllegalStateException("the database is unreachable");
         }
 
@@ -438,10 +436,7 @@ class SessionEndpointDatabaseTest {
 
         @Override
         public boolean touch(
-                Connection unitOfWork,
-                com.finapp.identity.SessionId sessionId,
-                Instant at,
-                SessionPolicy policy) {
+                Connection unitOfWork, com.finapp.identity.SessionId sessionId, SessionPolicy policy) {
             throw new UnsupportedOperationException();
         }
     }
@@ -466,7 +461,7 @@ class SessionEndpointDatabaseTest {
                 .isEqualTo(404);
 
         try (Connection app = DatabaseRoles.application()) {
-            assertThat(sessions.findLive(app, notMine.token(), Instant.now(CLOCK)))
+            assertThat(sessions.findLive(app, notMine.token()))
                     .as("and it must still work for its owner")
                     .isPresent();
         }
@@ -612,7 +607,7 @@ class SessionEndpointDatabaseTest {
         String plaintext = java.util.Base64.getUrlEncoder().withoutPadding().encodeToString(bytes);
         SessionToken token = SessionToken.of(plaintext);
 
-        Session session =
+        Session.Draft draft =
                 Session.issue(
                         IDS,
                         CLOCK,
@@ -622,31 +617,30 @@ class SessionEndpointDatabaseTest {
                         SessionPolicy.current(),
                         device == null ? null : new DeviceDescription(device));
         try (Connection app = DatabaseRoles.application()) {
-            sessions.insert(app, session);
+            return new Issued(sessions.insert(app, draft), token, plaintext);
         }
-        return new Issued(session, token, plaintext);
     }
 
     /**
      * A session whose idle bound has already passed.
      *
-     * <p><strong>Issue time is back-dated too, and the schema is what insisted.</strong> The first
-     * version moved only {@code idle_expires_at} and was refused by
+     * <p><strong>The start of its life is back-dated too, and the schema is what insisted.</strong>
+     * The first version moved only {@code idle_expires_at} and was refused by
      * {@code session_bounds_follow_issue} — a session cannot be written already expired. The
      * constraint was right and the fixture was wrong, which is the constraint doing exactly the job
-     * {@code P1-TSK-013} added it for.
+     * {@code P1-TSK-013} added it for. Since {@code X-TSK-007} the constraint is
+     * {@code session_bounds_follow_liveness}, measured from {@code live_from} on the database's
+     * clock, so that is what moves - relative to the database's {@code now()}, never to this JVM's.
      */
     private Issued givenAnExpiredSession(IdentityId identityId) throws SQLException {
         Issued issued = givenALiveSession(identityId, null);
-        Instant now = Instant.now(CLOCK);
         try (Connection app = DatabaseRoles.application();
                 PreparedStatement expire =
                         app.prepareStatement(
-                                "UPDATE identity.session SET issued_at = ?, idle_expires_at = ?"
+                                "UPDATE identity.session SET live_from = now() - interval '2 hours',"
+                                        + " idle_expires_at = now() - interval '1 hour'"
                                         + " WHERE id = ?")) {
-            expire.setTimestamp(1, java.sql.Timestamp.from(now.minus(Duration.ofHours(2))));
-            expire.setTimestamp(2, java.sql.Timestamp.from(now.minus(Duration.ofHours(1))));
-            expire.setObject(3, issued.session().id().value());
+            expire.setObject(1, issued.session().id().value());
             expire.executeUpdate();
         }
         return issued;

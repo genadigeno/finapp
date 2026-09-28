@@ -61,8 +61,9 @@ class NoProcessLocalSessionStateTest {
      *
      * <p>An identifier or a token held in a field is not a cache: neither answers whether a session
      * is live, so neither can make a revoked session usable. Retaining the <strong>aggregate</strong>
-     * is what does, because that is the object a consumer would then read {@code isLiveAt} from
-     * instead of asking the database.
+     * is what does, because that is the object a consumer would then trust as live instead of asking
+     * the database. (It once carried {@code isLiveAt} for exactly that misuse; {@code X-TSK-007}
+     * removed it, because only the database's clock may answer.)
      */
     private static final String SESSION_TYPE = "com.finapp.identity.Session";
 

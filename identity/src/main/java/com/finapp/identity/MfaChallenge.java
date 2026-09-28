@@ -124,9 +124,11 @@ public final class MfaChallenge {
         Optional<SessionRotation.Rotated> rotated =
                 rotation.rotate(unitOfWork, current, AssuranceLevel.MULTI_FACTOR, idleTimeout);
         if (rotated.isEmpty()) {
-            // The session was revoked or elevated by another instance between the boundary proving
-            // it and this line. Reported as a refusal rather than as a success: this call did not
-            // produce a session, and an audit record claiming it did would be wrong for ever.
+            // The session was revoked or elevated by another instance, or expired, between the
+            // boundary proving it and this line (expiry since X-TSK-007: it used to surface as a
+            // 500 from the aggregate's constructor). Reported as a refusal rather than as a
+            // success: this call did not produce a session, and an audit record claiming it did
+            // would be wrong for ever.
             return refuse(unitOfWork, identityId, "sessionGone");
         }
 

@@ -137,3 +137,39 @@ Negative:
   the level itself, and no Phase 4 logic is implemented here.
 - Redis remains in `compose.yaml` and unused. If session lookup is ever measured to be the
   bottleneck, a cache is an additive change behind the same interface.
+
+## Amendment — `X-TSK-007`: whose clock the two bounds are on
+
+§*Expiry is two bounds, not one* decided what the bounds are. It left the clock unstated, and the
+implementation filled the gap with the wrong answer. The bounds were stamped from the issuing
+instance's `Clock` and judged against the asking instance's, so a session lived its policy plus the
+issuer's skew, minus the judge's. That broke ADR-0014, which requires the database to supply *both
+sides* of a comparison of time across instances. It also broke this ADR's own absolute bound: a fast
+issuer's sessions outlived it by the skew.
+
+**The bounds are coordination time, and the database stamps and judges both.**
+
+- **Judgement.** A session is live when it is `ACTIVE` and inside both bounds at the database's
+  `now()`. One predicate is shared by every statement that asks.
+- **At issue.** The database writes its `now()` plus each lifetime of the policy.
+- **At rotation.** The replacement's absolute bound is copied verbatim from its predecessor's row,
+  and the rotation's revoke has locked that row in the same transaction. The fresh idle bound is
+  `LEAST(now() + idle, absolute)`. The revoke itself is conditional on the predecessor being live,
+  so an expired session is not rotated.
+- **On use.** The idle bound becomes `GREATEST(idle, LEAST(now() + idle, absolute))`: clamped as
+  before, and now never moved backwards by a touch whose transaction began earlier.
+- **Callers.** They supply durations, never instants, and receive the stored row, so the expiry a
+  client is told is the bound every instance judges.
+
+**`issued_at` and `revoked_at` remain business time** from the injected `Clock` (`P0-TSK-013`): the
+readings the login, rotation and revocation audit records carry. They decide nothing. The row gains
+`live_from` (`V016`), the database's own instant for it, and the rule that a session is never written
+already expired now compares the bounds with `live_from` on one clock, where `issued_at` had meant
+comparing two.
+
+The session aggregate no longer offers `isLiveAt(Instant)`. Whether a session is live is the
+database's question, and a Java predicate taking an arbitrary instant can only invite a caller to
+pass its own. The same reasoning led `V004` to remove `IdempotencyRecord.isStaleAt`.
+
+`DISTRIBUTED_EXECUTION.md` §4 (*Found again*) records how the defect hid, and `X-TSK-008` records the
+same shape elsewhere.

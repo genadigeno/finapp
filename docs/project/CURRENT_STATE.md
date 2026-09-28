@@ -360,6 +360,25 @@ phase exit and does not displace `P6-TSK-011`). **`BLOCKED` on final acceptance 
   with no further work. The plan and its results are
   [`tasks/CROSS-CUTTING-LOMBOK-REFACTOR.md`](tasks/CROSS-CUTTING-LOMBOK-REFACTOR.md) §21.
 
+**Cross-cutting — `X-TSK-007`, session liveness on the database clock** (2026-09-27; it belongs to
+no phase, gates no phase exit and displaces no phase task). **`IN_PROGRESS`: implemented and
+tested; the completion gate is next.**
+- **Done:** a session's bounds are stamped and judged on the database's clock, both halves. The
+  lookup, listing, gauge, touch and rotation share one predicate at `now()`. Issue writes `now()`
+  plus the policy, rotation copies the predecessor's absolute bound from its row, and the touch
+  never moves the idle bound back. `issued_at` and `revoked_at` stay business time. `V016` adds
+  `live_from`, moves the "not expired when written" rule onto one clock, and makes the lifetime
+  metric `now() - live_from`. ADR-0030 is amended, and the `DISTRIBUTED_EXECUTION.md` register row
+  is now true.
+- **Evidence:** 11 new skewed-instance and 3 build-rule tests. Eleven mutations were caught and
+  registered under `INV-IDN-03`, the original defect among them. The fresh database tier ran 802
+  app tests with one failure, the pre-existing `OperationalChartDatabaseTest` (§Blockers).
+- **Open:** the gate; and the merge with the main line (`claude/audit-context-efficiency-50b206`).
+  This branch is on master's base because moving it was refused as a shared-resource change. The
+  merge needs X-TSK-002…006 ordered before this entry in the backlog, and a check that the main
+  line has no identity `V016` of its own.
+- **Recorded, not done:** `X-TSK-008`, the same shape elsewhere (§Known Architectural Debt).
+
 The last work performed was the **Phase 5 → Phase 6 transition** (2026-09-21):
 Phase 5 confirmed by independent audit, the first fleet-wide full battery of the phase
 (**1323 hermetic / 829 database / 14 kafka, 0 failures** — after finding and repairing the
@@ -565,6 +584,7 @@ carries, what triggers paying it down, and the owning phase.
 
 | Deferred | Why | Risk carried | Trigger | Owning phase |
 |---|---|---|---|---|
+| **Time decided across instances outside the session store** (`X-TSK-008`). Five stores still compare a stored bound with a caller's instant: recovery tokens, contact-channel verification, checkout expiry, the fee schedule in force, and payout-destination cooling-off. `CHECK`s in most schemas order two business timestamps that different instances write. Two session leftovers remain: the touch extends by the current policy, and bulk revocation counts expired sessions. Found by `X-TSK-007`'s design, 2026-09-27 | `X-TSK-007` was scoped by the owner to sessions, and folding in five modules' stores and every schema's ordering constraints would have made one task of many. The routing store is `X-TSK-005`'s | **Varies by site, none silent.** The fee schedule can price a transaction at an activation boundary under the version a skewed instance believes in force; its pinned version keeps the fee explainable but not right, so it goes first, with `X-TSK-005`'s fix as the template. Recovery, contact-channel and cooling-off windows stretch or shrink by the skew. The ordering `CHECK`s fail closed, refusing a legitimate revocation, release or dispatch as a `500` | Owner scheduling. The fee schedule is due before the next change to it | Cross-cutting; Phase 15 (security hardening) at the latest |
 | **`payment_intent.wallet_account_id` holds a merchant payable for a merchant-bound payment.** The column's own comment defines it as *the wallet's ledger account - where the capture will credit*, so its MEANING is right and its NAME is narrower than its meaning (`P6-TSK-005`) | Renaming a column of applied history needs a new migration plus the every-writer trigger's recreation on the platform's most critical table, and the first PRODUCTION writer of a merchant-bound intent does not exist yet - `P6-TSK-007` brings it. Renaming before its real consumer exists would be guessing at what the consumer wants to call it | **Naming only, and bounded**: nothing reads it as a wallet - the capture credits whatever account it names, and the settlement REFUSES a capture whose credit account is not the pinned merchant's payable, so a mismatch is loud rather than silent. The cost is a reader of the schema being misled | `P6-TSK-007`, which creates merchant-bound intents for real | Phase 6 (`P6-TSK-007`) |
 | **Every session actor is audited as `CUSTOMER`, including operators.** `SessionAuthenticationInterceptor` enters `new Actor(identityId, ActorType.CUSTOMER)` for every authenticated session, so an operator's privileged acts — a manual adjustment, a transfer reversal, a refund, a merchant suspension, an API-key revocation — are recorded with the wrong actor TYPE. Found at `P6-TSK-002`'s implementation, while asserting that issuance names its operator: the test expected `EMPLOYEE` and the trail said `CUSTOMER` | The identifier is right — `actor_id` is the acting identity, so every record still names the person and `INV-AUD-01`'s attributability holds. What is wrong is the vocabulary that says which POPULATION acted, which is the field an auditor filters on to answer *what did staff do*. Correcting it means deriving the type from the identity's roles at authentication time and touches every audited session path on the platform — not a merchant task's to change, and not a change to make without its own negative tests | **Bounded but real**: no record is missing and none names the wrong person; a report separating staff activity from customers' cannot be built from `actor_type` alone today, and `ActorType.EMPLOYEE`'s own javadoc (*a human acting in an operational or administrative capacity*) describes a value nothing currently produces | An audit-completeness review, or the first report that must distinguish staff from customers | Phase 15 (audit completeness verification) |
 | ~~**Broker adapter behind `EventPublisher`.**~~ - **closed 2026-09-09** by `P2-TSK-001`. `KafkaEventPublisher` publishes every outbox event to Kafka - payload bytes verbatim, envelope as record headers, aggregate as the record key, one topic per producing module - and `OutboxRelaySchedule` polls on every instance, safely, because the per-aggregate advisory lock is the lease (`DISTRIBUTED_EXECUTION.md` §3). Delivery is at-least-once with `finapp.eventId` as the consumer dedupe key, and the crash duplicate is DEMONSTRATED in `KafkaOutboxDeliveryKafkaTest` rather than hidden. | - | - | - | - |

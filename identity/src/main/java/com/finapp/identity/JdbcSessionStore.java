@@ -22,12 +22,20 @@ import java.util.UUID;
  * revocation. {@code NoProcessLocalSessionStateTest} fails the build if any production type grows
  * one.
  *
- * <h2>Liveness is decided by the server, on every lookup</h2>
+ * <h2>Liveness is decided by the server, on every lookup, against bounds the server stamped</h2>
  *
  * <p>{@code now()} in the predicate rather than a timestamp this process computed. An instance
  * running six minutes fast would otherwise resurrect sessions its neighbours consider dead, or kill
  * live ones — the ADR-0014 defect {@code V004} had to correct for the idempotency lease, and the
  * reason every time comparison on this platform belongs to the database.
+ *
+ * <p><strong>Until {@code X-TSK-007} this paragraph described a design the code did not
+ * have.</strong> Every predicate compared the bounds with an instant the caller read from its own
+ * clock, and the bounds themselves were stamped by the issuing instance's clock and extended by the
+ * touching one's. Moving only the judgement would have left a fast issuer's sessions outliving the
+ * absolute lifetime by its skew, and a slow issuer's dead on arrival. So both halves are the
+ * database's: {@link #LIVE} is judged at {@code now()}, and every bound is written from
+ * {@code now()} as well. Nothing this class binds is ever compared with a bound.
  */
 public final class JdbcSessionStore implements SessionStore<Connection> {
 
@@ -37,10 +45,30 @@ public final class JdbcSessionStore implements SessionStore<Connection> {
             "id, identity_id, token_hash, assurance, status, issued_at, idle_expires_at,"
                     + " absolute_expires_at, device, revoked_at";
 
+    /**
+     * What "live" means, defined once ({@code X-TSK-007}).
+     *
+     * <p>{@code ACTIVE}, and inside both bounds <strong>at the database's {@code now()}</strong>,
+     * which is the start of the caller's transaction. So a lookup and the touch after it, or a
+     * rotation's revoke and the insert after it, are judged at one instant. Every statement that
+     * asks the question uses this constant verbatim, so the lookup, the listing, the gauge, the
+     * touch and rotation cannot disagree about what a session is.
+     *
+     * <p>Strictly {@code >}: at the bound itself the session is over.
+     */
+    private static final String LIVE =
+            "status = 'ACTIVE' AND idle_expires_at > now() AND absolute_expires_at > now()";
+
+    /**
+     * A duration bound as integer milliseconds and scaled in SQL: {@code INV-MON-01}'s rule, as
+     * the idempotency lease applies it.
+     */
+    private static final String NOW_PLUS_MILLIS = "now() + (? * INTERVAL '1 millisecond')";
+
     @Override
-    public void insert(Connection unitOfWork, Session session) {
+    public Session insert(Connection unitOfWork, Session.Draft draft) {
         Objects.requireNonNull(unitOfWork, "unitOfWork must not be null");
-        Objects.requireNonNull(session, "session must not be null");
+        Objects.requireNonNull(draft, "draft must not be null");
 
         // NO EXPLICIT LOCK HERE, and that is a measured decision rather than an omission.
         //
@@ -54,50 +82,74 @@ public final class JdbcSessionStore implements SessionStore<Connection> {
         // Keeping a redundant lock would read as the mechanism and hide the real one, which is worse
         // than not having it: the next person to remove the foreign key would see a lock two lines
         // away and conclude the serialisation was safe.
+        //
+        // THE DATABASE STAMPS BOTH BOUNDS (X-TSK-007). The draft carries lifetimes, never instants.
+        // A rotation's absolute bound is copied from its predecessor's ROW, which the rotation's
+        // revoke has just locked in this transaction - not from the Session the caller holds, a
+        // copy read in an earlier one. live_from is the database's own instant for the row, which
+        // V016's session_bounds_follow_liveness compares the bounds with on one clock. issued_at
+        // is the deciding instance's business time and is compared with nothing. RETURNING hands
+        // the stamped row back, so no caller holds bounds the database did not write.
+        String absolute =
+                switch (draft.absolute()) {
+                    case SessionAbsoluteBound.Lifetime ignored -> NOW_PLUS_MILLIS;
+                    case SessionAbsoluteBound.Inherited ignored ->
+                            "(SELECT absolute_expires_at FROM " + TABLE + " WHERE id = ?)";
+                };
         String sql =
-                "INSERT INTO " + TABLE + " (" + COLUMNS + ")"
-                        + " VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)";
+                "INSERT INTO " + TABLE + " (" + COLUMNS + ", live_from)"
+                        + " VALUES (?, ?, ?, ?, 'ACTIVE', ?,"
+                        + " LEAST(" + NOW_PLUS_MILLIS + ", " + absolute + "),"
+                        + " " + absolute + ", ?, NULL, now())"
+                        + " RETURNING " + COLUMNS;
         try (PreparedStatement insert = unitOfWork.prepareStatement(sql)) {
-            insert.setObject(1, session.id().value());
-            insert.setObject(2, session.identityId().value());
+            insert.setObject(1, draft.id().value());
+            insert.setObject(2, draft.identityId().value());
             // The one unwrap on the write path. SecretsAreUnwrappedInOnePlaceTest pins it.
-            insert.setString(3, session.tokenHash().expose());
-            insert.setString(4, session.assurance().name());
-            insert.setString(5, session.status().name());
-            insert.setTimestamp(6, Timestamp.from(session.issuedAt()));
-            insert.setTimestamp(7, Timestamp.from(session.idleExpiresAt()));
-            insert.setTimestamp(8, Timestamp.from(session.absoluteExpiresAt()));
-            insert.setString(9, session.device().orElse(null));
-            insert.setTimestamp(
-                    10, session.revokedAt().map(Timestamp::from).orElse(null));
-            insert.executeUpdate();
+            insert.setString(3, draft.tokenHash().expose());
+            insert.setString(4, draft.assurance().name());
+            insert.setTimestamp(5, Timestamp.from(draft.issuedAt()));
+            insert.setLong(6, draft.idleTimeout().toMillis());
+            // The absolute expression appears twice - inside the idle bound's clamp and as the
+            // bound itself - and now() is one instant for the whole transaction, so both are the
+            // same value and the idle bound can never exceed the absolute one.
+            bindAbsolute(insert, 7, draft.absolute());
+            bindAbsolute(insert, 8, draft.absolute());
+            insert.setString(9, draft.device().orElse(null));
+            try (ResultSet row = insert.executeQuery()) {
+                row.next();
+                return read(row);
+            }
         } catch (SQLException e) {
             // Never the token hash: an exception message reaches a log line (INV-AUD-02), and the
             // hash identifies which session to go looking for.
             throw new IdentityStorageException(
-                    DatabaseFailure.describe("Could not insert session " + session.id(), e));
+                    DatabaseFailure.describe("Could not insert session " + draft.id(), e));
+        }
+    }
+
+    private static void bindAbsolute(
+            PreparedStatement insert, int index, SessionAbsoluteBound absolute)
+            throws SQLException {
+        switch (absolute) {
+            case SessionAbsoluteBound.Lifetime lifetime ->
+                    insert.setLong(index, lifetime.value().toMillis());
+            case SessionAbsoluteBound.Inherited inherited ->
+                    insert.setObject(index, inherited.predecessor().value());
         }
     }
 
     @Override
-    public Optional<Session> findLive(Connection unitOfWork, SessionToken token, Instant at) {
+    public Optional<Session> findLive(Connection unitOfWork, SessionToken token) {
         Objects.requireNonNull(unitOfWork, "unitOfWork must not be null");
         Objects.requireNonNull(token, "token must not be null");
-        Objects.requireNonNull(at, "at must not be null");
 
         // One query, one answer. The predicate folds "no such token", "revoked", "idle-expired" and
         // "absolutely expired" into an empty result, so there is no branch anybody could later
         // report on - which is how INV-IDN-07's reasoning applies to a session identifier.
-        String sql =
-                "SELECT " + COLUMNS + " FROM " + TABLE
-                        + " WHERE token_hash = ?"
-                        + " AND status = 'ACTIVE'"
-                        + " AND idle_expires_at > ?"
-                        + " AND absolute_expires_at > ?";
+        String sql = "SELECT " + COLUMNS + " FROM " + TABLE + " WHERE token_hash = ? AND " + LIVE;
         try (PreparedStatement select = unitOfWork.prepareStatement(sql)) {
             select.setString(1, token.hash().expose());
-            select.setTimestamp(2, Timestamp.from(at));
-            select.setTimestamp(3, Timestamp.from(at));
             try (ResultSet rows = select.executeQuery()) {
                 return rows.next() ? Optional.of(read(rows)) : Optional.empty();
             }
@@ -116,11 +168,15 @@ public final class JdbcSessionStore implements SessionStore<Connection> {
         // Conditional, and the row count is the outcome: ten instances revoking one session produce
         // one transition and nine are told they lost. No read-then-write, so nothing to lose.
         //
+        // LIVE rather than ACTIVE (X-TSK-007): rotation is the only caller, and it inherits this
+        // session's absolute bound. Judged at the same now() the replacement is then stamped from,
+        // so a session that expired since the boundary proved it is not rotated at all.
+        //
         // No identity lock here: this targets one row by primary key, and a concurrent insert of a
         // DIFFERENT session is not in conflict with it.
         String sql =
                 "UPDATE " + TABLE + " SET status = 'REVOKED', revoked_at = ?"
-                        + " WHERE id = ? AND status = 'ACTIVE'";
+                        + " WHERE id = ? AND " + LIVE;
         try (PreparedStatement update = unitOfWork.prepareStatement(sql)) {
             update.setTimestamp(1, Timestamp.from(at));
             update.setObject(2, sessionId.value());
@@ -132,26 +188,22 @@ public final class JdbcSessionStore implements SessionStore<Connection> {
     }
 
     @Override
-    public java.util.List<Session> findLiveFor(
-            Connection unitOfWork, IdentityId identityId, Instant at) {
+    public java.util.List<Session> findLiveFor(Connection unitOfWork, IdentityId identityId) {
         Objects.requireNonNull(unitOfWork, "unitOfWork must not be null");
         Objects.requireNonNull(identityId, "identityId must not be null");
-        Objects.requireNonNull(at, "at must not be null");
 
         // The ownership control for listing IS this WHERE clause. Reading every session and
         // filtering in Java would put the control somewhere a future caller can skip; a predicate
         // cannot be skipped by the code that runs the query.
+        //
+        // Ordered by issued_at, which is business time: the order the listing displays. It decides
+        // nothing, so two instances' clocks disagreeing about it costs a display order at most.
         String sql =
                 "SELECT " + COLUMNS + " FROM " + TABLE
-                        + " WHERE identity_id = ?"
-                        + " AND status = 'ACTIVE'"
-                        + " AND idle_expires_at > ?"
-                        + " AND absolute_expires_at > ?"
+                        + " WHERE identity_id = ? AND " + LIVE
                         + " ORDER BY issued_at DESC, id DESC";
         try (PreparedStatement select = unitOfWork.prepareStatement(sql)) {
             select.setObject(1, identityId.value());
-            select.setTimestamp(2, Timestamp.from(at));
-            select.setTimestamp(3, Timestamp.from(at));
             try (ResultSet rows = select.executeQuery()) {
                 java.util.List<Session> live = new java.util.ArrayList<>();
                 while (rows.next()) {
@@ -180,10 +232,19 @@ public final class JdbcSessionStore implements SessionStore<Connection> {
         // RETURNING carries the session's lifetime out (P1-TSK-029). Whole seconds, cast in SQL:
         // INV-MON-01 forbids floating point on any production path, and a duration measured in
         // seconds gains nothing from a double (OutboxBacklog's precedent).
+        //
+        // now() - live_from, both the database's (X-TSK-007). It was revoked_at - issued_at: this
+        // instance's clock minus the issuing instance's, a measurement of two machines as much as
+        // of the session, and negative whenever the issuer ran ahead of the revoker by more than
+        // the session had lived. revoked_at is still this instance's business time, beside the
+        // audit record that carries the same reading.
+        //
+        // ACTIVE, not LIVE, deliberately: this ends a session its owner named, and whether an
+        // already-expired one should count is recorded against X-TSK-008 rather than changed here.
         String sql =
                 "UPDATE " + TABLE + " SET status = 'REVOKED', revoked_at = ?"
                         + " WHERE id = ? AND identity_id = ? AND status = 'ACTIVE'"
-                        + " RETURNING extract(epoch FROM revoked_at - issued_at)::bigint";
+                        + " RETURNING extract(epoch FROM now() - live_from)::bigint";
         try (PreparedStatement update = unitOfWork.prepareStatement(sql)) {
             update.setTimestamp(1, Timestamp.from(at));
             update.setObject(2, sessionId.value());
@@ -202,23 +263,17 @@ public final class JdbcSessionStore implements SessionStore<Connection> {
     }
 
     @Override
-    public long countLive(Connection unitOfWork, Instant at) {
+    public long countLive(Connection unitOfWork) {
         Objects.requireNonNull(unitOfWork, "unitOfWork must not be null");
-        Objects.requireNonNull(at, "at must not be null");
 
         // THE SAME PREDICATE AS findLive, and that is the point rather than tidiness. There is no
         // EXPIRED status and no sweep (ADR-0030, P1-TSK-013), so counting `status = 'ACTIVE'` alone
         // would count sessions nobody can use - and it would be wrong in the REASSURING direction,
         // reporting live customers indefinitely. A gauge that disagreed with the lookup about what
-        // a session is would be a number an operator could not act on.
-        String sql =
-                "SELECT count(*) FROM " + TABLE
-                        + " WHERE status = 'ACTIVE'"
-                        + " AND idle_expires_at > ?"
-                        + " AND absolute_expires_at > ?";
+        // a session is would be a number an operator could not act on. Since X-TSK-007 it is the
+        // same constant, so the two cannot drift.
+        String sql = "SELECT count(*) FROM " + TABLE + " WHERE " + LIVE;
         try (PreparedStatement count = unitOfWork.prepareStatement(sql)) {
-            count.setTimestamp(1, Timestamp.from(at));
-            count.setTimestamp(2, Timestamp.from(at));
             try (ResultSet rows = count.executeQuery()) {
                 rows.next();
                 return rows.getLong(1);
@@ -293,31 +348,30 @@ public final class JdbcSessionStore implements SessionStore<Connection> {
     }
 
     @Override
-    public boolean touch(
-            Connection unitOfWork, SessionId sessionId, Instant at, SessionPolicy policy) {
+    public boolean touch(Connection unitOfWork, SessionId sessionId, SessionPolicy policy) {
         Objects.requireNonNull(unitOfWork, "unitOfWork must not be null");
         Objects.requireNonNull(sessionId, "sessionId must not be null");
-        Objects.requireNonNull(at, "at must not be null");
         Objects.requireNonNull(policy, "policy must not be null");
 
         // LEAST(...) is the whole safety property: the idle bound is extended, but never beyond the
         // absolute bound. Without it an attacker holding a stolen token and using it steadily would
         // keep the session alive for ever, and the absolute lifetime would be advisory.
         //
+        // GREATEST(idle_expires_at, ...) keeps it monotonic (X-TSK-007). now() is a transaction's
+        // start, so a touch whose transaction began first can reach this row last; without the
+        // floor it would pull a later touch's extension back. The extension is measured from the
+        // database's now(), never from this instance's clock.
+        //
         // Conditional on the session still being live, so a touch cannot resurrect one that another
         // instance has just revoked or that has expired between the read and this write.
         String sql =
                 "UPDATE " + TABLE
-                        + " SET idle_expires_at = LEAST(?::timestamptz, absolute_expires_at)"
-                        + " WHERE id = ?"
-                        + " AND status = 'ACTIVE'"
-                        + " AND idle_expires_at > ?"
-                        + " AND absolute_expires_at > ?";
+                        + " SET idle_expires_at = GREATEST(idle_expires_at,"
+                        + " LEAST(" + NOW_PLUS_MILLIS + ", absolute_expires_at))"
+                        + " WHERE id = ? AND " + LIVE;
         try (PreparedStatement update = unitOfWork.prepareStatement(sql)) {
-            update.setTimestamp(1, Timestamp.from(at.plus(policy.idleTimeout())));
+            update.setLong(1, policy.idleTimeout().toMillis());
             update.setObject(2, sessionId.value());
-            update.setTimestamp(3, Timestamp.from(at));
-            update.setTimestamp(4, Timestamp.from(at));
             return update.executeUpdate() == 1;
         } catch (SQLException e) {
             throw new IdentityStorageException(

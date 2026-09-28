@@ -255,9 +255,10 @@ role cannot edit it.
 | `session` | `status` | `CONFIDENTIAL` | Whether a session is usable. As `identity.status` and `credential.status` |
 | `session` | `issued_at` | `CONFIDENTIAL` | When a person logged in — a behavioural fact, and one that patterns a person's day |
 | `session` | `idle_expires_at` | `CONFIDENTIAL` | With `issued_at`, it dates the *last activity*, which is more disclosive than the login itself |
-| `session` | `absolute_expires_at` | `CONFIDENTIAL` | As `issued_at`, from which it is derived |
+| `session` | `absolute_expires_at` | `CONFIDENTIAL` | As `issued_at`. Derived from `live_from` since `X-TSK-007`, and from `issued_at` before |
 | `session` | `device` | `RESTRICTED-PII` | **At its ceiling, not its content.** `P1-TSK-016` populates it, and what it holds is whatever a client sends about the machine a person uses — a user agent, a platform, a fingerprint. That is personal data about equipment in somebody's home, and there is no later moment at which classifying it lower becomes safe (ADR-0022) |
 | `session` | `revoked_at` | `CONFIDENTIAL` | Dates a logout, or an intervention. As `credential.superseded_at`, which is `CONFIDENTIAL` because it dates a password change |
+| `session` | `live_from` | `CONFIDENTIAL` | *Added by `X-TSK-007`.* The same moment as `issued_at`, read from the database's clock rather than the issuing instance's, so it dates a login exactly as `issued_at` does and patterns a person's day the same way. Coordination time, not a business fact (`V016`) |
 | `mfa_enrolment` | `id` | `INTERNAL` | An aggregate identifier. Not secret, never presented |
 | `mfa_enrolment` | `identity_id` | `RESTRICTED-PII` | Identifies a person, as `session.identity_id` does |
 | `mfa_enrolment` | `type` | `INTERNAL` | Which kind of factor. Says nothing about who |
