@@ -169,6 +169,7 @@ public final class ChargebackAccounting {
         switch (dispute.stage()) {
             case CHARGED_BACK -> {
                 ChargebackSplit split = dispute.split().orElseThrow();
+                counterpartyFirst(unitOfWork, intent);
                 LedgerAccountId recoverable = recoverableAccount(unitOfWork, split.amount());
                 // THE EXTERNAL FACT: the rail's clearing moves by exactly what the network
                 // took, whoever bears it.
@@ -192,6 +193,7 @@ public final class ChargebackAccounting {
             }
             case WON -> {
                 ChargebackSplit split = dispute.split().orElseThrow();
+                counterpartyFirst(unitOfWork, intent);
                 LedgerAccountId recoverable = recoverableAccount(unitOfWork, split.amount());
                 post(unitOfWork, WON_KEY + dispute.id().value(), dispute,
                         List.of(
@@ -476,6 +478,25 @@ public final class ChargebackAccounting {
                 amount,
                 correlation,
                 now);
+    }
+
+    /**
+     * The counterparty's account, share-locked BEFORE a stage's first posting (`P7-TST-001`'s
+     * find). Every path that holds a counterparty's account {@code FOR UPDATE} — a hold placed or
+     * released for a refund, a withdrawal, a wallet payment — takes that account before any balance
+     * row, and every single-entry posting takes the account's key share at its line insert before
+     * any balance row. A stage whose FIRST entry touches only the rail's clearing and the
+     * recoverable takes those balance rows first and the counterparty after — the one order
+     * nothing else takes: in the multi-rail storm a win's restoration, waiting on the counterparty
+     * a refund of another payment held while that refund waited on the clearing's balance row the
+     * win's first entry held, deadlocked ({@code 40P01}, a 500 at the card door). Taken first, the
+     * counterparty is where the two meet, and one waits for the other before either holds a
+     * balance row. Share, never upgraded: chargebacks on one account still run side by side. The
+     * chargeback's own split already takes it ({@link #postable}); re-taking it in the same
+     * transaction is a no-op that keeps the rule stated where the postings are.
+     */
+    private void counterpartyFirst(Connection unitOfWork, PaymentIntent intent) {
+        ledgerAccounts.lockForShare(unitOfWork, intent.creditAccount());
     }
 
     /** Whether the counterparty's account takes postings now — share-locked, never upgraded. */

@@ -3,6 +3,7 @@ package com.finapp.platform.testing.provider;
 import static com.github.tomakehurst.wiremock.client.WireMock.aResponse;
 import static com.github.tomakehurst.wiremock.client.WireMock.any;
 import static com.github.tomakehurst.wiremock.client.WireMock.anyRequestedFor;
+import static com.github.tomakehurst.wiremock.client.WireMock.containing;
 import static com.github.tomakehurst.wiremock.client.WireMock.urlEqualTo;
 
 import com.github.tomakehurst.wiremock.WireMockServer;
@@ -233,6 +234,25 @@ public final class SimulatedProvider implements AutoCloseable {
     public void receivesTheRequestThenLosesTheResponse(String path) {
         server.stubFor(
                 any(urlEqualTo(path)).willReturn(aResponse().withFault(Fault.EMPTY_RESPONSE)));
+    }
+
+    /**
+     * {@link #receivesTheRequestThenLosesTheResponse}, for only the requests whose body carries
+     * {@code fragment} (`P7-TST-001`): the provider acts on all of them and the caller never
+     * learns the outcome of those.
+     *
+     * <p>A storm needs the ambiguity mixed into live traffic on the same path, not a path that
+     * loses everything. Choosing the victims by their own content keeps the choice
+     * deterministic — an operation of a chosen amount is always lost, every other one answered
+     * by the path's ordinary stub — and it sits above that stub, whatever order they were
+     * registered in.
+     */
+    public void losesTheResponseWhenTheBodyContains(String path, String fragment) {
+        server.stubFor(
+                any(urlEqualTo(path))
+                        .atPriority(1)
+                        .withRequestBody(containing(fragment))
+                        .willReturn(aResponse().withFault(Fault.EMPTY_RESPONSE)));
     }
 
     /**

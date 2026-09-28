@@ -307,6 +307,71 @@ class ChargebackAccountingDatabaseTest {
         assertThat(balance(payment.credit())).as("never below what it was credited").isZero();
     }
 
+    /**
+     * `P7-TST-001`'s find, made deterministic enough to fail without its fix. A win posts its
+     * external fact first — the clearing's and the recoverable's balance rows — and only then
+     * restores the counterparty's share; a refund of ANOTHER payment to the same counterparty
+     * holds that account {@code FOR UPDATE} (its hold's release) and then posts to the clearing.
+     * Opposite orders over the same two rows: the multi-rail storm met it as a 40P01 and a 500
+     * at the card door. The win now share-locks the counterparty before its first posting.
+     */
+    @Test
+    @DisplayName("a WIN restoring its share races refunds of the same counterparty's other payments"
+            + " and every round completes - the counterparty share-locked before the win's first"
+            + " posting, the order every hold keeps (a 40P01 in the multi-rail storm)")
+    void aWinRacingRefundsOfTheSameCounterpartyNeverDeadlocks() throws Exception {
+        LedgerAccountId wallet = wallet();
+        provider.succeedsWithMintedReference(SimulatedCardPspAdapter.REFUNDS_PATH, "psp_wr");
+        int rounds = 8;
+        for (int round = 0; round < rounds; round++) {
+            int thisRound = round;
+            Payment disputed = captured(wallet);
+            String reference = someDisputeReference();
+            assertThat(deliver(chargeback(disputed, reference, "needs_response", 1000, null))
+                            .statusCode())
+                    .isEqualTo(204);
+            List<Payment> refundable =
+                    List.of(captured(wallet), captured(wallet), captured(wallet));
+            CountDownLatch open = new CountDownLatch(1);
+            ExecutorService pool = Executors.newFixedThreadPool(4);
+            try {
+                List<Future<?>> racers = new ArrayList<>();
+                racers.add(pool.submit((Callable<Void>) () -> {
+                    open.await();
+                    HttpResponse<String> won =
+                            deliver(chargeback(disputed, reference, "won", 1000, null));
+                    assertThat(won.statusCode())
+                            .as("round %s: the win applies - a deadlock is a 500 (%s)",
+                                    thisRound, won.body())
+                            .isEqualTo(204);
+                    return null;
+                }));
+                for (Payment payment : refundable) {
+                    racers.add(pool.submit((Callable<Void>) () -> {
+                        open.await();
+                        assertThat(refund(payment, 1000, null).status())
+                                .as("round %s: the refund completes", thisRound)
+                                .isEqualTo(RefundStatus.COMPLETED);
+                        return null;
+                    }));
+                }
+                open.countDown();
+                for (Future<?> racer : racers) {
+                    racer.get();
+                }
+            } finally {
+                pool.shutdownNow();
+            }
+            assertThat(split(disputeId(reference))[0])
+                    .as("round %s: the share was the whole chargeback, and the win restored it",
+                            thisRound)
+                    .isEqualTo(1000);
+        }
+        // Every round explained: the disputed payment kept (charged back and won back), each
+        // refunded payment returned in full.
+        assertThat(balance(wallet)).isEqualTo(rounds * 1000L);
+    }
+
     // -----------------------------------------------------------------
     // Re-attribution (ADR-0061 section 3's last rule)
     // -----------------------------------------------------------------

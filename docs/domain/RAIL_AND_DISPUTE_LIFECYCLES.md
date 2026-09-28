@@ -242,7 +242,11 @@ sibling chargeback won — re-attributes the standing excess to the counterparty
 always the one a chargeback arriving now would take. The stage facts (`ChargebackReceived`, `DisputeResolved`) name the split's accounts —
 `counterpartyAccountId`, `recoverableAccountId` — never an amount. A counterparty below zero is
 merchant debt or a receivable from the customer, counted by `finapp.ledger.negative.positions`
-and never absorbed.
+and never absorbed. **The lock order**: the attempt first, then the counterparty's account
+share-locked BEFORE the stage's first posting, then the balance rows the postings touch — the
+order every hold keeps (the account before any balance row). Posting the external fact first
+and reaching the counterparty only after deadlocked a win against a refund of another payment to
+the same counterparty (`P7-TST-001`'s multi-rail storm, a `40P01`).
 
 **Answering a chargeback** (`P7-TSK-014`, ADR-0061 §7; `DisputeResponses`) — the responder's
 answer is a `DisputeResponse`, dispatched through the card PSP, and it moves **no stage and no

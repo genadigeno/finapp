@@ -184,6 +184,26 @@ class SimulatedProviderTest {
         }
 
         @Test
+        @DisplayName("the provider acts on every request and loses only the chosen ones' responses"
+                + " (P7-TST-001), above the path's ordinary stub whatever the order")
+        void onlyTheChosenResponsesAreLost() throws Exception {
+            // The choice registered FIRST, the ordinary stub after it: priority, not order,
+            // decides which one a request meets.
+            provider.losesTheResponseWhenTheBodyContains(
+                    "/payments/18", "\"amountMinor\":\"1207\"");
+            provider.succeedsWith("/payments/18", 200, OK_BODY);
+
+            assertThatThrownBy(() -> post("/payments/18", "{\"amountMinor\":\"1207\"}"))
+                    .isInstanceOf(IOException.class);
+            HttpResponse<String> answered = post("/payments/18", "{\"amountMinor\":\"1200\"}");
+            assertThat(answered.statusCode()).isEqualTo(200);
+            assertThat(answered.body()).isEqualTo(OK_BODY);
+            assertThat(provider.requestCount("/payments/18"))
+                    .as("both reached the provider; only the chosen one's answer was lost")
+                    .isEqualTo(2);
+        }
+
+        @Test
         @DisplayName("the client retries, and the provider saw every attempt")
         void theClientRetries() throws Exception {
             provider.failsThenSucceeds("/payments/9", 2, 200, OK_BODY);

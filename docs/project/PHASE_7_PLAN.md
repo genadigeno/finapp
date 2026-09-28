@@ -128,6 +128,7 @@ arbiter:
 | Duplicate instant-payment sends, a takeover and the inquiry sweep | Our end-to-end reference, stored before the send (`INV-PAY-04`); the send permit; conditional outcomes on the locked row |
 | Duplicate rail callbacks (instant confirmations, card clearing, dispute notifications) | The inbox's primary key (`INV-IDEM-04`), then conditional transitions on the locked row |
 | A chargeback racing a refund on one payment | The attempt row's `FOR UPDATE`, taken by both before the combined bound is judged (`INV-DSP-01`) |
+| A dispute stage racing a refund of ANOTHER payment to the same counterparty | The counterparty's account, share-locked before the stage's first posting - the account every hold takes before any balance row *(added by `P7-TST-001`, whose storm met the missing lock as a `40P01` on a win)* |
 | Duplicate chargeback notifications | `UNIQUE (provider, provider_dispute_reference)`, the stage's conditional transition, and the posting key per stage (`INV-DSP-02`) |
 | A pay-in confirmation racing its initiation's expiry | Nothing expires by our clock alone: the payer PSP's answer decides, and a late execution lands (`INV-MER-06`'s second rail) |
 | Concurrent sweeps (attempts, refunds, withdrawals, initiations) | None needed — the registered leaderless pattern: queries idempotent, writes conditional, sends permitted |

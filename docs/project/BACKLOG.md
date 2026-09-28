@@ -8363,8 +8363,8 @@ negative payable** — `COMPLETE` (2026-09-23)
 
 # Phase 7 — Cards, Wallets, A2A and Instant Payments
 
-Status: `IN_PROGRESS` — started 2026-09-26 with `P7-TSK-001` (15 of 18 items complete, M7.1 at
-3 of 3, M7.2 at 2 of 2, M7.3 at 3 of 3, M7.4 at 2 of 2, M7.5 at 1 of 1, M7.6 at 3 of 3, M7.7 at 1 of 3) *(read `READY` for two days after the first task started — caught by `P7-TSK-001`'s own
+Status: `IN_PROGRESS` — started 2026-09-26 with `P7-TSK-001` (16 of 18 items complete, M7.1 at
+3 of 3, M7.2 at 2 of 2, M7.3 at 3 of 3, M7.4 at 2 of 2, M7.5 at 1 of 1, M7.6 at 3 of 3, M7.7 at 2 of 3) *(read `READY` for two days after the first task started — caught by `P7-TSK-001`'s own
 gate, the stale-second-copy class this file has now recorded five times)*; entry gate passed
 2026-09-24 by the Phase 6 → 7 transition
 ([`reviews/PHASE_6_TO_7_TRANSITION.md`](reviews/PHASE_6_TO_7_TRANSITION.md)), elaborated to task
@@ -9303,7 +9303,7 @@ Disputes (`P7-TSK-012`…`-014`) · M7.7 Observability and demonstration (`P7-TS
   transaction. Fleet hermetic 1731 tests across 14 modules, 0 failures; 393 targeted database tests across 36 suites, 0 failures; the platform classification guard green. The full
   battery deliberately skipped on the owner's instruction.
 
-**P7-TST-001 — The multi-rail conservation storm** — `READY`
+**P7-TST-001 — The multi-rail conservation storm** — `COMPLETE` (2026-09-28)
 - **Objective**: every rail and every money path at once, reconciled to the minor unit, with the
   four scenarios the gate names counted, not argued.
 - **Bounded context**: all of Phase 7's.
@@ -9332,8 +9332,44 @@ Disputes (`P7-TSK-012`…`-014`) · M7.7 Observability and demonstration (`P7-TS
   judgement to one of three appliers; (3) **the meters are per instance** - read the
   registry deltas in the storm's own JVM, and aggregate across simulated instances only
   where the storm runs them in separate contexts.
+- **Corrections to this entry** (the `P6-TSK-001` precedent): *Domain changes / Persistence / API
+  / Events: none (test only)* held for persistence, API and events; the storm found a production
+  defect and the task fixed it - `ChargebackAccounting` now share-locks the counterparty before a
+  stage's first posting (a win deadlocked against a refund of another payment to the same
+  counterparty, `40P01`). *Invariants* gain `INV-CON-02` (that lock order). The harness gains one
+  choice: `SimulatedProvider.losesTheResponseWhenTheBodyContains`.
+- **Gate**: the acceptance proven over the deployed chain - **stable over three runs**
+  (`MultiRailConservationStormDatabaseTest#conservationHoldsAcrossEveryRail`, three fresh runs on
+  the final code), and **every term reconciles under load and at rest**: thirty rounds, each in
+  one `REPEATABLE READ` snapshot and again at rest - `SETTLEMENT_CLEARING` against the card rail's
+  captures, refunds, standing chargebacks and fees; `INSTANT_CLEARING` against the instant rail's
+  executions, withdrawals and returns; `CHARGEBACK_RECOVERABLE` plus `DISPUTE_COSTS` against each
+  dispute's amount, share and fee; `FEE_REVENUE`; every wallet and payable against independent
+  books (fees priced from each sale's pin); holds against the debits in flight; available never
+  negative; the combined bound on every card attempt; the trial balance per currency. The four
+  scenarios counted: every capture of 20.07, withdrawal of 12.07 and pay-in of 15.07 loses its
+  answer on purpose and resolves to exactly one entry; every ten-way burst leaves exactly the row
+  its successful racers were answered with; every duplicated callback one effect; availability
+  holds while withdrawals complete beside wallet payments and transfers. The meters' tally equals
+  the tables' judgements, rail by rail. **Found by the storm, and fixed**: the win-against-refund
+  deadlock, with `ChargebackAccountingDatabaseTest#aWinRacingRefundsOfTheSameCounterpartyNeverDeadlocks`
+  and the lock order written into `RAIL_AND_DISPUTE_LIFECYCLES.md`, `DISTRIBUTED_EXECUTION.md`,
+  `PHASE_7_PLAN.md` §7 and ADR-0061; an honest `UNKNOWN` refund stranded while the harness
+  answered only its chosen losses - the providers now answer truthfully, by reference. **The
+  gate's own finds**: a contested boundary reached by luck (one run in five had no failed
+  transfer) - now forced by a never-affordable amount; every money path observed but asserted
+  nowhere - returns, book and card refunds, wins, losses and fees now required from the tables;
+  the bursts asserted "at most one row" - now exactly the answered row, and one for every
+  successful racer; and the tally over-assumed - inside the gate's battery a burst's payment the
+  provider never received failed honestly and was called a missing order: every burst's order and
+  every lost answer is now judged by what the provider received. Ten probe runs, ten caught, every one by its intended test and, for the
+  storm's readings, in the round the break first reached them; every verdict read from the
+  failing testcases themselves, never the exit code alone, each restore byte-identical
+  (`MUTATION_TESTING.md` §2 +9 rows, §3 +1 note, §4 +1 row). Multi-instance PASS. Fleet hermetic
+  1732 tests across 14 modules, 0 failures; 395 targeted database tests across 37 suites, 0 failures; the platform classification guard green. The full battery deliberately skipped
+  on the owner's instruction.
 
-**P7-TST-002 — The dispute battery** — `PLANNED`
+**P7-TST-002 — The dispute battery** — `READY`
 - **Objective**: every dispute failure scenario the plan names, raced and duplicated.
 - **Bounded context**: Disputes (29).
 - **Dependencies**: `P7-TSK-013`, `-014`.
@@ -9351,6 +9387,19 @@ Disputes (`P7-TSK-012`…`-014`) · M7.7 Observability and demonstration (`P7-TS
 - **Testing**: probes proving each assertion can fail.
 - **Accept**: the two dispute gate criteria demonstrated under load, probed.
 - **Definition of done**: `DOD-TEST`, `DOD-FIN`. **Risk**: Medium. **Cx**: M.
+- **Design inputs recorded by `P7-TST-001`** (read at design, not binding decisions):
+  (1) **the storm already covers the common path under load** - chargebacks full and
+  partial, wins, losses, fees, a refund before and after a chargeback, and four refunds
+  racing one full chargeback per burst: the battery's subject is what the storm does not
+  reach (a second cycle, a representment after resolution, a counterparty no longer
+  postable, ten-way duplicates under identical AND fresh event ids on every stage);
+  (2) **the lock order changed** - every dispute stage share-locks the counterparty before
+  its first posting (the storm's `40P01` find), so a win or loss racing refunds of the
+  counterparty's OTHER payments belongs in the battery beside
+  `aWinRacingRefundsOfTheSameCounterpartyNeverDeadlocks`; (3) **the reconciliation is
+  written** - the storm's dispute-accounts reading (`CHARGEBACK_RECOVERABLE` plus
+  `DISPUTE_COSTS` against each dispute's amount, posted share and fee) is the stage
+  postings' reconciliation the entry asks for.
 
 **P7-DOC-001 — The Phase 7 exit review** — `PLANNED`
 - **Objective**: rule Phase 7 against `PHASE_GATES.md` §3, the supplement and §5's Phase 7

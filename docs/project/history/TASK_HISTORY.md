@@ -1,6 +1,6 @@
 # Task History
 
-The per-task completion records that accumulated behind `## Current Task` - 159 "Previously" blocks, newest first, from `P7-TSK-014` back to project initiation. *(`X-TSK-004` is cross-cutting and completed after the Phase 6 → 7 transition, so it stands second, between `P7-TSK-001` and the transition's record - the transition's block moved here by `P7-TSK-001`'s gate, exactly as an earlier form of this note said it would.)*
+The per-task completion records that accumulated behind `## Current Task` - 160 "Previously" blocks, newest first, from `P7-TSK-015` back to project initiation. *(`X-TSK-004` is cross-cutting and completed after the Phase 6 → 7 transition, so it stands second, between `P7-TSK-001` and the transition's record - the transition's block moved here by `P7-TSK-001`'s gate, exactly as an earlier form of this note said it would.)*
 
 **Archive.** These records were moved verbatim out of
 [`CURRENT_STATE.md`](../CURRENT_STATE.md) on 2026-09-20 so that the canonical description of
@@ -14,6 +14,83 @@ Authoritative backlog: [`BACKLOG.md`](../BACKLOG.md)
 ---
 
 ### Previously
+
+**`P7-TSK-015` — Rail and dispute meters and the dashboard row** — `COMPLETE` (2026-09-28).
+**M7.7, Observability and demonstration, opens at 1 of 3: every rail's health and every dispute's
+stage visible on a running instance - each acting judgement counted exactly once where it is
+written, after its commit; every modelled unknown alertable by count and age; the chargeback
+ratio an operator report, never a metric tag** (`PHASE_7_PLAN.md` §15; `INV-LIFE-03`,
+`INV-AUD-02`, `INV-AUD-03`, `INV-AUD-01`).
+
+| Acceptance criterion | Evidence |
+|---|---|
+| Every §15 series published by a fresh instance | `PlannedMetersExistTest#phase7PlannedMetersAreAlreadyPublished` reads the plan's §15 rows (the two added here among them) against a fresh instance's registry; the running instance's stuck pairs and stage gauge read the real schema (`WithdrawalDatabaseTest#theStuckReadingCountsWhatTheSweepWould`, `DisputeResponseDatabaseTest#theStuckAnswerReadingCountsWhatTheSweepWould`, `#aRepresentmentIsSubmittedAndWonEndToEnd`); every query of the dashboard's new row names a published series (`DashboardQueriesResolveTest`) |
+
+**What inspection found**: `PaymentMeters` was built with the card PSP's name and `MeteredPushRail`
+recorded into the same timers, so every instant-rail call - withdrawals, initiations, their
+queries and returns - was published as the card PSP's latency; and judgement counting at the doors
+(`P5-TSK-017`) had lost every door added since that did not copy it - pay-in sweep executions,
+return sweep outcomes, voids, withdrawals and dispute answers were counted nowhere. The
+`PostingObserver` argument, evidenced five times.
+
+**One counting seam**: the three appliers (`PaymentOutcomes`, `WithdrawalOutcomes`,
+`DisputeResponseOutcomes`) report each acting judgement to the payments port `RailOutcomeObserver`
+- a required constructor parameter, called only past the one `if (!acting)` exit - and
+`CommittedRailOutcomes` counts it once the transaction commits (never on rollback, never thrown
+into a committed operation). The door counting is gone, and `JudgementWritersAreConfinedTest`
+pins every judgement writer to its applier. **The series**: `finapp.payments.rail.outcome` and
+`finapp.payments.rail.latency`, eager per declared rail from its capabilities; the provider timers
+under the true provider (the mislabel corrected); the dispute port metered (`MeteredDisputeResponder`,
+the `P7-TSK-014` input); `finapp.payments.withdrawal.unknown.*` and
+`finapp.payments.dispute.response.unknown.*` in the payout shape (`INV-LIFE-03`'s own age metric
+for the one machine that had none, two plan rows added with provenance); `finapp.payments.dispute`
+by current stage, `stage` joining the tag vocabulary with its written argument. The two §15 series
+earlier tasks shipped are adopted, not duplicated.
+
+**The report**: `GET /v1/operator/reports/chargeback-ratio?month=YYYY-MM` under
+`MERCHANT_ADMINISTER` (the standing judgement's desk; a dispute's details stay behind
+`DISPUTE_ADMINISTER`) - per merchant, the month's card sales and chargebacks on the rails that
+declare chargebacks, a chargeback dated by its escalation, the ratio to four places and undefined
+without sales, worst first, bounded at 100 with `truncated`, audited `payments.ChargebackRatioRead`
+naming the period, never a merchant. **The dashboard**: the "Rails and disputes" row, nine panels.
+
+**The gate's own finds**: the report accepted any four-digit year - `9999-12` pushed its window's
+end into year 10000 - and future months: the reportable range is now 2000-01 to the current month,
+the rest the one 422; no test read the running instance's stage gauge against the real schema
+(asserted now); and **a converged application was demonstrated nowhere** - the probe moving the
+refund report ahead of the acting exit SURVIVED, because the ten-webhook race it aimed at no longer
+reaches the applier (the door's locked read stops the nine losers first, and that test's comment
+still credited the acting bit - corrected): `PaymentRefundDatabaseTest#aConvergedRefundApplicationCountsNothing`
+drives the one reachable converged refund (an ambiguous answer on a row another resolver already
+moved into `UNKNOWN`), `PaymentSweeperDatabaseTest#aConvergedCaptureIsCountedOnce` the attempt's
+(the sweep's unlocked read), both re-probed and caught. **Found by the gate's own battery, not
+this task's code, and fixed**: its first run failed two tests -
+`BalanceDerivationDatabaseTest#aMixedScaleHistoryRefusesLoudly`, whose never-a-sum needle `777`
+matched a random account identifier (`7e777e...`, the `P7-TSK-008` needle class): the identifier
+is now taken out before the amounts are judged; and
+`PaymentRefundDatabaseTest#aTakeoversRefusedConnectionProvesNothing`, whose crashed flight's claim
+lapsed one second before insertion on the server clock that also judges the takeover - measured,
+the Docker VM's clock gains ~77 ms a second and is stepped back ~1.6 s every ~27 s, so a step-back
+between the insert and the takeover read the lease as held: both crashed-flight claims now lapse a
+minute back. The battery was re-run fresh, green; both classes' remaining instances (two platform
+lease fixtures, a dozen short digit needles) are chipped as their own task.
+
+Thirty-five probe runs, thirty-four caught - every one by its intended test - and one survivor that
+was the gate's find above, closed and re-run; every verdict read from the failing testcases
+themselves, never the exit code alone, each restore byte-identical (`MUTATION_TESTING.md` §2 +9
+rows under `INV-LIFE-03`, `INV-AUD-02`, `INV-AUD-03` and `INV-AUD-01`, and §3's
+demonstrated-not-claimed paragraph for the rest). Multi-instance PASS - the meters decide nothing:
+counters are per instance and count only what a commit made true, the gauges read the shared
+database with a refresh floor and aggregate with `max()`, and the report is one read-only
+transaction; nothing lives in process state that correctness needs. Registers: `MetricNames` +`stage`,
+`PHASE_7_PLAN.md` §15 +2 rows, `AUDITABLE_ACTIONS.md` +1, `RoutePermissionRegisterTest` +1,
+`OpenApiContractTest` +1 path, `NoFloatingPointMoneyRulesTest` +4 exemptions (the gauges'
+counts), `DashboardQueriesResolveTest`'s non-series labels +3, `MODULE_ARCHITECTURE.md`'s payments
+operations, `INV-LIFE-03`'s Verify note, ADR-0059, ADR-0061 and ADR-0062 annotated, the OpenAPI
+baseline regenerated (+1 path, additive under v1 by ADR-0015). No domain behaviour, persistence,
+event or error-code change. Verified by targeted tiers from fresh runs — the fleet-wide hermetic
+test task green at 1731 tests across 14 modules, 0 failures, and 393 targeted database tests across 36 suites, 0 failures, plus the platform classification guard — the full battery
+deliberately skipped on the owner's instruction, no fleet-wide database or kafka counts claimed.
 
 **`P7-TSK-014` — Representment and dispute evidence** — `COMPLETE` (2026-09-27).
 **M7.6, Disputes, closes at 3 of 3: a chargeback is answered - contested with evidence or

@@ -26,6 +26,22 @@ public final class RailOutcomeCounts {
         return counter == null ? 0 : counter.count();
     }
 
+    /**
+     * Every {@code finapp.payments.rail.outcome} counter the registry holds, keyed
+     * {@code "rail|type|outcome"} - the multi-rail storm's second tally ({@code P7-TST-001}).
+     */
+    public static java.util.Map<String, Long> all(MeterRegistry registry) {
+        java.util.Map<String, Long> counted = new java.util.TreeMap<>();
+        for (Counter counter : registry.find(PaymentMeters.RAIL_OUTCOME).counters()) {
+            io.micrometer.core.instrument.Meter.Id id = counter.getId();
+            counted.merge(
+                    id.getTag("rail") + "|" + id.getTag("type") + "|" + id.getTag("outcome"),
+                    (long) counter.count(),
+                    Long::sum);
+        }
+        return counted;
+    }
+
     /** The legacy {@code finapp.payments.attempt{outcome}} series the same judgements feed. */
     public static double attempt(MeterRegistry registry, String outcome) {
         Counter counter = registry.find(PaymentMeters.ATTEMPT).tag("outcome", outcome).counter();

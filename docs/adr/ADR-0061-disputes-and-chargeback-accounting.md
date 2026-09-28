@@ -184,6 +184,13 @@ the customer has spent the money.
    loudly and the PSP redelivers once the freeze lifts. The positions are counted by
    `finapp.ledger.negative.positions`, per purpose, and `INV-MER-07`'s amendment is in force.)*
 
+   *(`P7-TST-001`, the multi-rail storm, found the lock order one step short and closed it: every
+   stage now share-locks the counterparty BEFORE its first posting. A win's external fact had
+   taken the clearing's and the recoverable's balance rows before its restoration touched the
+   counterparty, while a refund of another payment to the same counterparty held that account for
+   its hold's release and waited on the clearing - a `40P01`, a 500 at the card door, the PSP's
+   redelivery the only recovery.)*
+
 6. **Notifications are authenticated, deduplicated and order-blind.** Dispute notifications
    arrive through the card rail's signed webhook door (ADR-0047): authenticated before parsing,
    deduplicated by the inbox (`INV-IDEM-04`), evidence retained verbatim before the effect
