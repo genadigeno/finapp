@@ -29,6 +29,19 @@ class SimulatedTokenisationAdapterTest {
             "{\"status\":\"tokenised\",\"token\":\"tok_visa-4242\",\"brand\":\"Visa\","
                     + "\"last4\":\"4242\",\"expiryMonth\":12,\"expiryYear\":2030}";
 
+    /**
+     * Long enough for the exchange to be on the wire before the adapter gives up, however cold
+     * the JVM. The first request of a fresh test JVM took up to ~160 ms to reach the provider
+     * (`X-TSK-009`), which left a 200 ms timeout almost no margin. A tight margin on a loaded
+     * machine is a flake (`P1-TSK-002`'s waiting rule). Two seconds, not `X-TSK-009`'s one: the
+     * main line had independently raised it to two for full-suite load, and the larger margin is
+     * kept.
+     */
+    private static final Duration IMPATIENT = Duration.ofSeconds(2);
+
+    /** How far the provider's record may trail the wire. A failure bound, never a pause. */
+    private static final Duration RECEIPT_BOUND = Duration.ofSeconds(10);
+
     private static SimulatedProvider provider;
 
     @BeforeAll
@@ -158,12 +171,16 @@ class SimulatedTokenisationAdapterTest {
         // establishment, so the request was never written and the received-count oracle below
         // read 0 - a flake that looked like a provider fault.
         SimulatedTokenisationAdapter impatient =
-                new SimulatedTokenisationAdapter(
-                        URI.create(provider.baseUrl()), Duration.ofSeconds(2));
+                new SimulatedTokenisationAdapter(URI.create(provider.baseUrl()), IMPATIENT);
         assertThat(impatient.exchange(GRANT).outcome()).isEqualTo(Outcome.UNAVAILABLE);
         // The requestCount oracle: the provider RECEIVED the exchange - which is why a fresh
         // grant, not a retry loop, is the recovery (the grant is one-time on the provider side).
-        assertThat(provider.requestCount(SimulatedTokenisationAdapter.TOKENISATIONS_PATH))
+        // Awaited, not read at the instant the adapter gave up: the provider records a request
+        // only after matching it, and on a cold JVM that landed after a 200 ms timeout in 11 of
+        // 15 fresh runs (X-TSK-009).
+        assertThat(
+                        provider.awaitRequestCount(
+                                SimulatedTokenisationAdapter.TOKENISATIONS_PATH, 1, RECEIPT_BOUND))
                 .isEqualTo(1);
     }
 }

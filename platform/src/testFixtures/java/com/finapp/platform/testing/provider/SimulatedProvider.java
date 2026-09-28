@@ -62,6 +62,9 @@ public final class SimulatedProvider implements AutoCloseable {
      */
     private static final Duration LONGER_THAN_ANY_CLIENT_WILL_WAIT = Duration.ofMinutes(5);
 
+    /** How often {@link #awaitRequestCount} re-reads the record while it waits. */
+    private static final Duration RECEIPT_POLL_INTERVAL = Duration.ofMillis(10);
+
     private final WireMockServer server;
     private final HttpClient callbackClient;
 
@@ -146,9 +149,9 @@ public final class SimulatedProvider implements AutoCloseable {
      * The provider never answers, so the caller times out.
      *
      * <p>{@code CLAUDE.md}: <em>the request times out</em>. The request <strong>is</strong>
-     * received — {@link #requestCount} proves it — which is the entire difficulty: a timeout says
-     * nothing about whether the provider acted, so treating it as failure is the most expensive
-     * assumption in payments (`INV-LIFE-03`).
+     * received — {@link #awaitRequestCount} proves it — which is the entire difficulty: a timeout
+     * says nothing about whether the provider acted, so treating it as failure is the most
+     * expensive assumption in payments (`INV-LIFE-03`).
      */
     public void neverResponds(String path) {
         server.stubFor(
@@ -291,9 +294,49 @@ public final class SimulatedProvider implements AutoCloseable {
      * <p>The most important assertion the harness offers, and it is what separates two failures
      * that look identical from the caller's side: a request that never arrived, and a request
      * that arrived and was acted on before the answer was lost.
+     *
+     * <p>It reads the record at this instant. After a caller has timed out, use
+     * {@link #awaitRequestCount}.
      */
     public int requestCount(String path) {
         return server.countRequestsMatching(anyRequestedFor(urlEqualTo(path)).build()).getCount();
+    }
+
+    /**
+     * How many times the provider was called on this path, once it has recorded at least
+     * {@code expected}, waiting up to {@code patience} for them (`X-TSK-009`).
+     *
+     * <p>The provider records a request only after matching it and rendering its answer, so the
+     * record trails the wire. Every mode that answers or hangs up does so after recording, so a
+     * count read once the caller has its answer is exact. A timeout is the exception, because the
+     * caller stops on its own clock. On a cold JVM the record landed about 100 ms after the
+     * request arrived, which was after a 200 ms client timeout had fired. A count read the moment
+     * the caller gave up then said 0 for a request the provider had.
+     *
+     * <p>Giving up is a failure, not a fallback. A request that never arrives is still reported
+     * as the count the provider holds, and the caller's assertion fails on it. The wait returns
+     * as soon as {@code expected} have arrived, so it proves arrival, not absence. An exactly-one
+     * assertion on its result still catches a second attempt recorded by then.
+     *
+     * <p>The wait is counted in polls, never read from a clock: this class is under the
+     * no-ambient-time rule like everything in {@code com.finapp} (`P0-TSK-013`). Every poll
+     * sleeps at least its interval, so a wait that gives up has lasted at least
+     * {@code patience}. It can last longer: on Windows a sleep takes a whole ~15.6 ms timer tick,
+     * and a 10 s patience gave up after 15.6 s.
+     */
+    public int awaitRequestCount(String path, int expected, Duration patience) {
+        long polls = patience.toMillis() / RECEIPT_POLL_INTERVAL.toMillis();
+        int count = requestCount(path);
+        for (long poll = 0; poll < polls && count < expected; poll++) {
+            try {
+                Thread.sleep(RECEIPT_POLL_INTERVAL.toMillis());
+            } catch (InterruptedException e) {
+                Thread.currentThread().interrupt();
+                throw new IllegalStateException("Interrupted awaiting a request to " + path, e);
+            }
+            count = requestCount(path);
+        }
+        return count;
     }
 
     /**

@@ -187,6 +187,15 @@ identical from the caller's side — a request that never arrived, and a request
 was acted on before the answer was lost. That distinction is why `INV-LIFE-03` requires an explicit
 indeterminate state rather than a guess in either direction.
 
+**After a timeout, await receipt rather than sampling it** (`X-TSK-009`). The provider records a
+request only after matching it, so its record trails the wire, by about 100 ms on a cold JVM
+(measured). Every mode that answers or hangs up does so after recording, so a count read once the
+caller has its answer is exact. A timeout is the exception, because the caller stops on its own
+clock. `awaitRequestCount` waits on the count with a bound that is a failure, not a fallback, so a
+request that never arrived still counts as none. Give the caller's timeout real margin as well.
+The request has to be on the wire before the caller gives up, and a cold first request took up to
+~160 ms to arrive.
+
 **A failure mode applies whatever verb the adapter uses.** A provider that is unavailable is
 unavailable for `GET` and `POST` alike — the failure belongs to the provider, not to the request
 method. The first version bound each stub to one verb, which meant an adapter POSTing to create a

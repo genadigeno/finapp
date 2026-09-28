@@ -16,6 +16,7 @@ import java.net.http.HttpResponse;
 import java.net.http.HttpTimeoutException;
 import java.time.Duration;
 import java.util.Set;
+import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.atomic.AtomicInteger;
 import org.junit.jupiter.api.AfterAll;
@@ -102,6 +103,40 @@ class SimulatedProviderTest {
             assertThat(provider.requestCount("/payments/2"))
                     .as("a timeout says nothing about whether the provider acted")
                     .isEqualTo(1);
+        }
+
+        @Test
+        @DisplayName("receipt is awaited with a bound, and a request that never came counts as none")
+        void receiptIsAwaitedWithABound() {
+            // Nothing is sent. The wait must end at its bound and report what the provider holds.
+            // Without this half, a test awaiting receipt could never fail - and failing when the
+            // request never arrived is the one thing it exists to do (X-TSK-009).
+            Duration bound = Duration.ofMillis(200);
+            long startedAt = System.nanoTime();
+            int nothingSent = provider.awaitRequestCount("/payments/11", 1, bound);
+            Duration waited = Duration.ofNanos(System.nanoTime() - startedAt);
+
+            assertThat(nothingSent).as("an absent request is counted as none").isZero();
+            assertThat(waited)
+                    .as("it waits out the bound rather than sampling once - and then stops")
+                    .isBetween(bound, bound.multipliedBy(10));
+
+            // The control: a request sent and held arrives, however far the record trails the
+            // wire.
+            provider.neverResponds("/payments/11");
+            CompletableFuture<HttpResponse<Void>> held =
+                    client.sendAsync(
+                            HttpRequest.newBuilder(uri("/payments/11"))
+                                    .timeout(Duration.ofSeconds(30))
+                                    .GET()
+                                    .build(),
+                            HttpResponse.BodyHandlers.discarding());
+            try {
+                assertThat(provider.awaitRequestCount("/payments/11", 1, Duration.ofSeconds(10)))
+                        .isEqualTo(1);
+            } finally {
+                held.cancel(true);
+            }
         }
 
         @Test

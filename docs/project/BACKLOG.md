@@ -7968,6 +7968,79 @@ Batches 0–9 applied and verified 2026-09-23; its one failing test predates it.
 - **Risk**: Medium. The `CHECK` family touches money-moving tables. **Cx**: L. Split it when it is
   scheduled. **DoD**: `DOD-SEC`, `DOD-FIN` for the money-moving sites, `DOD-DOMAIN`.
 
+**X-TSK-009 — Provider receipt after a timeout, proved deterministically** — `IN_PROGRESS`
+*(implemented and demonstrated 2026-09-27; awaiting the completion gate)*
+- **Context**: `platform` test fixtures (`SimulatedProvider`) and `paymentmethods` tests. Test
+  code only; no production code changes. Owner-reported flake.
+- **Problem**: `SimulatedTokenisationAdapterTest#aTimeoutIsUnavailable` (`P5-TSK-005`) failed
+  intermittently with `expected: 1 but was: 0` on its `requestCount` assertion. First seen
+  2026-09-27 on `claude/confident-roentgen-92eaad` (`bb86186`, which touches neither module).
+  Reproduced here with the original assertions, instrumented only to record timings: **9 of 10**
+  fresh-JVM `:paymentmethods:test` runs and **2 of 5** `unitTest` runs failed. It was never
+  specific to `test`.
+- **Cause (measured by an instrumented run, then reverted)**: the test runs first in its class,
+  so it makes the first request of a fresh JVM on both sides.
+  - The request reached WireMock 121–157 ms after the adapter started.
+  - WireMock records a request only after matching it and rendering the answer. That happened
+    at 221–273 ms.
+  - The adapter gave up at its 200 ms timeout, returning at 215–232 ms, and the test read the
+    count at that instant.
+
+  The request arrived every time; the count was read before the provider recorded it. Arrival
+  itself also had only ~40–80 ms of headroom inside 200 ms, which is the "200 ms is long enough
+  to connect" assumption.
+- **Change**:
+  - `SimulatedProvider.awaitRequestCount(path, expected, patience)` waits on the count, bounded.
+    Giving up is a failure, not a fallback: a request that never arrived is reported as none.
+    No WireMock type in the signature and no new library.
+  - The bound is counted in polls, never read from a clock. The first version read
+    `System.nanoTime()`, and `NoAmbientTimeRulesTest` rejected it: the rule covers test
+    fixtures too, "with no exemption". On Windows a 10 ms poll takes a ~15.6 ms timer tick, so
+    a 10 s patience gives up after about 15.6 s. That only matters once the test has already
+    failed.
+  - The test awaits receipt, and its timeout rises from 200 ms to 1 s (≥6× the measured cold
+    arrival). The two changes close different races. The wait covers the record trailing the
+    wire, which nothing bounds on a loaded JVM. The timeout covers arrival before the adapter
+    gives up, which no wait can repair. At the merge with the main line the timeout became 2 s:
+    `52992cd` had independently raised it to 2 s for full-suite load, and the larger margin was
+    kept. The evidence below was taken at 1 s.
+  - What the test proves is unchanged: the outcome is `UNAVAILABLE`, and the provider received
+    exactly one exchange.
+  - `SimulatedProviderTest#receiptIsAwaitedWithABound` proves the new method waits out its
+    bound, then stops, and counts an absent request as none. It has a sent-and-held control.
+  - `TESTING.md` §5a records the rule: a timeout is the one mode in which the provider's record
+    can trail the caller's verdict.
+- **Found, not fixed** (`EXECUTION_PROTOCOL.md` Rule 4): three tests read `requestCount` the
+  instant a client times out. They carry the same race with wider margins and are not observed
+  failing:
+  - `SimulatedProviderTest#theRequestTimesOut` (500 ms);
+  - `SimulatedCardPspAdapterTest#timeoutIsIndeterminate` (400 ms);
+  - `VerificationRunDatabaseTest#aTimeoutDoesNotDecide` (700 ms).
+
+  The fix for each is the same one-line change. The owner decides whether to make it.
+- **Evidence** (2026-09-27, the final code, a fresh test JVM per run):
+  - **40 of 40 green**: 20 of 20 `:paymentmethods:test` runs and 20 of 20 `unitTest` runs. The
+    test takes 1.03–1.11 s, its 1 s timeout firing as designed.
+  - Mutations, each reverted:
+    - **the adapter stops sending the request**: the receipt assertion fails once its patience
+      runs out, `expected: 1 but was: 0`, while the outcome assertion still passes;
+    - **the adapter retries the same grant once**: `expected: 1 but was: 2`, so returning as
+      soon as the count arrives does not weaken "exactly one";
+    - **`awaitRequestCount` samples once instead of waiting** (the pre-fix behaviour):
+      `SimulatedProviderTest` fails, having returned in 0.0001 s against a required
+      [0.2 s, 2 s].
+  - Targeted tiers green from a fresh run: `:platform:test` 174, `:paymentmethods:test` 30,
+    `:payments:unitTest` 106, `:kyc:unitTest` 107, `:app:architectureTest` 136. That is 553
+    tests, 0 failures.
+- **Deps**: none.
+- **Accept**:
+  - repeated fresh-JVM runs green under both `unitTest` and `test`;
+  - the assertion fails when the adapter stops sending the request;
+  - `SimulatedProviderTest` green, and `:app:architectureTest` green (`ProviderFailureCoverageTest`
+    reads the harness suite; `NoAmbientTimeRulesTest` covers the harness);
+  - no production code changed.
+- **Risk**: Low. **Cx**: S. **DoD**: `DOD-TEST`.
+
 ---
 
 # Phases 7–16 — Epics
