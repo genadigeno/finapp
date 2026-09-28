@@ -192,6 +192,54 @@ class AdjustmentProposalSchemaDatabaseTest {
         }
     }
 
+    /**
+     * The insert-then-decide fixture shape is proven insensitive to a backwards clock correction
+     * ({@code P1-TSK-031}).
+     *
+     * <p>{@link #theProposalIsFrozenForEveryWriter} proposes through {@link #insertProposal},
+     * commits, and rejects in a later transaction with {@code decided_at = now()}: two reads of
+     * the server clock, and the local container's clock runs fast and is corrected backwards, so
+     * nothing orders the second read after the first. {@code V010}'s
+     * {@code adjustment_proposal_decision_follows_proposal} is right to refuse such a pair, and no
+     * store clamp reaches a raw UPDATE, so the fixture must not produce one.
+     *
+     * <p>The decision below simulates a correction of thirty minutes and must succeed against a
+     * fixture proposal. The second half is the vacuity control: the same decision against a
+     * proposal written at plain {@code now()} is still refused, so a pass proves the back-dating
+     * carries the property rather than the CHECK being dead.
+     */
+    @Test
+    @DisplayName("a back-dated proposal fixture survives a backwards clock correction, one at"
+            + " now() does not (P1-TSK-031)")
+    void theProposalFixtureSurvivesABackwardsClockCorrection() throws SQLException {
+        String rejectionBehindTheClock =
+                "UPDATE ledger.adjustment_proposal SET status = 'REJECTED',"
+                        + " decided_by = 'person-2', decided_at = now() - interval '30 minutes'"
+                        + " WHERE id = ?";
+        try (Connection app = DatabaseRoles.application()) {
+            UUID fixture = insertProposal(app, "person-1");
+            assertThatCode(() -> execute(app, rejectionBehindTheClock, fixture))
+                    .as("a clock corrected backwards between the proposal and its decision must"
+                            + " not refuse the fixture")
+                    .doesNotThrowAnyException();
+
+            UUID atNow = IDS.next();
+            execute(
+                    app,
+                    "INSERT INTO ledger.adjustment_proposal (id, status, posting_date,"
+                            + " value_date, reference, reason, proposed_by, proposed_at)"
+                            + " VALUES (?, 'PROPOSED', current_date, current_date,"
+                            + " 'raw-probe', 'raw schema probe', 'person-1', now())",
+                    atNow);
+            assertThatThrownBy(() -> execute(app, rejectionBehindTheClock, atNow))
+                    .as("the same decision against a proposal written at now() is refused - the"
+                            + " CHECK is alive, so the back-dating is what carries the property")
+                    .isInstanceOf(SQLException.class)
+                    .hasFieldOrPropertyWithValue("SQLState", "23514")
+                    .hasMessageContaining("adjustment_proposal_decision_follows_proposal");
+        }
+    }
+
     // -----------------------------------------------------------------
     // The clock
 
@@ -350,10 +398,16 @@ class AdjustmentProposalSchemaDatabaseTest {
         UUID proposal = IDS.next();
         try (PreparedStatement insert =
                 app.prepareStatement(
+                        // Back-dated: a test later decides this proposal with an UPDATE that
+                        // reads now() again in another transaction, and the local container's
+                        // clock is corrected backwards between statements (P1-TSK-031). V010's
+                        // ordering CHECK is right and a fixture must not depend on two now()
+                        // reads being ordered.
                         "INSERT INTO ledger.adjustment_proposal (id, status, posting_date,"
                                 + " value_date, reference, reason, proposed_by, proposed_at)"
                                 + " VALUES (?, 'PROPOSED', current_date, current_date,"
-                                + " 'raw-probe', 'raw schema probe', ?, now())")) {
+                                + " 'raw-probe', 'raw schema probe', ?,"
+                                + " now() - interval '1 hour')")) {
             insert.setObject(1, proposal);
             insert.setString(2, proposedBy);
             insert.executeUpdate();
