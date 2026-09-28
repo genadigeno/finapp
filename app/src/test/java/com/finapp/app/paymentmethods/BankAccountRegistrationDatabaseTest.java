@@ -275,6 +275,42 @@ class BankAccountRegistrationDatabaseTest {
     }
 
     @Test
+    @DisplayName("a grant that could steer the provider's request - a quote, a backslash, a"
+            + " duplicate key - or that takes a bank identifier's shape is refused at the"
+            + " boundary with NOTHING sent (the Phase 7 -> 8 transition, INV-RAIL-03)")
+    void aHostileGrantNeverReachesTheProvider() throws Exception {
+        String login = someLogin();
+        assertThat(register(login).statusCode()).isEqualTo(201);
+        String token = tokenFrom(authenticate(login).body());
+        UUID party = partyOf(login);
+        scheme.succeedsWith(
+                SimulatedInstantSchemeAdapter.EXCHANGES_PATH, 200, "{\"status\":\"refused\"}");
+
+        // Each value is written as its JSON string literal - what the customer's client sends.
+        for (String grantLiteral :
+                java.util.List.of(
+                        "\"g\\\",\\\"endToEndReference\\\":\\\"x\\\",\\\"scope\\\":\\\"all\"",
+                        "\"blg-\\\\n-" + suffix() + "\"",
+                        "\"blg- " + suffix() + "\"",
+                        "\"DE89370400440532013000\"",
+                        "\"12345678\"",
+                        "\"" + "a".repeat(129) + "\"")) {
+            HttpResponse<String> refused =
+                    post(
+                            "/v1/me/payment-methods/bank-accounts",
+                            "{\"grant\":" + grantLiteral + ",\"acknowledgeNoMatch\":false}",
+                            token,
+                            UUID.randomUUID());
+            assertThat(refused.statusCode()).as(grantLiteral).isEqualTo(422);
+            assertThat(refused.body()).as(grantLiteral).contains("grant");
+        }
+        assertThat(scheme.requestCount(SimulatedInstantSchemeAdapter.EXCHANGES_PATH))
+                .as("no hostile grant reached the provider's wire")
+                .isZero();
+        assertThat(paymentMethodRowsOf(party)).isEmpty();
+    }
+
+    @Test
     @DisplayName("an enrolled identity is refused at PASSWORD with the key UNBURNED and no"
             + " exchange; the same key succeeds at MULTI_FACTOR")
     void theStepUpGateLeavesTheKeyUnburned() throws Exception {

@@ -117,7 +117,14 @@ public final class JdbcHoldStore implements HoldStore<Connection> {
                 unitOfWork.prepareStatement(
                         // The row count is the outcome: of N concurrent releasers exactly one
                         // sees ACTIVE, and the losers converge (HoldStore's contract).
-                        "UPDATE " + TABLE + " SET status = 'RELEASED', released_at = ?"
+                        // Never before the placement (the Phase 7 -> 8 transition): the release
+                        // is stamped by the releasing instance's clock and the placement by the
+                        // placing one's, so a trailing clock met V008's released_at >= placed_at
+                        // CHECK and failed the completion that released it - a refund, a
+                        // withdrawal - until the clocks agreed. The later of the two is the
+                        // honest release instant.
+                        "UPDATE " + TABLE + " SET status = 'RELEASED',"
+                                + " released_at = GREATEST(CAST(? AS timestamptz), placed_at)"
                                 + " WHERE id = ? AND status = 'ACTIVE'")) {
             move.setTimestamp(1, Timestamp.from(at));
             move.setObject(2, id.value());

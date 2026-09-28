@@ -849,6 +849,183 @@ See `PHASE_GATES.md` §Phase 8.
 FX-related reconciliation, GL close and financial statements (Phase 14), regulatory
 reporting.
 
+*(**Elaborated by [`PHASE_8_PLAN.md`](PHASE_8_PLAN.md)** and ADR-0064…0073 at the Phase 7 → 8
+transition, 2026-09-28: twenty-seven items across eight milestones in `BACKLOG.md`, the model in
+[`RECONCILIATION_MODEL.md`](../domain/RECONCILIATION_MODEL.md), rewritten by the transition, and
+the machines in
+[`SETTLEMENT_AND_RECONCILIATION_LIFECYCLES.md`](../domain/SETTLEMENT_AND_RECONCILIATION_LIFECYCLES.md).
+The eighteen sections above are kept as written and made current here where they had fallen behind
+the decisions; where they disagree with this addendum or the plan, the addendum and the plan are
+right. §18 stands, and `PHASE_8_PLAN.md` §17 extends it. Until Phase 8's first task lands, nothing
+in this addendum is implemented; every statement is the decided design, corrected by the tasks that
+build it.)*
+
+- *§3 and §5 — **two modules, and the expectation is reconciliation's** (ADR-0064). Settlement
+  (context 13) and Reconciliation (context 14) are two modules, `settlement` and `reconciliation`,
+  with **no build edge between them**: each depends on `ledger`, `platform` and `sharedkernel`
+  alone, and `app` composes them with `payments` and `merchant` through ports that are required
+  constructor parameters — `SettlementExpectations` (declared in `payments`),
+  `PayoutSettlementExpectations` and `PayoutReturns` (`merchant`), `AcceptedBatchIntake`
+  (`settlement`), and `InternalReferenceLookup` and the repudiation seam (`reconciliation`), the
+  last letting `settlement` write a batch repudiation's reversal and `ACCEPTED → REPUDIATED` on the
+  approval's connection (ADR-0064 §3; the fourth cross-module transaction, named by the
+  transition's consistency review, B5). `settlement` holds the external side: the source
+  register, the Settlement File, the Refused Delivery, the Settlement Batch, the Settlement Line
+  and the recognition posting of each accepted batch. `reconciliation` holds the
+  internal side, the comparison and the outcome — and with them the **Settlement Expectation**,
+  which moves here from `settlement` (`MODULE_ARCHITECTURE.md` M8 amended), because allocation and
+  ageing drive its lifecycle and a module never mutates another's rows. §5's first bullet is
+  sharpened by ADR-0065 — each counterparty's clearing position is discharged in two evidence hops,
+  the counterparty's report recognising its fees and opening a remittance expectation and the
+  bank's statement moving cash, with no in-transit account — and by ADR-0067: every externally
+  settling completion opens its expectation in its own transaction. §5's matching bullet gains a
+  stored snapshot of every candidate a decision saw, claimant order, and tolerances on processing
+  fees and dates only, never on an amount already in a position (ADR-0068, `INV-REC-08`). §5's last
+  bullet reads through the ledger's own machinery: a person's resolution posts through
+  `ledger.AdjustmentService` with origin `RECONCILIATION` and a closed reason code, an `EVIDENCED`
+  resolution posts nothing of its own, and accepted evidence is reversed only by a four-eyes
+  `REPUDIATE_BATCH`, through `ReversalService`.*
+- *§4 and §13 — **Phase 7's evidence, as the transition's gate repaired it.** Phase 8 reads the
+  tree as it stands and claims no gap the gate closed (`PHASE_8_PLAN.md` §2). Each unmatched pay-in
+  confirmation records its `cause` (`UNATTRIBUTED`, `ATTEMPT_CONCLUDED`, `AMOUNT_MISMATCH`), the
+  `named_reference` it named, its `settlement_cycle` and, exactly when attributed, its `attempt_id`
+  (payments `V023`), its raw statement reached through `payments.provider_evidence`'s fifth subject;
+  it still has no state and no resolution, and gains its suspense item and owning break in this
+  phase (`P8-TSK-020`), an attributed parking resolved by a four-eyes `TRANSFER_TO_ACCOUNT` crediting
+  the named attempt's counterparty, never by a guess. `payments.scheme_execution_claim` names one
+  explanation per scheme reference, and a scheme reference no claim holds names no completed
+  execution: after grace it types `MISSING_INTERNAL` when its other references name an operation
+  still in flight, and `UNKNOWN_EXTERNAL` otherwise. A second, different network clearing of one
+  capture (`SECOND_PRESENTMENT`) is loud but rests only in the retained evidence: the cleared amount
+  reaches this phase as the PSP report's own `CAPTURE` line (ADR-0065), and a second presentment
+  parks with its break, never absorbed. A closed merchant's payable account takes no posting, so a
+  payout return to it parks (`REVERSAL_MISMATCH`, `RETURN_NOT_APPLICABLE`) for a four-eyes transfer
+  to an account that can take it. Every Phase 8 transaction posting several entries over shared hot
+  rows pre-locks their union in the balance projection's order before its first posting
+  (`PostingService.lockBalancesInOrder`, the rule the gate wrote for dispute postings); the pull's
+  `settlement.pull_permit` advances strictly on every renewal, the send permits' repaired shape; and
+  every pull source's URL joins `ProviderTransportGuard`, startup refused unless it is `https` or
+  `sftp` off loopback.*
+- *§6 — **raw files encrypted in PostgreSQL, not object storage, and the terms as built**
+  (ADR-0066). "Settlement File (raw retained in object storage with checksum)" now reads: raw
+  retained **encrypted in PostgreSQL** behind the `SettlementFileStore` port — ordered chunks of at
+  most 1 MiB, each AES-256-GCM under `FINAPP_SETTLEMENT_FILE_KEY` with its AAD bound to file,
+  source, checksum and position, and the whole-plaintext SHA-256 verified on every read. ADR-0066
+  re-assesses ADR-0036 and names the triggers for object storage — a source's daily volume above
+  256 MiB, total evidence above 50 GiB, a real format exceeding the 8 MiB and 50,000-line bound, or
+  production deployment — a move then being an adapter change plus a data migration. A delivery
+  carrying a card-number or bank-identifier shape is refused at the door and only its metadata
+  kept (O3): for a refused delivery, `INV-PAY-02` and `INV-RAIL-03` take precedence over
+  `INV-HIST-02`. The terms: the **Settlement Line** is the canonical, immutable external record
+  (`settlement.line`; the glossary's Settlement Record), and reconciliation disposes a working copy
+  of it, the External Item, so the line stays evidence; the **Expectation** is the Settlement
+  Expectation, reconciliation's, the `REMITTANCE` expectation a report's acceptance opens included;
+  a **Match** is a Match Decision — its pinned rule set and a snapshot of every candidate it saw —
+  together with the Match Allocations it produced; **Match Rule** and **Tolerance** are members of
+  a Matching Rule Set versioned per source and activated four-eyes (the module register's labels,
+  never a bare "Allocation" or "Rule Set", which would collide with `lending`'s and `risk`'s);
+  **Investigation** is the break's case file, with no machine of its own; the **Adjustment Entry**
+  is the ledger's `ADJUSTMENT` entry beneath an approved `RECONCILIATION`-origin
+  `adjustment_proposal`; **Suspense Account postings** are `SUSPENSE_UNMATCHED` lines, each tracked
+  as a Suspense Item owned by exactly one break (`INV-REC-09`). New beside them: the Remittance, the
+  merchant's `payout_return` (ADR-0073), and four operational purposes, each arriving with its
+  first poster — `PROCESSING_COSTS`, `RECONCILIATION_LOSSES`, `RECONCILIATION_GAINS` and
+  `CASH_AT_BANK`, the settlement account's cash. The merchant payable's drill-down gains
+  `payoutsReturned` (`P8-TSK-019`) and `reconciliationAttributed` — every payable line in a
+  `RECONCILIATION`-origin `ADJUSTMENT` entry, whatever it faces, built by `P8-TSK-015` with its
+  first poster (`INV-MER-02`; the transition's consistency review, A12 and A13).*
+- *§8 — **the events as decided** (ADR-0064). The list now reads:
+  `settlement.SettlementFileRejected`; `settlement.SettlementBatchAccepted`, replacing
+  `SettlementBatchIngested` — the fact is the batch recognised once, not the file read;
+  `settlement.SettlementBatchRepudiated`; `reconciliation.ReconciliationRunCompleted`, replacing
+  the per-record `SettlementMatched` with one fact per run carrying counts per outcome;
+  `reconciliation.SettlementExpectationSettled`; `reconciliation.SettlementExpectationOverdue`,
+  replacing the `SettlementExpectationUnmet` that `MODULE_ARCHITECTURE.md` planned;
+  `reconciliation.ReconciliationBreakRaised`, `reconciliation.BreakInvestigationStarted` and
+  `reconciliation.BreakResolved`, kept; and `merchant.MerchantPayoutReturned`. **`AdjustmentPosted`
+  is dropped**: it collides with the ledger's audit action `ledger.AdjustmentPosted`, and
+  `BreakResolved`'s `journalEntryId` with `ledger.JournalEntryPosted` already carries the fact.
+  Every event carries identifiers, enums and counts only — never an amount, a reference value, a
+  note or a file byte — and Phase 8 has no Kafka consumer: its events notify future consumers, and
+  no correctness rests on them (`INV-EVT-04`).*
+- *§9 — **authority as decided** (ADR-0066, ADR-0071). "Value thresholds" resolve to four-eyes
+  **whenever value is at issue or the resolution posts**: a zero-value, zero-posting `ACKNOWLEDGE`
+  is single-person, `EVIDENCED` is the platform's alone, and value-banded approver escalation
+  (six-eyes) is deferred. The per-currency high-value threshold — 1,000.00 EUR, GBP and USD in rule
+  set v1 (O7) — escalates a break's severity, never its approver count. Four permissions and two
+  pairwise-disjoint roles (O1): `RECONCILIATION_OPERATOR` {`SETTLEMENT_INGEST`,
+  `RECONCILIATION_INVESTIGATE`, `RECONCILIATION_RESOLVE`} and `RECONCILIATION_CONTROLLER`
+  {`RECONCILIATION_ADMINISTER`} — whoever can loosen a tolerance cannot resolve the breaks it would
+  hide. An uploaded file is inert until a second person attests it, a pulled one arrives over its
+  source's own confined credential, and a readmitted file inherits its original's authentication
+  only when the original was pulled or attested — otherwise the readmission is itself attested
+  (`INV-SET-07`); every read of a file's content is reasoned and audited (`INV-REC-10`).*
+- *§10 — **no value in any metric; the value figures are audited operator reports** (ADR-0072).
+  ADR-0018 keeps every amount out of metrics, so §10's value items become operator reports under
+  `/v1/operator/` and `RECONCILIATION_INVESTIGATE`, each read writing `reconciliation.ReportRead`
+  naming the report and period only (the `payments.ChargebackRatioRead` precedent): **unmatched
+  value** is `/reports/reconciliation/unmatched`, the **suspense account balance**
+  `/reports/reconciliation/suspense` (CREDIT and DEBIT items gross, never netted), beside
+  `/positions`, `/summary` and `/provider-costs`. The counts and ages stay metrics: the match rate
+  is `finapp.reconciliation.item` by `outcome`, the unmatched count
+  `finapp.reconciliation.item.unmatched`, break count by type `finapp.reconciliation.break.raised`
+  and `.open` by `type` and `severity`, break age `finapp.reconciliation.break.age` — the oldest
+  open break per severity, alerted per severity — suspense age `finapp.reconciliation.suspense.age`,
+  and time-to-resolution `finapp.reconciliation.resolution.latency`. "Ageing suspense balance is an
+  alertable operational risk indicator" is met by alerting on suspense age and on
+  `finapp.reconciliation.suspense.unowned`, which must read 0, the balance itself living in the
+  report. Phase 7's per-rail cost, owned here, is settled the same way: the counterparties' fees
+  are recognised from their evidence into `PROCESSING_COSTS` and reported by
+  `/reports/reconciliation/provider-costs`, never as a metric. The full series list is
+  `PHASE_8_PLAN.md` §15.*
+- *§14 — **the ADRs written**: ADR-0064…0073, each Proposed (2026-09-28, the Phase 7 → 8
+  transition). The three §14 asks for are ADR-0068 (matching strategy, rule versioning and
+  tolerance model), ADR-0070 (suspense account policy and ageing) and ADR-0071 (break resolution
+  authority and four-eyes thresholds). Seven more were needed: ADR-0064 (settlement holds external
+  evidence; reconciliation holds the expectations and the comparison), ADR-0065 (each
+  counterparty's clearing position is discharged in two evidence hops; cash moves only on the
+  bank's statement), ADR-0066 (raw settlement files screened at the door, authenticated by pull
+  credential or second-person attestation, and retained encrypted in PostgreSQL behind a port),
+  ADR-0067 (every externally settling completion opens its expectation in its own transaction),
+  ADR-0069 (break taxonomy and lifecycle), ADR-0072 (amounts never enter metrics) and ADR-0073 (a
+  payout return is a merchant fact applied from settlement evidence; the payout's push-rail
+  convergence trigger did not fire). ADR-0036, ADR-0040, ADR-0057, ADR-0060 §6 and ADR-0062 are
+  annotated. `RECONCILIATION_MODEL.md` is rewritten, and
+  `SETTLEMENT_AND_RECONCILIATION_LIFECYCLES.md` states every machine before the first task.
+  ADR-0063 is reserved by an unmerged branch (`X-TSK-005`), so the numbering starts at ADR-0064;
+  the two cross-cutting tasks the design found, `X-TSK-008` (AAD bound in the four existing
+  ciphers) and `X-TSK-009` (the documentation of clock-read posting dates), sit outside the phase.*
+- *§2 and §15 — **the milestone map.** The capabilities and the deliverables land across eight
+  milestones:*
+  - *M8.1 Evidence intake — `P8-TSK-001`…`-003`: the two modules, the encrypted file store and the
+    door screen, upload with attestation and audited evidence access.*
+  - *M8.2 Every settling completion is expected — `-004`…`-007`: settlement expectation tracking,
+    adjustments carrying an origin and a reason code, the opening position and the position proof.*
+  - *M8.3 Card settlement reported end to end — `-008`…`-013`: settlement file ingestion for the
+    PSP, acceptance with fee recognition, breaks and suspense as records, the matching engine, fees
+    and corrections, grace, ageing and late evidence.*
+  - *M8.4 Investigation and controlled resolution — `-014`, `-015`: the investigation workflow,
+    and controlled adjustment as four-eyes resolution through the ledger.*
+  - *M8.5 Cash confirmed — `-016`: the bank statement recognising cash, remittances matched.*
+  - *M8.6 Every counterparty — `-017`…`-020`: the instant scheme's cycle report, the payout
+    provider's report, payout returns (O2) and Phase 7's unmatched confirmations under suspense
+    management.*
+  - *M8.7 Operating it — `-021`…`-024`: pull acquisition, rule-set administration, reprocessing,
+    readmission, requeue and replay, batch repudiation, and reconciliation reporting with the
+    meters.*
+  - *M8.8 Proof — `P8-TST-001`, `P8-TST-002`, `P8-DOC-001`: the storm, the battery and the exit
+    review against `PHASE_GATES.md` §Phase 8.*
+
+  *If the phase must shrink, `P8-TSK-021` is cut first (upload with attestation suffices), then
+  `-019` (the four-eyes `TRANSFER_TO_ACCOUNT` fallback), then `-023` (the attestation and pull
+  controls remain), each recorded with an owner (O6).*
+- *O1–O7 — **the transition's decisions, each the owner's to revisit** (recorded in
+  `PHASE_8_PLAN.md` §2): O1, two pairwise-disjoint roles; O2, payout returns applied
+  automatically, with a four-eyes `TRANSFER_TO_ACCOUNT` as the fallback; O3, PII-bearing files
+  refused at the door; O4, the simulated bank opening at zero, an equity account waiting for
+  Phase 14; O5, a gain recognised only after 90 days, four-eyes; O6, the cut order `P8-TSK-021`,
+  `-019`, `-023`; O7, a high-value severity threshold of 1,000.00 per currency.*
+
 ---
 
 # Phase 9 — FX and Cross-Border Payments

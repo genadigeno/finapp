@@ -528,7 +528,8 @@ class PaymentCaptureDatabaseTest {
                         com.finapp.payments.PaymentRails.of(java.util.List.of(SimulatedCardPspAdapter.RAIL)),
                         IDS,
                         CLOCK),
-                                            com.finapp.payments.RailOutcomeObserver.NONE),
+                                            com.finapp.payments.RailOutcomeObserver.NONE,
+                                            new com.finapp.payments.JdbcSchemeExecutionClaimStore()),
                 new com.finapp.payments.JdbcRoutingStore(),
                 com.finapp.payments.PaymentRails.of(java.util.List.of(SimulatedCardPspAdapter.RAIL)),
                 new JdbcAuditWriter(),
@@ -628,7 +629,8 @@ class PaymentCaptureDatabaseTest {
                         com.finapp.payments.PaymentRails.of(java.util.List.of(SimulatedCardPspAdapter.RAIL)),
                         IDS,
                         CLOCK),
-                        com.finapp.payments.RailOutcomeObserver.NONE);
+                        com.finapp.payments.RailOutcomeObserver.NONE,
+                        new com.finapp.payments.JdbcSchemeExecutionClaimStore());
         return new PaymentCapture(
                 runner,
                 intents,

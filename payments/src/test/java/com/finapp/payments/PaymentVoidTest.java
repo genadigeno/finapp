@@ -155,7 +155,8 @@ class PaymentVoidTest {
                         UntouchedChargebacks.over(
                                 attempts, intents, PaymentRails.of(List.of(SimulatedCardPspAdapter.RAIL)),
                                 IDS, CLOCK),
-                        com.finapp.payments.RailOutcomeObserver.NONE);
+                        com.finapp.payments.RailOutcomeObserver.NONE,
+                        new com.finapp.payments.JdbcSchemeExecutionClaimStore());
         return new PaymentVoid(
                 runner,
                 intents,
@@ -827,6 +828,13 @@ class PaymentVoidTest {
         @Override
         public void appendForDisputeResponse(
                 Connection uow, DisputeResponseId response, EvidenceKind kind,
+                byte[] payload, Instant recordedAt) {
+            payloads.add(payload.clone());
+        }
+
+        @Override
+        public void appendForUnmatched(
+                Connection uow, java.util.UUID unmatchedConfirmation, EvidenceKind kind,
                 byte[] payload, Instant recordedAt) {
             payloads.add(payload.clone());
         }

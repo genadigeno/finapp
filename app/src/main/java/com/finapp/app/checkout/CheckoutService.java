@@ -455,7 +455,7 @@ public class CheckoutService {
         // so the two cannot drift in how they treat an unknown outcome.
         if (!alreadyPaid) {
             try {
-                payments.confirm(current, intent);
+                payments.confirmForCheckout(current, intent);
             } catch (ApiException refused) {
                 if (refused.errorCode() == PlatformErrorCode.NOT_FOUND) {
                     // THE CALLER IS NOT THE PAYER (the Phase 6 -> 7 transition): a second holder
@@ -550,7 +550,28 @@ public class CheckoutService {
             // Ownership is not checked here: PaymentConfirmation re-resolves the intent as the
             // caller's own and answers a stranger the payments surface's 404 (P5-TSK-011's
             // predicate). A second check would be a second place for it to be wrong.
-            return new Opened(session.id(), intentOf(session), false);
+            PaymentIntentId intent = intentOf(session);
+            // AN INTENT NEVER DISPATCHED IS A FRESH OPEN'S EQUAL (the Phase 7 -> 8
+            // transition): a crash between the open and the dispatch, an unfunded wallet or a
+            // rail out of service leaves PAYMENT_PENDING over an intent still awaiting
+            // confirmation - and this branch handed it to the dispatch past the offer's
+            // deadline, past the merchant's suspension and past the wallet's step-up. The
+            // same three questions a fresh open asks, asked again before anything is sent.
+            if (intents.findById(unitOfWork, intent)
+                    .map(row -> row.status()
+                            == com.finapp.payments.PaymentIntentStatus.REQUIRES_CONFIRMATION)
+                    .orElse(false)) {
+                if (session.hasExpired(clock)) {
+                    throw new CheckoutSessionExpiredException();
+                }
+                checkout.requireTrading(unitOfWork, session.merchantRef());
+                if (intents.findById(unitOfWork, intent)
+                        .flatMap(com.finapp.payments.PaymentIntent::debitAccount)
+                        .isPresent()) {
+                    requireConditionalAssurance(unitOfWork, current);
+                }
+            }
+            return new Opened(session.id(), intent, false);
         }
         if (session.status().isPaid()) {
             // THE RETRY OF A PURCHASE THAT WORKED. Nothing is confirmed and nothing chained:

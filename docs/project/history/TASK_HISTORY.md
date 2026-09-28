@@ -1,6 +1,6 @@
 # Task History
 
-The per-task completion records that accumulated behind `## Current Task` - 162 "Previously" blocks, newest first, from `P7-TST-002` back to project initiation. *(`X-TSK-004` is cross-cutting and completed after the Phase 6 → 7 transition, so it stands second, between `P7-TSK-001` and the transition's record - the transition's block moved here by `P7-TSK-001`'s gate, exactly as an earlier form of this note said it would.)*
+The per-task completion records that accumulated behind `## Current Task` - 163 "Previously" blocks, newest first, from `P7-DOC-001` back to project initiation. *(`X-TSK-004` is cross-cutting and completed after the Phase 6 → 7 transition, so it stands second, between `P7-TSK-001` and the transition's record - the transition's block moved here by `P7-TSK-001`'s gate, exactly as an earlier form of this note said it would.)*
 
 **Archive.** These records were moved verbatim out of
 [`CURRENT_STATE.md`](../CURRENT_STATE.md) on 2026-09-20 so that the canonical description of
@@ -12,6 +12,51 @@ Current state: [`CURRENT_STATE.md`](../CURRENT_STATE.md) ·
 Authoritative backlog: [`BACKLOG.md`](../BACKLOG.md)
 
 ---
+
+### Previously
+
+**`P7-DOC-001` — The Phase 7 exit review** — `COMPLETE` (2026-09-28). **M7.8, the gate,
+closes at 1 of 1, and with it Phase 7: ruled `COMPLETE` against all twelve universal criteria,
+the financial supplement F1–F8 re-assessed at the gate, and all twenty-one Phase 7 criteria (5
+original + 16 added by the Phase 6 → 7 transition), in
+[`reviews/PHASE_7_REVIEW.md`](reviews/PHASE_7_REVIEW.md)** — criterion 7 and the Testing bullet's
+fleet-wide battery with the deviation recorded (the owner's standing instruction; the Phase 7 → 8
+transition inherits the run).
+
+| Acceptance criterion | Evidence |
+|---|---|
+| The review's verdict | Eight areas `PASS` (six only after corrections), twelve universal criteria `PASS`, F1–F8 `Met`, twenty-one Phase 7 criteria `PASS`, the ten-instance question `PASS` |
+| Every ADR read against the code and accepted or corrected | ADR-0059 (nine passages, one rule made, one code defect fixed), 0060 (ten), 0061 (seven), 0062 (eight, one code defect fixed), each `Accepted` only after its corrections; ADR-0045's follow-up annotated as paid |
+| A register row for every `Phase: 7` invariant | Ten invariants, every one with rows; demanded by `MutationDemonstrationTest` from the flip, which surfaced nothing and was proven non-vacuous (`INV-SET-01`'s rows removed → the guard failed `(currently 7)` naming exactly it; restored byte-identical) |
+| Corrections only, each probed | Twenty-four probe runs over twenty-three breaks, twenty-three caught at once; the survivor (the void's capability gate dropped, the push machine refusing in its place under the same 409) found a test weaker than its name — tightened to the capability's own code and caught. `MUTATION_TESTING.md` §2 +23 rows, §3 +1 note |
+| The post-flip battery | the fleet-wide hermetic test task green at 1740 tests across 14 modules, 0 failures, and 408 targeted database tests across 38 suites, 0 failures (every Phase 7 suite, the multi-rail storm and the dispute battery among them), plus the platform classification guard - the full battery deliberately skipped on the owner's instruction, no fleet-wide database or kafka counts claimed |
+
+**What the six audits found and the review did** (each in the review record's first table):
+the withdrawal's completion posting to a clearing purpose it NAMED — resolved from its stored rail,
+and a static rule makes a clearing purpose nameable only by its rail's declaration; the stored
+"descriptor" was one integer while every resolver read the build — **ruled: a rail's money
+semantics are frozen per `RailId`**, guarded by `RailMoneySemanticsArePinnedTest`; three push-rail
+port records printed bank details in their `toString` — redacted, `PushRailRecordsRedactTest`; the
+chargeback stage's lock order held only because seeded chart ids sort first — **confirmed as a
+rule**, `OperationalChartMigrationTest#everySeededIdSortsBeforeEveryRuntimeId`, written into
+`DISTRIBUTED_EXECUTION.md` §3; the confirmation-race debt row closed unpaid by its owner — paid,
+three deterministic races; nineteen gate claims with partial or missing tests — each closed in its
+owning suite (stage atomicity by failure injection, the stored-row recomputation, ten-way sweeps,
+5 + 5 callbacks with the inbox asserted, `INV-RAIL-03`'s needle through the money paths with logs
+captured, `INV-PAY-02`'s sweep over every schema, §14.14 on the bank rail, the wallet statement
+reconciled line by line, the withdrawal takeover driven, the operator's dispute negatives, the
+routing explanation and refusal audits, the decision's Tx1 co-commit, availability after the
+decision, the void's counters, identifier chain walks, acting-only audit counts); reserves and
+receivable collection "recorded with an owner" and recorded nowhere — now a debt row owned by
+Phase 13; the operator void unreasoned at the domain and the routing-version handler unkeyed —
+both fixed; drift in every Phase 7 document and five javadoc comments — corrected with
+provenance; register decay — the step-up row's fired trigger re-owned, the scope and sweep rows
+recounted and widened, a stale blocker struck, two producerless states recorded, six stranded flake
+commits recorded. **The gate's own find**: the confirmation's push branch lacks `Withdrawals`'
+guard against a routing choice naming another push rail — safe while one push rail is declared,
+recorded for the phase that adds a second (a composition-root parameter, not an edit here).
+Multi-instance **PASS**. The narrative is in [`history/TASK_HISTORY.md`](history/TASK_HISTORY.md)
+at the next archival; the entry is in [`BACKLOG.md`](BACKLOG.md).
 
 ### Previously
 

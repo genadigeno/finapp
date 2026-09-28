@@ -104,6 +104,18 @@ class HoldDatabaseTest {
                 CLOCK);
     }
 
+    private HoldService holdService(Clock clock) {
+        return new HoldService(
+                ledgerAccounts,
+                new JdbcBalanceDerivation(),
+                holds,
+                new JdbcBalanceProjection(),
+                new JdbcAuditWriter(),
+                new JdbcOutboxWriter(),
+                IDS,
+                clock);
+    }
+
     @Test
     @DisplayName("a hold is bounded by available balance: exactly available accepted, one"
             + " minor unit more refused with nothing written")
@@ -150,6 +162,38 @@ class HoldDatabaseTest {
             assertThat(holdsMinorOf(app, wallet.account())).isEqualTo(1000);
             assertThat(auditRowsFor(app, "ledger.HoldPlaced")).isEqualTo(auditBefore);
             assertThat(eventRowsFor(app, "ledger.HoldPlaced")).isEqualTo(eventsBefore);
+        }
+    }
+
+    @Test
+    @DisplayName("a release stamped by an instance whose clock TRAILS the placing one's still"
+            + " lands - never before its placement, never a CHECK failure that fails the"
+            + " completion releasing it (the Phase 7 -> 8 transition)")
+    void aTrailingClocksReleaseStillLands() throws Exception {
+        Wallet wallet = fundedWallet(500);
+        try (Connection app = DatabaseRoles.application();
+                SecurityContext.Scope actor = SecurityContext.enter(wallet.actor());
+                CorrelationContext.Scope flow = flow()) {
+            app.setAutoCommit(false);
+            Hold placed =
+                    holdService(Clock.offset(CLOCK, java.time.Duration.ofSeconds(90)))
+                            .place(app, wallet.account().id(), Money.ofMinorUnits(500, USD));
+            app.commit();
+
+            HoldService.Release release =
+                    holdService(CLOCK).release(app, placed.id()).orElseThrow();
+            app.commit();
+            assertThat(release.released()).isTrue();
+            try (PreparedStatement read =
+                    app.prepareStatement(
+                            "SELECT released_at >= placed_at FROM ledger.hold WHERE id = ?")) {
+                read.setObject(1, placed.id().value());
+                try (ResultSet row = read.executeQuery()) {
+                    assertThat(row.next()).isTrue();
+                    assertThat(row.getBoolean(1)).isTrue();
+                }
+            }
+            assertThat(holdsMinorOf(app, wallet.account())).isZero();
         }
     }
 

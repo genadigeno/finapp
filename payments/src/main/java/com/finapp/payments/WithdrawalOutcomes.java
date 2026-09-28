@@ -31,6 +31,7 @@ import java.util.Objects;
 import java.util.Optional;
 import lombok.NonNull;
 import lombok.RequiredArgsConstructor;
+import lombok.extern.slf4j.Slf4j;
 
 /**
  * Applies the scheme's word to a withdrawal (`P7-TSK-008`) — the ONE place an answer becomes
@@ -71,6 +72,7 @@ import lombok.RequiredArgsConstructor;
  *       margin, never a clock alone (ADR-0062 §3).
  * </ul>
  */
+@Slf4j
 @RequiredArgsConstructor
 public final class WithdrawalOutcomes {
 
@@ -105,6 +107,14 @@ public final class WithdrawalOutcomes {
      */
     @NonNull private final PaymentRails rails;
 
+    /**
+     * The one-money-fact arbiter (the Phase 7 -&gt; 8 transition, {@code V023}): a completion
+     * claims its scheme execution, so the pay-in door's parking of the same execution - the
+     * withdrawal's own confirmation echoed back without our reference - yields instead of
+     * booking value that went OUT as value that came in. Appended last, as above.
+     */
+    @NonNull private final SchemeExecutionClaimStore<Connection> claims;
+
     /** The committed status after an answer, and whether THIS call's transition fired —
      * the row's truth, never the verdict's. */
     public record Applied(WithdrawalStatus status, boolean acting) {
@@ -134,7 +144,10 @@ public final class WithdrawalOutcomes {
         Objects.requireNonNull(correlation, "correlation must not be null");
         if (!locked.status().isResolvable()) {
             // A late or contradictory answer beside a resolved withdrawal is evidence,
-            // not a move.
+            // not a move - and an ACCEPTED on a FAILED one is a contradiction about money
+            // (the scheme says value left that our books kept), loud rather than silent
+            // (the Phase 7 -> 8 transition).
+            contradicted(locked, answer.verdict() == PushAnswer.Verdict.ACCEPTED);
             return new Applied(locked.status(), false);
         }
         return switch (answer.verdict()) {
@@ -182,6 +195,7 @@ public final class WithdrawalOutcomes {
         Objects.requireNonNull(neverReceivedBound, "neverReceivedBound must not be null");
         Objects.requireNonNull(correlation, "correlation must not be null");
         if (!locked.status().isResolvable()) {
+            contradicted(locked, answer.verdict() == PushInquiryAnswer.Verdict.ACCEPTED);
             return new Applied(locked.status(), false);
         }
         return switch (answer.verdict()) {
@@ -209,6 +223,17 @@ public final class WithdrawalOutcomes {
                             : new Applied(locked.status(), false);
             case INDETERMINATE -> unknown(unitOfWork, locked, correlation, "inquiry");
         };
+    }
+
+    /** An acceptance beside a FAILED withdrawal: a break reconciliation must see. */
+    private static void contradicted(Withdrawal locked, boolean accepted) {
+        if (accepted && locked.status() == WithdrawalStatus.FAILED) {
+            log.warn(
+                    "The scheme accepted withdrawal {} which the platform holds FAILED - value"
+                            + " may have left that the books kept; the row stands and the answer"
+                            + " rests as evidence - a break reconciliation must see",
+                    locked.id());
+        }
     }
 
     private Applied complete(
@@ -254,6 +279,26 @@ public final class WithdrawalOutcomes {
                                         locked.amount()),
                                 new JournalLine(
                                         clearing.id(), Direction.CREDIT, locked.amount()))));
+        // THE CLAIM (V023). The completion happened whatever it answers - the scheme said so,
+        // by our reference - so a claim standing elsewhere never refuses it: it is a parking
+        // made in good faith of this withdrawal's own echo, recorded loud for the operator.
+        SchemeExecutionClaim standing =
+                claims.claim(
+                        unitOfWork,
+                        new SchemeExecutionClaim(
+                                locked.railId(), theirs,
+                                SchemeExecutionClaim.Subject.WITHDRAWAL,
+                                locked.id().value(), now));
+        if (!standing.heldBy(SchemeExecutionClaim.Subject.WITHDRAWAL, locked.id().value())) {
+            log.warn(
+                    "Withdrawal {} completed under a scheme reference already explained by {}"
+                            + " {}; the withdrawal stands, and the earlier record is an"
+                            + " integration break for the operator (one scheme execution, one"
+                            + " money fact - V023)",
+                    locked.id(),
+                    standing.subject(),
+                    standing.subjectId());
+        }
         announce(unitOfWork, completed, COMPLETED_EVENT_TYPE, correlation, now);
         record(unitOfWork, completed, correlation, now, resolver);
         return new Applied(WithdrawalStatus.COMPLETED, true);

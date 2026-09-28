@@ -592,6 +592,119 @@ cycle; every outbound push carries the send permit; pay-by-bank waits in `AWAITI
 payer PSP. The merchant payout keeps its own port. →
 [ADR-0062](../adr/ADR-0062-account-to-account-and-instant-payments.md)
 
+### Settlement and reconciliation (Phase 8, `Proposed` at the Phase 7 → 8 transition)
+Nothing below is implemented until Phase 8's tasks build it. ADR-0063 is reserved by an unmerged
+branch (`X-TSK-005`), so the phase's numbering starts at ADR-0064.
+
+**Settlement holds the external evidence; reconciliation holds the expectations, the comparison
+and its outcome.** Contexts 13 and 14 are two modules, each depending only on `ledger`, `platform`
+and `sharedkernel`, with no build edge between them; `app` composes them. The Settlement
+Expectation moves from `settlement` to `reconciliation`, so `INV-REC-07` holds inside one schema.
+Completions reach reconciliation through required ports that `payments` and `merchant` declare,
+and four named seams join two modules' writes in one transaction: a completion opening its
+expectation, acceptance handing a batch over, a payout return, and a batch repudiation. Neither
+module writes a journal row, and no correctness rests on Kafka. →
+[ADR-0064](../adr/ADR-0064-settlement-holds-evidence-reconciliation-holds-expectations.md)
+
+**Each counterparty's clearing position is discharged in two evidence hops, and cash moves only
+on the bank's statement.** Hop 1, an accepted counterparty report, posts only what the platform
+had not recorded - the counterparty's fees, to `PROCESSING_COSTS` - and opens one `REMITTANCE`
+expectation of the batch's net on that counterparty's own position; its transaction lines post
+nothing and are allocated. Hop 2, an accepted bank statement, moves `CASH_AT_BANK` against each
+attributed counterparty's position and parks an unattributed line in suspense with its break.
+There is no in-transit account; a batch is recognised once, dated from stored facts, and reversed
+only by a four-eyes repudiation; four purposes arrive, each with its first poster. A capture's
+cleared amount and a second presentment, which Phase 7 keeps only in its retained evidence, are
+this phase's clearing-level evidence. →
+[ADR-0065](../adr/ADR-0065-clearing-discharged-in-two-evidence-hops.md)
+
+**A settlement file is screened at the door, authenticated by a pull credential or a second
+person's attestation, and retained encrypted in PostgreSQL behind a port.** The screen checks
+every field against its declared class in memory, and a field failing its class is screened as
+free text. A delivery carrying a card number or bank details is refused and keeps its metadata
+only: for a refused delivery `INV-PAY-02` and `INV-RAIL-03` take precedence over `INV-HIST-02`. An
+upload is inert until a second person attests it, and a readmission of an unattested original is
+attested itself. Files rest under their own key, bound by associated data to file, source, content
+and position, with every content read audited; ADR-0036 is re-assessed with named triggers for
+object storage. Every pull URL joins `ProviderTransportGuard`: `https` or `sftp` off loopback, or
+the application does not start. →
+[ADR-0066](../adr/ADR-0066-settlement-file-screening-authentication-and-storage.md)
+
+**Every externally settling completion opens its settlement expectation in its own
+transaction.** The applier calls a required port past its acting exit, after the posting whose
+clearing line the expectation copies, keyed on the rail's declared clearing purpose and never on
+its name; the completion, its posting and its expectation commit together or not at all. A key
+collision is recorded and raised as a break, never a failed payment. Keys are scoped per source; a
+settlement cycle is an attribute of the expectation row, never a key; a payout return opens no key
+of its own and is reached through its operation. Earlier history is adopted once by a keyed,
+audited backfill, and a report-only verifier counts every clearing or suspense line that no
+expectation, suspense item or Phase 8 record accounts for. →
+[ADR-0067](../adr/ADR-0067-every-settling-completion-opens-its-expectation.md)
+
+**Matching allocates by key in acceptance order under a pinned, versioned rule set, stores every
+candidate it saw, and posts nothing of its own.** One pure decision function; claimants served in
+`(source_sequence, line_no)` order on every instance, advisory namespace 4 ordering allocation and
+PostgreSQL's uniques and deferred triggers arbitrating it; no fuzzy, subset-sum or learned
+matching. A scheme line's reference resolves to exactly one internal explanation through Phase 7's
+`payments.scheme_execution_claim`, for break typing only. Rule set v1, seeded and frozen per
+source, makes the payout return's rule operation-anchored, so a return line waits for its return
+instead of meeting its payout. A tolerance exists only for fees and dates - no amount tolerance can
+be represented (`INV-REC-08`) - and a rule change governs only later decisions. →
+[ADR-0068](../adr/ADR-0068-matching-strategy-rule-versioning-and-tolerance-model.md)
+
+**A break is a classified, immutable record of a fact the platform detected.** Fourteen closed
+types, each with its subject, value at issue, base severity and the resolution kinds it admits;
+that per-type table is the one authority. Every suspense-owning type admits `WRITE_OFF` for a
+DEBIT item and `RECOGNISE_GAIN` for a CREDIT item after the minimum age, except that
+`REVERSAL_MISMATCH`, `REFUND_MISMATCH` and `CURRENCY_MISMATCH` admit no gain, and
+`SETTLEMENT_MISMATCH`'s statement causes close only by evidence. A break is born only in the
+transaction that detects its fact, one open per type and subject; severity is computed from the
+pinned rule set and only rises; `EVIDENCED` is a stored resolution, never a silent clearing
+(`INV-REC-02` amended); nothing is deleted or edited. →
+[ADR-0069](../adr/ADR-0069-break-taxonomy-and-lifecycle.md)
+
+**Value enters suspense only with the break that owns it, and leaves only by evidence, a
+four-eyes resolution or a repudiation.** `SUSPENSE_UNMATCHED` stays one account per currency,
+decomposed into items, each owned by exactly one break (`INV-REC-09`); CREDIT and DEBIT items are
+never netted, and age runs from a stored `opened_on` on the database clock. An unclaimed credit
+becomes a gain only after the pinned minimum age of 90 days, and only where the break's type admits
+it. Phase 7's unmatched confirmations are adopted as suspense items keyed on each parking's
+recorded cause and attempt (payments `V023`); an attributed parking resolves by a four-eyes
+transfer to the named attempt's counterparty, never a guess. The balance is an audited report,
+never a metric. Return-to-sender of unattributed funds is a new payment capability, deferred. →
+[ADR-0070](../adr/ADR-0070-suspense-account-policy-and-ageing.md)
+
+**A break closes only by evidence or by a template-bound, reason-coded resolution, and two people
+decide whenever value is at issue or the resolution posts.** Eight kinds; the proposer chooses the
+kind, a closed reason code and a narrative, and the lines are derived from the current remainder,
+never typed. Posting kinds go through `ledger.AdjustmentService` as proposals of origin
+`RECONCILIATION`, approver and proposer distinct at the domain, by `CHECK` and by ledger `V010`;
+the generic adjustment door refuses them, and reconciled positions take no free adjustment. There
+is no de-minimis band, and two pairwise-disjoint roles keep whoever loosens a tolerance from
+resolving the breaks it would hide. A transfer is labelled on the merchant's breakdown and the
+customer's statement by its entry's origin. A multi-entry approval pre-locks its ledger rows in
+the projection's order (`PostingService.lockBalancesInOrder`, the transition's dispute repair). →
+[ADR-0071](../adr/ADR-0071-break-resolution-authority-and-four-eyes-thresholds.md)
+
+**Amounts never enter metrics: unmatched value, the suspense balance and provider costs are
+audited operator reports.** No series carries an amount as a tag or as its value - ADR-0018 §2
+widened from the tag to the sample. Five reports, each one audited `REPEATABLE READ` snapshot,
+folded with `Money`, per currency and bounded. Value reaches alerting only as a break's severity
+under the pinned rule set. The per-rail cost meter Phase 7 deferred is settled as the
+`PROCESSING_COSTS` ledger fact plus the provider-costs report, never a meter. →
+[ADR-0072](../adr/ADR-0072-amounts-never-enter-metrics.md)
+
+**A payout return is a merchant fact applied from settlement evidence, and the payout stays
+`COMPLETED`.** A leaderless worker re-reads the reported line's item under a share lock, then
+applies the return under the payout row's lock: it posts DR `PAYOUT_CLEARING` / CR the payable,
+keyed by the payout and dated from stored evidence, then inserts the append-only return, its money
+held equal to the payout's by a composite foreign key, and opens its expectation in the same
+transaction. A return that cannot apply - a merchant closed since, whose close closed its payable
+account - writes nothing, and at grace parks as a `REVERSAL_MISMATCH` for a four-eyes transfer,
+never a gain. ADR-0062 §7's second convergence trigger did not fire: the canonical settlement line
+already gives every outbound credit transfer one evidence shape. →
+[ADR-0073](../adr/ADR-0073-payout-return-applied-from-settlement-evidence.md)
+
 ### Integration
 External financial providers are accessed through adapters and treated as unreliable.
 Provider vocabulary never enters the domain or a public API contract; unknown provider state
@@ -643,11 +756,12 @@ where later capability is structurally needed earlier, the earlier phase defines
 → [ADR-0007](../adr/ADR-0007-phase-gated-delivery.md), [`EXECUTION_PROTOCOL.md`](EXECUTION_PROTOCOL.md)
 
 ### Invariant governance
-One hundred and one financial, security and operational invariants are catalogued with stable
+One hundred and ten financial, security and operational invariants are catalogued with stable
 IDs, enforcement mechanisms and verification methods. (This line said "seventy-one" until the
 Phase 1 → 2 transition — stale since `INV-IDN-08` — and "eighty-seven" from the Phase 4 → 5
-transition until the Phase 6 → 7 one, through two groups it never counted; it takes its number
-from the catalogue's own index.) Phases declare the invariants they protect
+transition until the Phase 6 → 7 one, through two groups it never counted, and "one hundred and
+one" until the Phase 7 → 8 transition catalogued nine more; it takes its number from the
+catalogue's own index.) Phases declare the invariants they protect
 at the entry gate and prove them by test at the exit gate. →
 [`FINANCIAL_INVARIANTS.md`](../domain/FINANCIAL_INVARIANTS.md)
 
@@ -666,9 +780,9 @@ Recorded so these are not mistaken for oversights.
 | Machine-learning risk models | Beyond scope | Versioned rules first; models add reproducibility burden without domain insight |
 | Handling raw card data | Never | Tokenised at the boundary; PCI scope deliberately minimised |
 | Instant-payment recall requests; batch credit-transfer rails with return windows | A later payments phase, when a rail that needs them is added | A recall is a request the payee's PSP may refuse, days later - a new operation with its own lifecycle, never a reversal (ADR-0059's rejected alternative); a batch rail's return window is a second finality model. Neither exists in any Phase 7 rail (ADR-0062's follow-up; recorded here by the Phase 7 review) |
-| Moving the merchant payout onto the push rail | A second outbound rail, or Phase 8 needing one evidence shape for every outbound credit transfer | Two outbound disciplines coexist by design: the payout keeps its own port (ADR-0057) and the push rail can implement it in `app` without a `merchant` change (ADR-0062 §7) |
+| Moving the merchant payout onto the push rail | A second outbound rail | Two outbound disciplines coexist by design: the payout keeps its own port (ADR-0057) and the push rail can implement it in `app` without a `merchant` change (ADR-0062 §7). *(The row's second trigger, "Phase 8 needing one evidence shape for every outbound credit transfer", was evaluated at the Phase 7 → 8 transition and did not fire: the canonical settlement line already gives every outbound credit transfer one evidence shape, and converging would re-declare the payout's position and source (ADR-0073 §8, `Proposed`). The row stays open on its first trigger.)* |
 | Automatic rail availability from observed failure rates | Phase 15 | Availability is an operator's recorded, audited fact read inside each decision; automation must write the same fact, never an instance's opinion (ADR-0060 §4 - "Phase 15 or 16" until the Phase 7 review settled one owner) |
-| A per-rail cost meter | Phase 8 | No Phase 7 rail reports a cost; the processor's fees arrive with its settlement evidence (ADR-0060 §6, annotated at the review) |
-| Dispute-fee pass-through to merchants | A merchant-risk phase (Phase 13's neighbourhood) | The PSP's dispute fee posts to `DISPUTE_COSTS`; charging it on is a commercial term with its own consent and statement consequences (ADR-0061's follow-up; recorded here by the review, with reserves the Known Architectural Debt row in `CURRENT_STATE.md`) |
+| A per-rail cost meter | Phase 8 (`P8-TSK-009`, `P8-TSK-024`) | No Phase 7 rail reports a cost; the processor's fees arrive with its settlement evidence (ADR-0060 §6, annotated at the review). *(Decided at the Phase 7 → 8 transition, `Proposed`: not a meter. Each counterparty's cost is recognised from its accepted evidence as the `PROCESSING_COSTS` ledger fact and read through the audited provider-costs report, never a metric (ADR-0065, ADR-0072 §6). "Not charged" stands.)* |
+| Dispute-fee pass-through to merchants | A merchant-risk phase (Phase 13's neighbourhood) | The PSP's dispute fee posts to `DISPUTE_COSTS`; charging it on is a commercial term with its own consent and statement consequences (ADR-0061's follow-up; recorded here by the review, with reserves the Known Architectural Debt row in `CURRENT_STATE.md`). *(The Phase 7 → 8 transition adds the counterparties' processing costs to the same deferral: they post to `PROCESSING_COSTS`, and no price varies with the rail (ADR-0072 §6, `Proposed`).)* |
 | A secrets manager (Vault, cloud KMS) | Phase 15 | No deployment, no key material and one local database password. A manager chosen with no real requirement to shape it is the wrong manager; the seam - configuration read from the environment - is established now (ADR-0020) |
 | Changing the verified contact channel | Phase 15, with the notifier | A safe change needs a step-up, a notice to the channel being replaced and a cooling-off - `INV-IDN-06`'s own enforcement - and the notice needs the channel notifier Phase 15 brings. Until then a second verification is refused (`X-TSK-004`, §Recovery channels). Nothing delivers a challenge before that notifier either, so the refusal cannot yet strand a customer. **The flow must spend every pending challenge of the kind**: a refused verification writes nothing, so its challenge stays live until it expires, and a flow that freed the kind without spending them would let a parked challenge verify the moment the verified channel is gone |

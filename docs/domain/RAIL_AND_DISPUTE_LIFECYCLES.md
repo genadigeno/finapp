@@ -106,11 +106,14 @@ terminals: CAPTURED, VOIDED, FAILED
 
 Two edges deserve their provenance. `AUTHORIZED -> FAILED`, drawn in this section's first
 version, was removed by the implementing task: no producer exists — abandoning a promise
-is the void's own act, and a declined or never-received void lands `FAILED` from the void
-states, carrying its mapped reason. `CAPTURE_* -> VOID_DISPATCHED` is the
-**declined-capture redirect**: on a rail whose declared reversals contain `VOID`, a
-declined capture releases the standing authorization instead of leaving it to lapse
-against the customer's funds.
+is the void's own act, and a declined void lands `FAILED` from the void states, carrying its
+mapped reason. `CAPTURE_* -> VOID_DISPATCHED` is the **capture redirect**: on a rail whose
+declared reversals contain `VOID`, a declined capture releases the standing authorization
+instead of leaving it to lapse against the customer's funds. *(The Phase 7 → 8 transition's gate
+widened the redirect to a capture that never left - a refused connection - and to one the
+provider says it never received, and made a never-received VOID a re-send by its stored
+reference, concluded by that answer (`VOID_UNKNOWN` → `VOIDED` | `FAILED`), never
+`FAILED(NEVER_RECEIVED)`: each had failed the payment with the authorization standing.)*
 
 **Push (instant, A2A)**:
 
@@ -137,6 +140,16 @@ nothing; a scheme's timeout lands the withdrawal's or the refund's `UNKNOWN`. Th
 reserved for an outbound push that is an attempt, which no Phase 7 flow is - Known
 Architectural Debt under ADR-0044's no-state-without-a-producer rule, recorded in
 `CURRENT_STATE.md`.)*
+
+**One scheme execution, one money fact** *(the Phase 7 → 8 transition, payments `V023`)*: every
+producer of a scheme execution on a rail — the pay-in's `EXECUTED`, the withdrawal's
+`COMPLETED`, the return's `COMPLETED` and the suspense parking — claims its
+`(rail, scheme reference)` in `payments.scheme_execution_claim` before any money moves, and the
+primary key decides between them for every instance. The executed amount is judged by the ONE
+applier for the callback and the inquiry alike: a mismatch parks the executed value
+(`AMOUNT_MISMATCH`) and fails the pay-in `DECLINED`; an `expired` inquiry answer fails it; a
+statement of value on a concluded attempt parks (`ATTEMPT_CONCLUDED`); and a withdrawal's or a
+return's own confirmation is recognised at the door as the echo it is.
 
 The pay-in's initiation ambiguity is deliberately NOT a state: an `initiate()` whose answer was
 lost leaves `AWAITING_PAYER` **without a stored handle**, and the resolution is the sweep's
@@ -265,7 +278,11 @@ and never absorbed. **The lock order**: the attempt first, then the counterparty
 share-locked BEFORE the stage's first posting, then the balance rows the postings touch — the
 order every hold keeps (the account before any balance row). Posting the external fact first
 and reaching the counterparty only after deadlocked a win against a refund of another payment to
-the same counterparty (`P7-TST-001`'s multi-rail storm, a `40P01`).
+the same counterparty (`P7-TST-001`'s multi-rail storm, a `40P01`). *(The Phase 7 → 8
+transition's gate added the balance rows' own order across entries: a stage posting several
+entries - a loss that first reports the fee - takes the platform's three rows (the rail's
+clearing, the recoverable, the costs) in the projection's order before its first posting, since
+the loss-then-fee order reached back to the clearing every chargeback takes first.)*
 
 **Answering a chargeback** (`P7-TSK-014`, ADR-0061 §7; `DisputeResponses`) — the responder's
 answer is a `DisputeResponse`, dispatched through the card PSP, and it moves **no stage and no

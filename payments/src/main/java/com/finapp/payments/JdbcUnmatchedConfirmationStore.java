@@ -18,7 +18,7 @@ public final class JdbcUnmatchedConfirmationStore
 
     private static final String COLUMNS =
             "id, rail, scheme_reference, amount_minor, currency, scale, received_at,"
-                    + " entry_ref";
+                    + " entry_ref, cause, attempt_id, named_reference, settlement_cycle";
 
     @Override
     public boolean insert(Connection unitOfWork, UnmatchedConfirmation confirmation) {
@@ -26,7 +26,7 @@ public final class JdbcUnmatchedConfirmationStore
         try (PreparedStatement insert =
                 unitOfWork.prepareStatement(
                         "INSERT INTO payments.unmatched_confirmation (" + COLUMNS + ")"
-                                + " VALUES (?, ?, ?, ?, ?, ?, ?, ?)"
+                                + " VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)"
                                 // The fresh-id duplicate's arbiter (V015's shape): the
                                 // UNIQUE decides race-free, and the loser converges on the
                                 // record that stands.
@@ -39,6 +39,11 @@ public final class JdbcUnmatchedConfirmationStore
             insert.setShort(6, (short) confirmation.amount().scale());
             insert.setTimestamp(7, Timestamp.from(confirmation.receivedAt()));
             insert.setObject(8, confirmation.entryRef());
+            UnmatchedConfirmation.Attribution attribution = confirmation.attribution();
+            insert.setString(9, attribution.cause().name());
+            insert.setObject(10, attribution.attempt().map(PaymentAttemptId::value).orElse(null));
+            insert.setString(11, attribution.namedReference().map(EndToEndReference::value).orElse(null));
+            insert.setString(12, attribution.settlementCycle().orElse(null));
             return insert.executeUpdate() == 1;
         } catch (SQLException failure) {
             throw new PaymentsStorageException(
@@ -100,6 +105,13 @@ public final class JdbcUnmatchedConfirmationStore
                         CurrencyCode.of(row.getString("currency")),
                         row.getShort("scale")),
                 row.getTimestamp("received_at").toInstant(),
-                row.getObject("entry_ref", UUID.class));
+                row.getObject("entry_ref", UUID.class),
+                new UnmatchedConfirmation.Attribution(
+                        UnmatchedConfirmation.Cause.valueOf(row.getString("cause")),
+                        Optional.ofNullable(row.getObject("attempt_id", UUID.class))
+                                .map(PaymentAttemptId::of),
+                        Optional.ofNullable(row.getString("named_reference"))
+                                .map(EndToEndReference::new),
+                        Optional.ofNullable(row.getString("settlement_cycle"))));
     }
 }

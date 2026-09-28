@@ -90,9 +90,13 @@ Ten states since `P7-TSK-004`: Phase 5's seven plus the void trio —
 `VOID_DISPATCHED`, `VOID_UNKNOWN`, `VOIDED` — the card rail's declared reversal
 performed (`INV-REV-03`'s revocable half, ADR-0059 §1). `AUTHORIZED -> FAILED` is
 deliberately NOT an edge: no producer exists — abandoning a promise is the void's own
-act — and a declined or never-received void lands `FAILED` from the void states.
-`CAPTURE_* -> VOID_DISPATCHED` is the declined-capture redirect: the promise released
-rather than left to lapse. Since `P7-TSK-001` every attempt also records its
+act — and a declined void lands `FAILED` from the void states. *(It read "a declined or
+never-received void" until the Phase 7 → 8 transition's gate: a void the provider says it never
+received is now RE-SENT by its stored reference and concluded by that answer, never failed with
+the authorization standing.)* `CAPTURE_* -> VOID_DISPATCHED` is the capture redirect: the
+promise released rather than left to lapse — for a DECLINED capture since `P7-TSK-004`, and
+since the transition's gate for a capture that never left (a refused connection) or that the
+provider says it never received, on a rail that declares `VOID`. Since `P7-TSK-001` every attempt also records its
 **rail** as a frozen birth fact (ADR-0059, payments `V011`): which way the money travels is
 stamped in the dispatching transaction, no writer can rewrite it, and every capability
 decision — the clearing position an outcome posts to, the mode a refund executes in — keys on
@@ -126,6 +130,9 @@ arrive with their rails' tasks; nothing dispatches on them yet.
   own code — that lives in the retained evidence).
 - A connection **refused before anything was sent** is knowledge, not ambiguity: the
   dispatch fails into `FAILED(PROVIDER_UNAVAILABLE)`. Anything after send is `*_UNKNOWN`.
+  *(A CAPTURE's refused connection is not a failure since the Phase 7 → 8 transition: nothing
+  was captured and the authorization stands, so on a rail declaring `VOID` it redirects into
+  the void - failing it alone left the hold on the customer's funds.)*
   **The void is the recorded exception** (`P7-TSK-004`): its refused connection concludes
   NOTHING — the row rests `VOID_DISPATCHED` and any instance's permit-free re-send
   releases it. Concluding `FAILED` would abandon a live promise one more send releases

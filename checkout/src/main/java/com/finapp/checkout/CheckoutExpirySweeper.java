@@ -79,6 +79,15 @@ import lombok.extern.slf4j.Slf4j;
  * {@code EXPIRED → COMPLETED_LATE}, the merchant is credited and the order is born. Expiry is
  * about the offer's standing, never the money's — which is the whole of {@code INV-MER-06}.
  *
+ * <p><strong>A payment that was never IN flight is another matter</strong> (the Phase 7 -&gt; 8
+ * transition): an intent opened but never dispatched — a crash between the open and the
+ * dispatch, an unfunded wallet, a rail out of service — still {@code REQUIRES_CONFIRMATION}
+ * when its session expires is cancelled in the same transaction, through
+ * {@link UndispatchedPayments}. The gate found such an intent confirmable indefinitely and its
+ * merchant's close blocked for ever. Its row is taken FIRST, conditionally, then the session's
+ * — a wallet confirmation's own order — and a session that then refuses to expire rolls the
+ * cancel back with it.
+ *
  * <h2>One bad row must not stall the queue</h2>
  *
  * <p>Each candidate expires in its own transaction, and a failing row is logged (identifier and
@@ -102,6 +111,7 @@ public final class CheckoutExpirySweeper {
     private final Clock clock;
     private final Duration paymentGrace;
     private final int batchSize;
+    private final UndispatchedPayments<Connection> undispatched;
 
     public CheckoutExpirySweeper(
             CheckoutTransactionRunner transactions,
@@ -111,8 +121,10 @@ public final class CheckoutExpirySweeper {
             IdGenerator ids,
             Clock clock,
             Duration paymentGrace,
-            int batchSize) {
+            int batchSize,
+            UndispatchedPayments<Connection> undispatched) {
         this.transactions = Objects.requireNonNull(transactions, "transactions must not be null");
+        this.undispatched = Objects.requireNonNull(undispatched, "undispatched must not be null");
         this.sessions = Objects.requireNonNull(sessions, "sessions must not be null");
         this.audit = Objects.requireNonNull(audit, "audit must not be null");
         this.outbox = Objects.requireNonNull(outbox, "outbox must not be null");
@@ -166,7 +178,7 @@ public final class CheckoutExpirySweeper {
                             CorrelationContext.enter(
                                     Correlation.startingWith(CorrelationId.generate(ids)));
                     SecurityContext.Scope actor = SecurityContext.enterSystem()) {
-                if (expireOne(candidate.id())) {
+                if (expireOne(candidate)) {
                     expired++;
                 } else {
                     skipped++;
@@ -185,11 +197,37 @@ public final class CheckoutExpirySweeper {
         return new SweepResult(candidates.size(), expired, skipped, failedRows);
     }
 
+    /** Thrown to roll back a cancel whose session then declined to expire. */
+    private static final class NotExpiring extends RuntimeException {
+        @java.io.Serial private static final long serialVersionUID = 1L;
+
+        NotExpiring() {
+            super("the session declined to expire under its lock", null, false, false);
+        }
+    }
+
     /** {@code true} when <strong>this call's own</strong> conditional transition fired. */
-    private boolean expireOne(CheckoutSessionId id) {
+    private boolean expireOne(CheckoutSession candidate) {
+        try {
+            return expireOneOrRollBack(candidate);
+        } catch (NotExpiring declined) {
+            return false;
+        }
+    }
+
+    private boolean expireOneOrRollBack(CheckoutSession candidate) {
+        CheckoutSessionId id = candidate.id();
         Correlation correlation = resolvedCorrelation();
         return transactions.inTransaction(
                 uow -> {
+                    // THE UNDISPATCHED PAYMENT FIRST (the Phase 7 -> 8 transition): its row,
+                    // conditionally, before the session's - a wallet confirmation's order.
+                    boolean cancelled =
+                            candidate.status() == CheckoutSessionStatus.PAYMENT_PENDING
+                                    && candidate.paymentIntentRef()
+                                            .map(ref ->
+                                                    undispatched.cancelIfUndispatched(uow, ref))
+                                            .orElse(false);
                     // LOCK, THEN JUDGE, THEN WRITE CONDITIONALLY - the established idiom. The
                     // lock is what makes the judgement worth making: without it two sweepers
                     // both read OPEN, both build the transition, and the conditional refuses
@@ -197,17 +235,23 @@ public final class CheckoutExpirySweeper {
                     // and an event id on a decision that never landed.
                     Optional<CheckoutSession> found = sessions.findByIdForUpdate(uow, id);
                     if (found.isEmpty()) {
-                        return false;
+                        return declined(cancelled);
                     }
                     CheckoutSession current = found.get();
                     if (!current.status().canTransitionTo(CheckoutSessionStatus.EXPIRED)) {
                         // Confirmed, completed, abandoned or already expired since the list.
-                        return false;
+                        return declined(cancelled);
                     }
                     // RE-JUDGED AGAINST THE CLOCK, not trusted from the list: the candidate was
                     // read in an earlier transaction, and a row that is no longer overdue must
                     // not be expired because a query once said it was.
                     if (!isOverdue(current)) {
+                        return declined(cancelled);
+                    }
+                    if (current.status() == CheckoutSessionStatus.PAYMENT_PENDING
+                            && candidate.status() != CheckoutSessionStatus.PAYMENT_PENDING) {
+                        // Confirmed since the list: its intent was not taken first, so this
+                        // tick leaves it; the next one reads it PAYMENT_PENDING and does.
                         return false;
                     }
 
@@ -243,6 +287,14 @@ public final class CheckoutExpirySweeper {
                     announce(uow, current, at, correlation);
                     return true;
                 });
+    }
+
+    /** A session that declines to expire: nothing to undo, or the cancel rolled back with it. */
+    private static boolean declined(boolean cancelled) {
+        if (cancelled) {
+            throw new NotExpiring();
+        }
+        return false;
     }
 
     /**

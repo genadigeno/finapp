@@ -1,6 +1,6 @@
 # ADR-0059 — A payment rail declares its capabilities, finality is modelled per rail, and the attempt's machine follows the rail's interaction model
 
-Status: Accepted (2026-09-28, `P7-DOC-001` — read against the implementation at the phase review; nine passages corrected to it, one rule made where the text promised more than the code held, and one defect in the code fixed, first)
+Status: Accepted (2026-09-28, `P7-DOC-001` — read against the implementation at the phase review; nine passages corrected to it, one rule made where the text promised more than the code held, and one defect in the code fixed, first. Amended by the Phase 7 → 8 transition's gate the same day: §2's void and capture conclusions, and §4's second presentment)
 Date: 2026-09-24
 Phase: 7
 Context: Payments · Payment Methods · Accounts · Ledger
@@ -57,7 +57,10 @@ The second is attempting a reversal on an irrevocable rail. Phase 5's attempt ma
    running build through `PaymentRails.capabilitiesOf`. The review's ruling closes the gap that
    opens: **a rail's money semantics are frozen per `RailId`**. The interaction model, finality,
    reversals, refund mode, settlement, disputes and clearing position of a declared rail never
-   change under its name; a change to any of them is a new `RailId`, so a payment already made
+   change under its name *(and, since the Phase 7 → 8 transition's gate, its outcome deadline:
+   it decides when a withdrawal's explicit "never seen" may conclude it and release its hold, so
+   a shortened deadline under the same name could conclude an old in-flight withdrawal while a
+   re-send was still live)*; a change to any of them is a new `RailId`, so a payment already made
    is always read under the semantics it was made under. `RailMoneySemanticsArePinnedTest`
    freezes each rail's tuple and its declaration version, and fails an edit that does not also
    mint a new rail.)* **No core code branches on a rail's name.** *(This went on "a second
@@ -74,9 +77,17 @@ The second is attempting a reversal on an irrevocable rail. Phase 5's attempt ma
    `TWO_STEP` keeps Phase 5's seven states verbatim, plus the void *(the card-reversal task,
    `P7-TSK-004`, added three states - `VOID_DISPATCHED`, `VOID_UNKNOWN`, `VOIDED` - with the edge
    `AUTHORIZED → VOID_DISPATCHED` and the declined-capture redirect `CAPTURE_DISPATCHED |
-   CAPTURE_UNKNOWN → VOID_DISPATCHED`; a declined or never-received void lands `FAILED` from the
-   void states, and the drawn `AUTHORIZED → FAILED` edge, which had no producer, was
-   deliberately not implemented - recorded here by the phase review, `P7-DOC-001`)*. `PUSH` has
+   CAPTURE_UNKNOWN → VOID_DISPATCHED`; a declined void lands `FAILED` from the void states, and
+   the drawn `AUTHORIZED → FAILED` edge, which had no producer, was deliberately not implemented
+   - recorded here by the phase review, `P7-DOC-001`)* *(the Phase 7 → 8 transition's gate
+   corrected this sentence, which read "a declined or never-received void lands `FAILED`": a
+   void exists to release a standing authorization and a re-sent void is harmless
+   by definition, so a void the provider says it never received is RE-SENT by its stored
+   reference and concluded by that answer - `FAILED(NEVER_RECEIVED)` left the authorization held
+   against the customer until it lapsed. And a CAPTURE that never left (a refused connection)
+   or that the provider says it never received now takes the redirect on a rail declaring
+   `VOID`, exactly as a declined capture does: the gate found both failing the payment with the
+   authorization standing, so a retry took a second hold for one purchase)*. `PUSH` has
    its own vocabulary: an initiation `AWAITING_PAYER` (a pay-by-bank payment waiting for the
    payer's authorization at the payer's own PSP), `EXECUTION_DISPATCHED`, `EXECUTION_UNKNOWN`,
    `EXECUTED`, `FAILED`. *(The review: Phase 7's push attempt is the pay-in alone,
@@ -143,7 +154,11 @@ The second is attempting a reversal on an irrevocable rail. Phase 5's attempt ma
    - the payment's **authorization, capture, void and refund**, in `payments`;
    - the **chargeback and dispute**, in `payments` (ADR-0061);
    - the **clearing and settlement evidence**, preserved by `payments` and reconciled by
-     `settlement` (Phase 8).
+     `settlement` (Phase 8). *(The Phase 7 → 8 transition's gate: a second, DIFFERENT network
+     clearing of one capture is its own outcome, `SECOND_PRESENTMENT` - loud, counted
+     unmappable, the first record standing - where it had been absorbed as the rail repeating
+     itself. Its references rest in the retained evidence; the clearing-notice record with the
+     cleared amount and date is Phase 8's, with its two evidence hops (ADR-0065).)*
 
    Network routing, 3-D Secure and clearing belong to the processor and the network, behind the
    adapter (`INV-PAY-03`). Issuing is a product decision this ADR does not take: were it ever

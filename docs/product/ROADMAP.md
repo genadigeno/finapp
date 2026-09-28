@@ -45,9 +45,17 @@ nineteen gate claims with partial tests, and fixed and probed each. **Money move
 the domain tells apart by their declarations** — card, instant credit transfer and the platform's
 own books — every payment routed once and explainable, every external rail's money in flight on
 its own clearing position, bank details never entering, and a chargeback never taking more than
-the capture credited. The fleet-wide battery was skipped by the owner's standing instruction and
-is the Phase 7 → 8 transition's to run. **Phase 8 — Settlement and Reconciliation — is next**,
-behind that transition.
+the capture credited. **The Phase 7 → 8 transition** (2026-09-28) confirmed Phase 7 only after
+repairing what the review had missed — a withdrawal's own confirmation parked as inbound value, an
+inquiry sweep crediting an amount the scheme never executed, and twelve important defects besides,
+among them one scheme execution credited and parked at once, authorizations left standing, a
+merchant closed with a winnable chargeback and a dispute deadlock — broke every repair on purpose,
+and ran the fleet-wide battery before and after. **Phase 8 — Settlement and Reconciliation — is
+`READY`** behind its entry gate: planned in `PHASE_8_PLAN.md` on ADR-0064…0073 — settlement holds
+the external evidence and reconciliation the expectations, each clearing position discharged in
+two evidence hops, every disagreement a classified, aged break resolved by evidence or a four-eyes
+adjustment through the ledger. Twenty-seven items across eight milestones; first task
+`P8-TSK-001`.
 
 **Phase 6** closed on
 its exit review (`P6-DOC-001` — 8 areas, 12 universal criteria, F1–F8 re-assessed and met, 16

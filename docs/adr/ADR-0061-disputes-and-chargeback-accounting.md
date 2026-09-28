@@ -1,6 +1,6 @@
 # ADR-0061 — A dispute is its own lifecycle on a card payment; a chargeback never takes more from the counterparty than it was credited, and every stage posts once
 
-Status: Accepted (2026-09-28, `P7-DOC-001` — read against the implementation at the phase review; seven passages corrected to it, and the risks it said were recorded recorded, first)
+Status: Accepted (2026-09-28, `P7-DOC-001` — read against the implementation at the phase review; seven passages corrected to it, and the risks it said were recorded recorded, first. Amended by the Phase 7 → 8 transition's gate the same day: §5's merchant close, and the lock order's second step)
 Date: 2026-09-24
 Phase: 7
 Context: Payments (Disputes) · Merchant · Accounts · Ledger
@@ -202,6 +202,29 @@ the customer has spent the money.
    counterparty, while a refund of another payment to the same counterparty held that account for
    its hold's release and waited on the clearing - a `40P01`, a 500 at the card door, the PSP's
    redelivery the only recovery.)*
+
+   *(The Phase 7 → 8 transition's gate found the MERCHANT side of §5 unwritten: the customer
+   account's close asked whether a chargeback could still be won, the merchant's did not - a
+   merchant closed with a restorable chargeback, and the win then credited a CLOSED merchant's
+   payable no payout can reach (the stranded liability the Phase 6 → 7 transition had closed for
+   captures). The merchant's close now asks the same question and refuses until the dispute
+   cannot be won; and the close CLOSES the payable's ledger account in its transaction, so a
+   chargeback the network files after the close parks its share in `CHARGEBACK_RECOVERABLE`
+   under this section's own rule instead of charging a terminal merchant nothing can collect
+   from - every later writer refused by the ledger (`V007`) rather than trusted to ask.)*
+
+   *(The same gate found the lock order a second step short: a `LOST` or `ACCEPTED` stage that
+   first reports the PSP's fee posts two entries - the loss (recoverable, costs), then the fee
+   (costs, clearing) - and so reached back to the clearing, which sorts first and which every
+   chargeback, win and capture takes first; one delivery against a concurrent chargeback on
+   another payment was a `40P01`. The review's rule "seeded accounts sort before runtime ones"
+   did not cover seeded-to-seeded order across two entries. Every dispute posting now takes the
+   platform's three rows - the rail's clearing, the recoverable, the costs - in the balance
+   projection's own order before the first of them (`PostingService.lockBalancesInOrder`), after
+   the counterparty's account row where a stage takes it; raced by
+   `ChargebackAccountingDatabaseTest#aLossWithAFirstReportedFeeRacingOtherDisputesNeverDeadlocks`.
+   The rule, stated where it binds (`DISTRIBUTED_EXECUTION` §3): a transaction posting several
+   entries over shared hot rows pre-locks their union in that order before its first posting.)*
 
 6. **Notifications are authenticated, deduplicated and order-blind.** Dispute notifications
    arrive through the card rail's signed webhook door (ADR-0047): authenticated before parsing,

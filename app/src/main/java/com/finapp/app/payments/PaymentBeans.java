@@ -267,7 +267,8 @@ class PaymentBeans {
             IdGenerator ids,
             Clock clock,
             com.finapp.payments.RailOutcomeObserver railOutcomeObserver,
-            com.finapp.payments.PaymentRails paymentRails) {
+            com.finapp.payments.PaymentRails paymentRails,
+            com.finapp.payments.SchemeExecutionClaimStore<Connection> schemeExecutionClaimStore) {
         return new com.finapp.payments.WithdrawalOutcomes(
                 withdrawalStore,
                 holdService,
@@ -280,7 +281,9 @@ class PaymentBeans {
                 // Each acting judgement reported where it is written (P7-TSK-015).
                 railOutcomeObserver,
                 // The completion posts to its stored rail's declared clearing (P7-DOC-001).
-                paymentRails);
+                paymentRails,
+                // The completion claims its scheme execution (the Phase 7 -> 8 transition).
+                schemeExecutionClaimStore);
     }
 
     /**
@@ -403,6 +406,16 @@ class PaymentBeans {
         return new com.finapp.payments.JdbcUnmatchedConfirmationStore();
     }
 
+    /**
+     * One scheme execution, one money fact (the Phase 7 -&gt; 8 transition, {@code V023}): the
+     * arbiter every producer of a scheme execution claims through - unconditional, like the
+     * parking, because it calls no provider.
+     */
+    @Bean
+    com.finapp.payments.SchemeExecutionClaimStore<Connection> schemeExecutionClaimStore() {
+        return new com.finapp.payments.JdbcSchemeExecutionClaimStore();
+    }
+
     /** The suspense parking (`INV-REC-05`) — unconditional: it calls no provider. */
     @Bean
     com.finapp.payments.UnmatchedConfirmations unmatchedConfirmations(
@@ -413,7 +426,9 @@ class PaymentBeans {
             com.finapp.ledger.PostingService postingService,
             AuditWriter<Connection> auditWriter,
             IdGenerator ids,
-            Clock clock) {
+            Clock clock,
+            com.finapp.payments.SchemeExecutionClaimStore<Connection> schemeExecutionClaimStore,
+            com.finapp.payments.RailOutcomeObserver railOutcomeObserver) {
         return new com.finapp.payments.UnmatchedConfirmations(
                 unmatchedConfirmationStore,
                 paymentRails,
@@ -421,7 +436,11 @@ class PaymentBeans {
                 postingService,
                 auditWriter,
                 ids,
-                clock);
+                clock,
+                // The parking claims its execution before it posts (the Phase 7 -> 8
+                // transition), and reports its acting count where it is written.
+                schemeExecutionClaimStore,
+                railOutcomeObserver);
     }
 
     /**
@@ -950,7 +969,8 @@ class PaymentBeans {
             com.finapp.payments.UnmatchedConfirmationStore<Connection>
                     unmatchedConfirmationStore,
             com.finapp.payments.ChargebackAccounting chargebackAccounting,
-            com.finapp.payments.RailOutcomeObserver railOutcomeObserver) {
+            com.finapp.payments.RailOutcomeObserver railOutcomeObserver,
+            com.finapp.payments.SchemeExecutionClaimStore<Connection> schemeExecutionClaimStore) {
         return new com.finapp.payments.PaymentOutcomes(
                 paymentIntentStore,
                 paymentAttemptStore,
@@ -965,8 +985,8 @@ class PaymentBeans {
                 ids,
                 clock,
                 paymentRails,
-                // The execute arm's second claim pre-check (P7-TSK-009): a scheme
-                // reference already PARKED must not also credit.
+                // The store behind a mismatched execution's parking (the Phase 7 -> 8
+                // transition; P7-TSK-009's pre-check is now the execution claim below).
                 unmatchedConfirmationStore,
                 // The book rail's fixed-order pair lock (P7-TSK-011): the account
                 // rows themselves, beside the chart that resolves positions.
@@ -976,7 +996,9 @@ class PaymentBeans {
                 chargebackAccounting,
                 // Every acting judgement reported where it is written, counted once its
                 // transaction commits (P7-TSK-015).
-                railOutcomeObserver);
+                railOutcomeObserver,
+                // One scheme execution, one money fact (the Phase 7 -> 8 transition).
+                schemeExecutionClaimStore);
     }
 
     @Bean
@@ -1114,7 +1136,11 @@ class PaymentBeans {
                 refundStore,
                 identityStore,
                 paymentTransactions,
-                dataSource);
+                dataSource,
+                // The public door's refusal of a checkout's intent (the Phase 7 -> 8
+                // transition): the session store is stateless, so a direct instance is the
+                // wiring (the AccountsBeans hold-store idiom).
+                new com.finapp.checkout.JdbcCheckoutSessionStore());
     }
 
     /**
@@ -1255,7 +1281,8 @@ class PaymentBeans {
             Clock clock,
             TransactionTemplate paymentTransactions,
             DataSource dataSource,
-            com.finapp.payments.RefundStore<Connection> refundStore) {
+            com.finapp.payments.RefundStore<Connection> refundStore,
+            com.finapp.payments.WithdrawalStore<Connection> withdrawalStore) {
         return new InstantCallbackService(
                 instantWebhookSignature,
                 providerEvidenceStore,
@@ -1274,7 +1301,9 @@ class PaymentBeans {
                 com.finapp.payments.SimulatedInstantSchemeAdapter.RAIL.id(),
                 // The park guard's attribution read (P7-TSK-010): a return's own echo
                 // must never park as unmatched money.
-                refundStore);
+                refundStore,
+                // And a withdrawal's (the Phase 7 -> 8 transition): value that went OUT.
+                withdrawalStore);
     }
 
     /**

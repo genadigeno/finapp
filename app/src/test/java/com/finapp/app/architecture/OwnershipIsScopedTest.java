@@ -947,6 +947,20 @@ class OwnershipIsScopedTest {
                                         + " composition runs; V002's trigger sets the reference"
                                         + " once.")),
                     Map.entry(
+                            "com.finapp.checkout.JdbcCheckoutSessionStore.opened",
+                            new Entry(
+                                    Scope.AUTHORITATIVE_ID,
+                                    "com.finapp.payments.JdbcPaymentIntentStore.findOwned",
+                                    "The Phase 7 -> 8 transition. The public payment door's"
+                                        + " refusal of a checkout's intent: payment_intent_ref = ?"
+                                        + " and no tenant predicate, asked by"
+                                        + " PaymentService.confirm only AFTER findOwned resolved"
+                                        + " the intent as the caller's own in the same"
+                                        + " transaction - so a stranger's intent id meets the"
+                                        + " command's one 404, never a refusal that says the"
+                                        + " intent exists. It answers a boolean and returns no"
+                                        + " row.")),
+                    Map.entry(
                             "com.finapp.checkout.JdbcCheckoutSessionStore.findById",
                             new Entry(
                                     Scope.AUTHORITATIVE_ID,

@@ -117,12 +117,15 @@ public final class JdbcDisputeResponseStore implements DisputeResponseStore<Conn
         Objects.requireNonNull(at, "at must not be null");
         // The conditional IS the permit (the refund's renewal, V009): a response another resolver
         // moved to a terminal status leaves this matching no row, and then nothing may be sent.
-        // GREATEST keeps the permit forward-only against an instance whose clock trails the one
-        // that wrote the previous permit - V022's trigger refuses a step back.
+        // Every renewal STRICTLY advances it (the Phase 7 -> 8 transition, the refund's rule and
+        // its reason): one microsecond past the stored permit, or this instance's time if later -
+        // so a takeover's send is never made under the permit the first flight's rule reads.
         try (PreparedStatement update =
                 unitOfWork.prepareStatement(
                         "UPDATE " + TABLE
-                                + " SET send_permit = GREATEST(send_permit, CAST(? AS timestamptz))"
+                                + " SET send_permit = GREATEST("
+                                + "   send_permit + interval '1 microsecond',"
+                                + "   CAST(? AS timestamptz))"
                                 + " WHERE id = ? AND status IN ('DISPATCHED', 'UNKNOWN')"
                                 + " RETURNING send_permit")) {
             update.setTimestamp(1, Timestamp.from(at));

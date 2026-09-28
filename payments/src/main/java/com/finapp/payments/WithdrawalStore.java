@@ -34,6 +34,13 @@ public interface WithdrawalStore<T> {
     Optional<Withdrawal> findByDispatchKey(T unitOfWork, UUID customerId, String dispatchKey);
 
     /**
+     * The withdrawal carrying OUR end-to-end reference, or empty (the Phase 7 -&gt; 8
+     * transition): the instant callback door recognises a withdrawal's own confirmation
+     * echoed back to it - evidence only, never a parking of value that went out.
+     */
+    Optional<Withdrawal> findByEndToEndReference(T unitOfWork, EndToEndReference reference);
+
+    /**
      * Commits a fresh send permit, conditional on the withdrawal still awaiting the scheme's
      * word — {@code false} when a resolver got there first, and then nothing may be sent.
      */

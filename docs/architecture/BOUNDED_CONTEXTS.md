@@ -12,6 +12,15 @@ decision.
 already named it a new context for Phase 7; this list never had. It maps to `payments`, merged,
 with its split trigger recorded (`MODULE_ARCHITECTURE.md` M11).
 
+**Settlement (13)** and **Reconciliation (14)** were re-bounded by the Phase 7 → 8 transition
+(ADR-0064), not renamed or merged: they stay two contexts in two modules with no build edge
+between them (`MODULE_ARCHITECTURE.md` M8). Settlement is the external side — each counterparty's
+reports and the bank's statements, received, retained and recognised. Reconciliation is the
+internal side, the comparison and its outcome — the settlement expectations every externally
+settling completion opens, the matching, the breaks, the suspense and the resolutions. The
+expectation belonged to Settlement until then; it is internal state that allocation and ageing
+drive, so it is Reconciliation's.
+
 1. Party & Customer
 2. Identity, Authentication & Authorization
 3. KYC/KYB

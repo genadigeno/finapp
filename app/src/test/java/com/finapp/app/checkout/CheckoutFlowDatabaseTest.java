@@ -546,8 +546,18 @@ class CheckoutFlowDatabaseTest {
                 IDS,
                 clock,
                 grace,
-                50);
+                50,
+                // The wired port (the Phase 7 -> 8 transition): an undispatched intent ends with
+                // its session, an in-flight one is untouched.
+                (unitOfWork, intentRef) ->
+                        paymentCancellation.cancelUndispatched(
+                                unitOfWork,
+                                com.finapp.payments.PaymentIntentId.of(intentRef),
+                                "the checkout session expired before its payment was"
+                                        + " dispatched"));
     }
+
+    @Autowired private com.finapp.payments.PaymentCancellation paymentCancellation;
 
     private HttpResponse<String> abandon(Merchant merchant, String id, String reason)
             throws Exception {
@@ -2623,6 +2633,111 @@ class CheckoutFlowDatabaseTest {
             assertThat(payablePositionMinor(app, merchant)).isEqualTo(96_80L);
         }
     }
+
+    @Test
+    @DisplayName("an intent a checkout OPENED but never dispatched is a fresh open's equal (the"
+            + " Phase 7 -> 8 transition): the public payment door refuses it, and the checkout"
+            + " door's retry asks the merchant's standing again - a suspended merchant is never"
+            + " paid, nothing written")
+    void anUndispatchedCheckoutIntentIsNeverConfirmedAroundItsChecks() throws Exception {
+        Merchant merchant = tradingMerchant("0.029", 30L);
+        WalletCustomer payer = walletCustomer("40.00");
+        String created = createSession(merchant, AMOUNT_MINOR, someKey()).body();
+        String checkoutId = field(created, "checkoutId");
+        String sessionToken = field(created, "sessionToken");
+        assertThat(confirmFromWallet(payer.token(), sessionToken).statusCode()).isEqualTo(422);
+        String intent = intentOfSession(checkoutId);
+        assertThat(sessionStatus(checkoutId)).isEqualTo("PAYMENT_PENDING");
+
+        // The public door: a checkout's intent is confirmed through its session only.
+        fundWallet(payer.token(), "60.00");
+        HttpResponse<String> around =
+                post("/v1/payments/" + intent + "/confirmation", null, payer.token(), null);
+        assertThat(around.statusCode()).as(around.body()).isEqualTo(409);
+        assertThat(around.body()).contains("payments.NotConfirmable");
+
+        // The merchant is suspended; the payer's retry at the checkout door asks again.
+        suspend(merchant);
+        HttpResponse<String> retried = confirmFromWallet(payer.token(), sessionToken);
+        assertThat(retried.statusCode()).as(retried.body()).isEqualTo(409);
+        assertThat(retried.body()).contains("checkout.NotTrading");
+
+        try (Connection app = DatabaseRoles.application()) {
+            assertThat(count(app,
+                            "SELECT count(*) FROM payments.payment_attempt WHERE intent_id = ?",
+                            UUID.fromString(intent)))
+                    .as("neither door dispatched anything")
+                    .isZero();
+            assertThat(oneString(app,
+                            "SELECT status FROM payments.payment_intent WHERE id = ?",
+                            UUID.fromString(intent)))
+                    .isEqualTo("REQUIRES_CONFIRMATION");
+            assertThat(payablePositionMinor(app, merchant)).isZero();
+            assertThat(orderCountFor(app, merchant)).isZero();
+        }
+        assertThat(get("/v1/me/accounts/" + payer.product() + "/balance", payer.token())
+                        .body())
+                .contains("\"available\":\"100.00\"");
+    }
+
+    @Test
+    @DisplayName("the expiry sweep ENDS an intent its session opened and never dispatched -"
+            + " CANCELLED as the platform, audited - so it is confirmable no more and its"
+            + " merchant can close (the Phase 7 -> 8 transition)")
+    void theExpirySweepCancelsAnUndispatchedIntent() throws Exception {
+        Merchant merchant = tradingMerchant("0.029", 30L);
+        WalletCustomer payer = walletCustomer("10.00");
+        String created = createSession(merchant, AMOUNT_MINOR, someKey()).body();
+        String checkoutId = field(created, "checkoutId");
+        assertThat(confirmFromWallet(payer.token(), field(created, "sessionToken"))
+                        .statusCode())
+                .isEqualTo(422);
+        String intent = intentOfSession(checkoutId);
+
+        expirySweeper(Clock.offset(CLOCK, Duration.ofMinutes(45)), Duration.ZERO).sweep();
+
+        assertThat(sessionStatus(checkoutId)).isEqualTo("EXPIRED");
+        try (Connection app = DatabaseRoles.application()) {
+            assertThat(oneString(app,
+                            "SELECT status FROM payments.payment_intent WHERE id = ?",
+                            UUID.fromString(intent)))
+                    .isEqualTo("CANCELLED");
+            assertThat(count(app,
+                            "SELECT count(*) FROM platform.audit_record WHERE operation ="
+                                    + " 'payments.PaymentCancelled' AND target_id = ?"
+                                    + " AND actor_type = 'SYSTEM'",
+                            intent))
+                    .isEqualTo(1);
+        }
+        HttpResponse<String> after =
+                confirmFromWallet(payer.token(), field(created, "sessionToken"));
+        assertThat(after.statusCode()).as("a dead offer is paid never").isEqualTo(409);
+        assertThat(after.body()).contains("checkout.SessionExpired");
+        assertThat(asOperatorClose(merchant))
+                .as("nothing is on its way to the payable any more")
+                .isEqualTo(com.finapp.merchant.MerchantStatus.CLOSED);
+    }
+
+    /** The merchant's close, driven at the administration as the platform. */
+    private com.finapp.merchant.MerchantStatus asOperatorClose(Merchant merchant)
+            throws Exception {
+        try (CorrelationContext.Scope flow =
+                        CorrelationContext.enter(
+                                Correlation.startingWith(CorrelationId.generate(IDS)));
+                SecurityContext.Scope actor = SecurityContext.enterSystem();
+                Connection app = DatabaseRoles.application()) {
+            app.setAutoCommit(false);
+            com.finapp.merchant.MerchantStatus status =
+                    merchantAdministration
+                            .close(app, com.finapp.merchant.MerchantId.of(
+                                    UUID.fromString(merchant.id())), "ended")
+                            .status();
+            app.commit();
+            return status;
+        }
+    }
+
+    @Autowired private com.finapp.merchant.MerchantAdministration merchantAdministration;
 
     @Test
     @DisplayName("P7-TSK-011: TEN INSTANCES confirming one session from the wallet produce"

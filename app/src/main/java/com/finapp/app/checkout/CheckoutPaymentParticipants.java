@@ -72,9 +72,9 @@ public final class CheckoutPaymentParticipants implements PaymentParticipants<Co
     }
 
     /**
-     * The merchant's payable, share-locked: postable only while {@code ACTIVE}. Nothing closes a
-     * payable's ledger account today, so this answers true - asked anyway, because the question
-     * the confirmation asks is about the account, whoever owns it.
+     * The merchant's payable, share-locked: postable only while {@code ACTIVE}. Since the Phase 7
+     * -&gt; 8 transition the merchant's close closes it, so this answers false for a closed
+     * merchant - the question the confirmation asks is about the account, whoever owns it.
      */
     @Override
     public boolean creditable(Connection unitOfWork, com.finapp.ledger.LedgerAccountId account) {

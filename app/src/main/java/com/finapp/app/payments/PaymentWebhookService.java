@@ -294,8 +294,11 @@ public class PaymentWebhookService {
 
         if (delivered.consumed() == InboxConsumer.Outcome.CONTENDED) {
             // The inbox's own contract: the other transaction may yet roll back, so this
-            // delivery must NOT be acknowledged. The rollback took this delivery's evidence
-            // row with it; the redelivery retains it.
+            // delivery must NOT be acknowledged. Its evidence row DID commit - the delivery
+            // transaction returned normally with CONTENDED, and every authenticated delivery
+            // is retained (INV-HIST-02) - so the redelivery adds a second row for the same
+            // bytes. (This said the rollback took the evidence with it until the Phase 7 -> 8
+            // transition's gate read it against the code.)
             throw new ApiException(
                     PlatformErrorCode.CONFLICT,
                     "A payment webhook is being processed by another instance; asking the"
@@ -486,16 +489,43 @@ public class PaymentWebhookService {
                         network.get(),
                         PaymentCreation.resolvedCorrelation());
         switch (recorded) {
-            case RECORDED ->
-                    log.info(
-                            "A capture's clearing was recorded with its network references"
-                                    + " (attempt {}, INV-SET-01: no posting, no transition)",
-                            attempt.id());
+            case RECORDED -> {
+                log.info(
+                        "A capture's clearing was recorded with its network references"
+                                + " (attempt {}, INV-SET-01: no posting, no transition)",
+                        attempt.id());
+                if (attempt.status() == com.finapp.payments.PaymentAttemptStatus.FAILED
+                        || attempt.status() == com.finapp.payments.PaymentAttemptStatus.VOIDED) {
+                    // The network cleared a payment our books hold concluded without a capture
+                    // (the Phase 7 -> 8 transition): recorded - reconciliation needs the
+                    // references - and loud, counted where a break is looked for, never a
+                    // normal clearing.
+                    judged.unmappable();
+                    log.warn(
+                            "A clearing was recorded for attempt {} which the platform holds {}"
+                                    + " - the network presented a payment our books did not"
+                                    + " capture; a break reconciliation must see",
+                            attempt.id(),
+                            attempt.status());
+                }
+            }
             case ALREADY_RECORDED ->
                     log.info(
                             "A duplicate clearing notice for attempt {} was absorbed by the"
                                     + " record that stands (INV-IDEM-04)",
                             attempt.id());
+            case SECOND_PRESENTMENT -> {
+                // The network presented one capture twice (the Phase 7 -> 8 transition): never
+                // the rail repeating itself. Loud, counted unmappable, the first record standing
+                // and this statement's bytes retained against the attempt for reconciliation.
+                judged.unmappable();
+                log.warn(
+                        "A clearing notice for attempt {} named network references OTHER than"
+                                + " the clearing already recorded for it - a second presentment"
+                                + " of one capture; the first record stands and this statement"
+                                + " rests as evidence - a break reconciliation must see",
+                        attempt.id());
+            }
             case REFERENCE_CLAIMED_ELSEWHERE -> {
                 judged.unmappable();
                 log.warn(

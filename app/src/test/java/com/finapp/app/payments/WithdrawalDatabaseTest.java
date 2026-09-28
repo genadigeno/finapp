@@ -84,6 +84,8 @@ import org.springframework.test.context.DynamicPropertySource;
  */
 @Tag("database")
 @SpringBootTest(webEnvironment = SpringBootTest.WebEnvironment.RANDOM_PORT)
+@org.junit.jupiter.api.extension.ExtendWith(
+        org.springframework.boot.test.system.OutputCaptureExtension.class)
 @DisplayName("the wallet withdrawal over the instant rail (P7-TSK-008)")
 @SuppressWarnings("try") // Scopes are used for their close side effect (the idiom).
 class WithdrawalDatabaseTest {
@@ -852,6 +854,48 @@ class WithdrawalDatabaseTest {
     // -----------------------------------------------------------------
     // Fixtures
     // -----------------------------------------------------------------
+
+    @Test
+    @DisplayName("an ACCEPTED answer beside a withdrawal the platform holds FAILED moves nothing"
+            + " and is LOUD - a break about money, never absorbed silently (the Phase 7 -> 8"
+            + " transition)")
+    void anAcceptanceBesideAFailedWithdrawalIsLoud(
+            org.springframework.boot.test.system.CapturedOutput output) throws Exception {
+        Fixture f = fundedFixture("10.00");
+        Seeded seeded = seedDispatched(f, "2.00", Instant.now(CLOCK));
+        try (SecurityContext.Scope platform = SecurityContext.enterSystem();
+                CorrelationContext.Scope correlation =
+                        CorrelationContext.enter(
+                                Correlation.startingWith(CorrelationId.generate(ids)))) {
+            transactions.inTransaction(
+                    uow -> {
+                        Withdrawal locked =
+                                withdrawalStore.findForUpdate(uow, seeded.id()).orElseThrow();
+                        return outcomes.applySendAnswer(
+                                uow, locked, com.finapp.payments.PushAnswer.rejected(new byte[] {1}),
+                                true, locked.lastDispatchedAt(),
+                                com.finapp.payments.PaymentCreation.resolvedCorrelation());
+                    });
+            WithdrawalOutcomes.Applied applied =
+                    transactions.inTransaction(
+                            uow -> {
+                                Withdrawal locked =
+                                        withdrawalStore.findForUpdate(uow, seeded.id())
+                                                .orElseThrow();
+                                return outcomes.applySendAnswer(
+                                        uow, locked,
+                                        com.finapp.payments.PushAnswer.accepted(
+                                                new ProviderReference("sch-late-" + suffix()),
+                                                java.util.Optional.empty(), new byte[] {1}),
+                                        false, locked.lastDispatchedAt(),
+                                        com.finapp.payments.PaymentCreation.resolvedCorrelation());
+                            });
+            assertThat(applied.status()).isEqualTo(WithdrawalStatus.FAILED);
+            assertThat(applied.acting()).isFalse();
+        }
+        assertThat(output.getOut())
+                .contains("which the platform holds FAILED - value may have left");
+    }
 
     private record Fixture(
             String token,

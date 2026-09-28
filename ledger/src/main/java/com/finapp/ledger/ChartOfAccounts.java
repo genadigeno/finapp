@@ -33,6 +33,23 @@ public final class ChartOfAccounts<T> {
 
     @NonNull private final LedgerAccountStore<T> store;
 
+    /**
+     * The platform's account for this purpose in this currency, or empty where the chart has
+     * none (the Phase 7 -&gt; 8 transition) — for a caller that must answer a delivery totally
+     * rather than throw inside it: a door parking an external statement in a currency the
+     * platform does not support refuses it as unmappable instead of rolling its evidence back.
+     */
+    public java.util.Optional<LedgerAccount> find(
+            T unitOfWork, AccountPurpose purpose, CurrencyCode currency) {
+        Objects.requireNonNull(unitOfWork, "unitOfWork must not be null");
+        Objects.requireNonNull(purpose, "purpose must not be null");
+        Objects.requireNonNull(currency, "currency must not be null");
+        if (purpose.ownerKind().requiresOwnerRef()) {
+            return java.util.Optional.empty();
+        }
+        return store.findOperational(unitOfWork, purpose, currency);
+    }
+
     /** The platform's account for this purpose in this currency. Throws on any gap. */
     public LedgerAccount resolve(T unitOfWork, AccountPurpose purpose, CurrencyCode currency) {
         Objects.requireNonNull(unitOfWork, "unitOfWork must not be null");

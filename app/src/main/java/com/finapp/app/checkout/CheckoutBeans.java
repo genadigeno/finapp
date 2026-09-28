@@ -105,7 +105,8 @@ public class CheckoutBeans {
                     java.time.Duration paymentGrace,
             @org.springframework.beans.factory.annotation.Value(
                             "${finapp.checkout.sweeper.batch:50}")
-                    int batchSize) {
+                    int batchSize,
+            com.finapp.payments.PaymentCancellation paymentCancellation) {
         TransactionTemplate template = new TransactionTemplate(transactionManager);
         return new com.finapp.checkout.CheckoutExpirySweeper(
                 new CheckoutTransactions(template, dataSource),
@@ -115,7 +116,16 @@ public class CheckoutBeans {
                 ids,
                 clock,
                 paymentGrace,
-                batchSize);
+                batchSize,
+                // THE UNDISPATCHED PAYMENT ENDS WITH ITS SESSION (the Phase 7 -> 8 transition):
+                // checkout cannot see payments, so the composition root answers the port over
+                // the payment's own cancellation, as the platform.
+                (unitOfWork, intentRef) ->
+                        paymentCancellation.cancelUndispatched(
+                                unitOfWork,
+                                com.finapp.payments.PaymentIntentId.of(intentRef),
+                                "the checkout session expired before its payment was"
+                                        + " dispatched"));
     }
 
     /**

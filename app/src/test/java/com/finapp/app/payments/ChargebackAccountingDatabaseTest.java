@@ -112,6 +112,7 @@ class ChargebackAccountingDatabaseTest {
     @Autowired private PaymentRefund paymentRefund;
     @Autowired private AccountOpening accountOpening;
     @Autowired private AccountClosing accountClosing;
+    @Autowired private com.finapp.merchant.MerchantAdministration administration;
     @Autowired private MeterRegistry registry;
 
     @BeforeAll
@@ -370,6 +371,57 @@ class ChargebackAccountingDatabaseTest {
         // Every round explained: the disputed payment kept (charged back and won back), each
         // refunded payment returned in full.
         assertThat(balance(wallet)).isEqualTo(rounds * 1000L);
+    }
+
+    @Test
+    @DisplayName("a LOSS that first reports the fee - two entries, the cost's row before the"
+            + " clearing's - races chargebacks and wins on OTHER payments and every round"
+            + " completes: the platform's rows taken in order before any dispute posting (the"
+            + " Phase 7 -> 8 transition's 40P01)")
+    void aLossWithAFirstReportedFeeRacingOtherDisputesNeverDeadlocks() throws Exception {
+        int rounds = 8;
+        for (int round = 0; round < rounds; round++) {
+            int thisRound = round;
+            // The loss's own dispute: refunded first, so its chargeback stands with an EXCESS
+            // the loss writes off - and no fee yet, so the loss statement reports it first.
+            Payment losing = captured(wallet());
+            refund(losing, 300, "psp_rf-" + IDS.next());
+            String lostReference = someDisputeReference();
+            deliver(chargeback(losing, lostReference, "needs_response", 1000, null));
+            // Two standing chargebacks to be WON, and three payments to be charged back.
+            List<Payment> winning = List.of(captured(wallet()), captured(wallet()));
+            List<String> winReferences = new ArrayList<>();
+            for (Payment payment : winning) {
+                String reference = someDisputeReference();
+                deliver(chargeback(payment, reference, "needs_response", 1000, null));
+                deliver(chargeback(payment, reference, "under_review", 1000, null));
+                winReferences.add(reference);
+            }
+            List<Payment> charging =
+                    List.of(captured(wallet()), captured(wallet()), captured(wallet()));
+
+            List<String> bodies = new ArrayList<>();
+            bodies.add(chargeback(losing, lostReference, "lost", 1000, 150L));
+            for (int i = 0; i < winning.size(); i++) {
+                bodies.add(chargeback(winning.get(i), winReferences.get(i), "won", 1000, null));
+            }
+            for (Payment payment : charging) {
+                bodies.add(chargeback(payment, someDisputeReference(), "needs_response", 1000,
+                        null));
+            }
+            List<Integer> statuses = race(bodies.size(), bodies::get);
+            assertThat(statuses)
+                    .as("round %s: every delivery applies - a deadlock is a 500", thisRound)
+                    .containsOnly(204);
+
+            UUID lost = disputeId(lostReference);
+            assertThat(lines(lost))
+                    .as("round %s: the loss wrote off exactly the excess, the fee posted once",
+                            thisRound)
+                    .contains(
+                            "dispute-loss|DEBIT:DISPUTE_COSTS:300",
+                            "dispute-fee|DEBIT:DISPUTE_COSTS:150");
+        }
     }
 
     // -----------------------------------------------------------------
@@ -746,6 +798,63 @@ class ChargebackAccountingDatabaseTest {
 
         deliver(chargeback(payment, reference, "lost", 1000, null));
         assertThat(close(customer)).as("no win can follow a loss").isTrue();
+    }
+
+    @Test
+    @DisplayName("a MERCHANT cannot close while a chargeback charged to its payable may still be"
+            + " WON, and its close closes the payable: a chargeback filed afterwards parks in the"
+            + " recoverable instead of charging a terminal merchant (the Phase 7 -> 8 transition)")
+    void aRestorableChargebackKeepsTheMerchantOpen() throws Exception {
+        com.finapp.merchant.MerchantId merchant = com.finapp.merchant.MerchantId.of(IDS.next());
+        Instant created = Instant.now(CLOCK).minusSeconds(3600);
+        try (Connection app = DatabaseRoles.application()) {
+            execute(app,
+                    "INSERT INTO merchant.merchant (id, party_ref, legal_name, display_name,"
+                            + " settlement_currency, status, created_at, status_changed_at)"
+                            + " VALUES (?, ?, 'Disputed GmbH', 'Disputed', 'EUR', 'ACTIVE', ?, ?)",
+                    merchant.value(), IDS.next(), java.sql.Timestamp.from(created),
+                    java.sql.Timestamp.from(created));
+        }
+        LedgerAccountId payable =
+                asActor(uow -> ledgerAccountStore
+                        .createOrConverge(
+                                uow,
+                                LedgerAccount.owned(
+                                        IDS, CLOCK, AccountType.LIABILITY,
+                                        AccountPurpose.MERCHANT_PAYABLE, EUR, merchant.value()))
+                        .account()
+                        .id());
+        // One sale disputed to zero; another sold and paid out, undisputed so far.
+        Payment disputed = captured(payable);
+        Payment later = captured(payable);
+        spend(payable, 1000);
+        String reference = someDisputeReference();
+        deliver(chargeback(disputed, reference, "needs_response", 1000, null));
+        assertThat(balance(payable)).as("settled to zero by the chargeback").isZero();
+
+        assertThatThrownBy(() -> asActor(uow -> administration.close(uow, merchant, "ended")))
+                .as("a win would credit a closed merchant nothing can ever pay out")
+                .isInstanceOf(com.finapp.merchant.MerchantNotSettledException.class);
+
+        deliver(chargeback(disputed, reference, "lost", 1000, null));
+        assertThat(asActor(uow -> administration.close(uow, merchant, "ended")).status())
+                .as("no win can follow a loss")
+                .isEqualTo(com.finapp.merchant.MerchantStatus.CLOSED);
+        LedgerAccountStatus payableStatus =
+                asActor(uow -> ledgerAccountStore.lockForShare(uow, payable).orElseThrow()
+                        .status());
+        assertThat(payableStatus)
+                .as("the close closes the payable: every later writer is the ledger's to refuse")
+                .isEqualTo(LedgerAccountStatus.CLOSED);
+
+        // The network charges back the OTHER sale after the close: its share parks.
+        String afterClose = someDisputeReference();
+        assertThat(deliver(chargeback(later, afterClose, "needs_response", 1000, null))
+                        .statusCode())
+                .isEqualTo(204);
+        UUID dispute = disputeId(afterClose);
+        assertThat(split(dispute)).as("share, parked, excess").isEqualTo(new long[] {0, 1000, 0});
+        assertThat(balance(payable)).as("a closed merchant is charged nothing").isZero();
     }
 
     // -----------------------------------------------------------------

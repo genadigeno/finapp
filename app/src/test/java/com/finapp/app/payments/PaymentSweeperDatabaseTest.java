@@ -985,7 +985,8 @@ class PaymentSweeperDatabaseTest {
                         com.finapp.payments.PaymentRails.of(java.util.List.of(SimulatedCardPspAdapter.RAIL)),
                         IDS,
                         CLOCK),
-                observer);
+                observer,
+                new com.finapp.payments.JdbcSchemeExecutionClaimStore());
     }
 
     private SimulatedCardPspAdapter adapter() {

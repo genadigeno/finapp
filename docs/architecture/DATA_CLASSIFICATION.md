@@ -628,6 +628,16 @@ them are classified at the ceiling regardless.
 | `unmatched_confirmation` | `scale` | `INTERNAL` | The amount's scale |
 | `unmatched_confirmation` | `received_at` | `INTERNAL` | Server clock at parking (ADR-0014) — the age the `INV-REC-05` gauge reads |
 | `unmatched_confirmation` | `entry_ref` | `INTERNAL` | The suspense entry this parking posted — the chain stays walkable by stored id |
+| `unmatched_confirmation` | `named_reference` | `CONFIDENTIAL` | The end-to-end reference the statement named, when it had OUR minted shape (the Phase 7 → 8 transition, `V023`) — the `payment_attempt.end_to_end_reference` row's reasoning: scoped to one operation, Phase 8's clue to a mistyped or concluded payment |
+| `unmatched_confirmation` | `settlement_cycle` | `INTERNAL` | The scheme's cycle the parked value rides in — the `payment_attempt.settlement_cycle` reasoning (`V023`) |
+| `unmatched_confirmation` | `cause` | `INTERNAL` | Why it parked — an enumerated name (`UNATTRIBUTED`, `ATTEMPT_CONCLUDED`, `AMOUNT_MISMATCH`; `V023`) |
+| `unmatched_confirmation` | `attempt_id` | `INTERNAL` | Foreign key to the attempt the statement named, exactly when it named one (`V023`) |
+| `provider_evidence` | `unmatched_confirmation_id` | `INTERNAL` | The evidence's fifth subject (the Phase 7 → 8 transition, `V023`): a parking's raw statement found by stored identifier; the bytes' own rows carry the classification that matters |
+| `scheme_execution_claim` | `rail` | `INTERNAL` | The rail of the execution — the `payment_attempt.rail` reasoning (the Phase 7 → 8 transition, `V023`) |
+| `scheme_execution_claim` | `scheme_reference` | `CONFIDENTIAL` | The scheme's transaction reference — the `payment_attempt.scheme_reference` class, and the one-money-fact arbiter's key |
+| `scheme_execution_claim` | `subject_kind` | `INTERNAL` | What explains the execution — an enumerated name (`PAY_IN`, `WITHDRAWAL`, `RETURN`, `UNMATCHED`) |
+| `scheme_execution_claim` | `subject_id` | `INTERNAL` | The explaining row's identifier (an attempt, a withdrawal, a refund or a parking) |
+| `scheme_execution_claim` | `claimed_at` | `INTERNAL` | Application-stamped claim instant |
 | `dispute` | `id` | `INTERNAL` | An aggregate identifier (`P7-TSK-012`) — from `P7-TSK-013`, the suffix of each stage's posting key |
 | `dispute` | `provider` | `INTERNAL` | The PSP's stable adapter name: the scope its dispute references are unique in |
 | `dispute` | `provider_dispute_reference` | `CONFIDENTIAL` | The PSP's identifier for one dispute on a person's payment — the `acquirer_reference` class: scoped to its own dispute, it authorises nothing, and it is Phase 8's join to the stage entries. Shown to operators only, never to the merchant |

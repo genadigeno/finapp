@@ -41,7 +41,12 @@ class RailMoneySemanticsArePinnedTest {
             RailCapabilities.RefundMode refundMode,
             RailCapabilities.SettlementModel settlement,
             RailCapabilities.DisputeModel disputes,
-            Optional<AccountPurpose> clearing) {
+            Optional<AccountPurpose> clearing,
+            // Money semantics too (the Phase 7 -> 8 transition): the deadline decides when a
+            // withdrawal's explicit "never seen" may conclude it and release its hold, read
+            // from the running declaration - shortened under the same id, an old in-flight
+            // withdrawal could be concluded while a re-send was still live.
+            Optional<Duration> outcomeDeadline) {
 
         static MoneySemantics of(RailCapabilities declared) {
             return new MoneySemantics(
@@ -51,7 +56,8 @@ class RailMoneySemanticsArePinnedTest {
                     declared.refundMode(),
                     declared.settlement(),
                     declared.disputes(),
-                    declared.clearingPurpose());
+                    declared.clearingPurpose(),
+                    declared.outcomeDeadline());
         }
     }
 
@@ -65,7 +71,8 @@ class RailMoneySemanticsArePinnedTest {
                             RailCapabilities.RefundMode.PROVIDER_REFUND,
                             RailCapabilities.SettlementModel.DEFERRED_VIA_CLEARING,
                             RailCapabilities.DisputeModel.CARD_SCHEME_CHARGEBACKS,
-                            Optional.of(AccountPurpose.SETTLEMENT_CLEARING)),
+                            Optional.of(AccountPurpose.SETTLEMENT_CLEARING),
+                            Optional.empty()),
                     "instant",
                     new MoneySemantics(
                             InteractionModel.PUSH,
@@ -74,7 +81,8 @@ class RailMoneySemanticsArePinnedTest {
                             RailCapabilities.RefundMode.RETURN_PAYMENT,
                             RailCapabilities.SettlementModel.SCHEME_REPORTED,
                             RailCapabilities.DisputeModel.NONE,
-                            Optional.of(AccountPurpose.INSTANT_CLEARING)),
+                            Optional.of(AccountPurpose.INSTANT_CLEARING),
+                            Optional.of(Duration.ofSeconds(90))),
                     "book",
                     new MoneySemantics(
                             InteractionModel.BOOK,
@@ -83,6 +91,7 @@ class RailMoneySemanticsArePinnedTest {
                             RailCapabilities.RefundMode.BOOK_REFUND,
                             RailCapabilities.SettlementModel.NONE,
                             RailCapabilities.DisputeModel.NONE,
+                            Optional.empty(),
                             Optional.empty()));
 
     private static final Set<PaymentRail> DECLARED =
@@ -123,11 +132,6 @@ class RailMoneySemanticsArePinnedTest {
             assertThat(declared.perCurrencyMaximum())
                     .as("rail '%s' v%d: per-currency maximum", id, rail.declarationVersion())
                     .isEmpty();
-            assertThat(declared.outcomeDeadline())
-                    .as("rail '%s' v%d: outcome deadline", id, rail.declarationVersion())
-                    .isEqualTo(id.equals("instant")
-                            ? Optional.of(Duration.ofSeconds(90))
-                            : Optional.empty());
         }
     }
 }

@@ -89,11 +89,11 @@ public final class SimulatedInstantSchemeAdapter implements PushRail {
         return client.exchange(
                 EXCHANGES_PATH,
                 request.reference(),
-                "{\"endToEndReference\":\""
-                        + request.reference().value()
-                        + "\",\"grant\":\""
-                        + request.grant()
-                        + "\"}");
+                "{\"endToEndReference\":"
+                        + SchemeWireClient.jsonString(request.reference().value())
+                        + ",\"grant\":"
+                        + SchemeWireClient.jsonString(request.grant())
+                        + "}");
     }
 
     @Override
@@ -101,11 +101,11 @@ public final class SimulatedInstantSchemeAdapter implements PushRail {
         return client.send(
                 TRANSFERS_PATH,
                 request.reference(),
-                "{\"endToEndReference\":\""
-                        + request.reference().value()
-                        + "\",\"destination\":\""
-                        + request.destination().value()
-                        + "\","
+                "{\"endToEndReference\":"
+                        + SchemeWireClient.jsonString(request.reference().value())
+                        + ",\"destination\":"
+                        + SchemeWireClient.jsonString(request.destination().value())
+                        + ","
                         + amountOf(request.amount())
                         + "}");
     }
@@ -120,16 +120,16 @@ public final class SimulatedInstantSchemeAdapter implements PushRail {
         return client.initiate(
                 INITIATIONS_PATH,
                 request.reference(),
-                "{\"endToEndReference\":\""
-                        + request.reference().value()
-                        + "\","
+                "{\"endToEndReference\":"
+                        + SchemeWireClient.jsonString(request.reference().value())
+                        + ","
                         + amountOf(request.amount())
                         + "}");
     }
 
     @Override
     public PushInquiryAnswer inquireInitiation(EndToEndReference ourReference) {
-        return client.inquire(INITIATION_STATUS_PATH + ourReference.value());
+        return client.inquireInitiation(INITIATION_STATUS_PATH + ourReference.value());
     }
 
     @Override
@@ -140,11 +140,11 @@ public final class SimulatedInstantSchemeAdapter implements PushRail {
         return client.send(
                 RETURNS_PATH,
                 request.reference(),
-                "{\"endToEndReference\":\""
-                        + request.reference().value()
-                        + "\",\"originalReference\":\""
-                        + request.originalSchemeReference().value()
-                        + "\","
+                "{\"endToEndReference\":"
+                        + SchemeWireClient.jsonString(request.reference().value())
+                        + ",\"originalReference\":"
+                        + SchemeWireClient.jsonString(request.originalSchemeReference().value())
+                        + ","
                         + amountOf(request.amount())
                         + "}");
     }

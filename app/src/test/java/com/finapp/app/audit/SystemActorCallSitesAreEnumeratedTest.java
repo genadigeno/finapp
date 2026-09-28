@@ -178,7 +178,7 @@ class SystemActorCallSitesAreEnumeratedTest {
                                 + " provider's decision. The scope wraps only Tx2, the outcome"
                                 + " application."),
                     Map.entry(
-                            "com.finapp.payments.PaymentVoid.completeDispatched",
+                            "com.finapp.payments.PaymentVoid.send",
                             "The void outcome's transaction (P7-TSK-004): the dispatch is"
                                 + " audited as its own actor - the cancelling customer or the"
                                 + " reasoned operator - in Tx1, but the provider's answer has"

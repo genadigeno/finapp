@@ -89,6 +89,7 @@ public final class PaymentService {
     private final IdentityStore<Connection> identities;
     private final TransactionTemplate transactions;
     private final DataSource dataSource;
+    private final com.finapp.checkout.CheckoutSessionStore<Connection> checkoutSessions;
 
     public PaymentService(
             PaymentCreation creation,
@@ -102,8 +103,11 @@ public final class PaymentService {
             com.finapp.payments.RefundStore<Connection> refunds,
             IdentityStore<Connection> identities,
             TransactionTemplate paymentTransactions,
-            DataSource dataSource) {
+            DataSource dataSource,
+            com.finapp.checkout.CheckoutSessionStore<Connection> checkoutSessions) {
         this.creation = Objects.requireNonNull(creation, "creation must not be null");
+        this.checkoutSessions =
+                Objects.requireNonNull(checkoutSessions, "checkoutSessions must not be null");
         this.cancellation = Objects.requireNonNull(cancellation, "cancellation must not be null");
         this.confirmation = Objects.requireNonNull(confirmation, "confirmation must not be null");
         this.capture = Objects.requireNonNull(capture, "capture must not be null");
@@ -223,8 +227,43 @@ public final class PaymentService {
     /**
      * Confirms the caller's intent, chains the capture after a synchronous {@code AUTHORIZED},
      * and answers the intent's real state — honestly {@code PROCESSING} when that is the truth.
+     *
+     * <p><strong>The public door confirms only what the public door created</strong> (the
+     * Phase 7 -&gt; 8 transition): an intent a checkout session opened is confirmed through
+     * that session, whose door asks the offer's deadline, the merchant's standing and the
+     * wallet's step-up before anything is sent. The gate found this route confirming such an
+     * intent with none of the three - an expired offer paid days later, a suspended merchant
+     * credited. Refused with nothing written; the checkout door is the way.
      */
     public PaymentView confirm(Session current, PaymentIntentId intentId) {
+        Objects.requireNonNull(current, "current must not be null");
+        Objects.requireNonNull(intentId, "intentId must not be null");
+        // The deployment's answer first, exactly as before this refusal existed: an unconfigured
+        // provider is the honest 503 whoever asks (P5-TSK-011's contract).
+        if (confirmation.getIfAvailable() == null) {
+            throw providerUnavailable();
+        }
+        // The caller's OWN intent first (ADR-0031): a stranger naming a checkout's intent meets
+        // the command's one 404 below, never a refusal that says the intent exists.
+        UUID caller = inOneTransaction(unitOfWork -> partyOf(unitOfWork, current));
+        if (inOneTransaction(unitOfWork ->
+                intents.findOwned(unitOfWork, intentId, caller).isPresent()
+                        && checkoutSessions.opened(unitOfWork, intentId.value()))) {
+            throw new ApiException(
+                    PaymentsErrorCode.NOT_CONFIRMABLE,
+                    "A confirmation was refused: this payment belongs to a checkout session",
+                    "the payment was opened by a checkout session and is confirmed through"
+                            + " that session's own confirmation.");
+        }
+        return confirmForCheckout(current, intentId);
+    }
+
+    /**
+     * The confirmation itself — the public door's after its refusal, and the checkout door's
+     * once the session has asked its own questions ({@code CheckoutService}). Ownership is
+     * still the caller's: the command re-resolves the intent as the caller's own.
+     */
+    public PaymentView confirmForCheckout(Session current, PaymentIntentId intentId) {
         Objects.requireNonNull(current, "current must not be null");
         Objects.requireNonNull(intentId, "intentId must not be null");
 

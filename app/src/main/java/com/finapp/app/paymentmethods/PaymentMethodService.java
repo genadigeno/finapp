@@ -283,11 +283,16 @@ public final class PaymentMethodService {
         Objects.requireNonNull(idempotencyKey, "idempotencyKey must not be null");
 
         String grant = request.grant().expose();
-        if (grant == null || grant.isBlank()) {
+        // The grant's shape rule at the boundary (the Phase 7 -> 8 transition): the port's
+        // own predicate, so nothing a customer types can steer the provider's request - and
+        // nothing shaped like a bank identifier gets further than this line (INV-RAIL-03).
+        if (!com.finapp.payments.PushRail.GrantExchange.wellShaped(grant)) {
             throw new ApiException(
                     PlatformErrorCode.VALIDATION_FAILED,
                     "A bank-account grant was refused by the domain rule",
-                    "grant must be the rail provider's one-time linking grant.");
+                    "grant must be the rail provider's one-time linking grant: 1-"
+                            + com.finapp.payments.PushRail.GrantExchange.MAX_GRANT_LENGTH
+                            + " characters of letters, digits and _ . : - with a letter.");
         }
 
         // Tx1: resolve the party (the claim's scope names the principal, so the reads come

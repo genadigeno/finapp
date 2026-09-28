@@ -346,6 +346,9 @@ class MultiRailConservationStormDatabaseTest {
         provider.succeedsWithMintedReference(SimulatedCardPspAdapter.AUTHORIZATIONS_PATH, "psp_a");
         provider.succeedsWithMintedReference(SimulatedCardPspAdapter.CAPTURES_PATH, "psp_c");
         provider.succeedsWithMintedReference(SimulatedCardPspAdapter.REFUNDS_PATH, "psp_r");
+        // The PSP releases authorizations (the Phase 7 -> 8 transition): a capture the provider
+        // never received now redirects into the void, so the truthful PSP must answer voids too.
+        provider.succeedsWithMintedReference(SimulatedCardPspAdapter.VOIDS_PATH, "psp_v");
         provider.losesTheResponseWhenTheBodyContains(
                 SimulatedCardPspAdapter.CAPTURES_PATH, amountOnTheWire(LOST_CARD_TOP_UP));
         provider.succeedsWith(
@@ -996,7 +999,9 @@ class MultiRailConservationStormDatabaseTest {
                             attempt[0]))
                     .as("the lost capture %s: the provider %s it", attempt[0],
                             received ? "took" : "never saw")
-                    .isEqualTo(received ? "CAPTURED" : "FAILED");
+                    // A capture the provider never saw releases its authorization (the Phase 7 ->
+                    // 8 transition): the void redirect, never FAILED with the hold standing.
+                    .isEqualTo(received ? "CAPTURED" : "VOIDED");
             assertThat(entries(app, "payment-capture:" + attempt[0]))
                     .as("the lost capture %s resolved to one entry, or none", attempt[0])
                     .isEqualTo(received ? 1 : 0);
@@ -1857,6 +1862,18 @@ class MultiRailConservationStormDatabaseTest {
                         authorising ? "psp_a" : "psp_c",
                         atRest);
             }
+            // A void the redirect sent (the Phase 7 -> 8 transition): asked by its own
+            // reference, answered as truthfully as every other operation.
+            for (String reference :
+                    strings(app,
+                            "SELECT a.void_reference FROM payments.payment_attempt a"
+                                    + " JOIN payments.payment_intent i ON i.id = a.intent_id"
+                                    + " WHERE a.rail = 'card'"
+                                    + "   AND a.status IN ('VOID_DISPATCHED', 'VOID_UNKNOWN')"
+                                    + "   AND i.credit_account_id = ANY (?)",
+                            (Object) accounts)) {
+                answerCard(storm, reference, SimulatedCardPspAdapter.VOIDS_PATH, "psp_v", atRest);
+            }
             for (String reference :
                     strings(app,
                             "SELECT r.provider_idempotency_reference FROM payments.refund r"
@@ -1903,7 +1920,10 @@ class MultiRailConservationStormDatabaseTest {
                             SimulatedInstantSchemeAdapter.INITIATION_STATUS_PATH + reference,
                             200,
                             "{\"status\":\"accepted\",\"reference\":\"sch-pq-" + reference
-                                    + "\",\"cycle\":\"C4\"}");
+                                    + "\",\"cycle\":\"C4\",\"amount\":\"15.07\","
+                                    // The executed amount the applier judges (the
+                                    // Phase 7 -> 8 transition): the lost pay-in's ask.
+                                    + "\"currency\":\"EUR\"}");
                 }
             }
         }

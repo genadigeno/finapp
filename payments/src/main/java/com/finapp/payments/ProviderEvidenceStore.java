@@ -59,6 +59,19 @@ public interface ProviderEvidenceStore<T> {
             Instant recordedAt);
 
     /**
+     * Retains a scheme delivery that parked value, or restated a parked execution, addressed to
+     * its parking (the Phase 7 -&gt; 8 transition) — the FIFTH subject, its own door like the
+     * others. {@code V023} widens the at-most-one-subject rule to five: Phase 8 finds a
+     * parking's raw statement by stored identifier, never by decrypting every unattributed row.
+     */
+    void appendForUnmatched(
+            T unitOfWork,
+            java.util.UUID unmatchedConfirmation,
+            EvidenceKind kind,
+            byte[] payload,
+            Instant recordedAt);
+
+    /**
      * The attempt's retained payloads, oldest first, decrypted and checksum-verified — a
      * mismatch is corruption and throws rather than yielding bytes that are not the evidence.
      */

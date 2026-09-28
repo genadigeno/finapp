@@ -143,7 +143,8 @@ class PaymentCaptureTest {
                                 attempts, intents,
                                 PaymentRails.of(java.util.List.of(SimulatedCardPspAdapter.RAIL)),
                                 IDS, CLOCK),
-                        com.finapp.payments.RailOutcomeObserver.NONE);
+                        com.finapp.payments.RailOutcomeObserver.NONE,
+                        new com.finapp.payments.JdbcSchemeExecutionClaimStore());
         return new PaymentCapture(
                 runner,
                 intents,
@@ -211,12 +212,26 @@ class PaymentCaptureTest {
         assertThat(events)
                 .anyMatch(e -> e.eventType().equals("payments.AuthorizationVoided"));
 
+        // A CAPTURE THAT NEVER LEFT (the Phase 7 -> 8 transition): nothing was captured and
+        // the authorization stands, so it redirects into the void exactly as a decline does -
+        // the gate found it failing the payment and leaving the hold on the customer's funds.
         reset();
+        provider.voidCalls = 0;
         provider.answer = ProviderAnswer.nothingSent();
         PaymentCapture.CaptureResult refused = capture().capture(authorized.id());
-        assertThat(refused.attempt()).isEqualTo(PaymentAttemptStatus.FAILED);
-        assertThat(attempts.single().failureReason())
-                .isEqualTo(PaymentFailureReason.PROVIDER_UNAVAILABLE);
+        assertThat(refused.attempt()).isEqualTo(PaymentAttemptStatus.VOIDED);
+        assertThat(refused.intent()).isEqualTo(PaymentIntentStatus.FAILED);
+        assertThat(provider.voidCalls).as("the redirect's send happened").isEqualTo(1);
+        assertThat(attempts.single().failureReason()).isNull();
+
+        // And when the void cannot leave either (the PSP down for both), the row rests
+        // VOID_DISPATCHED for the sweeper's permit-free re-send - never FAILED.
+        reset();
+        provider.answer = ProviderAnswer.nothingSent();
+        provider.voidAnswer = ProviderAnswer.nothingSent();
+        PaymentCapture.CaptureResult stranded = capture().capture(authorized.id());
+        assertThat(stranded.attempt()).isEqualTo(PaymentAttemptStatus.VOID_DISPATCHED);
+        assertThat(stranded.intent()).isEqualTo(PaymentIntentStatus.PROCESSING);
         assertThat(evidence.payloads).isEmpty();
     }
 
@@ -227,7 +242,11 @@ class PaymentCaptureTest {
                 PaymentAttemptStatus.CAPTURE_DISPATCHED,
                 PaymentAttemptStatus.CAPTURE_UNKNOWN,
                 PaymentAttemptStatus.CAPTURED,
-                PaymentAttemptStatus.FAILED}) {
+                PaymentAttemptStatus.FAILED,
+                // A void won the race (the Phase 7 -> 8 transition): the truth, never a throw.
+                PaymentAttemptStatus.VOID_DISPATCHED,
+                PaymentAttemptStatus.VOID_UNKNOWN,
+                PaymentAttemptStatus.VOIDED}) {
             attempts.rows.put(authorized.id().value(), attemptAt(already));
             PaymentCapture.CaptureResult result = capture().capture(authorized.id());
             assertThat(result.converged()).as("%s converges", already).isTrue();
@@ -293,6 +312,17 @@ class PaymentCaptureTest {
             case FAILED -> authorized
                     .dispatchCapture(new ProviderIdempotencyReference("cap-" + IDS.next()))
                     .fail(PaymentFailureReason.DECLINED);
+            case VOID_DISPATCHED ->
+                    authorized.dispatchVoid(
+                            new ProviderIdempotencyReference("void-" + IDS.next()));
+            case VOID_UNKNOWN ->
+                    authorized
+                            .dispatchVoid(new ProviderIdempotencyReference("void-" + IDS.next()))
+                            .voidOutcomeUnknown();
+            case VOIDED ->
+                    authorized
+                            .dispatchVoid(new ProviderIdempotencyReference("void-" + IDS.next()))
+                            .voided(new ProviderReference("psp-void-1"));
             default -> throw new IllegalArgumentException(status.name());
         };
     }
@@ -643,6 +673,13 @@ class PaymentCaptureTest {
         @Override
         public void appendForDisputeResponse(
                 Connection uow, DisputeResponseId response, EvidenceKind kind,
+                byte[] payload, Instant recordedAt) {
+            payloads.add(payload.clone());
+        }
+
+        @Override
+        public void appendForUnmatched(
+                Connection uow, java.util.UUID unmatchedConfirmation, EvidenceKind kind,
                 byte[] payload, Instant recordedAt) {
             payloads.add(payload.clone());
         }

@@ -95,7 +95,8 @@ public class MerchantBeans {
             Clock clock,
             com.finapp.ledger.LedgerAccountStore<Connection> ledgerAccountStore,
             com.finapp.ledger.BalanceDerivation<Connection> balanceDerivation,
-            com.finapp.payments.PaymentIntentStore<Connection> paymentIntentStore) {
+            com.finapp.payments.PaymentIntentStore<Connection> paymentIntentStore,
+            com.finapp.payments.DisputeStore<Connection> disputeStore) {
         return new MerchantAdministration(
                 new JdbcMerchantStore(),
                 ledgerAccountStore,
@@ -103,8 +104,14 @@ public class MerchantBeans {
                 // Stateless, like the close's own (AccountsBeans): a direct instance is the wiring.
                 new com.finapp.ledger.JdbcHoldStore(),
                 // THE PAYMENTS IN FLIGHT (the Phase 6 -> 7 transition): merchant cannot see
-                // payments, so the composition root answers the port over the intent store.
-                paymentIntentStore::anyInFlightCrediting,
+                // payments, so the composition root answers the port over the intent store -
+                // and, since the Phase 7 -> 8 transition, over the disputes too, exactly as
+                // the customer account's close has since P7-TSK-013: a chargeback whose share
+                // was posted to the payable and that the network may still RETURN would credit
+                // a closed merchant's payable on a win, a liability no payout can reach.
+                (unitOfWork, payable) ->
+                        paymentIntentStore.anyInFlightCrediting(unitOfWork, payable)
+                                || disputeStore.anyRestorableTo(unitOfWork, payable),
                 auditWriter,
                 ids,
                 clock);

@@ -162,7 +162,12 @@ owning tasks' rows stand: `INV-LED-01` (`PostingService`, and `V004`'s deferred 
 
 - The payout webhook, when a real provider supplies one.
 - Payout returns (a bank refusing an instructed payout after the fact): Phase 8, a compensating
-  DEBIT `PAYOUT_CLEARING` / CREDIT payable.
+  DEBIT `PAYOUT_CLEARING` / CREDIT payable. *(Paid, as a decision, at the Phase 7 → 8 transition
+  by ADR-0073, `Proposed`, built by `P8-TSK-019`. A return is a merchant fact of its own, born
+  once from the payout provider's settlement evidence and applied by a leaderless worker. That
+  worker posts exactly this compensating entry, with a four-eyes `TRANSFER_TO_ACCOUNT` as the
+  fallback when it cannot apply. The payout itself stays `COMPLETED`: a return is a new
+  operation, never an edge back (`INV-LIFE-04`).)*
 - A real adapter must honour the idempotency-by-reference contract for at least the sweep's
   resolution horizon.
 - *The Phase 6 → 7 transition*: §4's send permit brought to the refund (payments `V009`), the

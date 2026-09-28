@@ -219,8 +219,24 @@ public final class PaymentVoid {
      * redirect's caller, and the sweeper's re-send of a stranded row. Reads the row itself,
      * so a caller needs only the attempt.
      */
-    @SuppressWarnings("try") // The Scope is used for its close side effect.
     public VoidResult completeDispatched(PaymentAttemptId attemptId) {
+        return send(attemptId, PaymentAttemptStatus.VOID_DISPATCHED);
+    }
+
+    /**
+     * Re-sends the void a {@code VOID_UNKNOWN} row records, by its stored reference, and
+     * applies the answer from {@code VOID_UNKNOWN} (the Phase 7 -&gt; 8 transition) — the
+     * sweeper's answer when the provider says it never received the void: releasing a
+     * standing authorization is what the void is for, and a re-send converges at the provider,
+     * so nothing concludes FAILED on that word. {@code APPROVED} voids, {@code DECLINED}
+     * fails, and ambiguity or a refused connection leaves the row where it stands.
+     */
+    public VoidResult resendUnknown(PaymentAttemptId attemptId) {
+        return send(attemptId, PaymentAttemptStatus.VOID_UNKNOWN);
+    }
+
+    @SuppressWarnings("try") // The Scope is used for its close side effect.
+    private VoidResult send(PaymentAttemptId attemptId, PaymentAttemptStatus from) {
         Objects.requireNonNull(attemptId, "attemptId must not be null");
         Correlation correlation = PaymentCreation.resolvedCorrelation();
 
@@ -239,7 +255,7 @@ public final class PaymentVoid {
                                                             new IllegalStateException(
                                                                     "a void's attempt row"
                                                                             + " exists"));
-                            if (current.status() != PaymentAttemptStatus.VOID_DISPATCHED) {
+                            if (current.status() != from) {
                                 PaymentIntentStatus intentStatus =
                                         intents.findById(uow, current.intentId())
                                                 .orElseThrow(
@@ -286,7 +302,7 @@ public final class PaymentVoid {
                                         uow,
                                         toSend.intent(),
                                         attemptId,
-                                        PaymentAttemptStatus.VOID_DISPATCHED,
+                                        from,
                                         answer.verdict(),
                                         answer.providerReference(),
                                         correlation);

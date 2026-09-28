@@ -57,7 +57,15 @@ public final class PaymentClearing {
          * cannot share one network clearing, so one side is wrong — the first record
          * stands, this statement rests as evidence, and the caller alerts.
          */
-        REFERENCE_CLAIMED_ELSEWHERE
+        REFERENCE_CLAIMED_ELSEWHERE,
+        /**
+         * The capture is already cleared under OTHER network references (the Phase 7 -&gt; 8
+         * transition): the network presenting one capture a second time - a double charge to
+         * the cardholder, or a presentment the platform never made. The first record stands;
+         * this statement is a break, never the rail repeating itself (the gate found it
+         * absorbed as {@link #ALREADY_RECORDED}, counted processed, kept nowhere but evidence).
+         */
+        SECOND_PRESENTMENT
     }
 
     /**
@@ -86,9 +94,16 @@ public final class PaymentClearing {
                                 networkTransactionId,
                                 now));
         if (!recorded) {
-            return clearings.findForAttempt(unitOfWork, attempt.id()).isPresent()
-                    ? Outcome.ALREADY_RECORDED
-                    : Outcome.REFERENCE_CLAIMED_ELSEWHERE;
+            // The standing record decides which repeat this is: the same references are the
+            // rail repeating itself; different ones on this attempt are a second presentment.
+            return clearings.findForAttempt(unitOfWork, attempt.id())
+                    .map(standing ->
+                            standing.acquirerReference().equals(acquirerReference)
+                                            && standing.networkTransactionId()
+                                                    .equals(networkTransactionId)
+                                    ? Outcome.ALREADY_RECORDED
+                                    : Outcome.SECOND_PRESENTMENT)
+                    .orElse(Outcome.REFERENCE_CLAIMED_ELSEWHERE);
         }
 
         // Announced only by the acting insert, in its transaction: downstream hears one

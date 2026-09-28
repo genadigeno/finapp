@@ -3,6 +3,7 @@ package com.finapp.payments;
 import com.finapp.sharedkernel.money.Money;
 import java.time.Instant;
 import java.util.Objects;
+import java.util.Optional;
 import java.util.UUID;
 
 /**
@@ -24,6 +25,62 @@ public final class UnmatchedConfirmation {
     private final Money amount;
     private final Instant receivedAt;
     private final UUID entryRef;
+    private final Attribution attribution;
+
+    /** Why a statement parked (the Phase 7 -> 8 transition, {@code V023}). */
+    public enum Cause {
+        /** It named nothing the platform made. */
+        UNATTRIBUTED,
+        /**
+         * It named an attempt already concluded — failed, or executed under another scheme
+         * reference: value arrived that the attempt's own story does not explain.
+         */
+        ATTEMPT_CONCLUDED,
+        /** It named a waiting attempt but executed an amount other than the initiation's ask. */
+        AMOUNT_MISMATCH
+    }
+
+    /**
+     * What Phase 8 resolves the parking with: why it parked, the attempt it named when it
+     * named one, the end-to-end reference it named when that had OUR minted shape, and the
+     * scheme's settlement cycle.
+     */
+    public record Attribution(
+            Cause cause,
+            Optional<PaymentAttemptId> attempt,
+            Optional<EndToEndReference> namedReference,
+            Optional<String> settlementCycle) {
+
+        public Attribution {
+            Objects.requireNonNull(cause, "cause must not be null");
+            Objects.requireNonNull(attempt, "attempt must not be null");
+            Objects.requireNonNull(namedReference, "namedReference must not be null");
+            Objects.requireNonNull(settlementCycle, "settlementCycle must not be null");
+            if ((cause == Cause.UNATTRIBUTED) != attempt.isEmpty()) {
+                throw new IllegalArgumentException(
+                        "a parking names its attempt exactly when it was attributed to one ("
+                                + cause + ")");
+            }
+            settlementCycle.ifPresent(PushAnswer::requireCycleShape);
+        }
+
+        /** A statement that named nothing we made. */
+        public static Attribution unattributed(
+                Optional<EndToEndReference> namedReference, Optional<String> settlementCycle) {
+            return new Attribution(
+                    Cause.UNATTRIBUTED, Optional.empty(), namedReference, settlementCycle);
+        }
+
+        /** A statement that named {@code attempt}, parked for {@code cause}. */
+        public static Attribution of(
+                Cause cause,
+                PaymentAttemptId attempt,
+                EndToEndReference namedReference,
+                Optional<String> settlementCycle) {
+            return new Attribution(
+                    cause, Optional.of(attempt), Optional.of(namedReference), settlementCycle);
+        }
+    }
 
     public UnmatchedConfirmation(
             UUID id,
@@ -31,7 +88,8 @@ public final class UnmatchedConfirmation {
             ProviderReference schemeReference,
             Money amount,
             Instant receivedAt,
-            UUID entryRef) {
+            UUID entryRef,
+            Attribution attribution) {
         this.id = Objects.requireNonNull(id, "id must not be null");
         this.rail = Objects.requireNonNull(rail, "rail must not be null");
         this.schemeReference =
@@ -39,6 +97,7 @@ public final class UnmatchedConfirmation {
         this.amount = Objects.requireNonNull(amount, "amount must not be null");
         this.receivedAt = Objects.requireNonNull(receivedAt, "receivedAt must not be null");
         this.entryRef = Objects.requireNonNull(entryRef, "entryRef must not be null");
+        this.attribution = Objects.requireNonNull(attribution, "attribution must not be null");
         if (!amount.isPositive()) {
             throw new IllegalArgumentException(
                     "an unmatched confirmation parks value: a non-positive amount in "
@@ -71,9 +130,15 @@ public final class UnmatchedConfirmation {
         return entryRef;
     }
 
+    /** Why it parked and what it named (the Phase 7 -> 8 transition). */
+    public Attribution attribution() {
+        return attribution;
+    }
+
     /** Identifiers only — never the amount ({@code INV-AUD-02}). */
     @Override
     public String toString() {
-        return "UnmatchedConfirmation[" + id + ", rail=" + rail.value() + "]";
+        return "UnmatchedConfirmation[" + id + ", rail=" + rail.value() + ", cause="
+                + attribution.cause() + "]";
     }
 }

@@ -48,6 +48,13 @@ public interface RailOutcomeObserver {
     void disputeResponseJudged(RailId rail, DisputeResponseStatus committed);
 
     /**
+     * An acting suspense parking committed on {@code rail} (the Phase 7 -> 8 transition): the
+     * parking reports where it is written, so a parking made by the pay-in sweep's applier is
+     * counted exactly as one made at the callback door.
+     */
+    void unmatchedParked(RailId rail);
+
+    /**
      * Observes nothing — for tests and tools that measure nothing. Production wiring passes the
      * meters; this constant exists so a test asserting payment semantics does not have to invent
      * one, not so a bean can take the quiet path.
@@ -65,5 +72,8 @@ public interface RailOutcomeObserver {
 
                 @Override
                 public void disputeResponseJudged(RailId rail, DisputeResponseStatus committed) {}
+
+                @Override
+                public void unmatchedParked(RailId rail) {}
             };
 }

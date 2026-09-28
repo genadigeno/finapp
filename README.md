@@ -24,9 +24,13 @@ closed on 2026-09-28, ruled by its exit review
 and fixed a withdrawal posting to a clearing position it named, a capability descriptor stored as
 one integer while every resolver read the running build, bank details printable by three port
 records and nineteen gate claims with partial tests — and broke every fix on purpose to prove its
-test. The fleet-wide database battery was skipped by the owner's standing instruction and is the
-next act's to run. **Next: the Phase 7 → 8 transition**, then Phase 8 — Settlement and
-Reconciliation.
+test. **The Phase 7 → 8 transition** (2026-09-28,
+[`docs/project/reviews/PHASE_7_TO_8_TRANSITION.md`](docs/project/reviews/PHASE_7_TO_8_TRANSITION.md))
+then confirmed Phase 7 only after repairing what the review had missed — a withdrawal's own
+confirmation parked as inbound value, an inquiry sweep crediting an amount the scheme never
+executed, and twelve important defects besides — broke every repair on purpose, and ran the
+fleet-wide battery before and after. **Phase 8 — Settlement and Reconciliation — is `READY`**;
+its first task, `P8-TSK-001`, is next.
 
 Every number below is counted from this repository rather than recalled: items from
 [`docs/project/BACKLOG.md`](docs/project/BACKLOG.md), decisions from [`docs/adr/`](docs/adr/README.md),
@@ -37,29 +41,31 @@ description of where the project is; this section is the summary of it.
 
 ```
 Programme    ████████░░░░░░░░░   8 of 17 phases complete
-Backlog      ██████████████████  219 of 221 elaborated items complete — 2 cross-cutting open
+Backlog      ████████████████░░  219 of 250 elaborated items complete — 27 Phase 8, 4 cross-cutting open
 Phase 6      ██████████████████  18 of 18 items, 7 of 7 milestones closed
 Phase 7      ██████████████████  18 of 18 items, 8 of 8 milestones closed
+Phase 8      ░░░░░░░░░░░░░░░░░░  0 of 27 items — READY, first task P8-TSK-001
 ```
 
 | | |
 |---|---|
-| 🔨 **Current work** | Phase 7 is `COMPLETE`. Next: **the Phase 7 → 8 transition** — an independent audit, the fleet-wide battery, and Phase 8 initialised |
+| 🔨 **Current work** | Phase 8 — Settlement and Reconciliation — is `READY` behind the Phase 7 → 8 transition. Next: **`P8-TSK-001`**, the `settlement` and `reconciliation` modules and schemas |
 | 💰 **Business capability** | Money exists and moves: accounts, a double-entry ledger, explainable balances, holds, internal transfers, payments and refunds through an unreliable provider, merchants who sell through checkout and are paid out under the bound, and three rails — cards that authorize, void, clear and are charged back; instant credit transfers final on acceptance, for pay-ins, withdrawals and returns; and wallet payments on the platform's own books |
-| 📐 **Decisions** | 62 ADRs — 61 `Accepted`; ADR-0055 (Lombok, cross-cutting, its acceptance the owner's) `Proposed` |
-| 🔒 **Invariants** | 101 catalogued; each in scope for a completed phase has a test *demonstrated to fail* when the invariant is broken |
-| 🗄️ **Schema** | 96 forward-only migrations across 12 schema-owning modules |
+| 📐 **Decisions** | 72 ADRs — 61 `Accepted`; 11 `Proposed`: ADR-0055 (Lombok, cross-cutting, its acceptance the owner's) and the ten Phase 8 ADRs, ADR-0064…0073 (ADR-0063 reserved by an unmerged branch) |
+| 🔒 **Invariants** | 110 catalogued; each in scope for a completed phase has a test *demonstrated to fail* when the invariant is broken |
+| 🗄️ **Schema** | 97 forward-only migrations across 12 schema-owning modules |
 | 🌐 **API** | 92 published paths, 107 operations, compared byte for byte against the running application on every build |
 | 🧾 **Audit and errors** | 95 auditable actions, 86 error codes, both reconciled with the code by the build |
-| 🧩 **Code** | 14 Gradle modules; 903 production, 424 test and 7 test-fixture source files |
-| 📦 **History** | 318 commits, 2026-08-31 to 2026-09-28 |
+| 🧩 **Code** | 14 Gradle modules; 908 production, 427 test and 7 test-fixture source files |
+| 📦 **History** | 319 commits, 2026-08-31 to 2026-09-28 |
 
 *(This section read "Phase 5 … `IN_PROGRESS`, 5 of 21 items" from 2026-09-20 until the Phase 6
 review's completion gate, `P6-DOC-001` — frozen through the rest of Phase 5, its review, the
 Phase 5 → 6 transition and the whole of Phase 6, the stale-second-copy class. Every number above
 was recounted from the repository at that gate, and again at the Phase 6 → 7 transition. It then
 read "Phase 7 is `READY` … 0 of 18 items" through the whole of Phase 7 — frozen at the transition,
-the same class again — until the Phase 7 review, `P7-DOC-001`, recounted every number here.)*
+the same class again — until the Phase 7 review, `P7-DOC-001`, recounted every number here, and
+the Phase 7 → 8 transition recounted them again.)*
 
 ---
 
@@ -81,7 +87,7 @@ vocabulary are [`docs/project/PHASE_GATES.md`](docs/project/PHASE_GATES.md).
 | 5 | Payment Infrastructure | COMPLETE 2026-09-21 | Payment intent/attempt, provider adapters, auth/capture, refunds, webhooks |
 | 6 | Checkout and Merchant Platform | COMPLETE 2026-09-24 | Merchants, checkout sessions, fees, merchant payouts |
 | 7 | Cards, Wallets, A2A and Instant Payments | COMPLETE 2026-09-28 | Multi-rail abstraction, disputes and chargebacks |
-| 8 | Settlement and Reconciliation | PLANNED | Settlement ingestion, matching, breaks, suspense, investigation |
+| 8 | Settlement and Reconciliation | READY | Settlement ingestion, matching, breaks, suspense, investigation |
 | 9 | FX and Cross-Border Payments | PLANNED | Quotes, rate locks, multi-currency conversion, cross-border workflow |
 | 10 | Credit Decisioning | PLANNED | Credit profile, bureau adapters, versioned policy, explainable decisions |
 | 11 | Lending | PLANNED | Applications, offers, disbursement, schedules, repayment, delinquency |

@@ -26,15 +26,19 @@ import org.junit.jupiter.api.Test;
 class BalanceProjectionTest {
 
     @Test
-    @DisplayName("the port declares exactly the two write methods, and both return nothing")
+    @DisplayName("the port declares exactly its two writes and its ordered lock, and all three"
+            + " return nothing")
     void thePortDeclaresOnlyVoidWrites() {
         // P3-TSK-015 added the hold adjustment - a second WRITE, said so here as the class
         // doc demands: still no read exists, and a third method is a read until proven
-        // otherwise.
+        // otherwise. The Phase 7 -> 8 transition added the third, and proves it here: the
+        // ordered row LOCK a multi-entry transaction takes before its first posting (the
+        // dispute stages' 40P01) - void like the writes, reading nothing out, its query's rows
+        // discarded inside the adapter.
         Method[] declared = BalanceProjection.class.getDeclaredMethods();
         assertThat(declared)
                 .extracting(Method::getName)
-                .containsExactlyInAnyOrder("apply", "adjustHolds");
+                .containsExactlyInAnyOrder("apply", "adjustHolds", "lockInOrder");
         for (Method method : declared) {
             assertThat(method.getReturnType())
                     .as("port method %s carries nothing out", method.getName())

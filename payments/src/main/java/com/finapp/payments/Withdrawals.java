@@ -131,6 +131,19 @@ public final class Withdrawals {
             Objects.requireNonNull(paymentMethodId, "paymentMethodId must not be null");
             Objects.requireNonNull(destination, "destination must not be null");
         }
+
+        /**
+         * Identifiers and the currency - never the destination (the Phase 7 -&gt; 8 transition,
+         * {@code INV-RAIL-03}): the generated form printed the customer's bank destination
+         * reference, and the review's claim that it travelled only in redacting records was
+         * false for this one.
+         */
+        @Override
+        public String toString() {
+            return "Resolved[party=" + partyId + ", customer=" + customerId
+                    + ", wallet=" + walletAccountId + ", currency=" + walletCurrency
+                    + ", method=" + paymentMethodId + ", destination=<redacted>]";
+        }
     }
 
     /**

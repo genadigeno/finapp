@@ -193,8 +193,22 @@ retained unmodified, with a checksum where the source is a file.
 **Why:** Reconciliation and dispute resolution require original evidence, not our
 interpretation of it.
 **Enforce:** `DOMAIN` + `DB-PRIVILEGE` on evidence tables.
-**Verify:** Test asserting stored payload matches the received bytes.
+**Verify:** Test asserting stored payload matches the received bytes; for a settlement file, the
+stored bytes equal the received bytes by checksum, the whole-plaintext SHA-256 verified on every
+read.
 **Phase:** 2 (screening), 5 (providers), 8 (files)
+
+*(Amended at the Phase 7 → 8 transition, ADR-0066 (`Proposed`), in force when `P8-TSK-002`
+lands. **For a refused delivery, `INV-PAY-02` and `INV-RAIL-03` take precedence over this
+invariant:** a settlement file whose bytes the door screen finds carrying a card-number or
+bank-identifier shape is retained as one `settlement.refused_delivery` metadata row only —
+source, SHA-256, length, format version, reason, line number, field name, channel, actor and
+correlation, never the value. A refused delivery decides nothing: it posts, allocates and opens
+nothing, the counterparty still holds its bytes, and its checksum ties it to any later
+re-presentation. Every delivery admitted is retained verbatim, encrypted (`INV-REC-10`). The
+Verify line read "Test asserting stored payload matches the received bytes." Refusal at the door,
+rather than verbatim retention of PII-bearing files, is owner decision O3, settled at the
+transition on the design's recommendation and open to revision.)*
 
 ### INV-HIST-03 — Audit records are append-only
 **Statement:** Audit records cannot be updated or deleted by any application role.
@@ -209,7 +223,11 @@ trail that can be edited is worth less than none, because it invites false confi
 rule, rounding policy, risk rule set) used in a decision is pinned and recorded on that decision.
 **Why:** Without version pinning, a past decision cannot be reproduced or defended.
 **Enforce:** `DB-CONSTRAINT` (`NOT NULL` version reference).
-**Verify:** Replay test reproducing a stored decision exactly.
+**Verify:** Replay test reproducing a stored decision exactly — for matching, decision replay
+(`POST /v1/operator/reconciliation/runs/{id}/replay`) re-running every stored decision over its
+candidate snapshot under its pinned rule set, `IDENTICAL` or `DIVERGED`, a divergence raising a
+CRITICAL `PROCESSING_ERROR` break. *(Amended at the Phase 7 → 8 transition, ADR-0068
+(`Proposed`), in force when `P8-TSK-022` lands; the line ended at "exactly".)*
 **Phase:** 6 (fees), 7 (routing), 8 (matching), 10 (credit), 13 (risk)
 
 ---
@@ -230,7 +248,12 @@ HTTP filter.
 same period produces no additional financial effect.
 **Why:** Batch jobs crash and are re-run; double accrual is money creation.
 **Enforce:** `DB-CONSTRAINT` — unique on (process, entity, period).
-**Verify:** Crash-and-rerun integration tests.
+**Verify:** Crash-and-rerun integration tests; for settlement, the live-batch unique —
+`UNIQUE (source_id, external_batch_ref, currency)` among batches neither `REJECTED` nor
+`REPUDIATED`, independent of `platform.idempotency_record` retention — with a re-acceptance on a
+later clock day converging on `settlement-batch:<batchId>` (`INV-SET-04`). *(Amended at the
+Phase 7 → 8 transition, ADR-0065 (`Proposed`), in force when `P8-TSK-009` lands; the line ended
+at "tests".)*
 **Phase:** 8, 11, 14
 
 ### INV-IDEM-03 — Key reuse with a different request is rejected
@@ -356,9 +379,27 @@ rejects the reversal rather than attempting it.
 **Statement:** Every manual adjustment records a reason code and the authorising actor, with
 four-eyes approval above defined thresholds.
 **Why:** Manual postings are the highest-risk financial action in any platform.
-**Enforce:** `DOMAIN` + `PROCESS` (four-eyes) + `DB-CONSTRAINT` (`NOT NULL` reason).
-**Verify:** Authorization negative tests.
+**Enforce:** `DOMAIN` + `PROCESS` (four-eyes) + `DB-CONSTRAINT` (`NOT NULL` reason, and since
+ledger `V015` a closed `reason_code` on every adjustment proposal — `MANUAL_CORRECTION`,
+`RECONCILIATION_WRITE_OFF`, `RECONCILIATION_TRANSFER`, `RECONCILIATION_GAIN` or
+`RECONCILIATION_OFFSET`, `UNCODED` reserved to proposals that predate it and refused on every new
+one by a `BEFORE INSERT` trigger — frozen with the payload beside an `origin` of `MANUAL` or
+`RECONCILIATION`; each origin's door refuses the other's proposals).
+**Verify:** Authorization negative tests; a raw insert without a reason code refused; approval
+and `DELETE` of a `RECONCILIATION`-origin proposal through the generic door refused (`409
+ledger.AdjustmentOriginMismatch`).
 **Phase:** 3, 8
+
+*(Amended at the Phase 7 → 8 transition, ADR-0071 (`Proposed`), in force when `P8-TSK-006`
+lands: the Enforce line ended "`DB-CONSTRAINT` (`NOT NULL` reason)." and the Verify line read
+"Authorization negative tests." Until then the reason is ledger `V010`'s free text, and the
+statement's "reason code" has no column. The generic `POST /v1/ledger/adjustments` assigns
+`MANUAL_CORRECTION` server-side, so its request is unchanged — additive under ADR-0015 — and
+`ADD COLUMN ... DEFAULT` fires no update trigger, so existing proposals stay valid and read
+`UNCODED` and `MANUAL`. `RECONCILIATION_OFFSET`, which no Phase 8 resolution kind produces
+(`OFFSET_SUSPENSE` posts nothing; a correction offset is a system `POSTING`), is kept or dropped
+by `P8-TSK-006`'s design before `V015` is written, because migrations are forward-only and the
+closed set cannot wait for `P8-TSK-015` — recorded by the transition's consistency review, B14.)*
 
 ---
 
@@ -414,9 +455,25 @@ guarantee is documented per rail.
 **Statement:** Every operation expected to settle externally creates a tracked expectation
 that ages and alerts when unmet.
 **Why:** Value that never settles must be visible, not silently assumed received.
-**Enforce:** `DOMAIN`.
-**Verify:** Ageing metric with alerting; missing-settlement tests.
+**Enforce:** `DOMAIN` + `DB-CONSTRAINT` (the expectation uniques, `UNIQUE (kind, operation_ref)`
+and `UNIQUE (journal_entry_id, ledger_account_id)`, written in the completion's own transaction
+through the `SettlementExpectations` and `PayoutSettlementExpectations` ports) + `PROCESS` (the
+completeness verifier, `finapp.reconciliation.line.unattributed`).
+**Verify:** The expectation-opener register — every externally settling completion's posting key
+has a test proving its expectation; the expectation gauges
+`finapp.reconciliation.expectation.overdue` and `.overdue.age` with alerting; missing-settlement
+tests.
 **Phase:** 8
+
+*(Amended at the Phase 7 → 8 transition, ADR-0067 (`Proposed`), in force when `P8-TSK-004`,
+`-005` and `-007` land: the Enforce line read "`DOMAIN`." and the Verify line "Ageing metric with
+alerting; missing-settlement tests." The expectation is opened past the completion's acting exit,
+keyed on the stored rail's declared clearing purpose, and the port is infallible for valid input:
+a colliding key is recorded as a counted `KEY_COLLISION` and later raised as a
+`DUPLICATE_INTERNAL` break, never a failed payment. The register covers the completions' posting
+keys (a payout return's included, ADR-0073 §3), not every entry touching a clearing position: a
+recognition, a park, a resolution and a repudiation open no expectation and are known to the
+completeness verifier instead (ADR-0067 §9).)*
 
 ### INV-SET-03 — Late settlement is handled, not rejected
 **Statement:** Settlement arriving later than expected is processed correctly rather than
@@ -425,6 +482,119 @@ discarded as stale.
 **Enforce:** `DOMAIN`.
 **Verify:** Late-arrival tests.
 **Phase:** 8
+
+*`INV-SET-04`…`INV-SET-07` catalogued by the Phase 7 → 8 transition (2026-09-28), the `INV-RAIL`
+and `INV-DSP` precedent: Phase 8's gate properties given stable IDs before any settlement code
+exists, so the register can demand their demonstrations by identifier rather than by prose.
+Decisions in ADR-0064…0067. `INV-SET-02` and `INV-SET-03`, catalogued at initiation and
+subjectless until now, are Phase 8's too, and so is `INV-SET-01` at the last hop. Until Phase 8's
+first task lands, nothing these entries name is implemented; every statement is the decided
+design, corrected by the tasks that build it.*
+
+### INV-SET-04 — A settlement batch is recognised once, from its own stored evidence
+**Statement:** A settlement batch is accepted at most once per (source, external batch reference,
+currency) among live batches — those neither `REJECTED` nor `REPUDIATED`. Its recognition posting
+is keyed by the batch, `settlement-batch:<batchId>`, and dated only from facts stored with it: the
+posting date is the batch's `accepted_on`, stamped once in the acceptance transaction, and the
+value date is the evidence's. A re-delivery, a conflicting re-issue, a retried acceptance or a
+later-day replay produces no second effect.
+**Why:** `INV-IDEM-02` for settlement: a batch recognised twice expenses its fees twice and opens
+a remittance nobody owes. The posting fingerprint binds the entry's dates, so a recognition dated
+from the clock would conflict on a later day instead of converging, and a guarantee resting only
+on `platform.idempotency_record` lasts only as long as that row is retained (ADR-0065 §6, §7).
+**Enforce:** `DB-CONSTRAINT` — the content unique on `settlement.file`, the live-batch uniques
+`(source_id, external_batch_ref, currency)` and `(source_id, currency, statement_sequence)` on
+`settlement.batch`, `UNIQUE (batch_id)` on the run, none depending on `idempotency_record`
+retention — + `DOMAIN` (the conditional `PARSED → ACCEPTED`, the posting key, dates read from the
+row and never from a clock).
+**Verify:** The same file sequentially and ten ways across upload and racing pulls — one file,
+batch, run and recognition entry; a conflicting re-issue refused as `REJECTED(CONFLICTING_BATCH)`
+and retained; a re-acceptance on a later clock day converging on the key.
+**Phase:** 8
+
+### INV-SET-05 — Every externally settling position has exactly one declared source, and only that source's evidence discharges it
+**Statement:** The clearing position of every rail declaring `settlement() != NONE`, and the
+payout position, is discharged by exactly one declared source, whose position is read from that
+counterparty's own declaration — `RailCapabilities.clearingPurpose()`,
+`merchant.PayoutSettlementDeclaration.CLEARING_PURPOSE` — when `app` composes the register, and
+stored nowhere else. `CASH_AT_BANK` is recognised by exactly one source, the bank's. No source's
+evidence posts to, or allocates against, another counterparty's position.
+**Why:** A position without a source is never reconciled, and its value ages unexplained;
+discharging one counterparty's position with another's evidence is `INV-RAIL-04`'s netting
+reached through settlement (ADR-0064 §5, ADR-0065 §4).
+**Enforce:** `STATIC` — `EverySettlingPositionHasASource`, and
+`RailVocabularyIsConfinedTest#clearingPositionsAreNamedOnlyByTheirDeclarations` widened to
+`settlement` and `reconciliation`, neither of which may name a `*_CLEARING` purpose — + `DOMAIN`
+(the register composed from the declarations in `app`'s `SettlementBeans`, `settlement.source`
+holding no position column; a bank line attributed only to the unique source whose declared
+`remittancePattern` matches, zero or two matches leaving it unattributed and parked with its
+break; matching candidates restricted to the item's own source).
+**Verify:** The coverage test failing on a planted uncovered rail; per-source position proofs in
+the settlement storm, each clearing position discharged only by its own source's evidence.
+**Phase:** 8
+
+### INV-SET-06 — Cash moves only on the bank's own statement
+**Statement:** `CASH_AT_BANK` is posted only by the recognition of an accepted bank statement, or
+by the repudiation of one. Whenever the chain of accepted statements for a currency is unbroken —
+each statement's sequence following the last, its opening balance equal to the previous closing,
+the first opening at zero — the position equals the latest statement's closing balance. A gap or
+an opening mismatch raises a break, fails the cash proof until evidence fills it, and is never
+adjusted to fit.
+**Why:** `INV-SET-01` at the last hop: a counterparty's report that it paid is still that
+counterparty's obligation, not cash. Cash recognised from anything but the bank's own evidence, or
+adjusted to agree with it, states money the platform may not hold (ADR-0065 §3).
+**Enforce:** `STATIC` (one poster: only bank-statement recognition and a statement's repudiation
+name `CASH_AT_BANK`) + `DOMAIN` (continuity checked for every accepted statement; a
+`SETTLEMENT_MISMATCH` with cause `STATEMENT_GAP` or `OPENING_BALANCE`, closed only `EVIDENCED`,
+nothing posted to fit) + `DB-CONSTRAINT` (ledger `V015`'s binding refuses a `MANUAL`-origin
+adjustment line on a `reconciledPositions()` purpose, `CASH_AT_BANK` among them).
+**Verify:** The static rule with a planted violation; gap, out-of-order and non-zero-opening
+tests; the cash proof, `finapp.reconciliation.cash.proof`, at 0 at rest and failing while a
+statement break is open.
+**Phase:** 8
+
+*(The first statement opening at zero is owner decision O4, settled at the Phase 7 → 8 transition
+on the design's recommendation and open to revision: a non-zero first opening raises
+`SETTLEMENT_MISMATCH` (`OPENING_BALANCE`) and posts nothing, because its only honest
+counter-account is equity, which is Phase 14's. A statement cause closes only `EVIDENCED`: ADR-0069's
+per-type table admits `WRITE_OFF`, `TRANSFER_TO_ACCOUNT` and, for a credit excess after the minimum
+age and four-eyes, `RECOGNISE_GAIN` for `SETTLEMENT_MISMATCH` under the `REMITTANCE_DIFFERS` cause
+alone — the transition's consistency review, A3, the gain added by its re-check, R14.)*
+
+### INV-SET-07 — Settlement evidence takes effect only whole and authenticated
+**Statement:** No line of a settlement file drives matching or posting unless every line of the
+file is valid and its control totals equal the lines, and unless the file was pulled over its
+source's own confined credential or, when uploaded, attested by a second person holding
+`SETTLEMENT_INGEST`, distinct from the uploader. A readmitted file inherits its original's
+authentication, its checksum being identical, when the original was pulled or attested; the
+readmission of an original never attested is inert until a second holder of `SETTLEMENT_INGEST`,
+distinct from the readmitter and from the original's uploader, attests the readmission itself.
+Unattested evidence is retained but inert.
+**Why:** Half a file posts half a settlement, and a partly applied batch cannot be told from a
+short-paid one. A single insider able to introduce both a counterparty's report and a bank
+statement could discharge clearing into fictitious cash — `INV-PAY-01`'s authenticated source
+applied to files (ADR-0066 §2, §8, §9).
+**Enforce:** `DOMAIN` (the parse is one transaction — lines, references, batch and totals, or the
+errors and `REJECTED` — and so is the acceptance; the accept leg admits an upload, or an
+unattested original's readmission, only once attested; our own parser failure leaves the file
+`RECEIVED`, never `REJECTED`; a pull source URL that is neither `https` nor `sftp` off loopback
+refuses startup, `ProviderTransportGuard` extended to the pull sources) + `DB-CONSTRAINT` (the
+attestation `CHECK`s on `settlement.file`: `attested_by IS NULL OR attested_by <> received_by`,
+and no `ACCEPTED` upload without `attested_by`; `P8-TSK-022` holds a readmission's attester apart
+at both ranks).
+**Verify:** Partially corrupt files and failure injection mid-parse and mid-acceptance, each
+rejected or rolled back whole; self-attestation refused at the domain and by the `CHECK`; an
+unattested upload never accepted, and an unattested original's readmission accepted only once a
+person distinct from the readmitter and from the original's uploader attests it.
+**Phase:** 8
+
+*(The transport clause rests on the Phase 7 → 8 transition's repair: `ProviderTransportGuard`
+refuses a non-`https` provider URL off loopback at startup, and `P8-TSK-021` extends it to the
+settlement pull's own source URLs, so a source's confined credential never rides a cleartext
+channel. The readmission clause is ADR-0066 §8 as the transition's consistency review settled it
+(A11): an original never attested passes no authentication on, and a `CONFLICTING_BATCH` original
+whose conflicting batch is now `REPUDIATED` is readmissible; whether a declined upload is, is
+`P8-TSK-022`'s to decide, and such a readmission would inherit nothing and be attested.)*
 
 ---
 
@@ -441,36 +611,239 @@ evidence of a break.
 
 ### INV-REC-02 — Breaks are classified, never discarded
 **Statement:** Every unmatched or mismatched record becomes a classified break record. No
-record is silently dropped, auto-cleared or suppressed.
+record is silently dropped, auto-cleared or suppressed. An `EVIDENCED` resolution — the platform
+closing a break because a later zero-residual allocation or offset explains it, stored as a
+Resolution row naming that decision and posting — is recorded, not silent, and is the only
+resolution no person decides.
 **Why:** An unexplained difference that disappears is a loss nobody noticed.
 **Enforce:** `DOMAIN`.
 **Verify:** Tests for every break type; unmatched-count metric.
 **Phase:** 8
 
+*(Amended at the Phase 7 → 8 transition, ADR-0069 (`Proposed`), in force when `P8-TSK-012`
+stores the first `EVIDENCED` row: the statement's last sentence was added. Closing a break on
+evidence is not the auto-clearing this invariant forbids, because the closure is itself a record
+— kind `EVIDENCED`, reason code `EVIDENCE_RECEIVED`, born `APPROVED` under the platform, naming
+the decision and, where parked value moved, the park whose `recon-suspense:` entry is the
+posting. The alternative, recorded and not taken: the platform proposes and a person confirms.
+The wording is to be widened, with provenance, to the non-allocation evidence the break taxonomy
+also accepts — an accepted statement restoring the chain, a requeued run completing — by
+`P8-TSK-016` and `P8-TSK-022` (ADR-0069 §8).)*
+
 ### INV-REC-03 — Resolution is a controlled adjustment
 **Statement:** A break is resolved by posting a compensating entry with a reason code and
 authorisation — never by editing either record.
 **Why:** `FINANCIAL_INVARIANTS` original text.
-**Enforce:** `DOMAIN` + `PROCESS` (four-eyes above threshold).
+**Enforce:** `DOMAIN` + `DB-CONSTRAINT` + `PROCESS` (four-eyes). At the database rank: a posting
+resolution, its ledger adjustment proposal and its journal entry are one-to-one (`UNIQUE
+adjustment_proposal_id` and `UNIQUE journal_entry_id` on `reconciliation.resolution`, ledger
+`V010`'s deferred rule that an `ADJUSTMENT` entry needs an `APPROVED` proposal); four-eyes
+whenever value is at issue or the resolution posts — a zero-value `ACKNOWLEDGE` alone is
+single-person, and `EVIDENCED` is the platform's alone — refused at three ranks (the domain, the
+`resolution` four-eyes `CHECK`, `V010`'s approver ≠ initiator `CHECK`); closed reason codes at
+both ranks (`ResolutionReasonCode` with an allowed subset per kind, ledger `V015`'s
+`reason_code`); a kind admitted only where ADR-0069's per-type table lists it for the break's type
+(`reconciliation.ResolutionKindNotAllowed`); a stale approval refused (`409
+reconciliation.ResolutionStale` when the break's `residual_version` or the subject's remainder has
+moved since the proposal froze them).
 **Verify:** Resolution authorization tests; immutability tests.
 **Phase:** 8
 
+*(Amended at the Phase 7 → 8 transition, ADR-0071 (`Proposed`), in force when `P8-TSK-006` and
+`P8-TSK-015` land: the Enforce line read "`DOMAIN` + `PROCESS` (four-eyes above threshold)." The
+threshold is now defined — any value at issue or any posting — and a resolution's lines are
+derived from its subject's current remainder, never typed. The statement reads as: where a
+resolution moves value, it moves it only by a compensating entry, never by an edit. A resolution
+whose effect is not an adjustment entry — `ACKNOWLEDGE` and `OFFSET_SUSPENSE`, which post
+nothing; `EVIDENCED` and `MANUAL_MATCH`, whose posting is an allocation's unpark or offset;
+`REPUDIATE_BATCH`, a ledger reversal — still carries a reason code and its authorisation. The
+per-type admission is the transition's consistency review's, A1: ADR-0069's table is the one
+authority on which kinds each break type admits.)*
+
 ### INV-REC-04 — Matching is deterministic and explainable
 **Statement:** Every match records the rule version and tolerance that produced it, and the
-same inputs always produce the same matches.
+same stored inputs always produce the same matches.
 **Why:** `.claude/rules/reconciliation-domain.md` — matching must be deterministic and
 explainable.
-**Enforce:** `DOMAIN` + `DB-CONSTRAINT` (`NOT NULL` rule version).
-**Verify:** Replay test producing identical matches.
+**Enforce:** `DOMAIN` + `DB-CONSTRAINT` (`NOT NULL` rule version) — with claimant order, every
+allocation to an expectation made through `allocate(E)` in `(source_sequence, line_no)` order, the
+sequence assigned gaplessly at acceptance and the run leg held under advisory namespace `4` per
+source; and decision snapshots, every evaluation writing a `match_decision` that carries its
+`rule_set_id` and one `match_candidate` row per candidate it considered.
+**Verify:** Replay test producing identical matches: decision replay re-running every stored
+decision over its candidate snapshot under its pinned rule set (`IDENTICAL`, and the perturbation
+probe `DIVERGED`); the shuffled-order property test over the pure layer.
 **Phase:** 8
+
+*(Amended at the Phase 7 → 8 transition, ADR-0068 (`Proposed`), in force when `P8-TSK-011` lands
+and, for replay, `P8-TSK-022`: the statement read "the same inputs always produce the same
+matches". Stated honestly, the property holds for stored inputs, not for the world: a decision is
+a pure function of its stored candidate snapshot and its pinned rule set, while which candidates
+it saw depends on what had been recorded when it ran — an expectation's `opened_at`,
+first-writer-wins keys, grace expiry on the database clock — which is why the snapshot is stored.
+Items whose rematch is merely pending are reported by replay as `PENDING_REMATCH`, not as
+divergence. Enforce gained claimant order and decision snapshots; Verify, the shuffled-order
+property test and snapshot replay.)*
 
 ### INV-REC-05 — Suspense is temporary and aged
 **Statement:** Value parked in a suspense account is tracked, aged, reported and alerted on.
 Suspense is never a permanent resting place.
 **Why:** Ageing suspense is an unrecognised loss or liability.
-**Enforce:** `PROCESS` + `DOMAIN`.
-**Verify:** Suspense age and balance metrics with alerting.
+**Enforce:** `PROCESS` + `DOMAIN` — value enters `SUSPENSE_UNMATCHED` only with its owning break
+(`INV-REC-09`) and leaves only by evidence, an approved four-eyes resolution or a repudiation; an
+unclaimed CREDIT item becomes revenue only by an approved `RECOGNISE_GAIN` to
+`RECONCILIATION_GAINS`, four-eyes, once older than the rule set's pinned `gain_min_age_days`
+(seeded 90), and is refused before it (`reconciliation.GainNotYetEligible`) — and only under a
+break type ADR-0069's per-type table admits it for, never `REVERSAL_MISMATCH`, `REFUND_MISMATCH`
+or `CURRENCY_MISMATCH`, whose value is a counterparty's or never income
+(`reconciliation.ResolutionKindNotAllowed`).
+**Verify:** Suspense age metrics with alerting — `finapp.reconciliation.suspense.open`, `.age`
+(NaN when unreadable, never zero) and `.unowned`; the balance through the audited suspense report,
+`GET /v1/operator/reports/reconciliation/suspense`, its CREDIT and DEBIT items gross and never
+netted; the suspense proof at 0; `RECOGNISE_GAIN` refused before the minimum age.
 **Phase:** 3 (accounts), 8 (management)
+
+*(Amended at the Phase 7 → 8 transition, ADR-0070 (`Proposed`), in force when `P8-TSK-010`,
+`P8-TSK-015` and `P8-TSK-024` land: the Enforce line read "`PROCESS` + `DOMAIN`." and the Verify
+line "Suspense age and balance metrics with alerting." A balance is an amount, and amounts never
+enter metrics (ADR-0072, ADR-0018): the age is a metric, the balance an audited report. The
+90-day minimum age is owner decision O5, settled at the transition on the design's recommendation
+and open to revision. The per-type limit on the gain was added by the transition's consistency
+review (A1): ADR-0069's table is the one authority on which kinds each break type admits.)*
+
+*(Phase 7's parking as it stands, after the same transition's repairs: a parking CLAIMS its scheme
+execution first (`payments.scheme_execution_claim`, `V023`) — one money fact per execution, so a
+credited execution, a withdrawal's or a return's echo never parks — and records why it parked
+(`UNATTRIBUTED`, `ATTEMPT_CONCLUDED`, `AMOUNT_MISMATCH`), the reference it named, its cycle, the
+attempt it named and its raw statements by the fifth evidence subject; it is counted where it is
+written and aged by `finapp.payments.unmatched`. Phase 8's suspense item adopts each (`P8-TSK-020`).
+Verified by `PayByBankDatabaseTest`'s parking, claim and race tests.)*
+
+*`INV-REC-06`…`INV-REC-10` catalogued by the Phase 7 → 8 transition (2026-09-28), on the same
+precedent. Decisions in ADR-0065…0068 and ADR-0070. `INV-REC-01`…`05`, catalogued at initiation,
+are Phase 8's too; four of them are amended at the same transition, each with its provenance.
+Until Phase 8's first task lands, nothing these entries name is implemented; every statement is
+the decided design, corrected by the tasks that build it.*
+
+### INV-REC-06 — Every reconciled position is explained by its open items
+**Statement:** For each clearing position and currency, DR−CR equals the signed remainders of its
+open settlement expectations less the signed unallocated, unparked remainders of its pending and
+unmatched allocating external items. Every journal line on a clearing position or on
+`SUSPENSE_UNMATCHED` belongs to an entry that reconciliation or settlement knows: an expectation
+names its `(journal_entry_id, ledger_account_id)`, a suspense item owns it (`INV-REC-09`), or its
+entry is a batch's recognition, a park's, a resolution's, a repudiation's or a payout return's.
+Every externally settling completion opens its expectation in its own transaction. Value nothing
+explains leaves the position only by parking with a break.
+**Why:** `CLAUDE.md` rule 11 at the counterparty boundary, and the ground `INV-BAL-03`,
+`INV-REC-02` and `INV-SET-02` stand on: a position that cannot be decomposed into the items that
+make it up cannot be reconciled, and a difference nobody can attribute is a loss nobody noticed
+(ADR-0065 §8, ADR-0067).
+**Enforce:** `DOMAIN` (the expectation opened inside the completing transaction through the
+infallible `SettlementExpectations` and `PayoutSettlementExpectations` ports, past the acting
+exit; parking in the transaction that decides it) + `DB-CONSTRAINT` (the expectation uniques
+`UNIQUE (kind, operation_ref)` and `UNIQUE (journal_entry_id, ledger_account_id)`; ledger `V015`'s
+binding refusing a free adjustment on a reconciled position) + `PROCESS` (the report-only position
+proof and completeness verifier: lock-free, report and never repair).
+**Verify:** `finapp.reconciliation.position.proof` and `finapp.reconciliation.line.unattributed`
+at 0 in every storm round and at rest, NaN never zero — on `SUSPENSE_UNMATCHED` once `P8-TSK-020`
+has given each of Phase 7's parkings its suspense item; a removed-expectation probe and a raw-SQL
+line probe each flip a gauge.
+**Phase:** 8
+
+*(The known-entry list is ADR-0067 §9's, the suspense item included by the transition's
+consistency review, A7: without it an unmatched confirmation's suspense line would read as
+unknown for ever.)*
+
+### INV-REC-07 — A match allocates no more than either side holds, records what it saw, and is never undone
+**Statement:** An allocation joins one external item and one settlement expectation of the same
+source, currency and direction. The allocations on each, net of any counter-allocation, never
+exceed its amount less what was resolved, parked or offset. Every allocation references a match
+decision that stores its pinned rule set and a snapshot of every candidate it considered.
+Allocations and decisions are append-only; only a batch repudiation adds counter-allocations.
+**Why:** Over-allocation creates or destroys explained value — an expectation shown settled that
+was not, or an excess hidden inside another item's match — and a match that can be edited is
+financial history that can be edited (ADR-0064, ADR-0068).
+**Enforce:** `DB-CONSTRAINT` (the `CHECK`s `allocated_minor + parked_minor + offset_minor ≤
+amount_minor` on the item and `allocated_minor + resolved_minor ≤ amount_minor` on the
+expectation; deferred Σ triggers on both sides; `UNIQUE (external_item_id, expectation_id) WHERE
+reverses_allocation_id IS NULL`; no `UPDATE` or `DELETE` grant on `allocation`, `match_decision`
+or `match_candidate`) + `DOMAIN` (every allocation through `allocate(E)`).
+**Verify:** Ten-way and lock-bypass races on one batch, leaving at most one positive allocation
+per (item, expectation) and no over-allocation; privilege tests for every writer; a raw-SQL
+over-allocation refused; snapshot replay `IDENTICAL`.
+**Phase:** 8
+
+*(The bound is net of counter-allocations because a repudiated batch leaves its positive
+allocation beside the counter-allocation that reverses it, and the genuine re-presented batch
+adds another: the positive sum then exceeds the amount while the net, which the Σ triggers hold,
+does not. ADR-0068's catalogued text was aligned to this wording by the transition's consistency
+review, B7.)*
+
+### INV-REC-08 — A tolerance never absorbs value
+**Statement:** Tolerances exist only for comparisons against values the ledger has not posted —
+a processing fee against its pinned terms, a date. No tolerance can exist on an amount already in
+a ledger position, and every principal difference, down to one minor unit, becomes a remainder on
+its expectation or a parked item with its break.
+**Why:** A tolerance that absorbs a principal difference is an unrecorded write-off: value leaves
+a position with no entry, no reason code and no approver (`INV-BAL-03`, `INV-REC-02`; ADR-0068
+§7).
+**Enforce:** `DB-CONSTRAINT` (`reconciliation.tolerance.comparison` admits only
+`PROCESSING_FEE_PER_LINE`, `PROCESSING_FEE_PER_BATCH` and `SETTLEMENT_DATE_DAYS`: the type has no
+amount member) + `DOMAIN` (a request for an amount tolerance refused, `422
+reconciliation.ToleranceNotPermitted`).
+**Verify:** A one-minor-unit difference raising a break in both directions; an amount-tolerance
+row unstorable.
+**Phase:** 8
+
+### INV-REC-09 — Every suspense item is owned by exactly one break
+**Statement:** Value enters `SUSPENSE_UNMATCHED` only in a transaction that records its owning
+break, and leaves only in a transaction that resolves that break, releases the item by evidence —
+an unpark or a correction offset — or repudiates the item's batch.
+**Why:** It gives `INV-REC-05`'s "never a permanent resting place" an owner for every unit of
+parked value; a suspense balance nobody owns is the unrecognised loss or liability that invariant
+exists to surface (ADR-0070).
+**Enforce:** `DOMAIN` (each of the four openers records the break in its own transaction:
+reconciliation's parks, bank recognition's unattributed lines, payments' `UnmatchedConfirmations`
+through the port, and a `REPUDIATE_BATCH` approval whose recognition reversal carries the suspense
+line of a `BANK_UNATTRIBUTED` item a posting resolution had already released — a new
+opposite-side item owned by a new `PROCESSING_ERROR` break raised in the same transaction,
+ADR-0070 §2 and §10) + `DB-CONSTRAINT` (`suspense_item.break_id NOT NULL`) + `PROCESS` (the
+ownership gauge).
+**Verify:** Each poster asserted to commit its suspense item with its break;
+`finapp.reconciliation.suspense.unowned` at 0 at rest, after the backfill that adopts Phase 7's
+parked confirmations — each keyed on the parking's stored `cause`, `named_reference` and, exactly
+when attributed, `attempt_id` (payments `V023`); a probe bypassing the port caught.
+**Phase:** 8
+
+*(The backfill keys on what the Phase 7 → 8 transition's gate repair made each parking record:
+an attributed parking, `ATTEMPT_CONCLUDED` or `AMOUNT_MISMATCH`, names the attempt its value
+belongs to, and its owning break is resolved by a four-eyes `TRANSFER_TO_ACCOUNT` crediting that
+attempt's counterparty, never by a guess. The repudiation is the fourth opener, origin
+`REPUDIATION`, admitted by reconciliation `V009` (`P8-TSK-023`), its `origin_ref` the released
+item's id — the transition's re-check, R3.)*
+
+### INV-REC-10 — Settlement evidence is screened, encrypted, and every content access audited
+**Statement:** A settlement file's raw bytes are held only as AES-256-GCM ciphertext under a key
+held outside the database, each chunk's associated data binding the file, its source, its
+checksum and the chunk's position (`file_id ‖ source_id ‖ content_sha256 ‖ seq`), and the
+whole-plaintext SHA-256 is verified on every read. Card-number and bank-identifier shapes are
+refused before anything is stored. Every read of content is audited with its reason. Canonical
+settlement records carry references, amounts and dates only.
+**Why:** The `INV-KYC-06` and `INV-DSP-03` regime applied to this phase's evidence — bank
+statements carry names and counterparty details — and `INV-PAY-02` and `INV-RAIL-03`'s "refused
+at the surface" applied to files: a PAN encrypted at rest is still a PAN at rest (ADR-0066).
+**Enforce:** `DOMAIN` (the door screen, by field class, before anything is stored — a value
+failing its field's declared class screened as free text; one content path,
+`POST /v1/operator/settlement/files/{id}/content-reads` with a reason under
+`RECONCILIATION_INVESTIGATE`, writing `settlement.SettlementFileContentRead` per read; a checksum
+mismatch serves nothing) + `DB-PRIVILEGE` (`SELECT, INSERT` only on chunks, lines, references,
+receipts, refusals and ingestion errors, each append-only by trigger) + `STATIC`
+(`FINAPP_SETTLEMENT_FILE_KEY`, the twelfth confined credential and one key per concern, held by
+`ConfinedCredentialVariablesTest`).
+**Verify:** A plaintext needle absent from `settlement.file_chunk` and the captured logs; a
+tampered chunk and an AAD swap refused; read audits counted; refusals storing nothing but the
+metadata row.
+**Phase:** 8
 
 ---
 
@@ -597,6 +970,21 @@ demand this row.)*
 shape both times: two authenticated acts, approver ≠ initiator as a `CHECK`, a frozen payload,
 lock-then-look approval. This note read "the first implemented four-eyes subject is
 `P6-TSK-011`" until that task's design found adjustments had already been one since Phase 3.)*
+
+*(Amended at the Phase 7 → 8 transition, ADR-0066, ADR-0068 and ADR-0071 (`Proposed`): Phase 8
+adds four subjects, none implemented until its task lands. **Upload attestation** (`P8-TSK-003`,
+`INV-SET-07`): an uploaded settlement file is inert until a second holder of `SETTLEMENT_INGEST`
+attests it, `CHECK (attested_by IS NULL OR attested_by <> received_by)`; the readmission of an
+original never attested is attested the same way, by a person distinct from the readmitter and
+from the original's uploader (`P8-TSK-022`, ADR-0066 §8). **Break resolutions** (`P8-TSK-015`):
+the statement's "above threshold" is defined as any value at issue or any posting — a zero-value
+`ACKNOWLEDGE` alone is single-person, and `EVIDENCED` is the platform's alone — refused at three
+ranks: the domain, the `reconciliation.resolution` four-eyes `CHECK` and ledger `V010`'s. **Batch
+repudiation** (`P8-TSK-023`, ADR-0065 §10): a `REPUDIATE_BATCH` resolution under the same rule.
+**Rule-set activation** (`P8-TSK-022`): one of the statement's policy activations, refused when
+the activator proposed it (`CHECK decided_by <> proposed_by` on an `ACTIVE` rule set).
+Person-distinctness is by actor id; resolution rows hold both ids, so the recorded debt of
+operators audited as `CUSTOMER` does not weaken it.)*
 
 ---
 
@@ -927,7 +1315,13 @@ no column of any row; the module isolation tests holding the `paymentmethods` bo
 sweep covered the payment-method row alone until the Phase 7 review, `P7-DOC-001`:
 `PaymentEndpointDatabaseTest#instrumentInputRestsNowhereButItsReference` now reads every
 text-like column of every base table in every schema after a routed card payment - the grant in
-none, the token in its payment method's reference alone.)*
+none, the token in its payment method's reference alone.)* *(Extended to settlement at the
+Phase 7 → 8 transition, ADR-0066 (`Proposed`), in force when `P8-TSK-002`, `-008` and `-016`
+land: the sweep runs after a settlement flow as well, over the `settlement` and `reconciliation`
+schemas with the rest; and a Luhn-valid 13–19-digit run in a declared free-text field of a
+settlement file — or in a field that fails its declared class, screened as free text — is refused
+at the door, storing nothing but metadata, while a Luhn-valid 15-digit network transaction id in
+a reference field is not refused.)*
 **Phase:** 5
 
 ### INV-PAY-03 — Provider vocabulary is confined behind the adapter
@@ -994,10 +1388,25 @@ resource, assert the one refusal and zero rows touched.
 
 ### INV-MER-02 — The merchant payable is derived from postings, never stored
 **Statement:** What the platform owes a merchant is the merchant's payable ledger account
-position — captured minus fees, minus refunded plus fees returned, minus payouts — and exists
-nowhere else. *(The refund terms were added by the Phase 6 review, `P6-DOC-001`: ADR-0054
-made them part of the position, and this statement predated it.)* No table stores a
-merchant balance; every payout decision derives the available payable inside the account
+position — captured minus fees, minus refunded plus fees returned, minus payouts, minus
+chargebacks plus chargebacks reversed, plus payouts returned, plus or minus reconciliation
+attributions — and exists nowhere else. *(The refund terms were added by the Phase 6 review,
+`P6-DOC-001`: ADR-0054 made them part of the position, and this statement predated it.)* *(The
+chargeback terms were added at the Phase 7 → 8 transition: `MerchantPayable` has named
+`chargedBack` and `chargebacksReversed` since `P7-TSK-013`, `INV-MER-07`'s amendment made a
+chargeback part of the position, and this statement predated it.)* *(The return and attribution
+terms were amended at the Phase 7 → 8 transition, ADR-0073 and ADR-0070 (`Proposed`): a payout
+return is a new merchant fact that credits the payable back from `PAYOUT_CLEARING` in its own
+posting while the payout stays `COMPLETED` (`P8-TSK-019`, which names it `payoutsReturned`), and
+a reconciliation attribution is every payable line in a `RECONCILIATION`-origin `ADJUSTMENT`
+entry — an approved resolution such as a `TRANSFER_TO_ACCOUNT`, whatever the line faces, suspense
+or a clearing position (`P8-TSK-015`, with its first poster, which names it
+`reconciliationAttributed`); today both fall into
+`MerchantPayable`'s `other`. If `P8-TSK-019` is deferred (owner decision O6), a returned payout
+reaches the payable only as an attribution. The attribution is ADR-0073 §6's origin rule, widened
+from "an approved `TRANSFER_TO_ACCOUNT` credits it from `SUSPENSE_UNMATCHED`", and its ownership
+settled on `P8-TSK-015`, by the transition's consistency review, A12, A13 and C8.)* No table
+stores a merchant balance; every payout decision derives the available payable inside the account
 lock.
 **Why:** A stored payable is a second balance authority (`INV-BAL-01`'s reasoning at the
 merchant boundary); two authorities drift, and drift in a liability to a counterparty is a
@@ -1153,7 +1562,13 @@ needle test over logs, events and responses. *(The needle covered the registrati
 the Phase 7 review, `P7-DOC-001`: `PayByBankDatabaseTest#theDestinationReachesNoSink` carries a
 registered destination and its grant through a pay-in funding the wallet and a withdrawal out
 of it, and asserts both absent from the captured log output, every response, every audit record
-and every event, the destination resting on its instrument alone.)*
+and every event, the destination resting on its instrument alone.)* *(Extended to settlement at
+the Phase 7 → 8 transition, ADR-0066 (`Proposed`), in force when `P8-TSK-002`, `-008` and `-016`
+land: the sweep covers the `settlement` and `reconciliation` schemas; the needle rides a bank
+statement whose free text carries an IBAN shape, and the delivery is refused at the door, storing
+metadata only; `settlement.line_reference` refuses bank-identifier and alias shapes by `CHECK`;
+the bank adapter extracts only the structured remittance reference, never a name or an account
+identifier; and a break note refuses an IBAN shape.)*
 **Phase:** 7
 
 ### INV-RAIL-04 — Every external rail's value in flight has its own clearing position
@@ -1266,8 +1681,8 @@ documents after resolution refused with nothing written or sent.*
 | `INV-LIFE` | 01–04 | Lifecycle and state |
 | `INV-REV` | 01–04 | Reversal and correction |
 | `INV-EVT` | 01–04 | Events and publication |
-| `INV-SET` | 01–03 | Settlement |
-| `INV-REC` | 01–05 | Reconciliation |
+| `INV-SET` | 01–07 | Settlement |
+| `INV-REC` | 01–10 | Reconciliation |
 | `INV-FX` | 01–03 | Foreign exchange |
 | `INV-ACC` | 01–05 | Accounting and reporting |
 | `INV-AUD` | 01–04 | Security and audit |
@@ -1280,5 +1695,5 @@ documents after resolution refused with nothing written or sent.*
 | `INV-RAIL` | 01–04 | Payment rails and routing |
 | `INV-DSP` | 01–03 | Disputes and chargebacks |
 
-**101 invariants.** Every one must be enforced and verified before the phase that owns it can
+**110 invariants.** Every one must be enforced and verified before the phase that owns it can
 pass its exit gate.

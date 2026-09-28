@@ -42,8 +42,9 @@ public enum PaymentsAuditAction implements AuditableAction {
      */
     PAYMENT_CANCELLED(
             "payments.PaymentCancelled",
-            "A person cancelled a payment intent before confirmation; nothing was dispatched"
-                    + " and nothing was posted.",
+            "A person cancelled a payment intent before confirmation - or the platform"
+                    + " cancelled one a checkout session opened and never dispatched, as the"
+                    + " session expired; nothing was dispatched and nothing was posted.",
             false),
 
     /**

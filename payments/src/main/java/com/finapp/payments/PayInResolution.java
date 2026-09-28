@@ -216,6 +216,10 @@ public final class PayInResolution {
                                                 answer.settlementCycle(),
                                                 intent.creditAccount(),
                                                 intent.amount(),
+                                                // The amount the payer PSP says it executed:
+                                                // the applier judges it for this producer too
+                                                // (the Phase 7 -> 8 transition).
+                                                answer.executed(),
                                                 correlation);
                             }
                             answer.evidence()

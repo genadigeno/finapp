@@ -78,6 +78,11 @@ public final class CommittedRailOutcomes implements RailOutcomeObserver {
                         outcome -> afterCommit(() -> meters.disputeResponseJudged(rail, outcome)));
     }
 
+    @Override
+    public void unmatchedParked(RailId rail) {
+        afterCommit(meters::unmatchedParked);
+    }
+
     private static void afterCommit(Runnable count) {
         if (!TransactionSynchronizationManager.isSynchronizationActive()) {
             safely(count);

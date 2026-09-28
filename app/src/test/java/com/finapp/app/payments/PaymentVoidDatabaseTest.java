@@ -306,6 +306,128 @@ class PaymentVoidDatabaseTest {
     }
 
     @Test
+    @DisplayName("a void the provider says it NEVER RECEIVED is re-sent by its stored reference"
+            + " and concluded by the answer - never FAILED(NEVER_RECEIVED) with the"
+            + " authorization left standing (the Phase 7 -> 8 transition)")
+    void aNeverReceivedVoidIsResentNeverFailed() throws Exception {
+        Holder holder = holder();
+        PaymentAttemptId attempt = authorizedAttempt(holder);
+        psp.neverResponds(SimulatedCardPspAdapter.VOIDS_PATH);
+        try (SecurityContext.Scope actor = SecurityContext.enter(holder.person())) {
+            assertThat(voids(adapter(Duration.ofMillis(400)))
+                            .voidAuthorized(
+                                    Optional.of(holder.party()), holder.intent(),
+                                    Optional.empty())
+                            .attempt())
+                    .isEqualTo(PaymentAttemptStatus.VOID_UNKNOWN);
+        }
+        ProviderIdempotencyReference ours;
+        try (Connection app = DatabaseRoles.application()) {
+            ours = attempts.findById(app, attempt).orElseThrow().voidReference();
+        }
+
+        // The query says it never saw our void: the sweep RE-SENDS it, permit-free.
+        psp.reset();
+        psp.succeedsWith(
+                SimulatedCardPspAdapter.OPERATIONS_PATH + ours.value(), 200,
+                "{\"status\":\"unrecognised\"}");
+        java.util.concurrent.atomic.AtomicInteger sends =
+                new java.util.concurrent.atomic.AtomicInteger();
+        sweepUntil(
+                releasingOnly(ours, "psp_void-resent-" + shortId(), sends),
+                attempt, PaymentAttemptStatus.VOIDED);
+
+        try (Connection app = DatabaseRoles.application()) {
+            PaymentAttempt released = attempts.findById(app, attempt).orElseThrow();
+            assertThat(released.status()).isEqualTo(PaymentAttemptStatus.VOIDED);
+            assertThat(released.failureReason()).as("a release, never NEVER_RECEIVED").isNull();
+            assertThat(released.voidReference()).as("the SAME stored reference").isEqualTo(ours);
+            assertThat(intents.findById(app, holder.intent()).orElseThrow().status())
+                    .isEqualTo(PaymentIntentStatus.FAILED);
+            assertThat(entriesReferencing(app, attempt)).isZero();
+        }
+        assertThat(sends.get()).as("one re-send released it").isEqualTo(1);
+    }
+
+    @Test
+    @DisplayName("a CAPTURE the provider says it never received redirects into the void and"
+            + " releases the authorization - never FAILED with the hold left on the customer's"
+            + " funds (the Phase 7 -> 8 transition)")
+    void aNeverReceivedCaptureReleasesTheAuthorization() throws Exception {
+        Holder holder = holder();
+        PaymentAttemptId attempt = authorizedAttempt(holder);
+        ProviderIdempotencyReference capture =
+                new ProviderIdempotencyReference("cap-" + IDS.next());
+        runner.inTransaction(
+                uow -> {
+                    assertThat(attempts.dispatchCapture(uow, attempt, capture)).isTrue();
+                    return null;
+                });
+        com.finapp.payments.ProviderReference authorization;
+        try (Connection app = DatabaseRoles.application()) {
+            authorization =
+                    attempts.findById(app, attempt).orElseThrow()
+                            .authorizationProviderReference();
+        }
+        psp.succeedsWith(
+                SimulatedCardPspAdapter.OPERATIONS_PATH + capture.value(), 200,
+                "{\"status\":\"unrecognised\"}");
+        java.util.concurrent.atomic.AtomicInteger sends =
+                new java.util.concurrent.atomic.AtomicInteger();
+        sweepUntil(
+                releasingAuthorization(authorization, "psp_void-cap-" + shortId(), sends),
+                attempt, PaymentAttemptStatus.VOIDED);
+
+        try (Connection app = DatabaseRoles.application()) {
+            PaymentAttempt released = attempts.findById(app, attempt).orElseThrow();
+            assertThat(released.status()).isEqualTo(PaymentAttemptStatus.VOIDED);
+            assertThat(released.failureReason()).isNull();
+            assertThat(released.captureReference()).as("the capture's history rides along")
+                    .isEqualTo(capture);
+            assertThat(intents.findById(app, holder.intent()).orElseThrow().status())
+                    .isEqualTo(PaymentIntentStatus.FAILED);
+            assertThat(entriesReferencing(app, attempt)).as("nothing was captured").isZero();
+        }
+        assertThat(sends.get()).isEqualTo(1);
+    }
+
+    @Test
+    @DisplayName("a capture that never LEFT (a refused connection) redirects into the void; with"
+            + " the provider down for the void too the row rests VOID_DISPATCHED and the sweep"
+            + " releases it - never FAILED(PROVIDER_UNAVAILABLE) with the authorization standing"
+            + " (the Phase 7 -> 8 transition)")
+    void aCaptureThatNeverLeftReleasesTheAuthorization() throws Exception {
+        Holder holder = holder();
+        PaymentAttemptId attempt = authorizedAttempt(holder);
+
+        PaymentCapture.CaptureResult refused;
+        try (SecurityContext.Scope platform = SecurityContext.enterSystem()) {
+            refused = capture(deadAdapter()).capture(attempt);
+        }
+        assertThat(refused.attempt()).isEqualTo(PaymentAttemptStatus.VOID_DISPATCHED);
+        assertThat(refused.intent()).isEqualTo(PaymentIntentStatus.PROCESSING);
+
+        ProviderIdempotencyReference ours;
+        try (Connection app = DatabaseRoles.application()) {
+            ours = attempts.findById(app, attempt).orElseThrow().voidReference();
+        }
+        java.util.concurrent.atomic.AtomicInteger sends =
+                new java.util.concurrent.atomic.AtomicInteger();
+        sweepUntil(
+                releasingOnly(ours, "psp_void-refused-" + shortId(), sends),
+                attempt, PaymentAttemptStatus.VOIDED);
+        try (Connection app = DatabaseRoles.application()) {
+            PaymentAttempt released = attempts.findById(app, attempt).orElseThrow();
+            assertThat(released.status()).isEqualTo(PaymentAttemptStatus.VOIDED);
+            assertThat(released.failureReason()).isNull();
+            assertThat(intents.findById(app, holder.intent()).orElseThrow().status())
+                    .isEqualTo(PaymentIntentStatus.FAILED);
+            assertThat(entriesReferencing(app, attempt)).isZero();
+        }
+        assertThat(sends.get()).isEqualTo(1);
+    }
+
+    @Test
     @DisplayName("a port-less resolver's declined-capture redirect strands VOID_DISPATCHED -"
             + " and the sweep SENDS it: no stranded redirect outlives the next tick")
     void aStrandedRedirectIsTheSweepsToSend() throws Exception {
@@ -716,7 +838,8 @@ class PaymentVoidDatabaseTest {
                                 java.util.List.of(SimulatedCardPspAdapter.RAIL)),
                         IDS,
                         CLOCK),
-                com.finapp.payments.RailOutcomeObserver.NONE);
+                com.finapp.payments.RailOutcomeObserver.NONE,
+                new com.finapp.payments.JdbcSchemeExecutionClaimStore());
     }
 
     private PaymentVoid voids(PaymentProvider provider) {
@@ -793,6 +916,53 @@ class PaymentVoidDatabaseTest {
             @Override
             public QueryAnswer query(ProviderIdempotencyReference reference) {
                 return delegate.query(reference);
+            }
+        };
+    }
+
+    /**
+     * {@link #releasingOnly}'s twin keyed on the AUTHORIZATION the void releases - for a void
+     * whose reference the sweep itself mints (a redirect), so the test cannot know it first.
+     */
+    private PaymentProvider releasingAuthorization(
+            com.finapp.payments.ProviderReference authorization, String pspReference,
+            java.util.concurrent.atomic.AtomicInteger sends) {
+        PaymentProvider mine = releasingOnly(null, pspReference, sends);
+        return new PaymentProvider() {
+            @Override
+            public String providerName() {
+                return mine.providerName();
+            }
+
+            @Override
+            public ProviderAnswer authorize(AuthorizationRequest request) {
+                return mine.authorize(request);
+            }
+
+            @Override
+            public ProviderAnswer capture(CaptureRequest request) {
+                return mine.capture(request);
+            }
+
+            @Override
+            public ProviderAnswer refund(RefundRequest request) {
+                return mine.refund(request);
+            }
+
+            @Override
+            public ProviderAnswer voidAuthorization(VoidRequest request) {
+                if (authorization.equals(request.authorization())) {
+                    sends.incrementAndGet();
+                    return ProviderAnswer.approved(
+                            new com.finapp.payments.ProviderReference(pspReference),
+                            "swept".getBytes());
+                }
+                return ProviderAnswer.nothingSent();
+            }
+
+            @Override
+            public QueryAnswer query(ProviderIdempotencyReference reference) {
+                return mine.query(reference);
             }
         };
     }

@@ -110,7 +110,11 @@ Two failure shapes make this more than bookkeeping:
    with the rail in Phase 7. Per-rail cost is observed (a meter), not charged. *(The review: no
    Phase 7 rail reports a cost, so no cost meter was built; it is owned by Phase 8, where the
    processor's fees arrive with its settlement evidence - `DECISIONS.md` §Deliberately
-   Deferred.)*
+   Deferred.)* *(Settled at the Phase 7 → 8 transition by ADR-0072 and ADR-0065, both
+   `Proposed`: per-rail cost is never a metric, because an amount never enters one. It is
+   recognised as `PROCESSING_COSTS` from each counterparty's own evidence (`P8-TSK-009`,
+   `P8-TSK-012`) and read per counterparty and month in the audited provider-costs report
+   (`P8-TSK-024`).)*
 
 ## Alternatives Considered
 

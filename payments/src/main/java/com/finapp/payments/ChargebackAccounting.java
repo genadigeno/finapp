@@ -499,6 +499,34 @@ public final class ChargebackAccounting {
         ledgerAccounts.lockForShare(unitOfWork, intent.creditAccount());
     }
 
+    /**
+     * The platform's three dispute rows — the rail's clearing, the recoverable and the costs —
+     * taken in the projection's own order BEFORE any dispute posting (the Phase 7 -&gt; 8
+     * transition). Each entry locks its own rows in that order, but a delivery posting SEVERAL
+     * entries does not: a loss (recoverable, costs) followed by a first-reported fee (costs,
+     * clearing) reached back to the clearing, which sorts first and which every chargeback, win
+     * and capture takes first - one deadlock ({@code 40P01}, a 500 at the card door) the review's
+     * seeded-accounts rule did not cover. Taken here, every dispute delivery meets every other
+     * writer of these rows at the clearing, before either holds anything past it. After
+     * {@link #counterpartyFirst} where a stage takes it: the counterparty's ACCOUNT row before
+     * any balance row stays the rule. Re-taking in the same transaction is a no-op.
+     */
+    private void platformRowsInOrder(Connection unitOfWork, Dispute dispute, Money inCurrency) {
+        PaymentAttempt attempt =
+                attempts.findById(unitOfWork, dispute.attemptId())
+                        .orElseThrow(
+                                () ->
+                                        new IllegalStateException(
+                                                "a dispute's attempt exists: V020's foreign key"
+                                                        + " holds it"));
+        postings.lockBalancesInOrder(
+                unitOfWork,
+                List.of(
+                        clearingAccount(unitOfWork, attempt, inCurrency),
+                        recoverableAccount(unitOfWork, inCurrency),
+                        costsAccount(unitOfWork, inCurrency)));
+    }
+
     /** Whether the counterparty's account takes postings now — share-locked, never upgraded. */
     private boolean postable(Connection unitOfWork, LedgerAccountId account) {
         return ledgerAccounts
@@ -540,6 +568,7 @@ public final class ChargebackAccounting {
 
     private void post(
             Connection unitOfWork, String key, Dispute dispute, List<JournalLine> lines) {
+        platformRowsInOrder(unitOfWork, dispute, lines.get(0).amount());
         LocalDate today = LocalDate.now(clock.withZone(ZoneOffset.UTC));
         // The entry references the DISPUTE: every stage posting is attributable to it (the
         // backlog's audit line), and reconciliation joins dispute to entries by it.

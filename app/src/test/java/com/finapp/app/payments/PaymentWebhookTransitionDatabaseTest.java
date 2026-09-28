@@ -430,6 +430,77 @@ class PaymentWebhookTransitionDatabaseTest {
     }
 
     @Test
+    @DisplayName("a SECOND presentment - the same capture cleared under OTHER network references -"
+            + " is a break, never the rail repeating itself: the first record stands, nothing"
+            + " announces, and the delivery is counted unmappable (the Phase 7 -> 8 transition)")
+    void aSecondPresentmentIsABreakNotARepeat() throws Exception {
+        Flow captured = capturedFlow();
+        String arn = "arn-first-" + suffix();
+        String nti = "nti-first-" + suffix();
+        assertThat(deliverWebhook(
+                        clearingBody(someEvent(), captured.captureReference(), arn, nti))
+                .statusCode())
+                .isEqualTo(204);
+        double unmappableBefore = unmappableWebhooks();
+
+        assertThat(deliverWebhook(
+                        clearingBody(someEvent(), captured.captureReference(),
+                                "arn-second-" + suffix(), "nti-second-" + suffix()))
+                .statusCode())
+                .as("acknowledged - the anti-stall doctrine - but not absorbed")
+                .isEqualTo(204);
+
+        assertThat(clearingCount(captured.attemptId())).isEqualTo(1);
+        assertThat(oneString(
+                        "SELECT acquirer_reference || '|' || network_transaction_id"
+                                + " FROM payments.clearing_record WHERE attempt_id = ?",
+                        captured.attemptId()))
+                .as("the first record stands")
+                .isEqualTo(arn + "|" + nti);
+        assertThat(clearedEventCount(captured.intentId())).isEqualTo(1);
+        assertThat(unmappableWebhooks() - unmappableBefore)
+                .as("a second presentment is counted where reconciliation will look")
+                .isEqualTo(1.0d);
+    }
+
+    @Test
+    @DisplayName("a clearing for a payment our books hold VOIDED is recorded - reconciliation needs"
+            + " its references - but counted unmappable, never a normal clearing (the Phase 7"
+            + " -> 8 transition)")
+    void aClearingOfAVoidedPaymentIsABreak() throws Exception {
+        providerAuthorises("psp_auth-" + suffix());
+        provider.succeedsWith(
+                SimulatedCardPspAdapter.CAPTURES_PATH, 200, "{\"status\":\"declined\"}");
+        provider.succeedsWith(
+                SimulatedCardPspAdapter.VOIDS_PATH, 200,
+                "{\"status\":\"approved\",\"reference\":\"psp_v-" + suffix() + "\"}");
+        Flow voided = confirmedFlow("3.00");
+        assertThat(attemptStatus(voided.intentId())).isEqualTo("VOIDED");
+        String captureReference =
+                oneString("SELECT capture_reference FROM payments.payment_attempt WHERE id = ?",
+                        voided.attemptId());
+        double unmappableBefore = unmappableWebhooks();
+
+        assertThat(deliverWebhook(
+                        clearingBody(someEvent(), captureReference, "arn-v-" + suffix(),
+                                "nti-v-" + suffix()))
+                .statusCode())
+                .isEqualTo(204);
+        assertThat(clearingCount(voided.attemptId())).isEqualTo(1);
+        assertThat(unmappableWebhooks() - unmappableBefore).isEqualTo(1.0d);
+    }
+
+    private double unmappableWebhooks() {
+        io.micrometer.core.instrument.Counter counter =
+                meterRegistry.find("finapp.payments.webhook").tag("outcome", "unmappable")
+                        .counter();
+        return counter == null ? 0.0d : counter.count();
+    }
+
+    @org.springframework.beans.factory.annotation.Autowired
+    private io.micrometer.core.instrument.MeterRegistry meterRegistry;
+
+    @Test
     @DisplayName("ten concurrent deliveries of one clearing notice - five under one event id,"
             + " five fresh - record it exactly once: the inbox absorbs the repeats and the"
             + " table's arbiter decides the rest (P7-DOC-001's five-and-five, section 13.3)")

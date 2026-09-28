@@ -1554,7 +1554,8 @@ class MerchantCaptureDatabaseTest {
                         com.finapp.payments.PaymentRails.of(java.util.List.of(SimulatedCardPspAdapter.RAIL)),
                         IDS,
                         CLOCK),
-                com.finapp.payments.RailOutcomeObserver.NONE);
+                com.finapp.payments.RailOutcomeObserver.NONE,
+                new com.finapp.payments.JdbcSchemeExecutionClaimStore());
     }
 
     private PaymentCapture capture() {
