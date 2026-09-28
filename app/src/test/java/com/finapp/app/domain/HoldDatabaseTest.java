@@ -143,7 +143,8 @@ class HoldDatabaseTest {
                                                     wallet.account().id(),
                                                     Money.ofMinorUnits(1, USD)))
                     .isInstanceOf(HoldExceedsAvailableBalanceException.class)
-                    .hasMessageNotContaining("1000")
+                    // Anchored by a non-hex char: bare needles can match a random UUIDv7's hex.
+                    .hasMessageNotContaining(" 1000")
                     .hasMessageNotContaining("10.00");
             app.rollback();
             assertThat(activeHoldRowsFor(app, wallet.account())).isEqualTo(1);

@@ -387,7 +387,8 @@ class PostingServiceDatabaseTest {
                     // original LedgerStorageException expectation - the stopgap-superseded
                     // precedent. The refusal is amount-free and still the schema's own.
                     .isInstanceOf(com.finapp.ledger.UnknownPostingAccountException.class)
-                    .hasMessageNotContaining("500");
+                    // Anchored by a non-hex char: bare needles can match a random UUIDv7's hex.
+                    .hasMessageNotContaining(" 500");
             app.rollback();
         }
     }

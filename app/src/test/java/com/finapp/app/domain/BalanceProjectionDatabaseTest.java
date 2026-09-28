@@ -239,7 +239,8 @@ class BalanceProjectionDatabaseTest {
             assertThatThrownBy(() -> post(app, atScaleThree))
                     .isInstanceOf(UnderivableBalanceException.class)
                     .hasMessageContaining("implicit rescale")
-                    .hasMessageNotContaining("500");
+                    // Anchored by a non-hex char: bare needles can match a random UUIDv7's hex.
+                    .hasMessageNotContaining(" 500");
             app.rollback();
 
             assertThat(projectionOf(app, wallet.id()).orElseThrow()).isEqualTo(before);

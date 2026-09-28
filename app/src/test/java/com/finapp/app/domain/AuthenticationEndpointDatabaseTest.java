@@ -291,7 +291,10 @@ class AuthenticationEndpointDatabaseTest {
                     .isIn(400, 401, 422);
             assertThat(response.body())
                     .as("%s: nothing echoes what was sent", shape.getKey())
-                    .doesNotContain("12345678");
+                    // Anchored by a non-hex char: bare needles can match a random UUIDv7's hex.
+                    .doesNotContain("\"12345678\"")
+                    .doesNotContain(":12345678")
+                    .doesNotContain(" 12345678");
         }
 
         // And the two that are decided by different mechanisms, pinned so a Jackson upgrade cannot

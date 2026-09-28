@@ -193,9 +193,16 @@ class JournalEntryTest {
                         List.of(
                                 line(Direction.DEBIT, Money.ofMinorUnits(987654, USD)),
                                 line(Direction.CREDIT, Money.ofMinorUnits(987654, USD))));
-        assertThat(entry.toString()).doesNotContain("987654").doesNotContain("9876.54");
+        // Anchored by a non-hex char: bare needles can match a random UUIDv7's hex.
+        assertThat(entry.toString())
+                .doesNotContain("=987654")
+                .doesNotContain(" 987654")
+                .doesNotContain("9876.54");
         for (JournalLine line : entry.lines()) {
-            assertThat(line.toString()).doesNotContain("987654").doesNotContain("9876.54");
+            assertThat(line.toString())
+                    .doesNotContain("=987654")
+                    .doesNotContain(" 987654")
+                    .doesNotContain("9876.54");
         }
     }
 

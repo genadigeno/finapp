@@ -66,7 +66,8 @@ class LoginIdentifierTest {
         assertThat(login.toString()).isEqualTo("LoginIdentifier[***]").doesNotContain("ada");
         assertThat(identity.toString())
                 .as("an identifier in a log is an enumeration aid for anyone who can read logs")
-                .doesNotContain("ada")
+                // Anchored by a non-hex char: bare needles can match a random UUIDv7's hex.
+                .doesNotContain("ada.l")
                 .contains(identity.id().toString());
         assertThat(login.value()).isEqualTo("ada.l");
     }

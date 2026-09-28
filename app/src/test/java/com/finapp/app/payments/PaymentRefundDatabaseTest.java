@@ -647,9 +647,11 @@ class PaymentRefundDatabaseTest {
                 .as("the terminal fact, once, in the committing transaction")
                 .isEqualTo(1);
         // Identifiers and enumerated names only - never an amount (the needle).
+        // Anchored by a non-hex char: bare needles can match a random UUIDv7's hex.
         assertThat(refundEventPayloads(result.refund()))
                 .doesNotContain("5.00")
-                .doesNotContain("500")
+                .doesNotContain(":500")
+                .doesNotContain("\"500\"")
                 .doesNotContain("psp_rfd-wh");
 
         assertThat(webhookCount(registry, "processed"))
