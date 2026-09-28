@@ -142,7 +142,18 @@ public final class Identity {
         if (!status.canTransitionTo(target)) {
             throw new IllegalIdentityTransitionException(id, status, target);
         }
-        return new Identity(id, partyId, loginIdentifier, target, createdAt, Instant.now(clock));
+        // GREATEST(now(), created_at) - the P1-TSK-031 drift, met in domain code: the
+        // administrator's instance may read behind the clock that wrote createdAt (ADR-0014:
+        // skew is bounded, never zero), and the store persists this stamp verbatim, so a legal
+        // move would die on V002's CHECK.
+        Instant now = Instant.now(clock);
+        return new Identity(
+                id,
+                partyId,
+                loginIdentifier,
+                target,
+                createdAt,
+                now.isBefore(createdAt) ? createdAt : now);
     }
 
     /** Whether this identity may currently be used to authenticate. */

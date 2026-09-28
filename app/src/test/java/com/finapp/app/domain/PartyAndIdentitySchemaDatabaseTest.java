@@ -4,12 +4,24 @@ import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatCode;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
+import com.finapp.identity.Identity;
+import com.finapp.identity.IdentityId;
+import com.finapp.identity.IdentityStatus;
+import com.finapp.identity.JdbcIdentityStore;
+import com.finapp.party.CustomerId;
+import com.finapp.party.CustomerStatus;
+import com.finapp.party.IllegalCustomerTransitionException;
+import com.finapp.party.JdbcPartyStore;
 import com.finapp.platform.testing.database.DatabaseRoles;
+import com.finapp.sharedkernel.id.IdGenerator;
+import java.security.SecureRandom;
 import java.sql.Connection;
 import java.sql.PreparedStatement;
 import java.sql.SQLException;
 import java.sql.Timestamp;
+import java.time.Clock;
 import java.time.Instant;
+import java.time.ZoneOffset;
 import java.util.UUID;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Tag;
@@ -42,6 +54,12 @@ class PartyAndIdentitySchemaDatabaseTest {
     private static final String CHECK_VIOLATION = "23514";
     private static final String FOREIGN_KEY_VIOLATION = "23503";
     private static final String INSUFFICIENT_PRIVILEGE = "42501";
+
+    /**
+     * Mints the customer and identity identifiers: ADR-0013 makes every {@code EntityId} a UUIDv7
+     * and refuses a v4, and the clock tests read these rows back through their typed stores.
+     */
+    private static final IdGenerator IDS = new IdGenerator(Clock.systemUTC(), new SecureRandom());
 
     @Test
     @DisplayName("a party, a customer and an identity are three rows in two schemas")
@@ -391,6 +409,145 @@ class PartyAndIdentitySchemaDatabaseTest {
     }
 
     // -----------------------------------------------------------------
+    // The same drift met in production code, where no fixture can back-date (P1-TSK-031;
+    // ADR-0014: skew between instances is bounded, never zero)
+
+    /**
+     * The projection's conditional ({@code DecisionRecording}) moves a relationship opened at
+     * registration, on the clock of whichever instance records the KYC decision - which may
+     * read behind the one that wrote {@code opened_at}.
+     */
+    @Test
+    @DisplayName(
+            "a clock behind birth cannot fail a legal customer move: status_changed_at clamps to"
+                    + " opened_at in the statement (the P1-TSK-031 drift; ADR-0014)")
+    void aClockBehindBirthCannotFailALegalCustomerMove() throws SQLException {
+        JdbcPartyStore parties = new JdbcPartyStore();
+        try (Connection app = DatabaseRoles.application()) {
+            UUID clamped =
+                    insertCustomer(app, insertParty(app, "PERSON", "Ada Lovelace"), "PENDING");
+            UUID own = insertCustomer(app, insertParty(app, "PERSON", "Grace Hopper"), "PENDING");
+
+            Instant opened = customerStampsOf(app, clamped).openedAt();
+            assertThat(
+                            parties.moveCustomerStatus(
+                                    app,
+                                    CustomerId.of(clamped),
+                                    CustomerStatus.PENDING,
+                                    CustomerStatus.ACTIVE,
+                                    opened.minusMillis(250)))
+                    .isTrue();
+            assertThat(customerStampsOf(app, clamped).statusChangedAt()).isEqualTo(opened);
+
+            // A floor, not a pin: a clock past birth stamps its own read.
+            Instant later = customerStampsOf(app, own).openedAt().plusSeconds(5);
+            assertThat(
+                            parties.moveCustomerStatus(
+                                    app,
+                                    CustomerId.of(own),
+                                    CustomerStatus.PENDING,
+                                    CustomerStatus.REJECTED,
+                                    later))
+                    .isTrue();
+            assertThat(customerStampsOf(app, own).statusChangedAt()).isEqualTo(later);
+        }
+    }
+
+    @Test
+    @DisplayName(
+            "an illegal customer move under a behind clock is still the machine's or the"
+                    + " conditional's refusal, never V002's CHECK")
+    void anIllegalCustomerMoveUnderABehindClockIsStillRefused() throws SQLException {
+        JdbcPartyStore parties = new JdbcPartyStore();
+        try (Connection app = DatabaseRoles.application()) {
+            CustomerId customer =
+                    CustomerId.of(
+                            insertCustomer(
+                                    app, insertParty(app, "PERSON", "Ada Lovelace"), "PENDING"));
+            Instant opened = customerStampsOf(app, customer.value()).openedAt();
+            assertThat(
+                            parties.moveCustomerStatus(
+                                    app,
+                                    customer,
+                                    CustomerStatus.PENDING,
+                                    CustomerStatus.ACTIVE,
+                                    opened))
+                    .isTrue();
+            Instant behind = opened.minusSeconds(1);
+
+            // The machine: nothing re-enters PENDING, refused before any SQL (INV-LIFE-02).
+            assertThatThrownBy(
+                            () ->
+                                    parties.moveCustomerStatus(
+                                            app,
+                                            customer,
+                                            CustomerStatus.ACTIVE,
+                                            CustomerStatus.PENDING,
+                                            behind))
+                    .isInstanceOf(IllegalCustomerTransitionException.class);
+            // The conditional: a stale from-state is zero rows.
+            assertThat(
+                            parties.moveCustomerStatus(
+                                    app,
+                                    customer,
+                                    CustomerStatus.PENDING,
+                                    CustomerStatus.ACTIVE,
+                                    behind))
+                    .isFalse();
+            assertThat(customerStampsOf(app, customer.value()).statusChangedAt()).isEqualTo(opened);
+        }
+    }
+
+    /**
+     * {@code IdentityAdministration} suspends and reinstates on the administrator's instance,
+     * whose clock may read behind the one that registered the identity. The store persists the
+     * aggregate's own stamp verbatim, so the clamp lives in {@code Identity}; this is the row it
+     * writes landing, where an unclamped stamp would die on V002's CHECK.
+     */
+    @Test
+    @DisplayName(
+            "a clock behind birth cannot fail a legal suspension: the row lands at created_at"
+                    + " (the P1-TSK-031 drift; ADR-0014)")
+    void aClockBehindBirthCannotFailALegalSuspension() throws SQLException {
+        JdbcIdentityStore identities = new JdbcIdentityStore();
+        try (Connection app = DatabaseRoles.application()) {
+            IdentityId id =
+                    IdentityId.of(
+                            insertIdentity(
+                                    app,
+                                    insertParty(app, "PERSON", "Ada Lovelace"),
+                                    login(),
+                                    "ACTIVE"));
+            // Read back through the store: created_at at the column's own resolution.
+            Identity identity = identities.findById(app, id).orElseThrow();
+
+            Identity suspended =
+                    identity.suspend(
+                            Clock.fixed(identity.createdAt().minusMillis(250), ZoneOffset.UTC));
+            assertThat(identities.moveStatus(app, id, IdentityStatus.ACTIVE, suspended)).isTrue();
+            assertThat(identities.findById(app, id).orElseThrow().statusChangedAt())
+                    .isEqualTo(identity.createdAt());
+        }
+    }
+
+    // -----------------------------------------------------------------
+
+    /** A customer row's two instants as stored, at the column's own microsecond resolution. */
+    private record CustomerStamps(Instant openedAt, Instant statusChangedAt) {}
+
+    private static CustomerStamps customerStampsOf(Connection connection, UUID customer)
+            throws SQLException {
+        try (PreparedStatement statement =
+                connection.prepareStatement(
+                        "SELECT opened_at, status_changed_at FROM party.customer WHERE id = ?")) {
+            statement.setObject(1, customer);
+            try (var rows = statement.executeQuery()) {
+                assertThat(rows.next()).isTrue();
+                return new CustomerStamps(
+                        rows.getTimestamp(1).toInstant(), rows.getTimestamp(2).toInstant());
+            }
+        }
+    }
 
     /**
      * A fresh identifier per call.
@@ -419,7 +576,7 @@ class PartyAndIdentitySchemaDatabaseTest {
 
     private static UUID insertCustomer(Connection connection, UUID partyId, String status)
             throws SQLException {
-        UUID id = UUID.randomUUID();
+        UUID id = IDS.next();
         try (PreparedStatement statement =
                 connection.prepareStatement(
                         // Back-dated: a test later moves this row's status with an UPDATE that
@@ -441,7 +598,7 @@ class PartyAndIdentitySchemaDatabaseTest {
     private static UUID insertIdentity(
             Connection connection, UUID partyId, String loginIdentifier, String status)
             throws SQLException {
-        UUID id = UUID.randomUUID();
+        UUID id = IDS.next();
         try (PreparedStatement statement =
                 connection.prepareStatement(
                         "INSERT INTO identity.identity"

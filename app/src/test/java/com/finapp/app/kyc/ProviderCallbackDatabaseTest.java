@@ -278,6 +278,59 @@ class ProviderCallbackDatabaseTest {
         assertThat(SimulatedProvider.SIGNATURE_HEADER).isEqualTo(CallbackSignature.HEADER);
     }
 
+    /**
+     * A callback completes the check on whichever instance the provider reaches, on that
+     * instance's clock - which may read behind the one that requested the check. The store's
+     * conditional driven directly: what such a clock can break is the statement.
+     */
+    @Test
+    @DisplayName(
+            "a clock behind birth cannot fail a legal completion: status_changed_at clamps to"
+                    + " requested_at in the statement (the P1-TSK-031 drift; ADR-0014)")
+    void aClockBehindBirthCannotFailALegalCompletion() throws Exception {
+        CheckId clamped = givenACaseAwaiting(CheckType.IDENTITY).pendingCheck();
+        CheckId own = givenACaseAwaiting(CheckType.IDENTITY).pendingCheck();
+        try (Connection app = DatabaseRoles.application()) {
+            app.setAutoCommit(false);
+            Instant requested = stampsOf(clamped).requestedAt();
+            assertThat(
+                            checkStore.complete(
+                                    app, clamped, CheckOutcome.CLEAR, requested.minusMillis(250)))
+                    .isTrue();
+            app.commit();
+            assertThat(stampsOf(clamped).statusChangedAt()).isEqualTo(requested);
+
+            // A floor, not a pin: a clock past birth stamps its own read.
+            Instant later = stampsOf(own).requestedAt().plusSeconds(5);
+            assertThat(checkStore.complete(app, own, CheckOutcome.CLEAR, later)).isTrue();
+            app.commit();
+            assertThat(stampsOf(own).statusChangedAt()).isEqualTo(later);
+        }
+    }
+
+    @Test
+    @DisplayName(
+            "a completion of an answered check under a behind clock is still the conditional's"
+                    + " refusal, never V004's CHECK")
+    void anIllegalCompletionUnderABehindClockIsStillTheConditionalsRefusal() throws Exception {
+        CheckId answered = givenACaseAwaiting(CheckType.IDENTITY).pendingCheck();
+        completeViaStore(answered, CheckOutcome.INDETERMINATE);
+        Stamps before = stampsOf(answered);
+        try (Connection app = DatabaseRoles.application()) {
+            app.setAutoCommit(false);
+            assertThat(
+                            checkStore.complete(
+                                    app,
+                                    answered,
+                                    CheckOutcome.CLEAR,
+                                    before.requestedAt().minusSeconds(1)))
+                    .isFalse();
+            app.commit();
+        }
+        assertThat(checkStatusOf(answered)).isEqualTo("INDETERMINATE");
+        assertThat(stampsOf(answered)).isEqualTo(before);
+    }
+
     // -----------------------------------------------------------------
 
     private record Fixture(KycCaseId caseId, CheckId pendingCheck) {}
@@ -368,6 +421,24 @@ class ProviderCallbackDatabaseTest {
     }
 
     // -----------------------------------------------------------------
+
+    /** The check's two instants as stored, at the column's own microsecond resolution. */
+    private record Stamps(Instant requestedAt, Instant statusChangedAt) {}
+
+    private static Stamps stampsOf(CheckId checkId) throws SQLException {
+        try (Connection app = DatabaseRoles.application();
+                PreparedStatement select =
+                        app.prepareStatement(
+                                "SELECT requested_at, status_changed_at FROM kyc.verification_check"
+                                        + " WHERE id = ?")) {
+            select.setObject(1, checkId.value());
+            try (ResultSet rows = select.executeQuery()) {
+                assertThat(rows.next()).isTrue();
+                return new Stamps(
+                        rows.getTimestamp(1).toInstant(), rows.getTimestamp(2).toInstant());
+            }
+        }
+    }
 
     private static String checkStatusOf(CheckId checkId) throws SQLException {
         try (Connection app = DatabaseRoles.application();

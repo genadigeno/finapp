@@ -15,6 +15,7 @@ import java.sql.PreparedStatement;
 import java.sql.ResultSet;
 import java.sql.SQLException;
 import java.sql.Statement;
+import java.sql.Timestamp;
 import java.time.Clock;
 import java.time.Duration;
 import java.time.Instant;
@@ -668,6 +669,79 @@ class IdempotentExecutorTest {
     }
 
     @Test
+    @DisplayName("a flight whose clock reads behind its takeover's still records the outcome:"
+            + " completed_at clamps to created_at in the statement (the P1-TSK-031 drift;"
+            + " ADR-0014)")
+    void aFlightBehindItsTakeoverStillRecordsTheOutcome() throws SQLException {
+        // The one shape in which two instances write this row's two instants. execute() claims
+        // and completes in one transaction on one instance; here a takeover rewrites created_at
+        // with ITS clock, and the original flight - slow, not dead - may still complete first,
+        // which complete()'s contract makes legal, on a clock reading behind the takeover's.
+        IdempotencyKey key = uniqueKey();
+        RequestFingerprint fingerprint =
+                RequestFingerprint.sha256("refund:303".getBytes(StandardCharsets.UTF_8));
+        insertExpiredLeaseClaim(key, fingerprint);
+        Instant takenOverAt = FIXED.plusSeconds(10);
+        inScope(
+                () ->
+                        executorAt(takenOverAt)
+                                .begin(
+                                        connection,
+                                        key,
+                                        fingerprint,
+                                        uow -> "converged".getBytes(StandardCharsets.UTF_8)));
+        connection.commit();
+        assertThat(stampsOf(key).createdAt()).isEqualTo(takenOverAt);
+
+        assertThat(
+                        executorAt(takenOverAt.minusMillis(250))
+                                .complete(
+                                        connection,
+                                        key,
+                                        true,
+                                        StoredResponse.of(
+                                                "judged".getBytes(StandardCharsets.UTF_8),
+                                                "text/plain")))
+                .isTrue();
+        connection.commit();
+        assertThat(stateOf(key)).isEqualTo(IdempotencyState.COMPLETED);
+        assertThat(stampsOf(key).completedAt()).isEqualTo(takenOverAt);
+
+        // A floor, not a pin: a completion past created_at stamps its own read.
+        IdempotencyKey own = uniqueKey();
+        inScope(() -> executor().begin(connection, own, fingerprint, uow -> new byte[0]));
+        connection.commit();
+        assertThat(
+                        executorAt(FIXED.plusSeconds(5))
+                                .complete(connection, own, true, StoredResponse.empty()))
+                .isTrue();
+        connection.commit();
+        assertThat(stampsOf(own).completedAt()).isEqualTo(FIXED.plusSeconds(5));
+    }
+
+    @Test
+    @DisplayName("completing a terminal claim under a behind clock is still the conditional's"
+            + " refusal, never V002's CHECK")
+    void completingATerminalClaimUnderABehindClockIsStillTheConditionalsRefusal()
+            throws SQLException {
+        IdempotencyKey key = uniqueKey();
+        RequestFingerprint fingerprint =
+                RequestFingerprint.sha256("refund:304".getBytes(StandardCharsets.UTF_8));
+        inScope(() -> executor().begin(connection, key, fingerprint, uow -> new byte[0]));
+        connection.commit();
+        assertThat(executor().complete(connection, key, true, StoredResponse.empty())).isTrue();
+        connection.commit();
+
+        assertThat(
+                        executorAt(FIXED.minusSeconds(1))
+                                .complete(connection, key, false, StoredResponse.empty()))
+                .isFalse();
+        connection.commit();
+        assertThat(stateOf(key)).isEqualTo(IdempotencyState.COMPLETED);
+        assertThat(stampsOf(key).completedAt()).isEqualTo(FIXED);
+    }
+
+    @Test
     @DisplayName("begin refuses a different fingerprint whatever the claim's state")
     void beginRefusesADifferentFingerprint() throws SQLException {
         IdempotencyKey key = uniqueKey();
@@ -697,11 +771,36 @@ class IdempotentExecutorTest {
     // -----------------------------------------------------------------
 
     private static IdempotentExecutor executor() {
+        return executorAt(FIXED);
+    }
+
+    /** An instance whose clock reads {@code now}: two of these are two instances' clocks. */
+    private static IdempotentExecutor executorAt(Instant now) {
         return new IdempotentExecutor(
                 new JdbcIdempotencyRecordStore(),
-                Clock.fixed(FIXED, ZoneOffset.UTC),
+                Clock.fixed(now, ZoneOffset.UTC),
                 RETENTION,
                 LEASE);
+    }
+
+    /** The claim's two instants as stored. */
+    private record Stamps(Instant createdAt, Instant completedAt) {}
+
+    private static Stamps stampsOf(IdempotencyKey key) throws SQLException {
+        try (PreparedStatement select =
+                connection.prepareStatement(
+                        "SELECT created_at, completed_at FROM platform.idempotency_record"
+                                + " WHERE scope = ? AND idempotency_key = ?")) {
+            select.setString(1, key.scope());
+            select.setString(2, key.key());
+            try (ResultSet rows = select.executeQuery()) {
+                assertThat(rows.next()).isTrue();
+                Timestamp completedAt = rows.getTimestamp(2);
+                return new Stamps(
+                        rows.getTimestamp(1).toInstant(),
+                        completedAt == null ? null : completedAt.toInstant());
+            }
+        }
     }
 
     /** Runs inside a correlation scope, as every money-moving command must. */

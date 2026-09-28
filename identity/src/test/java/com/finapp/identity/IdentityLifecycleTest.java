@@ -103,6 +103,35 @@ class IdentityLifecycleTest {
         assertThat(terminal).containsExactly(IdentityStatus.CLOSED);
     }
 
+    @Test
+    @DisplayName(
+            "a clock behind birth cannot stamp a legal move before it: the stamp clamps to"
+                    + " createdAt (the P1-TSK-031 drift, met in domain code; ADR-0014)")
+    void aClockBehindBirthCannotStampALegalMoveBeforeIt() {
+        // No constructor guard here: the store persists this stamp verbatim, so V002's CHECK is
+        // where an unclamped one would die (IdentityAdministration's suspend and reinstate).
+        Identity identity = at(IdentityStatus.ACTIVE);
+        Clock behind = Clock.fixed(identity.createdAt().minusMillis(250), ZoneOffset.UTC);
+
+        Identity suspended = identity.suspend(behind);
+        assertThat(suspended.status()).isEqualTo(IdentityStatus.SUSPENDED);
+        assertThat(suspended.statusChangedAt()).isEqualTo(identity.createdAt());
+
+        // A floor, not a pin: a clock at or past birth stamps its own read.
+        Clock ahead = Clock.fixed(identity.createdAt().plusSeconds(5), ZoneOffset.UTC);
+        assertThat(suspended.reinstate(ahead).statusChangedAt())
+                .isEqualTo(identity.createdAt().plusSeconds(5));
+    }
+
+    @Test
+    @DisplayName("an illegal move under a behind clock is still the machine's refusal")
+    void anIllegalMoveUnderABehindClockIsStillTheMachinesRefusal() {
+        Identity closed = at(IdentityStatus.CLOSED);
+        Clock behind = Clock.fixed(closed.createdAt().minusSeconds(1), ZoneOffset.UTC);
+        assertThatThrownBy(() -> closed.suspend(behind))
+                .isInstanceOf(IllegalIdentityTransitionException.class);
+    }
+
     // -----------------------------------------------------------------
 
     private static Identity at(IdentityStatus status) {

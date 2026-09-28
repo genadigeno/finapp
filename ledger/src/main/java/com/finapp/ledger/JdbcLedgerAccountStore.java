@@ -250,7 +250,12 @@ public final class JdbcLedgerAccountStore implements LedgerAccountStore<Connecti
         }
         try (PreparedStatement move =
                 unitOfWork.prepareStatement(
-                        "UPDATE " + TABLE + " SET status = ?, status_changed_at = ?"
+                        "UPDATE " + TABLE + " SET status = ?,"
+                                // GREATEST(?, created_at) - the P1-TSK-031 drift, clamped in the
+                                // statement: the closing instance's clock may read behind the one
+                                // that created the account (ADR-0014: skew is bounded, never
+                                // zero), and a legal close must not die on V002's CHECK.
+                                + " status_changed_at = GREATEST(?, created_at)"
                                 + " WHERE id = ? AND status = ?")) {
             move.setString(1, to.name());
             move.setTimestamp(2, Timestamp.from(at));

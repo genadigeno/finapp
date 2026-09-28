@@ -195,7 +195,128 @@ class KycCaseDatabaseTest {
         }
     }
 
+    /**
+     * Every case move stamps the mover's clock - a verification run, a callback's assessment, a
+     * reviewer's resolution or decision, on whichever instance serves it - against the
+     * {@code opened_at} the opening instance wrote. Both conditional statements driven directly:
+     * what such a clock can break is the statement.
+     */
+    @Test
+    @DisplayName(
+            "a clock behind birth cannot fail a legal move: status_changed_at clamps to"
+                    + " opened_at in both statements (the P1-TSK-031 drift; ADR-0014)")
+    void aClockBehindBirthCannotFailALegalMove() throws Exception {
+        try (Connection app = DatabaseRoles.application()) {
+            app.setAutoCommit(false);
+            KycCase clamped =
+                    store.openOrConverge(app, KycCase.open(IDS, CLOCK, IDS.next(), KycCaseKind.KYC))
+                            .kycCase();
+            KycCase own =
+                    store.openOrConverge(app, KycCase.open(IDS, CLOCK, IDS.next(), KycCaseKind.KYC))
+                            .kycCase();
+            app.commit();
+
+            Instant opened = stampsOf(clamped).openedAt();
+            Instant behind = opened.minusMillis(250);
+            assertThat(
+                            store.moveStatus(
+                                    app,
+                                    clamped.id(),
+                                    KycCaseStatus.OPEN,
+                                    KycCaseStatus.CHECKS_IN_PROGRESS,
+                                    behind))
+                    .isTrue();
+            app.commit();
+            assertThat(stampsOf(clamped).statusChangedAt()).isEqualTo(opened);
+            assertThat(
+                            store.moveToReadyForDecision(
+                                    app, clamped.id(), KycCaseStatus.CHECKS_IN_PROGRESS, behind))
+                    .isTrue();
+            app.commit();
+            assertThat(stampsOf(clamped).statusChangedAt()).isEqualTo(opened);
+
+            // A floor, not a pin: a clock past birth stamps its own read, in both statements.
+            Instant later = stampsOf(own).openedAt().plusSeconds(5);
+            assertThat(
+                            store.moveStatus(
+                                    app,
+                                    own.id(),
+                                    KycCaseStatus.OPEN,
+                                    KycCaseStatus.CHECKS_IN_PROGRESS,
+                                    later))
+                    .isTrue();
+            app.commit();
+            assertThat(stampsOf(own).statusChangedAt()).isEqualTo(later);
+            assertThat(
+                            store.moveToReadyForDecision(
+                                    app,
+                                    own.id(),
+                                    KycCaseStatus.CHECKS_IN_PROGRESS,
+                                    later.plusSeconds(1)))
+                    .isTrue();
+            app.commit();
+            assertThat(stampsOf(own).statusChangedAt()).isEqualTo(later.plusSeconds(1));
+        }
+    }
+
+    @Test
+    @DisplayName(
+            "a lost conditional under a behind clock is still zero rows in both statements, never"
+                    + " V002's CHECK")
+    void aLostConditionalUnderABehindClockIsStillZeroRows() throws Exception {
+        try (Connection app = DatabaseRoles.application()) {
+            app.setAutoCommit(false);
+            KycCase kycCase =
+                    store.openOrConverge(app, KycCase.open(IDS, CLOCK, IDS.next(), KycCaseKind.KYC))
+                            .kycCase();
+            app.commit();
+            Instant opened = stampsOf(kycCase).openedAt();
+            assertThat(
+                            store.moveStatus(
+                                    app,
+                                    kycCase.id(),
+                                    KycCaseStatus.OPEN,
+                                    KycCaseStatus.CHECKS_IN_PROGRESS,
+                                    opened))
+                    .isTrue();
+            app.commit();
+
+            // The case left OPEN: both doors from it are stale, whatever the clock reads.
+            Instant behind = opened.minusSeconds(1);
+            assertThat(
+                            store.moveStatus(
+                                    app,
+                                    kycCase.id(),
+                                    KycCaseStatus.OPEN,
+                                    KycCaseStatus.CHECKS_IN_PROGRESS,
+                                    behind))
+                    .isFalse();
+            assertThat(store.moveToReadyForDecision(app, kycCase.id(), KycCaseStatus.OPEN, behind))
+                    .isFalse();
+            app.commit();
+            assertThat(stampsOf(kycCase).statusChangedAt()).isEqualTo(opened);
+        }
+    }
+
     // -----------------------------------------------------------------
+
+    /** The case's two instants as stored, at the column's own microsecond resolution. */
+    private record Stamps(Instant openedAt, Instant statusChangedAt) {}
+
+    private static Stamps stampsOf(KycCase kycCase) throws SQLException {
+        try (Connection app = DatabaseRoles.application();
+                PreparedStatement read =
+                        app.prepareStatement(
+                                "SELECT opened_at, status_changed_at FROM kyc.kyc_case"
+                                        + " WHERE id = ?")) {
+            read.setObject(1, kycCase.id().value());
+            try (ResultSet row = read.executeQuery()) {
+                assertThat(row.next()).isTrue();
+                return new Stamps(
+                        row.getTimestamp(1).toInstant(), row.getTimestamp(2).toInstant());
+            }
+        }
+    }
 
     private static int rowsFor(UUID customerId) throws SQLException {
         try (Connection app = DatabaseRoles.application();
