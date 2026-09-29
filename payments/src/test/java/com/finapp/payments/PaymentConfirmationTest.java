@@ -158,7 +158,8 @@ class PaymentConfirmationTest {
                         PaymentRails.of(java.util.List.of(SimulatedCardPspAdapter.RAIL)),
                         IDS, CLOCK),
                 com.finapp.payments.RailOutcomeObserver.NONE,
-                new com.finapp.payments.JdbcSchemeExecutionClaimStore());
+                new com.finapp.payments.JdbcSchemeExecutionClaimStore(),
+                new RecordingSettlementExpectations());
     }
 
     @Test
@@ -693,6 +694,16 @@ class PaymentConfirmationTest {
     }
 
     private static final class FakeAttemptStore implements PaymentAttemptStore<Connection> {
+
+        @Override
+        public java.util.List<PaymentAttempt> pageByStatus(
+                Connection unitOfWork,
+                PaymentAttemptStatus status,
+                java.util.UUID after,
+                int limit) {
+            // P8-TSK-007: the opening-position backfill's page - not this suite's subject.
+            throw new UnsupportedOperationException("no backfill runs in this suite");
+        }
 
         // ------------------------------- the push model (P7-TSK-009): not this suite's subject.
 

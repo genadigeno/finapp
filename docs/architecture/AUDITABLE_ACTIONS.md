@@ -460,6 +460,28 @@ facts and an auditor must be able to tell them apart.
 closes the traceable chain in the trail itself: order → entry → ADR-0050 §3's four lines → the
 merchant's payable position.
 
+### `settlement` — `SettlementAuditAction`
+
+| Action | Reason required | What it records, and why |
+|---|---|---|
+| `settlement.SettlementDeliveryRefused` | No | The settlement door refused a delivery (`P8-TSK-002`, ADR-0066 §4): instrument data in screened text, or a delivery over the size or line bound. Written in the refusal's transaction; the change summary names the source, the reason, the content address and the finding's position — **never a value from the file** (`INV-PAY-02`, `INV-RAIL-03`). For a content refusal the `settlement.refused_delivery` metadata row stands beside it; an over-bound delivery leaves this record alone. Alertable from the first file through `finapp.settlement.delivery.refused`. |
+| `settlement.SettlementFileUploaded` | No | A person introduced settlement evidence over the upload door (`P8-TSK-003`, ADR-0066 §1). Written in the reception's ONE transaction — row, chunks, receipt, birth event and this record commit together; the change summary names the source, the channel and the content address, never the content and never the business date's claim (`INV-AUD-02`). A duplicate delivery writes its `DUPLICATE` receipt and no second record: the receipt table is the arrivals' history, the audit record is the act's. |
+| `settlement.SettlementFileAttested` | No | A second person attested an uploaded file (`P8-TSK-003`, `INV-SET-07`, `INV-AUD-04`): the `NULL → value` fact the accept leg (`P8-TSK-009`) will require before an upload can move money. Written in the attestation's transaction, after distinctness from the uploader is enforced at the domain AND by `V002`'s `CHECK` — so this record existing implies a genuine second person. The same attester's retry converges and writes no second record. |
+| `settlement.SettlementFileContentRead` | **Yes** | Somebody read a settlement file's raw bytes — the ONE content path, `POST .../content-reads` under `RECONCILIATION_INVESTIGATE` (`INV-REC-10`): one record per read, committed with the read before a byte is served, the audited unit being the access (ADR-0036's rule). A verification failure — tamper, transplant, truncation — is the SAME record with outcome `FAILED` and nothing served; a guessed identifier records nothing, because there is no file to audit an access against. |
+
+The pull's actions arrive with the pull (`P8-TSK-021`); the decline's with the parse leg
+(`P8-TSK-008`); the readmission's with `P8-TSK-022`.
+
+### `reconciliation` — `ReconciliationAuditAction`
+
+| Action | Reason required | What it records, and why |
+|---|---|---|
+| `reconciliation.OpeningPositionRecorded` | **Yes** | A reconciliation controller adopted the opening position (`P8-TSK-007`, ADR-0067 §8): Phases 5–7's completed clearing operations opened as tracked expectations through the live recorder's own path, converging on the register's uniques. One record per recorded run, keyed per principal and committed after the walk; the change summary carries the per-producer **counts only, never an amount** (`INV-AUD-02`), and the reason is the controller's own — adopting history decides what every proof and break is judged against, which is why the act demands one. |
+| `reconciliation.ReportRead` | No | Somebody was served a reconciliation report that carries amounts — the positions report first (`P8-TSK-007`, ADR-0072; the `payments.ChargebackRatioRead` precedent). One record per serving, committed in the reading's own transaction; the summary names the report and its shape, never its figures. |
+
+Matching's, the breaks' and the resolutions' actions arrive with their tasks (`P8-TSK-010`,
+`-015`); the repudiation's with `P8-TSK-023`.
+
 ### What is emitted, and what is declared not to be
 
 **The two registration actions are emitted; none of the three `platform` actions is**, and that is

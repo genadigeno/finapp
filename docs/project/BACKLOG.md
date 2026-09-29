@@ -9523,7 +9523,7 @@ Disputes (`P7-TSK-012`…`-014`) · M7.7 Observability and demonstration (`P7-TS
 
 # Phase 8 — Settlement and Reconciliation
 
-Status: `READY` — entry gate passed 2026-09-28 by the Phase 7 → 8 transition
+Status: `IN_PROGRESS` — started 2026-09-28 with `P8-TSK-001` (7 of 27 items complete; M8.1 Evidence intake closed 2026-09-29 at 3 of 3; M8.2 Every settling completion is expected CLOSED 2026-09-29 at 4 of 4); entry gate passed 2026-09-28 by the Phase 7 → 8 transition
 ([`reviews/PHASE_7_TO_8_TRANSITION.md`](reviews/PHASE_7_TO_8_TRANSITION.md)), elaborated to task
 granularity by the same transition: twenty-seven items (`P8-TSK-001`…`-024`, `P8-TST-001`,
 `P8-TST-002`, `P8-DOC-001`) across eight milestones, with `P8-TSK-001` marked `READY`. The
@@ -9586,7 +9586,7 @@ Two cross-cutting tasks recorded by the same transition sit under *Cross-cutting
 nothing here: `X-TSK-010` (an AAD bound in the four existing ciphers) and `X-TSK-011` (the
 posting-date documentation reconciled with the Phase 5–7 practice, with no retrofit).
 
-**P8-TSK-001 — The `settlement` and `reconciliation` modules and schemas** — `READY`
+**P8-TSK-001 — The `settlement` and `reconciliation` modules and schemas** — `COMPLETE` (2026-09-28)
 - **Objective**: bounded contexts 13 and 14 as build-graph facts before any domain code — two
   guarded modules with no edge between them, and their privilege floors only (ADR-0064; the
   `P5-TSK-001` and `P6-TSK-001` precedent that a phase's first task lays floors only).
@@ -9648,7 +9648,7 @@ posting-date documentation reconciled with the Phase 5–7 practice, with no ret
   planted probe caught.
 - **Definition of done**: `DOD-BUILD`, `DOD-ARCH`, `DOD-SEC`. **Risk**: Low. **Cx**: S.
 
-**P8-TSK-002 — The source register, the encrypted file store and the door screen** — `PLANNED`
+**P8-TSK-002 — The source register, the encrypted file store and the door screen** — `COMPLETE` (2026-09-29)
 - **Objective**: every externally settling position has exactly one declared source, composed from
   its counterparty's own declaration (`INV-SET-05`), and settlement evidence can be received —
   screened before anything is stored, encrypted under its own key with the AAD bound, checksummed
@@ -9770,14 +9770,14 @@ posting-date documentation reconciled with the Phase 5–7 practice, with no ret
   key is confined.
 - **Definition of done**: `DOD-FIN`, `DOD-SEC`, `DOD-OBS`, `DOD-TEST`, `DOD-DOC`. **Risk**: Medium. **Cx**: M.
 
-**P8-TSK-003 — The upload door, attestation and audited evidence access** — `PLANNED`
+**P8-TSK-003 — The upload door, attestation and audited evidence access** — `COMPLETE` (2026-09-29)
 - **Objective**: an operator introduces settlement evidence and a second person attests it — the
   upload half of `INV-SET-07` — and whoever investigates can read what arrived, the raw content only
   by a reasoned, audited, checksum-verified read.
 - **Bounded context**: Settlement (13); Identity (2) for the permissions and the role.
 - **Dependencies**: `P8-TSK-002`.
 - **Scope**: `PermissionName` gains `SETTLEMENT_INGEST` and `RECONCILIATION_INVESTIGATE`; `RoleName`
-  gains `RECONCILIATION_OPERATOR` holding both (identity `V016`; `RECONCILIATION_RESOLVE` joins it in
+  gains `RECONCILIATION_OPERATOR` holding both (identity `V017`; `RECONCILIATION_RESOLVE` joins it in
   `-015`; owner decision O1); the routes under `/v1/operator/settlement` — `POST /files` (source
   code, declared business date, base64 content of at most 8 MiB decoded) → `202 {fileId, status,
   duplicateOf?}`, `POST /files/{id}/attestation`, `GET /sources`, `GET /files`, `GET /files/{id}`,
@@ -9792,7 +9792,7 @@ posting-date documentation reconciled with the Phase 5–7 practice, with no ret
 - **Domain changes**: attestation on `SettlementFile` — a NULL → value fact (`attested_by`,
   `attested_at`) settable on a non-terminal file, never by its receiver; the reasoned content read,
   which verifies before it serves.
-- **Persistence**: identity `V016` (admits `RECONCILIATION_OPERATOR`); no settlement migration —
+- **Persistence**: identity `V017` (admits `RECONCILIATION_OPERATOR`); no settlement migration —
   attestation writes `V002`'s two columns under their narrowed grant, so no new classification rows.
 - **APIs**: seven routes, lists bounded at 100 with `truncated`; OpenAPI entries additive under v1
   (ADR-0015), the baseline regenerated; the upload is asynchronous — `202`, status read by `GET`;
@@ -9858,7 +9858,7 @@ posting-date documentation reconciled with the Phase 5–7 practice, with no ret
   the file gauges published by a fresh instance.
 - **Definition of done**: `DOD-API`, `DOD-SEC`, `DOD-OBS`, `DOD-TEST`, `DOD-DOC`. **Risk**: Medium. **Cx**: M.
 
-**P8-TSK-004 — The expectation register and the card completions** — `PLANNED`
+**P8-TSK-004 — The expectation register and the card completions** — `COMPLETE` (2026-09-29)
 - **Objective**: ADR-0067 made real for the card rail — every externally settling card completion
   opens, in its own transaction, a tracked settlement expectation that is the same fact as its
   clearing journal line; rule set v1 seeded for the four sources.
@@ -10004,7 +10004,7 @@ posting-date documentation reconciled with the Phase 5–7 practice, with no ret
   `PAYOUT_RETURNED` rule; the Phase 7 storm and dispute battery re-run green.
 - **Definition of done**: `DOD-FIN`, `DOD-DOMAIN`, `DOD-TEST`, `DOD-DOC`. **Risk**: High. **Cx**: L.
 
-**P8-TSK-005 — Disputes, push rails, unmatched confirmations and payouts open their expectations** — `PLANNED`
+**P8-TSK-005 — Disputes, push rails, unmatched confirmations and payouts open their expectations** — `COMPLETE` (2026-09-29)
 - **Objective**: ADR-0067 for every remaining externally settling completion, so that no posting
   touching a reconciled clearing exists without its expectation — and a register that makes the claim
   checkable.
@@ -10092,7 +10092,7 @@ posting-date documentation reconciled with the Phase 5–7 practice, with no ret
   the Phase 7 storm and dispute battery re-run green.
 - **Definition of done**: `DOD-FIN`, `DOD-TEST`. **Risk**: High. **Cx**: M.
 
-**P8-TSK-006 — Adjustments carry a reason code and an origin; reconciled positions are closed to free adjustments** — `PLANNED`
+**P8-TSK-006 — Adjustments carry a reason code and an origin; reconciled positions are closed to free adjustments** — `COMPLETE` (2026-09-29)
 - **Objective**: `INV-REV-04`'s reason code realised at both ranks without changing the generic
   adjustment request, and the ledger's free adjustment closed on every reconciled position, so value
   in a clearing or suspense account moves only through a break (ADR-0071); the generic approval and
@@ -10180,7 +10180,7 @@ posting-date documentation reconciled with the Phase 5–7 practice, with no ret
   OpenAPI request is unchanged; the existing adjustment suites are green.
 - **Definition of done**: `DOD-FIN`, `DOD-SEC`, `DOD-API`, `DOD-TEST`. **Risk**: Medium. **Cx**: M.
 
-**P8-TSK-007 — The opening position, the position proof and the completeness verifier** — `PLANNED`
+**P8-TSK-007 — The opening position, the position proof and the completeness verifier** — `COMPLETE` (2026-09-29)
 - **Objective**: every clearing position explained by its tracked expectations, history before
   Phase 8 included — a keyed backfill opens what the live port never saw, and two report-only
   verifiers say at every scrape whether each position, and every line on it, is explained
@@ -10208,7 +10208,7 @@ posting-date documentation reconciled with the Phase 5–7 practice, with no ret
   ageing (`-013`); the other reports (`-024`).
 - **Domain changes**: the backfill command; `PositionProof` and its per-(purpose, currency) verdicts;
   reconciliation's read API for open remainders and for the entries it knows.
-- **Persistence**: identity `V017` (admits `RECONCILIATION_CONTROLLER`); no reconciliation migration —
+- **Persistence**: identity `V018` (admits `RECONCILIATION_CONTROLLER`); no reconciliation migration —
   the backfill writes `V002`'s tables; the ledger's read API gains a lookup by posting key
   (`idempotency_scope`) if it lacks one, with no migration.
 - **APIs**: the backfill under `RECONCILIATION_ADMINISTER`, keyed per principal
@@ -10267,7 +10267,7 @@ posting-date documentation reconciled with the Phase 5–7 practice, with no ret
   `P8-TSK-020`); a planted missing expectation and a raw-SQL line each flip a gauge; NaN never zero.
 - **Definition of done**: `DOD-FIN`, `DOD-API`, `DOD-OBS`, `DOD-SEC`, `DOD-TEST`. **Risk**: Medium. **Cx**: M.
 
-**P8-TSK-008 — The PSP format: parse, normalise, reject whole** — `PLANNED`
+**P8-TSK-008 — The PSP format: parse, normalise, reject whole** — `READY`
 - **Objective**: a received PSP settlement report becomes one whole, canonical, immutable batch of
   typed lines, or is rejected whole with its errors recorded — the first half of `INV-SET-07` — and
   the provider's vocabulary stays inside its adapter.
@@ -11277,7 +11277,7 @@ posting-date documentation reconciled with the Phase 5–7 practice, with no ret
     plus the (kind, reason code) `CHECK`;
   - `RECONCILIATION_RESOLVE` (`PermissionName`) joins `RECONCILIATION_OPERATOR` (`RoleName`;
     `RoleNameTest`'s exact grants; the roles stay pairwise disjoint — *transition decision O1, the
-    owner may revisit*); no identity migration, because identity `V016` already admits the role;
+    owner may revisit*); no identity migration, because identity `V017` already admits the role;
   - the propose, approve, reject and withdraw routes;
   - the kinds, each deriving its lines from the subject's current remainder, never typed:
     `ACKNOWLEDGE` (`TIMING_DIFFERENCE`, `FEE_MISMATCH`, `DUPLICATE_INTERNAL`; no lines); `WRITE_OFF`

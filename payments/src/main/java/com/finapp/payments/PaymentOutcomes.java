@@ -146,6 +146,17 @@ public final class PaymentOutcomes {
     @NonNull private final SchemeExecutionClaimStore<Connection> claims;
 
     /**
+     * The expectation-opening seam (`P8-TSK-004`, ADR-0067, {@link SettlementExpectations}):
+     * in the acting branch only, after the posting whose clearing line it copies, inside
+     * this transaction — required, with no do-nothing production implementation, because a
+     * completion that opens nothing loses track of money. The card capture and the card refund
+     * (`P8-TSK-004`); the push execution, the return and - through {@link #parking()} - the
+     * unmatched confirmation (`P8-TSK-005`). Appended last (the constructor is positional
+     * history).
+     */
+    @NonNull private final SettlementExpectations expectations;
+
+    /**
      * What committed (or was found committed by the loser of a harmless race).
      *
      * @param acting whether <strong>this</strong> call's conditional transition fired
@@ -328,11 +339,9 @@ public final class PaymentOutcomes {
                     // the composer runs here, on this connection, after the conditional
                     // transition has been won, so it runs exactly once per capture however
                     // many resolvers raced.
+                    AccountPurpose clearingPurpose = clearingPurposeOf(uow, attemptId);
                     LedgerAccount clearing =
-                            chart.resolve(
-                                    uow,
-                                    clearingPurposeOf(uow, attemptId),
-                                    amount.currency());
+                            chart.resolve(uow, clearingPurpose, amount.currency());
                     LocalDate today = LocalDate.now(clock.withZone(ZoneOffset.UTC));
                     CaptureSettlement settlement =
                             new CaptureSettlement(
@@ -379,6 +388,36 @@ public final class PaymentOutcomes {
                     }
                     announce(uow, CAPTURED_EVENT_TYPE, intentId, "CAPTURED",
                             Optional.empty(), correlation, now);
+
+                    // THE EXPECTATION (P8-TSK-004, ADR-0067): the clearing line's tracked
+                    // counterpart, in THIS transaction, after every ledger row above - the
+                    // capture, its posting and its expectation commit together or not at
+                    // all. Amount and direction are derived from the posted line by the
+                    // implementation, so the expectation cannot contradict the entry. A
+                    // capture reaching this branch is always on a clearing-purposed rail
+                    // (clearingPurposeOf threw otherwise).
+                    expectations.open(
+                            uow,
+                            new SettlementExpectations.Opening(
+                                    SettlementExpectations.Kind.CARD_CAPTURE,
+                                    attemptId.value().toString(),
+                                    "payment-capture:" + attemptId.value(),
+                                    clearingPurpose,
+                                    clearing.id(),
+                                    posted.entryId(),
+                                    Optional.empty(),
+                                    List.of(
+                                            new SettlementExpectations.Key(
+                                                    SettlementExpectations.ReferenceKind
+                                                            .PSP_CAPTURE_REF,
+                                                    providerReference.orElseThrow().value()),
+                                            // The anchor the ARN alias resolves to
+                                            // (ADR-0067 §5), in either arrival order.
+                                            new SettlementExpectations.Key(
+                                                    SettlementExpectations.ReferenceKind
+                                                            .CARD_ATTEMPT,
+                                                    attemptId.value().toString())),
+                                    correlation));
                 }
                 committedAttempt = PaymentAttemptStatus.CAPTURED;
                 committedIntent = PaymentIntentStatus.SUCCEEDED;
@@ -732,12 +771,40 @@ public final class PaymentOutcomes {
                     // lines are COMPOSED by the flow that created the intent, the clearing
                     // is the STORED rail's declared position (INV-RAIL-04), and the key
                     // makes any duplicate resolver structurally unable to post twice.
+                    AccountPurpose clearingPurpose = clearingPurposeOf(uow, attemptId);
                     LedgerAccount clearing =
-                            chart.resolve(
-                                    uow, clearingPurposeOf(uow, attemptId), amount.currency());
-                    settleExecution(
-                            uow, intentId, attemptId, clearing.id(), credit, amount,
-                            platform, correlation, now);
+                            chart.resolve(uow, clearingPurpose, amount.currency());
+                    com.finapp.ledger.PostingResult posted =
+                            settleExecution(
+                                    uow, intentId, attemptId, clearing.id(), credit, amount,
+                                    platform, correlation, now);
+
+                    // THE EXPECTATION (P8-TSK-005, ADR-0067): the execution's clearing line's
+                    // tracked counterpart, in THIS transaction, after the posting - keyed by
+                    // the scheme's reference and our end-to-end reference, with the cycle the
+                    // confirmation ANNOUNCED as an attribute (never a key: one cycle names
+                    // many executions). The book rail never reaches this arm (settleBook), and
+                    // clearingPurposeOf threw above for a rail declaring no position.
+                    expectations.open(
+                            uow,
+                            new SettlementExpectations.Opening(
+                                    SettlementExpectations.Kind.PUSH_PAY_IN,
+                                    attemptId.value().toString(),
+                                    EXECUTION_POSTING_PREFIX + attemptId.value(),
+                                    clearingPurpose,
+                                    clearing.id(),
+                                    posted.entryId(),
+                                    settlementCycle,
+                                    List.of(
+                                            new SettlementExpectations.Key(
+                                                    SettlementExpectations.ReferenceKind
+                                                            .SCHEME_REF,
+                                                    scheme.value()),
+                                            new SettlementExpectations.Key(
+                                                    SettlementExpectations.ReferenceKind
+                                                            .END_TO_END_REF,
+                                                    locked.endToEndReference().value())),
+                                    correlation));
                 }
                 committedAttempt = PaymentAttemptStatus.EXECUTED;
                 committedIntent = PaymentIntentStatus.SUCCEEDED;
@@ -882,7 +949,8 @@ public final class PaymentOutcomes {
      */
     private UnmatchedConfirmations parking() {
         return new UnmatchedConfirmations(
-                unmatched, rails, chart, postings, audit, ids, clock, claims, observer);
+                unmatched, rails, chart, postings, audit, ids, clock, claims, observer,
+                expectations);
     }
 
     /**
@@ -1042,30 +1110,53 @@ public final class PaymentOutcomes {
                     // a RETURNED policy, gives the merchant back its share of the fee - four
                     // lines. Which it is depends on the flow that created the intent, and
                     // this module deliberately cannot tell.
-                    postings.post(
-                            uow,
-                            new PostingCommand(
-                                    "payment-refund:" + refund.id().value(),
-                                    today,
-                                    today,
-                                    refund.id().value().toString(),
-                                    refundComposition.settle(
-                                            uow,
-                                            new RefundSettlement(
-                                                    intentId,
-                                                    refund.attemptId(),
-                                                    refund.id(),
-                                                    counterpart,
-                                                    wallet,
-                                                    refund.amount(),
-                                                    refundedBefore,
-                                                    correlation,
-                                                    now))));
+                    com.finapp.ledger.PostingResult refundPosted =
+                            postings.post(
+                                    uow,
+                                    new PostingCommand(
+                                            "payment-refund:" + refund.id().value(),
+                                            today,
+                                            today,
+                                            refund.id().value().toString(),
+                                            refundComposition.settle(
+                                                    uow,
+                                                    new RefundSettlement(
+                                                            intentId,
+                                                            refund.attemptId(),
+                                                            refund.id(),
+                                                            counterpart,
+                                                            wallet,
+                                                            refund.amount(),
+                                                            refundedBefore,
+                                                            correlation,
+                                                            now))));
                     // The terminal fact publishes with the transition that commits it
                     // (INV-EVT-01) - inside the conditional, so a duplicate emits nothing.
                     announceRefund(
                             uow, REFUND_COMPLETED_EVENT_TYPE, refund, intentId,
                             correlation, now);
+
+                    // THE EXPECTATION (P8-TSK-004/-005, ADR-0067): only where the stored rail
+                    // declares a clearing position - the BOOK refund's counterpart is the
+                    // intent's own wallet and no reconciled position moved - and its KIND is
+                    // the rail's declared refund mode, never a name (INV-RAIL-01): a provider
+                    // refund against a capture is CARD_REFUND, a return payment is a new push
+                    // on the scheme and opens PUSH_RETURN (keyed by the scheme's reference,
+                    // with no cycle - a return's is learned from the scheme's report, -017).
+                    RailCapabilities refundedRail = refundedRailCapabilitiesOf(uow, refund);
+                    Optional<SettlementExpectations.Opening> refundOpening =
+                            refundedRail.clearingPurpose()
+                                    .flatMap(
+                                            position ->
+                                                    refundOpening(
+                                                            refundedRail.refundMode(),
+                                                            refund,
+                                                            position,
+                                                            counterpart,
+                                                            refundPosted.entryId(),
+                                                            providerReference.orElseThrow(),
+                                                            correlation));
+                    refundOpening.ifPresent(opening -> expectations.open(uow, opening));
                 }
                 committed = RefundStatus.COMPLETED;
             }
@@ -1397,8 +1488,10 @@ public final class PaymentOutcomes {
      *     declared clearing position for an external rail ({@code INV-RAIL-04}), or — on
      *     the book rail — the intent's own debit wallet: the platform pays itself, so the
      *     counterpart is the payer's account, never a clearing (ADR-0059 §§4/6)
+     * @return the posting — the push arm opens its expectation from it (`P8-TSK-005`); the
+     *     book arm touches no reconciled position and ignores it
      */
-    private void settleExecution(
+    private com.finapp.ledger.PostingResult settleExecution(
             Connection uow,
             PaymentIntentId intentId,
             PaymentAttemptId attemptId,
@@ -1438,6 +1531,7 @@ public final class PaymentOutcomes {
         }
         announce(uow, EXECUTED_EVENT_TYPE, intentId, "EXECUTED",
                 Optional.empty(), correlation, now);
+        return posted;
     }
 
     /**
@@ -1618,6 +1712,69 @@ public final class PaymentOutcomes {
                                         "a book refund's intent carries its debit wallet:"
                                                 + " V019's XOR holds it for every writer"
                                                 + " (P7-TSK-011)"));
+    }
+
+    /** The refunded attempt's stored rail, read back to its declaration (`P8-TSK-004`). */
+    private RailCapabilities refundedRailCapabilitiesOf(Connection uow, Refund refund) {
+        RailId rail =
+                attempts.findById(uow, refund.attemptId())
+                        .orElseThrow(
+                                () ->
+                                        new IllegalStateException(
+                                                "a refund is being applied to attempt "
+                                                        + refund.attemptId()
+                                                        + ", which no longer reads back"))
+                        .rail();
+        return rails.capabilitiesOf(rail);
+    }
+
+    /**
+     * A completed refund's opening by the refunded rail's DECLARED refund mode
+     * (`P8-TSK-005`): the provider refund's references are the PSP's and our {@code rfd-}
+     * reference; the return payment's are the scheme's execution reference and our own; a
+     * book refund declares no position, so it never reaches here — and should one ever
+     * declare one, it opens nothing rather than a guessed kind.
+     */
+    private static Optional<SettlementExpectations.Opening> refundOpening(
+            RailCapabilities.RefundMode mode,
+            Refund refund,
+            AccountPurpose position,
+            com.finapp.ledger.LedgerAccountId clearing,
+            com.finapp.ledger.JournalEntryId entry,
+            ProviderReference theirs,
+            Correlation correlation) {
+        SettlementExpectations.Kind kind;
+        SettlementExpectations.ReferenceKind theirKind;
+        switch (mode) {
+            case PROVIDER_REFUND -> {
+                kind = SettlementExpectations.Kind.CARD_REFUND;
+                theirKind = SettlementExpectations.ReferenceKind.PSP_REFUND_REF;
+            }
+            case RETURN_PAYMENT -> {
+                kind = SettlementExpectations.Kind.PUSH_RETURN;
+                theirKind = SettlementExpectations.ReferenceKind.SCHEME_REF;
+            }
+            default -> {
+                return Optional.empty();
+            }
+        }
+        return Optional.of(
+                new SettlementExpectations.Opening(
+                        kind,
+                        refund.id().value().toString(),
+                        "payment-refund:" + refund.id().value(),
+                        position,
+                        clearing,
+                        entry,
+                        Optional.empty(),
+                        List.of(
+                                new SettlementExpectations.Key(theirKind, theirs.value()),
+                                // The dispatch's own reference: what a report quoting OUR
+                                // side carries.
+                                new SettlementExpectations.Key(
+                                        SettlementExpectations.ReferenceKind.OUR_REF,
+                                        refund.providerIdempotencyReference().value())),
+                        correlation));
     }
 
     private AccountPurpose clearingPurposeOf(

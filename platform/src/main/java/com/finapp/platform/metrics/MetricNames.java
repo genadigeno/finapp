@@ -126,7 +126,19 @@ public final class MetricNames {
                     // one query - the purpose and currency precedents. P1-TSK-029 refused this
                     // key because a two-meter naming carried ITS signal (recovery initiation
                     // and completion); seven stages under one planned series is not that case.
-                    "stage");
+                    "stage",
+                    // Which settlement source (P8-TSK-002). Bounded by DEPLOYMENT, the rail
+                    // tag's reasoning verbatim: the value is a declared source's compile-time
+                    // code from the composed register (SettlementBeans) - a counterparty the
+                    // platform reconciles against, a category shared by everyone, structurally
+                    // never a person, a resource or anything a caller supplies. Added
+                    // deliberately, which is this list's job: the Phase 8 plan's section 15
+                    // says the ingestion series are "by source", and a name-split would invent
+                    // a series per counterparty and make "which source is refusing" or "which
+                    // source went silent" unanswerable in one query. The first series using
+                    // the key brings it (the transition's consistency review, B6): `severity`
+                    // joins with the break meters (P8-TSK-024), not here.
+                    "source");
 
     /**
      * Allowed keys the fragment rule below would otherwise refuse <strong>on a spelling

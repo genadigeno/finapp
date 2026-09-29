@@ -466,6 +466,28 @@ public final class JdbcRefundStore implements RefundStore<Connection> {
         }
     }
 
+    @Override
+    public List<Refund> pageCompleted(Connection unitOfWork, java.util.UUID after, int limit) {
+        try (PreparedStatement select =
+                unitOfWork.prepareStatement(
+                        "SELECT " + COLUMNS + " FROM payments.refund"
+                                + " WHERE status = 'COMPLETED' AND id > ?"
+                                + " ORDER BY id LIMIT ?")) {
+            select.setObject(1, after);
+            select.setInt(2, limit);
+            try (ResultSet rows = select.executeQuery()) {
+                List<Refund> page = new ArrayList<>();
+                while (rows.next()) {
+                    page.add(rehydrate(rows));
+                }
+                return List.copyOf(page);
+            }
+        } catch (SQLException failure) {
+            throw new PaymentsStorageException(
+                    DatabaseFailure.describe("paging completed refunds", failure));
+        }
+    }
+
     private static Refund rehydrate(ResultSet row) throws SQLException {
         String providerReference = row.getString("provider_reference");
         return Refund.rehydrate(

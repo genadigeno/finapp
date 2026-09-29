@@ -486,7 +486,7 @@ needs its own migration, because each state and edge arrives with its producer. 
   `external_item_ref`, `journal_entry_id UNIQUE`, `returned_on`, `value_date`, `recorded_at`;
   append-only, so it is inserted after its posting, carrying the entry id. *(The composite
   foreign key and the order: the Phase 7 → 8 transition's consistency review, A6.)*
-- **identity:** `V016` (`-003`) admits `RECONCILIATION_OPERATOR`; `V017` (`-007`) admits
+- **identity:** `V017` (`-003`) admits `RECONCILIATION_OPERATOR`; `V018` (`-007`) admits
   `RECONCILIATION_CONTROLLER`.
 - **payments:** none. The transition gate's `V023` — the parking's attribution columns,
   `provider_evidence`'s fifth subject and `scheme_execution_claim` — already stands (§2).
@@ -586,9 +586,9 @@ first route:
 
 **Roles, pairwise disjoint** (`RoleName`; `RoleNameTest`'s exact grants):
 `RECONCILIATION_OPERATOR` = {`SETTLEMENT_INGEST`, `RECONCILIATION_INVESTIGATE`,
-`RECONCILIATION_RESOLVE`}, admitted by identity `V016` in `P8-TSK-003` holding the first two, with
+`RECONCILIATION_RESOLVE`}, admitted by identity `V017` in `P8-TSK-003` holding the first two, with
 `RECONCILIATION_RESOLVE` joining in `P8-TSK-015`; `RECONCILIATION_CONTROLLER` =
-{`RECONCILIATION_ADMINISTER`}, admitted by identity `V017` in `P8-TSK-007`. A person needing both
+{`RECONCILIATION_ADMINISTER`}, admitted by identity `V018` in `P8-TSK-007`. A person needing both
 holds both roles, and that grant is recorded. `LEDGER_OPERATOR` is not extended: the desk that moves
 money does not reconcile it. Refusing a person who holds `LEDGER_OPERATOR` together with a
 reconciliation role, and "the resolver is not the operation's actor", are recorded for Phase 15.

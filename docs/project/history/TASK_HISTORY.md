@@ -1,6 +1,6 @@
 # Task History
 
-The per-task completion records that accumulated behind `## Current Task` - 164 "Previously" blocks, newest first, from `P7-DOC-001` back to project initiation. *(`X-TSK-005` is cross-cutting and completed after `P7-TSK-014` and before `P7-TSK-015`, so it stands between them; its record came in with its branch's merge.)* *(`X-TSK-004` is cross-cutting and completed after the Phase 6 → 7 transition, so it stands second, between `P7-TSK-001` and the transition's record - the transition's block moved here by `P7-TSK-001`'s gate, exactly as an earlier form of this note said it would.)*
+The per-task completion records that accumulated behind `## Current Task` - 171 "Previously" blocks, newest first, from `P8-TSK-006` back to project initiation. *(`X-TSK-005` is cross-cutting and completed after `P7-TSK-014` and before `P7-TSK-015`, so it stands between them; its record came in with its branch's merge.)* *(`X-TSK-004` is cross-cutting and completed after the Phase 6 → 7 transition, so it stands second, between `P7-TSK-001` and the transition's record - the transition's block moved here by `P7-TSK-001`'s gate, exactly as an earlier form of this note said it would.)*
 
 **Archive.** These records were moved verbatim out of
 [`CURRENT_STATE.md`](../CURRENT_STATE.md) on 2026-09-20 so that the canonical description of
@@ -12,6 +12,299 @@ Current state: [`CURRENT_STATE.md`](../CURRENT_STATE.md) ·
 Authoritative backlog: [`BACKLOG.md`](../BACKLOG.md)
 
 ---
+
+### Previously
+
+**`P8-TSK-006` — Adjustments carry a reason code and an origin; reconciled positions are
+closed to free adjustments** — `COMPLETE` (2026-09-29). **M8.2 at 3 of 4**: the position
+proof's precondition — `INV-REV-04`'s reason code realised at both ranks, and a way to move
+money removed. **Ledger `V015`**: `reason_code` and `origin` with history defaults
+(`UNCODED`/`MANUAL`, no rewrite trigger fired, `INV-HIST-01`), the value lists and the
+code↔origin pairing `CHECK` generated from the enums, a `BEFORE INSERT` trigger refusing
+`UNCODED` for every writer (the default is the backfill AND the refusal funnel: a raw insert
+without a code dies at the database), the payload freeze re-stated over both new columns, and
+**the binding** — a `BEFORE INSERT` trigger refusing any `MANUAL`-origin line on
+`AccountPurpose.reconciledPositions()` (`SETTLEMENT_CLEARING`, `PAYOUT_CLEARING`,
+`INSTANT_CLEARING`, `SUSPENSE_UNMATCHED`; the list generated and pinned, `V016`–`V018`
+re-state it as the four Phase 8 purposes join). **The domain judges the binding before the
+idempotency claim** — a refused proposal never consumes its key, proven by replaying the same
+key legally — and **re-judges it at a `MANUAL` approval**: the one row the insert trigger
+cannot see (a proposal born before `V015`) was planted with triggers disabled and refused at
+approval, nothing posted. **The origin regime** (ADR-0071 §6, F-a): the generic door assigns
+`MANUAL_CORRECTION` server-side (request shape unchanged, additive under ADR-0015 — the view
+gains `origin` and `reasonCode`); generic approval and `DELETE` refuse a
+`RECONCILIATION`-origin proposal (`409 ledger.AdjustmentOriginMismatch` — ten racing generic
+approvals, ten refusals, zero entries, the new counted race) and the owned methods
+(`proposeOwned`/`approveOwned`/`rejectOwned`, joining the caller's transaction for
+`P8-TSK-015`) refuse `MANUAL`, with the seam confined to `com.finapp.reconciliation` by a
+static rule with planted-caller controls. All three audit records carry origin and reason
+code. **Decided at design (B14): `RECONCILIATION_OFFSET` dropped** — no Phase 8 kind produces
+it, the platform keeps no producerless member, a future producer widens the generated `CHECK`
+forward (recorded in ADR-0071). Three suites moved off clearing onto `FEE_REVENUE`, each move
+recorded — they wanted "some operational counterpart", and clearing stopped being one on
+purpose. **Seven probe runs, seven caught**: the uncoded-insert trigger, the binding
+trigger and the pairing `CHECK` dropped, the freeze re-statement reverted (the
+migrator rewrote `origin` where "approves what they read" belongs), the origin
+refusal removed (ten generic approvals posted where ten 409s belong), the
+pre-claim domain check removed (the trigger beneath still refused — the layering —
+but the door's 422 became a 500 and the key burned), and the approval re-check
+removed (the legacy row posted) — every verdict from the failing testcase, every
+restore byte-identical (`MUTATION_TESTING.md` §2, +3 rows under `INV-REV-04`,
+`INV-REC-06`, `INV-AUD-04`).
+Verified by targeted tiers from fresh runs on the final code: ledger hermetic 83
+across 16 suites, app hermetic 555 across 100 (the confinement rule, the mutation and
+OpenAPI guards within, after the records landed), app database 1100 across 133
+suites (the adjustment, schema and statement suites within), and the platform
+classification guard over the two new rows, all 0 failures; the full battery
+deliberately skipped on the owner's instruction.
+
+### Previously
+
+**`P8-TSK-005` — Disputes, push rails, unmatched confirmations and payouts open their
+expectations** — `COMPLETE` (2026-09-29). **M8.2, Every settling completion is expected, at 2 of
+4**: every externally settling completion ADR-0067 §2 names now opens, in its own transaction, the
+expectation that copies its clearing journal line — and a register makes the claim a build fact.
+**The openers**, each in its applier's acting branch after the posting it copies:
+`ChargebackAccounting` — the chargeback, the win and the fee, each right after its own clearing
+posting, keyed by the network's dispute reference under its stage's kind (`DISPUTE_CB_REF`,
+`DISPUTE_REV_REF`, `DISPUTE_FEE_REF`); the attribution, restoration, loss and re-attribution
+entries touch no clearing and open nothing; a stage walk opens two or three in one transaction;
+`PaymentOutcomes` — the push execution (`PUSH_PAY_IN`, keys `SCHEME_REF` and `END_TO_END_REF`,
+the announced cycle its attribute) and the return (`PUSH_RETURN`, keys `SCHEME_REF` and
+`OUR_REF`, no cycle), the refund's kind now chosen by the refunded rail's **declared refund
+mode** (`PROVIDER_REFUND` → `CARD_REFUND`, `RETURN_PAYMENT` → `PUSH_RETURN`, a book refund
+nothing); `WithdrawalOutcomes` (`PUSH_WITHDRAWAL`, its stored cycle the attribute);
+`UnmatchedConfirmations` (`UNMATCHED_CONFIRMATION`, the claim winner only, keyed by the scheme
+reference alone — the parking's named reference, cause and attempt travel to `-020`'s suspense
+item); and **`merchant`'s own port** `PayoutSettlementExpectations`, a required parameter of
+`MerchantPayoutOutcomes` (`MERCHANT_PAYOUT`, keys `PAYOUT_PROVIDER_REF` and `OUR_REF`, the first
+answer and the sweep alike). `app`'s one `ReconciliationExpectationRecorder` implements both
+ports and now copies the **posting date from the posted entry** — the applier's own copy left
+the port. **The register**: `ExpectationOpenerRegisterTest` enumerates every posting-key prefix
+production code declares (the literals in each source constructing a `PostingCommand` or
+`ReversalCommand`) and requires each to open named kinds — with a real test calling the shared
+ledger-backed `ClearingLineCopies.assertOpensItsClearingLinesCopy` for that kind — or to touch no
+reconciled position with a test proving nothing opens; every kind either port can open has
+exactly one proving row, and its planted-violation controls sit beside the real register.
+**Proven live**: each completion's copy against the ledger (amount, entry, account, sign, date,
+dating, keys, cycle); the ten-way chargeback walk opening exactly three, the failed win's copy
+rolled back with it and opened by its redelivery; ten duplicate callbacks, ten inquiry sweeps,
+ten return sweeps, ten withdrawal sweeps and ten payout sweeps each opening one; **ten pay-ins of
+one cycle raising no collision**; the multi-rail storm and the merchant storm reading EVERY
+clearing line's copy in each round's snapshot and at rest (no window between a completion and
+its expectation), and the dispute battery every stage's. **Nine probe runs, nine caught**: each
+opener removed in turn (the chargeback's, the fee's, the execution's, the return's, the
+parking's, the withdrawal's), the win opening the chargeback's kind again (a stage opening
+twice), the payout port unwired and a planted posting key — every verdict read from the failing
+testcase, every restore byte-identical (`MUTATION_TESTING.md` §2, +3 rows under `INV-SET-02`
+and `INV-DSP-02`). **The gate's finds, each fixed**: the credit-versus-parking race proved one
+money fact but no expectation — it now proves exactly the winner's, the scheme reference keyed
+once and no collision; two "opens nothing" proofs rested on the battery's scope, which no
+scenario forces to hold a re-attribution — moved to tests that certainly post each key, and the
+storm's scope asserted to hold its transfers; and the register's own source check, which the
+gate's edit showed breaking on a line-wrapped call, made whitespace-tolerant. One storm run of
+four failed at the choreography's desk sale answering `PAYMENT_PENDING` — no error logged, no
+expectation assertion involved: a harness timing assumption, three re-runs green, recorded and
+offered as its own task. No migration, no API, no event, no series (by the backlog's scope).
+Verified by targeted tiers from fresh runs on the final code: payments hermetic 246
+across 35 suites, merchant hermetic 135 across 19, app hermetic 553 across 99 (the register
+within) and app database 1093 across 133 (the storm, the battery and the merchant storm
+within), all 0 failures, the document guards re-run after the records landed; the full
+battery deliberately skipped on the owner's instruction.
+
+### Previously
+
+**`P8-TSK-004` — The expectation register and the card completions** — `COMPLETE`
+(2026-09-29). **M8.2, Every settling completion is expected, OPENS at 1 of 4**: ADR-0067 is
+real for the card rail — every externally settling card completion opens, in its own
+transaction, a tracked settlement expectation that IS its clearing journal line's copy.
+**Reconciliation `V002`**: `expectation` with the whole machine stated (`OPEN`,
+`PARTIALLY_SETTLED`, `SETTLED`, `RESOLVED_BY_ADJUSTMENT`, the repudiation's reopening edges —
+generated from `permittedTransitions()` and reconciled by the migration test; only birth is
+produced, the `UPDATE` narrowed to what the machine moves, the birth statement frozen, nothing
+deletable), the two identity arbiters (`UNIQUE (kind, operation_ref)`,
+`UNIQUE (journal_entry_id, ledger_account_id)`), the per-source key and alias index with **no
+kind exempt** (the cycle is a column, never a key — A5), `expectation_event` (`OPENED`,
+`KEY_COLLISION`), and **rule set v1 seeded `ACTIVE` per source** with the migration as its
+provenance: the plan's lags (card 3, refund/dispute 3, instant 1, payout 2, funding 2), the
+values fixed at design (grace 48h, the operation-anchored `PAYOUT_RETURNED` at 72h — A4;
+`SETTLEMENT_DATE_DAYS` 2; fee tolerances 0.02/0.50; the PSP's terms 1.5% + 0.25; O5's 90 days;
+O7's 1,000.00), content frozen by trigger for EVERY writer, one `ACTIVE` per source by partial
+unique, and **an amount tolerance unstorable** (`INV-REC-08` at the database rank: the closed
+comparison list has no amount member). **The port**: `payments.SettlementExpectations`, a
+REQUIRED constructor parameter of `PaymentOutcomes` and `PaymentClearing` — no do-nothing
+production implementation — called in the acting branch after the posting: the capture
+(`CARD_CAPTURE`, keys `PSP_CAPTURE_REF` + the `CARD_ATTEMPT` anchor), the card refund
+(`CARD_REFUND`, gated on the stored rail's declared clearing purpose AND capture-model
+finality, so the push return stays `-005`'s and a book refund never qualifies; keys
+`PSP_REFUND_REF` + `OUR_REF`), and the ARN alias (`PaymentClearing`'s `RECORDED` branch alone —
+`ALREADY_RECORDED`, `REFERENCE_CLAIMED_ELSEWHERE` and `SECOND_PRESENTMENT` register nothing).
+**`app`'s `ReconciliationExpectationRecorder`** derives amount and direction from the posted
+clearing line (`DEBIT → INBOUND` — the ledger's own sign, never the applier's claim), resolves
+the source from the declared position through the compiled register, and pins the ACTIVE rule
+set on the row (`INV-HIST-04`). Every insert `ON CONFLICT DO NOTHING`: a key collision is a
+counted `KEY_COLLISION` event and NEVER a failed payment. Proven live: the capture, the refund
+and the funding top-up each asserted equal to their clearing line AGAINST THE LEDGER; the
+ten-way applier race (one acting, one entry, one expectation) and the ten-way direct-register
+race (one `OPENED`, nine `CONVERGED` — the guard-less writers, so the uniques are the arbiter);
+the ARN before AND after its capture; the forced port failure rolling the whole capture back
+and the redelivery completing both; a planted collision completing the payment; a book top-up
+and a book refund opening nothing; the machine, freeze and append-only triggers exercised as
+the application role and the migrator. `DATA_CLASSIFICATION.md` gains the reconciliation
+section (80 rows). No API, no event, no observability series (by the backlog); the openers for
+disputes, push and payouts are `-005`'s, the backfill and proof `-007`'s.
+
+### Previously
+
+**`P8-TSK-003` — The upload door, attestation and audited evidence access** — `COMPLETE`
+(2026-09-29). **M8.1, Evidence intake, CLOSES at 3 of 3**: settlement evidence now arrives over
+HTTP, waits visibly for its second person, and is readable only on the record. **Identity's
+fifth population** (`V017`, owner decision O1): `SETTLEMENT_INGEST` and
+`RECONCILIATION_INVESTIGATE`, held by `RECONCILIATION_OPERATOR` alone — pairwise disjoint from
+every desk it checks (`RoleNameTest`'s exact grants; `RECONCILIATION_RESOLVE` joins with
+`-015`). **Seven routes under `/v1/operator/settlement`** (each pinned in
+`RoutePermissionRegisterTest`, the OpenAPI baseline regenerated, seven `settlement.*` codes
+catalogued): the upload (`202 {fileId, status, duplicateOf?}`, keyed per principal under
+`settlement.upload:<actorType>:<actorId>` — the `X-TSK-003` disposition — with claim, reception
+and stored outcome ONE transaction, and **a refusal a recorded FAILED outcome that replays**,
+never an exception, its metadata row and audit committing while the client is told the line and
+field and never the value); the attestation (`INV-SET-07`'s upload half: row lock, conditional
+`NULL → value`, self-attestation refused at the domain AND by `V002`'s `CHECK`, the same
+attester converging, audited `settlement.SettlementFileAttested`); the metadata reads (sources,
+files, refused deliveries, bounded at 100 with `truncated`); and the ONE content path —
+`POST .../content-reads {reason}` under `RECONCILIATION_INVESTIGATE`, one
+`settlement.SettlementFileContentRead` record per read committed with the read, byte-identical
+content or a `FAILED` record and nothing served (`INV-REC-10`'s read half; a guessed id is a
+404 recording nothing). The transport carve-out: exactly the upload route admits its ~11.2 MiB
+base64 envelope (12 MiB bound, `finapp.api.settlement-upload-max-request-bytes`) while the
+DOMAIN refuses 8 MiB + 1 decoded as `413 settlement.FileTooLarge` with the audit record written
+— every other surface keeps the 1 MiB bound. The file gauges (`finapp.settlement.file.pending`,
+`.age` per source, `SettlementFileMetrics`) publish eagerly per declared source from a fresh
+instance, NaN when unreadable, zero when quiet. Proven over real HTTP and in settlement's own
+database tier: negatives per route (401, and 403 for the money-operating desk), replay
+byte-identical, key reuse 409, a second principal's same key its own claim and its same bytes
+`duplicateOf` with its own receipt, the ten-way attester race admitting exactly one, a PAN
+answering 422 naming line 2 and resting in no response, row, log or audit summary. **Five probe
+runs**: the attestation `CHECK`, the domain distinctness, the read audit and the per-principal
+scope each dropped and caught by the intended test; the row lock removed and the race still
+admitting one — the conditional is the arbiter, demonstrated rather than assumed
+(`MUTATION_TESTING.md` §2 +4 rows). Multi-instance `PASS` — the content unique, the
+per-principal claim and the conditional `NULL → value` are all PostgreSQL's. Deliberately
+deferred: the decline (`-008`, where `REJECTED` exists), parsed totals an attester reads first
+(`-008`), acceptance (`-009`), pull (`-021`), readmission (`-022`); the operators-audited-as-
+`CUSTOMER` debt stands (Phase 15) and does not weaken distinctness, which is by actor id.
+
+---
+
+### Previously
+
+**`P8-TSK-002` — The source register, the encrypted file store and the door screen** —
+`COMPLETE` (2026-09-29). **M8.1 stands at 2 of 3**: settlement evidence can now be received —
+screened before anything is stored, encrypted under its own key with the associated data bound,
+checksummed and append-only — and every externally settling position has exactly one declared
+source (`INV-SET-05`), with nothing parsed and no door open. **The register is compiled and
+composed in `app`** (`SettlementBeans`, joining the confinement test's configuration files): the
+rails' positions read off `RailCapabilities.clearingPurpose()`, the payout's off the new
+`merchant.PayoutSettlementDeclaration.CLEARING_PURPOSE` (`MerchantPayoutOutcomes` switched to it —
+still `PAYOUT_CLEARING`, no behaviour change), coverage verified at composition so an uncovered
+settling rail fails the build and every startup (`EverySettlingPositionHasASourceTest`, its
+planted-rail probe in-test), and `settlement`/`reconciliation` may not even NAME a `*_CLEARING`
+purpose (the widened confinement rule). The descriptor refuses incoherence at construction — a
+format for another kind, an empty channel set, a malformed remittance-reference pattern, and the
+position and pattern each present exactly for the report kinds *(a design elaboration: the
+backlog's pattern field became kind-coherent, because the bank statement is where remittances
+land and has none of its own)*. **Settlement `V002`**: `source` seeded by identity alone (no
+position column; retirement one-way, the sequence forward-only, identity frozen, never deleted —
+all by trigger for every writer), `file` born `RECEIVED` with no edge (the generated `CHECK` and
+transition trigger admit exactly the machine that exists; both attestation `CHECK`s stated now),
+the content unique among non-readmissions, `file_chunk`/`file_event`/`file_receipt`/
+`refused_delivery` each `SELECT, INSERT` with an every-writer append-only trigger, the file's
+`UPDATE` column-narrowed, and **no `DELETE` for `finapp_app` anywhere**. **`FileReception`** (the
+one door, channels arriving with `-003`/`-021`/`-022`): source known and `ACTIVE`, the bounds
+(1..8 MiB, 50,000 records by the screen's own walk), the conservative whole-stream screen
+(Luhn-valid 13–19-digit runs with separators collapsed; the international account shape as a
+second, independent pass — the first draft hung it off the digit walk and an identifier separated
+from its closing character escaped, caught by the unit tier), then the content address: the row,
+its AES-256-GCM chunks (fresh 12-byte nonces, the AAD binding `file_id ‖ source_id ‖
+content_sha256 ‖ seq` at fixed widths), a `NEW` receipt, the birth event and the channel's
+passed-in audit action in ONE transaction — or a `DUPLICATE` receipt and nothing else — or a
+refusal that is a RESULT, never an exception, committing exactly its metadata row and
+`settlement.SettlementDeliveryRefused` (catalogued; an over-bound delivery leaves the audit
+record alone). Reads decrypt every chunk under its binding and verify the whole plaintext
+against the stored address before serving a byte. **`FINAPP_SETTLEMENT_FILE_KEY`** is the
+twelfth confined credential (`SettlementFileKey`, suffix `/settlement-file`, `EXACTLY_32`);
+the two ingestion series count after commit (`CommittedReceptionOutcomes`, the
+`CommittedRailOutcomes` shape), eagerly per source, and `source` joined
+`MetricNames.ALLOWED_TAG_KEYS` with its written argument. Proven live in settlement's own
+database tier: round-trips at 1 byte, both chunk boundaries and 8 MiB; the ten-way
+`SimulatedInstance` race (one row, one `NEW`, nine `DUPLICATE`); a PAN and an IBAN each leaving
+only metadata, the needle absent from every settlement column and captured logs; a flipped
+byte, a transplanted chunk and a truncated file each serving nothing; append-only and the
+narrowed grants exercised as both roles. `DATA_CLASSIFICATION.md` §4 +63 rows;
+`AUDITABLE_ACTIONS.md` +1. Multi-instance `PASS` — the content unique is the arbiter, the
+register is compiled data, and the seeded row holds identity and operational state only.
+
+---
+
+### Previously
+
+**`P8-TSK-001` — The `settlement` and `reconciliation` modules and schemas** — `COMPLETE`
+(2026-09-28). **M8.1 opens at 1 of 3 and Phase 8 is `IN_PROGRESS`**: bounded contexts 13 and 14
+as build-graph facts and privilege floors, before any domain code — ADR-0064's separation made
+structural. Both modules declared after `ledger`, so `ledger → settlement` and
+`ledger → reconciliation` are Gradle cycles, **demonstrated both** ("Circular dependency"
+at configuration, each restore byte-identical); `settlement ↔ reconciliation` refused in BOTH
+directions with no cycle behind either refusal — the two isolation tests are the only controls,
+and all four planted edges (`settlement → reconciliation`, `reconciliation → settlement`,
+`settlement → payments`, `reconciliation → merchant`) were caught by the intended test naming
+the intruder. `V001` in each schema on the sibling shape verbatim: owner `finapp_migrator`,
+`REVOKE ALL FROM PUBLIC`, `USAGE` alone to `finapp_app`, no tables, deliberately no
+`ALTER DEFAULT PRIVILEGES`. **The floors proven live in each module's own database tier** — the
+task wired `testFixtures(platform)` and the image property into both new builds, so the module
+that owns the schema owns the proof of its floor: ACL exactly `{finapp_migrator=UC,
+finapp_app=U}` read whole from `pg_namespace` (an extra grantee is invisible to a per-role
+probe), the owner the migrator, `pg_default_acl` empty, the only table Flyway's history and the
+application role refused on it, `USAGE`-without-`CREATE` exercised as `finapp_app` behind
+`assertCannotBypassPrivileges`. `DatabaseUnderTest` discovered both schemas from the repository
+layout with zero edits and CI's flyway steps are unqualified — the stale-name class checked and
+empty. Eleven sibling isolation tests gain both modules (seven reflowed to the multi-line
+shape); both modules join `app`'s classpath so `ProductionModules` sweeps them, and a planted
+`double` in each was caught naming that module. **The gate's own finds, each fixed**: the floor
+test's text check tripped on the migration's own "deliberately NO `ALTER DEFAULT PRIVILEGES`"
+comment (it now reads only the statements, comments stripped); `:platform:test` first reported
+green from an `UP-TO-DATE` result, not an execution (re-run `--rerun-tasks`, fresh); the probe
+harness had overwritten `app`'s green evidence with its own intended failure (the final code
+re-run whole and fresh); and the reverse-edge cycle had been demonstrated on one side only (now
+both). Multi-instance `PASS` — ten instances booting at once apply each floor once under
+Flyway's schema-history lock, and nothing else exists for two instances to disagree on.
+`INV-LED-04` untouched: the ledger's grants unchanged, and the floor test proves the
+application role cannot even `CREATE` in the new schemas. Eight probe runs, eight caught, every
+verdict read from the failing testcases or Gradle's own refusal, every restore byte-identical.
+No aggregate, bean, endpoint, permission, event or audit action — the deliberately-few licence;
+no `DATA_CLASSIFICATION.md` rows because no columns exist. `MODULE_ARCHITECTURE.md`'s two
+Phase-8 owner entries and ADR-0064's implementation note now say the boundary exists. Verified
+by targeted tiers from fresh runs on the final code: the hermetic tier green fleet-wide across
+sixteen modules, and the two new database tiers green (five floor assertions each).
+
+### Previously
+
+**The Phase 7 → Phase 8 transition** — `COMPLETE` (2026-09-28),
+[`reviews/PHASE_7_TO_8_TRANSITION.md`](reviews/PHASE_7_TO_8_TRANSITION.md). **Phase 7
+`COMPLETE`, confirmed after repair; Phase 8 `READY`.** The integrated audit found two CRITICAL and
+twelve IMPORTANT Phase 7 defects and repaired every one before the boundary — payments `V023`
+(`scheme_execution_claim`: one money fact per scheme execution; the parking's named reference,
+cycle, cause and attempt; the fifth evidence subject), the executed amount judged by the one
+applier, the inquiry's own vocabulary, the void redirect for a capture never sent or received and
+a re-sent never-received void, the merchant close asking the dispute store and closing its
+payable, the grant's shape rule and escaped bodies, the undispatched checkout intent re-checked,
+refused at the public door and cancelled at expiry, the dispute rows pre-locked in order
+(`PostingService.lockBalancesInOrder`), strictly advancing permits, `ProviderTransportGuard`, and
+`SECOND_PRESENTMENT` — plus the MINOR correctness, concurrency and security findings, and the
+harness's heap. Thirty-four probe runs over thirty-three breaks, thirty-three caught at once.
+Multi-instance **`FAIL` as found, `PASS` after repair**. Phase 8 initialised: its plan, ten ADRs,
+its lifecycles and model, nine invariants, its gate extension, its registers and its backlog, with
+`P8-TSK-001` `READY`. The full record is the transition document; this block moves to
+[`history/TASK_HISTORY.md`](history/TASK_HISTORY.md) when the next task completes.
 
 ### Previously
 

@@ -302,6 +302,28 @@ public final class JdbcWithdrawalStore implements WithdrawalStore<Connection> {
         }
     }
 
+    @Override
+    public List<Withdrawal> pageCompleted(Connection unitOfWork, UUID after, int limit) {
+        try (PreparedStatement select =
+                unitOfWork.prepareStatement(
+                        "SELECT " + COLUMNS + " FROM " + TABLE
+                                + " WHERE status = 'COMPLETED' AND id > ?"
+                                + " ORDER BY id LIMIT ?")) {
+            select.setObject(1, after);
+            select.setInt(2, limit);
+            try (ResultSet rows = select.executeQuery()) {
+                List<Withdrawal> page = new ArrayList<>();
+                while (rows.next()) {
+                    page.add(map(rows));
+                }
+                return List.copyOf(page);
+            }
+        } catch (SQLException failure) {
+            throw new PaymentsStorageException(
+                    DatabaseFailure.describe("paging completed withdrawals", failure));
+        }
+    }
+
     private static Withdrawal map(ResultSet row) throws SQLException {
         String failureReason = row.getString("failure_reason");
         String schemeReference = row.getString("scheme_reference");

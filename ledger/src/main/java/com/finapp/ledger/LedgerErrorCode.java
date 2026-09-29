@@ -80,7 +80,35 @@ public enum LedgerErrorCode implements ErrorCode {
             "ledger.ProposalNotOpen",
             409,
             "The adjustment proposal is already decided; a new adjustment is a new"
-                    + " proposal.");
+                    + " proposal."),
+
+    /**
+     * A generic adjustment named a reconciled position (`P8-TSK-006`, ADR-0071,
+     * {@code INV-REC-06}).
+     *
+     * <p>A {@code 422}: the line set is the caller's to correct, and the remedy is not a
+     * retry against this surface at all — value in a clearing or suspense account moves
+     * only through a reconciliation break's four-eyes resolution. Which position is named
+     * (the purpose, an enumerated word); which account and amount are not.
+     */
+    ADJUSTMENT_ON_RECONCILED_POSITION(
+            "ledger.AdjustmentOnReconciledPosition",
+            422,
+            "A reconciled position cannot be adjusted here; value there moves only through"
+                    + " a reconciliation break's resolution."),
+
+    /**
+     * A decision reached a proposal another door owns (`P8-TSK-006`, ADR-0071 §6).
+     *
+     * <p>A {@code 409} and actionable in the {@code P1-TSK-018} sense: the proposal is fine
+     * and still standing — it is simply not this surface's to decide. A reconciliation
+     * proposal is decided by the resolution flow that also moves the break, and a manual
+     * one by the generic four-eyes door.
+     */
+    ADJUSTMENT_ORIGIN_MISMATCH(
+            "ledger.AdjustmentOriginMismatch",
+            409,
+            "The proposal belongs to another origin's door and cannot be decided here.");
 
     private final String code;
     private final int status;

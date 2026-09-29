@@ -110,4 +110,19 @@ include("payments")
 include("checkout")
 include("merchant")
 
+// The Phase 8 settlement modules (P8-TSK-001). Two bounded contexts, never one module, because
+// they hold two different authorities (ADR-0064, MODULE_ARCHITECTURE.md M8): `settlement` owns
+// what external institutions SAY happened - files, batches, lines, recognition - and
+// `reconciliation` owns what the platform EXPECTED to happen - expectations, matching, breaks,
+// suspense, resolutions. Each is declared after `ledger` for the same structural reason as
+// `accounts`, `transfers`, `payments` and `merchant`: recognition's postings and a resolution's
+// adjustments are COMMANDED through the ledger's APIs and never written (INV-LED-04), so with
+// settlement -> ledger and reconciliation -> ledger in the build graph, the reverse edges are
+// Gradle dependency cycles the build refuses outright. `settlement <-> reconciliation` is
+// deliberately ABSENT in BOTH directions and no cycle backs either refusal - the two isolation
+// tests are the only controls, which is exactly why they exist: evidence and expectations must
+// never share a writer, and every hand-off goes through a port `app` composes.
+include("settlement")
+include("reconciliation")
+
 include("app")

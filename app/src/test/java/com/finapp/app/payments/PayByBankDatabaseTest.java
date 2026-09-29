@@ -27,7 +27,12 @@ import java.time.Clock;
 import java.time.Duration;
 import java.time.Instant;
 import java.time.ZoneOffset;
+import com.finapp.app.reconciliation.ClearingLineCopies;
+import com.finapp.reconciliation.ExpectationDirection;
+import com.finapp.reconciliation.ExpectationKind;
+import com.finapp.reconciliation.KeyKind;
 import java.util.Base64;
+import java.util.List;
 import java.util.UUID;
 import org.junit.jupiter.api.AfterAll;
 import org.junit.jupiter.api.BeforeEach;
@@ -170,6 +175,18 @@ class PayByBankDatabaseTest {
         assertThat(get("/v1/me/accounts/" + f.product() + "/balance", f.token()).body())
                 .contains("\"settled\":\"5.00\"");
 
+        // ITS EXPECTATION (P8-TSK-005, ADR-0067): the execution's clearing line's copy, INBOUND,
+        // keyed by the scheme's reference and our end-to-end reference - and the cycle the
+        // confirmation announced kept as the ATTRIBUTE it is, never a key.
+        ClearingLineCopies.Opened payIn =
+                ClearingLineCopies.assertOpensItsClearingLinesCopy(
+                        ExpectationKind.PUSH_PAY_IN, attemptId,
+                        "payment-execution:" + attemptId, ExpectationDirection.INBOUND);
+        assertThat(payIn.amountMinor()).isEqualTo(500);
+        assertThat(payIn.settlementCycle()).contains("C7");
+        ClearingLineCopies.assertKeyed(payIn, KeyKind.SCHEME_REF, scheme);
+        ClearingLineCopies.assertKeyed(payIn, KeyKind.END_TO_END_REF, referenceOf(attemptId));
+
         // The pinned decision: version 3's bank pay-in rule chose the instant rail.
         assertThat(oneString(
                         "SELECT chosen_rail || '|' || v.version::text"
@@ -272,6 +289,9 @@ class PayByBankDatabaseTest {
                         + " 'payments.PaymentOutcomeApplied' AND target_id = '" + paymentId
                         + "' AND change_summary LIKE '%EXECUTED%'"))
                 .as("resolvers record acting transitions only: one record for ten deliveries")
+                .isEqualTo(1);
+        assertThat(ClearingLineCopies.expectationsOf(ExpectationKind.PUSH_PAY_IN, attemptId))
+                .as("ten deliveries, one expectation - the acting exit decides (P8-TSK-005)")
                 .isEqualTo(1);
     }
 
@@ -477,6 +497,20 @@ class PayByBankDatabaseTest {
                         + " WHERE u.scheme_reference = '" + scheme + "'"))
                 .isEqualTo(10);
 
+        // ITS EXPECTATION (P8-TSK-005, ADR-0067 §2): the parking's clearing line's copy, opened
+        // once under ten deliveries, keyed by the scheme's reference ALONE - the named reference
+        // is no key (it travels to -020's suspense item).
+        ClearingLineCopies.Opened parked =
+                ClearingLineCopies.assertOpensItsClearingLinesCopy(
+                        ExpectationKind.UNMATCHED_CONFIRMATION, "instant:" + scheme,
+                        "unmatched-confirmation:instant:" + scheme, ExpectationDirection.INBOUND);
+        assertThat(parked.amountMinor()).isEqualTo(750);
+        ClearingLineCopies.assertKeyed(parked, KeyKind.SCHEME_REF, scheme);
+        assertThat(count("SELECT count(*) FROM reconciliation.expectation_key WHERE"
+                        + " expectation_id = '" + parked.id() + "'"))
+                .as("one key: the scheme's reference")
+                .isEqualTo(1);
+
         // Moneyless, or unusable money: retained and acknowledged, nothing parked.
         String moneyless = "sch-moneyless-" + suffix();
         assertThat(callback(
@@ -522,6 +556,17 @@ class PayByBankDatabaseTest {
         assertThat(oneString("SELECT subject_kind FROM payments.scheme_execution_claim"
                         + " WHERE rail = 'instant' AND scheme_reference = ?", scheme))
                 .isEqualTo("UNMATCHED");
+        // THE EXPECTATIONS (P8-TSK-005): the parked value opens UNMATCHED_CONFIRMATION at the
+        // EXECUTED amount, its stored cycle the attribute; the failed pay-in opens nothing.
+        ClearingLineCopies.Opened parked =
+                ClearingLineCopies.assertOpensItsClearingLinesCopy(
+                        ExpectationKind.UNMATCHED_CONFIRMATION, "instant:" + scheme,
+                        "unmatched-confirmation:instant:" + scheme, ExpectationDirection.INBOUND);
+        assertThat(parked.amountMinor()).isEqualTo(499);
+        assertThat(parked.settlementCycle()).contains("C1");
+        assertThat(ClearingLineCopies.expectationsOf(ExpectationKind.PUSH_PAY_IN, attemptId))
+                .as("the mismatched pay-in posted no execution and opened no PUSH_PAY_IN")
+                .isZero();
     }
 
     @Test
@@ -805,6 +850,38 @@ class PayByBankDatabaseTest {
                             UUID.fromString(attemptId)))
                     .as("the row agrees with the one fact")
                     .isEqualTo(credited == 1 ? "EXECUTED" : "AWAITING_PAYER");
+
+            // ONE MONEY FACT, ONE EXPECTATION (P8-TSK-005, the gate's find): the credit and the
+            // parking are the two openers that could both claim this scheme reference, and
+            // under ten racers exactly the winner's opens - the pay-in's or the parking's -
+            // with the scheme reference keyed once and no collision recorded.
+            long payIns = ClearingLineCopies.expectationsOf(ExpectationKind.PUSH_PAY_IN, attemptId);
+            long parkings = ClearingLineCopies.expectationsOf(
+                    ExpectationKind.UNMATCHED_CONFIRMATION, "instant:" + scheme);
+            assertThat(new long[] {payIns, parkings})
+                    .as("round %d: the one money fact's expectation, and no other", round)
+                    .containsExactly(credited, parked);
+            if (credited == 1) {
+                ClearingLineCopies.assertOpensItsClearingLinesCopy(
+                        ExpectationKind.PUSH_PAY_IN, attemptId,
+                        "payment-execution:" + attemptId, ExpectationDirection.INBOUND);
+            } else {
+                ClearingLineCopies.assertOpensItsClearingLinesCopy(
+                        ExpectationKind.UNMATCHED_CONFIRMATION, "instant:" + scheme,
+                        "unmatched-confirmation:instant:" + scheme,
+                        ExpectationDirection.INBOUND);
+            }
+            assertThat(count("SELECT count(*) FROM reconciliation.expectation_key WHERE"
+                            + " key_kind = 'SCHEME_REF' AND key_value = '" + scheme + "'"))
+                    .as("round %d: the scheme reference keyed once", round)
+                    .isEqualTo(1);
+            assertThat(count("SELECT count(*) FROM reconciliation.expectation_event ev"
+                            + " JOIN reconciliation.expectation x ON x.id = ev.expectation_id"
+                            + " WHERE ev.event_type = 'KEY_COLLISION' AND x.operation_ref IN ('"
+                            + attemptId + "', 'instant:" + scheme + "')"))
+                    .as("round %d: no collision - V023's claim arbitrated before either opened",
+                            round)
+                    .isZero();
         }
     }
 
@@ -996,7 +1073,10 @@ class PayByBankDatabaseTest {
                         ids,
                         clock,
                         new com.finapp.payments.JdbcSchemeExecutionClaimStore(),
-                        com.finapp.payments.RailOutcomeObserver.NONE);
+                        com.finapp.payments.RailOutcomeObserver.NONE,
+                        // The wired recorder (P8-TSK-005): a parking made here opens its
+                        // expectation exactly as the door's does.
+                        settlementExpectationsBean);
         try (com.finapp.platform.security.SecurityContext.Scope platform =
                         com.finapp.platform.security.SecurityContext.enterSystem();
                 com.finapp.platform.correlation.CorrelationContext.Scope correlation =
@@ -1026,6 +1106,9 @@ class PayByBankDatabaseTest {
 
     @Autowired
     private com.finapp.payments.UnmatchedConfirmationStore<Connection> unmatchedStoreBean;
+
+    @Autowired
+    private com.finapp.payments.SettlementExpectations settlementExpectationsBean;
 
     @Autowired private com.finapp.ledger.LedgerAccountStore<Connection> ledgerAccountStore;
 
@@ -1323,12 +1406,15 @@ class PayByBankDatabaseTest {
             + " confirmation echo never parks (P7-TSK-010)")
     void theReturnChainHolds() throws Exception {
         String scheme = "sch-ret-orig-" + suffix();
+        // Unique per run since P8-TSK-005: the return's scheme reference is now a per-source
+        // expectation key, so a constant would collide with an earlier run's return.
+        String returnRef = "sch-ret-tx-" + suffix();
         Executed paid = executedPayIn("5.00", scheme);
         String operator = operatorToken();
 
         provider.succeedsWith(
                 SimulatedInstantSchemeAdapter.RETURNS_PATH, 200,
-                "{\"status\":\"accepted\",\"reference\":\"sch-ret-tx-1\","
+                "{\"status\":\"accepted\",\"reference\":\"" + returnRef + "\","
                         + "\"cycle\":\"C9\"}");
         String key = someKey();
         HttpResponse<String> returned =
@@ -1342,7 +1428,7 @@ class PayByBankDatabaseTest {
                         "SELECT status || '|' || provider_reference"
                                 + " FROM payments.refund WHERE id = ?",
                         UUID.fromString(refundId)))
-                .isEqualTo("COMPLETED|sch-ret-tx-1");
+                .isEqualTo("COMPLETED|" + returnRef);
 
         // THE WIRE: our minted reference as the Idempotency-Key, the ORIGINAL's scheme
         // reference as the destination-by-reference in the body (INV-RAIL-03: the
@@ -1378,6 +1464,21 @@ class PayByBankDatabaseTest {
                         paid.fixture().token()).body())
                 .contains("\"settled\":\"0.00\"");
 
+        // ITS EXPECTATION (P8-TSK-005, ADR-0067): the RETURN_PAYMENT mode opens PUSH_RETURN -
+        // OUTBOUND, keyed by the return's OWN scheme reference and our reference, and NO cycle:
+        // a return's cycle is learned from the scheme's report (-017), never announced here.
+        ClearingLineCopies.Opened returnOpened =
+                ClearingLineCopies.assertOpensItsClearingLinesCopy(
+                        ExpectationKind.PUSH_RETURN, refundId,
+                        "payment-refund:" + refundId, ExpectationDirection.OUTBOUND);
+        assertThat(returnOpened.amountMinor()).isEqualTo(500);
+        assertThat(returnOpened.settlementCycle()).isEmpty();
+        ClearingLineCopies.assertKeyed(returnOpened, KeyKind.SCHEME_REF, returnRef);
+        ClearingLineCopies.assertKeyed(returnOpened, KeyKind.OUR_REF, ourReference);
+        assertThat(ClearingLineCopies.expectationsOf(ExpectationKind.CARD_REFUND, refundId))
+                .as("a return is never a card refund: the kind is the DECLARED refund mode")
+                .isZero();
+
         // The replay: the recorded judgement byte for byte, no second wire call, no
         // second entry (INV-IDEM-03).
         HttpResponse<String> replay =
@@ -1389,13 +1490,13 @@ class PayByBankDatabaseTest {
 
         // THE RETURN'S OWN ECHO: the scheme confirming OUR return's reference attributes
         // to the refund, parks nothing and credits nothing (the park guard's half).
-        assertThat(executedCallback(ourReference, "sch-ret-tx-1", "C9", "5.00", "USD"))
+        assertThat(executedCallback(ourReference, returnRef, "C9", "5.00", "USD"))
                 .isEqualTo(204);
         assertThat(count("SELECT count(*) FROM payments.unmatched_confirmation WHERE"
-                        + " scheme_reference = 'sch-ret-tx-1'"))
+                        + " scheme_reference = '" + returnRef + "'"))
                 .isZero();
         assertThat(count("SELECT count(*) FROM ledger.journal_entry WHERE idempotency_scope"
-                        + " LIKE 'ledger.post:unmatched-confirmation:%sch-ret-tx-1'"))
+                        + " LIKE 'ledger.post:unmatched-confirmation:%" + returnRef + "'"))
                 .isZero();
     }
 
@@ -1558,6 +1659,13 @@ class PayByBankDatabaseTest {
                         + " 'payments.PaymentOutcomeApplied' AND target_id = '" + paymentId
                         + "' AND change_summary LIKE '%EXECUTED%'"))
                 .isEqualTo(1);
+        // The inquiry sweep is another arrival of the one applier (P8-TSK-005): ten sweeps,
+        // one expectation, its cycle the one the inquiry announced.
+        ClearingLineCopies.Opened swept =
+                ClearingLineCopies.assertOpensItsClearingLinesCopy(
+                        ExpectationKind.PUSH_PAY_IN, attemptId,
+                        "payment-execution:" + attemptId, ExpectationDirection.INBOUND);
+        assertThat(swept.settlementCycle()).contains("C4");
     }
 
     @Test
@@ -1589,6 +1697,55 @@ class PayByBankDatabaseTest {
                         + " = 'ledger.post:payment-refund:" + refundId + "'"))
                 .isEqualTo(1);
         assertThat(outboxCount("payments.RefundCompleted", refundId)).isEqualTo(1);
+        // Ten sweeps, one PUSH_RETURN expectation (P8-TSK-005): the acting exit decides.
+        ClearingLineCopies.assertOpensItsClearingLinesCopy(
+                ExpectationKind.PUSH_RETURN, refundId,
+                "payment-refund:" + refundId, ExpectationDirection.OUTBOUND);
+    }
+
+    /**
+     * THE CYCLE IS AN ATTRIBUTE, NEVER A KEY (`P8-TSK-005`, ADR-0067 §5, the transition's A5):
+     * ten pay-ins all announced in ONE settlement cycle open ten expectations each carrying that
+     * cycle - and raise no collision, because one cycle names many executions and a cycle key
+     * under the per-source unique would have made every pay-in after the first a
+     * {@code KEY_COLLISION}.
+     */
+    @Test
+    @DisplayName("ten pay-ins of ONE cycle open ten expectations carrying it and raise no"
+            + " collision - the cycle is an attribute, never a key (P8-TSK-005)")
+    void tenPayInsOfOneCycleRaiseNoCollision() throws Exception {
+        Fixture f = bankFixture();
+        String cycle = "CY" + suffix();
+        List<String> attemptIds = new java.util.ArrayList<>();
+        for (int payIn = 0; payIn < 10; payIn++) {
+            schemeInitiates("https://payer-psp.example/authorize/" + suffix());
+            String attemptId = attemptIdOf(field(confirmedPayment(f, "1.00").body(), "id"));
+            assertThat(executedCallback(
+                            referenceOf(attemptId), "sch-cycle-" + suffix(), cycle, "1.00",
+                            "USD"))
+                    .isEqualTo(204);
+            attemptIds.add(attemptId);
+        }
+        for (String attemptId : attemptIds) {
+            ClearingLineCopies.Opened opened =
+                    ClearingLineCopies.assertOpensItsClearingLinesCopy(
+                            ExpectationKind.PUSH_PAY_IN, attemptId,
+                            "payment-execution:" + attemptId, ExpectationDirection.INBOUND);
+            assertThat(opened.settlementCycle()).contains(cycle);
+        }
+        assertThat(count("SELECT count(*) FROM reconciliation.expectation"
+                        + " WHERE settlement_cycle = '" + cycle + "'"))
+                .isEqualTo(10);
+        assertThat(count("SELECT count(*) FROM reconciliation.expectation_event ev"
+                        + " JOIN reconciliation.expectation x ON x.id = ev.expectation_id"
+                        + " WHERE x.settlement_cycle = '" + cycle + "'"
+                        + " AND ev.event_type = 'KEY_COLLISION'"))
+                .as("no pay-in of the cycle collided with another")
+                .isZero();
+        assertThat(count("SELECT count(*) FROM reconciliation.expectation_key WHERE"
+                        + " key_value = '" + cycle + "'"))
+                .as("the cycle is registered as no key at all")
+                .isZero();
     }
 
     /** Ten calls released behind one gate, every one awaited. */

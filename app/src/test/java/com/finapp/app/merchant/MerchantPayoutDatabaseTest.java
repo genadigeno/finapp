@@ -4,7 +4,11 @@ import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.awaitility.Awaitility.await;
 
+import com.finapp.app.reconciliation.ClearingLineCopies;
 import com.finapp.app.telemetry.MerchantMeters;
+import com.finapp.reconciliation.ExpectationDirection;
+import com.finapp.reconciliation.ExpectationKind;
+import com.finapp.reconciliation.KeyKind;
 import com.finapp.ledger.AccountPurpose;
 import com.finapp.ledger.AccountType;
 import com.finapp.ledger.ChartOfAccounts;
@@ -195,6 +199,24 @@ class MerchantPayoutDatabaseTest {
         assertThat(provider.headerValues(PATH, SimulatedPayoutProvider.IDEMPOTENCY_KEY_HEADER))
                 .as("our minted reference was committed before the wire and sent as the key")
                 .containsExactly(stored(merchant, paid.payout()).reference().value());
+
+        // ITS EXPECTATION (P8-TSK-005, ADR-0067), through merchant's OWN port and app's one
+        // recorder: the completion's PAYOUT_CLEARING line's copy, OUTBOUND, keyed by the
+        // provider's reference and ours (pyo-...).
+        String payoutId = paid.payout().value().toString();
+        ClearingLineCopies.Opened opened =
+                ClearingLineCopies.assertOpensItsClearingLinesCopy(
+                        ExpectationKind.MERCHANT_PAYOUT, payoutId,
+                        MerchantPayoutOutcomes.POSTING_KEY_PREFIX + payoutId,
+                        ExpectationDirection.OUTBOUND);
+        assertThat(opened.amountMinor()).isEqualTo(4000);
+        assertThat(opened.settlementCycle()).as("a payout announces no cycle").isEmpty();
+        ClearingLineCopies.assertKeyed(
+                opened,
+                KeyKind.PAYOUT_PROVIDER_REF,
+                stored(merchant, paid.payout()).providerReference().orElseThrow().value());
+        ClearingLineCopies.assertKeyed(
+                opened, KeyKind.OUR_REF, stored(merchant, paid.payout()).reference().value());
     }
 
     @Test
@@ -212,6 +234,10 @@ class MerchantPayoutDatabaseTest {
         assertThat(entryLines(declined.payout())).isEmpty();
         assertThat(positionMinor(merchant)).as("the payable is whole").isEqualTo(10000);
         assertThat(outboxCount("merchant.MerchantPayoutFailed", declined.payout())).isEqualTo(1);
+        assertThat(ClearingLineCopies.expectationsOf(
+                        ExpectationKind.MERCHANT_PAYOUT, declined.payout().value().toString()))
+                .as("nothing posted, nothing expected (P8-TSK-005)")
+                .isZero();
     }
 
     @Test
@@ -375,6 +401,13 @@ class MerchantPayoutDatabaseTest {
                                 + " AND kind = 'QUERY_RESULT'",
                         unknown.payout().value()))
                 .isEqualTo(1);
+        // The provider has no webhook: the sweep is the completion's other arrival, and it
+        // opens the expectation exactly as the first answer would have (P8-TSK-005).
+        String payoutId = unknown.payout().value().toString();
+        ClearingLineCopies.assertOpensItsClearingLinesCopy(
+                ExpectationKind.MERCHANT_PAYOUT, payoutId,
+                MerchantPayoutOutcomes.POSTING_KEY_PREFIX + payoutId,
+                ExpectationDirection.OUTBOUND);
     }
 
     @Test
@@ -406,6 +439,10 @@ class MerchantPayoutDatabaseTest {
         assertThat(auditCount("merchant.MerchantPayoutOutcomeApplied", unknown.payout()))
                 .as("DISPATCHED -> UNKNOWN once, UNKNOWN -> COMPLETED once")
                 .isEqualTo(2);
+        assertThat(ClearingLineCopies.expectationsOf(
+                        ExpectationKind.MERCHANT_PAYOUT, unknown.payout().value().toString()))
+                .as("ten sweeps, one expectation - the acting exit decides (P8-TSK-005)")
+                .isEqualTo(1);
     }
 
     @Test

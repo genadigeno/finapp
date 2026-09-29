@@ -8,6 +8,7 @@ import com.finapp.ledger.LedgerAccountId;
 import com.finapp.ledger.LedgerAccountStatus;
 import com.finapp.ledger.LedgerAccountStore;
 import com.finapp.ledger.PostingCommand;
+import com.finapp.ledger.PostingResult;
 import com.finapp.ledger.PostingService;
 import com.finapp.platform.audit.AuditId;
 import com.finapp.platform.audit.AuditOutcome;
@@ -116,6 +117,18 @@ public final class ChargebackAccounting {
     @NonNull private final IdGenerator ids;
     @NonNull private final Clock clock;
 
+    /**
+     * The expectation-opening seam (`P8-TSK-005`, ADR-0067 §2, {@link SettlementExpectations}):
+     * each stage posting that moves the rail's clearing - the chargeback, the win, the fee -
+     * opens its expectation right after that posting, in the stage's transaction, keyed by the
+     * network's dispute reference under the STAGE's key kind (one reference, three stages: the
+     * kind carries the stage). The attribution, restoration, loss and re-attribution entries
+     * touch no clearing and open nothing. One expectation per stage, as one posting per stage
+     * ({@code INV-DSP-02}). Required, with no do-nothing production implementation. Appended
+     * last (the constructor is positional history).
+     */
+    @NonNull private final SettlementExpectations expectations;
+
     /** Whether the attempt's rail declares chargebacks — the declaration, never a name
      * ({@code INV-RAIL-01}). */
     public boolean disputable(PaymentAttempt attempt) {
@@ -173,13 +186,21 @@ public final class ChargebackAccounting {
                 LedgerAccountId recoverable = recoverableAccount(unitOfWork, split.amount());
                 // THE EXTERNAL FACT: the rail's clearing moves by exactly what the network
                 // took, whoever bears it.
-                post(unitOfWork, CHARGEBACK_KEY + dispute.id().value(), dispute,
-                        List.of(
-                                new JournalLine(recoverable, Direction.DEBIT, split.amount()),
-                                new JournalLine(
-                                        clearingAccount(unitOfWork, attempt, split.amount()),
-                                        Direction.CREDIT,
-                                        split.amount())));
+                Clearing clearing = clearingOf(unitOfWork, attempt, split.amount());
+                PostingResult charged =
+                        post(unitOfWork, CHARGEBACK_KEY + dispute.id().value(), dispute,
+                                List.of(
+                                        new JournalLine(
+                                                recoverable, Direction.DEBIT, split.amount()),
+                                        new JournalLine(
+                                                clearing.account(),
+                                                Direction.CREDIT,
+                                                split.amount())));
+                // ITS EXPECTATION (P8-TSK-005): the network's take, tracked until the PSP's
+                // report nets it - OUTBOUND, derived from the CREDIT line by the recorder.
+                expect(unitOfWork, SettlementExpectations.Kind.CHARGEBACK, CHARGEBACK_KEY,
+                        SettlementExpectations.ReferenceKind.DISPUTE_CB_REF, dispute, clearing,
+                        charged, correlation);
                 // THE ATTRIBUTION: the counterparty's share, composed by the flow that knows
                 // whose money its account holds. Nothing when it bears nothing, or when its
                 // share is parked (the recoverable already holds it).
@@ -195,13 +216,22 @@ public final class ChargebackAccounting {
                 ChargebackSplit split = dispute.split().orElseThrow();
                 counterpartyFirst(unitOfWork, intent);
                 LedgerAccountId recoverable = recoverableAccount(unitOfWork, split.amount());
-                post(unitOfWork, WON_KEY + dispute.id().value(), dispute,
-                        List.of(
-                                new JournalLine(
-                                        clearingAccount(unitOfWork, attempt, split.amount()),
-                                        Direction.DEBIT,
-                                        split.amount()),
-                                new JournalLine(recoverable, Direction.CREDIT, split.amount())));
+                Clearing clearing = clearingOf(unitOfWork, attempt, split.amount());
+                PostingResult won =
+                        post(unitOfWork, WON_KEY + dispute.id().value(), dispute,
+                                List.of(
+                                        new JournalLine(
+                                                clearing.account(),
+                                                Direction.DEBIT,
+                                                split.amount()),
+                                        new JournalLine(
+                                                recoverable, Direction.CREDIT, split.amount())));
+                // ITS EXPECTATION (P8-TSK-005): the network's return of what it took - INBOUND,
+                // its own kind beside the chargeback's (UNIQUE (kind, operation_ref) on the
+                // dispute holds the stages apart).
+                expect(unitOfWork, SettlementExpectations.Kind.CHARGEBACK_REVERSAL, WON_KEY,
+                        SettlementExpectations.ReferenceKind.DISPUTE_REV_REF, dispute, clearing,
+                        won, correlation);
                 if (split.counterpartyShare().isPositive()) {
                     post(unitOfWork, RESTORATION_KEY + dispute.id().value(), dispute,
                             composition.restore(
@@ -248,11 +278,17 @@ public final class ChargebackAccounting {
             Correlation correlation,
             Instant now) {
         Money fee = dispute.fee().orElseThrow();
-        post(unitOfWork, FEE_KEY + dispute.id().value(), dispute,
-                List.of(
-                        new JournalLine(costsAccount(unitOfWork, fee), Direction.DEBIT, fee),
-                        new JournalLine(
-                                clearingAccount(unitOfWork, attempt, fee), Direction.CREDIT, fee)));
+        Clearing clearing = clearingOf(unitOfWork, attempt, fee);
+        PostingResult charged =
+                post(unitOfWork, FEE_KEY + dispute.id().value(), dispute,
+                        List.of(
+                                new JournalLine(
+                                        costsAccount(unitOfWork, fee), Direction.DEBIT, fee),
+                                new JournalLine(clearing.account(), Direction.CREDIT, fee)));
+        // ITS EXPECTATION (P8-TSK-005): the fee the PSP nets from settlement - OUTBOUND.
+        expect(unitOfWork, SettlementExpectations.Kind.DISPUTE_FEE, FEE_KEY,
+                SettlementExpectations.ReferenceKind.DISPUTE_FEE_REF, dispute, clearing, charged,
+                correlation);
         audit.append(
                 unitOfWork,
                 new AuditRecord(
@@ -522,7 +558,7 @@ public final class ChargebackAccounting {
         postings.lockBalancesInOrder(
                 unitOfWork,
                 List.of(
-                        clearingAccount(unitOfWork, attempt, inCurrency),
+                        clearingOf(unitOfWork, attempt, inCurrency).account(),
                         recoverableAccount(unitOfWork, inCurrency),
                         costsAccount(unitOfWork, inCurrency)));
     }
@@ -547,12 +583,15 @@ public final class ChargebackAccounting {
                 .id();
     }
 
+    /** The rail's declared clearing position and the account it resolves to, in one read. */
+    private record Clearing(AccountPurpose purpose, LedgerAccountId account) {}
+
     /**
      * The STORED rail's declared clearing position (`INV-RAIL-04`, ADR-0059 §4) — the card's
-     * {@code SETTLEMENT_CLEARING} — read off the attempt, never off this instance's wiring.
+     * {@code SETTLEMENT_CLEARING} — read off the attempt, never off this instance's wiring;
+     * the same read chooses the posting's account and the expectation's position (ADR-0067 §3).
      */
-    private LedgerAccountId clearingAccount(
-            Connection unitOfWork, PaymentAttempt attempt, Money inCurrency) {
+    private Clearing clearingOf(Connection unitOfWork, PaymentAttempt attempt, Money inCurrency) {
         AccountPurpose purpose =
                 rails.capabilitiesOf(attempt.rail())
                         .clearingPurpose()
@@ -563,16 +602,47 @@ public final class ChargebackAccounting {
                                                         + " chargebacks but no clearing"
                                                         + " position: its coherence rules"
                                                         + " refuse that pairing"));
-        return chart.resolve(unitOfWork, purpose, inCurrency.currency()).id();
+        return new Clearing(
+                purpose, chart.resolve(unitOfWork, purpose, inCurrency.currency()).id());
     }
 
-    private void post(
+    /**
+     * A clearing-moving stage posting's expectation (`P8-TSK-005`): the operation is the
+     * dispute, the key its stage's kind over the network's reference — amount, direction and
+     * date read off the posted line by the implementation, never passed.
+     */
+    private void expect(
+            Connection unitOfWork,
+            SettlementExpectations.Kind kind,
+            String keyPrefix,
+            SettlementExpectations.ReferenceKind referenceKind,
+            Dispute dispute,
+            Clearing clearing,
+            PostingResult posted,
+            Correlation correlation) {
+        expectations.open(
+                unitOfWork,
+                new SettlementExpectations.Opening(
+                        kind,
+                        dispute.id().value().toString(),
+                        keyPrefix + dispute.id().value(),
+                        clearing.purpose(),
+                        clearing.account(),
+                        posted.entryId(),
+                        Optional.empty(),
+                        List.of(
+                                new SettlementExpectations.Key(
+                                        referenceKind, dispute.providerReference().value())),
+                        correlation));
+    }
+
+    private PostingResult post(
             Connection unitOfWork, String key, Dispute dispute, List<JournalLine> lines) {
         platformRowsInOrder(unitOfWork, dispute, lines.get(0).amount());
         LocalDate today = LocalDate.now(clock.withZone(ZoneOffset.UTC));
         // The entry references the DISPUTE: every stage posting is attributable to it (the
         // backlog's audit line), and reconciliation joins dispute to entries by it.
-        postings.post(
+        return postings.post(
                 unitOfWork,
                 new PostingCommand(key, today, today, dispute.id().value().toString(), lines));
     }

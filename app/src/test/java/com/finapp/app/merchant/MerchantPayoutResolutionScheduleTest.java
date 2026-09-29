@@ -203,7 +203,12 @@ class MerchantPayoutResolutionScheduleTest {
                         (uow, record) -> {},
                         (uow, envelope, payload, mediaType) -> {},
                         ids,
-                        clock);
+                        clock,
+                        // No payout resolves in a schedule test (the runner answers empty):
+                        // an opening reaching here is a harness defect (P8-TSK-005).
+                        (uow, opening) -> {
+                            throw new AssertionError("no payout completes in this suite");
+                        });
         return new MerchantPayoutResolution(
                 runner,
                 new JdbcMerchantPayoutStore(),

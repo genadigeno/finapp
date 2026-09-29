@@ -284,6 +284,29 @@ public final class JdbcMerchantPayoutStore implements MerchantPayoutStore<Connec
         }
     }
 
+    @Override
+    public List<MerchantPayout> pageCompleted(
+            Connection unitOfWork, java.util.UUID after, int limit) {
+        try (PreparedStatement select =
+                unitOfWork.prepareStatement(
+                        "SELECT " + COLUMNS + " FROM " + TABLE
+                                + " WHERE status = 'COMPLETED' AND id > ?"
+                                + " ORDER BY id LIMIT ?")) {
+            select.setObject(1, after);
+            select.setInt(2, limit);
+            try (ResultSet rows = select.executeQuery()) {
+                List<MerchantPayout> page = new ArrayList<>();
+                while (rows.next()) {
+                    page.add(map(rows));
+                }
+                return List.copyOf(page);
+            }
+        } catch (SQLException failure) {
+            throw new MerchantStorageException(
+                    DatabaseFailure.describe("paging completed payouts", failure));
+        }
+    }
+
     private static MerchantPayout map(ResultSet row) throws SQLException {
         return MerchantPayout.rehydrate(
                 MerchantPayoutId.of(row.getObject("id", UUID.class)),

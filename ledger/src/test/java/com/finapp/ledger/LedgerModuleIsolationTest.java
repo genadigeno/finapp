@@ -39,7 +39,21 @@ class LedgerModuleIsolationTest {
     @Test
     @DisplayName("ledger sees no sibling business module and not the composition root")
     void seesNoSiblingAndNoCompositionRoot() {
-        for (String forbidden : List.of("party", "identity", "kyc", "consent", "accounts", "transfers", "payments", "paymentmethods", "checkout", "merchant", "app")) {
+        for (String forbidden :
+                List.of(
+                        "party",
+                        "identity",
+                        "kyc",
+                        "consent",
+                        "accounts",
+                        "transfers",
+                        "payments",
+                        "paymentmethods",
+                        "checkout",
+                        "merchant",
+                        "settlement",
+                        "reconciliation",
+                        "app")) {
             assertThat(classpathEntries())
                     .as("ledger must not depend on %s", forbidden)
                     .noneMatch(entry -> isBuildOutputOf(entry, forbidden));

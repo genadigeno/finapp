@@ -114,7 +114,10 @@ public class MerchantPayoutBeans {
             AuditWriter<Connection> auditWriter,
             OutboxWriter<Connection> outboxWriter,
             IdGenerator ids,
-            Clock clock) {
+            Clock clock,
+            // The completion opens its MERCHANT_PAYOUT expectation (P8-TSK-005, ADR-0067):
+            // app's one recorder, behind merchant's own port.
+            com.finapp.merchant.PayoutSettlementExpectations payoutSettlementExpectations) {
         return new MerchantPayoutOutcomes(
                 merchantPayoutStore,
                 holdService,
@@ -124,7 +127,8 @@ public class MerchantPayoutBeans {
                 auditWriter,
                 outboxWriter,
                 ids,
-                clock);
+                clock,
+                payoutSettlementExpectations);
     }
 
     @Bean

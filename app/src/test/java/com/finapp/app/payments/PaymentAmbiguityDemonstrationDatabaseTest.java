@@ -578,7 +578,18 @@ class PaymentAmbiguityDemonstrationDatabaseTest {
                         IDS,
                         CLOCK),
                 com.finapp.payments.RailOutcomeObserver.NONE,
-                new com.finapp.payments.JdbcSchemeExecutionClaimStore());
+                new com.finapp.payments.JdbcSchemeExecutionClaimStore(),
+                // The expectation seam (P8-TSK-004): a quiet double - this suite
+                // asserts its own flow's semantics, and the register's coupling is
+                // SettlementExpectationDatabaseTest's to prove with the REAL recorder.
+                new com.finapp.payments.SettlementExpectations() {
+                    @Override
+                    public void open(java.sql.Connection uow, Opening opening) {}
+
+                    @Override
+                    public void alias(
+                            java.sql.Connection uow, AliasRegistration registration) {}
+                });
     }
 
     private SimulatedCardPspAdapter adapter() {
@@ -610,7 +621,19 @@ class PaymentAmbiguityDemonstrationDatabaseTest {
                                 new com.finapp.payments.JdbcClearingRecordStore(),
                                 new com.finapp.platform.outbox.JdbcOutboxWriter(),
                                 IDS,
-                                CLOCK),
+                                CLOCK,
+                                com.finapp.payments.PaymentRails.of(java.util.List.of(
+                                        com.finapp.payments.SimulatedCardPspAdapter.RAIL)),
+                                // The expectation seam (P8-TSK-004): a quiet double - the register's
+                                // coupling is SettlementExpectationDatabaseTest's to prove.
+                                new com.finapp.payments.SettlementExpectations() {
+                                    @Override
+                                    public void open(java.sql.Connection uow, Opening opening) {}
+
+                                    @Override
+                                    public void alias(
+                                            java.sql.Connection uow, AliasRegistration registration) {}
+                                }),
                         new InboxConsumer<>(new JdbcInboxRecordStore(), CLOCK, Duration.ofDays(14)),
                         new tools.jackson.databind.ObjectMapper(),
                         CLOCK,

@@ -23,8 +23,8 @@ public final class JdbcAdjustmentProposalStore
     private static final String LINES = "ledger.adjustment_proposal_line";
 
     private static final String COLUMNS =
-            "id, status, posting_date, value_date, reference, reason, proposed_by,"
-                    + " proposed_at, decided_by, decided_at, journal_entry_id";
+            "id, status, posting_date, value_date, reference, reason, reason_code, origin,"
+                    + " proposed_by, proposed_at, decided_by, decided_at, journal_entry_id";
 
     @Override
     public void insert(Connection unitOfWork, AdjustmentProposal proposal) {
@@ -33,15 +33,18 @@ public final class JdbcAdjustmentProposalStore
         try (PreparedStatement insert =
                 unitOfWork.prepareStatement(
                         "INSERT INTO " + TABLE + " (" + COLUMNS
-                                + ") VALUES (?, ?, ?, ?, ?, ?, ?, ?, NULL, NULL, NULL)")) {
+                                + ") VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, NULL, NULL,"
+                                + " NULL)")) {
             insert.setObject(1, proposal.id().value());
             insert.setString(2, proposal.status().name());
             insert.setDate(3, Date.valueOf(proposal.postingDate()));
             insert.setDate(4, Date.valueOf(proposal.valueDate()));
             insert.setString(5, proposal.reference());
             insert.setString(6, proposal.reason());
-            insert.setString(7, proposal.proposedBy());
-            insert.setTimestamp(8, Timestamp.from(proposal.proposedAt()));
+            insert.setString(7, proposal.reasonCode().name());
+            insert.setString(8, proposal.origin().name());
+            insert.setString(9, proposal.proposedBy());
+            insert.setTimestamp(10, Timestamp.from(proposal.proposedAt()));
             insert.executeUpdate();
             try (PreparedStatement line =
                     unitOfWork.prepareStatement(
@@ -170,6 +173,8 @@ public final class JdbcAdjustmentProposalStore
                 row.getDate("value_date").toLocalDate(),
                 row.getString("reference"),
                 row.getString("reason"),
+                AdjustmentReasonCode.valueOf(row.getString("reason_code")),
+                AdjustmentOrigin.valueOf(row.getString("origin")),
                 row.getString("proposed_by"),
                 row.getTimestamp("proposed_at").toInstant(),
                 linesOf(unitOfWork, id),

@@ -5,6 +5,9 @@ CLAUDE.local.md
 # --- Gradle ----------------------------------------------------------------
 .gradle/
 build/
+# The Kotlin compiler's transient session markers (.kotlin/sessions), written into the project
+# directory by the build-logic compilation. Machine-local liveness state, never source.
+.kotlin/
 !gradle/wrapper/gradle-wrapper.jar
 
 # gradle-wrapper.jar IS committed, deliberately. It is the bootstrapper that

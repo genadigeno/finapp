@@ -102,7 +102,8 @@ public class LedgerBeans {
             BalanceProjection<Connection> balanceProjection,
             com.finapp.sharedkernel.id.IdGenerator ids,
             Clock clock,
-            com.finapp.ledger.PostingObserver postingObserver) {
+            com.finapp.ledger.PostingObserver postingObserver,
+            com.finapp.ledger.LedgerAccountStore<Connection> ledgerAccountStore) {
         return new AdjustmentService(
                 idempotentExecutor,
                 journalEntryStore,
@@ -112,7 +113,10 @@ public class LedgerBeans {
                 balanceProjection,
                 ids,
                 clock,
-                postingObserver);
+                postingObserver,
+                // The binding's chart read (P8-TSK-006): no MANUAL line on a reconciled
+                // position, judged before the claim and re-judged at approval.
+                ledgerAccountStore);
     }
 
     /**

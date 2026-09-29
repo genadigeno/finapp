@@ -347,7 +347,8 @@ class StatementEndpointDatabaseTest {
                 new JdbcOutboxWriter(),
                 new JdbcBalanceProjection(),
                 IDS,
-                CLOCK, PostingObserver.NONE);
+                CLOCK, PostingObserver.NONE,
+                new com.finapp.ledger.JdbcLedgerAccountStore());
     }
 
     private void postCredit(UUID account, LocalDate postingDate, long minorUnits)
@@ -403,10 +404,16 @@ class StatementEndpointDatabaseTest {
         }
     }
 
+    /**
+     * The statement fixtures' operational counterpart. This was `SETTLEMENT_CLEARING` until
+     * `P8-TSK-006` closed reconciled positions to free adjustments (ADR-0071): the suite
+     * only ever wanted "some operational account facing the wallet", and clearing stopped
+     * being one on purpose — the move IS the control working.
+     */
     private LedgerAccount clearing() throws SQLException {
         try (Connection app = DatabaseRoles.application()) {
             return ledgerAccounts
-                    .findOperational(app, AccountPurpose.SETTLEMENT_CLEARING, USD)
+                    .findOperational(app, AccountPurpose.FEE_REVENUE, USD)
                     .orElseThrow();
         }
     }

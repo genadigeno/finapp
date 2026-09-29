@@ -47,6 +47,15 @@ public interface MerchantPayoutStore<T> {
      * before {@code unknownBefore}, oldest first. Unlocked, across every merchant, by design:
      * each candidate is re-judged under its own lock.
      */
+    /**
+     * The {@code COMPLETED} payouts with {@code id > after}, in id order, at most
+     * {@code limit} — the opening-position backfill's page (`P8-TSK-007`, ADR-0067 §8).
+     * Cross-owner by design — an administered read under {@code RECONCILIATION_ADMINISTER},
+     * composed in {@code app} — and lock-free: a completed row's copied facts are frozen,
+     * and the backfill's converge is the register's uniques, never a lock here.
+     */
+    List<MerchantPayout> pageCompleted(T unitOfWork, java.util.UUID after, int limit);
+
     List<MerchantPayout> findSweepable(
             T unitOfWork, Instant dispatchedBefore, Instant unknownBefore, int limit);
 

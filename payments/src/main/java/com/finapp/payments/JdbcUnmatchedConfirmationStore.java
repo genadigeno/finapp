@@ -94,6 +94,28 @@ public final class JdbcUnmatchedConfirmationStore
         }
     }
 
+    @Override
+    public java.util.List<UnmatchedConfirmation> page(
+            Connection unitOfWork, java.util.UUID after, int limit) {
+        try (PreparedStatement select =
+                unitOfWork.prepareStatement(
+                        "SELECT " + COLUMNS + " FROM payments.unmatched_confirmation"
+                                + " WHERE id > ? ORDER BY id LIMIT ?")) {
+            select.setObject(1, after);
+            select.setInt(2, limit);
+            try (ResultSet rows = select.executeQuery()) {
+                java.util.List<UnmatchedConfirmation> page = new java.util.ArrayList<>();
+                while (rows.next()) {
+                    page.add(rehydrate(rows));
+                }
+                return java.util.List.copyOf(page);
+            }
+        } catch (SQLException failure) {
+            throw new PaymentsStorageException(
+                    DatabaseFailure.describe("paging unmatched confirmations", failure));
+        }
+    }
+
     private static UnmatchedConfirmation rehydrate(ResultSet row) throws SQLException {
         return new UnmatchedConfirmation(
                 row.getObject("id", UUID.class),

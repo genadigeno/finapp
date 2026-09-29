@@ -5,6 +5,7 @@ import static org.assertj.core.api.Assertions.assertThat;
 import com.finapp.identity.Authorization;
 import com.finapp.identity.IdentityId;
 import com.finapp.identity.RoleName;
+import com.finapp.app.reconciliation.ClearingLineCopies;
 import com.finapp.ledger.AsOf;
 import com.finapp.ledger.JdbcBalanceDerivation;
 import com.finapp.ledger.LedgerAccountId;
@@ -266,6 +267,7 @@ class MultiRailConservationStormDatabaseTest {
 
     @LocalServerPort private int port;
     @Autowired private Authorization authorization;
+    @Autowired private com.finapp.app.reconciliation.PositionProof positionProof;
     @Autowired private PaymentSweeper paymentSweeper;
     @Autowired private WithdrawalResolution withdrawalResolution;
     @Autowired private PayInResolution payInResolution;
@@ -454,6 +456,91 @@ class MultiRailConservationStormDatabaseTest {
         try (Connection app = DatabaseRoles.application()) {
             reconcile(app, world, "at rest");
             tally(app, storm, choreography);
+            // The copies' reading is not vacuous: every settling flow the storm drove is in
+            // scope and proven - captures, executions, refunds and returns, withdrawals and
+            // the chargebacks the choreography forces (P8-TSK-005).
+            UUID[] stormAccounts = world.accounts();
+            assertThat(ClearingLineCopies.assertEveryClearingLineIsCopied(
+                                    app, "at rest", STORM_ENTRIES, stormAccounts, stormAccounts)
+                            .keySet())
+                    .as("at rest: each externally settling completion the storm drove opened"
+                            + " its expectations")
+                    .contains("payment-capture:", "payment-execution:", "payment-refund:",
+                            "wallet-withdrawal:", "dispute-chargeback:");
+            // And the reading's "nothing else opened" half is not vacuous for the transfers:
+            // the scope holds the storm's wallet-to-wallet entries, none of them expected.
+            assertThat(sum(app,
+                            "SELECT count(*) FROM ledger.journal_entry e"
+                                    + " WHERE e.idempotency_scope LIKE 'ledger.post:transfer:%'"
+                                    + "   AND e.id IN (" + STORM_ENTRIES + ")",
+                            stormAccounts, stormAccounts))
+                    .as("at rest: the storm's transfers are in the copies' scope")
+                    .isPositive();
+
+            // THE OPENING POSITION AND THE PROOF AT REST (P8-TSK-007, ADR-0067 sections
+            // 8-9): the backfill over the storm's live-opened history adds nothing - the
+            // uniques converge - and the position proof and completeness verifier read 0 on
+            // every clearing purpose, with SUSPENSE_UNMATCHED honestly counting exactly the
+            // parkings' own suspense lines until P8-TSK-020 adopts them.
+            String controller = operatorSession(RoleName.RECONCILIATION_CONTROLLER);
+            // Scoped to the storm's own entries: the shared container carries earlier
+            // suites' history, and adopting whatever of it never met a live opener is the
+            // backfill DOING ITS JOB - the adds-nothing claim is that everything the storm
+            // itself drove was live-opened, so for these entries the uniques converge.
+            String stormExpectations =
+                    "SELECT count(*) FROM reconciliation.expectation"
+                            + " WHERE journal_entry_id IN (" + STORM_ENTRIES + ")";
+            long expectationsBefore = sum(app, stormExpectations, stormAccounts, stormAccounts);
+            assertThat(send("POST", "/v1/operator/reconciliation/opening-position",
+                            "{\"reason\":\"the storm's at-rest adoption\"}", controller,
+                            someKey())
+                            .statusCode())
+                    .isEqualTo(200);
+            assertThat(sum(app, stormExpectations, stormAccounts, stormAccounts))
+                    .as("at rest: the backfill over live-opened history adds nothing")
+                    .isEqualTo(expectationsBefore);
+            assertProofHoldsAtRest(app);
+
+            // THE ALL-KINDS ADOPTION EQUIVALENCE: the register emptied (the platform's own
+            // root, triggers disabled - history's shape, not a production path) and rebuilt
+            // by the backfill alone - every clearing line's copy returns and the proof holds
+            // again, which is section 8's whole claim demonstrated across EVERY kind the
+            // storm drove.
+            try (Connection root = DatabaseRoles.bootstrap()) {
+                root.setAutoCommit(false);
+                execute(root, "ALTER TABLE reconciliation.expectation_key DISABLE TRIGGER"
+                        + " expectation_key_is_append_only");
+                execute(root, "ALTER TABLE reconciliation.expectation_event DISABLE TRIGGER"
+                        + " expectation_event_is_append_only");
+                execute(root, "ALTER TABLE reconciliation.expectation DISABLE TRIGGER"
+                        + " expectation_is_never_deleted");
+                try {
+                    execute(root, "DELETE FROM reconciliation.expectation_key");
+                    execute(root, "DELETE FROM reconciliation.expectation_event");
+                    execute(root, "DELETE FROM reconciliation.expectation");
+                } finally {
+                    execute(root, "ALTER TABLE reconciliation.expectation ENABLE TRIGGER"
+                            + " expectation_is_never_deleted");
+                    execute(root, "ALTER TABLE reconciliation.expectation_event ENABLE"
+                            + " TRIGGER expectation_event_is_append_only");
+                    execute(root, "ALTER TABLE reconciliation.expectation_key ENABLE TRIGGER"
+                            + " expectation_key_is_append_only");
+                }
+                root.commit();
+            }
+            assertThat(send("POST", "/v1/operator/reconciliation/opening-position",
+                            "{\"reason\":\"rebuilding the register from the books alone\"}",
+                            controller, someKey())
+                            .statusCode())
+                    .isEqualTo(200);
+            assertThat(ClearingLineCopies.assertEveryClearingLineIsCopied(
+                                    app, "rebuilt from the books", STORM_ENTRIES,
+                                    stormAccounts, stormAccounts)
+                            .keySet())
+                    .as("rebuilt: every kind the storm drove re-adopted from the books alone")
+                    .contains("payment-capture:", "payment-execution:", "payment-refund:",
+                            "wallet-withdrawal:", "dispute-chargeback:");
+            assertProofHoldsAtRest(app);
             // THE METERS, A SECOND AND INDEPENDENT TALLY: every judgement the storm's instance
             // counted after its commit is exactly one the tables committed, rail by rail, type by
             // type, outcome by outcome - valid because nothing else judges in this JVM while the
@@ -553,6 +640,14 @@ class MultiRailConservationStormDatabaseTest {
                                 when, attempt[1], attempt[2], attempt[0])
                         .isLessThanOrEqualTo(attempt[0]);
             }
+
+            // EVERY CLEARING LINE HAS ITS EXPECTATION, IN THE SAME SNAPSHOT (P8-TSK-005,
+            // ADR-0067): each capture, execution, refund, return, withdrawal and money stage the
+            // storm committed opened exactly one copy of its clearing line IN ITS OWN COMMIT - a
+            // round's snapshot taken mid-storm never sees a line without its copy - and the
+            // transfers and book movements beside them opened nothing.
+            ClearingLineCopies.assertEveryClearingLineIsCopied(
+                    snapshot, when, STORM_ENTRIES, accounts, accounts);
             snapshot.commit();
         }
     }
@@ -561,22 +656,30 @@ class MultiRailConservationStormDatabaseTest {
      * The storm's own entries' net DEBIT movement per platform purpose: every entry touching a
      * storm wallet or payable, and the dispute entries keyed by a storm dispute.
      */
+    /**
+     * The storm's own entries: every entry touching a storm wallet or payable, and the dispute
+     * entries keyed by a storm dispute - two bindings, the storm's accounts twice. One
+     * definition for the positions and the expectation copies (P8-TSK-005), so the two
+     * readings can never be taken over different scopes.
+     */
+    private static final String STORM_ENTRIES =
+            "SELECT mine.entry_id FROM ledger.journal_line mine"
+                    + "  WHERE mine.ledger_account_id = ANY (?)"
+                    + " UNION"
+                    + " SELECT e.id FROM ledger.journal_entry e"
+                    + "   JOIN payments.dispute d"
+                    + "     ON e.idempotency_scope LIKE 'ledger.post:dispute-%:'"
+                    + "        || d.id::text || '%'"
+                    + "   JOIN payments.payment_attempt a ON a.id = d.attempt_id"
+                    + "   JOIN payments.payment_intent i ON i.id = a.intent_id"
+                    + "  WHERE i.credit_account_id = ANY (?)";
+
     private static Map<String, Long> stormPositions(Connection app, UUID[] accounts)
             throws SQLException {
         Map<String, Long> positions = new java.util.HashMap<>();
         try (PreparedStatement read =
                 app.prepareStatement(
-                        "WITH storm_entry AS ("
-                                + "   SELECT mine.entry_id FROM ledger.journal_line mine"
-                                + "    WHERE mine.ledger_account_id = ANY (?)"
-                                + "   UNION"
-                                + "   SELECT e.id FROM ledger.journal_entry e"
-                                + "     JOIN payments.dispute d"
-                                + "       ON e.idempotency_scope LIKE 'ledger.post:dispute-%:'"
-                                + "          || d.id::text || '%'"
-                                + "     JOIN payments.payment_attempt a ON a.id = d.attempt_id"
-                                + "     JOIN payments.payment_intent i ON i.id = a.intent_id"
-                                + "    WHERE i.credit_account_id = ANY (?))"
+                        "WITH storm_entry AS (" + STORM_ENTRIES + ")"
                                 + " SELECT account.purpose, COALESCE(SUM(CASE"
                                 + "   WHEN line.direction = 'DEBIT' THEN line.amount_minor"
                                 + "   ELSE -line.amount_minor END), 0)"
@@ -2766,6 +2869,47 @@ class MultiRailConservationStormDatabaseTest {
 
     private static String someKey() {
         return UUID.randomUUID().toString();
+    }
+
+    /**
+     * The two verdicts at rest (P8-TSK-007): every clearing position's identity holds and
+     * every clearing line is known, in one fresh {@code REPEATABLE READ} snapshot;
+     * {@code SUSPENSE_UNMATCHED}'s unattributed count equals exactly the parkings' own
+     * suspense lines — the recorded truth until `P8-TSK-020` adopts them.
+     */
+    private void assertProofHoldsAtRest(Connection app) throws SQLException {
+        com.finapp.app.reconciliation.PositionProof.Report report;
+        try (Connection snapshot = DatabaseRoles.application()) {
+            snapshot.setAutoCommit(false);
+            snapshot.setTransactionIsolation(Connection.TRANSACTION_REPEATABLE_READ);
+            report = positionProof.sweep(snapshot);
+            snapshot.commit();
+        }
+        for (com.finapp.app.reconciliation.PositionProof.PositionVerdict verdict :
+                report.verdicts()) {
+            assertThat(verdict.explained())
+                    .as("at rest: %s %s explained - DR-CR %s = open remainders %s"
+                            + " (INV-REC-06)",
+                            verdict.purpose(), verdict.currency(), verdict.ledgerBalance(),
+                            verdict.openRemainders())
+                    .isTrue();
+        }
+        for (com.finapp.ledger.AccountPurpose purpose :
+                com.finapp.app.reconciliation.PositionProof.PROVEN) {
+            assertThat(report.unattributedByPurpose().get(purpose))
+                    .as("at rest: every %s line is known", purpose)
+                    .isZero();
+        }
+        long suspenseLines =
+                sum(app,
+                        "SELECT count(*) FROM ledger.journal_line l"
+                                + " JOIN ledger.ledger_account a ON a.id = l.ledger_account_id"
+                                + " WHERE a.purpose = 'SUSPENSE_UNMATCHED'");
+        assertThat(report.unattributedByPurpose()
+                        .get(com.finapp.ledger.AccountPurpose.SUSPENSE_UNMATCHED))
+                .as("at rest: SUSPENSE_UNMATCHED truthfully counts exactly the parkings'"
+                        + " suspense lines until P8-TSK-020 adopts them")
+                .isEqualTo(suspenseLines);
     }
 
     // ----------------------------------------------------------------- SQL

@@ -23,6 +23,10 @@ class AdjustmentProposalMigrationTest {
     private static final String MIGRATION =
             "db/migration/ledger/V010__create_adjustment_proposal.sql";
 
+    /** `P8-TSK-006`'s widening: reason codes, origins and the reconciled-position binding. */
+    private static final String MIGRATION_V015 =
+            "db/migration/ledger/V015__adjustment_reason_codes_and_origins.sql";
+
     @Test
     @DisplayName("the status CHECK lists exactly the values the enum declares")
     void theStatusListMatchesItsEnum() {
@@ -107,14 +111,74 @@ class AdjustmentProposalMigrationTest {
                 .doesNotContain("GRANT ALL");
     }
 
+    // -----------------------------------------------------------------
+    // V015 (P8-TSK-006): the reason-code regime and the reconciled-position binding.
+    // -----------------------------------------------------------------
+
+    @Test
+    @DisplayName("the reason-code and origin lists, and their pairing, are the enums' own"
+            + " (P8-TSK-006, INV-REV-04)")
+    void theCodeAndOriginListsMatchTheirEnums() {
+        assertThat(migrationV015())
+                .contains("CHECK (reason_code IN (" + AdjustmentReasonCode.sqlValueList() + "))")
+                .contains("CHECK (origin IN (" + AdjustmentOrigin.sqlValueList() + "))")
+                .contains("CHECK (" + AdjustmentReasonCode.sqlPairingRule() + ")");
+    }
+
+    @Test
+    @DisplayName("both columns arrive with the history defaults, and UNCODED is refused on"
+            + " INSERT for every writer (INV-HIST-01, INV-REV-04)")
+    void theHistoryDefaultsAndTheUncodedRefusalStand() {
+        assertThat(migrationV015())
+                .contains("ADD COLUMN reason_code text NOT NULL DEFAULT 'UNCODED'")
+                .contains("ADD COLUMN origin      text NOT NULL DEFAULT 'MANUAL'")
+                .contains("CREATE TRIGGER adjustment_proposal_requires_a_reason_code")
+                .contains("BEFORE INSERT ON ledger.adjustment_proposal");
+    }
+
+    @Test
+    @DisplayName("the binding's purpose list is AccountPurpose.reconciledPositions(),"
+            + " generated (P8-TSK-006, ADR-0071)")
+    void theBindingListIsTheEnums() {
+        assertThat(migrationV015())
+                .contains("CREATE TRIGGER adjustment_line_respects_reconciled_positions")
+                .contains("BEFORE INSERT ON ledger.adjustment_proposal_line")
+                .contains("account_purpose IN ("
+                        + AccountPurpose.sqlReconciledPositionsList() + ")");
+    }
+
+    @Test
+    @DisplayName("the payload freeze is re-stated with both new columns frozen (V015)")
+    void theFreezeCoversTheNewColumns() {
+        assertThat(migrationV015())
+                .contains("OLD.reason_code <> NEW.reason_code")
+                .contains("OLD.origin <> NEW.origin")
+                // Re-stated, not re-bound: V010's trigger stands and picks up the new body.
+                .contains(
+                        "CREATE OR REPLACE FUNCTION"
+                                + " ledger.adjustment_proposal_permits_only_decision");
+        assertThat(migrationV015())
+                .as("no new UPDATE grant arrives with the columns: the app role still"
+                        + " touches only the decision's four (V010's narrowing)")
+                .doesNotContain("GRANT");
+    }
+
+    private static String migrationV015() {
+        return read(MIGRATION_V015);
+    }
+
     private static String migration() {
+        return read(MIGRATION);
+    }
+
+    private static String read(String path) {
         try (InputStream migration =
                 AdjustmentProposalMigrationTest.class
                         .getClassLoader()
-                        .getResourceAsStream(MIGRATION)) {
+                        .getResourceAsStream(path)) {
             if (migration == null) {
                 throw new IllegalStateException(
-                        "Migration not on the test classpath: " + MIGRATION);
+                        "Migration not on the test classpath: " + path);
             }
             return new String(migration.readAllBytes(), StandardCharsets.UTF_8);
         } catch (IOException e) {

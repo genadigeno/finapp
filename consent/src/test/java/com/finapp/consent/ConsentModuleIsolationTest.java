@@ -30,7 +30,21 @@ class ConsentModuleIsolationTest {
     @Test
     @DisplayName("consent sees no sibling business module and not the composition root")
     void seesNoSiblingAndNoCompositionRoot() {
-        for (String forbidden : List.of("party", "identity", "kyc", "ledger", "accounts", "transfers", "payments", "paymentmethods", "checkout", "merchant", "app")) {
+        for (String forbidden :
+                List.of(
+                        "party",
+                        "identity",
+                        "kyc",
+                        "ledger",
+                        "accounts",
+                        "transfers",
+                        "payments",
+                        "paymentmethods",
+                        "checkout",
+                        "merchant",
+                        "settlement",
+                        "reconciliation",
+                        "app")) {
             assertThat(classpathEntries())
                     .as("consent must not depend on %s", forbidden)
                     .noneMatch(entry -> isBuildOutputOf(entry, forbidden));

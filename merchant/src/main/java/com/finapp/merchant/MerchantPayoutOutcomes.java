@@ -8,6 +8,7 @@ import com.finapp.ledger.JournalLine;
 import com.finapp.ledger.LedgerAccount;
 import com.finapp.ledger.LedgerAccountStore;
 import com.finapp.ledger.PostingCommand;
+import com.finapp.ledger.PostingResult;
 import com.finapp.ledger.PostingService;
 import com.finapp.platform.audit.AuditId;
 import com.finapp.platform.audit.AuditOutcome;
@@ -96,6 +97,15 @@ public final class MerchantPayoutOutcomes {
     @NonNull private final OutboxWriter<Connection> outbox;
     @NonNull private final IdGenerator ids;
     @NonNull private final Clock clock;
+
+    /**
+     * The expectation-opening seam (`P8-TSK-005`, ADR-0067, {@link PayoutSettlementExpectations}):
+     * a completed payout's clearing line opens its {@code MERCHANT_PAYOUT} expectation in the
+     * acting branch, after the posting, inside this transaction - whichever resolver answered.
+     * Required, with no do-nothing production implementation. Appended last (the constructor is
+     * positional history).
+     */
+    @NonNull private final PayoutSettlementExpectations expectations;
 
     /**
      * The committed status after an answer, and whether THIS call's transition fired.
@@ -210,22 +220,52 @@ public final class MerchantPayoutOutcomes {
                                                 "a payout's merchant has no payable in its"
                                                         + " currency"));
         LedgerAccount clearing =
-                chart.resolve(unitOfWork, AccountPurpose.PAYOUT_CLEARING, locked.amount().currency());
+                chart.resolve(
+                        unitOfWork,
+                        // The declared position (P8-TSK-002): one definition for this poster
+                        // and for settlement's payout source alike (INV-SET-05).
+                        PayoutSettlementDeclaration.CLEARING_PURPOSE,
+                        locked.amount().currency());
         LocalDate today = LocalDate.now(clock.withZone(ZoneOffset.UTC));
         // Only in the acting branch: the posting key's fingerprint carries the dates, so a
         // replay on a later day would conflict rather than converge - and the conditional
         // transition above already made this call the only one that can reach here.
-        postings.post(
+        PostingResult posted =
+                postings.post(
+                        unitOfWork,
+                        new PostingCommand(
+                                POSTING_KEY_PREFIX + locked.id().value(),
+                                today,
+                                today,
+                                locked.id().value().toString(),
+                                List.of(
+                                        new JournalLine(
+                                                payable.id(), Direction.DEBIT, locked.amount()),
+                                        new JournalLine(
+                                                clearing.id(),
+                                                Direction.CREDIT,
+                                                locked.amount()))));
+        // THE EXPECTATION (P8-TSK-005, ADR-0067): the clearing line's tracked counterpart,
+        // after the posting whose entry it names - keyed by the provider's reference and ours.
+        // A failure here rolls the completion back for the sweep to complete both.
+        expectations.open(
                 unitOfWork,
-                new PostingCommand(
-                        POSTING_KEY_PREFIX + locked.id().value(),
-                        today,
-                        today,
+                new PayoutSettlementExpectations.Opening(
+                        PayoutSettlementExpectations.Kind.MERCHANT_PAYOUT,
                         locked.id().value().toString(),
+                        POSTING_KEY_PREFIX + locked.id().value(),
+                        PayoutSettlementDeclaration.CLEARING_PURPOSE,
+                        clearing.id(),
+                        posted.entryId(),
                         List.of(
-                                new JournalLine(payable.id(), Direction.DEBIT, locked.amount()),
-                                new JournalLine(
-                                        clearing.id(), Direction.CREDIT, locked.amount()))));
+                                new PayoutSettlementExpectations.Key(
+                                        PayoutSettlementExpectations.ReferenceKind
+                                                .PAYOUT_PROVIDER_REF,
+                                        theirs.value()),
+                                new PayoutSettlementExpectations.Key(
+                                        PayoutSettlementExpectations.ReferenceKind.OUR_REF,
+                                        locked.reference().value())),
+                        correlation));
         announce(unitOfWork, completed, COMPLETED_EVENT_TYPE, correlation, now);
         record(unitOfWork, completed, correlation, now, resolver);
         return new Applied(MerchantPayoutStatus.COMPLETED, true);

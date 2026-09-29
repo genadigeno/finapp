@@ -7,6 +7,7 @@ import com.finapp.ledger.HoldService;
 import com.finapp.ledger.JournalLine;
 import com.finapp.ledger.LedgerAccount;
 import com.finapp.ledger.PostingCommand;
+import com.finapp.ledger.PostingResult;
 import com.finapp.ledger.PostingService;
 import com.finapp.platform.audit.AuditId;
 import com.finapp.platform.audit.AuditOutcome;
@@ -114,6 +115,14 @@ public final class WithdrawalOutcomes {
      * booking value that went OUT as value that came in. Appended last, as above.
      */
     @NonNull private final SchemeExecutionClaimStore<Connection> claims;
+
+    /**
+     * The expectation-opening seam (`P8-TSK-005`, ADR-0067, {@link SettlementExpectations}): the
+     * completion's clearing line opens its {@code PUSH_WITHDRAWAL} expectation in the acting
+     * branch, after the posting, inside this transaction - required, with no do-nothing
+     * production implementation. Appended last, as above.
+     */
+    @NonNull private final SettlementExpectations expectations;
 
     /** The committed status after an answer, and whether THIS call's transition fired —
      * the row's truth, never the verdict's. */
@@ -248,37 +257,61 @@ public final class WithdrawalOutcomes {
         requireLanded(unitOfWork, locked, completed, now);
         requireReleased(unitOfWork, locked);
 
+        AccountPurpose clearingPurpose =
+                rails.capabilitiesOf(locked.railId())
+                        .clearingPurpose()
+                        .orElseThrow(
+                                () ->
+                                        new IllegalStateException(
+                                                "rail '" + locked.railId().value()
+                                                        + "' carried a withdrawal but"
+                                                        + " declares no clearing"
+                                                        + " position: its coherence"
+                                                        + " rules refuse that pairing"));
         LedgerAccount clearing =
-                chart.resolve(
-                        unitOfWork,
-                        rails.capabilitiesOf(locked.railId())
-                                .clearingPurpose()
-                                .orElseThrow(
-                                        () ->
-                                                new IllegalStateException(
-                                                        "rail '" + locked.railId().value()
-                                                                + "' carried a withdrawal but"
-                                                                + " declares no clearing"
-                                                                + " position: its coherence"
-                                                                + " rules refuse that pairing")),
-                        locked.amount().currency());
+                chart.resolve(unitOfWork, clearingPurpose, locked.amount().currency());
         LocalDate today = LocalDate.now(clock.withZone(ZoneOffset.UTC));
         // Only in the acting branch, keyed by the operation: a double-complete is a
         // conflict, never a second entry (INV-PAY-04's posting face).
-        postings.post(
+        PostingResult posted =
+                postings.post(
+                        unitOfWork,
+                        new PostingCommand(
+                                POSTING_KEY_PREFIX + locked.id().value(),
+                                today,
+                                today,
+                                locked.id().value().toString(),
+                                List.of(
+                                        new JournalLine(
+                                                locked.walletAccountId(),
+                                                Direction.DEBIT,
+                                                locked.amount()),
+                                        new JournalLine(
+                                                clearing.id(),
+                                                Direction.CREDIT,
+                                                locked.amount()))));
+        // THE EXPECTATION (P8-TSK-005, ADR-0067): the clearing line's tracked counterpart,
+        // after the posting whose entry it names - keyed by the scheme's reference and our
+        // end-to-end reference, with the cycle the scheme stated as an attribute (never a
+        // key). A failure here rolls the completion back for the sweep to complete both.
+        expectations.open(
                 unitOfWork,
-                new PostingCommand(
-                        POSTING_KEY_PREFIX + locked.id().value(),
-                        today,
-                        today,
+                new SettlementExpectations.Opening(
+                        SettlementExpectations.Kind.PUSH_WITHDRAWAL,
                         locked.id().value().toString(),
+                        POSTING_KEY_PREFIX + locked.id().value(),
+                        clearingPurpose,
+                        clearing.id(),
+                        posted.entryId(),
+                        cycle,
                         List.of(
-                                new JournalLine(
-                                        locked.walletAccountId(),
-                                        Direction.DEBIT,
-                                        locked.amount()),
-                                new JournalLine(
-                                        clearing.id(), Direction.CREDIT, locked.amount()))));
+                                new SettlementExpectations.Key(
+                                        SettlementExpectations.ReferenceKind.SCHEME_REF,
+                                        theirs.value()),
+                                new SettlementExpectations.Key(
+                                        SettlementExpectations.ReferenceKind.END_TO_END_REF,
+                                        locked.reference().value())),
+                        correlation));
         // THE CLAIM (V023). The completion happened whatever it answers - the scheme said so,
         // by our reference - so a claim standing elsewhere never refuses it: it is a parking
         // made in good faith of this withdrawal's own echo, recorded loud for the operator.

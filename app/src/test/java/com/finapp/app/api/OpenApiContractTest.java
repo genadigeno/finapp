@@ -495,6 +495,21 @@ class OpenApiContractTest {
                         // and chargebacks for a month, behind MERCHANT_ADMINISTER, audited -
                         // a report because a merchant tag would be unbounded (ADR-0018).
                         ApiVersion.CURRENT_PREFIX + "/operator/reports/chargeback-ratio",
+                        // P8-TSK-003. The settlement evidence surfaces (ADR-0066): the upload
+                        // door and the second person's attestation behind SETTLEMENT_INGEST;
+                        // the metadata reads and the ONE content path - reasoned, audited per
+                        // read (INV-REC-10) - behind RECONCILIATION_INVESTIGATE.
+                        ApiVersion.CURRENT_PREFIX + "/operator/settlement/files",
+                        ApiVersion.CURRENT_PREFIX + "/operator/settlement/files/{id}",
+                        ApiVersion.CURRENT_PREFIX + "/operator/settlement/files/{id}/attestation",
+                        ApiVersion.CURRENT_PREFIX
+                                + "/operator/settlement/files/{id}/content-reads",
+                        ApiVersion.CURRENT_PREFIX + "/operator/settlement/sources",
+                        ApiVersion.CURRENT_PREFIX + "/operator/settlement/refused-deliveries",
+                        // P8-TSK-007: the opening-position backfill (RECONCILIATION_ADMINISTER)
+                        // and the positions report (RECONCILIATION_INVESTIGATE, audited).
+                        ApiVersion.CURRENT_PREFIX + "/operator/reconciliation/opening-position",
+                        ApiVersion.CURRENT_PREFIX + "/operator/reports/reconciliation/positions",
                         ApiVersion.CURRENT_PREFIX + "/sessions/{id}",
                         ApiVersion.CURRENT_PREFIX + "/sessions/current",
                         ApiVersion.CURRENT_PREFIX + "/me/mfa",

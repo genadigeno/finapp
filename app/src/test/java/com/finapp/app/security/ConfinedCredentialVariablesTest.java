@@ -64,7 +64,11 @@ class ConfinedCredentialVariablesTest {
                     Map.entry(PayoutEvidenceKey.class, "finapp.merchant.payout.evidence.key"),
                     Map.entry(PayoutProviderKey.class, "finapp.merchant.payout.provider.key"),
                     // P7-TSK-014: dispute evidence, its own key (one key per concern).
-                    Map.entry(DisputeEvidenceKey.class, "finapp.payments.dispute.evidence.key"));
+                    Map.entry(DisputeEvidenceKey.class, "finapp.payments.dispute.evidence.key"),
+                    // The twelfth (P8-TSK-002): the settlement-file key, one key per concern.
+                    Map.entry(
+                            com.finapp.app.settlement.SettlementFileKey.class,
+                            "finapp.settlement.file.key"));
 
     @Test
     @DisplayName("the variable a refusal names is the relaxed-binding form of the property read")

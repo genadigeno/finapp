@@ -371,6 +371,24 @@ class CredentialReachesNoEmittedSinkTest {
                         // is every schema REACHABLE from a request body. The RefundRequest
                         // shape, at the void.
                         "VoidPaymentRequest",
+                        // P8-TSK-003. Carries a declared source code, a declared business
+                        // date and the settlement file's bytes as base64 - counterparty
+                        // evidence, RESTRICTED-PII once at rest, which is exactly why the
+                        // door screens it in memory and stores it only encrypted
+                        // (ADR-0066 §3, §6): the value crosses the boundary once, reaches
+                        // no log, no toString and no audit summary, and rests only as
+                        // AES-256-GCM chunks behind the audited content read.
+                        "SettlementFileUploadRequest",
+                        // P8-TSK-003. Carries only a REASON (free prose by an investigator,
+                        // bound for the audit record's reason column - the reasoned content
+                        // read INV-REC-10 requires). No secret; the VoidPaymentRequest
+                        // shape, at the evidence door.
+                        "SettlementContentReadRequest",
+                        // P8-TSK-007. Carries only a REASON (free prose by the reconciliation
+                        // controller, bound for the audit record's reason column - the
+                        // opening-position backfill INV-AUD-03 requires a reason for). No
+                        // secret; the SettlementContentReadRequest shape, at the register.
+                        "OpeningPositionRequest",
                         // P3-TSK-017. Carries dates, a reference, a REASON (free prose by a
                         // person, bound for the reason columns - RESTRICTED-FINANCIAL, never
                         // rendered by any toString) and lines of account/direction/amount/

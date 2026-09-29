@@ -268,7 +268,8 @@ class PaymentBeans {
             Clock clock,
             com.finapp.payments.RailOutcomeObserver railOutcomeObserver,
             com.finapp.payments.PaymentRails paymentRails,
-            com.finapp.payments.SchemeExecutionClaimStore<Connection> schemeExecutionClaimStore) {
+            com.finapp.payments.SchemeExecutionClaimStore<Connection> schemeExecutionClaimStore,
+            com.finapp.payments.SettlementExpectations settlementExpectations) {
         return new com.finapp.payments.WithdrawalOutcomes(
                 withdrawalStore,
                 holdService,
@@ -283,7 +284,9 @@ class PaymentBeans {
                 // The completion posts to its stored rail's declared clearing (P7-DOC-001).
                 paymentRails,
                 // The completion claims its scheme execution (the Phase 7 -> 8 transition).
-                schemeExecutionClaimStore);
+                schemeExecutionClaimStore,
+                // The completion opens its expectation (P8-TSK-005, ADR-0067).
+                settlementExpectations);
     }
 
     /**
@@ -428,7 +431,8 @@ class PaymentBeans {
             IdGenerator ids,
             Clock clock,
             com.finapp.payments.SchemeExecutionClaimStore<Connection> schemeExecutionClaimStore,
-            com.finapp.payments.RailOutcomeObserver railOutcomeObserver) {
+            com.finapp.payments.RailOutcomeObserver railOutcomeObserver,
+            com.finapp.payments.SettlementExpectations settlementExpectations) {
         return new com.finapp.payments.UnmatchedConfirmations(
                 unmatchedConfirmationStore,
                 paymentRails,
@@ -440,7 +444,9 @@ class PaymentBeans {
                 // The parking claims its execution before it posts (the Phase 7 -> 8
                 // transition), and reports its acting count where it is written.
                 schemeExecutionClaimStore,
-                railOutcomeObserver);
+                railOutcomeObserver,
+                // The parking opens its UNMATCHED_CONFIRMATION expectation (P8-TSK-005).
+                settlementExpectations);
     }
 
     /**
@@ -633,7 +639,9 @@ class PaymentBeans {
             com.finapp.ledger.LedgerAccountStore<Connection> ledgerAccountStore,
             AuditWriter<Connection> auditWriter,
             IdGenerator ids,
-            Clock clock) {
+            Clock clock,
+            // Each clearing-moving stage opens its expectation (P8-TSK-005, ADR-0067).
+            com.finapp.payments.SettlementExpectations settlementExpectations) {
         return new com.finapp.payments.ChargebackAccounting(
                 disputeStore,
                 refundStore,
@@ -646,7 +654,8 @@ class PaymentBeans {
                 ledgerAccountStore,
                 auditWriter,
                 ids,
-                clock);
+                clock,
+                settlementExpectations);
     }
 
     /** The dispute read surfaces (`P7-TSK-012`): the merchant's, tenant-scoped in the
@@ -970,7 +979,8 @@ class PaymentBeans {
                     unmatchedConfirmationStore,
             com.finapp.payments.ChargebackAccounting chargebackAccounting,
             com.finapp.payments.RailOutcomeObserver railOutcomeObserver,
-            com.finapp.payments.SchemeExecutionClaimStore<Connection> schemeExecutionClaimStore) {
+            com.finapp.payments.SchemeExecutionClaimStore<Connection> schemeExecutionClaimStore,
+            com.finapp.payments.SettlementExpectations settlementExpectations) {
         return new com.finapp.payments.PaymentOutcomes(
                 paymentIntentStore,
                 paymentAttemptStore,
@@ -998,7 +1008,10 @@ class PaymentBeans {
                 // transaction commits (P7-TSK-015).
                 railOutcomeObserver,
                 // One scheme execution, one money fact (the Phase 7 -> 8 transition).
-                schemeExecutionClaimStore);
+                schemeExecutionClaimStore,
+                // The expectation-opening seam (P8-TSK-004, ADR-0067): every settling
+                // completion's tracked counterpart, in the completing transaction.
+                settlementExpectations);
     }
 
     @Bean
@@ -1220,7 +1233,9 @@ class PaymentBeans {
             Clock clock,
             TransactionTemplate paymentTransactions,
             DataSource dataSource,
-            com.finapp.payments.DisputeNotifications disputeNotifications) {
+            com.finapp.payments.DisputeNotifications disputeNotifications,
+            com.finapp.payments.PaymentRails paymentRails,
+            com.finapp.payments.SettlementExpectations settlementExpectations) {
         return new PaymentWebhookService(
                 webhookSignature,
                 providerEvidenceStore,
@@ -1230,12 +1245,16 @@ class PaymentBeans {
                 paymentMeters,
                 paymentOutcomes,
                 // The clearing recorder (P7-TSK-005): the door's non-transition effect,
-                // over the same outbox the outcome events travel.
+                // over the same outbox the outcome events travel - and, since P8-TSK-004,
+                // the ARN alias's registrar (ADR-0067 §5), judged from the stored rail's
+                // declaration.
                 new com.finapp.payments.PaymentClearing(
                         new com.finapp.payments.JdbcClearingRecordStore(),
                         outboxWriter,
                         idGenerator,
-                        clock),
+                        clock,
+                        paymentRails,
+                        settlementExpectations),
                 inboxConsumer,
                 objectMapper,
                 clock,

@@ -59,6 +59,13 @@ public interface WithdrawalStore<T> {
      * or before {@code unknownBefore}, oldest first. Unlocked, across every customer, by
      * design: each candidate is re-judged under its own lock.
      */
+    /**
+     * The {@code COMPLETED} withdrawals with {@code id > after}, in id order, at most
+     * {@code limit} — the opening-position backfill's page (`P8-TSK-007`, ADR-0067 §8;
+     * the attempt store's {@code pageByStatus} classification sentence, verbatim).
+     */
+    List<Withdrawal> pageCompleted(T unitOfWork, UUID after, int limit);
+
     List<Withdrawal> findSweepable(
             T unitOfWork, Instant dispatchedBefore, Instant unknownBefore, int limit);
 

@@ -50,4 +50,33 @@ public interface JournalEntryStore<T> {
      * every writer meets.
      */
     java.util.List<JournalLine> reversalLinesOf(T unitOfWork, JournalEntryId original);
+
+    /**
+     * The one entry whose {@code idempotency_scope} is {@code scope} — the durable tie from a
+     * command's posting key back to its entry (`P8-TSK-007`, ADR-0067 §8: the opening-position
+     * backfill finds each completed operation's entry by
+     * {@code "ledger.post:" + postingKey} and derives every fact from the posted rows, never
+     * from memory). Lock-free: an entry is immutable.
+     *
+     * <p>The column carries no unique index (`V004`), but the idempotency kernel makes one
+     * committed execution per scope-and-key the invariant — so a second row here is a defect,
+     * answered loudly rather than by picking one ({@code INV-IDEM-01}).
+     *
+     * @throws LedgerStorageException two entries share the scope — the defect made loud
+     */
+    Optional<JournalEntryId> findByIdempotencyScope(T unitOfWork, String scope);
+
+    /** One line's identity — what the completeness verifier joins on, nothing more. */
+    record LineKey(JournalEntryId entry, LedgerAccountId account) {}
+
+    /**
+     * Every {@code (entry, account)} pair posted on {@code accounts} — the completeness
+     * verifier's read (`P8-TSK-007`, ADR-0067 §9): each reconciled position's lines, joined
+     * in the caller's one {@code REPEATABLE READ} snapshot against the pairs reconciliation
+     * knows. Pairs only, deliberately — the verifier publishes counts, never an amount —
+     * and lock-free: a report decides nothing, and posted lines are immutable. The recorded
+     * scale path is incremental watermarks (ADR-0067 §9).
+     */
+    java.util.List<LineKey> lineKeysOn(
+            T unitOfWork, java.util.Collection<LedgerAccountId> accounts);
 }

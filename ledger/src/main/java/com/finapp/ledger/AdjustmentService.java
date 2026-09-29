@@ -83,6 +83,14 @@ public final class AdjustmentService {
     private final Clock clock;
     private final PostingObserver observer;
 
+    /**
+     * The chart, read for the binding (`P8-TSK-006`, ADR-0071): a {@code MANUAL} proposal's
+     * lines may not touch a reconciled position — judged before the idempotency claim, and
+     * re-judged at approval for the one row `V015`'s trigger could not see (a proposal born
+     * before the migration). Appended last (the constructor is positional history).
+     */
+    private final LedgerAccountStore<Connection> accounts;
+
     public AdjustmentService(
             IdempotentExecutor executor,
             JournalEntryStore<Connection> journal,
@@ -92,7 +100,8 @@ public final class AdjustmentService {
             BalanceProjection<Connection> projection,
             IdGenerator ids,
             Clock clock,
-            PostingObserver observer) {
+            PostingObserver observer,
+            LedgerAccountStore<Connection> accounts) {
         this.executor = Objects.requireNonNull(executor, "executor must not be null");
         this.effect = new PostingEffect(journal, audit, outbox, projection, ids, clock);
         this.proposals = Objects.requireNonNull(proposals, "proposals must not be null");
@@ -100,6 +109,7 @@ public final class AdjustmentService {
         this.ids = Objects.requireNonNull(ids, "ids must not be null");
         this.clock = Objects.requireNonNull(clock, "clock must not be null");
         this.observer = Objects.requireNonNull(observer, "observer must not be null");
+        this.accounts = Objects.requireNonNull(accounts, "accounts must not be null");
     }
 
     /** What a proposal came to: the proposal that stands, and whether this call created it. */
@@ -122,14 +132,17 @@ public final class AdjustmentService {
      * @throws UnbalancedJournalEntryException before any claim ({@code INV-LED-01})
      * @throws UnknownPostingAccountException a line names an unknown account or a foreign
      *     currency — `V010`'s FKs refusing at proposal time
+     * @throws AdjustmentOnReconciledPositionException a line names a reconciled position
+     *     (`P8-TSK-006`, ADR-0071) — judged before the claim, so the key is never consumed
      */
     public ProposalResult propose(Connection unitOfWork, AdjustmentCommand command) {
         Objects.requireNonNull(unitOfWork, "unitOfWork must not be null");
         Objects.requireNonNull(command, "command must not be null");
 
-        // Validation first: an unbalanced request never consumes its key.
+        // Validation first: an unbalanced or forbidden request never consumes its key.
         JournalEntry.balanced(
                 ids, clock, command.postingDate(), command.valueDate(), command.lines());
+        requireOffReconciledPositions(unitOfWork, command.lines());
 
         // An unestablished actor is an error, never a default (ADR-0021) - and for a
         // proposal the actor IS the initiator INV-AUD-04 distinguishes the approver from.
@@ -179,9 +192,28 @@ public final class AdjustmentService {
                         command.lines(),
                         clock);
         proposals.insert(unitOfWork, proposal);
-        // The first of the four-eyes trail's two records: the initiator, with the
-        // justification, at the moment they wrote it (INV-REV-04's reason regime entering
-        // the trail at proposal time; ledger.AdjustmentPosted names the approver later).
+        appendProposedRecord(unitOfWork, proposal, actor, correlation, command.reason());
+        // No outbox event, deliberately: the proposal lifecycle has no consumer, and the
+        // posted entry's ledger.JournalEntryPosted at approval remains the announcement.
+        return CommandResult.succeeded(
+                StoredResponse.of(
+                        proposal.id().value().toString().getBytes(StandardCharsets.UTF_8),
+                        "text/plain"));
+    }
+
+    /**
+     * The first of the four-eyes trail's two records: the initiator, with the justification,
+     * at the moment they wrote it (`INV-REV-04`'s reason regime entering the trail at
+     * proposal time; {@code ledger.AdjustmentPosted} names the approver later). The change
+     * summary carries origin and reason code (`P8-TSK-006`) — identifiers, counts and
+     * enumerated names, never an amount ({@code INV-AUD-02}).
+     */
+    private void appendProposedRecord(
+            Connection unitOfWork,
+            AdjustmentProposal proposal,
+            Actor actor,
+            Correlation correlation,
+            String reason) {
         audit.append(
                 unitOfWork,
                 new AuditRecord(
@@ -191,19 +223,37 @@ public final class AdjustmentService {
                         LedgerAuditAction.ADJUSTMENT_PROPOSED,
                         PROPOSAL_TARGET_TYPE,
                         proposal.id().value().toString(),
-                        Optional.of(command.reason()),
+                        Optional.of(reason),
                         AuditOutcome.SUCCEEDED,
                         correlation.correlationId(),
-                        // Identifiers and counts - never an amount (INV-AUD-02).
                         Optional.of(
                                 "proposal=" + proposal.id() + ", lines="
-                                        + proposal.lines().size())));
-        // No outbox event, deliberately: the proposal lifecycle has no consumer, and the
-        // posted entry's ledger.JournalEntryPosted at approval remains the announcement.
-        return CommandResult.succeeded(
-                StoredResponse.of(
-                        proposal.id().value().toString().getBytes(StandardCharsets.UTF_8),
-                        "text/plain"));
+                                        + proposal.lines().size() + ", "
+                                        + annotationOf(proposal))));
+    }
+
+    /** The origin-and-code annotation the four-eyes trail's records carry (`P8-TSK-006`). */
+    private static String annotationOf(AdjustmentProposal proposal) {
+        return "origin=" + proposal.origin() + ", reasonCode=" + proposal.reasonCode();
+    }
+
+    /**
+     * The binding, judged by the domain (`P8-TSK-006`, ADR-0071, {@code INV-REC-06}): a
+     * {@code MANUAL} adjustment's lines may not touch a reconciled position — value there
+     * moves only through a break resolution. One batch read; an account's purpose is frozen
+     * at its birth, so no lock is taken and no writer can invalidate the answer. A line
+     * naming an unknown account passes here and is refused by `V010`'s FK at the insert,
+     * exactly as before.
+     */
+    private void requireOffReconciledPositions(
+            Connection unitOfWork, java.util.List<JournalLine> lines) {
+        java.util.List<LedgerAccountId> named =
+                lines.stream().map(JournalLine::account).distinct().toList();
+        for (LedgerAccount account : accounts.findAllById(unitOfWork, named)) {
+            if (AccountPurpose.reconciledPositions().contains(account.purpose())) {
+                throw new AdjustmentOnReconciledPositionException(account.purpose());
+            }
+        }
     }
 
     /** A proposal in full — the approver must be able to read what they would approve. */
@@ -230,11 +280,19 @@ public final class AdjustmentService {
      * @throws AdjustmentProposalNotOpenException a different decision already stands
      * @throws LedgerAccountNotPostableException an account stopped accepting postings since
      *     the proposal — `V007`'s trigger at the approval's insert, the authoritative check
+     * @throws AdjustmentOriginMismatchException the proposal is reconciliation-owned
+     *     (`P8-TSK-006`, ADR-0071 §6) — its decision belongs to the resolution flow
+     * @throws AdjustmentOnReconciledPositionException a stored line names a reconciled
+     *     position — the re-check covering a proposal born before `V015`
      */
     public PostingResult approve(Connection unitOfWork, AdjustmentProposalId id) {
+        return observed(() -> doApprove(unitOfWork, id, AdjustmentOrigin.MANUAL));
+    }
+
+    private PostingResult observed(java.util.function.Supplier<PostingResult> approval) {
         Instant started = clock.instant();
         try {
-            PostingResult result = doApprove(unitOfWork, id);
+            PostingResult result = approval.get();
             observer.observe(
                     result.replayed()
                             ? PostingObserver.Outcome.REPLAYED
@@ -249,7 +307,8 @@ public final class AdjustmentService {
         }
     }
 
-    private PostingResult doApprove(Connection unitOfWork, AdjustmentProposalId id) {
+    private PostingResult doApprove(
+            Connection unitOfWork, AdjustmentProposalId id, AdjustmentOrigin door) {
         Objects.requireNonNull(unitOfWork, "unitOfWork must not be null");
         Objects.requireNonNull(id, "id must not be null");
         Actor actor = SecurityContext.require();
@@ -259,6 +318,12 @@ public final class AdjustmentService {
                 proposals
                         .lockById(unitOfWork, id)
                         .orElseThrow(() -> new AdjustmentProposalNotFoundException(id));
+        // Each door decides its own origin's proposals and no other's (P8-TSK-006,
+        // ADR-0071 section 6, F-a): judged BEFORE the converge, so even the recorded
+        // entry of a decided proposal is not answered through the wrong door.
+        if (proposal.origin() != door) {
+            throw new AdjustmentOriginMismatchException(id, proposal.origin());
+        }
 
         // The same approver's retry converges on the recorded entry (INV-IDEM-01 through
         // state): the machine, not a stored response, is what answers a lost response.
@@ -267,6 +332,13 @@ public final class AdjustmentService {
             return new PostingResult(proposal.entry().orElseThrow(), true);
         }
         proposal.requireApprovableBy(actor.id());
+
+        // The binding's re-check (P8-TSK-006): V015's insert trigger could not see a
+        // proposal born before the migration, so a MANUAL approval re-judges the stored
+        // lines against the reconciled positions - the one honest answer to a legacy row.
+        if (proposal.origin() == AdjustmentOrigin.MANUAL) {
+            requireOffReconciledPositions(unitOfWork, proposal.lines());
+        }
 
         // The entry is built from the STORED rows - what the approver read is what posts,
         // with the payload frozen by V010's trigger beneath (TOCTOU closed at the schema).
@@ -290,7 +362,11 @@ public final class AdjustmentService {
                         correlation,
                         APPROVAL_SCOPE_PREFIX + proposal.id().value());
 
-        effect.record(unitOfWork, entry, attribution, actor, correlation);
+        // The AdjustmentPosted record carries origin and reason code (P8-TSK-006,
+        // INV-REV-04) - the annotation is enumerated names, never an amount.
+        effect.record(
+                unitOfWork, entry, attribution, actor, correlation,
+                Optional.of(annotationOf(proposal)));
 
         // Belt under the lock: we read PROPOSED on the locked row, so this must win - a
         // zero row count here means the lock protocol was broken, which must be loud.
@@ -323,6 +399,11 @@ public final class AdjustmentService {
      *     approved adjustment is corrected by a reversal, never by un-deciding the proposal
      */
     public boolean reject(Connection unitOfWork, AdjustmentProposalId id) {
+        return doReject(unitOfWork, id, AdjustmentOrigin.MANUAL);
+    }
+
+    private boolean doReject(
+            Connection unitOfWork, AdjustmentProposalId id, AdjustmentOrigin door) {
         Objects.requireNonNull(unitOfWork, "unitOfWork must not be null");
         Objects.requireNonNull(id, "id must not be null");
         Actor actor = SecurityContext.require();
@@ -332,6 +413,12 @@ public final class AdjustmentService {
                 proposals
                         .lockById(unitOfWork, id)
                         .orElseThrow(() -> new AdjustmentProposalNotFoundException(id));
+        // Each door decides its own origin's proposals (P8-TSK-006, ADR-0071 section 6):
+        // a resolution's withdrawal is the resolution flow's act, and a generic DELETE of
+        // it would leave the break's state and its ledger half disagreeing.
+        if (proposal.origin() != door) {
+            throw new AdjustmentOriginMismatchException(id, proposal.origin());
+        }
         if (proposal.status() == AdjustmentProposalStatus.REJECTED) {
             // Ensure-rejected converges whoever rejected it: the resource is gone-equivalent,
             // and a second record would name an act that did not happen.
@@ -369,8 +456,72 @@ public final class AdjustmentService {
                         correlation.correlationId(),
                         Optional.of(
                                 "proposal=" + proposal.id() + ", proposedBy="
-                                        + proposal.proposedBy())));
+                                        + proposal.proposedBy() + ", "
+                                        + annotationOf(proposal))));
         return true;
+    }
+
+    // -----------------------------------------------------------------
+    // The reconciliation-owned door (P8-TSK-006, ADR-0071 section 6): a break resolution's
+    // ledger half, called only from com.finapp.reconciliation (a static rule with a planted
+    // caller holds the confinement) inside the resolution's own transaction - so the
+    // resolution row, its proposal and, at approval, its entry and the break's transition
+    // commit together (INV-REC-03). The caller arrives with P8-TSK-015.
+    // -----------------------------------------------------------------
+
+    /**
+     * Records a reconciliation-owned proposal in the caller's transaction — origin
+     * {@code RECONCILIATION}, one of the reconciliation reason codes, no idempotency key of
+     * its own (the caller's claimed transaction is the dedupe, and the resolution row
+     * stores the returned id). Nothing posts; the four-eyes machinery is `V010`'s,
+     * origin-agnostic — the approver must still be a second person.
+     *
+     * @throws UnbalancedJournalEntryException before anything is written
+     * @throws UnknownPostingAccountException a line names an unknown account or a foreign
+     *     currency
+     */
+    public AdjustmentProposalId proposeOwned(
+            Connection unitOfWork, OwnedAdjustmentCommand command) {
+        Objects.requireNonNull(unitOfWork, "unitOfWork must not be null");
+        Objects.requireNonNull(command, "command must not be null");
+        JournalEntry.balanced(
+                ids, clock, command.postingDate(), command.valueDate(), command.lines());
+        Actor actor = SecurityContext.require();
+        Correlation correlation = resolvedCorrelation();
+        AdjustmentProposal proposal =
+                AdjustmentProposal.proposeOwned(
+                        AdjustmentProposalId.next(ids),
+                        command.postingDate(),
+                        command.valueDate(),
+                        command.reference(),
+                        command.reason(),
+                        command.reasonCode(),
+                        actor.id(),
+                        command.lines(),
+                        clock);
+        proposals.insert(unitOfWork, proposal);
+        appendProposedRecord(unitOfWork, proposal, actor, correlation, command.reason());
+        return proposal.id();
+    }
+
+    /**
+     * Approves a reconciliation-owned proposal and posts its entry, in the caller's
+     * transaction — the resolution's approval leg. Refuses a {@code MANUAL} proposal
+     * ({@code ledger.AdjustmentOriginMismatch}); everything else is the generic approval's
+     * discipline verbatim: the row lock, the second person, the conditional decision, the
+     * same-approver converge, the posting meter.
+     */
+    public PostingResult approveOwned(Connection unitOfWork, AdjustmentProposalId id) {
+        return observed(() -> doApprove(unitOfWork, id, AdjustmentOrigin.RECONCILIATION));
+    }
+
+    /**
+     * Rejects — or, for the proposing flow, withdraws — a reconciliation-owned proposal in
+     * the caller's transaction; converges on one already rejected. Refuses a {@code MANUAL}
+     * proposal.
+     */
+    public boolean rejectOwned(Connection unitOfWork, AdjustmentProposalId id) {
+        return doReject(unitOfWork, id, AdjustmentOrigin.RECONCILIATION);
     }
 
     /** The flow's correlation with the cause resolved — the {@code PostingService} idiom. */

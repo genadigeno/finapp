@@ -8,6 +8,7 @@ import com.finapp.accounts.AccountNotEmptyException;
 import com.finapp.accounts.AccountOpening;
 import com.finapp.accounts.CustomerAccountStore;
 import com.finapp.accounts.ProductType;
+import com.finapp.app.reconciliation.ClearingLineCopies;
 import com.finapp.ledger.AccountPurpose;
 import com.finapp.ledger.AccountType;
 import com.finapp.ledger.ChartOfAccounts;
@@ -28,6 +29,9 @@ import com.finapp.payments.SimulatedCardPspAdapter;
 import com.finapp.payments.WebhookSignature;
 import com.finapp.platform.correlation.CorrelationContext;
 import com.finapp.platform.security.Actor;
+import com.finapp.reconciliation.ExpectationDirection;
+import com.finapp.reconciliation.ExpectationKind;
+import com.finapp.reconciliation.KeyKind;
 import com.finapp.platform.security.ActorType;
 import com.finapp.platform.security.SecurityContext;
 import com.finapp.platform.testing.database.DatabaseRoles;
@@ -538,6 +542,10 @@ class ChargebackAccountingDatabaseTest {
                 .singleElement()
                 .asString()
                 .contains("cause=dispute:" + disputeId(first));
+        // The re-attribution moves value between the counterparty and the recoverable: no
+        // clearing, no expectation (P8-TSK-005, the register's proof for the key).
+        ClearingLineCopies.assertOpensNothing(
+                "dispute-reattribution:" + secondCycle + ":" + disputeId(first));
     }
 
     // -----------------------------------------------------------------
@@ -645,6 +653,11 @@ class ChargebackAccountingDatabaseTest {
                         SimulatedCardPspAdapter.NAME + ":" + eventId))
                 .as("the inbox record rolled back with the effect: a redelivery is not a duplicate")
                 .isZero();
+        assertThat(ClearingLineCopies.expectationsOf(
+                        ExpectationKind.CHARGEBACK_REVERSAL, dispute.toString()))
+                .as("the win's expectation was opened after its first entry, in the failed"
+                        + " transaction - and is gone with it (P8-TSK-005)")
+                .isZero();
 
         // THE REDELIVERY, the injection lifted: the same event, applied once and whole.
         try (Connection root = DatabaseRoles.bootstrap()) {
@@ -669,6 +682,10 @@ class ChargebackAccountingDatabaseTest {
         assertThat(count("SELECT count(*) FROM platform.inbox_message WHERE dedupe_key = ?",
                         SimulatedCardPspAdapter.NAME + ":" + eventId))
                 .isEqualTo(1);
+        // The redelivery opened the win's expectation once, with the stage.
+        ClearingLineCopies.assertOpensItsClearingLinesCopy(
+                ExpectationKind.CHARGEBACK_REVERSAL, dispute.toString(),
+                "dispute-won:" + dispute, ExpectationDirection.INBOUND);
     }
 
     @Test
@@ -691,6 +708,9 @@ class ChargebackAccountingDatabaseTest {
                 .containsEntry("DISPUTE_COSTS", 300L)
                 .containsEntry("CUSTOMER_WALLET", 700L)
                 .containsEntry("SETTLEMENT_CLEARING", -1000L);
+        // The write-off moves DISPUTE_COSTS against the recoverable: no clearing, no
+        // expectation (P8-TSK-005, the register's proof for the key).
+        ClearingLineCopies.assertOpensNothing("dispute-loss:" + dispute);
     }
 
     @Test
@@ -749,6 +769,36 @@ class ChargebackAccountingDatabaseTest {
                 .containsExactly("dispute-chargeback", "dispute-attribution", "dispute-fee",
                         "dispute-won", "dispute-restoration");
         assertThat(balance(payment.credit())).as("charged once, restored once").isEqualTo(1000);
+
+        // ONE EXPECTATION PER MONEY STAGE (P8-TSK-005, INV-DSP-02): the walk posted the
+        // chargeback, the fee and the win in ONE transaction, ten deliveries racing it - and each
+        // clearing-moving stage opened exactly one copy of ITS clearing line, keyed by the
+        // network's reference under its stage's kind.
+        ClearingLineCopies.Opened charged =
+                ClearingLineCopies.assertOpensItsClearingLinesCopy(
+                        ExpectationKind.CHARGEBACK, dispute.toString(),
+                        "dispute-chargeback:" + dispute, ExpectationDirection.OUTBOUND);
+        ClearingLineCopies.Opened fee =
+                ClearingLineCopies.assertOpensItsClearingLinesCopy(
+                        ExpectationKind.DISPUTE_FEE, dispute.toString(),
+                        "dispute-fee:" + dispute, ExpectationDirection.OUTBOUND);
+        ClearingLineCopies.Opened won =
+                ClearingLineCopies.assertOpensItsClearingLinesCopy(
+                        ExpectationKind.CHARGEBACK_REVERSAL, dispute.toString(),
+                        "dispute-won:" + dispute, ExpectationDirection.INBOUND);
+        assertThat(charged.amountMinor()).isEqualTo(1000);
+        assertThat(fee.amountMinor()).isEqualTo(1500);
+        assertThat(won.amountMinor()).isEqualTo(1000);
+        ClearingLineCopies.assertKeyed(charged, KeyKind.DISPUTE_CB_REF, reference);
+        ClearingLineCopies.assertKeyed(fee, KeyKind.DISPUTE_FEE_REF, reference);
+        ClearingLineCopies.assertKeyed(won, KeyKind.DISPUTE_REV_REF, reference);
+        // The attribution and the restoration face the counterparty: no clearing, no copy.
+        ClearingLineCopies.assertOpensNothing("dispute-attribution:" + dispute);
+        ClearingLineCopies.assertOpensNothing("dispute-restoration:" + dispute);
+        assertThat(count("SELECT count(*) FROM reconciliation.expectation WHERE operation_ref = ?",
+                        dispute.toString()))
+                .as("three money stages, three expectations - however many deliveries raced")
+                .isEqualTo(3);
     }
 
     // -----------------------------------------------------------------

@@ -2,6 +2,7 @@ package com.finapp.app.merchant;
 
 import static org.assertj.core.api.Assertions.assertThat;
 
+import com.finapp.app.reconciliation.ClearingLineCopies;
 import com.finapp.identity.Authorization;
 import com.finapp.identity.IdentityId;
 import com.finapp.identity.RoleName;
@@ -354,7 +355,23 @@ class MerchantConservationStormDatabaseTest {
                                 tenant.currency())
                         .isEqualTo(Verdict.CLEAN);
             }
+            // Not vacuous: the captures, refunds and payouts the storm drove are all in scope,
+            // each with its copy (P8-TSK-005).
+            assertThat(ClearingLineCopies.assertEveryClearingLineIsCopied(
+                                    app, "settled", PAYABLE_ENTRIES, (Object) payablesOf(tenants))
+                            .keySet())
+                    .as("settled: every settling completion the merchant storm drove opened its"
+                            + " expectation")
+                    .contains("payment-capture:", "payment-refund:", "merchant-payout:");
         }
+    }
+
+    /** Every entry touching one of the storm's payables (P8-TSK-005's copies scope). */
+    private static final String PAYABLE_ENTRIES =
+            "SELECT l.entry_id FROM ledger.journal_line l WHERE l.ledger_account_id = ANY (?)";
+
+    private static UUID[] payablesOf(List<Tenant> tenants) {
+        return tenants.stream().map(tenant -> tenant.payable().value()).toArray(UUID[]::new);
     }
 
     // ----------------------------------------------------------------- the sweeps
@@ -408,6 +425,12 @@ class MerchantConservationStormDatabaseTest {
                                 round, tenant.currency())
                         .isGreaterThanOrEqualTo(-books.allowance());
             }
+            // EVERY CLEARING LINE HAS ITS EXPECTATION, IN THE SAME SNAPSHOT (P8-TSK-005,
+            // ADR-0067): each capture, refund and payout touching a storm payable opened exactly
+            // one copy of its clearing line in its own commit - PAYOUT_CLEARING's under load too.
+            ClearingLineCopies.assertEveryClearingLineIsCopied(
+                    snapshot, "mid-storm, round " + round, PAYABLE_ENTRIES,
+                    (Object) payablesOf(tenants));
             snapshot.commit();
         }
 

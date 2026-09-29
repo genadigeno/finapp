@@ -600,6 +600,15 @@ adapters). Catalogued with this ADR:
   `tolerance`, `provider_fee_schedule`, `severity_threshold`, `expectation_key`,
   `reference_alias`). Every rule of point 2's table is seeded there, the payout source's
   operation-anchored `PAYOUT_RETURNED` rule among them, because a seeded rule set is frozen.
+  **Implemented** (2026-09-29): v1 `ACTIVE` per source with the migration as its provenance;
+  the values fixed at that task's design — grace 48 hours per rule with the payout return at
+  72, `SETTLEMENT_DATE_DAYS` 2, `PROCESSING_FEE_PER_LINE` 2 minor and `_PER_BATCH` 50 minor
+  (the PSP source), the PSP's terms 1.5% + 0.25 (`numeric(7,6)`, `HALF_UP`), the scheme's
+  fixed 0.10 and the bank's fixed 0.50, `gain_min_age_days` 90 (O5) and `high_value_minor`
+  1,000.00 per currency (O7). Point 7's "no amount member" holds at the database rank
+  (`tolerance_shape` and the closed comparison list), the content is frozen by trigger for
+  every writer, and one `ACTIVE` per source is a partial unique. The matcher that reads the
+  rules is `P8-TSK-011`'s; the proposal/activation machine is `P8-TSK-022`'s.
   `P8-TSK-009` assigns the gapless `source_sequence` at acceptance and creates
   the run and its items (reconciliation `V003`). `P8-TSK-010` supplies `InternalReferenceLookup`,
   the breaks and the parks the matcher raises.

@@ -304,7 +304,7 @@ payout return as a merchant fact is ADR-0073's.
 8. **The opening position is adopted once, by a keyed, audited backfill.**
    - The route is `POST /v1/operator/reconciliation/opening-position {reason}`:
      - permission `RECONCILIATION_ADMINISTER`, held by the `RECONCILIATION_CONTROLLER` role
-       (identity V017);
+       (identity V018);
      - keyed per principal;
      - audited as `reconciliation.OpeningPositionRecorded` with its reason.
    - It walks the completed operations Phases 5–7 left behind, through `payments`' and `merchant`'s
@@ -482,18 +482,49 @@ transaction).
 
 ## Follow-up
 
-- `P8-TSK-004`: reconciliation V002 (`expectation` with its `settlement_cycle` attribute,
-  `expectation_event`, `expectation_key`, `reference_alias`, and the rule set seeded for four
-  sources, the payout source's operation-anchored `PAYOUT_RETURNED` rule among them, point 5),
-  `ExpectationRegister`, the
-  `SettlementExpectations` port in `PaymentOutcomes` (capture, card refund) and `PaymentClearing`
-  (the ARN alias), `app`'s recorder, and counted `KEY_COLLISION` events.
-- `P8-TSK-005`: `ChargebackAccounting`, push execution, `WithdrawalOutcomes`, returns,
-  `UnmatchedConfirmations` and the merchant port in `MerchantPayoutOutcomes`, plus the
-  expectation-opener register.
-- `P8-TSK-007`: the opening-position backfill, the position proof and the completeness verifier.
-  Its "unattributed 0" is reached on the clearing purposes there, and on `SUSPENSE_UNMATCHED` with
-  `P8-TSK-020`.
+- `P8-TSK-004` — **implemented** (2026-09-29): reconciliation V002 (`expectation` with its
+  `settlement_cycle` attribute, `expectation_event`, `expectation_key`, `reference_alias`, and
+  rule set v1 seeded `ACTIVE` for the four sources, the payout source's operation-anchored
+  `PAYOUT_RETURNED` rule among them, point 5), `ExpectationRegister` with its
+  `ON CONFLICT DO NOTHING` converges and counted `KEY_COLLISION` events (point 6), the
+  required `SettlementExpectations` port in `PaymentOutcomes` (the card capture and the card
+  refund, each in its acting branch after its posting) and `PaymentClearing` (the ARN alias,
+  the `RECORDED` branch alone), and `app`'s `ReconciliationExpectationRecorder`, which derives
+  amount and direction from the posted clearing line (point 3's "derived, never chosen") and
+  resolves the source through the compiled register. The dispute, push and unmatched openings
+  of point 2's table, the merchant port, the backfill (point 8) and the register/verifier
+  (point 9) remain with their named tasks below.
+- `P8-TSK-005` — **implemented** (2026-09-29): every remaining opener of point 2's table,
+  each in its applier's acting branch after the posting it copies — `ChargebackAccounting`
+  (the chargeback, the win and the fee, each keyed by the network's reference under its
+  stage's kind; the attribution, restoration, loss and re-attribution entries open nothing),
+  `PaymentOutcomes` (the push execution, with the announced cycle as its attribute, and the
+  return, the refund's kind now chosen by the refunded rail's DECLARED refund mode),
+  `WithdrawalOutcomes`, `UnmatchedConfirmations` (the claim winner only, keyed by the scheme
+  reference alone, point 5) and `merchant`'s own `PayoutSettlementExpectations` in
+  `MerchantPayoutOutcomes`, implemented by the same recorder. The port no longer carries a
+  posting date: the recorder copies it from the posted entry (point 4's "copied from the
+  entry and never re-read from the clock"). The expectation-opener register of point 9 is
+  `ExpectationOpenerRegisterTest`, its per-completion proof the shared ledger-backed
+  `ClearingLineCopies` helper; the storms read every clearing line's copy in each round's
+  snapshot and at rest.
+- `P8-TSK-007` — **implemented** (2026-09-29): the backfill of point 8 as decided —
+  `POST /v1/operator/reconciliation/opening-position {reason}` under
+  `RECONCILIATION_ADMINISTER` (identity `V018`, `RECONCILIATION_CONTROLLER`), keyed per
+  principal with the record committed after the walk, leaderless and paged by id through
+  payments' and merchant's public read stores, each entry found by its posting key
+  (`JournalEntryStore.findByIdempotencyScope`) and opened **through the live recorder's own
+  path** `ON CONFLICT DO NOTHING` — never guessed, skips counted, audited with counts only.
+  The register and verifier of point 9 as decided but for one recorded narrowing: the
+  completeness verifier is `PositionProof` in `app` (one `REPEATABLE READ` snapshot beside
+  the position proof, the `TrialBalance` shape, report and never repair), its known-entry
+  list today exactly "an expectation names the line" — the suspense item and the Phase 8
+  records join it with their tasks, and `SUSPENSE_UNMATCHED` truthfully reads above zero
+  until `P8-TSK-020`. `finapp.reconciliation.position.proof`, `.line.unattributed` and
+  `.expectation.open` published as §9 says (counts never amounts, NaN never zero); the
+  incremental-watermark scale path stays recorded, not built. Demonstrated: the storm's
+  register emptied as the platform's own root and rebuilt from the books alone, every kind's
+  copy returning — point 8's claim across every opener at once.
 - `P8-TSK-010`: `DUPLICATE_INTERNAL` raised from recorded collisions.
 - `P8-TSK-019`: the payout return's expectation through `PayoutSettlementExpectations`, opening
   no key and reached through its operation (point 5), and the return worker that the

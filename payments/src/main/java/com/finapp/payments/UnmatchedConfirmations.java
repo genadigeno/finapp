@@ -86,6 +86,15 @@ public final class UnmatchedConfirmations {
     /** Where an acting parking is counted, after its commit. Appended last. */
     @NonNull private final RailOutcomeObserver observer;
 
+    /**
+     * The expectation-opening seam (`P8-TSK-005`, ADR-0067 §2): the parking's clearing line
+     * opens its {@code UNMATCHED_CONFIRMATION} expectation in the parking's transaction, the
+     * claim winner only - the scheme's report reaches the value as an expectation, the first
+     * step in adopting Phase 7's suspense (the CREDIT suspense item and its break are
+     * `P8-TSK-020`'s, through this same call). Appended last.
+     */
+    @NonNull private final SettlementExpectations expectations;
+
     /** One statement's value to park, and what it named. */
     public record Parking(
             RailId rail,
@@ -171,14 +180,15 @@ public final class UnmatchedConfirmations {
         LedgerAccount suspense =
                 chart.resolve(uow, AccountPurpose.SUSPENSE_UNMATCHED, amount.currency());
         LocalDate today = LocalDate.now(clock.withZone(ZoneOffset.UTC));
+        // The operation the posting key names: the scheme execution on its rail.
+        String execution = rail.value() + ":" + schemeReference.value();
         // Only the claim's winner reaches this posting: a later delivery never re-posts, so
         // its date can never disagree with the entry's (the gate's poison-delivery find).
         PostingResult posted =
                 postings.post(
                         uow,
                         new PostingCommand(
-                                POSTING_KEY_PREFIX + rail.value() + ":"
-                                        + schemeReference.value(),
+                                POSTING_KEY_PREFIX + execution,
                                 today,
                                 today,
                                 schemeReference.value(),
@@ -189,6 +199,26 @@ public final class UnmatchedConfirmations {
                                                 suspense.id(), Direction.CREDIT, amount))));
 
         UnmatchedConfirmation.Attribution attribution = parking.attribution();
+        // THE EXPECTATION (P8-TSK-005, ADR-0067 §2, §5): the clearing line's copy, keyed by
+        // the scheme's reference alone - the parking's named reference, cause and attempt are
+        // NOT keys (a named reference may be an attempt's own end-to-end reference, which that
+        // attempt's expectation already keys); they travel to -020's suspense item instead.
+        // The cycle the parking stored is the expectation's attribute.
+        expectations.open(
+                uow,
+                new SettlementExpectations.Opening(
+                        SettlementExpectations.Kind.UNMATCHED_CONFIRMATION,
+                        execution,
+                        POSTING_KEY_PREFIX + execution,
+                        clearingPurpose,
+                        clearing.id(),
+                        posted.entryId(),
+                        attribution.settlementCycle(),
+                        List.of(
+                                new SettlementExpectations.Key(
+                                        SettlementExpectations.ReferenceKind.SCHEME_REF,
+                                        schemeReference.value())),
+                        parking.correlation()));
         if (!store.insert(
                 uow,
                 new UnmatchedConfirmation(

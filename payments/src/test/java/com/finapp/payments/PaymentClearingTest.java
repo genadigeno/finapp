@@ -39,12 +39,19 @@ class PaymentClearingTest {
 
     private final FakeClearingStore clearings = new FakeClearingStore();
     private final List<EventEnvelope> events = new ArrayList<>();
+
+    /** The ARN alias seam (`P8-TSK-004`): only the acting insert may register. */
+    private final RecordingSettlementExpectations expectations =
+            new RecordingSettlementExpectations();
+
     private final PaymentClearing clearing =
             new PaymentClearing(
                     clearings,
                     (uow, envelope, payload, mediaType) -> events.add(envelope),
                     IDS,
-                    CLOCK);
+                    CLOCK,
+                    PaymentRails.of(List.of(SimulatedCardPspAdapter.RAIL)),
+                    expectations);
     /** Caused, as every delivery's is: resolvedCorrelation() roots the causation. */
     private final Correlation correlation =
             Correlation.startingWith(CorrelationId.of("clr-" + UUID.randomUUID()))
@@ -142,6 +149,13 @@ class PaymentClearingTest {
     private static final class FakeClearingStore implements ClearingRecordStore<Connection> {
         private final Map<UUID, ClearingRecord> byAttempt = new HashMap<>();
         private final Map<String, UUID> byAcquirerReference = new HashMap<>();
+
+        @Override
+        public java.util.List<ClearingRecord> page(
+                Connection unitOfWork, UUID after, int limit) {
+            // P8-TSK-007: the opening-position backfill's page - not this suite's subject.
+            throw new UnsupportedOperationException("no backfill runs in this suite");
+        }
 
         @Override
         public boolean insert(Connection unitOfWork, ClearingRecord fresh) {

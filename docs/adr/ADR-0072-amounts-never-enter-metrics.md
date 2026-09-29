@@ -458,12 +458,16 @@ Financial impact:
 
 ## Follow-up
 
-- **Nothing is implemented yet.** Until Phase 8's first task lands, nothing in this ADR is
-  implemented. Every statement is the decided design, corrected by the tasks that build it.
+- **Implemented so far** *(every other statement is the decided design, corrected by the tasks
+  that build it)*: `P8-TSK-002` (2026-09-29) brought the `source` key and the first series;
+  `P8-TSK-007` (2026-09-29) the `positions` report with the clearing rows — one open-remainders
+  figure per row until `P8-TSK-009`'s `REMITTANCE` expectations give the split —
+  `reconciliation.ReportRead`, both verdict gauges and `finapp.reconciliation.expectation.open`.
 - **The tasks that build it:**
-  - `P8-TSK-002` brings the `source` key with its written argument, and the first series under it
+  - `P8-TSK-002` — **implemented** (2026-09-29) — brings the `source` key with its written
+    argument, and the first series under it
     (`finapp.settlement.file.received`, `finapp.settlement.delivery.refused`).
-  - `P8-TSK-007` builds the first report (`positions`, with the clearing rows), the
+  - `P8-TSK-007` — **implemented** (2026-09-29) — builds the first report (`positions`, with the clearing rows), the
     `reconciliation.ReportRead` action, the proof gauges (`finapp.reconciliation.position.proof`
     and `finapp.reconciliation.line.unattributed`) and `finapp.reconciliation.expectation.open`,
     under the `source` key. The report needs `RECONCILIATION_INVESTIGATE`, which `P8-TSK-003`

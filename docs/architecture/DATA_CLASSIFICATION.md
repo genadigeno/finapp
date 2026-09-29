@@ -434,6 +434,8 @@ the journal column it becomes at approval.
 | `adjustment_proposal` | `value_date` | `CONFIDENTIAL` | As `posting_date` |
 | `adjustment_proposal` | `reference` | `RESTRICTED-FINANCIAL` | `journal_entry.reference`'s reasoning, before the entry exists |
 | `adjustment_proposal` | `reason` | `RESTRICTED-PII` | **Free text written by a person** — `journal_entry.reason`'s reasoning verbatim |
+| `adjustment_proposal` | `reason_code` | `INTERNAL` | A closed enumeration (`P8-TSK-006`, `INV-REV-04`): the justification's category, never its text |
+| `adjustment_proposal` | `origin` | `INTERNAL` | An enumeration of two values (`P8-TSK-006`): whose machinery decides the proposal |
 | `adjustment_proposal` | `proposed_by` | `RESTRICTED-PII` | `journal_entry.actor_id`'s reasoning: a person's identity-provider subject |
 | `adjustment_proposal` | `proposed_at` | `CONFIDENTIAL` | Dates financial activity — `journal_entry.created_at`'s reasoning |
 | `adjustment_proposal` | `decided_by` | `RESTRICTED-PII` | The second person — `proposed_by`'s reasoning |
@@ -983,6 +985,175 @@ deliberately **not `platform.idempotency_record.response_body`** either, which i
 issuance claim records the key id alone rather than the response bytes every other keyed
 command records (`P6-TSK-002`; the database suite asserts it by sweeping every text column in
 every schema for the issued secret).
+
+### `settlement` — the source register and the evidence intake — *added by `P8-TSK-002`*
+
+**The evidence store's rows** (ADR-0066): the seeded source identities, the received file's
+metadata, its encrypted bytes, its receipts and history, and the refused deliveries. The one
+content column is the chunk ciphertext, `RESTRICTED-PII` at the ceiling of what it decrypts to —
+bank statements name people — and every other column is deliberately metadata: the door screen
+exists so nothing hotter can enter this schema in the clear (`INV-PAY-02`, `INV-RAIL-03`). Actor
+columns hold platform actor identifiers (`audit_record.actor`'s reasoning), and the checksum is
+`INTERNAL` — a fingerprint of bytes, recoverable from nothing.
+
+| Table | Column | Level | Why |
+|---|---|---|---|
+| `source` | `id` | `INTERNAL` | A seeded identifier (`P8-TSK-002`). Generated |
+| `source` | `code` | `INTERNAL` | A compiled register name - `simulated-psp.settlement` - a category, never a person |
+| `source` | `kind` | `INTERNAL` | Which statement family. Four values, none about a person |
+| `source` | `status` | `INTERNAL` | ACTIVE or RETIRED - operational state |
+| `source` | `next_sequence` | `INTERNAL` | The next statement sequence acceptance expects - a counter |
+| `file` | `id` | `INTERNAL` | An aggregate identifier. Generated |
+| `file` | `source_id` | `INTERNAL` | The delivering source - an identifier of a thing |
+| `file` | `received_via` | `INTERNAL` | UPLOAD, PULL or READMISSION - which door |
+| `file` | `status` | `INTERNAL` | The machine's position |
+| `file` | `business_date` | `CONFIDENTIAL` | The date the counterparty claims the statement covers - a fact about the platform's commercial traffic, not about a person |
+| `file` | `format_id` | `INTERNAL` | Which format family parsed it. Four values |
+| `file` | `format_version` | `INTERNAL` | Which frozen version screened it |
+| `file` | `content_sha256` | `INTERNAL` | The content address (INV-HIST-02): a fingerprint, recoverable from nothing |
+| `file` | `content_length` | `INTERNAL` | A byte count |
+| `file` | `line_count` | `INTERNAL` | A record count, by the screen's own walk |
+| `file` | `key_version` | `INTERNAL` | Which key wrote the chunks - rotation metadata |
+| `file` | `received_by` | `CONFIDENTIAL` | Which person delivered an upload (`audit_record.actor`'s reasoning): an actor identifier, needed to hold the attester distinct (INV-SET-07) |
+| `file` | `attested_by` | `CONFIDENTIAL` | Which second person attested - the four-eyes fact itself |
+| `file` | `attested_at` | `INTERNAL` | When the attestation was recorded |
+| `file` | `readmits_file_id` | `INTERNAL` | The original a readmission recovers - an identifier of a thing |
+| `file` | `rejection_code` | `INTERNAL` | Why the parse leg rejected - a closed vocabulary (`P8-TSK-008`) |
+| `file` | `rejection_detail` | `INTERNAL` | At most 500 characters of OUR diagnostic - never content, the schema's own bound |
+| `file` | `parse_failures` | `INTERNAL` | How often our parser failed - our defect's counter |
+| `file` | `next_parse_at` | `INTERNAL` | The backoff's next attempt |
+| `file` | `received_at` | `INTERNAL` | When the door committed it |
+| `file` | `status_changed_at` | `INTERNAL` | When the machine last moved |
+| `file` | `correlation_id` | `INTERNAL` | The flow's correlation - `audit_record.correlation_id`'s reasoning |
+| `file_chunk` | `file_id` | `INTERNAL` | The chunk's file - an identifier of a thing |
+| `file_chunk` | `seq` | `INTERNAL` | The chunk's seat |
+| `file_chunk` | `ciphertext` | `RESTRICTED-PII` | **The evidence bytes** - counterparty statements; a bank statement names people: classified at the ceiling of what it decrypts to (`dispute_evidence.content_ciphertext`'s reasoning), AES-256-GCM under a key held outside the database, the AAD binding file, source, content and seat |
+| `file_chunk` | `nonce` | `INTERNAL` | Public-by-design cryptographic material; useless without the key |
+| `file_chunk` | `plaintext_length` | `INTERNAL` | A byte count |
+| `file_event` | `seq` | `INTERNAL` | The history's server-assigned order |
+| `file_event` | `file_id` | `INTERNAL` | The moved file - an identifier of a thing |
+| `file_event` | `from_status` | `INTERNAL` | The edge's origin, NULL at birth |
+| `file_event` | `to_status` | `INTERNAL` | The edge's destination |
+| `file_event` | `actor` | `CONFIDENTIAL` | Who drove the edge (`audit_record.actor`'s reasoning) |
+| `file_event` | `actor_type` | `INTERNAL` | The actor's kind - a closed vocabulary |
+| `file_event` | `reason` | `INTERNAL` | The edge's stated reason - bounded, ours, never content |
+| `file_event` | `occurred_at` | `INTERNAL` | When the edge was driven |
+| `file_event` | `correlation_id` | `INTERNAL` | The flow's correlation |
+| `file_receipt` | `id` | `INTERNAL` | A record identifier. Generated |
+| `file_receipt` | `file_id` | `INTERNAL` | The delivered file - an identifier of a thing |
+| `file_receipt` | `outcome` | `INTERNAL` | NEW or DUPLICATE - the content address's verdict |
+| `file_receipt` | `channel` | `INTERNAL` | Which door the delivery used |
+| `file_receipt` | `actor` | `CONFIDENTIAL` | Who delivered (`audit_record.actor`'s reasoning) |
+| `file_receipt` | `actor_type` | `INTERNAL` | The actor's kind |
+| `file_receipt` | `received_at` | `INTERNAL` | When the delivery arrived |
+| `file_receipt` | `correlation_id` | `INTERNAL` | The flow's correlation |
+| `refused_delivery` | `id` | `INTERNAL` | A record identifier. Generated |
+| `refused_delivery` | `source_id` | `INTERNAL` | The delivering source - an identifier of a thing |
+| `refused_delivery` | `content_sha256` | `INTERNAL` | The refused bytes' fingerprint - what chains the refusal to a re-presentation, recoverable from nothing |
+| `refused_delivery` | `content_length` | `INTERNAL` | A byte count |
+| `refused_delivery` | `format_id` | `INTERNAL` | Which format's screen refused |
+| `refused_delivery` | `format_version` | `INTERNAL` | Which frozen version refused |
+| `refused_delivery` | `reason` | `INTERNAL` | Why - a closed two-value vocabulary, never the value found |
+| `refused_delivery` | `line_no` | `INTERNAL` | Where the screen found it - a position, not a value |
+| `refused_delivery` | `field_name` | `INTERNAL` | The declared field that failed its class - a NAME bounded to 200 characters, never a value (the schema's own CHECK) |
+| `refused_delivery` | `channel` | `INTERNAL` | Which door the delivery used |
+| `refused_delivery` | `actor` | `CONFIDENTIAL` | Who delivered (`audit_record.actor`'s reasoning) |
+| `refused_delivery` | `actor_type` | `INTERNAL` | The actor's kind |
+| `refused_delivery` | `refused_at` | `INTERNAL` | When the door refused |
+| `refused_delivery` | `correlation_id` | `INTERNAL` | The flow's correlation |
+
+### `reconciliation` — the expectation register and rule set v1 — *added by `P8-TSK-004`*
+
+**The internal side of the position proof** (ADR-0067, ADR-0068): versioned matching
+configuration — magnitudes of policy, nobody's money — and the expectation rows that copy each
+clearing journal line. The expectation's money triple is `RESTRICTED-FINANCIAL` (an amount of a
+person's or counterparty's transaction), every typed reference a counterparty will quote is
+`CONFIDENTIAL` (Phase 8's match key), actor columns are `CONFIDENTIAL`
+(`audit_record.actor`'s reasoning), and everything else is deliberately identifiers, enums,
+counters and dates of things.
+
+| Table | Column | Level | Why |
+|---|---|---|---|
+| `rule_set` | `id` | `INTERNAL` | A version identifier. Seeded/generated |
+| `rule_set` | `source_id` | `INTERNAL` | The source's seeded identifier, copied (no cross-schema FK) |
+| `rule_set` | `version` | `INTERNAL` | A counter |
+| `rule_set` | `status` | `INTERNAL` | An enumeration member |
+| `rule_set` | `funding_lag_days` | `INTERNAL` | A policy magnitude — days, nobody's money |
+| `rule_set` | `gain_min_age_days` | `INTERNAL` | A policy magnitude (owner decision O5) |
+| `rule_set` | `effective_from` | `INTERNAL` | A property of the artefact |
+| `rule_set` | `proposed_by` | `CONFIDENTIAL` | Who proposed the version (`audit_record.actor`'s reasoning; v1's is the migration) |
+| `rule_set` | `decided_by` | `CONFIDENTIAL` | Who activated it — the four-eyes fact once `P8-TSK-022` produces it |
+| `rule_set` | `reason` | `CONFIDENTIAL` | Free prose by a person about a decision (`audit_record.reason`'s reasoning) |
+| `rule_set` | `created_at` | `INTERNAL` | A property of the artefact |
+| `rule_set` | `correlation_id` | `INTERNAL` | The flow's correlation |
+| `rule_set_lag` | `rule_set_id` | `INTERNAL` | The owning version — an identifier of a thing |
+| `rule_set_lag` | `expectation_kind` | `INTERNAL` | An enumeration member |
+| `rule_set_lag` | `lag_days` | `INTERNAL` | A policy magnitude |
+| `rule` | `rule_set_id` | `INTERNAL` | The owning version |
+| `rule` | `priority` | `INTERNAL` | A position in a list |
+| `rule` | `line_type` | `INTERNAL` | Canonical vocabulary — a line family, never a value |
+| `rule` | `key_kind` | `INTERNAL` | An enumeration member — which reference KIND is consulted, never a reference |
+| `rule` | `expectation_kind` | `INTERNAL` | An enumeration member |
+| `rule` | `cardinality` | `INTERNAL` | An enumeration member |
+| `rule` | `operation_anchored` | `INTERNAL` | A boolean of policy (the transition's A4) |
+| `rule` | `grace_hours` | `INTERNAL` | A policy magnitude |
+| `tolerance` | `rule_set_id` | `INTERNAL` | The owning version |
+| `tolerance` | `comparison` | `INTERNAL` | An enumeration of exactly three — no amount member exists (`INV-REC-08`) |
+| `tolerance` | `currency` | `INTERNAL` | An enumeration; part of a policy shape with no transaction beside it |
+| `tolerance` | `absolute_minor` | `INTERNAL` | A policy bound on FEE comparison — two minor units of tolerance, nobody's money |
+| `tolerance` | `days` | `INTERNAL` | A policy magnitude |
+| `provider_fee_schedule` | `rule_set_id` | `INTERNAL` | The owning version |
+| `provider_fee_schedule` | `line_type` | `INTERNAL` | An enumeration member |
+| `provider_fee_schedule` | `currency` | `INTERNAL` | An enumeration |
+| `provider_fee_schedule` | `rate` | `CONFIDENTIAL` | A counterparty's commercial terms — pinned so a `FEE_MISMATCH` is judged against what was agreed, and not for publication |
+| `provider_fee_schedule` | `fixed_minor` | `CONFIDENTIAL` | The same commercial terms' fixed part |
+| `provider_fee_schedule` | `scale` | `INTERNAL` | Part of the monetary shape |
+| `provider_fee_schedule` | `rounding_policy` | `INTERNAL` | An enumeration member (`INV-MON-03`) |
+| `severity_threshold` | `rule_set_id` | `INTERNAL` | The owning version |
+| `severity_threshold` | `currency` | `INTERNAL` | An enumeration |
+| `severity_threshold` | `high_value_minor` | `INTERNAL` | A policy magnitude (owner decision O7) — what counts as loud, nobody's money |
+| `expectation` | `id` | `INTERNAL` | An aggregate identifier. Generated |
+| `expectation` | `kind` | `INTERNAL` | An enumeration member |
+| `expectation` | `operation_ref` | `CONFIDENTIAL` | The operation the completion names — an identifier that pairs a payment to its settlement (Phase 8's match key) |
+| `expectation` | `posting_key` | `CONFIDENTIAL` | The completion's posting key — the same pairing in the ledger's vocabulary |
+| `expectation` | `source_id` | `INTERNAL` | The source's seeded identifier, copied |
+| `expectation` | `position_purpose` | `INTERNAL` | A chart purpose name — a category of account, never an account of a person |
+| `expectation` | `ledger_account_id` | `INTERNAL` | The posted clearing account — an operational account's identifier, copied |
+| `expectation` | `direction` | `INTERNAL` | An enumeration of two |
+| `expectation` | `amount_minor` | `RESTRICTED-FINANCIAL` | **The expected settlement amount** — the clearing journal line's copy |
+| `expectation` | `currency` | `INTERNAL` | An enumeration; part of the monetary shape |
+| `expectation` | `scale` | `INTERNAL` | Part of the monetary shape |
+| `expectation` | `journal_entry_id` | `INTERNAL` | The entry's identifier, copied — an identifier of a thing |
+| `expectation` | `posting_date` | `INTERNAL` | The entry's own date, copied |
+| `expectation` | `settlement_cycle` | `INTERNAL` | The scheme's cycle identifier — a bucket name (`payment_attempt.settlement_cycle`'s reasoning; an attribute, never a key) |
+| `expectation` | `expected_by` | `INTERNAL` | A derived policy date |
+| `expectation` | `rule_set_id` | `INTERNAL` | The deciding version, pinned (`INV-HIST-04`) |
+| `expectation` | `status` | `INTERNAL` | The machine's state |
+| `expectation` | `allocated_minor` | `RESTRICTED-FINANCIAL` | How much of the amount evidence has discharged — the amount's own level |
+| `expectation` | `resolved_minor` | `RESTRICTED-FINANCIAL` | How much a resolution took — the amount's own level |
+| `expectation` | `overdue_since` | `INTERNAL` | A one-way operational fact |
+| `expectation` | `opened_at` | `INTERNAL` | A property of the row |
+| `expectation` | `status_changed_at` | `INTERNAL` | A property of the row |
+| `expectation` | `correlation_id` | `INTERNAL` | The flow's correlation |
+| `expectation_event` | `seq` | `INTERNAL` | The history's position |
+| `expectation_event` | `expectation_id` | `INTERNAL` | The owning row — NULL exactly for an alias collision |
+| `expectation_event` | `event_type` | `INTERNAL` | An enumeration member |
+| `expectation_event` | `detail` | `CONFIDENTIAL` | Names the colliding kind and reference value — the match key's own level, kept in-table and never in a log or an event |
+| `expectation_event` | `actor` | `CONFIDENTIAL` | Who drove it (`audit_record.actor`'s reasoning) |
+| `expectation_event` | `actor_type` | `INTERNAL` | An enumeration member |
+| `expectation_event` | `occurred_at` | `INTERNAL` | A property of the row |
+| `expectation_event` | `correlation_id` | `INTERNAL` | The flow's correlation |
+| `expectation_key` | `source_id` | `INTERNAL` | The scope of the unique — a seeded identifier |
+| `expectation_key` | `key_kind` | `INTERNAL` | An enumeration member |
+| `expectation_key` | `key_value` | `CONFIDENTIAL` | **A typed reference a counterparty will quote** — Phase 8's match key, shape-checked vocabulary and never free text |
+| `expectation_key` | `expectation_id` | `INTERNAL` | The owning row |
+| `reference_alias` | `source_id` | `INTERNAL` | The scope of the unique |
+| `reference_alias` | `key_kind` | `INTERNAL` | An enumeration member |
+| `reference_alias` | `key_value` | `CONFIDENTIAL` | The foreign reference (the ARN) — the match key's level |
+| `reference_alias` | `anchor_kind` | `INTERNAL` | An enumeration member |
+| `reference_alias` | `anchor_value` | `CONFIDENTIAL` | The anchor it resolves to — an operation identifier pairing |
+| `reference_alias` | `registered_at` | `INTERNAL` | A property of the row |
+| `reference_alias` | `correlation_id` | `INTERNAL` | The flow's correlation |
 
 ### `consent.consent_text` and `consent.consent_record` — *added by `P2-TSK-017`*
 

@@ -116,6 +116,36 @@ class RoleNameTest {
     }
 
     @Test
+    @DisplayName("RECONCILIATION_OPERATOR grants exactly the two evidence permissions")
+    void reconciliationOperatorGrantsExactlyTwo() {
+        // The fifth population (P8-TSK-003, ADR-0066, owner decision O1): introducing and
+        // attesting settlement evidence, and investigating it, are one desk today - and that
+        // desk CHECKS the money-operating desk's work, so the exact set is what keeps it from
+        // quietly gaining a posting or refund permission and becoming able to both move money
+        // and vouch for the evidence that reconciles it. RECONCILIATION_RESOLVE joins with
+        // P8-TSK-015; this pin is edited in that same change (the MERCHANT_ADMINISTRATOR
+        // discipline above).
+        assertThat(RoleName.RECONCILIATION_OPERATOR.permissions())
+                .as("checking the money's reconciliation is not operating the money")
+                .containsExactlyInAnyOrder(
+                        PermissionName.SETTLEMENT_INGEST,
+                        PermissionName.RECONCILIATION_INVESTIGATE);
+    }
+
+    @Test
+    @DisplayName("RECONCILIATION_CONTROLLER grants exactly RECONCILIATION_ADMINISTER")
+    void reconciliationControllerGrantsExactlyOne() {
+        // The sixth population (P8-TSK-007, ADR-0067 section 8, owner decision O1's second
+        // role): adopting history into the register decides what every proof and break is
+        // judged against, so the controller is disjoint even from the operator desk it
+        // oversees - the exact set is what keeps this role from quietly gaining the
+        // evidence permissions and becoming able to both feed the register and rule it.
+        assertThat(RoleName.RECONCILIATION_CONTROLLER.permissions())
+                .as("controlling the register is not feeding or investigating it")
+                .containsExactlyInAnyOrder(PermissionName.RECONCILIATION_ADMINISTER);
+    }
+
+    @Test
     @DisplayName("every pair of grants is disjoint, so the populations really are separate")
     void theGrantsArePairwiseDisjoint() {
         // No exact-set assertion alone says the SETS do not overlap - each pins its own role.
@@ -173,6 +203,7 @@ class RoleNameTest {
         assertThat(RoleName.sqlValueList())
                 .isEqualTo(
                         "'ADMINISTRATOR', 'KYC_REVIEWER', 'LEDGER_OPERATOR',"
-                                + " 'MERCHANT_ADMINISTRATOR'");
+                                + " 'MERCHANT_ADMINISTRATOR', 'RECONCILIATION_OPERATOR',"
+                                + " 'RECONCILIATION_CONTROLLER'");
     }
 }
