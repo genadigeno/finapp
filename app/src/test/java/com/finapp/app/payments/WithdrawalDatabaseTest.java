@@ -3,6 +3,7 @@ package com.finapp.app.payments;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
+import com.finapp.app.reconciliation.ClearingLineCopies;
 import com.finapp.ledger.Hold;
 import com.finapp.ledger.HoldService;
 import com.finapp.payments.EndToEndReference;
@@ -30,6 +31,9 @@ import com.finapp.platform.security.ActorType;
 import com.finapp.platform.security.SecurityContext;
 import com.finapp.platform.testing.database.DatabaseRoles;
 import com.finapp.platform.testing.provider.SimulatedProvider;
+import com.finapp.reconciliation.ExpectationDirection;
+import com.finapp.reconciliation.ExpectationKind;
+import com.finapp.reconciliation.KeyKind;
 import com.finapp.sharedkernel.correlation.Correlation;
 import com.finapp.sharedkernel.correlation.CorrelationId;
 import com.finapp.sharedkernel.id.IdGenerator;
@@ -229,6 +233,22 @@ class WithdrawalDatabaseTest {
                         + " AND w.end_to_end_reference IS NOT NULL"))
                 .as("the scheme's reference reaches exactly one withdrawal and its one entry")
                 .isEqualTo(1);
+
+        // ITS EXPECTATION (P8-TSK-005, ADR-0067): the completion's clearing line's copy,
+        // OUTBOUND, keyed by the scheme's reference and our end-to-end reference, and the cycle
+        // the scheme stated kept as the attribute - the chain's internal side, by identifiers.
+        ClearingLineCopies.Opened opened =
+                ClearingLineCopies.assertOpensItsClearingLinesCopy(
+                        ExpectationKind.PUSH_WITHDRAWAL, id, "wallet-withdrawal:" + id,
+                        ExpectationDirection.OUTBOUND);
+        assertThat(opened.amountMinor()).isEqualTo(500);
+        assertThat(opened.settlementCycle()).contains("CYCLE-7");
+        ClearingLineCopies.assertKeyed(opened, KeyKind.SCHEME_REF, schemeReference);
+        ClearingLineCopies.assertKeyed(
+                opened,
+                KeyKind.END_TO_END_REF,
+                oneString("SELECT end_to_end_reference FROM payments.withdrawal WHERE id = ?",
+                        UUID.fromString(id)));
     }
 
     @Test
@@ -537,6 +557,13 @@ class WithdrawalDatabaseTest {
         assertThat(count("SELECT count(*) FROM platform.audit_record WHERE operation ="
                         + " 'payments.WithdrawalOutcomeApplied' AND target_id = '" + id + "'"))
                 .isEqualTo(1);
+        // Ten sweeps, one expectation (P8-TSK-005): the sweep is an arrival of the one applier,
+        // and its cycle the one the inquiry stated.
+        ClearingLineCopies.Opened swept =
+                ClearingLineCopies.assertOpensItsClearingLinesCopy(
+                        ExpectationKind.PUSH_WITHDRAWAL, id, "wallet-withdrawal:" + id,
+                        ExpectationDirection.OUTBOUND);
+        assertThat(swept.settlementCycle()).contains("C5");
     }
 
     @Test

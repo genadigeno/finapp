@@ -165,6 +165,12 @@ class SettlementExpectationDatabaseTest {
                                 + " expectation_id = ? AND event_type = 'OPENED'",
                         expectation.id()))
                 .isEqualTo(1);
+        // The register's shared proof (P8-TSK-005): the same facts, by the posting key.
+        ClearingLineCopies.assertOpensItsClearingLinesCopy(
+                com.finapp.reconciliation.ExpectationKind.CARD_CAPTURE,
+                attemptId.value().toString(),
+                "payment-capture:" + attemptId.value(),
+                com.finapp.reconciliation.ExpectationDirection.INBOUND);
 
         // The converging resolver: the conditional transition already fired, so the port is
         // not even called - and the uniques would converge it if it were.
@@ -280,6 +286,12 @@ class SettlementExpectationDatabaseTest {
         assertThat(keyOwner("PSP_REFUND_REF", pspRefundRef)).isEqualTo(expectation.id());
         assertThat(keyOwner("OUR_REF", refund.providerIdempotencyReference().value()))
                 .isEqualTo(expectation.id());
+        // The register's shared proof (P8-TSK-005): the same facts, by the posting key.
+        ClearingLineCopies.assertOpensItsClearingLinesCopy(
+                com.finapp.reconciliation.ExpectationKind.CARD_REFUND,
+                refund.id().value().toString(),
+                "payment-refund:" + refund.id().value(),
+                com.finapp.reconciliation.ExpectationDirection.OUTBOUND);
     }
 
     // -----------------------------------------------------------------
@@ -508,6 +520,10 @@ class SettlementExpectationDatabaseTest {
                         bookRefund.id().value().toString()))
                 .as("neither book movement opened anything")
                 .isEqualTo(0);
+        // By the posting key too (P8-TSK-005): the book payment's execution and the book
+        // refund each posted - and touched no reconciled position, so opened nothing.
+        ClearingLineCopies.assertOpensNothing("payment-execution:" + bookAttempt.value());
+        ClearingLineCopies.assertOpensNothing("payment-refund:" + bookRefund.id().value());
         }
     }
 

@@ -5,7 +5,6 @@ import com.finapp.ledger.JournalEntryId;
 import com.finapp.ledger.LedgerAccountId;
 import com.finapp.sharedkernel.correlation.Correlation;
 import java.sql.Connection;
-import java.time.LocalDate;
 import java.util.List;
 import java.util.Objects;
 import java.util.Optional;
@@ -38,17 +37,18 @@ import java.util.Optional;
  *
  * <h2>What crosses</h2>
  *
- * <p>Identifiers, the declared position, the posted clearing account and entry, dates and
- * typed references — <strong>never an amount or a direction</strong>: the implementation
- * derives both from the posted entry's clearing line, so the expectation cannot contradict
- * the ledger (ADR-0067 §3, §4).
+ * <p>Identifiers, the declared position, the posted clearing account and entry and typed
+ * references — <strong>never an amount, a direction or a date</strong>: the implementation
+ * derives all three from the posted entry and its clearing line, so the expectation cannot
+ * contradict the ledger (ADR-0067 §3, §4; the posting date "copied from the entry and never
+ * re-read from the clock" — `P8-TSK-005` removed the applier's own copy of it).
  */
 public interface SettlementExpectations {
 
     /**
-     * Opens the completion's expectation with its keys — `P8-TSK-004` calls it for the card
-     * capture and the card refund; the dispute, push and unmatched completions arrive with
-     * `P8-TSK-005` over the same seam.
+     * Opens the completion's expectation with its keys — the card capture and the card refund
+     * (`P8-TSK-004`); the dispute stages, the push execution, withdrawal and return and the
+     * unmatched confirmation (`P8-TSK-005`), each in its applier's acting branch.
      */
     void open(Connection unitOfWork, Opening opening);
 
@@ -101,6 +101,8 @@ public interface SettlementExpectations {
      *
      * @param position the stored rail's declared clearing purpose — the same read that
      *     chose the posting's clearing account, made exactly when it is present
+     * @param operationRef the identifier the posting key names — the key's suffix after its
+     *     prefix, so the expectation and its entry name one operation
      * @param clearingAccount the account that declaration resolved and the posting hit
      * @param settlementCycle the cycle the completion announced, when it announced one — a
      *     matching attribute, never a key
@@ -112,7 +114,6 @@ public interface SettlementExpectations {
             AccountPurpose position,
             LedgerAccountId clearingAccount,
             JournalEntryId journalEntryId,
-            LocalDate postingDate,
             Optional<String> settlementCycle,
             List<Key> keys,
             Correlation correlation) {
@@ -124,7 +125,6 @@ public interface SettlementExpectations {
             Objects.requireNonNull(position, "position must not be null");
             Objects.requireNonNull(clearingAccount, "clearingAccount must not be null");
             Objects.requireNonNull(journalEntryId, "journalEntryId must not be null");
-            Objects.requireNonNull(postingDate, "postingDate must not be null");
             Objects.requireNonNull(settlementCycle, "settlementCycle must not be null");
             Objects.requireNonNull(correlation, "correlation must not be null");
             keys = List.copyOf(keys);

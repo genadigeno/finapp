@@ -27,6 +27,7 @@ import com.finapp.platform.correlation.CorrelationContext;
 import com.finapp.platform.security.Actor;
 import com.finapp.platform.security.ActorType;
 import com.finapp.platform.security.SecurityContext;
+import com.finapp.app.reconciliation.ClearingLineCopies;
 import com.finapp.platform.testing.database.DatabaseRoles;
 import com.finapp.platform.testing.provider.SimulatedProvider;
 import com.finapp.sharedkernel.correlation.Correlation;
@@ -310,6 +311,22 @@ class DisputeBatteryDatabaseTest {
         assertThat(positions.values().stream().mapToLong(Long::longValue).sum())
                 .as("%s: the trial balance over the battery's dispute entries", run)
                 .isZero();
+
+        // 3b. ONE EXPECTATION PER MONEY STAGE (P8-TSK-005, INV-DSP-02): every clearing line the
+        // battery's dispute entries hold - each chargeback, win and fee, out of order, walked,
+        // second-cycle, parked, raced ten ways - has exactly one expectation copying it, and the
+        // attribution, restoration, loss and re-attribution entries opened nothing.
+        try (Connection app = DatabaseRoles.application()) {
+            assertThat(ClearingLineCopies.assertEveryClearingLineIsCopied(
+                                    app, run,
+                                    "SELECT e.id FROM ledger.journal_entry e"
+                                            + " WHERE e.reference = ANY (?)",
+                                    (Object) ids)
+                            .keySet())
+                    .as("%s: the chargebacks, the wins and the fees each opened theirs", run)
+                    .containsExactlyInAnyOrder(
+                            "dispute-chargeback:", "dispute-won:", "dispute-fee:");
+        }
 
         // 4. EVERY WALLET AGAINST ITS BOOK: what its captures credited, less the refunds that
         // completed and the shares standing - the refund rows and the dispute rows, never the

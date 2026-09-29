@@ -377,10 +377,16 @@ adjustment machinery; amounts never enter metrics; a payout return applied from 
 evidence. The transition catalogued nine invariants, taking the platform to **110**, and the
 Phase 8 set is **twenty-two**. 27 backlog items across eight milestones (M8.1–M8.8);
 [`SETTLEMENT_AND_RECONCILIATION_LIFECYCLES.md`](../domain/SETTLEMENT_AND_RECONCILIATION_LIFECYCLES.md)
-states nine machines and one born-once fact. **2 of 27 items complete** (M8.1 at 2 of 3): the modules
-and floors (`P8-TSK-001`), then the source register, the encrypted file store and the door screen
-(`P8-TSK-002`); next **`P8-TSK-003` — the upload door, attestation and audited evidence access** —
-`READY` ([§Current Task](#current-task) is kept current).
+states nine machines and one born-once fact. **5 of 27 items complete** (M8.1 `CLOSED` at 3 of 3,
+M8.2 at 2 of 4): the modules and floors (`P8-TSK-001`), the source register, the encrypted file
+store and the door screen (`P8-TSK-002`), the upload door and attestation (`P8-TSK-003`), the
+expectation register with the card openers (`P8-TSK-004`) and every other settling
+completion's opener with the register that proves them (`P8-TSK-005`); next **`P8-TSK-006` —
+reason-coded adjustments, reconciled positions closed to free adjustments** — `READY`
+([§Current Task](#current-task) is kept current). *(This paragraph read "2 of 27 items complete
+(M8.1 at 2 of 3) ... next `P8-TSK-003`" through `P8-TSK-003`'s and `P8-TSK-004`'s gates, until
+`P8-TSK-005`'s record found it: the stale-second-copy class again, in the paragraph neither gate's
+record reached.)*
 
 ## Current Milestone
 
@@ -395,59 +401,72 @@ since M0.1". Moved, not edited.)*
 
 ## Current Task
 
-**`P8-TSK-005` — Disputes, push rails, unmatched confirmations and payouts open their
-expectations** — `READY`. M8.2's second act: every remaining settling completion joins the
-port `P8-TSK-004` built — the dispute stages (`ChargebackAccounting`), the push execution,
-withdrawal and return, the unmatched confirmation, and the merchant payout through
-`merchant`'s own `PayoutSettlementExpectations` — each in its acting branch, inside its
-completing transaction, over the same recorder. Its entry and field set are in
-[`BACKLOG.md`](BACKLOG.md); ADR-0067 §2's table is its map. **Not started.**
+**`P8-TSK-006` — Adjustments carry a reason code and an origin; reconciled positions are closed
+to free adjustments** — `READY`. M8.2's third act, in the ledger: `INV-REV-04`'s reason code at
+both ranks (an `UNCODED` proposal refused at birth, existing rows reading `UNCODED`/`MANUAL`),
+the free adjustment closed on every reconciled position so value in a clearing or suspense
+account moves only through a break (ADR-0071), and the reconciliation-owned proposal methods
+the resolution (`-015`) will call. It precedes the position proof (`-007`), which means nothing
+while a free adjustment can move a clearing. Its entry and field set are in
+[`BACKLOG.md`](BACKLOG.md). **Not started.**
 
 ### Just completed
 
-**`P8-TSK-004` — The expectation register and the card completions** — `COMPLETE`
-(2026-09-29). **M8.2, Every settling completion is expected, OPENS at 1 of 4**: ADR-0067 is
-real for the card rail — every externally settling card completion opens, in its own
-transaction, a tracked settlement expectation that IS its clearing journal line's copy.
-**Reconciliation `V002`**: `expectation` with the whole machine stated (`OPEN`,
-`PARTIALLY_SETTLED`, `SETTLED`, `RESOLVED_BY_ADJUSTMENT`, the repudiation's reopening edges —
-generated from `permittedTransitions()` and reconciled by the migration test; only birth is
-produced, the `UPDATE` narrowed to what the machine moves, the birth statement frozen, nothing
-deletable), the two identity arbiters (`UNIQUE (kind, operation_ref)`,
-`UNIQUE (journal_entry_id, ledger_account_id)`), the per-source key and alias index with **no
-kind exempt** (the cycle is a column, never a key — A5), `expectation_event` (`OPENED`,
-`KEY_COLLISION`), and **rule set v1 seeded `ACTIVE` per source** with the migration as its
-provenance: the plan's lags (card 3, refund/dispute 3, instant 1, payout 2, funding 2), the
-values fixed at design (grace 48h, the operation-anchored `PAYOUT_RETURNED` at 72h — A4;
-`SETTLEMENT_DATE_DAYS` 2; fee tolerances 0.02/0.50; the PSP's terms 1.5% + 0.25; O5's 90 days;
-O7's 1,000.00), content frozen by trigger for EVERY writer, one `ACTIVE` per source by partial
-unique, and **an amount tolerance unstorable** (`INV-REC-08` at the database rank: the closed
-comparison list has no amount member). **The port**: `payments.SettlementExpectations`, a
-REQUIRED constructor parameter of `PaymentOutcomes` and `PaymentClearing` — no do-nothing
-production implementation — called in the acting branch after the posting: the capture
-(`CARD_CAPTURE`, keys `PSP_CAPTURE_REF` + the `CARD_ATTEMPT` anchor), the card refund
-(`CARD_REFUND`, gated on the stored rail's declared clearing purpose AND capture-model
-finality, so the push return stays `-005`'s and a book refund never qualifies; keys
-`PSP_REFUND_REF` + `OUR_REF`), and the ARN alias (`PaymentClearing`'s `RECORDED` branch alone —
-`ALREADY_RECORDED`, `REFERENCE_CLAIMED_ELSEWHERE` and `SECOND_PRESENTMENT` register nothing).
-**`app`'s `ReconciliationExpectationRecorder`** derives amount and direction from the posted
-clearing line (`DEBIT → INBOUND` — the ledger's own sign, never the applier's claim), resolves
-the source from the declared position through the compiled register, and pins the ACTIVE rule
-set on the row (`INV-HIST-04`). Every insert `ON CONFLICT DO NOTHING`: a key collision is a
-counted `KEY_COLLISION` event and NEVER a failed payment. Proven live: the capture, the refund
-and the funding top-up each asserted equal to their clearing line AGAINST THE LEDGER; the
-ten-way applier race (one acting, one entry, one expectation) and the ten-way direct-register
-race (one `OPENED`, nine `CONVERGED` — the guard-less writers, so the uniques are the arbiter);
-the ARN before AND after its capture; the forced port failure rolling the whole capture back
-and the redelivery completing both; a planted collision completing the payment; a book top-up
-and a book refund opening nothing; the machine, freeze and append-only triggers exercised as
-the application role and the migrator. `DATA_CLASSIFICATION.md` gains the reconciliation
-section (80 rows). No API, no event, no observability series (by the backlog); the openers for
-disputes, push and payouts are `-005`'s, the backfill and proof `-007`'s.
+**`P8-TSK-005` — Disputes, push rails, unmatched confirmations and payouts open their
+expectations** — `COMPLETE` (2026-09-29). **M8.2, Every settling completion is expected, at 2 of
+4**: every externally settling completion ADR-0067 §2 names now opens, in its own transaction, the
+expectation that copies its clearing journal line — and a register makes the claim a build fact.
+**The openers**, each in its applier's acting branch after the posting it copies:
+`ChargebackAccounting` — the chargeback, the win and the fee, each right after its own clearing
+posting, keyed by the network's dispute reference under its stage's kind (`DISPUTE_CB_REF`,
+`DISPUTE_REV_REF`, `DISPUTE_FEE_REF`); the attribution, restoration, loss and re-attribution
+entries touch no clearing and open nothing; a stage walk opens two or three in one transaction;
+`PaymentOutcomes` — the push execution (`PUSH_PAY_IN`, keys `SCHEME_REF` and `END_TO_END_REF`,
+the announced cycle its attribute) and the return (`PUSH_RETURN`, keys `SCHEME_REF` and
+`OUR_REF`, no cycle), the refund's kind now chosen by the refunded rail's **declared refund
+mode** (`PROVIDER_REFUND` → `CARD_REFUND`, `RETURN_PAYMENT` → `PUSH_RETURN`, a book refund
+nothing); `WithdrawalOutcomes` (`PUSH_WITHDRAWAL`, its stored cycle the attribute);
+`UnmatchedConfirmations` (`UNMATCHED_CONFIRMATION`, the claim winner only, keyed by the scheme
+reference alone — the parking's named reference, cause and attempt travel to `-020`'s suspense
+item); and **`merchant`'s own port** `PayoutSettlementExpectations`, a required parameter of
+`MerchantPayoutOutcomes` (`MERCHANT_PAYOUT`, keys `PAYOUT_PROVIDER_REF` and `OUR_REF`, the first
+answer and the sweep alike). `app`'s one `ReconciliationExpectationRecorder` implements both
+ports and now copies the **posting date from the posted entry** — the applier's own copy left
+the port. **The register**: `ExpectationOpenerRegisterTest` enumerates every posting-key prefix
+production code declares (the literals in each source constructing a `PostingCommand` or
+`ReversalCommand`) and requires each to open named kinds — with a real test calling the shared
+ledger-backed `ClearingLineCopies.assertOpensItsClearingLinesCopy` for that kind — or to touch no
+reconciled position with a test proving nothing opens; every kind either port can open has
+exactly one proving row, and its planted-violation controls sit beside the real register.
+**Proven live**: each completion's copy against the ledger (amount, entry, account, sign, date,
+dating, keys, cycle); the ten-way chargeback walk opening exactly three, the failed win's copy
+rolled back with it and opened by its redelivery; ten duplicate callbacks, ten inquiry sweeps,
+ten return sweeps, ten withdrawal sweeps and ten payout sweeps each opening one; **ten pay-ins of
+one cycle raising no collision**; the multi-rail storm and the merchant storm reading EVERY
+clearing line's copy in each round's snapshot and at rest (no window between a completion and
+its expectation), and the dispute battery every stage's. **Nine probe runs, nine caught**: each
+opener removed in turn (the chargeback's, the fee's, the execution's, the return's, the
+parking's, the withdrawal's), the win opening the chargeback's kind again (a stage opening
+twice), the payout port unwired and a planted posting key — every verdict read from the failing
+testcase, every restore byte-identical (`MUTATION_TESTING.md` §2, +3 rows under `INV-SET-02`
+and `INV-DSP-02`). **The gate's finds, each fixed**: the credit-versus-parking race proved one
+money fact but no expectation — it now proves exactly the winner's, the scheme reference keyed
+once and no collision; two "opens nothing" proofs rested on the battery's scope, which no
+scenario forces to hold a re-attribution — moved to tests that certainly post each key, and the
+storm's scope asserted to hold its transfers; and the register's own source check, which the
+gate's edit showed breaking on a line-wrapped call, made whitespace-tolerant. One storm run of
+four failed at the choreography's desk sale answering `PAYMENT_PENDING` — no error logged, no
+expectation assertion involved: a harness timing assumption, three re-runs green, recorded and
+offered as its own task. No migration, no API, no event, no series (by the backlog's scope).
+Verified by targeted tiers from fresh runs on the final code: payments hermetic 246
+across 35 suites, merchant hermetic 135 across 19, app hermetic 553 across 99 (the register
+within) and app database 1093 across 133 (the storm, the battery and the merchant storm
+within), all 0 failures, the document guards re-run after the records landed; the full
+battery deliberately skipped on the owner's instruction.
 
 ### Previously
 
-The per-task completion records — 167 blocks, from `P8-TSK-003` back to project initiation
+The per-task completion records — 168 blocks, from `P8-TSK-004` back to project initiation
 (`X-TSK-004` cross-cutting, standing between `P7-TSK-001` and the Phase 6 → 7 transition) —
 are archived in [`history/TASK_HISTORY.md`](history/TASK_HISTORY.md).
 *(This pointer read "130 blocks, from `P6-TSK-005`" through four archivals — corrected by
@@ -466,9 +485,10 @@ archived verbatim in
 
 ## Active Work
 
-**Phase 8 is `IN_PROGRESS`** (2026-09-28) — 4 of 27 items complete; **M8.1 `CLOSED` at 3 of 3;
-M8.2, Every settling completion is expected, opens at 1 of 4** — the expectation register, rule
-set v1 and the card openers; next `P8-TSK-005`, the remaining openers
+**Phase 8 is `IN_PROGRESS`** (2026-09-28) — 5 of 27 items complete; **M8.1 `CLOSED` at 3 of 3;
+M8.2, Every settling completion is expected, at 2 of 4** — the expectation register, rule
+set v1 and every settling completion's opener, proven by the register; next `P8-TSK-006`, reason-coded
+adjustments with reconciled positions closed to free adjustments
 ([§Current Task](#current-task) is kept current). Phase 7 is `COMPLETE` — 18 of 18
 items, M7.1–M7.8 closed, ruled by `P7-DOC-001` and confirmed after repair by the Phase 7 → 8
 transition ([`reviews/PHASE_7_TO_8_TRANSITION.md`](reviews/PHASE_7_TO_8_TRANSITION.md)). *(This
@@ -871,9 +891,9 @@ Resolved during initiation:
 
 ## Next Task
 
-**`P8-TSK-005`** — `READY` (the Current Task), marked by `P8-TSK-004`'s completion gate — the
-port and register it joins exist; `P8-TSK-006` (on nothing within Phase 8) stays the recorded
-alternative if M8.2's order must yield.
+**`P8-TSK-006`** — `READY` (the Current Task), marked by `P8-TSK-005`'s completion gate — it
+depends on nothing within Phase 8, and M8.2 sequences it before the position proof (`P8-TSK-007`),
+which means nothing while a free adjustment can move a clearing.
 
 ### Superseded: the Phase 7 → 8 transition lead (read until 2026-09-28)
 

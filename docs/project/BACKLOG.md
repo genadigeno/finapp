@@ -9523,7 +9523,7 @@ Disputes (`P7-TSK-012`…`-014`) · M7.7 Observability and demonstration (`P7-TS
 
 # Phase 8 — Settlement and Reconciliation
 
-Status: `IN_PROGRESS` — started 2026-09-28 with `P8-TSK-001` (4 of 27 items complete; M8.1 Evidence intake closed 2026-09-29 at 3 of 3; M8.2 Every settling completion is expected opens at 1 of 4); entry gate passed 2026-09-28 by the Phase 7 → 8 transition
+Status: `IN_PROGRESS` — started 2026-09-28 with `P8-TSK-001` (5 of 27 items complete; M8.1 Evidence intake closed 2026-09-29 at 3 of 3; M8.2 Every settling completion is expected at 2 of 4); entry gate passed 2026-09-28 by the Phase 7 → 8 transition
 ([`reviews/PHASE_7_TO_8_TRANSITION.md`](reviews/PHASE_7_TO_8_TRANSITION.md)), elaborated to task
 granularity by the same transition: twenty-seven items (`P8-TSK-001`…`-024`, `P8-TST-001`,
 `P8-TST-002`, `P8-DOC-001`) across eight milestones, with `P8-TSK-001` marked `READY`. The
@@ -10004,7 +10004,7 @@ posting-date documentation reconciled with the Phase 5–7 practice, with no ret
   `PAYOUT_RETURNED` rule; the Phase 7 storm and dispute battery re-run green.
 - **Definition of done**: `DOD-FIN`, `DOD-DOMAIN`, `DOD-TEST`, `DOD-DOC`. **Risk**: High. **Cx**: L.
 
-**P8-TSK-005 — Disputes, push rails, unmatched confirmations and payouts open their expectations** — `READY`
+**P8-TSK-005 — Disputes, push rails, unmatched confirmations and payouts open their expectations** — `COMPLETE` (2026-09-29)
 - **Objective**: ADR-0067 for every remaining externally settling completion, so that no posting
   touching a reconciled clearing exists without its expectation — and a register that makes the claim
   checkable.
@@ -10092,7 +10092,7 @@ posting-date documentation reconciled with the Phase 5–7 practice, with no ret
   the Phase 7 storm and dispute battery re-run green.
 - **Definition of done**: `DOD-FIN`, `DOD-TEST`. **Risk**: High. **Cx**: M.
 
-**P8-TSK-006 — Adjustments carry a reason code and an origin; reconciled positions are closed to free adjustments** — `PLANNED`
+**P8-TSK-006 — Adjustments carry a reason code and an origin; reconciled positions are closed to free adjustments** — `READY`
 - **Objective**: `INV-REV-04`'s reason code realised at both ranks without changing the generic
   adjustment request, and the ledger's free adjustment closed on every reconciled position, so value
   in a clearing or suspense account moves only through a break (ADR-0071); the generic approval and

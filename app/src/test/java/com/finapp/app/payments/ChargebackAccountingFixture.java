@@ -49,6 +49,22 @@ public final class ChargebackAccountingFixture {
                 ledgerAccounts,
                 new JdbcAuditWriter(),
                 ids,
-                clock);
+                clock,
+                // No dispute stage runs in the suites this fixture serves (P8-TSK-005): a stage
+                // expectation reaching here is a harness defect, loud rather than swallowed.
+                new com.finapp.payments.SettlementExpectations() {
+                    @Override
+                    public void open(java.sql.Connection unitOfWork, Opening opening) {
+                        throw new AssertionError(
+                                "no dispute stage runs in a suite built on this fixture");
+                    }
+
+                    @Override
+                    public void alias(
+                            java.sql.Connection unitOfWork, AliasRegistration registration) {
+                        throw new AssertionError(
+                                "no dispute stage runs in a suite built on this fixture");
+                    }
+                });
     }
 }

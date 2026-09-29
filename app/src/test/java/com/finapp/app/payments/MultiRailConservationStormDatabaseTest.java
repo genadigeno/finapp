@@ -5,6 +5,7 @@ import static org.assertj.core.api.Assertions.assertThat;
 import com.finapp.identity.Authorization;
 import com.finapp.identity.IdentityId;
 import com.finapp.identity.RoleName;
+import com.finapp.app.reconciliation.ClearingLineCopies;
 import com.finapp.ledger.AsOf;
 import com.finapp.ledger.JdbcBalanceDerivation;
 import com.finapp.ledger.LedgerAccountId;
@@ -454,6 +455,26 @@ class MultiRailConservationStormDatabaseTest {
         try (Connection app = DatabaseRoles.application()) {
             reconcile(app, world, "at rest");
             tally(app, storm, choreography);
+            // The copies' reading is not vacuous: every settling flow the storm drove is in
+            // scope and proven - captures, executions, refunds and returns, withdrawals and
+            // the chargebacks the choreography forces (P8-TSK-005).
+            UUID[] stormAccounts = world.accounts();
+            assertThat(ClearingLineCopies.assertEveryClearingLineIsCopied(
+                                    app, "at rest", STORM_ENTRIES, stormAccounts, stormAccounts)
+                            .keySet())
+                    .as("at rest: each externally settling completion the storm drove opened"
+                            + " its expectations")
+                    .contains("payment-capture:", "payment-execution:", "payment-refund:",
+                            "wallet-withdrawal:", "dispute-chargeback:");
+            // And the reading's "nothing else opened" half is not vacuous for the transfers:
+            // the scope holds the storm's wallet-to-wallet entries, none of them expected.
+            assertThat(sum(app,
+                            "SELECT count(*) FROM ledger.journal_entry e"
+                                    + " WHERE e.idempotency_scope LIKE 'ledger.post:transfer:%'"
+                                    + "   AND e.id IN (" + STORM_ENTRIES + ")",
+                            stormAccounts, stormAccounts))
+                    .as("at rest: the storm's transfers are in the copies' scope")
+                    .isPositive();
             // THE METERS, A SECOND AND INDEPENDENT TALLY: every judgement the storm's instance
             // counted after its commit is exactly one the tables committed, rail by rail, type by
             // type, outcome by outcome - valid because nothing else judges in this JVM while the
@@ -553,6 +574,14 @@ class MultiRailConservationStormDatabaseTest {
                                 when, attempt[1], attempt[2], attempt[0])
                         .isLessThanOrEqualTo(attempt[0]);
             }
+
+            // EVERY CLEARING LINE HAS ITS EXPECTATION, IN THE SAME SNAPSHOT (P8-TSK-005,
+            // ADR-0067): each capture, execution, refund, return, withdrawal and money stage the
+            // storm committed opened exactly one copy of its clearing line IN ITS OWN COMMIT - a
+            // round's snapshot taken mid-storm never sees a line without its copy - and the
+            // transfers and book movements beside them opened nothing.
+            ClearingLineCopies.assertEveryClearingLineIsCopied(
+                    snapshot, when, STORM_ENTRIES, accounts, accounts);
             snapshot.commit();
         }
     }
@@ -561,22 +590,30 @@ class MultiRailConservationStormDatabaseTest {
      * The storm's own entries' net DEBIT movement per platform purpose: every entry touching a
      * storm wallet or payable, and the dispute entries keyed by a storm dispute.
      */
+    /**
+     * The storm's own entries: every entry touching a storm wallet or payable, and the dispute
+     * entries keyed by a storm dispute - two bindings, the storm's accounts twice. One
+     * definition for the positions and the expectation copies (P8-TSK-005), so the two
+     * readings can never be taken over different scopes.
+     */
+    private static final String STORM_ENTRIES =
+            "SELECT mine.entry_id FROM ledger.journal_line mine"
+                    + "  WHERE mine.ledger_account_id = ANY (?)"
+                    + " UNION"
+                    + " SELECT e.id FROM ledger.journal_entry e"
+                    + "   JOIN payments.dispute d"
+                    + "     ON e.idempotency_scope LIKE 'ledger.post:dispute-%:'"
+                    + "        || d.id::text || '%'"
+                    + "   JOIN payments.payment_attempt a ON a.id = d.attempt_id"
+                    + "   JOIN payments.payment_intent i ON i.id = a.intent_id"
+                    + "  WHERE i.credit_account_id = ANY (?)";
+
     private static Map<String, Long> stormPositions(Connection app, UUID[] accounts)
             throws SQLException {
         Map<String, Long> positions = new java.util.HashMap<>();
         try (PreparedStatement read =
                 app.prepareStatement(
-                        "WITH storm_entry AS ("
-                                + "   SELECT mine.entry_id FROM ledger.journal_line mine"
-                                + "    WHERE mine.ledger_account_id = ANY (?)"
-                                + "   UNION"
-                                + "   SELECT e.id FROM ledger.journal_entry e"
-                                + "     JOIN payments.dispute d"
-                                + "       ON e.idempotency_scope LIKE 'ledger.post:dispute-%:'"
-                                + "          || d.id::text || '%'"
-                                + "     JOIN payments.payment_attempt a ON a.id = d.attempt_id"
-                                + "     JOIN payments.payment_intent i ON i.id = a.intent_id"
-                                + "    WHERE i.credit_account_id = ANY (?))"
+                        "WITH storm_entry AS (" + STORM_ENTRIES + ")"
                                 + " SELECT account.purpose, COALESCE(SUM(CASE"
                                 + "   WHEN line.direction = 'DEBIT' THEN line.amount_minor"
                                 + "   ELSE -line.amount_minor END), 0)"

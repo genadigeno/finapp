@@ -1,9 +1,12 @@
 package com.finapp.app.reconciliation;
 
+import com.finapp.ledger.AccountPurpose;
 import com.finapp.ledger.Direction;
+import com.finapp.ledger.JournalEntryId;
 import com.finapp.ledger.JournalEntryStore;
 import com.finapp.ledger.JournalLine;
 import com.finapp.ledger.LedgerAccountId;
+import com.finapp.merchant.PayoutSettlementExpectations;
 import com.finapp.payments.SettlementExpectations;
 import com.finapp.platform.security.SecurityContext;
 import com.finapp.reconciliation.ExpectationDirection;
@@ -15,19 +18,23 @@ import com.finapp.reconciliation.RuleSets;
 import com.finapp.settlement.SettlementFileStore;
 import com.finapp.settlement.SettlementSourceDescriptor;
 import com.finapp.settlement.SettlementSources;
+import com.finapp.sharedkernel.correlation.Correlation;
+import com.finapp.sharedkernel.money.Money;
 import java.sql.Connection;
 import java.time.Clock;
-import java.time.Instant;
+import java.time.LocalDate;
 import java.util.List;
 import java.util.Objects;
+import java.util.Optional;
 import java.util.UUID;
 import lombok.NonNull;
 import lombok.RequiredArgsConstructor;
 
 /**
  * The composition root's implementation of the expectation-opening ports (`P8-TSK-004`,
- * ADR-0067 §1): {@code payments} (and, with `-005`/`-019`, {@code merchant}) call it on the
- * completing connection, and it delegates to {@code reconciliation.ExpectationRegister} —
+ * `P8-TSK-005`, ADR-0067 §1): {@code payments}' {@link SettlementExpectations} and
+ * {@code merchant}'s {@link PayoutSettlementExpectations} are ONE recorder — the appliers call
+ * it on the completing connection, and it delegates to {@code reconciliation.ExpectationRegister},
  * the join neither module may compile against (ADR-0064).
  *
  * <h2>Derived, never declared</h2>
@@ -38,16 +45,19 @@ import lombok.RequiredArgsConstructor;
  *       `INV-SET-05`): exactly one source discharges each settling position, proven total at
  *       build time, so the lookup cannot miss at runtime — a miss is a wiring defect and
  *       throws, rolling the completion back (ADR-0067 §6).
- *   <li><strong>Amount and direction</strong> are read off the posted entry's clearing line
- *       ({@code JournalEntryStore.findById}, same connection): a DEBIT on the position is
- *       {@code INBOUND}, a CREDIT {@code OUTBOUND} — so the expectation cannot contradict
- *       the ledger, and the position proof's sign is the ledger's own (ADR-0067 §3, §4).
+ *   <li><strong>Amount, direction and posting date</strong> are read off the posted entry and
+ *       its clearing line ({@code JournalEntryStore.findById}, same connection): a DEBIT on the
+ *       position is {@code INBOUND}, a CREDIT {@code OUTBOUND}, and the date is the entry's —
+ *       "copied from the entry and never re-read from the clock" — so the expectation cannot
+ *       contradict the ledger and the position proof's sign is the ledger's own (ADR-0067 §3,
+ *       §4).
  *   <li><strong>The dating</strong> comes from the source's {@code ACTIVE} rule set, read
  *       lock-free and pinned on the row ({@code INV-HIST-04}).
  * </ul>
  */
 @RequiredArgsConstructor
-public class ReconciliationExpectationRecorder implements SettlementExpectations {
+public class ReconciliationExpectationRecorder
+        implements SettlementExpectations, PayoutSettlementExpectations {
 
     @NonNull private final SettlementSources sources;
     @NonNull private final SettlementFileStore<Connection> sourceRows;
@@ -57,43 +67,48 @@ public class ReconciliationExpectationRecorder implements SettlementExpectations
     @NonNull private final Clock clock;
 
     @Override
-    public void open(Connection unitOfWork, Opening opening) {
+    public void open(Connection unitOfWork, SettlementExpectations.Opening opening) {
         Objects.requireNonNull(unitOfWork, "unitOfWork must not be null");
         Objects.requireNonNull(opening, "opening must not be null");
-
-        UUID sourceId = sourceIdFor(unitOfWork, opening.position());
-        ClearingLine line =
-                clearingLineOf(unitOfWork, opening.journalEntryId(), opening.clearingAccount());
-        RuleSets.ActiveRuleSet ruleSet = ruleSets.activeFor(unitOfWork, sourceId);
-        ExpectationKind kind = ExpectationKind.valueOf(opening.kind().name());
-        Instant now = clock.instant();
-
-        register.open(
+        record(
                 unitOfWork,
-                new NewExpectation(
-                        kind,
-                        opening.operationRef(),
-                        opening.postingKey(),
-                        sourceId,
-                        opening.position(),
-                        opening.clearingAccount().value(),
-                        line.direction(),
-                        line.amount(),
-                        java.util.Optional.of(opening.journalEntryId().value()),
-                        opening.postingDate(),
-                        opening.settlementCycle(),
-                        opening.postingDate().plusDays(ruleSet.lagDaysFor(kind)),
-                        ruleSet.id(),
-                        opening.keys().stream()
-                                .map(
-                                        key ->
-                                                new NewExpectation.ExpectationKey(
-                                                        KeyKind.valueOf(key.kind().name()),
-                                                        key.value()))
-                                .toList(),
-                        SecurityContext.require(),
-                        now,
-                        opening.correlation().correlationId()));
+                ExpectationKind.valueOf(opening.kind().name()),
+                opening.operationRef(),
+                opening.postingKey(),
+                opening.position(),
+                opening.clearingAccount(),
+                opening.journalEntryId(),
+                opening.settlementCycle(),
+                opening.keys().stream()
+                        .map(
+                                key ->
+                                        new NewExpectation.ExpectationKey(
+                                                KeyKind.valueOf(key.kind().name()), key.value()))
+                        .toList(),
+                opening.correlation());
+    }
+
+    @Override
+    public void open(Connection unitOfWork, PayoutSettlementExpectations.Opening opening) {
+        Objects.requireNonNull(unitOfWork, "unitOfWork must not be null");
+        Objects.requireNonNull(opening, "opening must not be null");
+        record(
+                unitOfWork,
+                ExpectationKind.valueOf(opening.kind().name()),
+                opening.operationRef(),
+                opening.postingKey(),
+                opening.position(),
+                opening.clearingAccount(),
+                opening.journalEntryId(),
+                // A payout announces no cycle: its report's own dating is the comparison.
+                Optional.empty(),
+                opening.keys().stream()
+                        .map(
+                                key ->
+                                        new NewExpectation.ExpectationKey(
+                                                KeyKind.valueOf(key.kind().name()), key.value()))
+                        .toList(),
+                opening.correlation());
     }
 
     @Override
@@ -113,7 +128,44 @@ public class ReconciliationExpectationRecorder implements SettlementExpectations
                         registration.correlation().correlationId()));
     }
 
-    private UUID sourceIdFor(Connection unitOfWork, com.finapp.ledger.AccountPurpose position) {
+    /** Both ports' one path: source, line and rule set resolved, then the register's insert. */
+    private void record(
+            Connection unitOfWork,
+            ExpectationKind kind,
+            String operationRef,
+            String postingKey,
+            AccountPurpose position,
+            LedgerAccountId clearingAccount,
+            JournalEntryId entryId,
+            Optional<String> settlementCycle,
+            List<NewExpectation.ExpectationKey> keys,
+            Correlation correlation) {
+        UUID sourceId = sourceIdFor(unitOfWork, position);
+        ClearingLine line = clearingLineOf(unitOfWork, entryId, clearingAccount);
+        RuleSets.ActiveRuleSet ruleSet = ruleSets.activeFor(unitOfWork, sourceId);
+        register.open(
+                unitOfWork,
+                new NewExpectation(
+                        kind,
+                        operationRef,
+                        postingKey,
+                        sourceId,
+                        position,
+                        clearingAccount.value(),
+                        line.direction(),
+                        line.amount(),
+                        Optional.of(entryId.value()),
+                        line.postingDate(),
+                        settlementCycle,
+                        line.postingDate().plusDays(ruleSet.lagDaysFor(kind)),
+                        ruleSet.id(),
+                        keys,
+                        SecurityContext.require(),
+                        clock.instant(),
+                        correlation.correlationId()));
+    }
+
+    private UUID sourceIdFor(Connection unitOfWork, AccountPurpose position) {
         SettlementSourceDescriptor declared =
                 sources.dischargedBy(position)
                         .orElseThrow(
@@ -134,11 +186,9 @@ public class ReconciliationExpectationRecorder implements SettlementExpectations
                 .id();
     }
 
-    /** The one line of {@code entryId} on the clearing account — amount and direction. */
+    /** The one line of {@code entryId} on the clearing account — amount, direction, date. */
     private ClearingLine clearingLineOf(
-            Connection unitOfWork,
-            com.finapp.ledger.JournalEntryId entryId,
-            LedgerAccountId clearingAccount) {
+            Connection unitOfWork, JournalEntryId entryId, LedgerAccountId clearingAccount) {
         JournalEntryStore.PostedEntry posted =
                 entries.findById(unitOfWork, entryId)
                         .orElseThrow(
@@ -162,9 +212,10 @@ public class ReconciliationExpectationRecorder implements SettlementExpectations
                 line.amount(),
                 line.direction() == Direction.DEBIT
                         ? ExpectationDirection.INBOUND
-                        : ExpectationDirection.OUTBOUND);
+                        : ExpectationDirection.OUTBOUND,
+                posted.entry().postingDate());
     }
 
     private record ClearingLine(
-            com.finapp.sharedkernel.money.Money amount, ExpectationDirection direction) {}
+            Money amount, ExpectationDirection direction, LocalDate postingDate) {}
 }

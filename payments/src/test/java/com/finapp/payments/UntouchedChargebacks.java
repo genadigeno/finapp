@@ -60,6 +60,19 @@ final class UntouchedChargebacks {
                     throw new AssertionError("no dispute audit in this suite");
                 },
                 ids,
-                clock);
+                clock,
+                // The same tripwire for the stage expectations (P8-TSK-005): no dispute money
+                // moves here, so no stage can open one.
+                new SettlementExpectations() {
+                    @Override
+                    public void open(Connection unitOfWork, Opening opening) {
+                        throw new AssertionError("no dispute expectation in this suite");
+                    }
+
+                    @Override
+                    public void alias(Connection unitOfWork, AliasRegistration registration) {
+                        throw new AssertionError("no dispute alias in this suite");
+                    }
+                });
     }
 }

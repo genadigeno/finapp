@@ -494,9 +494,20 @@ transaction).
   resolves the source through the compiled register. The dispute, push and unmatched openings
   of point 2's table, the merchant port, the backfill (point 8) and the register/verifier
   (point 9) remain with their named tasks below.
-- `P8-TSK-005`: `ChargebackAccounting`, push execution, `WithdrawalOutcomes`, returns,
-  `UnmatchedConfirmations` and the merchant port in `MerchantPayoutOutcomes`, plus the
-  expectation-opener register.
+- `P8-TSK-005` — **implemented** (2026-09-29): every remaining opener of point 2's table,
+  each in its applier's acting branch after the posting it copies — `ChargebackAccounting`
+  (the chargeback, the win and the fee, each keyed by the network's reference under its
+  stage's kind; the attribution, restoration, loss and re-attribution entries open nothing),
+  `PaymentOutcomes` (the push execution, with the announced cycle as its attribute, and the
+  return, the refund's kind now chosen by the refunded rail's DECLARED refund mode),
+  `WithdrawalOutcomes`, `UnmatchedConfirmations` (the claim winner only, keyed by the scheme
+  reference alone, point 5) and `merchant`'s own `PayoutSettlementExpectations` in
+  `MerchantPayoutOutcomes`, implemented by the same recorder. The port no longer carries a
+  posting date: the recorder copies it from the posted entry (point 4's "copied from the
+  entry and never re-read from the clock"). The expectation-opener register of point 9 is
+  `ExpectationOpenerRegisterTest`, its per-completion proof the shared ledger-backed
+  `ClearingLineCopies` helper; the storms read every clearing line's copy in each round's
+  snapshot and at rest.
 - `P8-TSK-007`: the opening-position backfill, the position proof and the completeness verifier.
   Its "unattributed 0" is reached on the clearing purposes there, and on `SUSPENSE_UNMATCHED` with
   `P8-TSK-020`.

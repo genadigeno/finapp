@@ -1,6 +1,6 @@
 # Task History
 
-The per-task completion records that accumulated behind `## Current Task` - 167 "Previously" blocks, newest first, from `P8-TSK-003` back to project initiation. *(`X-TSK-004` is cross-cutting and completed after the Phase 6 → 7 transition, so it stands second, between `P7-TSK-001` and the transition's record - the transition's block moved here by `P7-TSK-001`'s gate, exactly as an earlier form of this note said it would.)*
+The per-task completion records that accumulated behind `## Current Task` - 168 "Previously" blocks, newest first, from `P8-TSK-004` back to project initiation. *(`X-TSK-004` is cross-cutting and completed after the Phase 6 → 7 transition, so it stands second, between `P7-TSK-001` and the transition's record - the transition's block moved here by `P7-TSK-001`'s gate, exactly as an earlier form of this note said it would.)*
 
 **Archive.** These records were moved verbatim out of
 [`CURRENT_STATE.md`](../CURRENT_STATE.md) on 2026-09-20 so that the canonical description of
@@ -12,6 +12,48 @@ Current state: [`CURRENT_STATE.md`](../CURRENT_STATE.md) ·
 Authoritative backlog: [`BACKLOG.md`](../BACKLOG.md)
 
 ---
+
+### Previously
+
+**`P8-TSK-004` — The expectation register and the card completions** — `COMPLETE`
+(2026-09-29). **M8.2, Every settling completion is expected, OPENS at 1 of 4**: ADR-0067 is
+real for the card rail — every externally settling card completion opens, in its own
+transaction, a tracked settlement expectation that IS its clearing journal line's copy.
+**Reconciliation `V002`**: `expectation` with the whole machine stated (`OPEN`,
+`PARTIALLY_SETTLED`, `SETTLED`, `RESOLVED_BY_ADJUSTMENT`, the repudiation's reopening edges —
+generated from `permittedTransitions()` and reconciled by the migration test; only birth is
+produced, the `UPDATE` narrowed to what the machine moves, the birth statement frozen, nothing
+deletable), the two identity arbiters (`UNIQUE (kind, operation_ref)`,
+`UNIQUE (journal_entry_id, ledger_account_id)`), the per-source key and alias index with **no
+kind exempt** (the cycle is a column, never a key — A5), `expectation_event` (`OPENED`,
+`KEY_COLLISION`), and **rule set v1 seeded `ACTIVE` per source** with the migration as its
+provenance: the plan's lags (card 3, refund/dispute 3, instant 1, payout 2, funding 2), the
+values fixed at design (grace 48h, the operation-anchored `PAYOUT_RETURNED` at 72h — A4;
+`SETTLEMENT_DATE_DAYS` 2; fee tolerances 0.02/0.50; the PSP's terms 1.5% + 0.25; O5's 90 days;
+O7's 1,000.00), content frozen by trigger for EVERY writer, one `ACTIVE` per source by partial
+unique, and **an amount tolerance unstorable** (`INV-REC-08` at the database rank: the closed
+comparison list has no amount member). **The port**: `payments.SettlementExpectations`, a
+REQUIRED constructor parameter of `PaymentOutcomes` and `PaymentClearing` — no do-nothing
+production implementation — called in the acting branch after the posting: the capture
+(`CARD_CAPTURE`, keys `PSP_CAPTURE_REF` + the `CARD_ATTEMPT` anchor), the card refund
+(`CARD_REFUND`, gated on the stored rail's declared clearing purpose AND capture-model
+finality, so the push return stays `-005`'s and a book refund never qualifies; keys
+`PSP_REFUND_REF` + `OUR_REF`), and the ARN alias (`PaymentClearing`'s `RECORDED` branch alone —
+`ALREADY_RECORDED`, `REFERENCE_CLAIMED_ELSEWHERE` and `SECOND_PRESENTMENT` register nothing).
+**`app`'s `ReconciliationExpectationRecorder`** derives amount and direction from the posted
+clearing line (`DEBIT → INBOUND` — the ledger's own sign, never the applier's claim), resolves
+the source from the declared position through the compiled register, and pins the ACTIVE rule
+set on the row (`INV-HIST-04`). Every insert `ON CONFLICT DO NOTHING`: a key collision is a
+counted `KEY_COLLISION` event and NEVER a failed payment. Proven live: the capture, the refund
+and the funding top-up each asserted equal to their clearing line AGAINST THE LEDGER; the
+ten-way applier race (one acting, one entry, one expectation) and the ten-way direct-register
+race (one `OPENED`, nine `CONVERGED` — the guard-less writers, so the uniques are the arbiter);
+the ARN before AND after its capture; the forced port failure rolling the whole capture back
+and the redelivery completing both; a planted collision completing the payment; a book top-up
+and a book refund opening nothing; the machine, freeze and append-only triggers exercised as
+the application role and the migrator. `DATA_CLASSIFICATION.md` gains the reconciliation
+section (80 rows). No API, no event, no observability series (by the backlog); the openers for
+disputes, push and payouts are `-005`'s, the backfill and proof `-007`'s.
 
 ### Previously
 
