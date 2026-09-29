@@ -22,8 +22,59 @@ public final class SettlementFileEvents {
     static final int EVENT_VERSION = 1;
     static final String TARGET_TYPE = "settlement_file";
     static final String REJECTED_EVENT_TYPE = "settlement.SettlementFileRejected";
+    static final String ACCEPTED_EVENT_TYPE = "settlement.SettlementBatchAccepted";
 
     private SettlementFileEvents() {}
+
+    /**
+     * Announced on the one {@code PARSED → ACCEPTED} edge (`P8-TSK-009`), in the acceptance
+     * transaction: identifiers and counts only — never an amount or a reference — with the
+     * source as its UUID (the rejected event's recorded deviation) and the entry id exactly
+     * when a recognition posted ({@code posting_omitted} carries no field, honestly absent).
+     */
+    static void accepted(
+            OutboxWriter<Connection> outbox,
+            Connection unitOfWork,
+            IdGenerator ids,
+            UUID batchId,
+            UUID fileId,
+            UUID sourceId,
+            long sourceSequence,
+            int lineCount,
+            java.util.Optional<UUID> journalEntryId,
+            Instant occurredAt,
+            Correlation correlation) {
+        EventPayload payload =
+                EventPayload.of()
+                        .with("batchId", batchId.toString())
+                        .with("fileId", fileId.toString())
+                        .with("sourceId", sourceId.toString())
+                        .with("sourceSequence", String.valueOf(sourceSequence))
+                        .with("lineCount", String.valueOf(lineCount));
+        journalEntryId.ifPresent(entry -> payload.with("journalEntryId", entry.toString()));
+        outbox.write(
+                unitOfWork,
+                new EventEnvelope(
+                        EventId.next(ids),
+                        ACCEPTED_EVENT_TYPE,
+                        EVENT_VERSION,
+                        EventEnvelope.CURRENT_SCHEMA_VERSION,
+                        SettlementFileId.of(fileId),
+                        TARGET_TYPE,
+                        occurredAt,
+                        PRODUCER,
+                        correlation.correlationId(),
+                        correlation
+                                .cause()
+                                .orElseGet(
+                                        () ->
+                                                CausationId.of(
+                                                        correlation
+                                                                .correlationId()
+                                                                .value()))),
+                payload.toBytes(),
+                EventPayload.MEDIA_TYPE);
+    }
 
     /**
      * Announced on EVERY edge into {@code REJECTED} — the parse leg's and the decline's.

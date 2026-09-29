@@ -73,13 +73,24 @@ public final class PositionProof {
     @NonNull private final SettlementSources sources;
     @NonNull private final SettlementFileStore<Connection> sourceRows;
 
-    /** One position-and-currency verdict: the identity's two sides, and whether they agree. */
+    /** The recognition entries' reader (`P8-TSK-009`) — appended last (the Lombok rule). */
+    @NonNull private final com.finapp.settlement.SettlementBatchStore<Connection> batches;
+
+    /**
+     * One position-and-currency verdict: the identity's terms, and whether they agree.
+     * Since `P8-TSK-009` the identity carries the items term ({@code INV-REC-06} extended
+     * at acceptance): balance = open remainders − open item remainders, with every accepted
+     * line's undisposed claim subtracted — fee items excluded, their effect being the
+     * recognition entry itself.
+     */
     public record PositionVerdict(
             AccountPurpose purpose,
             CurrencyCode currency,
             Money ledgerBalance,
             Money openRemainders,
+            Money openItems,
             long openCount,
+            long openItemCount,
             boolean explained) {}
 
     /** One sweep's whole answer — the gauges' and the report's one source. */
@@ -140,6 +151,31 @@ public final class PositionProof {
                     .merge(currency, 1L, Long::sum);
         }
 
+        // THE ITEMS TERM (P8-TSK-009): every accepted, undisposed allocating line's claim,
+        // folded the same way - INBOUND positive, OUTBOUND negative, never a SQL SUM.
+        Map<AccountPurpose, Map<CurrencyCode, Money>> itemsFolded =
+                new EnumMap<>(AccountPurpose.class);
+        Map<AccountPurpose, Map<CurrencyCode, Long>> itemCounts =
+                new EnumMap<>(AccountPurpose.class);
+        for (ExpectationReadings.OpenItemRemainder item :
+                readings.openItemRemainders(unitOfWork)) {
+            CurrencyCode currency = item.remainder().currency();
+            Map<CurrencyCode, Money> sums =
+                    itemsFolded.computeIfAbsent(item.position(), p -> new HashMap<>());
+            Money signed = item.remainder();
+            Money current =
+                    sums.getOrDefault(
+                            currency, Money.ofPersisted(0, currency, signed.scale()));
+            sums.put(
+                    currency,
+                    item.direction() == ExpectationDirection.INBOUND
+                            ? current.plus(signed)
+                            : current.minus(signed));
+            itemCounts
+                    .computeIfAbsent(item.position(), p -> new HashMap<>())
+                    .merge(currency, 1L, Long::sum);
+        }
+
         List<PositionVerdict> verdicts = new ArrayList<>();
         for (AccountPurpose purpose : PROVEN) {
             for (Map.Entry<CurrencyCode, LedgerAccount> position :
@@ -153,8 +189,18 @@ public final class PositionProof {
                                 .orElse(
                                         Money.ofPersisted(
                                                 0, position.getKey(), balance.scale()));
+                Money items =
+                        Optional.ofNullable(itemsFolded.get(purpose))
+                                .map(sums -> sums.get(position.getKey()))
+                                .orElse(
+                                        Money.ofPersisted(
+                                                0, position.getKey(), balance.scale()));
                 long open =
                         Optional.ofNullable(openCounts.get(purpose))
+                                .map(counts -> counts.getOrDefault(position.getKey(), 0L))
+                                .orElse(0L);
+                long openItems =
+                        Optional.ofNullable(itemCounts.get(purpose))
                                 .map(counts -> counts.getOrDefault(position.getKey(), 0L))
                                 .orElse(0L);
                 verdicts.add(
@@ -163,8 +209,10 @@ public final class PositionProof {
                                 position.getKey(),
                                 balance,
                                 remainders,
+                                items,
                                 open,
-                                balance.equals(remainders)));
+                                openItems,
+                                balance.equals(remainders.minus(items))));
             }
         }
 
@@ -180,6 +228,11 @@ public final class PositionProof {
         }
         Set<ExpectationReadings.KnownLine> known =
                 new HashSet<>(readings.knownLines(unitOfWork));
+        // The second known-entry class (P8-TSK-009, ADR-0067 §9): a recognition entry's
+        // every line - the position credit AND the PROCESSING_COSTS debit - is explained by
+        // the acceptance that posted it.
+        Set<UUID> recognitionEntries =
+                new HashSet<>(batches.acceptedRecognitionEntries(unitOfWork));
         Map<AccountPurpose, Long> unattributed = new EnumMap<>(AccountPurpose.class);
         for (AccountPurpose purpose : AccountPurpose.reconciledPositions()) {
             unattributed.put(purpose, 0L);
@@ -187,8 +240,9 @@ public final class PositionProof {
         for (JournalEntryStore.LineKey line : entries.lineKeysOn(unitOfWork, reconciled)) {
             boolean explained =
                     known.contains(
-                            new ExpectationReadings.KnownLine(
-                                    line.entry().value(), line.account().value()));
+                                    new ExpectationReadings.KnownLine(
+                                            line.entry().value(), line.account().value()))
+                            || recognitionEntries.contains(line.entry().value());
             if (!explained) {
                 unattributed.merge(purposeOf.get(line.account()), 1L, Long::sum);
             }

@@ -377,15 +377,16 @@ adjustment machinery; amounts never enter metrics; a payout return applied from 
 evidence. The transition catalogued nine invariants, taking the platform to **110**, and the
 Phase 8 set is **twenty-two**. 27 backlog items across eight milestones (M8.1–M8.8);
 [`SETTLEMENT_AND_RECONCILIATION_LIFECYCLES.md`](../domain/SETTLEMENT_AND_RECONCILIATION_LIFECYCLES.md)
-states nine machines and one born-once fact. **8 of 27 items complete** (M8.1 `CLOSED` at 3 of 3,
-M8.2 `CLOSED` at 4 of 4, **M8.3, Evidence becomes canonical lines, at 1 of 6**): the modules
+states nine machines and one born-once fact. **9 of 27 items complete** (M8.1 `CLOSED` at 3 of 3,
+M8.2 `CLOSED` at 4 of 4, **M8.3, Evidence becomes canonical lines, at 2 of 6**): the modules
 and floors (`P8-TSK-001`), the source register, the file store and the door screen
 (`P8-TSK-002`), the upload door and attestation (`P8-TSK-003`), the expectation register with
 the card openers (`P8-TSK-004`), every other opener with the register that proves them
 (`P8-TSK-005`), the adjustment closure (`P8-TSK-006`), the opening position with the two
 published verdicts (`P8-TSK-007`) and the PSP format with the parse leg and the decline
-(`P8-TSK-008`); next **`P8-TSK-009` — acceptance: fee recognition, remittance expectation
-and reconciliation intake** — `READY` ([§Current Task](#current-task) is kept current). *(This paragraph read "2 of 27 items complete
+(`P8-TSK-008`) and the acceptance — hop 1's recognition, the remittance expectation and
+the reconciliation intake (`P8-TSK-009`); next **`P8-TSK-010` — breaks and suspense as
+records** — `READY` ([§Current Task](#current-task) is kept current). *(This paragraph read "2 of 27 items complete
 (M8.1 at 2 of 3) ... next `P8-TSK-003`" through `P8-TSK-003`'s and `P8-TSK-004`'s gates, until
 `P8-TSK-005`'s record found it: the stale-second-copy class again, in the paragraph neither gate's
 record reached.)*
@@ -403,91 +404,79 @@ since M0.1". Moved, not edited.)*
 
 ## Current Task
 
-**`P8-TSK-009` — Acceptance: fee recognition, remittance expectation and reconciliation
-intake** — `READY`. Hop 1 becomes real: an eligible `PARSED` batch — a pull always, an upload
-only once attested — is `ACCEPTED` in one transaction with the gapless `source_sequence`, the
-run handed to `reconciliation` through `AcceptedBatchIntake`, the counterparty's fees
-recognised (DR `PROCESSING_COSTS` / CR the position, `ledger` `V016`'s purpose) and the
-`REMITTANCE` expectation opened, the posting LAST (ADR-0065 §2; the register row's planned
-half). Its entry and field set are in [`BACKLOG.md`](BACKLOG.md). **Not started.**
+**`P8-TSK-010` — Breaks and suspense as records** — `READY`. Every discrepancy becomes a
+classified, severity-tagged break that is never deleted, and every unit of value moved to
+`SUSPENSE_UNMATCHED` is owned by exactly one break from the transaction that parks it
+(ADR-0069, ADR-0070; `INV-REC-02`, `INV-REC-09`) — the records and their writers, before
+any engine produces them. Its entry and field set are in [`BACKLOG.md`](BACKLOG.md). **Not started.**
 
 ### Just completed
 
-**`P8-TSK-008` — The PSP format: parse, normalise, reject whole** — `COMPLETE` (2026-09-29).
-**M8.3, Evidence becomes canonical lines, OPENS at 1 of 6**: settlement evidence is now DATA —
-one whole, canonical, immutable batch of typed lines per file, or a whole rejection with its
-errors on the record (`INV-SET-07`'s first half). **The `SettlementFormat` SPI** (pure — no
-I/O, clock or database) with **`SIM_PSP_CSV` v1 frozen by its golden file** (the
-`RailMoneySemanticsArePinnedTest` rule: the fingerprint algorithm pinned by hex literal, a
-behaviour change is a NEW version); the provider's vocabulary — `SALE` and its siblings —
-confined to `com.finapp.settlement.format.simpsp` by the new
-`SettlementVocabularyIsConfinedTest` with planted-violation controls (`INV-PAY-03`), an
-unknown type kept as `OTHER_IN`/`OTHER_OUT` by sign and never a success (`INV-REC-02`), and
-the gross-plus-fee split (a fee-bearing record becomes its transaction line plus a
-`PROCESSING_FEE` line carrying `ORIGINAL_REF`, the record digest shared). **The field-class
-screen fills the door's seam** (ADR-0066 §3, C6): reference fields by shape — a Luhn-valid
-15-digit network transaction id is never tested as free text — amounts and dates by type,
-only the descriptor free text, and a field failing its declared class screened as free text,
-so a PAN in a reference column is refused, never retained. **Settlement `V003`**: the file
-machine's real edges regenerated from `FileStatus.permittedTransitions()` (`ACCEPTED` still
-has no producer), `batch` born `PARSED` with `batch_event`, `batch_total` (the `Money` fold
-per type and direction, the attester's reading), `line` (the ADR-0003 triple;
-`canonical_fingerprint` indexed and deliberately NOT unique so a duplicate survives to become
-`DUPLICATE_EXTERNAL` at matching), `line_reference` (bank-identifier and alias shapes refused
-by `CHECK`), `ingestion_error` (≤100; no content column exists), the attestation gated to
-non-terminal files by trigger, a rejection verdict frozen once set, and **the live unique
-written whole** — `UNIQUE (source_id, external_batch_ref, currency) WHERE status NOT IN
-('REJECTED', 'REPUDIATED')` — so `-023` changes no index. **The parse leg** (`FileParsing` +
-`SettlementIntakeSchedule`, the scheduler register's row rewritten from the code, LEASE
-register 9 → 10, the sweep a SYSTEM actor site): candidates lock-free oldest first, the claim
-`FOR UPDATE SKIP LOCKED` inside each file's own transaction, one transaction per outcome —
-the batch whole with its edge and history, or the errors, verdict, acting-only audit record
-(`settlement.SettlementFileRejected`) and settlement's FIRST outbox event together — and OUR
-failure never rejects evidence: `parse_failures + 1` and the back-off in a second transaction
-that survives the rollback, the `RECEIVED → RECEIVED` history row the record. **The decline**
-(moved from `-003`): `RECEIVED | PARSED → REJECTED(DECLINED)`, the batch with it, the live
-key freed at commit and the genuine re-issue admitted; idempotent by state (a terminal file
-answers `409 settlement.FileNotAttestable`); `settlement.SettlementFileDeclined` requires its
-reason. **The batch read** (`GET /v1/operator/settlement/batches/{id}`,
-`RECONCILIATION_INVESTIGATE`; `404 settlement.BatchNotFound`, the `FileNotFound` departure's
-reasoning) serves the parsed totals an attester examines — and attestation now admits
-`PARSED`, the explicit relaxation `-003` designed for. `SimulatedSettlementReports` renders
-the format for the later legs, each parse-level fault pinned to the defect it claims.
-**Recorded deviations**: the rejection event's payload carries `sourceId`, not the drafted
-`sourceCode` — `EventPayload`'s vocabulary is identifiers and enumerated names
-(`INV-AUD-02`), a dotted code is neither (ADR-0066's implemented note); the decline is
-permission-gated (`SETTLEMENT_INGEST`), not person-restricted — the `-003` attestation
-precedent; a structurally corrupt file whose OTHER rows carry Luhn-valid references is
-over-refused by the conservative fallback, ADR-0066 §4's stated asymmetry, recovery
-re-presentation. **Five probe runs, four caught and one demonstration**: the trailer's net check dropped
-(the net-mismatched golden PARSED where Rejected belongs); the whole-file rule broken
-(defects ignored, the malformed-seq verdict falling through to CONTROL_TOTAL_MISMATCH
-where MALFORMED with its named line and field belongs); the live unique dropped from
-`V003` (a second raw live batch ADMITTED where the database must refuse any writer — the
-gate's own find made this deterministic: the sequential conflict is the pre-check's
-answer, so `theLiveUniqueIsTheArbiter` probes the arbiter directly); the field-class
-screen's C6 clause disarmed (the PAN in a reference column screened clean where
-PRIMARY_ACCOUNT_NUMBER belongs); and `SKIP LOCKED` reduced to a plain lock with the
-ten-parser race STILL GREEN — the conditional and the uniques are the arbiter,
-demonstrated rather than assumed. Every verdict read from the failing testcase, every
-restore byte-identical (`MUTATION_TESTING` section 2 +3 rows under `INV-SET-07`,
-`INV-SET-04` and `INV-PAY-02`). **The gate's second find, fixed**:
-`SimulatedSettlementReports` — the backlog's fixture — was unbuilt at implementation's
-end; it now renders the format for the later legs, each parse-level fault pinned to the
-defect it claims, and the HTTP flow uploads its render.
-Verified by targeted tiers from fresh runs on the final code — settlement hermetic
-46 across 8 suites and database 33 across 5 suites (the golden file, the
-faults, the field-class screen, the parse leg, the races and the arbiter within), app
-hermetic 564 across 104 suites (the vocabulary confinement, the scheduler and
-system-actor registers, OpenAPI and the fixture within) and the settlement routes suite
-green in the app database tier (negatives three ways on both new routes, the parse leg
-over the composed wiring, the committed meters), plus the document guards re-run fresh
-after the records landed, ALL 0 FAILURES — the full battery and the fleet-wide database
-and kafka tiers deliberately skipped on the owner's instruction.
+**`P8-TSK-009` — Acceptance: fee recognition, remittance expectation and reconciliation intake**
+— `COMPLETE` (2026-09-29). **M8.3, Evidence becomes canonical lines, at 2 of 6**: hop 1 posts —
+an eligible `PARSED` batch is `ACCEPTED` once, from its own stored evidence, in ONE transaction
+(ADR-0065 §2 shipped for the card PSP). **Ledger `V016`**: `PROCESSING_COSTS` (EXPENSE) joins
+the chart with the `V011`–`V014` ceremony — four regenerated constraints, three seeded
+currency rows below the UUIDv7 ceiling — AND `reconciledPositions()`, so no person can adjust
+the platform's own cost book outside a break resolution (the `-006` binding re-stated, refused
+at the door and the database in the suites). **Settlement `V004`**: `ACCEPTED` joins both
+machines with the four acceptance facts once-only by trigger, the honesty `CHECK` —
+`(journal_entry_id IS NULL) = posting_omitted` — and `UNIQUE (source_id, source_sequence)`;
+a retired source rejects `SOURCE_RETIRED`, RETAINED. **The accept leg** (`SettlementIntakeSchedule`'s
+second leg — leaderless, a SYSTEM actor site): eligibility is authentication — a pull always,
+an upload only past its second person (the one `ELIGIBLE` text in claim and re-read, `V002`'s
+`CHECK` beneath for every writer) — the source row `FOR UPDATE` gives the gapless sequence
+(a rollback releases its number, proven by the injected failure), `accepted_on` stamped once,
+the value date the batch's STORED business date (the design's D2), and the recognition posted
+keyed `settlement-batch:<batchId>` with stored dates BEFORE the accepting `UPDATE` (D3: the
+honesty `CHECK` wants the entry id in that statement; the posting stays the last CONTENDED
+write) — so a retry, a takeover or a later-day replay converges. **`BatchRecognition`, pure**:
+only the fees post — F folded with `Money` per row, DR `PROCESSING_COSTS` / CR the position
+(the mirror for a net rebate), a zero F omitted honestly, 16 lines pinned. **The intake**
+(ADR-0064's second app-composed join, `ReconciliationIntake`): the run born `OPEN` (kind `BATCH`,
+pinned to the ACTIVE rule set), one `PENDING` item per canonical line with its typed keys over
+the name-equal mirrored enums (`ReconciliationMirrorsSettlementVocabularyTest`, planted-violation
+controls), and the `REMITTANCE` of the net's magnitude keyed by the trailer's reference,
+`expected_by = value date + funding lag`, no entry — a zero net opens none. **Reconciliation
+`V003`**: both machines stated whole and generated into `CHECK`s and every-writer triggers, birth
+the only produced edge, `UNIQUE (batch_id)`, `UNIQUE (settlement_line_id)`, the value-conservation
+`CHECK`, append-only with no `DELETE` anywhere — and the `-001` schema floor widened with
+exactly the five new tables (the gate's second find: the pin had not moved). **`INV-REC-06`
+extended**: balance = open expectation remainders − open item remainders (allocating items
+`PENDING`/`UNMATCHED`; `PROCESSING_FEE` never allocates — its effect IS the recognition entry),
+the completeness verifier knowing every recognition entry by the batch's own row, and the
+positions report carrying `openItems`/`openItemCount` (the OpenAPI baseline regenerated, every
+flagged row reviewed: five rows, ALL COMPATIBLE ADDED). **THE GATE'S FIND**: the storm's
+emptied-register equivalence would have broken — a remittance is evidence's promise, no
+completion re-derives it — so the opening-position backfill walks ACCEPTED batches too,
+re-deriving each remittance from the row's stored facts THROUGH THE LIVE INTAKE'S OWN OPENER
+(ADR-0067 §8 kept true; the opener register's first `PHASE_8_RECORD` row, `settlement-batch:`),
+proven by wipe-and-rebuild with the re-derived row substance-equal to the live one, and by the
+five affected app database suites in ONE shared container (the storm's rebuild among them, 34
+tests across 5 suites). **Recorded deviations and minors**: the accepted event's payload carries
+`sourceId` (the `-008` `EventPayload` stance); the acceptance series stay `P8-TSK-024`'s (the
+observer widens there, the parse precedent); the leg carries no bespoke span (the `-008`
+precedent — correlation is the trace). **Eight probe runs, six caught and two honest
+survivals resolved** (`MUTATION_TESTING` §2 +3 rows under `INV-SET-07`, `INV-SET-04`,
+`INV-REC-06`): the attestation predicate dropped alone SURVIVED — both code ranks share the
+one `ELIGIBLE` text and `V002`'s `CHECK` refused the acceptance whole for every writer — and
+fell with the `CHECK` disarmed beside it ("inert until its second person": expected PARSED,
+was ACCEPTED); `claimNextSequence`'s lock dropped alone SURVIVED (`sourceByIdForUpdate`, taken
+first for the retirement judgement, is the equivalent arbiter) and BOTH source locks dropped
+were caught by the gapless-sequence race; the clock-dated posting conflicted exactly as the
+design predicted (`IdempotencyConflictException`, `INV-IDEM-03`); the posted transaction lines
+flipped the identity in its own words (SETTLEMENT_CLEARING EUR: 58.00 = 58.00 − 59.75, false);
+the inverted remittance answered OUTBOUND:5800 where INBOUND:5800 belongs; the removed batch
+walk rebuilt 0 remittances where at least 1 belongs. Every verdict read from the failing
+testcase, every restore byte-identical. Multi-instance **PASS** — the claim skips, the
+conditional edges, the source lock and three uniques arbitrate for any writer, the posting
+key's fingerprint binds stored dates, and the counted ten-acceptor race proves one entry, one
+run and gapless sequences.
+Verified by targeted tiers from fresh runs on the final code — ledger hermetic 83 across 16 suites (the chart ceremony and the binding within), reconciliation hermetic 10 across 3 suites and database 11 across 2 suites (the V003 reconciliations and the widened schema floor within), settlement hermetic 51 across 9 suites and database 39 across 6 suites (the accept leg, the races, the replay and the eligibility ranks within), and app hermetic 567 across 105 suites (the opener register's PHASE_8_RECORD row, the mirror guard, OpenAPI and the system-actor register within) — plus the five affected app database suites in ONE shared container (34 tests across 5 suites: the acceptance suite with the rebuild proof, the opening suite, the storm with its emptied-register rebuild, the settlement routes and the adjustment suite) and the document guards (143 across 25 suites) re-run fresh after the records landed, ALL 0 FAILURES — the full battery and the fleet-wide database and kafka tiers deliberately skipped on the owner's instruction.
 
 ### Previously
 
-The per-task completion records — 171 blocks, from `P8-TSK-007` back to project initiation
+The per-task completion records — 172 blocks, from `P8-TSK-008` back to project initiation
 (`X-TSK-004` cross-cutting, standing between `P7-TSK-001` and the Phase 6 → 7 transition) —
 are archived in [`history/TASK_HISTORY.md`](history/TASK_HISTORY.md).
 *(This pointer read "130 blocks, from `P6-TSK-005`" through four archivals — corrected by
@@ -506,9 +495,9 @@ archived verbatim in
 
 ## Active Work
 
-**Phase 8 is `IN_PROGRESS`** (2026-09-28) — 8 of 27 items complete; **M8.1 `CLOSED` at 3 of 3;
-M8.2 `CLOSED` at 4 of 4; M8.3, Evidence becomes canonical lines, at 1 of 6** — the PSP format,
-the parse leg and the decline; next `P8-TSK-009`, acceptance (hop 1 posts)
+**Phase 8 is `IN_PROGRESS`** (2026-09-28) — 9 of 27 items complete; **M8.1 `CLOSED` at 3 of 3;
+M8.2 `CLOSED` at 4 of 4; M8.3, Evidence becomes canonical lines, at 2 of 6** — the PSP format,
+the parse leg, the decline and the acceptance; next `P8-TSK-010`, breaks and suspense as records
 ([§Current Task](#current-task) is kept current). Phase 7 is `COMPLETE` — 18 of 18
 items, M7.1–M7.8 closed, ruled by `P7-DOC-001` and confirmed after repair by the Phase 7 → 8
 transition ([`reviews/PHASE_7_TO_8_TRANSITION.md`](reviews/PHASE_7_TO_8_TRANSITION.md)). *(This

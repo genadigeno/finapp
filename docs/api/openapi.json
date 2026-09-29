@@ -3503,6 +3503,10 @@
             "format": "int64",
             "type": "integer"
           },
+          "remittances": {
+            "format": "int64",
+            "type": "integer"
+          },
           "skipped": {
             "format": "int64",
             "type": "integer"
@@ -5248,6 +5252,13 @@
           "openExpectations": {
             "format": "int64",
             "type": "integer"
+          },
+          "openItemCount": {
+            "format": "int64",
+            "type": "integer"
+          },
+          "openItems": {
+            "type": "string"
           },
           "openRemainders": {
             "type": "string"

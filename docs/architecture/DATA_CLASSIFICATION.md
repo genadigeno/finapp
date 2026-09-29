@@ -1087,6 +1087,10 @@ reasoning); free text stays inside the encrypted file and has no column here.
 | `batch` | `created_at` | `INTERNAL` | When the parse committed it |
 | `batch` | `status_changed_at` | `INTERNAL` | When the machine last moved |
 | `batch` | `correlation_id` | `INTERNAL` | The flow's correlation |
+| `batch` | `source_sequence` | `INTERNAL` | The gapless statement sequence (`P8-TSK-009`) - a counter |
+| `batch` | `accepted_on` | `CONFIDENTIAL` | The UTC day acceptance recognised it - the recognition's posting date, a fact about commercial traffic |
+| `batch` | `journal_entry_id` | `INTERNAL` | The recognition entry - an identifier of a thing; NULL exactly when the posting was honestly omitted |
+| `batch` | `posting_omitted` | `INTERNAL` | Whether a zero fee omitted the entry - the honesty flag, never silent |
 | `batch_event` | `seq` | `INTERNAL` | The history's server-assigned order |
 | `batch_event` | `batch_id` | `INTERNAL` | The moved batch - an identifier of a thing |
 | `batch_event` | `from_status` | `INTERNAL` | The edge's origin, NULL at birth |
@@ -1218,6 +1222,72 @@ counters and dates of things.
 | `reference_alias` | `anchor_value` | `CONFIDENTIAL` | The anchor it resolves to — an operation identifier pairing |
 | `reference_alias` | `registered_at` | `INTERNAL` | A property of the row |
 | `reference_alias` | `correlation_id` | `INTERNAL` | The flow's correlation |
+
+**The runs and the external items** — *added by `P8-TSK-009`* (§5.3, §5.4, ADR-0064): the accepted batch's unit of matching work and its working copies. The item's money triple is `RESTRICTED-FINANCIAL` (a person's or counterparty's transaction), its keys `CONFIDENTIAL` (the match keys), a reprocess's reason `CONFIDENTIAL` prose; everything else identifiers, enums, counters and dates of things.
+
+| Table | Column | Level | Why |
+|---|---|---|---|
+| `reconciliation_batch` | `id` | `INTERNAL` | An aggregate identifier. Generated |
+| `reconciliation_batch` | `source_id` | `INTERNAL` | The source - an identifier of a thing |
+| `reconciliation_batch` | `batch_id` | `INTERNAL` | The accepted batch - an identifier of a thing |
+| `reconciliation_batch` | `kind` | `INTERNAL` | BATCH or REPROCESS - a closed vocabulary |
+| `reconciliation_batch` | `rule_set_id` | `INTERNAL` | The pinned deciding version (INV-HIST-04) |
+| `reconciliation_batch` | `business_date` | `CONFIDENTIAL` | The day the batch covers - `file.business_date`'s reasoning |
+| `reconciliation_batch` | `source_sequence` | `INTERNAL` | The acceptance's gapless counter, mirrored |
+| `reconciliation_batch` | `status` | `INTERNAL` | The machine's position |
+| `reconciliation_batch` | `item_count` | `INTERNAL` | A count |
+| `reconciliation_batch` | `cursor` | `INTERNAL` | The chunked walk's resume point - forward-only |
+| `reconciliation_batch` | `failures` | `INTERNAL` | Consecutive chunk failures - the BLOCKED gate's counter |
+| `reconciliation_batch` | `requested_by` | `CONFIDENTIAL` | Who asked for a reprocess (`audit_record.actor`'s reasoning) |
+| `reconciliation_batch` | `reason` | `CONFIDENTIAL` | A reprocess's stated reason - free prose by a person |
+| `reconciliation_batch` | `created_at` | `INTERNAL` | When the acceptance birthed it |
+| `reconciliation_batch` | `status_changed_at` | `INTERNAL` | When the machine last moved |
+| `reconciliation_batch` | `correlation_id` | `INTERNAL` | The flow's correlation |
+| `reconciliation_batch_event` | `seq` | `INTERNAL` | The history's server-assigned order |
+| `reconciliation_batch_event` | `run_id` | `INTERNAL` | The moved run - an identifier of a thing |
+| `reconciliation_batch_event` | `from_status` | `INTERNAL` | The edge's origin, NULL at birth |
+| `reconciliation_batch_event` | `to_status` | `INTERNAL` | The edge's destination |
+| `reconciliation_batch_event` | `actor` | `CONFIDENTIAL` | Who drove the edge (`audit_record.actor`'s reasoning) |
+| `reconciliation_batch_event` | `actor_type` | `INTERNAL` | The actor's kind - a closed vocabulary |
+| `reconciliation_batch_event` | `reason` | `CONFIDENTIAL` | The edge's stated reason - a requeue's is a person's prose |
+| `reconciliation_batch_event` | `occurred_at` | `INTERNAL` | When the edge was driven |
+| `reconciliation_batch_event` | `correlation_id` | `INTERNAL` | The flow's correlation |
+| `external_item` | `id` | `INTERNAL` | A record identifier. Generated |
+| `external_item` | `run_id` | `INTERNAL` | The item's run - an identifier of a thing |
+| `external_item` | `source_id` | `INTERNAL` | The source - an identifier of a thing |
+| `external_item` | `settlement_line_id` | `INTERNAL` | The copied line - an identifier of a thing |
+| `external_item` | `line_no` | `INTERNAL` | The line's seat in its file |
+| `external_item` | `line_type` | `INTERNAL` | The mirrored canonical vocabulary (INV-PAY-03) |
+| `external_item` | `direction` | `INTERNAL` | INBOUND or OUTBOUND |
+| `external_item` | `amount_minor` | `RESTRICTED-FINANCIAL` | **The reported amount** - the copied line's |
+| `external_item` | `currency` | `INTERNAL` | An enumeration; part of the monetary shape |
+| `external_item` | `scale` | `INTERNAL` | The monetary shape's scale (INV-MON-05) |
+| `external_item` | `position_purpose` | `INTERNAL` | Which position the item claims - a category |
+| `external_item` | `business_date` | `CONFIDENTIAL` | The transaction's day - the copied line's |
+| `external_item` | `settlement_date` | `CONFIDENTIAL` | When the counterparty says it settles |
+| `external_item` | `value_date` | `CONFIDENTIAL` | The value day the counterparty states |
+| `external_item` | `canonical_fingerprint` | `INTERNAL` | The copied identity digest - recoverable from nothing |
+| `external_item` | `allocated_minor` | `RESTRICTED-FINANCIAL` | **The allocated part** - a disposition of the amount |
+| `external_item` | `parked_minor` | `RESTRICTED-FINANCIAL` | **The parked part** - a disposition of the amount |
+| `external_item` | `offset_minor` | `RESTRICTED-FINANCIAL` | **The offset part** - a disposition of the amount |
+| `external_item` | `status` | `INTERNAL` | The machine's position |
+| `external_item` | `grace_until` | `INTERNAL` | The pinned grace deadline - a property of the row |
+| `external_item` | `created_at` | `INTERNAL` | When the acceptance birthed it |
+| `external_item` | `status_changed_at` | `INTERNAL` | When the machine last moved |
+| `external_item` | `correlation_id` | `INTERNAL` | The flow's correlation |
+| `external_item_event` | `seq` | `INTERNAL` | The history's server-assigned order |
+| `external_item_event` | `item_id` | `INTERNAL` | The moved item - an identifier of a thing |
+| `external_item_event` | `from_status` | `INTERNAL` | The edge's origin, NULL at birth |
+| `external_item_event` | `to_status` | `INTERNAL` | The edge's destination |
+| `external_item_event` | `actor` | `CONFIDENTIAL` | Who drove the edge (`audit_record.actor`'s reasoning) |
+| `external_item_event` | `actor_type` | `INTERNAL` | The actor's kind - a closed vocabulary |
+| `external_item_event` | `reason` | `CONFIDENTIAL` | The edge's stated reason, where one is |
+| `external_item_event` | `occurred_at` | `INTERNAL` | When the edge was driven |
+| `external_item_event` | `correlation_id` | `INTERNAL` | The flow's correlation |
+| `external_item_key` | `item_id` | `INTERNAL` | The keyed item - an identifier of a thing |
+| `external_item_key` | `source_id` | `INTERNAL` | The source, denormalised for the match index |
+| `external_item_key` | `key_kind` | `INTERNAL` | The mirrored reference vocabulary - a closed list |
+| `external_item_key` | `key_value` | `CONFIDENTIAL` | **A reference the counterparty quotes** - the match key (`expectation.operation_ref`'s reasoning) |
 
 ### `consent.consent_text` and `consent.consent_record` — *added by `P2-TSK-017`*
 

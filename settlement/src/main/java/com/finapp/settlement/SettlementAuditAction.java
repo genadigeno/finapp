@@ -86,7 +86,22 @@ public enum SettlementAuditAction implements AuditableAction {
             "settlement.SettlementFileDeclined",
             "An operator declined a settlement file, with the recorded reason; a parsed"
                     + " file's batch was rejected with it and its live key freed.",
-            true);
+            true),
+
+    /**
+     * The accept leg recognised a batch (`P8-TSK-009`, ADR-0065 §2): the platform's own act,
+     * acting-only — a losing racer records nothing — written in the acceptance transaction
+     * beside the run, the items, the remittance expectation and the recognition posting. The
+     * change summary carries identifiers and counts only (the
+     * {@code UnmatchedConfirmations} precedent): source, sequence, items, whether a
+     * remittance opened, whether the posting was omitted — never an amount.
+     */
+    SETTLEMENT_BATCH_ACCEPTED(
+            "settlement.SettlementBatchAccepted",
+            "The accept leg recognised a settlement batch: sequenced gaplessly, its fees"
+                    + " posted (or honestly omitted at zero), its run and items handed to"
+                    + " reconciliation - identifiers and counts only.",
+            false);
 
     private final String code;
     private final String description;

@@ -10,10 +10,11 @@ import java.util.stream.Collectors;
  * edge by edge with each edge's producer, the three-layer discipline's rule that a table
  * cannot honestly precede its machine.
  *
- * <p>`P8-TSK-002` bore files {@code RECEIVED} with no edge. `P8-TSK-008` brings the parse leg
- * and the decline, so {@code PARSED} and {@code REJECTED} exist now and `V003` regenerates
- * the {@code CHECK} and transition trigger from this enum. {@code ACCEPTED} arrives with the
- * accept leg (`P8-TSK-009`), which regenerates them again with the one edge it produces.
+ * <p>`P8-TSK-002` bore files {@code RECEIVED} with no edge; `P8-TSK-008` brought the parse
+ * leg and the decline (`V003`); `P8-TSK-009` brings the accept leg, so {@code ACCEPTED}
+ * exists now and `V004` regenerates the {@code CHECK} and transition trigger from this enum.
+ * The machine is complete: `SETTLEMENT_AND_RECONCILIATION_LIFECYCLES.md` §5.1 names no
+ * further status.
  */
 public enum FileStatus {
 
@@ -24,20 +25,28 @@ public enum FileStatus {
     PARSED,
 
     /**
-     * A content defect rejected the whole file, or a person declined it — terminal. Our own
-     * failure never lands here: a parser exception leaves {@code RECEIVED} with its back-off
-     * (ADR-0066 §9).
+     * The accept leg recognised its batch (`P8-TSK-009`): eligible by channel — a pull by
+     * its credential, an upload by its second person — sequenced gaplessly, its fees posted
+     * and its run handed over, all in one transaction. Terminal: a repudiated BATCH leaves
+     * its file {@code ACCEPTED} — the evidence is retained (§5.1).
+     */
+    ACCEPTED,
+
+    /**
+     * A content defect rejected the whole file, a person declined it, or its source retired
+     * before acceptance — terminal. Our own failure never lands here: a parser exception
+     * leaves {@code RECEIVED} with its back-off (ADR-0066 §9).
      */
     REJECTED;
 
-    /** The states reachable from this one — `V003`'s trigger edges are generated from it. */
+    /** The states reachable from this one — the trigger edges are generated from it. */
     public Set<FileStatus> permittedTransitions() {
         return switch (this) {
             case RECEIVED -> EnumSet.of(PARSED, REJECTED);
-            // ACCEPTED joins with its producer (`P8-TSK-009`); the decline and SOURCE_RETIRED
-            // are the PARSED exits that exist today.
-            case PARSED -> EnumSet.of(REJECTED);
-            case REJECTED -> EnumSet.noneOf(FileStatus.class);
+            // The accept leg's edge and the two PARSED rejections (a decline;
+            // SOURCE_RETIRED), each with its producer (`P8-TSK-008`, `-009`).
+            case PARSED -> EnumSet.of(ACCEPTED, REJECTED);
+            case ACCEPTED, REJECTED -> EnumSet.noneOf(FileStatus.class);
         };
     }
 

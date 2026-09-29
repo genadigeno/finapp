@@ -125,7 +125,13 @@ class ReconciliationMigrationTest {
                         "expectation",
                         "expectation_event",
                         "expectation_key",
-                        "reference_alias");
+                        "reference_alias",
+                        // V003 (P8-TSK-009): the runs and the external items.
+                        "reconciliation_batch",
+                        "reconciliation_batch_event",
+                        "external_item",
+                        "external_item_event",
+                        "external_item_key");
 
         assertThatExceptionOfType(SQLException.class)
                 .isThrownBy(() -> asApplication(

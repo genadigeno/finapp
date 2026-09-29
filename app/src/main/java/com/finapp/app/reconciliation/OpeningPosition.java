@@ -87,6 +87,14 @@ import org.springframework.transaction.support.TransactionTemplate;
  * <p>An operation whose entry the posting key cannot find is skipped and counted — if its
  * line exists anyway, the completeness verifier shows it ({@code line.unattributed});
  * opening from anything but the posted entry would be the guess ADR-0067 §8 refuses.
+ *
+ * <h2>Accepted batches too</h2>
+ *
+ * <p>Since `P8-TSK-009` a {@code REMITTANCE} expectation is settlement evidence's promise,
+ * not a completion's copy — so the walk also pages every ACCEPTED settlement batch and
+ * re-derives its remittance from the row's stored facts (net, dates, reference), through
+ * the live intake's own opener. Without this leg the register would no longer be
+ * rebuildable from the books alone, and §8's recovery claim would quietly stop being true.
  */
 @Slf4j
 @RequiredArgsConstructor
@@ -115,8 +123,15 @@ public class OpeningPosition {
     @NonNull private final Clock clock;
     @NonNull private final TransactionTemplate transactions;
     @NonNull private final DataSource dataSource;
+    @NonNull private final com.finapp.settlement.SettlementSources settlementSources;
+    @NonNull private final com.finapp.settlement.SettlementBatchStore<Connection> batches;
+    @NonNull private final com.finapp.app.settlement.ReconciliationIntake batchIntake;
 
-    /** What one recorded run adopted — counts only, never an amount ({@code INV-AUD-02}). */
+    /**
+     * What one recorded run adopted — counts only, never an amount ({@code INV-AUD-02}).
+     * {@code remittances} is last because the stored body appends it after `P8-TSK-009`:
+     * a record written before that replays with its old nine counts and zero remittances.
+     */
     public record Adopted(
             long captures,
             long executions,
@@ -126,7 +141,8 @@ public class OpeningPosition {
             long parkings,
             long payouts,
             long aliases,
-            long skipped) {}
+            long skipped,
+            long remittances) {}
 
     /** The command: walk, then record under the principal's key. */
     public Adopted record(String idempotencyKey, String reason) {
@@ -232,6 +248,10 @@ public class OpeningPosition {
                 (uow, after) -> clearings.page(uow, after, PAGE),
                 record -> record.id().value(),
                 (uow, record) -> adoptAlias(uow, record, counters));
+        pageThrough(
+                (uow, after) -> batches.pageAccepted(uow, after, PAGE),
+                com.finapp.settlement.SettlementBatchStore.AcceptedRow::id,
+                (uow, batch) -> adoptAcceptedBatch(uow, batch, counters));
     }
 
     /** One producer's pages: each page one transaction, the cursor the last id seen. */
@@ -541,6 +561,46 @@ public class OpeningPosition {
         counters.payouts++;
     }
 
+    /**
+     * One accepted batch's remittance, re-derived from the row's own stored facts through
+     * the live intake's opener — never recomputed from lines, never re-dated from the
+     * clock. A zero net opened none live and re-derives none here.
+     */
+    private void adoptAcceptedBatch(
+            Connection uow,
+            com.finapp.settlement.SettlementBatchStore.AcceptedRow batch,
+            Counters counters) {
+        com.finapp.sharedkernel.money.Money net =
+                com.finapp.sharedkernel.money.Money.ofPersisted(
+                        batch.netMinor(), batch.currency(), batch.netScale());
+        if (net.minorUnits() == 0) {
+            return; // Nothing was promised; the live intake opened none (P8-TSK-009).
+        }
+        AccountPurpose purpose =
+                settlementSources
+                        .byCode(batch.sourceCode())
+                        .flatMap(com.finapp.settlement.SettlementSourceDescriptor
+                                ::settledPosition)
+                        .orElseThrow(
+                                () ->
+                                        new IllegalStateException(
+                                                "an accepted batch's source declares its"
+                                                        + " position (INV-SET-05)"));
+        batchIntake.openRemittance(
+                uow,
+                batch.id(),
+                batch.sourceId(),
+                purpose,
+                net,
+                batch.acceptedOn(),
+                batch.businessDate(), // D2: the batch's stored value date.
+                batch.remittanceReference(),
+                SecurityContext.require(),
+                Instant.now(clock),
+                resolvedCorrelation().correlationId());
+        counters.remittances++;
+    }
+
     private void adoptAlias(Connection uow, ClearingRecord record, Counters counters) {
         PaymentAttempt attempt =
                 attempts.findById(uow, record.attemptId())
@@ -626,26 +686,29 @@ public class OpeningPosition {
         long payouts;
         long aliases;
         long skipped;
+        long remittances;
 
+        // remittances stays LAST: a pre-P8-TSK-009 stored body is a strict prefix of this.
         String render() {
             return captures + "|" + executions + "|" + refunds + "|" + withdrawals + "|"
                     + disputeStages + "|" + parkings + "|" + payouts + "|" + aliases + "|"
-                    + skipped;
+                    + skipped + "|" + remittances;
         }
 
         String summary() {
             return "captures=" + captures + ", executions=" + executions + ", refunds="
                     + refunds + ", withdrawals=" + withdrawals + ", disputeStages="
                     + disputeStages + ", parkings=" + parkings + ", payouts=" + payouts
-                    + ", aliases=" + aliases + ", skipped=" + skipped;
+                    + ", aliases=" + aliases + ", skipped=" + skipped + ", remittances="
+                    + remittances;
         }
     }
 
     private static Adopted parse(byte[] body) {
-        String[] fields = new String(body, StandardCharsets.UTF_8).split("\\|", 9);
-        if (fields.length != 9) {
+        String[] fields = new String(body, StandardCharsets.UTF_8).split("\\|", 10);
+        if (fields.length != 9 && fields.length != 10) {
             throw new IllegalStateException(
-                    "a stored opening-position body always carries its nine counts");
+                    "a stored opening-position body always carries its counts");
         }
         return new Adopted(
                 Long.parseLong(fields[0]),
@@ -656,6 +719,9 @@ public class OpeningPosition {
                 Long.parseLong(fields[5]),
                 Long.parseLong(fields[6]),
                 Long.parseLong(fields[7]),
-                Long.parseLong(fields[8]));
+                Long.parseLong(fields[8]),
+                // A record written before P8-TSK-009 carries nine counts: no batch had
+                // ever been accepted when it ran, so its remittance count is honestly zero.
+                fields.length == 10 ? Long.parseLong(fields[9]) : 0L);
     }
 }

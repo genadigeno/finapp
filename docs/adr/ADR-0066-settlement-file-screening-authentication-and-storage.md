@@ -513,7 +513,7 @@ ceiling), ADR-0046 (no connection across a pull), ADR-0008 (the collector SPI).
   (`RECEIVED | PARSED → REJECTED(DECLINED)`, the batch rejected in the same transaction and
   the live key freed). The event's payload carries `sourceId` rather than the drafted
   `sourceCode`: `EventPayload`'s vocabulary is identifiers and enumerated names
-  (`INV-AUD-02`), and a dotted source code is neither. Acceptance is `P8-TSK-009`'s.
+  (`INV-AUD-02`), and a dotted source code is neither. `P8-TSK-009` (2026-09-29) delivered point 9's acceptance half and point 2's eligibility: an upload moves money only past its second person (the claim query's predicate, the domain's re-read, `V002`'s `CHECK`s), a pull by its channel; the gapless `source_sequence` under the source row's lock with `UNIQUE (source_id, source_sequence)` behind it; `SOURCE_RETIRED` rejecting RETAINED under that same lock; and settlement `V004` completing the file machine.
   Everything else here is the decided design, corrected by the tasks that build it.
 - The Phase 8 review reads this ADR against the code before accepting it (`P8-DOC-001`, the
   `P7-DOC-001` precedent).

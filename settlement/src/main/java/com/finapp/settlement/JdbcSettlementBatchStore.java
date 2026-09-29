@@ -279,6 +279,170 @@ public final class JdbcSettlementBatchStore implements SettlementBatchStore<Conn
         return true;
     }
 
+    // ----------------------------------------------------------- the accept leg (P8-TSK-009)
+
+    @Override
+    public List<LineRow> linesOf(Connection unitOfWork, UUID batchId) {
+        Objects.requireNonNull(batchId, "batchId must not be null");
+        java.util.Map<UUID, java.util.Map<LineReferenceKind, String>> references =
+                new java.util.HashMap<>();
+        try (PreparedStatement read =
+                unitOfWork.prepareStatement(
+                        "SELECT r.line_id, r.kind, r.value FROM settlement.line_reference r"
+                                + " JOIN settlement.line l ON l.id = r.line_id"
+                                + " WHERE l.batch_id = ?")) {
+            read.setObject(1, batchId);
+            try (ResultSet rows = read.executeQuery()) {
+                while (rows.next()) {
+                    references
+                            .computeIfAbsent(
+                                    rows.getObject("line_id", UUID.class),
+                                    id -> new java.util.EnumMap<>(LineReferenceKind.class))
+                            .put(
+                                    LineReferenceKind.valueOf(rows.getString("kind")),
+                                    rows.getString("value"));
+                }
+            }
+        } catch (SQLException failure) {
+            throw new SettlementStorageException("could not read a batch's references", failure);
+        }
+        try (PreparedStatement read =
+                unitOfWork.prepareStatement(
+                        "SELECT id, line_no, line_type, direction, amount_minor, currency,"
+                                + " amount_scale, business_date, settlement_date, value_date,"
+                                + " canonical_fingerprint"
+                                + " FROM settlement.line WHERE batch_id = ?"
+                                + " ORDER BY line_no")) {
+            read.setObject(1, batchId);
+            try (ResultSet rows = read.executeQuery()) {
+                List<LineRow> lines = new ArrayList<>();
+                while (rows.next()) {
+                    UUID lineId = rows.getObject("id", UUID.class);
+                    lines.add(
+                            new LineRow(
+                                    lineId,
+                                    rows.getInt("line_no"),
+                                    SettlementLineType.valueOf(rows.getString("line_type")),
+                                    LineDirection.valueOf(rows.getString("direction")),
+                                    rows.getLong("amount_minor"),
+                                    CurrencyCode.of(rows.getString("currency")),
+                                    rows.getShort("amount_scale"),
+                                    rows.getObject("business_date", LocalDate.class),
+                                    Optional.ofNullable(
+                                            rows.getObject("settlement_date", LocalDate.class)),
+                                    Optional.ofNullable(
+                                            rows.getObject("value_date", LocalDate.class)),
+                                    rows.getBytes("canonical_fingerprint"),
+                                    references.getOrDefault(lineId, java.util.Map.of())));
+                }
+                return List.copyOf(lines);
+            }
+        } catch (SQLException failure) {
+            throw new SettlementStorageException("could not read a batch's lines", failure);
+        }
+    }
+
+    @Override
+    public boolean markAccepted(
+            Connection unitOfWork,
+            UUID batchId,
+            long sourceSequence,
+            LocalDate acceptedOn,
+            Optional<UUID> journalEntryId,
+            Instant at) {
+        try (PreparedStatement write =
+                unitOfWork.prepareStatement(
+                        // One statement, all four facts with the edge: the honesty CHECKs
+                        // and the once-only trigger admit no other shape (V004).
+                        "UPDATE settlement.batch SET status = 'ACCEPTED',"
+                                + " source_sequence = ?, accepted_on = ?,"
+                                + " journal_entry_id = ?, posting_omitted = ?,"
+                                + " status_changed_at = ?"
+                                + " WHERE id = ? AND status = 'PARSED'")) {
+            write.setLong(1, sourceSequence);
+            write.setObject(2, acceptedOn);
+            write.setObject(3, journalEntryId.orElse(null));
+            write.setBoolean(4, journalEntryId.isEmpty());
+            write.setTimestamp(5, Timestamp.from(at));
+            write.setObject(6, batchId);
+            return write.executeUpdate() == 1;
+        } catch (SQLException failure) {
+            throw new SettlementStorageException("could not accept a settlement batch", failure);
+        }
+    }
+
+    @Override
+    public List<UUID> acceptedRecognitionEntries(Connection unitOfWork) {
+        try (PreparedStatement read =
+                unitOfWork.prepareStatement(
+                        "SELECT journal_entry_id FROM settlement.batch"
+                                + " WHERE status = 'ACCEPTED'"
+                                + " AND journal_entry_id IS NOT NULL")) {
+            try (ResultSet rows = read.executeQuery()) {
+                List<UUID> entries = new ArrayList<>();
+                while (rows.next()) {
+                    entries.add(rows.getObject("journal_entry_id", UUID.class));
+                }
+                return List.copyOf(entries);
+            }
+        } catch (SQLException failure) {
+            throw new SettlementStorageException(
+                    "could not read the recognition entries", failure);
+        }
+    }
+
+    @Override
+    public List<AcceptedRow> pageAccepted(Connection unitOfWork, UUID after, int limit) {
+        try (PreparedStatement read =
+                unitOfWork.prepareStatement(
+                        "SELECT b.id, b.source_id, s.code, b.currency, b.net_minor,"
+                                + " b.net_scale, b.remittance_reference, b.business_date,"
+                                + " b.accepted_on"
+                                + " FROM settlement.batch b"
+                                + " JOIN settlement.source s ON s.id = b.source_id"
+                                + " WHERE b.status = 'ACCEPTED' AND b.id > ?"
+                                + " ORDER BY b.id"
+                                + " LIMIT ?")) {
+            read.setObject(1, after);
+            read.setInt(2, limit);
+            try (ResultSet rows = read.executeQuery()) {
+                List<AcceptedRow> page = new ArrayList<>();
+                while (rows.next()) {
+                    page.add(
+                            new AcceptedRow(
+                                    rows.getObject("id", UUID.class),
+                                    rows.getObject("source_id", UUID.class),
+                                    rows.getString("code"),
+                                    CurrencyCode.of(rows.getString("currency")),
+                                    rows.getLong("net_minor"),
+                                    rows.getInt("net_scale"),
+                                    rows.getString("remittance_reference"),
+                                    rows.getObject("business_date", LocalDate.class),
+                                    rows.getObject("accepted_on", LocalDate.class)));
+                }
+                return List.copyOf(page);
+            }
+        } catch (SQLException failure) {
+            throw new SettlementStorageException(
+                    "could not page the accepted batches", failure);
+        }
+    }
+
+    @Override
+    public void appendBatchEvent(
+            Connection unitOfWork,
+            UUID batchId,
+            BatchStatus from,
+            BatchStatus to,
+            Actor actor,
+            Optional<String> reason,
+            Instant occurredAt,
+            CorrelationId correlation) {
+        appendBatchEvent(
+                unitOfWork, batchId, Optional.of(from), to, actor, reason, occurredAt,
+                correlation);
+    }
+
     private static void appendBatchEvent(
             Connection unitOfWork,
             UUID batchId,

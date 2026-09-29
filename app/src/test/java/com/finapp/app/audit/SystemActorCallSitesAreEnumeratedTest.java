@@ -304,7 +304,21 @@ class SystemActorCallSitesAreEnumeratedTest {
                         + " it. The platform reading, canonicalising or rejecting a file is"
                         + " exactly what happened, and the rejection's audit record is"
                         + " acting-only by design. The scope wraps each file's own"
-                        + " transaction; the candidate read before it claims nothing."));
+                        + " transaction; the candidate read before it claims nothing."),
+                    Map.entry(
+                            "com.finapp.settlement.BatchAcceptance.sweep",
+                    "The settlement intake's accept leg (P8-TSK-009, ADR-0065 section 2):"
+                        + " the parse leg's case one hop later - a scheduled recognition of"
+                        + " stored, authenticated evidence has no person. The person who"
+                        + " AUTHENTICATED an upload is on the record already (the"
+                        + " attestation's own audit row, held distinct at three ranks), and"
+                        + " attributing the recognition to the attester would record them as"
+                        + " having posted fees at a moment they chose nothing. The platform"
+                        + " sequencing, recognising and handing over an accepted batch is"
+                        + " exactly what happened; the acceptance's audit record is"
+                        + " acting-only by design, and a losing racer records nothing. The"
+                        + " scope wraps each file's own transaction; the candidate read"
+                        + " before it claims nothing."));
 
     @Test
     @DisplayName("no production code claims the system actor without being enumerated")

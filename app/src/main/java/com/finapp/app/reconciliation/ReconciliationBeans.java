@@ -37,6 +37,18 @@ public class ReconciliationBeans {
         return new JdbcRuleSets();
     }
 
+    /** The run's birth writer (`P8-TSK-009`); the run leg (`P8-TSK-011`) drives it. */
+    @Bean
+    com.finapp.reconciliation.ReconciliationRuns reconciliationRuns() {
+        return new com.finapp.reconciliation.JdbcReconciliationRuns();
+    }
+
+    /** The items' birth writer (`P8-TSK-009`); the matcher (`P8-TSK-011`) disposes of them. */
+    @Bean
+    com.finapp.reconciliation.ExternalItems externalItems() {
+        return new com.finapp.reconciliation.JdbcExternalItems();
+    }
+
     /**
      * The ONE implementation of both expectation ports — {@code payments.SettlementExpectations}
      * and {@code merchant.PayoutSettlementExpectations} (`P8-TSK-005`): typed as the recorder so
@@ -75,19 +87,23 @@ public class ReconciliationBeans {
             JournalEntryStore<Connection> journalEntryStore,
             ExpectationReadings<Connection> expectationReadings,
             SettlementSources settlementSources,
-            SettlementFileStore<Connection> settlementFileStore) {
+            SettlementFileStore<Connection> settlementFileStore,
+            com.finapp.settlement.SettlementBatchStore<Connection> settlementBatchStore) {
         return new PositionProof(
                 ledgerAccountStore,
                 new com.finapp.ledger.JdbcBalanceDerivation(),
                 journalEntryStore,
                 expectationReadings,
                 settlementSources,
-                settlementFileStore);
+                settlementFileStore,
+                settlementBatchStore);
     }
 
     /**
      * The opening-position backfill (`P8-TSK-007`, ADR-0067 §8): history adopted through the
-     * live recorder's own path, page by page, converging on the register's uniques.
+     * live recorder's own path, page by page, converging on the register's uniques — and
+     * since `P8-TSK-009` the accepted batches' remittances re-derived through the live
+     * intake's own opener, so the register stays rebuildable from the books alone.
      */
     @Bean
     OpeningPosition openingPosition(
@@ -108,7 +124,10 @@ public class ReconciliationBeans {
             IdGenerator idGenerator,
             Clock clock,
             TransactionTemplate reconciliationTransactions,
-            javax.sql.DataSource dataSource) {
+            javax.sql.DataSource dataSource,
+            SettlementSources settlementSources,
+            com.finapp.settlement.SettlementBatchStore<Connection> settlementBatchStore,
+            com.finapp.app.settlement.ReconciliationIntake acceptedBatchIntake) {
         return new OpeningPosition(
                 paymentAttemptStore,
                 paymentIntentStore,
@@ -127,7 +146,10 @@ public class ReconciliationBeans {
                 idGenerator,
                 clock,
                 reconciliationTransactions,
-                dataSource);
+                dataSource,
+                settlementSources,
+                settlementBatchStore,
+                acceptedBatchIntake);
     }
 
     /**

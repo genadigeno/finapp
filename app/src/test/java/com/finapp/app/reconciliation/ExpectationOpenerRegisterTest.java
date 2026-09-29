@@ -52,8 +52,10 @@ import org.junit.jupiter.api.Test;
  *       nothing opens — {@link ClearingLineCopies#assertOpensNothing} naming the prefix, or
  *       {@link ClearingLineCopies#assertEveryClearingLineIsCopied} over a scope holding it;
  *   <li><strong>PHASE_8_RECORD</strong>: a record the completeness verifier knows by its own row
- *       (a recognition, a park, a resolution, a repudiation — ADR-0067 §9's third class). None
- *       exists yet; `P8-TSK-008` onward add their rows, discharging and opening none.
+ *       (a recognition, a park, a resolution, a repudiation — ADR-0067 §9's third class). It
+ *       copies no clearing line, so it names no kind HERE — what its transaction opens through
+ *       reconciliation's own register (`P8-TSK-009`'s {@code REMITTANCE}) is evidence's promise,
+ *       proven by its own suites, never by the copy helper. First row: {@code settlement-batch:}.
  * </ul>
  *
  * <p>A new prefix fails the build until it is classified; a row whose prefix no code declares is
@@ -98,6 +100,10 @@ class ExpectationOpenerRegisterTest {
 
     private static Row touchesNothing(String reason, Proof... proofs) {
         return new Row(Classification.TOUCHES_NO_RECONCILED_POSITION, reason, List.of(proofs));
+    }
+
+    private static Row phase8Record(String reason) {
+        return new Row(Classification.PHASE_8_RECORD, reason, List.of());
     }
 
     private static Proof proof(String opens, String test, String method) {
@@ -175,6 +181,12 @@ class ExpectationOpenerRegisterTest {
                                 + " external settles (the storm's scope asserted to hold"
                                 + " transfer entries)",
                         proof(NOTHING, STORM, "conservationHoldsAcrossEveryRail")));
+        rows.put("settlement-batch:",
+                phase8Record("hop 1's fee recognition (ADR-0065, P8-TSK-009): the entry is the"
+                        + " completeness verifier's own known row (acceptedRecognitionEntries),"
+                        + " and the REMITTANCE its acceptance opens through reconciliation's"
+                        + " register is evidence's promise, not a clearing line's copy - proven"
+                        + " by BatchAcceptanceDatabaseTest and SettlementAcceptanceDatabaseTest"));
         return rows;
     }
 
@@ -296,8 +308,8 @@ class ExpectationOpenerRegisterTest {
                 }
                 case PHASE_8_RECORD -> {
                     if (opensSomething) {
-                        violations.add("row '" + prefix + "' is a Phase 8 record and opens"
-                                + " nothing by definition");
+                        violations.add("row '" + prefix + "' is a Phase 8 record and names no"
+                                + " kind here: what it opens is not a clearing line's copy");
                     }
                 }
             }

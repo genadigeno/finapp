@@ -316,8 +316,64 @@ public class SettlementBeans {
     }
 
     /**
-     * The parse leg's schedule — leaderless on every instance, off in test contexts (the
-     * relay's flag discipline); registered in {@code DISTRIBUTED_EXECUTION.md} §3.
+     * The seam through which an accepted batch becomes reconciliation's work
+     * (`P8-TSK-009`, ADR-0064 §6): settlement declares the port, this composition joins it
+     * to reconciliation's writers and the ledger's chart on the acceptance's connection.
+     * Declared by its concrete type so the opening-position backfill can share the
+     * remittance opener (ADR-0067 §8); settlement still sees only the port.
+     */
+    @Bean
+    ReconciliationIntake acceptedBatchIntake(
+            com.finapp.reconciliation.ReconciliationRuns reconciliationRuns,
+            com.finapp.reconciliation.ExternalItems externalItems,
+            com.finapp.reconciliation.ExpectationRegister expectationRegister,
+            com.finapp.reconciliation.RuleSets ruleSets,
+            com.finapp.ledger.LedgerAccountStore<Connection> ledgerAccountStore,
+            IdGenerator idGenerator) {
+        return new ReconciliationIntake(
+                reconciliationRuns,
+                externalItems,
+                expectationRegister,
+                ruleSets,
+                ledgerAccountStore,
+                idGenerator);
+    }
+
+    /** The accept leg (`P8-TSK-009`): hop 1, once per batch, one transaction per file. */
+    @Bean
+    com.finapp.settlement.BatchAcceptance batchAcceptance(
+            SettlementFileStore<Connection> settlementFileStore,
+            SettlementBatchStore<Connection> settlementBatchStore,
+            SettlementSources settlementSources,
+            com.finapp.settlement.AcceptedBatchIntake acceptedBatchIntake,
+            com.finapp.ledger.PostingService postingService,
+            com.finapp.ledger.LedgerAccountStore<Connection> ledgerAccountStore,
+            @Value("${finapp.settlement.accept.batch:10}") int filesPerSweep,
+            IntakeOutcomeObserver intakeOutcomeObserver,
+            OutboxWriter<Connection> outboxWriter,
+            AuditWriter<Connection> auditWriter,
+            IdGenerator idGenerator,
+            Clock clock,
+            TransactionRunner settlementTransactionRunner) {
+        return new com.finapp.settlement.BatchAcceptance(
+                settlementFileStore,
+                settlementBatchStore,
+                settlementSources,
+                acceptedBatchIntake,
+                postingService,
+                ledgerAccountStore,
+                new com.finapp.settlement.BatchAcceptance.Config(filesPerSweep),
+                intakeOutcomeObserver,
+                outboxWriter,
+                auditWriter,
+                idGenerator,
+                clock,
+                settlementTransactionRunner);
+    }
+
+    /**
+     * The intake's schedule — both legs, leaderless on every instance, off in test contexts
+     * (the relay's flag discipline); registered in {@code DISTRIBUTED_EXECUTION.md} §3.
      */
     @Bean
     @ConditionalOnProperty(
@@ -326,8 +382,9 @@ public class SettlementBeans {
             matchIfMissing = true)
     SettlementIntakeSchedule settlementIntakeSchedule(
             FileParsing fileParsing,
+            com.finapp.settlement.BatchAcceptance batchAcceptance,
             @Value("${finapp.settlement.intake.poll:PT15S}") Duration pollInterval) {
-        return new SettlementIntakeSchedule(fileParsing, pollInterval);
+        return new SettlementIntakeSchedule(fileParsing, batchAcceptance, pollInterval);
     }
 
     /**

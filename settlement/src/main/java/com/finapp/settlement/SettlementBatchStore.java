@@ -112,6 +112,88 @@ public interface SettlementBatchStore<T> {
             Instant at,
             CorrelationId correlation);
 
+    // ----------------------------------------------------------- the accept leg (P8-TSK-009)
+
+    /** One canonical line read back whole, references included — the intake's material. */
+    record LineRow(
+            UUID id,
+            int lineNo,
+            SettlementLineType lineType,
+            LineDirection direction,
+            long amountMinor,
+            CurrencyCode currency,
+            int scale,
+            LocalDate businessDate,
+            Optional<LocalDate> settlementDate,
+            Optional<LocalDate> valueDate,
+            byte[] canonicalFingerprint,
+            java.util.Map<LineReferenceKind, String> references) {
+
+        public LineRow {
+            canonicalFingerprint = canonicalFingerprint.clone();
+            references = java.util.Map.copyOf(references);
+        }
+
+        @Override
+        public byte[] canonicalFingerprint() {
+            return canonicalFingerprint.clone();
+        }
+    }
+
+    /** Every canonical line of {@code batchId}, by line number, references joined. */
+    List<LineRow> linesOf(T unitOfWork, UUID batchId);
+
+    /**
+     * The conditional {@code PARSED → ACCEPTED} with the four acceptance facts in ONE
+     * statement — the once-only trigger and the honesty {@code CHECK}s admit no other shape;
+     * false when the batch already moved (another instance accepted or a decline won).
+     */
+    boolean markAccepted(
+            T unitOfWork,
+            UUID batchId,
+            long sourceSequence,
+            LocalDate acceptedOn,
+            Optional<UUID> journalEntryId,
+            Instant at);
+
+    /** Appends one batch-history row — the acceptance's own edge record. */
+    void appendBatchEvent(
+            T unitOfWork,
+            UUID batchId,
+            BatchStatus from,
+            BatchStatus to,
+            Actor actor,
+            Optional<String> reason,
+            Instant occurredAt,
+            CorrelationId correlation);
+
+    /**
+     * Every ACCEPTED batch's recognition entry id (`P8-TSK-009`) — the completeness
+     * verifier's second known-entry class: a recognition entry's every line is explained by
+     * the acceptance that posted it (ADR-0067 §9).
+     */
+    List<UUID> acceptedRecognitionEntries(T unitOfWork);
+
+    /**
+     * One ACCEPTED batch as the opening-position backfill re-derives its {@code REMITTANCE}
+     * (ADR-0067 §8): the row keeps the validated net, both dates and the counterparty's
+     * remittance reference, so the register can be emptied and rebuilt from the books alone
+     * even after settlement evidence starts opening expectations of its own.
+     */
+    record AcceptedRow(
+            UUID id,
+            UUID sourceId,
+            String sourceCode,
+            CurrencyCode currency,
+            long netMinor,
+            int netScale,
+            String remittanceReference,
+            LocalDate businessDate,
+            LocalDate acceptedOn) {}
+
+    /** ACCEPTED batches by id, after {@code after} — the backfill's bounded page. */
+    List<AcceptedRow> pageAccepted(T unitOfWork, UUID after, int limit);
+
     /** The live unique refused an insert: another batch claimed the identity first. */
     final class LiveBatchConflict extends RuntimeException {
 

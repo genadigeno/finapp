@@ -235,4 +235,37 @@ public interface SettlementFileStore<T> {
      * columns do not exist (`V003`).
      */
     void recordIngestionErrors(T unitOfWork, UUID fileId, List<FormatDefect> defects);
+
+    // ----------------------------------------------------------- the accept leg (P8-TSK-009)
+
+    /**
+     * Candidate files for the accept leg: {@code PARSED} and eligible by channel — a pull
+     * always; an upload only once a second person attested it; a readmission when its
+     * original was pulled or attested, or once the readmission itself is (`P8-TSK-022`
+     * widens the database's cross-row rule). Oldest first, ids only, NO lock — the claim
+     * that matters is {@link #lockEligibleById} inside each file's own transaction.
+     */
+    List<UUID> dueForAccept(T unitOfWork, int limit);
+
+    /**
+     * The per-file claim: the row, {@code FOR UPDATE SKIP LOCKED}, only while still
+     * {@code PARSED} and eligible — the upload-authentication predicate re-checked under
+     * the lock (its other two ranks: the domain's read of this row, and `V002`'s
+     * {@code CHECK}s).
+     */
+    Optional<FileRow> lockEligibleById(T unitOfWork, UUID fileId);
+
+    /** The conditional {@code PARSED → ACCEPTED}; false when the row already moved. */
+    boolean markFileAccepted(T unitOfWork, UUID fileId, Instant at);
+
+    /** The source's operational state, locked — retirement is judged under the same lock. */
+    Optional<SourceRow> sourceByIdForUpdate(T unitOfWork, UUID sourceId);
+
+    /**
+     * Claims the source's next statement sequence under the row lock taken by
+     * {@link #sourceByIdForUpdate} and advances it: gapless because a rolled-back
+     * acceptance releases its number with the transaction, and
+     * {@code UNIQUE (source_id, source_sequence)} arbitrates any writer the lock misses.
+     */
+    long claimNextSequence(T unitOfWork, UUID sourceId);
 }

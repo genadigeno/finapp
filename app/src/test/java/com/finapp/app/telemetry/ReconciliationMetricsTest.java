@@ -63,7 +63,8 @@ class ReconciliationMetricsTest {
                 new JdbcExpectationReadings(),
                 register(),
                 new JdbcSettlementFileStore(
-                        new SettlementFileCipher(new byte[32], 1, new SecureRandom())));
+                        new SettlementFileCipher(new byte[32], 1, new SecureRandom())),
+                new com.finapp.settlement.JdbcSettlementBatchStore(IDS));
     }
 
     @Test

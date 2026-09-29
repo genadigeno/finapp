@@ -655,6 +655,132 @@ public final class JdbcSettlementFileStore implements SettlementFileStore<Connec
         }
     }
 
+    // ----------------------------------------------------------- the accept leg (P8-TSK-009)
+
+    /** The channel-eligibility predicate (ADR-0066 §2, §9), one text for both claim reads. */
+    private static final String ELIGIBLE =
+            "(f.received_via = 'PULL'"
+                    + " OR (f.received_via = 'UPLOAD' AND f.attested_by IS NOT NULL"
+                    + "     AND f.attested_by <> f.received_by)"
+                    + " OR (f.received_via = 'READMISSION' AND ("
+                    + "     EXISTS (SELECT 1 FROM settlement.file original"
+                    + "             WHERE original.id = f.readmits_file_id"
+                    + "             AND (original.received_via = 'PULL'"
+                    + "                  OR original.attested_by IS NOT NULL))"
+                    + "     OR f.attested_by IS NOT NULL)))";
+
+    @Override
+    public List<UUID> dueForAccept(Connection unitOfWork, int limit) {
+        try (PreparedStatement read =
+                unitOfWork.prepareStatement(
+                        "SELECT f.id FROM settlement.file f"
+                                + " WHERE f.status = 'PARSED' AND " + ELIGIBLE
+                                + " ORDER BY f.received_at, f.id LIMIT ?")) {
+            read.setInt(1, limit);
+            try (ResultSet rows = read.executeQuery()) {
+                List<UUID> due = new ArrayList<>();
+                while (rows.next()) {
+                    due.add(rows.getObject("id", UUID.class));
+                }
+                return List.copyOf(due);
+            }
+        } catch (SQLException failure) {
+            throw new SettlementStorageException(
+                    "could not list files due for acceptance", failure);
+        }
+    }
+
+    @Override
+    public Optional<FileRow> lockEligibleById(Connection unitOfWork, UUID fileId) {
+        Objects.requireNonNull(fileId, "fileId must not be null");
+        try (PreparedStatement read =
+                unitOfWork.prepareStatement(
+                        FILE_ROW_COLUMNS
+                                + " WHERE f.id = ? AND f.status = 'PARSED' AND " + ELIGIBLE
+                                + " FOR UPDATE OF f SKIP LOCKED")) {
+            read.setObject(1, fileId);
+            try (ResultSet row = read.executeQuery()) {
+                if (!row.next()) {
+                    return Optional.empty();
+                }
+                return Optional.of(fileRow(row));
+            }
+        } catch (SQLException failure) {
+            throw new SettlementStorageException(
+                    "could not claim a file for acceptance", failure);
+        }
+    }
+
+    @Override
+    public boolean markFileAccepted(Connection unitOfWork, UUID fileId, Instant at) {
+        try (PreparedStatement write =
+                unitOfWork.prepareStatement(
+                        "UPDATE settlement.file SET status = 'ACCEPTED',"
+                                + " status_changed_at = ?"
+                                + " WHERE id = ? AND status = 'PARSED'")) {
+            write.setTimestamp(1, Timestamp.from(at));
+            write.setObject(2, fileId);
+            return write.executeUpdate() == 1;
+        } catch (SQLException failure) {
+            throw new SettlementStorageException("could not accept a file", failure);
+        }
+    }
+
+    @Override
+    public Optional<SourceRow> sourceByIdForUpdate(Connection unitOfWork, UUID sourceId) {
+        Objects.requireNonNull(sourceId, "sourceId must not be null");
+        try (PreparedStatement read =
+                unitOfWork.prepareStatement(
+                        "SELECT id, code, kind, status FROM settlement.source"
+                                + " WHERE id = ? FOR UPDATE")) {
+            read.setObject(1, sourceId);
+            try (ResultSet row = read.executeQuery()) {
+                if (!row.next()) {
+                    return Optional.empty();
+                }
+                return Optional.of(
+                        new SourceRow(
+                                row.getObject("id", UUID.class),
+                                row.getString("code"),
+                                SourceKind.valueOf(row.getString("kind")),
+                                "ACTIVE".equals(row.getString("status"))));
+            }
+        } catch (SQLException failure) {
+            throw new SettlementStorageException("could not lock a settlement source", failure);
+        }
+    }
+
+    @Override
+    public long claimNextSequence(Connection unitOfWork, UUID sourceId) {
+        long claimed;
+        try (PreparedStatement read =
+                unitOfWork.prepareStatement(
+                        "SELECT next_sequence FROM settlement.source WHERE id = ?"
+                                + " FOR UPDATE")) {
+            read.setObject(1, sourceId);
+            try (ResultSet row = read.executeQuery()) {
+                if (!row.next()) {
+                    throw new SettlementStorageException(
+                            "no settlement source " + sourceId + " exists");
+                }
+                claimed = row.getLong("next_sequence");
+            }
+        } catch (SQLException failure) {
+            throw new SettlementStorageException("could not claim a source sequence", failure);
+        }
+        try (PreparedStatement advance =
+                unitOfWork.prepareStatement(
+                        "UPDATE settlement.source SET next_sequence = ? WHERE id = ?")) {
+            advance.setLong(1, claimed + 1);
+            advance.setObject(2, sourceId);
+            advance.executeUpdate();
+        } catch (SQLException failure) {
+            throw new SettlementStorageException(
+                    "could not advance a source sequence", failure);
+        }
+        return claimed;
+    }
+
     @Override
     public void recordIngestionErrors(
             Connection unitOfWork, UUID fileId, List<FormatDefect> defects) {

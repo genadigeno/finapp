@@ -281,8 +281,15 @@ class SettlementEvidenceGrantsDatabaseTest {
         try (Statement statement = application.createStatement();
                 var rows =
                         statement.executeQuery(
-                                "SELECT code, kind, status, next_sequence"
-                                        + " FROM settlement.source ORDER BY code")) {
+                                // V002's own four rows: fixture sources other suites seed
+                                // beside them (the acceptance suite's retiring source) are
+                                // theirs to assert, and next_sequence is OPERATIONAL state
+                                // the accept leg legitimately advances (P8-TSK-009) - the
+                                // seed's claim is identity and openness, not the counter.
+                                "SELECT code, kind, status"
+                                        + " FROM settlement.source"
+                                        + " WHERE code LIKE 'simulated-%'"
+                                        + " ORDER BY code")) {
             StringBuilder seeded = new StringBuilder();
             while (rows.next()) {
                 seeded.append(rows.getString(1))
@@ -290,16 +297,14 @@ class SettlementEvidenceGrantsDatabaseTest {
                         .append(rows.getString(2))
                         .append(':')
                         .append(rows.getString(3))
-                        .append(':')
-                        .append(rows.getLong(4))
                         .append(';');
             }
             assertThat(seeded.toString())
                     .isEqualTo(
-                            "simulated-bank.statement=BANK_STATEMENT:ACTIVE:1;"
-                                    + "simulated-payout.settlement=PAYOUT_PROVIDER_REPORT:ACTIVE:1;"
-                                    + "simulated-psp.settlement=PSP_SETTLEMENT_REPORT:ACTIVE:1;"
-                                    + "simulated-scheme.cycle-report=SCHEME_CYCLE_REPORT:ACTIVE:1;");
+                            "simulated-bank.statement=BANK_STATEMENT:ACTIVE;"
+                                    + "simulated-payout.settlement=PAYOUT_PROVIDER_REPORT:ACTIVE;"
+                                    + "simulated-psp.settlement=PSP_SETTLEMENT_REPORT:ACTIVE;"
+                                    + "simulated-scheme.cycle-report=SCHEME_CYCLE_REPORT:ACTIVE;");
         }
         application.commit();
     }

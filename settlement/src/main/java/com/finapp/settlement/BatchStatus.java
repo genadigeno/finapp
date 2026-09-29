@@ -9,26 +9,34 @@ import java.util.stream.Collectors;
  * The settlement batch's machine (`SETTLEMENT_AND_RECONCILIATION_LIFECYCLES.md` §5.2) — of
  * which `P8-TSK-008` produces birth and one exit.
  *
- * <p>A batch is born {@code PARSED} in its file's {@code RECEIVED → PARSED} transaction and
- * moves {@code PARSED → REJECTED} only with its file (the decline; `SOURCE_RETIRED` joins with
- * the accept leg). {@code ACCEPTED} and {@code REPUDIATED} arrive with their producers
- * (`P8-TSK-009`, `P8-TSK-023`), each regenerating `V003`'s {@code CHECK} and trigger — but the
- * live unique's status list is written whole NOW, naming {@code REPUDIATED} too, so `-023`
- * changes no index (the backlog's own instruction).
+ * <p>A batch is born {@code PARSED} in its file's {@code RECEIVED → PARSED} transaction;
+ * the accept leg moves it {@code PARSED → ACCEPTED} with its acceptance facts (`P8-TSK-009`,
+ * `V004`), and {@code PARSED → REJECTED} rides its file's rejection (the decline;
+ * `SOURCE_RETIRED`). {@code REPUDIATED} arrives with its producer (`P8-TSK-023`),
+ * regenerating the {@code CHECK} and trigger once more — but the live unique's status list
+ * was written whole by `V003`, naming it already, so `-023` changes no index.
  */
 public enum BatchStatus {
 
     /** Born so, whole: lines, references and totals committed with it (`INV-SET-07`). */
     PARSED,
 
-    /** Its file was rejected after parsing (a decline today) — terminal, and its live key frees. */
+    /**
+     * Recognised once (`INV-SET-04`): sequenced gaplessly, its fees posted, its run and
+     * items handed to reconciliation — final but for the one designed exit, a repudiation
+     * (`P8-TSK-023`).
+     */
+    ACCEPTED,
+
+    /** Its file was rejected after parsing — terminal, and its live key frees. */
     REJECTED;
 
-    /** The states reachable from this one — `V003`'s trigger edges are generated from it. */
+    /** The states reachable from this one — the trigger edges are generated from it. */
     public Set<BatchStatus> permittedTransitions() {
         return switch (this) {
-            case PARSED -> EnumSet.of(REJECTED);
-            case REJECTED -> EnumSet.noneOf(BatchStatus.class);
+            case PARSED -> EnumSet.of(ACCEPTED, REJECTED);
+            // ACCEPTED -> REPUDIATED joins with its producer (`P8-TSK-023`).
+            case ACCEPTED, REJECTED -> EnumSet.noneOf(BatchStatus.class);
         };
     }
 

@@ -203,6 +203,33 @@ class SettlementFileMetricsTest {
                 List<com.finapp.settlement.format.FormatDefect> defects) {
             throw new UnsupportedOperationException("the gauges read pendingBySource alone");
         }
+
+        // The accept leg's surface (P8-TSK-009) - not the gauges', same as everything above.
+
+        @Override
+        public List<UUID> dueForAccept(Connection unitOfWork, int limit) {
+            throw new UnsupportedOperationException("the gauges read pendingBySource alone");
+        }
+
+        @Override
+        public Optional<FileRow> lockEligibleById(Connection unitOfWork, UUID fileId) {
+            throw new UnsupportedOperationException("the gauges read pendingBySource alone");
+        }
+
+        @Override
+        public boolean markFileAccepted(Connection unitOfWork, UUID fileId, Instant at) {
+            throw new UnsupportedOperationException("the gauges read pendingBySource alone");
+        }
+
+        @Override
+        public Optional<SourceRow> sourceByIdForUpdate(Connection unitOfWork, UUID sourceId) {
+            throw new UnsupportedOperationException("the gauges read pendingBySource alone");
+        }
+
+        @Override
+        public long claimNextSequence(Connection unitOfWork, UUID sourceId) {
+            throw new UnsupportedOperationException("the gauges read pendingBySource alone");
+        }
     }
 
     /** A connection the fake never touches — the gauges only open and close it. */

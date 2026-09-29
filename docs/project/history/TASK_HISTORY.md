@@ -1,6 +1,6 @@
 # Task History
 
-The per-task completion records that accumulated behind `## Current Task` - 171 "Previously" blocks, newest first, from `P8-TSK-007` back to project initiation. *(`X-TSK-004` is cross-cutting and completed after the Phase 6 → 7 transition, so it stands second, between `P7-TSK-001` and the transition's record - the transition's block moved here by `P7-TSK-001`'s gate, exactly as an earlier form of this note said it would.)*
+The per-task completion records that accumulated behind `## Current Task` - 172 "Previously" blocks, newest first, from `P8-TSK-008` back to project initiation. *(`X-TSK-004` is cross-cutting and completed after the Phase 6 → 7 transition, so it stands second, between `P7-TSK-001` and the transition's record - the transition's block moved here by `P7-TSK-001`'s gate, exactly as an earlier form of this note said it would.)*
 
 **Archive.** These records were moved verbatim out of
 [`CURRENT_STATE.md`](../CURRENT_STATE.md) on 2026-09-20 so that the canonical description of
@@ -14,6 +14,78 @@ Authoritative backlog: [`BACKLOG.md`](../BACKLOG.md)
 ---
 
 ### Previously
+
+**`P8-TSK-008` — The PSP format: parse, normalise, reject whole** — `COMPLETE` (2026-09-29).
+**M8.3, Evidence becomes canonical lines, OPENS at 1 of 6**: settlement evidence is now DATA —
+one whole, canonical, immutable batch of typed lines per file, or a whole rejection with its
+errors on the record (`INV-SET-07`'s first half). **The `SettlementFormat` SPI** (pure — no
+I/O, clock or database) with **`SIM_PSP_CSV` v1 frozen by its golden file** (the
+`RailMoneySemanticsArePinnedTest` rule: the fingerprint algorithm pinned by hex literal, a
+behaviour change is a NEW version); the provider's vocabulary — `SALE` and its siblings —
+confined to `com.finapp.settlement.format.simpsp` by the new
+`SettlementVocabularyIsConfinedTest` with planted-violation controls (`INV-PAY-03`), an
+unknown type kept as `OTHER_IN`/`OTHER_OUT` by sign and never a success (`INV-REC-02`), and
+the gross-plus-fee split (a fee-bearing record becomes its transaction line plus a
+`PROCESSING_FEE` line carrying `ORIGINAL_REF`, the record digest shared). **The field-class
+screen fills the door's seam** (ADR-0066 §3, C6): reference fields by shape — a Luhn-valid
+15-digit network transaction id is never tested as free text — amounts and dates by type,
+only the descriptor free text, and a field failing its declared class screened as free text,
+so a PAN in a reference column is refused, never retained. **Settlement `V003`**: the file
+machine's real edges regenerated from `FileStatus.permittedTransitions()` (`ACCEPTED` still
+has no producer), `batch` born `PARSED` with `batch_event`, `batch_total` (the `Money` fold
+per type and direction, the attester's reading), `line` (the ADR-0003 triple;
+`canonical_fingerprint` indexed and deliberately NOT unique so a duplicate survives to become
+`DUPLICATE_EXTERNAL` at matching), `line_reference` (bank-identifier and alias shapes refused
+by `CHECK`), `ingestion_error` (≤100; no content column exists), the attestation gated to
+non-terminal files by trigger, a rejection verdict frozen once set, and **the live unique
+written whole** — `UNIQUE (source_id, external_batch_ref, currency) WHERE status NOT IN
+('REJECTED', 'REPUDIATED')` — so `-023` changes no index. **The parse leg** (`FileParsing` +
+`SettlementIntakeSchedule`, the scheduler register's row rewritten from the code, LEASE
+register 9 → 10, the sweep a SYSTEM actor site): candidates lock-free oldest first, the claim
+`FOR UPDATE SKIP LOCKED` inside each file's own transaction, one transaction per outcome —
+the batch whole with its edge and history, or the errors, verdict, acting-only audit record
+(`settlement.SettlementFileRejected`) and settlement's FIRST outbox event together — and OUR
+failure never rejects evidence: `parse_failures + 1` and the back-off in a second transaction
+that survives the rollback, the `RECEIVED → RECEIVED` history row the record. **The decline**
+(moved from `-003`): `RECEIVED | PARSED → REJECTED(DECLINED)`, the batch with it, the live
+key freed at commit and the genuine re-issue admitted; idempotent by state (a terminal file
+answers `409 settlement.FileNotAttestable`); `settlement.SettlementFileDeclined` requires its
+reason. **The batch read** (`GET /v1/operator/settlement/batches/{id}`,
+`RECONCILIATION_INVESTIGATE`; `404 settlement.BatchNotFound`, the `FileNotFound` departure's
+reasoning) serves the parsed totals an attester examines — and attestation now admits
+`PARSED`, the explicit relaxation `-003` designed for. `SimulatedSettlementReports` renders
+the format for the later legs, each parse-level fault pinned to the defect it claims.
+**Recorded deviations**: the rejection event's payload carries `sourceId`, not the drafted
+`sourceCode` — `EventPayload`'s vocabulary is identifiers and enumerated names
+(`INV-AUD-02`), a dotted code is neither (ADR-0066's implemented note); the decline is
+permission-gated (`SETTLEMENT_INGEST`), not person-restricted — the `-003` attestation
+precedent; a structurally corrupt file whose OTHER rows carry Luhn-valid references is
+over-refused by the conservative fallback, ADR-0066 §4's stated asymmetry, recovery
+re-presentation. **Five probe runs, four caught and one demonstration**: the trailer's net check dropped
+(the net-mismatched golden PARSED where Rejected belongs); the whole-file rule broken
+(defects ignored, the malformed-seq verdict falling through to CONTROL_TOTAL_MISMATCH
+where MALFORMED with its named line and field belongs); the live unique dropped from
+`V003` (a second raw live batch ADMITTED where the database must refuse any writer — the
+gate's own find made this deterministic: the sequential conflict is the pre-check's
+answer, so `theLiveUniqueIsTheArbiter` probes the arbiter directly); the field-class
+screen's C6 clause disarmed (the PAN in a reference column screened clean where
+PRIMARY_ACCOUNT_NUMBER belongs); and `SKIP LOCKED` reduced to a plain lock with the
+ten-parser race STILL GREEN — the conditional and the uniques are the arbiter,
+demonstrated rather than assumed. Every verdict read from the failing testcase, every
+restore byte-identical (`MUTATION_TESTING` section 2 +3 rows under `INV-SET-07`,
+`INV-SET-04` and `INV-PAY-02`). **The gate's second find, fixed**:
+`SimulatedSettlementReports` — the backlog's fixture — was unbuilt at implementation's
+end; it now renders the format for the later legs, each parse-level fault pinned to the
+defect it claims, and the HTTP flow uploads its render.
+Verified by targeted tiers from fresh runs on the final code — settlement hermetic
+46 across 8 suites and database 33 across 5 suites (the golden file, the
+faults, the field-class screen, the parse leg, the races and the arbiter within), app
+hermetic 564 across 104 suites (the vocabulary confinement, the scheduler and
+system-actor registers, OpenAPI and the fixture within) and the settlement routes suite
+green in the app database tier (negatives three ways on both new routes, the parse leg
+over the composed wiring, the committed meters), plus the document guards re-run fresh
+after the records landed, ALL 0 FAILURES — the full battery and the fleet-wide database
+and kafka tiers deliberately skipped on the owner's instruction.
 
 **`P8-TSK-007` — The opening position, the position proof and the completeness verifier** —
 `COMPLETE` (2026-09-29). **M8.2, Every settling completion is expected, CLOSES at 4 of 4**:

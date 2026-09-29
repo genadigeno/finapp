@@ -37,7 +37,14 @@ public enum RejectionCode {
     CONFLICTING_BATCH(false),
 
     /** A person's reasoned judgement, not our validation — never readmitted (ADR-0066 §8). */
-    DECLINED(false);
+    DECLINED(false),
+
+    /**
+     * The source retired between receipt and acceptance (`P8-TSK-009`, §5.1): its identity
+     * stands, its door closed, and the parsed evidence is rejected RETAINED — a re-opened
+     * source is a NEW source whose re-issue arrives through its own door.
+     */
+    SOURCE_RETIRED(false);
 
     private final boolean leavesErrorRows;
 

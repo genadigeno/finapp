@@ -559,8 +559,7 @@ converted, `INV-MON-04`).
 
 ## Follow-up
 
-- Until Phase 8's first task lands, nothing in this ADR is implemented; every statement is the
-  decided design, corrected by the tasks that build it.
+- **Implemented so far** *(every other statement is the decided design, corrected by the tasks that build it)*: `P8-TSK-009` (2026-09-29) shipped HOP 1 for the card PSP — point 2's recognition (DR `PROCESSING_COSTS` / CR `SETTLEMENT_CLEARING` for the fee fold, the mirror for a net rebate, honestly omitted at zero), the `REMITTANCE` expectation of |N| keyed `REMITTANCE_REF` with `expected_by = value date + funding_lag_days`, and every line an item in a run born in the acceptance transaction. Two recorded build facts: the batch's stored value date IS its business date until a format carries a distinct one, and the recognition posts before the batch's accepting `UPDATE` (the honesty `CHECK` wants the entry id in that statement) — the last CONTENDED write, the rows after it the transaction's own claims.
 - `P8-TSK-009` (`PROCESSING_COSTS`, acceptance, fee recognition and the remittance expectation),
   `P8-TSK-016` (`CASH_AT_BANK`, attribution, bank recognition, continuity, the cash proof and the
   single-poster rule), `P8-TSK-015` (`RECONCILIATION_LOSSES` and `RECONCILIATION_GAINS` with

@@ -525,6 +525,19 @@ transaction).
   incremental-watermark scale path stays recorded, not built. Demonstrated: the storm's
   register emptied as the platform's own root and rebuilt from the books alone, every kind's
   copy returning — point 8's claim across every opener at once.
+- `P8-TSK-009` — **implemented** (2026-09-29): the first Phase 8 records join point 9's third
+  class — the completeness verifier knows every acceptance's recognition entry by the batch's
+  own row (`SettlementBatchStore.acceptedRecognitionEntries`), and `ExpectationOpenerRegisterTest`
+  gains its first `PHASE_8_RECORD` row (`settlement-batch:`). The position identity is extended
+  — balance = open expectation remainders − open item remainders (allocating items, `PENDING`
+  and `UNMATCHED`; `PROCESSING_FEE` never allocates) — so the proof holds from the moment of
+  acceptance, every item still pending. And point 8's backfill walks ACCEPTED settlement batches
+  too, re-deriving each `REMITTANCE` from the row's stored facts (validated net, both dates, the
+  counterparty's reference) **through the live intake's own opener** — without this leg the
+  register would no longer be rebuildable from the books alone, because a remittance is evidence's
+  promise, not a completion's copy; the wipe-and-rebuild equivalence is re-proven with settlement
+  evidence in the world (`SettlementAcceptanceDatabaseTest`), the re-derived row substance-equal
+  to the live one.
 - `P8-TSK-010`: `DUPLICATE_INTERNAL` raised from recorded collisions.
 - `P8-TSK-019`: the payout return's expectation through `PayoutSettlementExpectations`, opening
   no key and reached through its operation (point 5), and the return worker that the
