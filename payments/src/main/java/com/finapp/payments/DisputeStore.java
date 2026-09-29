@@ -158,6 +158,15 @@ public interface DisputeStore<T> {
     boolean anyRestorableTo(T unitOfWork, LedgerAccountId account);
 
     /** The operator's read of one dispute, across tenants by permission. */
+    /**
+     * Every dispute with {@code id > after}, in id order, at most {@code limit} — the
+     * opening-position backfill's page (`P8-TSK-007`, ADR-0067 §8; the attempt store's
+     * {@code pageByStatus} classification sentence, verbatim). Every row, deliberately:
+     * which stage postings exist is answered by the ledger's posting keys, not by
+     * re-deriving the stage walk here.
+     */
+    List<Dispute> pageAll(T unitOfWork, java.util.UUID after, int limit);
+
     Optional<Found> findById(T unitOfWork, DisputeId id);
 
     /** The operator's read of one payment's disputes, oldest first. */

@@ -161,6 +161,68 @@ public final class JdbcJournalEntryStore implements JournalEntryStore<Connection
     }
 
     @Override
+    public Optional<JournalEntryId> findByIdempotencyScope(Connection unitOfWork, String scope) {
+        Objects.requireNonNull(unitOfWork, "unitOfWork must not be null");
+        Objects.requireNonNull(scope, "scope must not be null");
+        try (PreparedStatement select =
+                unitOfWork.prepareStatement(
+                        "SELECT id FROM " + ENTRY_TABLE + " WHERE idempotency_scope = ?")) {
+            select.setString(1, scope);
+            try (ResultSet row = select.executeQuery()) {
+                if (!row.next()) {
+                    return Optional.empty();
+                }
+                JournalEntryId found = JournalEntryId.of(row.getObject("id", UUID.class));
+                if (row.next()) {
+                    // The kernel guarantees one committed execution per scope-and-key; a
+                    // second row is a defect, and picking one would hide it (INV-IDEM-01).
+                    throw new LedgerStorageException(
+                            "two journal entries share one idempotency scope: the kernel's"
+                                    + " one-execution guarantee was bypassed");
+                }
+                return Optional.of(found);
+            }
+        } catch (SQLException failure) {
+            throw new LedgerStorageException(
+                    DatabaseFailure.describe("reading the entry of one posting key", failure));
+        }
+    }
+
+    @Override
+    public List<LineKey> lineKeysOn(
+            Connection unitOfWork, java.util.Collection<LedgerAccountId> accounts) {
+        Objects.requireNonNull(unitOfWork, "unitOfWork must not be null");
+        Objects.requireNonNull(accounts, "accounts must not be null");
+        if (accounts.isEmpty()) {
+            return List.of();
+        }
+        try (PreparedStatement select =
+                unitOfWork.prepareStatement(
+                        "SELECT entry_id, ledger_account_id FROM " + LINE_TABLE
+                                + " WHERE ledger_account_id = ANY (?)")) {
+            select.setArray(
+                    1,
+                    unitOfWork.createArrayOf(
+                            "uuid",
+                            accounts.stream().map(LedgerAccountId::value).toArray()));
+            try (ResultSet rows = select.executeQuery()) {
+                List<LineKey> keys = new ArrayList<>();
+                while (rows.next()) {
+                    keys.add(
+                            new LineKey(
+                                    JournalEntryId.of(rows.getObject("entry_id", UUID.class)),
+                                    LedgerAccountId.of(
+                                            rows.getObject("ledger_account_id", UUID.class))));
+                }
+                return List.copyOf(keys);
+            }
+        } catch (SQLException failure) {
+            throw new LedgerStorageException(
+                    DatabaseFailure.describe("reading the line keys of the positions", failure));
+        }
+    }
+
+    @Override
     public Optional<PostedEntry> findById(Connection unitOfWork, JournalEntryId entryId) {
         Objects.requireNonNull(unitOfWork, "unitOfWork must not be null");
         Objects.requireNonNull(entryId, "entryId must not be null");

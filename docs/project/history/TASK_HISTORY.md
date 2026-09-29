@@ -1,6 +1,6 @@
 # Task History
 
-The per-task completion records that accumulated behind `## Current Task` - 169 "Previously" blocks, newest first, from `P8-TSK-005` back to project initiation. *(`X-TSK-004` is cross-cutting and completed after the Phase 6 → 7 transition, so it stands second, between `P7-TSK-001` and the transition's record - the transition's block moved here by `P7-TSK-001`'s gate, exactly as an earlier form of this note said it would.)*
+The per-task completion records that accumulated behind `## Current Task` - 170 "Previously" blocks, newest first, from `P8-TSK-006` back to project initiation. *(`X-TSK-004` is cross-cutting and completed after the Phase 6 → 7 transition, so it stands second, between `P7-TSK-001` and the transition's record - the transition's block moved here by `P7-TSK-001`'s gate, exactly as an earlier form of this note said it would.)*
 
 **Archive.** These records were moved verbatim out of
 [`CURRENT_STATE.md`](../CURRENT_STATE.md) on 2026-09-20 so that the canonical description of
@@ -12,6 +12,51 @@ Current state: [`CURRENT_STATE.md`](../CURRENT_STATE.md) ·
 Authoritative backlog: [`BACKLOG.md`](../BACKLOG.md)
 
 ---
+
+### Previously
+
+**`P8-TSK-006` — Adjustments carry a reason code and an origin; reconciled positions are
+closed to free adjustments** — `COMPLETE` (2026-09-29). **M8.2 at 3 of 4**: the position
+proof's precondition — `INV-REV-04`'s reason code realised at both ranks, and a way to move
+money removed. **Ledger `V015`**: `reason_code` and `origin` with history defaults
+(`UNCODED`/`MANUAL`, no rewrite trigger fired, `INV-HIST-01`), the value lists and the
+code↔origin pairing `CHECK` generated from the enums, a `BEFORE INSERT` trigger refusing
+`UNCODED` for every writer (the default is the backfill AND the refusal funnel: a raw insert
+without a code dies at the database), the payload freeze re-stated over both new columns, and
+**the binding** — a `BEFORE INSERT` trigger refusing any `MANUAL`-origin line on
+`AccountPurpose.reconciledPositions()` (`SETTLEMENT_CLEARING`, `PAYOUT_CLEARING`,
+`INSTANT_CLEARING`, `SUSPENSE_UNMATCHED`; the list generated and pinned, `V016`–`V018`
+re-state it as the four Phase 8 purposes join). **The domain judges the binding before the
+idempotency claim** — a refused proposal never consumes its key, proven by replaying the same
+key legally — and **re-judges it at a `MANUAL` approval**: the one row the insert trigger
+cannot see (a proposal born before `V015`) was planted with triggers disabled and refused at
+approval, nothing posted. **The origin regime** (ADR-0071 §6, F-a): the generic door assigns
+`MANUAL_CORRECTION` server-side (request shape unchanged, additive under ADR-0015 — the view
+gains `origin` and `reasonCode`); generic approval and `DELETE` refuse a
+`RECONCILIATION`-origin proposal (`409 ledger.AdjustmentOriginMismatch` — ten racing generic
+approvals, ten refusals, zero entries, the new counted race) and the owned methods
+(`proposeOwned`/`approveOwned`/`rejectOwned`, joining the caller's transaction for
+`P8-TSK-015`) refuse `MANUAL`, with the seam confined to `com.finapp.reconciliation` by a
+static rule with planted-caller controls. All three audit records carry origin and reason
+code. **Decided at design (B14): `RECONCILIATION_OFFSET` dropped** — no Phase 8 kind produces
+it, the platform keeps no producerless member, a future producer widens the generated `CHECK`
+forward (recorded in ADR-0071). Three suites moved off clearing onto `FEE_REVENUE`, each move
+recorded — they wanted "some operational counterpart", and clearing stopped being one on
+purpose. **Seven probe runs, seven caught**: the uncoded-insert trigger, the binding
+trigger and the pairing `CHECK` dropped, the freeze re-statement reverted (the
+migrator rewrote `origin` where "approves what they read" belongs), the origin
+refusal removed (ten generic approvals posted where ten 409s belong), the
+pre-claim domain check removed (the trigger beneath still refused — the layering —
+but the door's 422 became a 500 and the key burned), and the approval re-check
+removed (the legacy row posted) — every verdict from the failing testcase, every
+restore byte-identical (`MUTATION_TESTING.md` §2, +3 rows under `INV-REV-04`,
+`INV-REC-06`, `INV-AUD-04`).
+Verified by targeted tiers from fresh runs on the final code: ledger hermetic 83
+across 16 suites, app hermetic 555 across 100 (the confinement rule, the mutation and
+OpenAPI guards within, after the records landed), app database 1100 across 133
+suites (the adjustment, schema and statement suites within), and the platform
+classification guard over the two new rows, all 0 failures; the full battery
+deliberately skipped on the owner's instruction.
 
 ### Previously
 

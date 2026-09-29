@@ -217,6 +217,18 @@ public interface PaymentAttemptStore<T> {
      * {@code contactedBefore} — oldest first, bounded. The payer PSP's clock decides the
      * outcome; this bound only paces how often we ask.
      */
+    /**
+     * The attempts standing in {@code status} with {@code id > after}, in id order, at most
+     * {@code limit} — the opening-position backfill's page (`P8-TSK-007`, ADR-0067 §8):
+     * {@code CAPTURED} and {@code EXECUTED} are the completed clearing operations whose
+     * expectations history never opened. Cross-owner by design — an administered read under
+     * {@code RECONCILIATION_ADMINISTER}, composed in {@code app} — and lock-free: a
+     * completed row's copied facts are frozen, and the backfill's converge is the register's
+     * uniques, never a lock here.
+     */
+    List<PaymentAttempt> pageByStatus(
+            T unitOfWork, PaymentAttemptStatus status, java.util.UUID after, int limit);
+
     List<PaymentAttempt> findResolvableInitiations(
             T unitOfWork, Instant contactedBefore, int limit);
 

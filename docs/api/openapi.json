@@ -3438,6 +3438,47 @@
         },
         "type": "object"
       },
+      "Adopted": {
+        "properties": {
+          "aliases": {
+            "format": "int64",
+            "type": "integer"
+          },
+          "captures": {
+            "format": "int64",
+            "type": "integer"
+          },
+          "disputeStages": {
+            "format": "int64",
+            "type": "integer"
+          },
+          "executions": {
+            "format": "int64",
+            "type": "integer"
+          },
+          "parkings": {
+            "format": "int64",
+            "type": "integer"
+          },
+          "payouts": {
+            "format": "int64",
+            "type": "integer"
+          },
+          "refunds": {
+            "format": "int64",
+            "type": "integer"
+          },
+          "skipped": {
+            "format": "int64",
+            "type": "integer"
+          },
+          "withdrawals": {
+            "format": "int64",
+            "type": "integer"
+          }
+        },
+        "type": "object"
+      },
       "AssignFeeScheduleRequest": {
         "properties": {
           "feeScheduleId": {
@@ -4594,6 +4635,19 @@
         ],
         "type": "object"
       },
+      "OpeningPositionRequest": {
+        "properties": {
+          "reason": {
+            "maxLength": 1000,
+            "minLength": 1,
+            "type": "string"
+          }
+        },
+        "required": [
+          "reason"
+        ],
+        "type": "object"
+      },
       "OperatorDisputeEvidenceUploadRequest": {
         "properties": {
           "content": {
@@ -5054,6 +5108,51 @@
         },
         "type": "object"
       },
+      "PositionRow": {
+        "properties": {
+          "currency": {
+            "type": "string"
+          },
+          "difference": {
+            "type": "string"
+          },
+          "explained": {
+            "type": "boolean"
+          },
+          "ledgerBalance": {
+            "type": "string"
+          },
+          "openExpectations": {
+            "format": "int64",
+            "type": "integer"
+          },
+          "openRemainders": {
+            "type": "string"
+          },
+          "purpose": {
+            "type": "string"
+          },
+          "unattributedLines": {
+            "format": "int64",
+            "type": "integer"
+          }
+        },
+        "type": "object"
+      },
+      "PositionsReport": {
+        "properties": {
+          "positions": {
+            "items": {
+              "$ref": "#/components/schemas/PositionRow"
+            },
+            "type": "array"
+          },
+          "truncated": {
+            "type": "boolean"
+          }
+        },
+        "type": "object"
+      },
       "ProblemDetail": {
         "description": "An RFC 9457 problem detail. Clients switch on `code`; `title` is prose and may be reworded, and several codes share a status. Absent members are absent, never null.",
         "properties": {
@@ -5465,7 +5564,8 @@
               "KYC_REVIEWER",
               "LEDGER_OPERATOR",
               "MERCHANT_ADMINISTRATOR",
-              "RECONCILIATION_OPERATOR"
+              "RECONCILIATION_OPERATOR",
+              "RECONCILIATION_CONTROLLER"
             ],
             "type": "string"
           }
@@ -8580,6 +8680,43 @@
         }
       }
     },
+    "/v1/operator/reconciliation/opening-position": {
+      "post": {
+        "operationId": "recordOpeningPosition",
+        "parameters": [
+          {
+            "in": "header",
+            "name": "Idempotency-Key",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/OpeningPositionRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Adopted"
+                }
+              }
+            },
+            "description": "OK"
+          }
+        }
+      }
+    },
     "/v1/operator/reports/chargeback-ratio": {
       "get": {
         "operationId": "readChargebackRatioReport",
@@ -8599,6 +8736,23 @@
               "application/json": {
                 "schema": {
                   "$ref": "#/components/schemas/ChargebackRatioReport"
+                }
+              }
+            },
+            "description": "OK"
+          }
+        }
+      }
+    },
+    "/v1/operator/reports/reconciliation/positions": {
+      "get": {
+        "operationId": "readReconciliationPositionsReport",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PositionsReport"
                 }
               }
             },

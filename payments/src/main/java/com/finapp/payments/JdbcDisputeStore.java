@@ -612,6 +612,27 @@ public final class JdbcDisputeStore implements DisputeStore<Connection> {
         return new Found(map(row), PaymentIntentId.of(row.getObject("intent_id", UUID.class)));
     }
 
+    @Override
+    public List<Dispute> pageAll(Connection unitOfWork, java.util.UUID after, int limit) {
+        try (PreparedStatement select =
+                unitOfWork.prepareStatement(
+                        "SELECT " + COLUMNS + " FROM " + TABLE
+                                + " WHERE id > ? ORDER BY id LIMIT ?")) {
+            select.setObject(1, after);
+            select.setInt(2, limit);
+            try (ResultSet rows = select.executeQuery()) {
+                List<Dispute> page = new ArrayList<>();
+                while (rows.next()) {
+                    page.add(map(rows));
+                }
+                return List.copyOf(page);
+            }
+        } catch (SQLException failure) {
+            throw new PaymentsStorageException(
+                    DatabaseFailure.describe("paging disputes", failure));
+        }
+    }
+
     private static Dispute map(ResultSet row) throws SQLException {
         Optional<Money> amount = fragment(row, "chargeback");
         Optional<ChargebackSplit> split =

@@ -54,20 +54,43 @@ public final class JdbcClearingRecordStore implements ClearingRecordStore<Connec
                 if (!row.next()) {
                     return Optional.empty();
                 }
-                return Optional.of(
-                        new ClearingRecord(
-                                ClearingRecordId.of(row.getObject("id", UUID.class)),
-                                PaymentAttemptId.of(
-                                        row.getObject("attempt_id", UUID.class)),
-                                new ProviderReference(row.getString("acquirer_reference")),
-                                new ProviderReference(
-                                        row.getString("network_transaction_id")),
-                                row.getTimestamp("recorded_at").toInstant()));
+                return Optional.of(map(row));
             }
         } catch (SQLException failure) {
             throw new PaymentsStorageException(
                     DatabaseFailure.describe(
                             "reading the clearing record of attempt " + attempt, failure));
         }
+    }
+
+    @Override
+    public java.util.List<ClearingRecord> page(
+            Connection unitOfWork, UUID after, int limit) {
+        try (PreparedStatement select =
+                unitOfWork.prepareStatement(
+                        "SELECT " + COLUMNS + " FROM payments.clearing_record"
+                                + " WHERE id > ? ORDER BY id LIMIT ?")) {
+            select.setObject(1, after);
+            select.setInt(2, limit);
+            try (ResultSet rows = select.executeQuery()) {
+                java.util.List<ClearingRecord> page = new java.util.ArrayList<>();
+                while (rows.next()) {
+                    page.add(map(rows));
+                }
+                return java.util.List.copyOf(page);
+            }
+        } catch (SQLException failure) {
+            throw new PaymentsStorageException(
+                    DatabaseFailure.describe("paging clearing records", failure));
+        }
+    }
+
+    private static ClearingRecord map(ResultSet row) throws SQLException {
+        return new ClearingRecord(
+                ClearingRecordId.of(row.getObject("id", UUID.class)),
+                PaymentAttemptId.of(row.getObject("attempt_id", UUID.class)),
+                new ProviderReference(row.getString("acquirer_reference")),
+                new ProviderReference(row.getString("network_transaction_id")),
+                row.getTimestamp("recorded_at").toInstant());
     }
 }

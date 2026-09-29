@@ -506,6 +506,10 @@ class OpenApiContractTest {
                                 + "/operator/settlement/files/{id}/content-reads",
                         ApiVersion.CURRENT_PREFIX + "/operator/settlement/sources",
                         ApiVersion.CURRENT_PREFIX + "/operator/settlement/refused-deliveries",
+                        // P8-TSK-007: the opening-position backfill (RECONCILIATION_ADMINISTER)
+                        // and the positions report (RECONCILIATION_INVESTIGATE, audited).
+                        ApiVersion.CURRENT_PREFIX + "/operator/reconciliation/opening-position",
+                        ApiVersion.CURRENT_PREFIX + "/operator/reports/reconciliation/positions",
                         ApiVersion.CURRENT_PREFIX + "/sessions/{id}",
                         ApiVersion.CURRENT_PREFIX + "/sessions/current",
                         ApiVersion.CURRENT_PREFIX + "/me/mfa",

@@ -377,14 +377,14 @@ adjustment machinery; amounts never enter metrics; a payout return applied from 
 evidence. The transition catalogued nine invariants, taking the platform to **110**, and the
 Phase 8 set is **twenty-two**. 27 backlog items across eight milestones (M8.1–M8.8);
 [`SETTLEMENT_AND_RECONCILIATION_LIFECYCLES.md`](../domain/SETTLEMENT_AND_RECONCILIATION_LIFECYCLES.md)
-states nine machines and one born-once fact. **6 of 27 items complete** (M8.1 `CLOSED` at 3 of 3,
-M8.2 at 3 of 4): the modules and floors (`P8-TSK-001`), the source register, the encrypted file
-store and the door screen (`P8-TSK-002`), the upload door and attestation (`P8-TSK-003`), the
-expectation register with the card openers (`P8-TSK-004`), every other settling
-completion's opener with the register that proves them (`P8-TSK-005`) and the adjustment
-reason-code regime with reconciled positions closed to free adjustments (`P8-TSK-006`); next
-**`P8-TSK-007` — the opening position, the position proof and the completeness verifier** —
-`READY` ([§Current Task](#current-task) is kept current). *(This paragraph read "2 of 27 items complete
+states nine machines and one born-once fact. **7 of 27 items complete** (M8.1 `CLOSED` at 3 of 3,
+**M8.2, Every settling completion is expected, `CLOSED` at 4 of 4**): the modules and floors
+(`P8-TSK-001`), the source register, the file store and the door screen (`P8-TSK-002`), the
+upload door and attestation (`P8-TSK-003`), the expectation register with the card openers
+(`P8-TSK-004`), every other opener with the register that proves them (`P8-TSK-005`), the
+adjustment closure (`P8-TSK-006`) and the opening position with the two published verdicts
+(`P8-TSK-007`); next **`P8-TSK-008` — the PSP format: parse, normalise, reject whole** —
+`READY`, M8.3's first act ([§Current Task](#current-task) is kept current). *(This paragraph read "2 of 27 items complete
 (M8.1 at 2 of 3) ... next `P8-TSK-003`" through `P8-TSK-003`'s and `P8-TSK-004`'s gates, until
 `P8-TSK-005`'s record found it: the stale-second-copy class again, in the paragraph neither gate's
 record reached.)*
@@ -402,65 +402,87 @@ since M0.1". Moved, not edited.)*
 
 ## Current Task
 
-**`P8-TSK-007` — The opening position, the position proof and the completeness verifier** —
-`READY`. M8.2's closing act: `RECONCILIATION_ADMINISTER` and its disjoint
-`RECONCILIATION_CONTROLLER` (identity `V017`, owner decision O1); the keyed, audited
-opening-position backfill walking Phases 5–7's completed clearing operations through the live
-port's own path under `ON CONFLICT DO NOTHING`; and `PositionProof` in `app` — the position
-proof and the completeness verifier in one `REPEATABLE READ` transaction, report-only (the
-`TrialBalance` shape), publishing `finapp.reconciliation.position.proof`,
-`.line.unattributed` and `.expectation.open`, with the positions report under
-`RECONCILIATION_INVESTIGATE`. Its entry and field set are in [`BACKLOG.md`](BACKLOG.md);
-ADR-0067 §8–§9 are its map. **Not started.**
+**`P8-TSK-008` — The PSP format: parse, normalise, reject whole** — `READY`. M8.3's first
+act: a received PSP settlement report becomes one whole, canonical, immutable batch of typed
+lines, or is rejected whole with its errors recorded — the first half of `INV-SET-07` — with
+the provider's vocabulary confined to its adapter (`SettlementFormat`, `SIM_PSP_CSV` v1,
+settlement `V003`, the decline route moved from `-003`, the parse leg of the intake
+schedule). Its entry and field set are in [`BACKLOG.md`](BACKLOG.md); ADR-0065 §§2–4 are its
+map. **Not started.**
 
 ### Just completed
 
-**`P8-TSK-006` — Adjustments carry a reason code and an origin; reconciled positions are
-closed to free adjustments** — `COMPLETE` (2026-09-29). **M8.2 at 3 of 4**: the position
-proof's precondition — `INV-REV-04`'s reason code realised at both ranks, and a way to move
-money removed. **Ledger `V015`**: `reason_code` and `origin` with history defaults
-(`UNCODED`/`MANUAL`, no rewrite trigger fired, `INV-HIST-01`), the value lists and the
-code↔origin pairing `CHECK` generated from the enums, a `BEFORE INSERT` trigger refusing
-`UNCODED` for every writer (the default is the backfill AND the refusal funnel: a raw insert
-without a code dies at the database), the payload freeze re-stated over both new columns, and
-**the binding** — a `BEFORE INSERT` trigger refusing any `MANUAL`-origin line on
-`AccountPurpose.reconciledPositions()` (`SETTLEMENT_CLEARING`, `PAYOUT_CLEARING`,
-`INSTANT_CLEARING`, `SUSPENSE_UNMATCHED`; the list generated and pinned, `V016`–`V018`
-re-state it as the four Phase 8 purposes join). **The domain judges the binding before the
-idempotency claim** — a refused proposal never consumes its key, proven by replaying the same
-key legally — and **re-judges it at a `MANUAL` approval**: the one row the insert trigger
-cannot see (a proposal born before `V015`) was planted with triggers disabled and refused at
-approval, nothing posted. **The origin regime** (ADR-0071 §6, F-a): the generic door assigns
-`MANUAL_CORRECTION` server-side (request shape unchanged, additive under ADR-0015 — the view
-gains `origin` and `reasonCode`); generic approval and `DELETE` refuse a
-`RECONCILIATION`-origin proposal (`409 ledger.AdjustmentOriginMismatch` — ten racing generic
-approvals, ten refusals, zero entries, the new counted race) and the owned methods
-(`proposeOwned`/`approveOwned`/`rejectOwned`, joining the caller's transaction for
-`P8-TSK-015`) refuse `MANUAL`, with the seam confined to `com.finapp.reconciliation` by a
-static rule with planted-caller controls. All three audit records carry origin and reason
-code. **Decided at design (B14): `RECONCILIATION_OFFSET` dropped** — no Phase 8 kind produces
-it, the platform keeps no producerless member, a future producer widens the generated `CHECK`
-forward (recorded in ADR-0071). Three suites moved off clearing onto `FEE_REVENUE`, each move
-recorded — they wanted "some operational counterpart", and clearing stopped being one on
-purpose. **Seven probe runs, seven caught**: the uncoded-insert trigger, the binding
-trigger and the pairing `CHECK` dropped, the freeze re-statement reverted (the
-migrator rewrote `origin` where "approves what they read" belongs), the origin
-refusal removed (ten generic approvals posted where ten 409s belong), the
-pre-claim domain check removed (the trigger beneath still refused — the layering —
-but the door's 422 became a 500 and the key burned), and the approval re-check
-removed (the legacy row posted) — every verdict from the failing testcase, every
-restore byte-identical (`MUTATION_TESTING.md` §2, +3 rows under `INV-REV-04`,
-`INV-REC-06`, `INV-AUD-04`).
-Verified by targeted tiers from fresh runs on the final code: ledger hermetic 83
-across 16 suites, app hermetic 555 across 100 (the confinement rule, the mutation and
-OpenAPI guards within, after the records landed), app database 1100 across 133
-suites (the adjustment, schema and statement suites within), and the platform
-classification guard over the two new rows, all 0 failures; the full battery
-deliberately skipped on the owner's instruction.
+**`P8-TSK-007` — The opening position, the position proof and the completeness verifier** —
+`COMPLETE` (2026-09-29). **M8.2, Every settling completion is expected, CLOSES at 4 of 4**:
+history adopted and both verdicts published. **Identity `V017`** (owner decision O1's second,
+disjoint role): `RECONCILIATION_ADMINISTER`, held by **`RECONCILIATION_CONTROLLER`** alone —
+adopting history decides what every proof and break is judged against, so the controller is
+disjoint even from the operator desk it oversees (exact grants and pairwise disjointness in
+`RoleNameTest`; refused across desks over HTTP in both directions). **The backfill**
+(`POST /v1/operator/reconciliation/opening-position {reason}`): leaderless, paged by id — one
+bounded page per transaction, a crash leaves a prefix — walking every completed clearing
+operation through payments' and merchant's public read stores (seven new paging reads, each an
+administered, lock-free read), finding each entry by its posting key through the ledger's new
+`findByIdempotencyScope`, and opening **through the live recorder's own path** under
+`ON CONFLICT DO NOTHING` — an operation whose entry the key cannot find is skipped and
+counted, never guessed. The key records (per principal, the counts replayed byte for byte);
+the uniques converge the effect — proven by ten backfills racing a live burst, one expectation
+per operation, and by the storm's register **emptied as the platform's own root and rebuilt
+from the books alone**, every kind's copy returning. Audited
+`reconciliation.OpeningPositionRecorded` (reason required; counts only). **The verdicts**
+(`PositionProof`, the `TrialBalance` shape — lock-free, report and never repair, one
+`REPEATABLE READ` snapshot): the position proof — DR−CR per clearing and currency equals the
+signed `Money` fold of open remainders (`INBOUND` +, `OUTBOUND` −, never a SQL `SUM`) — and
+the completeness verifier — every line on a reconciled position known to the register, the
+every-writer detection ADR-0067 §9 buys without a ledger trigger. Published as
+`finapp.reconciliation.position.proof` and `.line.unattributed` per `purpose` (both must read
+0, both alerted; `SUSPENSE_UNMATCHED` honestly counts Phase 7's parkings until `-020`) and
+`.expectation.open` per `source` — counts never amounts (ADR-0072), NaN never zero, floored,
+`max()` never `sum()`. **The positions report**
+(`GET /v1/operator/reports/reconciliation/positions`, `RECONCILIATION_INVESTIGATE`): both
+sides of the identity with the difference — amounts, so every serving is audited
+(`reconciliation.ReportRead`). **Proven live**: the pre-Phase-8 world driven with quiet
+doubles then adopted, every adopted row proven against the LEDGER with the live openers' own
+helper; a planted missing expectation flips the proof AND completeness, repaired only by the
+reasoned backfill; a raw-SQL clearing line counted at once (observed in the writer's own
+uncommitted transaction, so the shared container never inherits the plant); the storm at rest:
+backfill adds nothing, every clearing purpose at proof 0 and unattributed 0, suspense counting
+exactly its parkings. **Six probe runs over five breaks, two honest survivals resolved**: the proof's sign
+convention inverted SURVIVED its first run — the suite's one captured-and-refunded world
+netted every clearing to zero, and zero is sign-blind — so the TEST was tightened, never
+the probe (a second, UNREFUNDED capture makes the card position's identity a judgment on
+a non-zero balance, asserted positive and equal to its remainders), and the re-run caught
+it in the identity's own words (DR-CR 12.00 EUR = open remainders -12.00 EUR); every line
+treated as known and the identity comparison bypassed each caught first run;
+`expectation_operation_once` dropped alone SURVIVED HONESTLY — `expectation_line_once`
+converged the ten racing backfills by itself, the equivalent mutant for this path (the
+operation unique's own kill is `P8-TSK-004`'s direct-register race) — and dropping BOTH
+uniques was caught, ten rows where exactly one belongs; every verdict read from the
+failing testcase, every restore byte-identical (`MUTATION_TESTING` section 2 +2 rows
+under `INV-REC-06` and `INV-SET-02`). **The gate's finds, each fixed**: the report's
+bound and `truncated` flag untested and untestable over HTTP (the live ceiling is ~12
+rows) — `render` became a package-private seam with a hermetic proof of the 101st row's
+announcement and each row's honest copy; the FULL app tier caught two registers the
+targeted runs never ran — `pageCompleted` classified `ADMINISTERED` in
+`OwnershipIsScopedTest` (the cursor is never a target) and `OpeningPositionRequest`
+pinned in `CredentialReachesNoEmittedSinkTest` (a REASON only); the storm's adds-nothing
+count was GLOBAL where its claim is the storm's own — in the full tier's shared container
+the backfill rightly adopts earlier suites' residue, so the assertion now scopes to the
+storm's entries; and ADR-0072's follow-up still said nothing-is-implemented-yet, stale
+since `P8-TSK-002` — corrected with the implemented ledger.
+Verified by targeted tiers from fresh runs on the final code — identity hermetic 124
+across 16 suites, ledger hermetic 83 across 16, payments hermetic 246 across 35,
+merchant hermetic 135 across 19, reconciliation hermetic 7 and database 11, app hermetic
+558 across 102 suites, the opening suite (4) and the storm re-run green targeted in the
+database tier, plus the document guards re-run fresh after the records landed, ALL 0
+FAILURES. One full app database sweep ran during the gate (1104 tests): its single
+failure was the storm's wrong-scoped adds-nothing count — the gate's own find, fixed and
+re-proven — and per the owner's instruction the tier was not re-run whole; the full
+battery deliberately skipped likewise, no fleet-wide database or kafka counts claimed.
 
 ### Previously
 
-The per-task completion records — 169 blocks, from `P8-TSK-005` back to project initiation
+The per-task completion records — 170 blocks, from `P8-TSK-006` back to project initiation
 (`X-TSK-004` cross-cutting, standing between `P7-TSK-001` and the Phase 6 → 7 transition) —
 are archived in [`history/TASK_HISTORY.md`](history/TASK_HISTORY.md).
 *(This pointer read "130 blocks, from `P6-TSK-005`" through four archivals — corrected by
@@ -479,10 +501,10 @@ archived verbatim in
 
 ## Active Work
 
-**Phase 8 is `IN_PROGRESS`** (2026-09-28) — 6 of 27 items complete; **M8.1 `CLOSED` at 3 of 3;
-M8.2, Every settling completion is expected, at 3 of 4** — the openers, the register and the
-adjustment closure; next `P8-TSK-007`, the opening position, the position proof and the
-completeness verifier
+**Phase 8 is `IN_PROGRESS`** (2026-09-28) — 7 of 27 items complete; **M8.1 `CLOSED` at 3 of 3;
+M8.2, Every settling completion is expected, `CLOSED` at 4 of 4** — the openers, the register,
+the adjustment closure, the opening position and the two published verdicts; next
+`P8-TSK-008`, the PSP format (M8.3 opens)
 ([§Current Task](#current-task) is kept current). Phase 7 is `COMPLETE` — 18 of 18
 items, M7.1–M7.8 closed, ruled by `P7-DOC-001` and confirmed after repair by the Phase 7 → 8
 transition ([`reviews/PHASE_7_TO_8_TRANSITION.md`](reviews/PHASE_7_TO_8_TRANSITION.md)). *(This
@@ -885,9 +907,9 @@ Resolved during initiation:
 
 ## Next Task
 
-**`P8-TSK-007`** — `READY` (the Current Task), marked by `P8-TSK-006`'s completion gate — its
-three dependencies (`-003` for `RECONCILIATION_INVESTIGATE`, `-005` for the openers, `-006` for
-the closed positions) are all `COMPLETE`.
+**`P8-TSK-008`** — `READY` (the Current Task), marked by `P8-TSK-007`'s completion gate — its
+dependencies (`-002` for the store and screen seam, `-003` for the decline route's door) are
+`COMPLETE`; M8.2 is closed, so M8.3, Evidence becomes canonical lines, opens.
 
 ### Superseded: the Phase 7 → 8 transition lead (read until 2026-09-28)
 

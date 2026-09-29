@@ -472,6 +472,16 @@ merchant's payable position.
 The pull's actions arrive with the pull (`P8-TSK-021`); the decline's with the parse leg
 (`P8-TSK-008`); the readmission's with `P8-TSK-022`.
 
+### `reconciliation` — `ReconciliationAuditAction`
+
+| Action | Reason required | What it records, and why |
+|---|---|---|
+| `reconciliation.OpeningPositionRecorded` | **Yes** | A reconciliation controller adopted the opening position (`P8-TSK-007`, ADR-0067 §8): Phases 5–7's completed clearing operations opened as tracked expectations through the live recorder's own path, converging on the register's uniques. One record per recorded run, keyed per principal and committed after the walk; the change summary carries the per-producer **counts only, never an amount** (`INV-AUD-02`), and the reason is the controller's own — adopting history decides what every proof and break is judged against, which is why the act demands one. |
+| `reconciliation.ReportRead` | No | Somebody was served a reconciliation report that carries amounts — the positions report first (`P8-TSK-007`, ADR-0072; the `payments.ChargebackRatioRead` precedent). One record per serving, committed in the reading's own transaction; the summary names the report and its shape, never its figures. |
+
+Matching's, the breaks' and the resolutions' actions arrive with their tasks (`P8-TSK-010`,
+`-015`); the repudiation's with `P8-TSK-023`.
+
 ### What is emitted, and what is declared not to be
 
 **The two registration actions are emitted; none of the three `platform` actions is**, and that is

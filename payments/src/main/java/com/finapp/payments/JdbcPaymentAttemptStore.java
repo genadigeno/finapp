@@ -764,6 +764,32 @@ public final class JdbcPaymentAttemptStore implements PaymentAttemptStore<Connec
         }
     }
 
+    @Override
+    public List<PaymentAttempt> pageByStatus(
+            Connection unitOfWork,
+            PaymentAttemptStatus status,
+            java.util.UUID after,
+            int limit) {
+        try (PreparedStatement select =
+                unitOfWork.prepareStatement(
+                        "SELECT " + COLUMNS + " FROM payments.payment_attempt"
+                                + " WHERE status = ? AND id > ? ORDER BY id LIMIT ?")) {
+            select.setString(1, status.name());
+            select.setObject(2, after);
+            select.setInt(3, limit);
+            try (ResultSet rows = select.executeQuery()) {
+                List<PaymentAttempt> page = new ArrayList<>();
+                while (rows.next()) {
+                    page.add(rehydrate(rows));
+                }
+                return List.copyOf(page);
+            }
+        } catch (SQLException failure) {
+            throw new PaymentsStorageException(
+                    DatabaseFailure.describe("paging attempts by status", failure));
+        }
+    }
+
     private static PaymentAttempt rehydrate(ResultSet row) throws SQLException {
         String authReference = row.getString("auth_reference");
         String captureReference = row.getString("capture_reference");

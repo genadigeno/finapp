@@ -1050,6 +1050,23 @@ class OwnershipIsScopedTest {
                                         + " stands in for an ownership check is that the platform"
                                         + " holds both halves.")),
                     Map.entry(
+                            "com.finapp.merchant.JdbcMerchantPayoutStore.pageCompleted",
+                            new Entry(
+                                    Scope.ADMINISTERED,
+                                    "P8-TSK-007. The opening-position backfill's walk over"
+                                        + " every merchant's completed payouts, deliberately"
+                                        + " cross-tenant: the reconciliation controller adopts"
+                                        + " history under RECONCILIATION_ADMINISTER"
+                                        + " (RoutePermissionRegisterTest pins the route; the"
+                                        + " cross-desk negatives are"
+                                        + " ReconciliationOpeningDatabaseTest's). The UUID is a"
+                                        + " paging cursor, never a target - rows are selected by"
+                                        + " status alone, id > ? only orders the walk, and the"
+                                        + " cursor's value is the last id of this same"
+                                        + " statement's previous page. Nothing it returns is"
+                                        + " served to a tenant: the walk opens expectations"
+                                        + " through the recorder and answers counts.")),
+                    Map.entry(
                             "com.finapp.merchant.JdbcMerchantStore.findById",
                             new Entry(
                                     Scope.ADMINISTERED,

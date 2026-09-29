@@ -290,5 +290,22 @@ public enum PermissionName {
      * bytes one already holds. One role holds both today; the vocabulary is precise so a later
      * split is a one-line change (the {@code FEE_ADMINISTER} shape).
      */
-    RECONCILIATION_INVESTIGATE
+    RECONCILIATION_INVESTIGATE,
+
+    /**
+     * Administer the reconciliation register itself (`P8-TSK-007`, ADR-0067 §8, owner
+     * decision O1's second, disjoint role): the one route today is the opening-position
+     * backfill, {@code POST /v1/operator/reconciliation/opening-position} — a reasoned,
+     * keyed, audited act that adopts Phases 5–7's completed clearing operations as tracked
+     * expectations. Names {@code reconciliation.OpeningPositionRecorded}; ships with its
+     * real check site.
+     *
+     * <p><strong>Distinct from {@link #RECONCILIATION_INVESTIGATE} and held by a different
+     * population</strong>: adopting history into the register shapes what every later proof
+     * and break is judged against, which is a stronger act than reading evidence or feeding
+     * it in — so it belongs to {@code RECONCILIATION_CONTROLLER}, pairwise disjoint from the
+     * operator desk it oversees, exactly as that desk is disjoint from the money-operating
+     * one it checks.
+     */
+    RECONCILIATION_ADMINISTER
 }

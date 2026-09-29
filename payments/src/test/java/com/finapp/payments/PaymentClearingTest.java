@@ -151,6 +151,13 @@ class PaymentClearingTest {
         private final Map<String, UUID> byAcquirerReference = new HashMap<>();
 
         @Override
+        public java.util.List<ClearingRecord> page(
+                Connection unitOfWork, UUID after, int limit) {
+            // P8-TSK-007: the opening-position backfill's page - not this suite's subject.
+            throw new UnsupportedOperationException("no backfill runs in this suite");
+        }
+
+        @Override
         public boolean insert(Connection unitOfWork, ClearingRecord fresh) {
             if (byAttempt.containsKey(fresh.attemptId().value())
                     || byAcquirerReference.containsKey(fresh.acquirerReference().value())) {

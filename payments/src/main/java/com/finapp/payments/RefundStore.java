@@ -145,6 +145,13 @@ public interface RefundStore<T> {
     Money sumCompletedFor(T unitOfWork, PaymentAttemptId attempt, CurrencyCode currency);
 
     /** {@code from → COMPLETED} with the provider's reference; the row count is the answer. */
+    /**
+     * The {@code COMPLETED} refunds with {@code id > after}, in id order, at most
+     * {@code limit} — the opening-position backfill's page (`P8-TSK-007`, ADR-0067 §8;
+     * the {@code pageByStatus} classification sentence, verbatim).
+     */
+    List<Refund> pageCompleted(T unitOfWork, java.util.UUID after, int limit);
+
     boolean complete(
             T unitOfWork, RefundId refund, RefundStatus from, ProviderReference providerReference);
 

@@ -22,4 +22,11 @@ public interface ClearingRecordStore<T> {
 
     /** The one clearing record of an attempt, if the rail has reported one. */
     Optional<ClearingRecord> findForAttempt(T unitOfWork, PaymentAttemptId attempt);
+
+    /**
+     * Every clearing record with {@code id > after}, in id order, at most {@code limit} —
+     * the opening-position backfill's page (`P8-TSK-007`, ADR-0067 §8: history's ARN
+     * aliases; the attempt store's {@code pageByStatus} classification sentence, verbatim).
+     */
+    java.util.List<ClearingRecord> page(T unitOfWork, java.util.UUID after, int limit);
 }

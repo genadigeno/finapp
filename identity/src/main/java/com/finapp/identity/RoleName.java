@@ -152,7 +152,22 @@ public enum RoleName {
     RECONCILIATION_OPERATOR(
             EnumSet.of(
                     PermissionName.SETTLEMENT_INGEST,
-                    PermissionName.RECONCILIATION_INVESTIGATE));
+                    PermissionName.RECONCILIATION_INVESTIGATE)),
+
+    /**
+     * Controls the reconciliation register (`P8-TSK-007`, ADR-0067 §8, owner decision O1's
+     * second role): performs the opening-position backfill — and, as later tasks land, the
+     * register-shaping acts of their kind — over the surfaces that check
+     * {@link PermissionName#RECONCILIATION_ADMINISTER}.
+     *
+     * <p><strong>A sixth role, because this IS a distinct trust decision</strong>: adopting
+     * history into the register decides what every proof and break is judged against, which
+     * is neither feeding evidence in nor investigating it ({@link #RECONCILIATION_OPERATOR}
+     * — the desk this one oversees), and certainly not operating the money. Holds none of
+     * the other populations' permissions and they hold none of this, asserted pairwise and
+     * over HTTP in both directions ({@code INV-AUD-03}).
+     */
+    RECONCILIATION_CONTROLLER(EnumSet.of(PermissionName.RECONCILIATION_ADMINISTER));
 
     private final Set<PermissionName> permissions;
 

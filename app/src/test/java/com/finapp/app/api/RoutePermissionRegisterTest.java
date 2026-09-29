@@ -108,7 +108,14 @@ class RoutePermissionRegisterTest {
                     entry("GET /v1/operator/settlement/files", PermissionName.RECONCILIATION_INVESTIGATE),
                     entry("GET /v1/operator/settlement/files/{id}", PermissionName.RECONCILIATION_INVESTIGATE),
                     entry("GET /v1/operator/settlement/refused-deliveries", PermissionName.RECONCILIATION_INVESTIGATE),
-                    entry("POST /v1/operator/settlement/files/{id}/content-reads", PermissionName.RECONCILIATION_INVESTIGATE)));
+                    entry("POST /v1/operator/settlement/files/{id}/content-reads", PermissionName.RECONCILIATION_INVESTIGATE),
+                    // The reconciliation controller's own door (P8-TSK-007, ADR-0067
+                    // section 8): adopting history is the CONTROLLER's act, a population
+                    // disjoint even from the operator desk it oversees; the positions
+                    // report - amounts on the record, audited per serving (ADR-0072) -
+                    // stays the investigator's.
+                    entry("POST /v1/operator/reconciliation/opening-position", PermissionName.RECONCILIATION_ADMINISTER),
+                    entry("GET /v1/operator/reports/reconciliation/positions", PermissionName.RECONCILIATION_INVESTIGATE)));
 
     /** The MVC mapping, by name - actuator registers a second one (the rule test's reason). */
     @Autowired

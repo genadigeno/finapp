@@ -508,9 +508,23 @@ transaction).
   `ExpectationOpenerRegisterTest`, its per-completion proof the shared ledger-backed
   `ClearingLineCopies` helper; the storms read every clearing line's copy in each round's
   snapshot and at rest.
-- `P8-TSK-007`: the opening-position backfill, the position proof and the completeness verifier.
-  Its "unattributed 0" is reached on the clearing purposes there, and on `SUSPENSE_UNMATCHED` with
-  `P8-TSK-020`.
+- `P8-TSK-007` — **implemented** (2026-09-29): the backfill of point 8 as decided —
+  `POST /v1/operator/reconciliation/opening-position {reason}` under
+  `RECONCILIATION_ADMINISTER` (identity `V017`, `RECONCILIATION_CONTROLLER`), keyed per
+  principal with the record committed after the walk, leaderless and paged by id through
+  payments' and merchant's public read stores, each entry found by its posting key
+  (`JournalEntryStore.findByIdempotencyScope`) and opened **through the live recorder's own
+  path** `ON CONFLICT DO NOTHING` — never guessed, skips counted, audited with counts only.
+  The register and verifier of point 9 as decided but for one recorded narrowing: the
+  completeness verifier is `PositionProof` in `app` (one `REPEATABLE READ` snapshot beside
+  the position proof, the `TrialBalance` shape, report and never repair), its known-entry
+  list today exactly "an expectation names the line" — the suspense item and the Phase 8
+  records join it with their tasks, and `SUSPENSE_UNMATCHED` truthfully reads above zero
+  until `P8-TSK-020`. `finapp.reconciliation.position.proof`, `.line.unattributed` and
+  `.expectation.open` published as §9 says (counts never amounts, NaN never zero); the
+  incremental-watermark scale path stays recorded, not built. Demonstrated: the storm's
+  register emptied as the platform's own root and rebuilt from the books alone, every kind's
+  copy returning — point 8's claim across every opener at once.
 - `P8-TSK-010`: `DUPLICATE_INTERNAL` raised from recorded collisions.
 - `P8-TSK-019`: the payout return's expectation through `PayoutSettlementExpectations`, opening
   no key and reached through its operation (point 5), and the return worker that the
