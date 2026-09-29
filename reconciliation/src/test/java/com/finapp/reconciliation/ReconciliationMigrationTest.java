@@ -139,7 +139,11 @@ class ReconciliationMigrationTest {
                         "break_evidence_link",
                         "park",
                         "suspense_item",
-                        "suspense_release");
+                        "suspense_release",
+                        // V005 (P8-TSK-011): the decisions, candidates and allocations.
+                        "match_decision",
+                        "match_candidate",
+                        "allocation");
 
         assertThatExceptionOfType(SQLException.class)
                 .isThrownBy(() -> asApplication(

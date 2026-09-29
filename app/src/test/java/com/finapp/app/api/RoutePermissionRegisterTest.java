@@ -121,7 +121,14 @@ class RoutePermissionRegisterTest {
                     // report - amounts on the record, audited per serving (ADR-0072) -
                     // stays the investigator's.
                     entry("POST /v1/operator/reconciliation/opening-position", PermissionName.RECONCILIATION_ADMINISTER),
-                    entry("GET /v1/operator/reports/reconciliation/positions", PermissionName.RECONCILIATION_INVESTIGATE)));
+                    entry("GET /v1/operator/reports/reconciliation/positions", PermissionName.RECONCILIATION_INVESTIGATE),
+                    // The matcher's explanation doors (P8-TSK-011, ADR-0068 section 7):
+                    // a decision explains itself from stored rows alone; every door the
+                    // investigator's, read-only.
+                    entry("GET /v1/operator/reconciliation/runs", PermissionName.RECONCILIATION_INVESTIGATE),
+                    entry("GET /v1/operator/reconciliation/runs/{id}", PermissionName.RECONCILIATION_INVESTIGATE),
+                    entry("GET /v1/operator/reconciliation/decisions/{id}", PermissionName.RECONCILIATION_INVESTIGATE),
+                    entry("GET /v1/operator/reconciliation/allocations/{id}", PermissionName.RECONCILIATION_INVESTIGATE)));
 
     /** The MVC mapping, by name - actuator registers a second one (the rule test's reason). */
     @Autowired

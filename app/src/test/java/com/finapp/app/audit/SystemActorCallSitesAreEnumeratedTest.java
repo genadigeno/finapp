@@ -318,7 +318,20 @@ class SystemActorCallSitesAreEnumeratedTest {
                         + " exactly what happened; the acceptance's audit record is"
                         + " acting-only by design, and a losing racer records nothing. The"
                         + " scope wraps each file's own transaction; the candidate read"
-                        + " before it claims nothing."));
+                        + " before it claims nothing."),
+                    Map.entry(
+                            "com.finapp.reconciliation.Matching.sweep",
+                    "The matcher's run leg (P8-TSK-011, ADR-0068 section 3): a scheduled"
+                        + " decision over locked, stored rows has no person at all - the"
+                        + " accept leg's case one hop later. A match is a pure function of"
+                        + " the pinned rule set and the frozen evidence; attributing an"
+                        + " allocation, a break or a park to any person would record them"
+                        + " as having judged money at a moment they chose nothing. The"
+                        + " decision, its audit record and its events are acting-only by"
+                        + " design; a person's later act on a break runs as that person"
+                        + " through the break's own doors. The scope wraps the whole"
+                        + " sweep, one transaction per chunk inside it; the worklist read"
+                        + " claims nothing."));
 
     @Test
     @DisplayName("no production code claims the system actor without being enumerated")

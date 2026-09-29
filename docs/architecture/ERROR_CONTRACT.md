@@ -594,6 +594,20 @@ and produces neither. `settlement.BatchNotFound` (404, `P8-TSK-008`) is the `Fil
 departure's reasoning at the batch read: unknown and malformed ids one answer, nothing
 recorded.
 
+### `reconciliation` — `ReconciliationErrorCode`
+
+| Code | Status | Meaning |
+|---|---|---|
+| `reconciliation.RunNotFound` | 404 | No reconciliation run has this identifier. |
+| `reconciliation.DecisionNotFound` | 404 | No match decision has this identifier. |
+| `reconciliation.AllocationNotFound` | 404 | No allocation has this identifier. |
+
+The matcher's explanation doors (`P8-TSK-011`, ADR-0068 §7). All three follow the
+`settlement.FileNotFound` departure: every route sits behind
+`RECONCILIATION_INVESTIGATE`, so the surface is no oracle over anyone else's resources,
+and an investigator chasing a break is told plainly that the id is wrong — unknown and
+malformed ids are still ONE answer, and a guessed id records nothing.
+
 ## 3a. Rejection at the boundary
 
 Untrusted input is refused before any domain code runs (`P0-TSK-025`).

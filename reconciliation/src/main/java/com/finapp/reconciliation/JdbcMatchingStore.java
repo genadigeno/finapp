@@ -1,0 +1,894 @@
+package com.finapp.reconciliation;
+
+import com.finapp.platform.security.Actor;
+import com.finapp.sharedkernel.correlation.CorrelationId;
+import com.finapp.sharedkernel.money.CurrencyCode;
+import com.finapp.sharedkernel.money.Money;
+import java.sql.Connection;
+import java.sql.PreparedStatement;
+import java.sql.ResultSet;
+import java.sql.SQLException;
+import java.sql.Timestamp;
+import java.time.Instant;
+import java.time.LocalDate;
+import java.util.AbstractMap;
+import java.util.ArrayList;
+import java.util.Collection;
+import java.util.EnumMap;
+import java.util.HashMap;
+import java.util.LinkedHashMap;
+import java.util.List;
+import java.util.Map;
+import java.util.Optional;
+import java.util.TreeSet;
+import java.util.UUID;
+
+/** {@link MatchingStore} over JDBC (ADR-0033: explicit SQL, no mapper). */
+public final class JdbcMatchingStore implements MatchingStore {
+
+    // ------------------------------------------------------------------ runs
+
+    private static final String RUN_COLUMNS =
+            "id, source_id, batch_id, status, rule_set_id, source_sequence, item_count,"
+                    + " cursor, failures, business_date, correlation_id";
+
+    @Override
+    public List<UUID> sourcesWithWork(Connection unitOfWork) {
+        try (PreparedStatement read =
+                unitOfWork.prepareStatement(
+                        "SELECT DISTINCT source_id FROM reconciliation.reconciliation_batch"
+                                + " WHERE kind = 'BATCH' AND status IN ('OPEN',"
+                                + " 'IN_PROGRESS') ORDER BY source_id")) {
+            try (ResultSet rows = read.executeQuery()) {
+                List<UUID> sources = new ArrayList<>();
+                while (rows.next()) {
+                    sources.add(rows.getObject("source_id", UUID.class));
+                }
+                return List.copyOf(sources);
+            }
+        } catch (SQLException failure) {
+            throw new ReconciliationStorageException("could not list the worklist", failure);
+        }
+    }
+
+    @Override
+    public Optional<RunRow> eligibleRun(Connection unitOfWork, UUID sourceId) {
+        try (PreparedStatement read =
+                unitOfWork.prepareStatement(
+                        "SELECT " + RUN_COLUMNS
+                                + " FROM reconciliation.reconciliation_batch r"
+                                + " WHERE r.source_id = ? AND r.kind = 'BATCH'"
+                                + " AND r.status IN ('OPEN', 'IN_PROGRESS')"
+                                // Source-sequence order, and a BLOCKED (or any incomplete)
+                                // lower sequence holds the source (ADR-0068 section 4).
+                                + " AND NOT EXISTS (SELECT 1 FROM"
+                                + " reconciliation.reconciliation_batch e"
+                                + " WHERE e.source_id = r.source_id AND e.kind = 'BATCH'"
+                                + " AND e.source_sequence < r.source_sequence"
+                                + " AND e.status <> 'COMPLETED')"
+                                + " ORDER BY r.source_sequence LIMIT 1")) {
+            read.setObject(1, sourceId);
+            try (ResultSet row = read.executeQuery()) {
+                return row.next() ? Optional.of(runRow(row)) : Optional.empty();
+            }
+        } catch (SQLException failure) {
+            throw new ReconciliationStorageException(
+                    "could not read the eligible run", failure);
+        }
+    }
+
+    private RunRow runRow(ResultSet row) throws SQLException {
+        Long sequence = row.getObject("source_sequence", Long.class);
+        return new RunRow(
+                row.getObject("id", UUID.class),
+                row.getObject("source_id", UUID.class),
+                row.getObject("batch_id", UUID.class),
+                RunStatus.valueOf(row.getString("status")),
+                row.getObject("rule_set_id", UUID.class),
+                sequence == null ? 0L : sequence,
+                row.getInt("item_count"),
+                row.getLong("cursor"),
+                row.getInt("failures"),
+                row.getObject("business_date", LocalDate.class),
+                row.getString("correlation_id"));
+    }
+
+    @Override
+    public boolean markRunInProgress(
+            Connection unitOfWork, UUID runId, Actor actor, Instant at) {
+        return moveRun(unitOfWork, runId, "OPEN", "IN_PROGRESS", actor, at);
+    }
+
+    @Override
+    public boolean completeRun(Connection unitOfWork, UUID runId, Actor actor, Instant at) {
+        boolean fromInProgress =
+                moveRun(unitOfWork, runId, "IN_PROGRESS", "COMPLETED", actor, at);
+        // The empty run's own edge: OPEN -> COMPLETED (item_count = 0).
+        return fromInProgress || moveRun(unitOfWork, runId, "OPEN", "COMPLETED", actor, at);
+    }
+
+    @Override
+    public boolean blockRun(Connection unitOfWork, UUID runId, Actor actor, Instant at) {
+        return moveRun(unitOfWork, runId, "IN_PROGRESS", "BLOCKED", actor, at)
+                || moveRun(unitOfWork, runId, "OPEN", "BLOCKED", actor, at);
+    }
+
+    private boolean moveRun(
+            Connection unitOfWork,
+            UUID runId,
+            String from,
+            String to,
+            Actor actor,
+            Instant at) {
+        try (PreparedStatement update =
+                unitOfWork.prepareStatement(
+                        "UPDATE reconciliation.reconciliation_batch SET status = ?,"
+                                + " status_changed_at = ? WHERE id = ? AND status = ?")) {
+            update.setString(1, to);
+            update.setTimestamp(2, Timestamp.from(at));
+            update.setObject(3, runId);
+            update.setString(4, from);
+            if (update.executeUpdate() != 1) {
+                return false;
+            }
+        } catch (SQLException failure) {
+            throw new ReconciliationStorageException("could not move the run", failure);
+        }
+        try (PreparedStatement insert =
+                unitOfWork.prepareStatement(
+                        "INSERT INTO reconciliation.reconciliation_batch_event (run_id,"
+                                + " from_status, to_status, actor, actor_type, reason,"
+                                + " occurred_at, correlation_id)"
+                                + " VALUES (?, ?, ?, ?, ?, NULL, ?, ?)")) {
+            insert.setObject(1, runId);
+            insert.setString(2, from);
+            insert.setString(3, to);
+            insert.setString(4, actor.id());
+            insert.setString(5, actor.type().name());
+            insert.setTimestamp(6, Timestamp.from(at));
+            insert.setString(7, "run:" + runId);
+            insert.executeUpdate();
+            return true;
+        } catch (SQLException failure) {
+            throw new ReconciliationStorageException(
+                    "could not append the run's history", failure);
+        }
+    }
+
+    @Override
+    public void advanceCursor(
+            Connection unitOfWork, UUID runId, long lastLineNo, Instant at) {
+        try (PreparedStatement update =
+                unitOfWork.prepareStatement(
+                        "UPDATE reconciliation.reconciliation_batch SET cursor = ?,"
+                                + " failures = 0, status_changed_at = ?"
+                                + " WHERE id = ? AND cursor < ?")) {
+            update.setLong(1, lastLineNo);
+            update.setTimestamp(2, Timestamp.from(at));
+            update.setObject(3, runId);
+            update.setLong(4, lastLineNo);
+            update.executeUpdate();
+        } catch (SQLException failure) {
+            throw new ReconciliationStorageException(
+                    "could not advance the cursor", failure);
+        }
+    }
+
+    @Override
+    public int bumpRunFailures(Connection unitOfWork, UUID runId, Instant at) {
+        try (PreparedStatement update =
+                unitOfWork.prepareStatement(
+                        "UPDATE reconciliation.reconciliation_batch SET failures ="
+                                + " failures + 1, status_changed_at = ? WHERE id = ?"
+                                + " RETURNING failures")) {
+            update.setTimestamp(1, Timestamp.from(at));
+            update.setObject(2, runId);
+            try (ResultSet row = update.executeQuery()) {
+                row.next();
+                return row.getInt("failures");
+            }
+        } catch (SQLException failure) {
+            throw new ReconciliationStorageException(
+                    "could not record the run's failure", failure);
+        }
+    }
+
+    // ------------------------------------------------------------------ the chunk
+
+    @Override
+    public List<ChunkItem> chunkItems(
+            Connection unitOfWork, UUID runId, long cursor, int limit) {
+        Map<UUID, ChunkItemBuilder> builders = new LinkedHashMap<>();
+        try (PreparedStatement read =
+                unitOfWork.prepareStatement(
+                        "SELECT i.id, i.line_no, i.line_type, i.direction, i.amount_minor, i.position_purpose,"
+                                + " i.currency, i.scale, i.business_date,"
+                                + " i.settlement_date, i.canonical_fingerprint,"
+                                + " r.source_sequence"
+                                + " FROM reconciliation.external_item i"
+                                + " JOIN reconciliation.reconciliation_batch r"
+                                + " ON r.id = i.run_id"
+                                + " WHERE i.run_id = ? AND i.line_no > ?"
+                                + " ORDER BY i.line_no LIMIT ?")) {
+            read.setObject(1, runId);
+            read.setLong(2, cursor);
+            read.setInt(3, limit);
+            try (ResultSet rows = read.executeQuery()) {
+                while (rows.next()) {
+                    ChunkItemBuilder builder = new ChunkItemBuilder();
+                    builder.id = rows.getObject("id", UUID.class);
+                    builder.lineNo = rows.getLong("line_no");
+                    builder.lineType = ExternalLineType.valueOf(rows.getString("line_type"));
+                    builder.direction =
+                            ExpectationDirection.valueOf(rows.getString("direction"));
+                    builder.amount =
+                            Money.ofPersisted(
+                                    rows.getLong("amount_minor"),
+                                    CurrencyCode.of(rows.getString("currency").trim()),
+                                    rows.getInt("scale"));
+                    builder.positionPurpose =
+                            com.finapp.ledger.AccountPurpose.valueOf(
+                                    rows.getString("position_purpose"));
+                    builder.businessDate = rows.getObject("business_date", LocalDate.class);
+                    builder.settlementDate =
+                            Optional.ofNullable(
+                                    rows.getObject("settlement_date", LocalDate.class));
+                    builder.fingerprint = rows.getBytes("canonical_fingerprint");
+                    Long sequence = rows.getObject("source_sequence", Long.class);
+                    builder.sourceSequence = sequence == null ? 0L : sequence;
+                    builders.put(builder.id, builder);
+                }
+            }
+        } catch (SQLException failure) {
+            throw new ReconciliationStorageException("could not read the chunk", failure);
+        }
+        if (builders.isEmpty()) {
+            return List.of();
+        }
+        try (PreparedStatement read =
+                unitOfWork.prepareStatement(
+                        "SELECT item_id, key_kind, key_value FROM"
+                                + " reconciliation.external_item_key"
+                                + " WHERE item_id = ANY (?)")) {
+            read.setArray(
+                    1, unitOfWork.createArrayOf("uuid", builders.keySet().toArray()));
+            try (ResultSet rows = read.executeQuery()) {
+                while (rows.next()) {
+                    builders.get(rows.getObject("item_id", UUID.class))
+                            .keys
+                            .put(
+                                    ItemKeyKind.valueOf(rows.getString("key_kind")),
+                                    rows.getString("key_value"));
+                }
+            }
+        } catch (SQLException failure) {
+            throw new ReconciliationStorageException(
+                    "could not read the chunk's keys", failure);
+        }
+        return builders.values().stream().map(ChunkItemBuilder::build).toList();
+    }
+
+    private static final class ChunkItemBuilder {
+        UUID id;
+        long lineNo;
+        ExternalLineType lineType;
+        ExpectationDirection direction;
+        Money amount;
+        com.finapp.ledger.AccountPurpose positionPurpose;
+        LocalDate businessDate;
+        Optional<LocalDate> settlementDate;
+        byte[] fingerprint;
+        long sourceSequence;
+        final Map<ItemKeyKind, String> keys = new EnumMap<>(ItemKeyKind.class);
+
+        ChunkItem build() {
+            return new ChunkItem(
+                    id, lineNo, lineType, direction, amount, positionPurpose, businessDate,
+                    settlementDate, fingerprint, sourceSequence, keys);
+        }
+    }
+
+    @Override
+    public boolean fingerprintSeenEarlier(
+            Connection unitOfWork,
+            UUID sourceId,
+            byte[] fingerprint,
+            long sourceSequence,
+            long lineNo) {
+        try (PreparedStatement read =
+                unitOfWork.prepareStatement(
+                        "SELECT 1 FROM reconciliation.external_item i"
+                                + " JOIN reconciliation.reconciliation_batch r"
+                                + " ON r.id = i.run_id"
+                                + " WHERE i.source_id = ? AND i.canonical_fingerprint = ?"
+                                + " AND (r.source_sequence < ? OR (r.source_sequence = ?"
+                                + " AND i.line_no < ?)) LIMIT 1")) {
+            read.setObject(1, sourceId);
+            read.setBytes(2, fingerprint);
+            read.setLong(3, sourceSequence);
+            read.setLong(4, sourceSequence);
+            read.setLong(5, lineNo);
+            try (ResultSet row = read.executeQuery()) {
+                return row.next();
+            }
+        } catch (SQLException failure) {
+            throw new ReconciliationStorageException(
+                    "could not judge the fingerprint's claimant order", failure);
+        }
+    }
+
+    @Override
+    public List<UUID> expectationsByKey(
+            Connection unitOfWork, UUID sourceId, KeyKind kind, String value) {
+        try (PreparedStatement read =
+                unitOfWork.prepareStatement(
+                        "SELECT expectation_id FROM reconciliation.expectation_key"
+                                + " WHERE source_id = ? AND key_kind = ? AND"
+                                + " key_value = ?")) {
+            read.setObject(1, sourceId);
+            read.setString(2, kind.name());
+            read.setString(3, value);
+            try (ResultSet rows = read.executeQuery()) {
+                List<UUID> hits = new ArrayList<>();
+                while (rows.next()) {
+                    hits.add(rows.getObject("expectation_id", UUID.class));
+                }
+                return List.copyOf(hits);
+            }
+        } catch (SQLException failure) {
+            throw new ReconciliationStorageException(
+                    "could not resolve the key", failure);
+        }
+    }
+
+    @Override
+    public Optional<Map.Entry<KeyKind, String>> aliasAnchor(
+            Connection unitOfWork, UUID sourceId, KeyKind kind, String value) {
+        try (PreparedStatement read =
+                unitOfWork.prepareStatement(
+                        "SELECT anchor_kind, anchor_value FROM"
+                                + " reconciliation.reference_alias"
+                                + " WHERE source_id = ? AND key_kind = ? AND"
+                                + " key_value = ?")) {
+            read.setObject(1, sourceId);
+            read.setString(2, kind.name());
+            read.setString(3, value);
+            try (ResultSet row = read.executeQuery()) {
+                if (!row.next()) {
+                    return Optional.empty();
+                }
+                return Optional.of(
+                        new AbstractMap.SimpleImmutableEntry<>(
+                                KeyKind.valueOf(row.getString("anchor_kind")),
+                                row.getString("anchor_value")));
+            }
+        } catch (SQLException failure) {
+            throw new ReconciliationStorageException(
+                    "could not resolve the alias", failure);
+        }
+    }
+
+    @Override
+    public List<MatchEngine.HitFacts> lockExpectations(
+            Connection unitOfWork,
+            Collection<UUID> expectationIds,
+            Map<UUID, KeyKind> reachedBy) {
+        List<MatchEngine.HitFacts> facts = new ArrayList<>();
+        for (UUID id : new TreeSet<>(expectationIds)) {
+            try (PreparedStatement read =
+                    unitOfWork.prepareStatement(
+                            "SELECT kind, direction, amount_minor, currency, scale,"
+                                    + " allocated_minor, resolved_minor, opened_at,"
+                                    + " expected_by, status, operation_ref"
+                                    + " FROM reconciliation.expectation WHERE id = ?"
+                                    + " FOR UPDATE")) {
+                read.setObject(1, id);
+                try (ResultSet row = read.executeQuery()) {
+                    if (!row.next()) {
+                        throw new ReconciliationStorageException(
+                                "expectation " + id + " vanished under a key that names"
+                                        + " it: the register is append-only");
+                    }
+                    long remainder =
+                            "RESOLVED_BY_ADJUSTMENT".equals(row.getString("status"))
+                                    ? 0L
+                                    : row.getLong("amount_minor")
+                                            - row.getLong("allocated_minor")
+                                            - row.getLong("resolved_minor");
+                    facts.add(
+                            new MatchEngine.HitFacts(
+                                    id,
+                                    ExpectationKind.valueOf(row.getString("kind")),
+                                    ExpectationDirection.valueOf(
+                                            row.getString("direction")),
+                                    Money.ofPersisted(
+                                            row.getLong("amount_minor"),
+                                            CurrencyCode.of(
+                                                    row.getString("currency").trim()),
+                                            row.getInt("scale")),
+                                    Math.max(0L, remainder),
+                                    row.getTimestamp("opened_at").toInstant(),
+                                    row.getObject("expected_by", LocalDate.class),
+                                    reachedBy.get(id),
+                                    row.getString("operation_ref")));
+                }
+            } catch (SQLException failure) {
+                throw new ReconciliationStorageException(
+                        "could not lock the candidates", failure);
+            }
+        }
+        return List.copyOf(facts);
+    }
+
+    @Override
+    public void lockItems(Connection unitOfWork, Collection<UUID> itemIds) {
+        for (UUID id : new TreeSet<>(itemIds)) {
+            try (PreparedStatement read =
+                    unitOfWork.prepareStatement(
+                            "SELECT id FROM reconciliation.external_item WHERE id = ?"
+                                    + " FOR UPDATE")) {
+                read.setObject(1, id);
+                read.executeQuery().close();
+            } catch (SQLException failure) {
+                throw new ReconciliationStorageException(
+                        "could not lock the chunk's items", failure);
+            }
+        }
+    }
+
+    // ------------------------------------------------------------------ writes
+
+    @Override
+    public void insertDecision(Connection unitOfWork, NewDecision decision) {
+        try (PreparedStatement insert =
+                unitOfWork.prepareStatement(
+                        "INSERT INTO reconciliation.match_decision (id, external_item_id,"
+                                + " run_id, origin, rule_set_id, rule_priority, strategy,"
+                                + " matched_key_kind, outcome, claimant_rank,"
+                                + " claimant_count, date_deviation_days,"
+                                + " timing_tolerance_days, decided_by, decided_by_type,"
+                                + " decided_at, decided_on, correlation_id)"
+                                + " VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?,"
+                                + " ?, ?, ?)")) {
+            insert.setObject(1, decision.id());
+            insert.setObject(2, decision.externalItemId());
+            insert.setObject(3, decision.runId());
+            insert.setString(4, decision.origin().name());
+            insert.setObject(5, decision.ruleSetId());
+            insert.setObject(6, decision.rulePriority().orElse(null));
+            insert.setString(7, decision.strategy().map(Enum::name).orElse(null));
+            insert.setString(8, decision.matchedKeyKind().map(Enum::name).orElse(null));
+            insert.setString(9, decision.outcome().name());
+            insert.setObject(10, decision.claimantRank().orElse(null));
+            insert.setObject(11, decision.claimantCount().orElse(null));
+            insert.setObject(12, decision.dateDeviationDays().orElse(null));
+            insert.setObject(13, decision.timingToleranceDays().orElse(null));
+            insert.setString(14, decision.decidedBy().id());
+            insert.setString(15, decision.decidedBy().type().name());
+            insert.setTimestamp(16, Timestamp.from(decision.decidedAt()));
+            insert.setObject(17, decision.decidedOn());
+            insert.setString(18, decision.correlation().value());
+            insert.executeUpdate();
+        } catch (SQLException failure) {
+            throw new ReconciliationStorageException(
+                    "could not store the decision", failure);
+        }
+    }
+
+    @Override
+    public void insertCandidates(
+            Connection unitOfWork, UUID decisionId, List<MatchEngine.HitFacts> candidates) {
+        if (candidates.isEmpty()) {
+            return;
+        }
+        try (PreparedStatement insert =
+                unitOfWork.prepareStatement(
+                        "INSERT INTO reconciliation.match_candidate (decision_id,"
+                                + " expectation_id, key_kind, amount_minor, currency,"
+                                + " scale, direction, remainder_before_minor, opened_at)"
+                                + " VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)")) {
+            for (MatchEngine.HitFacts candidate : candidates) {
+                insert.setObject(1, decisionId);
+                insert.setObject(2, candidate.expectationId());
+                insert.setString(3, candidate.reachedBy().name());
+                insert.setLong(4, candidate.amount().minorUnits());
+                insert.setString(5, candidate.amount().currency().code());
+                insert.setInt(6, candidate.amount().scale());
+                insert.setString(7, candidate.direction().name());
+                insert.setLong(8, candidate.remainderMinor());
+                insert.setTimestamp(9, Timestamp.from(candidate.openedAt()));
+                insert.addBatch();
+            }
+            insert.executeBatch();
+        } catch (SQLException failure) {
+            throw new ReconciliationStorageException(
+                    "could not store the candidate snapshot", failure);
+        }
+    }
+
+    @Override
+    public void insertAllocation(Connection unitOfWork, NewAllocation allocation) {
+        try (PreparedStatement insert =
+                unitOfWork.prepareStatement(
+                        "INSERT INTO reconciliation.allocation (id, decision_id,"
+                                + " external_item_id, expectation_id, amount_minor,"
+                                + " currency, scale, reverses_allocation_id, created_at,"
+                                + " correlation_id)"
+                                + " VALUES (?, ?, ?, ?, ?, ?, ?, NULL, ?, ?)")) {
+            insert.setObject(1, allocation.id());
+            insert.setObject(2, allocation.decisionId());
+            insert.setObject(3, allocation.externalItemId());
+            insert.setObject(4, allocation.expectationId());
+            insert.setLong(5, allocation.amount().minorUnits());
+            insert.setString(6, allocation.amount().currency().code());
+            insert.setInt(7, allocation.amount().scale());
+            insert.setTimestamp(8, Timestamp.from(allocation.at()));
+            insert.setString(9, allocation.correlation().value());
+            insert.executeUpdate();
+        } catch (SQLException failure) {
+            throw new ReconciliationStorageException(
+                    "could not store the allocation", failure);
+        }
+    }
+
+    @Override
+    public ExpectationStatus allocateToExpectation(
+            Connection unitOfWork,
+            UUID expectationId,
+            Money amount,
+            String detail,
+            Actor actor,
+            Instant at,
+            CorrelationId correlation) {
+        String status;
+        try (PreparedStatement update =
+                unitOfWork.prepareStatement(
+                        "UPDATE reconciliation.expectation SET"
+                                + " allocated_minor = allocated_minor + ?,"
+                                + " status = CASE WHEN allocated_minor + ? +"
+                                + " resolved_minor >= amount_minor THEN 'SETTLED'"
+                                + " ELSE 'PARTIALLY_SETTLED' END,"
+                                + " status_changed_at = ?"
+                                + " WHERE id = ? RETURNING status")) {
+            update.setLong(1, amount.minorUnits());
+            update.setLong(2, amount.minorUnits());
+            update.setTimestamp(3, Timestamp.from(at));
+            update.setObject(4, expectationId);
+            try (ResultSet row = update.executeQuery()) {
+                if (!row.next()) {
+                    throw new ReconciliationStorageException(
+                            "expectation " + expectationId + " vanished under its lock");
+                }
+                status = row.getString("status");
+            }
+        } catch (SQLException failure) {
+            throw new ReconciliationStorageException(
+                    "could not allocate to the expectation", failure);
+        }
+        try (PreparedStatement insert =
+                unitOfWork.prepareStatement(
+                        "INSERT INTO reconciliation.expectation_event (expectation_id,"
+                                + " event_type, detail, actor, actor_type, occurred_at,"
+                                + " correlation_id) VALUES (?, 'ALLOCATED', ?, ?, ?, ?,"
+                                + " ?)")) {
+            insert.setObject(1, expectationId);
+            insert.setString(2, detail);
+            insert.setString(3, actor.id());
+            insert.setString(4, actor.type().name());
+            insert.setTimestamp(5, Timestamp.from(at));
+            insert.setString(6, correlation.value());
+            insert.executeUpdate();
+        } catch (SQLException failure) {
+            throw new ReconciliationStorageException(
+                    "could not append the expectation's history", failure);
+        }
+        return ExpectationStatus.valueOf(status);
+    }
+
+    @Override
+    public void bumpResidualOnSubjects(
+            Connection unitOfWork, UUID expectationId, UUID itemId) {
+        try (PreparedStatement update =
+                unitOfWork.prepareStatement(
+                        "UPDATE reconciliation.break SET residual_version ="
+                                + " residual_version + 1 WHERE status <> 'RESOLVED'"
+                                + " AND (expectation_id = ? OR external_item_id = ?)")) {
+            update.setObject(1, expectationId);
+            update.setObject(2, itemId);
+            update.executeUpdate();
+        } catch (SQLException failure) {
+            throw new ReconciliationStorageException(
+                    "could not bump the touched breaks' residual", failure);
+        }
+    }
+
+    @Override
+    public boolean markItemMatched(
+            Connection unitOfWork,
+            UUID itemId,
+            long allocatedMinor,
+            Actor actor,
+            Instant at,
+            CorrelationId correlation) {
+        try (PreparedStatement update =
+                unitOfWork.prepareStatement(
+                        "UPDATE reconciliation.external_item SET status = 'MATCHED',"
+                                + " allocated_minor = allocated_minor + ?,"
+                                + " status_changed_at = ?"
+                                + " WHERE id = ? AND status = 'PENDING'")) {
+            update.setLong(1, allocatedMinor);
+            update.setTimestamp(2, Timestamp.from(at));
+            update.setObject(3, itemId);
+            if (update.executeUpdate() != 1) {
+                return false;
+            }
+        } catch (SQLException failure) {
+            throw new ReconciliationStorageException("could not match the item", failure);
+        }
+        appendItemEvent(unitOfWork, itemId, "PENDING", "MATCHED", actor, at, correlation);
+        return true;
+    }
+
+    @Override
+    public void recordItemAllocation(
+            Connection unitOfWork, UUID itemId, long allocatedMinor) {
+        try (PreparedStatement update =
+                unitOfWork.prepareStatement(
+                        "UPDATE reconciliation.external_item SET allocated_minor ="
+                                + " allocated_minor + ? WHERE id = ?")) {
+            update.setLong(1, allocatedMinor);
+            update.setObject(2, itemId);
+            update.executeUpdate();
+        } catch (SQLException failure) {
+            throw new ReconciliationStorageException(
+                    "could not record the item's allocation", failure);
+        }
+    }
+
+    @Override
+    public boolean markItemUnmatched(
+            Connection unitOfWork,
+            UUID itemId,
+            Optional<Integer> graceHours,
+            Actor actor,
+            Instant at,
+            CorrelationId correlation) {
+        try (PreparedStatement update =
+                unitOfWork.prepareStatement(
+                        "UPDATE reconciliation.external_item SET status = 'UNMATCHED',"
+                                // The window is judged on the database clock, from now:
+                                // stored once, compared in SQL (ADR-0068 section 6).
+                                + " grace_until = CASE WHEN ?::int IS NULL THEN NULL"
+                                + " ELSE statement_timestamp() +"
+                                + " make_interval(hours => ?) END,"
+                                + " status_changed_at = ?"
+                                + " WHERE id = ? AND status = 'PENDING'")) {
+            update.setObject(1, graceHours.orElse(null));
+            update.setObject(2, graceHours.orElse(null));
+            update.setTimestamp(3, Timestamp.from(at));
+            update.setObject(4, itemId);
+            if (update.executeUpdate() != 1) {
+                return false;
+            }
+        } catch (SQLException failure) {
+            throw new ReconciliationStorageException(
+                    "could not leave the item waiting", failure);
+        }
+        appendItemEvent(unitOfWork, itemId, "PENDING", "UNMATCHED", actor, at, correlation);
+        return true;
+    }
+
+    private void appendItemEvent(
+            Connection unitOfWork,
+            UUID itemId,
+            String fromStatus,
+            String toStatus,
+            Actor actor,
+            Instant at,
+            CorrelationId correlation) {
+        try (PreparedStatement insert =
+                unitOfWork.prepareStatement(
+                        "INSERT INTO reconciliation.external_item_event (item_id,"
+                                + " from_status, to_status, actor, actor_type, reason,"
+                                + " occurred_at, correlation_id)"
+                                + " VALUES (?, ?, ?, ?, ?, NULL, ?, ?)")) {
+            insert.setObject(1, itemId);
+            insert.setString(2, fromStatus);
+            insert.setString(3, toStatus);
+            insert.setString(4, actor.id());
+            insert.setString(5, actor.type().name());
+            insert.setTimestamp(6, Timestamp.from(at));
+            insert.setString(7, correlation.value());
+            insert.executeUpdate();
+        } catch (SQLException failure) {
+            throw new ReconciliationStorageException(
+                    "could not append the item's history", failure);
+        }
+    }
+
+    // ------------------------------------------------------------------ the doors' reads
+
+    @Override
+    public Optional<DecisionRow> decision(Connection unitOfWork, UUID decisionId) {
+        try (PreparedStatement read =
+                unitOfWork.prepareStatement(
+                        "SELECT id, external_item_id, run_id, origin, rule_set_id,"
+                                + " rule_priority, strategy, matched_key_kind, outcome,"
+                                + " claimant_rank, claimant_count, date_deviation_days,"
+                                + " timing_tolerance_days, decided_at, decided_on"
+                                + " FROM reconciliation.match_decision WHERE id = ?")) {
+            read.setObject(1, decisionId);
+            try (ResultSet row = read.executeQuery()) {
+                if (!row.next()) {
+                    return Optional.empty();
+                }
+                return Optional.of(
+                        new DecisionRow(
+                                row.getObject("id", UUID.class),
+                                row.getObject("external_item_id", UUID.class),
+                                row.getObject("run_id", UUID.class),
+                                row.getString("origin"),
+                                row.getObject("rule_set_id", UUID.class),
+                                Optional.ofNullable(
+                                        row.getObject("rule_priority", Integer.class)),
+                                Optional.ofNullable(row.getString("strategy")),
+                                Optional.ofNullable(row.getString("matched_key_kind")),
+                                row.getString("outcome"),
+                                Optional.ofNullable(
+                                        row.getObject("claimant_rank", Integer.class)),
+                                Optional.ofNullable(
+                                        row.getObject("claimant_count", Integer.class)),
+                                Optional.ofNullable(
+                                        row.getObject(
+                                                "date_deviation_days", Integer.class)),
+                                Optional.ofNullable(
+                                        row.getObject(
+                                                "timing_tolerance_days", Integer.class)),
+                                row.getTimestamp("decided_at").toInstant(),
+                                row.getObject("decided_on", LocalDate.class)));
+            }
+        } catch (SQLException failure) {
+            throw new ReconciliationStorageException(
+                    "could not read the decision", failure);
+        }
+    }
+
+    @Override
+    public List<CandidateRow> candidatesOf(Connection unitOfWork, UUID decisionId) {
+        try (PreparedStatement read =
+                unitOfWork.prepareStatement(
+                        "SELECT expectation_id, key_kind, amount_minor, currency, scale,"
+                                + " direction, remainder_before_minor, opened_at"
+                                + " FROM reconciliation.match_candidate"
+                                + " WHERE decision_id = ? ORDER BY expectation_id")) {
+            read.setObject(1, decisionId);
+            try (ResultSet rows = read.executeQuery()) {
+                List<CandidateRow> candidates = new ArrayList<>();
+                while (rows.next()) {
+                    candidates.add(
+                            new CandidateRow(
+                                    rows.getObject("expectation_id", UUID.class),
+                                    rows.getString("key_kind"),
+                                    Money.ofPersisted(
+                                            rows.getLong("amount_minor"),
+                                            CurrencyCode.of(
+                                                    rows.getString("currency").trim()),
+                                            rows.getInt("scale")),
+                                    rows.getString("direction"),
+                                    rows.getLong("remainder_before_minor"),
+                                    rows.getTimestamp("opened_at").toInstant()));
+                }
+                return List.copyOf(candidates);
+            }
+        } catch (SQLException failure) {
+            throw new ReconciliationStorageException(
+                    "could not read the candidates", failure);
+        }
+    }
+
+    @Override
+    public List<AllocationRow> allocationsOfDecision(
+            Connection unitOfWork, UUID decisionId) {
+        return allocations(unitOfWork, "decision_id = ?", decisionId);
+    }
+
+    @Override
+    public Optional<AllocationRow> allocation(Connection unitOfWork, UUID allocationId) {
+        List<AllocationRow> rows = allocations(unitOfWork, "id = ?", allocationId);
+        return rows.isEmpty() ? Optional.empty() : Optional.of(rows.get(0));
+    }
+
+    private List<AllocationRow> allocations(
+            Connection unitOfWork, String predicate, UUID argument) {
+        try (PreparedStatement read =
+                unitOfWork.prepareStatement(
+                        "SELECT id, decision_id, external_item_id, expectation_id,"
+                                + " amount_minor, currency, scale, reverses_allocation_id,"
+                                + " created_at FROM reconciliation.allocation WHERE "
+                                + predicate + " ORDER BY created_at")) {
+            read.setObject(1, argument);
+            try (ResultSet rows = read.executeQuery()) {
+                List<AllocationRow> allocations = new ArrayList<>();
+                while (rows.next()) {
+                    allocations.add(
+                            new AllocationRow(
+                                    rows.getObject("id", UUID.class),
+                                    rows.getObject("decision_id", UUID.class),
+                                    rows.getObject("external_item_id", UUID.class),
+                                    rows.getObject("expectation_id", UUID.class),
+                                    Money.ofPersisted(
+                                            rows.getLong("amount_minor"),
+                                            CurrencyCode.of(
+                                                    rows.getString("currency").trim()),
+                                            rows.getInt("scale")),
+                                    Optional.ofNullable(
+                                            rows.getObject(
+                                                    "reverses_allocation_id", UUID.class)),
+                                    rows.getTimestamp("created_at").toInstant()));
+                }
+                return List.copyOf(allocations);
+            }
+        } catch (SQLException failure) {
+            throw new ReconciliationStorageException(
+                    "could not read the allocations", failure);
+        }
+    }
+
+    @Override
+    public Optional<RunRow> run(Connection unitOfWork, UUID runId) {
+        try (PreparedStatement read =
+                unitOfWork.prepareStatement(
+                        "SELECT " + RUN_COLUMNS
+                                + " FROM reconciliation.reconciliation_batch"
+                                + " WHERE id = ?")) {
+            read.setObject(1, runId);
+            try (ResultSet row = read.executeQuery()) {
+                return row.next() ? Optional.of(runRow(row)) : Optional.empty();
+            }
+        } catch (SQLException failure) {
+            throw new ReconciliationStorageException("could not read the run", failure);
+        }
+    }
+
+    @Override
+    public List<RunRow> runs(Connection unitOfWork, int limit) {
+        try (PreparedStatement read =
+                unitOfWork.prepareStatement(
+                        "SELECT " + RUN_COLUMNS
+                                + " FROM reconciliation.reconciliation_batch"
+                                + " ORDER BY created_at DESC LIMIT ?")) {
+            read.setInt(1, limit);
+            try (ResultSet rows = read.executeQuery()) {
+                List<RunRow> runs = new ArrayList<>();
+                while (rows.next()) {
+                    runs.add(runRow(rows));
+                }
+                return List.copyOf(runs);
+            }
+        } catch (SQLException failure) {
+            throw new ReconciliationStorageException("could not list the runs", failure);
+        }
+    }
+
+    @Override
+    public Map<DecisionOutcome, Long> outcomeCounts(Connection unitOfWork, UUID runId) {
+        try (PreparedStatement read =
+                unitOfWork.prepareStatement(
+                        "SELECT outcome, count(*) AS n FROM reconciliation.match_decision"
+                                + " WHERE run_id = ? GROUP BY outcome")) {
+            read.setObject(1, runId);
+            try (ResultSet rows = read.executeQuery()) {
+                Map<DecisionOutcome, Long> counts = new HashMap<>();
+                while (rows.next()) {
+                    counts.put(
+                            DecisionOutcome.valueOf(rows.getString("outcome")),
+                            rows.getLong("n"));
+                }
+                return Map.copyOf(counts);
+            }
+        } catch (SQLException failure) {
+            throw new ReconciliationStorageException(
+                    "could not count the run's outcomes", failure);
+        }
+    }
+}

@@ -1,6 +1,6 @@
 # Task History
 
-The per-task completion records that accumulated behind `## Current Task` - 173 "Previously" blocks, newest first, from `P8-TSK-009` back to project initiation. *(`X-TSK-004` is cross-cutting and completed after the Phase 6 → 7 transition, so it stands second, between `P7-TSK-001` and the transition's record - the transition's block moved here by `P7-TSK-001`'s gate, exactly as an earlier form of this note said it would.)*
+The per-task completion records that accumulated behind `## Current Task` - 174 "Previously" blocks, newest first, from `P8-TSK-010` back to project initiation. *(`X-TSK-004` is cross-cutting and completed after the Phase 6 → 7 transition, so it stands second, between `P7-TSK-001` and the transition's record - the transition's block moved here by `P7-TSK-001`'s gate, exactly as an earlier form of this note said it would.)*
 
 **Archive.** These records were moved verbatim out of
 [`CURRENT_STATE.md`](../CURRENT_STATE.md) on 2026-09-20 so that the canonical description of
@@ -12,6 +12,81 @@ Current state: [`CURRENT_STATE.md`](../CURRENT_STATE.md) ·
 Authoritative backlog: [`BACKLOG.md`](../BACKLOG.md)
 
 ---
+
+### Previously
+
+**`P8-TSK-010` — Breaks and suspense as records** — `COMPLETE` (2026-09-29).
+**M8.3, Evidence becomes canonical lines, at 3 of 6**: every discrepancy can now be a
+classified, severity-graded record that is never deleted, and every unit of parked value
+names the one break answering for it — the records and their writers, before any engine
+produces them (ADR-0069, ADR-0070; `INV-REC-02`, `INV-REC-09`). **Reconciliation `V004`**:
+`break` (+`_event`, `_note`, `_evidence_link`), `suspense_item`, `suspense_release` and `park`
+— the fourteen types, twenty-four causes and four severities generated from their enums;
+the break machine stated whole with only birth produced; the four one-open-per-(type,
+subject) partial uniques; severity and `residual_version` forward-only and the frozen
+columns held by trigger; the note body's bounds and its PAN screen by a new IMMUTABLE
+plpgsql Luhn-run function plus the IBAN shape (`INV-PAY-02`, `INV-RAIL-03` at the database
+rank, over-refusal recorded); NO `DELETE` for any writer — grant absent AND a refusing
+trigger on every table, the migrator included. **The recorded pairing decision**: the
+type—cause pairing binds the RAISE by a `BEFORE INSERT` trigger, deliberately not a
+table `CHECK` — a reclassification moves the type while the cause stays frozen — and
+an investigator's reclassification raises nothing, so the closed cause enum carries no
+member for it. **`BreakRegister.raise`**: converging on the partial uniques (`ON CONFLICT
+DO NOTHING`, losers record no history, no audit, no event), severity assessed INSIDE the
+raise — the one pure seat (`BreakSeverity`) plus the pinned rule set's own
+`severity_threshold` read, so a raiser cannot pass a quieter grade; at exactly
+`high_value_minor` one level up and not one unit below (O7's ≥); OUTBOUND unknowns
+CRITICAL; a recurrence is a NEW break naming its predecessor. **Suspense**: park, unpark
+and the release primitive over the ledger's own `PostingService` (reconciliation's one
+permitted sibling edge) — one entry per (position, value date) of at most four lines,
+keyed `recon-suspense:<parkId>`, posting-dated the park row's stamped-once `decided_on`
+and value-dated the items' settlement date; the `park` and `suspense_item` rows inserted
+AFTER the posting carrying their entry ids whole (ADR-0070's entry-id question ANSWERED:
+the `P8-TSK-009` D3 shape); the unpark the EXACT inverse from frozen facts (side,
+position, the original park's value date) under a NEW park id; every release appended,
+conditional under the item's lock, bumping the owning break's `residual_version`.
+**`INV-REC-09` at three ranks**: `break_id NOT NULL`, the `V004` owner trigger (a
+never-parking or RESOLVED owner refused for every writer), and the domain's pre-park
+verification — `park` refuses a missing, resolved or never-parking break by the API's
+shape. **The proofs**: the suspense identity joins `PositionProof` per currency —
+CR−DR = § CREDIT − § DEBIT remainders plus the NAMED Phase 7 term (the parkings no
+item's `origin_ref` claims), exact with or without other suites' parkings in the
+container — publishing through `finapp.reconciliation.position.proof` under its own
+purpose; park entries and every item's entry join the completeness verifier's known
+classes; the three gauges (`suspense.open`, `.age`, `.unowned`) eager, NaN never zero,
+the unowned reading flipped by a planted defect observed in its own uncommitted
+transaction and never inherited by the shared container. **The lookup**
+(`InternalReferenceLookup`, the port in reconciliation, `JdbcInternalReferenceLookup` in
+`app` over payments' and merchant's public read stores, five new lock-free reference
+finders): the strongest knowledge wins (`COMPLETED` over `TERMINAL` over `IN_FLIGHT` over
+`UNKNOWN`), frozen on the break; THE GATE'S FIND — no test covered the classification
+over the named states — made the mappings pure and proven EXHAUSTIVELY over every
+member of every status enum (a new member fails loudly), with the wired smoke over the
+live schema; `ACQUIRER_REF` answers `UNKNOWN` here (the ARN's alias resolution is the
+matcher's, recorded). **The key-collision leg**: `DUPLICATE_INTERNAL` from the recorded
+`KEY_COLLISION` events — subject the colliding expectation, value its own amount,
+never parked — once under ten legs; a collision after an earlier break resolved is
+suppressed by the any-status guard (the recurrence refinement is `-013`'s, recorded).
+**Events and audit**: `reconciliation.ReconciliationBreakRaised` (sourceId, the recorded
+`-008` stance) through the outbox on the acting connection; `reconciliation.BreakRaised`
+acting-only with identifiers-only summary; `AUDITABLE_ACTIONS` +1, `DATA_CLASSIFICATION`
++91 rows. **Six probe runs, five caught, one honest survival resolved, one test
+tightened** (`MUTATION_TESTING` §2 +2 rows under `INV-REC-02` and `INV-REC-09`): the
+partial unique dropped — ten raisers wrote ten rows where one belongs; `break_id NOT
+NULL` dropped alone SURVIVED (the owner trigger is the equivalent arbiter, refusing the
+NULL insert in its own words) and fell with the trigger dropped beside it — the raw
+NULL-break insert ADMITTED where the database must refuse any writer; the DELETE
+trigger dropped first SURVIVED on foreign-key noise — the TEST was tightened, not the
+probe: the migrator's deletes now target planted CHILDLESS rows, so only the trigger
+can refuse them — and the re-run caught the admitted delete; the threshold compared
+with > for ≥ fell at exactly the seeded value; the unpark posting the park's own
+direction fell in the ledger's own words (the swapped accounts named). Every verdict
+read from the failing testcase, every restore byte-identical. Multi-instance **PASS** —
+ten raisers and ten parks counted (the conditional transition, the partial uniques,
+`UNIQUE (external_item_id)` and `origin_ref` arbitrate for any writer), the §3 lock
+order's first taker built and recorded, windows on stored dates, the gauges decide
+nothing. NO route, NO migration outside reconciliation `V004`, NO API change.
+Verified by targeted tiers from fresh runs on the final code — reconciliation hermetic 17 across 5 suites and database 22 across 3 suites (V004's reconciliations, the severity policy, the break and suspense suite with its races and the widened schema floor within), payments hermetic 246 across 35 suites and merchant hermetic 135 across 19 suites (the new reference finders and the widened fakes within), and app hermetic 571 across 106 suites (the opener register's recon-suspense row, the exhaustive lookup mappings, the ownership sweep and the doc guards within) — plus the affected app database suites in ONE shared container (37 tests across 6 suites: the composed suspense suite with the wired-lookup smoke and the planted-defect flip, the acceptance suite with its rebuild proof, the opening suite, the storm with its emptied-register rebuild beside parked suspense value, the settlement routes and the adjustment suite) and the document guards (143 across 25 suites) re-run fresh after the records landed, ALL 0 FAILURES — ledger and settlement untouched by this task (their `P8-TSK-009` tiers stand), and the full battery and the fleet-wide database and kafka tiers deliberately skipped on the owner's instruction.
 
 ### Previously
 

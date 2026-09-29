@@ -354,7 +354,10 @@ class BreakAndSuspenseDatabaseTest {
             for (Future<Integer> outcome : outcomes) {
                 created += outcome.get();
             }
-            assertThat(created).as("the ten legs converged").isEqualTo(1);
+            // The container may hold OTHER suites' committed, not-yet-raised collisions
+            // (ExpectationRegisterDatabaseTest commits one), each raised exactly once
+            // across the ten legs; THIS subject's convergence is the count below.
+            assertThat(created).as("the ten legs converged").isGreaterThanOrEqualTo(1);
         } finally {
             pool.shutdownNow();
         }
@@ -675,8 +678,9 @@ class BreakAndSuspenseDatabaseTest {
         UUID ownerBreak = IDS.next();
         UUID barePark = IDS.next();
         UUID childlessItem = IDS.next();
-        rawDecisionBreak(application, bareBreak);
-        rawDecisionBreak(application, ownerBreak);
+        List<UUID> decisionItems = seedItems(2, SETTLED_ON, ExpectationDirection.INBOUND);
+        rawDecisionBreak(application, bareBreak, decisionItems.get(0));
+        rawDecisionBreak(application, ownerBreak, decisionItems.get(1));
         execute("INSERT INTO reconciliation.park (id, source_id, kind,"
                 + " position_account_id, currency, decided_on, value_date,"
                 + " journal_entry_id, actor, actor_type, created_at, correlation_id)"
@@ -722,9 +726,26 @@ class BreakAndSuspenseDatabaseTest {
         }
     }
 
-    /** A childless break past every domain guard: its one subject is a bare decision id. */
-    private static void rawDecisionBreak(Connection connection, UUID id)
+    /**
+     * A childless break past every domain guard: its one subject is a bare decision id.
+     * Since `V005` the decision column carries a foreign key, so each call plants its own
+     * real {@code match_decision} (origin {@code MANUAL}: no run required) over the item.
+     */
+    private static void rawDecisionBreak(Connection connection, UUID id, UUID itemId)
             throws SQLException {
+        UUID decisionId = IDS.next();
+        try (PreparedStatement insert =
+                connection.prepareStatement(
+                        "INSERT INTO reconciliation.match_decision (id,"
+                                + " external_item_id, origin, rule_set_id, outcome,"
+                                + " decided_by, decided_by_type, decided_at, decided_on,"
+                                + " correlation_id) VALUES (?, ?, 'MANUAL', ?, 'PARKED',"
+                                + " 'system', 'SYSTEM', now(), now(), 'corr')")) {
+            insert.setObject(1, decisionId);
+            insert.setObject(2, itemId);
+            insert.setObject(3, PSP_RULE_SET);
+            insert.executeUpdate();
+        }
         try (PreparedStatement insert =
                 connection.prepareStatement(
                         "INSERT INTO reconciliation.break (id, type, cause, status,"
@@ -737,7 +758,7 @@ class BreakAndSuspenseDatabaseTest {
             insert.setObject(1, id);
             insert.setObject(2, PSP_SOURCE);
             insert.setObject(3, PSP_RULE_SET);
-            insert.setObject(4, java.util.UUID.randomUUID());
+            insert.setObject(4, decisionId);
             insert.executeUpdate();
         }
     }

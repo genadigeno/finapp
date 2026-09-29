@@ -1,0 +1,248 @@
+package com.finapp.reconciliation;
+
+import com.finapp.platform.security.Actor;
+import com.finapp.sharedkernel.correlation.CorrelationId;
+import com.finapp.sharedkernel.money.Money;
+import java.sql.Connection;
+import java.time.Instant;
+import java.time.LocalDate;
+import java.util.Collection;
+import java.util.List;
+import java.util.Map;
+import java.util.Optional;
+import java.util.UUID;
+
+/**
+ * Persistence for the matcher (`P8-TSK-011`, ADR-0068) — the run leg's chunk reads and
+ * conditional edges, the candidate resolution, the append-only decision, candidate and
+ * allocation writes, and the explanation reads the operator doors serve from stored rows
+ * alone.
+ */
+public interface MatchingStore {
+
+    // ------------------------------------------------------------------ runs
+
+    record RunRow(
+            UUID id,
+            UUID sourceId,
+            UUID batchId,
+            RunStatus status,
+            UUID ruleSetId,
+            long sourceSequence,
+            int itemCount,
+            long cursor,
+            int failures,
+            LocalDate businessDate,
+            String correlationId) {}
+
+    /** Sources holding a non-terminal {@code BATCH} run — the sweep's worklist. */
+    List<UUID> sourcesWithWork(Connection unitOfWork);
+
+    /**
+     * The one run the source may work: its lowest-sequence non-terminal {@code BATCH} run,
+     * and only when every lower-sequence one has completed — a {@code BLOCKED} run holds
+     * its source, visibly (ADR-0068 §4).
+     */
+    Optional<RunRow> eligibleRun(Connection unitOfWork, UUID sourceId);
+
+    /** The conditional {@code OPEN → IN_PROGRESS}; false when another edge won. */
+    boolean markRunInProgress(Connection unitOfWork, UUID runId, Actor actor, Instant at);
+
+    /** The conditional completion; the deferred trigger refuses it over a PENDING item. */
+    boolean completeRun(Connection unitOfWork, UUID runId, Actor actor, Instant at);
+
+    /** The cursor, advanced in the chunk's own transaction (ADR-0068 §4). */
+    void advanceCursor(Connection unitOfWork, UUID runId, long lastLineNo, Instant at);
+
+    /** Failure bookkeeping in its own small transaction; returns the new count. */
+    int bumpRunFailures(Connection unitOfWork, UUID runId, Instant at);
+
+    /** The conditional move to {@code BLOCKED}; false when another edge won. */
+    boolean blockRun(Connection unitOfWork, UUID runId, Actor actor, Instant at);
+
+    // ------------------------------------------------------------------ the chunk
+
+    record ChunkItem(
+            UUID id,
+            long lineNo,
+            ExternalLineType lineType,
+            ExpectationDirection direction,
+            Money amount,
+            com.finapp.ledger.AccountPurpose positionPurpose,
+            LocalDate businessDate,
+            Optional<LocalDate> settlementDate,
+            byte[] fingerprint,
+            long sourceSequence,
+            Map<ItemKeyKind, String> keys) {
+
+        public ChunkItem {
+            fingerprint = fingerprint.clone();
+            keys = Map.copyOf(keys);
+        }
+
+        @Override
+        public byte[] fingerprint() {
+            return fingerprint.clone();
+        }
+    }
+
+    /** The run's next items past {@code cursor}, in {@code line_no} order, keys joined. */
+    List<ChunkItem> chunkItems(Connection unitOfWork, UUID runId, long cursor, int limit);
+
+    /** Whether an identical fingerprint stands earlier in claimant order (ADR-0068 §4). */
+    boolean fingerprintSeenEarlier(
+            Connection unitOfWork,
+            UUID sourceId,
+            byte[] fingerprint,
+            long sourceSequence,
+            long lineNo);
+
+    /** Expectation ids reached by one key, per source — the direct hop. */
+    List<UUID> expectationsByKey(
+            Connection unitOfWork, UUID sourceId, KeyKind kind, String value);
+
+    /** The alias hop: {@code (kind, value) → (anchorKind, anchorValue)}, if recorded. */
+    Optional<Map.Entry<KeyKind, String>> aliasAnchor(
+            Connection unitOfWork, UUID sourceId, KeyKind kind, String value);
+
+    /** Locks the expectations sorted by id and reads the facts the engine snapshots. */
+    List<MatchEngine.HitFacts> lockExpectations(
+            Connection unitOfWork, Collection<UUID> expectationIds, Map<UUID, KeyKind> reachedBy);
+
+    /** Locks the chunk's item rows, sorted by id (`DISTRIBUTED_EXECUTION.md` §3). */
+    void lockItems(Connection unitOfWork, Collection<UUID> itemIds);
+
+    // ------------------------------------------------------------------ writes
+
+    record NewDecision(
+            UUID id,
+            UUID externalItemId,
+            UUID runId,
+            DecisionOrigin origin,
+            UUID ruleSetId,
+            Optional<Integer> rulePriority,
+            Optional<Cardinality> strategy,
+            Optional<KeyKind> matchedKeyKind,
+            DecisionOutcome outcome,
+            Optional<Integer> claimantRank,
+            Optional<Integer> claimantCount,
+            Optional<Integer> dateDeviationDays,
+            Optional<Integer> timingToleranceDays,
+            Actor decidedBy,
+            Instant decidedAt,
+            LocalDate decidedOn,
+            CorrelationId correlation) {}
+
+    void insertDecision(Connection unitOfWork, NewDecision decision);
+
+    void insertCandidates(
+            Connection unitOfWork, UUID decisionId, List<MatchEngine.HitFacts> candidates);
+
+    record NewAllocation(
+            UUID id,
+            UUID decisionId,
+            UUID externalItemId,
+            UUID expectationId,
+            Money amount,
+            Instant at,
+            CorrelationId correlation) {}
+
+    void insertAllocation(Connection unitOfWork, NewAllocation allocation);
+
+    /**
+     * Adds {@code amount} to the expectation's {@code allocated_minor} and moves its
+     * machine ({@code OPEN → PARTIALLY_SETTLED → SETTLED}), appending the {@code ALLOCATED}
+     * event; returns the resulting status so the caller announces {@code SETTLED} once.
+     */
+    ExpectationStatus allocateToExpectation(
+            Connection unitOfWork,
+            UUID expectationId,
+            Money amount,
+            String detail,
+            Actor actor,
+            Instant at,
+            CorrelationId correlation);
+
+    /**
+     * Bumps every OPEN break's staleness counter whose subject the allocation touched —
+     * the expectation or the item (ADR-0071: a resolution proposal reads the version it
+     * judged, and a moved residual refuses the stale approval). Forward-only by trigger;
+     * a {@code RESOLVED} break takes no write.
+     */
+    void bumpResidualOnSubjects(Connection unitOfWork, UUID expectationId, UUID itemId);
+
+    /** The item's conditional {@code PENDING → MATCHED}, allocation recorded, event appended. */
+    boolean markItemMatched(
+            Connection unitOfWork,
+            UUID itemId,
+            long allocatedMinor,
+            Actor actor,
+            Instant at,
+            CorrelationId correlation);
+
+    /** Records the allocated part on a {@code PENDING} item that will PARK its excess. */
+    void recordItemAllocation(Connection unitOfWork, UUID itemId, long allocatedMinor);
+
+    /**
+     * The item's conditional {@code PENDING → UNMATCHED}; {@code graceHours} empty leaves
+     * no clock running (an unlanded cardinality's item, `P8-TSK-012`'s to dispose).
+     */
+    boolean markItemUnmatched(
+            Connection unitOfWork,
+            UUID itemId,
+            Optional<Integer> graceHours,
+            Actor actor,
+            Instant at,
+            CorrelationId correlation);
+
+    // ------------------------------------------------------------------ the doors' reads
+
+    record DecisionRow(
+            UUID id,
+            UUID externalItemId,
+            UUID runId,
+            String origin,
+            UUID ruleSetId,
+            Optional<Integer> rulePriority,
+            Optional<String> strategy,
+            Optional<String> matchedKeyKind,
+            String outcome,
+            Optional<Integer> claimantRank,
+            Optional<Integer> claimantCount,
+            Optional<Integer> dateDeviationDays,
+            Optional<Integer> timingToleranceDays,
+            Instant decidedAt,
+            LocalDate decidedOn) {}
+
+    record CandidateRow(
+            UUID expectationId,
+            String keyKind,
+            Money amount,
+            String direction,
+            long remainderBeforeMinor,
+            Instant openedAt) {}
+
+    record AllocationRow(
+            UUID id,
+            UUID decisionId,
+            UUID externalItemId,
+            UUID expectationId,
+            Money amount,
+            Optional<UUID> reversesAllocationId,
+            Instant createdAt) {}
+
+    Optional<DecisionRow> decision(Connection unitOfWork, UUID decisionId);
+
+    List<CandidateRow> candidatesOf(Connection unitOfWork, UUID decisionId);
+
+    List<AllocationRow> allocationsOfDecision(Connection unitOfWork, UUID decisionId);
+
+    Optional<AllocationRow> allocation(Connection unitOfWork, UUID allocationId);
+
+    Optional<RunRow> run(Connection unitOfWork, UUID runId);
+
+    List<RunRow> runs(Connection unitOfWork, int limit);
+
+    /** The run's decisions per outcome — the completion event's counts. */
+    Map<DecisionOutcome, Long> outcomeCounts(Connection unitOfWork, UUID runId);
+}

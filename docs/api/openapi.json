@@ -2992,6 +2992,111 @@
           }
         }
       },
+      "reconciliation.AllocationNotFound": {
+        "content": {
+          "application/problem+json": {
+            "schema": {
+              "allOf": [
+                {
+                  "$ref": "#/components/schemas/ProblemDetail"
+                },
+                {
+                  "properties": {
+                    "code": {
+                      "const": "reconciliation.AllocationNotFound"
+                    },
+                    "status": {
+                      "const": 404
+                    },
+                    "type": {
+                      "const": "https://finapp.example/problems/reconciliation.AllocationNotFound"
+                    }
+                  }
+                }
+              ]
+            }
+          }
+        },
+        "description": "[404] No allocation has this identifier.",
+        "headers": {
+          "X-Client-Correlation-Id": {
+            "$ref": "#/components/headers/X-Client-Correlation-Id"
+          },
+          "X-Correlation-Id": {
+            "$ref": "#/components/headers/X-Correlation-Id"
+          }
+        }
+      },
+      "reconciliation.DecisionNotFound": {
+        "content": {
+          "application/problem+json": {
+            "schema": {
+              "allOf": [
+                {
+                  "$ref": "#/components/schemas/ProblemDetail"
+                },
+                {
+                  "properties": {
+                    "code": {
+                      "const": "reconciliation.DecisionNotFound"
+                    },
+                    "status": {
+                      "const": 404
+                    },
+                    "type": {
+                      "const": "https://finapp.example/problems/reconciliation.DecisionNotFound"
+                    }
+                  }
+                }
+              ]
+            }
+          }
+        },
+        "description": "[404] No match decision has this identifier.",
+        "headers": {
+          "X-Client-Correlation-Id": {
+            "$ref": "#/components/headers/X-Client-Correlation-Id"
+          },
+          "X-Correlation-Id": {
+            "$ref": "#/components/headers/X-Correlation-Id"
+          }
+        }
+      },
+      "reconciliation.RunNotFound": {
+        "content": {
+          "application/problem+json": {
+            "schema": {
+              "allOf": [
+                {
+                  "$ref": "#/components/schemas/ProblemDetail"
+                },
+                {
+                  "properties": {
+                    "code": {
+                      "const": "reconciliation.RunNotFound"
+                    },
+                    "status": {
+                      "const": 404
+                    },
+                    "type": {
+                      "const": "https://finapp.example/problems/reconciliation.RunNotFound"
+                    }
+                  }
+                }
+              ]
+            }
+          }
+        },
+        "description": "[404] No reconciliation run has this identifier.",
+        "headers": {
+          "X-Client-Correlation-Id": {
+            "$ref": "#/components/headers/X-Client-Correlation-Id"
+          },
+          "X-Correlation-Id": {
+            "$ref": "#/components/headers/X-Correlation-Id"
+          }
+        }
+      },
       "settlement.AttestationBySubmitter": {
         "content": {
           "application/problem+json": {
@@ -3518,6 +3623,35 @@
         },
         "type": "object"
       },
+      "AllocationView": {
+        "properties": {
+          "amount": {
+            "type": "string"
+          },
+          "createdAt": {
+            "type": "string"
+          },
+          "currency": {
+            "type": "string"
+          },
+          "decisionId": {
+            "type": "string"
+          },
+          "expectationId": {
+            "type": "string"
+          },
+          "externalItemId": {
+            "type": "string"
+          },
+          "id": {
+            "type": "string"
+          },
+          "reversesAllocationId": {
+            "type": "string"
+          }
+        },
+        "type": "object"
+      },
       "AssignFeeScheduleRequest": {
         "properties": {
           "feeScheduleId": {
@@ -3749,6 +3883,32 @@
             "type": "string"
           },
           "id": {
+            "type": "string"
+          }
+        },
+        "type": "object"
+      },
+      "CandidateView": {
+        "properties": {
+          "amount": {
+            "type": "string"
+          },
+          "currency": {
+            "type": "string"
+          },
+          "direction": {
+            "type": "string"
+          },
+          "expectationId": {
+            "type": "string"
+          },
+          "keyKind": {
+            "type": "string"
+          },
+          "openedAt": {
+            "type": "string"
+          },
+          "remainderBefore": {
             "type": "string"
           }
         },
@@ -4080,6 +4240,73 @@
           "outcome",
           "reason"
         ],
+        "type": "object"
+      },
+      "DecisionView": {
+        "properties": {
+          "allocations": {
+            "items": {
+              "$ref": "#/components/schemas/AllocationView"
+            },
+            "type": "array"
+          },
+          "candidates": {
+            "items": {
+              "$ref": "#/components/schemas/CandidateView"
+            },
+            "type": "array"
+          },
+          "claimantCount": {
+            "format": "int32",
+            "type": "integer"
+          },
+          "claimantRank": {
+            "format": "int32",
+            "type": "integer"
+          },
+          "dateDeviationDays": {
+            "format": "int32",
+            "type": "integer"
+          },
+          "decidedAt": {
+            "type": "string"
+          },
+          "decidedOn": {
+            "type": "string"
+          },
+          "externalItemId": {
+            "type": "string"
+          },
+          "id": {
+            "type": "string"
+          },
+          "matchedKeyKind": {
+            "type": "string"
+          },
+          "origin": {
+            "type": "string"
+          },
+          "outcome": {
+            "type": "string"
+          },
+          "rulePriority": {
+            "format": "int32",
+            "type": "integer"
+          },
+          "ruleSetId": {
+            "type": "string"
+          },
+          "runId": {
+            "type": "string"
+          },
+          "strategy": {
+            "type": "string"
+          },
+          "timingToleranceDays": {
+            "format": "int32",
+            "type": "integer"
+          }
+        },
         "type": "object"
       },
       "DeclineView": {
@@ -5774,6 +6001,66 @@
           "ruleIndex": {
             "format": "int32",
             "type": "integer"
+          }
+        },
+        "type": "object"
+      },
+      "RunList": {
+        "properties": {
+          "runs": {
+            "items": {
+              "$ref": "#/components/schemas/RunView"
+            },
+            "type": "array"
+          },
+          "truncated": {
+            "type": "boolean"
+          }
+        },
+        "type": "object"
+      },
+      "RunView": {
+        "properties": {
+          "batchId": {
+            "type": "string"
+          },
+          "businessDate": {
+            "type": "string"
+          },
+          "cursor": {
+            "format": "int64",
+            "type": "integer"
+          },
+          "failures": {
+            "format": "int32",
+            "type": "integer"
+          },
+          "id": {
+            "type": "string"
+          },
+          "itemCount": {
+            "format": "int32",
+            "type": "integer"
+          },
+          "outcomes": {
+            "additionalProperties": {
+              "format": "int64",
+              "type": "integer"
+            },
+            "type": "object"
+          },
+          "ruleSetId": {
+            "type": "string"
+          },
+          "sourceId": {
+            "type": "string"
+          },
+          "sourceSequence": {
+            "format": "int64",
+            "type": "integer"
+          },
+          "status": {
+            "type": "string"
           }
         },
         "type": "object"
@@ -8827,6 +9114,60 @@
         }
       }
     },
+    "/v1/operator/reconciliation/allocations/{id}": {
+      "get": {
+        "operationId": "viewAllocation",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "id",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AllocationView"
+                }
+              }
+            },
+            "description": "OK"
+          }
+        }
+      }
+    },
+    "/v1/operator/reconciliation/decisions/{id}": {
+      "get": {
+        "operationId": "viewMatchDecision",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "id",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/DecisionView"
+                }
+              }
+            },
+            "description": "OK"
+          }
+        }
+      }
+    },
     "/v1/operator/reconciliation/opening-position": {
       "post": {
         "operationId": "recordOpeningPosition",
@@ -8856,6 +9197,50 @@
               "application/json": {
                 "schema": {
                   "$ref": "#/components/schemas/Adopted"
+                }
+              }
+            },
+            "description": "OK"
+          }
+        }
+      }
+    },
+    "/v1/operator/reconciliation/runs": {
+      "get": {
+        "operationId": "listReconciliationRuns",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/RunList"
+                }
+              }
+            },
+            "description": "OK"
+          }
+        }
+      }
+    },
+    "/v1/operator/reconciliation/runs/{id}": {
+      "get": {
+        "operationId": "viewReconciliationRun",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "id",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/RunView"
                 }
               }
             },

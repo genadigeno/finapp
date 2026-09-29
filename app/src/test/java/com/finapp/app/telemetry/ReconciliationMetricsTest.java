@@ -76,6 +76,9 @@ class ReconciliationMetricsTest {
         SimpleMeterRegistry registry = new SimpleMeterRegistry();
         new ReconciliationMetrics(
                 proof(),
+                new com.finapp.reconciliation.JdbcRunReadings(),
+                new JdbcSettlementFileStore(
+                        new SettlementFileCipher(new byte[32], 1, new SecureRandom())),
                 register(),
                 () -> {
                     throw new SQLException("nope");
@@ -139,6 +142,26 @@ class ReconciliationMetricsTest {
                     .as("%s exists eagerly", series)
                     .isNotNull();
             assertThat(registry.find(series).gauge().value())
+                    .as("%s reads NaN when unreadable, never a comforting zero", series)
+                    .isNaN();
+        }
+
+        // The run series (P8-TSK-011): pending, age and blocked - each eager PER DECLARED
+        // SOURCE, each NaN when the counters are unreadable, never a comforting zero.
+        for (String series :
+                java.util.List.of(
+                        ReconciliationMetrics.RUN_PENDING,
+                        ReconciliationMetrics.RUN_AGE,
+                        ReconciliationMetrics.RUN_BLOCKED)) {
+            assertThat(registry.find(series)
+                            .tag("source", "simulated-psp.settlement")
+                            .gauge())
+                    .as("%s exists eagerly per declared source", series)
+                    .isNotNull();
+            assertThat(registry.find(series)
+                            .tag("source", "simulated-psp.settlement")
+                            .gauge()
+                            .value())
                     .as("%s reads NaN when unreadable, never a comforting zero", series)
                     .isNaN();
         }

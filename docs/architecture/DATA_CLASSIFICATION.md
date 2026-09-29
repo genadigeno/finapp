@@ -1376,6 +1376,46 @@ counters and dates of things.
 | `suspense_release` | `actor_type` | `INTERNAL` | The actor's kind - a closed vocabulary |
 | `suspense_release` | `released_at` | `INTERNAL` | When the release was taken |
 | `suspense_release` | `correlation_id` | `INTERNAL` | The flow's correlation |
+| `match_decision` | `id` | `INTERNAL` | A record identifier. Generated |
+| `match_decision` | `external_item_id` | `INTERNAL` | The decided item - an identifier of a thing |
+| `match_decision` | `run_id` | `INTERNAL` | The deciding run, where one did - an identifier of a thing |
+| `match_decision` | `origin` | `INTERNAL` | RUN and its siblings - a closed vocabulary |
+| `match_decision` | `rule_set_id` | `INTERNAL` | The pinned deciding version (INV-HIST-04) |
+| `match_decision` | `rule_priority` | `INTERNAL` | Which rule fired - a small number |
+| `match_decision` | `strategy` | `INTERNAL` | The rule's cardinality - a closed vocabulary |
+| `match_decision` | `matched_key_kind` | `INTERNAL` | Which key reached the candidate - a closed vocabulary |
+| `match_decision` | `outcome` | `INTERNAL` | MATCHED and its siblings - a closed vocabulary |
+| `match_decision` | `claimant_rank` | `INTERNAL` | This item's rank in claimant order - a count |
+| `match_decision` | `claimant_count` | `INTERNAL` | The live candidates seen - a count |
+| `match_decision` | `date_deviation_days` | `INTERNAL` | Stored dates' difference - a count of days, never an amount |
+| `match_decision` | `timing_tolerance_days` | `INTERNAL` | The applied window, frozen (INV-REC-04) |
+| `match_decision` | `fee_expected_minor` | `RESTRICTED-FINANCIAL` | **The fee check's expected value** (`P8-TSK-012`'s writer) - never in a metric, event or log |
+| `match_decision` | `fee_reported_minor` | `RESTRICTED-FINANCIAL` | **The fee the counterparty reported** - the check's other side |
+| `match_decision` | `fee_tolerance_minor` | `RESTRICTED-FINANCIAL` | **The applied fee bound**, frozen - an amount, conservatively |
+| `match_decision` | `decided_by` | `CONFIDENTIAL` | Who decided (`audit_record.actor`'s reasoning; the run leg is the system) |
+| `match_decision` | `decided_by_type` | `INTERNAL` | The decider's kind - a closed vocabulary |
+| `match_decision` | `decided_at` | `INTERNAL` | When it was decided |
+| `match_decision` | `decided_on` | `CONFIDENTIAL` | The deciding day - a park's posting date where one follows |
+| `match_decision` | `correlation_id` | `INTERNAL` | The flow's correlation |
+| `match_candidate` | `decision_id` | `INTERNAL` | The seeing decision - an identifier of a thing |
+| `match_candidate` | `expectation_id` | `INTERNAL` | The seen candidate - an identifier of a thing |
+| `match_candidate` | `key_kind` | `INTERNAL` | How it was reached - a closed vocabulary |
+| `match_candidate` | `amount_minor` | `RESTRICTED-FINANCIAL` | **The candidate's amount as seen** - the snapshot replay reads (INV-REC-04) |
+| `match_candidate` | `currency` | `INTERNAL` | An enumeration; part of the monetary shape |
+| `match_candidate` | `scale` | `INTERNAL` | The monetary shape's scale (INV-MON-05) |
+| `match_candidate` | `direction` | `INTERNAL` | INBOUND or OUTBOUND - a closed vocabulary |
+| `match_candidate` | `remainder_before_minor` | `RESTRICTED-FINANCIAL` | **The remainder the decision saw** - frozen because the live row moves on |
+| `match_candidate` | `opened_at` | `INTERNAL` | The candidate's birth as seen |
+| `allocation` | `id` | `INTERNAL` | A record identifier. Generated |
+| `allocation` | `decision_id` | `INTERNAL` | The deciding evaluation - an identifier of a thing |
+| `allocation` | `external_item_id` | `INTERNAL` | The claiming item - an identifier of a thing |
+| `allocation` | `expectation_id` | `INTERNAL` | The claimed expectation - an identifier of a thing |
+| `allocation` | `amount_minor` | `RESTRICTED-FINANCIAL` | **The allocated value** (INV-REC-07) - never in a metric, event or log |
+| `allocation` | `currency` | `INTERNAL` | An enumeration; part of the monetary shape |
+| `allocation` | `scale` | `INTERNAL` | The monetary shape's scale (INV-MON-05) |
+| `allocation` | `reverses_allocation_id` | `INTERNAL` | The reversed allocation, on a repudiation's counter-row - an identifier of a thing |
+| `allocation` | `created_at` | `INTERNAL` | When it was recorded |
+| `allocation` | `correlation_id` | `INTERNAL` | The flow's correlation |
 
 ### `consent.consent_text` and `consent.consent_record` — *added by `P2-TSK-017`*
 

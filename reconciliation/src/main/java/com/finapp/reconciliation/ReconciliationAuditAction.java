@@ -40,6 +40,17 @@ public enum ReconciliationAuditAction implements AuditableAction {
             false),
 
     /**
+     * A reconciliation run completed (`P8-TSK-011`, ADR-0068 §4) — acting-only, one per
+     * run: the completing chunk's own record, with the counts per outcome in the change
+     * summary — identifiers and counts only, never an amount ({@code INV-AUD-02}).
+     */
+    RUN_COMPLETED(
+            "reconciliation.RunCompleted",
+            "A reconciliation run completed: every item disposed, the counts per outcome"
+                    + " on the record.",
+            false),
+
+    /**
      * Somebody read a reconciliation report (`P8-TSK-007`, ADR-0072; the
      * {@code payments.ChargebackRatioRead} precedent): the positions report carries
      * amounts, so every serving is on the record — the report's name and period, never its

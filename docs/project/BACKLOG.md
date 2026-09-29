@@ -10739,7 +10739,7 @@ posting-date documentation reconciled with the Phase 5–7 practice, with no ret
 - **Definition of done**: `DOD-FIN`, `DOD-SEC`, `DOD-TEST`. **Risk**: Medium — the first
   reconciliation posting path, exercised here only through its API. **Cx**: M.
 
-**P8-TSK-011 — The matcher: ordered allocation with decision snapshots, for the PSP source** — `READY`
+**P8-TSK-011 — The matcher: ordered allocation with decision snapshots, for the PSP source** — `COMPLETE` (2026-09-30)
 - **Objective**: ADR-0068 for the card PSP. Each report item is allocated to our expectations by
   key, in claimant order, by one pure `decide` function. Every evaluation stores its pinned rule set
   and a snapshot of every candidate it saw, so a match is explainable from stored rows alone,
@@ -10929,7 +10929,7 @@ posting-date documentation reconciled with the Phase 5–7 practice, with no ret
   expectation machines, `RECONCILIATION_MODEL.md`'s matching section and `DISTRIBUTED_EXECUTION.md`
   §3's namespace-4 and lock-order rows current against the build). **Risk**: High. **Cx**: L.
 
-**P8-TSK-012 — Processing fees and counterparty corrections** — `PLANNED`
+**P8-TSK-012 — Processing fees and counterparty corrections** — `READY` (marked by `P8-TSK-011`'s completion gate)
 - **Objective**: the PSP's fees are checked against pinned terms — the one place a tolerance is
   legitimate, because the fee was never posted before its evidence — and the counterparty's own
   corrections net automatically, closing the breaks they explain as `EVIDENCED`, the one resolution

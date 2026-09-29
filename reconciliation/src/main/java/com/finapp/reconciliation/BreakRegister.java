@@ -81,6 +81,16 @@ public interface BreakRegister {
                     Optional.of(id),
                     Optional.empty());
         }
+
+        /** The one decision-subject type: {@code TIMING_DIFFERENCE} (`P8-TSK-011`). */
+        public static Subject decision(UUID id) {
+            return new Subject(
+                    Optional.empty(),
+                    Optional.empty(),
+                    Optional.empty(),
+                    Optional.empty(),
+                    Optional.of(id));
+        }
     }
 
     /**

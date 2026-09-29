@@ -56,6 +56,15 @@ public final class ReconciliationMetrics {
     /** {@code finapp.reconciliation.suspense.unowned} — items no open break answers for. */
     public static final String SUSPENSE_UNOWNED = "finapp.reconciliation.suspense.unowned";
 
+    /** {@code finapp.reconciliation.run.pending} — runs still owed work (`P8-TSK-011`). */
+    public static final String RUN_PENDING = "finapp.reconciliation.run.pending";
+
+    /** {@code finapp.reconciliation.run.age} — the oldest pending run, in seconds. */
+    public static final String RUN_AGE = "finapp.reconciliation.run.age";
+
+    /** {@code finapp.reconciliation.run.blocked} — runs a person must requeue. */
+    public static final String RUN_BLOCKED = "finapp.reconciliation.run.blocked";
+
     /** The floor: the sweep folds the open register, so it is dearer than a GROUP BY. */
     static final Duration MIN_REFRESH = Duration.ofSeconds(15);
 
@@ -66,17 +75,27 @@ public final class ReconciliationMetrics {
     }
 
     private final PositionProof proof;
+    private final com.finapp.reconciliation.RunReadings runReadings;
+    private final com.finapp.settlement.SettlementFileStore<Connection> sourceRows;
+    private final SettlementSources sources;
     private final Connections connections;
     private final Clock clock;
     private final AtomicReference<Cached> cached = new AtomicReference<>(Cached.empty());
+    private final AtomicReference<CachedRuns> cachedRuns =
+            new AtomicReference<>(CachedRuns.empty());
 
     public ReconciliationMetrics(
             PositionProof proof,
+            com.finapp.reconciliation.RunReadings runReadings,
+            com.finapp.settlement.SettlementFileStore<Connection> sourceRows,
             SettlementSources sources,
             Connections connections,
             Clock clock,
             MeterRegistry registry) {
         this.proof = proof;
+        this.runReadings = runReadings;
+        this.sourceRows = sourceRows;
+        this.sources = sources;
         this.connections = connections;
         this.clock = clock;
 
@@ -157,6 +176,41 @@ public final class ReconciliationMetrics {
                 .register(registry);
         for (SettlementSourceDescriptor source : sources.declared()) {
             String code = source.code();
+            Gauge.builder(RUN_PENDING, this, self -> self.runPending(code))
+                    .tag("source", code)
+                    .description(
+                            "Reconciliation runs of this source still owed work - OPEN or"
+                                    + " IN_PROGRESS (P8-TSK-011, ADR-0068 section 4). A"
+                                    + " count, never an amount. NaN when unreadable, never"
+                                    + " zero. Fleet-wide: aggregate with max(), never"
+                                    + " sum()")
+                    .strongReference(true)
+                    .register(registry);
+            Gauge.builder(RUN_AGE, this, self -> self.runAgeSeconds(code))
+                    .tag("source", code)
+                    .baseUnit("seconds")
+                    .description(
+                            "Age of this source's oldest run still owed work, from its"
+                                    + " stored created_at (P8-TSK-011:"
+                                    + " evidence-to-disposition latency). 0 when none is"
+                                    + " pending; NaN when unreadable. Fleet-wide:"
+                                    + " aggregate with max(), never sum()")
+                    .strongReference(true)
+                    .register(registry);
+            Gauge.builder(RUN_BLOCKED, this, self -> self.runBlocked(code))
+                    .tag("source", code)
+                    .description(
+                            "This source's runs BLOCKED after consecutive chunk failures,"
+                                    + " holding the source until a person requeues"
+                                    + " (P8-TSK-011; the requeue arrives with P8-TSK-014)."
+                                    + " MUST read 0 and alerts above it. NaN when"
+                                    + " unreadable, never zero. Fleet-wide: aggregate with"
+                                    + " max(), never sum()")
+                    .strongReference(true)
+                    .register(registry);
+        }
+        for (SettlementSourceDescriptor source : sources.declared()) {
+            String code = source.code();
             Gauge.builder(OPEN, this, self -> self.openOf(code))
                     .tag("source", code)
                     .description(
@@ -232,6 +286,86 @@ public final class ReconciliationMetrics {
                 .orElse(Double.NaN);
     }
 
+    private double runPending(String code) {
+        return runReading()
+                .counters()
+                .map(byCode -> (double) counterOf(byCode, code).pending())
+                .orElse(Double.NaN);
+    }
+
+    private double runAgeSeconds(String code) {
+        return runReading()
+                .counters()
+                .map(
+                        byCode ->
+                                counterOf(byCode, code)
+                                        .oldestCreatedAt()
+                                        .map(
+                                                oldest ->
+                                                        (double)
+                                                                Duration.between(
+                                                                                oldest,
+                                                                                clock
+                                                                                    .instant())
+                                                                        .getSeconds())
+                                        .orElse(0.0d))
+                .orElse(Double.NaN);
+    }
+
+    private double runBlocked(String code) {
+        return runReading()
+                .counters()
+                .map(byCode -> (double) counterOf(byCode, code).blocked())
+                .orElse(Double.NaN);
+    }
+
+    private static RunCounters counterOf(
+            java.util.Map<String, RunCounters> byCode, String code) {
+        return byCode.getOrDefault(code, new RunCounters(0, Optional.empty(), 0));
+    }
+
+    /** The run counters' own small read — three bounded counts, never the proof's fold. */
+    private CachedRuns runReading() {
+        CachedRuns current = cachedRuns.get();
+        if (!current.isStaleAt(clock.instant())) {
+            return current;
+        }
+        CachedRuns fresh;
+        try (Connection connection = connections.open()) {
+            java.util.Map<java.util.UUID, Long> pending =
+                    runReadings.pendingCountBySource(connection);
+            java.util.Map<java.util.UUID, Instant> oldest =
+                    runReadings.oldestPendingBySource(connection);
+            java.util.Map<java.util.UUID, Long> blocked =
+                    runReadings.blockedCountBySource(connection);
+            // The declared codes onto the reconciliation rows' source ids - the
+            // expectation.open gauge's mapping (P8-TSK-007), read the same way.
+            java.util.Map<String, RunCounters> byCode = new java.util.LinkedHashMap<>();
+            for (SettlementSourceDescriptor declared : sources.declared()) {
+                java.util.Optional<java.util.UUID> id =
+                        sourceRows
+                                .sourceByCode(connection, declared.code())
+                                .map(row -> row.id());
+                byCode.put(
+                        declared.code(),
+                        new RunCounters(
+                                id.map(key -> pending.getOrDefault(key, 0L)).orElse(0L),
+                                id.map(oldest::get).map(Optional::ofNullable).orElse(
+                                        Optional.empty()),
+                                id.map(key -> blocked.getOrDefault(key, 0L)).orElse(0L)));
+            }
+            fresh = new CachedRuns(clock.instant(), Optional.of(java.util.Map.copyOf(byCode)));
+        } catch (Exception unreadable) {
+            log.warn(
+                    "Could not read the run counters; the gauges report absent rather"
+                            + " than zero: {}",
+                    unreadable.getClass().getSimpleName());
+            fresh = new CachedRuns(clock.instant(), Optional.empty());
+        }
+        cachedRuns.set(fresh);
+        return fresh;
+    }
+
     private Cached reading() {
         Cached current = cached.get();
         if (!current.isStaleAt(clock.instant())) {
@@ -258,6 +392,22 @@ public final class ReconciliationMetrics {
         }
         cached.set(fresh);
         return fresh;
+    }
+
+    private record RunCounters(
+            long pending, Optional<Instant> oldestCreatedAt, long blocked) {}
+
+    /** The run counters per declared code — per instance, deciding nothing. */
+    private record CachedRuns(
+            Instant takenAt, Optional<java.util.Map<String, RunCounters>> counters) {
+
+        static CachedRuns empty() {
+            return new CachedRuns(Instant.EPOCH, Optional.empty());
+        }
+
+        boolean isStaleAt(Instant now) {
+            return takenAt.plus(MIN_REFRESH).isBefore(now);
+        }
     }
 
     /** One sweep and when it was taken — per instance, deciding nothing. */

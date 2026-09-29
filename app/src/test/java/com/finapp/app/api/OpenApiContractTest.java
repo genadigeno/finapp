@@ -514,6 +514,12 @@ class OpenApiContractTest {
                         // and the positions report (RECONCILIATION_INVESTIGATE, audited).
                         ApiVersion.CURRENT_PREFIX + "/operator/reconciliation/opening-position",
                         ApiVersion.CURRENT_PREFIX + "/operator/reports/reconciliation/positions",
+                        // P8-TSK-011: the matcher's explanation doors - a decision
+                        // explains itself from stored rows alone (RECONCILIATION_INVESTIGATE).
+                        ApiVersion.CURRENT_PREFIX + "/operator/reconciliation/runs",
+                        ApiVersion.CURRENT_PREFIX + "/operator/reconciliation/runs/{id}",
+                        ApiVersion.CURRENT_PREFIX + "/operator/reconciliation/decisions/{id}",
+                        ApiVersion.CURRENT_PREFIX + "/operator/reconciliation/allocations/{id}",
                         ApiVersion.CURRENT_PREFIX + "/sessions/{id}",
                         ApiVersion.CURRENT_PREFIX + "/sessions/current",
                         ApiVersion.CURRENT_PREFIX + "/me/mfa",
