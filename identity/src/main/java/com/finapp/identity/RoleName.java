@@ -127,7 +127,32 @@ public enum RoleName {
                     // P6-TSK-011: approving a payout destination joins the same population -
                     // four-eyes is two distinct identities (P3-TSK-021's shape), and the
                     // approval statement refuses the proposer whatever roles they hold.
-                    PermissionName.PAYOUT_DESTINATION_APPROVE));
+                    PermissionName.PAYOUT_DESTINATION_APPROVE)),
+
+    /**
+     * Runs settlement and reconciliation (`P8-TSK-003`, ADR-0066, owner decision O1):
+     * introduces settlement evidence, attests another person's upload, and investigates what
+     * arrived over the surfaces that check {@link PermissionName#SETTLEMENT_INGEST} and
+     * {@link PermissionName#RECONCILIATION_INVESTIGATE}.
+     * `P8-TSK-015`'s {@code RECONCILIATION_RESOLVE} joins it when break resolution exists.
+     *
+     * <p><strong>A fifth role, because this IS a distinct trust decision</strong>: judging
+     * whether the outside world's account of the money matches ours is neither operating the
+     * money ({@link #LEDGER_OPERATOR} - whose desk's work this population CHECKS, which is
+     * exactly why the two must stay separate populations), nor administering counterparties,
+     * identities or cases. Holds none of the other populations' permissions and they hold
+     * neither of these, asserted pairwise and over HTTP in both directions
+     * ({@code INV-AUD-03}).
+     *
+     * <p><strong>The four-eyes control is inside the role, not between roles</strong>: any
+     * two holders of {@code SETTLEMENT_INGEST} satisfy {@code INV-SET-07}, but never one
+     * person twice - distinctness is by actor id, at the domain and by {@code CHECK}
+     * (`P8-TSK-003`).
+     */
+    RECONCILIATION_OPERATOR(
+            EnumSet.of(
+                    PermissionName.SETTLEMENT_INGEST,
+                    PermissionName.RECONCILIATION_INVESTIGATE));
 
     private final Set<PermissionName> permissions;
 

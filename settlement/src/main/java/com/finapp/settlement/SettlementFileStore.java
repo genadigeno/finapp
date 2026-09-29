@@ -3,6 +3,9 @@ package com.finapp.settlement;
 import com.finapp.platform.security.Actor;
 import com.finapp.sharedkernel.correlation.CorrelationId;
 import java.time.Instant;
+import java.time.LocalDate;
+import java.util.List;
+import java.util.Objects;
 import java.util.Optional;
 import java.util.UUID;
 
@@ -25,6 +28,102 @@ public interface SettlementFileStore<T> {
 
     /** The seeded identity a code resolves to, or empty — an unknown source stores nothing. */
     Optional<SourceRow> sourceByCode(T unitOfWork, String code);
+
+    /** Every seeded source, by code — the operator's register view (`P8-TSK-003`). */
+    List<SourceRow> sources(T unitOfWork);
+
+    /** A file row as the investigator sees it: metadata only, never a byte of content. */
+    record FileRow(
+            UUID id,
+            String sourceCode,
+            UUID sourceId,
+            DeliveryChannel receivedVia,
+            FileStatus status,
+            Optional<LocalDate> businessDate,
+            SettlementFormatId formatId,
+            int formatVersion,
+            byte[] contentSha256,
+            int contentLength,
+            int lineCount,
+            Optional<String> receivedBy,
+            Optional<Attestation> attestation,
+            Instant receivedAt,
+            CorrelationId correlation) {
+
+        public FileRow {
+            contentSha256 = contentSha256.clone();
+        }
+
+        @Override
+        public byte[] contentSha256() {
+            return contentSha256.clone();
+        }
+    }
+
+    /** The second person's `NULL → value` fact (`INV-SET-07`). */
+    record Attestation(String attestedBy, Instant attestedAt) {
+        public Attestation {
+            Objects.requireNonNull(attestedBy, "attestedBy must not be null");
+            Objects.requireNonNull(attestedAt, "attestedAt must not be null");
+        }
+    }
+
+    /** A refused delivery's metadata row, read back — the reason and position, never a value. */
+    record RefusalRow(
+            UUID id,
+            String sourceCode,
+            byte[] contentSha256,
+            int contentLength,
+            SettlementFormatId formatId,
+            int formatVersion,
+            RefusalReason reason,
+            Optional<Integer> lineNo,
+            Optional<String> fieldName,
+            DeliveryChannel channel,
+            String actor,
+            Instant refusedAt,
+            CorrelationId correlation) {
+
+        public RefusalRow {
+            contentSha256 = contentSha256.clone();
+        }
+
+        @Override
+        public byte[] contentSha256() {
+            return contentSha256.clone();
+        }
+    }
+
+    /** One source's non-terminal backlog: how many files, and the oldest arrival. */
+    record PendingReading(String sourceCode, long pending, Optional<Instant> oldestReceivedAt) {}
+
+    /** The file, or empty — unknown and malformed ids are one answer that records nothing. */
+    Optional<FileRow> fileById(T unitOfWork, UUID fileId);
+
+    /**
+     * The file, locked {@code FOR UPDATE} — the attestation's serialisation point
+     * (ADR-0066 §2). The conditional write below is the arbiter even without it.
+     */
+    Optional<FileRow> lockFileById(T unitOfWork, UUID fileId);
+
+    /**
+     * The conditional {@code NULL → value}: sets {@code attested_by, attested_at} exactly
+     * when no attestation stands, and reports whether THIS call recorded it — under ten
+     * racing instances the database admits one, whatever happened to the row lock.
+     */
+    boolean recordAttestation(T unitOfWork, UUID fileId, String attestedBy, Instant attestedAt);
+
+    /** The newest {@code limit} files across every source — the investigator's list. */
+    List<FileRow> newestFiles(T unitOfWork, int limit);
+
+    /** The newest {@code limit} refused deliveries — metadata rows, never a value. */
+    List<RefusalRow> newestRefusals(T unitOfWork, int limit);
+
+    /**
+     * Every source's non-terminal backlog in one read — the file gauges' query
+     * (`P8-TSK-003`): a source with no waiting file is simply absent.
+     */
+    List<PendingReading> pendingBySource(T unitOfWork);
 
     /**
      * Stores {@code file} with its encrypted chunks — or converges on the file already holding

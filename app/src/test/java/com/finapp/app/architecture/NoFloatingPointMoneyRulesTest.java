@@ -227,6 +227,15 @@ class NoFloatingPointMoneyRulesTest {
                     "com.finapp.app.telemetry.DisputeStageMetrics$Cached",
                     "com.finapp.app.telemetry.StuckOperationMetrics",
                     "com.finapp.app.telemetry.StuckOperationMetrics$Cached",
+                    // P8-TSK-003. The SAME case again, the PaymentMetrics shape exactly: the
+                    // COUNT of non-terminal settlement files per source and the AGE IN whole
+                    // SECONDS of each source's oldest - longs from the store's PendingReading
+                    // to the registry boundary, published through the ToDoubleFunction
+                    // Micrometer's Gauge imposes, NaN the sentinel for unreadable. A count
+                    // and an age, never an amount: no monetary value here to be imprecise
+                    // about.
+                    "com.finapp.app.telemetry.SettlementFileMetrics",
+                    "com.finapp.app.telemetry.SettlementFileMetrics$Cached",
                     // P2-TSK-001. The SAME case again, not a new one: counts of published,
                     // failed and dead-lettered events - ints out of RelayPollResult - published
                     // through Counter.increment(double), the only instrument Micrometer offers.

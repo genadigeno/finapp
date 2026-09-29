@@ -395,64 +395,57 @@ since M0.1". Moved, not edited.)*
 
 ## Current Task
 
-**`P8-TSK-003` — The upload door, attestation and audited evidence access** — `READY`.
-M8.1's third act: an operator introduces settlement evidence over HTTP and a second person
-attests it — the upload half of `INV-SET-07` — and whoever investigates can read what arrived,
-the raw content only by a reasoned, audited, checksum-verified read (`INV-REC-10`'s read half).
-Its entry and field set are in [`BACKLOG.md`](BACKLOG.md); ADR-0066 §1, §2 and §7 are its
-decisions. **Not started.**
+**`P8-TSK-004` — The expectation register and the card completions** — `READY`.
+M8.2's opening act: ADR-0067 made real for the card rail — every externally settling card
+completion opens, in its own transaction, a tracked settlement expectation that is the same
+fact as its clearing journal line (reconciliation `V002`, rule set v1 seeded per source, the
+`SettlementExpectations` port a required constructor parameter of the completing appliers).
+Its entry and field set are in [`BACKLOG.md`](BACKLOG.md); ADR-0067 is its decision, with
+ADR-0068 §2 and ADR-0073 §3 shaping the seeded payout rule. **Not started.**
 
 ### Just completed
 
-**`P8-TSK-002` — The source register, the encrypted file store and the door screen** —
-`COMPLETE` (2026-09-29). **M8.1 stands at 2 of 3**: settlement evidence can now be received —
-screened before anything is stored, encrypted under its own key with the associated data bound,
-checksummed and append-only — and every externally settling position has exactly one declared
-source (`INV-SET-05`), with nothing parsed and no door open. **The register is compiled and
-composed in `app`** (`SettlementBeans`, joining the confinement test's configuration files): the
-rails' positions read off `RailCapabilities.clearingPurpose()`, the payout's off the new
-`merchant.PayoutSettlementDeclaration.CLEARING_PURPOSE` (`MerchantPayoutOutcomes` switched to it —
-still `PAYOUT_CLEARING`, no behaviour change), coverage verified at composition so an uncovered
-settling rail fails the build and every startup (`EverySettlingPositionHasASourceTest`, its
-planted-rail probe in-test), and `settlement`/`reconciliation` may not even NAME a `*_CLEARING`
-purpose (the widened confinement rule). The descriptor refuses incoherence at construction — a
-format for another kind, an empty channel set, a malformed remittance-reference pattern, and the
-position and pattern each present exactly for the report kinds *(a design elaboration: the
-backlog's pattern field became kind-coherent, because the bank statement is where remittances
-land and has none of its own)*. **Settlement `V002`**: `source` seeded by identity alone (no
-position column; retirement one-way, the sequence forward-only, identity frozen, never deleted —
-all by trigger for every writer), `file` born `RECEIVED` with no edge (the generated `CHECK` and
-transition trigger admit exactly the machine that exists; both attestation `CHECK`s stated now),
-the content unique among non-readmissions, `file_chunk`/`file_event`/`file_receipt`/
-`refused_delivery` each `SELECT, INSERT` with an every-writer append-only trigger, the file's
-`UPDATE` column-narrowed, and **no `DELETE` for `finapp_app` anywhere**. **`FileReception`** (the
-one door, channels arriving with `-003`/`-021`/`-022`): source known and `ACTIVE`, the bounds
-(1..8 MiB, 50,000 records by the screen's own walk), the conservative whole-stream screen
-(Luhn-valid 13–19-digit runs with separators collapsed; the international account shape as a
-second, independent pass — the first draft hung it off the digit walk and an identifier separated
-from its closing character escaped, caught by the unit tier), then the content address: the row,
-its AES-256-GCM chunks (fresh 12-byte nonces, the AAD binding `file_id ‖ source_id ‖
-content_sha256 ‖ seq` at fixed widths), a `NEW` receipt, the birth event and the channel's
-passed-in audit action in ONE transaction — or a `DUPLICATE` receipt and nothing else — or a
-refusal that is a RESULT, never an exception, committing exactly its metadata row and
-`settlement.SettlementDeliveryRefused` (catalogued; an over-bound delivery leaves the audit
-record alone). Reads decrypt every chunk under its binding and verify the whole plaintext
-against the stored address before serving a byte. **`FINAPP_SETTLEMENT_FILE_KEY`** is the
-twelfth confined credential (`SettlementFileKey`, suffix `/settlement-file`, `EXACTLY_32`);
-the two ingestion series count after commit (`CommittedReceptionOutcomes`, the
-`CommittedRailOutcomes` shape), eagerly per source, and `source` joined
-`MetricNames.ALLOWED_TAG_KEYS` with its written argument. Proven live in settlement's own
-database tier: round-trips at 1 byte, both chunk boundaries and 8 MiB; the ten-way
-`SimulatedInstance` race (one row, one `NEW`, nine `DUPLICATE`); a PAN and an IBAN each leaving
-only metadata, the needle absent from every settlement column and captured logs; a flipped
-byte, a transplanted chunk and a truncated file each serving nothing; append-only and the
-narrowed grants exercised as both roles. `DATA_CLASSIFICATION.md` §4 +63 rows;
-`AUDITABLE_ACTIONS.md` +1. Multi-instance `PASS` — the content unique is the arbiter, the
-register is compiled data, and the seeded row holds identity and operational state only.
+**`P8-TSK-003` — The upload door, attestation and audited evidence access** — `COMPLETE`
+(2026-09-29). **M8.1, Evidence intake, CLOSES at 3 of 3**: settlement evidence now arrives over
+HTTP, waits visibly for its second person, and is readable only on the record. **Identity's
+fifth population** (`V016`, owner decision O1): `SETTLEMENT_INGEST` and
+`RECONCILIATION_INVESTIGATE`, held by `RECONCILIATION_OPERATOR` alone — pairwise disjoint from
+every desk it checks (`RoleNameTest`'s exact grants; `RECONCILIATION_RESOLVE` joins with
+`-015`). **Seven routes under `/v1/operator/settlement`** (each pinned in
+`RoutePermissionRegisterTest`, the OpenAPI baseline regenerated, seven `settlement.*` codes
+catalogued): the upload (`202 {fileId, status, duplicateOf?}`, keyed per principal under
+`settlement.upload:<actorType>:<actorId>` — the `X-TSK-003` disposition — with claim, reception
+and stored outcome ONE transaction, and **a refusal a recorded FAILED outcome that replays**,
+never an exception, its metadata row and audit committing while the client is told the line and
+field and never the value); the attestation (`INV-SET-07`'s upload half: row lock, conditional
+`NULL → value`, self-attestation refused at the domain AND by `V002`'s `CHECK`, the same
+attester converging, audited `settlement.SettlementFileAttested`); the metadata reads (sources,
+files, refused deliveries, bounded at 100 with `truncated`); and the ONE content path —
+`POST .../content-reads {reason}` under `RECONCILIATION_INVESTIGATE`, one
+`settlement.SettlementFileContentRead` record per read committed with the read, byte-identical
+content or a `FAILED` record and nothing served (`INV-REC-10`'s read half; a guessed id is a
+404 recording nothing). The transport carve-out: exactly the upload route admits its ~11.2 MiB
+base64 envelope (12 MiB bound, `finapp.api.settlement-upload-max-request-bytes`) while the
+DOMAIN refuses 8 MiB + 1 decoded as `413 settlement.FileTooLarge` with the audit record written
+— every other surface keeps the 1 MiB bound. The file gauges (`finapp.settlement.file.pending`,
+`.age` per source, `SettlementFileMetrics`) publish eagerly per declared source from a fresh
+instance, NaN when unreadable, zero when quiet. Proven over real HTTP and in settlement's own
+database tier: negatives per route (401, and 403 for the money-operating desk), replay
+byte-identical, key reuse 409, a second principal's same key its own claim and its same bytes
+`duplicateOf` with its own receipt, the ten-way attester race admitting exactly one, a PAN
+answering 422 naming line 2 and resting in no response, row, log or audit summary. **Five probe
+runs**: the attestation `CHECK`, the domain distinctness, the read audit and the per-principal
+scope each dropped and caught by the intended test; the row lock removed and the race still
+admitting one — the conditional is the arbiter, demonstrated rather than assumed
+(`MUTATION_TESTING.md` §2 +4 rows). Multi-instance `PASS` — the content unique, the
+per-principal claim and the conditional `NULL → value` are all PostgreSQL's. Deliberately
+deferred: the decline (`-008`, where `REJECTED` exists), parsed totals an attester reads first
+(`-008`), acceptance (`-009`), pull (`-021`), readmission (`-022`); the operators-audited-as-
+`CUSTOMER` debt stands (Phase 15) and does not weaken distinctness, which is by actor id.
 
 ### Previously
 
-The per-task completion records — 162 blocks, from `P7-TST-002` back to project initiation
+The per-task completion records — 166 blocks, from `P8-TSK-002` back to project initiation
 (`X-TSK-004` cross-cutting, standing between `P7-TSK-001` and the Phase 6 → 7 transition) —
 are archived in [`history/TASK_HISTORY.md`](history/TASK_HISTORY.md).
 *(This pointer read "130 blocks, from `P6-TSK-005`" through four archivals — corrected by
@@ -471,9 +464,10 @@ archived verbatim in
 
 ## Active Work
 
-**Phase 8 is `IN_PROGRESS`** (2026-09-28) — 2 of 27 items complete; **M8.1, Evidence intake, at
-2 of 3** — the modules and floors, then the register, the file store and the screen; next
-`P8-TSK-003` ([§Current Task](#current-task) is kept current). Phase 7 is `COMPLETE` — 18 of 18
+**Phase 8 is `IN_PROGRESS`** (2026-09-28) — 3 of 27 items complete; **M8.1, Evidence intake,
+`CLOSED` 2026-09-29 at 3 of 3** — the modules and floors, then the register, the file store and
+the screen, then the upload door, attestation and the audited reads; next `P8-TSK-004`, opening
+M8.2 ([§Current Task](#current-task) is kept current). Phase 7 is `COMPLETE` — 18 of 18
 items, M7.1–M7.8 closed, ruled by `P7-DOC-001` and confirmed after repair by the Phase 7 → 8
 transition ([`reviews/PHASE_7_TO_8_TRANSITION.md`](reviews/PHASE_7_TO_8_TRANSITION.md)). *(This
 paragraph read "6 of 18 items complete; M7.1, Rail foundations, opens at 1 of 3 (`P7-TSK-001`).
@@ -875,9 +869,9 @@ Resolved during initiation:
 
 ## Next Task
 
-**`P8-TSK-003`** — `READY` (the Current Task), marked by `P8-TSK-002`'s completion gate — the
-milestone's own order (`-003` depends on `-002` alone); `P8-TSK-006` (on nothing within Phase 8)
-stays the recorded alternative if M8.1 must yield.
+**`P8-TSK-004`** — `READY` (the Current Task), marked by `P8-TSK-003`'s completion gate — M8.2's
+opening act, its dependencies (`-001`, `-002`) both complete; `P8-TSK-006` (on nothing within
+Phase 8) stays the recorded alternative if M8.2's order must yield.
 
 ### Superseded: the Phase 7 → 8 transition lead (read until 2026-09-28)
 

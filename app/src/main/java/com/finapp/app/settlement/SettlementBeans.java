@@ -2,12 +2,16 @@ package com.finapp.app.settlement;
 
 import com.finapp.app.security.DatabaseEndpoint;
 import com.finapp.app.telemetry.CommittedReceptionOutcomes;
+import com.finapp.app.telemetry.SettlementFileMetrics;
 import com.finapp.app.telemetry.SettlementMeters;
 import com.finapp.merchant.PayoutSettlementDeclaration;
 import com.finapp.payments.PaymentRails;
 import com.finapp.payments.RailId;
 import com.finapp.platform.audit.AuditWriter;
+import com.finapp.platform.idempotency.IdempotentExecutor;
 import com.finapp.settlement.DeliveryChannel;
+import com.finapp.settlement.EvidenceContentReads;
+import com.finapp.settlement.FileAttestation;
 import com.finapp.settlement.FileReception;
 import com.finapp.settlement.JdbcSettlementFileStore;
 import com.finapp.settlement.ReceptionOutcomeObserver;
@@ -26,10 +30,14 @@ import java.util.List;
 import java.util.Map;
 import java.util.Optional;
 import java.util.Set;
+import javax.sql.DataSource;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
 import org.springframework.core.env.Environment;
+import org.springframework.transaction.PlatformTransactionManager;
+import org.springframework.transaction.TransactionDefinition;
+import org.springframework.transaction.support.TransactionTemplate;
 
 /**
  * The settlement module's composition (`P8-TSK-002`, ADR-0064, ADR-0066) — and the ONE place
@@ -179,5 +187,79 @@ public class SettlementBeans {
                 auditWriter,
                 idGenerator,
                 clock);
+    }
+
+    /**
+     * The settlement transaction (`P8-TSK-003`): {@code REQUIRES_NEW} and default isolation —
+     * every contended decision inside is a conditional {@code UPDATE}'s row count or a
+     * unique constraint (the {@code paymentTransactions} recorded reasons).
+     */
+    @Bean
+    TransactionTemplate settlementTransactions(PlatformTransactionManager transactionManager) {
+        TransactionTemplate template = new TransactionTemplate(transactionManager);
+        template.setPropagationBehavior(TransactionDefinition.PROPAGATION_REQUIRES_NEW);
+        template.setIsolationLevel(TransactionDefinition.ISOLATION_DEFAULT);
+        return template;
+    }
+
+    /** The second person's act (`INV-SET-07`): row lock, conditional, audit — one transaction. */
+    @Bean
+    FileAttestation<Connection> fileAttestation(
+            SettlementFileStore<Connection> settlementFileStore,
+            AuditWriter<Connection> auditWriter,
+            IdGenerator idGenerator,
+            Clock clock) {
+        return new FileAttestation<>(settlementFileStore, auditWriter, idGenerator, clock);
+    }
+
+    /** The one content path (`INV-REC-10`): verified, reasoned, audited per read. */
+    @Bean
+    EvidenceContentReads<Connection> evidenceContentReads(
+            SettlementFileStore<Connection> settlementFileStore,
+            AuditWriter<Connection> auditWriter,
+            IdGenerator idGenerator,
+            Clock clock) {
+        return new EvidenceContentReads<>(settlementFileStore, auditWriter, idGenerator, clock);
+    }
+
+    @Bean
+    SettlementOperations settlementOperations(
+            SettlementSources settlementSources,
+            FileReception<Connection> fileReception,
+            FileAttestation<Connection> fileAttestation,
+            EvidenceContentReads<Connection> evidenceContentReads,
+            SettlementFileStore<Connection> settlementFileStore,
+            IdempotentExecutor idempotentExecutor,
+            TransactionTemplate settlementTransactions,
+            DataSource dataSource) {
+        return new SettlementOperations(
+                settlementSources,
+                fileReception,
+                fileAttestation,
+                evidenceContentReads,
+                settlementFileStore,
+                idempotentExecutor,
+                settlementTransactions,
+                dataSource);
+    }
+
+    /**
+     * The file gauges (`P8-TSK-003`, `PHASE_8_PLAN.md` §15): pending and oldest-age per
+     * source, over the application's own {@code DataSource} — the {@code TelemetryConfiguration}
+     * siblings' reasoning, declared here because the register and store are this module's.
+     */
+    @Bean
+    SettlementFileMetrics settlementFileMetrics(
+            SettlementFileStore<Connection> settlementFileStore,
+            SettlementSources settlementSources,
+            DataSource dataSource,
+            Clock clock,
+            MeterRegistry meterRegistry) {
+        return new SettlementFileMetrics(
+                settlementFileStore,
+                settlementSources,
+                dataSource::getConnection,
+                clock,
+                meterRegistry);
     }
 }

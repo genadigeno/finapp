@@ -98,7 +98,17 @@ class RoutePermissionRegisterTest {
                     entry("POST /v1/operator/disputes/{disputeId}/acceptance", PermissionName.DISPUTE_ADMINISTER),
                     // The chargeback-ratio report (P7-TSK-015): the standing desk's evidence,
                     // across every merchant, audited per report served
-                    entry("GET /v1/operator/reports/chargeback-ratio", PermissionName.MERCHANT_ADMINISTER)));
+                    entry("GET /v1/operator/reports/chargeback-ratio", PermissionName.MERCHANT_ADMINISTER),
+                    // Settlement evidence (P8-TSK-003, ADR-0066): introducing and attesting
+                    // is SETTLEMENT_INGEST; every read - and the ONE content path, reasoned
+                    // and audited per read (INV-REC-10) - is RECONCILIATION_INVESTIGATE
+                    entry("POST /v1/operator/settlement/files", PermissionName.SETTLEMENT_INGEST),
+                    entry("POST /v1/operator/settlement/files/{id}/attestation", PermissionName.SETTLEMENT_INGEST),
+                    entry("GET /v1/operator/settlement/sources", PermissionName.RECONCILIATION_INVESTIGATE),
+                    entry("GET /v1/operator/settlement/files", PermissionName.RECONCILIATION_INVESTIGATE),
+                    entry("GET /v1/operator/settlement/files/{id}", PermissionName.RECONCILIATION_INVESTIGATE),
+                    entry("GET /v1/operator/settlement/refused-deliveries", PermissionName.RECONCILIATION_INVESTIGATE),
+                    entry("POST /v1/operator/settlement/files/{id}/content-reads", PermissionName.RECONCILIATION_INVESTIGATE)));
 
     /** The MVC mapping, by name - actuator registers a second one (the rule test's reason). */
     @Autowired

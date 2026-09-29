@@ -488,9 +488,19 @@ ceiling), ADR-0046 (no connection across a pull), ADR-0008 (the collector SPI).
   included), the content-address convergence with its receipts (point 5), and the encrypted
   store behind `SettlementFileStore` — 1 MiB AES-256-GCM chunks under
   `FINAPP_SETTLEMENT_FILE_KEY` with the associated data of point 6 bound and the
-  whole-plaintext checksum verified on every read. No channel is open yet: the door routes,
-  attestation and the audited content read are `P8-TSK-003`'s, pull `P8-TSK-021`'s,
-  readmission `P8-TSK-022`'s. Everything else here is the decided design, corrected by the
-  tasks that build it.
+  whole-plaintext checksum verified on every read. `P8-TSK-003` (2026-09-29) opened the first
+  channel: point 1's `UPLOAD` row (`POST /v1/operator/settlement/files`, `202` with
+  `duplicateOf`, keyed per principal under `settlement.upload:<actorType>:<actorId>`, the
+  claim and the reception one transaction), point 2's attestation (`POST
+  .../files/{id}/attestation` under `SETTLEMENT_INGEST`; the row lock, the conditional
+  `NULL → value`, the distinctness refused at the domain and by the `CHECK`; the decline
+  moved to `P8-TSK-008` at elaboration, where `REJECTED` exists), and point 7's one read path
+  (`POST .../files/{id}/content-reads {reason}` under `RECONCILIATION_INVESTIGATE`, one
+  `settlement.SettlementFileContentRead` record per read, a verification failure audited
+  `FAILED` and serving nothing) with the metadata reads beside it, plus the
+  `finapp.settlement.file.pending`/`.age` gauges of point 2's "visibly". Pull is
+  `P8-TSK-021`'s, readmission `P8-TSK-022`'s, the field-class screens and the parse leg
+  `P8-TSK-008`'s. Everything else here is the decided design, corrected by the tasks that
+  build it.
 - The Phase 8 review reads this ADR against the code before accepting it (`P8-DOC-001`, the
   `P7-DOC-001` precedent).

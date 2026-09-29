@@ -549,6 +549,38 @@ malformed proposal identifier is the ordinary `api.NotFound`, one answer for bot
 validation owns required-field refusals; the reason's **bound** lives in three reconciled
 places (the DTO, `V004`'s `CHECK`, `AuditRecord`).
 
+### `settlement` — `SettlementErrorCode`
+
+| Code | Status | Meaning |
+|---|---|---|
+| `settlement.SourceUnknown` | 422 | No declared settlement source has this code. |
+| `settlement.SourceRetired` | 409 | This settlement source is retired and accepts no deliveries. |
+| `settlement.FileTooLarge` | 413 | The delivery exceeds the settlement file bounds. |
+| `settlement.DeliveryRefused` | 422 | The delivery was refused by the door screen; only metadata was recorded. |
+| `settlement.FileNotFound` | 404 | No settlement file has this identifier. |
+| `settlement.FileNotAttestable` | 409 | This settlement file cannot be attested. |
+| `settlement.AttestationBySubmitter` | 409 | The uploader cannot attest their own file; a second person must. |
+
+The evidence surfaces' refusals (`P8-TSK-003`, ADR-0066). **No title or detail ever carries a
+value from the file** (`INV-PAY-02`, `INV-RAIL-03`): `settlement.DeliveryRefused` (422) names
+the finding's line and field and nothing else — the refusal wrote its metadata row and audit
+record, and recovery is re-presentation of a clean file. `settlement.FileTooLarge` (413) is
+the decoded-content bound (8 MiB, 50,000 records), decided by the **domain** behind the
+route's own transport carve-out, so an over-bound delivery leaves its audit record rather
+than dying anonymously at a filter. `settlement.SourceUnknown` (422) is a body field the
+caller can correct, refused before anything is claimed or written;
+`settlement.SourceRetired` (409) is operational state. `settlement.FileNotFound` (404) is a
+deliberate departure from the payments rule that an unknown identifier is the anonymous
+`api.NotFound`: every settlement route sits behind an operator permission, so the surface is
+no oracle over anyone else's resources — unknown and malformed ids are still ONE answer, and
+a guessed id records nothing. The attestation pair are 409s — the caller holds the
+permission; the file's own facts refuse the act: `settlement.AttestationBySubmitter` is
+`INV-SET-07`'s named negative made actionable (the remedy is a second person, and the
+database `CHECK` stands behind the domain refusal), and `settlement.FileNotAttestable` is one
+code for the remaining causes (not an upload; another person's attestation already stands)
+because the remedy is one — read the file. The same attester's retry converges and produces
+neither.
+
 ## 3a. Rejection at the boundary
 
 Untrusted input is refused before any domain code runs (`P0-TSK-025`).

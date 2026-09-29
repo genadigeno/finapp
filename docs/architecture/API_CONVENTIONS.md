@@ -139,6 +139,13 @@ The limit closes both routes — a declared `Content-Length` over the limit is r
 reading a byte, and a chunked body, which declares no length at all, is bounded by a counting
 stream. A limit that only reads the header is one a caller opts out of by sending chunked.
 
+**One route carries its own bound** (`P8-TSK-003`, ADR-0066 §4): `POST
+/v1/operator/settlement/files` is bounded at **12582912** bytes (`finapp.api.settlement-upload-max-request-bytes`),
+because a settlement upload's base64 envelope of up to 8 MiB decoded is ~11.2 MiB on the wire.
+A per-route carve-out, never a raised global limit — every other surface keeps the 1 MiB bound,
+and the decoded-content rule (8 MiB, 50,000 records) still belongs to the domain, which refuses
+it as `settlement.FileTooLarge` (413) with the refusal's audit record written.
+
 **Rejected values are never echoed.** A validation detail names the field and the constraint, both
 of which are ours; the value is the caller's, and reflecting untrusted bytes into a response is how
 an error message becomes a vector (`INV-AUD-02`).

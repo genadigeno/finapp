@@ -9523,7 +9523,7 @@ Disputes (`P7-TSK-012`…`-014`) · M7.7 Observability and demonstration (`P7-TS
 
 # Phase 8 — Settlement and Reconciliation
 
-Status: `IN_PROGRESS` — started 2026-09-28 with `P8-TSK-001` (2 of 27 items complete, M8.1 at 2 of 3); entry gate passed 2026-09-28 by the Phase 7 → 8 transition
+Status: `IN_PROGRESS` — started 2026-09-28 with `P8-TSK-001` (3 of 27 items complete; M8.1 Evidence intake closed 2026-09-29 at 3 of 3); entry gate passed 2026-09-28 by the Phase 7 → 8 transition
 ([`reviews/PHASE_7_TO_8_TRANSITION.md`](reviews/PHASE_7_TO_8_TRANSITION.md)), elaborated to task
 granularity by the same transition: twenty-seven items (`P8-TSK-001`…`-024`, `P8-TST-001`,
 `P8-TST-002`, `P8-DOC-001`) across eight milestones, with `P8-TSK-001` marked `READY`. The
@@ -9770,7 +9770,7 @@ posting-date documentation reconciled with the Phase 5–7 practice, with no ret
   key is confined.
 - **Definition of done**: `DOD-FIN`, `DOD-SEC`, `DOD-OBS`, `DOD-TEST`, `DOD-DOC`. **Risk**: Medium. **Cx**: M.
 
-**P8-TSK-003 — The upload door, attestation and audited evidence access** — `READY`
+**P8-TSK-003 — The upload door, attestation and audited evidence access** — `COMPLETE` (2026-09-29)
 - **Objective**: an operator introduces settlement evidence and a second person attests it — the
   upload half of `INV-SET-07` — and whoever investigates can read what arrived, the raw content only
   by a reasoned, audited, checksum-verified read.
@@ -9858,7 +9858,7 @@ posting-date documentation reconciled with the Phase 5–7 practice, with no ret
   the file gauges published by a fresh instance.
 - **Definition of done**: `DOD-API`, `DOD-SEC`, `DOD-OBS`, `DOD-TEST`, `DOD-DOC`. **Risk**: Medium. **Cx**: M.
 
-**P8-TSK-004 — The expectation register and the card completions** — `PLANNED`
+**P8-TSK-004 — The expectation register and the card completions** — `READY`
 - **Objective**: ADR-0067 made real for the card rail — every externally settling card completion
   opens, in its own transaction, a tracked settlement expectation that is the same fact as its
   clearing journal line; rule set v1 seeded for the four sources.

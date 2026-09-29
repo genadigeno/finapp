@@ -11,7 +11,10 @@ import java.sql.ResultSet;
 import java.sql.SQLException;
 import java.sql.Timestamp;
 import java.time.Instant;
+import java.time.LocalDate;
+import java.util.ArrayList;
 import java.util.Arrays;
+import java.util.List;
 import java.util.Objects;
 import java.util.Optional;
 import java.util.UUID;
@@ -56,6 +59,196 @@ public final class JdbcSettlementFileStore implements SettlementFileStore<Connec
             }
         } catch (SQLException failure) {
             throw new SettlementStorageException("could not read settlement source", failure);
+        }
+    }
+
+    @Override
+    public List<SourceRow> sources(Connection unitOfWork) {
+        try (PreparedStatement read =
+                unitOfWork.prepareStatement(
+                        "SELECT id, code, kind, status FROM settlement.source ORDER BY code")) {
+            try (ResultSet rows = read.executeQuery()) {
+                List<SourceRow> sources = new ArrayList<>();
+                while (rows.next()) {
+                    sources.add(
+                            new SourceRow(
+                                    rows.getObject("id", UUID.class),
+                                    rows.getString("code"),
+                                    SourceKind.valueOf(rows.getString("kind")),
+                                    "ACTIVE".equals(rows.getString("status"))));
+                }
+                return List.copyOf(sources);
+            }
+        } catch (SQLException failure) {
+            throw new SettlementStorageException("could not read the settlement sources", failure);
+        }
+    }
+
+    /** The file row's columns, joined to the source's code — every reader shares one shape. */
+    private static final String FILE_ROW_COLUMNS =
+            "SELECT f.id, s.code AS source_code, f.source_id, f.received_via, f.status,"
+                    + " f.business_date, f.format_id, f.format_version, f.content_sha256,"
+                    + " f.content_length, f.line_count, f.received_by, f.attested_by,"
+                    + " f.attested_at, f.received_at, f.correlation_id"
+                    + " FROM settlement.file f"
+                    + " JOIN settlement.source s ON s.id = f.source_id";
+
+    @Override
+    public Optional<FileRow> fileById(Connection unitOfWork, UUID fileId) {
+        return oneFile(unitOfWork, fileId, FILE_ROW_COLUMNS + " WHERE f.id = ?");
+    }
+
+    @Override
+    public Optional<FileRow> lockFileById(Connection unitOfWork, UUID fileId) {
+        // FOR UPDATE OF f: the attestation's serialisation point. The joined source row is
+        // deliberately not locked - retiring a source must never wait on an attestation.
+        return oneFile(unitOfWork, fileId, FILE_ROW_COLUMNS + " WHERE f.id = ? FOR UPDATE OF f");
+    }
+
+    private Optional<FileRow> oneFile(Connection unitOfWork, UUID fileId, String sql) {
+        Objects.requireNonNull(fileId, "fileId must not be null");
+        try (PreparedStatement read = unitOfWork.prepareStatement(sql)) {
+            read.setObject(1, fileId);
+            try (ResultSet row = read.executeQuery()) {
+                if (!row.next()) {
+                    return Optional.empty();
+                }
+                return Optional.of(fileRow(row));
+            }
+        } catch (SQLException failure) {
+            throw new SettlementStorageException("could not read a settlement file row", failure);
+        }
+    }
+
+    private static FileRow fileRow(ResultSet row) throws SQLException {
+        Timestamp attestedAt = row.getTimestamp("attested_at");
+        String attestedBy = row.getString("attested_by");
+        return new FileRow(
+                row.getObject("id", UUID.class),
+                row.getString("source_code"),
+                row.getObject("source_id", UUID.class),
+                DeliveryChannel.valueOf(row.getString("received_via")),
+                FileStatus.valueOf(row.getString("status")),
+                Optional.ofNullable(row.getObject("business_date", LocalDate.class)),
+                SettlementFormatId.valueOf(row.getString("format_id")),
+                row.getInt("format_version"),
+                row.getBytes("content_sha256"),
+                row.getInt("content_length"),
+                row.getInt("line_count"),
+                Optional.ofNullable(row.getString("received_by")),
+                attestedBy == null
+                        ? Optional.empty()
+                        : Optional.of(new Attestation(attestedBy, attestedAt.toInstant())),
+                row.getTimestamp("received_at").toInstant(),
+                CorrelationId.of(row.getString("correlation_id")));
+    }
+
+    @Override
+    public boolean recordAttestation(
+            Connection unitOfWork, UUID fileId, String attestedBy, Instant attestedAt) {
+        Objects.requireNonNull(attestedBy, "attestedBy must not be null");
+        try (PreparedStatement write =
+                unitOfWork.prepareStatement(
+                        // The conditional NULL -> value is the arbiter (ADR-0066 §2): under
+                        // ten instances exactly one update matches, whatever happened to the
+                        // row lock. The CHECKs and the transition trigger stand behind it.
+                        "UPDATE settlement.file SET attested_by = ?, attested_at = ?"
+                                + " WHERE id = ? AND attested_by IS NULL")) {
+            write.setString(1, attestedBy);
+            write.setTimestamp(2, Timestamp.from(attestedAt));
+            write.setObject(3, fileId);
+            return write.executeUpdate() == 1;
+        } catch (SQLException failure) {
+            throw new SettlementStorageException("could not record an attestation", failure);
+        }
+    }
+
+    @Override
+    public List<FileRow> newestFiles(Connection unitOfWork, int limit) {
+        // The id beside the timestamp: two files received in the same instant still list in
+        // one stable order on every instance.
+        try (PreparedStatement read =
+                unitOfWork.prepareStatement(
+                        FILE_ROW_COLUMNS + " ORDER BY f.received_at DESC, f.id LIMIT ?")) {
+            read.setInt(1, limit);
+            try (ResultSet rows = read.executeQuery()) {
+                List<FileRow> files = new ArrayList<>();
+                while (rows.next()) {
+                    files.add(fileRow(rows));
+                }
+                return List.copyOf(files);
+            }
+        } catch (SQLException failure) {
+            throw new SettlementStorageException("could not list settlement files", failure);
+        }
+    }
+
+    @Override
+    public List<RefusalRow> newestRefusals(Connection unitOfWork, int limit) {
+        try (PreparedStatement read =
+                unitOfWork.prepareStatement(
+                        "SELECT r.id, s.code AS source_code, r.content_sha256,"
+                                + " r.content_length, r.format_id, r.format_version, r.reason,"
+                                + " r.line_no, r.field_name, r.channel, r.actor, r.refused_at,"
+                                + " r.correlation_id"
+                                + " FROM settlement.refused_delivery r"
+                                + " JOIN settlement.source s ON s.id = r.source_id"
+                                + " ORDER BY r.refused_at DESC, r.id LIMIT ?")) {
+            read.setInt(1, limit);
+            try (ResultSet rows = read.executeQuery()) {
+                List<RefusalRow> refusals = new ArrayList<>();
+                while (rows.next()) {
+                    Integer lineNo = rows.getObject("line_no", Integer.class);
+                    refusals.add(
+                            new RefusalRow(
+                                    rows.getObject("id", UUID.class),
+                                    rows.getString("source_code"),
+                                    rows.getBytes("content_sha256"),
+                                    rows.getInt("content_length"),
+                                    SettlementFormatId.valueOf(rows.getString("format_id")),
+                                    rows.getInt("format_version"),
+                                    RefusalReason.valueOf(rows.getString("reason")),
+                                    Optional.ofNullable(lineNo),
+                                    Optional.ofNullable(rows.getString("field_name")),
+                                    DeliveryChannel.valueOf(rows.getString("channel")),
+                                    rows.getString("actor"),
+                                    rows.getTimestamp("refused_at").toInstant(),
+                                    CorrelationId.of(rows.getString("correlation_id"))));
+                }
+                return List.copyOf(refusals);
+            }
+        } catch (SQLException failure) {
+            throw new SettlementStorageException("could not list refused deliveries", failure);
+        }
+    }
+
+    @Override
+    public List<PendingReading> pendingBySource(Connection unitOfWork) {
+        try (PreparedStatement read =
+                unitOfWork.prepareStatement(
+                        // Non-terminal by exclusion, deliberately: RECEIVED is the only value
+                        // today, PARSED joins with P8-TSK-008, and a gauge that named the
+                        // waiting statuses would silently stop counting the day one arrives.
+                        "SELECT s.code, count(*) AS pending, min(f.received_at) AS oldest"
+                                + " FROM settlement.file f"
+                                + " JOIN settlement.source s ON s.id = f.source_id"
+                                + " WHERE f.status NOT IN ('ACCEPTED', 'REJECTED')"
+                                + " GROUP BY s.code")) {
+            try (ResultSet rows = read.executeQuery()) {
+                List<PendingReading> readings = new ArrayList<>();
+                while (rows.next()) {
+                    Timestamp oldest = rows.getTimestamp("oldest");
+                    readings.add(
+                            new PendingReading(
+                                    rows.getString("code"),
+                                    rows.getLong("pending"),
+                                    Optional.ofNullable(oldest).map(Timestamp::toInstant)));
+                }
+                return List.copyOf(readings);
+            }
+        } catch (SQLException failure) {
+            throw new SettlementStorageException(
+                    "could not read the pending settlement files", failure);
         }
     }
 

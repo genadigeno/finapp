@@ -255,5 +255,40 @@ public enum PermissionName {
      * money forced back through the rail, and answering it is payment operations — the
      * money-operating population's concern until a trust decision splits it.
      */
-    DISPUTE_ADMINISTER
+    DISPUTE_ADMINISTER,
+
+    /**
+     * Introduce settlement evidence and attest another person's upload (`P8-TSK-003`,
+     * ADR-0066 §1–§2): {@code POST /v1/operator/settlement/files} and
+     * {@code POST .../files/'{id}'/attestation}. Names
+     * {@code settlement.SettlementFileUploaded} and
+     * {@code settlement.SettlementFileAttested}; ships with its real check sites.
+     *
+     * <p><strong>Its own permission, because evidence intake is not operating the money.</strong>
+     * A settlement file decides nothing until the accept leg reads it (`P8-TSK-009`), but what
+     * it will decide is which clearing positions discharge into cash — so who may introduce it
+     * is the phase's first money-relevant authorization, and it belongs to the reconciliation
+     * population, not the money-operating one ({@code INV-SET-07}'s reasoning: the threat is a
+     * single insider, and the fewer hats one desk wears the fewer files one person can both
+     * introduce and vouch for). The second-person control lives <em>inside</em> this
+     * population, by actor distinctness at two ranks, not across populations.
+     */
+    SETTLEMENT_INGEST,
+
+    /**
+     * Investigate settlement evidence (`P8-TSK-003`, ADR-0066 §7): the metadata reads —
+     * {@code GET /v1/operator/settlement/sources}, {@code .../files[/'{id}']},
+     * {@code .../refused-deliveries} — and the ONE content path,
+     * {@code POST .../files/'{id}'/content-reads}, reasoned and audited per read
+     * ({@code INV-REC-10}). Names {@code settlement.SettlementFileContentRead}; ships with its
+     * real check sites.
+     *
+     * <p><strong>Distinct from {@link #SETTLEMENT_INGEST}</strong> because the checks differ
+     * per surface (the reads demand nothing; the content read demands a recorded reason), and
+     * because reading a bank statement's raw bytes — names, counterparty details,
+     * {@code RESTRICTED-PII} — is a different trust decision from delivering a file whose
+     * bytes one already holds. One role holds both today; the vocabulary is precise so a later
+     * split is a one-line change (the {@code FEE_ADMINISTER} shape).
+     */
+    RECONCILIATION_INVESTIGATE
 }

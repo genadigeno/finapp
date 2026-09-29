@@ -1,6 +1,6 @@
 # Task History
 
-The per-task completion records that accumulated behind `## Current Task` - 165 "Previously" blocks, newest first, from `P8-TSK-001` back to project initiation. *(`X-TSK-004` is cross-cutting and completed after the Phase 6 → 7 transition, so it stands second, between `P7-TSK-001` and the transition's record - the transition's block moved here by `P7-TSK-001`'s gate, exactly as an earlier form of this note said it would.)*
+The per-task completion records that accumulated behind `## Current Task` - 166 "Previously" blocks, newest first, from `P8-TSK-002` back to project initiation. *(`X-TSK-004` is cross-cutting and completed after the Phase 6 → 7 transition, so it stands second, between `P7-TSK-001` and the transition's record - the transition's block moved here by `P7-TSK-001`'s gate, exactly as an earlier form of this note said it would.)*
 
 **Archive.** These records were moved verbatim out of
 [`CURRENT_STATE.md`](../CURRENT_STATE.md) on 2026-09-20 so that the canonical description of
@@ -10,6 +10,56 @@ when they were written.
 
 Current state: [`CURRENT_STATE.md`](../CURRENT_STATE.md) ·
 Authoritative backlog: [`BACKLOG.md`](../BACKLOG.md)
+
+---
+
+### Previously
+
+**`P8-TSK-002` — The source register, the encrypted file store and the door screen** —
+`COMPLETE` (2026-09-29). **M8.1 stands at 2 of 3**: settlement evidence can now be received —
+screened before anything is stored, encrypted under its own key with the associated data bound,
+checksummed and append-only — and every externally settling position has exactly one declared
+source (`INV-SET-05`), with nothing parsed and no door open. **The register is compiled and
+composed in `app`** (`SettlementBeans`, joining the confinement test's configuration files): the
+rails' positions read off `RailCapabilities.clearingPurpose()`, the payout's off the new
+`merchant.PayoutSettlementDeclaration.CLEARING_PURPOSE` (`MerchantPayoutOutcomes` switched to it —
+still `PAYOUT_CLEARING`, no behaviour change), coverage verified at composition so an uncovered
+settling rail fails the build and every startup (`EverySettlingPositionHasASourceTest`, its
+planted-rail probe in-test), and `settlement`/`reconciliation` may not even NAME a `*_CLEARING`
+purpose (the widened confinement rule). The descriptor refuses incoherence at construction — a
+format for another kind, an empty channel set, a malformed remittance-reference pattern, and the
+position and pattern each present exactly for the report kinds *(a design elaboration: the
+backlog's pattern field became kind-coherent, because the bank statement is where remittances
+land and has none of its own)*. **Settlement `V002`**: `source` seeded by identity alone (no
+position column; retirement one-way, the sequence forward-only, identity frozen, never deleted —
+all by trigger for every writer), `file` born `RECEIVED` with no edge (the generated `CHECK` and
+transition trigger admit exactly the machine that exists; both attestation `CHECK`s stated now),
+the content unique among non-readmissions, `file_chunk`/`file_event`/`file_receipt`/
+`refused_delivery` each `SELECT, INSERT` with an every-writer append-only trigger, the file's
+`UPDATE` column-narrowed, and **no `DELETE` for `finapp_app` anywhere**. **`FileReception`** (the
+one door, channels arriving with `-003`/`-021`/`-022`): source known and `ACTIVE`, the bounds
+(1..8 MiB, 50,000 records by the screen's own walk), the conservative whole-stream screen
+(Luhn-valid 13–19-digit runs with separators collapsed; the international account shape as a
+second, independent pass — the first draft hung it off the digit walk and an identifier separated
+from its closing character escaped, caught by the unit tier), then the content address: the row,
+its AES-256-GCM chunks (fresh 12-byte nonces, the AAD binding `file_id ‖ source_id ‖
+content_sha256 ‖ seq` at fixed widths), a `NEW` receipt, the birth event and the channel's
+passed-in audit action in ONE transaction — or a `DUPLICATE` receipt and nothing else — or a
+refusal that is a RESULT, never an exception, committing exactly its metadata row and
+`settlement.SettlementDeliveryRefused` (catalogued; an over-bound delivery leaves the audit
+record alone). Reads decrypt every chunk under its binding and verify the whole plaintext
+against the stored address before serving a byte. **`FINAPP_SETTLEMENT_FILE_KEY`** is the
+twelfth confined credential (`SettlementFileKey`, suffix `/settlement-file`, `EXACTLY_32`);
+the two ingestion series count after commit (`CommittedReceptionOutcomes`, the
+`CommittedRailOutcomes` shape), eagerly per source, and `source` joined
+`MetricNames.ALLOWED_TAG_KEYS` with its written argument. Proven live in settlement's own
+database tier: round-trips at 1 byte, both chunk boundaries and 8 MiB; the ten-way
+`SimulatedInstance` race (one row, one `NEW`, nine `DUPLICATE`); a PAN and an IBAN each leaving
+only metadata, the needle absent from every settlement column and captured logs; a flipped
+byte, a transplanted chunk and a truncated file each serving nothing; append-only and the
+narrowed grants exercised as both roles. `DATA_CLASSIFICATION.md` §4 +63 rows;
+`AUDITABLE_ACTIONS.md` +1. Multi-instance `PASS` — the content unique is the arbiter, the
+register is compiled data, and the seeded row holds identity and operational state only.
 
 ---
 

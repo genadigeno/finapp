@@ -2922,6 +2922,251 @@
           }
         }
       },
+      "settlement.AttestationBySubmitter": {
+        "content": {
+          "application/problem+json": {
+            "schema": {
+              "allOf": [
+                {
+                  "$ref": "#/components/schemas/ProblemDetail"
+                },
+                {
+                  "properties": {
+                    "code": {
+                      "const": "settlement.AttestationBySubmitter"
+                    },
+                    "status": {
+                      "const": 409
+                    },
+                    "type": {
+                      "const": "https://finapp.example/problems/settlement.AttestationBySubmitter"
+                    }
+                  }
+                }
+              ]
+            }
+          }
+        },
+        "description": "[409] The uploader cannot attest their own file; a second person must.",
+        "headers": {
+          "X-Client-Correlation-Id": {
+            "$ref": "#/components/headers/X-Client-Correlation-Id"
+          },
+          "X-Correlation-Id": {
+            "$ref": "#/components/headers/X-Correlation-Id"
+          }
+        }
+      },
+      "settlement.DeliveryRefused": {
+        "content": {
+          "application/problem+json": {
+            "schema": {
+              "allOf": [
+                {
+                  "$ref": "#/components/schemas/ProblemDetail"
+                },
+                {
+                  "properties": {
+                    "code": {
+                      "const": "settlement.DeliveryRefused"
+                    },
+                    "status": {
+                      "const": 422
+                    },
+                    "type": {
+                      "const": "https://finapp.example/problems/settlement.DeliveryRefused"
+                    }
+                  }
+                }
+              ]
+            }
+          }
+        },
+        "description": "[422] The delivery was refused by the door screen; only metadata was recorded.",
+        "headers": {
+          "X-Client-Correlation-Id": {
+            "$ref": "#/components/headers/X-Client-Correlation-Id"
+          },
+          "X-Correlation-Id": {
+            "$ref": "#/components/headers/X-Correlation-Id"
+          }
+        }
+      },
+      "settlement.FileNotAttestable": {
+        "content": {
+          "application/problem+json": {
+            "schema": {
+              "allOf": [
+                {
+                  "$ref": "#/components/schemas/ProblemDetail"
+                },
+                {
+                  "properties": {
+                    "code": {
+                      "const": "settlement.FileNotAttestable"
+                    },
+                    "status": {
+                      "const": 409
+                    },
+                    "type": {
+                      "const": "https://finapp.example/problems/settlement.FileNotAttestable"
+                    }
+                  }
+                }
+              ]
+            }
+          }
+        },
+        "description": "[409] This settlement file cannot be attested.",
+        "headers": {
+          "X-Client-Correlation-Id": {
+            "$ref": "#/components/headers/X-Client-Correlation-Id"
+          },
+          "X-Correlation-Id": {
+            "$ref": "#/components/headers/X-Correlation-Id"
+          }
+        }
+      },
+      "settlement.FileNotFound": {
+        "content": {
+          "application/problem+json": {
+            "schema": {
+              "allOf": [
+                {
+                  "$ref": "#/components/schemas/ProblemDetail"
+                },
+                {
+                  "properties": {
+                    "code": {
+                      "const": "settlement.FileNotFound"
+                    },
+                    "status": {
+                      "const": 404
+                    },
+                    "type": {
+                      "const": "https://finapp.example/problems/settlement.FileNotFound"
+                    }
+                  }
+                }
+              ]
+            }
+          }
+        },
+        "description": "[404] No settlement file has this identifier.",
+        "headers": {
+          "X-Client-Correlation-Id": {
+            "$ref": "#/components/headers/X-Client-Correlation-Id"
+          },
+          "X-Correlation-Id": {
+            "$ref": "#/components/headers/X-Correlation-Id"
+          }
+        }
+      },
+      "settlement.FileTooLarge": {
+        "content": {
+          "application/problem+json": {
+            "schema": {
+              "allOf": [
+                {
+                  "$ref": "#/components/schemas/ProblemDetail"
+                },
+                {
+                  "properties": {
+                    "code": {
+                      "const": "settlement.FileTooLarge"
+                    },
+                    "status": {
+                      "const": 413
+                    },
+                    "type": {
+                      "const": "https://finapp.example/problems/settlement.FileTooLarge"
+                    }
+                  }
+                }
+              ]
+            }
+          }
+        },
+        "description": "[413] The delivery exceeds the settlement file bounds.",
+        "headers": {
+          "X-Client-Correlation-Id": {
+            "$ref": "#/components/headers/X-Client-Correlation-Id"
+          },
+          "X-Correlation-Id": {
+            "$ref": "#/components/headers/X-Correlation-Id"
+          }
+        }
+      },
+      "settlement.SourceRetired": {
+        "content": {
+          "application/problem+json": {
+            "schema": {
+              "allOf": [
+                {
+                  "$ref": "#/components/schemas/ProblemDetail"
+                },
+                {
+                  "properties": {
+                    "code": {
+                      "const": "settlement.SourceRetired"
+                    },
+                    "status": {
+                      "const": 409
+                    },
+                    "type": {
+                      "const": "https://finapp.example/problems/settlement.SourceRetired"
+                    }
+                  }
+                }
+              ]
+            }
+          }
+        },
+        "description": "[409] This settlement source is retired and accepts no deliveries.",
+        "headers": {
+          "X-Client-Correlation-Id": {
+            "$ref": "#/components/headers/X-Client-Correlation-Id"
+          },
+          "X-Correlation-Id": {
+            "$ref": "#/components/headers/X-Correlation-Id"
+          }
+        }
+      },
+      "settlement.SourceUnknown": {
+        "content": {
+          "application/problem+json": {
+            "schema": {
+              "allOf": [
+                {
+                  "$ref": "#/components/schemas/ProblemDetail"
+                },
+                {
+                  "properties": {
+                    "code": {
+                      "const": "settlement.SourceUnknown"
+                    },
+                    "status": {
+                      "const": 422
+                    },
+                    "type": {
+                      "const": "https://finapp.example/problems/settlement.SourceUnknown"
+                    }
+                  }
+                }
+              ]
+            }
+          }
+        },
+        "description": "[422] No declared settlement source has this code.",
+        "headers": {
+          "X-Client-Correlation-Id": {
+            "$ref": "#/components/headers/X-Client-Correlation-Id"
+          },
+          "X-Correlation-Id": {
+            "$ref": "#/components/headers/X-Correlation-Id"
+          }
+        }
+      },
       "transfers.NotReversible": {
         "content": {
           "application/problem+json": {
@@ -3150,6 +3395,20 @@
         "required": [
           "clientToken"
         ],
+        "type": "object"
+      },
+      "AttestationView": {
+        "properties": {
+          "attestedAt": {
+            "type": "string"
+          },
+          "attestedBy": {
+            "type": "string"
+          },
+          "fileId": {
+            "type": "string"
+          }
+        },
         "type": "object"
       },
       "AuthenticatedSession": {
@@ -3428,6 +3687,24 @@
         "required": [
           "token"
         ],
+        "type": "object"
+      },
+      "ContentView": {
+        "properties": {
+          "content": {
+            "type": "string"
+          },
+          "contentLength": {
+            "format": "int32",
+            "type": "integer"
+          },
+          "contentSha256": {
+            "type": "string"
+          },
+          "fileId": {
+            "type": "string"
+          }
+        },
         "type": "object"
       },
       "CreateFeeScheduleRequest": {
@@ -3818,6 +4095,70 @@
             "type": "string"
           },
           "name": {
+            "type": "string"
+          }
+        },
+        "type": "object"
+      },
+      "FileList": {
+        "properties": {
+          "files": {
+            "items": {
+              "$ref": "#/components/schemas/FileView"
+            },
+            "type": "array"
+          },
+          "truncated": {
+            "type": "boolean"
+          }
+        },
+        "type": "object"
+      },
+      "FileView": {
+        "properties": {
+          "attestedAt": {
+            "type": "string"
+          },
+          "attestedBy": {
+            "type": "string"
+          },
+          "businessDate": {
+            "type": "string"
+          },
+          "contentLength": {
+            "format": "int32",
+            "type": "integer"
+          },
+          "contentSha256": {
+            "type": "string"
+          },
+          "fileId": {
+            "type": "string"
+          },
+          "formatId": {
+            "type": "string"
+          },
+          "formatVersion": {
+            "format": "int32",
+            "type": "integer"
+          },
+          "lineCount": {
+            "format": "int32",
+            "type": "integer"
+          },
+          "receivedAt": {
+            "type": "string"
+          },
+          "receivedBy": {
+            "type": "string"
+          },
+          "receivedVia": {
+            "type": "string"
+          },
+          "sourceCode": {
+            "type": "string"
+          },
+          "status": {
             "type": "string"
           }
         },
@@ -4872,6 +5213,64 @@
         },
         "type": "object"
       },
+      "RefusalList": {
+        "properties": {
+          "refusedDeliveries": {
+            "items": {
+              "$ref": "#/components/schemas/RefusalView"
+            },
+            "type": "array"
+          },
+          "truncated": {
+            "type": "boolean"
+          }
+        },
+        "type": "object"
+      },
+      "RefusalView": {
+        "properties": {
+          "channel": {
+            "type": "string"
+          },
+          "contentLength": {
+            "format": "int32",
+            "type": "integer"
+          },
+          "contentSha256": {
+            "type": "string"
+          },
+          "deliveredBy": {
+            "type": "string"
+          },
+          "fieldName": {
+            "type": "string"
+          },
+          "formatId": {
+            "type": "string"
+          },
+          "formatVersion": {
+            "format": "int32",
+            "type": "integer"
+          },
+          "lineNo": {
+            "format": "int32",
+            "type": "integer"
+          },
+          "reason": {
+            "type": "string"
+          },
+          "refusalId": {
+            "type": "string"
+          },
+          "refusedAt": {
+            "type": "string"
+          },
+          "sourceCode": {
+            "type": "string"
+          }
+        },
+        "type": "object"
+      },
       "RegisterBankAccountRequest": {
         "properties": {
           "acknowledgeNoMatch": {
@@ -4989,7 +5388,8 @@
               "ADMINISTRATOR",
               "KYC_REVIEWER",
               "LEDGER_OPERATOR",
-              "MERCHANT_ADMINISTRATOR"
+              "MERCHANT_ADMINISTRATOR",
+              "RECONCILIATION_OPERATOR"
             ],
             "type": "string"
           }
@@ -5184,6 +5584,81 @@
           "available",
           "reason"
         ],
+        "type": "object"
+      },
+      "SettlementContentReadRequest": {
+        "properties": {
+          "reason": {
+            "maxLength": 1000,
+            "minLength": 0,
+            "type": "string"
+          }
+        },
+        "required": [
+          "reason"
+        ],
+        "type": "object"
+      },
+      "SettlementFileUploadRequest": {
+        "properties": {
+          "businessDate": {
+            "format": "date",
+            "type": "string"
+          },
+          "content": {
+            "maxLength": 12582912,
+            "minLength": 0,
+            "type": "string"
+          },
+          "sourceCode": {
+            "maxLength": 100,
+            "minLength": 0,
+            "type": "string"
+          }
+        },
+        "required": [
+          "businessDate",
+          "content",
+          "sourceCode"
+        ],
+        "type": "object"
+      },
+      "SourceList": {
+        "properties": {
+          "sources": {
+            "items": {
+              "$ref": "#/components/schemas/SourceView"
+            },
+            "type": "array"
+          }
+        },
+        "type": "object"
+      },
+      "SourceView": {
+        "properties": {
+          "active": {
+            "type": "boolean"
+          },
+          "channels": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array"
+          },
+          "code": {
+            "type": "string"
+          },
+          "formatId": {
+            "type": "string"
+          },
+          "formatVersion": {
+            "format": "int32",
+            "type": "integer"
+          },
+          "kind": {
+            "type": "string"
+          }
+        },
         "type": "object"
       },
       "StageChangeView": {
@@ -5431,6 +5906,20 @@
             "type": "string"
           },
           "reversedAt": {
+            "type": "string"
+          },
+          "status": {
+            "type": "string"
+          }
+        },
+        "type": "object"
+      },
+      "UploadAnswer": {
+        "properties": {
+          "duplicateOf": {
+            "type": "string"
+          },
+          "fileId": {
             "type": "string"
           },
           "status": {
@@ -8075,6 +8564,183 @@
               }
             },
             "description": "Created"
+          }
+        }
+      }
+    },
+    "/v1/operator/settlement/files": {
+      "get": {
+        "operationId": "listSettlementFiles",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/FileList"
+                }
+              }
+            },
+            "description": "OK"
+          }
+        }
+      },
+      "post": {
+        "operationId": "uploadSettlementFile",
+        "parameters": [
+          {
+            "in": "header",
+            "name": "Idempotency-Key",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/SettlementFileUploadRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "202": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/UploadAnswer"
+                }
+              }
+            },
+            "description": "Accepted"
+          }
+        }
+      }
+    },
+    "/v1/operator/settlement/files/{id}": {
+      "get": {
+        "operationId": "viewSettlementFile",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "id",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/FileView"
+                }
+              }
+            },
+            "description": "OK"
+          }
+        }
+      }
+    },
+    "/v1/operator/settlement/files/{id}/attestation": {
+      "post": {
+        "operationId": "attestSettlementFile",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "id",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AttestationView"
+                }
+              }
+            },
+            "description": "OK"
+          }
+        }
+      }
+    },
+    "/v1/operator/settlement/files/{id}/content-reads": {
+      "post": {
+        "operationId": "readSettlementFileContent",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "id",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/SettlementContentReadRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ContentView"
+                }
+              }
+            },
+            "description": "OK"
+          }
+        }
+      }
+    },
+    "/v1/operator/settlement/refused-deliveries": {
+      "get": {
+        "operationId": "listRefusedSettlementDeliveries",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/RefusalList"
+                }
+              }
+            },
+            "description": "OK"
+          }
+        }
+      }
+    },
+    "/v1/operator/settlement/sources": {
+      "get": {
+        "operationId": "listSettlementSources",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/SourceList"
+                }
+              }
+            },
+            "description": "OK"
           }
         }
       }

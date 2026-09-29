@@ -194,12 +194,14 @@ class FileReceptionDatabaseTest {
 
         byte[] tooLarge = screenCleanContent(SettlementFile.MAX_CONTENT_LENGTH + 1);
         assertThat(reception.receive(application, upload(tooLarge)))
-                .isEqualTo(new FileReception.Result.Refused(RefusalReason.FILE_TOO_LARGE));
+                .isEqualTo(new FileReception.Result.Refused(
+                        RefusalReason.FILE_TOO_LARGE, Optional.empty(), Optional.empty()));
 
         byte[] tooManyLines = "a\n".repeat(SettlementFile.MAX_LINES + 1)
                 .getBytes(StandardCharsets.UTF_8);
         assertThat(reception.receive(application, upload(tooManyLines)))
-                .isEqualTo(new FileReception.Result.Refused(RefusalReason.TOO_MANY_LINES));
+                .isEqualTo(new FileReception.Result.Refused(
+                        RefusalReason.TOO_MANY_LINES, Optional.empty(), Optional.empty()));
         application.commit();
 
         assertThat(count("SELECT count(*) FROM settlement.file")).isEqualTo(filesBefore);
@@ -226,7 +228,10 @@ class FileReceptionDatabaseTest {
         application.commit();
 
         assertThat(result)
-                .isEqualTo(new FileReception.Result.Refused(RefusalReason.PRIMARY_ACCOUNT_NUMBER));
+                .isEqualTo(new FileReception.Result.Refused(
+                        RefusalReason.PRIMARY_ACCOUNT_NUMBER,
+                        Optional.of(2),
+                        Optional.empty()));
         assertThat(count("SELECT count(*) FROM settlement.file")).isEqualTo(filesBefore);
         try (PreparedStatement read =
                 application.prepareStatement(
@@ -264,7 +269,10 @@ class FileReceptionDatabaseTest {
             application.commit();
             assertThat(result)
                     .isEqualTo(
-                            new FileReception.Result.Refused(RefusalReason.ACCOUNT_IDENTIFIER));
+                            new FileReception.Result.Refused(
+                            RefusalReason.ACCOUNT_IDENTIFIER,
+                            Optional.of(2),
+                            Optional.empty()));
         } finally {
             root.detachAppender(captured);
         }

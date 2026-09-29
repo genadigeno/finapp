@@ -110,8 +110,21 @@ public final class FileReception<T> {
         /** The bytes already stand: one {@code DUPLICATE} receipt appended, nothing else. */
         record Duplicate(UUID existingFileId) implements Result {}
 
-        /** The door refused: the named reason's rows committed, the value nowhere. */
-        record Refused(RefusalReason reason) implements Result {}
+        /**
+         * The door refused: the named reason's rows committed, the value nowhere. The
+         * position — present exactly for a screen finding — is what the caller may tell the
+         * client (`P8-TSK-003`: the line and field, never the value); an over-bound refusal
+         * has none.
+         */
+        record Refused(
+                RefusalReason reason, Optional<Integer> lineNo, Optional<String> fieldName)
+                implements Result {
+            public Refused {
+                Objects.requireNonNull(reason, "reason must not be null");
+                Objects.requireNonNull(lineNo, "lineNo must not be null");
+                Objects.requireNonNull(fieldName, "fieldName must not be null");
+            }
+        }
     }
 
     public Result receive(T unitOfWork, Delivery delivery) {
@@ -181,7 +194,8 @@ public final class FileReception<T> {
                             + ", line=" + finding.lineNo()
                             + finding.fieldName().map(field -> ", field=" + field).orElse(""));
             observer.refused(delivery.sourceCode(), finding.reason());
-            return new Result.Refused(finding.reason());
+            return new Result.Refused(
+                    finding.reason(), Optional.of(finding.lineNo()), finding.fieldName());
         }
 
         // 4. The content address decides.
@@ -261,7 +275,7 @@ public final class FileReception<T> {
                 reason,
                 "source=" + delivery.sourceCode() + ", reason=" + reason + ", length=" + length);
         observer.refused(delivery.sourceCode(), reason);
-        return new Result.Refused(reason);
+        return new Result.Refused(reason, Optional.empty(), Optional.empty());
     }
 
     private void auditRefusal(

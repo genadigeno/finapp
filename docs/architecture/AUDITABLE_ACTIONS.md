@@ -465,9 +465,12 @@ merchant's payable position.
 | Action | Reason required | What it records, and why |
 |---|---|---|
 | `settlement.SettlementDeliveryRefused` | No | The settlement door refused a delivery (`P8-TSK-002`, ADR-0066 §4): instrument data in screened text, or a delivery over the size or line bound. Written in the refusal's transaction; the change summary names the source, the reason, the content address and the finding's position — **never a value from the file** (`INV-PAY-02`, `INV-RAIL-03`). For a content refusal the `settlement.refused_delivery` metadata row stands beside it; an over-bound delivery leaves this record alone. Alertable from the first file through `finapp.settlement.delivery.refused`. |
+| `settlement.SettlementFileUploaded` | No | A person introduced settlement evidence over the upload door (`P8-TSK-003`, ADR-0066 §1). Written in the reception's ONE transaction — row, chunks, receipt, birth event and this record commit together; the change summary names the source, the channel and the content address, never the content and never the business date's claim (`INV-AUD-02`). A duplicate delivery writes its `DUPLICATE` receipt and no second record: the receipt table is the arrivals' history, the audit record is the act's. |
+| `settlement.SettlementFileAttested` | No | A second person attested an uploaded file (`P8-TSK-003`, `INV-SET-07`, `INV-AUD-04`): the `NULL → value` fact the accept leg (`P8-TSK-009`) will require before an upload can move money. Written in the attestation's transaction, after distinctness from the uploader is enforced at the domain AND by `V002`'s `CHECK` — so this record existing implies a genuine second person. The same attester's retry converges and writes no second record. |
+| `settlement.SettlementFileContentRead` | **Yes** | Somebody read a settlement file's raw bytes — the ONE content path, `POST .../content-reads` under `RECONCILIATION_INVESTIGATE` (`INV-REC-10`): one record per read, committed with the read before a byte is served, the audited unit being the access (ADR-0036's rule). A verification failure — tamper, transplant, truncation — is the SAME record with outcome `FAILED` and nothing served; a guessed identifier records nothing, because there is no file to audit an access against. |
 
-The door's own actions (`SettlementFileUploaded`, `SettlementFileAttested`, the audited content
-read) arrive with the door (`P8-TSK-003`); the pull's with the pull (`P8-TSK-021`).
+The pull's actions arrive with the pull (`P8-TSK-021`); the decline's with the parse leg
+(`P8-TSK-008`); the readmission's with `P8-TSK-022`.
 
 ### What is emitted, and what is declared not to be
 
