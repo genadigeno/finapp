@@ -169,6 +169,13 @@ public interface PaymentAttemptStore<T> {
     Optional<PaymentAttempt> findByEndToEndReference(T unitOfWork, EndToEndReference reference);
 
     /**
+     * The attempt a PSP capture reference names, lock-free (`P8-TSK-010`): the
+     * reconciliation lookup's read — it types breaks and never allocates (ADR-0068).
+     */
+    Optional<PaymentAttempt> findByCaptureProviderReference(
+            T unitOfWork, ProviderReference reference);
+
+    /**
      * The push attempt already holding the scheme's transaction reference — the
      * cross-attempt claim pre-check (`P7-TSK-009`, the `V015` acquirer-reference reasoning):
      * one scheme execution credits one attempt, and a confirmation naming a reference some

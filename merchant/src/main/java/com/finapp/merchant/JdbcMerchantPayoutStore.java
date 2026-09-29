@@ -118,6 +118,34 @@ public final class JdbcMerchantPayoutStore implements MerchantPayoutStore<Connec
     }
 
     @Override
+    public Optional<MerchantPayout> findByProviderReference(
+            Connection unitOfWork, String providerReference) {
+        Objects.requireNonNull(providerReference, "providerReference must not be null");
+        return oneByColumn(unitOfWork, "provider_reference", providerReference);
+    }
+
+    @Override
+    public Optional<MerchantPayout> findByReference(Connection unitOfWork, String reference) {
+        Objects.requireNonNull(reference, "reference must not be null");
+        return oneByColumn(unitOfWork, "provider_idempotency_reference", reference);
+    }
+
+    private Optional<MerchantPayout> oneByColumn(
+            Connection unitOfWork, String column, String value) {
+        try (PreparedStatement select =
+                unitOfWork.prepareStatement(
+                        "SELECT " + COLUMNS + " FROM " + TABLE + " WHERE " + column + " = ?")) {
+            select.setString(1, value);
+            try (ResultSet row = select.executeQuery()) {
+                return row.next() ? Optional.of(map(row)) : Optional.empty();
+            }
+        } catch (SQLException failure) {
+            throw new MerchantStorageException(
+                    DatabaseFailure.describe("reading a payout by " + column, failure));
+        }
+    }
+
+    @Override
     public boolean renewSendPermit(Connection unitOfWork, MerchantPayout before, Instant at) {
         Objects.requireNonNull(before, "before must not be null");
         Objects.requireNonNull(at, "at must not be null");

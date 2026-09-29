@@ -1288,6 +1288,94 @@ counters and dates of things.
 | `external_item_key` | `source_id` | `INTERNAL` | The source, denormalised for the match index |
 | `external_item_key` | `key_kind` | `INTERNAL` | The mirrored reference vocabulary - a closed list |
 | `external_item_key` | `key_value` | `CONFIDENTIAL` | **A reference the counterparty quotes** - the match key (`expectation.operation_ref`'s reasoning) |
+| `break` | `id` | `INTERNAL` | A record identifier. Generated |
+| `break` | `type` | `INTERNAL` | One of fourteen - a closed vocabulary |
+| `break` | `cause` | `INTERNAL` | Which detector raised it - a closed vocabulary |
+| `break` | `status` | `INTERNAL` | The machine's position |
+| `break` | `severity` | `INTERNAL` | The computed grade - a closed vocabulary |
+| `break` | `source_id` | `INTERNAL` | The source - an identifier of a thing |
+| `break` | `rule_set_id` | `INTERNAL` | The pinned grading version (INV-HIST-04) |
+| `break` | `expectation_id` | `INTERNAL` | A subject - an identifier of a thing |
+| `break` | `external_item_id` | `INTERNAL` | A subject - an identifier of a thing |
+| `break` | `suspense_item_id` | `INTERNAL` | A subject - an identifier of a thing |
+| `break` | `run_id` | `INTERNAL` | A subject - an identifier of a thing |
+| `break` | `decision_id` | `INTERNAL` | A subject - an identifier of a thing |
+| `break` | `value_at_issue_minor` | `RESTRICTED-FINANCIAL` | **What is at issue** - frozen at raise, never in a metric, event or log |
+| `break` | `currency` | `INTERNAL` | An enumeration; part of the monetary shape |
+| `break` | `scale` | `INTERNAL` | The monetary shape's scale (INV-MON-05) |
+| `break` | `internal_classification` | `INTERNAL` | The lookup's frozen verdict - a closed vocabulary |
+| `break` | `internal_operation_ref` | `CONFIDENTIAL` | The operation the lookup named - an operation reference |
+| `break` | `internal_state` | `INTERNAL` | The named operation's state - an enumerated name |
+| `break` | `assignee` | `CONFIDENTIAL` | Who investigates (`audit_record.actor`'s reasoning) |
+| `break` | `residual_version` | `INTERNAL` | The staleness counter (ADR-0071) |
+| `break` | `follows_break_id` | `INTERNAL` | The predecessor - an identifier of a thing |
+| `break` | `raised_at` | `INTERNAL` | When the platform detected it |
+| `break` | `resolved_at` | `INTERNAL` | When it closed, exactly with RESOLVED |
+| `break` | `status_changed_at` | `INTERNAL` | When the machine last moved |
+| `break` | `correlation_id` | `INTERNAL` | The flow's correlation |
+| `break_event` | `seq` | `INTERNAL` | The history's server-assigned order |
+| `break_event` | `break_id` | `INTERNAL` | The moved break - an identifier of a thing |
+| `break_event` | `event_type` | `INTERNAL` | RAISED and its siblings - a closed vocabulary |
+| `break_event` | `actor` | `CONFIDENTIAL` | Who drove the edge (`audit_record.actor`'s reasoning) |
+| `break_event` | `actor_type` | `INTERNAL` | The actor's kind - a closed vocabulary |
+| `break_event` | `reason` | `CONFIDENTIAL` | The edge's stated reason - a person's prose where one is |
+| `break_event` | `detail` | `INTERNAL` | Identifiers and enumerated names only (INV-AUD-02) |
+| `break_event` | `occurred_at` | `INTERNAL` | When the edge was driven |
+| `break_event` | `correlation_id` | `INTERNAL` | The flow's correlation |
+| `break_note` | `id` | `INTERNAL` | A record identifier. Generated |
+| `break_note` | `break_id` | `INTERNAL` | The noted break - an identifier of a thing |
+| `break_note` | `body` | `CONFIDENTIAL` | **An investigator's own words** - never logged, evented or audited; screened at the database for PAN and IBAN shapes (INV-PAY-02, INV-RAIL-03) |
+| `break_note` | `author` | `CONFIDENTIAL` | Who wrote it (`audit_record.actor`'s reasoning) |
+| `break_note` | `author_type` | `INTERNAL` | The author's kind - a closed vocabulary |
+| `break_note` | `added_at` | `INTERNAL` | When it was appended |
+| `break_note` | `correlation_id` | `INTERNAL` | The flow's correlation |
+| `break_evidence_link` | `id` | `INTERNAL` | A record identifier. Generated |
+| `break_evidence_link` | `break_id` | `INTERNAL` | The linked break - an identifier of a thing |
+| `break_evidence_link` | `target_kind` | `INTERNAL` | What the identifier names - a closed vocabulary |
+| `break_evidence_link` | `target_ref` | `CONFIDENTIAL` | The named identifier - screened like a reference, never content |
+| `break_evidence_link` | `added_by` | `CONFIDENTIAL` | Who linked it (`audit_record.actor`'s reasoning) |
+| `break_evidence_link` | `added_by_type` | `INTERNAL` | The linker's kind - a closed vocabulary |
+| `break_evidence_link` | `added_at` | `INTERNAL` | When it was appended |
+| `break_evidence_link` | `correlation_id` | `INTERNAL` | The flow's correlation |
+| `park` | `id` | `INTERNAL` | A record identifier. Generated |
+| `park` | `source_id` | `INTERNAL` | The source - an identifier of a thing |
+| `park` | `kind` | `INTERNAL` | PARK or UNPARK - a closed vocabulary |
+| `park` | `position_account_id` | `INTERNAL` | The position the entry touched - an identifier of a thing |
+| `park` | `currency` | `INTERNAL` | An enumeration |
+| `park` | `decided_on` | `CONFIDENTIAL` | The deciding day - stamped once, the entry's posting date |
+| `park` | `value_date` | `CONFIDENTIAL` | The items' settlement day - the entry's value date |
+| `park` | `journal_entry_id` | `INTERNAL` | The posted entry - an identifier of a thing |
+| `park` | `actor` | `CONFIDENTIAL` | Who decided (`audit_record.actor`'s reasoning) |
+| `park` | `actor_type` | `INTERNAL` | The actor's kind - a closed vocabulary |
+| `park` | `created_at` | `INTERNAL` | When it was recorded |
+| `park` | `correlation_id` | `INTERNAL` | The flow's correlation |
+| `suspense_item` | `id` | `INTERNAL` | A record identifier. Generated |
+| `suspense_item` | `break_id` | `INTERNAL` | The one owning break (INV-REC-09) - an identifier of a thing |
+| `suspense_item` | `external_item_id` | `INTERNAL` | The parked item - an identifier of a thing |
+| `suspense_item` | `origin` | `INTERNAL` | Which opener - a closed vocabulary |
+| `suspense_item` | `origin_ref` | `CONFIDENTIAL` | The origin's own row - an identifier, conservatively a reference |
+| `suspense_item` | `side` | `INTERNAL` | CREDIT or DEBIT - fixed at birth, never netted |
+| `suspense_item` | `amount_minor` | `RESTRICTED-FINANCIAL` | **The parked value** - never in a metric, event or log |
+| `suspense_item` | `currency` | `INTERNAL` | An enumeration; part of the monetary shape |
+| `suspense_item` | `scale` | `INTERNAL` | The monetary shape's scale (INV-MON-05) |
+| `suspense_item` | `released_minor` | `RESTRICTED-FINANCIAL` | **The released part** - a disposition of the amount |
+| `suspense_item` | `status` | `INTERNAL` | The machine's position - the amounts' mirror |
+| `suspense_item` | `opened_on` | `CONFIDENTIAL` | The day the value entered suspense - the age's anchor, from stored data |
+| `suspense_item` | `entry_id` | `INTERNAL` | The entry that carried the value in - an identifier of a thing |
+| `suspense_item` | `park_id` | `INTERNAL` | The park that opened it - an identifier of a thing |
+| `suspense_item` | `position_account_id` | `INTERNAL` | The parked position - the unpark's frozen inverse fact |
+| `suspense_item` | `status_changed_at` | `INTERNAL` | When the machine last moved |
+| `suspense_item` | `correlation_id` | `INTERNAL` | The flow's correlation |
+| `suspense_release` | `seq` | `INTERNAL` | The history's server-assigned order |
+| `suspense_release` | `item_id` | `INTERNAL` | The released item - an identifier of a thing |
+| `suspense_release` | `amount_minor` | `RESTRICTED-FINANCIAL` | **The released value** - one row per release |
+| `suspense_release` | `park_id` | `INTERNAL` | The unpark that took it, where one did - an identifier of a thing |
+| `suspense_release` | `cause` | `INTERNAL` | Which path took the value - a closed vocabulary |
+| `suspense_release` | `cause_ref` | `CONFIDENTIAL` | The decision, resolution or park behind it - an identifier, conservatively a reference |
+| `suspense_release` | `actor` | `CONFIDENTIAL` | Who released (`audit_record.actor`'s reasoning) |
+| `suspense_release` | `actor_type` | `INTERNAL` | The actor's kind - a closed vocabulary |
+| `suspense_release` | `released_at` | `INTERNAL` | When the release was taken |
+| `suspense_release` | `correlation_id` | `INTERNAL` | The flow's correlation |
 
 ### `consent.consent_text` and `consent.consent_record` — *added by `P2-TSK-017`*
 

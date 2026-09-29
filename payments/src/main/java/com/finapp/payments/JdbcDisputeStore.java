@@ -108,6 +108,25 @@ public final class JdbcDisputeStore implements DisputeStore<Connection> {
     }
 
     @Override
+    public Optional<Dispute> findByProviderReference(
+            Connection unitOfWork, ProviderReference reference) {
+        Objects.requireNonNull(reference, "reference must not be null");
+        try (PreparedStatement select =
+                unitOfWork.prepareStatement(
+                        "SELECT " + COLUMNS + " FROM " + TABLE
+                                + " WHERE provider_dispute_reference = ?")) {
+            select.setString(1, reference.value());
+            try (ResultSet row = select.executeQuery()) {
+                return row.next() ? Optional.of(map(row)) : Optional.empty();
+            }
+        } catch (SQLException failure) {
+            throw new PaymentsStorageException(
+                    DatabaseFailure.describe(
+                            "reading a dispute by provider reference", failure));
+        }
+    }
+
+    @Override
     public boolean transition(Connection unitOfWork, Dispute before, Dispute after, Instant at) {
         Objects.requireNonNull(before, "before must not be null");
         Objects.requireNonNull(after, "after must not be null");

@@ -131,7 +131,15 @@ class ReconciliationMigrationTest {
                         "reconciliation_batch_event",
                         "external_item",
                         "external_item_event",
-                        "external_item_key");
+                        "external_item_key",
+                        // V004 (P8-TSK-010): the breaks and the owned suspense.
+                        "break",
+                        "break_event",
+                        "break_note",
+                        "break_evidence_link",
+                        "park",
+                        "suspense_item",
+                        "suspense_release");
 
         assertThatExceptionOfType(SQLException.class)
                 .isThrownBy(() -> asApplication(

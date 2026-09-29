@@ -1066,6 +1066,12 @@ class OwnershipIsScopedTest {
                                         + " statement's previous page. Nothing it returns is"
                                         + " served to a tenant: the walk opens expectations"
                                         + " through the recorder and answers counts.")),
+                    // P8-TSK-010's reference finders (findByCaptureProviderReference,
+                    // the dispute's and payout's findByProviderReference, the claim's
+                    // findByExecution) carry no entry HERE deliberately: the sweep
+                    // classifies methods that target a resource by its own identifier,
+                    // and those finders take a counterparty's stored REFERENCE - the
+                    // typing lookup's read, whose posture their javadocs state.
                     Map.entry(
                             "com.finapp.merchant.JdbcMerchantStore.findById",
                             new Entry(

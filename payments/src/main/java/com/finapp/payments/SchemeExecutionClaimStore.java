@@ -16,4 +16,13 @@ public interface SchemeExecutionClaimStore<T> {
      * this transaction's own; callers compare with {@link SchemeExecutionClaim#heldBy}.
      */
     SchemeExecutionClaim claim(T unitOfWork, SchemeExecutionClaim claim);
+
+    /**
+     * The claim standing for {@code (rail, schemeReference)}, if any — the reconciliation
+     * lookup's read half (`P8-TSK-010`, ADR-0069 §2): a claim is taken only when an
+     * execution completed, so a reference no claim holds names no completed execution.
+     * Lock-free.
+     */
+    java.util.Optional<SchemeExecutionClaim> findByExecution(
+            T unitOfWork, RailId rail, ProviderReference schemeReference);
 }

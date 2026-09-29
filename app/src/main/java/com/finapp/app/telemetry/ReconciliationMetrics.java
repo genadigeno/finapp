@@ -47,6 +47,15 @@ public final class ReconciliationMetrics {
     /** {@code finapp.reconciliation.expectation.open} — open expectations, per source. */
     public static final String OPEN = "finapp.reconciliation.expectation.open";
 
+    /** {@code finapp.reconciliation.suspense.open} — items with a remainder (`P8-TSK-010`). */
+    public static final String SUSPENSE_OPEN = "finapp.reconciliation.suspense.open";
+
+    /** {@code finapp.reconciliation.suspense.age} — the oldest open item, in seconds. */
+    public static final String SUSPENSE_AGE = "finapp.reconciliation.suspense.age";
+
+    /** {@code finapp.reconciliation.suspense.unowned} — items no open break answers for. */
+    public static final String SUSPENSE_UNOWNED = "finapp.reconciliation.suspense.unowned";
+
     /** The floor: the sweep folds the open register, so it is dearer than a GROUP BY. */
     static final Duration MIN_REFRESH = Duration.ofSeconds(15);
 
@@ -100,6 +109,52 @@ public final class ReconciliationMetrics {
                     .strongReference(true)
                     .register(registry);
         }
+        // The suspense proof publishes through the SAME proof series under its own purpose
+        // (P8-TSK-010, ADR-0070 §7 - the observability table carries no separate series,
+        // confirmed at design): CR-DR = CREDIT - DEBIT remainders + the named Phase 7 term.
+        Gauge.builder(
+                        PROOF,
+                        this,
+                        self -> self.proofOf(AccountPurpose.SUSPENSE_UNMATCHED))
+                .tag("purpose", AccountPurpose.SUSPENSE_UNMATCHED.name())
+                .description(
+                        "Currencies of SUSPENSE_UNMATCHED failing the suspense identity"
+                                + " CR-DR = CREDIT - DEBIT item remainders + Phase 7"
+                                + " parkings not yet adopted (ADR-0070 section 7). MUST"
+                                + " read 0 and is alerted; a count, never an amount. NaN"
+                                + " when unreadable, never zero. Fleet-wide: aggregate"
+                                + " with max(), never sum()")
+                .strongReference(true)
+                .register(registry);
+        Gauge.builder(SUSPENSE_OPEN, this, ReconciliationMetrics::suspenseOpen)
+                .description(
+                        "Suspense items still holding a remainder (P8-TSK-010, ADR-0070"
+                                + " section 5). A count, never an amount - the amounts are"
+                                + " the audited suspense report's. NaN when unreadable,"
+                                + " never zero. Fleet-wide: aggregate with max(), never"
+                                + " sum()")
+                .strongReference(true)
+                .register(registry);
+        Gauge.builder(SUSPENSE_AGE, this, ReconciliationMetrics::suspenseAgeSeconds)
+                .baseUnit("seconds")
+                .description(
+                        "Age of the oldest suspense item with a remainder, from its stored"
+                                + " opened_on (ADR-0070 section 5: never a permanent"
+                                + " resting place - INV-REC-05). 0 when none is open; NaN"
+                                + " when unreadable. Fleet-wide: aggregate with max(),"
+                                + " never sum()")
+                .strongReference(true)
+                .register(registry);
+        Gauge.builder(SUSPENSE_UNOWNED, this, ReconciliationMetrics::suspenseUnowned)
+                .description(
+                        "Suspense items with a remainder that no open break answers for"
+                                + " (INV-REC-09's detector: break_id NOT NULL is the"
+                                + " structural half, this counts a break closed over value"
+                                + " it still owns). MUST read 0 and alerts above it. NaN"
+                                + " when unreadable, never zero. Fleet-wide: aggregate"
+                                + " with max(), never sum()")
+                .strongReference(true)
+                .register(registry);
         for (SettlementSourceDescriptor source : sources.declared()) {
             String code = source.code();
             Gauge.builder(OPEN, this, self -> self.openOf(code))
@@ -140,6 +195,40 @@ public final class ReconciliationMetrics {
                                 (double)
                                         report.openBySourceCode()
                                                 .getOrDefault(sourceCode, 0L))
+                .orElse(Double.NaN);
+    }
+
+    private double suspenseOpen() {
+        return reading()
+                .report()
+                .map(report -> (double) report.suspenseOpenItems())
+                .orElse(Double.NaN);
+    }
+
+    private double suspenseAgeSeconds() {
+        return reading()
+                .report()
+                .map(
+                        report ->
+                                report.oldestSuspenseOpenedOn()
+                                        .map(
+                                                oldest ->
+                                                        (double)
+                                                                Duration.between(
+                                                                                oldest.atStartOfDay(
+                                                                                                java.time.ZoneOffset
+                                                                                                        .UTC)
+                                                                                        .toInstant(),
+                                                                                clock.instant())
+                                                                        .getSeconds())
+                                        .orElse(0.0d))
+                .orElse(Double.NaN);
+    }
+
+    private double suspenseUnowned() {
+        return reading()
+                .report()
+                .map(report -> (double) report.suspenseUnowned())
                 .orElse(Double.NaN);
     }
 

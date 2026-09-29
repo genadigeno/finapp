@@ -50,7 +50,10 @@ class ReconciliationReportRenderTest {
                                 .mapToObj(i -> verdict(i, i))
                                 .toList(),
                         Map.of(AccountPurpose.SETTLEMENT_CLEARING, 0L),
-                        Map.of());
+                        Map.of(),
+                        List.of(),
+                        java.util.Optional.empty(),
+                        0L);
 
         ReconciliationReportController.PositionsReport served =
                 ReconciliationReportController.render(report);
@@ -67,7 +70,10 @@ class ReconciliationReportRenderTest {
                 new PositionProof.Report(
                         List.of(verdict(1200, 700, 200)),
                         Map.of(AccountPurpose.SETTLEMENT_CLEARING, 4L),
-                        Map.of());
+                        Map.of(),
+                        List.of(),
+                        java.util.Optional.empty(),
+                        0L);
 
         ReconciliationReportController.PositionsReport served =
                 ReconciliationReportController.render(report);

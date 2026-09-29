@@ -63,4 +63,36 @@ public final class JdbcSchemeExecutionClaimStore implements SchemeExecutionClaim
                             "claiming a scheme execution on " + claim.rail().value(), failure));
         }
     }
+
+    @Override
+    public java.util.Optional<SchemeExecutionClaim> findByExecution(
+            Connection unitOfWork, RailId rail, ProviderReference schemeReference) {
+        Objects.requireNonNull(rail, "rail must not be null");
+        Objects.requireNonNull(schemeReference, "schemeReference must not be null");
+        try (PreparedStatement read =
+                unitOfWork.prepareStatement(
+                        "SELECT subject_kind, subject_id, claimed_at"
+                                + " FROM payments.scheme_execution_claim"
+                                + " WHERE rail = ? AND scheme_reference = ?")) {
+            read.setString(1, rail.value());
+            read.setString(2, schemeReference.value());
+            try (ResultSet row = read.executeQuery()) {
+                if (!row.next()) {
+                    return java.util.Optional.empty();
+                }
+                return java.util.Optional.of(
+                        new SchemeExecutionClaim(
+                                rail,
+                                schemeReference,
+                                SchemeExecutionClaim.Subject.valueOf(
+                                        row.getString("subject_kind")),
+                                row.getObject("subject_id", UUID.class),
+                                row.getTimestamp("claimed_at").toInstant()));
+            }
+        } catch (SQLException failure) {
+            throw new PaymentsStorageException(
+                    DatabaseFailure.describe(
+                            "reading a scheme-execution claim on " + rail.value(), failure));
+        }
+    }
 }

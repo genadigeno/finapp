@@ -720,6 +720,12 @@ class PaymentConfirmationTest {
         }
 
         @Override
+        public java.util.Optional<PaymentAttempt> findByCaptureProviderReference(
+                Connection uow, ProviderReference reference) {
+            throw new UnsupportedOperationException("not exercised here");
+        }
+
+        @Override
         public boolean openInitiation(
                 Connection uow,
                 PaymentAttemptId attempt,

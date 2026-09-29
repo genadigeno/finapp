@@ -187,6 +187,14 @@ class ExpectationOpenerRegisterTest {
                         + " and the REMITTANCE its acceptance opens through reconciliation's"
                         + " register is evidence's promise, not a clearing line's copy - proven"
                         + " by BatchAcceptanceDatabaseTest and SettlementAcceptanceDatabaseTest"));
+        rows.put("recon-suspense:",
+                phase8Record("the park and its exact inverse (ADR-0070, P8-TSK-010): the"
+                        + " entry is the completeness verifier's own known row"
+                        + " (SuspenseReadings.knownEntries - park.journal_entry_id and every"
+                        + " suspense_item.entry_id), and what it moves is owned by the break"
+                        + " raised in the same transaction (INV-REC-09), never an expectation"
+                        + " - proven by BreakAndSuspenseDatabaseTest and"
+                        + " ReconciliationSuspenseDatabaseTest"));
         return rows;
     }
 

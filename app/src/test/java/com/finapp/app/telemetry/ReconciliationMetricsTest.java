@@ -64,7 +64,9 @@ class ReconciliationMetricsTest {
                 register(),
                 new JdbcSettlementFileStore(
                         new SettlementFileCipher(new byte[32], 1, new SecureRandom())),
-                new com.finapp.settlement.JdbcSettlementBatchStore(IDS));
+                new com.finapp.settlement.JdbcSettlementBatchStore(IDS),
+                new com.finapp.reconciliation.JdbcSuspenseReadings(),
+                new com.finapp.payments.JdbcUnmatchedConfirmationStore());
     }
 
     @Test
@@ -115,5 +117,30 @@ class ReconciliationMetricsTest {
                         .gauge()
                         .value())
                 .isNaN();
+
+        // The suspense series (P8-TSK-010): the proof under its own purpose, and the
+        // three gauges - each eager, each NaN when the sweep is unreadable.
+        assertThat(registry.find(ReconciliationMetrics.PROOF)
+                        .tag("purpose", AccountPurpose.SUSPENSE_UNMATCHED.name())
+                        .gauge())
+                .as("the suspense proof publishes through the proof series (ADR-0070 §7)")
+                .isNotNull();
+        assertThat(registry.find(ReconciliationMetrics.PROOF)
+                        .tag("purpose", AccountPurpose.SUSPENSE_UNMATCHED.name())
+                        .gauge()
+                        .value())
+                .isNaN();
+        for (String series :
+                java.util.List.of(
+                        ReconciliationMetrics.SUSPENSE_OPEN,
+                        ReconciliationMetrics.SUSPENSE_AGE,
+                        ReconciliationMetrics.SUSPENSE_UNOWNED)) {
+            assertThat(registry.find(series).gauge())
+                    .as("%s exists eagerly", series)
+                    .isNotNull();
+            assertThat(registry.find(series).gauge().value())
+                    .as("%s reads NaN when unreadable, never a comforting zero", series)
+                    .isNaN();
+        }
     }
 }

@@ -950,6 +950,8 @@ each escalation is an appended `break_event`, and the column only moves forward.
 `now() − raised_at` on the database clock; the gauges report the oldest open break per severity,
 alerting at CRITICAL over 0 hours, HIGH over 1 day, MEDIUM over 5 days and LOW over 15 days.
 
+**The causes, closed** (`P8-TSK-010`, ADR-0069 §2): `EXPECTATION_OVERDUE` (the ageing sweep); `GRACE_EXPIRED` (the grace leg — the one cause two types share); `PARKED_ON_RECEIPT`; `BANK_LINE_UNATTRIBUTED`; `AMOUNT_DIFFERS`; `CURRENCY_DIFFERS`; `FEE_BEYOND_TOLERANCE`; `EXPECTATION_EXHAUSTED`; `REPEATED_FINGERPRINT`; `KEY_COLLISION`; `MULTIPLE_CANDIDATES`; `LATE_MATCH`; `CYCLE_MISMATCH`; `DIRECTION_CONTRADICTED`; `TERMINAL_STATE_CONTRADICTED`; `RETURN_NOT_APPLICABLE`; `REFUND_CONTRADICTED`; `REMITTANCE_DIFFERS`; `STATEMENT_GAP`; `OPENING_BALANCE`; `ITEM_ERRORED`; `RUN_BLOCKED`; `REPLAY_DIVERGED`; `EVIDENCE_REPUDIATED`. The type—cause pairing binds the RAISE by a generated `BEFORE INSERT` trigger, never a table `CHECK`: a reclassification moves the type while the cause stays frozen, so a life-long pairing would refuse the edge §5.6 allows. An investigator's reclassification raises nothing and so has no cause member.
+
 **Never discarded** (`INV-REC-02`): there is no `DELETE` grant and a refusing trigger; a run
 cannot complete with a `PENDING` item; every unallocated remainder either waits in `UNMATCHED`
 (counted, aged) or parks with its break in its own transaction; and an `EVIDENCED` resolution —

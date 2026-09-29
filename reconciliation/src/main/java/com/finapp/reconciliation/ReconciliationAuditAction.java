@@ -27,6 +27,19 @@ public enum ReconciliationAuditAction implements AuditableAction {
             true),
 
     /**
+     * The platform raised a break (`P8-TSK-010`, ADR-0069 §3) — acting-only: a raise that
+     * converged on the standing open break records nothing. The change summary carries the
+     * type, cause, severity and source id — identifiers and enumerated names only, never
+     * an amount ({@code INV-AUD-02}); the value at issue is the row's and the audited
+     * reports'.
+     */
+    BREAK_RAISED(
+            "reconciliation.BreakRaised",
+            "The platform raised a classified break from a stored fact it detected; the"
+                    + " record names the type, cause, severity and source, never a value.",
+            false),
+
+    /**
      * Somebody read a reconciliation report (`P8-TSK-007`, ADR-0072; the
      * {@code payments.ChargebackRatioRead} precedent): the positions report carries
      * amounts, so every serving is on the record — the report's name and period, never its

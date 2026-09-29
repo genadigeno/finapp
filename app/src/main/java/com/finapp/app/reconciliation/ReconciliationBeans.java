@@ -88,7 +88,10 @@ public class ReconciliationBeans {
             ExpectationReadings<Connection> expectationReadings,
             SettlementSources settlementSources,
             SettlementFileStore<Connection> settlementFileStore,
-            com.finapp.settlement.SettlementBatchStore<Connection> settlementBatchStore) {
+            com.finapp.settlement.SettlementBatchStore<Connection> settlementBatchStore,
+            com.finapp.reconciliation.SuspenseReadings suspenseReadings,
+            com.finapp.payments.UnmatchedConfirmationStore<Connection>
+                    unmatchedConfirmationStore) {
         return new PositionProof(
                 ledgerAccountStore,
                 new com.finapp.ledger.JdbcBalanceDerivation(),
@@ -96,7 +99,75 @@ public class ReconciliationBeans {
                 expectationReadings,
                 settlementSources,
                 settlementFileStore,
-                settlementBatchStore);
+                settlementBatchStore,
+                suspenseReadings,
+                unmatchedConfirmationStore);
+    }
+
+    /** The suspense proof's and gauges' reads (`P8-TSK-010`, ADR-0070 §§5, 7). */
+    @Bean
+    com.finapp.reconciliation.SuspenseReadings suspenseReadings() {
+        return new com.finapp.reconciliation.JdbcSuspenseReadings();
+    }
+
+    /**
+     * The raise's writer (`P8-TSK-010`, ADR-0069 §3): converging on the one-open uniques,
+     * severity assessed inside from the pinned rule set's threshold, acting-only audit and
+     * {@code reconciliation.ReconciliationBreakRaised} through the outbox.
+     */
+    @Bean
+    com.finapp.reconciliation.BreakRegister breakRegister(
+            com.finapp.platform.outbox.OutboxWriter<Connection> outboxWriter,
+            com.finapp.platform.audit.AuditWriter<Connection> auditWriter,
+            IdGenerator idGenerator) {
+        return new com.finapp.reconciliation.JdbcBreakRegister(
+                outboxWriter, auditWriter, idGenerator);
+    }
+
+    /**
+     * Park, unpark and the release primitive (`P8-TSK-010`, ADR-0070) — the reconciliation
+     * posting path, over the ledger's own {@code PostingService}.
+     */
+    @Bean
+    com.finapp.reconciliation.Suspense suspense(
+            com.finapp.ledger.PostingService postingService,
+            com.finapp.ledger.LedgerAccountStore<Connection> ledgerAccountStore,
+            IdGenerator idGenerator) {
+        return new com.finapp.reconciliation.Suspense(
+                postingService, ledgerAccountStore, idGenerator);
+    }
+
+    /** The key-collision leg (`P8-TSK-010`); `P8-TSK-013`'s sweep schedules it. */
+    @Bean
+    com.finapp.reconciliation.KeyCollisionBreaks keyCollisionBreaks(
+            com.finapp.reconciliation.BreakRegister breakRegister,
+            RuleSets ruleSets,
+            IdGenerator idGenerator) {
+        return new com.finapp.reconciliation.KeyCollisionBreaks(
+                breakRegister, ruleSets, idGenerator);
+    }
+
+    /**
+     * The typing lookup (`P8-TSK-010`, ADR-0064): reconciliation declares the port, this
+     * composition joins it to payments' and merchant's public read stores — read-only,
+     * lock-free, never allocating.
+     */
+    @Bean
+    com.finapp.reconciliation.InternalReferenceLookup internalReferenceLookup(
+            com.finapp.payments.PaymentAttemptStore<Connection> paymentAttemptStore,
+            com.finapp.payments.RefundStore<Connection> refundStore,
+            com.finapp.payments.DisputeStore<Connection> disputeStore,
+            com.finapp.payments.WithdrawalStore<Connection> withdrawalStore,
+            com.finapp.merchant.MerchantPayoutStore<Connection> merchantPayoutStore,
+            com.finapp.payments.SchemeExecutionClaimStore<Connection>
+                    schemeExecutionClaimStore) {
+        return new JdbcInternalReferenceLookup(
+                paymentAttemptStore,
+                refundStore,
+                disputeStore,
+                withdrawalStore,
+                merchantPayoutStore,
+                schemeExecutionClaimStore);
     }
 
     /**
