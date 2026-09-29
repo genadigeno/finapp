@@ -117,6 +117,70 @@ class AdjustmentProposalTest {
     }
 
     @Test
+    @DisplayName("the code pairs with its origin, UNCODED is unmintable, and the generic"
+            + " factory assigns MANUAL_CORRECTION server-side (P8-TSK-006, INV-REV-04)")
+    void theReasonCodeRegimeHolds() {
+        // The generic factory: MANUAL_CORRECTION and MANUAL, assigned - never asked for.
+        AdjustmentProposal generic = proposed();
+        assertThat(generic.reasonCode()).isEqualTo(AdjustmentReasonCode.MANUAL_CORRECTION);
+        assertThat(generic.origin()).isEqualTo(AdjustmentOrigin.MANUAL);
+
+        // The owned factory takes exactly the RECONCILIATION codes.
+        AdjustmentProposal owned =
+                AdjustmentProposal.proposeOwned(
+                        AdjustmentProposalId.next(IDS),
+                        LocalDate.parse("2026-09-17"),
+                        LocalDate.parse("2026-09-17"),
+                        "rsl-ref",
+                        "resolution=rsl-1, kind=WRITE_OFF",
+                        AdjustmentReasonCode.RECONCILIATION_WRITE_OFF,
+                        INITIATOR,
+                        lines(),
+                        CLOCK);
+        assertThat(owned.origin()).isEqualTo(AdjustmentOrigin.RECONCILIATION);
+
+        // A mispaired construction is impossible, whichever way it leans.
+        assertThatThrownBy(
+                        () ->
+                                AdjustmentProposal.proposeOwned(
+                                        AdjustmentProposalId.next(IDS),
+                                        LocalDate.parse("2026-09-17"),
+                                        LocalDate.parse("2026-09-17"),
+                                        "rsl-ref",
+                                        "mispaired",
+                                        AdjustmentReasonCode.MANUAL_CORRECTION,
+                                        INITIATOR,
+                                        lines(),
+                                        CLOCK))
+                .isInstanceOf(IllegalArgumentException.class)
+                .hasMessageContaining("INV-REV-04");
+        // UNCODED is history's backfill value: unmintable by either factory.
+        assertThatThrownBy(
+                        () ->
+                                AdjustmentProposal.proposeOwned(
+                                        AdjustmentProposalId.next(IDS),
+                                        LocalDate.parse("2026-09-17"),
+                                        LocalDate.parse("2026-09-17"),
+                                        "rsl-ref",
+                                        "uncoded",
+                                        AdjustmentReasonCode.UNCODED,
+                                        INITIATOR,
+                                        lines(),
+                                        CLOCK))
+                .isInstanceOf(IllegalArgumentException.class);
+        // Every code knows its origin - the schema's pairing CHECK is generated from this.
+        assertThat(AdjustmentReasonCode.MANUAL_CORRECTION.origin())
+                .isEqualTo(AdjustmentOrigin.MANUAL);
+        assertThat(AdjustmentReasonCode.UNCODED.origin()).isEqualTo(AdjustmentOrigin.MANUAL);
+        assertThat(AdjustmentReasonCode.RECONCILIATION_WRITE_OFF.origin())
+                .isEqualTo(AdjustmentOrigin.RECONCILIATION);
+        assertThat(AdjustmentReasonCode.RECONCILIATION_TRANSFER.origin())
+                .isEqualTo(AdjustmentOrigin.RECONCILIATION);
+        assertThat(AdjustmentReasonCode.RECONCILIATION_GAIN.origin())
+                .isEqualTo(AdjustmentOrigin.RECONCILIATION);
+    }
+
+    @Test
     @DisplayName("no rendering carries the reason (INV-AUD-02: a person's free prose)")
     void theReasonReachesNoRendering() {
         AdjustmentProposal proposal = proposed();
@@ -164,6 +228,8 @@ class AdjustmentProposalTest {
                 LocalDate.parse("2026-09-17"),
                 "adj-ref",
                 "NEEDLE-a-person-wrote-this",
+                AdjustmentReasonCode.MANUAL_CORRECTION,
+                AdjustmentOrigin.MANUAL,
                 INITIATOR,
                 Instant.now(CLOCK),
                 lines(),

@@ -527,6 +527,8 @@ one converges rather than answering `checkout.NotConfirmable`: a double-click is
 | `ledger.AccountNotPostable` | 409 | The account no longer accepts postings. |
 | `ledger.SelfApprovalRefused` | 409 | An adjustment requires a second approver distinct from its initiator. |
 | `ledger.ProposalNotOpen` | 409 | The adjustment proposal is already decided; a new adjustment is a new proposal. |
+| `ledger.AdjustmentOnReconciledPosition` | 422 | A reconciled position cannot be adjusted here; value there moves only through a reconciliation break's resolution. |
+| `ledger.AdjustmentOriginMismatch` | 409 | The proposal belongs to another origin's door and cannot be decided here. |
 
 The ledger's one public surface is the adjustment (`P3-TSK-017` — plan §9: posting is an
 internal API), so its vocabulary is the adjustment's refusals. **No title or detail ever names
@@ -547,7 +549,14 @@ same approver's retry, a repeated rejection) never produce either code, and an u
 malformed proposal identifier is the ordinary `api.NotFound`, one answer for both causes
 (`P1-TSK-016`). A missing reason is the ordinary `api.ValidationFailed`, because the boundary's bean
 validation owns required-field refusals; the reason's **bound** lives in three reconciled
-places (the DTO, `V004`'s `CHECK`, `AuditRecord`).
+places (the DTO, `V004`'s `CHECK`, `AuditRecord`). **The closure pair arrived with
+`P8-TSK-006`** (ADR-0071): `ledger.AdjustmentOnReconciledPosition` (422) refuses a `MANUAL`
+line on a clearing or suspense purpose — decided before the claim, so the key survives the
+refusal, and again at a legacy proposal's approval; the detail names the remedy (a break
+resolution) and never the account. `ledger.AdjustmentOriginMismatch` (409) is each door
+refusing the other origin's proposals: a reconciliation proposal is decided by the
+resolution flow that also moves the break, a manual one by the generic four-eyes door — the
+proposal is fine and still standing, which is what makes the 409 actionable.
 
 ### `settlement` — `SettlementErrorCode`
 

@@ -340,6 +340,48 @@ public class ApiErrorHandler extends ResponseEntityExceptionHandler {
     }
 
     /**
+     * A generic adjustment named a reconciled position (`P8-TSK-006`, ADR-0071,
+     * {@code INV-REC-06}): value in a clearing or suspense account moves only through a
+     * reconciliation break's resolution. The detail names the remedy and never an account
+     * or a value.
+     */
+    @ExceptionHandler(com.finapp.ledger.AdjustmentOnReconciledPositionException.class)
+    public ResponseEntity<ProblemDetailBody> handleAdjustmentOnReconciledPosition(
+            com.finapp.ledger.AdjustmentOnReconciledPositionException exception,
+            HttpServletRequest request) {
+        // Warn, not error: the refusal is the closure working.
+        log.warn(
+                "An adjustment on a reconciled position ({}) was refused on {}",
+                exception.position(),
+                request.getRequestURI());
+        return render(
+                ProblemDetail.of(
+                        com.finapp.ledger.LedgerErrorCode.ADJUSTMENT_ON_RECONCILED_POSITION,
+                        request.getRequestURI(),
+                        "Raise a reconciliation break resolution instead; nothing was"
+                                + " written."));
+    }
+
+    /**
+     * A decision reached a proposal another door owns (`P8-TSK-006`, ADR-0071 §6): the
+     * proposal is fine and still standing — it is simply not this surface's to decide.
+     */
+    @ExceptionHandler(com.finapp.ledger.AdjustmentOriginMismatchException.class)
+    public ResponseEntity<ProblemDetailBody> handleAdjustmentOriginMismatch(
+            com.finapp.ledger.AdjustmentOriginMismatchException exception,
+            HttpServletRequest request) {
+        log.warn(
+                "A cross-origin adjustment decision was refused on {}",
+                request.getRequestURI());
+        return render(
+                ProblemDetail.of(
+                        com.finapp.ledger.LedgerErrorCode.ADJUSTMENT_ORIGIN_MISMATCH,
+                        request.getRequestURI(),
+                        "The proposal is decided by its own origin's door; nothing was"
+                                + " written."));
+    }
+
+    /**
      * A decision named a proposal that does not exist (`P3-TSK-021`): the same {@code 404}
      * body the slice's malformed-identifier fold produces, so unknown and malformed stay
      * one answer (`P1-TSK-016`).

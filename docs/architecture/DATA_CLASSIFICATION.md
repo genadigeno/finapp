@@ -433,6 +433,8 @@ the journal column it becomes at approval.
 | `adjustment_proposal` | `value_date` | `CONFIDENTIAL` | As `posting_date` |
 | `adjustment_proposal` | `reference` | `RESTRICTED-FINANCIAL` | `journal_entry.reference`'s reasoning, before the entry exists |
 | `adjustment_proposal` | `reason` | `RESTRICTED-PII` | **Free text written by a person** — `journal_entry.reason`'s reasoning verbatim |
+| `adjustment_proposal` | `reason_code` | `INTERNAL` | A closed enumeration (`P8-TSK-006`, `INV-REV-04`): the justification's category, never its text |
+| `adjustment_proposal` | `origin` | `INTERNAL` | An enumeration of two values (`P8-TSK-006`): whose machinery decides the proposal |
 | `adjustment_proposal` | `proposed_by` | `RESTRICTED-PII` | `journal_entry.actor_id`'s reasoning: a person's identity-provider subject |
 | `adjustment_proposal` | `proposed_at` | `CONFIDENTIAL` | Dates financial activity — `journal_entry.created_at`'s reasoning |
 | `adjustment_proposal` | `decided_by` | `RESTRICTED-PII` | The second person — `proposed_by`'s reasoning |

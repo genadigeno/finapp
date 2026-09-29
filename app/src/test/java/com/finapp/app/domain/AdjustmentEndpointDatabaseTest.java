@@ -1,6 +1,7 @@
 package com.finapp.app.domain;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
 import com.finapp.identity.AssuranceLevel;
 import com.finapp.identity.Authorization;
@@ -560,6 +561,307 @@ class AdjustmentEndpointDatabaseTest {
     }
 
     // -----------------------------------------------------------------
+    // Reason codes, origins and the reconciled-position closure (P8-TSK-006, ADR-0071)
+    // -----------------------------------------------------------------
+
+    @Test
+    @DisplayName("a MANUAL adjustment on a reconciled position is 422 at the door, naming"
+            + " no account and no value - and the refusal never consumes the key"
+            + " (P8-TSK-006, INV-REC-06)")
+    void aManualAdjustmentOnAReconciledPositionIsRefused() throws Exception {
+        Operator initiator = givenAnOperator();
+        LedgerAccount wallet = givenAWallet();
+        LedgerAccount reconciled = settlementClearing();
+        String key = "adj-" + IDS.next();
+
+        String onClearing =
+                "{\"postingDate\":\"2026-09-17\",\"valueDate\":\"2026-09-17\","
+                        + "\"reference\":\"adj-probe\",\"reason\":\"free clearing probe\","
+                        + "\"lines\":[" + line(reconciled, "DEBIT", "5.00") + ","
+                        + line(wallet, "CREDIT", "5.00") + "]}";
+        HttpResponse<String> refused = post(onClearing, initiator.token(), key);
+        assertThat(refused.statusCode()).isEqualTo(422);
+        assertThat(refused.body())
+                .contains("ledger.AdjustmentOnReconciledPosition")
+                .doesNotContain(reconciled.id().value().toString())
+                .doesNotContain("5.00");
+        try (Connection app = DatabaseRoles.application()) {
+            assertThat(count(app,
+                            "SELECT count(*) FROM ledger.adjustment_proposal_line"
+                                    + " WHERE ledger_account_id = ?",
+                            reconciled.id().value()))
+                    .as("nothing was written")
+                    .isZero();
+        }
+
+        // The key was never consumed (validate-then-claim): the same key now carries a
+        // legal proposal, rather than replaying a refusal or conflicting.
+        assertThat(post(body(wallet, "5.00", "the corrected retry"), initiator.token(), key)
+                        .statusCode())
+                .isEqualTo(201);
+    }
+
+    @Test
+    @DisplayName("each door refuses the other origin's proposals: generic approval and"
+            + " DELETE answer 409 on a RECONCILIATION proposal - ten racers, ten refusals,"
+            + " no entry - and the owned methods refuse a MANUAL one (ADR-0071 section 6)")
+    void crossOriginDecisionsAreRefusedBothWays() throws Exception {
+        Operator initiator = givenAnOperator();
+        Operator approver = givenAnOperator();
+        LedgerAccount wallet = givenAWallet();
+
+        // A resolution's ledger half, proposed the way P8-TSK-015's flow will: the owned
+        // method, in its caller's transaction, on a reconciled position.
+        UUID owned = ownedProposal(wallet);
+
+        long entriesBefore = adjustmentEntryCount();
+        int racers = 10;
+        ExecutorService pool = Executors.newFixedThreadPool(racers);
+        try {
+            CountDownLatch start = new CountDownLatch(1);
+            List<Future<HttpResponse<String>>> outcomes = new ArrayList<>();
+            for (int i = 0; i < racers; i++) {
+                outcomes.add(
+                        pool.submit(
+                                () -> {
+                                    start.await();
+                                    return approve(owned.toString(), approver.token());
+                                }));
+            }
+            start.countDown();
+            for (Future<HttpResponse<String>> outcome : outcomes) {
+                HttpResponse<String> response = outcome.get();
+                assertThat(response.statusCode())
+                        .as("every generic approval of a reconciliation proposal is refused")
+                        .isEqualTo(409);
+                assertThat(response.body()).contains("ledger.AdjustmentOriginMismatch");
+            }
+        } finally {
+            pool.shutdownNow();
+        }
+        assertThat(adjustmentEntryCount())
+                .as("ten refusals, zero entries (the new counted race)")
+                .isEqualTo(entriesBefore);
+
+        // The generic DELETE is refused the same way: a resolution's withdrawal is the
+        // resolution flow's act.
+        HttpResponse<String> deleted = reject(owned.toString(), initiator.token());
+        assertThat(deleted.statusCode()).isEqualTo(409);
+        assertThat(deleted.body()).contains("ledger.AdjustmentOriginMismatch");
+        try (Connection app = DatabaseRoles.application()) {
+            assertThat(proposalColumn(app, owned, "status"))
+                    .as("the proposal still stands for its own door")
+                    .isEqualTo("PROPOSED");
+        }
+
+        // And the owned methods refuse a MANUAL proposal, symmetrically.
+        UUID manual =
+                proposalIdOf(
+                        post(body(wallet, "4.00", "manual for the owned door"),
+                                initiator.token(), "adj-" + IDS.next()));
+        try (Connection app = DatabaseRoles.application();
+                SecurityContext.Scope actor =
+                        SecurityContext.enter(
+                                new com.finapp.platform.security.Actor(
+                                        "recon-owned-prober",
+                                        com.finapp.platform.security.ActorType.EMPLOYEE));
+                CorrelationContext.Scope flow = flow()) {
+            app.setAutoCommit(false);
+            com.finapp.ledger.AdjustmentService owned2 = adjustmentService();
+            assertThatThrownBy(
+                            () ->
+                                    owned2.approveOwned(
+                                            app,
+                                            com.finapp.ledger.AdjustmentProposalId.of(manual)))
+                    .isInstanceOf(
+                            com.finapp.ledger.AdjustmentOriginMismatchException.class);
+            assertThatThrownBy(
+                            () ->
+                                    owned2.rejectOwned(
+                                            app,
+                                            com.finapp.ledger.AdjustmentProposalId.of(manual)))
+                    .isInstanceOf(
+                            com.finapp.ledger.AdjustmentOriginMismatchException.class);
+            app.rollback();
+        }
+    }
+
+    /**
+     * The one row `V015`'s insert trigger cannot see (`P8-TSK-006`'s decided failure case):
+     * a proposal born BEFORE the migration, still {@code PROPOSED}, with a line on a
+     * reconciled position. Planted with the triggers disabled — history's shape, not a
+     * bypass in production — and its approval is refused by the domain's re-check.
+     */
+    @Test
+    @DisplayName("a pre-V015 proposal with a clearing line is refused at approval by the"
+            + " domain's re-check: 422, nothing posted (P8-TSK-006)")
+    void aLegacyClearingProposalIsRefusedAtApproval() throws Exception {
+        Operator approver = givenAnOperator();
+        LedgerAccount wallet = givenAWallet();
+        LedgerAccount reconciled = settlementClearing();
+        UUID legacy = IDS.next();
+        try (Connection root = DatabaseRoles.bootstrap()) {
+            root.setAutoCommit(false);
+            execute(root, "ALTER TABLE ledger.adjustment_proposal DISABLE TRIGGER"
+                    + " adjustment_proposal_requires_a_reason_code");
+            execute(root, "ALTER TABLE ledger.adjustment_proposal_line DISABLE TRIGGER"
+                    + " adjustment_line_respects_reconciled_positions");
+            try {
+                execute(root,
+                        "INSERT INTO ledger.adjustment_proposal (id, status, posting_date,"
+                                + " value_date, reference, reason, reason_code, origin,"
+                                + " proposed_by, proposed_at) VALUES (?, 'PROPOSED',"
+                                + " current_date, current_date, 'legacy-probe',"
+                                + " 'a proposal born before V015', 'UNCODED', 'MANUAL',"
+                                + " 'legacy-initiator', now())",
+                        legacy);
+                execute(root,
+                        "INSERT INTO ledger.adjustment_proposal_line (proposal_id, seq,"
+                                + " ledger_account_id, direction, amount_minor, currency,"
+                                + " scale) VALUES (?, 0, ?, 'DEBIT', 500, 'USD', 2),"
+                                + " (?, 1, ?, 'CREDIT', 500, 'USD', 2)",
+                        legacy, reconciled.id().value(), legacy, wallet.id().value());
+            } finally {
+                execute(root, "ALTER TABLE ledger.adjustment_proposal ENABLE TRIGGER"
+                        + " adjustment_proposal_requires_a_reason_code");
+                execute(root, "ALTER TABLE ledger.adjustment_proposal_line ENABLE TRIGGER"
+                        + " adjustment_line_respects_reconciled_positions");
+            }
+            root.commit();
+        }
+
+        long entriesBefore = adjustmentEntryCount();
+        HttpResponse<String> refused = approve(legacy.toString(), approver.token());
+        assertThat(refused.statusCode()).isEqualTo(422);
+        assertThat(refused.body()).contains("ledger.AdjustmentOnReconciledPosition");
+        try (Connection app = DatabaseRoles.application()) {
+            assertThat(adjustmentEntryCount()).isEqualTo(entriesBefore);
+            assertThat(proposalColumn(app, legacy, "status")).isEqualTo("PROPOSED");
+        }
+    }
+
+    @Test
+    @DisplayName("the trail carries the regime: the proposal view shows origin and reason"
+            + " code, and all three audit records carry them (P8-TSK-006, INV-REV-04)")
+    void theTrailCarriesOriginAndReasonCode() throws Exception {
+        Operator initiator = givenAnOperator();
+        Operator approver = givenAnOperator();
+        LedgerAccount wallet = givenAWallet();
+
+        UUID proposal =
+                proposalIdOf(
+                        post(body(wallet, "2.00", "regime trail probe"), initiator.token(),
+                                "adj-" + IDS.next()));
+        assertThat(get(proposal.toString(), approver.token()).body())
+                .contains("\"reasonCode\":\"MANUAL_CORRECTION\"")
+                .contains("\"origin\":\"MANUAL\"");
+        UUID entry = entryIdOf(approve(proposal.toString(), approver.token()));
+
+        UUID withdrawn =
+                proposalIdOf(
+                        post(body(wallet, "2.00", "regime withdrawal probe"),
+                                initiator.token(), "adj-" + IDS.next()));
+        assertThat(reject(withdrawn.toString(), initiator.token()).statusCode())
+                .isEqualTo(204);
+
+        try (Connection app = DatabaseRoles.application()) {
+            assertThat(auditColumnFor(app, "ledger.AdjustmentProposed", proposal.toString(),
+                            "change_summary"))
+                    .contains("origin=MANUAL", "reasonCode=MANUAL_CORRECTION");
+            assertThat(auditColumnFor(app, "ledger.AdjustmentPosted", entry.toString(),
+                            "change_summary"))
+                    .contains("origin=MANUAL", "reasonCode=MANUAL_CORRECTION");
+            assertThat(auditColumnFor(app, "ledger.AdjustmentRejected", withdrawn.toString(),
+                            "change_summary"))
+                    .contains("origin=MANUAL", "reasonCode=MANUAL_CORRECTION");
+        }
+    }
+
+    /** A reconciliation-owned proposal, made as `P8-TSK-015`'s flow will make one. */
+    private UUID ownedProposal(LedgerAccount wallet) throws Exception {
+        try (Connection app = DatabaseRoles.application();
+                SecurityContext.Scope actor =
+                        SecurityContext.enter(
+                                new com.finapp.platform.security.Actor(
+                                        "recon-proposer-" + IDS.next(),
+                                        com.finapp.platform.security.ActorType.EMPLOYEE));
+                CorrelationContext.Scope flow = flow()) {
+            app.setAutoCommit(false);
+            com.finapp.ledger.AdjustmentProposalId id =
+                    adjustmentService()
+                            .proposeOwned(
+                                    app,
+                                    new com.finapp.ledger.OwnedAdjustmentCommand(
+                                            java.time.LocalDate.parse("2026-09-17"),
+                                            java.time.LocalDate.parse("2026-09-17"),
+                                            "rsl-" + IDS.next(),
+                                            "resolution=rsl-1, kind=WRITE_OFF,"
+                                                    + " code=RECONCILIATION_WRITE_OFF",
+                                            com.finapp.ledger.AdjustmentReasonCode
+                                                    .RECONCILIATION_WRITE_OFF,
+                                            List.of(
+                                                    new com.finapp.ledger.JournalLine(
+                                                            settlementClearing().id(),
+                                                            com.finapp.ledger.Direction.DEBIT,
+                                                            com.finapp.sharedkernel.money.Money
+                                                                    .ofMinorUnits(500, USD)),
+                                                    new com.finapp.ledger.JournalLine(
+                                                            wallet.id(),
+                                                            com.finapp.ledger.Direction.CREDIT,
+                                                            com.finapp.sharedkernel.money.Money
+                                                                    .ofMinorUnits(500, USD)))));
+            app.commit();
+            return id.value();
+        }
+    }
+
+    private com.finapp.ledger.AdjustmentService adjustmentService() {
+        return new com.finapp.ledger.AdjustmentService(
+                new com.finapp.platform.idempotency.IdempotentExecutor(
+                        new com.finapp.platform.idempotency.JdbcIdempotencyRecordStore(),
+                        CLOCK,
+                        java.time.Duration.ofDays(1),
+                        java.time.Duration.ofMinutes(5)),
+                new com.finapp.ledger.JdbcJournalEntryStore(IDS),
+                new com.finapp.ledger.JdbcAdjustmentProposalStore(),
+                new com.finapp.platform.audit.JdbcAuditWriter(),
+                new com.finapp.platform.outbox.JdbcOutboxWriter(),
+                new com.finapp.ledger.JdbcBalanceProjection(),
+                IDS,
+                CLOCK,
+                com.finapp.ledger.PostingObserver.NONE,
+                new JdbcLedgerAccountStore());
+    }
+
+    private LedgerAccount settlementClearing() {
+        try (Connection app = DatabaseRoles.application()) {
+            return accounts
+                    .findOperational(app, AccountPurpose.SETTLEMENT_CLEARING, USD)
+                    .orElseThrow();
+        } catch (SQLException failure) {
+            throw new IllegalStateException(failure);
+        }
+    }
+
+    private static CorrelationContext.Scope flow() {
+        return CorrelationContext.enter(
+                Correlation.startingWith(CorrelationId.of("p8t6-" + UUID.randomUUID())));
+    }
+
+    private static long count(Connection connection, String sql, Object... arguments)
+            throws SQLException {
+        try (PreparedStatement statement = connection.prepareStatement(sql)) {
+            for (int i = 0; i < arguments.length; i++) {
+                statement.setObject(i + 1, arguments[i]);
+            }
+            try (ResultSet row = statement.executeQuery()) {
+                assertThat(row.next()).isTrue();
+                return row.getLong(1);
+            }
+        }
+    }
+
+    // -----------------------------------------------------------------
     // Fixtures
 
     private record Operator(IdentityId identity, String token) {}
@@ -590,10 +892,16 @@ class AdjustmentEndpointDatabaseTest {
         }
     }
 
+    /**
+     * The adjustment fixtures' operational counterpart. This was `SETTLEMENT_CLEARING`
+     * until `P8-TSK-006` closed reconciled positions to free adjustments (ADR-0071): the
+     * suite only ever wanted "some operational account facing the wallet", and clearing
+     * stopped being one on purpose — the refusal has its own tests below.
+     */
     private LedgerAccount clearing() {
         try (Connection app = DatabaseRoles.application()) {
             return accounts
-                    .findOperational(app, AccountPurpose.SETTLEMENT_CLEARING, USD)
+                    .findOperational(app, AccountPurpose.FEE_REVENUE, USD)
                     .orElseThrow();
         } catch (SQLException failure) {
             throw new IllegalStateException(failure);

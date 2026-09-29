@@ -1207,6 +1207,76 @@
           }
         }
       },
+      "ledger.AdjustmentOnReconciledPosition": {
+        "content": {
+          "application/problem+json": {
+            "schema": {
+              "allOf": [
+                {
+                  "$ref": "#/components/schemas/ProblemDetail"
+                },
+                {
+                  "properties": {
+                    "code": {
+                      "const": "ledger.AdjustmentOnReconciledPosition"
+                    },
+                    "status": {
+                      "const": 422
+                    },
+                    "type": {
+                      "const": "https://finapp.example/problems/ledger.AdjustmentOnReconciledPosition"
+                    }
+                  }
+                }
+              ]
+            }
+          }
+        },
+        "description": "[422] A reconciled position cannot be adjusted here; value there moves only through a reconciliation break's resolution.",
+        "headers": {
+          "X-Client-Correlation-Id": {
+            "$ref": "#/components/headers/X-Client-Correlation-Id"
+          },
+          "X-Correlation-Id": {
+            "$ref": "#/components/headers/X-Correlation-Id"
+          }
+        }
+      },
+      "ledger.AdjustmentOriginMismatch": {
+        "content": {
+          "application/problem+json": {
+            "schema": {
+              "allOf": [
+                {
+                  "$ref": "#/components/schemas/ProblemDetail"
+                },
+                {
+                  "properties": {
+                    "code": {
+                      "const": "ledger.AdjustmentOriginMismatch"
+                    },
+                    "status": {
+                      "const": 409
+                    },
+                    "type": {
+                      "const": "https://finapp.example/problems/ledger.AdjustmentOriginMismatch"
+                    }
+                  }
+                }
+              ]
+            }
+          }
+        },
+        "description": "[409] The proposal belongs to another origin's door and cannot be decided here.",
+        "headers": {
+          "X-Client-Correlation-Id": {
+            "$ref": "#/components/headers/X-Client-Correlation-Id"
+          },
+          "X-Correlation-Id": {
+            "$ref": "#/components/headers/X-Correlation-Id"
+          }
+        }
+      },
       "ledger.ProposalNotOpen": {
         "content": {
           "application/problem+json": {
@@ -5070,6 +5140,9 @@
             },
             "type": "array"
           },
+          "origin": {
+            "type": "string"
+          },
           "postingDate": {
             "type": "string"
           },
@@ -5083,6 +5156,9 @@
             "type": "string"
           },
           "reason": {
+            "type": "string"
+          },
+          "reasonCode": {
             "type": "string"
           },
           "reference": {

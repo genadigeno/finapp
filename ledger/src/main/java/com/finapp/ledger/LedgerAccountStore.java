@@ -82,12 +82,14 @@ public interface LedgerAccountStore<T> {
      * with its first caller (`P7-TSK-015`): the chargeback-ratio report counts per credited
      * account in {@code payments} (which never learns what a merchant is) and needs each
      * account's purpose and owner to attribute the counts to merchants, in ONE statement rather
-     * than one read per account. No lock: a report decides nothing, and an account's owner and
-     * purpose are frozen at its birth. <strong>Cross-owner by design</strong> — its one caller is
-     * that operator report, under {@code MERCHANT_ADMINISTER}; no customer or merchant surface
-     * reaches it. {@code OwnershipIsScopedTest}'s detector keys on an {@code EntityId} parameter
-     * and does not see a collection of them, so this sentence is the classification: an
-     * administered read, the {@code ADMINISTERED} scope's reasoning.
+     * than one read per account. No lock: an account's owner and purpose are frozen at its
+     * birth, so the answer cannot be invalidated. <strong>Cross-owner by design</strong> — its
+     * callers are that operator report, under {@code MERCHANT_ADMINISTER}, and since
+     * `P8-TSK-006` the adjustment binding ({@code AdjustmentService}: no {@code MANUAL} line on
+     * a reconciled position, judged from the purposes this read returns); no customer or
+     * merchant surface reaches it. {@code OwnershipIsScopedTest}'s detector keys on an
+     * {@code EntityId} parameter and does not see a collection of them, so this sentence is the
+     * classification: an administered read, the {@code ADMINISTERED} scope's reasoning.
      */
     java.util.List<LedgerAccount> findAllById(
             T unitOfWork, java.util.Collection<LedgerAccountId> ids);

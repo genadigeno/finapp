@@ -113,6 +113,29 @@ public enum AccountPurpose {
         return ownerKind;
     }
 
+    /**
+     * The positions reconciliation explains and therefore owns the correction of
+     * (`P8-TSK-006`, ADR-0071, {@code INV-REC-06}): value here moves only through a system
+     * posting or a reconciliation-owned resolution — a {@code MANUAL}-origin adjustment line
+     * on any of them is refused at the domain and by `V015`'s trigger, because a free
+     * adjustment on a reconciled position is either unexplained value or destroyed evidence
+     * that a break existed. The four Phase 8 purposes (`PROCESSING_COSTS`,
+     * `RECONCILIATION_LOSSES`, `RECONCILIATION_GAINS`, `CASH_AT_BANK`) join with their tasks
+     * (`-009`, `-015`, `-016`), each re-stating the generated binding list (ledger
+     * `V016`–`V018`, the `V014` pattern).
+     */
+    public static java.util.Set<AccountPurpose> reconciledPositions() {
+        return java.util.EnumSet.of(
+                SETTLEMENT_CLEARING, INSTANT_CLEARING, PAYOUT_CLEARING, SUSPENSE_UNMATCHED);
+    }
+
+    /** The reconciled positions as a SQL literal list, for `V015`'s binding trigger. */
+    public static String sqlReconciledPositionsList() {
+        return reconciledPositions().stream()
+                .map(purpose -> "'" + purpose.name() + "'")
+                .collect(Collectors.joining(", "));
+    }
+
     /** The purposes as a SQL literal list, for the {@code CHECK} constraint. */
     public static String sqlValueList() {
         return Arrays.stream(values())

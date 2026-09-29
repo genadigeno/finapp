@@ -1,6 +1,6 @@
 # Task History
 
-The per-task completion records that accumulated behind `## Current Task` - 168 "Previously" blocks, newest first, from `P8-TSK-004` back to project initiation. *(`X-TSK-004` is cross-cutting and completed after the Phase 6 → 7 transition, so it stands second, between `P7-TSK-001` and the transition's record - the transition's block moved here by `P7-TSK-001`'s gate, exactly as an earlier form of this note said it would.)*
+The per-task completion records that accumulated behind `## Current Task` - 169 "Previously" blocks, newest first, from `P8-TSK-005` back to project initiation. *(`X-TSK-004` is cross-cutting and completed after the Phase 6 → 7 transition, so it stands second, between `P7-TSK-001` and the transition's record - the transition's block moved here by `P7-TSK-001`'s gate, exactly as an earlier form of this note said it would.)*
 
 **Archive.** These records were moved verbatim out of
 [`CURRENT_STATE.md`](../CURRENT_STATE.md) on 2026-09-20 so that the canonical description of
@@ -12,6 +12,60 @@ Current state: [`CURRENT_STATE.md`](../CURRENT_STATE.md) ·
 Authoritative backlog: [`BACKLOG.md`](../BACKLOG.md)
 
 ---
+
+### Previously
+
+**`P8-TSK-005` — Disputes, push rails, unmatched confirmations and payouts open their
+expectations** — `COMPLETE` (2026-09-29). **M8.2, Every settling completion is expected, at 2 of
+4**: every externally settling completion ADR-0067 §2 names now opens, in its own transaction, the
+expectation that copies its clearing journal line — and a register makes the claim a build fact.
+**The openers**, each in its applier's acting branch after the posting it copies:
+`ChargebackAccounting` — the chargeback, the win and the fee, each right after its own clearing
+posting, keyed by the network's dispute reference under its stage's kind (`DISPUTE_CB_REF`,
+`DISPUTE_REV_REF`, `DISPUTE_FEE_REF`); the attribution, restoration, loss and re-attribution
+entries touch no clearing and open nothing; a stage walk opens two or three in one transaction;
+`PaymentOutcomes` — the push execution (`PUSH_PAY_IN`, keys `SCHEME_REF` and `END_TO_END_REF`,
+the announced cycle its attribute) and the return (`PUSH_RETURN`, keys `SCHEME_REF` and
+`OUR_REF`, no cycle), the refund's kind now chosen by the refunded rail's **declared refund
+mode** (`PROVIDER_REFUND` → `CARD_REFUND`, `RETURN_PAYMENT` → `PUSH_RETURN`, a book refund
+nothing); `WithdrawalOutcomes` (`PUSH_WITHDRAWAL`, its stored cycle the attribute);
+`UnmatchedConfirmations` (`UNMATCHED_CONFIRMATION`, the claim winner only, keyed by the scheme
+reference alone — the parking's named reference, cause and attempt travel to `-020`'s suspense
+item); and **`merchant`'s own port** `PayoutSettlementExpectations`, a required parameter of
+`MerchantPayoutOutcomes` (`MERCHANT_PAYOUT`, keys `PAYOUT_PROVIDER_REF` and `OUR_REF`, the first
+answer and the sweep alike). `app`'s one `ReconciliationExpectationRecorder` implements both
+ports and now copies the **posting date from the posted entry** — the applier's own copy left
+the port. **The register**: `ExpectationOpenerRegisterTest` enumerates every posting-key prefix
+production code declares (the literals in each source constructing a `PostingCommand` or
+`ReversalCommand`) and requires each to open named kinds — with a real test calling the shared
+ledger-backed `ClearingLineCopies.assertOpensItsClearingLinesCopy` for that kind — or to touch no
+reconciled position with a test proving nothing opens; every kind either port can open has
+exactly one proving row, and its planted-violation controls sit beside the real register.
+**Proven live**: each completion's copy against the ledger (amount, entry, account, sign, date,
+dating, keys, cycle); the ten-way chargeback walk opening exactly three, the failed win's copy
+rolled back with it and opened by its redelivery; ten duplicate callbacks, ten inquiry sweeps,
+ten return sweeps, ten withdrawal sweeps and ten payout sweeps each opening one; **ten pay-ins of
+one cycle raising no collision**; the multi-rail storm and the merchant storm reading EVERY
+clearing line's copy in each round's snapshot and at rest (no window between a completion and
+its expectation), and the dispute battery every stage's. **Nine probe runs, nine caught**: each
+opener removed in turn (the chargeback's, the fee's, the execution's, the return's, the
+parking's, the withdrawal's), the win opening the chargeback's kind again (a stage opening
+twice), the payout port unwired and a planted posting key — every verdict read from the failing
+testcase, every restore byte-identical (`MUTATION_TESTING.md` §2, +3 rows under `INV-SET-02`
+and `INV-DSP-02`). **The gate's finds, each fixed**: the credit-versus-parking race proved one
+money fact but no expectation — it now proves exactly the winner's, the scheme reference keyed
+once and no collision; two "opens nothing" proofs rested on the battery's scope, which no
+scenario forces to hold a re-attribution — moved to tests that certainly post each key, and the
+storm's scope asserted to hold its transfers; and the register's own source check, which the
+gate's edit showed breaking on a line-wrapped call, made whitespace-tolerant. One storm run of
+four failed at the choreography's desk sale answering `PAYMENT_PENDING` — no error logged, no
+expectation assertion involved: a harness timing assumption, three re-runs green, recorded and
+offered as its own task. No migration, no API, no event, no series (by the backlog's scope).
+Verified by targeted tiers from fresh runs on the final code: payments hermetic 246
+across 35 suites, merchant hermetic 135 across 19, app hermetic 553 across 99 (the register
+within) and app database 1093 across 133 (the storm, the battery and the merchant storm
+within), all 0 failures, the document guards re-run after the records landed; the full
+battery deliberately skipped on the owner's instruction.
 
 ### Previously
 

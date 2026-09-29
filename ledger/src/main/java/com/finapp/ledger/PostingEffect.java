@@ -66,6 +66,22 @@ final class PostingEffect {
             PostingAttribution attribution,
             Actor actor,
             Correlation correlation) {
+        return record(unitOfWork, entry, attribution, actor, correlation, Optional.empty());
+    }
+
+    /**
+     * As above, with an identifier-only annotation appended to the audit record's change
+     * summary — the adjustment's origin and reason code (`P8-TSK-006`, {@code INV-REV-04}:
+     * {@code ledger.AdjustmentPosted} carries both). Enumerated names only, never an amount
+     * and never prose ({@code INV-AUD-02}); the caller owns what it appends.
+     */
+    CommandResult record(
+            Connection unitOfWork,
+            JournalEntry entry,
+            PostingAttribution attribution,
+            Actor actor,
+            Correlation correlation,
+            Optional<String> summaryAnnotation) {
         journal.append(unitOfWork, entry, attribution);
 
         // INV-REV-04's regime, derived from the kind: the adjustment's record carries its
@@ -97,6 +113,9 @@ final class PostingEffect {
                                         + attribution
                                                 .reverses()
                                                 .map(original -> ", reverses=" + original)
+                                                .orElse("")
+                                        + summaryAnnotation
+                                                .map(annotation -> ", " + annotation)
                                                 .orElse(""))));
 
         outbox.write(

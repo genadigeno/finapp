@@ -9523,7 +9523,7 @@ Disputes (`P7-TSK-012`…`-014`) · M7.7 Observability and demonstration (`P7-TS
 
 # Phase 8 — Settlement and Reconciliation
 
-Status: `IN_PROGRESS` — started 2026-09-28 with `P8-TSK-001` (5 of 27 items complete; M8.1 Evidence intake closed 2026-09-29 at 3 of 3; M8.2 Every settling completion is expected at 2 of 4); entry gate passed 2026-09-28 by the Phase 7 → 8 transition
+Status: `IN_PROGRESS` — started 2026-09-28 with `P8-TSK-001` (6 of 27 items complete; M8.1 Evidence intake closed 2026-09-29 at 3 of 3; M8.2 Every settling completion is expected at 3 of 4); entry gate passed 2026-09-28 by the Phase 7 → 8 transition
 ([`reviews/PHASE_7_TO_8_TRANSITION.md`](reviews/PHASE_7_TO_8_TRANSITION.md)), elaborated to task
 granularity by the same transition: twenty-seven items (`P8-TSK-001`…`-024`, `P8-TST-001`,
 `P8-TST-002`, `P8-DOC-001`) across eight milestones, with `P8-TSK-001` marked `READY`. The
@@ -10092,7 +10092,7 @@ posting-date documentation reconciled with the Phase 5–7 practice, with no ret
   the Phase 7 storm and dispute battery re-run green.
 - **Definition of done**: `DOD-FIN`, `DOD-TEST`. **Risk**: High. **Cx**: M.
 
-**P8-TSK-006 — Adjustments carry a reason code and an origin; reconciled positions are closed to free adjustments** — `READY`
+**P8-TSK-006 — Adjustments carry a reason code and an origin; reconciled positions are closed to free adjustments** — `COMPLETE` (2026-09-29)
 - **Objective**: `INV-REV-04`'s reason code realised at both ranks without changing the generic
   adjustment request, and the ledger's free adjustment closed on every reconciled position, so value
   in a clearing or suspense account moves only through a break (ADR-0071); the generic approval and
@@ -10180,7 +10180,7 @@ posting-date documentation reconciled with the Phase 5–7 practice, with no ret
   OpenAPI request is unchanged; the existing adjustment suites are green.
 - **Definition of done**: `DOD-FIN`, `DOD-SEC`, `DOD-API`, `DOD-TEST`. **Risk**: Medium. **Cx**: M.
 
-**P8-TSK-007 — The opening position, the position proof and the completeness verifier** — `PLANNED`
+**P8-TSK-007 — The opening position, the position proof and the completeness verifier** — `READY`
 - **Objective**: every clearing position explained by its tracked expectations, history before
   Phase 8 included — a keyed backfill opens what the live port never saw, and two report-only
   verifiers say at every scrape whether each position, and every line on it, is explained

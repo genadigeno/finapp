@@ -35,6 +35,8 @@ public record AdjustmentProposal(
         LocalDate valueDate,
         String reference,
         String reason,
+        AdjustmentReasonCode reasonCode,
+        AdjustmentOrigin origin,
         String proposedBy,
         Instant proposedAt,
         List<JournalLine> lines,
@@ -48,6 +50,17 @@ public record AdjustmentProposal(
         Objects.requireNonNull(postingDate, "postingDate is a domain input and must be given");
         Objects.requireNonNull(valueDate, "valueDate is a domain input and must be given");
         Objects.requireNonNull(reference, "reference must not be null");
+        Objects.requireNonNull(reasonCode, "reasonCode must not be null");
+        Objects.requireNonNull(origin, "origin must not be null");
+        if (reasonCode.origin() != origin) {
+            // The pairing (P8-TSK-006, ADR-0071 section 5): a RECONCILIATION_* code exactly
+            // with a RECONCILIATION origin. Permissive to UNCODED deliberately - history
+            // rehydrates through this constructor - while the factories refuse it, so no
+            // NEW proposal is uncoded at the domain.
+            throw new IllegalArgumentException(
+                    "reason code " + reasonCode + " pairs with origin " + reasonCode.origin()
+                            + ", not " + origin + " (INV-REV-04)");
+        }
         Objects.requireNonNull(proposedBy, "proposedBy must not be null");
         Objects.requireNonNull(proposedAt, "proposedAt must not be null");
         Objects.requireNonNull(lines, "lines must not be null");
@@ -87,7 +100,12 @@ public record AdjustmentProposal(
         }
     }
 
-    /** A newly proposed adjustment: {@code PROPOSED} from birth, awaiting a second person. */
+    /**
+     * A newly proposed <strong>generic</strong> adjustment: {@code PROPOSED} from birth,
+     * awaiting a second person — origin {@code MANUAL} with {@code MANUAL_CORRECTION}
+     * assigned server-side (`P8-TSK-006`, ADR-0071 §5: the request shape is unchanged and
+     * every new adjustment carries a closed code; {@code UNCODED} is unmintable here).
+     */
     public static AdjustmentProposal propose(
             AdjustmentProposalId id,
             LocalDate postingDate,
@@ -97,7 +115,53 @@ public record AdjustmentProposal(
             String proposedBy,
             List<JournalLine> lines,
             Clock clock) {
+        return born(
+                id, postingDate, valueDate, reference, reason,
+                AdjustmentReasonCode.MANUAL_CORRECTION, AdjustmentOrigin.MANUAL, proposedBy,
+                lines, clock);
+    }
+
+    /**
+     * A newly proposed <strong>reconciliation-owned</strong> adjustment (`P8-TSK-006`,
+     * ADR-0071 §6): a break resolution's ledger half, decidable only through the owned
+     * methods. The code must be one of the {@code RECONCILIATION} pairing — the constructor
+     * refuses the rest, {@code UNCODED} included.
+     */
+    public static AdjustmentProposal proposeOwned(
+            AdjustmentProposalId id,
+            LocalDate postingDate,
+            LocalDate valueDate,
+            String reference,
+            String reason,
+            AdjustmentReasonCode reasonCode,
+            String proposedBy,
+            List<JournalLine> lines,
+            Clock clock) {
+        return born(
+                id, postingDate, valueDate, reference, reason, reasonCode,
+                AdjustmentOrigin.RECONCILIATION, proposedBy, lines, clock);
+    }
+
+    private static AdjustmentProposal born(
+            AdjustmentProposalId id,
+            LocalDate postingDate,
+            LocalDate valueDate,
+            String reference,
+            String reason,
+            AdjustmentReasonCode reasonCode,
+            AdjustmentOrigin origin,
+            String proposedBy,
+            List<JournalLine> lines,
+            Clock clock) {
         Objects.requireNonNull(clock, "clock must not be null");
+        Objects.requireNonNull(reasonCode, "reasonCode must not be null");
+        if (reasonCode == AdjustmentReasonCode.UNCODED) {
+            // History's backfill value only (INV-HIST-01): no new proposal is uncoded, at
+            // the domain here and by V015's insert trigger for every writer.
+            throw new IllegalArgumentException(
+                    "a new adjustment proposal carries a real reason code - UNCODED is"
+                            + " history's backfill value (INV-REV-04, P8-TSK-006)");
+        }
         return new AdjustmentProposal(
                 id,
                 AdjustmentProposalStatus.PROPOSED,
@@ -105,6 +169,8 @@ public record AdjustmentProposal(
                 valueDate,
                 reference,
                 reason,
+                reasonCode,
+                origin,
                 proposedBy,
                 Instant.now(clock),
                 lines,
@@ -152,7 +218,8 @@ public record AdjustmentProposal(
      */
     @Override
     public String toString() {
-        return "AdjustmentProposal[id=" + id + ", status=" + status + ", proposedBy="
-                + proposedBy + decidedBy.map(by -> ", decidedBy=" + by).orElse("") + "]";
+        return "AdjustmentProposal[id=" + id + ", status=" + status + ", origin=" + origin
+                + ", reasonCode=" + reasonCode + ", proposedBy=" + proposedBy
+                + decidedBy.map(by -> ", decidedBy=" + by).orElse("") + "]";
     }
 }

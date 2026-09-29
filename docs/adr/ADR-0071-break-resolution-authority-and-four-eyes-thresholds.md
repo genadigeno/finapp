@@ -264,7 +264,9 @@ The three designs weighed at the transition differed on exactly the undefined pa
    - **Ledger `V015`** (`P8-TSK-006`) gives `adjustment_proposal` two columns, both added with
      defaults:
      - `reason_code`, closed: `MANUAL_CORRECTION`, `RECONCILIATION_WRITE_OFF`,
-       `RECONCILIATION_TRANSFER`, `RECONCILIATION_GAIN`, `RECONCILIATION_OFFSET`, `UNCODED`;
+       `RECONCILIATION_TRANSFER`, `RECONCILIATION_GAIN`, `UNCODED` *(this draft also listed
+       `RECONCILIATION_OFFSET`; dropped at `P8-TSK-006`'s design — the recorded input below,
+       decided before `V015` shipped)*;
      - `origin`: `MANUAL` | `RECONCILIATION`.
 
      `ADD COLUMN … DEFAULT` fires no update trigger, so history stays valid and existing rows read
@@ -618,11 +620,24 @@ stored resolution, ADR-0069's amendment), `INV-REC-06`, `INV-REC-09`, `INV-SET-0
   privilege and trigger; the two P&L accounts posted only by approvals). `P8-DOC-001`.
 - `MUTATION_TESTING.md` §2 rows for `INV-REC-03`, `INV-AUD-04` and `INV-REV-04` (Phase 8 token),
   each verdict read from the failing testcases.
-- **Recorded for `P8-TSK-006`'s design, not decided here.** `RECONCILIATION_OFFSET` is in the closed
+- ~~**Recorded for `P8-TSK-006`'s design, not decided here.** `RECONCILIATION_OFFSET` is in the closed
   set the design lists, but no Phase 8 kind produces it: `OFFSET_SUSPENSE` posts nothing, and a
   correction offset is a system `POSTING`. The platform does not keep producerless states, so the
   task decides before `V015` is written — migrations are forward-only — whether to drop the member or
-  to record why it stays.
+  to record why it stays.~~ **Decided at `P8-TSK-006`'s design (2026-09-29): dropped.** The closed
+  set shipped with five members; the `CHECK` is generated from `AdjustmentReasonCode`, so a future
+  offset-posting kind widens it with its own forward migration (the `V014` pattern) — the same act
+  keeping a dead member would still have required someone to police.
+- **`P8-TSK-006` — implemented** (2026-09-29): ledger `V015` as §5 scopes it (the code and origin
+  columns with history defaults, the uncoded-insert refusal, the generated pairing `CHECK`, the
+  freeze re-stated over both columns, and the binding trigger over
+  `AccountPurpose.reconciledPositions()` — `SETTLEMENT_CLEARING`, `PAYOUT_CLEARING`,
+  `INSTANT_CLEARING`, `SUSPENSE_UNMATCHED`); the domain judges the binding **before the
+  idempotency claim** and re-judges it at a `MANUAL` approval (the pre-`V015` legacy row's one
+  honest answer); §6's F-a origin refusal at both doors (`ledger.AdjustmentOriginMismatch`, with
+  `proposeOwned`/`approveOwned`/`rejectOwned` confined to `com.finapp.reconciliation` by a static
+  rule); the generic door assigns `MANUAL_CORRECTION` server-side with the request shape unchanged.
+  The resolution machine that calls the owned methods stays `P8-TSK-015`'s.
 - **Recorded for `P8-TSK-015`'s design, not decided here.**
   - Whether proposal and approval take `P4-TSK-007`'s conditional step-up. The ledger's adjustment
     approval does not today, and a sixth caller is the step-up debt row's extraction trigger

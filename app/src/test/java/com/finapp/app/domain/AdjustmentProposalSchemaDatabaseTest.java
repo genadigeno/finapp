@@ -186,6 +186,146 @@ class AdjustmentProposalSchemaDatabaseTest {
     }
 
     // -----------------------------------------------------------------
+    // The reason-code regime and the binding at DB-CONSTRAINT rank (P8-TSK-006)
+    // -----------------------------------------------------------------
+
+    @Test
+    @DisplayName("a raw insert without a code - and one stating UNCODED - is refused for"
+            + " every writer: the default is history's backfill value (INV-REV-04)")
+    void aRawInsertWithoutACodeIsRefused() throws SQLException {
+        try (Connection app = DatabaseRoles.application()) {
+            app.setAutoCommit(false);
+            try {
+                // Omitting the column lands on the UNCODED default; stating it is the same
+                // insert spelled out - one trigger refuses both.
+                assertThatThrownBy(
+                                () ->
+                                        execute(
+                                                app,
+                                                "INSERT INTO ledger.adjustment_proposal (id,"
+                                                        + " status, posting_date, value_date,"
+                                                        + " reference, reason, proposed_by,"
+                                                        + " proposed_at) VALUES (?, 'PROPOSED',"
+                                                        + " current_date, current_date,"
+                                                        + " 'raw-probe', 'no code', 'person-1',"
+                                                        + " now())",
+                                                IDS.next()))
+                        .isInstanceOf(SQLException.class)
+                        .hasMessageContaining("INV-REV-04");
+            } finally {
+                app.rollback();
+            }
+        }
+        try (Connection migrator = DatabaseRoles.migrator()) {
+            migrator.setAutoCommit(false);
+            try {
+                assertThatThrownBy(
+                                () ->
+                                        execute(
+                                                migrator,
+                                                "INSERT INTO ledger.adjustment_proposal (id,"
+                                                        + " status, posting_date, value_date,"
+                                                        + " reference, reason, reason_code,"
+                                                        + " origin, proposed_by, proposed_at)"
+                                                        + " VALUES (?, 'PROPOSED',"
+                                                        + " current_date, current_date,"
+                                                        + " 'raw-probe', 'uncoded', 'UNCODED',"
+                                                        + " 'MANUAL', 'person-1', now())",
+                                                IDS.next()))
+                        .as("the migrator too: the trigger binds every writer")
+                        .isInstanceOf(SQLException.class)
+                        .hasMessageContaining("INV-REV-04");
+            } finally {
+                migrator.rollback();
+            }
+        }
+    }
+
+    @Test
+    @DisplayName("a MANUAL line on a reconciled position is unstorable at the schema, a"
+            + " RECONCILIATION one stores, and the pairing is a CHECK (P8-TSK-006, ADR-0071)")
+    void theBindingAndThePairingHoldAtTheSchema() throws SQLException {
+        try (Connection app = DatabaseRoles.application()) {
+            app.setAutoCommit(false);
+            try {
+                UUID manual = insertProposal(app, "person-1");
+                Savepoint beforeTheProbe = app.setSavepoint();
+                assertThatThrownBy(
+                                () -> insertProposalLine(app, manual, clearingUsd(app)))
+                        .isInstanceOf(SQLException.class)
+                        .hasMessageContaining("ADR-0071");
+                app.rollback(beforeTheProbe);
+                // The positive controls, so the refusal is the binding and not the insert:
+                // the same MANUAL line off the positions stores, and a RECONCILIATION
+                // proposal's line ON one stores - that is the door resolutions use.
+                assertThatCode(() -> insertProposalLine(app, manual, feeRevenueUsd(app)))
+                        .doesNotThrowAnyException();
+                UUID owned =
+                        insertProposal(
+                                app, "person-1", "RECONCILIATION_WRITE_OFF", "RECONCILIATION");
+                assertThatCode(() -> insertProposalLine(app, owned, clearingUsd(app)))
+                        .doesNotThrowAnyException();
+
+                // The pairing: a RECONCILIATION_* code with a MANUAL origin is unstorable.
+                Savepoint beforeThePairing = app.setSavepoint();
+                assertThatThrownBy(
+                                () ->
+                                        insertProposal(
+                                                app,
+                                                "person-1",
+                                                "RECONCILIATION_GAIN",
+                                                "MANUAL"))
+                        .isInstanceOf(SQLException.class)
+                        .hasFieldOrPropertyWithValue("SQLState", "23514")
+                        .hasMessageContaining("adjustment_proposal_code_matches_origin");
+                app.rollback(beforeThePairing);
+            } finally {
+                app.rollback();
+            }
+        }
+    }
+
+    @Test
+    @DisplayName("the new columns join the frozen payload: reason_code and origin are"
+            + " immutable for every writer, the migrator included (V015)")
+    void theNewColumnsAreFrozenForEveryWriter() throws SQLException {
+        UUID standing;
+        try (Connection app = DatabaseRoles.application()) {
+            app.setAutoCommit(false);
+            standing = insertProposal(app, "person-1");
+            app.commit();
+        }
+        try (Connection migrator = DatabaseRoles.migrator()) {
+            assertThatThrownBy(
+                            () ->
+                                    execute(
+                                            migrator,
+                                            "UPDATE ledger.adjustment_proposal"
+                                                    + " SET reason_code ="
+                                                    + " 'RECONCILIATION_GAIN',"
+                                                    + " origin = 'RECONCILIATION'"
+                                                    + " WHERE id = ?",
+                                            standing))
+                    .isInstanceOf(SQLException.class)
+                    .hasMessageContaining("approver approves what they read");
+        }
+        // The application role cannot touch them at all: the UPDATE grant is still the
+        // decision's four columns (V015 grants nothing new).
+        try (Connection app = DatabaseRoles.application()) {
+            assertThatThrownBy(
+                            () ->
+                                    execute(
+                                            app,
+                                            "UPDATE ledger.adjustment_proposal"
+                                                    + " SET origin = 'RECONCILIATION'"
+                                                    + " WHERE id = ?",
+                                            standing))
+                    .isInstanceOf(SQLException.class)
+                    .hasFieldOrPropertyWithValue("SQLState", "42501");
+        }
+    }
+
+    // -----------------------------------------------------------------
     // Fixtures - raw SQL on purpose: the subject is the schema, not the domain
 
     private static void insertEntry(Connection app, UUID entry, String type, String reason)
@@ -225,28 +365,47 @@ class AdjustmentProposalSchemaDatabaseTest {
     }
 
     private static UUID insertProposal(Connection app, String proposedBy) throws SQLException {
+        // MANUAL_CORRECTION stated explicitly since P8-TSK-006: the column's UNCODED
+        // default is history's backfill value, and V015's trigger refuses it on INSERT -
+        // which has its own test above.
+        return insertProposal(app, proposedBy, "MANUAL_CORRECTION", "MANUAL");
+    }
+
+    private static UUID insertProposal(
+            Connection app, String proposedBy, String reasonCode, String origin)
+            throws SQLException {
         UUID proposal = IDS.next();
         try (PreparedStatement insert =
                 app.prepareStatement(
                         "INSERT INTO ledger.adjustment_proposal (id, status, posting_date,"
-                                + " value_date, reference, reason, proposed_by, proposed_at)"
+                                + " value_date, reference, reason, reason_code, origin,"
+                                + " proposed_by, proposed_at)"
                                 + " VALUES (?, 'PROPOSED', current_date, current_date,"
-                                + " 'raw-probe', 'raw schema probe', ?, now())")) {
+                                + " 'raw-probe', 'raw schema probe', ?, ?, ?, now())")) {
             insert.setObject(1, proposal);
-            insert.setString(2, proposedBy);
+            insert.setString(2, reasonCode);
+            insert.setString(3, origin);
+            insert.setString(4, proposedBy);
             insert.executeUpdate();
         }
         return proposal;
     }
 
     private static void insertProposalLine(Connection app, UUID proposal) throws SQLException {
+        // FEE_REVENUE since P8-TSK-006: this fixture wanted "some seeded account", and a
+        // MANUAL line on the clearing is now the binding's own refusal, tested above.
+        insertProposalLine(app, proposal, feeRevenueUsd(app));
+    }
+
+    private static void insertProposalLine(Connection app, UUID proposal, UUID account)
+            throws SQLException {
         try (PreparedStatement insert =
                 app.prepareStatement(
                         "INSERT INTO ledger.adjustment_proposal_line (proposal_id, seq,"
                                 + " ledger_account_id, direction, amount_minor, currency,"
                                 + " scale) VALUES (?, 0, ?, 'DEBIT', 500, 'USD', 2)")) {
             insert.setObject(1, proposal);
-            insert.setObject(2, clearingUsd(app));
+            insert.setObject(2, account);
             insert.executeUpdate();
         }
     }
@@ -266,14 +425,25 @@ class AdjustmentProposalSchemaDatabaseTest {
     }
 
     private static UUID clearingUsd(Connection app) throws SQLException {
+        return operationalUsd(app, "SETTLEMENT_CLEARING");
+    }
+
+    private static UUID feeRevenueUsd(Connection app) throws SQLException {
+        return operationalUsd(app, "FEE_REVENUE");
+    }
+
+    private static UUID operationalUsd(Connection app, String purpose) throws SQLException {
         try (PreparedStatement select =
-                        app.prepareStatement(
-                                "SELECT id FROM ledger.ledger_account"
-                                        + " WHERE purpose = 'SETTLEMENT_CLEARING'"
-                                        + " AND currency = 'USD'");
-                ResultSet row = select.executeQuery()) {
-            assertThat(row.next()).as("the operational chart is seeded (P3-TSK-003)").isTrue();
-            return row.getObject(1, UUID.class);
+                app.prepareStatement(
+                        "SELECT id FROM ledger.ledger_account"
+                                + " WHERE purpose = ? AND currency = 'USD'")) {
+            select.setString(1, purpose);
+            try (ResultSet row = select.executeQuery()) {
+                assertThat(row.next())
+                        .as("the operational chart is seeded (P3-TSK-003)")
+                        .isTrue();
+                return row.getObject(1, UUID.class);
+            }
         }
     }
 
