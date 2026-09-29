@@ -1,6 +1,7 @@
 package com.finapp.app.settlement;
 
 import com.finapp.app.security.DatabaseEndpoint;
+import com.finapp.app.telemetry.CommittedIntakeOutcomes;
 import com.finapp.app.telemetry.CommittedReceptionOutcomes;
 import com.finapp.app.telemetry.SettlementFileMetrics;
 import com.finapp.app.telemetry.SettlementMeters;
@@ -9,32 +10,45 @@ import com.finapp.payments.PaymentRails;
 import com.finapp.payments.RailId;
 import com.finapp.platform.audit.AuditWriter;
 import com.finapp.platform.idempotency.IdempotentExecutor;
+import com.finapp.platform.outbox.OutboxWriter;
 import com.finapp.settlement.DeliveryChannel;
+import com.finapp.settlement.DeliveryScreen;
 import com.finapp.settlement.EvidenceContentReads;
 import com.finapp.settlement.FileAttestation;
+import com.finapp.settlement.FileDecline;
+import com.finapp.settlement.FileParsing;
 import com.finapp.settlement.FileReception;
+import com.finapp.settlement.IntakeOutcomeObserver;
+import com.finapp.settlement.JdbcSettlementBatchStore;
 import com.finapp.settlement.JdbcSettlementFileStore;
 import com.finapp.settlement.ReceptionOutcomeObserver;
+import com.finapp.settlement.SettlementBatchStore;
 import com.finapp.settlement.SettlementFileCipher;
 import com.finapp.settlement.SettlementFileStore;
 import com.finapp.settlement.SettlementFormatId;
 import com.finapp.settlement.SettlementSourceDescriptor;
 import com.finapp.settlement.SettlementSources;
 import com.finapp.settlement.SourceKind;
+import com.finapp.settlement.TransactionRunner;
+import com.finapp.settlement.format.SettlementFormat;
+import com.finapp.settlement.format.simpsp.SimPspCsvFormat;
 import com.finapp.sharedkernel.id.IdGenerator;
 import io.micrometer.core.instrument.MeterRegistry;
 import java.security.SecureRandom;
 import java.sql.Connection;
 import java.time.Clock;
+import java.time.Duration;
 import java.util.List;
 import java.util.Map;
 import java.util.Optional;
 import java.util.Set;
 import javax.sql.DataSource;
 import org.springframework.beans.factory.annotation.Value;
+import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
 import org.springframework.core.env.Environment;
+import org.springframework.jdbc.datasource.DataSourceUtils;
 import org.springframework.transaction.PlatformTransactionManager;
 import org.springframework.transaction.TransactionDefinition;
 import org.springframework.transaction.support.TransactionTemplate;
@@ -167,22 +181,40 @@ public class SettlementBeans {
     }
 
     /**
-     * The door itself — unconditional: it calls nothing outside the database, and the format
-     * screens map is `P8-TSK-008`'s seam, empty until a format version exists (the
-     * conservative whole-stream screen stands in, ADR-0066 §3).
+     * The compiled formats, by family (`P8-TSK-008`, ADR-0066 §8): the one map the door's
+     * field-class screens and the parse leg both read, so a source cannot be screened under
+     * one version and parsed under another. `SIM_PSP_CSV` v1 is the first; `-016`…`-018`
+     * add theirs.
+     */
+    @Bean
+    Map<SettlementFormatId, SettlementFormat> settlementFormats() {
+        return Map.of(SettlementFormatId.SIM_PSP_CSV, SimPspCsvFormat.INSTANCE);
+    }
+
+    /**
+     * The door itself — unconditional: it calls nothing outside the database. The screens
+     * map was `P8-TSK-008`'s seam and is now filled per compiled format version; a source
+     * whose format has none keeps the conservative whole-stream screen (ADR-0066 §3).
      */
     @Bean
     FileReception<Connection> fileReception(
             SettlementSources settlementSources,
             SettlementFileStore<Connection> settlementFileStore,
+            Map<SettlementFormatId, SettlementFormat> settlementFormats,
             ReceptionOutcomeObserver receptionOutcomeObserver,
             AuditWriter<Connection> auditWriter,
             IdGenerator idGenerator,
             Clock clock) {
+        Map<SettlementFormatId, DeliveryScreen> screens =
+                settlementFormats.entrySet().stream()
+                        .collect(
+                                java.util.stream.Collectors.toMap(
+                                        Map.Entry::getKey,
+                                        entry -> entry.getValue()::screen));
         return new FileReception<>(
                 settlementSources,
                 settlementFileStore,
-                Map.of(),
+                screens,
                 receptionOutcomeObserver,
                 auditWriter,
                 idGenerator,
@@ -222,6 +254,115 @@ public class SettlementBeans {
         return new EvidenceContentReads<>(settlementFileStore, auditWriter, idGenerator, clock);
     }
 
+    // ------------------------------------------------------------------
+    // The parse leg and the decline (P8-TSK-008).
+    // ------------------------------------------------------------------
+
+    @Bean
+    SettlementBatchStore<Connection> settlementBatchStore(IdGenerator idGenerator) {
+        return new JdbcSettlementBatchStore(idGenerator);
+    }
+
+    /** One transaction per call — the parse leg's per-file containment (ADR-0066 §9). */
+    @Bean
+    TransactionRunner settlementTransactionRunner(
+            TransactionTemplate settlementTransactions, DataSource dataSource) {
+        return new TransactionRunner() {
+            @Override
+            public <R> R inTransaction(java.util.function.Function<Connection, R> work) {
+                return settlementTransactions.execute(
+                        status -> {
+                            Connection unitOfWork = DataSourceUtils.getConnection(dataSource);
+                            try {
+                                return work.apply(unitOfWork);
+                            } finally {
+                                DataSourceUtils.releaseConnection(unitOfWork, dataSource);
+                            }
+                        });
+            }
+        };
+    }
+
+    @Bean
+    IntakeOutcomeObserver intakeOutcomeObserver(SettlementMeters settlementMeters) {
+        return new CommittedIntakeOutcomes(settlementMeters);
+    }
+
+    @Bean
+    FileParsing fileParsing(
+            SettlementFileStore<Connection> settlementFileStore,
+            SettlementBatchStore<Connection> settlementBatchStore,
+            Map<SettlementFormatId, SettlementFormat> settlementFormats,
+            @Value("${finapp.settlement.intake.batch:10}") int filesPerSweep,
+            @Value("${finapp.settlement.intake.backoff-base:PT1M}") Duration backoffBase,
+            @Value("${finapp.settlement.intake.backoff-cap:PT1H}") Duration backoffCap,
+            IntakeOutcomeObserver intakeOutcomeObserver,
+            OutboxWriter<Connection> outboxWriter,
+            AuditWriter<Connection> auditWriter,
+            IdGenerator idGenerator,
+            Clock clock,
+            TransactionRunner settlementTransactionRunner) {
+        return new FileParsing(
+                settlementFileStore,
+                settlementBatchStore,
+                settlementFormats,
+                new FileParsing.Config(filesPerSweep, backoffBase, backoffCap),
+                intakeOutcomeObserver,
+                outboxWriter,
+                auditWriter,
+                idGenerator,
+                clock,
+                settlementTransactionRunner);
+    }
+
+    /**
+     * The parse leg's schedule — leaderless on every instance, off in test contexts (the
+     * relay's flag discipline); registered in {@code DISTRIBUTED_EXECUTION.md} §3.
+     */
+    @Bean
+    @ConditionalOnProperty(
+            name = "finapp.settlement.intake.sweeper.enabled",
+            havingValue = "true",
+            matchIfMissing = true)
+    SettlementIntakeSchedule settlementIntakeSchedule(
+            FileParsing fileParsing,
+            @Value("${finapp.settlement.intake.poll:PT15S}") Duration pollInterval) {
+        return new SettlementIntakeSchedule(fileParsing, pollInterval);
+    }
+
+    /**
+     * Whether this instance runs the intake sweeper — eager either way, so "off" reads as
+     * {@code 0} rather than as a missing series (`P1-TSK-029`'s rule).
+     */
+    @Bean
+    io.micrometer.core.instrument.Gauge settlementIntakeSweeperEnabled(
+            @Value("${finapp.settlement.intake.sweeper.enabled:true}") boolean enabled,
+            MeterRegistry meterRegistry) {
+        return io.micrometer.core.instrument.Gauge.builder(
+                        "finapp.settlement.intake.sweeper.enabled", () -> enabled ? 1 : 0)
+                .description("Whether this instance runs the settlement intake sweeper")
+                .register(meterRegistry);
+    }
+
+    @Bean
+    FileDecline fileDecline(
+            SettlementFileStore<Connection> settlementFileStore,
+            SettlementBatchStore<Connection> settlementBatchStore,
+            IntakeOutcomeObserver intakeOutcomeObserver,
+            OutboxWriter<Connection> outboxWriter,
+            AuditWriter<Connection> auditWriter,
+            IdGenerator idGenerator,
+            Clock clock) {
+        return new FileDecline(
+                settlementFileStore,
+                settlementBatchStore,
+                intakeOutcomeObserver,
+                outboxWriter,
+                auditWriter,
+                idGenerator,
+                clock);
+    }
+
     @Bean
     SettlementOperations settlementOperations(
             SettlementSources settlementSources,
@@ -229,6 +370,8 @@ public class SettlementBeans {
             FileAttestation<Connection> fileAttestation,
             EvidenceContentReads<Connection> evidenceContentReads,
             SettlementFileStore<Connection> settlementFileStore,
+            FileDecline fileDecline,
+            SettlementBatchStore<Connection> settlementBatchStore,
             IdempotentExecutor idempotentExecutor,
             TransactionTemplate settlementTransactions,
             DataSource dataSource) {
@@ -238,6 +381,8 @@ public class SettlementBeans {
                 fileAttestation,
                 evidenceContentReads,
                 settlementFileStore,
+                fileDecline,
+                settlementBatchStore,
                 idempotentExecutor,
                 settlementTransactions,
                 dataSource);

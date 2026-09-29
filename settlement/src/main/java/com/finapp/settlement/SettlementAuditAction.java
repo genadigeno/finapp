@@ -60,6 +60,32 @@ public enum SettlementAuditAction implements AuditableAction {
             "settlement.SettlementFileContentRead",
             "A settlement file's raw content was read (or a read failed verification), with"
                     + " the investigator's recorded reason.",
+            true),
+
+    /**
+     * The parse leg rejected a file whole (`P8-TSK-008`, ADR-0066 §9): the platform's own
+     * verdict, acting-only, written in the rejecting transaction beside the error rows, the
+     * history and the published event. The change summary names the source, the code and the
+     * error count — never a value. The parse leg's decryption is the platform's processing,
+     * recorded by the file's history; {@code SettlementFileContentRead} stays a person's
+     * read.
+     */
+    SETTLEMENT_FILE_REJECTED(
+            "settlement.SettlementFileRejected",
+            "The parse leg rejected a settlement file whole; the record names the source and"
+                    + " the rejection code, never a value from the file.",
+            false),
+
+    /**
+     * A person declined a settlement file (`P8-TSK-008`, moved from `P8-TSK-003`): a
+     * reasoned judgement, never our validation — {@code RECEIVED | PARSED → REJECTED}, a
+     * parsed file's batch rejected in the same transaction, the live key freed. Requires a
+     * reason.
+     */
+    SETTLEMENT_FILE_DECLINED(
+            "settlement.SettlementFileDeclined",
+            "An operator declined a settlement file, with the recorded reason; a parsed"
+                    + " file's batch was rejected with it and its live key freed.",
             true);
 
     private final String code;

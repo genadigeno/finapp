@@ -469,8 +469,10 @@ merchant's payable position.
 | `settlement.SettlementFileAttested` | No | A second person attested an uploaded file (`P8-TSK-003`, `INV-SET-07`, `INV-AUD-04`): the `NULL → value` fact the accept leg (`P8-TSK-009`) will require before an upload can move money. Written in the attestation's transaction, after distinctness from the uploader is enforced at the domain AND by `V002`'s `CHECK` — so this record existing implies a genuine second person. The same attester's retry converges and writes no second record. |
 | `settlement.SettlementFileContentRead` | **Yes** | Somebody read a settlement file's raw bytes — the ONE content path, `POST .../content-reads` under `RECONCILIATION_INVESTIGATE` (`INV-REC-10`): one record per read, committed with the read before a byte is served, the audited unit being the access (ADR-0036's rule). A verification failure — tamper, transplant, truncation — is the SAME record with outcome `FAILED` and nothing served; a guessed identifier records nothing, because there is no file to audit an access against. |
 
-The pull's actions arrive with the pull (`P8-TSK-021`); the decline's with the parse leg
-(`P8-TSK-008`); the readmission's with `P8-TSK-022`.
+| `settlement.SettlementFileRejected` | No | The parse leg rejected a file WHOLE (`P8-TSK-008`, ADR-0066 §9, `INV-SET-07`): the platform's own verdict — acting-only, the process rank of `INV-AUD-04` — written in the rejecting transaction beside the `ingestion_error` rows, the file history and the published `settlement.SettlementFileRejected` event. The change summary names the source, the rejection code and the error count, never a value from the file. Our own failure writes NO such record: an adapter exception leaves the file `RECEIVED` with its back-off, recorded by the file's history. |
+| `settlement.SettlementFileDeclined` | **Yes** | A person declined a settlement file (`P8-TSK-008`, moved from `-003` whose schema had no `REJECTED`): a reasoned judgement, never our validation — `RECEIVED \| PARSED → REJECTED(DECLINED)`, a parsed file's batch rejected in the SAME transaction so the live key frees at commit. A declined file is never readmitted (ADR-0066 §8); recovery is the counterparty's re-issue. |
+
+The pull's actions arrive with the pull (`P8-TSK-021`); the readmission's with `P8-TSK-022`.
 
 ### `reconciliation` — `ReconciliationAuditAction`
 

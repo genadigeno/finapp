@@ -189,7 +189,18 @@ class NoSingleInstanceAssumptionRulesTest {
                     // applies through the one shared DisputeResponseOutcomes on the LOCKED
                     // row. Register row: DISTRIBUTED_EXECUTION.md section 3; the races are
                     // DisputeResponseDatabaseTest's.
-                    "com.finapp.app.payments.DisputeResponseResolutionSchedule");
+                    "com.finapp.app.payments.DisputeResponseResolutionSchedule",
+                    // P8-TSK-008: the settlement intake's parse leg - the checkout expiry
+                    // sweeper's half of the bar, at the evidence store: NO EXTERNAL CALL AT
+                    // ALL, a parse is a pure function of stored bytes. The claim is FOR
+                    // UPDATE SKIP LOCKED on the still-RECEIVED row inside each file's own
+                    // transaction, and the conditional RECEIVED -> PARSED plus
+                    // batch.file_id UNIQUE and UNIQUE (file_id, line_no) arbitrate for any
+                    // writer the lock misses - N schedules on one due file produce one
+                    // batch between them, counted by the row count. Register row:
+                    // DISTRIBUTED_EXECUTION.md section 3; the ten-parser race is
+                    // FileParsingDatabaseTest's.
+                    "com.finapp.app.settlement.SettlementIntakeSchedule");
 
     /** Types that schedule work with no lease, so every instance runs it. */
     private static final Set<String> AMBIENT_SCHEDULERS =

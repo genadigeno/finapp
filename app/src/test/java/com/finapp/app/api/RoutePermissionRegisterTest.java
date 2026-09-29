@@ -109,6 +109,12 @@ class RoutePermissionRegisterTest {
                     entry("GET /v1/operator/settlement/files/{id}", PermissionName.RECONCILIATION_INVESTIGATE),
                     entry("GET /v1/operator/settlement/refused-deliveries", PermissionName.RECONCILIATION_INVESTIGATE),
                     entry("POST /v1/operator/settlement/files/{id}/content-reads", PermissionName.RECONCILIATION_INVESTIGATE),
+                    // The parse leg's surfaces (P8-TSK-008): declining is the ingest desk's
+                    // reasoned judgement (moved from -003, whose schema had no REJECTED);
+                    // the batch read is the parsed totals an attester examines first, and
+                    // an investigator's evidence view.
+                    entry("POST /v1/operator/settlement/files/{id}/decline", PermissionName.SETTLEMENT_INGEST),
+                    entry("GET /v1/operator/settlement/batches/{id}", PermissionName.RECONCILIATION_INVESTIGATE),
                     // The reconciliation controller's own door (P8-TSK-007, ADR-0067
                     // section 8): adopting history is the CONTROLLER's act, a population
                     // disjoint even from the operator desk it oversees; the positions

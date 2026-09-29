@@ -150,18 +150,19 @@ class SettlementEvidenceGrantsDatabaseTest {
             application.rollback();
         }
         // And for every writer, the trigger, probed on a REAL row (a vacuous UPDATE fires no
-        // row trigger and proves nothing): no edge exists yet, so status cannot move at all,
-        // and an attestation is recorded once.
+        // row trigger and proves nothing): only the machine's edges move a status
+        // (P8-TSK-008 brought RECEIVED -> PARSED | REJECTED and PARSED -> REJECTED; ACCEPTED
+        // still has no producer), and an attestation is recorded once.
         String fileId = probeFileId;
         assertThatExceptionOfType(SQLException.class)
-                .as("no edge leaves RECEIVED until its producer exists")
+                .as("RECEIVED -> ACCEPTED is no edge until the accept leg exists (P8-TSK-009)")
                 .isThrownBy(
                         () ->
                                 execute(
                                         migrator,
-                                        "UPDATE settlement.file SET status = 'PARSED'"
+                                        "UPDATE settlement.file SET status = 'ACCEPTED'"
                                                 + " WHERE id = '" + fileId + "'"))
-                .withMessageContaining("no edge");
+                .withMessageContaining("not a settlement file edge");
         migrator.rollback();
 
         execute(application,

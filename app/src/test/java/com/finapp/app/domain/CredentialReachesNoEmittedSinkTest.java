@@ -384,6 +384,11 @@ class CredentialReachesNoEmittedSinkTest {
                         // read INV-REC-10 requires). No secret; the VoidPaymentRequest
                         // shape, at the evidence door.
                         "SettlementContentReadRequest",
+                        // P8-TSK-008. Carries only a REASON (free prose by the operator who
+                        // declines a settlement file, bound for the file history's and the
+                        // audit record's reason columns - INV-AUD-03). No secret; the
+                        // SettlementContentReadRequest shape, at the decline.
+                        "SettlementFileDeclineRequest",
                         // P8-TSK-007. Carries only a REASON (free prose by the reconciliation
                         // controller, bound for the audit record's reason column - the
                         // opening-position backfill INV-AUD-03 requires a reason for). No

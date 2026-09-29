@@ -14,9 +14,12 @@ import com.finapp.platform.security.SecurityContext;
 import com.finapp.settlement.DeliveryChannel;
 import com.finapp.settlement.EvidenceContentReads;
 import com.finapp.settlement.FileAttestation;
+import com.finapp.settlement.FileDecline;
 import com.finapp.settlement.FileReception;
 import com.finapp.settlement.FileStatus;
+import com.finapp.settlement.RejectionCode;
 import com.finapp.settlement.SettlementAuditAction;
+import com.finapp.settlement.SettlementBatchStore;
 import com.finapp.settlement.SettlementErrorCode;
 import com.finapp.settlement.SettlementFileStore;
 import com.finapp.settlement.SettlementSourceDescriptor;
@@ -70,6 +73,8 @@ public class SettlementOperations {
     @NonNull private final FileAttestation<Connection> attestation;
     @NonNull private final EvidenceContentReads<Connection> contentReads;
     @NonNull private final SettlementFileStore<Connection> store;
+    @NonNull private final FileDecline fileDecline;
+    @NonNull private final SettlementBatchStore<Connection> batches;
     @NonNull private final IdempotentExecutor executor;
     @NonNull private final TransactionTemplate settlementTransactions;
     @NonNull private final DataSource dataSource;
@@ -265,6 +270,65 @@ public class SettlementOperations {
                 attested.attestedAt().toString());
     }
 
+    // ----------------------------------------------------------------- the decline
+
+    /**
+     * {@code POST /files/'{id}'/decline} (`P8-TSK-008`): a person's reasoned refusal —
+     * {@code RECEIVED | PARSED → REJECTED(DECLINED)}, a parsed file's batch with it, the
+     * live key freed at commit. Idempotent by state: a terminal file answers {@code 409}.
+     */
+    public DeclineView decline(String rawFileId, SettlementFileDeclineRequest request) {
+        UUID fileId = parsedIdOrNotFound(rawFileId);
+        Actor actor = SecurityContext.require();
+        Correlation correlation = resolvedCorrelation();
+        FileDecline.Declined declined;
+        try {
+            declined =
+                    inOneTransaction(
+                            unitOfWork ->
+                                    fileDecline.decline(
+                                            unitOfWork, fileId, request.reason(), actor,
+                                            correlation));
+        } catch (FileAttestation.SettlementFileNotFound unknown) {
+            throw fileNotFound();
+        } catch (FileAttestation.SettlementFileNotAttestable terminal) {
+            throw new ApiException(
+                    SettlementErrorCode.FILE_NOT_ATTESTABLE,
+                    "A settlement file refused a decline: " + terminal.getMessage(),
+                    "this file is terminal; its verdict already stands on the record.");
+        }
+        return new DeclineView(
+                declined.file().id().toString(),
+                declined.file().status().name(),
+                RejectionCode.DECLINED.name());
+    }
+
+    // ----------------------------------------------------------------- the batch read
+
+    /**
+     * {@code GET /batches/'{id}'} (`P8-TSK-008`): the parsed totals an attester reads before
+     * attesting — identity, the trailer's declared words and the folded totals; unknown and
+     * malformed ids are one {@code 404} recording nothing.
+     */
+    public BatchView viewBatch(String rawBatchId) {
+        UUID batchId;
+        try {
+            batchId = UUID.fromString(rawBatchId);
+        } catch (IllegalArgumentException malformed) {
+            throw batchNotFound();
+        }
+        return inOneTransaction(
+                unitOfWork ->
+                        batches.batchById(unitOfWork, batchId)
+                                .map(
+                                        batch ->
+                                                batchView(
+                                                        batch,
+                                                        batches.totalsOf(
+                                                                unitOfWork, batch.id()))))
+                .orElseThrow(SettlementOperations::batchNotFound);
+    }
+
     // ----------------------------------------------------------------- the reads
 
     /** {@code GET /sources}: the compiled register joined to each source's seeded state. */
@@ -418,6 +482,68 @@ public class SettlementOperations {
 
     public record ContentView(
             String fileId, String contentSha256, int contentLength, String content) {}
+
+    public record DeclineView(String fileId, String status, String rejectionCode) {}
+
+    public record BatchView(
+            String batchId,
+            String fileId,
+            String sourceCode,
+            String externalBatchRef,
+            String currency,
+            String status,
+            String businessDate,
+            String formatId,
+            int formatVersion,
+            int lineCount,
+            int declaredLineCount,
+            String declaredNet,
+            String remittanceReference,
+            List<BatchTotalView> totals,
+            String createdAt) {}
+
+    /** One (type, direction) fold: exact decimal strings, the ADR-0015 amount shape. */
+    public record BatchTotalView(
+            String lineType, String direction, long lineCount, String amount) {}
+
+    private static BatchView batchView(
+            SettlementBatchStore.BatchRow batch, List<SettlementBatchStore.TotalRow> totals) {
+        return new BatchView(
+                batch.id().toString(),
+                batch.fileId().toString(),
+                batch.sourceCode(),
+                batch.externalBatchRef(),
+                batch.currency().code(),
+                batch.status().name(),
+                batch.businessDate().toString(),
+                batch.formatId().name(),
+                batch.formatVersion(),
+                batch.lineCount(),
+                batch.declaredLineCount(),
+                java.math.BigDecimal.valueOf(batch.netMinor(), batch.netScale())
+                        .toPlainString(),
+                batch.remittanceReference(),
+                totals.stream()
+                        .map(
+                                total ->
+                                        new BatchTotalView(
+                                                total.lineType().name(),
+                                                total.direction().name(),
+                                                total.lineCount(),
+                                                java.math.BigDecimal.valueOf(
+                                                                total.amountMinor(),
+                                                                total.amountScale())
+                                                        .toPlainString()))
+                        .toList(),
+                batch.createdAt().toString());
+    }
+
+    private static ApiException batchNotFound() {
+        return new ApiException(
+                SettlementErrorCode.BATCH_NOT_FOUND,
+                "No settlement batch matches the requested identifier",
+                "no such settlement batch.");
+    }
 
     private static FileView fileView(SettlementFileStore.FileRow row) {
         return new FileView(

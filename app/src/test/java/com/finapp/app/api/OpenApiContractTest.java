@@ -506,6 +506,10 @@ class OpenApiContractTest {
                                 + "/operator/settlement/files/{id}/content-reads",
                         ApiVersion.CURRENT_PREFIX + "/operator/settlement/sources",
                         ApiVersion.CURRENT_PREFIX + "/operator/settlement/refused-deliveries",
+                        // P8-TSK-008: the decline (SETTLEMENT_INGEST, reasoned) and the batch
+                        // read - the parsed totals an attester examines before attesting.
+                        ApiVersion.CURRENT_PREFIX + "/operator/settlement/files/{id}/decline",
+                        ApiVersion.CURRENT_PREFIX + "/operator/settlement/batches/{id}",
                         // P8-TSK-007: the opening-position backfill (RECONCILIATION_ADMINISTER)
                         // and the positions report (RECONCILIATION_INVESTIGATE, audited).
                         ApiVersion.CURRENT_PREFIX + "/operator/reconciliation/opening-position",

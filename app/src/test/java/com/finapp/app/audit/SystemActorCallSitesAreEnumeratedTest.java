@@ -293,7 +293,18 @@ class SystemActorCallSitesAreEnumeratedTest {
                         + " permit-renewed re-send by our reference has no person, and its"
                         + " re-send's evidence transmission is honestly the platform's. The scope"
                         + " wraps each row's inquire-and-resolve; the candidate read claims"
-                        + " nothing."));
+                        + " nothing."),
+                    Map.entry(
+                            "com.finapp.settlement.FileParsing.sweep",
+                    "The settlement intake's parse leg (P8-TSK-008, ADR-0066 section 9): a"
+                        + " scheduled parse of stored evidence has no person at all - the"
+                        + " expiry-sweep case at the settlement door. The people's acts are"
+                        + " already theirs: the uploader's and the attester's records stand"
+                        + " with their actors, and a DECLINE runs as the person who reasoned"
+                        + " it. The platform reading, canonicalising or rejecting a file is"
+                        + " exactly what happened, and the rejection's audit record is"
+                        + " acting-only by design. The scope wraps each file's own"
+                        + " transaction; the candidate read before it claims nothing."));
 
     @Test
     @DisplayName("no production code claims the system actor without being enumerated")

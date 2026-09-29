@@ -1,6 +1,6 @@
 # Task History
 
-The per-task completion records that accumulated behind `## Current Task` - 170 "Previously" blocks, newest first, from `P8-TSK-006` back to project initiation. *(`X-TSK-004` is cross-cutting and completed after the Phase 6 → 7 transition, so it stands second, between `P7-TSK-001` and the transition's record - the transition's block moved here by `P7-TSK-001`'s gate, exactly as an earlier form of this note said it would.)*
+The per-task completion records that accumulated behind `## Current Task` - 171 "Previously" blocks, newest first, from `P8-TSK-007` back to project initiation. *(`X-TSK-004` is cross-cutting and completed after the Phase 6 → 7 transition, so it stands second, between `P7-TSK-001` and the transition's record - the transition's block moved here by `P7-TSK-001`'s gate, exactly as an earlier form of this note said it would.)*
 
 **Archive.** These records were moved verbatim out of
 [`CURRENT_STATE.md`](../CURRENT_STATE.md) on 2026-09-20 so that the canonical description of
@@ -12,6 +12,76 @@ Current state: [`CURRENT_STATE.md`](../CURRENT_STATE.md) ·
 Authoritative backlog: [`BACKLOG.md`](../BACKLOG.md)
 
 ---
+
+### Previously
+
+**`P8-TSK-007` — The opening position, the position proof and the completeness verifier** —
+`COMPLETE` (2026-09-29). **M8.2, Every settling completion is expected, CLOSES at 4 of 4**:
+history adopted and both verdicts published. **Identity `V017`** (owner decision O1's second,
+disjoint role): `RECONCILIATION_ADMINISTER`, held by **`RECONCILIATION_CONTROLLER`** alone —
+adopting history decides what every proof and break is judged against, so the controller is
+disjoint even from the operator desk it oversees (exact grants and pairwise disjointness in
+`RoleNameTest`; refused across desks over HTTP in both directions). **The backfill**
+(`POST /v1/operator/reconciliation/opening-position {reason}`): leaderless, paged by id — one
+bounded page per transaction, a crash leaves a prefix — walking every completed clearing
+operation through payments' and merchant's public read stores (seven new paging reads, each an
+administered, lock-free read), finding each entry by its posting key through the ledger's new
+`findByIdempotencyScope`, and opening **through the live recorder's own path** under
+`ON CONFLICT DO NOTHING` — an operation whose entry the key cannot find is skipped and
+counted, never guessed. The key records (per principal, the counts replayed byte for byte);
+the uniques converge the effect — proven by ten backfills racing a live burst, one expectation
+per operation, and by the storm's register **emptied as the platform's own root and rebuilt
+from the books alone**, every kind's copy returning. Audited
+`reconciliation.OpeningPositionRecorded` (reason required; counts only). **The verdicts**
+(`PositionProof`, the `TrialBalance` shape — lock-free, report and never repair, one
+`REPEATABLE READ` snapshot): the position proof — DR−CR per clearing and currency equals the
+signed `Money` fold of open remainders (`INBOUND` +, `OUTBOUND` −, never a SQL `SUM`) — and
+the completeness verifier — every line on a reconciled position known to the register, the
+every-writer detection ADR-0067 §9 buys without a ledger trigger. Published as
+`finapp.reconciliation.position.proof` and `.line.unattributed` per `purpose` (both must read
+0, both alerted; `SUSPENSE_UNMATCHED` honestly counts Phase 7's parkings until `-020`) and
+`.expectation.open` per `source` — counts never amounts (ADR-0072), NaN never zero, floored,
+`max()` never `sum()`. **The positions report**
+(`GET /v1/operator/reports/reconciliation/positions`, `RECONCILIATION_INVESTIGATE`): both
+sides of the identity with the difference — amounts, so every serving is audited
+(`reconciliation.ReportRead`). **Proven live**: the pre-Phase-8 world driven with quiet
+doubles then adopted, every adopted row proven against the LEDGER with the live openers' own
+helper; a planted missing expectation flips the proof AND completeness, repaired only by the
+reasoned backfill; a raw-SQL clearing line counted at once (observed in the writer's own
+uncommitted transaction, so the shared container never inherits the plant); the storm at rest:
+backfill adds nothing, every clearing purpose at proof 0 and unattributed 0, suspense counting
+exactly its parkings. **Six probe runs over five breaks, two honest survivals resolved**: the proof's sign
+convention inverted SURVIVED its first run — the suite's one captured-and-refunded world
+netted every clearing to zero, and zero is sign-blind — so the TEST was tightened, never
+the probe (a second, UNREFUNDED capture makes the card position's identity a judgment on
+a non-zero balance, asserted positive and equal to its remainders), and the re-run caught
+it in the identity's own words (DR-CR 12.00 EUR = open remainders -12.00 EUR); every line
+treated as known and the identity comparison bypassed each caught first run;
+`expectation_operation_once` dropped alone SURVIVED HONESTLY — `expectation_line_once`
+converged the ten racing backfills by itself, the equivalent mutant for this path (the
+operation unique's own kill is `P8-TSK-004`'s direct-register race) — and dropping BOTH
+uniques was caught, ten rows where exactly one belongs; every verdict read from the
+failing testcase, every restore byte-identical (`MUTATION_TESTING` section 2 +2 rows
+under `INV-REC-06` and `INV-SET-02`). **The gate's finds, each fixed**: the report's
+bound and `truncated` flag untested and untestable over HTTP (the live ceiling is ~12
+rows) — `render` became a package-private seam with a hermetic proof of the 101st row's
+announcement and each row's honest copy; the FULL app tier caught two registers the
+targeted runs never ran — `pageCompleted` classified `ADMINISTERED` in
+`OwnershipIsScopedTest` (the cursor is never a target) and `OpeningPositionRequest`
+pinned in `CredentialReachesNoEmittedSinkTest` (a REASON only); the storm's adds-nothing
+count was GLOBAL where its claim is the storm's own — in the full tier's shared container
+the backfill rightly adopts earlier suites' residue, so the assertion now scopes to the
+storm's entries; and ADR-0072's follow-up still said nothing-is-implemented-yet, stale
+since `P8-TSK-002` — corrected with the implemented ledger.
+Verified by targeted tiers from fresh runs on the final code — identity hermetic 124
+across 16 suites, ledger hermetic 83 across 16, payments hermetic 246 across 35,
+merchant hermetic 135 across 19, reconciliation hermetic 7 and database 11, app hermetic
+558 across 102 suites, the opening suite (4) and the storm re-run green targeted in the
+database tier, plus the document guards re-run fresh after the records landed, ALL 0
+FAILURES. One full app database sweep ran during the gate (1104 tests): its single
+failure was the storm's wrong-scoped adds-nothing count — the gate's own find, fixed and
+re-proven — and per the owner's instruction the tier was not re-run whole; the full
+battery deliberately skipped likewise, no fleet-wide database or kafka counts claimed.
 
 ### Previously
 

@@ -9523,7 +9523,7 @@ Disputes (`P7-TSK-012`…`-014`) · M7.7 Observability and demonstration (`P7-TS
 
 # Phase 8 — Settlement and Reconciliation
 
-Status: `IN_PROGRESS` — started 2026-09-28 with `P8-TSK-001` (7 of 27 items complete; M8.1 Evidence intake closed 2026-09-29 at 3 of 3; M8.2 Every settling completion is expected CLOSED 2026-09-29 at 4 of 4); entry gate passed 2026-09-28 by the Phase 7 → 8 transition
+Status: `IN_PROGRESS` — started 2026-09-28 with `P8-TSK-001` (8 of 27 items complete; M8.1 Evidence intake closed 2026-09-29 at 3 of 3; M8.2 Every settling completion is expected CLOSED 2026-09-29 at 4 of 4; M8.3 Evidence becomes canonical lines at 1 of 6); entry gate passed 2026-09-28 by the Phase 7 → 8 transition
 ([`reviews/PHASE_7_TO_8_TRANSITION.md`](reviews/PHASE_7_TO_8_TRANSITION.md)), elaborated to task
 granularity by the same transition: twenty-seven items (`P8-TSK-001`…`-024`, `P8-TST-001`,
 `P8-TST-002`, `P8-DOC-001`) across eight milestones, with `P8-TSK-001` marked `READY`. The
@@ -10267,7 +10267,7 @@ posting-date documentation reconciled with the Phase 5–7 practice, with no ret
   `P8-TSK-020`); a planted missing expectation and a raw-SQL line each flip a gauge; NaN never zero.
 - **Definition of done**: `DOD-FIN`, `DOD-API`, `DOD-OBS`, `DOD-SEC`, `DOD-TEST`. **Risk**: Medium. **Cx**: M.
 
-**P8-TSK-008 — The PSP format: parse, normalise, reject whole** — `READY`
+**P8-TSK-008 — The PSP format: parse, normalise, reject whole** — `COMPLETE` (2026-09-29)
 - **Objective**: a received PSP settlement report becomes one whole, canonical, immutable batch of
   typed lines, or is rejected whole with its errors recorded — the first half of `INV-SET-07` — and
   the provider's vocabulary stays inside its adapter.
@@ -10396,7 +10396,7 @@ posting-date documentation reconciled with the Phase 5–7 practice, with no ret
 - **Definition of done**: `DOD-DOMAIN`, `DOD-API`, `DOD-EVENT`, `DOD-SEC`, `DOD-OBS`, `DOD-TEST`,
   `DOD-DOC`. **Risk**: Medium. **Cx**: M.
 
-**P8-TSK-009 — Acceptance: fee recognition, remittance expectation and reconciliation intake** — `PLANNED`
+**P8-TSK-009 — Acceptance: fee recognition, remittance expectation and reconciliation intake** — `READY`
 - **Objective**: hop 1 of ADR-0065, for the card PSP. An accepted report is recognised once, from
   its own stored evidence: the counterparty's fees are expensed against its own clearing position,
   one `REMITTANCE` expectation of the report's net is opened on that same position, and every line

@@ -569,6 +569,7 @@ proposal is fine and still standing, which is what makes the 409 actionable.
 | `settlement.FileNotFound` | 404 | No settlement file has this identifier. |
 | `settlement.FileNotAttestable` | 409 | This settlement file cannot be attested. |
 | `settlement.AttestationBySubmitter` | 409 | The uploader cannot attest their own file; a second person must. |
+| `settlement.BatchNotFound` | 404 | No settlement batch has this identifier. |
 
 The evidence surfaces' refusals (`P8-TSK-003`, ADR-0066). **No title or detail ever carries a
 value from the file** (`INV-PAY-02`, `INV-RAIL-03`): `settlement.DeliveryRefused` (422) names
@@ -586,9 +587,12 @@ a guessed id records nothing. The attestation pair are 409s — the caller holds
 permission; the file's own facts refuse the act: `settlement.AttestationBySubmitter` is
 `INV-SET-07`'s named negative made actionable (the remedy is a second person, and the
 database `CHECK` stands behind the domain refusal), and `settlement.FileNotAttestable` is one
-code for the remaining causes (not an upload; another person's attestation already stands)
-because the remedy is one — read the file. The same attester's retry converges and produces
-neither.
+code for the remaining causes (not an upload; another person's attestation already stands;
+since `P8-TSK-008`, a terminal file — which also answers a repeat decline, the machine being
+the record) because the remedy is one — read the file. The same attester's retry converges
+and produces neither. `settlement.BatchNotFound` (404, `P8-TSK-008`) is the `FileNotFound`
+departure's reasoning at the batch read: unknown and malformed ids one answer, nothing
+recorded.
 
 ## 3a. Rejection at the boundary
 

@@ -3027,6 +3027,41 @@
           }
         }
       },
+      "settlement.BatchNotFound": {
+        "content": {
+          "application/problem+json": {
+            "schema": {
+              "allOf": [
+                {
+                  "$ref": "#/components/schemas/ProblemDetail"
+                },
+                {
+                  "properties": {
+                    "code": {
+                      "const": "settlement.BatchNotFound"
+                    },
+                    "status": {
+                      "const": 404
+                    },
+                    "type": {
+                      "const": "https://finapp.example/problems/settlement.BatchNotFound"
+                    }
+                  }
+                }
+              ]
+            }
+          }
+        },
+        "description": "[404] No settlement batch has this identifier.",
+        "headers": {
+          "X-Client-Correlation-Id": {
+            "$ref": "#/components/headers/X-Client-Correlation-Id"
+          },
+          "X-Correlation-Id": {
+            "$ref": "#/components/headers/X-Correlation-Id"
+          }
+        }
+      },
       "settlement.DeliveryRefused": {
         "content": {
           "application/problem+json": {
@@ -3606,6 +3641,80 @@
         },
         "type": "object"
       },
+      "BatchTotalView": {
+        "properties": {
+          "amount": {
+            "type": "string"
+          },
+          "direction": {
+            "type": "string"
+          },
+          "lineCount": {
+            "format": "int64",
+            "type": "integer"
+          },
+          "lineType": {
+            "type": "string"
+          }
+        },
+        "type": "object"
+      },
+      "BatchView": {
+        "properties": {
+          "batchId": {
+            "type": "string"
+          },
+          "businessDate": {
+            "type": "string"
+          },
+          "createdAt": {
+            "type": "string"
+          },
+          "currency": {
+            "type": "string"
+          },
+          "declaredLineCount": {
+            "format": "int32",
+            "type": "integer"
+          },
+          "declaredNet": {
+            "type": "string"
+          },
+          "externalBatchRef": {
+            "type": "string"
+          },
+          "fileId": {
+            "type": "string"
+          },
+          "formatId": {
+            "type": "string"
+          },
+          "formatVersion": {
+            "format": "int32",
+            "type": "integer"
+          },
+          "lineCount": {
+            "format": "int32",
+            "type": "integer"
+          },
+          "remittanceReference": {
+            "type": "string"
+          },
+          "sourceCode": {
+            "type": "string"
+          },
+          "status": {
+            "type": "string"
+          },
+          "totals": {
+            "items": {
+              "$ref": "#/components/schemas/BatchTotalView"
+            },
+            "type": "array"
+          }
+        },
+        "type": "object"
+      },
       "BeneficiaryCreateRequest": {
         "properties": {
           "destinationAccountId": {
@@ -3967,6 +4076,20 @@
           "outcome",
           "reason"
         ],
+        "type": "object"
+      },
+      "DeclineView": {
+        "properties": {
+          "fileId": {
+            "type": "string"
+          },
+          "rejectionCode": {
+            "type": "string"
+          },
+          "status": {
+            "type": "string"
+          }
+        },
         "type": "object"
       },
       "DisputeEvidenceUploadRequest": {
@@ -5767,6 +5890,19 @@
           "reason": {
             "maxLength": 1000,
             "minLength": 0,
+            "type": "string"
+          }
+        },
+        "required": [
+          "reason"
+        ],
+        "type": "object"
+      },
+      "SettlementFileDeclineRequest": {
+        "properties": {
+          "reason": {
+            "maxLength": 1000,
+            "minLength": 1,
             "type": "string"
           }
         },
@@ -8798,6 +8934,33 @@
         }
       }
     },
+    "/v1/operator/settlement/batches/{id}": {
+      "get": {
+        "operationId": "viewSettlementBatch",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "id",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/BatchView"
+                }
+              }
+            },
+            "description": "OK"
+          }
+        }
+      }
+    },
     "/v1/operator/settlement/files": {
       "get": {
         "operationId": "listSettlementFiles",
@@ -8933,6 +9096,43 @@
               "application/json": {
                 "schema": {
                   "$ref": "#/components/schemas/ContentView"
+                }
+              }
+            },
+            "description": "OK"
+          }
+        }
+      }
+    },
+    "/v1/operator/settlement/files/{id}/decline": {
+      "post": {
+        "operationId": "declineSettlementFile",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "id",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/SettlementFileDeclineRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/DeclineView"
                 }
               }
             },

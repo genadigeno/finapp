@@ -1,6 +1,7 @@
 package com.finapp.settlement;
 
 import com.finapp.platform.security.Actor;
+import com.finapp.settlement.format.FormatDefect;
 import com.finapp.sharedkernel.correlation.CorrelationId;
 import java.time.Instant;
 import java.time.LocalDate;
@@ -172,4 +173,66 @@ public interface SettlementFileStore<T> {
      *     (`P8-TSK-003`)
      */
     byte[] readContent(T unitOfWork, UUID fileId);
+
+    // ------------------------------------------------------------ the parse leg (P8-TSK-008)
+
+    /**
+     * Candidate files for the parse leg: {@code RECEIVED}, due ({@code next_parse_at} unset
+     * or passed), oldest first — ids only and NO lock, because the claim that matters is
+     * {@link #lockDueById} inside each file's own transaction.
+     */
+    List<UUID> dueForParse(T unitOfWork, Instant now, int limit);
+
+    /**
+     * The per-file claim: the row, {@code FOR UPDATE SKIP LOCKED}, and only while it is still
+     * {@code RECEIVED} and due — empty when another instance holds or already handled it.
+     * The conditional transition behind it is the arbiter even without the lock.
+     */
+    Optional<FileRow> lockDueById(T unitOfWork, UUID fileId, Instant now);
+
+    /** The conditional {@code RECEIVED → PARSED}; false when the row already moved. */
+    boolean markParsed(T unitOfWork, UUID fileId, Instant at);
+
+    /**
+     * The conditional edge into {@code REJECTED} from {@code from}, recording the verdict;
+     * false when the row already moved. {@code detail} names codes, lines and fields — never
+     * a value.
+     */
+    boolean markRejected(
+            T unitOfWork,
+            UUID fileId,
+            FileStatus from,
+            RejectionCode code,
+            Optional<String> detail,
+            Instant at);
+
+    /**
+     * Our own failure's tally ({@code ADR-0066} §9): {@code parse_failures + 1}, returning
+     * the new count so the caller can back off — never a status move, never a rejection.
+     */
+    int bumpParseFailures(T unitOfWork, UUID fileId);
+
+    /** Schedules the next attempt after a failure — the stuck-file gauge's visibility. */
+    void scheduleNextParse(T unitOfWork, UUID fileId, Instant nextParseAt);
+
+    /**
+     * Appends one machine-history row. A {@code from == to} row records the platform's
+     * processing of a file that did not move — the parse leg's failure note — which is the
+     * file history's own kind of audit (`P8-TSK-008`'s ruling).
+     */
+    void appendFileEvent(
+            T unitOfWork,
+            UUID fileId,
+            FileStatus from,
+            FileStatus to,
+            Actor actor,
+            Optional<String> reason,
+            Instant occurredAt,
+            CorrelationId correlation);
+
+    /**
+     * The rejection's substantiation: up to 100 rows of (line, code, field) — the value
+     * columns do not exist (`V003`).
+     */
+    void recordIngestionErrors(T unitOfWork, UUID fileId, List<FormatDefect> defects);
 }

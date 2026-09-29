@@ -4,6 +4,7 @@ import static org.assertj.core.api.Assertions.assertThat;
 
 import com.finapp.app.telemetry.SettlementFileMetrics;
 import com.finapp.identity.Authorization;
+import com.finapp.settlement.FileParsing;
 import com.finapp.identity.IdentityId;
 import com.finapp.identity.RoleName;
 import com.finapp.platform.api.IdempotencyKeyHeader;
@@ -64,6 +65,7 @@ class SettlementRoutesDatabaseTest {
     @LocalServerPort private int port;
     @Autowired private Authorization authorization;
     @Autowired private MeterRegistry registry;
+    @Autowired private FileParsing fileParsing;
 
     // -----------------------------------------------------------------
     // Negatives per route: no session, then a session whose role holds neither permission.
@@ -86,7 +88,11 @@ class SettlementRoutesDatabaseTest {
                         new Route("GET", "/v1/operator/settlement/files/" + someId, null, false),
                         new Route("GET", "/v1/operator/settlement/refused-deliveries", null, false),
                         new Route("POST", "/v1/operator/settlement/files/" + someId + "/content-reads",
-                                "{\"reason\":\"probe\"}", true));
+                                "{\"reason\":\"probe\"}", true),
+                        // P8-TSK-008: the decline and the batch read.
+                        new Route("POST", "/v1/operator/settlement/files/" + someId + "/decline",
+                                "{\"reason\":\"probe\"}", false),
+                        new Route("GET", "/v1/operator/settlement/batches/" + someId, null, false));
         for (Route route : routes) {
             HttpResponse<String> anonymous =
                     exchange(route.method(), route.path(), route.body(), null,
@@ -399,6 +405,119 @@ class SettlementRoutesDatabaseTest {
         assertThat(pending)
                 .as("a landed upload is a pending file, and unreadable would be NaN")
                 .isGreaterThanOrEqualTo(1.0);
+    }
+
+    // -----------------------------------------------------------------
+    // The parse leg, the batch read and the decline (P8-TSK-008), over the real wiring:
+    // the schedule is off in tests, so the sweep is driven through the REAL FileParsing
+    // bean - the composed formats, transaction runner, outbox and committed meters.
+    // -----------------------------------------------------------------
+
+    @Test
+    @DisplayName("an uploaded report parses through the composed leg; the batch read serves"
+            + " the attester's totals; the decline rejects file and batch together and a"
+            + " second decline answers 409; the intake meters count after commit")
+    void theParseLegBatchReadAndDeclineOverHttp() throws Exception {
+        String operator = sessionWith(RoleName.RECONCILIATION_OPERATOR);
+        String batchRef = "PSPB-HTTP-" + suffix();
+        // Rendered by the fixture the later legs feed from - what the simulated PSP did.
+        String csv =
+                new String(
+                        new SimulatedSettlementReports(
+                                        batchRef,
+                                        "EUR",
+                                        java.time.LocalDate.parse("2026-09-29"),
+                                        "PSP-REM-20260929")
+                                .with(SimulatedSettlementReports.Line.capture(
+                                        "PSP-CAP-" + suffix(), "", "", "100.00", "1.75"))
+                                .render(),
+                        StandardCharsets.UTF_8);
+        HttpResponse<String> landed =
+                post("/v1/operator/settlement/files", uploadBody(csv), operator, someKey());
+        assertThat(landed.statusCode()).isEqualTo(202);
+        String fileId = field(landed.body(), "fileId");
+
+        FileParsing.SweepResult swept = fileParsing.sweep();
+        assertThat(swept.parsed()).isGreaterThanOrEqualTo(1);
+        assertThat(field(get("/v1/operator/settlement/files/" + fileId, operator).body(),
+                        "status"))
+                .isEqualTo("PARSED");
+
+        UUID batchId = batchIdOf(UUID.fromString(fileId));
+        HttpResponse<String> batch =
+                get("/v1/operator/settlement/batches/" + batchId, operator);
+        assertThat(batch.statusCode()).isEqualTo(200);
+        assertThat(field(batch.body(), "externalBatchRef")).isEqualTo(batchRef);
+        assertThat(field(batch.body(), "status")).isEqualTo("PARSED");
+        assertThat(field(batch.body(), "declaredNet")).isEqualTo("98.25");
+        assertThat(batch.body())
+                .as("the folded totals are the attester's reading - the split's two lines")
+                .contains("\"lineType\":\"CAPTURE\"")
+                .contains("\"lineType\":\"PROCESSING_FEE\"")
+                .contains("\"amount\":\"100.00\"")
+                .contains("\"amount\":\"1.75\"");
+
+        HttpResponse<String> unknownBatch =
+                get("/v1/operator/settlement/batches/" + UUID.randomUUID(), operator);
+        assertThat(unknownBatch.statusCode()).isEqualTo(404);
+        assertThat(unknownBatch.body()).contains("settlement.BatchNotFound");
+
+        HttpResponse<String> reasonless =
+                post("/v1/operator/settlement/files/" + fileId + "/decline",
+                        "{\"reason\":\"\"}", operator, null);
+        assertThat(reasonless.statusCode())
+                .as("a decline is reasoned (INV-AUD-03)")
+                .isBetween(400, 422);
+
+        HttpResponse<String> declined =
+                post("/v1/operator/settlement/files/" + fileId + "/decline",
+                        "{\"reason\":\"wrong day's report\"}", operator, null);
+        assertThat(declined.statusCode()).isEqualTo(200);
+        assertThat(field(declined.body(), "rejectionCode")).isEqualTo("DECLINED");
+        assertThat(field(get("/v1/operator/settlement/files/" + fileId, operator).body(),
+                        "status"))
+                .isEqualTo("REJECTED");
+        assertThat(field(get("/v1/operator/settlement/batches/" + batchId, operator).body(),
+                        "status"))
+                .as("a parsed file's batch rejects WITH it - the live key freed (INV-SET-07)")
+                .isEqualTo("REJECTED");
+
+        HttpResponse<String> again =
+                post("/v1/operator/settlement/files/" + fileId + "/decline",
+                        "{\"reason\":\"again\"}", operator, null);
+        assertThat(again.statusCode()).isEqualTo(409);
+        assertThat(again.body()).contains("settlement.FileNotAttestable");
+
+        // The committed meters: the decline's rejection counted after ITS commit, and the
+        // enabled gauge exists eagerly and honestly reads 0 - tests run the leg directly.
+        assertThat(registry.find("finapp.settlement.file.rejected")
+                        .tag("source", SOURCE)
+                        .tag("outcome", "declined")
+                        .counter())
+                .isNotNull()
+                .satisfies(counter -> assertThat(counter.count()).isGreaterThanOrEqualTo(1.0));
+        assertThat(registry.find("finapp.settlement.ingestion.latency")
+                        .tag("source", SOURCE)
+                        .tag("stage", "parse")
+                        .timer())
+                .isNotNull()
+                .satisfies(timer -> assertThat(timer.count()).isGreaterThanOrEqualTo(1L));
+        assertThat(registry.find("finapp.settlement.intake.sweeper.enabled").gauge())
+                .isNotNull()
+                .satisfies(gauge -> assertThat(gauge.value()).isEqualTo(0.0));
+    }
+
+    private static UUID batchIdOf(UUID fileId) throws SQLException {
+        try (Connection app = DatabaseRoles.application();
+                PreparedStatement read =
+                        app.prepareStatement(
+                                "SELECT id FROM settlement.batch WHERE file_id = ?")) {
+            read.setObject(1, fileId);
+            try (ResultSet row = read.executeQuery()) {
+                assertThat(row.next()).as("a PARSED file has its batch").isTrue();
+                return row.getObject("id", UUID.class);
+            }
+        }
     }
 
     // -----------------------------------------------------------------

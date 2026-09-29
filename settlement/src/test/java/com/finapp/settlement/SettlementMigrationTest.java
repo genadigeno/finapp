@@ -112,11 +112,17 @@ class SettlementMigrationTest {
         // write it could make the schema's provenance disagree with the schema.
         assertThat(tablesIn(SCHEMA))
                 .containsExactly(
+                        "batch",
+                        "batch_event",
+                        "batch_total",
                         "file",
                         "file_chunk",
                         "file_event",
                         "file_receipt",
                         "flyway_schema_history",
+                        "ingestion_error",
+                        "line",
+                        "line_reference",
                         "refused_delivery",
                         "source");
 
@@ -140,6 +146,40 @@ class SettlementMigrationTest {
                 .isThrownBy(() -> asApplication("CREATE TABLE " + SCHEMA + ".probe (id INT)"))
                 .matches(e -> INSUFFICIENT_PRIVILEGE.equals(e.getSQLState()));
         application.rollback();
+    }
+
+    @Test
+    @DisplayName("V003's generated fragments are each enum's mirror - one definition, two"
+            + " artefacts (the V014 pattern)")
+    void v003FragmentsAreGeneratedFromTheEnums() {
+        String v003 = collapsed(migration(
+                "db/migration/settlement/V003__the_psp_format_parse_normalise_reject_whole.sql"));
+
+        // The file machine: value list and the transition trigger's edges.
+        assertThat(v003).contains("status IN (" + FileStatus.sqlValueList() + ")");
+        assertThat(v003).contains(FileStatus.sqlTransitionRule());
+
+        // The batch machine.
+        assertThat(v003).contains("status IN (" + BatchStatus.sqlValueList() + ")");
+        assertThat(v003).contains(BatchStatus.sqlTransitionRule());
+
+        // The closed vocabularies: line types (twice - totals and lines), directions,
+        // reference kinds, and the rejection codes' two lists.
+        assertThat(v003).contains("line_type IN (" + SettlementLineType.sqlValueList() + ")");
+        assertThat(v003).contains("direction IN (" + LineDirection.sqlValueList() + ")");
+        assertThat(v003).contains("kind IN (" + LineReferenceKind.sqlValueList() + ")");
+        assertThat(v003).contains("rejection_code IN (" + RejectionCode.sqlValueList() + ")");
+        assertThat(v003).contains("error_code IN (" + RejectionCode.sqlErrorRowList() + ")");
+
+        // The live unique, written WHOLE now: P8-TSK-023's REPUDIATED changes no index.
+        assertThat(v003)
+                .contains("ON settlement.batch (source_id, external_batch_ref, currency)")
+                .contains("WHERE status NOT IN ('REJECTED', 'REPUDIATED')");
+    }
+
+    /** Whitespace collapsed, so a generated fragment matches however the SQL wraps. */
+    private static String collapsed(String migration) {
+        return statementsOf(migration).replaceAll("\\s+", " ").replaceAll("\\( ", "(");
     }
 
     // -----------------------------------------------------------------
@@ -195,7 +235,10 @@ class SettlementMigrationTest {
 
     /** From the classpath, the sibling migration tests' idiom. */
     private static String migration() {
-        String resource = "db/migration/settlement/V001__initialise_settlement_schema.sql";
+        return migration("db/migration/settlement/V001__initialise_settlement_schema.sql");
+    }
+
+    private static String migration(String resource) {
         try (InputStream stream =
                 SettlementMigrationTest.class.getClassLoader().getResourceAsStream(resource)) {
             if (stream == null) {

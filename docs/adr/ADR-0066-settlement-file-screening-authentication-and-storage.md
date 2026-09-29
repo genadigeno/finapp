@@ -499,8 +499,21 @@ ceiling), ADR-0046 (no connection across a pull), ADR-0008 (the collector SPI).
   `settlement.SettlementFileContentRead` record per read, a verification failure audited
   `FAILED` and serving nothing) with the metadata reads beside it, plus the
   `finapp.settlement.file.pending`/`.age` gauges of point 2's "visibly". Pull is
-  `P8-TSK-021`'s, readmission `P8-TSK-022`'s, the field-class screens and the parse leg
-  `P8-TSK-008`'s. Everything else here is the decided design, corrected by the tasks that
-  build it.
+  `P8-TSK-021`'s, readmission `P8-TSK-022`'s. `P8-TSK-008` (2026-09-29) delivered the format
+  and parse halves: the `SettlementFormat` SPI with `SIM_PSP_CSV` v1 frozen by its golden
+  file (point 8's version discipline), point 3's field-class screen filling the door's seam —
+  reference fields by shape, a Luhn-valid network transaction id never tested as free text, a
+  field failing its declared class screened as free text (C6) — the parse leg of
+  `SettlementIntakeSchedule` under point 9 whole (one transaction per file; up to 100
+  `ingestion_error` rows; `settlement.SettlementFileRejected` audited acting-only and
+  published through the outbox; our exception leaving the file `RECEIVED` with
+  `parse_failures + 1` and the back-off), settlement `V003`'s batch, lines, typed references
+  and folded totals with the live-batch unique written whole, `CONFLICTING_BATCH` for a
+  second declaration (retained, point 8's readmission path), and point 4's moved decline
+  (`RECEIVED | PARSED → REJECTED(DECLINED)`, the batch rejected in the same transaction and
+  the live key freed). The event's payload carries `sourceId` rather than the drafted
+  `sourceCode`: `EventPayload`'s vocabulary is identifiers and enumerated names
+  (`INV-AUD-02`), and a dotted source code is neither. Acceptance is `P8-TSK-009`'s.
+  Everything else here is the decided design, corrected by the tasks that build it.
 - The Phase 8 review reads this ADR against the code before accepting it (`P8-DOC-001`, the
   `P7-DOC-001` precedent).

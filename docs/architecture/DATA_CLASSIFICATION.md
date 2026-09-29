@@ -1061,6 +1061,71 @@ columns hold platform actor identifiers (`audit_record.actor`'s reasoning), and 
 | `refused_delivery` | `refused_at` | `INTERNAL` | When the door refused |
 | `refused_delivery` | `correlation_id` | `INTERNAL` | The flow's correlation |
 
+**The canonical batch** — *added by `P8-TSK-008`* (ADR-0066 §§3, 9; ADR-0065): what the parse
+leg distils from the encrypted evidence, deliberately cooler than its file — types,
+directions, amounts, dates, digests and typed references. The amounts are
+`RESTRICTED-FINANCIAL` (a person's or counterparty's transaction value); every reference a
+counterparty will quote is `CONFIDENTIAL` (Phase 8's match key, `expectation.operation_ref`'s
+reasoning); free text stays inside the encrypted file and has no column here.
+
+| Table | Column | Level | Why |
+|---|---|---|---|
+| `batch` | `id` | `INTERNAL` | An aggregate identifier. Generated |
+| `batch` | `file_id` | `INTERNAL` | The file it distils - an identifier of a thing |
+| `batch` | `source_id` | `INTERNAL` | The delivering source - an identifier of a thing |
+| `batch` | `external_batch_ref` | `CONFIDENTIAL` | The counterparty's batch identity - a reference it will quote (the live key's member) |
+| `batch` | `currency` | `INTERNAL` | An enumeration; part of the monetary shape with no amount beside it |
+| `batch` | `status` | `INTERNAL` | The machine's position |
+| `batch` | `business_date` | `CONFIDENTIAL` | The day the batch covers - `file.business_date`'s reasoning |
+| `batch` | `format_id` | `INTERNAL` | Which format family parsed it |
+| `batch` | `format_version` | `INTERNAL` | Which frozen version parsed it |
+| `batch` | `line_count` | `INTERNAL` | A record count - canonical lines, the split's included |
+| `batch` | `declared_line_count` | `INTERNAL` | The trailer's own record count |
+| `batch` | `net_minor` | `RESTRICTED-FINANCIAL` | **The trailer's declared net** - what the counterparty will remit |
+| `batch` | `net_scale` | `INTERNAL` | The monetary shape's scale (INV-MON-05) |
+| `batch` | `remittance_reference` | `CONFIDENTIAL` | What hop 2 attributes the bank line by (ADR-0065) - a reference both sides quote |
+| `batch` | `created_at` | `INTERNAL` | When the parse committed it |
+| `batch` | `status_changed_at` | `INTERNAL` | When the machine last moved |
+| `batch` | `correlation_id` | `INTERNAL` | The flow's correlation |
+| `batch_event` | `seq` | `INTERNAL` | The history's server-assigned order |
+| `batch_event` | `batch_id` | `INTERNAL` | The moved batch - an identifier of a thing |
+| `batch_event` | `from_status` | `INTERNAL` | The edge's origin, NULL at birth |
+| `batch_event` | `to_status` | `INTERNAL` | The edge's destination |
+| `batch_event` | `actor` | `CONFIDENTIAL` | Who drove the edge (`audit_record.actor`'s reasoning) |
+| `batch_event` | `actor_type` | `INTERNAL` | The actor's kind - a closed vocabulary |
+| `batch_event` | `reason` | `CONFIDENTIAL` | The decline's stated reason - free prose by a person (`audit_record.reason`'s reasoning) |
+| `batch_event` | `occurred_at` | `INTERNAL` | When the edge was driven |
+| `batch_event` | `correlation_id` | `INTERNAL` | The flow's correlation |
+| `batch_total` | `batch_id` | `INTERNAL` | The batch - an identifier of a thing |
+| `batch_total` | `line_type` | `INTERNAL` | A closed vocabulary member |
+| `batch_total` | `direction` | `INTERNAL` | INBOUND or OUTBOUND |
+| `batch_total` | `line_count` | `INTERNAL` | A count |
+| `batch_total` | `amount_minor` | `RESTRICTED-FINANCIAL` | **A folded settlement amount** - the attester's control total |
+| `batch_total` | `amount_scale` | `INTERNAL` | The monetary shape's scale |
+| `line` | `id` | `INTERNAL` | A record identifier. Generated |
+| `line` | `batch_id` | `INTERNAL` | The line's batch - an identifier of a thing |
+| `line` | `file_id` | `INTERNAL` | The line's file - an identifier of a thing |
+| `line` | `line_no` | `INTERNAL` | The line's seat in its file |
+| `line` | `line_type` | `INTERNAL` | The platform's closed vocabulary (INV-PAY-03) - never the provider's word |
+| `line` | `direction` | `INTERNAL` | INBOUND or OUTBOUND |
+| `line` | `amount_minor` | `RESTRICTED-FINANCIAL` | **The reported settlement amount** - a person's or counterparty's transaction |
+| `line` | `amount_scale` | `INTERNAL` | The monetary shape's scale (INV-MON-05) |
+| `line` | `currency` | `INTERNAL` | An enumeration; part of the monetary shape |
+| `line` | `business_date` | `CONFIDENTIAL` | The transaction's day - `file.business_date`'s reasoning |
+| `line` | `settlement_date` | `CONFIDENTIAL` | When the counterparty says it settles |
+| `line` | `value_date` | `CONFIDENTIAL` | The value day the counterparty states |
+| `line` | `raw_record_sha256` | `INTERNAL` | The delivered record's fingerprint - recoverable from nothing |
+| `line` | `canonical_fingerprint` | `INTERNAL` | The canonical identity digest - deliberately not unique, so a duplicate survives to matching |
+| `line` | `attributed_source_id` | `INTERNAL` | NULL until the bank's lines (`P8-TSK-016`) - an identifier of a thing |
+| `line_reference` | `line_id` | `INTERNAL` | The reference's line - an identifier of a thing |
+| `line_reference` | `kind` | `INTERNAL` | A closed vocabulary member |
+| `line_reference` | `value` | `CONFIDENTIAL` | **A typed reference a counterparty quotes** - the match key (`expectation.operation_ref`'s reasoning); bank-identifier and alias shapes refused by CHECK (INV-RAIL-03) |
+| `ingestion_error` | `file_id` | `INTERNAL` | The rejected file - an identifier of a thing |
+| `ingestion_error` | `seq` | `INTERNAL` | The error's order, bounded at 100 |
+| `ingestion_error` | `line_no` | `INTERNAL` | Where - a position, not a value |
+| `ingestion_error` | `error_code` | `INTERNAL` | Why - a closed vocabulary, never the value found |
+| `ingestion_error` | `field_name` | `INTERNAL` | The field that failed - a NAME bounded to 200 characters (`refused_delivery.field_name`'s reasoning) |
+
 ### `reconciliation` — the expectation register and rule set v1 — *added by `P8-TSK-004`*
 
 **The internal side of the position proof** (ADR-0067, ADR-0068): versioned matching

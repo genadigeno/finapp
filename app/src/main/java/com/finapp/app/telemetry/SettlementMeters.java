@@ -1,11 +1,14 @@
 package com.finapp.app.telemetry;
 
 import com.finapp.settlement.RefusalReason;
+import com.finapp.settlement.RejectionCode;
 import com.finapp.settlement.SettlementFileStore;
 import com.finapp.settlement.SettlementSourceDescriptor;
 import com.finapp.settlement.SettlementSources;
 import io.micrometer.core.instrument.Counter;
 import io.micrometer.core.instrument.MeterRegistry;
+import io.micrometer.core.instrument.Timer;
+import java.time.Duration;
 import java.util.Locale;
 import java.util.Objects;
 
@@ -27,6 +30,15 @@ public final class SettlementMeters {
     /** Deliveries the door refused, by source and reason — alertable from the first file. */
     public static final String REFUSED = "finapp.settlement.delivery.refused";
 
+    /** Files rejected whole, by source and rejection code (`P8-TSK-008`, ADR-0066 §9). */
+    public static final String REJECTED = "finapp.settlement.file.rejected";
+
+    /** Door-to-verdict age per intake stage — {@code stage=parse} today (`P8-TSK-008`). */
+    public static final String INGESTION_LATENCY = "finapp.settlement.ingestion.latency";
+
+    /** The one intake stage that exists; acceptance brings its own (`P8-TSK-009`). */
+    public static final String PARSE_STAGE = "parse";
+
     private final MeterRegistry registry;
 
     public SettlementMeters(MeterRegistry registry, SettlementSources sources) {
@@ -43,6 +55,10 @@ public final class SettlementMeters {
             for (RefusalReason reason : RefusalReason.values()) {
                 refused(source.code(), reason);
             }
+            for (RejectionCode code : RejectionCode.values()) {
+                rejected(source.code(), code);
+            }
+            latency(source.code());
         }
     }
 
@@ -52,6 +68,14 @@ public final class SettlementMeters {
 
     public void countRefused(String sourceCode, RefusalReason reason) {
         refused(sourceCode, reason).increment();
+    }
+
+    public void countRejected(String sourceCode, RejectionCode code) {
+        rejected(sourceCode, code).increment();
+    }
+
+    public void recordParseLatency(String sourceCode, Duration sinceReceipt) {
+        latency(sourceCode).record(sinceReceipt);
     }
 
     private Counter received(String sourceCode, SettlementFileStore.ReceiptOutcome outcome) {
@@ -67,6 +91,26 @@ public final class SettlementMeters {
                 .tag("source", sourceCode)
                 .tag("outcome", reason.name().toLowerCase(Locale.ROOT))
                 .description("Settlement deliveries the door refused, by reason (ADR-0066)")
+                .register(registry);
+    }
+
+    private Counter rejected(String sourceCode, RejectionCode code) {
+        return Counter.builder(REJECTED)
+                .tag("source", sourceCode)
+                .tag("outcome", code.name().toLowerCase(Locale.ROOT))
+                .description(
+                        "Settlement files rejected whole - the parse leg's verdicts and the"
+                                + " decline (ADR-0066 §9)")
+                .register(registry);
+    }
+
+    private Timer latency(String sourceCode) {
+        return Timer.builder(INGESTION_LATENCY)
+                .tag("source", sourceCode)
+                .tag("stage", PARSE_STAGE)
+                .description(
+                        "Door-to-verdict age of settlement files per intake stage - a slow"
+                                + " parse leg ages evidence")
                 .register(registry);
     }
 }

@@ -71,14 +71,13 @@ public final class FileAttestation<T> {
                             + file.receivedVia()
                             + " delivery is authenticated by its own channel (ADR-0066 §2)");
         }
-        // Fail closed on the machine: RECEIVED is the only value today, so this branch is
-        // unreachable - it exists so that when the parse leg (`P8-TSK-008`) brings PARSED and
-        // the terminal statuses, admitting PARSED here is an explicit relaxation in that
-        // change, never a restriction somebody must remember to add (ADR-0066 §2: settable
-        // while RECEIVED or PARSED, never on a terminal file).
-        if (file.status() != FileStatus.RECEIVED) {
+        // The explicit relaxation P8-TSK-003 designed for, taken by P8-TSK-008 with the
+        // machine's arrival: attestation is settable while RECEIVED or PARSED - the attester
+        // may first read the parsed totals - and never on a terminal file (ADR-0066 §2). The
+        // V003 trigger holds the terminal half for every writer.
+        if (file.status().isTerminal()) {
             throw new SettlementFileNotAttestable(
-                    "a " + file.status() + " file is not awaiting attestation");
+                    "a " + file.status() + " file is terminal and not attestable");
         }
         if (file.attestation().isPresent()) {
             return convergedOrRefused(file, attester);
