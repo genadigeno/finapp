@@ -256,6 +256,15 @@ class MultiRailConservationStormDatabaseTest {
     /** The round the choreographed refund-then-chargeback pair runs at: mid-storm. */
     private static final int CHOREOGRAPHY_ROUND = MIN_ROUNDS_UNDER_LOAD / 2;
 
+    /**
+     * How long a desk sale answered {@code PAYMENT_PENDING} is given to capture - the resolvers'
+     * work, a tick or two - and how many sales the desk makes before calling a captured one
+     * impossible. Both are FAILURE bounds.
+     */
+    private static final Duration DESK_PATIENCE = Duration.ofSeconds(30);
+
+    private static final int DESK_SALES = 3;
+
     /** Stages at which a chargeback stands (or was lost) - the money is out of the clearing. */
     private static final String STANDING =
             "('CHARGED_BACK', 'REPRESENTED', 'LOST', 'ACCEPTED')";
@@ -318,8 +327,10 @@ class MultiRailConservationStormDatabaseTest {
         // The resolvers' candidacy bounds: an UNKNOWN row is asked about promptly, a dispatch
         // only once it is plainly overdue - a sweep asking about a row still in flight is legal
         // and harmless (an unanswered inquiry concludes nothing), but it is noise, not the
-        // subject. Batches wide enough to reach the storm's rows past every other suite's
-        // leftovers (the shared-database citizenship lesson).
+        // subject. Plainly overdue here is still inside the client timeout, the reverse of the
+        // production defaults, so such a sweep can leave a synchronous answer PAYMENT_PENDING:
+        // deskSale waits that out. Batches wide enough to reach the storm's rows past every
+        // other suite's leftovers (the shared-database citizenship lesson).
         registry.add("finapp.payments.sweeper.dispatched-age", () -> "PT2S");
         registry.add("finapp.payments.sweeper.unknown-age", () -> "PT0.2S");
         registry.add("finapp.payments.sweeper.batch", () -> "2000");
@@ -2581,18 +2592,73 @@ class MultiRailConservationStormDatabaseTest {
      * A fresh card sale on the dispute desk's merchant, CAPTURED: attempt, capture reference,
      * intent. Nothing else in the storm acts on it, so what the caller does to it happens in the
      * caller's order.
+     *
+     * <p><strong>{@code PAYMENT_PENDING} is an honest answer, and the desk waits it out.</strong>
+     * The confirmation answers the session as it stands ({@link #saleOutcome}'s reading), and
+     * under load the synchronous capture can lose its own race: an authorization or capture
+     * still on the wire past {@code dispatched-age} is swept before the storm's PSP has an
+     * answer to give ({@link #answerInquiries}), the inquiry concludes nothing and moves the row
+     * to its honest {@code *_UNKNOWN}, and the synchronous APPROVED - applied from
+     * {@code *_DISPATCHED} - converges on it. Nothing is posted, the session stays
+     * {@code PAYMENT_PENDING}, and the resolvers capture the sale a tick later (the stranded
+     * chain first, when it stopped at the authorization). The desk called that answer a failure
+     * until a storm run met it; it now waits for the storm's own resolvers to capture the sale.
+     * One that cannot capture while the storm runs - concluded without capturing, or waiting on
+     * an operation the PSP never received, which the PSP says only at rest - is left to the
+     * drain, which resolves and reconciles every storm attempt, and a fresh one is sold.
      */
     private String[] deskSale(Storm storm, Customer customer) throws Exception {
-        HttpResponse<String> opened = openSessionResponse(storm.world.desk());
-        if (opened.statusCode() != 201) {
-            throw unexpected("desk open", opened, storm);
+        for (int sold = 0; sold < DESK_SALES; sold++) {
+            HttpResponse<String> opened = openSessionResponse(storm.world.desk());
+            if (opened.statusCode() != 201) {
+                throw unexpected("desk open", opened, storm);
+            }
+            HttpResponse<String> confirmed =
+                    confirm(customer, field(opened.body(), "sessionToken"), Instrument.CARD);
+            if (saleOutcome(Instrument.CARD, confirmed) == null) {
+                throw unexpected("desk sale", confirmed, storm);
+            }
+            String checkout = field(opened.body(), "checkoutId");
+            if ("COMPLETED".equals(field(confirmed.body(), "status"))) {
+                // The order is written in the capture's own transaction: completed IS captured.
+                return capturedDeskSale(checkout);
+            }
+            storm.count("desk-sale:pending");
+            String status = awaitDeskCapture(checkout);
+            if (status.equals("CAPTURED")) {
+                return capturedDeskSale(checkout);
+            }
+            storm.count("desk-sale:left-to-the-drain:" + status);
         }
-        HttpResponse<String> confirmed =
-                confirm(customer, field(opened.body(), "sessionToken"), Instrument.CARD);
-        if (confirmed.statusCode() != 200
-                || !"COMPLETED".equals(field(confirmed.body(), "status"))) {
-            throw unexpected("desk sale", confirmed, storm);
+        throw new AssertionError("the desk sold no captured sale in " + DESK_SALES
+                + " tries (outcomes so far: " + storm.outcomes + ")");
+    }
+
+    /**
+     * The desk sale's attempt status once the resolvers have captured it, once it concluded
+     * without capturing, or when {@link #DESK_PATIENCE} runs out.
+     */
+    private static String awaitDeskCapture(String checkout) throws Exception {
+        long deadline = System.nanoTime() + DESK_PATIENCE.toNanos();
+        while (true) {
+            String status;
+            try (Connection app = DatabaseRoles.application()) {
+                status = one(app,
+                        "SELECT a.status FROM payments.payment_attempt a"
+                                + " JOIN checkout.checkout_session s"
+                                + "   ON s.payment_intent_ref = a.intent_id"
+                                + " WHERE s.id = ?::uuid",
+                        checkout);
+            }
+            if (List.of("CAPTURED", "FAILED", "VOIDED").contains(status)
+                    || System.nanoTime() >= deadline) {
+                return status;
+            }
+            Thread.sleep(50);
         }
+    }
+
+    private static String[] capturedDeskSale(String checkout) throws SQLException {
         try (Connection app = DatabaseRoles.application()) {
             List<String[]> sale =
                     rows(app,
@@ -2602,7 +2668,7 @@ class MultiRailConservationStormDatabaseTest {
                                     + " JOIN checkout.checkout_session s"
                                     + "   ON s.payment_intent_ref = i.id"
                                     + " WHERE s.id = ?::uuid AND a.status = 'CAPTURED'",
-                            field(opened.body(), "checkoutId"));
+                            checkout);
             assertThat(sale).as("the desk's sale captured").hasSize(1);
             return sale.get(0);
         }
