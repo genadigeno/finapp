@@ -104,12 +104,28 @@ class ReconciliationMigrationTest {
     }
 
     @Test
-    @DisplayName("the schema holds no table but Flyway's history, which the application cannot read")
+    @DisplayName("the schema holds exactly the tables its migrations created, and the"
+            + " application cannot read Flyway's history")
     void floorsOnlyAndTheHistoryIsConfined() throws SQLException {
-        // "No tables" with one honest exception: Flyway keeps this schema's history HERE, which
-        // is the record of what was applied. An application role that could read or write it
-        // could make the schema's provenance disagree with the schema.
-        assertThat(tablesIn(SCHEMA)).containsExactly("flyway_schema_history");
+        // The P8-TSK-001 floor asserted "no table but Flyway's history"; each migration widens
+        // this list with exactly what it creates (the settlement sibling's discipline), so a
+        // table nobody's task shipped is a failure here. The history stays the migrator's: an
+        // application role that could read or write it could make the schema's provenance
+        // disagree with the schema.
+        assertThat(tablesIn(SCHEMA))
+                .containsExactlyInAnyOrder(
+                        "flyway_schema_history",
+                        // V002 (P8-TSK-004): the expectation register and rule set v1.
+                        "rule_set",
+                        "rule_set_lag",
+                        "rule",
+                        "tolerance",
+                        "provider_fee_schedule",
+                        "severity_threshold",
+                        "expectation",
+                        "expectation_event",
+                        "expectation_key",
+                        "reference_alias");
 
         assertThatExceptionOfType(SQLException.class)
                 .isThrownBy(() -> asApplication(

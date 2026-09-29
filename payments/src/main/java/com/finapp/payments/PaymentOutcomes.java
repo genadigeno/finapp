@@ -146,6 +146,16 @@ public final class PaymentOutcomes {
     @NonNull private final SchemeExecutionClaimStore<Connection> claims;
 
     /**
+     * The expectation-opening seam (`P8-TSK-004`, ADR-0067, {@link SettlementExpectations}):
+     * in the acting branch only, after the posting whose clearing line it copies, inside
+     * this transaction — required, with no do-nothing production implementation, because a
+     * completion that opens nothing loses track of money. `P8-TSK-004` calls it for the card
+     * capture and the card refund; the push and dispute completions join with `P8-TSK-005`.
+     * Appended last (the constructor is positional history).
+     */
+    @NonNull private final SettlementExpectations expectations;
+
+    /**
      * What committed (or was found committed by the loser of a harmless race).
      *
      * @param acting whether <strong>this</strong> call's conditional transition fired
@@ -328,11 +338,9 @@ public final class PaymentOutcomes {
                     // the composer runs here, on this connection, after the conditional
                     // transition has been won, so it runs exactly once per capture however
                     // many resolvers raced.
+                    AccountPurpose clearingPurpose = clearingPurposeOf(uow, attemptId);
                     LedgerAccount clearing =
-                            chart.resolve(
-                                    uow,
-                                    clearingPurposeOf(uow, attemptId),
-                                    amount.currency());
+                            chart.resolve(uow, clearingPurpose, amount.currency());
                     LocalDate today = LocalDate.now(clock.withZone(ZoneOffset.UTC));
                     CaptureSettlement settlement =
                             new CaptureSettlement(
@@ -379,6 +387,37 @@ public final class PaymentOutcomes {
                     }
                     announce(uow, CAPTURED_EVENT_TYPE, intentId, "CAPTURED",
                             Optional.empty(), correlation, now);
+
+                    // THE EXPECTATION (P8-TSK-004, ADR-0067): the clearing line's tracked
+                    // counterpart, in THIS transaction, after every ledger row above - the
+                    // capture, its posting and its expectation commit together or not at
+                    // all. Amount and direction are derived from the posted line by the
+                    // implementation, so the expectation cannot contradict the entry. A
+                    // capture reaching this branch is always on a clearing-purposed rail
+                    // (clearingPurposeOf threw otherwise).
+                    expectations.open(
+                            uow,
+                            new SettlementExpectations.Opening(
+                                    SettlementExpectations.Kind.CARD_CAPTURE,
+                                    attemptId.value().toString(),
+                                    "payment-capture:" + attemptId.value(),
+                                    clearingPurpose,
+                                    clearing.id(),
+                                    posted.entryId(),
+                                    today,
+                                    Optional.empty(),
+                                    List.of(
+                                            new SettlementExpectations.Key(
+                                                    SettlementExpectations.ReferenceKind
+                                                            .PSP_CAPTURE_REF,
+                                                    providerReference.orElseThrow().value()),
+                                            // The anchor the ARN alias resolves to
+                                            // (ADR-0067 §5), in either arrival order.
+                                            new SettlementExpectations.Key(
+                                                    SettlementExpectations.ReferenceKind
+                                                            .CARD_ATTEMPT,
+                                                    attemptId.value().toString())),
+                                    correlation));
                 }
                 committedAttempt = PaymentAttemptStatus.CAPTURED;
                 committedIntent = PaymentIntentStatus.SUCCEEDED;
@@ -1042,30 +1081,70 @@ public final class PaymentOutcomes {
                     // a RETURNED policy, gives the merchant back its share of the fee - four
                     // lines. Which it is depends on the flow that created the intent, and
                     // this module deliberately cannot tell.
-                    postings.post(
-                            uow,
-                            new PostingCommand(
-                                    "payment-refund:" + refund.id().value(),
-                                    today,
-                                    today,
-                                    refund.id().value().toString(),
-                                    refundComposition.settle(
-                                            uow,
-                                            new RefundSettlement(
-                                                    intentId,
-                                                    refund.attemptId(),
-                                                    refund.id(),
-                                                    counterpart,
-                                                    wallet,
-                                                    refund.amount(),
-                                                    refundedBefore,
-                                                    correlation,
-                                                    now))));
+                    com.finapp.ledger.PostingResult refundPosted =
+                            postings.post(
+                                    uow,
+                                    new PostingCommand(
+                                            "payment-refund:" + refund.id().value(),
+                                            today,
+                                            today,
+                                            refund.id().value().toString(),
+                                            refundComposition.settle(
+                                                    uow,
+                                                    new RefundSettlement(
+                                                            intentId,
+                                                            refund.attemptId(),
+                                                            refund.id(),
+                                                            counterpart,
+                                                            wallet,
+                                                            refund.amount(),
+                                                            refundedBefore,
+                                                            correlation,
+                                                            now))));
                     // The terminal fact publishes with the transition that commits it
                     // (INV-EVT-01) - inside the conditional, so a duplicate emits nothing.
                     announceRefund(
                             uow, REFUND_COMPLETED_EVENT_TYPE, refund, intentId,
                             correlation, now);
+
+                    // THE EXPECTATION (P8-TSK-004, ADR-0067): only where the stored rail
+                    // declares a clearing position - the BOOK refund's counterpart is the
+                    // intent's own wallet and no reconciled position moved - and only for
+                    // the capture-model rail: the push rail's return opens PUSH_RETURN with
+                    // P8-TSK-005, over this same seam. Judged from the stored rail's
+                    // declaration, never a name (INV-RAIL-01).
+                    RailCapabilities refundedRail = refundedRailCapabilitiesOf(uow, refund);
+                    if (refundedRail.clearingPurpose().isPresent()
+                            && refundedRail.finality()
+                                    == RailCapabilities.Finality
+                                            .REVOCABLE_UNTIL_DISPUTE_WINDOW_ENDS) {
+                        expectations.open(
+                                uow,
+                                new SettlementExpectations.Opening(
+                                        SettlementExpectations.Kind.CARD_REFUND,
+                                        refund.id().value().toString(),
+                                        "payment-refund:" + refund.id().value(),
+                                        refundedRail.clearingPurpose().get(),
+                                        counterpart,
+                                        refundPosted.entryId(),
+                                        today,
+                                        Optional.empty(),
+                                        List.of(
+                                                new SettlementExpectations.Key(
+                                                        SettlementExpectations.ReferenceKind
+                                                                .PSP_REFUND_REF,
+                                                        providerReference
+                                                                .orElseThrow()
+                                                                .value()),
+                                                // The dispatch's own reference (rfd-…): what
+                                                // a report quoting OUR side carries.
+                                                new SettlementExpectations.Key(
+                                                        SettlementExpectations.ReferenceKind
+                                                                .OUR_REF,
+                                                        refund.providerIdempotencyReference()
+                                                                .value())),
+                                        correlation));
+                    }
                 }
                 committed = RefundStatus.COMPLETED;
             }
@@ -1618,6 +1697,20 @@ public final class PaymentOutcomes {
                                         "a book refund's intent carries its debit wallet:"
                                                 + " V019's XOR holds it for every writer"
                                                 + " (P7-TSK-011)"));
+    }
+
+    /** The refunded attempt's stored rail, read back to its declaration (`P8-TSK-004`). */
+    private RailCapabilities refundedRailCapabilitiesOf(Connection uow, Refund refund) {
+        RailId rail =
+                attempts.findById(uow, refund.attemptId())
+                        .orElseThrow(
+                                () ->
+                                        new IllegalStateException(
+                                                "a refund is being applied to attempt "
+                                                        + refund.attemptId()
+                                                        + ", which no longer reads back"))
+                        .rail();
+        return rails.capabilitiesOf(rail);
     }
 
     private AccountPurpose clearingPurposeOf(

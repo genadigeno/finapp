@@ -144,7 +144,10 @@ class PaymentCaptureTest {
                                 PaymentRails.of(java.util.List.of(SimulatedCardPspAdapter.RAIL)),
                                 IDS, CLOCK),
                         com.finapp.payments.RailOutcomeObserver.NONE,
-                        new com.finapp.payments.JdbcSchemeExecutionClaimStore());
+                        new com.finapp.payments.JdbcSchemeExecutionClaimStore(),
+                        // The expectation seam (P8-TSK-004): recorded, not opened -
+                        // this suite asserts capture semantics, not the register.
+                        new RecordingSettlementExpectations());
         return new PaymentCapture(
                 runner,
                 intents,

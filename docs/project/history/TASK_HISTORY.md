@@ -1,6 +1,6 @@
 # Task History
 
-The per-task completion records that accumulated behind `## Current Task` - 166 "Previously" blocks, newest first, from `P8-TSK-002` back to project initiation. *(`X-TSK-004` is cross-cutting and completed after the Phase 6 → 7 transition, so it stands second, between `P7-TSK-001` and the transition's record - the transition's block moved here by `P7-TSK-001`'s gate, exactly as an earlier form of this note said it would.)*
+The per-task completion records that accumulated behind `## Current Task` - 167 "Previously" blocks, newest first, from `P8-TSK-003` back to project initiation. *(`X-TSK-004` is cross-cutting and completed after the Phase 6 → 7 transition, so it stands second, between `P7-TSK-001` and the transition's record - the transition's block moved here by `P7-TSK-001`'s gate, exactly as an earlier form of this note said it would.)*
 
 **Archive.** These records were moved verbatim out of
 [`CURRENT_STATE.md`](../CURRENT_STATE.md) on 2026-09-20 so that the canonical description of
@@ -10,6 +10,48 @@ when they were written.
 
 Current state: [`CURRENT_STATE.md`](../CURRENT_STATE.md) ·
 Authoritative backlog: [`BACKLOG.md`](../BACKLOG.md)
+
+---
+
+### Previously
+
+**`P8-TSK-003` — The upload door, attestation and audited evidence access** — `COMPLETE`
+(2026-09-29). **M8.1, Evidence intake, CLOSES at 3 of 3**: settlement evidence now arrives over
+HTTP, waits visibly for its second person, and is readable only on the record. **Identity's
+fifth population** (`V016`, owner decision O1): `SETTLEMENT_INGEST` and
+`RECONCILIATION_INVESTIGATE`, held by `RECONCILIATION_OPERATOR` alone — pairwise disjoint from
+every desk it checks (`RoleNameTest`'s exact grants; `RECONCILIATION_RESOLVE` joins with
+`-015`). **Seven routes under `/v1/operator/settlement`** (each pinned in
+`RoutePermissionRegisterTest`, the OpenAPI baseline regenerated, seven `settlement.*` codes
+catalogued): the upload (`202 {fileId, status, duplicateOf?}`, keyed per principal under
+`settlement.upload:<actorType>:<actorId>` — the `X-TSK-003` disposition — with claim, reception
+and stored outcome ONE transaction, and **a refusal a recorded FAILED outcome that replays**,
+never an exception, its metadata row and audit committing while the client is told the line and
+field and never the value); the attestation (`INV-SET-07`'s upload half: row lock, conditional
+`NULL → value`, self-attestation refused at the domain AND by `V002`'s `CHECK`, the same
+attester converging, audited `settlement.SettlementFileAttested`); the metadata reads (sources,
+files, refused deliveries, bounded at 100 with `truncated`); and the ONE content path —
+`POST .../content-reads {reason}` under `RECONCILIATION_INVESTIGATE`, one
+`settlement.SettlementFileContentRead` record per read committed with the read, byte-identical
+content or a `FAILED` record and nothing served (`INV-REC-10`'s read half; a guessed id is a
+404 recording nothing). The transport carve-out: exactly the upload route admits its ~11.2 MiB
+base64 envelope (12 MiB bound, `finapp.api.settlement-upload-max-request-bytes`) while the
+DOMAIN refuses 8 MiB + 1 decoded as `413 settlement.FileTooLarge` with the audit record written
+— every other surface keeps the 1 MiB bound. The file gauges (`finapp.settlement.file.pending`,
+`.age` per source, `SettlementFileMetrics`) publish eagerly per declared source from a fresh
+instance, NaN when unreadable, zero when quiet. Proven over real HTTP and in settlement's own
+database tier: negatives per route (401, and 403 for the money-operating desk), replay
+byte-identical, key reuse 409, a second principal's same key its own claim and its same bytes
+`duplicateOf` with its own receipt, the ten-way attester race admitting exactly one, a PAN
+answering 422 naming line 2 and resting in no response, row, log or audit summary. **Five probe
+runs**: the attestation `CHECK`, the domain distinctness, the read audit and the per-principal
+scope each dropped and caught by the intended test; the row lock removed and the race still
+admitting one — the conditional is the arbiter, demonstrated rather than assumed
+(`MUTATION_TESTING.md` §2 +4 rows). Multi-instance `PASS` — the content unique, the
+per-principal claim and the conditional `NULL → value` are all PostgreSQL's. Deliberately
+deferred: the decline (`-008`, where `REJECTED` exists), parsed totals an attester reads first
+(`-008`), acceptance (`-009`), pull (`-021`), readmission (`-022`); the operators-audited-as-
+`CUSTOMER` debt stands (Phase 15) and does not weaken distinctness, which is by actor id.
 
 ---
 

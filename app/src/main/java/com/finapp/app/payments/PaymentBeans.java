@@ -970,7 +970,8 @@ class PaymentBeans {
                     unmatchedConfirmationStore,
             com.finapp.payments.ChargebackAccounting chargebackAccounting,
             com.finapp.payments.RailOutcomeObserver railOutcomeObserver,
-            com.finapp.payments.SchemeExecutionClaimStore<Connection> schemeExecutionClaimStore) {
+            com.finapp.payments.SchemeExecutionClaimStore<Connection> schemeExecutionClaimStore,
+            com.finapp.payments.SettlementExpectations settlementExpectations) {
         return new com.finapp.payments.PaymentOutcomes(
                 paymentIntentStore,
                 paymentAttemptStore,
@@ -998,7 +999,10 @@ class PaymentBeans {
                 // transaction commits (P7-TSK-015).
                 railOutcomeObserver,
                 // One scheme execution, one money fact (the Phase 7 -> 8 transition).
-                schemeExecutionClaimStore);
+                schemeExecutionClaimStore,
+                // The expectation-opening seam (P8-TSK-004, ADR-0067): every settling
+                // completion's tracked counterpart, in the completing transaction.
+                settlementExpectations);
     }
 
     @Bean
@@ -1220,7 +1224,9 @@ class PaymentBeans {
             Clock clock,
             TransactionTemplate paymentTransactions,
             DataSource dataSource,
-            com.finapp.payments.DisputeNotifications disputeNotifications) {
+            com.finapp.payments.DisputeNotifications disputeNotifications,
+            com.finapp.payments.PaymentRails paymentRails,
+            com.finapp.payments.SettlementExpectations settlementExpectations) {
         return new PaymentWebhookService(
                 webhookSignature,
                 providerEvidenceStore,
@@ -1230,12 +1236,16 @@ class PaymentBeans {
                 paymentMeters,
                 paymentOutcomes,
                 // The clearing recorder (P7-TSK-005): the door's non-transition effect,
-                // over the same outbox the outcome events travel.
+                // over the same outbox the outcome events travel - and, since P8-TSK-004,
+                // the ARN alias's registrar (ADR-0067 §5), judged from the stored rail's
+                // declaration.
                 new com.finapp.payments.PaymentClearing(
                         new com.finapp.payments.JdbcClearingRecordStore(),
                         outboxWriter,
                         idGenerator,
-                        clock),
+                        clock,
+                        paymentRails,
+                        settlementExpectations),
                 inboxConsumer,
                 objectMapper,
                 clock,

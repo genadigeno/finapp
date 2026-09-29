@@ -156,7 +156,8 @@ class PaymentVoidTest {
                                 attempts, intents, PaymentRails.of(List.of(SimulatedCardPspAdapter.RAIL)),
                                 IDS, CLOCK),
                         com.finapp.payments.RailOutcomeObserver.NONE,
-                        new com.finapp.payments.JdbcSchemeExecutionClaimStore());
+                        new com.finapp.payments.JdbcSchemeExecutionClaimStore(),
+                        new RecordingSettlementExpectations());
         return new PaymentVoid(
                 runner,
                 intents,

@@ -39,12 +39,19 @@ class PaymentClearingTest {
 
     private final FakeClearingStore clearings = new FakeClearingStore();
     private final List<EventEnvelope> events = new ArrayList<>();
+
+    /** The ARN alias seam (`P8-TSK-004`): only the acting insert may register. */
+    private final RecordingSettlementExpectations expectations =
+            new RecordingSettlementExpectations();
+
     private final PaymentClearing clearing =
             new PaymentClearing(
                     clearings,
                     (uow, envelope, payload, mediaType) -> events.add(envelope),
                     IDS,
-                    CLOCK);
+                    CLOCK,
+                    PaymentRails.of(List.of(SimulatedCardPspAdapter.RAIL)),
+                    expectations);
     /** Caused, as every delivery's is: resolvedCorrelation() roots the causation. */
     private final Correlation correlation =
             Correlation.startingWith(CorrelationId.of("clr-" + UUID.randomUUID()))

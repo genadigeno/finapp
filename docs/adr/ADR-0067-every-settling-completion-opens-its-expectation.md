@@ -482,12 +482,18 @@ transaction).
 
 ## Follow-up
 
-- `P8-TSK-004`: reconciliation V002 (`expectation` with its `settlement_cycle` attribute,
-  `expectation_event`, `expectation_key`, `reference_alias`, and the rule set seeded for four
-  sources, the payout source's operation-anchored `PAYOUT_RETURNED` rule among them, point 5),
-  `ExpectationRegister`, the
-  `SettlementExpectations` port in `PaymentOutcomes` (capture, card refund) and `PaymentClearing`
-  (the ARN alias), `app`'s recorder, and counted `KEY_COLLISION` events.
+- `P8-TSK-004` — **implemented** (2026-09-29): reconciliation V002 (`expectation` with its
+  `settlement_cycle` attribute, `expectation_event`, `expectation_key`, `reference_alias`, and
+  rule set v1 seeded `ACTIVE` for the four sources, the payout source's operation-anchored
+  `PAYOUT_RETURNED` rule among them, point 5), `ExpectationRegister` with its
+  `ON CONFLICT DO NOTHING` converges and counted `KEY_COLLISION` events (point 6), the
+  required `SettlementExpectations` port in `PaymentOutcomes` (the card capture and the card
+  refund, each in its acting branch after its posting) and `PaymentClearing` (the ARN alias,
+  the `RECORDED` branch alone), and `app`'s `ReconciliationExpectationRecorder`, which derives
+  amount and direction from the posted clearing line (point 3's "derived, never chosen") and
+  resolves the source through the compiled register. The dispute, push and unmatched openings
+  of point 2's table, the merchant port, the backfill (point 8) and the register/verifier
+  (point 9) remain with their named tasks below.
 - `P8-TSK-005`: `ChargebackAccounting`, push execution, `WithdrawalOutcomes`, returns,
   `UnmatchedConfirmations` and the merchant port in `MerchantPayoutOutcomes`, plus the
   expectation-opener register.

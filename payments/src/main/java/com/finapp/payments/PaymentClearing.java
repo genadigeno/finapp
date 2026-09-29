@@ -46,6 +46,19 @@ public final class PaymentClearing {
     @NonNull private final IdGenerator ids;
     @NonNull private final Clock clock;
 
+    /** The stored rail's key back to its declaration (`P8-TSK-004`, `INV-RAIL-01`). */
+    @NonNull private final PaymentRails rails;
+
+    /**
+     * The ARN alias's seam (`P8-TSK-004`, ADR-0067 §5): the acting insert registers the
+     * acquirer reference as an alias resolving to the attempt's {@code CARD_ATTEMPT}
+     * anchor, in this same transaction — in either order with the capture's expectation,
+     * because the matcher's two-hop join makes order irrelevant. Only {@code RECORDED}
+     * registers: the repeats, the claimed-elsewhere and the second presentment leave the
+     * first record standing and rest as evidence. Appended last (positional history).
+     */
+    @NonNull private final SettlementExpectations expectations;
+
     /** What one notice did — the caller's logging and metering seam. */
     public enum Outcome {
         /** This call recorded the clearing and published the event. */
@@ -129,6 +142,27 @@ public final class PaymentClearing {
                         .with("rail", attempt.rail().value())
                         .toBytes(),
                 EventPayload.MEDIA_TYPE);
+
+        // THE ALIAS (P8-TSK-004, ADR-0067 §5): the network's reference resolves to the
+        // attempt anchor, whatever the attempt's state - the ARN is evidence even against a
+        // voided or failed attempt, and the matcher then finds no candidate and types the
+        // break. Judged from the stored rail's declaration; a clearing on a rail declaring
+        // no position (unreachable today - only the card rail clears) registers nothing.
+        rails.capabilitiesOf(attempt.rail())
+                .clearingPurpose()
+                .ifPresent(
+                        position ->
+                                expectations.alias(
+                                        unitOfWork,
+                                        new SettlementExpectations.AliasRegistration(
+                                                position,
+                                                SettlementExpectations.ReferenceKind
+                                                        .ACQUIRER_REF,
+                                                acquirerReference.value(),
+                                                SettlementExpectations.ReferenceKind
+                                                        .CARD_ATTEMPT,
+                                                attempt.id().value().toString(),
+                                                correlation)));
         return Outcome.RECORDED;
     }
 }

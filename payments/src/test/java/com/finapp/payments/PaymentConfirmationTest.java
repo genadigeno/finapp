@@ -158,7 +158,8 @@ class PaymentConfirmationTest {
                         PaymentRails.of(java.util.List.of(SimulatedCardPspAdapter.RAIL)),
                         IDS, CLOCK),
                 com.finapp.payments.RailOutcomeObserver.NONE,
-                new com.finapp.payments.JdbcSchemeExecutionClaimStore());
+                new com.finapp.payments.JdbcSchemeExecutionClaimStore(),
+                new RecordingSettlementExpectations());
     }
 
     @Test
