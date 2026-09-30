@@ -358,7 +358,16 @@ class SystemActorCallSitesAreEnumeratedTest {
                         + " person DOES decide - the four-eyes transfer of a return that could"
                         + " not apply - they act as themselves through the break's own doors."
                         + " The scope wraps each item's re-read-and-apply, one transaction per"
-                        + " item; the page read before it claims nothing."));
+                        + " item; the page read before it claims nothing."),
+                    Map.entry(
+                            "com.finapp.app.settlement.SettlementPullSweep.sweep",
+                    "The settlement pull schedule (P8-TSK-021, ADR-0066 section 1): the platform"
+                        + " fetches a counterparty's report over the source's own credential"
+                        + " because the report is owed - nobody asked. Attributing a pulled"
+                        + " file to a person would record them as having delivered evidence"
+                        + " they never saw; when a person DOES ask - the operator's fetch door -"
+                        + " they act as themselves. The scope wraps each owed key's pull, one"
+                        + " permit and one reception transaction per key."));
 
     @Test
     @DisplayName("no production code claims the system actor without being enumerated")

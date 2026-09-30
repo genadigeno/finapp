@@ -1,6 +1,6 @@
 # Task History
 
-The per-task completion records that accumulated behind `## Current Task` - 183 "Previously" blocks, newest first, from `P8-TSK-019` back to project initiation. *(`X-TSK-004` is cross-cutting and completed after the Phase 6 → 7 transition, so it stands second, between `P7-TSK-001` and the transition's record - the transition's block moved here by `P7-TSK-001`'s gate, exactly as an earlier form of this note said it would.)*
+The per-task completion records that accumulated behind `## Current Task` - 184 "Previously" blocks, newest first, from `P8-TSK-020` back to project initiation. *(`X-TSK-004` is cross-cutting and completed after the Phase 6 → 7 transition, so it stands second, between `P7-TSK-001` and the transition's record - the transition's block moved here by `P7-TSK-001`'s gate, exactly as an earlier form of this note said it would.)*
 
 **Archive.** These records were moved verbatim out of
 [`CURRENT_STATE.md`](../CURRENT_STATE.md) on 2026-09-20 so that the canonical description of
@@ -14,6 +14,80 @@ Authoritative backlog: [`BACKLOG.md`](../BACKLOG.md)
 ---
 
 ### Previously
+
+**`P8-TSK-020` — Unmatched confirmations join suspense management** — `COMPLETE` (2026-10-01).
+**M8.6, Every counterparty, CLOSES at 4 of 4**: every unmatched confirmation now owns its value —
+the CREDIT suspense item for the line its entry put into `SUSPENSE_UNMATCHED` and the break that owns
+it, born in the parking's own transaction (`INV-REC-09`), released only by a person's resolution
+(`INV-REC-05`: the scheme's `CREDIT_IN` settles the parking's expectation and leaves the item `OPEN`);
+every Phase 7 parking is adopted once by the opening-position backfill, dated from its own entry; and
+the payments gauges say what they count (ADR-0070 §2's `UNMATCHED_CONFIRMATION` row and §8; protected
+`INV-SET-02`, `INV-IDEM-04`, `INV-AUD-02`, `INV-RAIL-04`). **ONE MIGRATION, A RECORDED DEVIATION** —
+the backlog's "Persistence: none new" did not hold, the fourth time in five tasks: a parking's owner
+is a break standing on its own suspense item (ADR-0069 §2), and no writer had raised one — the item
+names its owner, the owner's frozen subject names the item, and neither immediate key let the pair be
+born. Reconciliation `V011` makes `break_suspense_item_fk` `DEFERRABLE INITIALLY IMMEDIATE`, deferred
+by the one opener alone for its two inserts and set `IMMEDIATE` again at once, every other writer
+still meeting it at its own statement; and appends the cause `EXECUTION_ALREADY_EXPLAINED` — `P8-TSK-022`
+and `-023` renumbered to `V012` and `V013`. **THE RECORDED DESIGN INPUT, DECIDED**: a parking payments
+`V023`'s backfill left unclaimed — its scheme execution a credit, a withdrawal or a return already
+explains — is owned as the duplicate it is, `DUPLICATE_EXTERNAL` under `EXECUTION_ALREADY_EXPLAINED`
+(ADR-0069 §2 amended: that cause alone stands on a suspense item), whose admitted kinds exclude
+`TRANSFER_TO_ACCOUNT` — its value was attributed once — leaving the gain after its minimum age beside
+a write-off of the doubled clearing remainder, the ADR's own candidate. **THE PORT**: payments'
+`SettlementExpectations.parked(ParkedValue)`, called by the claim's winner right after `open`, past
+the acting exit — identifiers and the parking's stored attribution only, never an amount — and `app`'s
+recorder reading the item's side, value and `opened_on` off the parking entry's `SUSPENSE_UNMATCHED`
+line, the owner's source the one that discharges the rail's position; every test double of the port
+updated, the recording one recording. **THE OPENER** (reconciliation `ParkedConfirmations`): the
+standing item converges first; otherwise the break and the item inside a savepoint, a racer losing
+`UNIQUE (origin_ref)` rolling back to it — its break, event and audit never existed — no advisory
+and no lock on any committed row, so a pay-in delivery never waits on a matcher. **THE OWNER'S FACTS**:
+the parking's stored cause as `internal_state`, the named attempt (or the claim's standing subject)
+as `internal_operation_ref`, `UNKNOWN`/`TERMINAL`/`COMPLETED`; its trace reaches the raw statement
+through the item's new `EXPECTED_AS` step to the parking's `UNMATCHED_CONFIRMATION` expectation.
+**THE BACKFILL**: the parking leg opens the owner beside the expectation, typing an unclaimed parking
+by the scheme-execution claim that stands. **THE GAUGES**: `finapp.payments.unmatched.active` and
+`.age` read "parked, ever", names unchanged, the Phase 7 plan's rows annotated; the storm's at-rest
+assertion now reads ZERO unattributed suspense lines and zero unowned items — which pays the storm half
+of `P8-TSK-019`'s co-location debt: no earlier suite can move it any more. **DOCUMENTS**: ADR-0067,
+ADR-0069 (amended), ADR-0070 (the design input decided) and ADR-0072 notes, `INV-REC-09` as built,
+`RECONCILIATION_MODEL`, the lifecycle document, `MODULE_ARCHITECTURE`, `DISTRIBUTED_EXECUTION`'s
+lock-order reasoning, the plan's migration table and renumbering, the `V011`/`V012` references
+renumbered across the ADRs, the model, the lifecycle document and the backlog (one stale `V011` for
+`-023` an earlier renumber had missed, corrected). **THE BUILD'S FINDS, EACH FIXED** (the tests agent's, before its suite first ran): the item's side
+had been read through the clearing mapping — a CREDIT on a position is OUTBOUND — which made every
+parking a DEBIT item, off by twice its value in the suspense identity and refusing the transfer and
+the gain; and an `AMOUNT_MISMATCH` parking (and a stale-read `ATTEMPT_CONCLUDED` one, parked inside
+the applier) filed its raw statement on the attempt, never the parking, contrary to payments
+`V023`'s own comment — the applier now reports the parking it made (`PaymentOutcomes.Applied.parking`)
+and both producers, the instant door and the inquiry sweep, address the bytes to it. **EIGHT PROBES,
+EIGHT CAUGHT** (`MUTATION_TESTING` §2 +8 rows under `INV-REC-09` ×3, `INV-REC-05` ×3, `INV-REC-01`
+×2): the port bypassed (eight cases, no owner); the losing racer's savepoint rollback dropped (every
+loser failed at the deferred check); the deferral dropped (no owner could be born); `opened_on` from
+the clock (an adopted parking made young); the explained duplicate's refinement dropped (a transfer
+admitted twice); the backfill ignoring the standing claim (an unclaimed parking made attributable);
+the trace's `EXPECTED_AS` step dropped; the door ignoring the applier's parking — every restore
+byte-identical (sha256). **THE GATE'S FIND, FIXED**: the proof group met a flaky `P8-TSK-014` fixture — the investigation
+suite's note needle, a UUID's hex, now and then holds a Luhn-valid digit run the note screen rightly
+refuses (a 422 where 201 was expected) — now letters only; the screen unchanged (the `P8-TSK-017`
+cycle-fixture class). **Multi-instance PASS**: ten
+fresh-id deliveries of one confirmation leave one parking, one item and one break (the claim, then
+the origin unique); ten racing openers of one parking and ten racing backfills beside live parkings
+each own it once, the losers' breaks gone with their savepoints (counted). **NEXT**: `P8-TSK-021`
+`READY` (pull acquisition, per-source credentials and source silence — opening M8.7). **Verified** by
+targeted tiers from fresh runs on the final code — payments hermetic 246 across 35 suites,
+reconciliation hermetic 117 across 22 (`V011`'s pins, the amended admission and subject rules) and
+database 120 across 13 (the opener's four cases with its ten-way race and the deferred key's scope,
+the scheme suite's parking left `OPEN` by its `CREDIT_IN`), app hermetic 574 across 107 suites, the
+parking suite in its own container 9 across 1 (the live parking, ten fresh-id deliveries, the
+attributed parkings' owners and traces to their statements, ten backfills racing live parkings over
+history, the unclaimed duplicate, the four-eyes release, the proofs after adoption, the recorder's
+failure rolling the delivery back), the pay-by-bank suite 30 across 1, the twelve proof-group suites
+in ONE shared container 62 across 12 (the storm's at-rest suspense at zero among them), the
+column-classification guard 5, and the document guards 125 across 22 suites re-run after the records
+landed, ALL 0 FAILURES — the full battery and the fleet-wide database and kafka tiers deliberately
+skipped on the owner's instruction.
 
 **`P8-TSK-019` — Payout returns** — `COMPLETE` (2026-09-30). **M8.6, Every counterparty, at 3 of
 4**: a payout the beneficiary bank returned is now a merchant fact applied from settlement evidence

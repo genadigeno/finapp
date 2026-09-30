@@ -101,6 +101,30 @@ public enum SettlementAuditAction implements AuditableAction {
             "The accept leg recognised a settlement batch: sequenced gaplessly, its fees"
                     + " posted (or honestly omitted at zero), its run and items handed to"
                     + " reconciliation - identifiers and counts only.",
+            false),
+
+    /**
+     * The platform received a settlement file by pulling it (`P8-TSK-021`, ADR-0066 §1) - the
+     * door's audit word for the {@code PULL} channel, written in the reception's one
+     * transaction, acting-only: a duplicate pull writes its receipt and no second record. The
+     * source's own confined credential is the authentication ({@code INV-SET-07}).
+     */
+    SETTLEMENT_FILE_RECEIVED_BY_PULL(
+            "settlement.SettlementFileReceivedByPull",
+            "The platform pulled a settlement file over the source's own credential; the record"
+                    + " names the source, the channel and the content address, never the"
+                    + " content.",
+            false),
+
+    /**
+     * An operator asked for a source's report to be pulled now (`P8-TSK-021`,
+     * {@code POST /v1/operator/settlement/sources/{code}/fetch}): the request and what it came
+     * to - the source, the business key and the outcome, never a byte of the report.
+     */
+    SETTLEMENT_FETCH_REQUESTED(
+            "settlement.SettlementFetchRequested",
+            "An operator requested a pull of a source's report; the record names the source,"
+                    + " the business key and the outcome.",
             false);
 
     private final String code;

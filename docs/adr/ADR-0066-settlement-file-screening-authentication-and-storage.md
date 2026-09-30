@@ -521,6 +521,24 @@ ceiling), ADR-0046 (no connection across a pull), ADR-0008 (the collector SPI).
   candidate) and `P8-TSK-022` (readmission, including the attested readmission of an unattested
   original and the readmission of a `CONFLICTING_BATCH` original whose conflicting batch is
   `REPUDIATED`; the re-parse verification; and the declined-upload question of point 8).
+- `P8-TSK-021` — **implemented** (2026-10-01): point 1's `PULL` channel. The
+  `SettlementReportCollector` SPI in `settlement` and one `app` HTTP adapter per pulled source,
+  each over its own confined credential (`FINAPP_SETTLEMENT_PSP_REPORT_KEY`,
+  `_SCHEME_REPORT_KEY`, `_PAYOUT_REPORT_KEY`, `_BANK_STATEMENT_KEY`), present only when its URL is
+  configured; `ProviderTransportGuard` gained the source-URL list, admitting `https` or `sftp`
+  off loopback and plain transport only to loopback; `SettlementPull` takes the permit in its
+  own transaction, fetches holding no connection, and receives through the one door with
+  `received_via = PULL`, audited `settlement.SettlementFileReceivedByPull`; the accept leg's
+  existing eligibility accepts it without attestation (`INV-SET-07`). `pull_permit` (settlement
+  `V008`) paces the herd — point 10's row — and `SettlementPullSchedule` derives its worklist
+  from stored rows. `POST /v1/operator/settlement/sources/{code}/fetch` answers what the pull
+  came to, audited `settlement.SettlementFetchRequested` — a pull that throws recorded `FAILED`
+  before it propagates. `finapp.settlement.source.silence` and `finapp.settlement.pull.failure`
+  are published. **Only HTTP is built**: the guard admits `sftp` as this ADR allows, but no
+  `sftp` collector exists, so the HTTP adapter refuses any other scheme at construction — an
+  `sftp` source URL fails startup rather than every pull (the tests agent's find). The scheme's
+  cycle worklist walks every keyset page of payments' cycle reads, never a fixed first page
+  (the gate's find).
 - `P8-TST-001` delivers every file twice, by upload with attestation and by racing pulls, out of
   order and late.
 - `X-TSK-008`: bind associated data in `EvidenceCipher`, `PayoutEvidenceCipher`, `DocumentCipher`

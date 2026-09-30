@@ -1748,6 +1748,53 @@ class PayByBankDatabaseTest {
                 .isZero();
     }
 
+    /**
+     * THE PULL'S CYCLE WORKLIST READS THE REAL SCHEMA (`P8-TSK-021`, the gate's find): payments'
+     * {@code SettlementCycleReads} folds the three stored {@code settlement_cycle} columns to each
+     * token's earliest record, one keyset page at a time - every UNION branch executes, the page
+     * after a token excludes it, and the {@code since} bound excludes what is older.
+     */
+    @Test
+    @DisplayName("the pull's cycle reads: every cycle a pay-in names, first seen at its earliest"
+            + " record, one keyset page at a time, bounded by since (P8-TSK-021)")
+    void theCycleReadsWalkTheRealSchema() throws Exception {
+        Fixture f = bankFixture();
+        String stem = "CY" + suffix();
+        String first = stem + "A";
+        String second = stem + "B";
+        java.time.Instant before = java.time.Instant.now().minus(java.time.Duration.ofMinutes(5));
+        for (String cycle : List.of(first, second, second)) {
+            schemeInitiates("https://payer-psp.example/authorize/" + suffix());
+            String attemptId = attemptIdOf(field(confirmedPayment(f, "1.00").body(), "id"));
+            assertThat(executedCallback(
+                            referenceOf(attemptId), "sch-pull-" + suffix(), cycle, "1.00", "USD"))
+                    .isEqualTo(204);
+        }
+        com.finapp.payments.JdbcSettlementCycleReads reads =
+                new com.finapp.payments.JdbcSettlementCycleReads();
+        try (Connection app = DatabaseRoles.application()) {
+            List<com.finapp.payments.SettlementCycleReads.SeenCycle> fromTheStem =
+                    reads.cyclesSince(app, before, java.util.Optional.of(stem), 2);
+            assertThat(fromTheStem)
+                    .extracting(com.finapp.payments.SettlementCycleReads.SeenCycle::cycle)
+                    .as("the page after the stem, in cycle order, each cycle once")
+                    .containsExactly(first, second);
+            assertThat(fromTheStem)
+                    .allSatisfy(seen -> assertThat(seen.firstSeen()).isAfter(before));
+            assertThat(reads.cyclesSince(app, before, java.util.Optional.of(first), 1))
+                    .extracting(com.finapp.payments.SettlementCycleReads.SeenCycle::cycle)
+                    .as("the page after a cycle excludes it")
+                    .containsExactly(second);
+            assertThat(reads.cyclesSince(
+                            app,
+                            java.time.Instant.now().plus(java.time.Duration.ofHours(1)),
+                            java.util.Optional.of(stem),
+                            10))
+                    .as("records older than since name no cycle")
+                    .isEmpty();
+        }
+    }
+
     /** Ten calls released behind one gate, every one awaited. */
     private static void tenAtOnce(java.util.concurrent.Callable<?> sweep) throws Exception {
         java.util.concurrent.CountDownLatch open = new java.util.concurrent.CountDownLatch(1);

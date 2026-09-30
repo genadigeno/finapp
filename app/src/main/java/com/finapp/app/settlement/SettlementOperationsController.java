@@ -39,6 +39,7 @@ import org.springframework.web.bind.annotation.RestController;
 public class SettlementOperationsController {
 
     @NonNull private final SettlementOperations settlement;
+    @NonNull private final SettlementFetch fetch;
 
     /**
      * Introduces evidence. A {@code 202}, deliberately: reception is synchronous but the
@@ -54,6 +55,20 @@ public class SettlementOperationsController {
             @Valid @RequestBody SettlementFileUploadRequest body,
             @RequestHeader(IdempotencyKeyHeader.NAME) String idempotencyKey) {
         return settlement.upload(idempotencyKey, body);
+    }
+
+    /**
+     * Pulls a source's report now (`P8-TSK-021`, ADR-0066 §1): the schedule's own pull over the
+     * source's confined credential, its permit renewed rather than windowed. A {@code 200} with
+     * what it came to — received, a duplicate of a standing file, refused at the door, not yet
+     * published, failed, or not pullable — because the request was served either way. No
+     * idempotency key: the content address makes a repeated fetch one file.
+     */
+    @PostMapping(path = "/sources/{code}/fetch", consumes = MediaType.APPLICATION_JSON_VALUE)
+    @RequiresPermission(PermissionName.SETTLEMENT_INGEST)
+    public SettlementFetch.FetchAnswer fetchSettlementReport(
+            @PathVariable String code, @Valid @RequestBody SettlementFetchRequest body) {
+        return fetch.fetch(code, body);
     }
 
     /**

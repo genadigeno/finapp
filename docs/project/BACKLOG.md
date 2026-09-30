@@ -12219,7 +12219,7 @@ break row, as the approval door must.)*
 - **Definition of done**: `DOD-FIN`, `DOD-OBS`, `DOD-TEST`. **Risk**: Medium (a Phase 7 call site on
   the pay-in callback path). **Cx**: S.
 
-**P8-TSK-021 — Pull acquisition, per-source credentials and source silence** — `READY` (marked by `P8-TSK-020`'s completion gate)
+**P8-TSK-021 — Pull acquisition, per-source credentials and source silence** — `COMPLETE` (2026-10-01)
 - **Objective**: each source's evidence fetched on schedule over its own confined credential and
   accepted without a second person, because the channel authenticates it (`INV-SET-07`);
   deduplicated with uploads by content; every silent source visible.
@@ -12258,8 +12258,13 @@ break row, as the approval door must.)*
   multi-part or superseding files; object storage (ADR-0036's trigger, re-assessed by ADR-0066);
   retention deletion.
 - **Domain changes**: `SettlementReportCollector`, `PullPermit`, the expected-arrival derivation.
+  *(As built: `PullPermit` is a store, `PullPermitStore` — the permit is a pacing row with no
+  behaviour of its own to protect; the derivation is `ExpectedArrivals`, pure; the scheme's cycle
+  tokens come through payments' new public read store `SettlementCycleReads`, read in `app`.)*
 - **Persistence**: settlement `V00x` (`pull_permit`, conditional `UPDATE` only), its
-  `DATA_CLASSIFICATION.md` §4 rows in the same change.
+  `DATA_CLASSIFICATION.md` §4 rows in the same change. *(As built: settlement `V008`, the claim a
+  conditional upsert — the first attempt inserts — and every renewal strictly advancing under a
+  trigger for every writer; five classification rows. The claim held: one migration.)*
 - **APIs**: `POST /settlement/sources/{code}/fetch` under `SETTLEMENT_INGEST`, natural idempotency
   (the content address), `settlement.SourceUnknown` and `settlement.SourceRetired`, a
   `RoutePermissionRegisterTest` row, the OpenAPI baseline regenerated (additive under v1, ADR-0015).
@@ -12319,7 +12324,7 @@ break row, as the approval door must.)*
   criterion ("by pull where declared") is read against it. `finapp.settlement.source.silence` is not
   deferred with it: it reads accepted batches, not pulls, and moves to `P8-TSK-024`.
 
-**P8-TSK-022 — Rule-set administration, reprocessing, readmission, run requeue and replay** — `PLANNED`
+**P8-TSK-022 — Rule-set administration, reprocessing, readmission, run requeue and replay** — `READY` (marked by `P8-TSK-021`'s completion gate)
 - **Objective**: the platform can be operated without editing history (`INV-HIST-04`, `INV-REC-04`,
   `INV-AUD-04`): matching policy changes only forward and only under four-eyes; residual items are
   reprocessed under the new version; a file our own defect rejected is readmitted; a blocked run is

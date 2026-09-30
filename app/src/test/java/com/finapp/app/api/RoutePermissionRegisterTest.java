@@ -104,6 +104,8 @@ class RoutePermissionRegisterTest {
                     // and audited per read (INV-REC-10) - is RECONCILIATION_INVESTIGATE
                     entry("POST /v1/operator/settlement/files", PermissionName.SETTLEMENT_INGEST),
                     entry("POST /v1/operator/settlement/files/{id}/attestation", PermissionName.SETTLEMENT_INGEST),
+                    // P8-TSK-021: an operator's pull, the ingest permission's other channel.
+                    entry("POST /v1/operator/settlement/sources/{code}/fetch", PermissionName.SETTLEMENT_INGEST),
                     entry("GET /v1/operator/settlement/sources", PermissionName.RECONCILIATION_INVESTIGATE),
                     entry("GET /v1/operator/settlement/files", PermissionName.RECONCILIATION_INVESTIGATE),
                     entry("GET /v1/operator/settlement/files/{id}", PermissionName.RECONCILIATION_INVESTIGATE),

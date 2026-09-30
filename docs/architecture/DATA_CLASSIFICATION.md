@@ -1056,6 +1056,11 @@ columns hold platform actor identifiers (`audit_record.actor`'s reasoning), and 
 | `file_receipt` | `actor_type` | `INTERNAL` | The actor's kind |
 | `file_receipt` | `received_at` | `INTERNAL` | When the delivery arrived |
 | `file_receipt` | `correlation_id` | `INTERNAL` | The flow's correlation |
+| `pull_permit` | `source_id` | `INTERNAL` | The pulled source - an identifier of a thing (`P8-TSK-021`) |
+| `pull_permit` | `business_key` | `INTERNAL` | Which report a pull fetches: an ISO business date or a scheme cycle token - an operational label, no party's data |
+| `pull_permit` | `last_attempt_at` | `INTERNAL` | When the herd last attempted - pacing, never correctness |
+| `pull_permit` | `attempts` | `INTERNAL` | An attempt count |
+| `pull_permit` | `created_at` | `INTERNAL` | A system timestamp |
 | `refused_delivery` | `id` | `INTERNAL` | A record identifier. Generated |
 | `refused_delivery` | `source_id` | `INTERNAL` | The delivering source - an identifier of a thing |
 | `refused_delivery` | `content_sha256` | `INTERNAL` | The refused bytes' fingerprint - what chains the refusal to a re-presentation, recoverable from nothing |

@@ -389,6 +389,11 @@ class CredentialReachesNoEmittedSinkTest {
                         // audit record's reason columns - INV-AUD-03). No secret; the
                         // SettlementContentReadRequest shape, at the decline.
                         "SettlementFileDeclineRequest",
+                        // P8-TSK-021. Carries only a BUSINESS KEY - an ISO date or a scheme
+                        // cycle token, shaped by a pattern at the boundary, bound for the permit
+                        // row and the fetch's audit summary. No secret: the source's report
+                        // credential is configuration, never a request field.
+                        "SettlementFetchRequest",
                         // P8-TSK-007. Carries only a REASON (free prose by the reconciliation
                         // controller, bound for the audit record's reason column - the
                         // opening-position backfill INV-AUD-03 requires a reason for). No

@@ -123,6 +123,7 @@ class SettlementMigrationTest {
                         "ingestion_error",
                         "line",
                         "line_reference",
+                        "pull_permit",
                         "refused_delivery",
                         "source");
 

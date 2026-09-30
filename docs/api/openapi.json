@@ -5452,6 +5452,20 @@
         },
         "type": "object"
       },
+      "FetchAnswer": {
+        "properties": {
+          "fileId": {
+            "type": "string"
+          },
+          "outcome": {
+            "type": "string"
+          },
+          "reason": {
+            "type": "string"
+          }
+        },
+        "type": "object"
+      },
       "FileList": {
         "properties": {
           "files": {
@@ -7335,6 +7349,19 @@
         },
         "required": [
           "reason"
+        ],
+        "type": "object"
+      },
+      "SettlementFetchRequest": {
+        "properties": {
+          "businessKey": {
+            "minLength": 1,
+            "pattern": "[A-Za-z0-9][A-Za-z0-9._:-]{0,63}",
+            "type": "string"
+          }
+        },
+        "required": [
+          "businessKey"
         ],
         "type": "object"
       },
@@ -11322,6 +11349,43 @@
               "application/json": {
                 "schema": {
                   "$ref": "#/components/schemas/SourceList"
+                }
+              }
+            },
+            "description": "OK"
+          }
+        }
+      }
+    },
+    "/v1/operator/settlement/sources/{code}/fetch": {
+      "post": {
+        "operationId": "fetchSettlementReport",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "code",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/SettlementFetchRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/FetchAnswer"
                 }
               }
             },

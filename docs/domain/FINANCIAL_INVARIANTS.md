@@ -620,6 +620,12 @@ channel. The readmission clause is ADR-0066 §8 as the transition's consistency 
 whose conflicting batch is now `REPUDIATED` is readmissible; whether a declined upload is, is
 `P8-TSK-022`'s to decide, and such a readmission would inherit nothing and be attested.)*
 
+*(As built by `P8-TSK-021`, 2026-10-01: the pulled channel exists — `SettlementPull` receives
+through the one door with `received_via = PULL` after a fetch over the source's own confined
+credential, and the accept leg's eligibility admits it unattested; `ProviderTransportGuard` reads
+the four source URLs at startup. Demonstrated: a pulled file held for attestation, and the guard
+not consulted for a source URL, each caught — `MUTATION_TESTING.md` §2.)*
+
 ---
 
 # Reconciliation — `INV-REC`

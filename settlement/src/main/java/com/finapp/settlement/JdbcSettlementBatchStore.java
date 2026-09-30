@@ -559,6 +559,81 @@ public final class JdbcSettlementBatchStore implements SettlementBatchStore<Conn
         }
     }
 
+    @Override
+    public java.util.Set<LocalDate> acceptedBusinessDates(
+            Connection unitOfWork, UUID sourceId, LocalDate from, LocalDate to) {
+        Objects.requireNonNull(sourceId, "sourceId must not be null");
+        Objects.requireNonNull(from, "from must not be null");
+        Objects.requireNonNull(to, "to must not be null");
+        try (PreparedStatement read =
+                unitOfWork.prepareStatement(
+                        "SELECT DISTINCT business_date FROM settlement.batch"
+                                + " WHERE source_id = ? AND status = 'ACCEPTED'"
+                                + " AND business_date BETWEEN ? AND ?")) {
+            read.setObject(1, sourceId);
+            read.setObject(2, from);
+            read.setObject(3, to);
+            java.util.Set<LocalDate> dates = new java.util.TreeSet<>();
+            try (ResultSet row = read.executeQuery()) {
+                while (row.next()) {
+                    dates.add(row.getDate(1).toLocalDate());
+                }
+            }
+            return dates;
+        } catch (SQLException failure) {
+            throw new SettlementStorageException(
+                    "could not read the source's accepted business dates", failure);
+        }
+    }
+
+    @Override
+    public java.util.Set<String> acceptedBatchRefs(
+            Connection unitOfWork, UUID sourceId, java.util.Collection<String> refs) {
+        Objects.requireNonNull(sourceId, "sourceId must not be null");
+        Objects.requireNonNull(refs, "refs must not be null");
+        if (refs.isEmpty()) {
+            return java.util.Set.of();
+        }
+        try (PreparedStatement read =
+                unitOfWork.prepareStatement(
+                        "SELECT DISTINCT external_batch_ref FROM settlement.batch"
+                                + " WHERE source_id = ? AND status = 'ACCEPTED'"
+                                + " AND external_batch_ref = ANY (?)")) {
+            read.setObject(1, sourceId);
+            read.setArray(2, unitOfWork.createArrayOf("text", refs.toArray()));
+            java.util.Set<String> accepted = new java.util.TreeSet<>();
+            try (ResultSet row = read.executeQuery()) {
+                while (row.next()) {
+                    accepted.add(row.getString(1));
+                }
+            }
+            return accepted;
+        } catch (SQLException failure) {
+            throw new SettlementStorageException(
+                    "could not read the source's accepted batch references", failure);
+        }
+    }
+
+    @Override
+    public Map<UUID, Instant> lastAcceptedAt(Connection unitOfWork) {
+        try (PreparedStatement read =
+                unitOfWork.prepareStatement(
+                        "SELECT source_id, max(status_changed_at) FROM settlement.batch"
+                                + " WHERE status = 'ACCEPTED' GROUP BY source_id")) {
+            Map<UUID, Instant> latest = new java.util.HashMap<>();
+            try (ResultSet row = read.executeQuery()) {
+                while (row.next()) {
+                    latest.put(
+                            row.getObject(1, UUID.class), row.getTimestamp(2).toInstant());
+                }
+            }
+            return latest;
+        } catch (SQLException failure) {
+            throw new SettlementStorageException(
+                    "could not read the sources' latest acceptances", failure);
+        }
+    }
+
     private static Optional<UUID> singleUuid(
             Connection unitOfWork, String sql, UUID id, String failureMessage) {
         try (PreparedStatement read = unitOfWork.prepareStatement(sql)) {

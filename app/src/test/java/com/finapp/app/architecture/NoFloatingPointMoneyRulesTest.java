@@ -244,6 +244,13 @@ class NoFloatingPointMoneyRulesTest {
                     // Money arithmetic lives in PositionProof and folds through the kernel.
                     "com.finapp.app.telemetry.ReconciliationMetrics",
                     "com.finapp.app.telemetry.ReconciliationMetrics$Cached",
+                    // P8-TSK-021. The SAME case again, the SettlementFileMetrics shape: the
+                    // SILENCE of each source in whole SECONDS since its last accepted batch -
+                    // an Instant difference to the registry boundary, published through the
+                    // ToDoubleFunction Micrometer's Gauge imposes, NaN the sentinel for
+                    // unreadable or never accepted; the failure counter increments by one.
+                    // An age and a count, never an amount.
+                    "com.finapp.app.telemetry.SettlementPullMetrics",
                     // P2-TSK-001. The SAME case again, not a new one: counts of published,
                     // failed and dead-lettered events - ints out of RelayPollResult - published
                     // through Counter.increment(double), the only instrument Micrometer offers.

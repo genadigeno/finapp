@@ -295,6 +295,29 @@ public interface SettlementBatchStore<T> {
      */
     Optional<java.time.LocalDate> acceptedOnOf(T unitOfWork, UUID batchId);
 
+    /**
+     * The business dates in {@code [from, to]} for which {@code sourceId} holds an ACCEPTED
+     * batch (`P8-TSK-021`): the daily pull worklist's other half — a date with one is received,
+     * never expected again. Lock-free.
+     */
+    java.util.Set<LocalDate> acceptedBusinessDates(
+            T unitOfWork, UUID sourceId, LocalDate from, LocalDate to);
+
+    /**
+     * The batch references among {@code refs} for which {@code sourceId} holds an ACCEPTED
+     * batch (`P8-TSK-021`) — a scheme cycle's report received, its cycle the batch's
+     * {@code external_batch_ref}. Lock-free.
+     */
+    java.util.Set<String> acceptedBatchRefs(
+            T unitOfWork, UUID sourceId, java.util.Collection<String> refs);
+
+    /**
+     * Each source's latest acceptance, the ACCEPTED edge's instant (`P8-TSK-021`,
+     * {@code finapp.settlement.source.silence}): a source missing here has never had a batch
+     * accepted. Lock-free.
+     */
+    java.util.Map<UUID, Instant> lastAcceptedAt(T unitOfWork);
+
     /** The live unique refused an insert: another batch claimed the identity first. */
     final class LiveBatchConflict extends RuntimeException {
 

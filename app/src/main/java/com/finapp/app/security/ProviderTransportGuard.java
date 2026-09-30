@@ -25,6 +25,11 @@ import org.springframework.stereotype.Component;
  * and the tests live, and fails closed: a URL whose host cannot be read has not been shown to be
  * local. Every provider this build can be configured with is checked, absent ones skipped (an
  * unconfigured provider is the honest 503, never a hop).
+ *
+ * <p>Since `P8-TSK-021` the settlement pull sources join it (ADR-0066 §1): a pulled report
+ * moves money over a confined credential, so each source URL must be {@code https} or
+ * {@code sftp} off loopback — {@code sftp} admitted for these alone, a file-transfer channel a
+ * counterparty may offer — and plain transport only to loopback.
  */
 @Component
 public class ProviderTransportGuard {
@@ -38,10 +43,35 @@ public class ProviderTransportGuard {
                     "finapp.kyc.provider.url",
                     "finapp.merchant.payout.provider.url");
 
+    /**
+     * Every settlement pull source URL (`P8-TSK-021`): {@code https} or {@code sftp} off
+     * loopback.
+     */
+    static final List<String> SOURCE_URLS =
+            List.of(
+                    "finapp.settlement.psp.report.url",
+                    "finapp.settlement.scheme.report.url",
+                    "finapp.settlement.payout.report.url",
+                    "finapp.settlement.bank.statement.url");
+
     ProviderTransportGuard(Environment environment) {
         for (String property : PROVIDER_URLS) {
             verify(property, Optional.ofNullable(environment.getProperty(property)));
         }
+        for (String property : SOURCE_URLS) {
+            verifySource(property, Optional.ofNullable(environment.getProperty(property)));
+        }
+    }
+
+    /**
+     * A settlement pull source's URL (`P8-TSK-021`, ADR-0066 §1): {@link #verify}'s rule, with
+     * {@code sftp} admitted off loopback beside {@code https}.
+     *
+     * @throws IllegalStateException when a source off this machine would be reached over a
+     *     cleartext channel, or the URL cannot be shown to be either
+     */
+    public static void verifySource(String property, Optional<String> configured) {
+        check(property, configured, true);
     }
 
     /**
@@ -51,6 +81,10 @@ public class ProviderTransportGuard {
      *     TLS, or the URL cannot be shown to be either
      */
     public static void verify(String property, Optional<String> configured) {
+        check(property, configured, false);
+    }
+
+    private static void check(String property, Optional<String> configured, boolean sftp) {
         // Absent, blank or "false" is an unconfigured provider - exactly what each provider's
         // @ConditionalOnProperty reads as absent (a deployment and the tests switch one off by
         // setting it to false): no hop exists to guard.
@@ -70,7 +104,7 @@ public class ProviderTransportGuard {
         if (host == null || host.isBlank()) {
             throw refused(property, "names no host");
         }
-        if (scheme.equals("https")) {
+        if (scheme.equals("https") || (sftp && scheme.equals("sftp"))) {
             return;
         }
         String bareHost = host.startsWith("[") && host.endsWith("]")
