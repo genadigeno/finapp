@@ -492,7 +492,7 @@ class MultiRailConservationStormDatabaseTest {
             // 8-9): the backfill over the storm's live-opened history adds nothing - the
             // uniques converge - and the position proof and completeness verifier read 0 on
             // every clearing purpose, with SUSPENSE_UNMATCHED honestly counting exactly the
-            // parkings' own suspense lines until P8-TSK-020 adopts them.
+            // unadopted Phase 7 parkings' own suspense lines until P8-TSK-020 adopts them.
             String controller = operatorSession(RoleName.RECONCILIATION_CONTROLLER);
             // Scoped to the storm's own entries: the shared container carries earlier
             // suites' history, and adopting whatever of it never met a live opener is the
@@ -2951,8 +2951,11 @@ class MultiRailConservationStormDatabaseTest {
     /**
      * The two verdicts at rest (P8-TSK-007): every clearing position's identity holds and
      * every clearing line is known, in one fresh {@code REPEATABLE READ} snapshot;
-     * {@code SUSPENSE_UNMATCHED}'s unattributed count equals exactly the parkings' own
-     * suspense lines — the recorded truth until `P8-TSK-020` adopts them.
+     * {@code SUSPENSE_UNMATCHED}'s unattributed count equals exactly the suspense lines of
+     * Phase 7's parkings no {@code UNMATCHED_CONFIRMATION} suspense item claims — the term
+     * {@code PositionProof} names, the recorded truth until `P8-TSK-020` adopts them. Never
+     * every suspense line in the database: the shared container carries earlier suites'
+     * recon-suspense parks, whose lines the proof rightly knows.
      */
     private void assertProofHoldsAtRest(Connection app) throws SQLException {
         com.finapp.app.reconciliation.PositionProof.Report report;
@@ -2977,16 +2980,28 @@ class MultiRailConservationStormDatabaseTest {
                     .as("at rest: every %s line is known", purpose)
                     .isZero();
         }
-        long suspenseLines =
+        // Scoped to the Phase 7 term, not the whole table: a recon-suspense park an earlier
+        // suite committed is a KNOWN line (P8-TSK-010), and a whole-table count failed the
+        // storm whenever ReconciliationSuspenseDatabaseTest ran first in one container.
+        long unadoptedParkingLines =
                 sum(app,
                         "SELECT count(*) FROM ledger.journal_line l"
                                 + " JOIN ledger.ledger_account a ON a.id = l.ledger_account_id"
-                                + " WHERE a.purpose = 'SUSPENSE_UNMATCHED'");
+                                + " WHERE a.purpose = 'SUSPENSE_UNMATCHED'"
+                                + "   AND l.entry_id IN (SELECT u.entry_ref"
+                                + "     FROM payments.unmatched_confirmation u"
+                                + "    WHERE u.id::text NOT IN (SELECT origin_ref"
+                                + "      FROM reconciliation.suspense_item"
+                                + "     WHERE origin = 'UNMATCHED_CONFIRMATION'))");
+        assertThat(unadoptedParkingLines)
+                .as("at rest: the Phase 7 term is not vacuous - the storm's late instant"
+                        + " confirmations parked")
+                .isPositive();
         assertThat(report.unattributedByPurpose()
                         .get(com.finapp.ledger.AccountPurpose.SUSPENSE_UNMATCHED))
-                .as("at rest: SUSPENSE_UNMATCHED truthfully counts exactly the parkings'"
-                        + " suspense lines until P8-TSK-020 adopts them")
-                .isEqualTo(suspenseLines);
+                .as("at rest: SUSPENSE_UNMATCHED truthfully counts exactly the unadopted"
+                        + " parkings' suspense lines until P8-TSK-020 adopts them")
+                .isEqualTo(unadoptedParkingLines);
     }
 
     // ----------------------------------------------------------------- SQL

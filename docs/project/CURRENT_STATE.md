@@ -532,6 +532,17 @@ normal balance (`readFrom`) — DR−CR on clearing, CR−DR on suspense. `SETTL
 fails whenever that class runs before it in one container — a fleet-wide `:app:databaseTest`
 does; recorded for its own fix.
 
+### Since: the storm's at-rest suspense count (2026-09-30, outside the task loop)
+
+**A test-only defect in `MultiRailConservationStormDatabaseTest`, fixed.** Its at-rest check
+equated `PositionProof`'s unattributed `SUSPENSE_UNMATCHED` count with every suspense line in the
+database, but a recon-suspense park is a known line (`P8-TSK-010`), so the storm failed whenever
+`ReconciliationSuspenseDatabaseTest` ran before it in one container (`expected: 7L but was: 5L`,
+reproduced by forcing the class order; the local order runs the storm first, which hid it). The
+count is now the term the proof names — the suspense lines of Phase 7 parkings no
+`UNMATCHED_CONFIRMATION` suspense item claims — guarded as positive; a planted raw suspense line
+is still caught (change log). No production code changed.
+
 ### Previously
 
 The per-task completion records — 177 blocks, from `P8-TSK-013` back to project initiation
