@@ -4,6 +4,7 @@ import static org.assertj.core.api.Assertions.assertThat;
 
 import com.finapp.app.reconciliation.OpeningPosition;
 import com.finapp.app.reconciliation.PositionProof;
+import com.finapp.app.reconciliation.PositionResiduals;
 import com.finapp.ledger.AccountPurpose;
 import com.finapp.platform.correlation.CorrelationContext;
 import com.finapp.platform.security.Actor;
@@ -142,6 +143,7 @@ class SettlementAcceptanceDatabaseTest {
             + " item per canonical line with its typed keys, the REMITTANCE of |N| dated"
             + " value date + funding lag, and the identity holds with every item pending")
     void theIntakeIsWholeAndTheIdentityHolds() throws SQLException {
+        PositionProof.Report before = sweep();
         String marker = suffix();
         String batchRef = "PSPB-APP-" + marker;
         UUID batchId =
@@ -207,28 +209,29 @@ class SettlementAcceptanceDatabaseTest {
                 .isEqualTo(1);
 
         // The identity, with every item pending: balance = remainders - items, and the
-        // completeness verifier knows the recognition entry (unattributed 0).
+        // completeness verifier knows the recognition entry - both judged over THIS
+        // acceptance's writes (INV-REC-06 extended at acceptance). The shared container
+        // carries other suites' not-yet-adopted history, which an absolute reading judged
+        // here by class order: the residuals and the unattributed counts stand unchanged.
         PositionProof.Report report = sweep();
-        for (PositionProof.PositionVerdict verdict : report.verdicts()) {
-            assertThat(verdict.explained())
-                    .as("%s %s: %s = %s - %s (INV-REC-06 extended at acceptance)",
-                            verdict.purpose(), verdict.currency(), verdict.ledgerBalance(),
-                            verdict.openRemainders(), verdict.openItems())
-                    .isTrue();
-        }
+        PositionResiduals.assertUnchanged(before, report, "across the acceptance");
         assertThat(report.unattributedByPurpose()
                         .getOrDefault(AccountPurpose.SETTLEMENT_CLEARING, 0L))
-                .isZero();
+                .as("the recognition entry's clearing line is known (ADR-0067 §9)")
+                .isEqualTo(before.unattributedByPurpose()
+                        .getOrDefault(AccountPurpose.SETTLEMENT_CLEARING, 0L));
         assertThat(report.unattributedByPurpose()
                         .getOrDefault(AccountPurpose.PROCESSING_COSTS, 0L))
                 .as("the recognition entry's expense line is known too (ADR-0067 §9)")
-                .isZero();
+                .isEqualTo(before.unattributedByPurpose()
+                        .getOrDefault(AccountPurpose.PROCESSING_COSTS, 0L));
     }
 
     @Test
     @DisplayName("a zero net opens no remittance, and a zero fee omits the entry honestly -"
             + " each accepted whole")
     void zeroNetAndZeroFee() throws SQLException {
+        PositionProof.Report before = sweep();
         // Zero NET: T_in - T_out - F = 101.75 - 100.00 - 1.75 = 0; the fee still posts.
         String zeroNet = suffix();
         UUID zeroNetBatch =
@@ -273,11 +276,8 @@ class SettlementAcceptanceDatabaseTest {
                         zeroFeeBatch.toString()))
                 .isEqualTo(1);
 
-        PositionProof.Report report = sweep();
-        for (PositionProof.PositionVerdict verdict : report.verdicts()) {
-            assertThat(verdict.explained()).as("%s %s", verdict.purpose(), verdict.currency())
-                    .isTrue();
-        }
+        // Both acceptances explained over their own writes: unchanged residuals.
+        PositionResiduals.assertUnchanged(before, sweep(), "across the zero net and zero fee");
     }
 
     @Test

@@ -201,23 +201,13 @@ class ReconciliationSuspenseDatabaseTest {
                 itemId))
                 .isEqualTo("PARKED");
 
+        // Across the park, both identities hold over THIS suite's writes - the parked
+        // remainder leaves both sides of the position identity, and the suspense identity
+        // (ADR-0070 §7, CR-DR = CREDIT - DEBIT + Phase 7) moves by exactly what the park
+        // owns. Judged as unchanged residuals: the shared container carries other suites'
+        // not-yet-adopted history, which an absolute reading judged here by class order.
         PositionProof.Report report = sweep();
-        for (PositionProof.PositionVerdict verdict : report.verdicts()) {
-            assertThat(verdict.explained())
-                    .as("across a park: %s %s = %s - %s (INV-REC-06 - the parked remainder"
-                            + " leaves both sides)",
-                            verdict.purpose(), verdict.currency(), verdict.openRemainders(),
-                            verdict.openItems())
-                    .isTrue();
-        }
-        for (PositionProof.SuspenseVerdict verdict : report.suspenseVerdicts()) {
-            assertThat(verdict.explained())
-                    .as("the suspense identity: CR-DR %s = CREDIT %s - DEBIT %s + Phase 7"
-                            + " %s (ADR-0070 §7, exact with or without parkings present)",
-                            verdict.ledgerBalance(), verdict.creditRemainders(),
-                            verdict.debitRemainders(), verdict.unadoptedParkings())
-                    .isTrue();
-        }
+        PositionResiduals.assertUnchanged(before, report, "across a park");
         assertThat(report.unattributedByPurpose()
                         .getOrDefault(AccountPurpose.SETTLEMENT_CLEARING, 0L))
                 .as("the park entry's clearing line is a known line (ADR-0067 §9)")

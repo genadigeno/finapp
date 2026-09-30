@@ -1806,7 +1806,12 @@ class PaymentsSchemaDatabaseTest {
             insert.setString(4, "FAILED".equals(status) ? "DECLINED" : null);
             Timestamp born = Timestamp.from(Instant.now());
             insert.setTimestamp(5, born);
-            insert.setString(6, push ? "push-test" : "book-test");
+            // A DECLARED rail of each model, never an invented one: these rows commit into the
+            // tier's one shared database, and the opening backfill pages every EXECUTED and
+            // CAPTURED attempt through PaymentRails - an undeclared rail is ADR-0059's wiring
+            // fault, so one 'push-test' row answered 500 to every later backfill in the JVM.
+            // The schema cannot tell the rails apart; the backfill skips these (no entry).
+            insert.setString(6, push ? "instant" : "book");
             insert.setString(7, model.name());
             insert.setString(
                     8, push ? IDS.next().toString().replace("-", "") : null);

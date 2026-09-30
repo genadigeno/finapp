@@ -245,6 +245,15 @@ tasks.named<Test>("databaseTest") {
     // tests silently kept connecting to a developer's compose stack (P0-TSK-035).
     systemProperty("finapp.db.image", "postgres:" + libs.versions.postgresImage.get())
 
+    // One suite runs LAST: ReconciledPositionResidueDatabaseTest judges what every other suite
+    // left in the shared container (INV-REC-06) - a fixture's committed line on a reconciled
+    // position used to surface only when the offender happened to run before one of the two
+    // suites that sweep the proof, and Gradle's order is no contract (the file scan, with last
+    // run's failures first). The orderer reads @Order; every class without one keeps its place (a
+    // stable sort on the default order). The suite asserts this line is present, so removing it
+    // fails the tier rather than quietly leaving @Order as decoration.
+    systemProperty("junit.jupiter.testclass.order.default", "org.junit.jupiter.api.ClassOrderer\$OrderAnnotation")
+
     // `outputs.upToDateWhen { false }` is applied by the convention plugin to every tier needing
     // external infrastructure, so it is not repeated here.
 }
