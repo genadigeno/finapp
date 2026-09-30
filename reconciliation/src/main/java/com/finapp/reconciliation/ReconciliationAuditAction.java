@@ -65,6 +65,51 @@ public enum ReconciliationAuditAction implements AuditableAction {
             false),
 
     /**
+     * An investigator assigned a break (`P8-TSK-014`, ADR-0069 §7): the first assignment
+     * moves {@code OPEN → INVESTIGATING}, later ones hand the case over. The change summary
+     * names the assignee and the status edge — identifiers and enumerated names only.
+     */
+    BREAK_ASSIGNED(
+            "reconciliation.BreakAssigned",
+            "An investigator assigned a reconciliation break; the record names the assignee"
+                    + " and the status the break moved from and to.",
+            false),
+
+    /**
+     * An investigator added a note to a break's case file (`P8-TSK-014`, ADR-0069 §7). The
+     * body is CONFIDENTIAL and is NEVER in the record: the summary carries the note's id and
+     * length only.
+     */
+    BREAK_NOTE_ADDED(
+            "reconciliation.BreakNoteAdded",
+            "An investigator added a note to a reconciliation break's case file; the record"
+                    + " names the note, never its body.",
+            false),
+
+    /**
+     * An investigator linked evidence to a break (`P8-TSK-014`, ADR-0069 §7): an identifier
+     * into the stored chain, verified to exist, never content or a URL. The summary names the
+     * target kind and its identifier.
+     */
+    BREAK_EVIDENCE_LINKED(
+            "reconciliation.BreakEvidenceLinked",
+            "An investigator linked stored evidence to a reconciliation break by identifier;"
+                    + " the record names the target kind and identifier.",
+            false),
+
+    /**
+     * An investigator reclassified a break (`P8-TSK-014`, ADR-0069 §7): a reasoned type
+     * change in {@code OPEN} or {@code INVESTIGATING}, the cause, subject and value at issue
+     * frozen, the severity kept at the higher of stored and recomputed. The reason is the
+     * investigator's own; the summary names the types and grades.
+     */
+    BREAK_RECLASSIFIED(
+            "reconciliation.BreakReclassified",
+            "An investigator reclassified a reconciliation break with a recorded reason; the"
+                    + " record names the type and severity before and after.",
+            true),
+
+    /**
      * Somebody read a reconciliation report (`P8-TSK-007`, ADR-0072; the
      * {@code payments.ChargebackRatioRead} precedent): the positions report carries
      * amounts, so every serving is on the record — the report's name and period, never its

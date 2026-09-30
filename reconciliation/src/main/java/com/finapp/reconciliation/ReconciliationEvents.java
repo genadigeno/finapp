@@ -71,6 +71,42 @@ public final class ReconciliationEvents {
 
     private ReconciliationEvents() {}
 
+    static final String INVESTIGATION_STARTED_EVENT_TYPE =
+            "reconciliation.BreakInvestigationStarted";
+
+    /**
+     * Announced once, on the break's first assignment ({@code OPEN → INVESTIGATING},
+     * `P8-TSK-014`) — never on a reassignment, a note, a link or a reclassification: a note
+     * body never enters an event.
+     */
+    static void investigationStarted(
+            OutboxWriter<Connection> outbox,
+            Connection unitOfWork,
+            IdGenerator ids,
+            UUID breakId,
+            String assigneeId,
+            Instant occurredAt,
+            CorrelationId correlation) {
+        outbox.write(
+                unitOfWork,
+                new EventEnvelope(
+                        EventId.next(ids),
+                        INVESTIGATION_STARTED_EVENT_TYPE,
+                        EVENT_VERSION,
+                        EventEnvelope.CURRENT_SCHEMA_VERSION,
+                        BreakId.of(breakId),
+                        "reconciliation_break",
+                        occurredAt,
+                        PRODUCER,
+                        correlation,
+                        CausationId.of(breakId.toString())),
+                EventPayload.of()
+                        .with("breakId", breakId.toString())
+                        .with("assigneeId", assigneeId)
+                        .toBytes(),
+                EventPayload.MEDIA_TYPE);
+    }
+
     /** Announced once, on the run's completing edge, with its counts per outcome. */
     static void runCompleted(
             OutboxWriter<Connection> outbox,

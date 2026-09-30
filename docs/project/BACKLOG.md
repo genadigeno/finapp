@@ -11154,7 +11154,7 @@ posting-date documentation reconciled with the Phase 5–7 practice, with no ret
   reported chain readable through the expectation; ten sweepers raise once.
 - **Definition of done**: `DOD-FIN`, `DOD-OBS`, `DOD-TEST`. **Risk**: Medium. **Cx**: M.
 
-**P8-TSK-014 — Break reads, the case file and the settlement-status trail** — `READY` (marked by `P8-TSK-013`'s completion gate)
+**P8-TSK-014 — Break reads, the case file and the settlement-status trail** — `COMPLETE` (2026-09-30)
 - **Objective**: an investigator can find, own, annotate and reclassify a break, and walk from any
   break or any operation to its raw evidence and journal entries by stored identifiers alone.
   Investigation is a case file on the break, not a third aggregate (ADR-0069; `INV-REC-01`).
@@ -11256,7 +11256,17 @@ posting-date documentation reconciled with the Phase 5–7 practice, with no ret
   serialises; a PAN- or IBAN-bearing note is refused at both ranks.
 - **Definition of done**: `DOD-API`, `DOD-SEC`, `DOD-TEST`. **Risk**: Medium. **Cx**: M.
 
-**P8-TSK-015 — Four-eyes resolution through the ledger** — `PLANNED`
+*(Design input from `P8-TSK-014`: reclassification's parking rule — the new type parks
+exactly when the break's subject holds parked value (`INV-REC-09`) — holds at the domain under
+the break lock, and `V004`'s owner trigger refuses a never-parking owner only on the suspense
+item's INSERT; a raw `UPDATE` of an owner's `type` is not refused by the database. `V007`, which
+re-states break-adjacent rules for the person kinds, is the natural home for an every-writer
+trigger on `break.type` — and for the state rule beside it: `P8-TSK-014`'s probe demonstrated that
+`V004`'s edge trigger admits a type change in `RESOLUTION_PROPOSED`, which the domain and the store's
+predicate refuse today. Every case-file door takes the source's namespace-4 advisory before the
+break row, as the approval door must.)*
+
+**P8-TSK-015 — Four-eyes resolution through the ledger** — `READY` (marked by `P8-TSK-014`'s completion gate)
 - **Objective**: ADR-0071. A person resolves a break only through a template-bound, reason-coded
   resolution whose lines are derived from the subject's current remainder, approved by a second
   person whenever value is at issue or it posts, and posted through the ledger's adjustment

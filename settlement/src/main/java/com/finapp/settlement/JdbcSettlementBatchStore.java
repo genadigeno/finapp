@@ -429,6 +429,39 @@ public final class JdbcSettlementBatchStore implements SettlementBatchStore<Conn
     }
 
     @Override
+    public Optional<UUID> recognitionEntryOf(Connection unitOfWork, UUID batchId) {
+        return singleUuid(
+                unitOfWork,
+                "SELECT journal_entry_id FROM settlement.batch"
+                        + " WHERE id = ? AND status = 'ACCEPTED'",
+                batchId,
+                "could not read the batch's recognition entry");
+    }
+
+    @Override
+    public Optional<UUID> batchOfLine(Connection unitOfWork, UUID lineId) {
+        return singleUuid(
+                unitOfWork,
+                "SELECT batch_id FROM settlement.line WHERE id = ?",
+                lineId,
+                "could not read the line's batch");
+    }
+
+    private static Optional<UUID> singleUuid(
+            Connection unitOfWork, String sql, UUID id, String failureMessage) {
+        try (PreparedStatement read = unitOfWork.prepareStatement(sql)) {
+            read.setObject(1, id);
+            try (ResultSet row = read.executeQuery()) {
+                return row.next()
+                        ? Optional.ofNullable(row.getObject(1, UUID.class))
+                        : Optional.empty();
+            }
+        } catch (SQLException failure) {
+            throw new SettlementStorageException(failureMessage, failure);
+        }
+    }
+
+    @Override
     public void appendBatchEvent(
             Connection unitOfWork,
             UUID batchId,

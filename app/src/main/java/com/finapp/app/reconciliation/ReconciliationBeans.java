@@ -458,4 +458,86 @@ public class ReconciliationBeans {
                 expectationRegister,
                 clock);
     }
+
+    // ------------------------------------------------------------------ the desk (P8-TSK-014)
+
+    /**
+     * The investigator's reads' transaction shape (`P8-TSK-014`): {@code REQUIRES_NEW},
+     * {@code REPEATABLE READ}, read-only — a trace, a case file or a settlement status and its
+     * trail are one snapshot of the books, set by the transaction manager (and reset by it)
+     * rather than on a borrowed connection.
+     */
+    @Bean
+    TransactionTemplate reconciliationSnapshotReads(
+            PlatformTransactionManager transactionManager) {
+        TransactionTemplate template = new TransactionTemplate(transactionManager);
+        template.setPropagationBehavior(TransactionDefinition.PROPAGATION_REQUIRES_NEW);
+        template.setIsolationLevel(TransactionDefinition.ISOLATION_REPEATABLE_READ);
+        template.setReadOnly(true);
+        return template;
+    }
+
+    /**
+     * The case file's view beyond reconciliation — link targets and the trace's external
+     * steps — over settlement's, the ledger's and payments' public read stores (ADR-0064).
+     */
+    @Bean
+    ComposedCaseFileEvidence composedCaseFileEvidence(
+            SettlementFileStore<Connection> settlementFileStore,
+            com.finapp.settlement.SettlementBatchStore<Connection> settlementBatchStore,
+            JournalEntryStore<Connection> journalEntryStore,
+            com.finapp.payments.ProviderEvidenceStore<Connection> providerEvidenceStore,
+            com.finapp.payments.DisputeStore<Connection> disputeStore,
+            com.finapp.payments.UnmatchedConfirmationStore<Connection>
+                    unmatchedConfirmationStore) {
+        return new ComposedCaseFileEvidence(
+                settlementFileStore,
+                settlementBatchStore,
+                journalEntryStore,
+                providerEvidenceStore,
+                disputeStore,
+                unmatchedConfirmationStore);
+    }
+
+    /** The investigation as the break's case file (`P8-TSK-014`, ADR-0069 §7). */
+    @Bean
+    com.finapp.reconciliation.BreakCaseFile breakCaseFile(
+            ComposedCaseFileEvidence composedCaseFileEvidence,
+            com.finapp.platform.outbox.OutboxWriter<Connection> outboxWriter,
+            com.finapp.platform.audit.AuditWriter<Connection> auditWriter,
+            IdGenerator idGenerator,
+            Clock clock) {
+        return new com.finapp.reconciliation.BreakCaseFile(
+                new com.finapp.reconciliation.JdbcBreakCaseStore(),
+                composedCaseFileEvidence,
+                outboxWriter,
+                auditWriter,
+                idGenerator,
+                clock);
+    }
+
+    /** The investigator's desk (`P8-TSK-014`): reads, the case file, trace and status. */
+    @Bean
+    BreakInvestigation breakInvestigation(
+            com.finapp.reconciliation.BreakCaseFile breakCaseFile,
+            ComposedCaseFileEvidence composedCaseFileEvidence,
+            com.finapp.platform.idempotency.IdempotentExecutor idempotentExecutor,
+            TransactionTemplate reconciliationTransactions,
+            TransactionTemplate reconciliationSnapshotReads,
+            javax.sql.DataSource dataSource) {
+        com.finapp.reconciliation.JdbcBreakInquiries breakInquiries =
+                new com.finapp.reconciliation.JdbcBreakInquiries();
+        com.finapp.reconciliation.JdbcExpectationInquiries expectationInquiries =
+                new com.finapp.reconciliation.JdbcExpectationInquiries();
+        return new BreakInvestigation(
+                breakCaseFile,
+                breakInquiries,
+                new com.finapp.reconciliation.BreakTraces(breakInquiries, composedCaseFileEvidence),
+                expectationInquiries,
+                new com.finapp.reconciliation.SettlementStatuses(expectationInquiries),
+                idempotentExecutor,
+                reconciliationTransactions,
+                reconciliationSnapshotReads,
+                dataSource);
+    }
 }

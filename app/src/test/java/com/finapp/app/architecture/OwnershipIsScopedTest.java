@@ -393,7 +393,13 @@ class OwnershipIsScopedTest {
                                         + " refusal and DenyByDefaultDatabaseTest - and every"
                                         + " dispute shown is audited (DISPUTE_READ). No merchant"
                                         + " surface reaches it: theirs is"
-                                        + " findForCounterparties.")),
+                                        + " findForCounterparties. Since P8-TSK-014 the break"
+                                        + " trace reads it too, under"
+                                        + " RECONCILIATION_INVESTIGATE, only to learn the"
+                                        + " disputed attempt whose provider statements it"
+                                        + " names - the dispute id is the operation_ref of"
+                                        + " reconciliation's own stored expectation, never a"
+                                        + " request's, and nothing of the dispute is served.")),
                     Map.entry(
                             "com.finapp.payments.JdbcDisputeStore.listForIntent",
                             new Entry(
@@ -1324,6 +1330,25 @@ class OwnershipIsScopedTest {
                                         + " keyed by the intent findOwned validated) - never"
                                         + " a request's. Today's callers are the database"
                                         + " suite and the coming reconciliation surface.")),
+                    Map.entry(
+                            "com.finapp.payments.JdbcProviderEvidenceStore.evidenceMetadataFor",
+                            new Entry(
+                                    Scope.ADMINISTERED,
+                                    "P8-TSK-014. A break trace's walk to the provider"
+                                        + " statements about an operation - METADATA only"
+                                        + " (id, kind, capture time; no ciphertext column is"
+                                        + " selected) - deliberately cross-tenant: an"
+                                        + " investigator follows a break to whoever's attempt,"
+                                        + " refund or withdrawal it names, under"
+                                        + " @RequiresPermission(RECONCILIATION_INVESTIGATE)"
+                                        + " (RoutePermissionRegisterTest pins every desk route;"
+                                        + " the wrong-role negatives are"
+                                        + " ReconciliationInvestigationDatabaseTest's). The"
+                                        + " identifier is never a request's: it is the"
+                                        + " operation_ref reconciliation's own expectation row"
+                                        + " stored when the operation completed, reached by"
+                                        + " the break's stored subject chain. The payload stays"
+                                        + " behind payloadsFor's decrypt-and-verify read.")),
                     Map.entry(
                             "com.finapp.payments.JdbcPaymentAttemptStore.lockById",
                             new Entry(

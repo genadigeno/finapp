@@ -595,6 +595,26 @@ postings (ADR-0071) move money, each in a transaction that names its break.
 - `P8-TSK-011` — **implemented** (2026-09-30): the run leg produces the definitive detectors — `AMOUNT_DIFFERS` on both sides of a one-to-one mismatch (the excess parked on the item's subject, the shortfall recorded on the expectation's, never parked), `CURRENCY_DIFFERS`, `EXPECTATION_EXHAUSTED` and `REPEATED_FINGERPRINT` (both `DUPLICATE_EXTERNAL`, parked whole), `DIRECTION_CONTRADICTED`, `TERMINAL_STATE_CONTRADICTED` and `REFUND_CONTRADICTED` typed by the frozen lookup answer, `LATE_MATCH` as the zero-value observation naming its decision (the one decision-subject type), and `ITEM_ERRORED`/`RUN_BLOCKED` for the contained poison and the held source; `MULTIPLE_CANDIDATES` is stated and hermetically proven but unproduced (`expectation_key_once` admits one expectation per key), and §2's precedence over coexisting hit-failures — direction, then currency, then exhausted — is the engine's recorded reading, proven in `MatchEngineTest`.
 - `P8-TSK-012` — **implemented** (2026-09-30): `FEE_BEYOND_TOLERANCE` raises `FEE_MISMATCH` at both ranks — per line beyond the pinned per-line bound, and per batch on the run's first fee item beyond the per-batch bound — commercial, value the absolute deviation, NEVER parked (the reported fee was expensed at acceptance); and the first breaks now CLOSE: an exact correction offset or a settling top-up resolves its break `EVIDENCED` (`OPEN → RESOLVED`, the platform's shortcut edge produced), the resolution naming the decision and the park, `reconciliation.BreakResolved` on the terminal edge.
 - `P8-TSK-013` — **implemented** (2026-09-30): time's detectors. `EXPECTATION_OVERDUE` raises `MISSING_EXTERNAL` on the expectation's subject (value the remainder at the raise, never parked) behind the one-way `overdue_since` conditional — once under ten sweepers, `reconciliation.SettlementExpectationOverdue` in the same transaction, nothing raised inside a window and a settled row never aged — and `GRACE_EXPIRED` raises `UNKNOWN_EXTERNAL` or `MISSING_INTERNAL` on the expired item's subject with the lookup's answer frozen, while a terminal answer learned during the wait takes the `-011` definitive types. §6's escalation is built as bands crossed (2/7/30 days since `raised_at`, the DATABASE's own day count) minus `SEVERITY_ESCALATED` events already appended: an expected-value step under the forward-only trigger, capped at CRITICAL, once per band under ten sweepers, the source's advisory held first (the `P8-TSK-012` register fact honoured). The lost-block detector blocks a run at the failure bound through the run's conditional edge, once, with its CRITICAL `RUN_BLOCKED` break; the `P8-TSK-010` key-collision leg is scheduled at last. Late evidence CLOSES what it explains: the late settlement (L1) and the rematch unpark each resolve `EVIDENCED` with `reconciliation.BreakResolved` on the terminal edge — and a non-zero residual still resolves nothing.
+- `P8-TSK-014` — **implemented** (2026-09-30): point 7's case file and reads. Assignment moves
+  `OPEN → INVESTIGATING` on the first one only, publishing `reconciliation.BreakInvestigationStarted`
+  once under ten racers (counted), a repeat of the standing assignee converging; notes and evidence
+  links are keyed per principal from birth, the note screen (a pure `NoteScreen` mirroring `V004`'s
+  function window for window) running BEFORE the claim and the stored receipt carrying no body;
+  reclassification's three rules are one pure table on `BreakType` (`admits`, `parksOn` — this
+  ADR's Subject and Parked columns read per subject), the collision refused at the pre-check and by
+  the partial unique, the severity the higher of stored and recomputed, and `residual_version`
+  bumped — appending ONLY a `RECLASSIFIED` event: a `SEVERITY_ESCALATED` row would corrupt the
+  sweep's band counter (`P8-TSK-013`). Every case-file command takes the source's namespace-4
+  advisory before the break row (the `P8-TSK-012` register fact). Three recorded deviations: the
+  backlog's "expectation" link target is served by `V004`'s closed `OPERATION` kind, its reference
+  `<ExpectationKind>:<operationRef>` verified against `UNIQUE (kind, operation_ref)` (the schema's
+  generated list is the authority; a new kind would be a migration); the reclassification's
+  reason is screened like a note because it reaches the history and the audit record; and the
+  parking rule holds at the domain under the break lock with `V004`'s owner trigger covering the
+  insert side — a raw `UPDATE` of an owner's type is not yet refused by the database, recorded as
+  a design input to `P8-TSK-015`'s `V007`. The trace walks point 7's chain by stored identifiers
+  alone, bounded at 500 steps; a merchant payout's statements (`merchant.payout_evidence`) are not
+  walked — the trace names the operation and stops (recorded).
 - `P8-TSK-011` (the definitive classes, errored items, blocked runs), `P8-TSK-012` (`FEE_MISMATCH`,
   `CORRECTION` and the `EVIDENCED` resolution row, reconciliation `V006`, and the first
   `reconciliation.BreakResolved`, for `EVIDENCED`), `P8-TSK-013` (grace, ageing, rematch, severity

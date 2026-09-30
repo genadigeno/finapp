@@ -34,7 +34,31 @@ public enum ReconciliationErrorCode implements ErrorCode {
     ALLOCATION_NOT_FOUND(
             "reconciliation.AllocationNotFound",
             404,
-            "No allocation has this identifier.");
+            "No allocation has this identifier."),
+
+    /** No break has this id — unknown and malformed alike (`P8-TSK-014`). */
+    BREAK_NOT_FOUND(
+            "reconciliation.BreakNotFound",
+            404,
+            "No reconciliation break has this identifier."),
+
+    /**
+     * A write to a {@code RESOLVED} break (`P8-TSK-014`, ADR-0069 §7): a resolved break takes
+     * no assignment, note, link or reclassification — the case continues on its successor.
+     */
+    BREAK_TERMINAL(
+            "reconciliation.BreakTerminal",
+            409,
+            "This break is resolved; its case continues on its successor."),
+
+    /**
+     * No expectation has this id, or none tracks this (kind, operation) (`P8-TSK-014`) —
+     * unknown and malformed alike: an operation that settles internally opens none.
+     */
+    EXPECTATION_NOT_FOUND(
+            "reconciliation.ExpectationNotFound",
+            404,
+            "No settlement expectation matches.");
 
     private final String code;
     private final int status;

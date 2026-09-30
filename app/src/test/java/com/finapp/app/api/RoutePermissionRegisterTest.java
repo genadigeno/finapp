@@ -128,7 +128,20 @@ class RoutePermissionRegisterTest {
                     entry("GET /v1/operator/reconciliation/runs", PermissionName.RECONCILIATION_INVESTIGATE),
                     entry("GET /v1/operator/reconciliation/runs/{id}", PermissionName.RECONCILIATION_INVESTIGATE),
                     entry("GET /v1/operator/reconciliation/decisions/{id}", PermissionName.RECONCILIATION_INVESTIGATE),
-                    entry("GET /v1/operator/reconciliation/allocations/{id}", PermissionName.RECONCILIATION_INVESTIGATE)));
+                    entry("GET /v1/operator/reconciliation/allocations/{id}", PermissionName.RECONCILIATION_INVESTIGATE),
+                    // The investigator's desk (P8-TSK-014, ADR-0069 section 7): every door
+                    // under the investigator's permission - the controller's role alone is
+                    // refused (ReconciliationInvestigationDatabaseTest's negatives).
+                    entry("GET /v1/operator/reconciliation/breaks", PermissionName.RECONCILIATION_INVESTIGATE),
+                    entry("GET /v1/operator/reconciliation/breaks/{id}", PermissionName.RECONCILIATION_INVESTIGATE),
+                    entry("GET /v1/operator/reconciliation/breaks/{id}/trace", PermissionName.RECONCILIATION_INVESTIGATE),
+                    entry("POST /v1/operator/reconciliation/breaks/{id}/assignment", PermissionName.RECONCILIATION_INVESTIGATE),
+                    entry("POST /v1/operator/reconciliation/breaks/{id}/notes", PermissionName.RECONCILIATION_INVESTIGATE),
+                    entry("POST /v1/operator/reconciliation/breaks/{id}/evidence-links", PermissionName.RECONCILIATION_INVESTIGATE),
+                    entry("POST /v1/operator/reconciliation/breaks/{id}/classification", PermissionName.RECONCILIATION_INVESTIGATE),
+                    entry("GET /v1/operator/reconciliation/expectations", PermissionName.RECONCILIATION_INVESTIGATE),
+                    entry("GET /v1/operator/reconciliation/expectations/{id}", PermissionName.RECONCILIATION_INVESTIGATE),
+                    entry("GET /v1/operator/reconciliation/settlement-status", PermissionName.RECONCILIATION_INVESTIGATE)));
 
     /** The MVC mapping, by name - actuator registers a second one (the rule test's reason). */
     @Autowired

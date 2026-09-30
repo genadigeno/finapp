@@ -601,12 +601,17 @@ recorded.
 | `reconciliation.RunNotFound` | 404 | No reconciliation run has this identifier. |
 | `reconciliation.DecisionNotFound` | 404 | No match decision has this identifier. |
 | `reconciliation.AllocationNotFound` | 404 | No allocation has this identifier. |
+| `reconciliation.BreakNotFound` | 404 | No reconciliation break has this identifier. |
+| `reconciliation.BreakTerminal` | 409 | This break is resolved; its case continues on its successor. |
+| `reconciliation.ExpectationNotFound` | 404 | No settlement expectation matches. |
 
 The matcher's explanation doors (`P8-TSK-011`, ADR-0068 §7). All three follow the
 `settlement.FileNotFound` departure: every route sits behind
 `RECONCILIATION_INVESTIGATE`, so the surface is no oracle over anyone else's resources,
 and an investigator chasing a break is told plainly that the id is wrong — unknown and
 malformed ids are still ONE answer, and a guessed id records nothing.
+
+The investigator's desk (`P8-TSK-014`, ADR-0069 §7) adds three. `reconciliation.BreakNotFound` and `reconciliation.ExpectationNotFound` are the same departure at the break and expectation doors — and `ExpectationNotFound` also answers a settlement-status query naming a (kind, operation) no expectation tracks, because an operation that settles internally opens none. `reconciliation.BreakTerminal` (409) refuses every case-file write — assignment, note, evidence link, reclassification — to a `RESOLVED` break: the caller holds the permission; the break's own state refuses the act, and the remedy is its successor (`follows_break_id`). The desk's other refusals use the platform's codes: a refused note or link body (a card-number or bank-account shape, an out-of-bounds length, a target that does not exist) is `api.ValidationFailed` with nothing stored and the offending text never echoed; a reclassification onto an occupied (type, subject) seat, or of a break whose resolution is proposed, is `api.Conflict`.
 
 ## 3a. Rejection at the boundary
 

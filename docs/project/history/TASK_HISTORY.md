@@ -1,6 +1,6 @@
 # Task History
 
-The per-task completion records that accumulated behind `## Current Task` - 176 "Previously" blocks, newest first, from `P8-TSK-012` back to project initiation. *(`X-TSK-004` is cross-cutting and completed after the Phase 6 → 7 transition, so it stands second, between `P7-TSK-001` and the transition's record - the transition's block moved here by `P7-TSK-001`'s gate, exactly as an earlier form of this note said it would.)*
+The per-task completion records that accumulated behind `## Current Task` - 177 "Previously" blocks, newest first, from `P8-TSK-013` back to project initiation. *(`X-TSK-004` is cross-cutting and completed after the Phase 6 → 7 transition, so it stands second, between `P7-TSK-001` and the transition's record - the transition's block moved here by `P7-TSK-001`'s gate, exactly as an earlier form of this note said it would.)*
 
 **Archive.** These records were moved verbatim out of
 [`CURRENT_STATE.md`](../CURRENT_STATE.md) on 2026-09-20 so that the canonical description of
@@ -12,6 +12,101 @@ Current state: [`CURRENT_STATE.md`](../CURRENT_STATE.md) ·
 Authoritative backlog: [`BACKLOG.md`](../BACKLOG.md)
 
 ---
+
+### Previously
+
+**`P8-TSK-013` — Grace, ageing, rematch and late evidence** — `COMPLETE`
+(2026-09-30). **M8.3, Evidence becomes canonical lines, `CLOSED` at 6 of 6**: time is
+now explicit — unexplained external value waits out its pinned window and parks
+OWNED, internal records that never settle age into alertable breaks, and late evidence
+on either side is found and closes what it explains `EVIDENCED` — nothing refused
+as stale (`INV-SET-02`, `INV-SET-03`, `INV-REC-02`; ADR-0068, ADR-0069 §§4–6,
+ADR-0073 §7). **The grace and rematch legs ride `Matching.sweep`** — after the run
+loop, per source under the same namespace-4 try-lock, bounded batches, ONE transaction
+per batch: the grace leg re-judges each expired `UNMATCHED` item on its row locked
+`FOR UPDATE` through the same pure engine (the stored fingerprint was judged at run
+time — a waiting item is never re-parked as a duplicate of itself), candidates
+re-read under the lock — an expectation committed while another transaction held
+the item's share lock is ALLOCATED, never parked beside it (ADR-0073 §7, proven with
+a share-lock holder standing in for the return worker) — and only then types the
+true remainder through the lookup: `UNKNOWN_EXTERNAL` for a key the platform does not
+know, `MISSING_INTERNAL` for an operation known but not completed, the `-011`
+definitive types for a terminal answer LEARNED DURING THE WAIT (a run-time terminal
+answer parks in the chunk itself), cause `GRACE_EXPIRED`, parked with its break; the
+rematch leg re-decides residuals whose keys reach an expectation opened after their
+latest decision (origin `REMATCH`, only `ALLOCATE` acts): `UNMATCHED → MATCHED`, and
+`PARKED → MATCHED` only at candidate remainder ≥ parked remainder — the WHOLE
+parked value unparked (cause `UNPARK`, the park's exact inverse at the item's own
+amount, proven line for line against `ledger.journal_line`) and the owning break
+resolved `EVIDENCED` carrying the unpark's entry — a partial unpark never happens,
+and a skipped candidate is rescanned every tick (no decision row on a skip; bounded,
+recorded). **Late settlement (L1)**: a settling allocation locks the candidate's open
+`MISSING_EXTERNAL` break BEFORE allocating (the §3 break-first order extended) and
+resolves it `EVIDENCED` with no posting of its own, the timing frozen on the decision
+(deviation 60 against tolerance 2 in the proof), the `TIMING_DIFFERENCE` raise
+suppressed whenever an open `MISSING_EXTERNAL` stands — one fact, one break — and
+a partial arrival resolves NOTHING and still raises no second timing record.
+**`ReconciliationSweepSchedule`, time's observers** (leaderless, off in tests, a
+SYSTEM actor site with its argument): AGEING judges `expected_by +
+SETTLEMENT_DATE_DAYS < current_date` in SQL on the DATABASE clock and marks per row
+under the expectation's lock — the one-way `overdue_since` (NULL → value) the
+ten-sweeper arbiter, a loser writing NOTHING — raising `MISSING_EXTERNAL`
+(`EXPECTATION_OVERDUE`, value the remainder, never parked) and
+`reconciliation.SettlementExpectationOverdue` in the same transaction; nothing inside
+a window, a settled row never ages; ESCALATION owes bands crossed (2/7/30 days since
+`raised_at`, the database's own day count) minus `SEVERITY_ESCALATED` events already
+appended — an expected-value step under the forward-only trigger, capped CRITICAL,
+once per band under ten, the source's advisory held FIRST (the `-012` register fact
+honoured by every committed-break writer); RUN-BLOCK detection blocks a run whose
+recorded failures reached the bound but whose blocking transaction died, once, with
+its CRITICAL `RUN_BLOCKED` break; and `-010`'s key-collision leg is scheduled at
+last. **The clock discipline is structural**: the module suite pins the matcher's JVM
+clock MONTHS behind the database on purpose, so any window judged off the database
+clock fails every grace scenario at once. **THE BUILD'S FIND, FIXED**: the legs'
+batch posting phase first ran outside any correlation scope and the ledger's own
+`INV-LED-05` guard refused every grace park — each leg now posts LAST inside its
+own generated correlation scope, the per-item records keeping the ingesting flow's
+correlation. **Registers**: `LEASE_PROTECTED_SCHEDULERS` +1
+(`ReconciliationSweepSchedule`, leaderless, its argument written),
+`SystemActorCallSitesAreEnumeratedTest` +1 (`ReconciliationSweep.sweep`;
+`Matching.sweep`'s entry restated for the new legs), three ageing gauges per declared
+source (`finapp.reconciliation.expectation.overdue`, `.overdue.age`,
+`.item.unmatched` — eager, NaN never zero) beside the sweep's own enabled gauge; NO
+route, ONE event, NO migration — `grace_until` (`V003`), `overdue_since` (`V002`),
+`break_event` (`V004`) and `resolution` (`V006`) already stood, no classification
+rows; `DISTRIBUTED_EXECUTION` §3's schedule rows rewritten from the code (the
+planned markers dropped, the namespace-4 row restated with the blocking form's
+holders), ADR-0068/0069/0073 implemented notes with every deviation named (no bespoke
+spans — the `-008` precedent). **Five probe runs, five caught** (`MUTATION_TESTING`
+§2 +3 rows under `INV-SET-02`, `INV-SET-03`, `INV-REC-02`): the grace worklist
+judged on the application's injected clock found NOTHING (graced 0 where 3 belong —
+the months-behind pin the structural catcher); `break_one_open_per_expectation`
+weakened to a plain index ADMITTED a second raw OPEN `MISSING_EXTERNAL` where the
+database must refuse any writer (the direct two-raw-inserts probe, the `-008`
+precedent); the rematch worklist narrowed to `UNMATCHED` left the parked capture
+standing (rematched 0 where 1 belongs); the unscreened ageing marked the SETTLED
+fixture overdue (expected null, was a timestamp); the dropped item lock parked money
+beside its committed candidate (a suspense row where none belongs) — every verdict
+read from the failing testcase, every restore byte-identical (sha256-verified).
+Multi-instance **PASS** — ten ageing sweepers mark once (the conditional and the
+one-open seat, counted), ten escalators step once per band (the expected-value
+UPDATE), ten block-detectors block once (the run's conditional edge, blocked summed 1
+across the racers), the rematch unpark once by the item's conditional exit and
+`released_minor ≤ amount_minor`, the grace leg per source under the try-lock with
+every window judged in SQL on the database clock. Verified by targeted tiers from
+fresh runs on the final code — reconciliation hermetic 58 across 12 suites (the
+bands' arithmetic with its pinned bounds within) and database 46 across 6 (the
+grace-and-rematch suite's nine ordered tests: the typing, the meanwhile-committed
+candidate, the whole-value unpark with its inverse, the ten-sweeper ageing race with
+the per-source readings, L1 whole and partial, escalation and lost-block under ten,
+the share-lock holder, the raw one-open seat), app hermetic 571 across 106 suites
+(the two register rows, the three eager-NaN series and the arch rules within), the
+five affected app database suites in ONE shared container 13 across 5 (the composed
+matcher, opening, suspense, acceptance with its rebuild proof and the storm), and the
+document guards with the register and architecture rules (289 across 42 suites) re-run fresh after the records landed, ALL 0
+FAILURES — ledger, settlement, payments and merchant untouched by this task (their
+`P8-TSK-012` tiers stand), the full battery and the fleet-wide database and kafka
+tiers deliberately skipped on the owner's instruction.
 
 ### Previously
 

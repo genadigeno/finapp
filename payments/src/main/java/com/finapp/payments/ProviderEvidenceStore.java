@@ -76,4 +76,30 @@ public interface ProviderEvidenceStore<T> {
      * mismatch is corruption and throws rather than yielding bytes that are not the evidence.
      */
     List<byte[]> payloadsFor(T unitOfWork, PaymentAttemptId attempt);
+
+    /**
+     * One retained statement's METADATA (`P8-TSK-014`) — its identifier, kind and capture time,
+     * never a byte of content: reconciliation's trace names the evidence by identifier, and the
+     * payload stays behind this store's decrypt-and-verify read.
+     */
+    record EvidenceMetadata(java.util.UUID id, EvidenceKind kind, Instant recordedAt) {}
+
+    /** The attempt's retained statements' metadata, oldest first — lock-free. */
+    List<EvidenceMetadata> evidenceMetadataFor(T unitOfWork, PaymentAttemptId attempt);
+
+    /** The refund's retained statements' metadata, oldest first — lock-free. */
+    List<EvidenceMetadata> evidenceMetadataFor(T unitOfWork, RefundId refund);
+
+    /** The withdrawal's retained statements' metadata, oldest first — lock-free. */
+    List<EvidenceMetadata> evidenceMetadataFor(T unitOfWork, WithdrawalId withdrawal);
+
+    /**
+     * A parking's retained statements' metadata through the fifth subject (`V023`) — the
+     * stored identifier Phase 8 finds a parking's raw statement by, never a decrypt-all scan.
+     */
+    List<EvidenceMetadata> evidenceMetadataForUnmatched(
+            T unitOfWork, java.util.UUID unmatchedConfirmation);
+
+    /** Whether a retained statement has this identifier — an evidence link's existence check. */
+    boolean evidenceExists(T unitOfWork, java.util.UUID evidenceId);
 }

@@ -165,6 +165,102 @@ public final class JdbcProviderEvidenceStore implements ProviderEvidenceStore<Co
         }
     }
 
+    @Override
+    public List<EvidenceMetadata> evidenceMetadataFor(
+            Connection unitOfWork, PaymentAttemptId attempt) {
+        Objects.requireNonNull(attempt, "attempt must not be null");
+        try (PreparedStatement read =
+                unitOfWork.prepareStatement(
+                        "SELECT id, kind, recorded_at FROM payments.provider_evidence"
+                                + " WHERE attempt_id = ? ORDER BY recorded_at, id")) {
+            read.setObject(1, attempt.value());
+            return metadataRows(read);
+        } catch (SQLException failure) {
+            throw new PaymentsStorageException(
+                    DatabaseFailure.describe("reading provider evidence metadata", failure));
+        }
+    }
+
+    @Override
+    public List<EvidenceMetadata> evidenceMetadataFor(Connection unitOfWork, RefundId refund) {
+        Objects.requireNonNull(refund, "refund must not be null");
+        try (PreparedStatement read =
+                unitOfWork.prepareStatement(
+                        "SELECT id, kind, recorded_at FROM payments.provider_evidence"
+                                + " WHERE refund_id = ? ORDER BY recorded_at, id")) {
+            read.setObject(1, refund.value());
+            return metadataRows(read);
+        } catch (SQLException failure) {
+            throw new PaymentsStorageException(
+                    DatabaseFailure.describe("reading provider evidence metadata", failure));
+        }
+    }
+
+    @Override
+    public List<EvidenceMetadata> evidenceMetadataFor(
+            Connection unitOfWork, WithdrawalId withdrawal) {
+        Objects.requireNonNull(withdrawal, "withdrawal must not be null");
+        try (PreparedStatement read =
+                unitOfWork.prepareStatement(
+                        "SELECT id, kind, recorded_at FROM payments.provider_evidence"
+                                + " WHERE withdrawal_id = ? ORDER BY recorded_at, id")) {
+            read.setObject(1, withdrawal.value());
+            return metadataRows(read);
+        } catch (SQLException failure) {
+            throw new PaymentsStorageException(
+                    DatabaseFailure.describe("reading provider evidence metadata", failure));
+        }
+    }
+
+    @Override
+    public List<EvidenceMetadata> evidenceMetadataForUnmatched(
+            Connection unitOfWork, java.util.UUID unmatchedConfirmation) {
+        Objects.requireNonNull(unmatchedConfirmation, "unmatchedConfirmation must not be null");
+        try (PreparedStatement read =
+                unitOfWork.prepareStatement(
+                        "SELECT id, kind, recorded_at FROM payments.provider_evidence"
+                                + " WHERE unmatched_confirmation_id = ? ORDER BY recorded_at, id")) {
+            read.setObject(1, unmatchedConfirmation);
+            return metadataRows(read);
+        } catch (SQLException failure) {
+            throw new PaymentsStorageException(
+                    DatabaseFailure.describe("reading provider evidence metadata", failure));
+        }
+    }
+
+    /** Metadata only: no ciphertext column is selected, so no content can leave these reads. */
+    private static List<EvidenceMetadata> metadataRows(PreparedStatement read)
+            throws SQLException {
+        try (ResultSet rows = read.executeQuery()) {
+            List<EvidenceMetadata> found = new ArrayList<>();
+            while (rows.next()) {
+                found.add(
+                        new EvidenceMetadata(
+                                rows.getObject("id", java.util.UUID.class),
+                                EvidenceKind.valueOf(rows.getString("kind")),
+                                rows.getTimestamp("recorded_at").toInstant()));
+            }
+            return List.copyOf(found);
+        }
+    }
+
+    @Override
+    public boolean evidenceExists(Connection unitOfWork, java.util.UUID evidenceId) {
+        Objects.requireNonNull(evidenceId, "evidenceId must not be null");
+        try (PreparedStatement read =
+                unitOfWork.prepareStatement(
+                        "SELECT EXISTS (SELECT 1 FROM payments.provider_evidence WHERE id = ?)")) {
+            read.setObject(1, evidenceId);
+            try (ResultSet row = read.executeQuery()) {
+                row.next();
+                return row.getBoolean(1);
+            }
+        } catch (SQLException failure) {
+            throw new PaymentsStorageException(
+                    DatabaseFailure.describe("probing provider evidence", failure));
+        }
+    }
+
     private static byte[] sha256(byte[] payload) {
         try {
             return MessageDigest.getInstance("SHA-256").digest(payload);

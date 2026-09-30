@@ -74,6 +74,57 @@ public enum BreakType {
         return mayOwnSuspense;
     }
 
+    /**
+     * Whether this type stands on {@code subject} — ADR-0069 §2's Subject column, the one
+     * authority (`P8-TSK-014`): a reclassification must land on a type that admits the
+     * break's own subject kind, because the subject is frozen at raise.
+     */
+    public boolean admits(BreakSubjectKind subject) {
+        return switch (this) {
+            case MISSING_EXTERNAL, DUPLICATE_INTERNAL -> subject == BreakSubjectKind.EXPECTATION;
+            case UNKNOWN_EXTERNAL ->
+                    subject == BreakSubjectKind.EXTERNAL_ITEM
+                            || subject == BreakSubjectKind.SUSPENSE_ITEM;
+            case AMOUNT_MISMATCH ->
+                    subject == BreakSubjectKind.EXPECTATION
+                            || subject == BreakSubjectKind.EXTERNAL_ITEM;
+            case MISSING_INTERNAL,
+                            CURRENCY_MISMATCH,
+                            FEE_MISMATCH,
+                            DUPLICATE_EXTERNAL,
+                            AMBIGUOUS_MATCH,
+                            REVERSAL_MISMATCH,
+                            REFUND_MISMATCH ->
+                    subject == BreakSubjectKind.EXTERNAL_ITEM;
+            case TIMING_DIFFERENCE -> subject == BreakSubjectKind.DECISION;
+            case SETTLEMENT_MISMATCH ->
+                    subject == BreakSubjectKind.EXPECTATION
+                            || subject == BreakSubjectKind.EXTERNAL_ITEM
+                            || subject == BreakSubjectKind.RUN;
+            case PROCESSING_ERROR ->
+                    subject == BreakSubjectKind.EXTERNAL_ITEM
+                            || subject == BreakSubjectKind.RUN
+                            || subject == BreakSubjectKind.DECISION;
+        };
+    }
+
+    /**
+     * Whether a break of this type on {@code subject} holds parked value — ADR-0069 §2's
+     * Parked column read per subject: an item's remainder parks exactly for the
+     * suspense-owning types, a suspense item IS parked value, and an expectation's, a run's
+     * or a decision's never does (its value stays in its position, or is zero). A
+     * reclassification must keep this equal to what the break's subject actually holds
+     * (ADR-0069 §7), or a parked item's owner could become a type whose closure leaves its
+     * suspense behind ({@code INV-REC-09}).
+     */
+    public boolean parksOn(BreakSubjectKind subject) {
+        return switch (subject) {
+            case EXTERNAL_ITEM -> mayOwnSuspense;
+            case SUSPENSE_ITEM -> true;
+            case EXPECTATION, RUN, DECISION -> false;
+        };
+    }
+
     /** The `V004` {@code CHECK}'s value list — reconciled by the migration test. */
     public static String sqlValueList() {
         return Arrays.stream(values())

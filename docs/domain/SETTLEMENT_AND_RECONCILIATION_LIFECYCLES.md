@@ -126,8 +126,13 @@ expectation is open, nothing allocated), `REPORTED` (allocated from a counterpar
 batch whose remittance the bank has not discharged), `CASH_CONFIRMED` (that remittance is
 settled by bank items), `OVERDUE` (`overdue_since` is set and it is not settled) or `RESOLVED`
 (`RESOLVED_BY_ADJUSTMENT`), with the identifier trail expectation → allocations → items → batch
-→ remittance → bank items. "Reported, awaiting cash" is this reading, not an account; the exact
-precedence of the five is `P8-TSK-014`'s.
+→ remittance → bank items. "Reported, awaiting cash" is this reading, not an account. The precedence, decided and built by
+`P8-TSK-014` (`SettlementStatus.derive`, pure): `RESOLVED` > `CASH_CONFIRMED` > `REPORTED` >
+`OVERDUE` > `PENDING`. A partially allocated operation is `OVERDUE` once its window passed and
+`PENDING` before — part of the money is still unaccounted for; `CASH_CONFIRMED` needs EVERY
+report batch the expectation was allocated from to have its `REMITTANCE` settled, so an operation
+settled from a zero-net batch (which opens no remittance) stays `REPORTED`; `kind=REMITTANCE` is
+refused (`422`) — a report's promise is read as an expectation, not as an operation.
 
 ## 3. The accounting model (ADR-0065)
 

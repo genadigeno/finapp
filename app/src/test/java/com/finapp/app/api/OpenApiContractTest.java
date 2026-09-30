@@ -520,6 +520,22 @@ class OpenApiContractTest {
                         ApiVersion.CURRENT_PREFIX + "/operator/reconciliation/runs/{id}",
                         ApiVersion.CURRENT_PREFIX + "/operator/reconciliation/decisions/{id}",
                         ApiVersion.CURRENT_PREFIX + "/operator/reconciliation/allocations/{id}",
+                        // P8-TSK-014: the investigator's desk - break reads, the case file,
+                        // the trace, expectation reads and the settlement-status trail
+                        // (RECONCILIATION_INVESTIGATE).
+                        ApiVersion.CURRENT_PREFIX + "/operator/reconciliation/breaks",
+                        ApiVersion.CURRENT_PREFIX + "/operator/reconciliation/breaks/{id}",
+                        ApiVersion.CURRENT_PREFIX + "/operator/reconciliation/breaks/{id}/trace",
+                        ApiVersion.CURRENT_PREFIX
+                                + "/operator/reconciliation/breaks/{id}/assignment",
+                        ApiVersion.CURRENT_PREFIX + "/operator/reconciliation/breaks/{id}/notes",
+                        ApiVersion.CURRENT_PREFIX
+                                + "/operator/reconciliation/breaks/{id}/evidence-links",
+                        ApiVersion.CURRENT_PREFIX
+                                + "/operator/reconciliation/breaks/{id}/classification",
+                        ApiVersion.CURRENT_PREFIX + "/operator/reconciliation/expectations",
+                        ApiVersion.CURRENT_PREFIX + "/operator/reconciliation/expectations/{id}",
+                        ApiVersion.CURRENT_PREFIX + "/operator/reconciliation/settlement-status",
                         ApiVersion.CURRENT_PREFIX + "/sessions/{id}",
                         ApiVersion.CURRENT_PREFIX + "/sessions/current",
                         ApiVersion.CURRENT_PREFIX + "/me/mfa",

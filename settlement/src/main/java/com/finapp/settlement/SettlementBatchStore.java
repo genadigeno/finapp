@@ -194,6 +194,16 @@ public interface SettlementBatchStore<T> {
     /** ACCEPTED batches by id, after {@code after} — the backfill's bounded page. */
     List<AcceptedRow> pageAccepted(T unitOfWork, UUID after, int limit);
 
+    /**
+     * The batch's recognition entry (`P8-TSK-014`, reconciliation's trace) — the stored
+     * {@code journal_entry_id} its acceptance posted; empty when the batch is not accepted
+     * or its posting was honestly omitted. Lock-free.
+     */
+    Optional<UUID> recognitionEntryOf(T unitOfWork, UUID batchId);
+
+    /** The batch a canonical line belongs to (`P8-TSK-014`) — its stored {@code batch_id}. */
+    Optional<UUID> batchOfLine(T unitOfWork, UUID lineId);
+
     /** The live unique refused an insert: another batch claimed the identity first. */
     final class LiveBatchConflict extends RuntimeException {
 
