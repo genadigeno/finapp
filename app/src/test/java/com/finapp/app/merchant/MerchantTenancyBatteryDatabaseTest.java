@@ -8,7 +8,6 @@ import com.finapp.identity.IdentityId;
 import com.finapp.identity.RoleName;
 import com.finapp.ledger.AccountPurpose;
 import com.finapp.ledger.AccountType;
-import com.finapp.ledger.ChartOfAccounts;
 import com.finapp.ledger.Direction;
 import com.finapp.ledger.JournalLine;
 import com.finapp.ledger.LedgerAccount;
@@ -668,12 +667,22 @@ class MerchantTenancyBatteryDatabaseTest {
                                                         AccountPurpose.MERCHANT_PAYABLE, EUR, id))
                                         .account()
                                         .id());
+        // A book-rail sale funds it - DR a payer's wallet / CR payable - never DR
+        // SETTLEMENT_CLEARING: a reconciled position (INV-REC-06) whose every line must answer
+        // to an expectation, which this fixture's entry never had and the opening backfill
+        // could never adopt. MerchantPayoutDatabaseTest#post has the whole story.
         String fundingEntry =
                 asOperator(
                         uow -> {
-                            LedgerAccount clearing =
-                                    new ChartOfAccounts<>(ledgerAccountStore)
-                                            .resolve(uow, AccountPurpose.SETTLEMENT_CLEARING, EUR);
+                            LedgerAccount payer =
+                                    ledgerAccountStore
+                                            .createOrConverge(
+                                                    uow,
+                                                    LedgerAccount.owned(
+                                                            IDS, CLOCK, AccountType.LIABILITY,
+                                                            AccountPurpose.CUSTOMER_WALLET, EUR,
+                                                            UUID.randomUUID()))
+                                            .account();
                             LocalDate today = LocalDate.now(CLOCK);
                             UUID reference = UUID.randomUUID();
                             Money amount = Money.of(new BigDecimal(funds), EUR);
@@ -686,7 +695,7 @@ class MerchantTenancyBatteryDatabaseTest {
                                                     reference.toString(),
                                                     List.of(
                                                             new JournalLine(
-                                                                    clearing.id(),
+                                                                    payer.id(),
                                                                     Direction.DEBIT,
                                                                     amount),
                                                             new JournalLine(

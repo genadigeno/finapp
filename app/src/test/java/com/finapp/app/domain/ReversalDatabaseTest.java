@@ -469,7 +469,14 @@ class ReversalDatabaseTest {
     private record Fixture(
             JournalEntryId original, LedgerAccount clearing, LedgerAccount wallet) {}
 
-    /** An owned USD wallet credited {@code minor} from the operational clearing account. */
+    /**
+     * An owned USD wallet credited {@code minor} from an operational account - the fixture's
+     * {@code clearing}, named for the clearing account it was. {@code FEE_REVENUE}, not
+     * {@code SETTLEMENT_CLEARING} (the P8-TSK-006 move): clearing is a reconciled position
+     * whose every line must answer to an expectation ({@code INV-REC-06}), and neither this
+     * entry nor its reversals is an operation a backfill could adopt, so their lines stood
+     * unexplained in the shared container.
+     */
     private Fixture posted(Connection app, long minor) {
         LedgerAccount wallet =
                 accounts.createOrConverge(
@@ -483,7 +490,7 @@ class ReversalDatabaseTest {
                                         IDS.next()))
                         .account();
         LedgerAccount clearing =
-                accounts.findOperational(app, AccountPurpose.SETTLEMENT_CLEARING, USD)
+                accounts.findOperational(app, AccountPurpose.FEE_REVENUE, USD)
                         .orElseThrow();
         PostingResult posted =
                 postingService()

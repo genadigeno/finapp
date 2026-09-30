@@ -263,9 +263,16 @@ class ProjectionVerificationDatabaseTest {
                 .account();
     }
 
+    /**
+     * The operational account facing the wallets - still named {@code clearing} where it is
+     * used. {@code FEE_REVENUE}, not {@code SETTLEMENT_CLEARING} (the P8-TSK-006 move): clearing
+     * is a reconciled position whose every line must answer to an expectation
+     * ({@code INV-REC-06}), and these entries are no operation a backfill could adopt, so they
+     * stood unexplained in the shared container.
+     */
     private LedgerAccount operational(Connection app) {
         return accounts
-                .findOperational(app, AccountPurpose.SETTLEMENT_CLEARING, USD)
+                .findOperational(app, AccountPurpose.FEE_REVENUE, USD)
                 .orElseThrow();
     }
 

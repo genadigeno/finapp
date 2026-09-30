@@ -691,7 +691,13 @@ class CheckoutFlowDatabaseTest {
         }
     }
 
-    /** DR SETTLEMENT_CLEARING / CR the merchant's payable, 1.00, committed on its own. */
+    /**
+     * DR a payer's wallet / CR the merchant's payable, 1.00, committed on its own - a book-rail
+     * sale's shape, which the payable view reads as captured. It was DR SETTLEMENT_CLEARING
+     * until the position proof (P8-TSK-007, {@code INV-REC-06}): a reconciled position's every
+     * line must answer to an expectation, and this entry is no operation the opening backfill
+     * could ever adopt, so its line stood unexplained in the shared container.
+     */
     @SuppressWarnings("try") // Scopes are used for their close side effect.
     private void postOneEuroToThePayable(Merchant merchant) {
         try (CorrelationContext.Scope flow =
@@ -711,12 +717,17 @@ class CheckoutFlowDatabaseTest {
                                     com.finapp.ledger.AccountPurpose.MERCHANT_PAYABLE,
                                     eur)
                             .orElseThrow();
-            com.finapp.ledger.LedgerAccount clearing =
-                    new com.finapp.ledger.ChartOfAccounts<>(accounts)
-                            .resolve(
+            com.finapp.ledger.LedgerAccount payer =
+                    accounts.createOrConverge(
                                     other,
-                                    com.finapp.ledger.AccountPurpose.SETTLEMENT_CLEARING,
-                                    eur);
+                                    com.finapp.ledger.LedgerAccount.owned(
+                                            IDS,
+                                            CLOCK,
+                                            com.finapp.ledger.AccountType.LIABILITY,
+                                            com.finapp.ledger.AccountPurpose.CUSTOMER_WALLET,
+                                            eur,
+                                            UUID.randomUUID()))
+                            .account();
             Money one = Money.ofMinorUnits(1_00L, eur);
             java.time.LocalDate today = java.time.LocalDate.now(CLOCK);
             postingService.post(
@@ -728,7 +739,7 @@ class CheckoutFlowDatabaseTest {
                             "mid-read-" + UUID.randomUUID(),
                             java.util.List.of(
                                     new com.finapp.ledger.JournalLine(
-                                            clearing.id(),
+                                            payer.id(),
                                             com.finapp.ledger.Direction.DEBIT,
                                             one),
                                     new com.finapp.ledger.JournalLine(

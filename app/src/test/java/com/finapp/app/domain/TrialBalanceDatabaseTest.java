@@ -187,12 +187,18 @@ class TrialBalanceDatabaseTest {
     // -----------------------------------------------------------------
     // Fixtures
 
-    /** The operational clearing account's id for {@code currency} - seeded per currency. */
+    /**
+     * An operational account's id for {@code currency} - seeded per currency, and still named
+     * for the clearing account it was. {@code FEE_REVENUE}, not {@code SETTLEMENT_CLEARING}
+     * (the P8-TSK-006 move): clearing is a reconciled position whose every line must answer to
+     * an expectation ({@code INV-REC-06}), and the committed postings below are no operation a
+     * backfill could adopt, so they stood unexplained in the shared container.
+     */
     private UUID clearing(String currency) throws SQLException {
         try (Connection app = DatabaseRoles.application()) {
             return ledgerAccounts
                     .findOperational(
-                            app, AccountPurpose.SETTLEMENT_CLEARING, CurrencyCode.of(currency))
+                            app, AccountPurpose.FEE_REVENUE, CurrencyCode.of(currency))
                     .orElseThrow()
                     .id()
                     .value();

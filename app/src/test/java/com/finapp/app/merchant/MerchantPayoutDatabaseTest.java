@@ -13,7 +13,6 @@ import com.finapp.reconciliation.ExpectationKind;
 import com.finapp.reconciliation.KeyKind;
 import com.finapp.ledger.AccountPurpose;
 import com.finapp.ledger.AccountType;
-import com.finapp.ledger.ChartOfAccounts;
 import com.finapp.ledger.Direction;
 import com.finapp.ledger.HoldExceedsAvailableBalanceException;
 import com.finapp.ledger.HoldId;
@@ -396,7 +395,7 @@ class MerchantPayoutDatabaseTest {
     void aNegativePayableRefusesEveryPayout() throws Exception {
         Funded merchant = funded("0.00");
         // A RETAINED fee's share kept on a refund, the payable left owing the platform
-        // (ADR-0054): refund-shaped, DEBIT payable / CREDIT settlement clearing.
+        // (ADR-0054): refund-shaped, DEBIT payable / CREDIT the payer's wallet.
         post(merchant, "5.00", Direction.DEBIT);
         assertThat(positionMinor(merchant)).isEqualTo(-500);
         assertThatThrownBy(() -> initiate(merchant, "0.01", key()))
@@ -1307,17 +1306,43 @@ class MerchantPayoutDatabaseTest {
     }
 
     /**
-     * A capture-shaped entry ({@code CREDIT}: DR settlement clearing / CR payable) or a
-     * refund-shaped one ({@code DEBIT}), so the payable view reads it as captured or refunded.
+     * A book-rail sale ({@code CREDIT}: DR a payer's wallet / CR payable) or a book refund
+     * ({@code DEBIT}: DR payable / CR the wallet), so the payable view reads it as captured or
+     * refunded - the payer's wallet is the book rail's sale counterparty, in the same column of
+     * {@code MerchantPayable}'s table as a clearing (P7-TSK-011).
+     *
+     * <p>The counterparty was {@code SETTLEMENT_CLEARING} until the position proof
+     * (P8-TSK-007, {@code INV-REC-06}) made every line on a reconciled position answer to an
+     * expectation. A real card capture opens its own (P8-TSK-005); this fixture opened none, and
+     * its entry is no operation the opening backfill could ever adopt, so every line it left in
+     * the shared container stood unexplained - the opening suite's and the multi-rail storm's
+     * proofs failed whenever this suite ran first. The book rail settles nothing externally
+     * ({@code SettlementModel.NONE}), so its sale touches no reconciled position and is owed no
+     * expectation: the one capture shape that is honest without one. {@code FEE_REVENUE},
+     * P8-TSK-006's substitute, would not do here - the view reads it as {@code other}, and
+     * {@code thePayableReconcilesWithPayouts} pins {@code captured} and {@code other}.
+     *
+     * <p>The payer is a fresh wallet per entry, left below zero by a sale: a receivable from
+     * the customer, a legal ledger state (ADR-0061 section 5) that no other suite reads - every
+     * wallet read elsewhere is scoped to its own owner.
      */
     private void post(Funded merchant, String amount, Direction payableSide) throws Exception {
         asOperator(
                 uow -> {
-                    LedgerAccount clearing =
-                            new ChartOfAccounts<>(ledgerAccountStore)
-                                    .resolve(uow, AccountPurpose.SETTLEMENT_CLEARING, EUR);
+                    LedgerAccount payer =
+                            ledgerAccountStore
+                                    .createOrConverge(
+                                            uow,
+                                            LedgerAccount.owned(
+                                                    IDS,
+                                                    CLOCK,
+                                                    AccountType.LIABILITY,
+                                                    AccountPurpose.CUSTOMER_WALLET,
+                                                    EUR,
+                                                    UUID.randomUUID()))
+                                    .account();
                     LocalDate today = LocalDate.now(CLOCK.withZone(ZoneOffset.UTC));
-                    Direction clearingSide =
+                    Direction payerSide =
                             payableSide == Direction.CREDIT ? Direction.DEBIT : Direction.CREDIT;
                     UUID reference = UUID.randomUUID();
                     return postings.post(
@@ -1328,7 +1353,7 @@ class MerchantPayoutDatabaseTest {
                                     today,
                                     reference.toString(),
                                     List.of(
-                                            new JournalLine(clearing.id(), clearingSide, eur(amount)),
+                                            new JournalLine(payer.id(), payerSide, eur(amount)),
                                             new JournalLine(
                                                     merchant.payable(), payableSide, eur(amount)))));
                 });

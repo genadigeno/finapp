@@ -85,21 +85,26 @@ class BalanceDerivationDatabaseTest {
                 CorrelationContext.Scope flow = flow()) {
             app.setAutoCommit(false);
             LedgerAccount wallet = wallet(app, USD); // LIABILITY
-            LedgerAccount clearing = operational(app, AccountPurpose.SETTLEMENT_CLEARING);
+            // The ASSET: CHARGEBACK_RECOVERABLE, the one operational asset outside the reconciled
+            // positions. It was SETTLEMENT_CLEARING until the position proof (P8-TSK-007,
+            // INV-REC-06): every clearing line must answer to an expectation, and these entries
+            // are no operation a backfill could adopt, so they stood unexplained in the shared
+            // container. FEE_REVENUE (P8-TSK-006's substitute) is REVENUE and would drop the type.
+            LedgerAccount asset = operational(app, AccountPurpose.CHARGEBACK_RECOVERABLE);
             LedgerAccount fees = operational(app, AccountPurpose.FEE_REVENUE);
             LedgerAccount residual = operational(app, AccountPurpose.ROUNDING_RESIDUAL);
             // The four reachable types, by their derived normal balances: ASSET and EXPENSE
             // debit-normal, LIABILITY and REVENUE credit-normal (the aggregate exposes the
             // derivation's product, not the input - P3-TSK-002's no-free-choices rule).
-            assertThat(clearing.normalBalance()).isEqualTo(NormalBalance.DEBIT);
+            assertThat(asset.normalBalance()).isEqualTo(NormalBalance.DEBIT);
             assertThat(residual.normalBalance()).isEqualTo(NormalBalance.DEBIT);
             assertThat(fees.normalBalance()).isEqualTo(NormalBalance.CREDIT);
             assertThat(wallet.normalBalance()).isEqualTo(NormalBalance.CREDIT);
 
-            post(app, entry(clearing, Direction.DEBIT, wallet, Direction.CREDIT, 5000));
+            post(app, entry(asset, Direction.DEBIT, wallet, Direction.CREDIT, 5000));
             post(app, entry(residual, Direction.DEBIT, fees, Direction.CREDIT, 300));
             // Both directions on one account, so the fold's subtraction is exercised on rows.
-            post(app, entry(wallet, Direction.DEBIT, clearing, Direction.CREDIT, 1200));
+            post(app, entry(wallet, Direction.DEBIT, asset, Direction.CREDIT, 1200));
             app.commit();
 
             // The fresh account's number is pinned literally; every account - the shared
@@ -107,7 +112,7 @@ class BalanceDerivationDatabaseTest {
             // independent recomputation, which is the property under test.
             assertThat(derivation.derive(app, wallet.id(), AsOf.latest()).settled())
                     .isEqualTo(Money.ofMinorUnits(3800, USD));
-            for (LedgerAccount account : List.of(wallet, clearing, fees, residual)) {
+            for (LedgerAccount account : List.of(wallet, asset, fees, residual)) {
                 DerivedBalance derived = derivation.derive(app, account.id(), AsOf.latest());
                 assertThat(derived.settled().currency())
                         .as("%s: the balance is in the account's own currency", account.id())
