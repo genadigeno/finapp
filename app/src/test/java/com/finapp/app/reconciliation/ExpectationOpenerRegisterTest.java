@@ -157,6 +157,12 @@ class ExpectationOpenerRegisterTest {
                 opens("a completed payout's CR PAYOUT_CLEARING line, through merchant's port",
                         proof("MERCHANT_PAYOUT", "merchant.MerchantPayoutDatabaseTest",
                                 "aPaidPayoutReleasesAndPosts")));
+        rows.put("merchant-payout-return:",
+                opens("a returned payout's DR PAYOUT_CLEARING line, through merchant's port with"
+                                + " no key of its own - the operation-anchored rule reaches it"
+                                + " (P8-TSK-019, ADR-0073)",
+                        proof("PAYOUT_RETURN", "merchant.PayoutReturnDatabaseTest",
+                                "theRoutineReturnIsAppliedOnceAndRematched")));
         rows.put("dispute-attribution:",
                 touchesNothing("the counterparty against CHARGEBACK_RECOVERABLE",
                         proof(NOTHING, CHARGEBACKS, "tenFreshIdChargebacksPostOnce")));

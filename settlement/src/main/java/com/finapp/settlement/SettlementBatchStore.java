@@ -288,6 +288,13 @@ public interface SettlementBatchStore<T> {
     /** The batch a canonical line belongs to (`P8-TSK-014`) — its stored {@code batch_id}. */
     Optional<UUID> batchOfLine(T unitOfWork, UUID lineId);
 
+    /**
+     * The batch's stored {@code accepted_on} (`P8-TSK-019`, ADR-0073 §2) — the date a payout
+     * return's posting carries, read from the evidence so a retry on a later day converges on
+     * the posting key; empty when the batch is not accepted. Lock-free: the fact is frozen.
+     */
+    Optional<java.time.LocalDate> acceptedOnOf(T unitOfWork, UUID batchId);
+
     /** The live unique refused an insert: another batch claimed the identity first. */
     final class LiveBatchConflict extends RuntimeException {
 

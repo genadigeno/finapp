@@ -240,4 +240,87 @@ public class MerchantPayoutBeans {
         return new MerchantPayoutResolutionSchedule(
                 merchantPayoutResolution, merchantMeters, pollInterval);
     }
+
+    /** The payout return fact's store (`P8-TSK-019`, merchant `V008`). */
+    @Bean
+    com.finapp.merchant.PayoutReturnStore<Connection> payoutReturnStore() {
+        return new com.finapp.merchant.JdbcPayoutReturnStore();
+    }
+
+    /**
+     * The payout return's applier (`P8-TSK-019`, ADR-0073 §4): the payout row, the payable's
+     * share lock, the return's own posting and fact, its {@code PAYOUT_RETURN} expectation through
+     * the same recorder every payout completion opens through, the event and the audit record.
+     */
+    @Bean
+    com.finapp.merchant.PayoutReturns payoutReturns(
+            MerchantPayoutStore<Connection> merchantPayoutStore,
+            com.finapp.merchant.PayoutReturnStore<Connection> payoutReturnStore,
+            PostingService postingService,
+            LedgerAccountStore<Connection> ledgerAccountStore,
+            com.finapp.merchant.PayoutSettlementExpectations payoutSettlementExpectations,
+            AuditWriter<Connection> auditWriter,
+            OutboxWriter<Connection> outboxWriter,
+            IdGenerator ids,
+            Clock clock) {
+        return new com.finapp.merchant.PayoutReturns(
+                merchantPayoutStore,
+                payoutReturnStore,
+                postingService,
+                new ChartOfAccounts<>(ledgerAccountStore),
+                ledgerAccountStore,
+                payoutSettlementExpectations,
+                auditWriter,
+                outboxWriter,
+                ids,
+                clock);
+    }
+
+    /** The return worker's sweep (`P8-TSK-019`) — composed across three modules, here. */
+    @Bean
+    PayoutReturnSweep payoutReturnSweep(
+            com.finapp.merchant.PayoutReturns payoutReturns,
+            com.finapp.reconciliation.WaitingPayoutReturns waitingPayoutReturns,
+            com.finapp.settlement.SettlementBatchStore<Connection> settlementBatchStore,
+            PlatformTransactionManager transactionManager,
+            DataSource dataSource,
+            @Value("${finapp.merchant.payout.return.sweeper.batch:50}") int batchSize) {
+        return new PayoutReturnSweep(
+                new MerchantTransactions(new TransactionTemplate(transactionManager), dataSource),
+                waitingPayoutReturns,
+                settlementBatchStore,
+                payoutReturns,
+                batchSize);
+    }
+
+    /**
+     * The return worker's schedule — off in the app test overlay, whose suites drive
+     * {@code sweep()} directly; {@code matchIfMissing = true}, because a deployment that forgets
+     * it sends every routine return to a person at grace.
+     */
+    @Bean
+    @ConditionalOnProperty(
+            name = "finapp.merchant.payout.return.sweeper.enabled",
+            havingValue = "true",
+            matchIfMissing = true)
+    PayoutReturnSchedule payoutReturnSchedule(
+            PayoutReturnSweep payoutReturnSweep,
+            @Value("${finapp.merchant.payout.return.sweeper.poll-interval:PT30S}")
+                    Duration pollInterval) {
+        return new PayoutReturnSchedule(payoutReturnSweep, pollInterval);
+    }
+
+    /**
+     * Whether this instance runs the payout return worker — eager either way, so "off" reads as
+     * {@code 0} rather than as a missing series (`P1-TSK-029`'s rule).
+     */
+    @Bean
+    io.micrometer.core.instrument.Gauge payoutReturnSweeperEnabled(
+            @Value("${finapp.merchant.payout.return.sweeper.enabled:true}") boolean enabled,
+            io.micrometer.core.instrument.MeterRegistry meterRegistry) {
+        return io.micrometer.core.instrument.Gauge.builder(
+                        "finapp.merchant.payout.return.sweeper.enabled", () -> enabled ? 1 : 0)
+                .description("Whether this instance runs the payout return worker")
+                .register(meterRegistry);
+    }
 }

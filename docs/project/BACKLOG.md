@@ -11937,7 +11937,7 @@ break row, as the approval door must.)*
   `/settlement-status` (the gate's *Settlement recognition* criterion); every probe caught.
 - **Definition of done**: `DOD-FIN`, `DOD-TEST`. **Risk**: Medium. **Cx**: M.
 
-**P8-TSK-019 — Payout returns** — `READY` (marked by `P8-TSK-018`'s completion gate)
+**P8-TSK-019 — Payout returns** — `COMPLETE` (2026-09-30)
 - **Objective**: ADR-0073 — a payout the beneficiary bank returned is a merchant fact applied from
   settlement evidence: the payable restored exactly once by its own posting, the return expected and
   matched, the payout still `COMPLETED`; ADR-0057's follow-up closed. A routine return needs no
@@ -11987,7 +11987,16 @@ break row, as the approval door must.)*
     prove the clause: with the matcher's clock months behind, every anchor reads "opened after"
     and the leg passes for the wrong reason)*;
     `NoSingleInstanceAssumptionRulesTest.LEASE_PROTECTED_SCHEDULERS` +1 with its argument,
-    DISTRIBUTED_EXECUTION §3's scheduler register, `SystemActorCallSitesAreEnumeratedTest`;
+    DISTRIBUTED_EXECUTION §3's scheduler register, `SystemActorCallSitesAreEnumeratedTest`
+    *(as built: reconciliation's public read is the port `WaitingPayoutReturns` — a bounded page
+    in claimant order by keyset, walked to the end every tick, since a fixed first page of returns
+    that cannot apply yet would starve every return behind it until grace (the build's find); and
+    the item re-read `FOR SHARE` only while it is still an `UNMATCHED` `PAYOUT_RETURNED` item —
+    the payout found by `apply`'s own locking finders, the batch's `accepted_on` by settlement's
+    `acceptedOnOf`; the anchored clause built with a remainder condition — the reached
+    expectation still `OPEN` or `PARTIALLY_SETTLED` — so a duplicate line's reach to a SPENT
+    return leaves the worklist rather than being re-locked on every tick (the tests agent's find);
+    proven on REAL clocks, the design input's warning honoured)*;
   - how the `PAYOUT_RETURNED` rule reaches its expectation — **the operation-anchored mechanism**,
     the one Phase 8 uses: the line's `PAYOUT_PROVIDER_REF` and `OUR_REF` are the payout's own keys,
     already held by its `MERCHANT_PAYOUT` expectation under `UNIQUE (source_id, key_kind,
@@ -12015,7 +12024,12 @@ break row, as the approval door must.)*
 - **Domain changes**: `PayoutReturn` (a born-once fact, `RECORDED`), `PayoutReturns`,
   `PayoutReturnStore`; `MerchantPayable`'s `payoutsReturned` term.
 - **Persistence**: merchant `V008`, its `DATA_CLASSIFICATION.md` §4 rows in the same change
-  (`ColumnClassificationTest`); no payments, reconciliation or ledger migration.
+  (`ColumnClassificationTest`); no payments, reconciliation or ledger migration. *(Held as
+  built — the first Phase 8 task in four whose persistence claim did: `V008` also declares
+  `merchant_payout_money_is_unique UNIQUE (id, amount_minor, currency, scale)` on the payout, the
+  target the composite foreign key needs, and an insert trigger refusing a return naming a payout
+  that is not `COMPLETED` (`23514`) — the check's second rank for any writer; ten classification
+  rows.)*
 - **APIs**: none new; the payable's breakdown (`MerchantPayable`) shows `payoutsReturned`, beside
   `P8-TSK-015`'s `reconciliationAttributed`, wherever it is already served — an additive change
   under v1 (ADR-0015), the OpenAPI baseline regenerated if a view gains the field.
@@ -12093,7 +12107,7 @@ break row, as the approval door must.)*
   `other` whatever becomes of it *(the status moved to the title line alone and this note here by
   the Phase 7 → 8 transition's consistency review, C4; the terms' owner settled by A12)*.
 
-**P8-TSK-020 — Unmatched confirmations join suspense management** — `PLANNED`
+**P8-TSK-020 — Unmatched confirmations join suspense management** — `READY` (marked by `P8-TSK-019`'s completion gate)
 - **Objective**: Phase 7's unmatched confirmations become owned suspense (`INV-REC-05`,
   `INV-REC-09`): every parking opens, in its own transaction, a CREDIT suspense item with an
   `UNKNOWN_EXTERNAL` break (cause `PARKED_ON_RECEIPT`); existing rows are adopted once; the value

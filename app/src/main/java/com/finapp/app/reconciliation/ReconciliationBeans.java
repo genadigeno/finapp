@@ -160,6 +160,12 @@ public class ReconciliationBeans {
                 breakRegister, ruleSets, idGenerator);
     }
 
+    /** The payout returns waiting for their worker (`P8-TSK-019`) - reconciliation's read. */
+    @Bean
+    com.finapp.reconciliation.WaitingPayoutReturns waitingPayoutReturns() {
+        return new com.finapp.reconciliation.JdbcWaitingPayoutReturns();
+    }
+
     /**
      * The typing lookup (`P8-TSK-010`, ADR-0064): reconciliation declares the port, this
      * composition joins it to payments' and merchant's public read stores — read-only,
@@ -208,7 +214,8 @@ public class ReconciliationBeans {
      * The opening-position backfill (`P8-TSK-007`, ADR-0067 §8): history adopted through the
      * live recorder's own path, page by page, converging on the register's uniques — and
      * since `P8-TSK-009` the accepted batches' remittances re-derived through the live
-     * intake's own opener, so the register stays rebuildable from the books alone.
+     * intake's own opener, so the register stays rebuildable from the books alone — and
+     * since `P8-TSK-019` every recorded payout return's keyless {@code PAYOUT_RETURN}.
      */
     @Bean
     OpeningPosition openingPosition(
@@ -232,7 +239,8 @@ public class ReconciliationBeans {
             javax.sql.DataSource dataSource,
             SettlementSources settlementSources,
             com.finapp.settlement.SettlementBatchStore<Connection> settlementBatchStore,
-            com.finapp.app.settlement.ReconciliationIntake acceptedBatchIntake) {
+            com.finapp.app.settlement.ReconciliationIntake acceptedBatchIntake,
+            com.finapp.merchant.PayoutReturnStore<Connection> payoutReturnStore) {
         return new OpeningPosition(
                 paymentAttemptStore,
                 paymentIntentStore,
@@ -254,7 +262,8 @@ public class ReconciliationBeans {
                 dataSource,
                 settlementSources,
                 settlementBatchStore,
-                acceptedBatchIntake);
+                acceptedBatchIntake,
+                payoutReturnStore);
     }
 
     /**

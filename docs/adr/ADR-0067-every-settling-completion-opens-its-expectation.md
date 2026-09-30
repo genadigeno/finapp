@@ -562,6 +562,14 @@ transaction).
   operation-anchored rule waits for (automated returns are owner decision O2, a transition
   decision the owner may revisit). If `P8-TSK-019` is cut (owner decision O6, likewise revisitable), its opener and
   its register row go with it, and nothing else here changes.
+  **Implemented** (2026-09-30): `PayoutReturns.apply` opens the `PAYOUT_RETURN` through the port
+  after the return's posting, keyless, and the register row `merchant-payout-return:` is proved
+  by the routine return's ledger-backed copy. Point 8's backfill gained a leg the list above did
+  not name: it pages every recorded `payout_return` and re-opens its copy from the return's own
+  posting, because without it a rebuilt register restores the payout's expectation and leaves
+  its return's clearing line unattributed (`P8-TSK-009`'s rule for every kind the register
+  holds); `Adopted` gains a trailing `returns` count, an older record replaying with an honest
+  zero.
 - `P8-TSK-020`: the unmatched confirmation's suspense item and break through the same call.
 - `P8-TST-001`: completeness and the position proof read in every storm round and at rest.
 - Until `P8-TSK-004` lands, nothing in this ADR is implemented: every statement is the decided

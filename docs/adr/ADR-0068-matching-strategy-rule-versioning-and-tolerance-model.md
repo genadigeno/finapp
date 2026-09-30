@@ -725,7 +725,11 @@ adapters). Catalogued with this ADR:
   seeded; it reads zero. (3) `PAYOUT_FEE`'s original is reached by `PAYOUT_PROVIDER_REF` (the
   line type's own key, `P8-TSK-017`'s mechanism).
 - `P8-TSK-019` builds the return worker that the operation-anchored `PAYOUT_RETURNED` rule waits
-  for, and the `PAYOUT_RETURN` expectation it reaches (ADR-0067 §5, ADR-0073).
+  for, and the `PAYOUT_RETURN` expectation it reaches (ADR-0067 §5, ADR-0073). **Implemented**
+  (2026-09-30): and the rematch worklist's anchored clause — an item whose key reaches an
+  anchor whose operation's anchored kind opened under the anchor's source after the item's
+  latest decision, and still holds a remainder, is re-decided — since a keyless expectation is otherwise invisible to a
+  worklist that joins keys; proven on real clocks, the control item never rematched.
 - `P8-TSK-022` builds rule-set administration under four-eyes, `REPROCESS` runs, requeue,
   `run_replay` (reconciliation `V011`) and the replay-perturbation probe. `P8-TSK-023`'s
   repudiation, the only path that adds counter-allocations, follows in reconciliation `V012`.

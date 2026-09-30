@@ -541,6 +541,24 @@ public final class JdbcSettlementBatchStore implements SettlementBatchStore<Conn
                 "could not read the line's batch");
     }
 
+    @Override
+    public Optional<java.time.LocalDate> acceptedOnOf(Connection unitOfWork, UUID batchId) {
+        try (PreparedStatement read =
+                unitOfWork.prepareStatement(
+                        "SELECT accepted_on FROM settlement.batch"
+                                + " WHERE id = ? AND status = 'ACCEPTED'")) {
+            read.setObject(1, batchId);
+            try (ResultSet row = read.executeQuery()) {
+                return row.next() && row.getDate(1) != null
+                        ? Optional.of(row.getDate(1).toLocalDate())
+                        : Optional.empty();
+            }
+        } catch (SQLException failure) {
+            throw new SettlementStorageException(
+                    "could not read the batch's acceptance date", failure);
+        }
+    }
+
     private static Optional<UUID> singleUuid(
             Connection unitOfWork, String sql, UUID id, String failureMessage) {
         try (PreparedStatement read = unitOfWork.prepareStatement(sql)) {

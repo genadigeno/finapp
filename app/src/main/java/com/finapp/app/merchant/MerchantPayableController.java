@@ -44,9 +44,12 @@ public class MerchantPayableController {
 
     /**
      * One currency's payable. Every figure is a decimal string; {@code position} equals
-     * {@code captured − fees − refunded + feesReturned − paidOut − chargedBack +
-     * chargebacksReversed + reconciliationAttributed + other} exactly. {@code paidOut} is what the payout rail accepted
-     * (`P6-TSK-012`; a payout in flight is a hold, not a posting, and appears in no term);
+     * {@code captured − fees − refunded + feesReturned − paidOut + payoutsReturned − chargedBack
+     * + chargebacksReversed + reconciliationAttributed + other} exactly. {@code paidOut} is what
+     * the payout rail accepted (`P6-TSK-012`; a payout in flight is a hold, not a posting, and
+     * appears in no term); {@code payoutsReturned} is what the beneficiary banks returned of it
+     * (`P8-TSK-019`, ADR-0073 §6), credited back by each return's own posting while the payout
+     * stays {@code COMPLETED};
      * {@code chargedBack} is the chargebacks attributed to this merchant's sales and
      * {@code chargebacksReversed} what won ones gave back (`P7-TSK-013`, ADR-0061 §4) — a
      * position below zero after a chargeback is merchant debt, recovered from later captures
@@ -62,6 +65,7 @@ public class MerchantPayableController {
             String refunded,
             String feesReturned,
             String paidOut,
+            String payoutsReturned,
             String chargedBack,
             String chargebacksReversed,
             String reconciliationAttributed,
@@ -88,6 +92,7 @@ public class MerchantPayableController {
                 decimal(payable.refunded()),
                 decimal(payable.feesReturned()),
                 decimal(payable.paidOut()),
+                decimal(payable.payoutsReturned()),
                 decimal(payable.chargedBack()),
                 decimal(payable.chargebacksReversed()),
                 decimal(payable.reconciliationAttributed()),

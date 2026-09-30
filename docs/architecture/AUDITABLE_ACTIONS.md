@@ -398,6 +398,7 @@ record nothing.
 | `merchant.MerchantPayoutInitiated` | No | A merchant initiated a payout of its payable with its API key; the record names the payout, the destination and the key by identifier. |
 | `merchant.MerchantPayoutInitiatedByOperator` | **Yes** | An operator initiated a payout of a merchant's payable on its behalf; the reason is required. |
 | `merchant.MerchantPayoutOutcomeApplied` | No | The platform applied the payout provider's answer to a payout (completed, failed or unknown); acting transitions only. |
+| `merchant.PayoutReturnApplied` | No | The platform applied a payout return from settlement evidence: the payable credited back by the return's own posting, the payout still COMPLETED. |
 
 The three pricing actions arrive with `P6-TSK-004`, and their reason split is the
 `MerchantApiKeyIssued`/`Revoked` split restated: **creating a named schedule needs no reason**
@@ -428,7 +429,13 @@ operator moving a merchant's money on its behalf is a judgement the trail must e
 transaction or the resolution sweep, through enumerated `enterSystem()` sites, written only on
 an acting transition — so ten racing resolvers leave one record per move, not ten. No record
 carries the destination's provider reference (`INV-AUD-02`). The ledger's own hold and posting
-records sit beside these, as they do for the refund.
+records sit beside these, as they do for the refund. `merchant.PayoutReturnApplied`
+(`P8-TSK-019`, ADR-0073 §4) is the platform's too: the return worker's enumerated `enterSystem()`
+site applies a return the beneficiary bank made, from the payout provider's own evidence, written
+only when it applies — a refusal (the payout not completed, another amount, the payable closed)
+and a losing racer write nothing, so ten workers on one return leave one record. When a return
+cannot apply, the person who later transfers its value is recorded by the resolution desk's own
+actions, as themselves.
 
 ### `checkout` — `CheckoutAuditAction`
 

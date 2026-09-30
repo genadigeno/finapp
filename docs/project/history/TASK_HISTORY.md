@@ -1,6 +1,6 @@
 # Task History
 
-The per-task completion records that accumulated behind `## Current Task` - 181 "Previously" blocks, newest first, from `P8-TSK-017` back to project initiation. *(`X-TSK-004` is cross-cutting and completed after the Phase 6 → 7 transition, so it stands second, between `P7-TSK-001` and the transition's record - the transition's block moved here by `P7-TSK-001`'s gate, exactly as an earlier form of this note said it would.)*
+The per-task completion records that accumulated behind `## Current Task` - 182 "Previously" blocks, newest first, from `P8-TSK-018` back to project initiation. *(`X-TSK-004` is cross-cutting and completed after the Phase 6 → 7 transition, so it stands second, between `P7-TSK-001` and the transition's record - the transition's block moved here by `P7-TSK-001`'s gate, exactly as an earlier form of this note said it would.)*
 
 **Archive.** These records were moved verbatim out of
 [`CURRENT_STATE.md`](../CURRENT_STATE.md) on 2026-09-20 so that the canonical description of
@@ -14,6 +14,78 @@ Authoritative backlog: [`BACKLOG.md`](../BACKLOG.md)
 ---
 
 ### Previously
+
+**`P8-TSK-018` — The payout provider's report** — `COMPLETE` (2026-09-30). **M8.6, Every
+counterparty, at 2 of 4**: `PAYOUT_CLEARING` — instructed but unsettled — is now discharged by the
+payout provider's own report and the bank's debit: each payout allocated by the provider's
+reference (or our `pyo-` one), the provider's fees recognised at acceptance and checked against
+pinned terms, the day's net expected as an OUTBOUND remittance and settled only by the bank's
+statement — each payout `CASH_CONFIRMED` over the wire, still `COMPLETED` (ADR-0065 §2, ADR-0067,
+ADR-0068, ADR-0073; `INV-SET-01`, `INV-SET-05`; protected `INV-SET-06`, `INV-REC-06`, `-07`,
+`INV-RAIL-04`, `INV-LIFE-04`, `INV-PAY-03`, `INV-RAIL-03`). **TWO MIGRATIONS, THE THIRD TASK
+RUNNING WHOSE "NO PERSISTENCE" DID NOT HOLD**: settlement `V007` (`PAYOUT_EXECUTED`,
+`PAYOUT_RETURNED`, `PAYOUT_FEE`, `PAYOUT_PROVIDER_REF`) and reconciliation `V010` (the item's
+vocabulary; `PAYOUT_FEE` in the rule and fee schedule `CHECK`s) — `P8-TSK-022` and `-023`
+renumbered to `V011` and `V012`. **A RECORDED DEVIATION, GUARDED**: `P8-TSK-004` seeded the payout
+rule set v1 with no fee rule and no fee schedule, so a fee line would have met `NO_RULE` and waited
+unchecked forever; a new version is unavailable (superseding v1 updates its frozen status), so
+`V010` appends the fee `CHECK` rule and a flat 0.25 schedule to v1 behind a guard refusing once any
+run or decision names that rule set — no stored decision can be explained differently, the reason
+"a change is a new version" exists (ADR-0068). **THE FORMAT** (`SIM_PAYOUT_CSV` v1, built by a
+delegated agent, reviewed): the PSP report's sibling, golden-filed, `SETTLED`/`RETURNED` confined,
+the beneficiary name the one free-text field and always screened, our reference admitting the
+platform's own minted `pyo-` UUIDv7 exactly (`P8-TSK-017`'s lesson in dashed form), each record's
+defects gathered apart. **HOP 1**: the provider's fee is its OWN `PAYOUT_FEE` type — a deviation from
+the plan's list, the `SCHEME_FEE` precedent: its original reached by `PAYOUT_PROVIDER_REF`, the
+per-batch fold the PSP's alone — posted DR `PROCESSING_COSTS` / CR `PAYOUT_CLEARING` (the liability
+grows). **THE OPERATION-ANCHORED RULE, DECLARED IN V1 AND NEVER READ UNTIL NOW**: `Matching.resolve`
+honours `operation_anchored` — a returned payout's references reach its payout's `MERCHANT_PAYOUT`
+as the ANCHOR, and the rule reaches only that operation's `PAYOUT_RETURN` under the anchor's own
+source (read lock-free: the anchor's operation is a frozen birth fact), never the payout itself; with
+none it waits `UNMATCHED` under 72 hours' grace, no break; at grace a return whose payout the lookup
+knows is `REVERSAL_MISMATCH` (`RETURN_NOT_APPLICABLE`), parked for the four-eyes
+`TRANSFER_TO_ACCOUNT` crediting the payable back — the fallback of transition decision O2, proven end
+to end through the REAL lookup and the resolution desk; a return naming nothing is `UNKNOWN_EXTERNAL`.
+The rematch worklist's anchored clause is recorded as `P8-TSK-019`'s design input (until it lands, a
+late return is allocated at grace by the grace leg's re-resolution). **THE DEBT PAID**:
+`PositionProof` read `settled()`, signed by the normal balance, so the credit-normal
+`PAYOUT_CLEARING` read CR−DR against remainders signed DR−CR and every in-flight payout failed the
+verdict; it now reads DR−CR for every position, as its javadoc always said — proven with an open
+payout's expectation, absolutely, in the suite's own container. **THE BUILD'S AND GATE'S FINDS, EACH
+FIXED**: the anchored rule never read; the fee terms never seeded; the proof's sign; the anchored
+second hop unscoped by source (the tests agent's find, now tied to the anchor's source); a misplaced
+javadoc orphaning `recordLearnedCycle`'s; the backlog's excess-debit scenario missing from the build,
+added. **DOCUMENTS**: ADR-0065/0066/0067/0068/0069/0073 implemented notes, `RECONCILIATION_MODEL.md`'s
+payout rows, the lifecycle document, `INV-SET-01`'s payout note, `DISTRIBUTED_EXECUTION` §3,
+`MODULE_ARCHITECTURE`, the plan's migration tables. **SIX PROBE RUNS, SIX CAUGHT** (`MUTATION_TESTING`
+§2 +6 rows under `INV-SET-05`, `INV-REC-06` ×2, `INV-REC-02` ×2, `INV-REC-08`): payout evidence
+discharging `SETTLEMENT_CLEARING`; the fee recognition dropped; the return rule key-matched (the
+backlog's own probe — a return parked at once); the proof's sign reverted (+5250 where −5250
+belongs); the fee's original by the PSP's key; the `RETURN_NOT_APPLICABLE` typing dropped — every
+restore byte-identical (sha256). **Multi-instance PASS**: ten matchers over a five-line payout run
+decide each line once and settle each expectation once, and with the try-lock BYPASSED still allocate
+each pair at most once (counted); ten rematch sweepers settle a late payout once; the same report
+delivered ten ways is one file, one batch, one run, one entry (counted). **RECORDED MINORS**: no
+payout fee tolerance is seeded, so "inside" collapses onto "at"; references bounded at the canonical
+line's 100 characters though merchant admits 128, and no CSV quoting (a comma in the beneficiary
+rejects the file whole); the suite's merchants are funded by a capture-shaped posting with no
+expectation, so its own container's `SETTLEMENT_CLEARING` reads unexplained (not asserted); the
+simulated provider in the suite mints alphabetic references; a return to a payable closed since its
+payout stays in suspense (the machine refuses a non-ACTIVE target, not exercised here); the PSP
+adapter's defect-cap crash stays recorded debt. **NEXT**: `P8-TSK-019` `READY` (payout returns).
+**Verified** by targeted tiers from fresh runs on the final code — settlement hermetic 160 across 24
+suites and database 45 across 7 (the golden payout report, the screen, `V007`'s pins, the payout
+fee recognition), reconciliation hermetic 115 across 21 and database 115 across 12 (the payout
+matching suite's twelve ordered cases: both references, the fee at the boundary, the return never a
+candidate and waiting, `RETURN_NOT_APPLICABLE` and `UNKNOWN_EXTERNAL` at grace, the terminal
+contrast, the anchored allocation, the late payout under ten rematchers, both ten-sweeper races and
+`V010`'s guard refusing as the migrator), app hermetic 574 across 107 suites, the payout cash suite
+in its own container 5 across 1 (the in-flight proof, the chain to `CASH_CONFIRMED`, the return's
+four-eyes fallback over HTTP, exact, short and excess debits, the real lookup, ten deliveries), the
+twelve proof-group suites in ONE shared container 62 across 12, the scheme cash suite in its own
+container 4 across 1, and the document guards 125 across 22 suites re-run fresh after the records
+landed, ALL 0 FAILURES — the full battery and the fleet-wide database and kafka tiers
+deliberately skipped on the owner's instruction.
 
 **`P8-TSK-017` — The instant scheme's cycle report** — `COMPLETE` (2026-09-30). **M8.6, Every
 counterparty, opens at 1 of 4**: `INSTANT_CLEARING` is now discharged by the scheme's own evidence

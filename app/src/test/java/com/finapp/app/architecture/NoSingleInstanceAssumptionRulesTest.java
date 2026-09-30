@@ -221,7 +221,17 @@ class NoSingleInstanceAssumptionRulesTest {
                     // escalate a band once and block a lost run once, counted. Register
                     // row: DISTRIBUTED_EXECUTION.md section 3; the counted races are
                     // GraceAndRematchDatabaseTest's.
-                    "com.finapp.app.reconciliation.ReconciliationSweepSchedule");
+                    "com.finapp.app.reconciliation.ReconciliationSweepSchedule",
+                    // P8-TSK-019: the payout return worker - NO EXTERNAL CALL: an
+                    // application is a function of the stored evidence and locked rows.
+                    // Each item is re-read FOR SHARE (ordering it against the grace leg's
+                    // FOR UPDATE), the payout row FOR UPDATE serialises every applier of one
+                    // return, and UNIQUE (payout_id), the posting key and the expectation's
+                    // uniques arbitrate for any writer the locks miss - N workers on one
+                    // return produce one return, one entry and one expectation between them,
+                    // counted. Register row: DISTRIBUTED_EXECUTION.md section 3; the ten-way
+                    // race is PayoutReturnDatabaseTest's.
+                    "com.finapp.app.merchant.PayoutReturnSchedule");
 
     /** Types that schedule work with no lease, so every instance runs it. */
     private static final Set<String> AMBIENT_SCHEDULERS =

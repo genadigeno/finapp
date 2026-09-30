@@ -872,7 +872,10 @@ direction mismatch (§5.4). `app`'s `PayoutReturnSchedule`, leaderless, reads re
 *(The Phase 7 → 8 transition's consistency review, A4 and A6: the steps inserted before they
 posted — impossible for an append-only row that stores the entry id — and "`CHECK`ed" the money;
 the worker read the item unlocked; and how the line reached the return's expectation was unstated,
-while ADR-0067 and ADR-0073 spoke of return-qualified key kinds.)*
+while ADR-0067 and ADR-0073 spoke of return-qualified key kinds.)* *(Built by `P8-TSK-019`:
+step 2's checks are typed outcomes that write nothing — `NO_PAYOUT`, `PAYOUT_NOT_COMPLETED`,
+`ALREADY_RETURNED`, `AMOUNT_DIFFERS`, `PAYABLE_NOT_POSTABLE` — and `V008`'s insert trigger
+refuses a return naming a payout that is not `COMPLETED`, the second rank.)*
 
 The rematch leg then allocates the item by the **operation-anchored lookup**: the line's
 `PAYOUT_PROVIDER_REF`, then its `OUR_REF`, names the payout's operation through its

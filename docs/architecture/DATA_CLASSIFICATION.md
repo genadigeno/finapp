@@ -896,6 +896,16 @@ column exists here and none ever will** (`INV-MER-02`); the payable is the ledge
 | `merchant_payout` | `reason` | `RESTRICTED-PII` | **Free text written by a person** — an operator's reason for moving a merchant's money, `refund.reason`'s ceiling; absent on the merchant's own payout |
 | `merchant_payout` | `created_at` | `CONFIDENTIAL` | Dates a counterparty's payout |
 | `merchant_payout` | `last_dispatched_at` | `CONFIDENTIAL` | The latest send permit (ADR-0057 §4): when the payout was last authorised onto the wire |
+| `payout_return` | `id` | `INTERNAL` | A record identifier. Generated |
+| `payout_return` | `payout_id` | `INTERNAL` | The returned payout - an identifier of a thing (`P8-TSK-019`) |
+| `payout_return` | `amount_minor` | `RESTRICTED-FINANCIAL` | **The returned amount** - the payout's own, by the composite key |
+| `payout_return` | `currency` | `RESTRICTED-FINANCIAL` | Part of the monetary shape - `merchant_payout.currency`'s |
+| `payout_return` | `scale` | `RESTRICTED-FINANCIAL` | Part of the monetary shape - `merchant_payout.scale`'s |
+| `payout_return` | `external_item_ref` | `INTERNAL` | The reconciliation item whose evidence caused the application - an identifier of a thing |
+| `payout_return` | `journal_entry_id` | `INTERNAL` | The return's own posting - an identifier of a thing |
+| `payout_return` | `returned_on` | `CONFIDENTIAL` | The posting date - the evidence batch's stored acceptance date (`merchant_payout.created_at`'s reasoning: when money moved for a merchant) |
+| `payout_return` | `value_date` | `CONFIDENTIAL` | The item's settlement date - the same reasoning |
+| `payout_return` | `recorded_at` | `INTERNAL` | When the platform recorded the fact |
 | `merchant_payout_event` | `id` | `INTERNAL` | A server-assigned ordinal |
 | `merchant_payout_event` | `payout_id` | `INTERNAL` | An identifier of a thing |
 | `merchant_payout_event` | `from_status` | `CONFIDENTIAL` | History is the same facts, older |

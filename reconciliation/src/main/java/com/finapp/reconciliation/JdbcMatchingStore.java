@@ -363,9 +363,11 @@ public final class JdbcMatchingStore implements MatchingStore {
                     + " WHERE d.external_item_id = i.id), '-infinity'::timestamptz)";
 
     /**
-     * The rematch predicate (`P8-TSK-013`, widened by `P8-TSK-016`): a residual whose keys,
-     * judged in its KEY SCOPE (its attributed source, else its own), reach an expectation
-     * opened after its latest decision; or an attributed waiting item for which an untouched
+     * The rematch predicate (`P8-TSK-013`, widened by `P8-TSK-016` and `P8-TSK-019`): a residual
+     * whose keys, judged in its KEY SCOPE (its attributed source, else its own), reach an
+     * expectation opened after its latest decision — directly, or through an operation-anchored
+     * rule's anchor to its operation's expectation of the rule's kind; or an attributed waiting
+     * item for which an untouched
      * candidate of its run's value-date group rule opened after its latest decision. A PARKED
      * item leaves here only by the park's exact inverse, so an item owning a suspense item of
      * another origin (an unattributed bank line's {@code BANK_UNATTRIBUTED}) is never read.
@@ -380,6 +382,27 @@ public final class JdbcMatchingStore implements MatchingStore {
                     + " AND ek.key_value = ik.key_value"
                     + " JOIN reconciliation.expectation e ON e.id = ek.expectation_id"
                     + " WHERE ik.item_id = i.id AND e.opened_at > " + LATEST_DECISION + ")"
+                    // The operation-anchored rule's reach (P8-TSK-019, P8-TSK-018's recorded
+                    // design input): a PAYOUT_RETURN opens no key of its own, so the keys above
+                    // never see it - the item's key reaches the ANCHOR (the payout's
+                    // MERCHANT_PAYOUT), and the anchored rule's kind for the same operation,
+                    // under the anchor's source, opened after the item's latest decision and
+                    // still holding a remainder - a spent return (a duplicate's reach) leaves
+                    // the worklist instead of being re-locked on every tick.
+                    + " OR EXISTS (SELECT 1 FROM reconciliation.external_item_key ak"
+                    + " JOIN reconciliation.expectation_key aek"
+                    + " ON aek.source_id = COALESCE(i.attributed_source_id, i.source_id)"
+                    + " AND aek.key_value = ak.key_value"
+                    + " JOIN reconciliation.expectation anchor ON anchor.id = aek.expectation_id"
+                    + " JOIN reconciliation.reconciliation_batch ar ON ar.id = i.run_id"
+                    + " JOIN reconciliation.rule arule ON arule.rule_set_id = ar.rule_set_id"
+                    + " AND arule.line_type = i.line_type AND arule.operation_anchored"
+                    + " JOIN reconciliation.expectation reached"
+                    + " ON reached.operation_ref = anchor.operation_ref"
+                    + " AND reached.kind = arule.expectation_kind"
+                    + " AND reached.source_id = anchor.source_id AND reached.id <> anchor.id"
+                    + " AND reached.status IN ('OPEN', 'PARTIALLY_SETTLED')"
+                    + " WHERE ak.item_id = i.id AND reached.opened_at > " + LATEST_DECISION + ")"
                     + " OR (i.status = 'UNMATCHED' AND i.attributed_source_id IS NOT NULL"
                     + " AND EXISTS (SELECT 1 FROM reconciliation.rule g"
                     + " JOIN reconciliation.reconciliation_batch gr"

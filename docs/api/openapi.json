@@ -4102,6 +4102,10 @@
             "format": "int64",
             "type": "integer"
           },
+          "returns": {
+            "format": "int64",
+            "type": "integer"
+          },
           "skipped": {
             "format": "int64",
             "type": "integer"
@@ -6263,6 +6267,9 @@
             "type": "string"
           },
           "paidOut": {
+            "type": "string"
+          },
+          "payoutsReturned": {
             "type": "string"
           },
           "position": {

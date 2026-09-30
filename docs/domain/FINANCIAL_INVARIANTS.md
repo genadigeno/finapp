@@ -1439,7 +1439,10 @@ settled on `P8-TSK-015`, by the transition's consistency review, A12, A13 and C8
 of an `ADJUSTMENT` entry whose ledger proposal is of origin `RECONCILIATION`, classified before
 any counterparty rule, so a transfer of an OUTBOUND clearing remainder never reads as a capture —
 and the customer statement labels a wallet line of such an entry `RECONCILIATION_ATTRIBUTION` by
-the same rule; `payoutsReturned` stays `P8-TSK-019`'s.)* No table
+the same rule; `payoutsReturned` stays `P8-TSK-019`'s.)* *(Built by `P8-TSK-019`:
+`MerchantPayable.payoutsReturned` is every payable CREDIT facing `PAYOUT_CLEARING` — the return's
+posting `merchant-payout-return:<payoutId>` — classified after the attribution rule, so a
+reconciliation transfer never reads as a return, and served on the payable endpoint's line.)* No table
 stores a merchant balance; every payout decision derives the available payable inside the account
 lock.
 **Why:** A stored payable is a second balance authority (`INV-BAL-01`'s reasoning at the

@@ -38,6 +38,16 @@ public interface MerchantPayoutStore<T> {
     Optional<MerchantPayout> findByReference(T unitOfWork, String reference);
 
     /**
+     * The payout a provider's own reference names, locked {@code FOR UPDATE} (`P8-TSK-019`,
+     * ADR-0073 §4): the return's working claim — the row every applier of one payout's return
+     * serialises on. A counterparty's stored reference, never a tenant's identifier.
+     */
+    Optional<MerchantPayout> lockByProviderReference(T unitOfWork, String providerReference);
+
+    /** The payout our minted reference names, locked {@code FOR UPDATE} — the OUR_REF claim. */
+    Optional<MerchantPayout> lockByReference(T unitOfWork, String reference);
+
+    /**
      * Commits a fresh send permit, conditional on the payout still awaiting the rail's word —
      * {@code false} when a resolver got there first, and then nothing may be sent.
      */

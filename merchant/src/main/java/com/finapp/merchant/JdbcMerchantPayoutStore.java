@@ -130,11 +130,31 @@ public final class JdbcMerchantPayoutStore implements MerchantPayoutStore<Connec
         return oneByColumn(unitOfWork, "provider_idempotency_reference", reference);
     }
 
+    @Override
+    public Optional<MerchantPayout> lockByProviderReference(
+            Connection unitOfWork, String providerReference) {
+        Objects.requireNonNull(providerReference, "providerReference must not be null");
+        return oneByColumn(unitOfWork, "provider_reference", providerReference, " FOR UPDATE");
+    }
+
+    @Override
+    public Optional<MerchantPayout> lockByReference(Connection unitOfWork, String reference) {
+        Objects.requireNonNull(reference, "reference must not be null");
+        return oneByColumn(
+                unitOfWork, "provider_idempotency_reference", reference, " FOR UPDATE");
+    }
+
     private Optional<MerchantPayout> oneByColumn(
             Connection unitOfWork, String column, String value) {
+        return oneByColumn(unitOfWork, column, value, "");
+    }
+
+    private Optional<MerchantPayout> oneByColumn(
+            Connection unitOfWork, String column, String value, String lock) {
         try (PreparedStatement select =
                 unitOfWork.prepareStatement(
-                        "SELECT " + COLUMNS + " FROM " + TABLE + " WHERE " + column + " = ?")) {
+                        "SELECT " + COLUMNS + " FROM " + TABLE + " WHERE " + column + " = ?"
+                                + lock)) {
             select.setString(1, value);
             try (ResultSet row = select.executeQuery()) {
                 return row.next() ? Optional.of(map(row)) : Optional.empty();

@@ -169,16 +169,21 @@ class PayoutMatchingDatabaseTest {
     }
 
     private static Matching matching(boolean bypassTheLock) {
+        return matching(bypassTheLock, CLOCK);
+    }
+
+    /** The matcher on a chosen clock - the real one proves the rematch leg's anchored clause. */
+    private static Matching matching(boolean bypassTheLock, Clock clock) {
         JdbcBreakRegister register =
                 new JdbcBreakRegister(new JdbcOutboxWriter(), new JdbcAuditWriter(), IDS);
         Suspense suspense = new Suspense(postingService(), new JdbcLedgerAccountStore(), IDS);
         if (bypassTheLock) {
             return new Matching(
                     new JdbcMatchingStore(), new MatchingRules(), register, suspense,
-                    ResolutionFixtures.resolutions(IDS, CLOCK),
+                    ResolutionFixtures.resolutions(IDS, clock),
                     LOOKUP,
                     new JdbcLedgerAccountStore(), new JdbcOutboxWriter(),
-                    new JdbcAuditWriter(), IDS, CLOCK, new Matching.Config(200, 2), runner()) {
+                    new JdbcAuditWriter(), IDS, clock, new Matching.Config(200, 2), runner()) {
                 @Override
                 boolean claimSource(Connection unitOfWork, UUID sourceId) {
                     return true; // The probe: the lock ORDERS, the arbiters decide.
@@ -187,10 +192,10 @@ class PayoutMatchingDatabaseTest {
         }
         return new Matching(
                 new JdbcMatchingStore(), new MatchingRules(), register, suspense,
-                ResolutionFixtures.resolutions(IDS, CLOCK),
+                ResolutionFixtures.resolutions(IDS, clock),
                 LOOKUP,
                 new JdbcLedgerAccountStore(), new JdbcOutboxWriter(),
-                new JdbcAuditWriter(), IDS, CLOCK, new Matching.Config(200, 2), runner());
+                new JdbcAuditWriter(), IDS, clock, new Matching.Config(200, 2), runner());
     }
 
     private static PostingService postingService() {
@@ -961,10 +966,92 @@ class PayoutMatchingDatabaseTest {
         }
     }
 
-    // ----------------------------------------------------------------- the lock only orders
+    // ----------------------------------------------------------------- the late return
 
     @Test
     @Order(12)
+    @DisplayName("(m) the rematch leg reaches a return opened AFTER the item's decision - on REAL"
+            + " clocks, so only the anchored clause can find it (a PAYOUT_RETURN opens no key,"
+            + " and the payout's keys opened before the decision): the waiting return allocated by"
+            + " a REMATCH decision; a return nobody opened is never rematched")
+    void theRematchLegReachesALateReturnOnRealClocks() throws SQLException {
+        // Not the class's pinned clock: with the matcher months behind, every expectation reads
+        // "opened after" every decision and the rematch leg would pass for the wrong reason
+        // (P8-TSK-018's recorded warning, P8-TSK-019's design input).
+        Matching realTime = matching(false, Clock.systemUTC());
+        LocalDate day = day(13);
+        Payout late = newPayout(COMPLETED_PAYOUT);
+        Payout never = newPayout(COMPLETED_PAYOUT);
+        openPayout(late, 30_00, day);
+        openPayout(never, 20_00, day);
+        // Line 3 returns the same payout again - its keys reach the same anchor.
+        UUID runId =
+                seedRun(
+                        returned(1, 30_00, day, refs(late)),
+                        returned(2, 20_00, day, refs(never)),
+                        returned(3, 30_00, day, refs(late)));
+        realTime.sweep();
+        assertThat(itemStatus(runId, 1)).as("no return applied yet: it waits").isEqualTo("UNMATCHED");
+        assertThat(itemStatus(runId, 2)).isEqualTo("UNMATCHED");
+        assertThat(itemStatus(runId, 3)).isEqualTo("UNMATCHED");
+
+        // The worker's application, committed AFTER the items' decisions.
+        UUID lateReturn = openReturn(late, 30_00, day);
+        UUID itemSource =
+                (UUID) one("SELECT source_id FROM reconciliation.external_item WHERE id = ?",
+                        itemId(runId, 3));
+        assertThat(rematchWorklist(itemSource))
+                .as("the return open, both its lines are on the worklist - the read is live")
+                .contains(itemId(runId, 1), itemId(runId, 3));
+        realTime.sweep();
+
+        UUID lateItem = itemId(runId, 1);
+        assertThat(itemStatus(runId, 1)).isEqualTo("MATCHED");
+        assertThat(count("SELECT count(*) FROM reconciliation.match_decision WHERE"
+                + " external_item_id = ? AND origin = 'REMATCH'", lateItem))
+                .as("found by the anchored clause, re-decided once")
+                .isEqualTo(1);
+        assertThat(row("SELECT a.expectation_id, d.matched_key_kind, d.rule_priority FROM"
+                + " reconciliation.allocation a JOIN reconciliation.match_decision d ON d.id ="
+                + " a.decision_id WHERE a.external_item_id = ?", lateItem))
+                .containsExactly(lateReturn, "PAYOUT_PROVIDER_REF", 3);
+        assertThat(expectationStatus(lateReturn)).isEqualTo("SETTLED");
+
+        UUID neverItem = itemId(runId, 2);
+        assertThat(itemStatus(runId, 2)).as("nothing opened for it: it keeps waiting").isEqualTo(
+                "UNMATCHED");
+        assertThat(count("SELECT count(*) FROM reconciliation.match_decision WHERE"
+                + " external_item_id = ? AND origin = 'REMATCH'", neverItem))
+                .as("its keys reach only a payout opened before its decision - never rematched")
+                .isZero();
+
+        // The second return of the same payout reaches a SPENT return: it waits for its grace,
+        // and the worklist no longer selects it - it would be re-locked on every tick and, 200
+        // deep, keep every other residual of its source out.
+        UUID secondItem = itemId(runId, 3);
+        assertThat(itemStatus(runId, 3)).isEqualTo("UNMATCHED");
+        assertThat(rematchWorklist(itemSource))
+                .as("neither the spent return's second line nor the never-returned one")
+                .doesNotContain(secondItem, neverItem);
+    }
+
+    /** The rematch leg's worklist for one source, read as the leg reads it, rolled back. */
+    private static List<UUID> rematchWorklist(UUID source) throws SQLException {
+        List<UUID> worklist = new ArrayList<>();
+        try (Connection app = DatabaseRoles.application()) {
+            app.setAutoCommit(false);
+            new JdbcMatchingStore()
+                    .lockRematchCandidates(app, source, List.of(), 200)
+                    .forEach(residual -> worklist.add(residual.item().id()));
+            app.rollback();
+        }
+        return worklist;
+    }
+
+    // ----------------------------------------------------------------- the lock only orders
+
+    @Test
+    @Order(13)
     @DisplayName("(k) the lock only ORDERS: bypassed, ten sweepers over a fresh five-line payout"
             + " run still allocate each (item, expectation) at most once, never above an"
             + " expectation's amount, park nothing, and complete the run once")

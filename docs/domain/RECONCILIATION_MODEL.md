@@ -202,7 +202,11 @@ joins another module's rows. It is keyed on `(journal_entry_id, ledger_account_i
   transaction. The return expectation opens **no key of its own** — the line's references are the
   payout's own keys, held by its `MERCHANT_PAYOUT` expectation — and is reached as that operation's
   `PAYOUT_RETURN` by `UNIQUE (kind, operation_ref)` (§6.1). The payout stays `COMPLETED`. *(The
-  Phase 7 → 8 transition's consistency review, A4 and A6.)*
+  Phase 7 → 8 transition's consistency review, A4 and A6.)* *(Built by `P8-TSK-019`: a check
+  that fails — no payout, not `COMPLETED`, already returned, a different amount, a payable no
+  longer `ACTIVE` — is a typed outcome that writes nothing, the item waiting out its grace; the
+  rematch worklist's anchored clause re-decides the item once the keyless `PAYOUT_RETURN`
+  opens.)*
 - **History before Phase 8** is brought in by the opening-position backfill: keyed, leaderless,
   converging on the same uniques as live completions.
 
