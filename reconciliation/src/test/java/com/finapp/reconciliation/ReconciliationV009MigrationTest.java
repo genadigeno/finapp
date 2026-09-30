@@ -30,8 +30,9 @@ import org.junit.jupiter.api.Test;
 /**
  * `V009` reconciled against the vocabulary that generates it and the functions it re-states
  * (`P8-TSK-017`, ADR-0065 §2, ADR-0067 §5): the item's line-type and key-kind {@code CHECK}s are
- * the enums' WHOLE value lists (the scheme members exactly what `V009` adds to `V008`'s bank
- * vocabulary); the run's trigger freezes {@code settlement_cycle} beside `V003`'s birth facts and
+ * the scheme vocabulary's value lists — the enums' whole lists when `V009` landed, the payout
+ * members `V010`'s (`P8-TSK-018`) — the scheme members exactly what `V009` adds to `V008`'s bank
+ * vocabulary; the run's trigger freezes {@code settlement_cycle} beside `V003`'s birth facts and
  * keeps `V003`'s edges; the item's trigger keeps `V008`'s frozen copy and adds the learned-cycle
  * rule (written once, equal to its run's cycle); an item is never BORN knowing a cycle; and the
  * one grant is the learned cycle's UPDATE column — the run's cycle is never granted.
@@ -64,19 +65,21 @@ class ReconciliationV009MigrationTest {
     // ----------------------------------------------------------------- the vocabulary
 
     @Test
-    @DisplayName("the line-type and key-kind CHECKs are the enums' whole lists - the scheme"
+    @DisplayName("the line-type and key-kind CHECKs are the scheme vocabulary's lists - the scheme"
             + " members and references exactly what V009 adds to V008's bank vocabulary")
     void theSchemeVocabularyIsTheEnums() {
         String sql = normalized(migration(V009));
         assertThat(sql)
                 .contains(normalized(
                         "ADD CONSTRAINT external_item_line_type CHECK (line_type IN ("
-                                + ExternalLineType.sqlValueList() + "))"))
+                                + ExternalLineType.sqlValueList(
+                                        ExternalLineType.schemeVocabulary()) + "))"))
                 .contains(normalized(
                         "ADD CONSTRAINT external_item_key_kind CHECK (key_kind IN ("
-                                + ItemKeyKind.sqlValueList() + "))"));
+                                + ItemKeyKind.sqlValueList(ItemKeyKind.schemeVocabulary())
+                                + "))"));
 
-        Set<ExternalLineType> schemeMembers = EnumSet.allOf(ExternalLineType.class);
+        Set<ExternalLineType> schemeMembers = EnumSet.copyOf(ExternalLineType.schemeVocabulary());
         schemeMembers.removeAll(ExternalLineType.bankVocabulary());
         assertThat(schemeMembers)
                 .containsExactlyInAnyOrder(
@@ -84,7 +87,7 @@ class ReconciliationV009MigrationTest {
                         ExternalLineType.DEBIT_OUT,
                         ExternalLineType.SCHEME_FEE);
         assertThat(schemeMembers).noneMatch(ExternalLineType::isBankLine);
-        Set<ItemKeyKind> schemeKeys = EnumSet.allOf(ItemKeyKind.class);
+        Set<ItemKeyKind> schemeKeys = EnumSet.copyOf(ItemKeyKind.schemeVocabulary());
         schemeKeys.removeAll(ItemKeyKind.bankVocabulary());
         assertThat(schemeKeys)
                 .containsExactlyInAnyOrder(ItemKeyKind.SCHEME_REF, ItemKeyKind.END_TO_END_REF);

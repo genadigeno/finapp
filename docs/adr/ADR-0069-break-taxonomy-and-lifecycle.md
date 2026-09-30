@@ -639,6 +639,13 @@ postings (ADR-0071) move money, each in a transaction that names its break.
   The terminal typing reads the
   internal SUBJECT: a line naming a refund whose operation failed is `REFUND_MISMATCH` whether it
   arrived as a card `REFUND` or a scheme `DEBIT_OUT` naming a return.
+- `P8-TSK-018` — **implemented** (2026-09-30): `REVERSAL_MISMATCH` gains its producer for
+  `RETURN_NOT_APPLICABLE` — the grace leg, for an operation-anchored line (a payout return) whose
+  operation the lookup knows but whose return was never applied within grace; the value parks
+  owned, disposed of by a four-eyes `TRANSFER_TO_ACCOUNT` crediting the merchant's payable back
+  (proven end to end through the real lookup and the resolution desk). A return naming no payout is
+  `UNKNOWN_EXTERNAL` (`GRACE_EXPIRED`); one naming a payout the platform concluded failed parks at
+  once as `TERMINAL_STATE_CONTRADICTED`, as any terminal answer does.
 - `P8-TSK-011` (the definitive classes, errored items, blocked runs), `P8-TSK-012` (`FEE_MISMATCH`,
   `CORRECTION` and the `EVIDENCED` resolution row, reconciliation `V006`, and the first
   `reconciliation.BreakResolved`, for `EVIDENCED`), `P8-TSK-013` (grace, ageing, rematch, severity

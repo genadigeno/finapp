@@ -319,6 +319,16 @@ public interface MatchingStore {
     long breakResidualVersion(Connection unitOfWork, UUID breakId);
 
     /**
+     * The operation-anchored rule's reach (`P8-TSK-018`): for each anchor expectation a key
+     * reached, the expectation of {@code kind} for the SAME operation ({@code UNIQUE (kind,
+     * operation_ref)}) under the anchor's own source - never the anchor itself. Read lock-free:
+     * the anchor's operation is a frozen birth fact, and the reached expectation is locked with
+     * the chunk's sorted pass.
+     */
+    List<UUID> anchoredExpectations(
+            Connection unitOfWork, List<UUID> anchorIds, ExpectationKind kind);
+
+    /**
      * Records the cycle a cycle-less expectation learned from this item's report
      * (`P8-TSK-017`): written once, equal to the item's run's cycle — `V009`'s every-writer rule
      * refuses a second write and any other value.

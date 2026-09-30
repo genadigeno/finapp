@@ -448,6 +448,7 @@ deferral renumbers.
 | `V004` (`-009`) | Acceptance: the batch's `source_sequence`, `accepted_on`, `journal_entry_id`, `posting_omitted`; `ACCEPTED` on file and batch | `UNIQUE (source_id, source_sequence)`; the acceptance columns once-only by trigger; `CHECK` that an accepted batch has its sequence and `accepted_on`, and that `journal_entry_id` is NULL exactly when the posting was omitted |
 | `V005` (`-016`) | The bank statement: the batch's `statement_sequence`, `opening_minor`, `closing_minor`; `remittance_reference` nullable; the bank line types and `REMITTANCE_REF` | The live statement-sequence unique `(source_id, currency, statement_sequence)` excluding `REJECTED`/`REPUDIATED`; a batch a report or a statement, exactly one, the facts whole and the net their difference by `CHECK`; attribution a bank credit's or debit's alone; the facts frozen with the parse statement |
 | `V006` (`-017`) | The scheme cycle report's vocabulary: `CREDIT_IN`, `DEBIT_OUT`, `SCHEME_FEE`; the `SCHEME_REF` and `END_TO_END_REF` references | The regenerated `CHECK`s; the cycle is the batch's identity (`external_batch_ref`), never a line reference |
+| `V007` (`-018`) | The payout provider report's vocabulary: `PAYOUT_EXECUTED`, `PAYOUT_RETURNED`, `PAYOUT_FEE`; the `PAYOUT_PROVIDER_REF` reference | The regenerated `CHECK`s |
 | Next free (`-021`) | `pull_permit` | A forward-only `last_attempt_at` under a conditional `UPDATE`, strictly advancing on every renewal (the send permits' shape as the transition's gate repaired it) |
 | Next free (`-022`) | The readmission's attestation rule on `file` | A trigger refusing `ACCEPTED` for a `READMISSION` of a never-attested original unless the readmission's `attested_by` is set and differs from the readmitter (its `received_by`) and from the original's `received_by` — `V002`'s `CHECK`s bind only `UPLOAD`, and a cross-row rule needs a trigger |
 | Next free (`-023`) | The batch's `REPUDIATED` | The live uniques exclude it, so a genuine batch can follow |
@@ -464,12 +465,13 @@ held at the database, as `V002` holds the upload's.)*
 | `V003` (`-009`) | `reconciliation_batch` (+`_event`), `external_item` (+`_event`, `_key`) | `UNIQUE (source_id, source_sequence) WHERE kind = 'BATCH'`; `UNIQUE (batch_id)`; one open `REPROCESS` per source; allocated plus parked plus offset never above the item's amount |
 | `V004` (`-010`) | `break` (+`_event`, `_note`, `_evidence_link`), `suspense_item`, `suspense_release`, `park` | One open break per (type, subject) by partial uniques; no `DELETE` grant plus a refusing trigger; `suspense_item.break_id NOT NULL`; released never above the amount; a note refused when it holds a Luhn-valid 13–19-digit run or an IBAN shape |
 | `V005` (`-011`) | `match_decision`, `match_candidate`, `allocation` | `rule_set_id NOT NULL`; the allocation unique and deferred Σ triggers on both sides; **no `UPDATE` or `DELETE` grant** on decisions, candidates or allocations |
-| `V006` (`-012`) | `resolution` (+`_event`), for the platform's `EVIDENCED` kind; the person kinds (`V007`, `-015`) and the batch subject (`V011`, `-023`) are admitted by the tasks that introduce them | Exactly one subject; one `PROPOSED` per subject; the four-eyes `CHECK`; an `EVIDENCED` resolution proposed by the system and born `APPROVED`; `UNIQUE adjustment_proposal_id`, `UNIQUE journal_entry_id` |
+| `V006` (`-012`) | `resolution` (+`_event`), for the platform's `EVIDENCED` kind; the person kinds (`V007`, `-015`) and the batch subject (`V012`, `-023`) are admitted by the tasks that introduce them | Exactly one subject; one `PROPOSED` per subject; the four-eyes `CHECK`; an `EVIDENCED` resolution proposed by the system and born `APPROVED`; `UNIQUE adjustment_proposal_id`, `UNIQUE journal_entry_id` |
 | `V007` (`-015`) | `resolution`'s generated `CHECK`s and transition trigger re-stated for the person kinds and the `PROPOSED`, `REJECTED` and `WITHDRAWN` states | The (kind, reason code) `CHECK`; the regenerated machine `CHECK` and every-writer trigger |
 | `V008` (`-016`) | The bank item: `external_item.attributed_source_id`, `position_purpose` nullable under the position rule, the bank line types and `REMITTANCE_REF`; `match_candidate.key_kind` nullable for the value-date group | A report line always in its source's position and never attributed, a bank credit or debit in a position exactly when attributed, a bank fee in neither; the attribution frozen with the copied line |
 | `V009` (`-017`) | The scheme item: the scheme's line types and references on the working copy; the cycle on the run (`reconciliation_batch.settlement_cycle`, frozen); the cycle a return learns (`external_item.learned_cycle`) | The learned cycle written once, equal to the item's run's cycle, never at birth — every-writer triggers; the UPDATE grant narrowed to it |
-| `V010` (`-022`) | `run_replay` | Append-only |
-| `V011` (`-023`) | The `REPUDIATE_BATCH` kind and the batch subject on `resolution`; the item's `REPUDIATED` and its `MATCHED → UNMATCHED` reopening; the expectation's reopening edges; the suspense item's `REPUDIATION` origin | The generated `CHECK`s and transition triggers regenerated; one `PROPOSED` repudiation per batch |
+| `V010` (`-018`) | The payout item: the payout provider's line types and reference on the working copy; `PAYOUT_FEE` in the rule and fee schedule vocabularies; the payout rule set v1's missing fee rule and flat schedule, completed in place | The seed completed only behind a guard refusing once any run or decision names the payout rule set — no stored decision can be explained differently |
+| `V011` (`-022`) | `run_replay` | Append-only |
+| `V012` (`-023`) | The `REPUDIATE_BATCH` kind and the batch subject on `resolution`; the item's `REPUDIATED` and its `MATCHED → UNMATCHED` reopening; the expectation's reopening edges; the suspense item's `REPUDIATION` origin | The generated `CHECK`s and transition triggers regenerated; one `PROPOSED` repudiation per batch |
 
 *(`V007`…`V009` numbered by the Phase 7 → 8 transition's consistency review, A8: `P8-TSK-023`
 needs its own migration, because each state and edge arrives with its producer. A deferral of
@@ -480,7 +482,10 @@ it added settlement `V005` for the statement's facts and unique, which the plan'
 claimed and the schema did not hold.)* *(`P8-TSK-017` took `V009` in turn — its backlog entry had
 recorded "Persistence: none new", but neither the item's vocabulary nor `learned_cycle` existed — so
 `-022` and `-023` moved again, to `V010` and `V011`; and settlement `V006` admitted the scheme's
-line types and references.)*
+line types and references.)* *(`P8-TSK-018` took `V010` — its backlog entry had recorded
+"Persistence: none new" a third time, but the item admitted no payout vocabulary and the payout rule
+set had no fee terms to check by — so `-022` and `-023` moved to `V011` and `V012`; and settlement
+`V007` admitted the payout provider's line types and reference.)*
 
 **Other schemas.**
 - **ledger:** `V015` (`P8-TSK-006`) — `adjustment_proposal.reason_code` and `origin`, the

@@ -46,7 +46,13 @@ public enum LineReferenceKind {
     SCHEME_REF,
 
     /** The end-to-end reference the platform gave a push execution, echoed by the scheme. */
-    END_TO_END_REF;
+    END_TO_END_REF,
+
+    /**
+     * The payout provider's own reference for a payout it accepted (`P8-TSK-018`) — the
+     * {@code MERCHANT_PAYOUT} expectation's first key.
+     */
+    PAYOUT_PROVIDER_REF;
 
     /** The report vocabulary `V003` admitted; {@code REMITTANCE_REF} arrived with `V005`. */
     public static java.util.Set<LineReferenceKind> reportVocabulary() {
@@ -58,6 +64,11 @@ public enum LineReferenceKind {
         return java.util.EnumSet.range(PSP_CAPTURE_REF, REMITTANCE_REF);
     }
 
+    /** The vocabulary through the scheme's cycle report — what `V006` admitted. */
+    public static java.util.Set<LineReferenceKind> schemeVocabulary() {
+        return java.util.EnumSet.range(PSP_CAPTURE_REF, END_TO_END_REF);
+    }
+
     /** A subset's {@code CHECK} value list, in declaration order. */
     public static String sqlValueList(java.util.Set<LineReferenceKind> members) {
         return Arrays.stream(values())
@@ -66,7 +77,7 @@ public enum LineReferenceKind {
                 .collect(Collectors.joining(", "));
     }
 
-    /** The whole {@code CHECK} value list (`V006`) — reconciled by the migration test. */
+    /** The whole {@code CHECK} value list (`V007`) — reconciled by the migration test. */
     public static String sqlValueList() {
         return Arrays.stream(values())
                 .map(value -> "'" + value.name() + "'")

@@ -420,7 +420,7 @@ Three designs were weighed at the transition:
     `MATCHED → UNMATCHED` reopening (a bank item of another batch, step 2), the expectations'
     reopening edges, the suspense item's `REPUDIATION` origin (ADR-0070 point 2), the
     `REPUDIATE_BATCH` kind and its batch subject arrive with
-    `P8-TSK-023`'s reconciliation `V011`, after `P8-TSK-022`'s `V010` (renumbered when `P8-TSK-016` and `P8-TSK-017` took `V008` and `V009`).
+    `P8-TSK-023`'s reconciliation `V012`, after `P8-TSK-022`'s `V011` (renumbered when `P8-TSK-016`, `P8-TSK-017` and `P8-TSK-018` took `V008`, `V009` and `V010`).
 
     *(The remittance rule, the write order, the already-released rule and the migration were
     settled by the Phase 7 → 8 transition's consistency review: A8, A9, A10 and B5.)*
@@ -593,13 +593,26 @@ converted, `INV-MON-04`).
   reference. Recorded deviation: the backlog's "Persistence: none new" did not hold — neither the
   scheme's vocabulary nor `learned_cycle` existed — so settlement `V006` and reconciliation `V009`
   were added, and the plan renumbered `-022` and `-023` again, to `V010` and `V011`.
+  `P8-TSK-018` (2026-09-30) shipped HOP 1 for the payout provider — `SIM_PAYOUT_CSV` v1 (settlement
+  `V007`: `PAYOUT_EXECUTED`, `PAYOUT_RETURNED`, `PAYOUT_FEE` and `PAYOUT_PROVIDER_REF`; the provider
+  codes confined to the adapter), point 2's recognition with the provider's fees as report fees (DR
+  `PROCESSING_COSTS` / CR `PAYOUT_CLEARING`: the liability grows, the provider owed its fee), the
+  executed and returned lines posting nothing, and the day's OUTBOUND `REMITTANCE` discharged by the
+  bank's DEBIT (DR `PAYOUT_CLEARING` / CR `CASH_AT_BANK`, `P8-TSK-016`'s recognition) against the
+  merchant's own declared position alone (`INV-SET-05`, `INV-RAIL-04`) — each payout proven
+  through the bank to `CASH_CONFIRMED`, still `COMPLETED`. The provider's fee is its OWN canonical
+  type (the `SCHEME_FEE` precedent: its original is a payout, reached by `PAYOUT_PROVIDER_REF`, and
+  the per-batch fold stays the PSP's) — a deviation from the plan's closed list, recorded. Recorded
+  deviation: the backlog's "Persistence: none new" did not hold a third time — settlement `V007`
+  and reconciliation `V010` were added, and the plan renumbered `-022` and `-023` to `V011` and
+  `V012`.
 - `P8-TSK-009` (`PROCESSING_COSTS`, acceptance, fee recognition and the remittance expectation),
   `P8-TSK-016` (`CASH_AT_BANK`, attribution, bank recognition, continuity, the cash proof and the
   single-poster rule), `P8-TSK-015` (`RECONCILIATION_LOSSES` and `RECONCILIATION_GAINS` with
   their resolutions), `P8-TSK-017` and `P8-TSK-018` (the scheme's and the payout provider's
   positions discharged the same way), `P8-TSK-007` (the position proof and the completeness
   verifier), `P8-TSK-012` (the fee check), `P8-TSK-023` (repudiation, with reconciliation
-  `V011`), `P8-TST-001` (the proofs and the trial balance in every round of the storm),
+  `V012`), `P8-TST-001` (the proofs and the trial balance in every round of the storm),
   `P8-DOC-001`.
 - **The repudiated report's `REMITTANCE`, now decided** (point 10, step 2). This read "recorded
   for `P8-TSK-023`'s design, not decided here": the paid case needed a rule the item machine did

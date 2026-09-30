@@ -455,6 +455,10 @@ guarantee is documented per rail.
 return `COMPLETED` is the expectation's `PENDING`, the scheme's cycle report its `REPORTED`, and
 only the bank statement's recognition of the cycle's net its `CASH_CONFIRMED` —
 `SchemeCycleCashDatabaseTest` walks all three for a net-receivable and a net-payable cycle.)*
+*(And for the payout, as built by `P8-TSK-018`: a payout `COMPLETED` is instructed, its
+expectation `PENDING`; the provider's report its `REPORTED`; the bank's debit its
+`CASH_CONFIRMED` — and settlement moves no payout out of `COMPLETED` (`INV-LIFE-04`),
+`PayoutSettlementCashDatabaseTest` walking it over the wire.)*
 
 ### INV-SET-02 — Settlement expectations are tracked
 **Statement:** Every operation expected to settle externally creates a tracked expectation
@@ -844,7 +848,7 @@ when attributed, `attempt_id` (payments `V023`); a probe bypassing the port caug
 an attributed parking, `ATTEMPT_CONCLUDED` or `AMOUNT_MISMATCH`, names the attempt its value
 belongs to, and its owning break is resolved by a four-eyes `TRANSFER_TO_ACCOUNT` crediting that
 attempt's counterparty, never by a guess. The repudiation is the fourth opener, origin
-`REPUDIATION`, admitted by reconciliation `V011` (`P8-TSK-023`), its `origin_ref` the released
+`REPUDIATION`, admitted by reconciliation `V012` (`P8-TSK-023`), its `origin_ref` the released
 item's id — the transition's re-check, R3.)*
 
 ### INV-REC-10 — Settlement evidence is screened, encrypted, and every content access audited

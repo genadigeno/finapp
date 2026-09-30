@@ -531,7 +531,11 @@ payable bounds the next payout).
   `GraceAndRematchDatabaseTest` with a share-lock holder standing in for the worker, and the
   dropped-item-lock probe killed by that test. The worker's own side of the race stays
   `P8-TSK-019`'s.
-- `P8-TSK-018`: the payout provider's report and rules.
+- `P8-TSK-018`: the payout provider's report and rules. **Implemented** (2026-09-30): the
+  `PAYOUT_RETURNED` line is held as an item under the operation-anchored rule, never a candidate of
+  its payout's `MERCHANT_PAYOUT`; it waits `UNMATCHED` with no break, and at grace types
+  `RETURN_NOT_APPLICABLE` and parks — the fallback this ADR names while `P8-TSK-019`'s worker does
+  not exist — the four-eyes transfer crediting the payable back, the payout still `COMPLETED`.
 - `P8-TSK-015`: the fallback's `TRANSFER_TO_ACCOUNT`, and with it `reconciliationAttributed`, the
   customer statement's `RECONCILIATION_ATTRIBUTION` label and `INV-MER-02`'s attribution clause
   (point 6), so cutting `P8-TSK-019` takes none of them. `P8-TSK-006`: the `origin` column the

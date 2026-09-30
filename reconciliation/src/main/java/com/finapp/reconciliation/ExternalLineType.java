@@ -14,8 +14,9 @@ import java.util.stream.Collectors;
  * never allocates against an expectation and never enters the position identity's items
  * term — it takes the {@code CHECKED} path at matching. A {@code BANK_FEE} is the same fact at
  * the bank (`P8-TSK-016`: posted DR {@code PROCESSING_COSTS} at the statement's recognition), and a
- * {@code SCHEME_FEE} the same fact in the instant scheme's cycle report (`P8-TSK-017`).
- * Everything else asserts value already in the position and allocates.
+ * {@code SCHEME_FEE} the same fact in the instant scheme's cycle report (`P8-TSK-017`), and a
+ * {@code PAYOUT_FEE} in the payout provider's report (`P8-TSK-018`). Everything else asserts value
+ * already in the position and allocates.
  */
 public enum ExternalLineType {
     CAPTURE,
@@ -32,22 +33,30 @@ public enum ExternalLineType {
     BANK_FEE,
     CREDIT_IN,
     DEBIT_OUT,
-    SCHEME_FEE;
+    SCHEME_FEE,
+    PAYOUT_EXECUTED,
+    PAYOUT_RETURNED,
+    PAYOUT_FEE;
 
     /** Whether this line claims value in the position — false exactly for the fees. */
     public boolean allocating() {
-        return this != PROCESSING_FEE && this != BANK_FEE && this != SCHEME_FEE;
+        return this != PROCESSING_FEE
+                && this != BANK_FEE
+                && this != SCHEME_FEE
+                && this != PAYOUT_FEE;
     }
 
     /**
      * The key a report fee's {@code ORIGINAL_REF} reaches its transaction's expectation by
-     * (`P8-TSK-017`): the PSP's fee names a capture, the scheme's an execution. Empty for every
-     * other line — the bank's fee has no original (it is judged against a zero gross).
+     * (`P8-TSK-017`): the PSP's fee names a capture, the scheme's an execution, the payout
+     * provider's a payout (`P8-TSK-018`). Empty for every other line — the bank's fee has no
+     * original (it is judged against a zero gross).
      */
     public java.util.Optional<KeyKind> originalKeyKind() {
         return switch (this) {
             case PROCESSING_FEE -> java.util.Optional.of(KeyKind.PSP_CAPTURE_REF);
             case SCHEME_FEE -> java.util.Optional.of(KeyKind.SCHEME_REF);
+            case PAYOUT_FEE -> java.util.Optional.of(KeyKind.PAYOUT_PROVIDER_REF);
             default -> java.util.Optional.empty();
         };
     }
@@ -67,6 +76,11 @@ public enum ExternalLineType {
         return java.util.EnumSet.range(CAPTURE, BANK_FEE);
     }
 
+    /** The vocabulary through the scheme's cycle report — what `V009` admitted. */
+    public static java.util.Set<ExternalLineType> schemeVocabulary() {
+        return java.util.EnumSet.range(CAPTURE, SCHEME_FEE);
+    }
+
     /** A subset's {@code CHECK} value list, in declaration order. */
     public static String sqlValueList(java.util.Set<ExternalLineType> members) {
         return Arrays.stream(values())
@@ -75,7 +89,7 @@ public enum ExternalLineType {
                 .collect(Collectors.joining(", "));
     }
 
-    /** The whole {@code CHECK} value list (`V009`) — reconciled by the migration test. */
+    /** The whole {@code CHECK} value list (`V010`) — reconciled by the migration test. */
     public static String sqlValueList() {
         return Arrays.stream(values())
                 .map(value -> "'" + value.name() + "'")

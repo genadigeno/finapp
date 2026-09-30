@@ -5,7 +5,7 @@ import java.util.stream.Collectors;
 
 /**
  * How a suspense item's value reached {@code SUSPENSE_UNMATCHED} (`P8-TSK-010`, ADR-0070
- * §2's openers) — three now; {@code REPUDIATION} joins by reconciliation `V011`
+ * §2's openers) — three now; {@code REPUDIATION} joins by reconciliation `V012`
  * (`P8-TSK-023`), the origin whose {@code origin_ref} is the already-released item it
  * reverses. {@code origin_ref} is the origin's own row — the external item, the Phase 7
  * parking, the settlement line — one uniform {@code UNIQUE}, the backfill's and every

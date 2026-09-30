@@ -1,6 +1,6 @@
 # Task History
 
-The per-task completion records that accumulated behind `## Current Task` - 180 "Previously" blocks, newest first, from `P8-TSK-016` back to project initiation. *(`X-TSK-004` is cross-cutting and completed after the Phase 6 → 7 transition, so it stands second, between `P7-TSK-001` and the transition's record - the transition's block moved here by `P7-TSK-001`'s gate, exactly as an earlier form of this note said it would.)*
+The per-task completion records that accumulated behind `## Current Task` - 181 "Previously" blocks, newest first, from `P8-TSK-017` back to project initiation. *(`X-TSK-004` is cross-cutting and completed after the Phase 6 → 7 transition, so it stands second, between `P7-TSK-001` and the transition's record - the transition's block moved here by `P7-TSK-001`'s gate, exactly as an earlier form of this note said it would.)*
 
 **Archive.** These records were moved verbatim out of
 [`CURRENT_STATE.md`](../CURRENT_STATE.md) on 2026-09-20 so that the canonical description of
@@ -14,6 +14,84 @@ Authoritative backlog: [`BACKLOG.md`](../BACKLOG.md)
 ---
 
 ### Previously
+
+**`P8-TSK-017` — The instant scheme's cycle report** — `COMPLETE` (2026-09-30). **M8.6, Every
+counterparty, opens at 1 of 4**: `INSTANT_CLEARING` is now discharged by the scheme's own evidence
+per settlement cycle — each pay-in, withdrawal, return and parking allocated by the scheme's
+references, the scheme's fees recognised at acceptance, the cycle's net expected as a remittance and
+moved to cash only by the bank's statement; a net-receivable cycle debits cash, a net-payable one
+credits it, and each operation reads `CASH_CONFIRMED` over the wire (ADR-0065 §2, ADR-0067 §5,
+ADR-0068; `INV-RAIL-04`, `INV-SET-01`, `INV-SET-05`; protected `INV-SET-02`, `INV-REC-06`, `-07`,
+`INV-REV-03`, `INV-MON-04`, `INV-PAY-03`, `INV-RAIL-03`). **TWO MIGRATIONS, A RECORDED DEVIATION**:
+the backlog's "Persistence: none new" did not hold — neither the scheme's vocabulary nor
+`learned_cycle` existed — so settlement `V006` (`CREDIT_IN`, `DEBIT_OUT`, `SCHEME_FEE`, the
+`SCHEME_REF` and `END_TO_END_REF` references; the cycle NOT a line reference but the batch's own
+`external_batch_ref`) and reconciliation `V009` (the item's scheme vocabulary; the cycle on the
+RUN, `reconciliation_batch.settlement_cycle`, frozen; `external_item.learned_cycle`, written once,
+only equal to the run's cycle and never at birth, for every writer, the `UPDATE` grant narrowed to
+it) — `P8-TSK-022` and `-023` renumbered again, to `V010` and `V011`, in the plan, backlog, ADRs
+and javadocs. **THE FORMAT** (`SIM_SCHEME_JSON` v1, built by a delegated agent, reviewed and
+corrected): one JSON object per cycle, amounts JSON strings never numbers, the entry codes `CT`
+and `RT` confined to the adapter, a fee split into a `SCHEME_FEE` line naming its execution by
+`ORIGINAL_REF`, golden-filed with pinned fingerprints; the field-class screen over DECODED strings,
+number tokens and undeclared member names, the record count the entries' (a minified report is one
+line), several cycles `UNSUPPORTED_FORMAT`. THE AGENT'S FIND, DECIDED: the platform's own minted
+end-to-end and dispatch references — a dashless UUIDv7 — hold a card-length digit run about once in
+sixty and would have been refused at random, so the two classes admit that exact shape (the
+acquirer reference's precedent). **HOP 1**: the scheme's fees are report fees
+(`SettlementLineType.isReportFee`) — DR `PROCESSING_COSTS` / CR the declared position — and the
+accepted batch carries its cycle to the run. **MATCHING**: the pure `decide` compares the run's
+cycle with the candidate's announced one — a shift allocates normally with a zero-value
+`TIMING_DIFFERENCE(CYCLE_MISMATCH)` (suppressed under an open `MISSING_EXTERNAL`, which the money
+closes `EVIDENCED`), a comparison and never a tie-breaker; a cycle-less expectation's allocating
+item records `learned_cycle` (ADR-0062's follow-up paid, no payments migration); a fee's original
+is reached by the fee line type's own key (`SCHEME_FEE → SCHEME_REF`); the lookup is handed the
+item's key scope and `app` answers the rail as the one whose declared clearing purpose is that
+source's position; a terminal answer on a refund subject is `REFUND_MISMATCH` whatever line named
+it. **THE BUILD'S FINDS, EACH FIXED**: the lookup had no rail for an item, so every scheme reference
+read unknown; a fee's original was looked up as the PSP's capture reference, so every scheme fee
+priced zero; a line PARKED at once and later re-matched learned no cycle and raised no shift (the
+tests agent's find — the parked path now does both); the adapter's reference alphabet was named like
+a secret (the redaction rule's find, renamed). **THE GATE'S FIND, FIXED**: the app suite's cycle
+fixture ran a date into a digit-led random marker, joining a card-length run that the format's class
+rightly refuses about one run in ten — the fixture now takes the simulated scheme's own shape, the
+class unchanged. **DOCUMENTS**: ADR-0062 (the follow-up paid), ADR-0065/0066/0067/0068/0069
+implemented notes, the lifecycle document, `RECONCILIATION_MODEL.md`'s instant rows, `INV-SET-01`'s
+and `INV-RAIL-04`'s as-built notes, `DISTRIBUTED_EXECUTION` §3, `MODULE_ARCHITECTURE`, the plan's
+migration table, two `DATA_CLASSIFICATION` rows. **SEVEN PROBE RUNS, SEVEN CAUGHT**
+(`MUTATION_TESTING` §2 +7 rows under `INV-RAIL-04`, `INV-REC-02` ×3, `INV-REC-01` ×2,
+`INV-REC-08`): the scheme's fees discharging `SETTLEMENT_CLEARING`; the cycle comparison dropped;
+the learned cycle not written; the fee's original looked up as the PSP's; the lookup's rail dropped;
+refund typing by line alone; the parked re-match observing no cycle — every restore byte-identical
+(sha256). **Multi-instance PASS**: the learned cycle is written on the item row the chunk already
+holds, by a conditional `learned_cycle IS NULL` under `V009`'s every-writer trigger admitting one
+value; ten matchers over a five-line scheme run decide each line once, settle each expectation once
+and learn the return's cycle once — and with the try-lock BYPASSED still allocate each pair at most
+once (counted); ten rematch sweepers settle a late pay-in once; the same report delivered ten ways is
+one file, one batch, one run, one entry (counted). **RECORDED MINORS**: the scheme's rule set seeds
+no fee tolerance, so "inside" collapses onto "at"; every fee type reads the `PROCESSING_FEE_PER_LINE`
+tolerance comparison; the per-batch fee fold stays the processing fee's; `AMBIGUOUS_MATCH` between a
+pay-in and a parking is proven hermetically — the per-source key unique makes it unreachable by one
+key in the schema; a scheme reference is bounded at 100 characters where payments admits 128, and
+the cycle token at the reference alphabet with no card-length digit run (v2 if a scheme exceeds
+them); the fixture renders from seeded completions, not the payments tables; the settled cycle's
+identity is asserted moved by exactly zero (the `P8-TSK-016` precedent); the suspense proof is not
+asserted after each scenario; the date deviation alone raises nothing on a parked re-match, as
+`P8-TSK-013` built it; a latent defect in the PSP adapter found in passing (`SimPspCsvFormat`
+crashing past its 100-defect cap — a stuck file, never money) is recorded as debt and flagged for its
+own task. **NEXT**: `P8-TSK-018` `READY` (the payout provider's report). **Verified** by targeted
+tiers from fresh runs on the final code — settlement hermetic 129 across 19 suites and database 45
+across 7 (the golden report, the field-class screen, the platform's own reference, `V006`'s pins, the
+scheme's fees at hop 1), reconciliation hermetic 112 across 20 and database 103 across 11 (the
+scheme matching suite's fourteen ordered cases with both ten-sweeper races and the raw-writer
+refusals; the cycle engine; `V009`), app hermetic 574 across 107 suites (the vocabulary and rail
+confinement rules, the redaction rule, the claim-subject mapping, the document guards), the scheme
+cash suite in its own container 4 across 1 (both cycles to `CASH_CONFIRMED` over the wire, the real
+claim store's lookup, the ten deliveries), the twelve proof-group app database suites in ONE shared
+container 62 across 12, the platform's column-classification guard 5 across 1, and the document
+guards 125 across 22 suites re-run fresh after the records landed, ALL 0 FAILURES —
+ledger, payments and merchant untouched; the full battery and the fleet-wide database and kafka tiers
+deliberately skipped on the owner's instruction.
 
 **`P8-TSK-016` — The bank statement: cash recognised, remittances matched** — `COMPLETE`
 (2026-09-30). **M8.5, Cash confirmed, `CLOSED` at 1 of 1**: cash now moves on the platform's books

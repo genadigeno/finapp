@@ -29,7 +29,9 @@ public enum ItemKeyKind {
     /** The instant scheme's reference for an execution (`P8-TSK-017`). */
     SCHEME_REF,
     /** The platform's end-to-end reference for a push execution, echoed by the scheme. */
-    END_TO_END_REF;
+    END_TO_END_REF,
+    /** The payout provider's own reference for a payout it accepted (`P8-TSK-018`). */
+    PAYOUT_PROVIDER_REF;
 
     /** The report vocabulary `V003` admitted; {@code REMITTANCE_REF} arrived with `V008`. */
     public static java.util.Set<ItemKeyKind> reportVocabulary() {
@@ -41,6 +43,11 @@ public enum ItemKeyKind {
         return java.util.EnumSet.range(PSP_CAPTURE_REF, REMITTANCE_REF);
     }
 
+    /** The vocabulary through the scheme's cycle report — what `V009` admitted. */
+    public static java.util.Set<ItemKeyKind> schemeVocabulary() {
+        return java.util.EnumSet.range(PSP_CAPTURE_REF, END_TO_END_REF);
+    }
+
     /** A subset's {@code CHECK} value list, in declaration order. */
     public static String sqlValueList(java.util.Set<ItemKeyKind> members) {
         return Arrays.stream(values())
@@ -49,7 +56,7 @@ public enum ItemKeyKind {
                 .collect(Collectors.joining(", "));
     }
 
-    /** The whole {@code CHECK} value list (`V009`) — reconciled by the migration test. */
+    /** The whole {@code CHECK} value list (`V010`) — reconciled by the migration test. */
     public static String sqlValueList() {
         return Arrays.stream(values())
                 .map(value -> "'" + value.name() + "'")

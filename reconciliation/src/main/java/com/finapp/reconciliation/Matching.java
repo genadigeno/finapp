@@ -348,6 +348,19 @@ public class Matching {
                             Optional.of(internal), parks, now, correlation);
                     return;
                 }
+                if (resolution.anchored()
+                        && internal.classification() != InternalClassification.UNKNOWN) {
+                    // A returned payout whose operation the platform knows, but whose return
+                    // was never applied within grace (`P8-TSK-018`, ADR-0069 section 2): the
+                    // matcher cannot apply it - `P8-TSK-019`'s worker does, inside grace - so
+                    // the value parks OWNED, for a person's four-eyes transfer back to the
+                    // payable (transition decision O2's fallback).
+                    applyDefinitive(
+                            unitOfWork, run, item, Optional.empty(), decisionId, decidedOn,
+                            BreakType.REVERSAL_MISMATCH, BreakCause.RETURN_NOT_APPLICABLE,
+                            Optional.of(internal), parks, now, correlation);
+                    return;
+                }
                 // Grace has run out: the remainder is OWNED now, its classification the
                 // lookup's frozen answer (INV-REC-02).
                 applyDefinitive(
@@ -1177,7 +1190,8 @@ public class Matching {
             Optional<Integer> waitingGraceHours,
             Optional<MatchingRules.RuleRow> unlandedRule,
             Optional<MatchingRules.RuleRow> groupRule,
-            List<UUID> groupCandidateIds) {}
+            List<UUID> groupCandidateIds,
+            boolean anchored) {}
 
     private Resolution resolve(
             Connection unitOfWork, MatchingStore.RunRow run, MatchingStore.ChunkItem item) {
@@ -1200,6 +1214,7 @@ public class Matching {
         boolean anyLanded =
                 lineRules.stream()
                         .anyMatch(rule -> rule.cardinality() == Cardinality.ONE_TO_ONE);
+        boolean anchored = lineRules.stream().anyMatch(MatchingRules.RuleRow::operationAnchored);
         // The CHECK or CORRECTION rule this line type rides when no landed rule serves
         // it (`P8-TSK-012`); PARTIAL has no v1 rule.
         Optional<MatchingRules.RuleRow> unlanded =
@@ -1225,10 +1240,20 @@ public class Matching {
                 continue;
             }
             List<UUID> hits = resolveKey(unitOfWork, scope, keyKind, value.get());
+            if (rule.operationAnchored()) {
+                // An operation-anchored rule (`P8-TSK-018`, the Phase 7 -> 8 transition's A4):
+                // the line's key names its operation's ANCHOR - a returned payout's reference
+                // is its payout's own key - and the rule reaches only that operation's
+                // expectation of the rule's kind (`UNIQUE (kind, operation_ref)`), never the
+                // anchor: an INBOUND return is no direction mismatch against its OUTBOUND
+                // payout. Finding none, the line has reached nothing and waits.
+                hits = store.anchoredExpectations(
+                        unitOfWork, hits, rule.expectationKind().orElseThrow());
+            }
             if (!hits.isEmpty()) {
                 return new Resolution(
                         Optional.of(rule), anyLanded, hits, keyKind, waitingGrace,
-                        unlanded, Optional.empty(), List.of());
+                        unlanded, Optional.empty(), List.of(), anchored);
             }
         }
         // No key reached anything in the scope: the value-date group, if the line type rides
@@ -1251,7 +1276,7 @@ public class Matching {
                         .orElse(List.of());
         return new Resolution(
                 Optional.empty(), anyLanded, List.of(), KeyKind.OUR_REF, waitingGrace,
-                unlanded, group, groupCandidates);
+                unlanded, group, groupCandidates, anchored);
     }
 
     /**
@@ -1272,6 +1297,8 @@ public class Matching {
                     // The scheme's reference and our end-to-end reference (`P8-TSK-017`).
                     case SCHEME_REF -> ItemKeyKind.SCHEME_REF;
                     case END_TO_END_REF -> ItemKeyKind.END_TO_END_REF;
+                    // The payout provider's reference (`P8-TSK-018`).
+                    case PAYOUT_PROVIDER_REF -> ItemKeyKind.PAYOUT_PROVIDER_REF;
                     default -> null; // The other sources' kinds arrive with their tasks.
                 };
         return itemKind == null

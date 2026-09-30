@@ -7,6 +7,7 @@ import com.finapp.ledger.JournalEntryStore;
 import com.finapp.ledger.LedgerAccount;
 import com.finapp.ledger.LedgerAccountId;
 import com.finapp.ledger.LedgerAccountStore;
+import com.finapp.ledger.NormalBalance;
 import com.finapp.ledger.SupportedCurrencies;
 import com.finapp.reconciliation.ExpectationDirection;
 import com.finapp.reconciliation.ExpectationReadings;
@@ -268,9 +269,17 @@ public final class PositionProof {
         for (AccountPurpose purpose : PROVEN) {
             for (Map.Entry<CurrencyCode, LedgerAccount> position :
                     positions.get(purpose).entrySet()) {
-                Money balance =
+                // DR−CR, whatever the account's normal side (`P8-TSK-018`, the debt `P8-TSK-015`
+                // recorded): the settled balance is signed by the NORMAL balance, so a
+                // credit-normal position - PAYOUT_CLEARING, a LIABILITY - reads CR−DR and is
+                // turned to the remainders' own sign before the comparison.
+                Money settled =
                         balances.derive(unitOfWork, position.getValue().id(), AsOf.latest())
                                 .settled();
+                Money balance =
+                        position.getValue().normalBalance() == NormalBalance.CREDIT
+                                ? settled.negated()
+                                : settled;
                 Money remainders =
                         Optional.ofNullable(folded.get(purpose))
                                 .map(sums -> sums.get(position.getKey()))

@@ -47,9 +47,10 @@ class ReconciliationMirrorsSettlementVocabularyTest {
                                 .filter(type -> !type.allocating())
                                 .map(Enum::name))
                 .as("a non-allocating line's effect is the recognition entry itself: the"
-                        + " processing fee's and the scheme's fee at hop 1 (P8-TSK-017), the"
-                        + " bank's fee at hop 2 (P8-TSK-016)")
-                .containsExactly("PROCESSING_FEE", "BANK_FEE", "SCHEME_FEE");
+                        + " processing fee's, the scheme's (P8-TSK-017) and the payout"
+                        + " provider's (P8-TSK-018) at hop 1, the bank's fee at hop 2"
+                        + " (P8-TSK-016)")
+                .containsExactly("PROCESSING_FEE", "BANK_FEE", "SCHEME_FEE", "PAYOUT_FEE");
     }
 
     private static java.util.Set<String> names(Enum<?>[] values) {

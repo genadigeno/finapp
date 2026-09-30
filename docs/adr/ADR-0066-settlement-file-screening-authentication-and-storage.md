@@ -503,6 +503,19 @@ ceiling), ADR-0046 (no connection across a pull), ADR-0008 (the collector SPI).
   dashes (`CYC-2026-09-26-01`, the simulated scheme's shape, joins ten digits; a date running
   into a five-digit sequence would join thirteen and be refused — found by the gate as a flaky
   fixture, the fixture corrected, never the class) — a scheme exceeding any of these needs v2.
+- `P8-TSK-018` — **implemented** (2026-09-30): `SIM_PAYOUT_CSV` v1, the PSP report's sibling
+  (`H`/`D`/`T` records, signed amounts, the gross-plus-fee split naming the payout by
+  `ORIGINAL_REF`), built by a delegated agent, golden-filed with pinned fingerprints, its codes
+  `SETTLED` and `RETURNED` confined. §3 field by field: the beneficiary name is the one declared
+  free-text field, always screened (a card number or an account identifier refused at the door,
+  metadata only — `INV-RAIL-03`); the provider reference is held to the no-instrument class; our
+  reference admits the platform's OWN minted `pyo-` UUIDv7 EXACTLY (its dash-joined hex reaches a
+  card-length run about once in several dozen — `P8-TSK-017`'s rule, dashed form). Differences from
+  the PSP adapter, each deliberate: amounts at twelve integer digits, the header's name and version
+  screened by class, a well-formed code required before an unknown one maps to `OTHER_IN`/`OTHER_OUT`,
+  and each record's defects gathered apart — the PSP adapter's defect-cap crash, recorded as debt,
+  does not recur here. Recorded limits: references bounded at the canonical line's 100 characters
+  though merchant admits 128; no quoting, so a comma in the beneficiary rejects the file whole.
 - M8.7: `P8-TSK-021` (pull acquisition, the four credentials, `pull_permit`, source silence, and
   `ProviderTransportGuard` extended to every pull source's URL (point 1); the first deferral
   candidate) and `P8-TSK-022` (readmission, including the attested readmission of an unattested

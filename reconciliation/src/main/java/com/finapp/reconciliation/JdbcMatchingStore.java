@@ -1365,6 +1365,35 @@ public final class JdbcMatchingStore implements MatchingStore {
     }
 
     @Override
+    public List<UUID> anchoredExpectations(
+            Connection unitOfWork, List<UUID> anchorIds, ExpectationKind kind) {
+        if (anchorIds.isEmpty()) {
+            return List.of();
+        }
+        try (PreparedStatement read =
+                unitOfWork.prepareStatement(
+                        "SELECT DISTINCT reached.id FROM reconciliation.expectation anchor"
+                                + " JOIN reconciliation.expectation reached"
+                                + " ON reached.operation_ref = anchor.operation_ref"
+                                + " AND reached.source_id = anchor.source_id"
+                                + " AND reached.kind = ? AND reached.id <> anchor.id"
+                                + " WHERE anchor.id = ANY (?) ORDER BY reached.id")) {
+            read.setString(1, kind.name());
+            read.setArray(2, unitOfWork.createArrayOf("uuid", anchorIds.toArray()));
+            List<UUID> reached = new ArrayList<>();
+            try (ResultSet rows = read.executeQuery()) {
+                while (rows.next()) {
+                    reached.add(rows.getObject(1, UUID.class));
+                }
+            }
+            return reached;
+        } catch (SQLException failure) {
+            throw new ReconciliationStorageException(
+                    "could not read an anchored rule's expectations", failure);
+        }
+    }
+
+    @Override
     public void recordLearnedCycle(Connection unitOfWork, UUID itemId, String cycle) {
         try (PreparedStatement update =
                 unitOfWork.prepareStatement(

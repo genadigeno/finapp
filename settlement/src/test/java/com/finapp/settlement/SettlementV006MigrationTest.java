@@ -23,26 +23,30 @@ class SettlementV006MigrationTest {
             "db/migration/settlement/V006__the_scheme_cycle_report.sql";
 
     @Test
-    @DisplayName("the line-type and reference CHECKs are the enums' whole lists - exactly the"
+    @DisplayName("the line-type and reference CHECKs are the scheme vocabulary's lists - exactly the"
             + " scheme's members added to V005's")
     void theSchemeVocabularyIsTheEnums() {
         String sql = normalized(migration());
         assertThat(sql)
                 .contains(normalized("ADD CONSTRAINT batch_total_line_type CHECK (line_type IN ("
-                        + SettlementLineType.sqlValueList() + "))"))
+                        + SettlementLineType.sqlValueList(SettlementLineType.schemeVocabulary())
+                        + "))"))
                 .contains(normalized("ADD CONSTRAINT line_type CHECK (line_type IN ("
-                        + SettlementLineType.sqlValueList() + "))"))
+                        + SettlementLineType.sqlValueList(SettlementLineType.schemeVocabulary())
+                        + "))"))
                 .contains(normalized("ADD CONSTRAINT line_reference_kind CHECK (kind IN ("
-                        + LineReferenceKind.sqlValueList() + "))"));
+                        + LineReferenceKind.sqlValueList(LineReferenceKind.schemeVocabulary())
+                        + "))"));
 
-        Set<SettlementLineType> added = EnumSet.allOf(SettlementLineType.class);
+        Set<SettlementLineType> added = EnumSet.copyOf(SettlementLineType.schemeVocabulary());
         added.removeAll(SettlementLineType.bankVocabulary());
         assertThat(added)
                 .containsExactly(
                         SettlementLineType.CREDIT_IN,
                         SettlementLineType.DEBIT_OUT,
                         SettlementLineType.SCHEME_FEE);
-        Set<LineReferenceKind> references = EnumSet.allOf(LineReferenceKind.class);
+        Set<LineReferenceKind> references =
+                EnumSet.copyOf(LineReferenceKind.schemeVocabulary());
         references.removeAll(LineReferenceKind.bankVocabulary());
         assertThat(references)
                 .as("no SETTLEMENT_CYCLE reference: the cycle is the batch's identity")

@@ -704,11 +704,31 @@ adapters). Catalogued with this ADR:
   direction) and later re-matched `PARKED → MATCHED` neither learned a return's cycle nor raised a
   shift; the parked re-match now does both (the date deviation alone still raises nothing there,
   as `P8-TSK-013` built it).
+  **`P8-TSK-018` implemented** (2026-09-30): §2's payout rows run. (1) THE OPERATION-ANCHORED
+  RULE, which rule set v1 declared and the matcher had never read: `Matching.resolve` now honours
+  `operation_anchored` — the line's key reaches its operation's ANCHOR (a returned payout's
+  references are its payout's own keys, held by its `MERCHANT_PAYOUT`), and the rule reaches only
+  that operation's expectation of the rule's kind (`PAYOUT_RETURN`, `UNIQUE (kind, operation_ref)`,
+  read lock-free because the anchor's operation is a frozen birth fact, the reached row locked in
+  the chunk's sorted pass), never the anchor itself: an INBOUND return is no direction mismatch
+  against its OUTBOUND payout. With no return expectation it reaches nothing and waits `UNMATCHED`
+  under its 72-hour grace, no break raised; at grace, a return whose operation the lookup knows is
+  `REVERSAL_MISMATCH` (`RETURN_NOT_APPLICABLE`), parked for the four-eyes transfer — the
+  fallback of transition decision O2 — and one naming nothing is `UNKNOWN_EXTERNAL`. The rematch
+  worklist's anchored clause is `P8-TSK-019`'s, recorded as its design input. (2) THE COMPLETED
+  SEED, a recorded deviation from §8's "a change is a NEW version": `P8-TSK-004` seeded the payout
+  rule set v1 with no fee rule and no fee schedule, so a payout fee would have met `NO_RULE` and
+  waited unchecked forever. A new version is unavailable — superseding v1 would update its frozen
+  status — so reconciliation `V010` appends the fee `CHECK` rule and the flat schedule (0.25, no
+  rate) to v1 behind a guard that refuses once any run or decision has named that rule set: no
+  stored decision can be explained differently, the reason the rule exists. No fee tolerance is
+  seeded; it reads zero. (3) `PAYOUT_FEE`'s original is reached by `PAYOUT_PROVIDER_REF` (the
+  line type's own key, `P8-TSK-017`'s mechanism).
 - `P8-TSK-019` builds the return worker that the operation-anchored `PAYOUT_RETURNED` rule waits
   for, and the `PAYOUT_RETURN` expectation it reaches (ADR-0067 §5, ADR-0073).
 - `P8-TSK-022` builds rule-set administration under four-eyes, `REPROCESS` runs, requeue,
-  `run_replay` (reconciliation `V010`) and the replay-perturbation probe. `P8-TSK-023`'s
-  repudiation, the only path that adds counter-allocations, follows in reconciliation `V011`.
+  `run_replay` (reconciliation `V011`) and the replay-perturbation probe. `P8-TSK-023`'s
+  repudiation, the only path that adds counter-allocations, follows in reconciliation `V012`.
 - `P8-TST-001` (the storm: replay `IDENTICAL` every round, at most one positive allocation per item
   and expectation, ten matcher instances) and `P8-TST-002` (the break and resolution battery).
 - Deferred and recorded as not implemented in Phase 8: fuzzy or subset-sum matching, business-day

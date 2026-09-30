@@ -75,7 +75,25 @@ public enum SettlementLineType {
      * The instant scheme's own charge (`P8-TSK-017`) — posted DR {@code PROCESSING_COSTS} at the
      * report's recognition like the PSP's fee, carrying {@code ORIGINAL_REF} to its entry.
      */
-    SCHEME_FEE;
+    SCHEME_FEE,
+
+    /**
+     * A payout the payout provider reports executed (`P8-TSK-018`) — money out of the platform to
+     * a merchant's destination, allocating against its {@code MERCHANT_PAYOUT}, posting nothing.
+     */
+    PAYOUT_EXECUTED,
+
+    /**
+     * A payout the beneficiary bank returned (`P8-TSK-018`) — money back in, reaching only that
+     * payout's own {@code PAYOUT_RETURN} (the operation-anchored rule), never the payout itself.
+     */
+    PAYOUT_RETURNED,
+
+    /**
+     * The payout provider's own charge (`P8-TSK-018`) — posted DR {@code PROCESSING_COSTS} at the
+     * report's recognition, carrying {@code ORIGINAL_REF} to the payout it rode in on.
+     */
+    PAYOUT_FEE;
 
     /** The report vocabulary `V003` admitted; the bank members arrived with `V005`. */
     public static java.util.Set<SettlementLineType> reportVocabulary() {
@@ -87,13 +105,18 @@ public enum SettlementLineType {
         return java.util.EnumSet.range(CAPTURE, BANK_FEE);
     }
 
+    /** The vocabulary through the scheme's cycle report — what `V006` admitted. */
+    public static java.util.Set<SettlementLineType> schemeVocabulary() {
+        return java.util.EnumSet.range(CAPTURE, SCHEME_FEE);
+    }
+
     /**
      * Whether this is a report's own fee — what hop 1's recognition posts, DR
-     * {@code PROCESSING_COSTS} against the source's position (`P8-TSK-009`, `P8-TSK-017`). The
-     * bank's fee is hop 2's ({@code BankRecognition}).
+     * {@code PROCESSING_COSTS} against the source's position (`P8-TSK-009`, `P8-TSK-017`,
+     * `P8-TSK-018`). The bank's fee is hop 2's ({@code BankRecognition}).
      */
     public boolean isReportFee() {
-        return this == PROCESSING_FEE || this == SCHEME_FEE;
+        return this == PROCESSING_FEE || this == SCHEME_FEE || this == PAYOUT_FEE;
     }
 
     /** Whether this is a bank statement's line (`P8-TSK-016`). */
@@ -109,7 +132,7 @@ public enum SettlementLineType {
                 .collect(Collectors.joining(", "));
     }
 
-    /** The whole {@code CHECK} value list (`V006`) — reconciled by the migration test. */
+    /** The whole {@code CHECK} value list (`V007`) — reconciled by the migration test. */
     public static String sqlValueList() {
         return Arrays.stream(values())
                 .map(value -> "'" + value.name() + "'")

@@ -32,6 +32,7 @@ import com.finapp.settlement.SourceKind;
 import com.finapp.settlement.TransactionRunner;
 import com.finapp.settlement.format.SettlementFormat;
 import com.finapp.settlement.format.simpsp.SimPspCsvFormat;
+import com.finapp.settlement.format.simpayout.SimPayoutCsvFormat;
 import com.finapp.settlement.format.simscheme.SimSchemeJsonFormat;
 import com.finapp.settlement.format.simstatement.SimStatementTaggedFormat;
 import com.finapp.sharedkernel.id.IdGenerator;
@@ -112,7 +113,7 @@ public class SettlementBeans {
                                         1,
                                         Set.of(DeliveryChannel.UPLOAD, DeliveryChannel.PULL),
                                         Optional.of(PayoutSettlementDeclaration.CLEARING_PURPOSE),
-                                        Optional.of("PAY-REM-[0-9]{4,12}")),
+                                        Optional.of(SimPayoutCsvFormat.REMITTANCE_REFERENCE)),
                                 new SettlementSourceDescriptor(
                                         "simulated-bank.statement",
                                         SourceKind.BANK_STATEMENT,
@@ -194,7 +195,8 @@ public class SettlementBeans {
      * classified CONFIDENTIAL, never logged: a statement is ours only when its account record
      * equals the reference configured for its currency ({@code INV-RAIL-03}). The defaults are
      * the simulated bank's. `SIM_SCHEME_JSON` v1 (`P8-TSK-017`) is the instant scheme's cycle
-     * report — pure, a singleton like the PSP's.
+     * report and `SIM_PAYOUT_CSV` v1 (`P8-TSK-018`) the payout provider's daily report — both
+     * pure, singletons like the PSP's.
      */
     @Bean
     Map<SettlementFormatId, SettlementFormat> settlementFormats(
@@ -209,6 +211,8 @@ public class SettlementBeans {
                 SimPspCsvFormat.INSTANCE,
                 SettlementFormatId.SIM_SCHEME_JSON,
                 SimSchemeJsonFormat.INSTANCE,
+                SettlementFormatId.SIM_PAYOUT_CSV,
+                SimPayoutCsvFormat.INSTANCE,
                 SettlementFormatId.SIM_STATEMENT_TAGGED,
                 new SimStatementTaggedFormat(
                         Map.of(

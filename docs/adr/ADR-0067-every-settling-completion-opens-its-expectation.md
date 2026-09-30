@@ -550,6 +550,13 @@ transaction).
   deviation: the cycle is not a tie-breaker between candidates as point 5 says; since payments
   `V023` a scheme reference reaches one claimant, and two reachable candidates stay
   `AMBIGUOUS_MATCH`, never settled by a cycle.
+- `P8-TSK-018` — **implemented** (2026-09-30): the `MERCHANT_PAYOUT` expectations `P8-TSK-005`
+  opens are discharged by the payout provider's report and the bank. The position proof is now
+  signed DR−CR for EVERY reconciled position, as its javadoc always said: `PositionProof` read
+  `settled()`, signed by the account's normal balance, so the credit-normal `PAYOUT_CLEARING`
+  (a LIABILITY) read CR−DR against remainders signed DR−CR and every in-flight payout failed the
+  verdict — the debt `P8-TSK-015` recorded, paid here and proven with an open payout's expectation
+  (the positions report's `ledgerBalance` for `PAYOUT_CLEARING` is DR−CR accordingly).
 - `P8-TSK-019`: the payout return's expectation through `PayoutSettlementExpectations`, opening
   no key and reached through its operation (point 5), and the return worker that the
   operation-anchored rule waits for (automated returns are owner decision O2, a transition
