@@ -96,7 +96,7 @@ Three existing texts pull against each other, and this ADR settles them:
    | `AMOUNT_MISMATCH` | `ONE_TO_ONE` with a different amount | expectation (under) or item (over) | difference | the over-part only | HIGH | `EVIDENCED` (a correction fills or offsets it), `WRITE_OFF` (an INBOUND remainder; a DEBIT item), `TRANSFER_TO_ACCOUNT`, `RECOGNISE_GAIN` (CREDIT, after the minimum age) |
    | `CURRENCY_MISMATCH` | Key hit, currency differs; never converted (`INV-MON-04`; FX is Phase 9) | item | item amount (its own currency) | Yes | HIGH | `EVIDENCED` (a counterparty correction offsets it), `TRANSFER_TO_ACCOUNT`, `WRITE_OFF` (DEBIT), `OFFSET_SUSPENSE` — never `RECOGNISE_GAIN` |
    | `FEE_MISMATCH` | Fee check beyond tolerance (a dispute-fee line ≠ its expectation is an `AMOUNT_MISMATCH` instead) | item | \|difference\| (commercial) | No (already expensed) | MEDIUM | `ACKNOWLEDGE` (four-eyes) |
-   | `DUPLICATE_EXTERNAL` | Expectation already fully allocated, or a repeated fingerprint | item | amount | Yes | HIGH | `EVIDENCED` (a claw-back correction offsets it), `OFFSET_SUSPENSE`, `TRANSFER_TO_ACCOUNT`, `WRITE_OFF` (DEBIT), `RECOGNISE_GAIN` (a recovery after a write-off, CREDIT, after the minimum age) |
+   | `DUPLICATE_EXTERNAL` | Expectation already fully allocated, or a repeated fingerprint; a parking whose scheme execution a credit already explains (`EXECUTION_ALREADY_EXPLAINED`, `P8-TSK-020`) | item; for `EXECUTION_ALREADY_EXPLAINED`, the parking's suspense item | amount | Yes | HIGH | `EVIDENCED` (a claw-back correction offsets it), `OFFSET_SUSPENSE`, `TRANSFER_TO_ACCOUNT`, `WRITE_OFF` (DEBIT), `RECOGNISE_GAIN` (a recovery after a write-off, CREDIT, after the minimum age) — never `TRANSFER_TO_ACCOUNT` for `EXECUTION_ALREADY_EXPLAINED`: its value was attributed once |
    | `DUPLICATE_INTERNAL` | A key collision recorded at opening; or an investigator's reclassification | expectation | the colliding expectation's amount | No | HIGH | `ACKNOWLEDGE`, `WRITE_OFF` |
    | `AMBIGUOUS_MATCH` | Two or more candidates | item | amount | Yes | MEDIUM | `MANUAL_MATCH`, `TRANSFER_TO_ACCOUNT`, `WRITE_OFF` (DEBIT), `RECOGNISE_GAIN` (CREDIT, after the minimum age) |
    | `TIMING_DIFFERENCE` | Late match beyond tolerance; cycle mismatch | decision | 0 | No | LOW | `ACKNOWLEDGE` (one person) |
@@ -661,6 +661,17 @@ postings (ADR-0071) move money, each in a transaction that names its break.
   Phase 7 → 8 transition's re-check, R8)*, `P8-TSK-020` (`PARKED_ON_RECEIPT` and the adoption of
   Phase 7's rows), `P8-TSK-022` (replay's `PROCESSING_ERROR`, requeue) and `P8-TSK-024` (the break
   meters, the dashboard row and the alerts).
+- `P8-TSK-020` — **implemented** (2026-09-30): the first break standing on a suspense item. Its
+  subject is the item it owns, so reconciliation `V011` made `break_suspense_item_fk`
+  `DEFERRABLE INITIALLY IMMEDIATE` and the one opener defers it for its two inserts; every other
+  writer keeps immediate checking. **Amended**: `DUPLICATE_EXTERNAL` gains the cause
+  `EXECUTION_ALREADY_EXPLAINED` (the parking payments `V023`'s backfill left unclaimed, ADR-0070's
+  recorded design input) and, for it alone, a suspense-item subject; its admitted kinds exclude
+  `TRANSFER_TO_ACCOUNT` (`ResolutionTemplates`), so a value a credit already attributed is never
+  attributed again. The break keeps the parking's stored cause as `internal_state`, the named
+  attempt (or the claim's standing subject) as `internal_operation_ref`, and the classification
+  `UNKNOWN`, `TERMINAL` or `COMPLETED`; its trace reaches the raw statement through the item's
+  `EXPECTED_AS` step to the parking's `UNMATCHED_CONFIRMATION` expectation.
 - `P8-TST-001` (each seeded fault produces exactly its break type and no extra breaks) and
   `P8-TST-002` (every break type crossed with every allowed resolution kind, evidence against
   approval, immutability by privilege and trigger).

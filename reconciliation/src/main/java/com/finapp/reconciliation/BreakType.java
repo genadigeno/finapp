@@ -88,10 +88,14 @@ public enum BreakType {
             case AMOUNT_MISMATCH ->
                     subject == BreakSubjectKind.EXPECTATION
                             || subject == BreakSubjectKind.EXTERNAL_ITEM;
+            // A parking whose execution is already explained is a duplicate held as a
+            // suspense item, never an external item (P8-TSK-020, ADR-0069 section 2 amended).
+            case DUPLICATE_EXTERNAL ->
+                    subject == BreakSubjectKind.EXTERNAL_ITEM
+                            || subject == BreakSubjectKind.SUSPENSE_ITEM;
             case MISSING_INTERNAL,
                             CURRENCY_MISMATCH,
                             FEE_MISMATCH,
-                            DUPLICATE_EXTERNAL,
                             AMBIGUOUS_MATCH,
                             REVERSAL_MISMATCH,
                             REFUND_MISMATCH ->

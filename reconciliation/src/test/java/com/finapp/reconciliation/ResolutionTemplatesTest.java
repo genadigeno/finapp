@@ -89,6 +89,22 @@ class ResolutionTemplatesTest {
             }
         }
         assertThat(ResolutionTemplates.admittedKinds(
+                        BreakType.DUPLICATE_EXTERNAL, BreakCause.EXECUTION_ALREADY_EXPLAINED))
+                .as("a parking whose execution a credit already explains is never attributed"
+                        + " twice (P8-TSK-020, ADR-0070 point 8)")
+                .doesNotContain(ResolutionKind.TRANSFER_TO_ACCOUNT)
+                .containsExactlyInAnyOrder(
+                        ResolutionKind.WRITE_OFF, ResolutionKind.OFFSET_SUSPENSE,
+                        ResolutionKind.RECOGNISE_GAIN);
+        assertThat(ResolutionTemplates.admittedKinds(
+                        BreakType.DUPLICATE_EXTERNAL, BreakCause.REPEATED_FINGERPRINT))
+                .as("the refinement is the cause's alone")
+                .contains(ResolutionKind.TRANSFER_TO_ACCOUNT);
+        assertThat(ResolutionTemplates.admittedKinds(
+                        BreakType.UNKNOWN_EXTERNAL, BreakCause.PARKED_ON_RECEIPT))
+                .as("an unattributed or attributed parking goes to its owner by a transfer")
+                .contains(ResolutionKind.TRANSFER_TO_ACCOUNT, ResolutionKind.RECOGNISE_GAIN);
+        assertThat(ResolutionTemplates.admittedKinds(
                         BreakType.TIMING_DIFFERENCE, BreakCause.values()[0]))
                 .containsExactly(ResolutionKind.ACKNOWLEDGE);
         assertThat(ResolutionTemplates.admittedKinds(

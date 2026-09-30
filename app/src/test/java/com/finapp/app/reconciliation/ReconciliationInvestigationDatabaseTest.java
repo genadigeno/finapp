@@ -353,7 +353,10 @@ class ReconciliationInvestigationDatabaseTest {
                 + " 'reconciliation.BreakInvestigationStarted' AND aggregate_id = ?", breakId))
                 .isEqualTo(1);
 
-        String needle = "needle" + UUID.randomUUID().toString().replace("-", "");
+        // Letters only: a UUID's hex can hold a Luhn-valid digit run the note screen rightly
+        // refuses as a card number - the flaky-fixture class (found by P8-TSK-020's gate).
+        String needle = "needle" + UUID.randomUUID().toString().replace("-", "")
+                .replaceAll("[0-9]", "q");
         String key = "note-" + UUID.randomUUID();
         HttpResponse<String> noted = post(operator.token(), "/breaks/" + breakId + "/notes",
                 key, "{\"body\":\"the PSP confirms the capture " + needle + "\"}");

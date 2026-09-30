@@ -2922,11 +2922,18 @@ class MultiRailConservationStormDatabaseTest {
                         "SELECT count(*) FROM ledger.journal_line l"
                                 + " JOIN ledger.ledger_account a ON a.id = l.ledger_account_id"
                                 + " WHERE a.purpose = 'SUSPENSE_UNMATCHED'");
+        assertThat(suspenseLines)
+                .as("the storm parked: the zero below is about real suspense lines")
+                .isPositive();
         assertThat(report.unattributedByPurpose()
                         .get(com.finapp.ledger.AccountPurpose.SUSPENSE_UNMATCHED))
-                .as("at rest: SUSPENSE_UNMATCHED truthfully counts exactly the parkings'"
-                        + " suspense lines until P8-TSK-020 adopts them")
-                .isEqualTo(suspenseLines);
+                .as("at rest: every parking's suspense line is known - its suspense item owns"
+                        + " it (P8-TSK-020, INV-REC-09); this read the parkings' own count"
+                        + " until that task")
+                .isZero();
+        assertThat(report.suspenseUnowned())
+                .as("at rest: every parking's item is owned by an open break (INV-REC-09)")
+                .isZero();
     }
 
     // ----------------------------------------------------------------- SQL

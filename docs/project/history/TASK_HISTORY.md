@@ -1,6 +1,6 @@
 # Task History
 
-The per-task completion records that accumulated behind `## Current Task` - 182 "Previously" blocks, newest first, from `P8-TSK-018` back to project initiation. *(`X-TSK-004` is cross-cutting and completed after the Phase 6 → 7 transition, so it stands second, between `P7-TSK-001` and the transition's record - the transition's block moved here by `P7-TSK-001`'s gate, exactly as an earlier form of this note said it would.)*
+The per-task completion records that accumulated behind `## Current Task` - 183 "Previously" blocks, newest first, from `P8-TSK-019` back to project initiation. *(`X-TSK-004` is cross-cutting and completed after the Phase 6 → 7 transition, so it stands second, between `P7-TSK-001` and the transition's record - the transition's block moved here by `P7-TSK-001`'s gate, exactly as an earlier form of this note said it would.)*
 
 **Archive.** These records were moved verbatim out of
 [`CURRENT_STATE.md`](../CURRENT_STATE.md) on 2026-09-20 so that the canonical description of
@@ -14,6 +14,99 @@ Authoritative backlog: [`BACKLOG.md`](../BACKLOG.md)
 ---
 
 ### Previously
+
+**`P8-TSK-019` — Payout returns** — `COMPLETE` (2026-09-30). **M8.6, Every counterparty, at 3 of
+4**: a payout the beneficiary bank returned is now a merchant fact applied from settlement evidence
+with no person — the payable restored exactly once by the return's own posting
+`merchant-payout-return:<payoutId>` (DR `PAYOUT_CLEARING` / CR the payable, dated from the batch's
+stored `accepted_on` and the item's settlement date), the fact born once, the keyless
+`PAYOUT_RETURN` expected and allocated by the rematch leg through the operation-anchored rule, the
+payout still `COMPLETED` — transition decision O2's automated path, the four-eyes transfer its
+fallback; ADR-0057's follow-up closed (ADR-0073; `INV-LIFE-04`, `INV-MER-02`, `INV-SET-05`,
+`INV-REC-06`; protected `INV-LED-01`, `INV-IDEM-02`, `INV-CON-02`, `INV-SET-02`, `INV-HIST-01`).
+**ONE MIGRATION, AS CLAIMED** — the first Phase 8 task in four whose persistence claim held: merchant
+`V008` (`payout_return`, its money bound to the payout's by a composite foreign key onto a declared
+`merchant_payout_money_is_unique`, `UNIQUE (payout_id)` and `UNIQUE (journal_entry_id)`, an insert
+trigger refusing a payout not `COMPLETED`, append-only for every writer, `SELECT, INSERT` the only
+grant; ten classification rows). **THE APPLIER** (`merchant.PayoutReturns.apply`, one caller
+transaction): the payout row `FOR UPDATE` by the provider's reference, then ours; the checks each a
+TYPED OUTCOME that writes nothing — `NO_PAYOUT`, `PAYOUT_NOT_COMPLETED`, `ALREADY_RETURNED`,
+`AMOUNT_DIFFERS`, `PAYABLE_NOT_POSTABLE` (the payable read `FOR SHARE` before any posting, the rank
+that orders it against a merchant close); then the posting, the fact naming its entry, the
+expectation through the port, `merchant.MerchantPayoutReturned` (identifiers only) and the acting
+audit `merchant.PayoutReturnApplied`. **THE WORKER** (`app`'s `PayoutReturnSweep`, run by the
+leaderless `PayoutReturnSchedule`, off in tests): reconciliation's rows through a port it declares
+(`WaitingPayoutReturns`), the batch's date through settlement's `acceptedOnOf`, each item its own
+transaction inside the item's own flow (the item the cause) and the system actor, the item re-read
+`FOR SHARE` FIRST and applied only while still `UNMATCHED`; it allocates nothing and takes no
+namespace-4 lock. **THE REMATCH CLAUSE** (`P8-TSK-018`'s design input): an item whose key reaches
+an anchor whose operation's anchored kind opened, under the anchor's source, after the item's
+latest decision and still holds a remainder — proven on REAL clocks (the pinned-clock trap the
+input warned of), a control item never rematched. **`MerchantPayable.payoutsReturned`**: every
+payable CREDIT facing `PAYOUT_CLEARING`, after the attribution rule, served on the payable
+endpoint's line (the OpenAPI baseline regenerated, one compatible addition); `INV-MER-02` as built.
+**THE BUILD'S FINDS, EACH FIXED**: a fixed first page of returns that cannot apply yet would have
+starved every routine return behind it until grace — the worker now walks every page by keyset,
+proven with a page of one; the anchored clause, unconditioned, kept a duplicate line's reach to a
+SPENT return in the worklist, re-locked on every tick and, 200 deep, keeping other residuals out —
+the tests agent's find, now conditioned on the reached expectation's remainder and proven by the
+worklist itself; the ownership register flagged the new finder (classified `ADMINISTERED`).
+**THE GATE'S FINDS, EACH FIXED**: the opening-position backfill had no leg for returns, so a rebuilt
+register (ADR-0067 §8, the rule `P8-TSK-009` set for every new kind) would have restored each
+payout's expectation and left its return's clearing line unattributed — it now pages every recorded
+`payout_return` and re-opens its keyless copy from the return's own posting (a trailing
+`returns` count, older records replaying with an honest zero; the OpenAPI baseline regenerated),
+proven by emptying a return's `PAYOUT_RETURN` as the platform's root and requiring it back
+substance-equal and keyless, a second run adding nothing, the rematch still allocating its line;
+the remainder condition's worklist assertion read another source's worklist — vacuous (below);
+the E2E suite funded its merchants by a capture-shaped posting that opened no expectation, so run
+inside the twelve-suite proof group it left `SETTLEMENT_CLEARING` unexplained and ten absolute
+proofs of other suites failed — each funding now opens its capture's expectation through the live
+payments port, which cleared seven of them, and the suite runs in its own container like the two
+cash suites, because the storm's at-rest suspense count and the register rebuild's comparison
+assume no parking or fixture-funded suite ran before them (recorded as debt); the system-actor
+register still named `sweep` after the keyset refactor moved `enterSystem()` into
+`applyContained`.
+**REGISTERS**: `LEASE_PROTECTED_SCHEDULERS` +1, the system-actor call sites +1, the
+expectation-opener register's `merchant-payout-return:` row (proved by the routine return's
+ledger-backed copy), one `AUDITABLE_ACTIONS` row. **DOCUMENTS**: ADR-0073's and ADR-0068's
+implemented notes, `RECONCILIATION_MODEL`, the lifecycle document, `INV-MER-02`,
+`DISTRIBUTED_EXECUTION` §3 (the worker's row built, the lock order's fifth taker),
+`MODULE_ARCHITECTURE`. **NINE PROBE RUNS, EIGHT PROBES CAUGHT, ONE AFTER A FIX**
+(`MUTATION_TESTING` §2 +5 rows under `INV-CON-02` ×2, `INV-MER-02`, `INV-SET-02` ×2): the payable's
+share lock dropped (the worker ran past an uncommitted close); the amount check dropped (`APPLIED`
+where `AMOUNT_DIFFERS` belongs); the expectation not opened (eleven cases); the worker's item
+re-read dropped (a PARKED item's return `APPLIED` — the double credit ADR-0073 §7 records); the
+backfill's returns leg dropped (no return walked, so none could come back) — and
+three timeliness probes no invariant owns, recorded here: the anchored clause dropped (the late
+return left `UNMATCHED`), the keyset walk dropped (one tick applying nothing behind the head), and
+the remainder condition dropped — which SURVIVED its first run: the case read the worklist of the
+wrong source, so the assertion was vacuous (the gate's find; a diagnostic showed the anchored clause
+selecting the spent line under the probe); now the item's own source with a live-read control
+beforehand, and caught — every restore byte-identical (sha256).
+**Multi-instance PASS**: ten workers over ten duplicate lines apply ONE return — one fact, one entry,
+one expectation, one event, one audit (the payout row lock, `UNIQUE (payout_id)`, the posting key;
+counted); the worker against the grace leg and against a merchant close, each both ways, the loser
+proven blocked through `pg_stat_activity` before the winner commits. **RECORDED**: the rematch
+worklist's pre-existing KEY clause carries the same unconditioned reach, and joins keys by value
+alone (debt, §Known Architectural Debt); a partial return stays the fallback's (out of scope).
+**NEXT**: `P8-TSK-020` `READY` (unmatched confirmations join suspense management). **Verified** by
+targeted tiers from fresh runs — merchant hermetic 137 across 20 suites
+(`V008`'s text pins, the payable's `payoutsReturned` term), reconciliation hermetic 115 across 21
+and database 116 across 12 (the payout matching suite's thirteen ordered cases, the real-clock
+rematch with its live-read control and spent-return worklist among them), settlement database 45
+across 7 (`acceptedOnOf`), app hermetic 574 across 107 suites (the opener, ownership, system-actor
+and scheduler registers, the regenerated OpenAPI baseline), the return suite in its own container
+14 across 1 (the routine return and its rematch, the converging retry, ten workers over ten
+duplicate lines, the closed payable's four-eyes fallback, unequal and unknown evidence, a return
+waiting for its payout, the rollback after the posting, both races each way, the keyset walk, the
+register rebuild, the schema's ranks), the twelve proof-group suites in ONE shared container
+62 across 12, and — run fresh on the code before the gate's last fix, the backfill's returns
+leg, which none of them reaches — the payable and statement suites in their own container 54
+across 4, the payout cash suite 5 across 1, the scheme cash suite 4 across 1 and the
+column-classification guard 5, and the document guards 125 across 22 suites re-run after the records
+landed, ALL 0 FAILURES — the full battery and the fleet-wide database and kafka tiers deliberately
+skipped on the owner's instruction.
 
 **`P8-TSK-018` — The payout provider's report** — `COMPLETE` (2026-09-30). **M8.6, Every
 counterparty, at 2 of 4**: `PAYOUT_CLEARING` — instructed but unsettled — is now discharged by the

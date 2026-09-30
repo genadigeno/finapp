@@ -420,7 +420,7 @@ Three designs were weighed at the transition:
     `MATCHED → UNMATCHED` reopening (a bank item of another batch, step 2), the expectations'
     reopening edges, the suspense item's `REPUDIATION` origin (ADR-0070 point 2), the
     `REPUDIATE_BATCH` kind and its batch subject arrive with
-    `P8-TSK-023`'s reconciliation `V012`, after `P8-TSK-022`'s `V011` (renumbered when `P8-TSK-016`, `P8-TSK-017` and `P8-TSK-018` took `V008`, `V009` and `V010`).
+    `P8-TSK-023`'s reconciliation `V013`, after `P8-TSK-022`'s `V012` (renumbered when `P8-TSK-016`, `P8-TSK-017`, `P8-TSK-018` and `P8-TSK-020` took `V008`, `V009`, `V010` and `V011`).
 
     *(The remittance rule, the write order, the already-released rule and the migration were
     settled by the Phase 7 → 8 transition's consistency review: A8, A9, A10 and B5.)*
@@ -612,7 +612,7 @@ converted, `INV-MON-04`).
   their resolutions), `P8-TSK-017` and `P8-TSK-018` (the scheme's and the payout provider's
   positions discharged the same way), `P8-TSK-007` (the position proof and the completeness
   verifier), `P8-TSK-012` (the fee check), `P8-TSK-023` (repudiation, with reconciliation
-  `V012`), `P8-TST-001` (the proofs and the trial balance in every round of the storm),
+  `V013`), `P8-TST-001` (the proofs and the trial balance in every round of the storm),
   `P8-DOC-001`.
 - **The repudiated report's `REMITTANCE`, now decided** (point 10, step 2). This read "recorded
   for `P8-TSK-023`'s design, not decided here": the paid case needed a rule the item machine did

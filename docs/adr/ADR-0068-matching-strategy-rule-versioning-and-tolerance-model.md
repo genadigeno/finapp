@@ -731,8 +731,8 @@ adapters). Catalogued with this ADR:
   latest decision, and still holds a remainder, is re-decided — since a keyless expectation is otherwise invisible to a
   worklist that joins keys; proven on real clocks, the control item never rematched.
 - `P8-TSK-022` builds rule-set administration under four-eyes, `REPROCESS` runs, requeue,
-  `run_replay` (reconciliation `V011`) and the replay-perturbation probe. `P8-TSK-023`'s
-  repudiation, the only path that adds counter-allocations, follows in reconciliation `V012`.
+  `run_replay` (reconciliation `V012`) and the replay-perturbation probe. `P8-TSK-023`'s
+  repudiation, the only path that adds counter-allocations, follows in reconciliation `V013`.
 - `P8-TST-001` (the storm: replay `IDENTICAL` every round, at most one positive allocation per item
   and expectation, ten matcher instances) and `P8-TST-002` (the break and resolution battery).
 - Deferred and recorded as not implemented in Phase 8: fuzzy or subset-sum matching, business-day

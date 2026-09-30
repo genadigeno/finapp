@@ -240,7 +240,8 @@ public class ReconciliationBeans {
             SettlementSources settlementSources,
             com.finapp.settlement.SettlementBatchStore<Connection> settlementBatchStore,
             com.finapp.app.settlement.ReconciliationIntake acceptedBatchIntake,
-            com.finapp.merchant.PayoutReturnStore<Connection> payoutReturnStore) {
+            com.finapp.merchant.PayoutReturnStore<Connection> payoutReturnStore,
+            com.finapp.payments.SchemeExecutionClaimStore<Connection> schemeExecutionClaimStore) {
         return new OpeningPosition(
                 paymentAttemptStore,
                 paymentIntentStore,
@@ -263,7 +264,8 @@ public class ReconciliationBeans {
                 settlementSources,
                 settlementBatchStore,
                 acceptedBatchIntake,
-                payoutReturnStore);
+                payoutReturnStore,
+                schemeExecutionClaimStore);
     }
 
     /**
@@ -541,14 +543,17 @@ public class ReconciliationBeans {
             JournalEntryStore<Connection> journalEntryStore,
             RuleSets ruleSets,
             ExpectationRegister expectationRegister,
-            Clock clock) {
+            Clock clock,
+            com.finapp.reconciliation.BreakRegister breakRegister,
+            IdGenerator idGenerator) {
         return new ReconciliationExpectationRecorder(
                 settlementSources,
                 settlementFileStore,
                 journalEntryStore,
                 ruleSets,
                 expectationRegister,
-                clock);
+                clock,
+                new com.finapp.reconciliation.ParkedConfirmations(breakRegister, idGenerator));
     }
 
     // ------------------------------------------------------------------ the desk (P8-TSK-014)

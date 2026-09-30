@@ -571,6 +571,11 @@ transaction).
   holds); `Adopted` gains a trailing `returns` count, an older record replaying with an honest
   zero.
 - `P8-TSK-020`: the unmatched confirmation's suspense item and break through the same call.
+  **Implemented** (2026-09-30), through the same PORT rather than the same call: a second
+  method, `parked(ParkedValue)`, called right after `open` on the parking's connection, because
+  the item's facts are not the expectation's — its origin is the parking row, its line the
+  suspense one. Point 8's backfill adopts every Phase 7 parking the same way, converging on the
+  item's `origin_ref`.
 - `P8-TST-001`: completeness and the position proof read in every storm round and at rest.
 - Until `P8-TSK-004` lands, nothing in this ADR is implemented: every statement is the decided
   design, to be corrected by the tasks that build it.

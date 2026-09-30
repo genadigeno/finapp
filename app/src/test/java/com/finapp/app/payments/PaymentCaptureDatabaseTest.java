@@ -539,6 +539,9 @@ class PaymentCaptureDatabaseTest {
                                                 @Override
                                                 public void alias(
                                                         java.sql.Connection uow, AliasRegistration registration) {}
+
+                                                @Override
+                                                public void parked(java.sql.Connection uow, ParkedValue parked) {}
                                             }),
                 new com.finapp.payments.JdbcRoutingStore(),
                 com.finapp.payments.PaymentRails.of(java.util.List.of(SimulatedCardPspAdapter.RAIL)),
@@ -650,6 +653,9 @@ class PaymentCaptureDatabaseTest {
                             @Override
                             public void alias(
                                     java.sql.Connection uow, AliasRegistration registration) {}
+
+                            @Override
+                            public void parked(java.sql.Connection uow, ParkedValue parked) {}
                         });
         return new PaymentCapture(
                 runner,

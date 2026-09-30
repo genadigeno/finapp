@@ -323,6 +323,16 @@ public final class JdbcBreakInquiries implements BreakInquiries {
     }
 
     @Override
+    public Optional<UUID> parkingExpectationOf(Connection unitOfWork, UUID entryId) {
+        return one(
+                unitOfWork,
+                "SELECT id FROM reconciliation.expectation WHERE journal_entry_id = ?"
+                        + " AND kind = 'UNMATCHED_CONFIRMATION'",
+                entryId,
+                row -> row.getObject("id", UUID.class));
+    }
+
+    @Override
     public List<ParkLink> releasesOf(Connection unitOfWork, UUID suspenseItemId) {
         return list(
                 unitOfWork,

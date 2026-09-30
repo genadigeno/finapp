@@ -82,7 +82,12 @@ public record BreakTrace(UUID breakId, List<Step> steps, boolean truncated) {
         /** An expectation tracks this operation. */
         TRACKS,
         /** A retained provider statement about the operation. */
-        EVIDENCED_BY
+        EVIDENCED_BY,
+        /**
+         * A parking's suspense item, and the expectation its entry's clearing line opened —
+         * the one entry both carry (`P8-TSK-020`).
+         */
+        EXPECTED_AS
     }
 
     /** One stored reference: {@code from —relation→ to}. */

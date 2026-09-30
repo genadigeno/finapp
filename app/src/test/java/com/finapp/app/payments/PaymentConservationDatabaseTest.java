@@ -867,6 +867,9 @@ class PaymentConservationDatabaseTest {
                     @Override
                     public void alias(
                             java.sql.Connection uow, AliasRegistration registration) {}
+
+                    @Override
+                    public void parked(java.sql.Connection uow, ParkedValue parked) {}
                 });
     }
 

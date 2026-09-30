@@ -386,7 +386,7 @@ resolution or repudiation — committed matches stand as history.
 
 1. **Decision replay** re-runs `decide` over every stored decision's candidate snapshot under its
    pinned rule set and compares outcome and allocations. It appends a `reconciliation.run_replay`
-   verdict (reconciliation `V011`, `P8-TSK-022`) — `IDENTICAL` or `DIVERGED` — and writes nothing
+   verdict (reconciliation `V012`, `P8-TSK-022`) — `IDENTICAL` or `DIVERGED` — and writes nothing
    else; `DIVERGED` raises a CRITICAL
    `PROCESSING_ERROR`. An item whose rematch is merely pending is reported `PENDING_REMATCH`, not as
    divergence.
@@ -495,7 +495,7 @@ posters, and no others:
 | `RECON_PARK` | A match decision, the grace leg or a rematch parks an item's remainder | the item's break |
 | `BANK_UNATTRIBUTED` | Bank recognition meets a line no source's pattern attributes | `UNKNOWN_EXTERNAL`, cause `BANK_LINE_UNATTRIBUTED` |
 | `UNMATCHED_CONFIRMATION` | Phase 7's unmatched pay-in confirmation, through the port; existing rows adopted by an idempotent backfill. The item keys on the parking's stored facts (payments `V023`): `named_reference`, `settlement_cycle`, `cause` and, exactly when attributed, `attempt_id` | `UNKNOWN_EXTERNAL`, cause `PARKED_ON_RECEIPT` |
-| `REPUDIATION` | An approved `REPUDIATE_BATCH`, in its approval transaction, meets a `BANK_UNATTRIBUTED` item a posting resolution had already released: the recognition's reversal (`ReversalService`, scope `ledger.reverse`, key `settlement-batch:<batchId>`) still carries that item's suspense line, which opens a new item of the opposite side. `origin_ref` is the released item's id — an item is repudiated once — and the item opens on the reversal entry's posting date. The origin is admitted by `P8-TSK-023`'s reconciliation `V012` | a new `PROCESSING_ERROR`, raised in the same transaction |
+| `REPUDIATION` | An approved `REPUDIATE_BATCH`, in its approval transaction, meets a `BANK_UNATTRIBUTED` item a posting resolution had already released: the recognition's reversal (`ReversalService`, scope `ledger.reverse`, key `settlement-batch:<batchId>`) still carries that item's suspense line, which opens a new item of the opposite side. `origin_ref` is the released item's id — an item is repudiated once — and the item opens on the reversal entry's posting date. The origin is admitted by `P8-TSK-023`'s reconciliation `V013` | a new `PROCESSING_ERROR`, raised in the same transaction |
 
 *(The Phase 7 → 8 transition's re-check, R3: the table had named three posters, while ADR-0070
 point 10 already had a repudiation open an item for value a resolution had released.)*
@@ -508,7 +508,11 @@ failed `DECLINED`, judged by the one applier for the callback and the inquiry al
 are **attributed**: they name their attempt, so their natural way out is a `TRANSFER_TO_ACCOUNT`
 crediting that attempt's counterparty, or a return to the payer — the deferred return-to-sender
 (§13) — never a guess. The parking itself still has no state and no resolution; both are Phase 8's
-(ADR-0070, `P8-TSK-020`).
+(ADR-0070, `P8-TSK-020`). *(Built by `P8-TSK-020`: each parking — live, and every Phase 7 row the
+backfill adopts — owns a CREDIT suspense item under an `UNKNOWN_EXTERNAL` break
+(`PARKED_ON_RECEIPT`) standing on the item, the cause and the named attempt frozen on the break;
+a parking whose execution a credit already explains is owned as a `DUPLICATE_EXTERNAL`
+(`EXECUTION_ALREADY_EXPLAINED`) that admits no transfer.)*
 
 **Parking moves unexplained value out of the counterparty's position** (P), in the transaction
 that decides it:
@@ -629,7 +633,7 @@ removes an expectation's remainder moves it to `RESOLVED_BY_ADJUSTMENT`. `RECONC
   is then re-presented and accepted normally, or readmitted when it was itself rejected
   `CONFLICTING_BATCH` against the repudiated batch (§3). These states, the `MATCHED → UNMATCHED`
   reopening, the `REPUDIATION` suspense origin and the `REPUDIATE_BATCH` kind arrive with
-  `P8-TSK-023`'s reconciliation `V012`. *(The Phase 7 → 8 transition's consistency review, A8, A9
+  `P8-TSK-023`'s reconciliation `V013`. *(The Phase 7 → 8 transition's consistency review, A8, A9
   and A11; its re-check, R3.)*
 - **Who.** `RECONCILIATION_RESOLVE` is held by `RECONCILIATION_OPERATOR`; `RECONCILIATION_ADMINISTER`
   — rule sets, reprocessing, requeue, readmission, backfill — by `RECONCILIATION_CONTROLLER`. The

@@ -73,6 +73,19 @@ public interface BreakRegister {
                     Optional.empty());
         }
 
+        /**
+         * A suspense item's owner standing on the item itself - a parking's (`P8-TSK-020`),
+         * whose value entered suspense with no external item behind it.
+         */
+        public static Subject suspenseItem(UUID id) {
+            return new Subject(
+                    Optional.empty(),
+                    Optional.empty(),
+                    Optional.of(id),
+                    Optional.empty(),
+                    Optional.empty());
+        }
+
         public static Subject run(UUID id) {
             return new Subject(
                     Optional.empty(),

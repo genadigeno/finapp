@@ -374,7 +374,8 @@ public class InstantCallbackService {
         if (verdict.get() == PushInquiryAnswer.Verdict.ACCEPTED && stated.isEmpty()) {
             judged.unmappable();
         }
-        outcomes.applyExecution(
+        PaymentOutcomes.Applied applied =
+                outcomes.applyExecution(
                         uow,
                         intent.id(),
                         attempt.id(),
@@ -386,6 +387,15 @@ public class InstantCallbackService {
                         intent.amount(),
                         stated,
                         PaymentCreation.resolvedCorrelation());
+        // A mismatched or concluded execution parked inside the applier: the delivery's
+        // bytes rest addressed to that parking (V023's fifth subject), never the attempt -
+        // so the parking's owner traces to its raw statement (P8-TSK-020).
+        applied.parking()
+                .ifPresent(
+                        parking ->
+                                judged.parked(
+                                        new UnmatchedConfirmations.Parked(
+                                                false, Optional.of(parking))));
     }
 
     /**

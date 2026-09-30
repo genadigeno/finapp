@@ -10606,7 +10606,7 @@ posting-date documentation reconciled with the Phase 5–7 practice, with no ret
     by trigger; `value_at_issue_*` ≥ 0; the note body's bounds and shape `CHECK`s (1..4000; no
     Luhn-valid 13–19-digit run, no IBAN shape), ready for their producer in `P8-TSK-014`;
     `suspense_item.break_id NOT NULL`, `external_item_id UNIQUE NULL`,
-    `origin (RECON_PARK|BANK_UNATTRIBUTED|UNMATCHED_CONFIRMATION)` (`REPUDIATION` added by `V012`,
+    `origin (RECON_PARK|BANK_UNATTRIBUTED|UNMATCHED_CONFIRMATION)` (`REPUDIATION` added by `V013`,
     `P8-TSK-023`) *(the Phase 7 → 8 transition's re-check, R3)*, `origin_ref UNIQUE`,
     `CHECK released_minor ≤ amount_minor`; `park.journal_entry_id UNIQUE`; no `DELETE` grant and a
     refusing trigger on every table.
@@ -10648,7 +10648,7 @@ posting-date documentation reconciled with the Phase 5–7 practice, with no ret
 - **Out of scope**: the matcher and every leg that decides to park (`P8-TSK-011`, `-013`);
   resolutions (`-012`, `-015`); the case file's routes (`-014`); the producers of the
   `BANK_UNATTRIBUTED` (`-016`) and `UNMATCHED_CONFIRMATION` (`-020`) origins, which `V004` admits,
-  and of the fourth, `REPUDIATION` (`-023`), which `V012` admits; the break meters (`-024`).
+  and of the fourth, `REPUDIATION` (`-023`), which `V013` admits; the break meters (`-024`).
 - **Domain changes**: `ReconciliationBreak` (type, cause, severity, status, subject, value at issue,
   residual version), `BreakType`, `BreakCause`, `Severity`, the pure severity policy,
   `BreakRegister`; `SuspenseItem`, `SuspenseRelease`, `Park`, `Suspense`; `InternalReferenceLookup`
@@ -12107,7 +12107,7 @@ break row, as the approval door must.)*
   `other` whatever becomes of it *(the status moved to the title line alone and this note here by
   the Phase 7 → 8 transition's consistency review, C4; the terms' owner settled by A12)*.
 
-**P8-TSK-020 — Unmatched confirmations join suspense management** — `READY` (marked by `P8-TSK-019`'s completion gate)
+**P8-TSK-020 — Unmatched confirmations join suspense management** — `COMPLETE` (2026-10-01)
 - **Objective**: Phase 7's unmatched confirmations become owned suspense (`INV-REC-05`,
   `INV-REC-09`): every parking opens, in its own transaction, a CREDIT suspense item with an
   `UNKNOWN_EXTERNAL` break (cause `PARKED_ON_RECEIPT`); existing rows are adopted once; the value
@@ -12150,12 +12150,21 @@ break row, as the approval door must.)*
   evidence, not a guess); a resolved state on
   `payments.unmatched_confirmation` (the suspense item carries the disposition; no payments
   migration); renaming the payments gauges.
-- **Domain changes**: `UnmatchedConfirmations` gains the suspense half of the port call;
+- **Domain changes**: `UnmatchedConfirmations` gains the suspense half of the port call *(as built:
+  the port's second method, `parked(ParkedValue)`, beside `open` — the item's facts are the
+  parking's, not the expectation's; reconciliation's opener is `ParkedConfirmations`)*;
   reconciliation's suspense opening path for the `UNMATCHED_CONFIRMATION` origin; the break raised
   with cause `PARKED_ON_RECEIPT`.
 - **Persistence**: none new — `suspense_item`'s `UNMATCHED_CONFIRMATION` origin and the break exist
   (reconciliation `V004`, `P8-TSK-010`); **no payments migration** — the parking's `V023` columns
-  and the evidence's fifth subject already exist.
+  and the evidence's fifth subject already exist. *(Corrected by the task's design, a fourth time
+  in five tasks: a parking's owner is a break standing on its own suspense item, and neither
+  immediate key let that pair be born — the item names its owner, the owner's frozen subject names
+  the item. Reconciliation `V011` makes `break_suspense_item_fk` `DEFERRABLE INITIALLY
+  IMMEDIATE`, deferred by the one opener alone, and appends the cause `EXECUTION_ALREADY_EXPLAINED`
+  (`DUPLICATE_EXTERNAL`) for a parking payments `V023`'s backfill left unclaimed — ADR-0070's
+  recorded design input, decided here: it admits no transfer. `P8-TSK-022` and `-023` moved to
+  `V012` and `V013`. No payments migration, as claimed; no columns, so no classification rows.)*
 - **APIs**: none new; `POST /reconciliation/opening-position` gains the adoption leg with its
   request and OpenAPI entry unchanged.
 - **Events**: `reconciliation.ReconciliationBreakRaised` per new or adopted parking.
@@ -12210,7 +12219,7 @@ break row, as the approval door must.)*
 - **Definition of done**: `DOD-FIN`, `DOD-OBS`, `DOD-TEST`. **Risk**: Medium (a Phase 7 call site on
   the pay-in callback path). **Cx**: S.
 
-**P8-TSK-021 — Pull acquisition, per-source credentials and source silence** — `PLANNED`
+**P8-TSK-021 — Pull acquisition, per-source credentials and source silence** — `READY` (marked by `P8-TSK-020`'s completion gate)
 - **Objective**: each source's evidence fetched on schedule over its own confined credential and
   accepted without a second person, because the channel authenticates it (`INV-SET-07`);
   deduplicated with uploads by content; every silent source visible.
@@ -12374,8 +12383,8 @@ break row, as the approval door must.)*
   business-day calendars; value-banded approver escalation; automatic readmission.
 - **Domain changes**: `RuleSet`'s administration commands; `ReprocessRun`; `Readmission`;
   `RunReplay`; the re-parse verification.
-- **Persistence**: reconciliation `V011` `run_replay` (renumbered: `P8-TSK-016` took `V008` for its bank items, `P8-TSK-017` `V009` for its scheme items and `P8-TSK-018` `V010` for its payout items; in task
-  order; `P8-TSK-023`'s is `V012` — the Phase 7 → 8 transition's consistency review, A8 and C9,
+- **Persistence**: reconciliation `V012` `run_replay` (renumbered: `P8-TSK-016` took `V008` for its bank items, `P8-TSK-017` `V009` for its scheme items, `P8-TSK-018` `V010` for its payout items and `P8-TSK-020` `V011` for its owner subject and cause; in task
+  order; `P8-TSK-023`'s is `V013` — the Phase 7 → 8 transition's consistency review, A8 and C9,
   where this read `V00x`) (`run_id`, `requested_by`, `verdict`,
   `divergences`, `pending_rematch`, `first_divergent_decision`, `at`; append-only), its
   `DATA_CLASSIFICATION.md` §4 rows in the same change; beside it a settlement migration of its own,
@@ -12514,15 +12523,15 @@ break row, as the approval door must.)*
   - the approval re-derives the counter-allocations and unparks from the rows under lock, and a
     change since the proposal is `409 reconciliation.ResolutionStale`;
   - settlement `V00x`, the next free settlement number (`batch` `ACCEPTED → REPUDIATED`; the live
-    uniques already exclude it); reconciliation `V012` (below).
+    uniques already exclude it); reconciliation `V013` (below).
 - **Out of scope**: repudiating single lines (the batch is the unit); automatic repudiation;
   deleting or editing the file or its lines (retained); re-allocating committed matches outside
   repudiation; reversing a write-off automatically on late evidence (deferred).
 - **Domain changes**: the `REPUDIATE_BATCH` kind on a batch subject; counter-allocations; the
   batch's single designed exit from `ACCEPTED`.
 - **Persistence**: settlement `V00x` (the batch state and its transition trigger regenerated) with
-  its `DATA_CLASSIFICATION.md` rows if any column changes; **reconciliation `V012`**, after
-  `P8-TSK-022`'s `V011` — the resolution's `REPUDIATE_BATCH` kind and its batch subject admitted,
+  its `DATA_CLASSIFICATION.md` rows if any column changes; **reconciliation `V013`**, after
+  `P8-TSK-022`'s `V012` — the resolution's `REPUDIATE_BATCH` kind and its batch subject admitted,
   the item's `REPUDIATED` state and its repudiation-only reopening edge, the expectation's
   reopening edges (`SETTLED | PARTIALLY_SETTLED → OPEN | PARTIALLY_SETTLED`), and the suspense
   item's fourth origin, `REPUDIATION` (`V004` created the three others), each generated `CHECK`

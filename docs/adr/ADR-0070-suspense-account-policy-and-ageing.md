@@ -84,7 +84,7 @@ Netting them inside one balance hides two open problems behind one number.
      suspense account and no new owner kind (Alternatives).
    - Every unit of value in it belongs to a `reconciliation.suspense_item` (reconciliation `V004`,
      `P8-TSK-010`): `break_id NOT NULL`, `external_item_id UNIQUE NULL`, `origin` (`RECON_PARK` |
-     `BANK_UNATTRIBUTED` | `UNMATCHED_CONFIRMATION`; `REPUDIATION` added by reconciliation `V012`,
+     `BANK_UNATTRIBUTED` | `UNMATCHED_CONFIRMATION`; `REPUDIATION` added by reconciliation `V013`,
      `P8-TSK-023`), `origin_ref UNIQUE`, `side` (CREDIT | DEBIT), the ADR-0003 money triple,
      `released_minor`, `status`, `opened_on`, `entry_id`.
    - Its machine is `OPEN → PARTIALLY_RELEASED → RELEASED` (terminal), with
@@ -109,7 +109,7 @@ Netting them inside one balance hides two open problems behind one number.
 
    *(The fourth opener was named by the Phase 7 → 8 transition's re-check, R3: point 10 already
    opened this item, while the list said "three openers, and no fourth". Its enum value arrives
-   with reconciliation `V012`, not `V004`, which creates the three others.)*
+   with reconciliation `V013`, not `V004`, which creates the three others.)*
 
    - **`opened_on` comes from stored data and never restarts.** It is the date the value entered
      suspense: the park row's `decided_on` (stamped once), the batch's `accepted_on`, the
@@ -601,14 +601,16 @@ Constraints this decision must preserve:
   first `TRANSFER_TO_ACCOUNT`), `P8-TSK-016` (bank recognition's unattributed lines), `P8-TSK-019`
   (the payout return's fallback through suspense), `P8-TSK-020` (the unmatched confirmation
   adopted; the payments gauges' descriptions), `P8-TSK-023` (repudiation's reach into suspense and
-  its `REPUDIATION` origin, under reconciliation `V012`), `P8-TSK-024` (the suspense
+  its `REPUDIATION` origin, under reconciliation `V013`), `P8-TSK-024` (the suspense
   report, the dashboard row and its alerts), `P8-TST-001` (the suspense proof and ownership in every
   round of the storm), `P8-TST-002` (every exit crossed with every owning type; the gains and losses
   accounts posted only by approvals), `P8-DOC-001`.
 - **Recorded for task designs, not decided here:**
   - *(point 9's attribution labels, recorded here for `P8-TSK-015`, were decided by the transition's
     consistency review, A12: they are `P8-TSK-015`'s, above;)*
-  - for `P8-TSK-020`: a parking payments `V023`'s backfill left unclaimed (point 8) — one scheme
+  - *(decided by `P8-TSK-020`, below: the unclaimed parking is owned as a `DUPLICATE_EXTERNAL`
+    under `EXECUTION_ALREADY_EXPLAINED`, which admits no transfer;)* for `P8-TSK-020`: a parking
+    payments `V023`'s backfill left unclaimed (point 8) — one scheme
     execution a credit or completion already explains — must be adopted so that its value is not
     attributed a second time. Its entry still put a real line into suspense and a second debit on
     the clearing, so it is resolved by the kinds the table admits, never deleted. The candidates
@@ -627,4 +629,5 @@ Constraints this decision must preserve:
   (`AdjustmentService`); collection from customers and merchants (Phase 13); disclosure at close
   (Phase 14, `INV-ACC-05`).
 - `P8-TSK-010` — **implemented** (2026-09-29): points 1, 2 (the `RECON_PARK` opener), 5 and 7 as decided, and the entry-id ordering question above ANSWERED — the posting stays the last CONTENDED write, and the `park` and `suspense_item` rows are inserted AFTER it carrying `journal_entry_id`/`entry_id` whole (`NOT NULL`), because the arbiters (the item's conditional transition, the break locks) were taken before the posting and the late inserts are the transaction's own rows (the `P8-TSK-009` D3 shape; the `merchant.payout_return` precedent). A `RECON_PARK` item also carries `park_id` and `position_account_id` (`NOT NULL` exactly for that origin, by `CHECK`): the park names its items through them, and the unpark's exact inverse — side, position and the original park's value date — reads frozen facts instead of re-deriving. `origin_ref` is uniformly the origin's own row id. Ownership holds at three ranks: `break_id NOT NULL`, the owner-type trigger (a never-parking or RESOLVED owner refused for every writer, `V004`), and the domain's pre-park verification; the suspense proof, the ownership reading and the three gauges are `PositionProof`'s/`ReconciliationMetrics`' with the named Phase 7 term paged through payments' own read — proven over the composed wiring with the planted defect observed in its own uncommitted transaction (`ReconciliationSuspenseDatabaseTest`). The park entries and every item's entry join the completeness verifier's known classes (point 7). The unpark alone restores the position and releases the item; the item's return to the fold is its caller's allocation in the same transaction (`P8-TSK-013`'s rematch), which the suites simulate — recorded.
+- `P8-TSK-020` — **implemented** (2026-09-30): point 2's `UNMATCHED_CONFIRMATION` row and point 8. the owner of a parking's value is born beside it: `UnmatchedConfirmations.park` calls the port's `parked` after its expectation, the claim winner only, and `app`'s recorder opens, through reconciliation's `ParkedConfirmations`, the CREDIT suspense item (its value, side and `opened_on` read off the parking entry's `SUSPENSE_UNMATCHED` line) and the `UNKNOWN_EXTERNAL` break (`PARKED_ON_RECEIPT`) standing on that item — in the delivery's transaction, owned from birth (`INV-REC-09`). The owner's subject is the item it owns, which neither immediate key let be born, so reconciliation `V011` made `break_suspense_item_fk` deferrable, initially immediate, and only this opener defers it; a concurrent opener that loses `UNIQUE (origin_ref)` rolls back to a savepoint, discarding its break. The opening-position backfill adopts every Phase 7 parking the same way, dated from its own entry; the recorded design input is decided — a parking whose execution a credit already explains is owned as a `DUPLICATE_EXTERNAL` under `EXECUTION_ALREADY_EXPLAINED`, which admits the gain, the offset and a DEBIT write-off but never a transfer. A `CREDIT_IN` allocation of the parking's expectation leaves the item `OPEN` (`INV-REC-05`); the payments gauges read "parked, ever", with provenance. Two finds before the suite first ran, both fixed: the item's side had been read through the clearing mapping (a CREDIT on a position is OUTBOUND), which made every parking a DEBIT item; and an `AMOUNT_MISMATCH` parking — and a stale-read `ATTEMPT_CONCLUDED` one — filed its raw statement on the attempt, never the parking, contrary to payments `V023`'s own comment: the applier now reports the parking it made (`PaymentOutcomes.Applied.parking`) and both producers, the instant door and the inquiry sweep, address the bytes to it, so every parking's owner traces to its statement.
 - The Phase 8 review reads this ADR against the code before accepting it.

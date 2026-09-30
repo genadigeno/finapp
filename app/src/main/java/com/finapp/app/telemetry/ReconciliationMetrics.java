@@ -138,8 +138,9 @@ public final class ReconciliationMetrics {
                                     + " detection - a raw-SQL poster or a missed opener"
                                     + " lands here). MUST read 0 on the clearing purposes"
                                     + " and is alerted; SUSPENSE_UNMATCHED truthfully"
-                                    + " counts Phase 7's parking lines until P8-TSK-020"
-                                    + " adopts them. NaN when unreadable, never zero."
+                                    + " counts Phase 7's parking lines until the backfill"
+                                    + " adopts them (P8-TSK-020). NaN when unreadable, never"
+                                    + " zero."
                                     + " Fleet-wide: aggregate with max(), never sum()")
                     .strongReference(true)
                     .register(registry);

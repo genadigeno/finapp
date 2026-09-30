@@ -488,7 +488,8 @@ Financial impact:
     the transition's consistency review, B6.)*
   - `P8-TSK-016` — **implemented** (2026-09-30) — adds the cash rows and
     `finapp.reconciliation.cash.proof`.
-  - `P8-TSK-020` corrects the descriptions of Phase 7's suspense gauges.
+  - `P8-TSK-020` — **implemented** (2026-09-30) — corrects the descriptions of Phase 7's
+    suspense gauges ("parked, ever"), names unchanged, the Phase 7 plan's rows annotated.
   - `P8-TSK-021` adds `finapp.settlement.source.silence` and `finapp.settlement.pull.failure`. If
     it is cut, silence moves to `P8-TSK-024` (point 10, O6).
   - `P8-TSK-024` adds every remaining series, completes the tag arguments, and builds the

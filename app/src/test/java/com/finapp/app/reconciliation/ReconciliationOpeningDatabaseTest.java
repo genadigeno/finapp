@@ -485,6 +485,9 @@ class ReconciliationOpeningDatabaseTest {
 
                 @Override
                 public void alias(Connection unitOfWork, AliasRegistration registration) {}
+
+                @Override
+                public void parked(java.sql.Connection uow, ParkedValue parked) {}
             };
 
     @Autowired private SettlementExpectations liveRecorder;

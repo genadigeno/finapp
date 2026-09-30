@@ -844,11 +844,13 @@ parked confirmations — each keyed on the parking's stored `cause`, `named_refe
 when attributed, `attempt_id` (payments `V023`); a probe bypassing the port caught.
 **Phase:** 8
 
+*(Built by `P8-TSK-020` for the parkings: the owner of a parking's value is born beside it: `UnmatchedConfirmations.park` calls the port's `parked` after its expectation, the claim winner only, and `app`'s recorder opens, through reconciliation's `ParkedConfirmations`, the CREDIT suspense item (its value, side and `opened_on` read off the parking entry's `SUSPENSE_UNMATCHED` line) and the `UNKNOWN_EXTERNAL` break (`PARKED_ON_RECEIPT`) standing on that item — in one transaction, the owner's suspense-item subject made deferrable by reconciliation `V011` for this opener alone. Verified by `ParkedConfirmationsDatabaseTest` (born together, ten racers owning one parking once) and `UnmatchedConfirmationSuspenseDatabaseTest` over the real door and the backfill.)*
+
 *(The backfill keys on what the Phase 7 → 8 transition's gate repair made each parking record:
 an attributed parking, `ATTEMPT_CONCLUDED` or `AMOUNT_MISMATCH`, names the attempt its value
 belongs to, and its owning break is resolved by a four-eyes `TRANSFER_TO_ACCOUNT` crediting that
 attempt's counterparty, never by a guess. The repudiation is the fourth opener, origin
-`REPUDIATION`, admitted by reconciliation `V012` (`P8-TSK-023`), its `origin_ref` the released
+`REPUDIATION`, admitted by reconciliation `V013` (`P8-TSK-023`), its `origin_ref` the released
 item's id — the transition's re-check, R3.)*
 
 ### INV-REC-10 — Settlement evidence is screened, encrypted, and every content access audited

@@ -9,12 +9,16 @@ import com.finapp.ledger.LedgerAccountId;
 import com.finapp.merchant.PayoutSettlementExpectations;
 import com.finapp.payments.SettlementExpectations;
 import com.finapp.platform.security.SecurityContext;
+import com.finapp.reconciliation.BreakCause;
 import com.finapp.reconciliation.ExpectationDirection;
 import com.finapp.reconciliation.ExpectationKind;
 import com.finapp.reconciliation.ExpectationRegister;
 import com.finapp.reconciliation.KeyKind;
+import com.finapp.reconciliation.InternalClassification;
 import com.finapp.reconciliation.NewExpectation;
+import com.finapp.reconciliation.ParkedConfirmations;
 import com.finapp.reconciliation.RuleSets;
+import com.finapp.reconciliation.SuspenseSide;
 import com.finapp.settlement.SettlementFileStore;
 import com.finapp.settlement.SettlementSourceDescriptor;
 import com.finapp.settlement.SettlementSources;
@@ -54,6 +58,12 @@ import lombok.RequiredArgsConstructor;
  *   <li><strong>The dating</strong> comes from the source's {@code ACTIVE} rule set, read
  *       lock-free and pinned on the row ({@code INV-HIST-04}).
  * </ul>
+ *
+ * <p>Since `P8-TSK-020` it also gives a parking's value its owner
+ * ({@link #parked}): the suspense item's side, amount and {@code opened_on} read off the
+ * parking entry's one {@code SUSPENSE_UNMATCHED} line the same way, the owning break's source
+ * the one that discharges the rail's position — so the scheme's evidence and the break answer
+ * to one source.
  */
 @RequiredArgsConstructor
 public class ReconciliationExpectationRecorder
@@ -65,6 +75,7 @@ public class ReconciliationExpectationRecorder
     @NonNull private final RuleSets ruleSets;
     @NonNull private final ExpectationRegister register;
     @NonNull private final Clock clock;
+    @NonNull private final ParkedConfirmations parkedConfirmations;
 
     @Override
     public void open(Connection unitOfWork, SettlementExpectations.Opening opening) {
@@ -128,6 +139,45 @@ public class ReconciliationExpectationRecorder
                         registration.correlation().correlationId()));
     }
 
+    @Override
+    public void parked(Connection unitOfWork, SettlementExpectations.ParkedValue parked) {
+        Objects.requireNonNull(unitOfWork, "unitOfWork must not be null");
+        Objects.requireNonNull(parked, "parked must not be null");
+        UUID sourceId = sourceIdFor(unitOfWork, parked.position());
+        SuspenseLine line =
+                suspenseLineOf(unitOfWork, parked.journalEntryId(), parked.suspenseAccount());
+        RuleSets.ActiveRuleSet ruleSet = ruleSets.activeFor(unitOfWork, sourceId);
+        boolean explained = parked.explainedBy().isPresent();
+        parkedConfirmations.open(
+                unitOfWork,
+                new ParkedConfirmations.Opening(
+                        parked.parkingId(),
+                        sourceId,
+                        ruleSet.id(),
+                        line.side(),
+                        line.amount(),
+                        line.postingDate(),
+                        parked.journalEntryId().value(),
+                        explained
+                                ? BreakCause.EXECUTION_ALREADY_EXPLAINED
+                                : BreakCause.PARKED_ON_RECEIPT,
+                        // What the parking knew, frozen on its owner: nothing named
+                        // (UNKNOWN), a concluded or mismatched attempt named (TERMINAL), or a
+                        // credit already explaining the execution (COMPLETED).
+                        explained
+                                ? InternalClassification.COMPLETED
+                                : parked.attempt().isPresent()
+                                        ? InternalClassification.TERMINAL
+                                        : InternalClassification.UNKNOWN,
+                        explained
+                                ? parked.explainedBy()
+                                : parked.attempt().map(attempt -> attempt.value().toString()),
+                        parked.cause().name(),
+                        SecurityContext.require(),
+                        clock.instant(),
+                        parked.correlation().correlationId()));
+    }
+
     /** Both ports' one path: source, line and rule set resolved, then the register's insert. */
     private void record(
             Connection unitOfWork,
@@ -189,6 +239,18 @@ public class ReconciliationExpectationRecorder
     /** The one line of {@code entryId} on the clearing account — amount, direction, date. */
     private ClearingLine clearingLineOf(
             Connection unitOfWork, JournalEntryId entryId, LedgerAccountId clearingAccount) {
+        PostedLine line = lineOf(unitOfWork, entryId, clearingAccount);
+        return new ClearingLine(
+                line.amount(),
+                line.direction() == Direction.DEBIT
+                        ? ExpectationDirection.INBOUND
+                        : ExpectationDirection.OUTBOUND,
+                line.postingDate());
+    }
+
+    /** The one line of {@code entryId} on {@code account}, as the ledger posted it. */
+    private PostedLine lineOf(
+            Connection unitOfWork, JournalEntryId entryId, LedgerAccountId account) {
         JournalEntryStore.PostedEntry posted =
                 entries.findById(unitOfWork, entryId)
                         .orElseThrow(
@@ -197,25 +259,39 @@ public class ReconciliationExpectationRecorder
                                                 "entry " + entryId + " does not read back on"
                                                         + " its own connection: the opener"
                                                         + " runs after the posting"));
-        List<JournalLine> onPosition =
+        List<JournalLine> onAccount =
                 posted.entry().lines().stream()
-                        .filter(line -> line.account().equals(clearingAccount))
+                        .filter(line -> line.account().equals(account))
                         .toList();
-        if (onPosition.size() != 1) {
+        if (onAccount.size() != 1) {
             throw new IllegalStateException(
-                    "entry " + entryId + " holds " + onPosition.size() + " lines on the"
-                            + " clearing account where exactly one clearing line belongs"
-                            + " (ADR-0067 §4): the expectation is that line's copy");
+                    "entry " + entryId + " holds " + onAccount.size() + " lines on the"
+                            + " account where exactly one line belongs (ADR-0067 §4): the"
+                            + " expectation, or the suspense item, is that line's copy");
         }
-        JournalLine line = onPosition.get(0);
-        return new ClearingLine(
-                line.amount(),
-                line.direction() == Direction.DEBIT
-                        ? ExpectationDirection.INBOUND
-                        : ExpectationDirection.OUTBOUND,
-                posted.entry().postingDate());
+        JournalLine line = onAccount.get(0);
+        return new PostedLine(line.amount(), line.direction(), posted.entry().postingDate());
     }
+
+    private record PostedLine(Money amount, Direction direction, LocalDate postingDate) {}
 
     private record ClearingLine(
             Money amount, ExpectationDirection direction, LocalDate postingDate) {}
+
+    /**
+     * The one line of {@code entryId} on the suspense account — side, amount, date. The side is
+     * the line's OWN: a CREDIT to suspense is a CREDIT item, value parked from an INBOUND
+     * remainder — never through the clearing mapping, which reads a CREDIT on a position as
+     * OUTBOUND (the tests agent's find, before any test ran).
+     */
+    private SuspenseLine suspenseLineOf(
+            Connection unitOfWork, JournalEntryId entryId, LedgerAccountId suspenseAccount) {
+        PostedLine line = lineOf(unitOfWork, entryId, suspenseAccount);
+        return new SuspenseLine(
+                line.amount(),
+                line.direction() == Direction.CREDIT ? SuspenseSide.CREDIT : SuspenseSide.DEBIT,
+                line.postingDate());
+    }
+
+    private record SuspenseLine(Money amount, SuspenseSide side, LocalDate postingDate) {}
 }

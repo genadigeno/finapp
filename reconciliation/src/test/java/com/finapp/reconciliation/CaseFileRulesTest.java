@@ -119,10 +119,15 @@ class CaseFileRulesTest {
                 .containsExactlyInAnyOrder(
                         BreakSubjectKind.EXTERNAL_ITEM, BreakSubjectKind.RUN,
                         BreakSubjectKind.DECISION);
+        assertThat(standsOn(BreakType.DUPLICATE_EXTERNAL))
+                .as("an item, or the suspense item of a parking whose execution is already"
+                        + " explained (P8-TSK-020, ADR-0069 section 2 amended)")
+                .containsExactlyInAnyOrder(
+                        BreakSubjectKind.EXTERNAL_ITEM, BreakSubjectKind.SUSPENSE_ITEM);
         for (BreakType itemOnly :
                 List.of(
                         BreakType.MISSING_INTERNAL, BreakType.CURRENCY_MISMATCH,
-                        BreakType.FEE_MISMATCH, BreakType.DUPLICATE_EXTERNAL,
+                        BreakType.FEE_MISMATCH,
                         BreakType.AMBIGUOUS_MATCH, BreakType.REVERSAL_MISMATCH,
                         BreakType.REFUND_MISMATCH)) {
             assertThat(standsOn(itemOnly)).as("%s", itemOnly)

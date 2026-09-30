@@ -80,6 +80,18 @@ public final class ResolutionTemplates {
     public static Set<ResolutionKind> admittedKinds(BreakType type, BreakCause cause) {
         Objects.requireNonNull(type, "type must not be null");
         Objects.requireNonNull(cause, "cause must not be null");
+        // A parking whose scheme execution a credit already explains: its value was attributed
+        // once, so no transfer may attribute it again - the gain after its minimum age, beside a
+        // write-off of the doubled clearing remainder, or an offset against the scheme's own
+        // correction (P8-TSK-020, ADR-0070 point 8). WRITE_OFF stays, as on every
+        // suspense-owning type: the side rule refuses it a CREDIT item.
+        if (type == BreakType.DUPLICATE_EXTERNAL
+                && cause == BreakCause.EXECUTION_ALREADY_EXPLAINED) {
+            return EnumSet.of(
+                    ResolutionKind.WRITE_OFF,
+                    ResolutionKind.OFFSET_SUSPENSE,
+                    ResolutionKind.RECOGNISE_GAIN);
+        }
         return switch (type) {
             case MISSING_EXTERNAL ->
                     EnumSet.of(ResolutionKind.WRITE_OFF, ResolutionKind.TRANSFER_TO_ACCOUNT);

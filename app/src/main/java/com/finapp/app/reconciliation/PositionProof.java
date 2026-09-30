@@ -48,7 +48,8 @@ import lombok.RequiredArgsConstructor;
  *   <li><strong>Completeness</strong>: every {@code (entry, account)} line on a reconciled
  *       position is one the register knows — an expectation names it; the suspense item
  *       (`P8-TSK-010`/`-020`) and the Phase 8 records join the known list with their tasks.
- *       Until `-020` adopts Phase 7's parkings, {@code SUSPENSE_UNMATCHED} truthfully reads
+ *       Until the backfill adopts Phase 7's parkings (`-020`: every live parking owns its
+ *       item from birth), {@code SUSPENSE_UNMATCHED} truthfully reads
  *       above zero (the transition's A7).
  *   <li><strong>The cash proof</strong> (`P8-TSK-016`, {@code INV-SET-06}): per currency, DR−CR
  *       of {@code CASH_AT_BANK} equals the closing balance at the head of an UNBROKEN chain of
@@ -86,7 +87,7 @@ public final class PositionProof {
     /** The suspense terms (`P8-TSK-010`, ADR-0070 §7) — appended after `-009`'s. */
     @NonNull private final com.finapp.reconciliation.SuspenseReadings suspense;
 
-    /** Phase 7's parkings, for the unadopted term — until `-020` adopts them. */
+    /** Phase 7's parkings, for the unadopted term — until the backfill adopts them. */
     @NonNull
     private final com.finapp.payments.UnmatchedConfirmationStore<Connection> parkings;
 
@@ -332,7 +333,7 @@ public final class PositionProof {
                 new HashSet<>(batches.acceptedRecognitionEntries(unitOfWork));
         // The third and fourth known-entry classes (P8-TSK-010, ADR-0070 §7): a park's
         // entry, and every entry a suspense item owns - the rule by which Phase 7's
-        // parking lines become known once `-020` adopts them.
+        // parking lines become known once the backfill adopts them (`-020`).
         recognitionEntries.addAll(suspense.knownEntries(unitOfWork));
         Map<AccountPurpose, Long> unattributed = new EnumMap<>(AccountPurpose.class);
         for (AccountPurpose purpose : AccountPurpose.reconciledPositions()) {
@@ -436,7 +437,7 @@ public final class PositionProof {
      * CR−DR = Σ CREDIT remainders − Σ DEBIT remainders + Σ Phase 7 parkings not yet
      * adopted. The last is the parkings whose id no {@code UNMATCHED_CONFIRMATION} item's
      * {@code origin_ref} names — without it the proof would fail on any database holding a
-     * Phase 7 parking until `-020` adopts them. Folded through {@code Money}, gross,
+     * Phase 7 parking until the backfill adopts them (`-020`). Folded through {@code Money}, gross,
      * CREDIT and DEBIT never netted inside a term.
      */
     private List<SuspenseVerdict> suspenseVerdicts(

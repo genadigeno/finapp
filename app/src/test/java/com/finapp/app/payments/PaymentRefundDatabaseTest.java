@@ -2101,6 +2101,9 @@ class PaymentRefundDatabaseTest {
                     @Override
                     public void alias(
                             java.sql.Connection uow, AliasRegistration registration) {}
+
+                    @Override
+                    public void parked(java.sql.Connection uow, ParkedValue parked) {}
                 });
     }
 
@@ -2153,6 +2156,9 @@ class PaymentRefundDatabaseTest {
                             @Override
                             public void alias(
                                     java.sql.Connection uow, AliasRegistration registration) {}
+
+                            @Override
+                            public void parked(java.sql.Connection uow, ParkedValue parked) {}
                         }),
                 new com.finapp.platform.inbox.InboxConsumer<>(
                         new com.finapp.platform.inbox.JdbcInboxRecordStore(),

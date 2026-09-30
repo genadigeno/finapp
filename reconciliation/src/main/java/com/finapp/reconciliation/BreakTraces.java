@@ -270,6 +270,14 @@ public final class BreakTraces {
                 step(NodeKind.SUSPENSE_ITEM, suspenseItemId, Relation.POSTED_AS,
                         NodeKind.JOURNAL_ENTRY, suspense.entryId());
             }
+            if (SuspenseOrigin.UNMATCHED_CONFIRMATION.name().equals(suspense.origin())) {
+                // A parking's value: the expectation its entry's clearing line opened, and
+                // through it the operation and the parking's raw statement (P8-TSK-020).
+                inquiries.parkingExpectationOf(unitOfWork, suspense.entryId())
+                        .ifPresent(expectation -> step(
+                                NodeKind.SUSPENSE_ITEM, suspenseItemId, Relation.EXPECTED_AS,
+                                NodeKind.EXPECTATION, expectation));
+            }
             for (BreakInquiries.ParkLink release : inquiries.releasesOf(unitOfWork, suspenseItemId)) {
                 step(NodeKind.SUSPENSE_ITEM, suspenseItemId, Relation.RELEASED_BY,
                         NodeKind.PARK, release.parkId());

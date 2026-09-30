@@ -35,7 +35,8 @@ class ReconciliationV004MigrationTest {
                                 + BreakType.sqlValueList() + "))"))
                 .contains(normalized(
                         "CONSTRAINT break_cause CHECK (cause IN ("
-                                + BreakCause.sqlValueList() + "))"))
+                                + BreakCause.sqlValueList(BreakCause.v004Vocabulary())
+                                + "))"))
                 .contains(normalized(
                         "CONSTRAINT break_status CHECK (status IN ("
                                 + BreakStatus.sqlValueList() + "))"))
@@ -47,7 +48,7 @@ class ReconciliationV004MigrationTest {
                                 + BreakEventType.sqlValueList() + "))"))
                 .contains(BreakStatus.sqlTransitionRule())
                 .contains(Severity.sqlForwardOnlyRule())
-                .contains(BreakCause.sqlRaisePairingRule());
+                .contains(BreakCause.sqlRaisePairingRule(BreakCause.v004Vocabulary()));
     }
 
     @Test

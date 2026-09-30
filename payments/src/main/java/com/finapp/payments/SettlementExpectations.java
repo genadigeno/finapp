@@ -8,6 +8,7 @@ import java.sql.Connection;
 import java.util.List;
 import java.util.Objects;
 import java.util.Optional;
+import java.util.UUID;
 
 /**
  * The expectation-opening seam on the payment appliers' acting branches (`P8-TSK-004`,
@@ -57,6 +58,15 @@ public interface SettlementExpectations {
      * with the expectation that anchors it (ADR-0067 §5).
      */
     void alias(Connection unitOfWork, AliasRegistration registration);
+
+    /**
+     * Gives a parking's value its owner (`P8-TSK-020`, ADR-0070 §2's
+     * {@code UNMATCHED_CONFIRMATION} row): the CREDIT suspense item for the line the parking
+     * put into {@code SUSPENSE_UNMATCHED}, and the break that owns it, in the parking's own
+     * transaction ({@code INV-REC-09}). Called by the claim's winner only, after the parking row
+     * it names exists; the amount, side and date are read off the posted entry, never passed.
+     */
+    void parked(Connection unitOfWork, ParkedValue parked);
 
     /** The completions this module can open expectations for (ADR-0067 §2's table). */
     enum Kind {
@@ -128,6 +138,47 @@ public interface SettlementExpectations {
             Objects.requireNonNull(settlementCycle, "settlementCycle must not be null");
             Objects.requireNonNull(correlation, "correlation must not be null");
             keys = List.copyOf(keys);
+        }
+    }
+
+    /**
+     * One parking's value to own: identifiers and the parking's stored attribution - never an
+     * amount, a side or a date (the implementation reads them off the posted entry's line on
+     * {@code suspenseAccount}).
+     *
+     * @param parkingId the parking row - the suspense item's {@code origin_ref}, its one arbiter
+     * @param position the rail's declared clearing position the parking debited - the source
+     *     whose evidence reaches the value is the one that discharges it
+     * @param cause what the statement named, as the parking stored it (payments `V023`)
+     * @param attempt the named attempt, exactly when the parking is attributed
+     * @param explainedBy the claim's standing subject when payments `V023`'s backfill left this
+     *     parking unclaimed - one scheme execution a credit, a withdrawal or a return already
+     *     explains (ADR-0070 point 8). Only the opening-position backfill passes it: a live
+     *     parking is always its claim's winner
+     */
+    record ParkedValue(
+            UUID parkingId,
+            AccountPurpose position,
+            LedgerAccountId suspenseAccount,
+            JournalEntryId journalEntryId,
+            UnmatchedConfirmation.Cause cause,
+            Optional<PaymentAttemptId> attempt,
+            Optional<String> explainedBy,
+            Correlation correlation) {
+
+        public ParkedValue {
+            Objects.requireNonNull(parkingId, "parkingId must not be null");
+            Objects.requireNonNull(position, "position must not be null");
+            Objects.requireNonNull(suspenseAccount, "suspenseAccount must not be null");
+            Objects.requireNonNull(journalEntryId, "journalEntryId must not be null");
+            Objects.requireNonNull(cause, "cause must not be null");
+            Objects.requireNonNull(attempt, "attempt must not be null");
+            Objects.requireNonNull(explainedBy, "explainedBy must not be null");
+            Objects.requireNonNull(correlation, "correlation must not be null");
+            if ((cause == UnmatchedConfirmation.Cause.UNATTRIBUTED) != attempt.isEmpty()) {
+                throw new IllegalArgumentException(
+                        "a parking names an attempt exactly when it is attributed (V023)");
+            }
         }
     }
 

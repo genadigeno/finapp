@@ -465,13 +465,14 @@ held at the database, as `V002` holds the upload's.)*
 | `V003` (`-009`) | `reconciliation_batch` (+`_event`), `external_item` (+`_event`, `_key`) | `UNIQUE (source_id, source_sequence) WHERE kind = 'BATCH'`; `UNIQUE (batch_id)`; one open `REPROCESS` per source; allocated plus parked plus offset never above the item's amount |
 | `V004` (`-010`) | `break` (+`_event`, `_note`, `_evidence_link`), `suspense_item`, `suspense_release`, `park` | One open break per (type, subject) by partial uniques; no `DELETE` grant plus a refusing trigger; `suspense_item.break_id NOT NULL`; released never above the amount; a note refused when it holds a Luhn-valid 13–19-digit run or an IBAN shape |
 | `V005` (`-011`) | `match_decision`, `match_candidate`, `allocation` | `rule_set_id NOT NULL`; the allocation unique and deferred Σ triggers on both sides; **no `UPDATE` or `DELETE` grant** on decisions, candidates or allocations |
-| `V006` (`-012`) | `resolution` (+`_event`), for the platform's `EVIDENCED` kind; the person kinds (`V007`, `-015`) and the batch subject (`V012`, `-023`) are admitted by the tasks that introduce them | Exactly one subject; one `PROPOSED` per subject; the four-eyes `CHECK`; an `EVIDENCED` resolution proposed by the system and born `APPROVED`; `UNIQUE adjustment_proposal_id`, `UNIQUE journal_entry_id` |
+| `V006` (`-012`) | `resolution` (+`_event`), for the platform's `EVIDENCED` kind; the person kinds (`V007`, `-015`) and the batch subject (`V013`, `-023`) are admitted by the tasks that introduce them | Exactly one subject; one `PROPOSED` per subject; the four-eyes `CHECK`; an `EVIDENCED` resolution proposed by the system and born `APPROVED`; `UNIQUE adjustment_proposal_id`, `UNIQUE journal_entry_id` |
 | `V007` (`-015`) | `resolution`'s generated `CHECK`s and transition trigger re-stated for the person kinds and the `PROPOSED`, `REJECTED` and `WITHDRAWN` states | The (kind, reason code) `CHECK`; the regenerated machine `CHECK` and every-writer trigger |
 | `V008` (`-016`) | The bank item: `external_item.attributed_source_id`, `position_purpose` nullable under the position rule, the bank line types and `REMITTANCE_REF`; `match_candidate.key_kind` nullable for the value-date group | A report line always in its source's position and never attributed, a bank credit or debit in a position exactly when attributed, a bank fee in neither; the attribution frozen with the copied line |
 | `V009` (`-017`) | The scheme item: the scheme's line types and references on the working copy; the cycle on the run (`reconciliation_batch.settlement_cycle`, frozen); the cycle a return learns (`external_item.learned_cycle`) | The learned cycle written once, equal to the item's run's cycle, never at birth — every-writer triggers; the UPDATE grant narrowed to it |
 | `V010` (`-018`) | The payout item: the payout provider's line types and reference on the working copy; `PAYOUT_FEE` in the rule and fee schedule vocabularies; the payout rule set v1's missing fee rule and flat schedule, completed in place | The seed completed only behind a guard refusing once any run or decision names the payout rule set — no stored decision can be explained differently |
-| `V011` (`-022`) | `run_replay` | Append-only |
-| `V012` (`-023`) | The `REPUDIATE_BATCH` kind and the batch subject on `resolution`; the item's `REPUDIATED` and its `MATCHED → UNMATCHED` reopening; the expectation's reopening edges; the suspense item's `REPUDIATION` origin | The generated `CHECK`s and transition triggers regenerated; one `PROPOSED` repudiation per batch |
+| `V011` (`-020`) | `break_suspense_item_fk` made `DEFERRABLE INITIALLY IMMEDIATE` — a parking's owner stands on its own suspense item, born in one transaction; the cause `EXECUTION_ALREADY_EXPLAINED` (`DUPLICATE_EXTERNAL`) for a parking payments `V023`'s backfill left unclaimed | Only the parking's opener defers the key, and sets it `IMMEDIATE` again at once; the cause `CHECK` and the raise pairing regenerated whole |
+| `V012` (`-022`) | `run_replay` | Append-only |
+| `V013` (`-023`) | The `REPUDIATE_BATCH` kind and the batch subject on `resolution`; the item's `REPUDIATED` and its `MATCHED → UNMATCHED` reopening; the expectation's reopening edges; the suspense item's `REPUDIATION` origin | The generated `CHECK`s and transition triggers regenerated; one `PROPOSED` repudiation per batch |
 
 *(`V007`…`V009` numbered by the Phase 7 → 8 transition's consistency review, A8: `P8-TSK-023`
 needs its own migration, because each state and edge arrives with its producer. A deferral of
@@ -485,7 +486,11 @@ recorded "Persistence: none new", but neither the item's vocabulary nor `learned
 line types and references.)* *(`P8-TSK-018` took `V010` — its backlog entry had recorded
 "Persistence: none new" a third time, but the item admitted no payout vocabulary and the payout rule
 set had no fee terms to check by — so `-022` and `-023` moved to `V011` and `V012`; and settlement
-`V007` admitted the payout provider's line types and reference.)*
+`V007` admitted the payout provider's line types and reference.)* *(`P8-TSK-020` took `V011` — its backlog entry
+had recorded "Persistence: none new" a fourth time, but a parking's owner is a break standing on its
+own suspense item, which neither immediate key let be born, and a parking payments `V023`'s backfill
+left unclaimed needed a cause that admits no second attribution — so `-022` and `-023` moved to
+`V012` and `V013`.)*
 
 **Other schemas.**
 - **ledger:** `V015` (`P8-TSK-006`) — `adjustment_proposal.reason_code` and `origin`, the
