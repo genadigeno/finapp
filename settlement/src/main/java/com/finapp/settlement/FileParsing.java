@@ -99,6 +99,9 @@ public final class FileParsing {
     @NonNull private final Clock clock;
     @NonNull private final TransactionRunner transactions;
 
+    /** The compiled register a bank line is attributed through (`P8-TSK-016`). */
+    @NonNull private final SettlementSources sources;
+
     /** One tick's tally — telemetry, never the count of record. */
     public record SweepResult(int candidates, int parsed, int rejected, int failed) {}
 
@@ -182,6 +185,13 @@ public final class FileParsing {
                 parsed.declaredNet().currency())) {
             return rejectClaimed(uow, fileId, RejectionCode.CONFLICTING_BATCH, List.of());
         }
+        if (parsed.statement().isPresent()
+                && batches.liveStatementStands(
+                        uow, file.sourceId(), parsed.declaredNet().currency(),
+                        parsed.statement().get().sequence())) {
+            // A second statement of a sequence already live (ADR-0066 §5): retained, refused.
+            return rejectClaimed(uow, fileId, RejectionCode.CONFLICTING_BATCH, List.of());
+        }
         batches.insertParsedBatch(
                 uow,
                 new SettlementBatchStore.NewBatch(
@@ -194,7 +204,8 @@ public final class FileParsing {
                         totalsOf(parsed),
                         SecurityContext.require(),
                         now,
-                        correlation().correlationId()));
+                        correlation().correlationId(),
+                        attributionsOf(uow, parsed)));
         if (!files.markParsed(uow, fileId, now)) {
             // Unreachable while we hold the claim; stated so a lock-less probe still
             // converges instead of writing a batch beside a moved file.
@@ -286,6 +297,42 @@ public final class FileParsing {
                 clock.instant(),
                 correlation().correlationId());
         return Outcome.FAILED;
+    }
+
+    /**
+     * Each bank credit's and debit's attributed source by line number (`P8-TSK-016`, ADR-0065
+     * §3): the unique declared source whose compiled remittance pattern fully matches the line's
+     * {@code REMITTANCE_REF}. A line zero or two patterns match — or with no reference — is left
+     * out: unattributed, parked owned at acceptance. A report has nothing to attribute.
+     */
+    private Map<Integer, UUID> attributionsOf(Connection uow, ParsedBatch parsed) {
+        if (parsed.statement().isEmpty()) {
+            return Map.of();
+        }
+        Map<String, UUID> sourceIds = new java.util.HashMap<>();
+        files.sources(uow).forEach(source -> sourceIds.put(source.code(), source.id()));
+        Map<Integer, UUID> attributions = new java.util.HashMap<>();
+        for (ParsedLine line : parsed.lines()) {
+            if (line.type() != SettlementLineType.BANK_CREDIT
+                    && line.type() != SettlementLineType.BANK_DEBIT) {
+                continue;
+            }
+            Optional.ofNullable(line.references().get(LineReferenceKind.REMITTANCE_REF))
+                    .flatMap(sources::attribute)
+                    .ifPresent(
+                            source -> {
+                                UUID sourceId = sourceIds.get(source.code());
+                                if (sourceId == null) {
+                                    // A declared source without its seeded row is OUR gap: the
+                                    // file stays RECEIVED, loudly (ADR-0066 §9).
+                                    throw new IllegalStateException(
+                                            "declared source " + source.code()
+                                                    + " has no settlement.source row");
+                                }
+                                attributions.put(line.lineNo(), sourceId);
+                            });
+        }
+        return Map.copyOf(attributions);
     }
 
     /** The `Money` fold per (type, direction) — never a SQL {@code SUM} (`INV-MON-01`). */

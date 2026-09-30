@@ -48,6 +48,15 @@ import lombok.extern.slf4j.Slf4j;
  * {@code PROCESSING_ERROR} break, and the chunk carries on — the rows behind it are other
  * people's money. A run failing {@code blockAfterFailures} chunks in a row moves to
  * {@code BLOCKED} with a CRITICAL {@code RUN_BLOCKED} break, holding its source visibly.
+ *
+ * <p><strong>Bank lines</strong> (`P8-TSK-016`): an attributed bank credit or debit is judged
+ * in its attributed report source's KEY SCOPE — its {@code REMITTANCE_REF} first, and only when
+ * that reaches nothing, the value date's untouched remittances through {@link GroupMatch}
+ * (exact total or wait, never a subset); a difference against a remittance is
+ * {@code SETTLEMENT_MISMATCH(REMITTANCE_DIFFERS)}; a bank fee is judged flat through the
+ * {@code CHECK} route. Because a bank leg may lock the report source's committed breaks, it
+ * takes the attributed sources' advisories before any row lock. A line born disposed (an
+ * unattributed bank line, {@code PARKED} at acceptance) is never read by the chunk.
  */
 @Slf4j
 public class Matching {
@@ -215,8 +224,12 @@ public class Matching {
         if (!claimSource(unitOfWork, source)) {
             return -1;
         }
+        List<UUID> attributions = store.attributedSourcesWithExpiredGrace(unitOfWork, source);
+        if (!claimAttributedSources(unitOfWork, source, attributions)) {
+            return -1; // An attributed source is busy elsewhere: not this instance's turn.
+        }
         List<MatchingStore.ResidualItem> residuals =
-                store.lockExpiredItems(unitOfWork, source, config.chunkSize());
+                store.lockExpiredItems(unitOfWork, source, attributions, config.chunkSize());
         if (residuals.isEmpty()) {
             return 0;
         }
@@ -297,6 +310,29 @@ public class Matching {
                             BreakType.DUPLICATE_EXTERNAL, BreakCause.EXPECTATION_EXHAUSTED,
                             Optional.empty(), parks, now, correlation);
             case NO_CANDIDATES, NO_RULE -> {
+                if (verdict.kind() == MatchEngine.VerdictKind.NO_CANDIDATES
+                        && resolution.groupRule().isPresent()) {
+                    // The value-date group judged again before anything parks (ADR-0073
+                    // section 7's rule, P8-TSK-016): candidates committed while the item
+                    // waited are found and allocated, never parked beside.
+                    GroupMatch.Verdict group =
+                            groupVerdict(
+                                    unitOfWork, item, residual.sourceId(), resolution,
+                                    lockedHits, java.util.Set.of());
+                    if (group.kind() == GroupMatch.Kind.MATCH) {
+                        applyGroupMatch(
+                                unitOfWork, run, item, resolution.groupRule().get(), group,
+                                decisionId, decidedOn, lockedHits, claimantRanks, tolerance,
+                                DecisionOrigin.RUN, "UNMATCHED", now, correlation);
+                        return;
+                    }
+                    if (group.kind() == GroupMatch.Kind.MEMBERSHIP_MOVED) {
+                        // A candidate committed after the lock-free read: parking now could
+                        // park beside its owner. Nothing is written; the next batch reads
+                        // the whole group and judges it.
+                        return;
+                    }
+                }
                 InternalReferenceLookup.InternalReference internal =
                         classifyThroughLookup(unitOfWork, item);
                 if (internal.classification() == InternalClassification.TERMINAL) {
@@ -338,8 +374,13 @@ public class Matching {
         if (!claimSource(unitOfWork, source)) {
             return -1;
         }
+        List<UUID> attributions = store.attributedSourcesWithRematchWork(unitOfWork, source);
+        if (!claimAttributedSources(unitOfWork, source, attributions)) {
+            return -1; // An attributed source is busy elsewhere: not this instance's turn.
+        }
         List<MatchingStore.ResidualItem> residuals =
-                store.lockRematchCandidates(unitOfWork, source, config.chunkSize());
+                store.lockRematchCandidates(
+                        unitOfWork, source, attributions, config.chunkSize());
         if (residuals.isEmpty()) {
             return 0;
         }
@@ -397,6 +438,27 @@ public class Matching {
         Optional<MatchEngine.FiredRule> fired = firedRule(resolution, lockedHits);
         MatchEngine.Verdict verdict =
                 MatchEngine.decide(facts(item), fired, resolution.anyLandedRule(), tolerance);
+        if (verdict.kind() == MatchEngine.VerdictKind.NO_CANDIDATES
+                && resolution.groupRule().isPresent()) {
+            // A waiting item's value-date group, re-judged now a candidate opened after its
+            // decision (P8-TSK-016); a PARKED item re-matches by its reference alone.
+            if (!"UNMATCHED".equals(store.itemStatus(unitOfWork, item.id()))) {
+                return false;
+            }
+            GroupMatch.Verdict group =
+                    groupVerdict(
+                            unitOfWork, item, residual.sourceId(), resolution, lockedHits,
+                            java.util.Set.of());
+            if (group.kind() != GroupMatch.Kind.MATCH) {
+                return false;
+            }
+            applyGroupMatch(
+                    unitOfWork, syntheticRun(residual), item, resolution.groupRule().get(),
+                    group, ids.next(), LocalDate.ofInstant(now, ZoneOffset.UTC), lockedHits,
+                    claimantRanks, tolerance, DecisionOrigin.REMATCH, "UNMATCHED", now,
+                    correlation);
+            return true;
+        }
         if (verdict.kind() != MatchEngine.VerdictKind.ALLOCATE) {
             return false;
         }
@@ -461,7 +523,7 @@ public class Matching {
                         residual.ruleSetId(),
                         Optional.empty(),
                         Optional.of(Cardinality.ONE_TO_ONE),
-                        Optional.of(candidate.reachedBy()),
+                        candidate.reachedBy(),
                         DecisionOutcome.MATCHED,
                         Optional.of(
                                 claimantRanks.merge(
@@ -535,20 +597,28 @@ public class Matching {
                 residual.correlationId());
     }
 
-    /** Locks a resolution's hits sorted by id and maps them for the engine. */
+    /**
+     * Locks a resolution's hits and value-date group candidates together, sorted by id, and
+     * maps them for the engine.
+     */
     private Map<UUID, MatchEngine.HitFacts> lockResolutionHits(
             Connection unitOfWork, Resolution resolution) {
         Map<UUID, KeyKind> reachedBy = new HashMap<>();
         resolution.hitIds().forEach(id -> reachedBy.put(id, resolution.reachedBy()));
+        java.util.Set<UUID> locked = new java.util.HashSet<>(reachedBy.keySet());
+        locked.addAll(resolution.groupCandidateIds());
         Map<UUID, MatchEngine.HitFacts> lockedHits = new HashMap<>();
-        for (MatchEngine.HitFacts hit :
-                store.lockExpectations(unitOfWork, reachedBy.keySet(), reachedBy)) {
+        for (MatchEngine.HitFacts hit : store.lockExpectations(unitOfWork, locked, reachedBy)) {
             lockedHits.put(hit.expectationId(), hit);
         }
         return lockedHits;
     }
 
-    /** The rule that fired, its hits re-read from the locked rows. */
+    /**
+     * The rule that fired, its hits re-read from the locked rows. Only a key's rule fires
+     * here: a resolution names a {@code ONE_TO_ONE} rule with its key, never the keyless
+     * value-date group (that is {@link #groupVerdict}'s).
+     */
     private Optional<MatchEngine.FiredRule> firedRule(
             Resolution resolution, Map<UUID, MatchEngine.HitFacts> lockedHits) {
         return resolution.firedRule()
@@ -573,9 +643,69 @@ public class Matching {
                                                         hit.remainderMinor(),
                                                         hit.openedAt(),
                                                         hit.expectedBy(),
-                                                        rule.keyKind().orElseThrow(),
+                                                        rule.keyKind(),
                                                         hit.operationRef()))
                                         .toList()));
+    }
+
+    /**
+     * The value-date group's verdict over the locked candidates (`P8-TSK-016`): each re-read
+     * under the lock (an earlier claimant's allocation in this transaction shows as a
+     * diminished remainder), every candidate a key of ANOTHER item in the same chunk reaches
+     * set aside ({@code keyClaims} — a referenced line's claim is never taken by an
+     * unreferenced one), and the membership re-read now that the rows are locked: a candidate
+     * committed after the lock-free read makes the locked set a part, never the whole, and the
+     * item waits.
+     */
+    private GroupMatch.Verdict groupVerdict(
+            Connection unitOfWork,
+            MatchingStore.ChunkItem item,
+            UUID sourceId,
+            Resolution resolution,
+            Map<UUID, MatchEngine.HitFacts> lockedHits,
+            java.util.Set<UUID> keyClaims) {
+        MatchingRules.RuleRow rule = resolution.groupRule().orElseThrow();
+        List<UUID> standing =
+                store.groupCandidates(
+                        unitOfWork,
+                        item.keyScope(sourceId),
+                        groupKind(rule),
+                        item.direction(),
+                        item.amount().currency(),
+                        item.groupDate());
+        boolean membershipComplete =
+                resolution.groupCandidateIds().containsAll(standing);
+        List<MatchEngine.HitFacts> candidates =
+                resolution.groupCandidateIds().stream()
+                        .filter(id -> !keyClaims.contains(id))
+                        .map(lockedHits::get)
+                        .filter(Objects::nonNull)
+                        // Reached by the date, never by a key: the snapshot carries none.
+                        .map(hit ->
+                                new MatchEngine.HitFacts(
+                                        hit.expectationId(),
+                                        hit.kind(),
+                                        hit.direction(),
+                                        hit.amount(),
+                                        hit.remainderMinor(),
+                                        hit.openedAt(),
+                                        hit.expectedBy(),
+                                        Optional.empty(),
+                                        hit.operationRef()))
+                        .toList();
+        return GroupMatch.decide(
+                facts(item), item.groupDate(), rule.expectationKind(), candidates,
+                membershipComplete);
+    }
+
+    /** A value-date group names the expectation kind it discharges (v1: REMITTANCE). */
+    private static ExpectationKind groupKind(MatchingRules.RuleRow rule) {
+        return rule.expectationKind()
+                .orElseThrow(
+                        () ->
+                                new IllegalStateException(
+                                        "a GROUP_BY_VALUE_DATE rule names the expectation"
+                                                + " kind it discharges"));
     }
 
     private record ChunkOutcome(Kind kind, UUID runId, int decided) {
@@ -663,6 +793,41 @@ public class Matching {
         }
     }
 
+    /**
+     * The attributed sources' advisories (`P8-TSK-016`), after the leg's own try-lock and
+     * before any row lock: a bank item settles its attributed report source's
+     * {@code REMITTANCE}, whose committed breaks — ageing's {@code MISSING_EXTERNAL} is stamped
+     * with the REPORT source — this transaction may lock (L1's closure, the residual bump),
+     * and every writer locking a committed break row holds that break's source's namespace-4
+     * advisory first (`DISTRIBUTED_EXECUTION.md` §3). Sorted by the UUID's string, the leg's
+     * own source skipped (it holds that one already).
+     *
+     * <p><strong>The TRY form, and a refusal skips the turn</strong> — never a wait. The
+     * resolution machine takes a two-source offset's pair BLOCKING in {@code UUID} order, and a
+     * report source sorts before the bank, so a bank leg WAITING here on the report source
+     * while holding its own could close a cycle with such an offset. Trying instead means this
+     * leg never waits on a namespace-4 key while holding one, so no cycle can pass through it;
+     * a refused leg writes nothing (the claim comes before any write) and the next tick, on any
+     * instance, tries again — the try only orders, exactly as {@link #CLAIM_SQL} does.
+     *
+     * @return false when an attributed source is held elsewhere: the caller skips its turn
+     */
+    private boolean claimAttributedSources(
+            Connection unitOfWork, UUID ownSource, java.util.Collection<UUID> attributed) {
+        java.util.TreeMap<String, UUID> sorted = new java.util.TreeMap<>();
+        for (UUID source : attributed) {
+            if (!source.equals(ownSource)) {
+                sorted.put(source.toString(), source);
+            }
+        }
+        for (UUID source : sorted.values()) {
+            if (!claimSource(unitOfWork, source)) {
+                return false;
+            }
+        }
+        return true;
+    }
+
     @SuppressWarnings("try")
     private ChunkOutcome chunk(Connection unitOfWork, UUID source, UUID[] runHolder) {
         if (!claimSource(unitOfWork, source)) {
@@ -690,11 +855,23 @@ public class Matching {
             completeRun(unitOfWork, run, now, correlation);
             return new ChunkOutcome(ChunkOutcome.Kind.COMPLETED, run.id(), 0);
         }
+        // The chunk's items are read lock-free FIRST, so the attributed sources' advisories
+        // precede every row lock this transaction takes, the run row's included.
+        List<MatchingStore.ChunkItem> items =
+                store.chunkItems(unitOfWork, run.id(), run.cursor(), config.chunkSize());
+        if (!claimAttributedSources(
+                unitOfWork,
+                run.sourceId(),
+                items.stream()
+                        .map(MatchingStore.ChunkItem::attributedSourceId)
+                        .flatMap(Optional::stream)
+                        .toList())) {
+            // Nothing written yet: the run waits for a tick when its report sources are free.
+            return new ChunkOutcome(ChunkOutcome.Kind.SKIPPED, run.id(), 0);
+        }
         if (run.status() == RunStatus.OPEN) {
             store.markRunInProgress(unitOfWork, run.id(), SecurityContext.require(), now);
         }
-        List<MatchingStore.ChunkItem> items =
-                store.chunkItems(unitOfWork, run.id(), run.cursor(), config.chunkSize());
         if (items.isEmpty()) {
             completeRun(unitOfWork, run, now, correlation);
             return new ChunkOutcome(ChunkOutcome.Kind.COMPLETED, run.id(), 0);
@@ -703,17 +880,23 @@ public class Matching {
         int tolerance = rules.settlementDateToleranceDays(unitOfWork, run.ruleSetId());
         // Resolve every item's fired rule and hit ids BEFORE any row lock, then lock
         // expectations and items sorted by id (the §3 order), then re-read the hit facts
-        // on the locked rows - the snapshot is the locked truth.
+        // on the locked rows - the snapshot is the locked truth. A value-date group's
+        // candidates are locked in the same sorted pass (P8-TSK-016).
         Map<UUID, Resolution> resolutions = new LinkedHashMap<>();
         Map<UUID, KeyKind> reachedBy = new HashMap<>();
+        java.util.Set<UUID> locked = new java.util.HashSet<>();
         for (MatchingStore.ChunkItem item : items) {
             Resolution resolution = resolve(unitOfWork, run, item);
             resolutions.put(item.id(), resolution);
             resolution.hitIds().forEach(id -> reachedBy.put(id, resolution.reachedBy()));
+            locked.addAll(resolution.hitIds());
+            locked.addAll(resolution.groupCandidateIds());
         }
+        // What some item's KEY reaches is that item's claim: no value-date group in this
+        // chunk takes it (the design's "no other claimant in the chunk").
+        java.util.Set<UUID> keyClaims = java.util.Set.copyOf(reachedBy.keySet());
         Map<UUID, MatchEngine.HitFacts> lockedHits = new HashMap<>();
-        for (MatchEngine.HitFacts hit :
-                store.lockExpectations(unitOfWork, reachedBy.keySet(), reachedBy)) {
+        for (MatchEngine.HitFacts hit : store.lockExpectations(unitOfWork, locked, reachedBy)) {
             lockedHits.put(hit.expectationId(), hit);
         }
         store.lockItems(unitOfWork, items.stream().map(MatchingStore.ChunkItem::id).toList());
@@ -730,7 +913,8 @@ public class Matching {
             try {
                 decideAndApply(
                         unitOfWork, run, item, resolutions.get(item.id()), lockedHits,
-                        claimantRanks, tolerance, parks, offsets, now, correlation);
+                        keyClaims, claimantRanks, tolerance, parks, offsets, now,
+                        correlation);
             } catch (RuntimeException poisoned) {
                 rollbackTo(unitOfWork, savepoint);
                 containPoisoned(unitOfWork, run, item, parks, now, correlation, poisoned);
@@ -878,7 +1062,8 @@ public class Matching {
         }
         // The per-batch fee comparison (`P8-TSK-012`, ADR-0068 §7), judged once by the
         // completing edge's one winner: the signed fold of reported - expected per
-        // currency over the run's CHECKED fee decisions (one currency's minor units -
+        // currency over the run's CHECKED PROCESSING_FEE decisions - a bank fee is judged
+        // per line only, P8-TSK-016 - (one currency's minor units -
         // Java arithmetic, never SQL SUM), its subject the run's FIRST fee item in
         // claimant order (the design's D: the taxonomy names the item, and the batch's
         // fee narrative starts at its first line), converging on the one-open unique.
@@ -949,32 +1134,44 @@ public class Matching {
 
     // ------------------------------------------------------------------ resolution
 
-    /** What one item's rules reached: the fired rule, or the facts of why none did. */
+    /**
+     * What one item's rules reached: the fired rule, or the facts of why none did — and, when
+     * no key reached anything, the value-date group rule its line type rides with the group's
+     * candidates as the lock-free read found them (`P8-TSK-016`).
+     */
     private record Resolution(
             Optional<MatchingRules.RuleRow> firedRule,
             boolean anyLandedRule,
             List<UUID> hitIds,
             KeyKind reachedBy,
             Optional<Integer> waitingGraceHours,
-            Optional<MatchingRules.RuleRow> unlandedRule) {}
+            Optional<MatchingRules.RuleRow> unlandedRule,
+            Optional<MatchingRules.RuleRow> groupRule,
+            List<UUID> groupCandidateIds) {}
 
     private Resolution resolve(
             Connection unitOfWork, MatchingStore.RunRow run, MatchingStore.ChunkItem item) {
         return resolve(unitOfWork, run.ruleSetId(), run.sourceId(), item);
     }
 
+    /**
+     * @param sourceId the item's own source (the run's); its expectation keys are judged in
+     *     {@link MatchingStore.ChunkItem#keyScope} — the attributed source for an attributed
+     *     bank line (ADR-0068 §1, `P8-TSK-016`)
+     */
     private Resolution resolve(
             Connection unitOfWork,
             UUID ruleSetId,
             UUID sourceId,
             MatchingStore.ChunkItem item) {
+        UUID scope = item.keyScope(sourceId);
         List<MatchingRules.RuleRow> lineRules =
                 rules.rulesFor(unitOfWork, ruleSetId, item.lineType());
         boolean anyLanded =
                 lineRules.stream()
                         .anyMatch(rule -> rule.cardinality() == Cardinality.ONE_TO_ONE);
         // The CHECK or CORRECTION rule this line type rides when no landed rule serves
-        // it (`P8-TSK-012`); GROUP_BY_VALUE_DATE stays `-016`'s, PARTIAL has no v1 rule.
+        // it (`P8-TSK-012`); PARTIAL has no v1 rule.
         Optional<MatchingRules.RuleRow> unlanded =
                 lineRules.stream()
                         .filter(rule ->
@@ -997,16 +1194,34 @@ public class Matching {
             if (value.isEmpty()) {
                 continue;
             }
-            List<UUID> hits = resolveKey(unitOfWork, sourceId, keyKind, value.get());
+            List<UUID> hits = resolveKey(unitOfWork, scope, keyKind, value.get());
             if (!hits.isEmpty()) {
                 return new Resolution(
                         Optional.of(rule), anyLanded, hits, keyKind, waitingGrace,
-                        unlanded);
+                        unlanded, Optional.empty(), List.of());
             }
         }
+        // No key reached anything in the scope: the value-date group, if the line type rides
+        // one, reads its candidates now - before any row lock - to lock them with the rest.
+        // Never when a reference HIT something exhausted or contradicted (returned above).
+        Optional<MatchingRules.RuleRow> group =
+                lineRules.stream()
+                        .filter(rule -> rule.cardinality() == Cardinality.GROUP_BY_VALUE_DATE)
+                        .findFirst();
+        List<UUID> groupCandidates =
+                group.map(
+                                rule ->
+                                        store.groupCandidates(
+                                                unitOfWork,
+                                                scope,
+                                                groupKind(rule),
+                                                item.direction(),
+                                                item.amount().currency(),
+                                                item.groupDate()))
+                        .orElse(List.of());
         return new Resolution(
                 Optional.empty(), anyLanded, List.of(), KeyKind.OUR_REF, waitingGrace,
-                unlanded);
+                unlanded, group, groupCandidates);
     }
 
     /**
@@ -1022,6 +1237,8 @@ public class Matching {
                     case PSP_REFUND_REF -> ItemKeyKind.PSP_REFUND_REF;
                     case ACQUIRER_REF -> ItemKeyKind.ACQUIRER_REF;
                     case OUR_REF -> ItemKeyKind.OUR_REF;
+                    // The bank line's structured reference (`P8-TSK-016`).
+                    case REMITTANCE_REF -> ItemKeyKind.REMITTANCE_REF;
                     default -> null; // The other sources' kinds arrive with their tasks.
                 };
         return itemKind == null
@@ -1051,6 +1268,7 @@ public class Matching {
             MatchingStore.ChunkItem item,
             Resolution resolution,
             Map<UUID, MatchEngine.HitFacts> lockedHits,
+            java.util.Set<UUID> keyClaims,
             Map<UUID, Integer> claimantRanks,
             int toleranceDays,
             List<Suspense.ParkedItem> parks,
@@ -1130,14 +1348,186 @@ public class Matching {
             case NO_RULE ->
                     applyWaiting(
                             unitOfWork, run, item, decisionId, decidedOn,
-                            Optional.empty(), now, correlation);
-            case NO_CANDIDATES ->
-                    applyUnreached(
-                            unitOfWork, run, item, resolution, decisionId, decidedOn,
-                            parks, now, correlation);
+                            Optional.empty(), Optional.empty(), now, correlation);
+            case NO_CANDIDATES -> {
+                // No key reached anything: a line type riding a value-date group is judged
+                // against its date's untouched candidates before the lookup types what is
+                // left (`P8-TSK-016`).
+                Optional<GroupEvaluation> group = Optional.empty();
+                if (resolution.groupRule().isPresent()) {
+                    GroupMatch.Verdict grouped =
+                            groupVerdict(
+                                    unitOfWork, item, run.sourceId(), resolution, lockedHits,
+                                    keyClaims);
+                    if (grouped.kind() == GroupMatch.Kind.MATCH) {
+                        applyGroupMatch(
+                                unitOfWork, run, item, resolution.groupRule().get(), grouped,
+                                decisionId, decidedOn, lockedHits, claimantRanks,
+                                toleranceDays, DecisionOrigin.RUN, "PENDING", now,
+                                correlation);
+                        return;
+                    }
+                    group = Optional.of(
+                            new GroupEvaluation(resolution.groupRule().get(), grouped));
+                }
+                applyUnreached(
+                        unitOfWork, run, item, resolution, group, decisionId, decidedOn,
+                        parks, now, correlation);
+            }
             default ->
                     throw new IllegalStateException("unhandled verdict " + verdict.kind());
         }
+    }
+
+    /**
+     * A value-date group that was judged and did not match (`P8-TSK-016`) — recorded on the
+     * waiting decision with the candidates it saw, so the wait explains itself from stored
+     * rows (ADR-0068 §5: every evaluation snapshots what it saw).
+     */
+    private record GroupEvaluation(MatchingRules.RuleRow rule, GroupMatch.Verdict verdict) {}
+
+    /**
+     * The value-date group's allocation (`P8-TSK-016`): ONE decision, one candidate row per
+     * member with no key kind, one allocation per member for its WHOLE amount — each member
+     * settles on its own machine edge with its own {@code SettlementExpectationSettled} — and
+     * the item {@code MATCHED} for its whole amount. A member's open {@code MISSING_EXTERNAL}
+     * is locked before the allocations and closed {@code EVIDENCED} after them (`P8-TSK-013`'s
+     * L1, member by member). A group is reached BY its date, so it is never late against it:
+     * the decision freezes a deviation of zero and raises no timing observation.
+     */
+    private void applyGroupMatch(
+            Connection unitOfWork,
+            MatchingStore.RunRow run,
+            MatchingStore.ChunkItem item,
+            MatchingRules.RuleRow rule,
+            GroupMatch.Verdict verdict,
+            UUID decisionId,
+            LocalDate decidedOn,
+            Map<UUID, MatchEngine.HitFacts> lockedHits,
+            Map<UUID, Integer> claimantRanks,
+            int toleranceDays,
+            DecisionOrigin origin,
+            String itemFromStatus,
+            Instant now,
+            CorrelationId correlation) {
+        List<MatchEngine.HitFacts> members = verdict.candidates();
+        Map<UUID, UUID> overdueBreaks = new LinkedHashMap<>();
+        for (MatchEngine.HitFacts member : members) {
+            store.lockOpenBreakOn(
+                            unitOfWork, member.expectationId(), BreakType.MISSING_EXTERNAL)
+                    .ifPresent(breakId -> overdueBreaks.put(member.expectationId(), breakId));
+        }
+        int claimantRank = 0;
+        for (MatchEngine.HitFacts member : members) {
+            claimantRank =
+                    Math.max(
+                            claimantRank,
+                            claimantRanks.merge(member.expectationId(), 1, Integer::sum));
+        }
+        int deviation =
+                (int) ChronoUnit.DAYS.between(members.get(0).expectedBy(), item.groupDate());
+        store.insertDecision(
+                unitOfWork,
+                new MatchingStore.NewDecision(
+                        decisionId,
+                        item.id(),
+                        run.id(),
+                        origin,
+                        run.ruleSetId(),
+                        Optional.of(rule.priority()),
+                        Optional.of(Cardinality.GROUP_BY_VALUE_DATE),
+                        Optional.empty(),
+                        DecisionOutcome.MATCHED,
+                        Optional.of(claimantRank),
+                        Optional.of(members.size()),
+                        Optional.of(deviation),
+                        Optional.of(toleranceDays),
+                        SecurityContext.require(),
+                        now,
+                        decidedOn,
+                        correlation));
+        store.insertCandidates(unitOfWork, decisionId, members);
+        Map<UUID, Money> allocated = new LinkedHashMap<>();
+        for (MatchEngine.HitFacts member : members) {
+            // Untouched by construction: the remainder IS the member's whole amount.
+            Money allocation =
+                    Money.ofPersisted(
+                            member.remainderMinor(),
+                            member.amount().currency(),
+                            member.amount().scale());
+            store.insertAllocation(
+                    unitOfWork,
+                    new MatchingStore.NewAllocation(
+                            ids.next(), decisionId, item.id(), member.expectationId(),
+                            allocation, now, correlation));
+            ExpectationStatus status =
+                    store.allocateToExpectation(
+                            unitOfWork,
+                            member.expectationId(),
+                            allocation,
+                            "decision=" + decisionId,
+                            SecurityContext.require(),
+                            now,
+                            correlation);
+            store.bumpResidualOnSubjects(unitOfWork, member.expectationId(), item.id());
+            // The next claimant in this chunk sees the member emptied (INV-REC-07).
+            lockedHits.put(
+                    member.expectationId(),
+                    new MatchEngine.HitFacts(
+                            member.expectationId(),
+                            member.kind(),
+                            member.direction(),
+                            member.amount(),
+                            0L,
+                            member.openedAt(),
+                            member.expectedBy(),
+                            member.reachedBy(),
+                            member.operationRef()));
+            if (status == ExpectationStatus.SETTLED) {
+                ReconciliationEvents.expectationSettled(
+                        outbox, unitOfWork, ids, member.expectationId(), member.kind(),
+                        member.operationRef(), run.sourceId(), now, correlation);
+            }
+            allocated.put(member.expectationId(), allocation);
+        }
+        store.markItemMatchedFrom(
+                unitOfWork, item.id(), itemFromStatus, item.amount().minorUnits(),
+                SecurityContext.require(), now, correlation);
+        overdueBreaks.forEach(
+                (expectationId, breakId) ->
+                        resolutions.evidence(
+                                unitOfWork,
+                                new Resolutions.Evidence(
+                                        ids.next(),
+                                        breakId,
+                                        allocated.get(expectationId),
+                                        store.breakResidualVersion(unitOfWork, breakId),
+                                        decisionId,
+                                        Optional.empty(),
+                                        Optional.empty(),
+                                        Optional.empty(),
+                                        run.ruleSetId(),
+                                        SecurityContext.require(),
+                                        now,
+                                        correlation)));
+    }
+
+    /**
+     * The difference's break against its candidate (`P8-TSK-016`): the bank's cash against a
+     * report's {@code REMITTANCE} is a {@code SETTLEMENT_MISMATCH} ({@code REMITTANCE_DIFFERS}),
+     * every other kind's an {@code AMOUNT_MISMATCH} ({@code AMOUNT_DIFFERS}) — the pairing
+     * `V004`'s detector trigger admits.
+     */
+    private static BreakType differenceType(ExpectationKind kind) {
+        return kind == ExpectationKind.REMITTANCE
+                ? BreakType.SETTLEMENT_MISMATCH
+                : BreakType.AMOUNT_MISMATCH;
+    }
+
+    private static BreakCause differenceCause(ExpectationKind kind) {
+        return kind == ExpectationKind.REMITTANCE
+                ? BreakCause.REMITTANCE_DIFFERS
+                : BreakCause.AMOUNT_DIFFERS;
     }
 
     private void applyAllocation(
@@ -1175,6 +1565,18 @@ public class Matching {
                                 && store.openBreakExistsOn(
                                         unitOfWork, candidate.expectationId(),
                                         BreakType.MISSING_EXTERNAL));
+        // A later tranche (`P8-TSK-016`): an earlier partial allocation left its shortfall
+        // break on the candidate - AMOUNT_MISMATCH, or a remittance's SETTLEMENT_MISMATCH. When
+        // THIS allocation settles the remainder, that shortfall is explained to zero: locked
+        // FIRST (the section-3 break-first order; its source's advisory is the expectation's,
+        // which this transaction holds) and resolved EVIDENCED below, never left open over a
+        // SETTLED expectation with nothing a person could dispose of.
+        Optional<UUID> shortfallBreak =
+                settles
+                        ? store.lockOpenBreakOn(
+                                unitOfWork, candidate.expectationId(),
+                                differenceType(candidate.kind()))
+                        : Optional.empty();
         int claimantRank =
                 claimantRanks.merge(candidate.expectationId(), 1, Integer::sum);
         int deviation =
@@ -1193,7 +1595,7 @@ public class Matching {
                         run.ruleSetId(),
                         Optional.of(rule.priority()),
                         Optional.of(rule.cardinality()),
-                        Optional.of(candidate.reachedBy()),
+                        candidate.reachedBy(),
                         outcome,
                         Optional.of(claimantRank),
                         Optional.of(1),
@@ -1242,6 +1644,13 @@ public class Matching {
                     outbox, unitOfWork, ids, candidate.expectationId(), candidate.kind(),
                     candidate.operationRef(), run.sourceId(), now, correlation);
         }
+        // Against a REMITTANCE the difference is the bank's cash against the report's promise
+        // - SETTLEMENT_MISMATCH (REMITTANCE_DIFFERS) (P8-TSK-016); the arithmetic and the
+        // parking are the same. The item's excess is stamped with this run's source; the
+        // expectation's shortfall with the EXPECTATION's source and rule set - the report
+        // source for a bank line - so every open break on one remainder shares one source's
+        // advisory (ageing's MISSING_EXTERNAL is stamped the same way), and a resolution that
+        // disposes of the remainder and its siblings holds the one key they all answer to.
         if (verdict.excess().isPresent()) {
             Money excess = verdict.excess().get();
             store.recordItemAllocation(unitOfWork, item.id(), allocation.minorUnits());
@@ -1249,8 +1658,8 @@ public class Matching {
                     breaks.raise(
                             unitOfWork,
                             newBreak(
-                                    run, item, BreakType.AMOUNT_MISMATCH,
-                                    BreakCause.AMOUNT_DIFFERS,
+                                    run, item, differenceType(candidate.kind()),
+                                    differenceCause(candidate.kind()),
                                     BreakRegister.Subject.externalItem(item.id()), excess,
                                     Optional.empty(), now));
             parks.add(
@@ -1263,13 +1672,27 @@ public class Matching {
                     SecurityContext.require(), now, correlation);
         }
         if (verdict.underRemainder().isPresent()) {
-            breaks.raise(
-                    unitOfWork,
+            UUID expectationSource = item.keyScope(run.sourceId());
+            BreakRegister.NewBreak shortfall =
                     newBreak(
-                            run, item, BreakType.AMOUNT_MISMATCH, BreakCause.AMOUNT_DIFFERS,
+                            run, item, differenceType(candidate.kind()),
+                            differenceCause(candidate.kind()),
                             BreakRegister.Subject.expectation(candidate.expectationId()),
                             verdict.underRemainder().get(),
-                            Optional.of(candidate.kind()), now));
+                            Optional.of(candidate.kind()), now);
+            if (!expectationSource.equals(run.sourceId())) {
+                shortfall =
+                        new BreakRegister.NewBreak(
+                                shortfall.breakId(), shortfall.type(), shortfall.cause(),
+                                shortfall.subject(), expectationSource,
+                                store.expectationRuleSet(unitOfWork, candidate.expectationId()),
+                                shortfall.valueAtIssue(), shortfall.direction(),
+                                shortfall.expectationKind(), shortfall.internalClassification(),
+                                shortfall.internalOperationRef(), shortfall.internalState(),
+                                shortfall.followsBreakId(), shortfall.actor(),
+                                shortfall.raisedAt(), shortfall.correlation());
+            }
+            breaks.raise(unitOfWork, shortfall);
         }
         if (verdict.timing().isPresent() && !overdueStands) {
             breaks.raise(
@@ -1300,6 +1723,24 @@ public class Matching {
                                         SecurityContext.require(),
                                         now,
                                         correlation)));
+        // The remainder's last tranche: the earlier shortfall is explained to zero.
+        shortfallBreak.ifPresent(
+                breakId ->
+                        resolutions.evidence(
+                                unitOfWork,
+                                new Resolutions.Evidence(
+                                        ids.next(),
+                                        breakId,
+                                        allocation,
+                                        store.breakResidualVersion(unitOfWork, breakId),
+                                        decisionId,
+                                        Optional.empty(),
+                                        Optional.empty(),
+                                        Optional.empty(),
+                                        run.ruleSetId(),
+                                        SecurityContext.require(),
+                                        now,
+                                        correlation)));
     }
 
     /**
@@ -1309,6 +1750,11 @@ public class Matching {
      * whatever the verdict; a breach is `FEE_MISMATCH`, commercial, NEVER parked — the
      * value was expensed at acceptance. An unreachable original or an absent schedule
      * prices the expected fee at zero (the design's F1/F2, conservative).
+     *
+     * <p>A bank fee is FLAT (`P8-TSK-016`): charged per statement line on no transaction's
+     * gross, so its pinned schedule is judged against a gross of exactly zero — expected =
+     * round(rate × 0 + fixed), the fixed part — never F1's unreachable-original zero, which
+     * would price the fixed part away and stand the whole fee at issue.
      */
     private void applyFeeCheck(
             Connection unitOfWork,
@@ -1319,11 +1765,16 @@ public class Matching {
             CorrelationId correlation) {
         Optional<Money> gross = Optional.empty();
         String originalRef = item.keys().get(ItemKeyKind.ORIGINAL_REF);
-        if (originalRef != null) {
+        if (item.lineType() == ExternalLineType.BANK_FEE) {
+            gross =
+                    Optional.of(
+                            Money.ofPersisted(
+                                    0, item.amount().currency(), item.amount().scale()));
+        } else if (originalRef != null) {
             gross =
                     store.expectationsByKey(
-                                    unitOfWork, run.sourceId(), KeyKind.PSP_CAPTURE_REF,
-                                    originalRef)
+                                    unitOfWork, item.keyScope(run.sourceId()),
+                                    KeyKind.PSP_CAPTURE_REF, originalRef)
                             .stream()
                             .findFirst()
                             .flatMap(id -> store.expectationAmount(unitOfWork, id));
@@ -1415,7 +1866,8 @@ public class Matching {
             for (KeyKind kind : List.of(KeyKind.PSP_CAPTURE_REF, KeyKind.PSP_REFUND_REF)) {
                 for (UUID id :
                         store.expectationsByKey(
-                                unitOfWork, run.sourceId(), kind, originalRef)) {
+                                unitOfWork, item.keyScope(run.sourceId()), kind,
+                                originalRef)) {
                     reachedBy.putIfAbsent(id, kind);
                 }
             }
@@ -1473,8 +1925,8 @@ public class Matching {
             }
             case UNREACHED ->
                     applyUnreached(
-                            unitOfWork, run, item, resolution, decisionId, decidedOn,
-                            parks, now, correlation);
+                            unitOfWork, run, item, resolution, Optional.empty(), decisionId,
+                            decidedOn, parks, now, correlation);
         }
     }
 
@@ -1496,12 +1948,13 @@ public class Matching {
         boolean settles = allocation.minorUnits() == candidate.remainderMinor();
         // The break BEFORE the settling allocation (the §3 order): the one this top-up
         // may close is locked first, so the evidence write serialises break-first with
-        // any other writer of that break.
+        // any other writer of that break. A REMITTANCE's shortfall is its
+        // SETTLEMENT_MISMATCH (P8-TSK-016), closed exactly as AMOUNT_MISMATCH is.
         Optional<UUID> explained =
                 settles
                         ? store.lockOpenBreakOn(
                                 unitOfWork, candidate.expectationId(),
-                                BreakType.AMOUNT_MISMATCH)
+                                differenceType(candidate.kind()))
                         : Optional.empty();
         int claimantRank =
                 claimantRanks.merge(candidate.expectationId(), 1, Integer::sum);
@@ -1515,7 +1968,7 @@ public class Matching {
                         run.ruleSetId(),
                         Optional.of(rule.priority()),
                         Optional.of(Cardinality.CORRECTION),
-                        Optional.of(candidate.reachedBy()),
+                        candidate.reachedBy(),
                         verdict.excess().isPresent()
                                 ? DecisionOutcome.PARKED
                                 : DecisionOutcome.MATCHED,
@@ -1555,8 +2008,8 @@ public class Matching {
                     breaks.raise(
                             unitOfWork,
                             newBreak(
-                                    run, item, BreakType.AMOUNT_MISMATCH,
-                                    BreakCause.AMOUNT_DIFFERS,
+                                    run, item, differenceType(candidate.kind()),
+                                    differenceCause(candidate.kind()),
                                     BreakRegister.Subject.externalItem(item.id()), excess,
                                     Optional.empty(), now));
             parks.add(
@@ -1655,6 +2108,11 @@ public class Matching {
                         positionAccount(unitOfWork, item)));
     }
 
+    /**
+     * The waiting decision. A value-date group that saw candidates and did not match names
+     * its rule and stores what it saw ({@code group}, `P8-TSK-016`); every other wait names
+     * no rule, as before.
+     */
     private void applyWaiting(
             Connection unitOfWork,
             MatchingStore.RunRow run,
@@ -1662,8 +2120,11 @@ public class Matching {
             UUID decisionId,
             LocalDate decidedOn,
             Optional<Integer> graceHours,
+            Optional<GroupEvaluation> group,
             Instant now,
             CorrelationId correlation) {
+        Optional<GroupEvaluation> seen =
+                group.filter(evaluation -> !evaluation.verdict().candidates().isEmpty());
         store.insertDecision(
                 unitOfWork,
                 new MatchingStore.NewDecision(
@@ -1672,18 +2133,22 @@ public class Matching {
                         run.id(),
                         DecisionOrigin.RUN,
                         run.ruleSetId(),
-                        Optional.empty(),
-                        Optional.empty(),
+                        seen.map(evaluation -> evaluation.rule().priority()),
+                        seen.map(evaluation -> Cardinality.GROUP_BY_VALUE_DATE),
                         Optional.empty(),
                         DecisionOutcome.UNMATCHED,
                         Optional.empty(),
-                        Optional.empty(),
+                        seen.map(evaluation -> evaluation.verdict().candidates().size()),
                         Optional.empty(),
                         Optional.empty(),
                         SecurityContext.require(),
                         now,
                         decidedOn,
                         correlation));
+        seen.ifPresent(
+                evaluation ->
+                        store.insertCandidates(
+                                unitOfWork, decisionId, evaluation.verdict().candidates()));
         store.markItemUnmatched(
                 unitOfWork, item.id(), graceHours, SecurityContext.require(), now, correlation);
     }
@@ -1694,6 +2159,7 @@ public class Matching {
             MatchingStore.RunRow run,
             MatchingStore.ChunkItem item,
             Resolution resolution,
+            Optional<GroupEvaluation> group,
             UUID decisionId,
             LocalDate decidedOn,
             List<Suspense.ParkedItem> parks,
@@ -1714,7 +2180,7 @@ public class Matching {
         }
         applyWaiting(
                 unitOfWork, run, item, decisionId, decidedOn,
-                resolution.waitingGraceHours(), now, correlation);
+                resolution.waitingGraceHours(), group, now, correlation);
     }
 
     /** The lookup's frozen answer over the item's own keys — for typing only, never
@@ -1757,8 +2223,9 @@ public class Matching {
         // A poisoned FEE line is contained WITHOUT a park (`P8-TSK-012`): its value was
         // expensed at acceptance, so nothing of it sits in the position - it is left
         // UNMATCHED with no grace clock, its ERRORED decision and unparked
-        // PROCESSING_ERROR break the honest record.
-        if (item.lineType() == ExternalLineType.PROCESSING_FEE) {
+        // PROCESSING_ERROR break the honest record. A bank fee is the same fact, and a
+        // line standing in no position has nothing a park could move (`P8-TSK-016`).
+        if (!item.lineType().allocating() || item.positionPurpose().isEmpty()) {
             UUID feeDecision = ids.next();
             store.insertDecision(
                     unitOfWork,
@@ -1863,9 +2330,18 @@ public class Matching {
     }
 
     private UUID positionAccount(Connection unitOfWork, MatchingStore.ChunkItem item) {
+        com.finapp.ledger.AccountPurpose position =
+                item.positionPurpose()
+                        .orElseThrow(
+                                () ->
+                                        new IllegalStateException(
+                                                "only a positioned item parks - a report line"
+                                                        + " or an attributed bank line;"
+                                                        + " a bank fee or an unattributed"
+                                                        + " bank line stands in none"
+                                                        + " (P8-TSK-016's position rule)"));
         return accounts
-                .findOperational(
-                        unitOfWork, item.positionPurpose(), item.amount().currency())
+                .findOperational(unitOfWork, position, item.amount().currency())
                 .orElseThrow(
                         () ->
                                 new IllegalStateException(

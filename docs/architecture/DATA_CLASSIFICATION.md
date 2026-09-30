@@ -1083,7 +1083,7 @@ reasoning); free text stays inside the encrypted file and has no column here.
 | `batch` | `declared_line_count` | `INTERNAL` | The trailer's own record count |
 | `batch` | `net_minor` | `RESTRICTED-FINANCIAL` | **The trailer's declared net** - what the counterparty will remit |
 | `batch` | `net_scale` | `INTERNAL` | The monetary shape's scale (INV-MON-05) |
-| `batch` | `remittance_reference` | `CONFIDENTIAL` | What hop 2 attributes the bank line by (ADR-0065) - a reference both sides quote |
+| `batch` | `remittance_reference` | `CONFIDENTIAL` | What hop 2 attributes the bank line by (ADR-0065) - a reference both sides quote; NULL for a bank statement (`P8-TSK-016`), whose lines carry theirs |
 | `batch` | `created_at` | `INTERNAL` | When the parse committed it |
 | `batch` | `status_changed_at` | `INTERNAL` | When the machine last moved |
 | `batch` | `correlation_id` | `INTERNAL` | The flow's correlation |
@@ -1091,6 +1091,9 @@ reasoning); free text stays inside the encrypted file and has no column here.
 | `batch` | `accepted_on` | `CONFIDENTIAL` | The UTC day acceptance recognised it - the recognition's posting date, a fact about commercial traffic |
 | `batch` | `journal_entry_id` | `INTERNAL` | The recognition entry - an identifier of a thing; NULL exactly when the posting was honestly omitted |
 | `batch` | `posting_omitted` | `INTERNAL` | Whether a zero fee omitted the entry - the honesty flag, never silent |
+| `batch` | `statement_sequence` | `INTERNAL` | A bank statement's place in its account's chain (`P8-TSK-016`, INV-SET-06) - a counter; NULL for a report |
+| `batch` | `opening_minor` | `RESTRICTED-FINANCIAL` | **A bank statement's opening balance** - the platform's cash as the bank states it; NULL for a report |
+| `batch` | `closing_minor` | `RESTRICTED-FINANCIAL` | **A bank statement's closing balance** - what CASH_AT_BANK equals at the head of an unbroken chain; NULL for a report |
 | `batch_event` | `seq` | `INTERNAL` | The history's server-assigned order |
 | `batch_event` | `batch_id` | `INTERNAL` | The moved batch - an identifier of a thing |
 | `batch_event` | `from_status` | `INTERNAL` | The edge's origin, NULL at birth |
@@ -1120,7 +1123,7 @@ reasoning); free text stays inside the encrypted file and has no column here.
 | `line` | `value_date` | `CONFIDENTIAL` | The value day the counterparty states |
 | `line` | `raw_record_sha256` | `INTERNAL` | The delivered record's fingerprint - recoverable from nothing |
 | `line` | `canonical_fingerprint` | `INTERNAL` | The canonical identity digest - deliberately not unique, so a duplicate survives to matching |
-| `line` | `attributed_source_id` | `INTERNAL` | NULL until the bank's lines (`P8-TSK-016`) - an identifier of a thing |
+| `line` | `attributed_source_id` | `INTERNAL` | A bank credit's or debit's attributed source (`P8-TSK-016`, ADR-0065 section 3) - an identifier of a thing; NULL for a report line, a bank fee or an unattributed line |
 | `line_reference` | `line_id` | `INTERNAL` | The reference's line - an identifier of a thing |
 | `line_reference` | `kind` | `INTERNAL` | A closed vocabulary member |
 | `line_reference` | `value` | `CONFIDENTIAL` | **A typed reference a counterparty quotes** - the match key (`expectation.operation_ref`'s reasoning); bank-identifier and alias shapes refused by CHECK (INV-RAIL-03) |
@@ -1129,6 +1132,14 @@ reasoning); free text stays inside the encrypted file and has no column here.
 | `ingestion_error` | `line_no` | `INTERNAL` | Where - a position, not a value |
 | `ingestion_error` | `error_code` | `INTERNAL` | Why - a closed vocabulary, never the value found |
 | `ingestion_error` | `field_name` | `INTERNAL` | The field that failed - a NAME bounded to 200 characters (`refused_delivery.field_name`'s reasoning) |
+
+**Configuration, not a column** (`P8-TSK-016`): `finapp.settlement.bank.account-reference.{EUR,GBP,USD}`
+is the bank's OPAQUE reference for the platform's settlement account per currency — the one
+value a statement's account record must equal to be ours. It is **`CONFIDENTIAL`**: deployment
+configuration, never persisted, never logged, never echoed in a defect, an exception message or
+a `toString` (the adapter names only the currency). It is a reference the bank issues, shaped
+`SIMBANK-[A-Z]{3}-[0-9]{2,8}` in v1 and validated at construction — never an IBAN or an account
+number, which the platform does not hold for its own bank account (`INV-RAIL-03`).
 
 ### `reconciliation` — the expectation register and rule set v1 — *added by `P8-TSK-004`*
 
@@ -1262,7 +1273,7 @@ counters and dates of things.
 | `external_item` | `amount_minor` | `RESTRICTED-FINANCIAL` | **The reported amount** - the copied line's |
 | `external_item` | `currency` | `INTERNAL` | An enumeration; part of the monetary shape |
 | `external_item` | `scale` | `INTERNAL` | The monetary shape's scale (INV-MON-05) |
-| `external_item` | `position_purpose` | `INTERNAL` | Which position the item claims - a category |
+| `external_item` | `position_purpose` | `INTERNAL` | Which position the item claims - a category; NULL for an unattributed bank line or a bank fee (`P8-TSK-016`) |
 | `external_item` | `business_date` | `CONFIDENTIAL` | The transaction's day - the copied line's |
 | `external_item` | `settlement_date` | `CONFIDENTIAL` | When the counterparty says it settles |
 | `external_item` | `value_date` | `CONFIDENTIAL` | The value day the counterparty states |
@@ -1275,6 +1286,7 @@ counters and dates of things.
 | `external_item` | `created_at` | `INTERNAL` | When the acceptance birthed it |
 | `external_item` | `status_changed_at` | `INTERNAL` | When the machine last moved |
 | `external_item` | `correlation_id` | `INTERNAL` | The flow's correlation |
+| `external_item` | `attributed_source_id` | `INTERNAL` | A bank item's attributed source - its key scope (`P8-TSK-016`) - an identifier of a thing |
 | `external_item_event` | `seq` | `INTERNAL` | The history's server-assigned order |
 | `external_item_event` | `item_id` | `INTERNAL` | The moved item - an identifier of a thing |
 | `external_item_event` | `from_status` | `INTERNAL` | The edge's origin, NULL at birth |
@@ -1399,7 +1411,7 @@ counters and dates of things.
 | `match_decision` | `correlation_id` | `INTERNAL` | The flow's correlation |
 | `match_candidate` | `decision_id` | `INTERNAL` | The seeing decision - an identifier of a thing |
 | `match_candidate` | `expectation_id` | `INTERNAL` | The seen candidate - an identifier of a thing |
-| `match_candidate` | `key_kind` | `INTERNAL` | How it was reached - a closed vocabulary |
+| `match_candidate` | `key_kind` | `INTERNAL` | How it was reached - a closed vocabulary; NULL for a value-date group's candidate (`P8-TSK-016`) |
 | `match_candidate` | `amount_minor` | `RESTRICTED-FINANCIAL` | **The candidate's amount as seen** - the snapshot replay reads (INV-REC-04) |
 | `match_candidate` | `currency` | `INTERNAL` | An enumeration; part of the monetary shape |
 | `match_candidate` | `scale` | `INTERNAL` | The monetary shape's scale (INV-MON-05) |

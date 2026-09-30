@@ -44,9 +44,43 @@ public enum SettlementLineType {
     OTHER_IN,
 
     /** An outbound line no mapping knows. */
-    OTHER_OUT;
+    OTHER_OUT,
 
-    /** The `V003` {@code CHECK}'s value list — reconciled by the migration test. */
+    /**
+     * Money the settlement bank credited to the platform's account (`P8-TSK-016`, ADR-0065 §3) —
+     * cash, recognised at the statement's acceptance against the ATTRIBUTED counterparty's
+     * clearing position, then matched to that counterparty's remittance.
+     */
+    BANK_CREDIT,
+
+    /** Money the settlement bank debited from the platform's account — cash leaving. */
+    BANK_DEBIT,
+
+    /**
+     * The settlement bank's own charge (`P8-TSK-016`): posted DR {@code PROCESSING_COSTS} at the
+     * recognition, so its line is checked against the pinned bank fee terms, never allocated.
+     */
+    BANK_FEE;
+
+    /** The report vocabulary `V003` admitted; the bank members arrived with `V005`. */
+    public static java.util.Set<SettlementLineType> reportVocabulary() {
+        return java.util.EnumSet.range(CAPTURE, OTHER_OUT);
+    }
+
+    /** Whether this is a bank statement's line (`P8-TSK-016`). */
+    public boolean isBankLine() {
+        return this == BANK_CREDIT || this == BANK_DEBIT || this == BANK_FEE;
+    }
+
+    /** A subset's {@code CHECK} value list, in declaration order. */
+    public static String sqlValueList(java.util.Set<SettlementLineType> members) {
+        return Arrays.stream(values())
+                .filter(members::contains)
+                .map(value -> "'" + value.name() + "'")
+                .collect(Collectors.joining(", "));
+    }
+
+    /** The whole {@code CHECK} value list (`V005`) — reconciled by the migration test. */
     public static String sqlValueList() {
         return Arrays.stream(values())
                 .map(value -> "'" + value.name() + "'")

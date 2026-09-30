@@ -500,7 +500,8 @@ public class SettlementOperations {
             String declaredNet,
             String remittanceReference,
             List<BatchTotalView> totals,
-            String createdAt) {}
+            String createdAt,
+            Long statementSequence) {}
 
     /** One (type, direction) fold: exact decimal strings, the ADR-0015 amount shape. */
     public record BatchTotalView(
@@ -522,7 +523,8 @@ public class SettlementOperations {
                 batch.declaredLineCount(),
                 java.math.BigDecimal.valueOf(batch.netMinor(), batch.netScale())
                         .toPlainString(),
-                batch.remittanceReference(),
+                // A report's promise to pay; a bank statement has none of its own (P8-TSK-016).
+                batch.remittanceReference().orElse(null),
                 totals.stream()
                         .map(
                                 total ->
@@ -535,7 +537,9 @@ public class SettlementOperations {
                                                                 total.amountScale())
                                                         .toPlainString()))
                         .toList(),
-                batch.createdAt().toString());
+                batch.createdAt().toString(),
+                // A statement's place in its account's chain; null for a report (P8-TSK-016).
+                batch.statement().map(SettlementBatchStore.StatementRow::sequence).orElse(null));
     }
 
     private static ApiException batchNotFound() {

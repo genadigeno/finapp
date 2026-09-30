@@ -3,9 +3,11 @@ package com.finapp.settlement;
 import com.finapp.ledger.AccountPurpose;
 import java.util.Collection;
 import java.util.LinkedHashMap;
+import java.util.List;
 import java.util.Map;
 import java.util.Objects;
 import java.util.Optional;
+import java.util.regex.Pattern;
 
 /**
  * The source register: every settlement source this build declares (`P8-TSK-002`, ADR-0064).
@@ -22,8 +24,22 @@ public final class SettlementSources {
 
     private final Map<String, SettlementSourceDescriptor> byCode;
 
+    /** Each report source's remittance-reference shape, compiled once (`P8-TSK-016`). */
+    private final Map<String, Pattern> remittancePatterns;
+
     private SettlementSources(Map<String, SettlementSourceDescriptor> byCode) {
         this.byCode = byCode;
+        Map<String, Pattern> compiled = new LinkedHashMap<>();
+        byCode.values()
+                .forEach(
+                        source ->
+                                source.remittanceReferencePattern()
+                                        .ifPresent(
+                                                pattern ->
+                                                        compiled.put(
+                                                                source.code(),
+                                                                Pattern.compile(pattern))));
+        this.remittancePatterns = Map.copyOf(compiled);
     }
 
     /** Builds the register, refusing a duplicate code or a twice-discharged position. */
@@ -64,6 +80,25 @@ public final class SettlementSources {
     /** Every declared source, in declaration order. */
     public Collection<SettlementSourceDescriptor> declared() {
         return byCode.values();
+    }
+
+    /**
+     * The one declared source whose remittance-reference pattern FULLY matches {@code reference}
+     * (`P8-TSK-016`, ADR-0065 §3, {@code INV-SET-05}) — attribution is normalisation, not
+     * matching: deterministic, compiled, identical on every instance. Zero matches or two are
+     * both empty, never the first of two: an ambiguous line is unexplained value, parked owned
+     * at acceptance, never guessed into one counterparty's position.
+     */
+    public Optional<SettlementSourceDescriptor> attribute(String reference) {
+        Objects.requireNonNull(reference, "reference must not be null");
+        List<String> matching =
+                remittancePatterns.entrySet().stream()
+                        .filter(entry -> entry.getValue().matcher(reference).matches())
+                        .map(Map.Entry::getKey)
+                        .toList();
+        return matching.size() == 1
+                ? Optional.of(byCode.get(matching.get(0)))
+                : Optional.empty();
     }
 
     /** The one declared source discharging {@code position}, or empty. */

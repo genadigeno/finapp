@@ -75,6 +75,12 @@ public final class ReconciliationMetrics {
     /** {@code finapp.reconciliation.item.unmatched} — items waiting inside grace. */
     public static final String ITEM_UNMATCHED = "finapp.reconciliation.item.unmatched";
 
+    /**
+     * {@code finapp.reconciliation.cash.proof} — per currency, 1 when {@code CASH_AT_BANK} is
+     * not the head closing of an unbroken statement chain, else 0 (`P8-TSK-016`).
+     */
+    public static final String CASH_PROOF = "finapp.reconciliation.cash.proof";
+
     /** The floor: the sweep folds the open register, so it is dearer than a GROUP BY. */
     static final Duration MIN_REFRESH = Duration.ofSeconds(15);
 
@@ -155,6 +161,24 @@ public final class ReconciliationMetrics {
                                 + " with max(), never sum()")
                 .strongReference(true)
                 .register(registry);
+        // The cash proof (P8-TSK-016, INV-SET-06): eager per supported currency.
+        for (com.finapp.sharedkernel.money.CurrencyCode currency :
+                com.finapp.ledger.SupportedCurrencies.ALL) {
+            Gauge.builder(CASH_PROOF, this, self -> self.cashProofOf(currency))
+                    .tag("currency", currency.code())
+                    .description(
+                            "1 when the cash-at-bank balance in this currency is not the"
+                                    + " closing balance"
+                                    + " at the head of an unbroken chain of accepted bank"
+                                    + " statements (INV-SET-06: sequence 1 opens at zero,"
+                                    + " every opening its predecessor's closing, no gap), else"
+                                    + " 0. MUST read 0 and is alerted; a verdict, never an"
+                                    + " amount - the difference is the positions report's."
+                                    + " NaN when unreadable, never zero. Fleet-wide: aggregate"
+                                    + " with max(), never sum()")
+                    .strongReference(true)
+                    .register(registry);
+        }
         Gauge.builder(SUSPENSE_OPEN, this, ReconciliationMetrics::suspenseOpen)
                 .description(
                         "Suspense items still holding a remainder (P8-TSK-010, ADR-0070"
@@ -262,6 +286,14 @@ public final class ReconciliationMetrics {
                     .strongReference(true)
                     .register(registry);
         }
+    }
+
+    private double cashProofOf(com.finapp.sharedkernel.money.CurrencyCode currency) {
+        return reading()
+                .report()
+                .flatMap(report -> report.cashOf(currency))
+                .map(verdict -> verdict.explained() ? 0.0 : 1.0)
+                .orElse(Double.NaN);
     }
 
     private double proofOf(AccountPurpose purpose) {

@@ -21,9 +21,10 @@ public final class JdbcExternalItems implements ExternalItems {
                                         + " scale, position_purpose, business_date,"
                                         + " settlement_date, value_date,"
                                         + " canonical_fingerprint, status, created_at,"
-                                        + " status_changed_at, correlation_id)"
+                                        + " status_changed_at, correlation_id,"
+                                        + " attributed_source_id)"
                                         + " VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?,"
-                                        + " ?, 'PENDING', ?, ?, ?)");
+                                        + " ?, 'PENDING', ?, ?, ?, ?)");
                 PreparedStatement key =
                         unitOfWork.prepareStatement(
                                 "INSERT INTO reconciliation.external_item_key (item_id,"
@@ -46,7 +47,7 @@ public final class JdbcExternalItems implements ExternalItems {
                 insert.setLong(8, item.amount().minorUnits());
                 insert.setString(9, item.amount().currency().code());
                 insert.setShort(10, (short) item.amount().scale());
-                insert.setString(11, item.positionPurpose().name());
+                insert.setString(11, item.positionPurpose().map(Enum::name).orElse(null));
                 insert.setObject(12, item.businessDate());
                 insert.setObject(13, item.settlementDate().orElse(null));
                 insert.setObject(14, item.valueDate().orElse(null));
@@ -54,6 +55,7 @@ public final class JdbcExternalItems implements ExternalItems {
                 insert.setTimestamp(16, Timestamp.from(item.at()));
                 insert.setTimestamp(17, Timestamp.from(item.at()));
                 insert.setString(18, item.correlation().value());
+                insert.setObject(19, item.attributedSourceId().orElse(null));
                 insert.addBatch();
                 for (Map.Entry<ItemKeyKind, String> each : item.keys().entrySet()) {
                     key.setObject(1, item.id());

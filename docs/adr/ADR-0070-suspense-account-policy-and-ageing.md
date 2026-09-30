@@ -84,7 +84,7 @@ Netting them inside one balance hides two open problems behind one number.
      suspense account and no new owner kind (Alternatives).
    - Every unit of value in it belongs to a `reconciliation.suspense_item` (reconciliation `V004`,
      `P8-TSK-010`): `break_id NOT NULL`, `external_item_id UNIQUE NULL`, `origin` (`RECON_PARK` |
-     `BANK_UNATTRIBUTED` | `UNMATCHED_CONFIRMATION`; `REPUDIATION` added by reconciliation `V009`,
+     `BANK_UNATTRIBUTED` | `UNMATCHED_CONFIRMATION`; `REPUDIATION` added by reconciliation `V010`,
      `P8-TSK-023`), `origin_ref UNIQUE`, `side` (CREDIT | DEBIT), the ADR-0003 money triple,
      `released_minor`, `status`, `opened_on`, `entry_id`.
    - Its machine is `OPEN → PARTIALLY_RELEASED → RELEASED` (terminal), with
@@ -109,7 +109,7 @@ Netting them inside one balance hides two open problems behind one number.
 
    *(The fourth opener was named by the Phase 7 → 8 transition's re-check, R3: point 10 already
    opened this item, while the list said "three openers, and no fourth". Its enum value arrives
-   with reconciliation `V009`, not `V004`, which creates the three others.)*
+   with reconciliation `V010`, not `V004`, which creates the three others.)*
 
    - **`opened_on` comes from stored data and never restarts.** It is the date the value entered
      suspense: the park row's `decided_on` (stamped once), the batch's `accepted_on`, the
@@ -577,6 +577,21 @@ Constraints this decision must preserve:
 
 - Until Phase 8's first task lands, nothing in this ADR is implemented; every statement is the
   decided design, corrected by the tasks that build it.
+- `P8-TSK-016` — **implemented** (2026-09-30): §2's `BANK_UNATTRIBUTED` opener. The statement's
+  acceptance raises each unattributed line's `UNKNOWN_EXTERNAL(BANK_LINE_UNATTRIBUTED)` break on
+  its item (CRITICAL for a debit by the severity seat's direction rule), moves the item
+  `PENDING → PARKED` with its whole value (`Suspense.bornParked`), and — after the recognition
+  posts its `SUSPENSE_UNMATCHED` lines, a CREDIT line of the unattributed credits and a DEBIT line
+  of the unattributed debits, never netted — opens one owned item per line carrying the entry id
+  whole (`Suspense.openUnattributed`; the constraint's FIRST option: written after the posting,
+  never moving it earlier), side from the direction, `opened_on` the batch's `accepted_on`, no
+  park and no position. The item leaves only through a resolution's release — `unpark` refuses it,
+  as before. **The unattributed-remittance question, decided (no amendment):** a parked bank
+  credit that was really a counterparty's remittance is disposed by the honest path this ADR's
+  negative consequence names — a four-eyes `WRITE_OFF` of the aged remittance and a later
+  `RECOGNISE_GAIN` of the credit after the minimum age, or `OFFSET_SUSPENSE` when the bank reverses
+  with an equal debit; widening `MANUAL_MATCH` to unattributed bank items stays an amendment the
+  owner may revisit (ADR-0071).
 - `P8-TSK-006` (the binding that closes suspense to free adjustments, and the reason codes),
   `P8-TSK-010` (suspense items, releases and parks; park and unpark; the suspense proof and
   gauges), `P8-TSK-011` (definitive parks and errored items in the chunk), `P8-TSK-012` (the
@@ -586,7 +601,7 @@ Constraints this decision must preserve:
   first `TRANSFER_TO_ACCOUNT`), `P8-TSK-016` (bank recognition's unattributed lines), `P8-TSK-019`
   (the payout return's fallback through suspense), `P8-TSK-020` (the unmatched confirmation
   adopted; the payments gauges' descriptions), `P8-TSK-023` (repudiation's reach into suspense and
-  its `REPUDIATION` origin, under reconciliation `V009`), `P8-TSK-024` (the suspense
+  its `REPUDIATION` origin, under reconciliation `V010`), `P8-TSK-024` (the suspense
   report, the dashboard row and its alerts), `P8-TST-001` (the suspense proof and ownership in every
   round of the storm), `P8-TST-002` (every exit crossed with every owning type; the gains and losses
   accounts posted only by approvals), `P8-DOC-001`.

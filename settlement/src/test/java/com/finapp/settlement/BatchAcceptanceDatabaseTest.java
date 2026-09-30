@@ -108,6 +108,13 @@ class BatchAcceptanceDatabaseTest {
             batches.add(batch);
             return new Intaken(UUID.randomUUID(), batch.lines().size(), true);
         }
+
+        @Override
+        public void recognised(
+                Connection unitOfWork,
+                AcceptedBatch batch,
+                Intaken intaken,
+                java.util.Optional<UUID> entryId) {}
     }
 
     private static Connection application;
@@ -234,7 +241,8 @@ class BatchAcceptanceDatabaseTest {
                         audit,
                         IDS,
                         CLOCK,
-                        RUNNER);
+                        RUNNER,
+                        sources());
         attestation = new FileAttestation<>(store, audit, IDS, CLOCK);
         intake = new RecordingIntake();
         acceptance = acceptanceWith(intake, batches, CLOCK);
@@ -399,8 +407,9 @@ class BatchAcceptanceDatabaseTest {
         // PROCESSING_FEE line at parse (P8-TSK-008), and the intake copies canonical lines.
         assertThat(handed.lines()).hasSize(4);
         assertThat(handed.net().minorUnits()).isEqualTo(6_300L);
-        assertThat(handed.positionPurpose()).isEqualTo(AccountPurpose.SETTLEMENT_CLEARING);
-        assertThat(handed.remittanceReference()).isEqualTo("PSP-REM-20260925");
+        assertThat(handed.positionPurpose()).contains(AccountPurpose.SETTLEMENT_CLEARING);
+        assertThat(handed.remittanceReference()).contains("PSP-REM-20260925");
+        assertThat(handed.statement()).as("a report carries no statement facts").isEmpty();
         assertThat(handed.acceptedOn()).isEqualTo(LocalDate.parse("2026-09-29"));
 
         assertThat(count(

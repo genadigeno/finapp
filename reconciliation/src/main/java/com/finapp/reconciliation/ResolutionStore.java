@@ -143,9 +143,10 @@ public interface ResolutionStore {
 
     /**
      * The OTHER open breaks answering for the expectation's remainder — {@code AMOUNT_MISMATCH}
-     * and {@code MISSING_EXTERNAL} on it, both valued at what is left — locked in id order.
-     * A partial allocation raises the first and ageing the second, so both can stand; the
-     * disposal of the remainder explains both.
+     * (a remittance's {@code SETTLEMENT_MISMATCH}, `P8-TSK-016`) and {@code MISSING_EXTERNAL}
+     * on it, both valued at what is left — locked in id order. A partial allocation raises the
+     * first and ageing the second, so both can stand; the disposal of the remainder explains
+     * both. They share the expectation's source, so the command's one advisory covers them.
      */
     List<RemainderSibling> lockRemainderSiblings(
             Connection unitOfWork, UUID expectationId, UUID exceptBreakId);

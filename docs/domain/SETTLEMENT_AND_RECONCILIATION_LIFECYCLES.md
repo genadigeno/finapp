@@ -464,7 +464,7 @@ PARSED ──accept──> ACCEPTED ──an approved REPUDIATE_BATCH──> REP
 | Edge | Driver | Condition |
 |---|---|---|
 | (birth) → `PARSED` | The parse leg, in its file's `RECEIVED → PARSED` transaction | The live-batch uniques admit it: `UNIQUE (source_id, external_batch_ref, currency)` and, for statements, `UNIQUE (source_id, currency, statement_sequence)`, both among batches not `REJECTED` or `REPUDIATED` |
-| `PARSED → ACCEPTED` | The accept leg, in its file's `PARSED → ACCEPTED` transaction | The source row locked `FOR UPDATE` for the gapless `source_sequence`; `accepted_on` stamped once; the run created (`AcceptedBatchIntake`); items, keys and the remittance expectation — or, for a statement, the unattributed lines' suspense items with their breaks — then the recognition posting as the last CONTENDED write, PRECEDING the batch's accepting `UPDATE`: `V004`'s honesty `CHECK` wants the entry id in that same statement, and every row after the posting is one the transaction already exclusively claimed *(built so by `P8-TSK-009`, the design's recorded correction of this row's "posting last")*. Publishes `settlement.SettlementBatchAccepted` |
+| `PARSED → ACCEPTED` | The accept leg, in its file's `PARSED → ACCEPTED` transaction | The source row locked `FOR UPDATE` for the gapless `source_sequence`; `accepted_on` stamped once; the run created (`AcceptedBatchIntake`); items, keys and the remittance expectation — or, for a statement, the unattributed lines' suspense items with their breaks — then the recognition posting as the last CONTENDED write, PRECEDING the batch's accepting `UPDATE`: `V004`'s honesty `CHECK` wants the entry id in that same statement, and every row after the posting is one the transaction already exclusively claimed *(built so by `P8-TSK-009`, the design's recorded correction of this row's "posting last")*. For a statement (`P8-TSK-016`): the accepted predecessor and successor of its currency read under the same source row lock; the unattributed lines' breaks raised and their items moved `PENDING → PARKED`; the chain judged (`STATEMENT_GAP`/`OPENING_BALANCE` on the run, a filled successor's gap closed `EVIDENCED`); then the recognition; then, AFTER it, each unattributed line's `BANK_UNATTRIBUTED` suspense item carrying the entry id; no remittance. Publishes `settlement.SettlementBatchAccepted` |
 | `PARSED → REJECTED` | Whatever rejects its `PARSED` file (a decline, `SOURCE_RETIRED`), in the same transaction | — |
 | `ACCEPTED → REPUDIATED` | The approval of a `REPUDIATE_BATCH` resolution by a second person holding `RECONCILIATION_RESOLVE` (`P8-TSK-023`) | Four-eyes, reason `EVIDENCE_REPUDIATED`. Publishes `settlement.SettlementBatchRepudiated` |
 
@@ -495,7 +495,7 @@ and its content are retained, and the genuine file is then re-presented and acce
 readmitted, when it was itself rejected `CONFLICTING_BATCH` against the repudiated batch (§5.1).
 The item's `REPUDIATED` and its reopening `MATCHED → UNMATCHED`, the expectation's reopening
 edges, the suspense item's origin `REPUDIATION`, the `REPUDIATE_BATCH` kind and the batch subject
-arrive with `P8-TSK-023`'s reconciliation `V009` (§5.11).
+arrive with `P8-TSK-023`'s reconciliation `V010` (§5.11).
 
 These consequences are left to `P8-TSK-023`'s design, which confirms or corrects them. **An item
 still `PENDING` has no edge to `REPUDIATED`**, so a repudiation is approvable only once the
@@ -744,7 +744,7 @@ born APPROVED: EVIDENCED (the platform) · a zero-value ACKNOWLEDGE (one person)
   | `OFFSET_SUSPENSE` | `DUPLICATE_BY_COUNTERPARTY`, `COUNTERPARTY_ERROR_CONFIRMED`, `INTERNAL_PROCESSING_ERROR` |
   | `RECOGNISE_GAIN` | `UNATTRIBUTABLE_AGED` |
   | `MANUAL_MATCH` | `AMBIGUITY_RESOLVED_BY_EVIDENCE` |
-  | `REPUDIATE_BATCH` | `EVIDENCE_REPUDIATED` (`V009`, `P8-TSK-023`) |
+  | `REPUDIATE_BATCH` | `EVIDENCE_REPUDIATED` (`V010`, `P8-TSK-023`) |
 
 - **As built (`P8-TSK-015`).** Every resolution command — propose, approve, reject, withdraw —
   takes the break's source advisory first (both sources, sorted, for an offset spanning two),
@@ -783,7 +783,7 @@ OPEN ──partial release──> PARTIALLY_RELEASED ──release of the rest�
 
 | Edge | Driver | Condition |
 |---|---|---|
-| (birth) → `OPEN` | Only in the transaction that records its owning break, by one of four openers and no fifth: a park (origin `RECON_PARK` — CREDIT for an INBOUND remainder, DEBIT for an OUTBOUND one); bank recognition's unattributed line (`BANK_UNATTRIBUTED`, cause `BANK_LINE_UNATTRIBUTED`); an unmatched confirmation through the port (`UNMATCHED_CONFIRMATION`, cause `PARKED_ON_RECEIPT`), or the backfill adopting one; a repudiation (`REPUDIATION`), in the `REPUDIATE_BATCH` approval transaction, for a `BANK_UNATTRIBUTED` item a posting resolution had already released — its line is the suspense line the recognition's reversal (`ReversalService`, scope `ledger.reverse`, key `settlement-batch:<batchId>`) carries for that item, so the new item is of the opposite side, owned by a new `PROCESSING_ERROR` break raised in the same transaction, `origin_ref` the released item's id and `opened_on` the reversal entry's posting date; the origin admitted by reconciliation `V009` (`P8-TSK-023`) *(the Phase 7 → 8 transition's re-check, R3)* | `break_id NOT NULL`; `UNIQUE (external_item_id)`; `UNIQUE origin_ref` — an item is repudiated once, so a `REPUDIATION` item's holds too |
+| (birth) → `OPEN` | Only in the transaction that records its owning break, by one of four openers and no fifth: a park (origin `RECON_PARK` — CREDIT for an INBOUND remainder, DEBIT for an OUTBOUND one); bank recognition's unattributed line (`BANK_UNATTRIBUTED`, cause `BANK_LINE_UNATTRIBUTED`); an unmatched confirmation through the port (`UNMATCHED_CONFIRMATION`, cause `PARKED_ON_RECEIPT`), or the backfill adopting one; a repudiation (`REPUDIATION`), in the `REPUDIATE_BATCH` approval transaction, for a `BANK_UNATTRIBUTED` item a posting resolution had already released — its line is the suspense line the recognition's reversal (`ReversalService`, scope `ledger.reverse`, key `settlement-batch:<batchId>`) carries for that item, so the new item is of the opposite side, owned by a new `PROCESSING_ERROR` break raised in the same transaction, `origin_ref` the released item's id and `opened_on` the reversal entry's posting date; the origin admitted by reconciliation `V010` (`P8-TSK-023`) *(the Phase 7 → 8 transition's re-check, R3)* | `break_id NOT NULL`; `UNIQUE (external_item_id)`; `UNIQUE origin_ref` — an item is repudiated once, so a `REPUDIATION` item's holds too |
 | `OPEN → PARTIALLY_RELEASED` | A release: an unpark (a late allocation), an approved resolution, a correction offset (`CORRECTION_OFFSET`), a repudiation | Part of the amount; the item locked `FOR UPDATE` |
 | `OPEN` or `PARTIALLY_RELEASED` → `RELEASED` | The same | `released_minor` reaches `amount_minor` |
 
@@ -913,11 +913,11 @@ A12.)*
 | Settlement file | `settlement.file` (`V002`, `P8-TSK-002`; states widened by `V003` and `V004`) | `file_event`; a `file_receipt` per delivery | Content unique; the attestation `CHECK`s, and the readmission's attestation trigger (`P8-TSK-022`'s own settlement migration); status ↔ columns `CHECK`s; `UPDATE` narrowed to the status, rejection, parse-retry and attestation columns |
 | Settlement batch | `settlement.batch` (`V003`, `P8-TSK-008`; acceptance `V004`, `P8-TSK-009`; `REPUDIATED` with `P8-TSK-023`) | `batch_event` | The live uniques; `UNIQUE (source_id, source_sequence)`; once-only acceptance columns |
 | Reconciliation batch | `reconciliation.reconciliation_batch` (`V003`, `P8-TSK-009`) | `reconciliation_batch_event` | `UNIQUE (batch_id)`; the per-source sequence unique; one open `REPROCESS` per source; the deferred no-`PENDING` trigger |
-| External item | `reconciliation.external_item` (`V003`, `P8-TSK-009`; `REPUDIATED` and the reopening `MATCHED → UNMATCHED` by `V009`, `P8-TSK-023`) | `external_item_event` | `UNIQUE settlement_line_id`; the amounts `CHECK`; disposition columns only |
-| Settlement expectation | `reconciliation.expectation` (`V002`, `P8-TSK-004`, with the announced-cycle attribute column; the reopening edges by `V009`, `P8-TSK-023`) | `expectation_event` (`KEY_COLLISION` among its kinds) | The two uniques; the `REMITTANCE` `CHECK`; `allocated + resolved ≤ amount`; the deferred Σ trigger |
+| External item | `reconciliation.external_item` (`V003`, `P8-TSK-009`; `REPUDIATED` and the reopening `MATCHED → UNMATCHED` by `V010`, `P8-TSK-023`) | `external_item_event` | `UNIQUE settlement_line_id`; the amounts `CHECK`; disposition columns only |
+| Settlement expectation | `reconciliation.expectation` (`V002`, `P8-TSK-004`, with the announced-cycle attribute column; the reopening edges by `V010`, `P8-TSK-023`) | `expectation_event` (`KEY_COLLISION` among its kinds) | The two uniques; the `REMITTANCE` `CHECK`; `allocated + resolved ≤ amount`; the deferred Σ trigger |
 | Break | `reconciliation.break` (`V004`, `P8-TSK-010`) | `break_event`, `break_note`, `break_evidence_link` | The one-open-per-(type, subject) partial uniques; no `DELETE` grant and a refusing trigger; forward-only severity |
-| Resolution | `reconciliation.resolution` (`V006`, `P8-TSK-012` for `EVIDENCED`; the person kinds `P8-TSK-015`; the `REPUDIATE_BATCH` kind and its batch subject by `V009`, `P8-TSK-023`) | `resolution_event` | One `PROPOSED` per subject; the four-eyes `CHECK`; the `EVIDENCED` `CHECK`; the proposal and entry uniques; decision columns once |
-| Suspense item | `reconciliation.suspense_item` (`V004`, `P8-TSK-010`; origin `REPUDIATION` by `V009`, `P8-TSK-023`) | `suspense_release` — every edge is a release | `break_id NOT NULL`; `released ≤ amount`; the origin uniques |
+| Resolution | `reconciliation.resolution` (`V006`, `P8-TSK-012` for `EVIDENCED`; the person kinds `P8-TSK-015`; the `REPUDIATE_BATCH` kind and its batch subject by `V010`, `P8-TSK-023`) | `resolution_event` | One `PROPOSED` per subject; the four-eyes `CHECK`; the `EVIDENCED` `CHECK`; the proposal and entry uniques; decision columns once |
+| Suspense item | `reconciliation.suspense_item` (`V004`, `P8-TSK-010`; origin `REPUDIATION` by `V010`, `P8-TSK-023`) | `suspense_release` — every edge is a release | `break_id NOT NULL`; `released ≤ amount`; the origin uniques |
 | Rule set | `reconciliation.rule_set` (`V002`, `P8-TSK-004`) | `rule_set_event` *(the three-layer rule requires it; the transition's data model names only the row's decision columns — `P8-TSK-004` adds it)* | Content frozen from `PROPOSED`; one `ACTIVE` per source; activator ≠ proposer |
 | Payout return | `merchant.payout_return` (`V008`, `P8-TSK-019`) | The row itself — born once | `UNIQUE (payout_id)`; the composite foreign key binding its money to the payout's `(id, amount_minor, currency, scale)`; `UNIQUE journal_entry_id`; append-only |
 
@@ -925,7 +925,7 @@ Each state arrives with its producer's task, so a deferral removes states rather
 them (transition decision O6, §8): without `P8-TSK-023` there is no `REPUDIATED` on the batch or
 the item, no reopening edge on the item or the expectation, no `REPUDIATION` suspense origin and
 no `REPUDIATE_BATCH` kind — its
-reconciliation `V009`, numbered after `P8-TSK-022`'s `run_replay` in `V008`, is what admits them;
+reconciliation `V010`, numbered after `P8-TSK-022`'s `run_replay` in `V009` (and `P8-TSK-016`'s bank items in `V008`), is what admits them;
 without `P8-TSK-019` no `payout_return` exists, and a returned payout takes the four-eyes
 `TRANSFER_TO_ACCOUNT` path. *(The Phase 7 → 8 transition's consistency review, A6 and A8.)*
 
@@ -964,7 +964,13 @@ named exclusions with their reasons, `WRITE_OFF` added to `DUPLICATE_EXTERNAL`, 
 `SETTLEMENT_MISMATCH`'s posting kinds confined to `REMITTANCE_DIFFERS`. The statement causes still
 name their batch through its run — one run per accepted batch — because a break's subject columns
 (`expectation_id`, `external_item_id`, `suspense_item_id`, `run_id`, `decision_id`) carry no batch;
-`P8-TSK-016` confirms or adds one.)*
+`P8-TSK-016` confirms or adds one.)* *(Confirmed by `P8-TSK-016`: no column is added — the run IS
+the batch's, `UNIQUE (batch_id)`, and `break_one_open_per_run` gives one open statement break per
+statement. As built, a missing predecessor and a predecessor's closing unequal to the opening are
+both `STATEMENT_GAP`, value the opening or the difference; `OPENING_BALANCE` is the first opening
+alone. A gap whose missing statement is later accepted, and stitches, closes `EVIDENCED` naming
+that statement; a mis-stitched opening has nothing to fill it and waits for `P8-TSK-023`'s
+repudiation and correction.)*
 
 **One open break per (type, subject)** — partial uniques `(type, expectation_id)`, `(type,
 external_item_id)`, `(type, suspense_item_id)` and `(type, run_id)`, all `WHERE status <>
@@ -1036,7 +1042,11 @@ highest-sequence accepted statement of an unbroken chain for c. A `STATEMENT_GAP
 `OPENING_BALANCE` break makes the verdict fail loudly (`finapp.reconciliation.cash.proof`) until
 it is resolved, and nothing is ever adjusted to fit. The simulated bank opens at zero; a non-zero
 first opening raises `SETTLEMENT_MISMATCH(OPENING_BALANCE)` and posts nothing, because the only
-honest counter-account is equity, which is Phase 14's (transition decision O4, §8).
+honest counter-account is equity, which is Phase 14's (transition decision O4, §8). *As built
+(`P8-TSK-016`):* `PositionProof.CashVerdict`, per currency, in the sweep's one `REPEATABLE READ`
+snapshot — each bank account's accepted statements must run 1..n with no hole, the first opening at
+zero and every opening its predecessor's closing, and `CASH_AT_BANK`'s DR−CR must equal the sum of
+the chains' head closings; the verdict is the positions report's cash row and the gauge's 0/1.
 
 **Completeness** (`INV-SET-02` for every writer): every journal line on the three clearings and
 `SUSPENSE_UNMATCHED` belongs to an entry reconciliation or settlement knows — an expectation's

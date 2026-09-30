@@ -1,6 +1,6 @@
 # Task History
 
-The per-task completion records that accumulated behind `## Current Task` - 178 "Previously" blocks, newest first, from `P8-TSK-014` back to project initiation. *(`X-TSK-004` is cross-cutting and completed after the Phase 6 → 7 transition, so it stands second, between `P7-TSK-001` and the transition's record - the transition's block moved here by `P7-TSK-001`'s gate, exactly as an earlier form of this note said it would.)*
+The per-task completion records that accumulated behind `## Current Task` - 179 "Previously" blocks, newest first, from `P8-TSK-015` back to project initiation. *(`X-TSK-004` is cross-cutting and completed after the Phase 6 → 7 transition, so it stands second, between `P7-TSK-001` and the transition's record - the transition's block moved here by `P7-TSK-001`'s gate, exactly as an earlier form of this note said it would.)*
 
 **Archive.** These records were moved verbatim out of
 [`CURRENT_STATE.md`](../CURRENT_STATE.md) on 2026-09-20 so that the canonical description of
@@ -14,6 +14,108 @@ Authoritative backlog: [`BACKLOG.md`](../BACKLOG.md)
 ---
 
 ### Previously
+
+**`P8-TSK-015` — Four-eyes resolution through the ledger** — `COMPLETE`
+(2026-09-30). **M8.4, Investigation and controlled resolution, `CLOSED` at 2 of 2**: a person
+now resolves a break only through a template-bound, reason-coded resolution whose lines are
+derived from the subject's current remainder, approved by a second person whenever value is at
+issue or it posts, the resolution and its compensating `ADJUSTMENT` committing together through
+the ledger's owned door — every break type can now be closed (ADR-0071; `INV-REC-03`,
+`INV-AUD-04`, `INV-REV-04`, `INV-REC-06`, `INV-REC-09`; protected `INV-REC-05`, `INV-REC-07`,
+`INV-LED-01`, `INV-BAL-03`, `INV-MER-02` as amended). **Ledger `V017`**: `RECONCILIATION_LOSSES`
+(EXPENSE) and `RECONCILIATION_GAINS` (REVENUE) per currency with the ceremony — four
+regenerated constraints, the binding function's list re-stated so both are closed to `MANUAL`
+lines (proven at both ranks over HTTP and raw SQL), `SEEDED_TYPES` +2, `SEED_MIGRATIONS` +1 — and
+posted by nothing but approved resolutions (counted). **Identity**: `RECONCILIATION_RESOLVE`
+joins `RECONCILIATION_OPERATOR` alone (`RoleNameTest`'s exact grants; the controller who can
+loosen a tolerance cannot resolve). **Reconciliation `V007`**: the kind, status and reason
+`CHECK`s regenerated from the enums (every kind but `REPUDIATE_BATCH`, every code but
+`EVIDENCE_REPUDIATED` — `V009`'s), the generated (kind, reason) pairing, the DERIVED
+`four_eyes`, the one-to-one ledger binding and each kind's operand, `V006`'s blanket freeze
+replaced by the machine's every-writer trigger under a narrowed `UPDATE` grant (payload frozen,
+`PROPOSED →` the three terminals only, what an approval produced named once, no delete), the
+expectation history's `RESOLVED` event, and `P8-TSK-014`'s design input — a break's type moves
+only in `OPEN`/`INVESTIGATING`, and a suspense owner only onto an owning type. **The machine**
+(`ResolutionTemplates`, pure: ADR-0069 §2's admission table, the side rule, the whole-residual
+amount and the lines; `ResolutionMachine`: propose, approve, reject, withdraw, each ONE
+transaction, EVERY command taking the source's namespace-4 advisory first — both sources,
+sorted, for an offset — then break rows sorted, then the resolution row, then the subject rows,
+then a transfer target `FOR SHARE`, then inside `approveOwned` the ledger proposal and the
+projections, the posting last): `WRITE_OFF` DR losses / CR the position or suspense, `TRANSFER`
+DR suspense or the OUTBOUND position / CR an owned, same-currency, `ACTIVE` wallet or payable,
+`RECOGNISE_GAIN` DR suspense / CR gains only at the pinned age judged in SQL on the DATABASE
+clock, `OFFSET_SUSPENSE` releasing both items and closing both breaks, `MANUAL_MATCH` a `MANUAL`
+decision over a STORED candidate absorbing the whole parked value, then the allocation, the
+item `MATCHED` and the park's exact inverse, and `ACKNOWLEDGE` born `APPROVED` by one person at
+zero value, two otherwise; approval re-derives the amount AND the lines under the locks and
+compares the break's `residual_version`, refusing any move as `ResolutionStale` with nothing
+written; the same person's retry of any decision converges; withdrawal is the proposer's alone
+(`NotTheProposer`, a code beyond the ADR's list) and rejection never the proposer's. **Evidence
+wins**: the evidence writer now withdraws a pending proposal and rejects its ledger half in the
+evidence's own transaction (proven through the real matcher's L1). **The build's find, fixed**:
+a partial allocation raises `AMOUNT_MISMATCH` on the expectation and ageing later raises
+`MISSING_EXTERNAL` on the SAME remainder — disposing of it through one would have left the other
+open over a value no person kind could still dispose of; the disposal now closes every such
+sibling with the same resolution (the offset's two-break precedent) and one live proposal stands
+across them. **The doors** (`BreakResolutionDesk`, all `RECONCILIATION_RESOLVE`): the proposal
+keyed per principal (`reconciliation.resolve:<actorType>:<actorId>`), the shape screened BEFORE
+the claim, the stored receipt carrying no narrative; approval, rejection and withdrawal by
+state. **The attribution reads**: the ledger's breakdown bucket and statement line flag a
+`RECONCILIATION`-origin entry's lines, `MerchantPayable.reconciliationAttributed` reads them FIRST
+(an OUTBOUND clearing remainder's transfer never a capture, counted) and the customer statement
+labels them `RECONCILIATION_ATTRIBUTION`; `INV-MER-02` amended as built. **Registers**: four
+`RoutePermissionRegisterTest` rows, eleven error codes with their `ERROR_CONTRACT` rows, four
+`AUDITABLE_ACTIONS` rows (`ResolutionProposed` and `ResolutionRejected` reason-required), the
+completeness verifier learning resolution entries, the OpenAPI baseline regenerated (every
+flagged row a `required` marker inside the four new routes and two new request schemas — the
+new-route precedent; the payable and statement fields compatible additions), the credential-sink
+guard's two new schemas, no classification rows (`V007` adds no column), ADR-0071's implemented
+note with every deviation named (the uniform advisory, the siblings, the break history's
+terminal-only edge, `NotTheProposer`, the manual match's named decision and whole-value rule,
+the one-item template, no bespoke span, meters `P8-TSK-024`'s; no step-up and a refused
+self-approval writing nothing, the two recorded questions decided), the lifecycle document's
+reason-code matrix, `RECONCILIATION_MODEL` §10, `DISTRIBUTED_EXECUTION` §3's lock-order row
+(the third taker built) and MODULE_ARCHITECTURE. Two shared-container test wipes now scope
+around expectations a break or a resolution names (their NULLs filtered). **Seven probe runs,
+seven caught** (`MUTATION_TESTING` §2 +7 rows under `INV-AUD-04`, `INV-REC-03`, `INV-REC-06`,
+`INV-REC-05`, `INV-REC-02`): the distinctness CHECK dropped admitted a raw self-approved row;
+the stale comparison dropped approved over a moved residual; the target's share lock dropped let
+a `FOR NO KEY UPDATE` writer past an uncommitted approval (the posting's own key-share lock does
+not exclude it — the test was written for the probe, the lock's meaning demonstrated); the
+break's frozen value posted in place of the remainder showed 80.00 lines where 50.00 belong; the
+minimum age ignored admitted a gain one day short; the siblings left standing kept the shortfall
+break `OPEN`; evidence without the withdrawal left the pending proposal `PROPOSED` — every
+verdict read from the failing testcase, every restore byte-identical (sha256-verified).
+Multi-instance **PASS** — the source's advisory, then the break row, then the resolution row
+serialise every command (ten racing approvers post ONE entry and ONE `BreakResolved`, counted),
+the partial unique and the keyed propose arbitrate proposals for any writer, the conditional
+decision and `UNIQUE adjustment_proposal_id`/`journal_entry_id` beneath, and the evidence writer
+takes the break row first. Recorded minors: `RecordAlreadyMatched` maps the pair unique but the
+pre-checks refuse first, so it is defensive and untested; a break owning more than one open
+suspense item is refused by the template; operators are audited with actor type `CUSTOMER`
+(the Phase 15 debt; distinctness holds by id); and a LATENT defect found in passing and flagged
+for its own task — `PositionProof` compares `PAYOUT_CLEARING`'s credit-normal settled balance
+(CR−DR) against remainders signed DR−CR, so any open payout expectation fails the
+verdict (seen when the merchant storm shared the proofs' container; the proof suites' own group
+never includes it). Verified by targeted tiers from fresh runs on the final code —
+reconciliation hermetic 85 across 15 suites (the templates' table and side rules, the shape
+screen, `V007`'s reconciliations) and database 70 across 8 (the machine suite's fourteen ordered
+tests: each kind's lines against `ledger.journal_line`, the refusals at both ranks, self-approval
+at all three (the domain, the resolution CHECK and ledger `V010` for a posting kind), the gain one
+day short and at, the closed target, the value-bearing `FEE_MISMATCH` acknowledgement, the raw
+writers, the ten-way race, evidence both ways, the stale refusal by a moved version and by the
+real matcher's partial arrival, the withdraw/reject edges, the manual match, the siblings, the
+share lock), ledger
+hermetic 83 across 16, identity 124 across 16, merchant 135 across 19, app hermetic
+571 across 106 suites (the route rows, the catalogues, the credential-sink guard, the regenerated
+baseline and the document guards within), the eight proof-group app database suites in ONE
+shared container 40 across 8 (the resolver's desk over HTTP — the keyed replay, the second key,
+the generic ledger doors refusing a REAL reconciliation proposal both ways, self-approval, the
+narrative absent from every sink, the attributions counted, the P&L positions closed — the
+investigation, matcher, opening, suspense and acceptance proofs over its residue, the multi-rail
+storm and the adjustment suite), and the payable and statement suites in their own container
+54 across 4, ALL 0 FAILURES — the full battery and the fleet-wide database and kafka
+tiers deliberately skipped on the owner's instruction.
 
 **`P8-TSK-014` — Break reads, the case file and the settlement-status trail** — `COMPLETE`
 (2026-09-30). **M8.4, Investigation and controlled resolution, at 1 of 2**: an investigator

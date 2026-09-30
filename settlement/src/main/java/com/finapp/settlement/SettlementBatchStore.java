@@ -36,9 +36,16 @@ public interface SettlementBatchStore<T> {
             int declaredLineCount,
             long netMinor,
             int netScale,
-            String remittanceReference,
+            Optional<String> remittanceReference,
             Instant createdAt,
-            CorrelationId correlation) {}
+            CorrelationId correlation,
+            Optional<StatementRow> statement) {}
+
+    /**
+     * A bank statement's continuity facts as stored (`P8-TSK-016`, settlement `V005`): its
+     * sequence and its SIGNED opening and closing balances at the batch's {@code net_scale}.
+     */
+    record StatementRow(long sequence, long openingMinor, long closingMinor) {}
 
     /** One control total: the `Money` fold per (type, direction), persisted for the attester. */
     record TotalRow(
@@ -59,7 +66,8 @@ public interface SettlementBatchStore<T> {
             List<TotalRow> totals,
             Actor actor,
             Instant at,
-            CorrelationId correlation) {
+            CorrelationId correlation,
+            java.util.Map<Integer, UUID> attributions) {
 
         public NewBatch {
             Objects.requireNonNull(batchId, "batchId must not be null");
@@ -71,7 +79,25 @@ public interface SettlementBatchStore<T> {
             Objects.requireNonNull(actor, "actor must not be null");
             Objects.requireNonNull(at, "at must not be null");
             Objects.requireNonNull(correlation, "correlation must not be null");
+            Objects.requireNonNull(attributions, "attributions must not be null");
             totals = List.copyOf(totals);
+            attributions = java.util.Map.copyOf(attributions);
+        }
+
+        /** A batch with no attributed line — every report (`P8-TSK-008`'s shape). */
+        public NewBatch(
+                UUID batchId,
+                UUID fileId,
+                UUID sourceId,
+                SettlementFormatId formatId,
+                int formatVersion,
+                ParsedBatch parsed,
+                List<TotalRow> totals,
+                Actor actor,
+                Instant at,
+                CorrelationId correlation) {
+            this(batchId, fileId, sourceId, formatId, formatVersion, parsed, totals, actor, at,
+                    correlation, java.util.Map.of());
         }
     }
 
@@ -83,6 +109,15 @@ public interface SettlementBatchStore<T> {
      */
     boolean liveBatchStands(
             T unitOfWork, UUID sourceId, String externalBatchRef, CurrencyCode currency);
+
+    /**
+     * Whether a live statement already holds this (source, currency, sequence) — the pre-check
+     * beside `V005`'s live statement-sequence unique (`P8-TSK-016`): the loser answers
+     * {@code CONFLICTING_BATCH}, and a race the read cannot see surfaces as
+     * {@link LiveBatchConflict}.
+     */
+    boolean liveStatementStands(
+            T unitOfWork, UUID sourceId, CurrencyCode currency, long statementSequence);
 
     /**
      * Writes the batch whole: row, lines, typed references, totals and the birth event, or
@@ -127,11 +162,31 @@ public interface SettlementBatchStore<T> {
             Optional<LocalDate> settlementDate,
             Optional<LocalDate> valueDate,
             byte[] canonicalFingerprint,
-            java.util.Map<LineReferenceKind, String> references) {
+            java.util.Map<LineReferenceKind, String> references,
+            Optional<UUID> attributedSourceId) {
 
         public LineRow {
             canonicalFingerprint = canonicalFingerprint.clone();
             references = java.util.Map.copyOf(references);
+            Objects.requireNonNull(attributedSourceId, "attributedSourceId must not be null");
+        }
+
+        /** A report line — never attributed (`P8-TSK-009`'s shape). */
+        public LineRow(
+                UUID id,
+                int lineNo,
+                SettlementLineType lineType,
+                LineDirection direction,
+                long amountMinor,
+                CurrencyCode currency,
+                int scale,
+                LocalDate businessDate,
+                Optional<LocalDate> settlementDate,
+                Optional<LocalDate> valueDate,
+                byte[] canonicalFingerprint,
+                java.util.Map<LineReferenceKind, String> references) {
+            this(id, lineNo, lineType, direction, amountMinor, currency, scale, businessDate,
+                    settlementDate, valueDate, canonicalFingerprint, references, Optional.empty());
         }
 
         @Override
@@ -191,8 +246,37 @@ public interface SettlementBatchStore<T> {
             LocalDate businessDate,
             LocalDate acceptedOn) {}
 
-    /** ACCEPTED batches by id, after {@code after} — the backfill's bounded page. */
+    /**
+     * ACCEPTED REPORT batches by id, after {@code after} — the backfill's bounded page. A bank
+     * statement opens no remittance, so it is never on this page (`P8-TSK-016`).
+     */
     List<AcceptedRow> pageAccepted(T unitOfWork, UUID after, int limit);
+
+    /**
+     * One ACCEPTED bank statement as the chain sees it (`P8-TSK-016`, `INV-SET-06`): its
+     * sequence and signed balances at {@code scale}.
+     */
+    record StatementLink(
+            UUID batchId,
+            UUID sourceId,
+            CurrencyCode currency,
+            long sequence,
+            long openingMinor,
+            long closingMinor,
+            int scale) {}
+
+    /**
+     * The ACCEPTED statement of this (source, currency, sequence), if any — the continuity
+     * check's neighbour read, taken under the source row lock the accept leg holds.
+     */
+    Optional<StatementLink> acceptedStatement(
+            T unitOfWork, UUID sourceId, CurrencyCode currency, long sequence);
+
+    /**
+     * Every ACCEPTED statement, by source, currency and sequence — the cash proof's chain read,
+     * in the caller's one snapshot.
+     */
+    List<StatementLink> acceptedStatements(T unitOfWork);
 
     /**
      * The batch's recognition entry (`P8-TSK-014`, reconciliation's trace) — the stored

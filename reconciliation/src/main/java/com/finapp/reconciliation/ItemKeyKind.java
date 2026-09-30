@@ -23,9 +23,24 @@ public enum ItemKeyKind {
     ACQUIRER_REF,
     DISPUTE_REF,
     OUR_REF,
-    ORIGINAL_REF;
+    ORIGINAL_REF,
+    /** A bank statement line's structured remittance reference (`P8-TSK-016`). */
+    REMITTANCE_REF;
 
-    /** The `V003` {@code CHECK}'s value list — reconciled by the migration test. */
+    /** The report vocabulary `V003` admitted; {@code REMITTANCE_REF} arrived with `V008`. */
+    public static java.util.Set<ItemKeyKind> reportVocabulary() {
+        return java.util.EnumSet.range(PSP_CAPTURE_REF, ORIGINAL_REF);
+    }
+
+    /** A subset's {@code CHECK} value list, in declaration order. */
+    public static String sqlValueList(java.util.Set<ItemKeyKind> members) {
+        return Arrays.stream(values())
+                .filter(members::contains)
+                .map(value -> "'" + value.name() + "'")
+                .collect(Collectors.joining(", "));
+    }
+
+    /** The whole {@code CHECK} value list (`V008`) — reconciled by the migration test. */
     public static String sqlValueList() {
         return Arrays.stream(values())
                 .map(value -> "'" + value.name() + "'")

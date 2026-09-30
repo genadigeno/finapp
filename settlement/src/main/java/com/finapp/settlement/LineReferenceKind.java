@@ -30,9 +30,29 @@ public enum LineReferenceKind {
      * The transaction a derived or correcting line points at: a gross-plus-fee split's fee
      * line names the transaction it rode in on, and an adjustment names what it adjusts.
      */
-    ORIGINAL_REF;
+    ORIGINAL_REF,
 
-    /** The `V003` {@code CHECK}'s value list — reconciled by the migration test. */
+    /**
+     * The structured remittance reference a bank statement line carries (`P8-TSK-016`) — what
+     * attribution normalises the line by, and what the matcher reaches the attributed
+     * counterparty's {@code REMITTANCE} by. Never a name or an account identifier.
+     */
+    REMITTANCE_REF;
+
+    /** The report vocabulary `V003` admitted; {@code REMITTANCE_REF} arrived with `V005`. */
+    public static java.util.Set<LineReferenceKind> reportVocabulary() {
+        return java.util.EnumSet.range(PSP_CAPTURE_REF, ORIGINAL_REF);
+    }
+
+    /** A subset's {@code CHECK} value list, in declaration order. */
+    public static String sqlValueList(java.util.Set<LineReferenceKind> members) {
+        return Arrays.stream(values())
+                .filter(members::contains)
+                .map(value -> "'" + value.name() + "'")
+                .collect(Collectors.joining(", "));
+    }
+
+    /** The whole {@code CHECK} value list (`V005`) — reconciled by the migration test. */
     public static String sqlValueList() {
         return Arrays.stream(values())
                 .map(value -> "'" + value.name() + "'")

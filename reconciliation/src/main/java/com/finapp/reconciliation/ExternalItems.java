@@ -30,7 +30,15 @@ public interface ExternalItems {
             Connection unitOfWork, com.finapp.platform.security.Actor actor,
             List<NewItem> items);
 
-    /** One item at birth. */
+    /**
+     * One item at birth.
+     *
+     * <p>A report line stands in its source's position and is never attributed; a bank credit
+     * or debit stands in its ATTRIBUTED source's position exactly when it is attributed — the
+     * key scope its {@code REMITTANCE_REF} is judged in (`P8-TSK-016`, ADR-0068 §1); a bank fee
+     * stands in neither (its effect is the recognition's {@code PROCESSING_COSTS} line). The
+     * database's {@code external_item_position_rule} is the same rule's second rank.
+     */
     record NewItem(
             UUID id,
             UUID runId,
@@ -40,7 +48,8 @@ public interface ExternalItems {
             ExternalLineType lineType,
             ExpectationDirection direction,
             Money amount,
-            AccountPurpose positionPurpose,
+            Optional<AccountPurpose> positionPurpose,
+            Optional<UUID> attributedSourceId,
             LocalDate businessDate,
             Optional<LocalDate> settlementDate,
             Optional<LocalDate> valueDate,
@@ -58,6 +67,7 @@ public interface ExternalItems {
             Objects.requireNonNull(direction, "direction must not be null");
             Objects.requireNonNull(amount, "amount must not be null");
             Objects.requireNonNull(positionPurpose, "positionPurpose must not be null");
+            Objects.requireNonNull(attributedSourceId, "attributedSourceId must not be null");
             Objects.requireNonNull(businessDate, "businessDate must not be null");
             Objects.requireNonNull(settlementDate, "settlementDate must not be null");
             Objects.requireNonNull(valueDate, "valueDate must not be null");
@@ -76,8 +86,46 @@ public interface ExternalItems {
             if (canonicalFingerprint.length != 32) {
                 throw new IllegalArgumentException("a canonical fingerprint is a SHA-256");
             }
+            boolean positionRuleHolds =
+                    switch (lineType) {
+                        case BANK_CREDIT, BANK_DEBIT ->
+                                positionPurpose.isPresent() == attributedSourceId.isPresent();
+                        case BANK_FEE ->
+                                positionPurpose.isEmpty() && attributedSourceId.isEmpty();
+                        default -> positionPurpose.isPresent() && attributedSourceId.isEmpty();
+                    };
+            if (!positionRuleHolds) {
+                throw new IllegalArgumentException(
+                        "a " + lineType + " item's position and attribution disagree"
+                                + " (P8-TSK-016's position rule)");
+            }
             canonicalFingerprint = canonicalFingerprint.clone();
             keys = Map.copyOf(keys);
+        }
+
+        /** A report line's item — its source's position, never attributed. */
+        public NewItem(
+                UUID id,
+                UUID runId,
+                UUID sourceId,
+                UUID settlementLineId,
+                int lineNo,
+                ExternalLineType lineType,
+                ExpectationDirection direction,
+                Money amount,
+                AccountPurpose positionPurpose,
+                LocalDate businessDate,
+                Optional<LocalDate> settlementDate,
+                Optional<LocalDate> valueDate,
+                byte[] canonicalFingerprint,
+                Map<ItemKeyKind, String> keys,
+                Instant at,
+                CorrelationId correlation) {
+            this(id, runId, sourceId, settlementLineId, lineNo, lineType, direction, amount,
+                    Optional.of(Objects.requireNonNull(positionPurpose,
+                            "positionPurpose must not be null")),
+                    Optional.empty(), businessDate, settlementDate, valueDate,
+                    canonicalFingerprint, keys, at, correlation);
         }
 
         @Override

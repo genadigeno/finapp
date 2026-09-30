@@ -73,7 +73,9 @@ public final class JdbcResolutions implements Resolutions {
         withdrawPending(unitOfWork, evidence);
 
         String narrative =
-                "decision=" + evidence.decisionId()
+                evidence.decisionId()
+                                .map(decision -> "decision=" + decision)
+                                .orElseGet(() -> "statement=" + evidence.fillingStatementId().get())
                         + evidence.parkId().map(park -> ", park=" + park).orElse("");
         try (PreparedStatement insert =
                 unitOfWork.prepareStatement(
@@ -96,7 +98,7 @@ public final class JdbcResolutions implements Resolutions {
             insert.setInt(6, evidence.explained().scale());
             insert.setLong(7, evidence.residualVersion());
             insert.setObject(8, evidence.offsetItemId().orElse(null));
-            insert.setObject(9, evidence.decisionId());
+            insert.setObject(9, evidence.decisionId().orElse(null));
             insert.setObject(10, evidence.parkId().orElse(null));
             insert.setObject(11, evidence.ruleSetId());
             insert.setObject(12, evidence.journalEntryId().orElse(null));

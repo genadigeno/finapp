@@ -75,6 +75,18 @@ public enum AccountPurpose {
     INSTANT_CLEARING(OwnerKind.OPERATIONAL),
 
     /**
+     * The platform's cash at its settlement bank (ADR-0065 §3, `P8-TSK-016`): an operational
+     * ASSET posted by EXACTLY ONE poster, the recognition of an accepted bank statement (DR
+     * the statement's net credits / CR its net debits, netted to one line, against each
+     * attributed counterparty's clearing position) — and, from `P8-TSK-023`, by the reversal
+     * of that recognition when a statement is repudiated. Cash always follows the bank's own
+     * statement, never a report ({@code INV-SET-06}); a static rule refuses any other code that
+     * names it, and as a reconciled position it is closed to free adjustments. Added with its
+     * first poster beside `V018`.
+     */
+    CASH_AT_BANK(OwnerKind.OPERATIONAL),
+
+    /**
      * What the card network took that the platform has not (yet) recovered from anyone
      * (ADR-0061 §3–§5, `P7-TSK-013`): an operational ASSET. A chargeback debits it by the whole
      * amount the network took against the card rail's clearing position — the external fact —
@@ -157,13 +169,15 @@ public enum AccountPurpose {
      * recognition entry's, so a free adjustment there would un-explain an accepted report.
      * `RECONCILIATION_LOSSES` and `RECONCILIATION_GAINS` joined with their poster, the
      * four-eyes resolution (`P8-TSK-015`, `V017`): posted by nothing but approved
-     * resolutions. `CASH_AT_BANK` joins with `-016`, re-stating it again (`V018`).
+     * resolutions. `CASH_AT_BANK` joined with its one poster, the bank statement's recognition
+     * (`P8-TSK-016`, `V018`): cash is never adjusted to fit (`INV-SET-06`).
      */
     public static java.util.Set<AccountPurpose> reconciledPositions() {
         return java.util.EnumSet.of(
                 SETTLEMENT_CLEARING,
                 INSTANT_CLEARING,
                 PAYOUT_CLEARING,
+                CASH_AT_BANK,
                 SUSPENSE_UNMATCHED,
                 PROCESSING_COSTS,
                 RECONCILIATION_LOSSES,

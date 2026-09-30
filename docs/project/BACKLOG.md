@@ -10606,7 +10606,7 @@ posting-date documentation reconciled with the Phase 5–7 practice, with no ret
     by trigger; `value_at_issue_*` ≥ 0; the note body's bounds and shape `CHECK`s (1..4000; no
     Luhn-valid 13–19-digit run, no IBAN shape), ready for their producer in `P8-TSK-014`;
     `suspense_item.break_id NOT NULL`, `external_item_id UNIQUE NULL`,
-    `origin (RECON_PARK|BANK_UNATTRIBUTED|UNMATCHED_CONFIRMATION)` (`REPUDIATION` added by `V009`,
+    `origin (RECON_PARK|BANK_UNATTRIBUTED|UNMATCHED_CONFIRMATION)` (`REPUDIATION` added by `V010`,
     `P8-TSK-023`) *(the Phase 7 → 8 transition's re-check, R3)*, `origin_ref UNIQUE`,
     `CHECK released_minor ≤ amount_minor`; `park.journal_entry_id UNIQUE`; no `DELETE` grant and a
     refusing trigger on every table.
@@ -10648,7 +10648,7 @@ posting-date documentation reconciled with the Phase 5–7 practice, with no ret
 - **Out of scope**: the matcher and every leg that decides to park (`P8-TSK-011`, `-013`);
   resolutions (`-012`, `-015`); the case file's routes (`-014`); the producers of the
   `BANK_UNATTRIBUTED` (`-016`) and `UNMATCHED_CONFIRMATION` (`-020`) origins, which `V004` admits,
-  and of the fourth, `REPUDIATION` (`-023`), which `V009` admits; the break meters (`-024`).
+  and of the fourth, `REPUDIATION` (`-023`), which `V010` admits; the break meters (`-024`).
 - **Domain changes**: `ReconciliationBreak` (type, cause, severity, status, subject, value at issue,
   residual version), `BreakType`, `BreakCause`, `Severity`, the pure severity policy,
   `BreakRegister`; `SuspenseItem`, `SuspenseRelease`, `Park`, `Suspense`; `InternalReferenceLookup`
@@ -11476,7 +11476,7 @@ break row, as the approval door must.)*
   and thresholds, the lifecycle document's resolution machine and reason-code matrix, `INV-MER-02`'s
   amended statement and `RECONCILIATION_MODEL.md` current against the build). **Risk**: High. **Cx**: L.
 
-**P8-TSK-016 — The bank statement: cash recognised, remittances matched** — `READY` (marked by `P8-TSK-015`'s completion gate)
+**P8-TSK-016 — The bank statement: cash recognised, remittances matched** — `COMPLETE` (2026-09-30)
 - **Objective**: hop 2 of ADR-0065. Cash moves on the platform's books only on the bank's own
   statement, against each attributed counterparty's own clearing position, and the bank's lines
   discharge the remittances the reports opened. `CASH_AT_BANK` equals the closing balance of an
@@ -11560,7 +11560,11 @@ break row, as the approval door must.)*
   the live statement-sequence unique and `attributed_source_id` (settlement `V003`), the
   `BANK_UNATTRIBUTED` origin (reconciliation `V004`) and the bank rules (rule set v1, reconciliation
   `V002`) already exist. Configuration: the settlement account's opaque reference per currency, with
-  a `DATA_CLASSIFICATION.md` row (`CONFIDENTIAL`).
+  a `DATA_CLASSIFICATION.md` row (`CONFIDENTIAL`). *(Corrected by the task's design: the claim did
+  not hold against the schema — the statement's columns and live unique were settlement `V005`'s
+  to add, and the external item's bank types, nullable position and attribution reconciliation
+  `V008`'s, which moved `P8-TSK-022`'s `run_replay` to `V009` and `P8-TSK-023`'s repudiation to
+  `V010`; the configuration's classification is a non-column paragraph, since nothing stores it.)*
 - **APIs**: none new. Statements arrive through `P8-TSK-003`'s upload with attestation;
   `CASH_CONFIRMED` becomes reachable at `P8-TSK-014`'s `/settlement-status`; `P8-TSK-007`'s
   positions report gains its cash rows (a response addition, additive under v1, ADR-0015).
@@ -11647,7 +11651,7 @@ break row, as the approval door must.)*
   document, `RECONCILIATION_MODEL.md`'s bank pair and `INV-SET-06`'s Verify line current against the
   build). **Risk**: High — the only path by which cash moves. **Cx**: L.
 
-**P8-TSK-017 — The instant scheme's cycle report** — `PLANNED`
+**P8-TSK-017 — The instant scheme's cycle report** — `READY` (marked by `P8-TSK-016`'s completion gate)
 - **Objective**: `INSTANT_CLEARING` discharged by the scheme's own evidence (ADR-0065): every
   pay-in, withdrawal, return and unmatched confirmation allocated to its expectation per settlement
   cycle, the scheme's fees recognised, the cycle's net expected as a remittance and moved to cash
@@ -12326,8 +12330,8 @@ break row, as the approval door must.)*
   business-day calendars; value-banded approver escalation; automatic readmission.
 - **Domain changes**: `RuleSet`'s administration commands; `ReprocessRun`; `Readmission`;
   `RunReplay`; the re-parse verification.
-- **Persistence**: reconciliation `V008` `run_replay` (the number after `P8-TSK-015`'s `V007`, in task
-  order; `P8-TSK-023`'s is `V009` — the Phase 7 → 8 transition's consistency review, A8 and C9,
+- **Persistence**: reconciliation `V009` `run_replay` (renumbered: `P8-TSK-016` took `V008` for its bank items; in task
+  order; `P8-TSK-023`'s is `V010` — the Phase 7 → 8 transition's consistency review, A8 and C9,
   where this read `V00x`) (`run_id`, `requested_by`, `verdict`,
   `divergences`, `pending_rematch`, `first_divergent_decision`, `at`; append-only), its
   `DATA_CLASSIFICATION.md` §4 rows in the same change; beside it a settlement migration of its own,
@@ -12466,15 +12470,15 @@ break row, as the approval door must.)*
   - the approval re-derives the counter-allocations and unparks from the rows under lock, and a
     change since the proposal is `409 reconciliation.ResolutionStale`;
   - settlement `V00x`, the next free settlement number (`batch` `ACCEPTED → REPUDIATED`; the live
-    uniques already exclude it); reconciliation `V009` (below).
+    uniques already exclude it); reconciliation `V010` (below).
 - **Out of scope**: repudiating single lines (the batch is the unit); automatic repudiation;
   deleting or editing the file or its lines (retained); re-allocating committed matches outside
   repudiation; reversing a write-off automatically on late evidence (deferred).
 - **Domain changes**: the `REPUDIATE_BATCH` kind on a batch subject; counter-allocations; the
   batch's single designed exit from `ACCEPTED`.
 - **Persistence**: settlement `V00x` (the batch state and its transition trigger regenerated) with
-  its `DATA_CLASSIFICATION.md` rows if any column changes; **reconciliation `V009`**, after
-  `P8-TSK-022`'s `V008` — the resolution's `REPUDIATE_BATCH` kind and its batch subject admitted,
+  its `DATA_CLASSIFICATION.md` rows if any column changes; **reconciliation `V010`**, after
+  `P8-TSK-022`'s `V009` — the resolution's `REPUDIATE_BATCH` kind and its batch subject admitted,
   the item's `REPUDIATED` state and its repudiation-only reopening edge, the expectation's
   reopening edges (`SETTLED | PARTIALLY_SETTLED → OPEN | PARTIALLY_SETTLED`), and the suspense
   item's fourth origin, `REPUDIATION` (`V004` created the three others), each generated `CHECK`

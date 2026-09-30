@@ -201,41 +201,27 @@ public final class JdbcMatchingStore implements MatchingStore {
         Map<UUID, ChunkItemBuilder> builders = new LinkedHashMap<>();
         try (PreparedStatement read =
                 unitOfWork.prepareStatement(
-                        "SELECT i.id, i.line_no, i.line_type, i.direction, i.amount_minor, i.position_purpose,"
-                                + " i.currency, i.scale, i.business_date,"
-                                + " i.settlement_date, i.canonical_fingerprint,"
+                        "SELECT i.id, i.line_no, i.line_type, i.direction, i.amount_minor,"
+                                + " i.position_purpose, i.attributed_source_id, i.currency,"
+                                + " i.scale, i.business_date, i.settlement_date,"
+                                + " i.value_date, i.canonical_fingerprint,"
                                 + " r.source_sequence"
                                 + " FROM reconciliation.external_item i"
                                 + " JOIN reconciliation.reconciliation_batch r"
                                 + " ON r.id = i.run_id"
+                                // PENDING only: an item born disposed (an unattributed bank
+                                // line, PARKED at acceptance - P8-TSK-016) is never decided.
+                                // The LIMIT applies after the filter, so a short chunk still
+                                // means the run is exhausted.
                                 + " WHERE i.run_id = ? AND i.line_no > ?"
+                                + " AND i.status = 'PENDING'"
                                 + " ORDER BY i.line_no LIMIT ?")) {
             read.setObject(1, runId);
             read.setLong(2, cursor);
             read.setInt(3, limit);
             try (ResultSet rows = read.executeQuery()) {
                 while (rows.next()) {
-                    ChunkItemBuilder builder = new ChunkItemBuilder();
-                    builder.id = rows.getObject("id", UUID.class);
-                    builder.lineNo = rows.getLong("line_no");
-                    builder.lineType = ExternalLineType.valueOf(rows.getString("line_type"));
-                    builder.direction =
-                            ExpectationDirection.valueOf(rows.getString("direction"));
-                    builder.amount =
-                            Money.ofPersisted(
-                                    rows.getLong("amount_minor"),
-                                    CurrencyCode.of(rows.getString("currency").trim()),
-                                    rows.getInt("scale"));
-                    builder.positionPurpose =
-                            com.finapp.ledger.AccountPurpose.valueOf(
-                                    rows.getString("position_purpose"));
-                    builder.businessDate = rows.getObject("business_date", LocalDate.class);
-                    builder.settlementDate =
-                            Optional.ofNullable(
-                                    rows.getObject("settlement_date", LocalDate.class));
-                    builder.fingerprint = rows.getBytes("canonical_fingerprint");
-                    Long sequence = rows.getObject("source_sequence", Long.class);
-                    builder.sourceSequence = sequence == null ? 0L : sequence;
+                    ChunkItemBuilder builder = itemFacts(rows);
                     builders.put(builder.id, builder);
                 }
             }
@@ -272,38 +258,56 @@ public final class JdbcMatchingStore implements MatchingStore {
         }
     }
 
+    /**
+     * One item row's facts, the chunk's and the residual readers' shared shape. A NULL
+     * position (a bank fee, an unattributed bank line - `V008`) reads as empty.
+     */
+    private static ChunkItemBuilder itemFacts(ResultSet rows) throws SQLException {
+        ChunkItemBuilder builder = new ChunkItemBuilder();
+        builder.id = rows.getObject("id", UUID.class);
+        builder.lineNo = rows.getLong("line_no");
+        builder.lineType = ExternalLineType.valueOf(rows.getString("line_type"));
+        builder.direction = ExpectationDirection.valueOf(rows.getString("direction"));
+        builder.amount =
+                Money.ofPersisted(
+                        rows.getLong("amount_minor"),
+                        CurrencyCode.of(rows.getString("currency").trim()),
+                        rows.getInt("scale"));
+        builder.positionPurpose =
+                Optional.ofNullable(rows.getString("position_purpose"))
+                        .map(com.finapp.ledger.AccountPurpose::valueOf);
+        builder.attributedSourceId =
+                Optional.ofNullable(rows.getObject("attributed_source_id", UUID.class));
+        builder.businessDate = rows.getObject("business_date", LocalDate.class);
+        builder.settlementDate =
+                Optional.ofNullable(rows.getObject("settlement_date", LocalDate.class));
+        builder.valueDate = Optional.ofNullable(rows.getObject("value_date", LocalDate.class));
+        builder.fingerprint = rows.getBytes("canonical_fingerprint");
+        Long sequence = rows.getObject("source_sequence", Long.class);
+        builder.sourceSequence = sequence == null ? 0L : sequence;
+        return builder;
+    }
+
     /** The residual readers' shared shape: locked item rows plus run facts and keys. */
     private List<ResidualItem> lockedResiduals(
-            Connection unitOfWork, String sql, UUID sourceId, int limit) {
+            Connection unitOfWork,
+            String sql,
+            UUID sourceId,
+            Collection<UUID> heldAttributions,
+            int limit) {
         record RunFacts(UUID runId, UUID sourceId, UUID ruleSetId, String correlationId) {}
         Map<UUID, ChunkItemBuilder> builders = new LinkedHashMap<>();
         Map<UUID, RunFacts> facts = new HashMap<>();
         try (PreparedStatement read = unitOfWork.prepareStatement(sql)) {
             read.setObject(1, sourceId);
-            read.setInt(2, limit);
+            read.setArray(
+                    2,
+                    unitOfWork.createArrayOf(
+                            "uuid", new TreeSet<>(heldAttributions).toArray()));
+            read.setInt(3, limit);
             try (ResultSet rows = read.executeQuery()) {
                 while (rows.next()) {
-                    ChunkItemBuilder builder = new ChunkItemBuilder();
-                    builder.id = rows.getObject("id", UUID.class);
-                    builder.lineNo = rows.getLong("line_no");
-                    builder.lineType = ExternalLineType.valueOf(rows.getString("line_type"));
-                    builder.direction =
-                            ExpectationDirection.valueOf(rows.getString("direction"));
-                    builder.amount =
-                            Money.ofPersisted(
-                                    rows.getLong("amount_minor"),
-                                    CurrencyCode.of(rows.getString("currency").trim()),
-                                    rows.getInt("scale"));
-                    builder.positionPurpose =
-                            com.finapp.ledger.AccountPurpose.valueOf(
-                                    rows.getString("position_purpose"));
-                    builder.businessDate = rows.getObject("business_date", LocalDate.class);
-                    builder.settlementDate =
-                            Optional.ofNullable(
-                                    rows.getObject("settlement_date", LocalDate.class));
-                    builder.fingerprint = rows.getBytes("canonical_fingerprint");
-                    Long sequence = rows.getObject("source_sequence", Long.class);
-                    builder.sourceSequence = sequence == null ? 0L : sequence;
+                    ChunkItemBuilder builder = itemFacts(rows);
                     builders.put(builder.id, builder);
                     facts.put(
                             builder.id,
@@ -334,11 +338,62 @@ public final class JdbcMatchingStore implements MatchingStore {
 
     private static final String RESIDUAL_COLUMNS =
             "SELECT i.id, i.line_no, i.line_type, i.direction, i.amount_minor,"
-                    + " i.position_purpose, i.currency, i.scale, i.business_date,"
-                    + " i.settlement_date, i.canonical_fingerprint, i.run_id,"
-                    + " i.source_id, r.source_sequence, r.rule_set_id, r.correlation_id"
+                    + " i.position_purpose, i.attributed_source_id, i.currency, i.scale,"
+                    + " i.business_date, i.settlement_date, i.value_date,"
+                    + " i.canonical_fingerprint, i.run_id, i.source_id, r.source_sequence,"
+                    + " r.rule_set_id, r.correlation_id"
                     + " FROM reconciliation.external_item i"
                     + " JOIN reconciliation.reconciliation_batch r ON r.id = i.run_id";
+
+    /**
+     * The grace worklist's predicate for one source ({@code ?}): the window judged in SQL on
+     * the DATABASE clock against the stored timestamp (INV-SET-02).
+     */
+    private static final String EXPIRED_PREDICATE =
+            " i.source_id = ? AND i.status = 'UNMATCHED'"
+                    + " AND i.grace_until IS NOT NULL AND i.grace_until <= now()";
+
+    /** The item's latest decision instant, or minus infinity before any. */
+    private static final String LATEST_DECISION =
+            "COALESCE((SELECT max(d.decided_at) FROM reconciliation.match_decision d"
+                    + " WHERE d.external_item_id = i.id), '-infinity'::timestamptz)";
+
+    /**
+     * The rematch predicate (`P8-TSK-013`, widened by `P8-TSK-016`): a residual whose keys,
+     * judged in its KEY SCOPE (its attributed source, else its own), reach an expectation
+     * opened after its latest decision; or an attributed waiting item for which an untouched
+     * candidate of its run's value-date group rule opened after its latest decision. A PARKED
+     * item leaves here only by the park's exact inverse, so an item owning a suspense item of
+     * another origin (an unattributed bank line's {@code BANK_UNATTRIBUTED}) is never read.
+     */
+    private static final String REMATCH_PREDICATE =
+            " i.status IN ('UNMATCHED', 'PARKED')"
+                    + " AND NOT EXISTS (SELECT 1 FROM reconciliation.suspense_item s"
+                    + " WHERE s.external_item_id = i.id AND s.origin <> 'RECON_PARK')"
+                    + " AND (EXISTS (SELECT 1 FROM reconciliation.external_item_key ik"
+                    + " JOIN reconciliation.expectation_key ek"
+                    + " ON ek.source_id = COALESCE(i.attributed_source_id, i.source_id)"
+                    + " AND ek.key_value = ik.key_value"
+                    + " JOIN reconciliation.expectation e ON e.id = ek.expectation_id"
+                    + " WHERE ik.item_id = i.id AND e.opened_at > " + LATEST_DECISION + ")"
+                    + " OR (i.status = 'UNMATCHED' AND i.attributed_source_id IS NOT NULL"
+                    + " AND EXISTS (SELECT 1 FROM reconciliation.rule g"
+                    + " JOIN reconciliation.reconciliation_batch gr"
+                    + " ON gr.rule_set_id = g.rule_set_id"
+                    + " JOIN reconciliation.expectation e"
+                    + " ON e.source_id = i.attributed_source_id"
+                    + " AND e.kind = g.expectation_kind"
+                    + " WHERE gr.id = i.run_id AND g.line_type = i.line_type"
+                    + " AND g.cardinality = 'GROUP_BY_VALUE_DATE'"
+                    + " AND e.status = 'OPEN' AND e.allocated_minor = 0"
+                    + " AND e.resolved_minor = 0 AND e.direction = i.direction"
+                    + " AND e.currency = i.currency"
+                    + " AND e.expected_by = COALESCE(i.value_date, i.business_date)"
+                    + " AND e.opened_at > " + LATEST_DECISION + ")))";
+
+    /** A locking residual read admits the unattributed and the held attributions only. */
+    private static final String HELD_ATTRIBUTION =
+            " AND (i.attributed_source_id IS NULL OR i.attributed_source_id = ANY (?))";
 
     @Override
     public List<UUID> sourcesWithExpiredGrace(Connection unitOfWork) {
@@ -361,18 +416,27 @@ public final class JdbcMatchingStore implements MatchingStore {
     }
 
     @Override
+    public List<UUID> attributedSourcesWithExpiredGrace(Connection unitOfWork, UUID sourceId) {
+        return distinctAttributions(
+                unitOfWork,
+                "SELECT DISTINCT i.attributed_source_id FROM reconciliation.external_item i"
+                        + " WHERE" + EXPIRED_PREDICATE
+                        + " AND i.attributed_source_id IS NOT NULL",
+                sourceId);
+    }
+
+    @Override
     public List<ResidualItem> lockExpiredItems(
-            Connection unitOfWork, UUID sourceId, int limit) {
-        // The window judged in SQL on the DATABASE clock against the stored timestamp
-        // (INV-SET-02); FOR UPDATE OF i so the judgement is made on the locked row
-        // (ADR-0073 section 7).
+            Connection unitOfWork, UUID sourceId, Collection<UUID> heldAttributions,
+            int limit) {
+        // FOR UPDATE OF i so the judgement is made on the locked row (ADR-0073 section 7).
         return lockedResiduals(
                 unitOfWork,
                 RESIDUAL_COLUMNS
-                        + " WHERE i.source_id = ? AND i.status = 'UNMATCHED'"
-                        + " AND i.grace_until IS NOT NULL AND i.grace_until <= now()"
+                        + " WHERE" + EXPIRED_PREDICATE + HELD_ATTRIBUTION
                         + " ORDER BY i.grace_until, i.id LIMIT ? FOR UPDATE OF i",
                 sourceId,
+                heldAttributions,
                 limit);
     }
 
@@ -381,19 +445,7 @@ public final class JdbcMatchingStore implements MatchingStore {
         try (PreparedStatement read =
                 unitOfWork.prepareStatement(
                         "SELECT DISTINCT i.source_id FROM reconciliation.external_item i"
-                                + " WHERE i.status IN ('UNMATCHED', 'PARKED')"
-                                + " AND EXISTS (SELECT 1 FROM"
-                                + " reconciliation.external_item_key ik"
-                                + " JOIN reconciliation.expectation_key ek"
-                                + " ON ek.source_id = i.source_id"
-                                + " AND ek.key_value = ik.key_value"
-                                + " JOIN reconciliation.expectation e"
-                                + " ON e.id = ek.expectation_id"
-                                + " WHERE ik.item_id = i.id"
-                                + " AND e.opened_at > COALESCE((SELECT max(d.decided_at)"
-                                + " FROM reconciliation.match_decision d"
-                                + " WHERE d.external_item_id = i.id),"
-                                + " '-infinity'::timestamptz))"
+                                + " WHERE" + REMATCH_PREDICATE
                                 + " ORDER BY i.source_id")) {
             try (ResultSet rows = read.executeQuery()) {
                 List<UUID> sources = new ArrayList<>();
@@ -409,26 +461,44 @@ public final class JdbcMatchingStore implements MatchingStore {
     }
 
     @Override
+    public List<UUID> attributedSourcesWithRematchWork(Connection unitOfWork, UUID sourceId) {
+        return distinctAttributions(
+                unitOfWork,
+                "SELECT DISTINCT i.attributed_source_id FROM reconciliation.external_item i"
+                        + " WHERE i.source_id = ? AND i.attributed_source_id IS NOT NULL"
+                        + " AND" + REMATCH_PREDICATE,
+                sourceId);
+    }
+
+    @Override
     public List<ResidualItem> lockRematchCandidates(
-            Connection unitOfWork, UUID sourceId, int limit) {
+            Connection unitOfWork, UUID sourceId, Collection<UUID> heldAttributions,
+            int limit) {
         return lockedResiduals(
                 unitOfWork,
                 RESIDUAL_COLUMNS
-                        + " WHERE i.source_id = ? AND i.status IN ('UNMATCHED', 'PARKED')"
-                        + " AND EXISTS (SELECT 1 FROM"
-                        + " reconciliation.external_item_key ik"
-                        + " JOIN reconciliation.expectation_key ek"
-                        + " ON ek.source_id = i.source_id"
-                        + " AND ek.key_value = ik.key_value"
-                        + " JOIN reconciliation.expectation e"
-                        + " ON e.id = ek.expectation_id"
-                        + " WHERE ik.item_id = i.id"
-                        + " AND e.opened_at > COALESCE((SELECT max(d.decided_at)"
-                        + " FROM reconciliation.match_decision d"
-                        + " WHERE d.external_item_id = i.id), '-infinity'::timestamptz))"
+                        + " WHERE i.source_id = ? AND" + REMATCH_PREDICATE + HELD_ATTRIBUTION
                         + " ORDER BY i.line_no, i.id LIMIT ? FOR UPDATE OF i",
                 sourceId,
+                heldAttributions,
                 limit);
+    }
+
+    private static List<UUID> distinctAttributions(
+            Connection unitOfWork, String sql, UUID sourceId) {
+        try (PreparedStatement read = unitOfWork.prepareStatement(sql)) {
+            read.setObject(1, sourceId);
+            try (ResultSet rows = read.executeQuery()) {
+                List<UUID> attributions = new ArrayList<>();
+                while (rows.next()) {
+                    attributions.add(rows.getObject("attributed_source_id", UUID.class));
+                }
+                return List.copyOf(attributions);
+            }
+        } catch (SQLException failure) {
+            throw new ReconciliationStorageException(
+                    "could not read the worklist's attributed sources", failure);
+        }
     }
 
     @Override
@@ -680,17 +750,20 @@ public final class JdbcMatchingStore implements MatchingStore {
         ExternalLineType lineType;
         ExpectationDirection direction;
         Money amount;
-        com.finapp.ledger.AccountPurpose positionPurpose;
+        Optional<com.finapp.ledger.AccountPurpose> positionPurpose;
+        Optional<UUID> attributedSourceId;
         LocalDate businessDate;
         Optional<LocalDate> settlementDate;
+        Optional<LocalDate> valueDate;
         byte[] fingerprint;
         long sourceSequence;
         final Map<ItemKeyKind, String> keys = new EnumMap<>(ItemKeyKind.class);
 
         ChunkItem build() {
             return new ChunkItem(
-                    id, lineNo, lineType, direction, amount, positionPurpose, businessDate,
-                    settlementDate, fingerprint, sourceSequence, keys);
+                    id, lineNo, lineType, direction, amount, positionPurpose,
+                    attributedSourceId, businessDate, settlementDate, valueDate, fingerprint,
+                    sourceSequence, keys);
         }
     }
 
@@ -775,6 +848,42 @@ public final class JdbcMatchingStore implements MatchingStore {
     }
 
     @Override
+    public List<UUID> groupCandidates(
+            Connection unitOfWork,
+            UUID sourceId,
+            ExpectationKind kind,
+            ExpectationDirection direction,
+            CurrencyCode currency,
+            LocalDate expectedBy) {
+        try (PreparedStatement read =
+                unitOfWork.prepareStatement(
+                        "SELECT id FROM reconciliation.expectation"
+                                + " WHERE source_id = ? AND kind = ? AND direction = ?"
+                                + " AND currency = ? AND expected_by = ?"
+                                // Untouched: nothing allocated, nothing resolved - an
+                                // allocation's own transaction sees its uncommitted update.
+                                + " AND status = 'OPEN' AND allocated_minor = 0"
+                                + " AND resolved_minor = 0"
+                                + " ORDER BY id")) {
+            read.setObject(1, sourceId);
+            read.setString(2, kind.name());
+            read.setString(3, direction.name());
+            read.setString(4, currency.code());
+            read.setObject(5, expectedBy);
+            try (ResultSet rows = read.executeQuery()) {
+                List<UUID> candidates = new ArrayList<>();
+                while (rows.next()) {
+                    candidates.add(rows.getObject("id", UUID.class));
+                }
+                return List.copyOf(candidates);
+            }
+        } catch (SQLException failure) {
+            throw new ReconciliationStorageException(
+                    "could not read the value-date group's candidates", failure);
+        }
+    }
+
+    @Override
     public List<MatchEngine.HitFacts> lockExpectations(
             Connection unitOfWork,
             Collection<UUID> expectationIds,
@@ -815,7 +924,7 @@ public final class JdbcMatchingStore implements MatchingStore {
                                     Math.max(0L, remainder),
                                     row.getTimestamp("opened_at").toInstant(),
                                     row.getObject("expected_by", LocalDate.class),
-                                    reachedBy.get(id),
+                                    Optional.ofNullable(reachedBy.get(id)),
                                     row.getString("operation_ref")));
                 }
             } catch (SQLException failure) {
@@ -901,7 +1010,8 @@ public final class JdbcMatchingStore implements MatchingStore {
             for (MatchEngine.HitFacts candidate : candidates) {
                 insert.setObject(1, decisionId);
                 insert.setObject(2, candidate.expectationId());
-                insert.setString(3, candidate.reachedBy().name());
+                // NULL exactly for a value-date group's candidate (V008).
+                insert.setString(3, candidate.reachedBy().map(Enum::name).orElse(null));
                 insert.setLong(4, candidate.amount().minorUnits());
                 insert.setString(5, candidate.amount().currency().code());
                 insert.setInt(6, candidate.amount().scale());
@@ -1248,6 +1358,25 @@ public final class JdbcMatchingStore implements MatchingStore {
     }
 
     @Override
+    public UUID expectationRuleSet(Connection unitOfWork, UUID expectationId) {
+        try (PreparedStatement read =
+                unitOfWork.prepareStatement(
+                        "SELECT rule_set_id FROM reconciliation.expectation WHERE id = ?")) {
+            read.setObject(1, expectationId);
+            try (ResultSet row = read.executeQuery()) {
+                if (!row.next()) {
+                    throw new ReconciliationStorageException(
+                            "expectation " + expectationId + " vanished under its lock");
+                }
+                return row.getObject("rule_set_id", UUID.class);
+            }
+        } catch (SQLException failure) {
+            throw new ReconciliationStorageException(
+                    "could not read the expectation's rule set", failure);
+        }
+    }
+
+    @Override
     public long breakResidualVersion(Connection unitOfWork, UUID breakId) {
         try (PreparedStatement read =
                 unitOfWork.prepareStatement(
@@ -1298,6 +1427,9 @@ public final class JdbcMatchingStore implements MatchingStore {
                                 + " ON i.id = d.external_item_id"
                                 + " WHERE d.run_id = ? AND d.outcome = 'CHECKED'"
                                 + " AND d.fee_reported_minor IS NOT NULL"
+                                // The per-batch bound is the processing fee's alone: a
+                                // bank fee is judged per line (P8-TSK-016).
+                                + " AND i.line_type = 'PROCESSING_FEE'"
                                 + " ORDER BY i.line_no")) {
             read.setObject(1, runId);
             try (ResultSet rows = read.executeQuery()) {

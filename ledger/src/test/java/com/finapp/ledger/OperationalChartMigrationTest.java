@@ -39,7 +39,9 @@ class OperationalChartMigrationTest {
                     // P8-TSK-009: the counterparties' processing costs, with hop 1's poster.
                     "db/migration/ledger/V016__processing_costs_joins_the_chart.sql",
                     // P8-TSK-015: the resolution's P&L accounts, with their poster.
-                    "db/migration/ledger/V017__reconciliation_losses_and_gains_join_the_chart.sql");
+                    "db/migration/ledger/V017__reconciliation_losses_and_gains_join_the_chart.sql",
+                    // P8-TSK-016: the platform's cash, with its one poster.
+                    "db/migration/ledger/V018__cash_at_bank_joins_the_chart.sql");
 
     /**
      * The seed's type decisions, pinned as its contract. Changing one is a reclassification of
@@ -55,6 +57,9 @@ class OperationalChartMigrationTest {
                     // ADR-0062 §4: the net receivable on the instant scheme - pay-ins
                     // debit it, withdrawals credit it, Phase 8 discharges it per cycle.
                     Map.entry(AccountPurpose.INSTANT_CLEARING, AccountType.ASSET),
+                    // ADR-0065 section 3 (P8-TSK-016): the cash at the settlement bank -
+                    // debited by a statement's net credits, credited by its net debits.
+                    Map.entry(AccountPurpose.CASH_AT_BANK, AccountType.ASSET),
                     // ADR-0061 §3: a claim - on the network by representment, or on the
                     // counterparty for a parked share - growing on the debit side.
                     Map.entry(AccountPurpose.CHARGEBACK_RECOVERABLE, AccountType.ASSET),

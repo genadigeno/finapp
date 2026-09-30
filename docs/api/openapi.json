@@ -4331,6 +4331,10 @@
           "sourceCode": {
             "type": "string"
           },
+          "statementSequence": {
+            "format": "int64",
+            "type": "integer"
+          },
           "status": {
             "type": "string"
           },
@@ -4608,6 +4612,33 @@
           },
           "status": {
             "type": "string"
+          }
+        },
+        "type": "object"
+      },
+      "CashRow": {
+        "properties": {
+          "chainClosing": {
+            "type": "string"
+          },
+          "currency": {
+            "type": "string"
+          },
+          "difference": {
+            "type": "string"
+          },
+          "explained": {
+            "type": "boolean"
+          },
+          "latestSequence": {
+            "format": "int64",
+            "type": "integer"
+          },
+          "ledgerBalance": {
+            "type": "string"
+          },
+          "unbroken": {
+            "type": "boolean"
           }
         },
         "type": "object"
@@ -6465,6 +6496,12 @@
       },
       "PositionsReport": {
         "properties": {
+          "cash": {
+            "items": {
+              "$ref": "#/components/schemas/CashRow"
+            },
+            "type": "array"
+          },
           "positions": {
             "items": {
               "$ref": "#/components/schemas/PositionRow"

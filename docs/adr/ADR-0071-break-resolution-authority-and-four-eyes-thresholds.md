@@ -92,7 +92,7 @@ The three designs weighed at the transition differed on exactly the undefined pa
    **The Resolution** is an aggregate of `reconciliation`: `reconciliation.resolution` plus
    `resolution_event` (reconciliation `V006`, `P8-TSK-012` for the platform's kind,
    `P8-TSK-015` for the person's kinds; the `REPUDIATE_BATCH` kind and its batch subject arrive
-   with reconciliation `V009`, `P8-TSK-023`, beside the external item's `REPUDIATED`, its
+   with reconciliation `V010`, `P8-TSK-023`, beside the external item's `REPUDIATED`, its
    `MATCHED → UNMATCHED` reopening (a bank item of another batch whose allocation named the
    repudiated batch's remittance expectation), the expectation's reopening edges and the
    suspense item's `REPUDIATION` origin — each state with its producer). Its subject is
@@ -622,7 +622,7 @@ stored resolution, ADR-0069's amendment), `INV-REC-06`, `INV-REC-09`, `INV-SET-0
   `RECONCILIATION_LOSSES` (EXPENSE) and `RECONCILIATION_GAINS` (REVENUE) per currency, both
   reconciled positions (the binding function's list re-stated), so only an approved resolution
   posts there. Reconciliation `V007` regenerates the kind, status and reason `CHECK`s from the
-  enums (every kind but `REPUDIATE_BATCH`, every code but `EVIDENCE_REPUDIATED` — `V009`'s),
+  enums (every kind but `REPUDIATE_BATCH`, every code but `EVIDENCE_REPUDIATED` — `V010`'s, as renumbered by `P8-TSK-016`),
   adds the generated (kind, reason) pairing, §3's derived `four_eyes`, the one-to-one ledger
   binding (a posting kind names its proposal, an approved one its entry) and each kind's operand,
   and replaces `V006`'s blanket freeze with the machine's every-writer trigger (payload frozen,
@@ -676,7 +676,7 @@ stored resolution, ADR-0069's amendment), `INV-REC-06`, `INV-REC-09`, `INV-SET-0
   `reconciliation.BreakResolved` extended to the person's kinds, and `reconciliationAttributed`
   with the customer statement's `RECONCILIATION_ATTRIBUTION` label, point 2). `P8-TSK-019` (the
   payout return's fallback). `P8-TSK-020` (unmatched confirmations released only by resolution).
-  `P8-TSK-023` (`REPUDIATE_BATCH`; reconciliation `V009` admitting the kind, the batch subject and
+  `P8-TSK-023` (`REPUDIATE_BATCH`; reconciliation `V010` admitting the kind, the batch subject and
   its one-live unique, the external item's `REPUDIATED` and its `MATCHED → UNMATCHED` reopening
   (a bank item of another batch), the expectation's reopening edges, and the suspense item's
   `REPUDIATION` origin).

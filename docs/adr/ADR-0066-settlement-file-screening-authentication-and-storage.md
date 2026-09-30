@@ -469,6 +469,22 @@ ceiling), ADR-0046 (no connection across a pull), ADR-0008 (the collector SPI).
   *(The decline was listed under `P8-TSK-003` until the Phase 7 → 8 transition's consistency
   review, B4. It needs the `REJECTED` state, which arrives with `P8-TSK-008`'s settlement
   `V003`, so the backlog moved it there.)*
+- `P8-TSK-016` — **implemented** (2026-09-30): `SIM_STATEMENT_TAGGED` v1, MT940-shaped
+  (`:20:`, `:25:`, `:28C:`, `:60F:`, `:61:`, `:86:`, `:62F:`), frozen by its golden file and
+  confined to its adapter (`SettlementVocabularyIsConfinedTest`, now per adapter). §3's field-class
+  screen holds field by field; so that an account identifier put where a reference belongs meets
+  the free-text screen, the statement and remittance reference classes themselves exclude the
+  international account shape and card-length digit runs — an IBAN in `:25:`, `:20:`, a line's
+  reference or the `:86:` narrative is refused at the door, metadata only (§7's needle,
+  `BankStatementCashDatabaseTest#theIbanNeedleReachesNoSink`). Decided here, as the backlog left
+  it: a well-shaped `:25:` that is not the reference configured for the statement's currency
+  rejects the file whole `MALFORMED` with the field `accountRef` — among §9's codes, the field
+  failing its one admitted value; no new code — the value never echoed. The configured references
+  (`finapp.settlement.bank.account-reference.*`) are construction-time configuration of a pure
+  adapter, classified `CONFIDENTIAL`. §5's "a statement sequence already accepted" is enforced
+  for any LIVE statement (`PARSED` or `ACCEPTED`): the parse's pre-check and settlement `V005`'s
+  partial unique answer `CONFLICTING_BATCH`, retained. The statement's continuity facts ride out
+  of the parse (`ParsedBatch.StatementFacts`) and are frozen with the parse statement.
 - M8.7: `P8-TSK-021` (pull acquisition, the four credentials, `pull_permit`, source silence, and
   `ProviderTransportGuard` extended to every pull source's URL (point 1); the first deferral
   candidate) and `P8-TSK-022` (readmission, including the attested readmission of an unattested

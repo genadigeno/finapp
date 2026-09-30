@@ -10,7 +10,7 @@ import java.util.stream.Collectors;
 /**
  * The eight template-bound ways a break closes (`P8-TSK-012`, ADR-0071 §2) — the closed
  * vocabulary `V006` narrowed to {@code EVIDENCED} and `V007` (`P8-TSK-015`) regenerates for
- * the person kinds; {@code REPUDIATE_BATCH} and its batch subject arrive with `-023`'s `V009`.
+ * the person kinds; {@code REPUDIATE_BATCH} and its batch subject arrive with `-023`'s `V010`.
  * Each kind carries its admitted reason codes (ADR-0071 §5's matrix, pinned per kind), whether
  * it posts through the ledger's owned adjustment, and that posting's ledger reason code.
  */
@@ -40,7 +40,7 @@ public enum ResolutionKind {
     /** An accepted batch reversed whole (`P8-TSK-023`). */
     REPUDIATE_BATCH;
 
-    /** The kinds `V007` admits: every kind but the batch subject's ({@code V009}, `-023`). */
+    /** The kinds `V007` admits: every kind but the batch subject's ({@code V010}, `-023`). */
     public static Set<ResolutionKind> admittedByV007() {
         return EnumSet.complementOf(EnumSet.of(REPUDIATE_BATCH));
     }

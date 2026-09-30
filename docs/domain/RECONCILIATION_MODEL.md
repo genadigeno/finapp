@@ -55,7 +55,7 @@ fourth proves the platform's own parking is owned.
 | Pair | Internal side | External side | Agreement means |
 |---|---|---|---|
 | **Each clearing position vs its counterparty's report** | `SETTLEMENT_CLEARING`, `INSTANT_CLEARING`, `PAYOUT_CLEARING`, each decomposed into open expectations | The reports of `simulated-psp.settlement`, `simulated-scheme.cycle-report`, `simulated-payout.settlement` | Every report line allocates to an expectation of its own position, and every expectation is allocated in full |
-| **Each counterparty's remittance vs the bank statement** | The `REMITTANCE` expectation each accepted report opens on its position | The attributed lines of `simulated-bank.statement` | The bank line equals the remittance exactly — singly, or as the whole of one value date's remittances |
+| **Each counterparty's remittance vs the bank statement** | The `REMITTANCE` expectation each accepted report opens on its position | The attributed lines of `simulated-bank.statement` | The bank line equals the remittance exactly — singly, by its `REMITTANCE_REF` judged in the attributed source's key scope, or, when its reference reaches no remittance at all, as the whole of one value date's untouched remittances of that source that no other line of the chunk claims by key; a difference is `SETTLEMENT_MISMATCH` (`REMITTANCE_DIFFERS`), never absorbed *(as built by `P8-TSK-016`)* |
 | **Cash vs the statement's closing balance** | `CASH_AT_BANK`, per currency | The closing balance of the highest-sequence accepted statement of an unbroken chain | The two are equal (the cash proof, §12) |
 | **Suspense vs its owning breaks** | `SUSPENSE_UNMATCHED`, per currency | — (internal) | The balance equals the open suspense items, gross — plus Phase 7's unmatched confirmations not yet adopted, a term that reads 0 once `P8-TSK-020` adopts them — and every item names its break (the suspense proof, §12) |
 
@@ -231,7 +231,11 @@ off and visible. The matcher reads only `ACCEPTED` batches.
   line carrying `ORIGINAL_REF`.
 - **Bank-line attribution is normalisation, not matching.** Each source declares a remittance
   pattern; a bank line is attributed to the **unique** source whose pattern its structured
-  remittance reference matches. Zero or two matches leave it unattributed.
+  remittance reference FULLY matches. Zero or two matches leave it unattributed — cash all the
+  same (the recognition debits `CASH_AT_BANK`), its value parked owned under a
+  `BANK_UNATTRIBUTED` suspense item and an `UNKNOWN_EXTERNAL` break from its transaction *(as
+  built by `P8-TSK-016`: attributed at parse, written on the line, copied to the item with the
+  attributed source's position)*.
 - **Versions are frozen.** Every file and batch records its format and version, each version is
   pinned by golden files, and a behaviour change is a new version.
 
@@ -370,7 +374,7 @@ resolution or repudiation — committed matches stand as history.
 
 1. **Decision replay** re-runs `decide` over every stored decision's candidate snapshot under its
    pinned rule set and compares outcome and allocations. It appends a `reconciliation.run_replay`
-   verdict (reconciliation `V008`, `P8-TSK-022`) — `IDENTICAL` or `DIVERGED` — and writes nothing
+   verdict (reconciliation `V009`, `P8-TSK-022`) — `IDENTICAL` or `DIVERGED` — and writes nothing
    else; `DIVERGED` raises a CRITICAL
    `PROCESSING_ERROR`. An item whose rematch is merely pending is reported `PENDING_REMATCH`, not as
    divergence.
@@ -479,7 +483,7 @@ posters, and no others:
 | `RECON_PARK` | A match decision, the grace leg or a rematch parks an item's remainder | the item's break |
 | `BANK_UNATTRIBUTED` | Bank recognition meets a line no source's pattern attributes | `UNKNOWN_EXTERNAL`, cause `BANK_LINE_UNATTRIBUTED` |
 | `UNMATCHED_CONFIRMATION` | Phase 7's unmatched pay-in confirmation, through the port; existing rows adopted by an idempotent backfill. The item keys on the parking's stored facts (payments `V023`): `named_reference`, `settlement_cycle`, `cause` and, exactly when attributed, `attempt_id` | `UNKNOWN_EXTERNAL`, cause `PARKED_ON_RECEIPT` |
-| `REPUDIATION` | An approved `REPUDIATE_BATCH`, in its approval transaction, meets a `BANK_UNATTRIBUTED` item a posting resolution had already released: the recognition's reversal (`ReversalService`, scope `ledger.reverse`, key `settlement-batch:<batchId>`) still carries that item's suspense line, which opens a new item of the opposite side. `origin_ref` is the released item's id — an item is repudiated once — and the item opens on the reversal entry's posting date. The origin is admitted by `P8-TSK-023`'s reconciliation `V009` | a new `PROCESSING_ERROR`, raised in the same transaction |
+| `REPUDIATION` | An approved `REPUDIATE_BATCH`, in its approval transaction, meets a `BANK_UNATTRIBUTED` item a posting resolution had already released: the recognition's reversal (`ReversalService`, scope `ledger.reverse`, key `settlement-batch:<batchId>`) still carries that item's suspense line, which opens a new item of the opposite side. `origin_ref` is the released item's id — an item is repudiated once — and the item opens on the reversal entry's posting date. The origin is admitted by `P8-TSK-023`'s reconciliation `V010` | a new `PROCESSING_ERROR`, raised in the same transaction |
 
 *(The Phase 7 → 8 transition's re-check, R3: the table had named three posters, while ADR-0070
 point 10 already had a repudiation open an item for value a resolution had released.)*
@@ -613,7 +617,7 @@ removes an expectation's remainder moves it to `RESOLVED_BY_ADJUSTMENT`. `RECONC
   is then re-presented and accepted normally, or readmitted when it was itself rejected
   `CONFLICTING_BATCH` against the repudiated batch (§3). These states, the `MATCHED → UNMATCHED`
   reopening, the `REPUDIATION` suspense origin and the `REPUDIATE_BATCH` kind arrive with
-  `P8-TSK-023`'s reconciliation `V009`. *(The Phase 7 → 8 transition's consistency review, A8, A9
+  `P8-TSK-023`'s reconciliation `V010`. *(The Phase 7 → 8 transition's consistency review, A8, A9
   and A11; its re-check, R3.)*
 - **Who.** `RECONCILIATION_RESOLVE` is held by `RECONCILIATION_OPERATOR`; `RECONCILIATION_ADMINISTER`
   — rule sets, reprocessing, requeue, readmission, backfill — by `RECONCILIATION_CONTROLLER`. The

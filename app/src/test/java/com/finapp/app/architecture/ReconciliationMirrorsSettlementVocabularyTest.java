@@ -40,15 +40,15 @@ class ReconciliationMirrorsSettlementVocabularyTest {
     }
 
     @Test
-    @DisplayName("the allocating split is exactly the fee's exclusion (ADR-0065 §2)")
+    @DisplayName("the allocating split is exactly the fees' exclusion (ADR-0065 §§2-3)")
     void theAllocatingSplitIsTheFee() {
         assertThat(
                         Arrays.stream(ExternalLineType.values())
                                 .filter(type -> !type.allocating())
                                 .map(Enum::name))
-                .as("a non-allocating line's effect is the recognition entry itself; today"
-                        + " that is the processing fee alone (bank fees join with -016)")
-                .containsExactly("PROCESSING_FEE");
+                .as("a non-allocating line's effect is the recognition entry itself: the"
+                        + " processing fee's at hop 1, the bank's fee at hop 2 (P8-TSK-016)")
+                .containsExactly("PROCESSING_FEE", "BANK_FEE");
     }
 
     private static java.util.Set<String> names(Enum<?>[] values) {

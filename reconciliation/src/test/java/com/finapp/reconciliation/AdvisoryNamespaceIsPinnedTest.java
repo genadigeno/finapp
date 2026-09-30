@@ -25,6 +25,8 @@ class AdvisoryNamespaceIsPinnedTest {
         assertThat(Matching.ADVISORY_NAMESPACE).isEqualTo(4);
         assertThat(Matching.CLAIM_SQL)
                 .contains("pg_try_advisory_xact_lock(4, hashtext(?::text))");
+        // A bank leg's attributed report sources are tried through CLAIM_SQL itself
+        // (P8-TSK-016): the same namespace by construction.
         // The park path's lock is an inline statement; the pin reads the source so the
         // two paths cannot drift apart silently.
         Path suspense =

@@ -284,7 +284,11 @@ public final class JdbcResolutionStore implements ResolutionStore {
         try (PreparedStatement read =
                 unitOfWork.prepareStatement(
                         "SELECT id, status FROM reconciliation.break WHERE expectation_id = ?"
-                                + " AND type IN ('AMOUNT_MISMATCH', 'MISSING_EXTERNAL')"
+                                // A remittance's shortfall is SETTLEMENT_MISMATCH
+                                // (REMITTANCE_DIFFERS, P8-TSK-016) - the one SETTLEMENT_MISMATCH
+                                // an expectation subject carries.
+                                + " AND type IN ('AMOUNT_MISMATCH', 'SETTLEMENT_MISMATCH',"
+                                + " 'MISSING_EXTERNAL')"
                                 + " AND status <> 'RESOLVED' AND id <> ?"
                                 + " ORDER BY id FOR UPDATE")) {
             read.setObject(1, expectationId);
@@ -432,6 +436,9 @@ public final class JdbcResolutionStore implements ResolutionStore {
                                 + " JOIN reconciliation.match_decision d"
                                 + " ON d.id = c.decision_id"
                                 + " WHERE d.external_item_id = ?"
+                                // A value-date group's candidates carry no key (P8-TSK-016):
+                                // a manual match stands in for a keyed engine only.
+                                + " AND c.key_kind IS NOT NULL"
                                 + " ORDER BY d.decided_at, c.expectation_id",
                         externalItemId,
                         row ->

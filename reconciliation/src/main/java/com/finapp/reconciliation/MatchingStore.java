@@ -62,15 +62,24 @@ public interface MatchingStore {
 
     // ------------------------------------------------------------------ the chunk
 
+    /**
+     * One item as the matcher reads it. {@code positionPurpose} is empty for a bank fee and an
+     * unattributed bank line (`P8-TSK-016`, `V008`'s position rule); {@code attributedSourceId}
+     * is present exactly for an attributed bank credit or debit — the source whose remittance
+     * pattern claimed it, and so the KEY SCOPE its expectation keys are judged in (ADR-0068
+     * §1). The item's own keys stay stored under its own source.
+     */
     record ChunkItem(
             UUID id,
             long lineNo,
             ExternalLineType lineType,
             ExpectationDirection direction,
             Money amount,
-            com.finapp.ledger.AccountPurpose positionPurpose,
+            Optional<com.finapp.ledger.AccountPurpose> positionPurpose,
+            Optional<UUID> attributedSourceId,
             LocalDate businessDate,
             Optional<LocalDate> settlementDate,
+            Optional<LocalDate> valueDate,
             byte[] fingerprint,
             long sourceSequence,
             Map<ItemKeyKind, String> keys) {
@@ -84,9 +93,35 @@ public interface MatchingStore {
         public byte[] fingerprint() {
             return fingerprint.clone();
         }
+
+        /**
+         * The source whose expectation keys this item is judged against: its attributed
+         * source when a remittance pattern claimed it, else its own ({@code ownSource}, the
+         * run's).
+         */
+        public UUID keyScope(UUID ownSource) {
+            return attributedSourceId.orElse(ownSource);
+        }
+
+        /** The date a value-date group judges: the line's value date, else its business day. */
+        public LocalDate groupDate() {
+            return valueDate.orElse(businessDate);
+        }
+
+        /** Identifiers only — an amount in a log line is `INV-AUD-02`'s to refuse. */
+        @Override
+        public String toString() {
+            return "ChunkItem[" + id + ", " + lineType + "]";
+        }
     }
 
-    /** The run's next items past {@code cursor}, in {@code line_no} order, keys joined. */
+    /**
+     * The run's next {@code PENDING} items past {@code cursor}, in {@code line_no} order, keys
+     * joined. An item born disposed — an unattributed bank line is born {@code PARKED} in the
+     * acceptance transaction that births the run (`P8-TSK-016`) — is never read, so never
+     * decided; a run whose remaining items are all disposed reads an empty chunk and
+     * completes.
+     */
     List<ChunkItem> chunkItems(Connection unitOfWork, UUID runId, long cursor, int limit);
 
     /** Whether an identical fingerprint stands earlier in claimant order (ADR-0068 §4). */
@@ -105,7 +140,23 @@ public interface MatchingStore {
     Optional<Map.Entry<KeyKind, String>> aliasAnchor(
             Connection unitOfWork, UUID sourceId, KeyKind kind, String value);
 
-    /** Locks the expectations sorted by id and reads the facts the engine snapshots. */
+    /**
+     * Untouched {@code OPEN} expectations of one source, kind, direction and currency promised
+     * for {@code expectedBy} — nothing allocated and nothing resolved — sorted by id: a
+     * value-date group's candidates (`P8-TSK-016`). Lock-free; the caller locks and re-reads.
+     */
+    List<UUID> groupCandidates(
+            Connection unitOfWork,
+            UUID sourceId,
+            ExpectationKind kind,
+            ExpectationDirection direction,
+            com.finapp.sharedkernel.money.CurrencyCode currency,
+            LocalDate expectedBy);
+
+    /**
+     * Locks the expectations sorted by id and reads the facts the engine snapshots; an id
+     * {@code reachedBy} does not name was reached by no key (a value-date group's candidate).
+     */
     List<MatchEngine.HitFacts> lockExpectations(
             Connection unitOfWork, Collection<UUID> expectationIds, Map<UUID, KeyKind> reachedBy);
 
@@ -244,6 +295,9 @@ public interface MatchingStore {
     /** The break's staleness counter as stored — frozen onto the resolution it closes. */
     long breakResidualVersion(Connection unitOfWork, UUID breakId);
 
+    /** The expectation's pinned rule set — the one its own breaks are judged under. */
+    UUID expectationRuleSet(Connection unitOfWork, UUID expectationId);
+
     /**
      * The one open break of this type on the expectation, LOCKED — taken before the
      * allocation that might settle it, so the evidence write holds the §3 break-first
@@ -263,20 +317,43 @@ public interface MatchingStore {
     List<UUID> sourcesWithExpiredGrace(Connection unitOfWork);
 
     /**
+     * The distinct attributed sources among the source's expired items — read lock-free, so
+     * the leg takes their advisories before any row lock (`P8-TSK-016`).
+     */
+    List<UUID> attributedSourcesWithExpiredGrace(Connection unitOfWork, UUID sourceId);
+
+    /**
      * The source's expired {@code UNMATCHED} items, LOCKED, oldest {@code grace_until}
      * first — each judged on its locked row (ADR-0073 §7: a candidate committed by a
-     * holder of the item's share lock is found and allocated, never parked beside).
+     * holder of the item's share lock is found and allocated, never parked beside). Only
+     * unattributed items and items attributed to one of {@code heldAttributions} are read: an
+     * item attributed to a source whose advisory the leg does not hold waits for the next
+     * batch.
      */
-    List<ResidualItem> lockExpiredItems(Connection unitOfWork, UUID sourceId, int limit);
+    List<ResidualItem> lockExpiredItems(
+            Connection unitOfWork, UUID sourceId, Collection<UUID> heldAttributions, int limit);
 
-    /** Sources holding a residual item whose keys reach an expectation opened later. */
+    /**
+     * Sources holding a residual item whose keys reach an expectation opened later, or an
+     * attributed {@code UNMATCHED} item for which a value-date group candidate opened later.
+     */
     List<UUID> sourcesWithRematchWork(Connection unitOfWork);
+
+    /** The distinct attributed sources among the source's rematch candidates — lock-free. */
+    List<UUID> attributedSourcesWithRematchWork(Connection unitOfWork, UUID sourceId);
 
     /**
      * The source's {@code UNMATCHED} or {@code PARKED} items whose keys now reach an
-     * expectation opened AFTER their latest decision, LOCKED, oldest first.
+     * expectation opened AFTER their latest decision — in their KEY SCOPE (`P8-TSK-016`: an
+     * attributed item's keys are judged under its attributed source) — and the attributed
+     * {@code UNMATCHED} items for which an untouched value-date group candidate opened after
+     * their latest decision, LOCKED, oldest first. An item owning a suspense item of another
+     * origin than {@code RECON_PARK} — an unattributed bank line's — is never read: it has no
+     * park to invert and leaves by a person's resolution. {@code heldAttributions} as for
+     * {@link #lockExpiredItems}.
      */
-    List<ResidualItem> lockRematchCandidates(Connection unitOfWork, UUID sourceId, int limit);
+    List<ResidualItem> lockRematchCandidates(
+            Connection unitOfWork, UUID sourceId, Collection<UUID> heldAttributions, int limit);
 
     /** The item's conditional exit to {@code MATCHED} from the named non-terminal state. */
     boolean markItemMatchedFrom(
@@ -345,7 +422,11 @@ public interface MatchingStore {
     /** The item's stored status, read on the already-locked row. */
     String itemStatus(Connection unitOfWork, UUID itemId);
 
-    /** One fee decision per row of the run, in claimant order — the per-batch fold. */
+    /**
+     * One {@code PROCESSING_FEE} decision per row of the run, in claimant order — the per-batch
+     * fold. A bank fee is judged per line only (`P8-TSK-016`: the bank's terms are flat, and no
+     * batch bound is pinned for them), so it never enters the fold.
+     */
     record FeeDecisionRow(
             UUID itemId,
             long lineNo,
@@ -390,6 +471,7 @@ public interface MatchingStore {
             Instant decidedAt,
             LocalDate decidedOn) {}
 
+    /** {@code keyKind} is null exactly for a value-date group's candidate (`V008`). */
     record CandidateRow(
             UUID expectationId,
             String keyKind,

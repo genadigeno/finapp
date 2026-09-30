@@ -12,8 +12,9 @@ import java.util.stream.Collectors;
  * <p>{@link #allocating()} is the matcher's and the proof's split (ADR-0065 §2,
  * `INV-REC-06`): a {@code PROCESSING_FEE} line's effect IS the recognition entry, so it
  * never allocates against an expectation and never enters the position identity's items
- * term — it takes the {@code CHECKED} path at matching. Everything else asserts value
- * already in the position and allocates.
+ * term — it takes the {@code CHECKED} path at matching. A {@code BANK_FEE} is the same fact at
+ * the bank (`P8-TSK-016`: posted DR {@code PROCESSING_COSTS} at the statement's recognition).
+ * Everything else asserts value already in the position and allocates.
  */
 public enum ExternalLineType {
     CAPTURE,
@@ -24,14 +25,35 @@ public enum ExternalLineType {
     PROCESSING_FEE,
     COUNTERPARTY_ADJUSTMENT,
     OTHER_IN,
-    OTHER_OUT;
+    OTHER_OUT,
+    BANK_CREDIT,
+    BANK_DEBIT,
+    BANK_FEE;
 
-    /** Whether this line claims value in the position — false exactly for the fee. */
+    /** Whether this line claims value in the position — false exactly for the fees. */
     public boolean allocating() {
-        return this != PROCESSING_FEE;
+        return this != PROCESSING_FEE && this != BANK_FEE;
     }
 
-    /** The `V003` {@code CHECK}'s value list — reconciled by the migration test. */
+    /** Whether this is a bank statement's line (`P8-TSK-016`). */
+    public boolean isBankLine() {
+        return this == BANK_CREDIT || this == BANK_DEBIT || this == BANK_FEE;
+    }
+
+    /** The report vocabulary `V003` admitted; the bank members arrived with `V008`. */
+    public static java.util.Set<ExternalLineType> reportVocabulary() {
+        return java.util.EnumSet.range(CAPTURE, OTHER_OUT);
+    }
+
+    /** A subset's {@code CHECK} value list, in declaration order. */
+    public static String sqlValueList(java.util.Set<ExternalLineType> members) {
+        return Arrays.stream(values())
+                .filter(members::contains)
+                .map(value -> "'" + value.name() + "'")
+                .collect(Collectors.joining(", "));
+    }
+
+    /** The whole {@code CHECK} value list (`V008`) — reconciled by the migration test. */
     public static String sqlValueList() {
         return Arrays.stream(values())
                 .map(value -> "'" + value.name() + "'")

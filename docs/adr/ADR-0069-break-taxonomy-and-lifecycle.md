@@ -615,6 +615,23 @@ postings (ADR-0071) move money, each in a transaction that names its break.
   a design input to `P8-TSK-015`'s `V007`. The trace walks point 7's chain by stored identifiers
   alone, bounded at 500 steps; a merchant payout's statements (`merchant.payout_evidence`) are not
   walked — the trace names the operation and stops (recorded).
+- `P8-TSK-016` — **implemented** (2026-09-30): the statement's detectors, raised in its
+  acceptance through `AcceptedBatchIntake`. `UNKNOWN_EXTERNAL` (`BANK_LINE_UNATTRIBUTED`) on each
+  unattributed credit or debit's item, owning its `BANK_UNATTRIBUTED` suspense item (HIGH; CRITICAL
+  for a debit, by the severity seat's direction rule). `SETTLEMENT_MISMATCH` on the statement's RUN
+  — the run names its batch, so no subject column was added (the lifecycle's open note confirmed):
+  `STATEMENT_GAP` for a missing predecessor (value the opening) or a predecessor's closing unequal to
+  the opening (value the difference), `OPENING_BALANCE` for a non-zero first opening, both CRITICAL,
+  never parked, never posted around. §8's third evidence form is built: a `STATEMENT_GAP` whose
+  missing statement is later accepted and stitches (its closing the successor's opening) closes
+  `EVIDENCED`, the resolution naming the filling statement's batch with no decision
+  (`decision_id` NULL; `INV-REC-02` widened with provenance); a fill that does not stitch leaves it
+  open, and a mis-stitched opening has nothing to fill it until `P8-TSK-023`'s repudiation. The
+  deciding chunk raises `REMITTANCE_DIFFERS` (ADR-0068's note); the expectation-side break is
+  stamped with the EXPECTATION's source and rule set, so every open break on one remainder —
+  ageing's `MISSING_EXTERNAL` included — answers to one advisory, and the resolution machine's
+  sibling closure treats it as `AMOUNT_MISMATCH`'s peer. Recorded minors: a gap raised at |opening|
+  keeps that value when a non-stitching fill arrives (nothing re-states a frozen value).
 - `P8-TSK-011` (the definitive classes, errored items, blocked runs), `P8-TSK-012` (`FEE_MISMATCH`,
   `CORRECTION` and the `EVIDENCED` resolution row, reconciliation `V006`, and the first
   `reconciliation.BreakResolved`, for `EVIDENCED`), `P8-TSK-013` (grace, ageing, rematch, severity

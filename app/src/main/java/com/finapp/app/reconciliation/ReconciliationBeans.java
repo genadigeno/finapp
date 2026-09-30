@@ -137,6 +137,19 @@ public class ReconciliationBeans {
                 postingService, ledgerAccountStore, idGenerator);
     }
 
+    /**
+     * Statement continuity (`P8-TSK-016`, {@code INV-SET-06}): judged inside each bank
+     * statement's acceptance by the intake.
+     */
+    @Bean
+    com.finapp.reconciliation.StatementChain statementChain(
+            com.finapp.reconciliation.BreakRegister breakRegister,
+            com.finapp.reconciliation.Resolutions resolutions,
+            IdGenerator idGenerator) {
+        return new com.finapp.reconciliation.StatementChain(
+                breakRegister, resolutions, idGenerator);
+    }
+
     /** The key-collision leg (`P8-TSK-010`); `P8-TSK-013`'s sweep schedules it. */
     @Bean
     com.finapp.reconciliation.KeyCollisionBreaks keyCollisionBreaks(

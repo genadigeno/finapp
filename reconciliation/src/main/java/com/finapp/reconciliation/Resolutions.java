@@ -22,13 +22,19 @@ public interface Resolutions {
      * One evidence-closure's facts. {@code explained} is the value the correction
      * explained (frozen as the resolution's amount); {@code journalEntryId} is the
      * offset's unpark entry, absent for a pure top-up allocation.
+     *
+     * <p>The evidence is named exactly once: the match decision that explained the break, or —
+     * for a statement gap the missing statement filled (`P8-TSK-016`, {@code INV-SET-06}) — the
+     * filling statement's batch, since no decision is made there (the database column
+     * {@code decision_id} is nullable for exactly this).
      */
     record Evidence(
             UUID resolutionId,
             UUID breakId,
             Money explained,
             long residualVersion,
-            UUID decisionId,
+            Optional<UUID> decisionId,
+            Optional<UUID> fillingStatementId,
             Optional<UUID> parkId,
             Optional<UUID> offsetItemId,
             Optional<UUID> journalEntryId,
@@ -42,6 +48,12 @@ public interface Resolutions {
             Objects.requireNonNull(breakId, "breakId must not be null");
             Objects.requireNonNull(explained, "explained must not be null");
             Objects.requireNonNull(decisionId, "decisionId must not be null");
+            Objects.requireNonNull(fillingStatementId, "fillingStatementId must not be null");
+            if (decisionId.isPresent() == fillingStatementId.isPresent()) {
+                throw new IllegalArgumentException(
+                        "an evidence closure names its decision or its filling statement,"
+                                + " exactly one");
+            }
             Objects.requireNonNull(parkId, "parkId must not be null");
             Objects.requireNonNull(offsetItemId, "offsetItemId must not be null");
             Objects.requireNonNull(journalEntryId, "journalEntryId must not be null");
@@ -53,6 +65,26 @@ public interface Resolutions {
                 throw new IllegalArgumentException(
                         "the explained value is an absolute fact of the closure");
             }
+        }
+
+        /** A matcher's closure — its decision explained the break (`P8-TSK-012`'s shape). */
+        public Evidence(
+                UUID resolutionId,
+                UUID breakId,
+                Money explained,
+                long residualVersion,
+                UUID decisionId,
+                Optional<UUID> parkId,
+                Optional<UUID> offsetItemId,
+                Optional<UUID> journalEntryId,
+                UUID ruleSetId,
+                Actor actor,
+                Instant at,
+                CorrelationId correlation) {
+            this(resolutionId, breakId, explained, residualVersion,
+                    Optional.of(Objects.requireNonNull(decisionId, "decisionId must not be null")),
+                    Optional.empty(), parkId, offsetItemId, journalEntryId, ruleSetId, actor, at,
+                    correlation);
         }
     }
 

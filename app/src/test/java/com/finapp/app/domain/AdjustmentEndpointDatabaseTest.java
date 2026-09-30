@@ -665,6 +665,67 @@ class AdjustmentEndpointDatabaseTest {
     }
 
     @Test
+    @DisplayName("CASH_AT_BANK joined the closed set with its one poster (P8-TSK-016, ledger"
+            + " V018, INV-SET-06): cash is never adjusted to fit the statement - a MANUAL line"
+            + " is 422 at the door and refused by the re-stated trigger for a raw writer")
+    void cashAtBankIsClosedToFreeAdjustments() throws Exception {
+        Operator initiator = givenAnOperator();
+        LedgerAccount wallet = givenAWallet();
+        LedgerAccount cash;
+        try (Connection app = DatabaseRoles.application()) {
+            cash = accounts.findOperational(app, AccountPurpose.CASH_AT_BANK, USD).orElseThrow();
+        }
+
+        // The domain rank, through the door: cash moves only on the bank's own statement.
+        String onCash =
+                "{\"postingDate\":\"2026-09-29\",\"valueDate\":\"2026-09-29\","
+                        + "\"reference\":\"adj-cash-probe\",\"reason\":\"free cash probe\","
+                        + "\"lines\":[" + line(cash, "DEBIT", "5.00") + ","
+                        + line(wallet, "CREDIT", "5.00") + "]}";
+        HttpResponse<String> refused = post(onCash, initiator.token(), "adj-" + IDS.next());
+        assertThat(refused.statusCode()).isEqualTo(422);
+        assertThat(refused.body())
+                .contains("ledger.AdjustmentOnReconciledPosition")
+                .doesNotContain(cash.id().value().toString());
+
+        // The database rank, past every domain guard: V018's re-stated trigger refuses a raw
+        // MANUAL line on the cash account.
+        try (Connection app = DatabaseRoles.application()) {
+            app.setAutoCommit(false);
+            UUID proposal = UUID.fromString(IDS.next().toString());
+            try (PreparedStatement head =
+                    app.prepareStatement(
+                            "INSERT INTO ledger.adjustment_proposal (id, status,"
+                                    + " posting_date, value_date, reference, reason,"
+                                    + " proposed_by, proposed_at, reason_code, origin)"
+                                    + " VALUES (?, 'PROPOSED', '2026-09-29', '2026-09-29',"
+                                    + " 'raw-cash-probe', 'raw probe', 'op-raw', now(),"
+                                    + " 'MANUAL_CORRECTION', 'MANUAL')")) {
+                head.setObject(1, proposal);
+                head.executeUpdate();
+            }
+            assertThatThrownBy(
+                            () -> {
+                                try (PreparedStatement raw =
+                                        app.prepareStatement(
+                                                "INSERT INTO ledger.adjustment_proposal_line"
+                                                        + " (proposal_id, seq,"
+                                                        + " ledger_account_id, direction,"
+                                                        + " amount_minor, currency, scale)"
+                                                        + " VALUES (?, 0, ?, 'DEBIT', 500,"
+                                                        + " 'USD', 2)")) {
+                                    raw.setObject(1, proposal);
+                                    raw.setObject(2, cash.id().value());
+                                    raw.executeUpdate();
+                                }
+                            })
+                    .isInstanceOf(SQLException.class)
+                    .hasMessageContaining("closed to free adjustments");
+            app.rollback();
+        }
+    }
+
+    @Test
     @DisplayName("each door refuses the other origin's proposals: generic approval and"
             + " DELETE answer 409 on a RECONCILIATION proposal - ten racers, ten refusals,"
             + " no entry - and the owned methods refuse a MANUAL one (ADR-0071 section 6)")

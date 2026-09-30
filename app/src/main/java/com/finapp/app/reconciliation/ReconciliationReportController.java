@@ -69,7 +69,23 @@ public class ReconciliationReportController {
             String openItems,
             long openItemCount) {}
 
-    public record PositionsReport(List<PositionRow> positions, boolean truncated) {}
+    /**
+     * One currency's cash row (`P8-TSK-016`, {@code INV-SET-06}): {@code CASH_AT_BANK}'s balance,
+     * the head closing of the currency's statement chain, their difference, the latest accepted
+     * sequence, and whether the chain is unbroken and explains the balance.
+     */
+    public record CashRow(
+            String currency,
+            String ledgerBalance,
+            String chainClosing,
+            String difference,
+            long latestSequence,
+            boolean unbroken,
+            boolean explained) {}
+
+    /** The positions, and — added at the end (ADR-0015: additive) — the cash rows. */
+    public record PositionsReport(
+            List<PositionRow> positions, boolean truncated, List<CashRow> cash) {}
 
     /** The positions report — audited per serving, in the reading's own transaction. */
     @GetMapping("/positions")
@@ -143,7 +159,28 @@ public class ReconciliationReportController {
                                                         .toPlainString(),
                                                 verdict.openItemCount()))
                         .toList();
-        return new PositionsReport(rows, report.verdicts().size() > BOUND);
+        List<CashRow> cash =
+                report.cashVerdicts().stream()
+                        .limit(BOUND)
+                        .map(
+                                verdict ->
+                                        new CashRow(
+                                                verdict.currency().code(),
+                                                verdict.ledgerBalance()
+                                                        .toBigDecimal()
+                                                        .toPlainString(),
+                                                verdict.chainClosing()
+                                                        .toBigDecimal()
+                                                        .toPlainString(),
+                                                verdict.ledgerBalance()
+                                                        .minus(verdict.chainClosing())
+                                                        .toBigDecimal()
+                                                        .toPlainString(),
+                                                verdict.latestSequence(),
+                                                verdict.unbroken(),
+                                                verdict.explained()))
+                        .toList();
+        return new PositionsReport(rows, report.verdicts().size() > BOUND, cash);
     }
 
     private <R> R inOneTransaction(SqlFunction<R> work) {

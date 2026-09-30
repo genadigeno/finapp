@@ -49,6 +49,12 @@ import lombok.RequiredArgsConstructor;
  *       (`P8-TSK-010`/`-020`) and the Phase 8 records join the known list with their tasks.
  *       Until `-020` adopts Phase 7's parkings, {@code SUSPENSE_UNMATCHED} truthfully reads
  *       above zero (the transition's A7).
+ *   <li><strong>The cash proof</strong> (`P8-TSK-016`, {@code INV-SET-06}): per currency, DR−CR
+ *       of {@code CASH_AT_BANK} equals the closing balance at the head of an UNBROKEN chain of
+ *       accepted bank statements — sequence 1 opening at zero, every later opening its
+ *       predecessor's closing, no sequence missing. A gap or a mis-stitched opening fails the
+ *       verdict loudly: the platform does not know its cash, and nothing is ever posted to make
+ *       the chain fit.
  * </ul>
  *
  * <p>The caller runs the sweep in <strong>one {@code REPEATABLE READ} transaction on one
@@ -116,6 +122,21 @@ public final class PositionProof {
             long openItemCount,
             boolean explained) {}
 
+    /**
+     * The cash identity, per currency (`P8-TSK-016`, {@code INV-SET-06}): DR−CR of
+     * {@code CASH_AT_BANK} (debit-normal, so its settled balance already reads DR−CR) equals
+     * the summed head closing of every bank account's statement chain in that currency — and
+     * only while each chain is UNBROKEN. {@code latestSequence} is the highest accepted
+     * sequence (0 before the first statement), a count the gauge never publishes as money.
+     */
+    public record CashVerdict(
+            CurrencyCode currency,
+            Money ledgerBalance,
+            Money chainClosing,
+            long latestSequence,
+            boolean unbroken,
+            boolean explained) {}
+
     /** One sweep's whole answer — the gauges' and the report's one source. */
     public record Report(
             List<PositionVerdict> verdicts,
@@ -123,7 +144,8 @@ public final class PositionProof {
             Map<String, Long> openBySourceCode,
             List<SuspenseVerdict> suspenseVerdicts,
             Optional<java.time.LocalDate> oldestSuspenseOpenedOn,
-            long suspenseUnowned) {
+            long suspenseUnowned,
+            List<CashVerdict> cashVerdicts) {
 
         public Report {
             verdicts = List.copyOf(verdicts);
@@ -132,6 +154,31 @@ public final class PositionProof {
             suspenseVerdicts = List.copyOf(suspenseVerdicts);
             Objects.requireNonNull(
                     oldestSuspenseOpenedOn, "oldestSuspenseOpenedOn must not be null");
+            cashVerdicts = List.copyOf(cashVerdicts);
+        }
+
+        /** A report without the cash term — the shape before `P8-TSK-016`. */
+        public Report(
+                List<PositionVerdict> verdicts,
+                Map<AccountPurpose, Long> unattributedByPurpose,
+                Map<String, Long> openBySourceCode,
+                List<SuspenseVerdict> suspenseVerdicts,
+                Optional<java.time.LocalDate> oldestSuspenseOpenedOn,
+                long suspenseUnowned) {
+            this(verdicts, unattributedByPurpose, openBySourceCode, suspenseVerdicts,
+                    oldestSuspenseOpenedOn, suspenseUnowned, List.of());
+        }
+
+        /** The cash gauge's value: how many currencies' cash the chain does not explain. */
+        public long cashCurrenciesFailing() {
+            return cashVerdicts.stream().filter(verdict -> !verdict.explained()).count();
+        }
+
+        /** One currency's cash verdict, when that currency's cash account is seeded. */
+        public Optional<CashVerdict> cashOf(CurrencyCode currency) {
+            return cashVerdicts.stream()
+                    .filter(verdict -> verdict.currency().equals(currency))
+                    .findFirst();
         }
 
         /** Items with a remainder — {@code finapp.reconciliation.suspense.open}. */
@@ -310,7 +357,69 @@ public final class PositionProof {
                 openBySourceCode,
                 suspenseVerdicts(unitOfWork, positions),
                 suspense.oldestOpenedOn(unitOfWork),
-                suspense.unownedCount(unitOfWork));
+                suspense.unownedCount(unitOfWork),
+                cashVerdicts(unitOfWork, positions));
+    }
+
+    /**
+     * THE CASH PROOF (`P8-TSK-016`, {@code INV-SET-06}), per currency: each bank account's
+     * chain of ACCEPTED statements — read in this sweep's one snapshot — is unbroken when its
+     * sequences run 1..n with no hole, sequence 1 opens at zero and every later opening is its
+     * predecessor's closing; the verdict holds when every chain of the currency is unbroken
+     * and {@code CASH_AT_BANK}'s DR−CR equals the sum of their head closings. Folded through
+     * {@code Money}; the balances are the statement's own words, never recomputed.
+     */
+    private List<CashVerdict> cashVerdicts(
+            Connection unitOfWork,
+            Map<AccountPurpose, Map<CurrencyCode, LedgerAccount>> positions) {
+        Map<CurrencyCode, Map<UUID, List<com.finapp.settlement.SettlementBatchStore.StatementLink>>>
+                chains = new HashMap<>();
+        for (com.finapp.settlement.SettlementBatchStore.StatementLink link :
+                batches.acceptedStatements(unitOfWork)) {
+            chains.computeIfAbsent(link.currency(), c -> new LinkedHashMap<>())
+                    .computeIfAbsent(link.sourceId(), s -> new ArrayList<>())
+                    .add(link);
+        }
+        List<CashVerdict> verdicts = new ArrayList<>();
+        for (Map.Entry<CurrencyCode, LedgerAccount> position :
+                positions.get(AccountPurpose.CASH_AT_BANK).entrySet()) {
+            CurrencyCode currency = position.getKey();
+            Money balance =
+                    balances.derive(unitOfWork, position.getValue().id(), AsOf.latest())
+                            .settled();
+            Money closing = Money.ofPersisted(0, currency, balance.scale());
+            boolean unbroken = true;
+            long latest = 0;
+            for (List<com.finapp.settlement.SettlementBatchStore.StatementLink> chain :
+                    chains.getOrDefault(currency, Map.of()).values()) {
+                // The store reads the chain ordered by sequence (acceptedStatements).
+                long expected = 1;
+                Money previousClosing = Money.ofPersisted(0, currency, balance.scale());
+                Money head = previousClosing;
+                for (com.finapp.settlement.SettlementBatchStore.StatementLink link : chain) {
+                    Money opening =
+                            Money.ofPersisted(link.openingMinor(), currency, link.scale());
+                    if (link.sequence() != expected || !opening.equals(previousClosing)) {
+                        unbroken = false;
+                    }
+                    previousClosing =
+                            Money.ofPersisted(link.closingMinor(), currency, link.scale());
+                    head = previousClosing;
+                    expected = link.sequence() + 1;
+                    latest = Math.max(latest, link.sequence());
+                }
+                closing = closing.plus(head);
+            }
+            verdicts.add(
+                    new CashVerdict(
+                            currency,
+                            balance,
+                            closing,
+                            latest,
+                            unbroken,
+                            unbroken && balance.equals(closing)));
+        }
+        return List.copyOf(verdicts);
     }
 
     /**

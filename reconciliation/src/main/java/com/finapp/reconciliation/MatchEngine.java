@@ -52,7 +52,12 @@ public final class MatchEngine {
         }
     }
 
-    /** One expectation a key reached, snapshotted under the chunk's lock. */
+    /**
+     * One expectation a key reached, snapshotted under the chunk's lock. {@code reachedBy} is
+     * empty exactly for a value-date group's candidate (`P8-TSK-016`, {@link GroupMatch}): it
+     * was reached by its date, never by a key, and its snapshot row carries no key kind
+     * (`V008`).
+     */
     public record HitFacts(
             UUID expectationId,
             ExpectationKind kind,
@@ -61,7 +66,7 @@ public final class MatchEngine {
             long remainderMinor,
             Instant openedAt,
             LocalDate expectedBy,
-            KeyKind reachedBy,
+            Optional<KeyKind> reachedBy,
             String operationRef) {
 
         public HitFacts {
@@ -73,6 +78,22 @@ public final class MatchEngine {
             Objects.requireNonNull(expectedBy, "expectedBy must not be null");
             Objects.requireNonNull(reachedBy, "reachedBy must not be null");
             Objects.requireNonNull(operationRef, "operationRef must not be null");
+        }
+
+        /** A key's hit — the `P8-TSK-011` shape. */
+        public HitFacts(
+                UUID expectationId,
+                ExpectationKind kind,
+                ExpectationDirection direction,
+                Money amount,
+                long remainderMinor,
+                Instant openedAt,
+                LocalDate expectedBy,
+                KeyKind reachedBy,
+                String operationRef) {
+            this(expectationId, kind, direction, amount, remainderMinor, openedAt, expectedBy,
+                    Optional.of(Objects.requireNonNull(reachedBy, "reachedBy must not be null")),
+                    operationRef);
         }
     }
 

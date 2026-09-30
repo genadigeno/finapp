@@ -654,11 +654,39 @@ adapters). Catalogued with this ADR:
   `P8-TSK-018` bring the instant and payout sources' reports under their v1 rules. The instant
   rules' break typing reads `payments.scheme_execution_claim`.
   **`P8-TSK-013` implemented** (2026-09-30), with the deviations recorded: the grace and rematch legs ride `Matching.sweep` itself — after the run loop, per source under the same namespace-4 try-lock, bounded batches, ONE transaction per batch — rather than a schedule of their own. The grace leg re-decides each expired `UNMATCHED` item on its row locked `FOR UPDATE` through the same pure engine (the stored fingerprint was judged at run time, so a waiting item is never re-parked as a duplicate of itself), allocates a candidate committed during the wait (proven with a share-lock holder standing in for `P8-TSK-019`'s worker), and only then types the remainder through the lookup — `UNKNOWN_EXTERNAL`, `MISSING_INTERNAL`, or the `-011` definitive types when the platform learned a terminal answer during the wait — cause `GRACE_EXPIRED`, parked with its break. The rematch leg acts only on `ALLOCATE` (origin `REMATCH`, a stored decision with its candidates like any other): `UNMATCHED → MATCHED`, and `PARKED → MATCHED` only at candidate remainder ≥ parked remainder, the WHOLE parked value unparked (cause `UNPARK`, the park's exact inverse at the item's amount) and the owning break resolved `EVIDENCED` — a partial unpark never happens, and a skipped candidate is rescanned every tick (no decision row on a skip; bounded waste, recorded). Late settlement (the design's L1): a settling allocation locks the candidate's open `MISSING_EXTERNAL` break BEFORE allocating and resolves it `EVIDENCED` with the timing frozen on the decision, and the `TIMING_DIFFERENCE` raise is suppressed whenever an open `MISSING_EXTERNAL` stands — one fact, one break. THE BUILD'S FIND, fixed: the batch posting phase first ran outside any correlation scope and the ledger's own `INV-LED-05` guard refused every grace park — each leg now posts last inside its own generated correlation scope, the per-item records keeping the ingesting flow's correlation. No bespoke spans (the `P8-TSK-008` precedent; correlation is the trace).
+  **`P8-TSK-016` implemented** (2026-09-30): §2's bank rows land. A bank credit or debit reaches
+  the matcher already attributed; its keys resolve in the item's scope,
+  `COALESCE(attributed_source_id, source_id)` — §1's per-source keys, "same source" for a bank item
+  meaning its attributed source — while its stored keys and its fingerprint stay under the bank.
+  `REMITTANCE_REF` is `ONE_TO_ONE` through the existing engine; a difference against a `REMITTANCE`
+  is `SETTLEMENT_MISMATCH` (`REMITTANCE_DIFFERS`) on both sides (the excess parked on the item, the
+  shortfall on the expectation, never parked), never absorbed (`INV-REC-08`). §3's
+  `GROUP_BY_VALUE_DATE` is a sibling pure function (`GroupMatch`): it fires only when the item's
+  reference reached NO expectation in scope; its candidates are every OPEN, untouched
+  (`remainder = amount`) `REMITTANCE` of the scope source with the item's direction and currency and
+  `expected_by` equal to the item's value date (the promised funding date read as the value date —
+  recorded), excluding any expectation another item's KEY reaches in the same chunk (the design's
+  "no other claimant", stricter than an earlier claimant: without it an unreferenced line earlier
+  in the file would take a referenced line's remittance); it matches only at an exact total — one
+  decision, one keyless candidate row and one whole allocation per member, no subset search — and
+  otherwise waits under the first `ONE_TO_ONE` rule's grace, its evaluation stored on the waiting
+  decision. The membership is re-read under the locks: a candidate committed after the lock-free
+  read means wait, never a judgement over a partial set; the grace leg tries the group before it
+  parks, and the rematch leg re-decides an `UNMATCHED` item by group when its date's remittances
+  open later. A group records deviation 0 (it is reached by its date) and raises no
+  `TIMING_DIFFERENCE`. The bank's fee takes the `CHECK` route against an explicit zero gross
+  (expected = the pinned fixed 0.50); the per-batch fee fold is the processing fee's alone.
+  `match_candidate.key_kind` is NULL exactly for a group's candidate (reconciliation `V008`), and a
+  manual match reads only keyed snapshots. Recorded: a remittance paid in two bank tranches settles
+  by the second allocation while the first tranche's `REMITTANCE_DIFFERS` shortfall stays OPEN — a
+  `ONE_TO_ONE` settling allocation closes no shortfall break (the pre-existing `AMOUNT_MISMATCH`
+  behaviour; only a `CORRECTION` top-up does) — so the break is disposed by a person, a known
+  limitation carried to `P8-TST-002`'s battery.
 - `P8-TSK-019` builds the return worker that the operation-anchored `PAYOUT_RETURNED` rule waits
   for, and the `PAYOUT_RETURN` expectation it reaches (ADR-0067 §5, ADR-0073).
 - `P8-TSK-022` builds rule-set administration under four-eyes, `REPROCESS` runs, requeue,
-  `run_replay` (reconciliation `V008`) and the replay-perturbation probe. `P8-TSK-023`'s
-  repudiation, the only path that adds counter-allocations, follows in reconciliation `V009`.
+  `run_replay` (reconciliation `V009`) and the replay-perturbation probe. `P8-TSK-023`'s
+  repudiation, the only path that adds counter-allocations, follows in reconciliation `V010`.
 - `P8-TST-001` (the storm: replay `IDENTICAL` every round, at most one positive allocation per item
   and expectation, ten matcher instances) and `P8-TST-002` (the break and resolution battery).
 - Deferred and recorded as not implemented in Phase 8: fuzzy or subset-sum matching, business-day

@@ -420,7 +420,7 @@ Three designs were weighed at the transition:
     `MATCHED → UNMATCHED` reopening (a bank item of another batch, step 2), the expectations'
     reopening edges, the suspense item's `REPUDIATION` origin (ADR-0070 point 2), the
     `REPUDIATE_BATCH` kind and its batch subject arrive with
-    `P8-TSK-023`'s reconciliation `V009`, after `P8-TSK-022`'s `V008`.
+    `P8-TSK-023`'s reconciliation `V010`, after `P8-TSK-022`'s `V009` (renumbered when `P8-TSK-016` took `V008`).
 
     *(The remittance rule, the write order, the already-released rule and the migration were
     settled by the Phase 7 → 8 transition's consistency review: A8, A9, A10 and B5.)*
@@ -560,13 +560,33 @@ converted, `INV-MON-04`).
 ## Follow-up
 
 - **Implemented so far** *(every other statement is the decided design, corrected by the tasks that build it)*: `P8-TSK-009` (2026-09-29) shipped HOP 1 for the card PSP — point 2's recognition (DR `PROCESSING_COSTS` / CR `SETTLEMENT_CLEARING` for the fee fold, the mirror for a net rebate, honestly omitted at zero), the `REMITTANCE` expectation of |N| keyed `REMITTANCE_REF` with `expected_by = value date + funding_lag_days`, and every line an item in a run born in the acceptance transaction. Two recorded build facts: the batch's stored value date IS its business date until a format carries a distinct one, and the recognition posts before the batch's accepting `UPDATE` (the honesty `CHECK` wants the entry id in that statement) — the last CONTENDED write, the rows after it the transaction's own claims.
+  `P8-TSK-016` (2026-09-30) shipped HOP 2 — `CASH_AT_BANK` (ledger `V018`, ASSET, one row per
+  currency, joining `reconciledPositions()` so a `MANUAL` line is refused at both ranks), the
+  `SIM_STATEMENT_TAGGED` v1 statement (settlement `V005`: the statement's sequence and signed
+  opening and closing balances on the batch, the live statement-sequence unique), attribution at
+  parse (`SettlementSources.attribute`: the unique FULL match of the compiled patterns, written on
+  the line), point 3's recognition (`BankRecognition`: DR/CR `CASH_AT_BANK` the statement's net on
+  one line, each attributed source's clearing position the opposite of its lines' fold, the bank's
+  fees DR `PROCESSING_COSTS`, and `SUSPENSE_UNMATCHED` a CREDIT line of the unattributed credits and
+  a DEBIT line of the unattributed debits, never netted), continuity (`StatementChain`), the cash
+  proof and the single-poster rule (`CashAtBankHasOnePosterTest`). Recorded deviations: (1) point
+  7's order — the recognition posts BEFORE the batch's accepting `UPDATE`, as `P8-TSK-009` built,
+  and each unattributed line's suspense item is inserted AFTER the posting through the intake's new
+  `recognised` call, carrying the entry id whole (ADR-0070's constraint, its first option); the
+  unattributed lines' breaks and the items' `PENDING → PARKED` are written before it, in the
+  intake; (2) the backlog's "no settlement or reconciliation migration" did not hold — the
+  statement's columns and unique were settlement `V005`'s to add, and the item's bank types,
+  nullable position and attribution reconciliation `V008`'s (the plan renumbered `-022` and `-023`
+  to `V009` and `V010`); (3) the statement's value date is its closing balance's date (the
+  batch's business date), point 6's rule unchanged; (4) point 3's "exactly two posters" holds one
+  until `P8-TSK-023` builds the repudiation.
 - `P8-TSK-009` (`PROCESSING_COSTS`, acceptance, fee recognition and the remittance expectation),
   `P8-TSK-016` (`CASH_AT_BANK`, attribution, bank recognition, continuity, the cash proof and the
   single-poster rule), `P8-TSK-015` (`RECONCILIATION_LOSSES` and `RECONCILIATION_GAINS` with
   their resolutions), `P8-TSK-017` and `P8-TSK-018` (the scheme's and the payout provider's
   positions discharged the same way), `P8-TSK-007` (the position proof and the completeness
   verifier), `P8-TSK-012` (the fee check), `P8-TSK-023` (repudiation, with reconciliation
-  `V009`), `P8-TST-001` (the proofs and the trial balance in every round of the storm),
+  `V010`), `P8-TST-001` (the proofs and the trial balance in every round of the storm),
   `P8-DOC-001`.
 - **The repudiated report's `REMITTANCE`, now decided** (point 10, step 2). This read "recorded
   for `P8-TSK-023`'s design, not decided here": the paid case needed a rule the item machine did

@@ -873,7 +873,7 @@ public final class ResolutionMachine {
                         row.ruleSetId(),
                         Optional.empty(),
                         Optional.of(Cardinality.ONE_TO_ONE),
-                        Optional.of(hit.reachedBy()),
+                        hit.reachedBy(),
                         DecisionOutcome.MATCHED,
                         Optional.of(1),
                         Optional.of(1),
