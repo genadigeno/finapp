@@ -561,7 +561,7 @@ class AccountClosingDatabaseTest {
                 .orElseThrow();
     }
 
-    /** A balanced credit to the holder's wallet from the operational clearing account. */
+    /** A balanced credit to the holder's wallet from an operational account. */
     private void credit(Connection app, Holder holder, long minorUnits) {
         post(app, holder, minorUnits, Direction.DEBIT, Direction.CREDIT);
     }
@@ -575,12 +575,15 @@ class AccountClosingDatabaseTest {
             Connection app,
             Holder holder,
             long minorUnits,
-            Direction clearingSide,
+            Direction operationalSide,
             Direction walletSide) {
         LedgerAccount wallet = walletOf(app, holder);
-        LedgerAccount clearing =
+        // FEE_REVENUE, not SETTLEMENT_CLEARING (the P8-TSK-006 move): clearing is a
+        // reconciled position whose every line must answer to an expectation (INV-REC-06),
+        // and this entry is no operation a backfill could adopt.
+        LedgerAccount operational =
                 ledgerAccounts
-                        .findOperational(app, AccountPurpose.SETTLEMENT_CLEARING, USD)
+                        .findOperational(app, AccountPurpose.FEE_REVENUE, USD)
                         .orElseThrow();
         postingService()
                 .post(
@@ -592,8 +595,8 @@ class AccountClosingDatabaseTest {
                                 "closing-fixture",
                                 List.of(
                                         new JournalLine(
-                                                clearing.id(),
-                                                clearingSide,
+                                                operational.id(),
+                                                operationalSide,
                                                 Money.ofMinorUnits(minorUnits, USD)),
                                         new JournalLine(
                                                 wallet.id(),

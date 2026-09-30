@@ -268,11 +268,14 @@ class PaymentRefundDatabaseTest {
         Captured captured = capturedPayment();
         runner.inTransaction(
                 uow -> {
-                    com.finapp.ledger.LedgerAccount clearing =
+                    // FEE_REVENUE, not SETTLEMENT_CLEARING (the P8-TSK-006 move): clearing is a
+                    // reconciled position whose every line answers to an expectation
+                    // (INV-REC-06), and this entry is no operation a backfill could adopt.
+                    com.finapp.ledger.LedgerAccount operational =
                             new ChartOfAccounts<Connection>(ledgerAccounts)
                                     .resolve(
                                             uow,
-                                            com.finapp.ledger.AccountPurpose.SETTLEMENT_CLEARING,
+                                            com.finapp.ledger.AccountPurpose.FEE_REVENUE,
                                             EUR);
                     postingService()
                             .post(
@@ -288,7 +291,7 @@ class PaymentRefundDatabaseTest {
                                                             com.finapp.ledger.Direction.CREDIT,
                                                             Money.ofMinorUnits(20_00, EUR)),
                                                     new com.finapp.ledger.JournalLine(
-                                                            clearing.id(),
+                                                            operational.id(),
                                                             com.finapp.ledger.Direction.DEBIT,
                                                             Money.ofMinorUnits(20_00, EUR)))));
                     return null;
@@ -520,11 +523,14 @@ class PaymentRefundDatabaseTest {
         // The customer spends everything: a real posting out of the wallet.
         runner.inTransaction(
                 uow -> {
-                    com.finapp.ledger.LedgerAccount clearing =
+                    // FEE_REVENUE, not SETTLEMENT_CLEARING (the P8-TSK-006 move): clearing is a
+                    // reconciled position whose every line answers to an expectation
+                    // (INV-REC-06), and this entry is no operation a backfill could adopt.
+                    com.finapp.ledger.LedgerAccount operational =
                             new ChartOfAccounts<Connection>(ledgerAccounts)
                                     .resolve(
                                             uow,
-                                            com.finapp.ledger.AccountPurpose.SETTLEMENT_CLEARING,
+                                            com.finapp.ledger.AccountPurpose.FEE_REVENUE,
                                             EUR);
                     postingService()
                             .post(
@@ -540,7 +546,7 @@ class PaymentRefundDatabaseTest {
                                                             com.finapp.ledger.Direction.DEBIT,
                                                             CAPTURED),
                                                     new com.finapp.ledger.JournalLine(
-                                                            clearing.id(),
+                                                            operational.id(),
                                                             com.finapp.ledger.Direction.CREDIT,
                                                             CAPTURED))));
                     return null;

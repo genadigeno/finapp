@@ -308,9 +308,19 @@ class BalanceProjectionDatabaseTest {
                 .account();
     }
 
+    /**
+     * The DEBIT-normal operational account facing the wallets - still named {@code clearing}
+     * where it is used. It was {@code SETTLEMENT_CLEARING} until the position proof
+     * (P8-TSK-007, {@code INV-REC-06}): a reconciled position's every line must answer to an
+     * expectation, and these entries are no operation a backfill could adopt, so they stood
+     * unexplained in the shared container. {@code CHARGEBACK_RECOVERABLE} is the one
+     * operational ASSET outside the reconciled positions, so the suite keeps a debit-normal
+     * projection beside the credit-normal wallet; {@code FEE_REVENUE} (P8-TSK-006's substitute)
+     * would have made both credit-normal.
+     */
     private LedgerAccount operational(Connection app) {
         return accounts
-                .findOperational(app, AccountPurpose.SETTLEMENT_CLEARING, USD)
+                .findOperational(app, AccountPurpose.CHARGEBACK_RECOVERABLE, USD)
                 .orElseThrow();
     }
 
