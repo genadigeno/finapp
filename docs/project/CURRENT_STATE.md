@@ -517,6 +517,23 @@ residue — with the matcher and the storm), ALL 0 FAILURES — ledger untouched
 battery and the fleet-wide database and kafka tiers deliberately skipped on the owner's
 instruction.
 
+### Since: the shared container's residue, judged last (2026-09-30, outside the task loop)
+
+**The fixture class below cannot return unseen** (test infrastructure, no production code,
+`INV-REC-06`). `ReconciledPositionResidueDatabaseTest` runs last in `:app:databaseTest` (the tier
+orders classes by `@Order`; every other class keeps its place), runs the opening backfill, and
+asserts zero unexplained lines on every reconciled position but `SUSPENSE_UNMATCHED` (the recorded
+exception until `P8-TSK-020`) and every position and suspense identity — naming each writer by its
+idempotency scope. A source rule was weighed and refused: after the fixture moves it would have
+allow-listed every file still able to offend. Its first fleet-wide run found the tier red at
+baseline for two more reasons, both fixed: raw fixture rows on the undeclared rail `push-test`
+made every later backfill answer 500, and three suites asserted the whole-ledger identity without
+a backfill — they now judge their own writes as unchanged residuals (`PositionResiduals`). Rules
+in `TESTING.md` §5. **Found, not fixed here**: the storm's whole-database `SUSPENSE_UNMATCHED`
+count fails whenever the suspense suite runs first (observed once Gradle ran last run's failures
+first) — fixed in its own session; two suites still commit `push-test` attempts in non-terminal
+states no backfill or proof reads. Verified: the targeted run with every polluter ordered first, 65/0; five probes; the fleet-wide tier stopped by the owner at 836/0 before the proof suites and the sentinel ran - the next fleet-wide run is its first full verdict.
+
 ### Since: no app test fixture leaves an unexplained reconciled line (2026-09-30, outside the task loop)
 
 **The fixture defect below, fixed with its whole class** (test-only, `INV-REC-06`). Twenty-one

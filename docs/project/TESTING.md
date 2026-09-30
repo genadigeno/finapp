@@ -159,6 +159,46 @@ A superuser ignores every permission check, so a denial test connected as one pa
 grants correct, with the grants wrong, and with no grants at all. That is the worst kind of green,
 and it is why `assertCannotBypassPrivileges` exists.
 
+### One container per JVM: every later suite inherits what a suite commits
+
+A tier runs in one JVM against one database, so a committed row is inherited by every suite that
+runs after it — in an order that is **no contract**: Gradle hands classes over in its file-scan
+order and runs the classes that failed last time first, so two runs on one machine can differ
+(observed: one run put four reconciliation suites at positions 114–124, the next at 0–3). A suite
+asserting a whole-database property is therefore only as reliable as every other suite's hygiene,
+and a violation surfaces as a failure that comes and goes with the order. Journal lines are
+immutable, so ledger residue is permanent.
+
+Three rules follow:
+
+- **A suite judges its own writes.** Claiming the position identity holds "over this suite's
+  residue" is a difference, not an absolute: `PositionResiduals.assertUnchanged(before, after, …)`
+  compares each identity's residual — `DR−CR − (open remainders − open items)`, and the suspense
+  identity's — before and after the suite's writes. Other suites' history that no backfill has yet
+  adopted is legitimate state, and an absolute `explained()` judged it by class order.
+- **A whole-ledger claim follows a backfill.** The opening suite, the storm and the register
+  rebuild run the opening backfill first; after it, only non-adoptable residue can fail them.
+- **A raw fixture row names a declared rail** (`card`, `instant`, `book`) or rolls back. The
+  backfill resolves every `CAPTURED`/`EXECUTED` attempt and every parking through `PaymentRails`,
+  and an undeclared rail is ADR-0059's wiring fault: one committed `push-test` row answered 500 to
+  every later backfill in the JVM.
+
+The reconciled positions are where this bit (`da48fb2`: twenty-one fixtures posting straight onto
+`SETTLEMENT_CLEARING`). They are now judged **once, last**: `:app:databaseTest` sets JUnit's class
+orderer to `ClassOrderer$OrderAnnotation`, every class without `@Order` keeps its place, and
+`ReconciledPositionResidueDatabaseTest` carries `@Order(Integer.MAX_VALUE)`. It runs the opening
+backfill, then asserts every position and suspense identity and zero unexplained lines, naming each
+writer by its idempotency scope. A fixture that needs an operational counterparty takes one that
+is not reconciled (`AccountPurpose.reconciledPositions()`): a payer's `CUSTOMER_WALLET`,
+`FEE_REVENUE`, or `CHARGEBACK_RECOVERABLE` for a debit-normal asset. A probe that must touch a
+reconciled position rolls back.
+
+To judge one suite's residue, run it with the sentinel — the orderer still puts the sentinel last:
+
+```bash
+./gradlew :app:databaseTest --tests '*MerchantPayoutDatabaseTest' --tests '*ReconciledPositionResidueDatabaseTest'
+```
+
 ---
 
 ## 5a. Simulating a provider

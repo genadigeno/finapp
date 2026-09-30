@@ -154,18 +154,29 @@ class PaymentMetricsDatabaseTest {
 
             com.finapp.payments.UnmatchedConfirmationStore<Connection> unmatched =
                     new com.finapp.payments.JdbcUnmatchedConfirmationStore();
-            PaymentAttemptStore.UnknownReading parkedBefore = unmatched.parkedReading(app);
-            execute(app,
-                    "INSERT INTO payments.unmatched_confirmation (id, rail,"
-                            + " scheme_reference, amount_minor, currency, scale,"
-                            + " received_at, entry_ref, cause) VALUES (?, 'push-test', ?, 750,"
-                            + " 'EUR', 2, now() - interval '1 hour', ?, 'UNATTRIBUTED')",
-                    IDS.next(), "sch-gauge-" + IDS.next(), IDS.next());
-            PaymentAttemptStore.UnknownReading parkedAfter = unmatched.parkedReading(app);
-            assertThat(parkedAfter.active() - parkedBefore.active()).isEqualTo(1);
-            assertThat(parkedAfter.oldestAgeSeconds())
-                    .as("the INV-REC-05 ageing: suspense is never a quiet resting place")
-                    .isGreaterThanOrEqualTo(3_500L);
+            // The raw parking is READ, never committed: a parking with no DR clearing / CR
+            // suspense entry behind it is exactly what the suspense identity's Phase 7 term
+            // counts (PositionProof), and on an undeclared rail it is ADR-0059's wiring fault
+            // to the backfill's parking walk - committed into the tier's shared database, it
+            // failed every later suspense verdict and answered 500 to every later backfill.
+            app.setAutoCommit(false);
+            try {
+                PaymentAttemptStore.UnknownReading parkedBefore = unmatched.parkedReading(app);
+                execute(app,
+                        "INSERT INTO payments.unmatched_confirmation (id, rail,"
+                                + " scheme_reference, amount_minor, currency, scale,"
+                                + " received_at, entry_ref, cause) VALUES (?, 'push-test', ?,"
+                                + " 750, 'EUR', 2, now() - interval '1 hour', ?,"
+                                + " 'UNATTRIBUTED')",
+                        IDS.next(), "sch-gauge-" + IDS.next(), IDS.next());
+                PaymentAttemptStore.UnknownReading parkedAfter = unmatched.parkedReading(app);
+                assertThat(parkedAfter.active() - parkedBefore.active()).isEqualTo(1);
+                assertThat(parkedAfter.oldestAgeSeconds())
+                        .as("the INV-REC-05 ageing: suspense is never a quiet resting place")
+                        .isGreaterThanOrEqualTo(3_500L);
+            } finally {
+                app.rollback();
+            }
         }
     }
 

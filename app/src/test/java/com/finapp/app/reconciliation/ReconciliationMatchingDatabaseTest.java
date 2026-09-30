@@ -108,6 +108,7 @@ class ReconciliationMatchingDatabaseTest {
             + " register, a waiting item typed by the composed lookup - and the doors"
             + " explain it from stored rows alone, over HTTP")
     void theComposedLegDecidesAndTheDoorsExplain() throws Exception {
+        PositionProof.Report before = sweep();
         seedPrivateRuleSet();
         String key = "CAP-APP-" + UUID.randomUUID().toString().substring(0, 8);
         UUID expectation = openExpectation(key, 77_00);
@@ -141,25 +142,9 @@ class ReconciliationMatchingDatabaseTest {
 
         // The position identity holds over this suite's residue: the settled pair nets
         // to zero and the waiting item is balanced by its own expectation (INV-REC-06).
-        try (Connection app = DatabaseRoles.application()) {
-            app.setAutoCommit(false);
-            PositionProof.Report report = positionProof.sweep(app);
-            PositionProof.PositionVerdict clearing =
-                    report.verdicts().stream()
-                            .filter(verdict ->
-                                    verdict.purpose() == AccountPurpose.SETTLEMENT_CLEARING
-                                            && verdict.currency().equals(
-                                                    com.finapp.sharedkernel.money
-                                                            .CurrencyCode.of("EUR")))
-                            .findFirst()
-                            .orElseThrow();
-            assertThat(clearing.explained())
-                    .as("SETTLEMENT_CLEARING EUR: %s = %s - %s",
-                            clearing.ledgerBalance(), clearing.openRemainders(),
-                            clearing.openItems())
-                    .isTrue();
-            app.rollback();
-        }
+        // Judged as unchanged residuals - the shared container carries other suites'
+        // not-yet-adopted history, which an absolute reading judged here by class order.
+        PositionResiduals.assertUnchanged(before, sweep(), "the composed run");
 
         // The doors, as the investigator, from stored rows alone.
         Session operator = operatorSession();
@@ -248,6 +233,19 @@ class ReconciliationMatchingDatabaseTest {
     }
 
     // ----------------------------------------------------------------- seeding
+
+    /** One {@code REPEATABLE READ} snapshot of both verdicts - never committed. */
+    private PositionProof.Report sweep() throws SQLException {
+        try (Connection app = DatabaseRoles.application()) {
+            app.setAutoCommit(false);
+            app.setTransactionIsolation(Connection.TRANSACTION_REPEATABLE_READ);
+            try {
+                return positionProof.sweep(app);
+            } finally {
+                app.rollback();
+            }
+        }
+    }
 
     private static void seedPrivateRuleSet() throws SQLException {
         try (Connection app = DatabaseRoles.application()) {
