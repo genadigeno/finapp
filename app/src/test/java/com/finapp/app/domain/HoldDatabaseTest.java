@@ -576,9 +576,12 @@ class HoldDatabaseTest {
                                     USD)
                             .orElseThrow();
             if (minorUnits > 0) {
-                LedgerAccount clearing =
+                // FEE_REVENUE, not SETTLEMENT_CLEARING (the P8-TSK-006 move): clearing is a
+                // reconciled position whose every line must answer to an expectation (INV-REC-06),
+                // and this entry is no operation a backfill could adopt.
+                LedgerAccount operational =
                         ledgerAccounts
-                                .findOperational(app, AccountPurpose.SETTLEMENT_CLEARING, USD)
+                                .findOperational(app, AccountPurpose.FEE_REVENUE, USD)
                                 .orElseThrow();
                 new PostingService(
                                 new IdempotentExecutor(
@@ -601,7 +604,7 @@ class HoldDatabaseTest {
                                         "hold-fixture",
                                         List.of(
                                                 new JournalLine(
-                                                        clearing.id(),
+                                                        operational.id(),
                                                         Direction.DEBIT,
                                                         Money.ofMinorUnits(minorUnits, USD)),
                                                 new JournalLine(

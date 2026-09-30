@@ -901,9 +901,13 @@ class MerchantCaptureDatabaseTest {
             + " cumulative residual is ZERO per currency, and so is the trial balance")
     void theFeeBatchConservesEveryMinorUnit() throws Exception {
         // Through the capture's PRODUCTION seam - the pin, then the composition's lines posted
-        // under the capture's key in one transaction, exactly as PaymentOutcomes runs them -
-        // rather than through the provider: the provider path is the four-line test's subject,
-        // and this one's is the arithmetic and the books it lands in, at volume.
+        // under the sale's key in one transaction, exactly as PaymentOutcomes' BOOK arm runs
+        // them - rather than through the provider: the provider path is the four-line test's
+        // subject, and this one's is the arithmetic and the books it lands in, at volume. The
+        // book arm, not the card's, since the position proof (P8-TSK-007): the card arm also
+        // opens its expectation in that transaction (P8-TSK-005), and 360 card-shaped entries
+        // with none left 360 clearing lines no backfill could adopt in the shared container.
+        // The composition is one for every rail - only the counterparty differs (INV-RAIL-04).
         //
         // Seeded, so a failure is reproducible from its message (FeeCalculationTest's rule).
         java.util.Random random = new java.util.Random(20260923L);
@@ -917,7 +921,7 @@ class MerchantCaptureDatabaseTest {
         List<String> references = new ArrayList<>();
         int index = 0;
         for (CurrencyCode currency : currencies) {
-            LedgerAccountId clearing = clearingIn(currency);
+            LedgerAccountId payer = payerWalletIn(currency);
             for (RoundingPolicy rounding : RoundingPolicy.values()) {
                 BigDecimal rate = new BigDecimal(rates.get(index % rates.size()));
                 long fixed = fixedParts[index % fixedParts.length];
@@ -930,7 +934,7 @@ class MerchantCaptureDatabaseTest {
                 for (long grossMinor : discriminatingAmounts(rate, random)) {
                     references.add(
                             assessAtCapture(
-                                    merchant, clearing, Money.ofMinorUnits(grossMinor, currency)));
+                                    merchant, payer, Money.ofMinorUnits(grossMinor, currency)));
                     long[] sums = expected.computeIfAbsent(currency, key -> new long[2]);
                     sums[0] += grossMinor;
                     sums[1] += expectedFee(grossMinor, rate, fixed, rounding);
@@ -947,8 +951,8 @@ class MerchantCaptureDatabaseTest {
                 long fee = expected.get(currency)[1];
 
                 // The books against the formula, computed here independently of FeeCalculation.
-                assertThat(booked.get(code + " DEBIT:SETTLEMENT_CLEARING"))
-                        .as("%s: clearing received every gross", code)
+                assertThat(booked.get(code + " DEBIT:CUSTOMER_WALLET"))
+                        .as("%s: the payer paid every gross", code)
                         .isEqualTo(gross);
                 assertThat(booked.get(code + " CREDIT:MERCHANT_PAYABLE"))
                         .as("%s: the payables were credited every gross", code)
@@ -960,7 +964,7 @@ class MerchantCaptureDatabaseTest {
                         .as("%s: revenue earned exactly that fee", code)
                         .isEqualTo(fee);
 
-                // THE RESIDUAL, read from the books alone: what clearing received, less what
+                // THE RESIDUAL, read from the books alone: what the payer paid, less what
                 // revenue earned, less what the payables now hold - derived, never stored.
                 long net = 0L;
                 for (Merchant merchant : merchants.get(currency)) {
@@ -971,7 +975,7 @@ class MerchantCaptureDatabaseTest {
                                     .minorUnits();
                 }
                 assertThat(
-                                booked.get(code + " DEBIT:SETTLEMENT_CLEARING")
+                                booked.get(code + " DEBIT:CUSTOMER_WALLET")
                                         - booked.getOrDefault(code + " CREDIT:FEE_REVENUE", 0L)
                                         - net)
                         .as("%s: the cumulative residual over the batch", code)
@@ -1020,11 +1024,13 @@ class MerchantCaptureDatabaseTest {
     }
 
     /**
-     * One capture's assessment through the PRODUCTION seam: the price pinned, then the lines
-     * composed and posted under the capture's own key in one transaction, and the seam's second
-     * moment - exactly PaymentOutcomes' sequence. Returns the entry's reference.
+     * One sale's assessment through the PRODUCTION seam: the price pinned, then the lines
+     * composed and posted under the sale's own key in one transaction, and the seam's second
+     * moment - exactly the sequence of PaymentOutcomes' book arm ({@code settleExecution}), whose
+     * counterparty is the payer's wallet and which owes no expectation. Returns the entry's
+     * reference.
      */
-    private String assessAtCapture(Merchant merchant, LedgerAccountId clearing, Money gross) {
+    private String assessAtCapture(Merchant merchant, LedgerAccountId payer, Money gross) {
         UUID intentRef = pinFor(merchant, gross);
         PaymentAttemptId attempt = PaymentAttemptId.of(IDS.next());
         java.time.LocalDate today =
@@ -1037,7 +1043,7 @@ class MerchantCaptureDatabaseTest {
                                 new com.finapp.payments.CaptureSettlement(
                                         PaymentIntentId.of(intentRef),
                                         attempt,
-                                        clearing,
+                                        payer,
                                         merchant.payable(),
                                         gross,
                                         correlation(),
@@ -1047,7 +1053,7 @@ class MerchantCaptureDatabaseTest {
                                         .post(
                                                 uow,
                                                 new com.finapp.ledger.PostingCommand(
-                                                        "payment-capture:" + attempt.value(),
+                                                        "payment-execution:" + attempt.value(),
                                                         today,
                                                         today,
                                                         attempt.value().toString(),
@@ -1362,7 +1368,13 @@ class MerchantCaptureDatabaseTest {
                                                 before)));
     }
 
-    /** Composes the refund's lines through the PRODUCTION seam and posts them. */
+    /**
+     * Composes the refund's lines through the PRODUCTION seam and posts them - to a payer's
+     * wallet, the book refund's counterparty (one composition for every rail, INV-RAIL-04).
+     * Card clearing, as it was until the position proof (P8-TSK-007), would owe a CARD_REFUND
+     * expectation that a refund with no row of its own can never honestly have, and its line
+     * stood unexplained in the shared container. These tests read only the payable.
+     */
     private void postRefund(
             Merchant merchant, Payment payment, Money refunded, Money refundedBefore) {
         java.util.UUID refundId = IDS.next();
@@ -1380,7 +1392,7 @@ class MerchantCaptureDatabaseTest {
                                                     com.finapp.payments.PaymentAttemptId.of(
                                                             IDS.next()),
                                                     com.finapp.payments.RefundId.of(refundId),
-                                                    clearing(),
+                                                    payerWalletIn(EUR),
                                                     merchant.payable(),
                                                     refunded,
                                                     refundedBefore,
@@ -1604,6 +1616,28 @@ class MerchantCaptureDatabaseTest {
                 uow ->
                         new ChartOfAccounts<>(ledgerAccounts)
                                 .resolve(uow, AccountPurpose.SETTLEMENT_CLEARING, currency)
+                                .id());
+    }
+
+    /**
+     * A fresh payer's wallet: the book rail's sale and refund counterparty, which touches no
+     * reconciled position. A sale leaves it below zero - a receivable from the customer, legal
+     * (ADR-0061 section 5), and read by no other suite: every wallet read is owner-scoped.
+     */
+    private LedgerAccountId payerWalletIn(CurrencyCode currency) {
+        return runner.inTransaction(
+                uow ->
+                        ledgerAccounts
+                                .createOrConverge(
+                                        uow,
+                                        LedgerAccount.owned(
+                                                IDS,
+                                                CLOCK,
+                                                com.finapp.ledger.AccountType.LIABILITY,
+                                                AccountPurpose.CUSTOMER_WALLET,
+                                                currency,
+                                                UUID.randomUUID()))
+                                .account()
                                 .id());
     }
 

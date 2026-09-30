@@ -559,9 +559,13 @@ class TransferReversalDatabaseTest {
                             .findFirst()
                             .orElseThrow()
                             .id();
-            LedgerAccount clearing =
+            // FEE_REVENUE, not SETTLEMENT_CLEARING (the P8-TSK-006 move): clearing is a reconciled
+            // position whose every line answers to an expectation (INV-REC-06), and a funding
+            // entry is no operation a backfill could adopt - it stood unexplained in the shared
+            // container. This fixture only ever wanted an operational account facing the wallet.
+            LedgerAccount operational =
                     ledgerAccounts
-                            .findOperational(app, AccountPurpose.SETTLEMENT_CLEARING, USD)
+                            .findOperational(app, AccountPurpose.FEE_REVENUE, USD)
                             .orElseThrow();
             LocalDate today = LocalDate.now(CLOCK);
             new PostingService(
@@ -586,7 +590,7 @@ class TransferReversalDatabaseTest {
                                     "funding",
                                     List.of(
                                             new JournalLine(
-                                                    clearing.id(),
+                                                    operational.id(),
                                                     Direction.DEBIT,
                                                     Money.ofMinorUnits(minorUnits, USD)),
                                             new JournalLine(

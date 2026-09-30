@@ -110,7 +110,7 @@ class AccountEndpointDatabaseTest {
                 .contains("\"holds\":\"0.00\"")
                 .contains("\"available\":\"0.00\"");
 
-        // A real posting credits the wallet - the platform's clearing account debited, the
+        // A real posting credits the wallet - an operational account debited, the
         // customer's stored value credited - and the display follows in the same commit
         // (ADR-0041: the projection is transactional, so there is nothing to wait for).
         try (Connection app = DatabaseRoles.application();
@@ -125,9 +125,12 @@ class AccountEndpointDatabaseTest {
                                     AccountPurpose.CUSTOMER_WALLET,
                                     USD)
                             .orElseThrow();
-            LedgerAccount clearing =
+            // FEE_REVENUE, not SETTLEMENT_CLEARING (the P8-TSK-006 move): clearing is a
+            // reconciled position whose every line must answer to an expectation (INV-REC-06),
+            // and this entry is no operation a backfill could adopt.
+            LedgerAccount operational =
                     ledgerAccounts
-                            .findOperational(app, AccountPurpose.SETTLEMENT_CLEARING, USD)
+                            .findOperational(app, AccountPurpose.FEE_REVENUE, USD)
                             .orElseThrow();
             postingService()
                     .post(
@@ -139,7 +142,7 @@ class AccountEndpointDatabaseTest {
                                     "acceptance-credit",
                                     List.of(
                                             new JournalLine(
-                                                    clearing.id(),
+                                                    operational.id(),
                                                     Direction.DEBIT,
                                                     Money.ofMinorUnits(1250, USD)),
                                             new JournalLine(
@@ -462,7 +465,7 @@ class AccountEndpointDatabaseTest {
         return http.send(request.build(), HttpResponse.BodyHandlers.ofString());
     }
 
-    /** A balanced clearing-to-wallet credit, the acceptance test's posting in helper form. */
+    /** A balanced operational-to-wallet credit, the acceptance test's posting in helper form. */
     private void creditOverLedger(String accountId, long minorUnits) throws Exception {
         try (Connection app = DatabaseRoles.application();
                 SecurityContext.Scope actor = SecurityContext.enterSystem();
@@ -476,9 +479,12 @@ class AccountEndpointDatabaseTest {
                                     AccountPurpose.CUSTOMER_WALLET,
                                     USD)
                             .orElseThrow();
-            LedgerAccount clearing =
+            // FEE_REVENUE, not SETTLEMENT_CLEARING (the P8-TSK-006 move): clearing is a
+            // reconciled position whose every line must answer to an expectation (INV-REC-06),
+            // and this entry is no operation a backfill could adopt.
+            LedgerAccount operational =
                     ledgerAccounts
-                            .findOperational(app, AccountPurpose.SETTLEMENT_CLEARING, USD)
+                            .findOperational(app, AccountPurpose.FEE_REVENUE, USD)
                             .orElseThrow();
             postingService()
                     .post(
@@ -490,7 +496,7 @@ class AccountEndpointDatabaseTest {
                                     "close-refusal-credit",
                                     List.of(
                                             new JournalLine(
-                                                    clearing.id(),
+                                                    operational.id(),
                                                     Direction.DEBIT,
                                                     Money.ofMinorUnits(minorUnits, USD)),
                                             new JournalLine(

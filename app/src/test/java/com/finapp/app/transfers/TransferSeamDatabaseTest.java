@@ -386,9 +386,13 @@ class TransferSeamDatabaseTest {
                 SecurityContext.Scope scope = SecurityContext.enter(holder.actor);
                 CorrelationContext.Scope flow = flow()) {
             app.setAutoCommit(false);
-            LedgerAccount clearing =
+            // FEE_REVENUE, not SETTLEMENT_CLEARING (the P8-TSK-006 move): clearing is a reconciled
+            // position whose every line answers to an expectation (INV-REC-06), and a funding
+            // entry is no operation a backfill could adopt - it stood unexplained in the shared
+            // container. This fixture only ever wanted an operational account facing the wallet.
+            LedgerAccount operational =
                     ledgerAccounts
-                            .findOperational(app, AccountPurpose.SETTLEMENT_CLEARING, USD)
+                            .findOperational(app, AccountPurpose.FEE_REVENUE, USD)
                             .orElseThrow();
             LocalDate today = LocalDate.now(CLOCK);
             postingService()
@@ -401,7 +405,7 @@ class TransferSeamDatabaseTest {
                                     "funding",
                                     List.of(
                                             new JournalLine(
-                                                    clearing.id(),
+                                                    operational.id(),
                                                     Direction.DEBIT,
                                                     usd(minorUnits)),
                                             new JournalLine(
