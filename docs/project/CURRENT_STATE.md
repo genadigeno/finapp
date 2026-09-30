@@ -517,6 +517,21 @@ residue — with the matcher and the storm), ALL 0 FAILURES — ledger untouched
 battery and the fleet-wide database and kafka tiers deliberately skipped on the owner's
 instruction.
 
+### Since: the position proof's sign on `PAYOUT_CLEARING` (2026-09-30, outside the task loop)
+
+**A production defect in `P8-TSK-007`'s `PositionProof`, fixed** (`INV-REC-06`). The proof
+compared the ledger's *normal-signed* settled balance with the DR−CR remainder fold; on
+CREDIT-normal `PAYOUT_CLEARING` (ledger `V012`) that judged every open payout against its own
+negation, so `position.proof{purpose=PAYOUT_CLEARING}` counted failing currencies and the
+positions report showed a 2X difference on a correct position. The invariant and ADR-0067 §3
+already said DR−CR; the code now reads each identity's named side from the account's stored
+normal balance (`readFrom`) — DR−CR on clearing, CR−DR on suspense. `SETTLEMENT_CLEARING` and
+`INSTANT_CLEARING` (DEBIT-normal) were unaffected. Red-first test and three probes recorded
+(`MUTATION_TESTING` §2, change log). **Found, not fixed**: `MerchantPayoutDatabaseTest`'s
+`funded()` fixture posts to `SETTLEMENT_CLEARING` with no expectation, so the opening suite
+fails whenever that class runs before it in one container — a fleet-wide `:app:databaseTest`
+does; recorded for its own fix.
+
 ### Previously
 
 The per-task completion records — 177 blocks, from `P8-TSK-013` back to project initiation

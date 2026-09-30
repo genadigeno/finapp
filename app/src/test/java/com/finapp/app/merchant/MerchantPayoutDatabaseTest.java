@@ -5,7 +5,9 @@ import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.awaitility.Awaitility.await;
 
 import com.finapp.app.reconciliation.ClearingLineCopies;
+import com.finapp.app.reconciliation.PositionProof;
 import com.finapp.app.telemetry.MerchantMeters;
+import com.finapp.app.telemetry.ReconciliationMetrics;
 import com.finapp.reconciliation.ExpectationDirection;
 import com.finapp.reconciliation.ExpectationKind;
 import com.finapp.reconciliation.KeyKind;
@@ -140,6 +142,10 @@ class MerchantPayoutDatabaseTest {
     @Autowired private PlatformTransactionManager transactionManager;
     @Autowired private DataSource dataSource;
     @Autowired private io.micrometer.core.instrument.MeterRegistry meterRegistry;
+    @Autowired private PositionProof positionProof;
+    @Autowired private com.finapp.reconciliation.RunReadings runReadings;
+    @Autowired private com.finapp.settlement.SettlementFileStore<Connection> settlementFileStore;
+    @Autowired private com.finapp.settlement.SettlementSources settlementSources;
 
     @BeforeAll
     static void startProvider() {
@@ -217,6 +223,67 @@ class MerchantPayoutDatabaseTest {
                 stored(merchant, paid.payout()).providerReference().orElseThrow().value());
         ClearingLineCopies.assertKeyed(
                 opened, KeyKind.OUR_REF, stored(merchant, paid.payout()).reference().value());
+    }
+
+    @Test
+    @DisplayName("a paid payout's open expectation explains PAYOUT_CLEARING in the ledger's own"
+            + " sign: DR-CR of the CREDIT-normal position reads negative, equal to the OUTBOUND"
+            + " remainder, and the proof gauge reads 0 (INV-REC-06)")
+    void aPaidPayoutIsExplainedOnItsPosition() throws Exception {
+        Funded merchant = funded("100.00");
+        provider.succeedsWith(PATH, 200, PAID);
+        MerchantPayouts.Initiated paid = initiate(merchant, "40.00", key());
+        assertThat(paid.status()).isEqualTo(MerchantPayoutStatus.COMPLETED);
+
+        // PAYOUT_CLEARING is CREDIT-normal (ledger V012), so its derived balance is CR-DR;
+        // the identity reads DR-CR whatever the chart's classification (ADR-0067 section 3).
+        // The payout's expectation stands open, so the position is non-zero and the sign is
+        // JUDGED - zero is sign-blind (P8-TSK-007's recorded find). Only this position is
+        // asserted: the shared container's other positions are other suites' to prove.
+        PositionProof.Report report = sweep();
+        List<PositionProof.PositionVerdict> payoutClearing =
+                report.verdicts().stream()
+                        .filter(verdict -> verdict.purpose() == AccountPurpose.PAYOUT_CLEARING)
+                        .toList();
+        assertThat(payoutClearing)
+                .extracting(verdict -> verdict.currency().code())
+                .containsExactlyInAnyOrder("EUR", "GBP", "USD");
+        for (PositionProof.PositionVerdict verdict : payoutClearing) {
+            assertThat(verdict.explained())
+                    .as("%s %s: DR-CR %s = open remainders %s - open items %s (INV-REC-06)",
+                            verdict.purpose(), verdict.currency(), verdict.ledgerBalance(),
+                            verdict.openRemainders(), verdict.openItems())
+                    .isTrue();
+        }
+        PositionProof.PositionVerdict eur =
+                payoutClearing.stream()
+                        .filter(verdict -> verdict.currency().equals(EUR))
+                        .findFirst()
+                        .orElseThrow();
+        assertThat(eur.ledgerBalance().isNegative())
+                .as("the payout's CR line reads negative in DR-CR - the sign is judged: %s",
+                        eur.ledgerBalance())
+                .isTrue();
+        assertThat(eur.openRemainders().minus(eur.openItems())).isEqualTo(eur.ledgerBalance());
+
+        // The gauge consumes the same verdict: a FRESH instance, so its first read sweeps
+        // now rather than answering a reading the application's instance cached earlier.
+        io.micrometer.core.instrument.simple.SimpleMeterRegistry scraped =
+                new io.micrometer.core.instrument.simple.SimpleMeterRegistry();
+        new ReconciliationMetrics(
+                positionProof,
+                runReadings,
+                settlementFileStore,
+                settlementSources,
+                DatabaseRoles::application,
+                CLOCK,
+                scraped);
+        assertThat(scraped.find(ReconciliationMetrics.PROOF)
+                        .tag("purpose", AccountPurpose.PAYOUT_CLEARING.name())
+                        .gauge()
+                        .value())
+                .as("finapp.reconciliation.position.proof{purpose=PAYOUT_CLEARING}")
+                .isZero();
     }
 
     @Test
@@ -1582,6 +1649,22 @@ class MerchantPayoutDatabaseTest {
     private MerchantPayout stored(Funded merchant, MerchantPayoutId payout) throws Exception {
         try (Connection app = DatabaseRoles.application()) {
             return payoutStore.find(app, merchant.id(), payout).orElseThrow();
+        }
+    }
+
+    /** The position proof in one {@code REPEATABLE READ} snapshot, as its callers run it. */
+    private PositionProof.Report sweep() throws SQLException {
+        try (Connection app = DatabaseRoles.application()) {
+            app.setAutoCommit(false);
+            app.setTransactionIsolation(Connection.TRANSACTION_REPEATABLE_READ);
+            try {
+                PositionProof.Report report = positionProof.sweep(app);
+                app.commit();
+                return report;
+            } catch (RuntimeException failure) {
+                app.rollback();
+                throw failure;
+            }
         }
     }
 
