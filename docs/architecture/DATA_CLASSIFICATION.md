@@ -1062,6 +1062,75 @@ columns hold platform actor identifiers (`audit_record.actor`'s reasoning), and 
 | `refused_delivery` | `refused_at` | `INTERNAL` | When the door refused |
 | `refused_delivery` | `correlation_id` | `INTERNAL` | The flow's correlation |
 
+**The canonical batch** — *added by `P8-TSK-008`* (ADR-0066 §§3, 9; ADR-0065): what the parse
+leg distils from the encrypted evidence, deliberately cooler than its file — types,
+directions, amounts, dates, digests and typed references. The amounts are
+`RESTRICTED-FINANCIAL` (a person's or counterparty's transaction value); every reference a
+counterparty will quote is `CONFIDENTIAL` (Phase 8's match key, `expectation.operation_ref`'s
+reasoning); free text stays inside the encrypted file and has no column here.
+
+| Table | Column | Level | Why |
+|---|---|---|---|
+| `batch` | `id` | `INTERNAL` | An aggregate identifier. Generated |
+| `batch` | `file_id` | `INTERNAL` | The file it distils - an identifier of a thing |
+| `batch` | `source_id` | `INTERNAL` | The delivering source - an identifier of a thing |
+| `batch` | `external_batch_ref` | `CONFIDENTIAL` | The counterparty's batch identity - a reference it will quote (the live key's member) |
+| `batch` | `currency` | `INTERNAL` | An enumeration; part of the monetary shape with no amount beside it |
+| `batch` | `status` | `INTERNAL` | The machine's position |
+| `batch` | `business_date` | `CONFIDENTIAL` | The day the batch covers - `file.business_date`'s reasoning |
+| `batch` | `format_id` | `INTERNAL` | Which format family parsed it |
+| `batch` | `format_version` | `INTERNAL` | Which frozen version parsed it |
+| `batch` | `line_count` | `INTERNAL` | A record count - canonical lines, the split's included |
+| `batch` | `declared_line_count` | `INTERNAL` | The trailer's own record count |
+| `batch` | `net_minor` | `RESTRICTED-FINANCIAL` | **The trailer's declared net** - what the counterparty will remit |
+| `batch` | `net_scale` | `INTERNAL` | The monetary shape's scale (INV-MON-05) |
+| `batch` | `remittance_reference` | `CONFIDENTIAL` | What hop 2 attributes the bank line by (ADR-0065) - a reference both sides quote |
+| `batch` | `created_at` | `INTERNAL` | When the parse committed it |
+| `batch` | `status_changed_at` | `INTERNAL` | When the machine last moved |
+| `batch` | `correlation_id` | `INTERNAL` | The flow's correlation |
+| `batch` | `source_sequence` | `INTERNAL` | The gapless statement sequence (`P8-TSK-009`) - a counter |
+| `batch` | `accepted_on` | `CONFIDENTIAL` | The UTC day acceptance recognised it - the recognition's posting date, a fact about commercial traffic |
+| `batch` | `journal_entry_id` | `INTERNAL` | The recognition entry - an identifier of a thing; NULL exactly when the posting was honestly omitted |
+| `batch` | `posting_omitted` | `INTERNAL` | Whether a zero fee omitted the entry - the honesty flag, never silent |
+| `batch_event` | `seq` | `INTERNAL` | The history's server-assigned order |
+| `batch_event` | `batch_id` | `INTERNAL` | The moved batch - an identifier of a thing |
+| `batch_event` | `from_status` | `INTERNAL` | The edge's origin, NULL at birth |
+| `batch_event` | `to_status` | `INTERNAL` | The edge's destination |
+| `batch_event` | `actor` | `CONFIDENTIAL` | Who drove the edge (`audit_record.actor`'s reasoning) |
+| `batch_event` | `actor_type` | `INTERNAL` | The actor's kind - a closed vocabulary |
+| `batch_event` | `reason` | `CONFIDENTIAL` | The decline's stated reason - free prose by a person (`audit_record.reason`'s reasoning) |
+| `batch_event` | `occurred_at` | `INTERNAL` | When the edge was driven |
+| `batch_event` | `correlation_id` | `INTERNAL` | The flow's correlation |
+| `batch_total` | `batch_id` | `INTERNAL` | The batch - an identifier of a thing |
+| `batch_total` | `line_type` | `INTERNAL` | A closed vocabulary member |
+| `batch_total` | `direction` | `INTERNAL` | INBOUND or OUTBOUND |
+| `batch_total` | `line_count` | `INTERNAL` | A count |
+| `batch_total` | `amount_minor` | `RESTRICTED-FINANCIAL` | **A folded settlement amount** - the attester's control total |
+| `batch_total` | `amount_scale` | `INTERNAL` | The monetary shape's scale |
+| `line` | `id` | `INTERNAL` | A record identifier. Generated |
+| `line` | `batch_id` | `INTERNAL` | The line's batch - an identifier of a thing |
+| `line` | `file_id` | `INTERNAL` | The line's file - an identifier of a thing |
+| `line` | `line_no` | `INTERNAL` | The line's seat in its file |
+| `line` | `line_type` | `INTERNAL` | The platform's closed vocabulary (INV-PAY-03) - never the provider's word |
+| `line` | `direction` | `INTERNAL` | INBOUND or OUTBOUND |
+| `line` | `amount_minor` | `RESTRICTED-FINANCIAL` | **The reported settlement amount** - a person's or counterparty's transaction |
+| `line` | `amount_scale` | `INTERNAL` | The monetary shape's scale (INV-MON-05) |
+| `line` | `currency` | `INTERNAL` | An enumeration; part of the monetary shape |
+| `line` | `business_date` | `CONFIDENTIAL` | The transaction's day - `file.business_date`'s reasoning |
+| `line` | `settlement_date` | `CONFIDENTIAL` | When the counterparty says it settles |
+| `line` | `value_date` | `CONFIDENTIAL` | The value day the counterparty states |
+| `line` | `raw_record_sha256` | `INTERNAL` | The delivered record's fingerprint - recoverable from nothing |
+| `line` | `canonical_fingerprint` | `INTERNAL` | The canonical identity digest - deliberately not unique, so a duplicate survives to matching |
+| `line` | `attributed_source_id` | `INTERNAL` | NULL until the bank's lines (`P8-TSK-016`) - an identifier of a thing |
+| `line_reference` | `line_id` | `INTERNAL` | The reference's line - an identifier of a thing |
+| `line_reference` | `kind` | `INTERNAL` | A closed vocabulary member |
+| `line_reference` | `value` | `CONFIDENTIAL` | **A typed reference a counterparty quotes** - the match key (`expectation.operation_ref`'s reasoning); bank-identifier and alias shapes refused by CHECK (INV-RAIL-03) |
+| `ingestion_error` | `file_id` | `INTERNAL` | The rejected file - an identifier of a thing |
+| `ingestion_error` | `seq` | `INTERNAL` | The error's order, bounded at 100 |
+| `ingestion_error` | `line_no` | `INTERNAL` | Where - a position, not a value |
+| `ingestion_error` | `error_code` | `INTERNAL` | Why - a closed vocabulary, never the value found |
+| `ingestion_error` | `field_name` | `INTERNAL` | The field that failed - a NAME bounded to 200 characters (`refused_delivery.field_name`'s reasoning) |
+
 ### `reconciliation` — the expectation register and rule set v1 — *added by `P8-TSK-004`*
 
 **The internal side of the position proof** (ADR-0067, ADR-0068): versioned matching
@@ -1154,6 +1223,237 @@ counters and dates of things.
 | `reference_alias` | `anchor_value` | `CONFIDENTIAL` | The anchor it resolves to — an operation identifier pairing |
 | `reference_alias` | `registered_at` | `INTERNAL` | A property of the row |
 | `reference_alias` | `correlation_id` | `INTERNAL` | The flow's correlation |
+
+**The runs and the external items** — *added by `P8-TSK-009`* (§5.3, §5.4, ADR-0064): the accepted batch's unit of matching work and its working copies. The item's money triple is `RESTRICTED-FINANCIAL` (a person's or counterparty's transaction), its keys `CONFIDENTIAL` (the match keys), a reprocess's reason `CONFIDENTIAL` prose; everything else identifiers, enums, counters and dates of things.
+
+| Table | Column | Level | Why |
+|---|---|---|---|
+| `reconciliation_batch` | `id` | `INTERNAL` | An aggregate identifier. Generated |
+| `reconciliation_batch` | `source_id` | `INTERNAL` | The source - an identifier of a thing |
+| `reconciliation_batch` | `batch_id` | `INTERNAL` | The accepted batch - an identifier of a thing |
+| `reconciliation_batch` | `kind` | `INTERNAL` | BATCH or REPROCESS - a closed vocabulary |
+| `reconciliation_batch` | `rule_set_id` | `INTERNAL` | The pinned deciding version (INV-HIST-04) |
+| `reconciliation_batch` | `business_date` | `CONFIDENTIAL` | The day the batch covers - `file.business_date`'s reasoning |
+| `reconciliation_batch` | `source_sequence` | `INTERNAL` | The acceptance's gapless counter, mirrored |
+| `reconciliation_batch` | `status` | `INTERNAL` | The machine's position |
+| `reconciliation_batch` | `item_count` | `INTERNAL` | A count |
+| `reconciliation_batch` | `cursor` | `INTERNAL` | The chunked walk's resume point - forward-only |
+| `reconciliation_batch` | `failures` | `INTERNAL` | Consecutive chunk failures - the BLOCKED gate's counter |
+| `reconciliation_batch` | `requested_by` | `CONFIDENTIAL` | Who asked for a reprocess (`audit_record.actor`'s reasoning) |
+| `reconciliation_batch` | `reason` | `CONFIDENTIAL` | A reprocess's stated reason - free prose by a person |
+| `reconciliation_batch` | `created_at` | `INTERNAL` | When the acceptance birthed it |
+| `reconciliation_batch` | `status_changed_at` | `INTERNAL` | When the machine last moved |
+| `reconciliation_batch` | `correlation_id` | `INTERNAL` | The flow's correlation |
+| `reconciliation_batch_event` | `seq` | `INTERNAL` | The history's server-assigned order |
+| `reconciliation_batch_event` | `run_id` | `INTERNAL` | The moved run - an identifier of a thing |
+| `reconciliation_batch_event` | `from_status` | `INTERNAL` | The edge's origin, NULL at birth |
+| `reconciliation_batch_event` | `to_status` | `INTERNAL` | The edge's destination |
+| `reconciliation_batch_event` | `actor` | `CONFIDENTIAL` | Who drove the edge (`audit_record.actor`'s reasoning) |
+| `reconciliation_batch_event` | `actor_type` | `INTERNAL` | The actor's kind - a closed vocabulary |
+| `reconciliation_batch_event` | `reason` | `CONFIDENTIAL` | The edge's stated reason - a requeue's is a person's prose |
+| `reconciliation_batch_event` | `occurred_at` | `INTERNAL` | When the edge was driven |
+| `reconciliation_batch_event` | `correlation_id` | `INTERNAL` | The flow's correlation |
+| `external_item` | `id` | `INTERNAL` | A record identifier. Generated |
+| `external_item` | `run_id` | `INTERNAL` | The item's run - an identifier of a thing |
+| `external_item` | `source_id` | `INTERNAL` | The source - an identifier of a thing |
+| `external_item` | `settlement_line_id` | `INTERNAL` | The copied line - an identifier of a thing |
+| `external_item` | `line_no` | `INTERNAL` | The line's seat in its file |
+| `external_item` | `line_type` | `INTERNAL` | The mirrored canonical vocabulary (INV-PAY-03) |
+| `external_item` | `direction` | `INTERNAL` | INBOUND or OUTBOUND |
+| `external_item` | `amount_minor` | `RESTRICTED-FINANCIAL` | **The reported amount** - the copied line's |
+| `external_item` | `currency` | `INTERNAL` | An enumeration; part of the monetary shape |
+| `external_item` | `scale` | `INTERNAL` | The monetary shape's scale (INV-MON-05) |
+| `external_item` | `position_purpose` | `INTERNAL` | Which position the item claims - a category |
+| `external_item` | `business_date` | `CONFIDENTIAL` | The transaction's day - the copied line's |
+| `external_item` | `settlement_date` | `CONFIDENTIAL` | When the counterparty says it settles |
+| `external_item` | `value_date` | `CONFIDENTIAL` | The value day the counterparty states |
+| `external_item` | `canonical_fingerprint` | `INTERNAL` | The copied identity digest - recoverable from nothing |
+| `external_item` | `allocated_minor` | `RESTRICTED-FINANCIAL` | **The allocated part** - a disposition of the amount |
+| `external_item` | `parked_minor` | `RESTRICTED-FINANCIAL` | **The parked part** - a disposition of the amount |
+| `external_item` | `offset_minor` | `RESTRICTED-FINANCIAL` | **The offset part** - a disposition of the amount |
+| `external_item` | `status` | `INTERNAL` | The machine's position |
+| `external_item` | `grace_until` | `INTERNAL` | The pinned grace deadline - a property of the row |
+| `external_item` | `created_at` | `INTERNAL` | When the acceptance birthed it |
+| `external_item` | `status_changed_at` | `INTERNAL` | When the machine last moved |
+| `external_item` | `correlation_id` | `INTERNAL` | The flow's correlation |
+| `external_item_event` | `seq` | `INTERNAL` | The history's server-assigned order |
+| `external_item_event` | `item_id` | `INTERNAL` | The moved item - an identifier of a thing |
+| `external_item_event` | `from_status` | `INTERNAL` | The edge's origin, NULL at birth |
+| `external_item_event` | `to_status` | `INTERNAL` | The edge's destination |
+| `external_item_event` | `actor` | `CONFIDENTIAL` | Who drove the edge (`audit_record.actor`'s reasoning) |
+| `external_item_event` | `actor_type` | `INTERNAL` | The actor's kind - a closed vocabulary |
+| `external_item_event` | `reason` | `CONFIDENTIAL` | The edge's stated reason, where one is |
+| `external_item_event` | `occurred_at` | `INTERNAL` | When the edge was driven |
+| `external_item_event` | `correlation_id` | `INTERNAL` | The flow's correlation |
+| `external_item_key` | `item_id` | `INTERNAL` | The keyed item - an identifier of a thing |
+| `external_item_key` | `source_id` | `INTERNAL` | The source, denormalised for the match index |
+| `external_item_key` | `key_kind` | `INTERNAL` | The mirrored reference vocabulary - a closed list |
+| `external_item_key` | `key_value` | `CONFIDENTIAL` | **A reference the counterparty quotes** - the match key (`expectation.operation_ref`'s reasoning) |
+| `break` | `id` | `INTERNAL` | A record identifier. Generated |
+| `break` | `type` | `INTERNAL` | One of fourteen - a closed vocabulary |
+| `break` | `cause` | `INTERNAL` | Which detector raised it - a closed vocabulary |
+| `break` | `status` | `INTERNAL` | The machine's position |
+| `break` | `severity` | `INTERNAL` | The computed grade - a closed vocabulary |
+| `break` | `source_id` | `INTERNAL` | The source - an identifier of a thing |
+| `break` | `rule_set_id` | `INTERNAL` | The pinned grading version (INV-HIST-04) |
+| `break` | `expectation_id` | `INTERNAL` | A subject - an identifier of a thing |
+| `break` | `external_item_id` | `INTERNAL` | A subject - an identifier of a thing |
+| `break` | `suspense_item_id` | `INTERNAL` | A subject - an identifier of a thing |
+| `break` | `run_id` | `INTERNAL` | A subject - an identifier of a thing |
+| `break` | `decision_id` | `INTERNAL` | A subject - an identifier of a thing |
+| `break` | `value_at_issue_minor` | `RESTRICTED-FINANCIAL` | **What is at issue** - frozen at raise, never in a metric, event or log |
+| `break` | `currency` | `INTERNAL` | An enumeration; part of the monetary shape |
+| `break` | `scale` | `INTERNAL` | The monetary shape's scale (INV-MON-05) |
+| `break` | `internal_classification` | `INTERNAL` | The lookup's frozen verdict - a closed vocabulary |
+| `break` | `internal_operation_ref` | `CONFIDENTIAL` | The operation the lookup named - an operation reference |
+| `break` | `internal_state` | `INTERNAL` | The named operation's state - an enumerated name |
+| `break` | `assignee` | `CONFIDENTIAL` | Who investigates (`audit_record.actor`'s reasoning) |
+| `break` | `residual_version` | `INTERNAL` | The staleness counter (ADR-0071) |
+| `break` | `follows_break_id` | `INTERNAL` | The predecessor - an identifier of a thing |
+| `break` | `raised_at` | `INTERNAL` | When the platform detected it |
+| `break` | `resolved_at` | `INTERNAL` | When it closed, exactly with RESOLVED |
+| `break` | `status_changed_at` | `INTERNAL` | When the machine last moved |
+| `break` | `correlation_id` | `INTERNAL` | The flow's correlation |
+| `break_event` | `seq` | `INTERNAL` | The history's server-assigned order |
+| `break_event` | `break_id` | `INTERNAL` | The moved break - an identifier of a thing |
+| `break_event` | `event_type` | `INTERNAL` | RAISED and its siblings - a closed vocabulary |
+| `break_event` | `actor` | `CONFIDENTIAL` | Who drove the edge (`audit_record.actor`'s reasoning) |
+| `break_event` | `actor_type` | `INTERNAL` | The actor's kind - a closed vocabulary |
+| `break_event` | `reason` | `CONFIDENTIAL` | The edge's stated reason - a person's prose where one is |
+| `break_event` | `detail` | `INTERNAL` | Identifiers and enumerated names only (INV-AUD-02) |
+| `break_event` | `occurred_at` | `INTERNAL` | When the edge was driven |
+| `break_event` | `correlation_id` | `INTERNAL` | The flow's correlation |
+| `break_note` | `id` | `INTERNAL` | A record identifier. Generated |
+| `break_note` | `break_id` | `INTERNAL` | The noted break - an identifier of a thing |
+| `break_note` | `body` | `CONFIDENTIAL` | **An investigator's own words** - never logged, evented or audited; screened at the database for PAN and IBAN shapes (INV-PAY-02, INV-RAIL-03) |
+| `break_note` | `author` | `CONFIDENTIAL` | Who wrote it (`audit_record.actor`'s reasoning) |
+| `break_note` | `author_type` | `INTERNAL` | The author's kind - a closed vocabulary |
+| `break_note` | `added_at` | `INTERNAL` | When it was appended |
+| `break_note` | `correlation_id` | `INTERNAL` | The flow's correlation |
+| `break_evidence_link` | `id` | `INTERNAL` | A record identifier. Generated |
+| `break_evidence_link` | `break_id` | `INTERNAL` | The linked break - an identifier of a thing |
+| `break_evidence_link` | `target_kind` | `INTERNAL` | What the identifier names - a closed vocabulary |
+| `break_evidence_link` | `target_ref` | `CONFIDENTIAL` | The named identifier - screened like a reference, never content |
+| `break_evidence_link` | `added_by` | `CONFIDENTIAL` | Who linked it (`audit_record.actor`'s reasoning) |
+| `break_evidence_link` | `added_by_type` | `INTERNAL` | The linker's kind - a closed vocabulary |
+| `break_evidence_link` | `added_at` | `INTERNAL` | When it was appended |
+| `break_evidence_link` | `correlation_id` | `INTERNAL` | The flow's correlation |
+| `park` | `id` | `INTERNAL` | A record identifier. Generated |
+| `park` | `source_id` | `INTERNAL` | The source - an identifier of a thing |
+| `park` | `kind` | `INTERNAL` | PARK or UNPARK - a closed vocabulary |
+| `park` | `position_account_id` | `INTERNAL` | The position the entry touched - an identifier of a thing |
+| `park` | `currency` | `INTERNAL` | An enumeration |
+| `park` | `decided_on` | `CONFIDENTIAL` | The deciding day - stamped once, the entry's posting date |
+| `park` | `value_date` | `CONFIDENTIAL` | The items' settlement day - the entry's value date |
+| `park` | `journal_entry_id` | `INTERNAL` | The posted entry - an identifier of a thing |
+| `park` | `actor` | `CONFIDENTIAL` | Who decided (`audit_record.actor`'s reasoning) |
+| `park` | `actor_type` | `INTERNAL` | The actor's kind - a closed vocabulary |
+| `park` | `created_at` | `INTERNAL` | When it was recorded |
+| `park` | `correlation_id` | `INTERNAL` | The flow's correlation |
+| `suspense_item` | `id` | `INTERNAL` | A record identifier. Generated |
+| `suspense_item` | `break_id` | `INTERNAL` | The one owning break (INV-REC-09) - an identifier of a thing |
+| `suspense_item` | `external_item_id` | `INTERNAL` | The parked item - an identifier of a thing |
+| `suspense_item` | `origin` | `INTERNAL` | Which opener - a closed vocabulary |
+| `suspense_item` | `origin_ref` | `CONFIDENTIAL` | The origin's own row - an identifier, conservatively a reference |
+| `suspense_item` | `side` | `INTERNAL` | CREDIT or DEBIT - fixed at birth, never netted |
+| `suspense_item` | `amount_minor` | `RESTRICTED-FINANCIAL` | **The parked value** - never in a metric, event or log |
+| `suspense_item` | `currency` | `INTERNAL` | An enumeration; part of the monetary shape |
+| `suspense_item` | `scale` | `INTERNAL` | The monetary shape's scale (INV-MON-05) |
+| `suspense_item` | `released_minor` | `RESTRICTED-FINANCIAL` | **The released part** - a disposition of the amount |
+| `suspense_item` | `status` | `INTERNAL` | The machine's position - the amounts' mirror |
+| `suspense_item` | `opened_on` | `CONFIDENTIAL` | The day the value entered suspense - the age's anchor, from stored data |
+| `suspense_item` | `entry_id` | `INTERNAL` | The entry that carried the value in - an identifier of a thing |
+| `suspense_item` | `park_id` | `INTERNAL` | The park that opened it - an identifier of a thing |
+| `suspense_item` | `position_account_id` | `INTERNAL` | The parked position - the unpark's frozen inverse fact |
+| `suspense_item` | `status_changed_at` | `INTERNAL` | When the machine last moved |
+| `suspense_item` | `correlation_id` | `INTERNAL` | The flow's correlation |
+| `suspense_release` | `seq` | `INTERNAL` | The history's server-assigned order |
+| `suspense_release` | `item_id` | `INTERNAL` | The released item - an identifier of a thing |
+| `suspense_release` | `amount_minor` | `RESTRICTED-FINANCIAL` | **The released value** - one row per release |
+| `suspense_release` | `park_id` | `INTERNAL` | The unpark that took it, where one did - an identifier of a thing |
+| `suspense_release` | `cause` | `INTERNAL` | Which path took the value - a closed vocabulary |
+| `suspense_release` | `cause_ref` | `CONFIDENTIAL` | The decision, resolution or park behind it - an identifier, conservatively a reference |
+| `suspense_release` | `actor` | `CONFIDENTIAL` | Who released (`audit_record.actor`'s reasoning) |
+| `suspense_release` | `actor_type` | `INTERNAL` | The actor's kind - a closed vocabulary |
+| `suspense_release` | `released_at` | `INTERNAL` | When the release was taken |
+| `suspense_release` | `correlation_id` | `INTERNAL` | The flow's correlation |
+| `match_decision` | `id` | `INTERNAL` | A record identifier. Generated |
+| `match_decision` | `external_item_id` | `INTERNAL` | The decided item - an identifier of a thing |
+| `match_decision` | `run_id` | `INTERNAL` | The deciding run, where one did - an identifier of a thing |
+| `match_decision` | `origin` | `INTERNAL` | RUN and its siblings - a closed vocabulary |
+| `match_decision` | `rule_set_id` | `INTERNAL` | The pinned deciding version (INV-HIST-04) |
+| `match_decision` | `rule_priority` | `INTERNAL` | Which rule fired - a small number |
+| `match_decision` | `strategy` | `INTERNAL` | The rule's cardinality - a closed vocabulary |
+| `match_decision` | `matched_key_kind` | `INTERNAL` | Which key reached the candidate - a closed vocabulary |
+| `match_decision` | `outcome` | `INTERNAL` | MATCHED and its siblings - a closed vocabulary |
+| `match_decision` | `claimant_rank` | `INTERNAL` | This item's rank in claimant order - a count |
+| `match_decision` | `claimant_count` | `INTERNAL` | The live candidates seen - a count |
+| `match_decision` | `date_deviation_days` | `INTERNAL` | Stored dates' difference - a count of days, never an amount |
+| `match_decision` | `timing_tolerance_days` | `INTERNAL` | The applied window, frozen (INV-REC-04) |
+| `match_decision` | `fee_expected_minor` | `RESTRICTED-FINANCIAL` | **The fee check's expected value** (`P8-TSK-012`'s writer) - never in a metric, event or log |
+| `match_decision` | `fee_reported_minor` | `RESTRICTED-FINANCIAL` | **The fee the counterparty reported** - the check's other side |
+| `match_decision` | `fee_tolerance_minor` | `RESTRICTED-FINANCIAL` | **The applied fee bound**, frozen - an amount, conservatively |
+| `match_decision` | `decided_by` | `CONFIDENTIAL` | Who decided (`audit_record.actor`'s reasoning; the run leg is the system) |
+| `match_decision` | `decided_by_type` | `INTERNAL` | The decider's kind - a closed vocabulary |
+| `match_decision` | `decided_at` | `INTERNAL` | When it was decided |
+| `match_decision` | `decided_on` | `CONFIDENTIAL` | The deciding day - a park's posting date where one follows |
+| `match_decision` | `correlation_id` | `INTERNAL` | The flow's correlation |
+| `match_candidate` | `decision_id` | `INTERNAL` | The seeing decision - an identifier of a thing |
+| `match_candidate` | `expectation_id` | `INTERNAL` | The seen candidate - an identifier of a thing |
+| `match_candidate` | `key_kind` | `INTERNAL` | How it was reached - a closed vocabulary |
+| `match_candidate` | `amount_minor` | `RESTRICTED-FINANCIAL` | **The candidate's amount as seen** - the snapshot replay reads (INV-REC-04) |
+| `match_candidate` | `currency` | `INTERNAL` | An enumeration; part of the monetary shape |
+| `match_candidate` | `scale` | `INTERNAL` | The monetary shape's scale (INV-MON-05) |
+| `match_candidate` | `direction` | `INTERNAL` | INBOUND or OUTBOUND - a closed vocabulary |
+| `match_candidate` | `remainder_before_minor` | `RESTRICTED-FINANCIAL` | **The remainder the decision saw** - frozen because the live row moves on |
+| `match_candidate` | `opened_at` | `INTERNAL` | The candidate's birth as seen |
+| `allocation` | `id` | `INTERNAL` | A record identifier. Generated |
+| `allocation` | `decision_id` | `INTERNAL` | The deciding evaluation - an identifier of a thing |
+| `allocation` | `external_item_id` | `INTERNAL` | The claiming item - an identifier of a thing |
+| `allocation` | `expectation_id` | `INTERNAL` | The claimed expectation - an identifier of a thing |
+| `allocation` | `amount_minor` | `RESTRICTED-FINANCIAL` | **The allocated value** (INV-REC-07) - never in a metric, event or log |
+| `allocation` | `currency` | `INTERNAL` | An enumeration; part of the monetary shape |
+| `allocation` | `scale` | `INTERNAL` | The monetary shape's scale (INV-MON-05) |
+| `allocation` | `reverses_allocation_id` | `INTERNAL` | The reversed allocation, on a repudiation's counter-row - an identifier of a thing |
+| `allocation` | `created_at` | `INTERNAL` | When it was recorded |
+| `allocation` | `correlation_id` | `INTERNAL` | The flow's correlation |
+| `resolution` | `id` | `INTERNAL` | A record identifier. Generated |
+| `resolution` | `break_id` | `INTERNAL` | The closed break - an identifier of a thing |
+| `resolution` | `kind` | `INTERNAL` | EVIDENCED and its siblings - a closed vocabulary |
+| `resolution` | `status` | `INTERNAL` | The machine's position - a closed vocabulary |
+| `resolution` | `reason_code` | `INTERNAL` | The closed reason (ADR-0071) - never the narrative |
+| `resolution` | `narrative` | `CONFIDENTIAL` | **The resolver's own words** - never logged, evented or audited; screened at the database for PAN and IBAN shapes (INV-PAY-02, INV-RAIL-03) |
+| `resolution` | `four_eyes` | `INTERNAL` | Whether a second person was required |
+| `resolution` | `proposed_amount_minor` | `RESTRICTED-FINANCIAL` | **The value the resolution explains or moves** - frozen at write, never in a metric, event or log |
+| `resolution` | `currency` | `INTERNAL` | An enumeration; part of the monetary shape |
+| `resolution` | `scale` | `INTERNAL` | The monetary shape's scale (INV-MON-05) |
+| `resolution` | `residual_version` | `INTERNAL` | The break's staleness counter as frozen (ADR-0071) |
+| `resolution` | `target_account_id` | `INTERNAL` | The named account, where a transfer names one - an identifier of a thing |
+| `resolution` | `offset_item_id` | `INTERNAL` | The released suspense item - an identifier of a thing |
+| `resolution` | `chosen_expectation_id` | `INTERNAL` | The manual match's choice (`P8-TSK-015`) - an identifier of a thing |
+| `resolution` | `decision_id` | `INTERNAL` | The explaining decision - an identifier of a thing |
+| `resolution` | `park_id` | `INTERNAL` | The offset's unpark - an identifier of a thing |
+| `resolution` | `rule_set_id` | `INTERNAL` | The version active when written (INV-HIST-04) |
+| `resolution` | `adjustment_proposal_id` | `INTERNAL` | The bound ledger proposal (`P8-TSK-015`) - an identifier of a thing |
+| `resolution` | `journal_entry_id` | `INTERNAL` | The posted entry, where one posts - an identifier of a thing |
+| `resolution` | `proposed_by` | `CONFIDENTIAL` | Who proposed (`audit_record.actor`'s reasoning; the platform for EVIDENCED) |
+| `resolution` | `proposed_by_type` | `INTERNAL` | The proposer's kind - a closed vocabulary |
+| `resolution` | `proposed_at` | `INTERNAL` | When it was proposed |
+| `resolution` | `decided_by` | `CONFIDENTIAL` | Who decided (`audit_record.actor`'s reasoning) |
+| `resolution` | `decided_by_type` | `INTERNAL` | The decider's kind - a closed vocabulary |
+| `resolution` | `decided_at` | `INTERNAL` | When it was decided |
+| `resolution` | `created_at` | `INTERNAL` | When it was recorded |
+| `resolution` | `status_changed_at` | `INTERNAL` | When the machine last moved |
+| `resolution` | `correlation_id` | `INTERNAL` | The flow's correlation |
+| `resolution_event` | `seq` | `INTERNAL` | The history's server-assigned order |
+| `resolution_event` | `resolution_id` | `INTERNAL` | The moved resolution - an identifier of a thing |
+| `resolution_event` | `from_status` | `INTERNAL` | The edge's origin - a closed vocabulary |
+| `resolution_event` | `to_status` | `INTERNAL` | The edge's target - a closed vocabulary |
+| `resolution_event` | `actor` | `CONFIDENTIAL` | Who drove the edge (`audit_record.actor`'s reasoning) |
+| `resolution_event` | `actor_type` | `INTERNAL` | The actor's kind - a closed vocabulary |
+| `resolution_event` | `reason` | `CONFIDENTIAL` | The edge's stated reason - a person's prose where one is |
+| `resolution_event` | `occurred_at` | `INTERNAL` | When the edge was driven |
+| `resolution_event` | `correlation_id` | `INTERNAL` | The flow's correlation |
 
 ### `consent.consent_text` and `consent.consent_record` — *added by `P2-TSK-017`*
 

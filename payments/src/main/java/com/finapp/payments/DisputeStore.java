@@ -52,6 +52,12 @@ public interface DisputeStore<T> {
     Optional<Dispute> findForUpdate(T unitOfWork, String provider, ProviderReference reference);
 
     /**
+     * The dispute a provider reference names, lock-free (`P8-TSK-010`): the reconciliation
+     * lookup's read — a typing snapshot, never a working claim, so no lock is taken.
+     */
+    Optional<Dispute> findByProviderReference(T unitOfWork, ProviderReference reference);
+
+    /**
      * Moves the dispute {@code before → after}, conditional on {@code before}'s stage, with
      * its trail row — stamped {@code at}, from the caller's injected clock — in the same
      * transaction. The chargeback, its attribution and the fee ride the statement: `V021` lets

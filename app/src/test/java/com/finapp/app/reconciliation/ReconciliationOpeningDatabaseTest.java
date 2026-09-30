@@ -227,7 +227,12 @@ class ReconciliationOpeningDatabaseTest {
         assertThat(card.ledgerBalance().minorUnits())
                 .as("the standing capture keeps the position non-zero: the sign is judged")
                 .isPositive();
-        assertThat(card.openRemainders()).isEqualTo(card.ledgerBalance());
+        // The identity's own form since P8-TSK-009 carries the items term - in the
+        // shared container another suite's waiting item and its balancing expectation
+        // (P8-TSK-011's) may stand, so the special case remainders = balance is not
+        // this suite's to assert.
+        assertThat(card.openRemainders().minus(card.openItems()))
+                .isEqualTo(card.ledgerBalance());
         assertThat(report.unattributedByPurpose().get(AccountPurpose.SETTLEMENT_CLEARING))
                 .as("every clearing line is known")
                 .isZero();

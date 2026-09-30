@@ -112,11 +112,17 @@ class SettlementMigrationTest {
         // write it could make the schema's provenance disagree with the schema.
         assertThat(tablesIn(SCHEMA))
                 .containsExactly(
+                        "batch",
+                        "batch_event",
+                        "batch_total",
                         "file",
                         "file_chunk",
                         "file_event",
                         "file_receipt",
                         "flyway_schema_history",
+                        "ingestion_error",
+                        "line",
+                        "line_reference",
                         "refused_delivery",
                         "source");
 
@@ -140,6 +146,56 @@ class SettlementMigrationTest {
                 .isThrownBy(() -> asApplication("CREATE TABLE " + SCHEMA + ".probe (id INT)"))
                 .matches(e -> INSUFFICIENT_PRIVILEGE.equals(e.getSQLState()));
         application.rollback();
+    }
+
+    @Test
+    @DisplayName("the generated fragments are each enum's mirror in their LATEST defining"
+            + " migration - one definition, two artefacts (the V014 pattern)")
+    void generatedFragmentsMatchTheEnums() {
+        String v003 = collapsed(migration(
+                "db/migration/settlement/V003__the_psp_format_parse_normalise_reject_whole.sql"));
+        String v004 = collapsed(migration(
+                "db/migration/settlement/V004__acceptance_joins_the_machines.sql"));
+
+        // The machines and the rejection codes were re-stated by V004 (ACCEPTED and
+        // SOURCE_RETIRED arrived with their producers) - the current definitions live there.
+        assertThat(v004).contains("status IN (" + FileStatus.sqlValueList() + ")");
+        assertThat(v004).contains(FileStatus.sqlTransitionRule());
+        assertThat(v004).contains("status IN (" + BatchStatus.sqlValueList() + ")");
+        assertThat(v004).contains(BatchStatus.sqlTransitionRule());
+        assertThat(v004).contains("rejection_code IN (" + RejectionCode.sqlValueList() + ")");
+
+        // V003 keeps the current definitions it introduced: line types (twice - totals and
+        // lines), directions, reference kinds, the error-row codes, and the live unique -
+        // written WHOLE, so neither V004 nor P8-TSK-023 changes the index.
+        assertThat(v003).contains("line_type IN (" + SettlementLineType.sqlValueList() + ")");
+        assertThat(v003).contains("direction IN (" + LineDirection.sqlValueList() + ")");
+        assertThat(v003).contains("kind IN (" + LineReferenceKind.sqlValueList() + ")");
+        assertThat(v003).contains("error_code IN (" + RejectionCode.sqlErrorRowList() + ")");
+        assertThat(v003)
+                .contains("ON settlement.batch (source_id, external_batch_ref, currency)")
+                .contains("WHERE status NOT IN ('REJECTED', 'REPUDIATED')");
+
+        // V004's own arbiters and honesty rules.
+        assertThat(v004)
+                .contains("CONSTRAINT batch_sequence_once UNIQUE (source_id, source_sequence)")
+                .contains(normalizedFragment(
+                        "CONSTRAINT batch_accepted_carries_its_facts CHECK ("
+                                + " status <> 'ACCEPTED' OR (source_sequence IS NOT NULL AND"
+                                + " accepted_on IS NOT NULL))"))
+                .contains(normalizedFragment(
+                        "CONSTRAINT batch_posting_omitted_is_honest CHECK ("
+                                + " status <> 'ACCEPTED' OR ((journal_entry_id IS NULL) ="
+                                + " posting_omitted))"));
+    }
+
+    private static String normalizedFragment(String fragment) {
+        return fragment.replaceAll("\\s+", " ").replaceAll("\\( ", "(");
+    }
+
+    /** Whitespace collapsed, so a generated fragment matches however the SQL wraps. */
+    private static String collapsed(String migration) {
+        return statementsOf(migration).replaceAll("\\s+", " ").replaceAll("\\( ", "(");
     }
 
     // -----------------------------------------------------------------
@@ -195,7 +251,10 @@ class SettlementMigrationTest {
 
     /** From the classpath, the sibling migration tests' idiom. */
     private static String migration() {
-        String resource = "db/migration/settlement/V001__initialise_settlement_schema.sql";
+        return migration("db/migration/settlement/V001__initialise_settlement_schema.sql");
+    }
+
+    private static String migration(String resource) {
         try (InputStream stream =
                 SettlementMigrationTest.class.getClassLoader().getResourceAsStream(resource)) {
             if (stream == null) {

@@ -61,6 +61,59 @@ public final class JdbcExpectationReadings implements ExpectationReadings<Connec
     }
 
     @Override
+    public List<OpenItemRemainder> openItemRemainders(Connection unitOfWork) {
+        try (PreparedStatement select =
+                unitOfWork.prepareStatement(
+                        // Allocating lines only (fees' effect IS the recognition entry),
+                        // undisposed statuses only - the list generated from the enum.
+                        "SELECT source_id, position_purpose, direction, amount_minor,"
+                                + " allocated_minor, parked_minor, offset_minor, currency,"
+                                + " scale"
+                                + " FROM reconciliation.external_item"
+                                + " WHERE status IN ('PENDING', 'UNMATCHED')"
+                                + " AND line_type IN (" + ExternalLineType.sqlAllocatingList()
+                                + ")")) {
+            try (ResultSet rows = select.executeQuery()) {
+                List<OpenItemRemainder> remainders = new ArrayList<>();
+                while (rows.next()) {
+                    CurrencyCode currency =
+                            CurrencyCode.of(rows.getString("currency").stripTrailing());
+                    short scale = rows.getShort("scale");
+                    // Row-level Money arithmetic, caller-level fold (P3-TSK-008's rule).
+                    Money remainder =
+                            Money.ofPersisted(rows.getLong("amount_minor"), currency, scale)
+                                    .minus(
+                                            Money.ofPersisted(
+                                                    rows.getLong("allocated_minor"),
+                                                    currency,
+                                                    scale))
+                                    .minus(
+                                            Money.ofPersisted(
+                                                    rows.getLong("parked_minor"),
+                                                    currency,
+                                                    scale))
+                                    .minus(
+                                            Money.ofPersisted(
+                                                    rows.getLong("offset_minor"),
+                                                    currency,
+                                                    scale));
+                    remainders.add(
+                            new OpenItemRemainder(
+                                    rows.getObject("source_id", UUID.class),
+                                    AccountPurpose.valueOf(
+                                            rows.getString("position_purpose")),
+                                    ExpectationDirection.valueOf(rows.getString("direction")),
+                                    remainder));
+                }
+                return List.copyOf(remainders);
+            }
+        } catch (SQLException failure) {
+            throw new ReconciliationStorageException(
+                    DatabaseFailure.describe("reading the open item remainders", failure));
+        }
+    }
+
+    @Override
     public List<KnownLine> knownLines(Connection unitOfWork) {
         try (PreparedStatement select =
                 unitOfWork.prepareStatement(

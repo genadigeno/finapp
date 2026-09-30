@@ -46,6 +46,33 @@ public interface ExpectationReadings<T> {
     List<OpenRemainder> openRemainders(T unitOfWork);
 
     /**
+     * One undisposed item's remainder (`P8-TSK-009`): what an accepted line still claims of
+     * its position — {@code amount − allocated − parked − offset}, per row through the
+     * kernel. The identity's items term (`INV-REC-06` extended at acceptance):
+     * balance = open remainders − open item remainders, at every commit.
+     */
+    record OpenItemRemainder(
+            UUID sourceId,
+            AccountPurpose position,
+            ExpectationDirection direction,
+            Money remainder) {
+        public OpenItemRemainder {
+            Objects.requireNonNull(sourceId, "sourceId must not be null");
+            Objects.requireNonNull(position, "position must not be null");
+            Objects.requireNonNull(direction, "direction must not be null");
+            Objects.requireNonNull(remainder, "remainder must not be null");
+        }
+    }
+
+    /**
+     * Every ALLOCATING item's remainder while it is {@code PENDING} or {@code UNMATCHED}
+     * (§5.4): fee items are excluded because their effect IS the recognition entry, and a
+     * parked remainder is excluded because the park posted it to suspense — where the
+     * position identity already sees it.
+     */
+    List<OpenItemRemainder> openItemRemainders(T unitOfWork);
+
+    /**
      * Every {@code (journal_entry_id, ledger_account_id)} pair an expectation names — the
      * known-entry list's first class (ADR-0067 §9); suspense items and the Phase 8 records
      * join it with their tasks.

@@ -126,8 +126,13 @@ expectation is open, nothing allocated), `REPORTED` (allocated from a counterpar
 batch whose remittance the bank has not discharged), `CASH_CONFIRMED` (that remittance is
 settled by bank items), `OVERDUE` (`overdue_since` is set and it is not settled) or `RESOLVED`
 (`RESOLVED_BY_ADJUSTMENT`), with the identifier trail expectation → allocations → items → batch
-→ remittance → bank items. "Reported, awaiting cash" is this reading, not an account; the exact
-precedence of the five is `P8-TSK-014`'s.
+→ remittance → bank items. "Reported, awaiting cash" is this reading, not an account. The precedence, decided and built by
+`P8-TSK-014` (`SettlementStatus.derive`, pure): `RESOLVED` > `CASH_CONFIRMED` > `REPORTED` >
+`OVERDUE` > `PENDING`. A partially allocated operation is `OVERDUE` once its window passed and
+`PENDING` before — part of the money is still unaccounted for; `CASH_CONFIRMED` needs EVERY
+report batch the expectation was allocated from to have its `REMITTANCE` settled, so an operation
+settled from a zero-net batch (which opens no remittance) stays `REPORTED`; `kind=REMITTANCE` is
+refused (`422`) — a report's promise is read as an expectation, not as an operation.
 
 ## 3. The accounting model (ADR-0065)
 
@@ -459,7 +464,7 @@ PARSED ──accept──> ACCEPTED ──an approved REPUDIATE_BATCH──> REP
 | Edge | Driver | Condition |
 |---|---|---|
 | (birth) → `PARSED` | The parse leg, in its file's `RECEIVED → PARSED` transaction | The live-batch uniques admit it: `UNIQUE (source_id, external_batch_ref, currency)` and, for statements, `UNIQUE (source_id, currency, statement_sequence)`, both among batches not `REJECTED` or `REPUDIATED` |
-| `PARSED → ACCEPTED` | The accept leg, in its file's `PARSED → ACCEPTED` transaction | The source row locked `FOR UPDATE` for the gapless `source_sequence`; `accepted_on` stamped once; the run created (`AcceptedBatchIntake`); items, keys and the remittance expectation — or, for a statement, the unattributed lines' suspense items with their breaks — then the recognition posting last. Publishes `settlement.SettlementBatchAccepted` |
+| `PARSED → ACCEPTED` | The accept leg, in its file's `PARSED → ACCEPTED` transaction | The source row locked `FOR UPDATE` for the gapless `source_sequence`; `accepted_on` stamped once; the run created (`AcceptedBatchIntake`); items, keys and the remittance expectation — or, for a statement, the unattributed lines' suspense items with their breaks — then the recognition posting as the last CONTENDED write, PRECEDING the batch's accepting `UPDATE`: `V004`'s honesty `CHECK` wants the entry id in that same statement, and every row after the posting is one the transaction already exclusively claimed *(built so by `P8-TSK-009`, the design's recorded correction of this row's "posting last")*. Publishes `settlement.SettlementBatchAccepted` |
 | `PARSED → REJECTED` | Whatever rejects its `PARSED` file (a decline, `SOURCE_RETIRED`), in the same transaction | — |
 | `ACCEPTED → REPUDIATED` | The approval of a `REPUDIATE_BATCH` resolution by a second person holding `RECONCILIATION_RESOLVE` (`P8-TSK-023`) | Four-eyes, reason `EVIDENCE_REPUDIATED`. Publishes `settlement.SettlementBatchRepudiated` |
 
@@ -949,6 +954,8 @@ per-currency `high_value_minor` (seeded 1,000.00 — transition decision O7). It
 each escalation is an appended `break_event`, and the column only moves forward. **Ageing** is
 `now() − raised_at` on the database clock; the gauges report the oldest open break per severity,
 alerting at CRITICAL over 0 hours, HIGH over 1 day, MEDIUM over 5 days and LOW over 15 days.
+
+**The causes, closed** (`P8-TSK-010`, ADR-0069 §2): `EXPECTATION_OVERDUE` (the ageing sweep); `GRACE_EXPIRED` (the grace leg — the one cause two types share); `PARKED_ON_RECEIPT`; `BANK_LINE_UNATTRIBUTED`; `AMOUNT_DIFFERS`; `CURRENCY_DIFFERS`; `FEE_BEYOND_TOLERANCE`; `EXPECTATION_EXHAUSTED`; `REPEATED_FINGERPRINT`; `KEY_COLLISION`; `MULTIPLE_CANDIDATES`; `LATE_MATCH`; `CYCLE_MISMATCH`; `DIRECTION_CONTRADICTED`; `TERMINAL_STATE_CONTRADICTED`; `RETURN_NOT_APPLICABLE`; `REFUND_CONTRADICTED`; `REMITTANCE_DIFFERS`; `STATEMENT_GAP`; `OPENING_BALANCE`; `ITEM_ERRORED`; `RUN_BLOCKED`; `REPLAY_DIVERGED`; `EVIDENCE_REPUDIATED`. The type—cause pairing binds the RAISE by a generated `BEFORE INSERT` trigger, never a table `CHECK`: a reclassification moves the type while the cause stays frozen, so a life-long pairing would refuse the edge §5.6 allows. An investigator's reclassification raises nothing and so has no cause member.
 
 **Never discarded** (`INV-REC-02`): there is no `DELETE` grant and a refusing trigger; a run
 cannot complete with a `PENDING` item; every unallocated remainder either waits in `UNMATCHED`

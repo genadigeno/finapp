@@ -506,10 +506,36 @@ class OpenApiContractTest {
                                 + "/operator/settlement/files/{id}/content-reads",
                         ApiVersion.CURRENT_PREFIX + "/operator/settlement/sources",
                         ApiVersion.CURRENT_PREFIX + "/operator/settlement/refused-deliveries",
+                        // P8-TSK-008: the decline (SETTLEMENT_INGEST, reasoned) and the batch
+                        // read - the parsed totals an attester examines before attesting.
+                        ApiVersion.CURRENT_PREFIX + "/operator/settlement/files/{id}/decline",
+                        ApiVersion.CURRENT_PREFIX + "/operator/settlement/batches/{id}",
                         // P8-TSK-007: the opening-position backfill (RECONCILIATION_ADMINISTER)
                         // and the positions report (RECONCILIATION_INVESTIGATE, audited).
                         ApiVersion.CURRENT_PREFIX + "/operator/reconciliation/opening-position",
                         ApiVersion.CURRENT_PREFIX + "/operator/reports/reconciliation/positions",
+                        // P8-TSK-011: the matcher's explanation doors - a decision
+                        // explains itself from stored rows alone (RECONCILIATION_INVESTIGATE).
+                        ApiVersion.CURRENT_PREFIX + "/operator/reconciliation/runs",
+                        ApiVersion.CURRENT_PREFIX + "/operator/reconciliation/runs/{id}",
+                        ApiVersion.CURRENT_PREFIX + "/operator/reconciliation/decisions/{id}",
+                        ApiVersion.CURRENT_PREFIX + "/operator/reconciliation/allocations/{id}",
+                        // P8-TSK-014: the investigator's desk - break reads, the case file,
+                        // the trace, expectation reads and the settlement-status trail
+                        // (RECONCILIATION_INVESTIGATE).
+                        ApiVersion.CURRENT_PREFIX + "/operator/reconciliation/breaks",
+                        ApiVersion.CURRENT_PREFIX + "/operator/reconciliation/breaks/{id}",
+                        ApiVersion.CURRENT_PREFIX + "/operator/reconciliation/breaks/{id}/trace",
+                        ApiVersion.CURRENT_PREFIX
+                                + "/operator/reconciliation/breaks/{id}/assignment",
+                        ApiVersion.CURRENT_PREFIX + "/operator/reconciliation/breaks/{id}/notes",
+                        ApiVersion.CURRENT_PREFIX
+                                + "/operator/reconciliation/breaks/{id}/evidence-links",
+                        ApiVersion.CURRENT_PREFIX
+                                + "/operator/reconciliation/breaks/{id}/classification",
+                        ApiVersion.CURRENT_PREFIX + "/operator/reconciliation/expectations",
+                        ApiVersion.CURRENT_PREFIX + "/operator/reconciliation/expectations/{id}",
+                        ApiVersion.CURRENT_PREFIX + "/operator/reconciliation/settlement-status",
                         ApiVersion.CURRENT_PREFIX + "/sessions/{id}",
                         ApiVersion.CURRENT_PREFIX + "/sessions/current",
                         ApiVersion.CURRENT_PREFIX + "/me/mfa",

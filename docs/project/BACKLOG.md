@@ -9523,7 +9523,7 @@ Disputes (`P7-TSK-012`…`-014`) · M7.7 Observability and demonstration (`P7-TS
 
 # Phase 8 — Settlement and Reconciliation
 
-Status: `IN_PROGRESS` — started 2026-09-28 with `P8-TSK-001` (7 of 27 items complete; M8.1 Evidence intake closed 2026-09-29 at 3 of 3; M8.2 Every settling completion is expected CLOSED 2026-09-29 at 4 of 4); entry gate passed 2026-09-28 by the Phase 7 → 8 transition
+Status: `IN_PROGRESS` — started 2026-09-28 with `P8-TSK-001` (10 of 27 items complete; M8.1 Evidence intake closed 2026-09-29 at 3 of 3; M8.2 Every settling completion is expected CLOSED 2026-09-29 at 4 of 4; M8.3 Evidence becomes canonical lines at 3 of 6); entry gate passed 2026-09-28 by the Phase 7 → 8 transition
 ([`reviews/PHASE_7_TO_8_TRANSITION.md`](reviews/PHASE_7_TO_8_TRANSITION.md)), elaborated to task
 granularity by the same transition: twenty-seven items (`P8-TSK-001`…`-024`, `P8-TST-001`,
 `P8-TST-002`, `P8-DOC-001`) across eight milestones, with `P8-TSK-001` marked `READY`. The
@@ -10267,7 +10267,7 @@ posting-date documentation reconciled with the Phase 5–7 practice, with no ret
   `P8-TSK-020`); a planted missing expectation and a raw-SQL line each flip a gauge; NaN never zero.
 - **Definition of done**: `DOD-FIN`, `DOD-API`, `DOD-OBS`, `DOD-SEC`, `DOD-TEST`. **Risk**: Medium. **Cx**: M.
 
-**P8-TSK-008 — The PSP format: parse, normalise, reject whole** — `READY`
+**P8-TSK-008 — The PSP format: parse, normalise, reject whole** — `COMPLETE` (2026-09-29)
 - **Objective**: a received PSP settlement report becomes one whole, canonical, immutable batch of
   typed lines, or is rejected whole with its errors recorded — the first half of `INV-SET-07` — and
   the provider's vocabulary stays inside its adapter.
@@ -10396,7 +10396,7 @@ posting-date documentation reconciled with the Phase 5–7 practice, with no ret
 - **Definition of done**: `DOD-DOMAIN`, `DOD-API`, `DOD-EVENT`, `DOD-SEC`, `DOD-OBS`, `DOD-TEST`,
   `DOD-DOC`. **Risk**: Medium. **Cx**: M.
 
-**P8-TSK-009 — Acceptance: fee recognition, remittance expectation and reconciliation intake** — `PLANNED`
+**P8-TSK-009 — Acceptance: fee recognition, remittance expectation and reconciliation intake** — `COMPLETE` (2026-09-29)
 - **Objective**: hop 1 of ADR-0065, for the card PSP. An accepted report is recognised once, from
   its own stored evidence: the counterparty's fees are expensed against its own clearing position,
   one `REMITTANCE` expectation of the report's net is opened on that same position, and every line
@@ -10584,7 +10584,7 @@ posting-date documentation reconciled with the Phase 5–7 practice, with no ret
   lines corrected with provenance wherever the build differs). **Risk**: High — the first settlement
   posting, on the platform's hottest projection row. **Cx**: L.
 
-**P8-TSK-010 — Breaks and suspense as records** — `PLANNED`
+**P8-TSK-010 — Breaks and suspense as records** — `COMPLETE` (2026-09-29)
 - **Objective**: every discrepancy is a classified, severity-tagged break that is never deleted, and
   every unit of value moved to `SUSPENSE_UNMATCHED` is owned by exactly one break from the
   transaction that parks it (ADR-0069, ADR-0070; `INV-REC-02`, `INV-REC-09`). This task builds the
@@ -10739,7 +10739,7 @@ posting-date documentation reconciled with the Phase 5–7 practice, with no ret
 - **Definition of done**: `DOD-FIN`, `DOD-SEC`, `DOD-TEST`. **Risk**: Medium — the first
   reconciliation posting path, exercised here only through its API. **Cx**: M.
 
-**P8-TSK-011 — The matcher: ordered allocation with decision snapshots, for the PSP source** — `PLANNED`
+**P8-TSK-011 — The matcher: ordered allocation with decision snapshots, for the PSP source** — `COMPLETE` (2026-09-30)
 - **Objective**: ADR-0068 for the card PSP. Each report item is allocated to our expectations by
   key, in claimant order, by one pure `decide` function. Every evaluation stores its pinned rule set
   and a snapshot of every candidate it saw, so a match is explainable from stored rows alone,
@@ -10929,7 +10929,7 @@ posting-date documentation reconciled with the Phase 5–7 practice, with no ret
   expectation machines, `RECONCILIATION_MODEL.md`'s matching section and `DISTRIBUTED_EXECUTION.md`
   §3's namespace-4 and lock-order rows current against the build). **Risk**: High. **Cx**: L.
 
-**P8-TSK-012 — Processing fees and counterparty corrections** — `PLANNED`
+**P8-TSK-012 — Processing fees and counterparty corrections** — `COMPLETE` (2026-09-30)
 - **Objective**: the PSP's fees are checked against pinned terms — the one place a tolerance is
   legitimate, because the fee was never posted before its evidence — and the counterparty's own
   corrections net automatically, closing the breaks they explain as `EVIDENCED`, the one resolution
@@ -11029,7 +11029,7 @@ posting-date documentation reconciled with the Phase 5–7 practice, with no ret
   and an under-payment `EVIDENCED`; the expected fee is reproduced from the pinned version.
 - **Definition of done**: `DOD-FIN`, `DOD-TEST`. **Risk**: Medium. **Cx**: M.
 
-**P8-TSK-013 — Grace, ageing, rematch and late evidence** — `PLANNED`
+**P8-TSK-013 — Grace, ageing, rematch and late evidence** — `COMPLETE` (2026-09-30)
 - **Objective**: time becomes explicit. Unexplained external value waits out a pinned grace window
   and then parks with its break; internal records that never settle age into `MISSING_EXTERNAL`;
   late evidence on either side is found and closes what it explains. Nothing is ever refused as
@@ -11154,7 +11154,7 @@ posting-date documentation reconciled with the Phase 5–7 practice, with no ret
   reported chain readable through the expectation; ten sweepers raise once.
 - **Definition of done**: `DOD-FIN`, `DOD-OBS`, `DOD-TEST`. **Risk**: Medium. **Cx**: M.
 
-**P8-TSK-014 — Break reads, the case file and the settlement-status trail** — `PLANNED`
+**P8-TSK-014 — Break reads, the case file and the settlement-status trail** — `COMPLETE` (2026-09-30)
 - **Objective**: an investigator can find, own, annotate and reclassify a break, and walk from any
   break or any operation to its raw evidence and journal entries by stored identifiers alone.
   Investigation is a case file on the break, not a third aggregate (ADR-0069; `INV-REC-01`).
@@ -11256,7 +11256,17 @@ posting-date documentation reconciled with the Phase 5–7 practice, with no ret
   serialises; a PAN- or IBAN-bearing note is refused at both ranks.
 - **Definition of done**: `DOD-API`, `DOD-SEC`, `DOD-TEST`. **Risk**: Medium. **Cx**: M.
 
-**P8-TSK-015 — Four-eyes resolution through the ledger** — `PLANNED`
+*(Design input from `P8-TSK-014`: reclassification's parking rule — the new type parks
+exactly when the break's subject holds parked value (`INV-REC-09`) — holds at the domain under
+the break lock, and `V004`'s owner trigger refuses a never-parking owner only on the suspense
+item's INSERT; a raw `UPDATE` of an owner's `type` is not refused by the database. `V007`, which
+re-states break-adjacent rules for the person kinds, is the natural home for an every-writer
+trigger on `break.type` — and for the state rule beside it: `P8-TSK-014`'s probe demonstrated that
+`V004`'s edge trigger admits a type change in `RESOLUTION_PROPOSED`, which the domain and the store's
+predicate refuse today. Every case-file door takes the source's namespace-4 advisory before the
+break row, as the approval door must.)*
+
+**P8-TSK-015 — Four-eyes resolution through the ledger** — `READY` (marked by `P8-TSK-014`'s completion gate)
 - **Objective**: ADR-0071. A person resolves a break only through a template-bound, reason-coded
   resolution whose lines are derived from the subject's current remainder, approved by a second
   person whenever value is at issue or it posts, and posted through the ledger's adjustment

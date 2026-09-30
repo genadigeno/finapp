@@ -569,6 +569,7 @@ proposal is fine and still standing, which is what makes the 409 actionable.
 | `settlement.FileNotFound` | 404 | No settlement file has this identifier. |
 | `settlement.FileNotAttestable` | 409 | This settlement file cannot be attested. |
 | `settlement.AttestationBySubmitter` | 409 | The uploader cannot attest their own file; a second person must. |
+| `settlement.BatchNotFound` | 404 | No settlement batch has this identifier. |
 
 The evidence surfaces' refusals (`P8-TSK-003`, ADR-0066). **No title or detail ever carries a
 value from the file** (`INV-PAY-02`, `INV-RAIL-03`): `settlement.DeliveryRefused` (422) names
@@ -586,9 +587,31 @@ a guessed id records nothing. The attestation pair are 409s — the caller holds
 permission; the file's own facts refuse the act: `settlement.AttestationBySubmitter` is
 `INV-SET-07`'s named negative made actionable (the remedy is a second person, and the
 database `CHECK` stands behind the domain refusal), and `settlement.FileNotAttestable` is one
-code for the remaining causes (not an upload; another person's attestation already stands)
-because the remedy is one — read the file. The same attester's retry converges and produces
-neither.
+code for the remaining causes (not an upload; another person's attestation already stands;
+since `P8-TSK-008`, a terminal file — which also answers a repeat decline, the machine being
+the record) because the remedy is one — read the file. The same attester's retry converges
+and produces neither. `settlement.BatchNotFound` (404, `P8-TSK-008`) is the `FileNotFound`
+departure's reasoning at the batch read: unknown and malformed ids one answer, nothing
+recorded.
+
+### `reconciliation` — `ReconciliationErrorCode`
+
+| Code | Status | Meaning |
+|---|---|---|
+| `reconciliation.RunNotFound` | 404 | No reconciliation run has this identifier. |
+| `reconciliation.DecisionNotFound` | 404 | No match decision has this identifier. |
+| `reconciliation.AllocationNotFound` | 404 | No allocation has this identifier. |
+| `reconciliation.BreakNotFound` | 404 | No reconciliation break has this identifier. |
+| `reconciliation.BreakTerminal` | 409 | This break is resolved; its case continues on its successor. |
+| `reconciliation.ExpectationNotFound` | 404 | No settlement expectation matches. |
+
+The matcher's explanation doors (`P8-TSK-011`, ADR-0068 §7). All three follow the
+`settlement.FileNotFound` departure: every route sits behind
+`RECONCILIATION_INVESTIGATE`, so the surface is no oracle over anyone else's resources,
+and an investigator chasing a break is told plainly that the id is wrong — unknown and
+malformed ids are still ONE answer, and a guessed id records nothing.
+
+The investigator's desk (`P8-TSK-014`, ADR-0069 §7) adds three. `reconciliation.BreakNotFound` and `reconciliation.ExpectationNotFound` are the same departure at the break and expectation doors — and `ExpectationNotFound` also answers a settlement-status query naming a (kind, operation) no expectation tracks, because an operation that settles internally opens none. `reconciliation.BreakTerminal` (409) refuses every case-file write — assignment, note, evidence link, reclassification — to a `RESOLVED` break: the caller holds the permission; the break's own state refuses the act, and the remedy is its successor (`follows_break_id`). The desk's other refusals use the platform's codes: a refused note or link body (a card-number or bank-account shape, an out-of-bounds length, a target that does not exist) is `api.ValidationFailed` with nothing stored and the offending text never echoed; a reclassification onto an occupied (type, subject) seat, or of a break whose resolution is proposed, is `api.Conflict`.
 
 ## 3a. Rejection at the boundary
 

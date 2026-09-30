@@ -569,6 +569,25 @@ public final class JdbcPaymentAttemptStore implements PaymentAttemptStore<Connec
     }
 
     @Override
+    public Optional<PaymentAttempt> findByCaptureProviderReference(
+            Connection unitOfWork, ProviderReference reference) {
+        Objects.requireNonNull(reference, "reference must not be null");
+        try (PreparedStatement read =
+                unitOfWork.prepareStatement(
+                        "SELECT " + COLUMNS + " FROM payments.payment_attempt"
+                                + " WHERE capture_provider_reference = ?")) {
+            read.setString(1, reference.value());
+            try (ResultSet row = read.executeQuery()) {
+                return row.next() ? Optional.of(rehydrate(row)) : Optional.empty();
+            }
+        } catch (SQLException failure) {
+            throw new PaymentsStorageException(
+                    DatabaseFailure.describe(
+                            "reading an attempt by capture provider reference", failure));
+        }
+    }
+
+    @Override
     public Optional<PaymentAttempt> findBySchemeReference(
             Connection unitOfWork, ProviderReference reference) {
         Objects.requireNonNull(reference, "reference must not be null");

@@ -94,6 +94,20 @@ public enum AccountPurpose {
      */
     DISPUTE_COSTS(OwnerKind.OPERATIONAL),
 
+    /**
+     * What external processing costs the platform (ADR-0065 §2, `P8-TSK-009`): an operational
+     * EXPENSE — the counterparty's own fees, recognised once per ACCEPTED settlement batch
+     * from the report's fee lines (DR here / CR that counterparty's clearing position; the
+     * mirror for a net rebate), keyed {@code settlement-batch:<batchId>}. This settles the
+     * per-rail cost-meter deferral (`DECISIONS.md`:671, ADR-0060 §6) as a LEDGER fact — the
+     * provider-costs question is answered by an audited report over these rows, never a
+     * metric (ADR-0072). Distinct from {@link #DISPUTE_COSTS} on purpose: a dispute fee is
+     * posted at its stage and allocates at matching; a processing fee is learned only from
+     * the report. Added with its first poster beside `V016`, which also re-states the
+     * reconciled-positions binding with this member (the `V014` pattern).
+     */
+    PROCESSING_COSTS(OwnerKind.OPERATIONAL),
+
     /** Fees earned. Phase 6's seam; nothing posts to it before then. */
     FEE_REVENUE(OwnerKind.OPERATIONAL),
 
@@ -119,14 +133,20 @@ public enum AccountPurpose {
      * posting or a reconciliation-owned resolution — a {@code MANUAL}-origin adjustment line
      * on any of them is refused at the domain and by `V015`'s trigger, because a free
      * adjustment on a reconciled position is either unexplained value or destroyed evidence
-     * that a break existed. The four Phase 8 purposes (`PROCESSING_COSTS`,
-     * `RECONCILIATION_LOSSES`, `RECONCILIATION_GAINS`, `CASH_AT_BANK`) join with their tasks
-     * (`-009`, `-015`, `-016`), each re-stating the generated binding list (ledger
-     * `V016`–`V018`, the `V014` pattern).
+     * that a break existed. `PROCESSING_COSTS` joined with its poster (`P8-TSK-009`, `V016`
+     * re-stating the generated binding list — the `V014` pattern): its every line is a
+     * recognition entry's, so a free adjustment there would un-explain an accepted report.
+     * The remaining Phase 8 purposes (`RECONCILIATION_LOSSES`, `RECONCILIATION_GAINS`,
+     * `CASH_AT_BANK`) join with their tasks (`-015`, `-016`), re-stating it again
+     * (`V017`–`V018`).
      */
     public static java.util.Set<AccountPurpose> reconciledPositions() {
         return java.util.EnumSet.of(
-                SETTLEMENT_CLEARING, INSTANT_CLEARING, PAYOUT_CLEARING, SUSPENSE_UNMATCHED);
+                SETTLEMENT_CLEARING,
+                INSTANT_CLEARING,
+                PAYOUT_CLEARING,
+                SUSPENSE_UNMATCHED,
+                PROCESSING_COSTS);
     }
 
     /** The reconciled positions as a SQL literal list, for `V015`'s binding trigger. */

@@ -25,13 +25,20 @@ class ReconciliationReportRenderTest {
     private static final CurrencyCode EUR = CurrencyCode.of("EUR");
 
     private static PositionProof.PositionVerdict verdict(long balanceMinor, long remainderMinor) {
+        return verdict(balanceMinor, remainderMinor, 0);
+    }
+
+    private static PositionProof.PositionVerdict verdict(
+            long balanceMinor, long remainderMinor, long itemsMinor) {
         return new PositionProof.PositionVerdict(
                 AccountPurpose.SETTLEMENT_CLEARING,
                 EUR,
                 Money.ofPersisted(balanceMinor, EUR, 2),
                 Money.ofPersisted(remainderMinor, EUR, 2),
+                Money.ofPersisted(itemsMinor, EUR, 2),
                 3L,
-                balanceMinor == remainderMinor);
+                itemsMinor == 0 ? 0L : 2L,
+                balanceMinor == remainderMinor - itemsMinor);
     }
 
     @Test
@@ -43,7 +50,10 @@ class ReconciliationReportRenderTest {
                                 .mapToObj(i -> verdict(i, i))
                                 .toList(),
                         Map.of(AccountPurpose.SETTLEMENT_CLEARING, 0L),
-                        Map.of());
+                        Map.of(),
+                        List.of(),
+                        java.util.Optional.empty(),
+                        0L);
 
         ReconciliationReportController.PositionsReport served =
                 ReconciliationReportController.render(report);
@@ -54,13 +64,16 @@ class ReconciliationReportRenderTest {
 
     @Test
     @DisplayName("a report within the bound serves every row, not truncated, each row the"
-            + " verdict's two sides and their difference")
+            + " identity's terms - the items term included - and their difference")
     void withinTheBoundServesEveryRowFaithfully() {
         PositionProof.Report report =
                 new PositionProof.Report(
-                        List.of(verdict(1200, 700)),
+                        List.of(verdict(1200, 700, 200)),
                         Map.of(AccountPurpose.SETTLEMENT_CLEARING, 4L),
-                        Map.of());
+                        Map.of(),
+                        List.of(),
+                        java.util.Optional.empty(),
+                        0L);
 
         ReconciliationReportController.PositionsReport served =
                 ReconciliationReportController.render(report);
@@ -72,10 +85,13 @@ class ReconciliationReportRenderTest {
         assertThat(row.currency()).isEqualTo("EUR");
         assertThat(row.ledgerBalance()).isEqualTo("12.00");
         assertThat(row.openRemainders()).isEqualTo("7.00");
+        assertThat(row.openItems()).isEqualTo("2.00");
         assertThat(row.difference())
-                .as("the difference is the identity's own subtraction, never re-derived")
-                .isEqualTo("5.00");
+                .as("the difference is the identity's own subtraction - balance minus"
+                        + " (remainders minus items) - never re-derived (P8-TSK-009)")
+                .isEqualTo("7.00");
         assertThat(row.openExpectations()).isEqualTo(3L);
+        assertThat(row.openItemCount()).isEqualTo(2L);
         assertThat(row.unattributedLines()).isEqualTo(4L);
         assertThat(row.explained()).isFalse();
     }

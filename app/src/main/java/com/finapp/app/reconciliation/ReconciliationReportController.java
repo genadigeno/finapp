@@ -51,7 +51,12 @@ public class ReconciliationReportController {
     @NonNull private final TransactionTemplate reconciliationTransactions;
     @NonNull private final DataSource dataSource;
 
-    /** One position-and-currency row: both sides of the identity, and the difference. */
+    /**
+     * One position-and-currency row: the identity's terms and the difference. Since
+     * `P8-TSK-009` the identity carries the items term — {@code difference} is
+     * balance − (remainders − items) — and the two new fields are ADDED at the end
+     * (ADR-0015: additive).
+     */
     public record PositionRow(
             String purpose,
             String currency,
@@ -60,7 +65,9 @@ public class ReconciliationReportController {
             String difference,
             long openExpectations,
             long unattributedLines,
-            boolean explained) {}
+            boolean explained,
+            String openItems,
+            long openItemCount) {}
 
     public record PositionsReport(List<PositionRow> positions, boolean truncated) {}
 
@@ -117,14 +124,24 @@ public class ReconciliationReportController {
                                                 verdict.openRemainders()
                                                         .toBigDecimal()
                                                         .toPlainString(),
+                                                // The identity's own subtraction, items
+                                                // term included (P8-TSK-009).
                                                 verdict.ledgerBalance()
-                                                        .minus(verdict.openRemainders())
+                                                        .minus(
+                                                                verdict.openRemainders()
+                                                                        .minus(
+                                                                                verdict
+                                                                                    .openItems()))
                                                         .toBigDecimal()
                                                         .toPlainString(),
                                                 verdict.openCount(),
                                                 report.unattributedByPurpose()
                                                         .getOrDefault(verdict.purpose(), 0L),
-                                                verdict.explained()))
+                                                verdict.explained(),
+                                                verdict.openItems()
+                                                        .toBigDecimal()
+                                                        .toPlainString(),
+                                                verdict.openItemCount()))
                         .toList();
         return new PositionsReport(rows, report.verdicts().size() > BOUND);
     }

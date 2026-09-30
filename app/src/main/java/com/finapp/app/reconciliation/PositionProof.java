@@ -73,29 +73,81 @@ public final class PositionProof {
     @NonNull private final SettlementSources sources;
     @NonNull private final SettlementFileStore<Connection> sourceRows;
 
-    /** One position-and-currency verdict: the identity's two sides, and whether they agree. */
+    /** The recognition entries' reader (`P8-TSK-009`) — appended last (the Lombok rule). */
+    @NonNull private final com.finapp.settlement.SettlementBatchStore<Connection> batches;
+
+    /** The suspense terms (`P8-TSK-010`, ADR-0070 §7) — appended after `-009`'s. */
+    @NonNull private final com.finapp.reconciliation.SuspenseReadings suspense;
+
+    /** Phase 7's parkings, for the unadopted term — until `-020` adopts them. */
+    @NonNull
+    private final com.finapp.payments.UnmatchedConfirmationStore<Connection> parkings;
+
+    /**
+     * One position-and-currency verdict: the identity's terms, and whether they agree.
+     * Since `P8-TSK-009` the identity carries the items term ({@code INV-REC-06} extended
+     * at acceptance): balance = open remainders − open item remainders, with every accepted
+     * line's undisposed claim subtracted — fee items excluded, their effect being the
+     * recognition entry itself.
+     */
     public record PositionVerdict(
             AccountPurpose purpose,
             CurrencyCode currency,
             Money ledgerBalance,
             Money openRemainders,
+            Money openItems,
             long openCount,
+            long openItemCount,
+            boolean explained) {}
+
+    /**
+     * The suspense identity, per currency (`P8-TSK-010`, ADR-0070 §7):
+     * CR−DR of {@code SUSPENSE_UNMATCHED} = Σ CREDIT remainders − Σ DEBIT remainders,
+     * plus the NAMED term for Phase 7's parkings no suspense item's {@code origin_ref}
+     * claims — exact before and after `-020`'s adoption, reading zero at rest once it runs.
+     * The account is CREDIT-normal, so its settled balance already reads CR−DR.
+     */
+    public record SuspenseVerdict(
+            CurrencyCode currency,
+            Money ledgerBalance,
+            Money creditRemainders,
+            Money debitRemainders,
+            Money unadoptedParkings,
+            long openItemCount,
             boolean explained) {}
 
     /** One sweep's whole answer — the gauges' and the report's one source. */
     public record Report(
             List<PositionVerdict> verdicts,
             Map<AccountPurpose, Long> unattributedByPurpose,
-            Map<String, Long> openBySourceCode) {
+            Map<String, Long> openBySourceCode,
+            List<SuspenseVerdict> suspenseVerdicts,
+            Optional<java.time.LocalDate> oldestSuspenseOpenedOn,
+            long suspenseUnowned) {
 
         public Report {
             verdicts = List.copyOf(verdicts);
             unattributedByPurpose = Map.copyOf(unattributedByPurpose);
             openBySourceCode = Map.copyOf(openBySourceCode);
+            suspenseVerdicts = List.copyOf(suspenseVerdicts);
+            Objects.requireNonNull(
+                    oldestSuspenseOpenedOn, "oldestSuspenseOpenedOn must not be null");
+        }
+
+        /** Items with a remainder — {@code finapp.reconciliation.suspense.open}. */
+        public long suspenseOpenItems() {
+            return suspenseVerdicts.stream()
+                    .mapToLong(SuspenseVerdict::openItemCount)
+                    .sum();
         }
 
         /** The proof gauge's value for {@code purpose}: how many currencies fail. */
         public long currenciesFailing(AccountPurpose purpose) {
+            if (purpose == AccountPurpose.SUSPENSE_UNMATCHED) {
+                return suspenseVerdicts.stream()
+                        .filter(verdict -> !verdict.explained())
+                        .count();
+            }
             return verdicts.stream()
                     .filter(verdict -> verdict.purpose() == purpose && !verdict.explained())
                     .count();
@@ -140,6 +192,31 @@ public final class PositionProof {
                     .merge(currency, 1L, Long::sum);
         }
 
+        // THE ITEMS TERM (P8-TSK-009): every accepted, undisposed allocating line's claim,
+        // folded the same way - INBOUND positive, OUTBOUND negative, never a SQL SUM.
+        Map<AccountPurpose, Map<CurrencyCode, Money>> itemsFolded =
+                new EnumMap<>(AccountPurpose.class);
+        Map<AccountPurpose, Map<CurrencyCode, Long>> itemCounts =
+                new EnumMap<>(AccountPurpose.class);
+        for (ExpectationReadings.OpenItemRemainder item :
+                readings.openItemRemainders(unitOfWork)) {
+            CurrencyCode currency = item.remainder().currency();
+            Map<CurrencyCode, Money> sums =
+                    itemsFolded.computeIfAbsent(item.position(), p -> new HashMap<>());
+            Money signed = item.remainder();
+            Money current =
+                    sums.getOrDefault(
+                            currency, Money.ofPersisted(0, currency, signed.scale()));
+            sums.put(
+                    currency,
+                    item.direction() == ExpectationDirection.INBOUND
+                            ? current.plus(signed)
+                            : current.minus(signed));
+            itemCounts
+                    .computeIfAbsent(item.position(), p -> new HashMap<>())
+                    .merge(currency, 1L, Long::sum);
+        }
+
         List<PositionVerdict> verdicts = new ArrayList<>();
         for (AccountPurpose purpose : PROVEN) {
             for (Map.Entry<CurrencyCode, LedgerAccount> position :
@@ -153,8 +230,18 @@ public final class PositionProof {
                                 .orElse(
                                         Money.ofPersisted(
                                                 0, position.getKey(), balance.scale()));
+                Money items =
+                        Optional.ofNullable(itemsFolded.get(purpose))
+                                .map(sums -> sums.get(position.getKey()))
+                                .orElse(
+                                        Money.ofPersisted(
+                                                0, position.getKey(), balance.scale()));
                 long open =
                         Optional.ofNullable(openCounts.get(purpose))
+                                .map(counts -> counts.getOrDefault(position.getKey(), 0L))
+                                .orElse(0L);
+                long openItems =
+                        Optional.ofNullable(itemCounts.get(purpose))
                                 .map(counts -> counts.getOrDefault(position.getKey(), 0L))
                                 .orElse(0L);
                 verdicts.add(
@@ -163,8 +250,10 @@ public final class PositionProof {
                                 position.getKey(),
                                 balance,
                                 remainders,
+                                items,
                                 open,
-                                balance.equals(remainders)));
+                                openItems,
+                                balance.equals(remainders.minus(items))));
             }
         }
 
@@ -180,6 +269,15 @@ public final class PositionProof {
         }
         Set<ExpectationReadings.KnownLine> known =
                 new HashSet<>(readings.knownLines(unitOfWork));
+        // The second known-entry class (P8-TSK-009, ADR-0067 §9): a recognition entry's
+        // every line - the position credit AND the PROCESSING_COSTS debit - is explained by
+        // the acceptance that posted it.
+        Set<UUID> recognitionEntries =
+                new HashSet<>(batches.acceptedRecognitionEntries(unitOfWork));
+        // The third and fourth known-entry classes (P8-TSK-010, ADR-0070 §7): a park's
+        // entry, and every entry a suspense item owns - the rule by which Phase 7's
+        // parking lines become known once `-020` adopts them.
+        recognitionEntries.addAll(suspense.knownEntries(unitOfWork));
         Map<AccountPurpose, Long> unattributed = new EnumMap<>(AccountPurpose.class);
         for (AccountPurpose purpose : AccountPurpose.reconciledPositions()) {
             unattributed.put(purpose, 0L);
@@ -187,8 +285,9 @@ public final class PositionProof {
         for (JournalEntryStore.LineKey line : entries.lineKeysOn(unitOfWork, reconciled)) {
             boolean explained =
                     known.contains(
-                            new ExpectationReadings.KnownLine(
-                                    line.entry().value(), line.account().value()));
+                                    new ExpectationReadings.KnownLine(
+                                            line.entry().value(), line.account().value()))
+                            || recognitionEntries.contains(line.entry().value());
             if (!explained) {
                 unattributed.merge(purposeOf.get(line.account()), 1L, Long::sum);
             }
@@ -205,6 +304,87 @@ public final class PositionProof {
                             .orElse(0L);
             openBySourceCode.put(declared.code(), count);
         }
-        return new Report(verdicts, unattributed, openBySourceCode);
+        return new Report(
+                verdicts,
+                unattributed,
+                openBySourceCode,
+                suspenseVerdicts(unitOfWork, positions),
+                suspense.oldestOpenedOn(unitOfWork),
+                suspense.unownedCount(unitOfWork));
+    }
+
+    /**
+     * THE SUSPENSE PROOF (`P8-TSK-010`, ADR-0070 §7), per currency:
+     * CR−DR = Σ CREDIT remainders − Σ DEBIT remainders + Σ Phase 7 parkings not yet
+     * adopted. The last is the parkings whose id no {@code UNMATCHED_CONFIRMATION} item's
+     * {@code origin_ref} names — without it the proof would fail on any database holding a
+     * Phase 7 parking until `-020` adopts them. Folded through {@code Money}, gross,
+     * CREDIT and DEBIT never netted inside a term.
+     */
+    private List<SuspenseVerdict> suspenseVerdicts(
+            Connection unitOfWork,
+            Map<AccountPurpose, Map<CurrencyCode, LedgerAccount>> positions) {
+        Map<CurrencyCode, Money> credits = new HashMap<>();
+        Map<CurrencyCode, Money> debits = new HashMap<>();
+        Map<CurrencyCode, Long> openItems = new HashMap<>();
+        for (com.finapp.reconciliation.SuspenseReadings.OpenSuspenseRemainder open :
+                suspense.openRemainders(unitOfWork)) {
+            CurrencyCode currency = open.remainder().currency();
+            Map<CurrencyCode, Money> side =
+                    open.side() == com.finapp.reconciliation.SuspenseSide.CREDIT
+                            ? credits
+                            : debits;
+            side.merge(currency, open.remainder(), Money::plus);
+            openItems.merge(currency, 1L, Long::sum);
+        }
+
+        // Phase 7's parkings the register does not own yet, paged through payments' own
+        // read - all CREDIT-side (DR clearing / CR suspense), by their entries' shape.
+        Set<String> owned =
+                suspense.ownedOriginRefs(
+                        unitOfWork,
+                        com.finapp.reconciliation.SuspenseOrigin.UNMATCHED_CONFIRMATION);
+        Map<CurrencyCode, Money> unadopted = new HashMap<>();
+        UUID after = new UUID(0L, 0L);
+        while (true) {
+            List<com.finapp.payments.UnmatchedConfirmation> page =
+                    parkings.page(unitOfWork, after, 200);
+            if (page.isEmpty()) {
+                break;
+            }
+            for (com.finapp.payments.UnmatchedConfirmation parking : page) {
+                if (!owned.contains(parking.id().toString())) {
+                    unadopted.merge(
+                            parking.amount().currency(), parking.amount(), Money::plus);
+                }
+                after = parking.id();
+            }
+            if (page.size() < 200) {
+                break;
+            }
+        }
+
+        List<SuspenseVerdict> verdicts = new ArrayList<>();
+        for (Map.Entry<CurrencyCode, LedgerAccount> position :
+                positions.get(AccountPurpose.SUSPENSE_UNMATCHED).entrySet()) {
+            CurrencyCode currency = position.getKey();
+            Money balance =
+                    balances.derive(unitOfWork, position.getValue().id(), AsOf.latest())
+                            .settled();
+            Money zero = Money.ofPersisted(0, currency, balance.scale());
+            Money credit = credits.getOrDefault(currency, zero);
+            Money debit = debits.getOrDefault(currency, zero);
+            Money phase7 = unadopted.getOrDefault(currency, zero);
+            verdicts.add(
+                    new SuspenseVerdict(
+                            currency,
+                            balance,
+                            credit,
+                            debit,
+                            phase7,
+                            openItems.getOrDefault(currency, 0L),
+                            balance.equals(credit.minus(debit).plus(phase7))));
+        }
+        return List.copyOf(verdicts);
     }
 }

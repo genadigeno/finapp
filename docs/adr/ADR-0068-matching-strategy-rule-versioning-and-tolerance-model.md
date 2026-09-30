@@ -615,12 +615,45 @@ adapters). Catalogued with this ADR:
 - `P8-TSK-011` builds the matcher: reconciliation `V005` (`match_decision`, `match_candidate`,
   `allocation` with its Σ triggers), the run leg under namespace 4, `allocate(E)`, `ONE_TO_ONE`,
   aliases, the definitive classes, poisoned items, `BLOCKED` runs and the explanation doors.
+  **Implemented** (2026-09-30), with the deviations recorded. The engine is one pure
+  `MatchEngine.decide` (no I/O, clock or database; the shuffled-order property and a
+  stored-snapshot re-decide prove `INV-REC-04` as amended), and the chunk maintains the
+  DIMINISHING remainder in claimant order in memory, so one chunk can never allocate one
+  expectation twice over before the deferred Σ triggers judge the commit
+  (`INV-REC-07` at both ranks; `claimant_rank` counts the chunk's claimants per
+  expectation). `AMBIGUOUS_MATCH` is stated and proven hermetically but UNPRODUCED:
+  `V002`'s `expectation_key_once` means one key reaches at most one expectation per
+  source, so no produced path yields two candidates yet — the edge waits for a
+  producer exactly as the run machine's unproduced edges did. §6's ≤ bounds are
+  the standing `V002`/`V003` table `CHECK`s (stronger: judged per statement); `V005` adds
+  the equality Σ on BOTH sides — the allocation insert and either denormalised
+  column — so a writer can neither allocate without recording nor record without
+  allocating. The rule table's `key_kind` on a `CHECK` or `CORRECTION` row is ITEM-side
+  vocabulary (`ORIGINAL_REF`), so the store surfaces the expectation-side `KeyKind` only
+  for landed rules; the unlanded rows' keys are `P8-TSK-012`'s to read in their own
+  shape. `allocate(E)`'s shared path is the store pair `insertAllocation →
+  allocateToExpectation` under the pair unique and the Σ discipline — the run
+  leg is its first caller; the rematch, reprocess and manual legs compose the same pair.
+  An allocation bumps every OPEN break's `residual_version` on the subjects it touches
+  (ADR-0071's staleness counter; a break the chunk itself raises is born after the bump
+  and carries 0 honestly). The events carry `sourceId`, not the drafted `sourceCode`
+  (the `P8-TSK-008` `EventPayload` stance); the completion's audit action is
+  `reconciliation.RunCompleted`; the leg carries no bespoke span (the `P8-TSK-008`
+  precedent — correlation is the trace); the run gauges are per declared source
+  (tagged `source`, the codes mapped in the app over the settlement source rows); and
+  the namespace-4 pin lives at the code rank (`AdvisoryNamespaceIsPinnedTest`) because
+  no migration statement carries the number — the run leg's TRY form and the park
+  path's blocking form are proven to share it. Ten sweepers converge WITH the lock and
+  with it BYPASSED (`MatchingDatabaseTest`); a bypassed loser may record its losing
+  evaluation — an honest `ERRORED` decision — while money moves once.
   `P8-TSK-012` adds `CHECK` and `CORRECTION`, and `P8-TSK-013` the grace and rematch legs on the
-  database clock. The grace leg judges a `PAYOUT_RETURNED` item on its locked row, and its race
+  database clock.
+  **`P8-TSK-012` implemented** (2026-09-30), with the design decisions recorded: the fee check is one pure seat (`FeeCheck`: round(rate × gross + fixed) under the pinned NAMED rounding, the comparison STRICT — at the tolerance nothing, one minor unit beyond a breach); a fee whose `ORIGINAL_REF` reaches no capture expectation is judged AT ONCE against an expected fee of ZERO (F1 — waiting would hand the grace leg a fee item, and the grace leg parks expirees, double-counting expensed value), and an absent schedule or tolerance row reads zero (F2, the conservative default); the per-batch comparison folds signed reported − expected per currency once, under the completing edge's one winner, and names the run's FIRST fee item in claimant order (D — the taxonomy names the item), converging on the one-open unique — a first item already carrying its own per-line break absorbs the batch verdict there. `CORRECTION` is its own pure seat (`CorrectionEngine`): a same-direction top-up allocates min(item, remainder) with any excess parked (C1 — a correction is evidence like any line), the opposite-direction offset requires EXACT equality — never partial — and the top-up wins when both could apply; a repeated correction fingerprint is the duplicate it always was, while a repeated fee line is still checked — each expensed line judged. A poisoned FEE item is contained WITHOUT a park — `UNMATCHED` with no clock, its `ERRORED` decision and unparked `PROCESSING_ERROR` break the record — because nothing of an expensed fee sits in the position. `NO_RULE`'s remaining producers are the rule-less line types (`OTHER_IN`/`OTHER_OUT`). The grace leg judges a `PAYOUT_RETURNED` item on its locked row, and its race
   against the return worker is counted both ways with `P8-TSK-019`. `P8-TSK-015` adds
   `MANUAL_MATCH`; `P8-TSK-016` adds `REMITTANCE_REF` and `GROUP_BY_VALUE_DATE`; `P8-TSK-017` and
   `P8-TSK-018` bring the instant and payout sources' reports under their v1 rules. The instant
   rules' break typing reads `payments.scheme_execution_claim`.
+  **`P8-TSK-013` implemented** (2026-09-30), with the deviations recorded: the grace and rematch legs ride `Matching.sweep` itself — after the run loop, per source under the same namespace-4 try-lock, bounded batches, ONE transaction per batch — rather than a schedule of their own. The grace leg re-decides each expired `UNMATCHED` item on its row locked `FOR UPDATE` through the same pure engine (the stored fingerprint was judged at run time, so a waiting item is never re-parked as a duplicate of itself), allocates a candidate committed during the wait (proven with a share-lock holder standing in for `P8-TSK-019`'s worker), and only then types the remainder through the lookup — `UNKNOWN_EXTERNAL`, `MISSING_INTERNAL`, or the `-011` definitive types when the platform learned a terminal answer during the wait — cause `GRACE_EXPIRED`, parked with its break. The rematch leg acts only on `ALLOCATE` (origin `REMATCH`, a stored decision with its candidates like any other): `UNMATCHED → MATCHED`, and `PARKED → MATCHED` only at candidate remainder ≥ parked remainder, the WHOLE parked value unparked (cause `UNPARK`, the park's exact inverse at the item's amount) and the owning break resolved `EVIDENCED` — a partial unpark never happens, and a skipped candidate is rescanned every tick (no decision row on a skip; bounded waste, recorded). Late settlement (the design's L1): a settling allocation locks the candidate's open `MISSING_EXTERNAL` break BEFORE allocating and resolves it `EVIDENCED` with the timing frozen on the decision, and the `TIMING_DIFFERENCE` raise is suppressed whenever an open `MISSING_EXTERNAL` stands — one fact, one break. THE BUILD'S FIND, fixed: the batch posting phase first ran outside any correlation scope and the ledger's own `INV-LED-05` guard refused every grace park — each leg now posts last inside its own generated correlation scope, the per-item records keeping the ingesting flow's correlation. No bespoke spans (the `P8-TSK-008` precedent; correlation is the trace).
 - `P8-TSK-019` builds the return worker that the operation-anchored `PAYOUT_RETURNED` rule waits
   for, and the `PAYOUT_RETURN` expectation it reaches (ADR-0067 §5, ADR-0073).
 - `P8-TSK-022` builds rule-set administration under four-eyes, `REPROCESS` runs, requeue,
@@ -631,6 +664,8 @@ adapters). Catalogued with this ADR:
 - Deferred and recorded as not implemented in Phase 8: fuzzy or subset-sum matching, business-day
   calendars, multi-part or superseding files, re-allocating committed matches outside
   repudiation, and partitioning by (source, currency).
-- Until those tasks land, nothing in this ADR is implemented; every statement is the decided
-  design, corrected by the tasks that build it.
+- Until the remaining tasks land, the statements they own are decided design, corrected by the
+  tasks that build them; the seeded rule content (`P8-TSK-004`), the intake hand-off (`-009`),
+  the records the matcher raises (`-010`) and the matcher itself (`-011`) are implemented, each
+  with its note above.
 - The Phase 8 review (`P8-DOC-001`) reads this ADR against the code before accepting it.

@@ -83,7 +83,16 @@ public enum SettlementErrorCode implements ErrorCode {
     ATTESTATION_BY_SUBMITTER(
             "settlement.AttestationBySubmitter",
             409,
-            "The uploader cannot attest their own file; a second person must.");
+            "The uploader cannot attest their own file; a second person must."),
+
+    /**
+     * No settlement batch has this id (`P8-TSK-008`) — unknown and malformed alike,
+     * recording nothing; the {@code FileNotFound} departure's reasoning, at the batch.
+     */
+    BATCH_NOT_FOUND(
+            "settlement.BatchNotFound",
+            404,
+            "No settlement batch has this identifier.");
 
     private final String code;
     private final int status;

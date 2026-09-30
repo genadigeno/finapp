@@ -125,7 +125,28 @@ class ReconciliationMigrationTest {
                         "expectation",
                         "expectation_event",
                         "expectation_key",
-                        "reference_alias");
+                        "reference_alias",
+                        // V003 (P8-TSK-009): the runs and the external items.
+                        "reconciliation_batch",
+                        "reconciliation_batch_event",
+                        "external_item",
+                        "external_item_event",
+                        "external_item_key",
+                        // V004 (P8-TSK-010): the breaks and the owned suspense.
+                        "break",
+                        "break_event",
+                        "break_note",
+                        "break_evidence_link",
+                        "park",
+                        "suspense_item",
+                        "suspense_release",
+                        // V005 (P8-TSK-011): the decisions, candidates and allocations.
+                        "match_decision",
+                        "match_candidate",
+                        "allocation",
+                        // V006 (P8-TSK-012): the resolution record, EVIDENCED first.
+                        "resolution",
+                        "resolution_event");
 
         assertThatExceptionOfType(SQLException.class)
                 .isThrownBy(() -> asApplication(

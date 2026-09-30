@@ -482,6 +482,12 @@ class PaymentCaptureTest {
         }
 
         @Override
+        public java.util.Optional<PaymentAttempt> findByCaptureProviderReference(
+                Connection uow, ProviderReference reference) {
+            throw new UnsupportedOperationException("not exercised here");
+        }
+
+        @Override
         public boolean openInitiation(
                 Connection uow,
                 PaymentAttemptId attempt,
@@ -700,6 +706,35 @@ class PaymentCaptureTest {
         @Override
         public List<byte[]> payloadsFor(Connection uow, PaymentAttemptId attempt) {
             return List.copyOf(payloads);
+        }
+
+        // P8-TSK-014's metadata reads: this fake retains no rows to describe.
+        @Override
+        public List<EvidenceMetadata> evidenceMetadataFor(
+                Connection uow, PaymentAttemptId attempt) {
+            return List.of();
+        }
+
+        @Override
+        public List<EvidenceMetadata> evidenceMetadataFor(Connection uow, RefundId refund) {
+            return List.of();
+        }
+
+        @Override
+        public List<EvidenceMetadata> evidenceMetadataFor(
+                Connection uow, WithdrawalId withdrawal) {
+            return List.of();
+        }
+
+        @Override
+        public List<EvidenceMetadata> evidenceMetadataForUnmatched(
+                Connection uow, java.util.UUID unmatchedConfirmation) {
+            return List.of();
+        }
+
+        @Override
+        public boolean evidenceExists(Connection uow, java.util.UUID evidenceId) {
+            return false;
         }
     }
 

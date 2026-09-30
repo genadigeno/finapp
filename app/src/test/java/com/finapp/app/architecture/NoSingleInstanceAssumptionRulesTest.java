@@ -189,7 +189,39 @@ class NoSingleInstanceAssumptionRulesTest {
                     // applies through the one shared DisputeResponseOutcomes on the LOCKED
                     // row. Register row: DISTRIBUTED_EXECUTION.md section 3; the races are
                     // DisputeResponseDatabaseTest's.
-                    "com.finapp.app.payments.DisputeResponseResolutionSchedule");
+                    "com.finapp.app.payments.DisputeResponseResolutionSchedule",
+                    // P8-TSK-008: the settlement intake's parse leg - the checkout expiry
+                    // sweeper's half of the bar, at the evidence store: NO EXTERNAL CALL AT
+                    // ALL, a parse is a pure function of stored bytes. The claim is FOR
+                    // UPDATE SKIP LOCKED on the still-RECEIVED row inside each file's own
+                    // transaction, and the conditional RECEIVED -> PARSED plus
+                    // batch.file_id UNIQUE and UNIQUE (file_id, line_no) arbitrate for any
+                    // writer the lock misses - N schedules on one due file produce one
+                    // batch between them, counted by the row count. Register row:
+                    // DISTRIBUTED_EXECUTION.md section 3; the ten-parser race is
+                    // FileParsingDatabaseTest's.
+                    "com.finapp.app.settlement.SettlementIntakeSchedule",
+                    // P8-TSK-011: the matcher's run leg - the conditional-transition half
+                    // again, with NO EXTERNAL CALL: a decision is a pure function of
+                    // locked rows. The per-source pg_try_advisory_xact_lock (namespace 4)
+                    // only ORDERS - a refused instance moves on - while the item's
+                    // conditional exits from PENDING, allocation_pair_once, the deferred
+                    // sum triggers and the run's conditional edges arbitrate for any
+                    // writer the lock misses; N sweeps on one run produce one allocation
+                    // per pair between them, counted by the row count. Register row:
+                    // DISTRIBUTED_EXECUTION.md section 3; the ten-sweeper races - locked
+                    // AND bypassed - are MatchingDatabaseTest's.
+                    "com.finapp.app.reconciliation.ReconciliationSchedule",
+                    // P8-TSK-013: time's observers - the conditional-transition half
+                    // once more, with NO EXTERNAL CALL: every window judged in SQL on
+                    // the database clock against stored dates. The one-way
+                    // overdue_since (NULL -> value), the one-open break uniques, the
+                    // expected-value severity step and the run's conditional edge
+                    // arbitrate for any writer - ten sweepers age an expectation once,
+                    // escalate a band once and block a lost run once, counted. Register
+                    // row: DISTRIBUTED_EXECUTION.md section 3; the counted races are
+                    // GraceAndRematchDatabaseTest's.
+                    "com.finapp.app.reconciliation.ReconciliationSweepSchedule");
 
     /** Types that schedule work with no lease, so every instance runs it. */
     private static final Set<String> AMBIENT_SCHEDULERS =

@@ -293,6 +293,59 @@ class SystemActorCallSitesAreEnumeratedTest {
                         + " permit-renewed re-send by our reference has no person, and its"
                         + " re-send's evidence transmission is honestly the platform's. The scope"
                         + " wraps each row's inquire-and-resolve; the candidate read claims"
+                        + " nothing."),
+                    Map.entry(
+                            "com.finapp.settlement.FileParsing.sweep",
+                    "The settlement intake's parse leg (P8-TSK-008, ADR-0066 section 9): a"
+                        + " scheduled parse of stored evidence has no person at all - the"
+                        + " expiry-sweep case at the settlement door. The people's acts are"
+                        + " already theirs: the uploader's and the attester's records stand"
+                        + " with their actors, and a DECLINE runs as the person who reasoned"
+                        + " it. The platform reading, canonicalising or rejecting a file is"
+                        + " exactly what happened, and the rejection's audit record is"
+                        + " acting-only by design. The scope wraps each file's own"
+                        + " transaction; the candidate read before it claims nothing."),
+                    Map.entry(
+                            "com.finapp.settlement.BatchAcceptance.sweep",
+                    "The settlement intake's accept leg (P8-TSK-009, ADR-0065 section 2):"
+                        + " the parse leg's case one hop later - a scheduled recognition of"
+                        + " stored, authenticated evidence has no person. The person who"
+                        + " AUTHENTICATED an upload is on the record already (the"
+                        + " attestation's own audit row, held distinct at three ranks), and"
+                        + " attributing the recognition to the attester would record them as"
+                        + " having posted fees at a moment they chose nothing. The platform"
+                        + " sequencing, recognising and handing over an accepted batch is"
+                        + " exactly what happened; the acceptance's audit record is"
+                        + " acting-only by design, and a losing racer records nothing. The"
+                        + " scope wraps each file's own transaction; the candidate read"
+                        + " before it claims nothing."),
+                    Map.entry(
+                            "com.finapp.reconciliation.Matching.sweep",
+                    "The matcher's run leg (P8-TSK-011, ADR-0068 section 3): a scheduled"
+                        + " decision over locked, stored rows has no person at all - the"
+                        + " accept leg's case one hop later. A match is a pure function of"
+                        + " the pinned rule set and the frozen evidence; attributing an"
+                        + " allocation, a break or a park to any person would record them"
+                        + " as having judged money at a moment they chose nothing. The"
+                        + " decision, its audit record and its events are acting-only by"
+                        + " design; a person's later act on a break runs as that person"
+                        + " through the break's own doors. The scope wraps the whole"
+                        + " sweep, one transaction per chunk inside it; the worklist read"
+                        + " claims nothing. Since P8-TSK-013 the same sweep carries the"
+                        + " grace and rematch legs - a deadline passing and late evidence"
+                        + " arriving are the expiry-sweep case at the matcher: the clock"
+                        + " and the counterparty's file arrive, nobody asks."),
+                    Map.entry(
+                            "com.finapp.reconciliation.ReconciliationSweep.sweep",
+                    "Time's observers (P8-TSK-013, ADR-0069 sections 4 and 6): an"
+                        + " expectation ageing past its window, a break's severity band"
+                        + " crossing, a run lost at its failure bound and a recorded key"
+                        + " collision surfacing are all acts with no requester - the"
+                        + " expiry-sweep case, judged in SQL on the database clock against"
+                        + " stored dates. Attributing an overdue break or an escalation to"
+                        + " any person would record them as having judged lateness at a"
+                        + " moment they chose nothing. The scope wraps the whole sweep,"
+                        + " one transaction per row inside it; the candidate reads claim"
                         + " nothing."));
 
     @Test

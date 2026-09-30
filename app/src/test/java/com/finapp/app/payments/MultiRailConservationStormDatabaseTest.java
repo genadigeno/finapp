@@ -526,9 +526,20 @@ class MultiRailConservationStormDatabaseTest {
                 execute(root, "ALTER TABLE reconciliation.expectation DISABLE TRIGGER"
                         + " expectation_is_never_deleted");
                 try {
-                    execute(root, "DELETE FROM reconciliation.expectation_key");
-                    execute(root, "DELETE FROM reconciliation.expectation_event");
-                    execute(root, "DELETE FROM reconciliation.expectation");
+                    // Since P8-TSK-011 an expectation history names - an allocation or
+                    // a candidate snapshot - is held by those rows' foreign keys,
+                    // exactly the immutability the records claim; the emptied-register
+                    // equivalence is judged over the rest (the storm's own rows are
+                    // never allocated - no matcher runs here).
+                    String unheld = " NOT IN (SELECT expectation_id FROM"
+                            + " reconciliation.allocation UNION SELECT expectation_id"
+                            + " FROM reconciliation.match_candidate)";
+                    execute(root, "DELETE FROM reconciliation.expectation_key WHERE"
+                            + " expectation_id" + unheld);
+                    execute(root, "DELETE FROM reconciliation.expectation_event WHERE"
+                            + " expectation_id" + unheld);
+                    execute(root, "DELETE FROM reconciliation.expectation WHERE id"
+                            + unheld);
                 } finally {
                     execute(root, "ALTER TABLE reconciliation.expectation ENABLE TRIGGER"
                             + " expectation_is_never_deleted");

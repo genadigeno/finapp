@@ -68,6 +68,30 @@ public class SettlementOperationsController {
         return settlement.attest(fileId);
     }
 
+    /**
+     * Declines a file — a person's reasoned judgement (`P8-TSK-008`, moved from `-003`). No
+     * idempotency key: the machine is the record, a terminal file answers {@code 409}, and
+     * each door refuses before it converges (the `P8-TSK-006` rule).
+     */
+    @PostMapping(path = "/files/{id}/decline", consumes = MediaType.APPLICATION_JSON_VALUE)
+    @RequiresPermission(PermissionName.SETTLEMENT_INGEST)
+    public SettlementOperations.DeclineView declineSettlementFile(
+            @PathVariable("id") String fileId,
+            @Valid @RequestBody SettlementFileDeclineRequest body) {
+        return settlement.decline(fileId, body);
+    }
+
+    /**
+     * One batch: identity, the trailer's declared words and the folded totals — what an
+     * attester reads before attesting a {@code PARSED} upload (`P8-TSK-008`).
+     */
+    @GetMapping("/batches/{id}")
+    @RequiresPermission(PermissionName.RECONCILIATION_INVESTIGATE)
+    public SettlementOperations.BatchView viewSettlementBatch(
+            @PathVariable("id") String batchId) {
+        return settlement.viewBatch(batchId);
+    }
+
     /** The declared sources with their seeded operational state — compiled data plus one flag. */
     @GetMapping("/sources")
     @RequiresPermission(PermissionName.RECONCILIATION_INVESTIGATE)

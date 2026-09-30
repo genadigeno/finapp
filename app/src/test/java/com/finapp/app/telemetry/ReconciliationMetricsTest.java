@@ -63,7 +63,10 @@ class ReconciliationMetricsTest {
                 new JdbcExpectationReadings(),
                 register(),
                 new JdbcSettlementFileStore(
-                        new SettlementFileCipher(new byte[32], 1, new SecureRandom())));
+                        new SettlementFileCipher(new byte[32], 1, new SecureRandom())),
+                new com.finapp.settlement.JdbcSettlementBatchStore(IDS),
+                new com.finapp.reconciliation.JdbcSuspenseReadings(),
+                new com.finapp.payments.JdbcUnmatchedConfirmationStore());
     }
 
     @Test
@@ -73,6 +76,9 @@ class ReconciliationMetricsTest {
         SimpleMeterRegistry registry = new SimpleMeterRegistry();
         new ReconciliationMetrics(
                 proof(),
+                new com.finapp.reconciliation.JdbcRunReadings(),
+                new JdbcSettlementFileStore(
+                        new SettlementFileCipher(new byte[32], 1, new SecureRandom())),
                 register(),
                 () -> {
                     throw new SQLException("nope");
@@ -114,5 +120,55 @@ class ReconciliationMetricsTest {
                         .gauge()
                         .value())
                 .isNaN();
+
+        // The suspense series (P8-TSK-010): the proof under its own purpose, and the
+        // three gauges - each eager, each NaN when the sweep is unreadable.
+        assertThat(registry.find(ReconciliationMetrics.PROOF)
+                        .tag("purpose", AccountPurpose.SUSPENSE_UNMATCHED.name())
+                        .gauge())
+                .as("the suspense proof publishes through the proof series (ADR-0070 §7)")
+                .isNotNull();
+        assertThat(registry.find(ReconciliationMetrics.PROOF)
+                        .tag("purpose", AccountPurpose.SUSPENSE_UNMATCHED.name())
+                        .gauge()
+                        .value())
+                .isNaN();
+        for (String series :
+                java.util.List.of(
+                        ReconciliationMetrics.SUSPENSE_OPEN,
+                        ReconciliationMetrics.SUSPENSE_AGE,
+                        ReconciliationMetrics.SUSPENSE_UNOWNED)) {
+            assertThat(registry.find(series).gauge())
+                    .as("%s exists eagerly", series)
+                    .isNotNull();
+            assertThat(registry.find(series).gauge().value())
+                    .as("%s reads NaN when unreadable, never a comforting zero", series)
+                    .isNaN();
+        }
+
+        // The run series (P8-TSK-011): pending, age and blocked - each eager PER DECLARED
+        // SOURCE, each NaN when the counters are unreadable, never a comforting zero. The
+        // ageing series (P8-TSK-013) join the same reading: overdue expectations, the
+        // oldest overdue's age and the unmatched items still waiting.
+        for (String series :
+                java.util.List.of(
+                        ReconciliationMetrics.RUN_PENDING,
+                        ReconciliationMetrics.RUN_AGE,
+                        ReconciliationMetrics.RUN_BLOCKED,
+                        ReconciliationMetrics.OVERDUE,
+                        ReconciliationMetrics.OVERDUE_AGE,
+                        ReconciliationMetrics.ITEM_UNMATCHED)) {
+            assertThat(registry.find(series)
+                            .tag("source", "simulated-psp.settlement")
+                            .gauge())
+                    .as("%s exists eagerly per declared source", series)
+                    .isNotNull();
+            assertThat(registry.find(series)
+                            .tag("source", "simulated-psp.settlement")
+                            .gauge()
+                            .value())
+                    .as("%s reads NaN when unreadable, never a comforting zero", series)
+                    .isNaN();
+        }
     }
 }

@@ -86,10 +86,13 @@ class ExpectationRegisterDatabaseTest {
     @DisplayName("version 1 is seeded ACTIVE for each of the four sources with the decided"
             + " values, and the active read resolves it with its lags")
     void versionOneIsSeededActivePerSource() throws SQLException {
+        // Scoped to the migration's own rows: another suite may commit a private rule
+        // set of its own (MatchingDatabaseTest does), and this guard is V002's seed.
         assertThat(count("SELECT count(*) FROM reconciliation.rule_set WHERE status ="
-                + " 'ACTIVE'"))
+                + " 'ACTIVE' AND correlation_id = 'p8-tsk-004-migration'"))
                 .isEqualTo(4);
-        assertThat(count("SELECT count(*) FROM reconciliation.rule_set"))
+        assertThat(count("SELECT count(*) FROM reconciliation.rule_set WHERE"
+                + " correlation_id = 'p8-tsk-004-migration'"))
                 .as("only version 1 exists")
                 .isEqualTo(4);
 
@@ -101,14 +104,18 @@ class ExpectationRegisterDatabaseTest {
         assertThat(psp.lagDaysFor(ExpectationKind.CARD_REFUND)).isEqualTo(3);
 
         assertThat(count("SELECT count(*) FROM reconciliation.tolerance WHERE comparison ="
-                + " 'SETTLEMENT_DATE_DAYS' AND days = 2"))
+                + " 'SETTLEMENT_DATE_DAYS' AND days = 2 AND rule_set_id IN (SELECT id"
+                + " FROM reconciliation.rule_set WHERE correlation_id ="
+                + " 'p8-tsk-004-migration')"))
                 .isEqualTo(4);
         assertThat(count("SELECT count(*) FROM reconciliation.provider_fee_schedule WHERE"
                 + " rule_set_id = ? AND line_type = 'PROCESSING_FEE' AND rate = 0.015000"
                 + " AND fixed_minor = 25", PSP_RULE_SET))
                 .isEqualTo(3);
         assertThat(count("SELECT count(*) FROM reconciliation.severity_threshold WHERE"
-                + " high_value_minor = 100000"))
+                + " high_value_minor = 100000 AND rule_set_id IN (SELECT id FROM"
+                + " reconciliation.rule_set WHERE correlation_id ="
+                + " 'p8-tsk-004-migration')"))
                 .isEqualTo(12);
         assertThat(count("SELECT count(*) FROM reconciliation.rule WHERE operation_anchored"
                 + " AND line_type = 'PAYOUT_RETURNED' AND grace_hours = 72"))
@@ -272,8 +279,12 @@ class ExpectationRegisterDatabaseTest {
         application.commit();
         UUID id = expectationIdOf(operation);
 
-        // A machine edge moves - the whole amount allocated is OPEN -> SETTLED.
-        execute("UPDATE reconciliation.expectation SET status = 'SETTLED', allocated_minor ="
+        // A machine edge moves - the whole amount resolved is OPEN -> SETTLED. The raw
+        // fixture rides resolved_minor: since V005 a raw allocated_minor without its
+        // allocation rows is REFUSED at commit by the deferred sum trigger for every
+        // writer (INV-REC-07, proven in MatchingDatabaseTest) - this suite proves the
+        // MACHINE's edges, not the sum discipline.
+        execute("UPDATE reconciliation.expectation SET status = 'SETTLED', resolved_minor ="
                 + " amount_minor, status_changed_at = now() WHERE id = ?", id);
         application.commit();
 
@@ -285,7 +296,7 @@ class ExpectationRegisterDatabaseTest {
                 .as("SETTLED -> RESOLVED_BY_ADJUSTMENT: nothing remains to resolve")
                 .contains("invalid expectation transition");
 
-        execute("UPDATE reconciliation.expectation SET status = 'OPEN', allocated_minor = 0,"
+        execute("UPDATE reconciliation.expectation SET status = 'OPEN', resolved_minor = 0,"
                 + " status_changed_at = now() WHERE id = ?", id);
         execute("UPDATE reconciliation.expectation SET status = 'RESOLVED_BY_ADJUSTMENT',"
                 + " resolved_minor = amount_minor, status_changed_at = now() WHERE id = ?",

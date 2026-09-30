@@ -150,18 +150,19 @@ class SettlementEvidenceGrantsDatabaseTest {
             application.rollback();
         }
         // And for every writer, the trigger, probed on a REAL row (a vacuous UPDATE fires no
-        // row trigger and proves nothing): no edge exists yet, so status cannot move at all,
-        // and an attestation is recorded once.
+        // row trigger and proves nothing): only the machine's edges move a status
+        // (P8-TSK-008 brought RECEIVED -> PARSED | REJECTED and PARSED -> REJECTED; ACCEPTED
+        // still has no producer), and an attestation is recorded once.
         String fileId = probeFileId;
         assertThatExceptionOfType(SQLException.class)
-                .as("no edge leaves RECEIVED until its producer exists")
+                .as("RECEIVED -> ACCEPTED is no edge until the accept leg exists (P8-TSK-009)")
                 .isThrownBy(
                         () ->
                                 execute(
                                         migrator,
-                                        "UPDATE settlement.file SET status = 'PARSED'"
+                                        "UPDATE settlement.file SET status = 'ACCEPTED'"
                                                 + " WHERE id = '" + fileId + "'"))
-                .withMessageContaining("no edge");
+                .withMessageContaining("not a settlement file edge");
         migrator.rollback();
 
         execute(application,
@@ -280,8 +281,15 @@ class SettlementEvidenceGrantsDatabaseTest {
         try (Statement statement = application.createStatement();
                 var rows =
                         statement.executeQuery(
-                                "SELECT code, kind, status, next_sequence"
-                                        + " FROM settlement.source ORDER BY code")) {
+                                // V002's own four rows: fixture sources other suites seed
+                                // beside them (the acceptance suite's retiring source) are
+                                // theirs to assert, and next_sequence is OPERATIONAL state
+                                // the accept leg legitimately advances (P8-TSK-009) - the
+                                // seed's claim is identity and openness, not the counter.
+                                "SELECT code, kind, status"
+                                        + " FROM settlement.source"
+                                        + " WHERE code LIKE 'simulated-%'"
+                                        + " ORDER BY code")) {
             StringBuilder seeded = new StringBuilder();
             while (rows.next()) {
                 seeded.append(rows.getString(1))
@@ -289,16 +297,14 @@ class SettlementEvidenceGrantsDatabaseTest {
                         .append(rows.getString(2))
                         .append(':')
                         .append(rows.getString(3))
-                        .append(':')
-                        .append(rows.getLong(4))
                         .append(';');
             }
             assertThat(seeded.toString())
                     .isEqualTo(
-                            "simulated-bank.statement=BANK_STATEMENT:ACTIVE:1;"
-                                    + "simulated-payout.settlement=PAYOUT_PROVIDER_REPORT:ACTIVE:1;"
-                                    + "simulated-psp.settlement=PSP_SETTLEMENT_REPORT:ACTIVE:1;"
-                                    + "simulated-scheme.cycle-report=SCHEME_CYCLE_REPORT:ACTIVE:1;");
+                            "simulated-bank.statement=BANK_STATEMENT:ACTIVE;"
+                                    + "simulated-payout.settlement=PAYOUT_PROVIDER_REPORT:ACTIVE;"
+                                    + "simulated-psp.settlement=PSP_SETTLEMENT_REPORT:ACTIVE;"
+                                    + "simulated-scheme.cycle-report=SCHEME_CYCLE_REPORT:ACTIVE;");
         }
         application.commit();
     }

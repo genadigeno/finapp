@@ -29,6 +29,15 @@ public interface MerchantPayoutStore<T> {
     Optional<MerchantPayout> findByDispatchKey(T unitOfWork, MerchantId merchant, String dispatchKey);
 
     /**
+     * The payout a provider's own reference names, lock-free (`P8-TSK-010`): the
+     * reconciliation lookup's read — a typing snapshot, never a working claim.
+     */
+    Optional<MerchantPayout> findByProviderReference(T unitOfWork, String providerReference);
+
+    /** The payout our minted reference names, lock-free (`P8-TSK-010`) — the OUR_REF read. */
+    Optional<MerchantPayout> findByReference(T unitOfWork, String reference);
+
+    /**
      * Commits a fresh send permit, conditional on the payout still awaiting the rail's word —
      * {@code false} when a resolver got there first, and then nothing may be sent.
      */

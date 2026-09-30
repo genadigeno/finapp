@@ -35,7 +35,9 @@ class OperationalChartMigrationTest {
                     "db/migration/ledger/V012__payout_clearing_joins_the_chart.sql",
                     "db/migration/ledger/V013__instant_clearing_joins_the_chart.sql",
                     // P7-TSK-013: the dispute accounts, each with its first poster.
-                    "db/migration/ledger/V014__dispute_accounts_join_the_chart.sql");
+                    "db/migration/ledger/V014__dispute_accounts_join_the_chart.sql",
+                    // P8-TSK-009: the counterparties' processing costs, with hop 1's poster.
+                    "db/migration/ledger/V016__processing_costs_joins_the_chart.sql");
 
     /**
      * The seed's type decisions, pinned as its contract. Changing one is a reclassification of
@@ -43,23 +45,27 @@ class OperationalChartMigrationTest {
      * and once anything has posted, the trigger refuses it anyway ({@code INV-LED-06}).
      */
     private static final Map<AccountPurpose, AccountType> SEEDED_TYPES =
-            Map.of(
-                    AccountPurpose.SETTLEMENT_CLEARING, AccountType.ASSET,
+            Map.ofEntries(
+                    Map.entry(AccountPurpose.SETTLEMENT_CLEARING, AccountType.ASSET),
                     // ADR-0057: instructed and not yet settled is an obligation we still owe,
                     // so it grows on the credit side the payout credits.
-                    AccountPurpose.PAYOUT_CLEARING, AccountType.LIABILITY,
+                    Map.entry(AccountPurpose.PAYOUT_CLEARING, AccountType.LIABILITY),
                     // ADR-0062 §4: the net receivable on the instant scheme - pay-ins
                     // debit it, withdrawals credit it, Phase 8 discharges it per cycle.
-                    AccountPurpose.INSTANT_CLEARING, AccountType.ASSET,
+                    Map.entry(AccountPurpose.INSTANT_CLEARING, AccountType.ASSET),
                     // ADR-0061 §3: a claim - on the network by representment, or on the
                     // counterparty for a parked share - growing on the debit side.
-                    AccountPurpose.CHARGEBACK_RECOVERABLE, AccountType.ASSET,
+                    Map.entry(AccountPurpose.CHARGEBACK_RECOVERABLE, AccountType.ASSET),
                     // ADR-0061 §4: the written-off excess and the PSP's dispute fees.
-                    AccountPurpose.DISPUTE_COSTS, AccountType.EXPENSE,
-                    AccountPurpose.FEE_REVENUE, AccountType.REVENUE,
-                    AccountPurpose.FX_POSITION, AccountType.ASSET,
-                    AccountPurpose.ROUNDING_RESIDUAL, AccountType.EXPENSE,
-                    AccountPurpose.SUSPENSE_UNMATCHED, AccountType.LIABILITY);
+                    Map.entry(AccountPurpose.DISPUTE_COSTS, AccountType.EXPENSE),
+                    // ADR-0065 §2 (P8-TSK-009): the counterparties' processing fees, each
+                    // recognised at its report's acceptance - growing on the debit side the
+                    // recognition debits, a rebate crediting it back.
+                    Map.entry(AccountPurpose.PROCESSING_COSTS, AccountType.EXPENSE),
+                    Map.entry(AccountPurpose.FEE_REVENUE, AccountType.REVENUE),
+                    Map.entry(AccountPurpose.FX_POSITION, AccountType.ASSET),
+                    Map.entry(AccountPurpose.ROUNDING_RESIDUAL, AccountType.EXPENSE),
+                    Map.entry(AccountPurpose.SUSPENSE_UNMATCHED, AccountType.LIABILITY));
 
     private static final Pattern ROW =
             Pattern.compile(

@@ -1,6 +1,6 @@
 # Task History
 
-The per-task completion records that accumulated behind `## Current Task` - 171 "Previously" blocks, newest first, from `P8-TSK-006` back to project initiation. *(`X-TSK-005` is cross-cutting and completed after `P7-TSK-014` and before `P7-TSK-015`, so it stands between them; its record came in with its branch's merge.)* *(`X-TSK-004` is cross-cutting and completed after the Phase 6 → 7 transition, so it stands second, between `P7-TSK-001` and the transition's record - the transition's block moved here by `P7-TSK-001`'s gate, exactly as an earlier form of this note said it would.)*
+The per-task completion records that accumulated behind `## Current Task` - 177 "Previously" blocks, newest first, from `P8-TSK-013` back to project initiation. *(`X-TSK-004` is cross-cutting and completed after the Phase 6 → 7 transition, so it stands second, between `P7-TSK-001` and the transition's record - the transition's block moved here by `P7-TSK-001`'s gate, exactly as an earlier form of this note said it would.)*
 
 **Archive.** These records were moved verbatim out of
 [`CURRENT_STATE.md`](../CURRENT_STATE.md) on 2026-09-20 so that the canonical description of
@@ -12,6 +12,593 @@ Current state: [`CURRENT_STATE.md`](../CURRENT_STATE.md) ·
 Authoritative backlog: [`BACKLOG.md`](../BACKLOG.md)
 
 ---
+
+### Previously
+
+**`P8-TSK-013` — Grace, ageing, rematch and late evidence** — `COMPLETE`
+(2026-09-30). **M8.3, Evidence becomes canonical lines, `CLOSED` at 6 of 6**: time is
+now explicit — unexplained external value waits out its pinned window and parks
+OWNED, internal records that never settle age into alertable breaks, and late evidence
+on either side is found and closes what it explains `EVIDENCED` — nothing refused
+as stale (`INV-SET-02`, `INV-SET-03`, `INV-REC-02`; ADR-0068, ADR-0069 §§4–6,
+ADR-0073 §7). **The grace and rematch legs ride `Matching.sweep`** — after the run
+loop, per source under the same namespace-4 try-lock, bounded batches, ONE transaction
+per batch: the grace leg re-judges each expired `UNMATCHED` item on its row locked
+`FOR UPDATE` through the same pure engine (the stored fingerprint was judged at run
+time — a waiting item is never re-parked as a duplicate of itself), candidates
+re-read under the lock — an expectation committed while another transaction held
+the item's share lock is ALLOCATED, never parked beside it (ADR-0073 §7, proven with
+a share-lock holder standing in for the return worker) — and only then types the
+true remainder through the lookup: `UNKNOWN_EXTERNAL` for a key the platform does not
+know, `MISSING_INTERNAL` for an operation known but not completed, the `-011`
+definitive types for a terminal answer LEARNED DURING THE WAIT (a run-time terminal
+answer parks in the chunk itself), cause `GRACE_EXPIRED`, parked with its break; the
+rematch leg re-decides residuals whose keys reach an expectation opened after their
+latest decision (origin `REMATCH`, only `ALLOCATE` acts): `UNMATCHED → MATCHED`, and
+`PARKED → MATCHED` only at candidate remainder ≥ parked remainder — the WHOLE
+parked value unparked (cause `UNPARK`, the park's exact inverse at the item's own
+amount, proven line for line against `ledger.journal_line`) and the owning break
+resolved `EVIDENCED` carrying the unpark's entry — a partial unpark never happens,
+and a skipped candidate is rescanned every tick (no decision row on a skip; bounded,
+recorded). **Late settlement (L1)**: a settling allocation locks the candidate's open
+`MISSING_EXTERNAL` break BEFORE allocating (the §3 break-first order extended) and
+resolves it `EVIDENCED` with no posting of its own, the timing frozen on the decision
+(deviation 60 against tolerance 2 in the proof), the `TIMING_DIFFERENCE` raise
+suppressed whenever an open `MISSING_EXTERNAL` stands — one fact, one break — and
+a partial arrival resolves NOTHING and still raises no second timing record.
+**`ReconciliationSweepSchedule`, time's observers** (leaderless, off in tests, a
+SYSTEM actor site with its argument): AGEING judges `expected_by +
+SETTLEMENT_DATE_DAYS < current_date` in SQL on the DATABASE clock and marks per row
+under the expectation's lock — the one-way `overdue_since` (NULL → value) the
+ten-sweeper arbiter, a loser writing NOTHING — raising `MISSING_EXTERNAL`
+(`EXPECTATION_OVERDUE`, value the remainder, never parked) and
+`reconciliation.SettlementExpectationOverdue` in the same transaction; nothing inside
+a window, a settled row never ages; ESCALATION owes bands crossed (2/7/30 days since
+`raised_at`, the database's own day count) minus `SEVERITY_ESCALATED` events already
+appended — an expected-value step under the forward-only trigger, capped CRITICAL,
+once per band under ten, the source's advisory held FIRST (the `-012` register fact
+honoured by every committed-break writer); RUN-BLOCK detection blocks a run whose
+recorded failures reached the bound but whose blocking transaction died, once, with
+its CRITICAL `RUN_BLOCKED` break; and `-010`'s key-collision leg is scheduled at
+last. **The clock discipline is structural**: the module suite pins the matcher's JVM
+clock MONTHS behind the database on purpose, so any window judged off the database
+clock fails every grace scenario at once. **THE BUILD'S FIND, FIXED**: the legs'
+batch posting phase first ran outside any correlation scope and the ledger's own
+`INV-LED-05` guard refused every grace park — each leg now posts LAST inside its
+own generated correlation scope, the per-item records keeping the ingesting flow's
+correlation. **Registers**: `LEASE_PROTECTED_SCHEDULERS` +1
+(`ReconciliationSweepSchedule`, leaderless, its argument written),
+`SystemActorCallSitesAreEnumeratedTest` +1 (`ReconciliationSweep.sweep`;
+`Matching.sweep`'s entry restated for the new legs), three ageing gauges per declared
+source (`finapp.reconciliation.expectation.overdue`, `.overdue.age`,
+`.item.unmatched` — eager, NaN never zero) beside the sweep's own enabled gauge; NO
+route, ONE event, NO migration — `grace_until` (`V003`), `overdue_since` (`V002`),
+`break_event` (`V004`) and `resolution` (`V006`) already stood, no classification
+rows; `DISTRIBUTED_EXECUTION` §3's schedule rows rewritten from the code (the
+planned markers dropped, the namespace-4 row restated with the blocking form's
+holders), ADR-0068/0069/0073 implemented notes with every deviation named (no bespoke
+spans — the `-008` precedent). **Five probe runs, five caught** (`MUTATION_TESTING`
+§2 +3 rows under `INV-SET-02`, `INV-SET-03`, `INV-REC-02`): the grace worklist
+judged on the application's injected clock found NOTHING (graced 0 where 3 belong —
+the months-behind pin the structural catcher); `break_one_open_per_expectation`
+weakened to a plain index ADMITTED a second raw OPEN `MISSING_EXTERNAL` where the
+database must refuse any writer (the direct two-raw-inserts probe, the `-008`
+precedent); the rematch worklist narrowed to `UNMATCHED` left the parked capture
+standing (rematched 0 where 1 belongs); the unscreened ageing marked the SETTLED
+fixture overdue (expected null, was a timestamp); the dropped item lock parked money
+beside its committed candidate (a suspense row where none belongs) — every verdict
+read from the failing testcase, every restore byte-identical (sha256-verified).
+Multi-instance **PASS** — ten ageing sweepers mark once (the conditional and the
+one-open seat, counted), ten escalators step once per band (the expected-value
+UPDATE), ten block-detectors block once (the run's conditional edge, blocked summed 1
+across the racers), the rematch unpark once by the item's conditional exit and
+`released_minor ≤ amount_minor`, the grace leg per source under the try-lock with
+every window judged in SQL on the database clock. Verified by targeted tiers from
+fresh runs on the final code — reconciliation hermetic 58 across 12 suites (the
+bands' arithmetic with its pinned bounds within) and database 46 across 6 (the
+grace-and-rematch suite's nine ordered tests: the typing, the meanwhile-committed
+candidate, the whole-value unpark with its inverse, the ten-sweeper ageing race with
+the per-source readings, L1 whole and partial, escalation and lost-block under ten,
+the share-lock holder, the raw one-open seat), app hermetic 571 across 106 suites
+(the two register rows, the three eager-NaN series and the arch rules within), the
+five affected app database suites in ONE shared container 13 across 5 (the composed
+matcher, opening, suspense, acceptance with its rebuild proof and the storm), and the
+document guards with the register and architecture rules (289 across 42 suites) re-run fresh after the records landed, ALL 0
+FAILURES — ledger, settlement, payments and merchant untouched by this task (their
+`P8-TSK-012` tiers stand), the full battery and the fleet-wide database and kafka
+tiers deliberately skipped on the owner's instruction.
+
+### Previously
+
+**`P8-TSK-012` — Processing fees and counterparty corrections** — `COMPLETE`
+(2026-09-30). **M8.3, Evidence becomes canonical lines, at 5 of 6**: the PSP's charges are
+now checkable against its own pinned terms — the ONE legitimate tolerance, comparing two
+unposted quantities — and the counterparty's own corrections net automatically, closing
+the breaks they explain `EVIDENCED`, the one resolution no person decides (`INV-REC-08`;
+`INV-REC-02` as amended; ADR-0068 §7, ADR-0071 §2). **Reconciliation `V006`**:
+`resolution` (+`_event`) with ADR-0071's full column set — the frozen amount, the
+break's `residual_version`, the named decision and park, `UNIQUE adjustment_proposal_id`
+and `UNIQUE journal_entry_id` — the vocabulary STATED WHOLE in code (`ResolutionKind`,
+`ResolutionStatus`, `ResolutionReasonCode`: eight kinds, four states, thirteen closed
+reasons) while the `CHECK`s deliberately admit only the produced subset (`EVIDENCED`,
+`APPROVED`, `EVIDENCE_RECEIVED`) exactly as the plan's §8 slices `V006`/`V007` — a
+narrowed RANK, not a narrowed vocabulary, the migration test pinning each admitted value
+as its enum's member; `EVIDENCED` the platform's at three ranks (the writer's system
+path; `CHECK (proposed_by_type = 'SYSTEM' AND status = 'APPROVED' AND NOT four_eyes)`
+refusing every raw writer, the migrator included; `-015`'s door to refuse the kind); the
+distinctness `CHECK` and the one-live-proposal partial unique stated now, inert; the
+narrative bounded 1..1000 and screened for PAN and IBAN shapes at the database (the break
+note's rank); both tables append-only for EVERY writer until `V007`. **The fee check
+(`CHECK` cardinality)**: one pure seat (`FeeCheck`) — expected = round(rate × gross
++ fixed) under the pinned schedule's NAMED rounding (`INV-MON-03`; HALF_UP and DOWN proven
+to part ways), the comparison STRICT: at the tolerance nothing, one minor unit beyond a
+breach, the deviation absolute so under-charging is judged the same way; the gross is the
+capture expectation the fee's `ORIGINAL_REF` reaches; AN UNREACHABLE ORIGINAL IS JUDGED
+AT ONCE against an expected fee of ZERO (the design's F1 — waiting would hand `-013`'s
+grace leg a fee item, and the grace leg parks expirees, double-counting expensed value)
+and an absent schedule or tolerance row reads zero (F2, conservative, never loosened);
+the item moves `PENDING → CHECKED` whatever the verdict, the decision freezing
+expected, reported and tolerance (the `V005` columns, now written; the explanation door's
+view gains the triple, additive, the OpenAPI baseline regenerated with exactly its three
+flagged rows reviewed); a breach is `FEE_MISMATCH` (`FEE_BEYOND_TOLERANCE`), commercial,
+value |reported − expected|, NEVER parked — the reported fee was expensed at
+acceptance; and the PER-BATCH comparison folds signed reported − expected per currency
+ONCE, under the completing edge's one winner, its subject the run's FIRST fee item in
+claimant order (the design's D: the taxonomy names the item), converging on the one-open
+unique. A `DISPUTE_FEE` line differing from its expectation stays `AMOUNT_MISMATCH` under
+`ONE_TO_ONE`, proven. **The corrections (`CORRECTION` cardinality)**: one pure seat
+(`CorrectionEngine`) — a same-direction correction TOPS UP the original expectation's
+open remainder (min(item, remainder), any excess parked: C1, a correction is evidence
+like any line), an opposite-direction correction OFFSETS the original item's parked
+excess only at EXACT equality — never a partial offset — and the top-up wins when
+both could apply; matching neither, it waits under ITS rule's grace like any remainder.
+THE OFFSET, whole in the chunk: the correcting item `PENDING → OFFSET` (its value
+recorded in `offset_minor`), the original item `PARKED → RESOLVED`, the unpark the
+park's EXACT INVERSE (cause `CORRECTION_OFFSET` — `Suspense.unpark` gains the cause
+parameter — proven line for line against `ledger.journal_line`), the `EVIDENCED`
+resolution carrying the unpark's entry, the break's conditional `→ RESOLVED` (the
+`OPEN → RESOLVED` shortcut edge produced), `reconciliation.BreakResolved` on the
+terminal edge and the acting-only `reconciliation.BreakResolvedByEvidence` audit record
+— identifiers and enumerated names only. A settling TOP-UP locks the expectation's
+open `AMOUNT_MISMATCH` break BEFORE the allocation that closes it (the §3 break-first
+order) and resolves it `EVIDENCED` with no posting of its own; A NON-ZERO RESIDUAL NEVER
+RESOLVES — the partial top-up and the non-exact correction both proven to close
+nothing. A claw-back offsets a parked duplicate the same way, proven. THE POSTING PHASE:
+a chunk posting parks BESIDE offset unparks pre-locks the union of their projection rows
+itself (`Suspense.park`'s internal pre-lock covers only its own groups — the
+multi-entry rule held at the caller); a poisoned FEE item is contained WITHOUT a park
+(nothing of an expensed fee sits in the position — `UNMATCHED`, no clock, its
+`ERRORED` decision and unparked `PROCESSING_ERROR` break the record). **THE LOCK-ORDER
+FACT RECORDED FOR `-015`** (`DISTRIBUTED_EXECUTION` §3, ADR-0071's note): a chunk now
+locks COMMITTED break rows — safe today because every such writer holds the source's
+namespace-4 advisory first — and the approval door must take the same advisory or
+restate the row. **THE BUILD'S FIND, FIXED STRUCTURALLY**: the composed app suite's raw
+balancing expectation was WIPE-VULNERABLE — the acceptance suite's platform-root
+register wipe deletes unheld rows, and a raw seed is not book-derived, so the waiting
+item's balancer vanished and every later global identity read +12.00 — the balancer is
+now HELD by its own partial allocation (history's foreign keys, the same immutability the
+records claim), and the suite asserts the clearing identity over its own residue.
+**Registers**: `AUDITABLE_ACTIONS` +1, `DATA_CLASSIFICATION` +37 rows (the narrative
+CONFIDENTIAL, the frozen amount RESTRICTED-FINANCIAL), no new route, no new permission,
+no LEASE change; ADR-0068, ADR-0069 and ADR-0071 implemented notes with every deviation
+named. **Four probe runs, four caught** (`MUTATION_TESTING` §2 +3 rows under
+`INV-REC-08`, `INV-REC-06` and `INV-REC-02`): the tolerance compared with ≥ for >
+fell at exactly the boundary (deviation 2 = tolerance 2 suddenly a breach) and on the
+tiny-fee control; the NAMED rounding replaced with a fixed DOWN fell in the terms' own
+arithmetic (expected 27, answered 26); the offset releasing WITHOUT its unpark fell on
+the resolution's absent entry where the park's exact inverse belongs (the app tier's
+suspense proof the systemic catcher behind it); `EVIDENCED` forced over a residual fell
+in the machine's own words (expected OPEN, was RESOLVED, a 50.00 remainder standing) —
+every verdict read from the failing testcase, every restore byte-identical.
+Multi-instance **PASS** — ten sweepers over the offset produce ONE release (the item
+lock and `released_minor ≤ amount_minor`), ONE resolution and ONE `BreakResolved`
+(the break's conditional `→ RESOLVED`, the raise-loser precedent for racers), inside
+`P8-TSK-011`'s ordered chunk and arbiters; the fee check idempotent by the item's
+conditional exit; the per-batch verdict judged once by the completing edge's winner. NO
+route, ONE audit action, ONE event, NO migration outside reconciliation `V006`. Verified
+by targeted tiers from fresh runs on the final code — reconciliation hermetic 48
+across 11 suites (the fee and correction seats, the V006 reconciliations within) and
+database 37 across 5 (the fee-and-correction suite's eight ordered tests with the
+ten-instance race and the raw-writer refusals within; the matcher suite's fee line
+re-stated CHECKED), app hermetic 571 across 106 suites (the audit registry, the
+regenerated baseline within), the five affected app database suites in ONE shared
+container 13 across 5 (the composed matcher suite with its new clearing-identity assert,
+opening, suspense, acceptance with its rebuild proof and the storm), the platform
+classification guard 5 targeted over the +37 rows, and the document guards (140 across
+23 suites) re-run fresh after the records landed, ALL 0 FAILURES — ledger, settlement,
+payments and merchant untouched by this task (their `P8-TSK-010` tiers stand), the full
+battery and the fleet-wide database and kafka tiers deliberately skipped on the owner's
+instruction.
+
+### Previously
+
+**`P8-TSK-011` — The matcher: ordered allocation with decision snapshots** — `COMPLETE`
+(2026-09-30). **M8.3, Evidence becomes canonical lines, at 4 of 6**: evidence now BECOMES
+canonical lines — each report item allocated to our expectations by key, in claimant order,
+by one pure decision function, every evaluation a stored snapshot explainable from rows
+alone, replaying exactly and never over-allocating (ADR-0068 §§3–7; `INV-REC-04` as amended,
+`INV-REC-07`, `INV-REC-02`, `INV-REC-08`). **Reconciliation `V005`**: `match_decision`
+(pinned rule set NOT NULL, the fired rule, key, cardinality, claimant rank of count, the
+stored deviation against its frozen tolerance), `match_candidate` (what the decision SAW
+— amount, direction, remainder_before, opened_at — kept because the live rows move on)
+and `allocation` — all three append-only for EVERY writer (no UPDATE or DELETE grant AND
+the refusing trigger, the migrator included), `allocation_pair_once` UNIQUE
+`(external_item_id, expectation_id) WHERE reverses_allocation_id IS NULL`, the deferred Σ
+triggers firing from BOTH sides (the allocation insert AND either denormalised column, so
+a writer can neither allocate without recording nor record without allocating; the ≤
+bounds are `V002`/`V003`'s standing per-statement CHECKs, stronger than the drafted
+deferred form), the every-writer `run_completes_only_disposed` deferred trigger, the
+`break.decision_id` foreign key `V004` deliberately left off, and `expectation_event`'s
+list regenerated with exactly the new producer (`ALLOCATED`). **The engine
+(`MatchEngine.decide`)**: PURE — no I/O, clock or database — the fingerprint duplicate
+definitive before anything else, kind/direction/currency/remainder screening, two live
+candidates `AMBIGUOUS` (stated and proven hermetically, UNPRODUCED: `expectation_key_once`
+admits one expectation per key — the unproduced-edge precedent), the coexisting
+hit-failures judged in ADR-0069 §2's listed order (direction, then currency, then
+exhausted), allocate min(item, remainder) with the excess parked at once
+(`AMOUNT_MISMATCH`, subject the item) and the shortfall recorded on the expectation's own
+break, never parked; timing a zero-value observation naming its DECISION (the one
+decision-subject type), the deviation and tolerance frozen on the row (`INV-SET-03`);
+proven by the seeded 50-round shuffled-order property and a stored-snapshot RE-DECIDE
+over the live schema — outcome and allocation reproduced from stored rows alone.
+**The run leg (`Matching.sweep`, a SYSTEM actor site)**: per source
+`pg_try_advisory_xact_lock(4, …)` per chunk — the TRY only ORDERS, a refused instance
+moves on (the `OutboxRelay` argument) — the lowest-sequence eligible run (a `BLOCKED` or
+any incomplete lower sequence holds its source, proven), one transaction per chunk
+re-reading and advancing the cursor, expectations then items locked sorted by id, the
+resolution's key hops (the dispute stages onto one item key; the ARN through
+`reference_alias`'s local two-hop join, proven end to end), and THE CHUNK'S OWN CLAIMANT
+LEDGER — each allocation diminishes the remainder the next item in claimant order sees,
+so one chunk can never allocate one expectation twice over BEFORE the Σ triggers judge
+the commit; the exhausted second claimant becomes `DUPLICATE_EXTERNAL` in the same chunk,
+counted. Definitive classes park IN the chunk with their raised breaks through
+`P8-TSK-010`'s suspense (whose blocking advisory re-enters the lock the chunk holds, and
+whose break-row FOR UPDATE verifies rows the chunk itself raised — transaction-local,
+order-neutral, the §3 register row rewritten SECOND-TAKER-BUILT); the unreached remainder
+is TYPED by the composed lookup — TERMINAL parks at once (`REFUND_CONTRADICTED` /
+`TERMINAL_STATE_CONTRADICTED`, the frozen answer on the break), everything else WAITS
+`UNMATCHED` with `grace_until` computed in SQL on the database clock (no landed rule, no
+clock — the fee item is `P8-TSK-012`'s); an allocation bumps every OPEN break's
+`residual_version` on the subjects it touches (ADR-0071's staleness counter; the chunk's
+own fresh break born after the bump at 0, honestly). A poisoned item is CONTAINED under
+its savepoint — `ERRORED` on the record, the remainder parked under `PROCESSING_ERROR`,
+the queued park of the failed attempt withdrawn, the rows behind it decided — and a run
+failing consecutive chunks (failures recorded in their own small transaction surviving
+the rollback) moves to `BLOCKED` with its CRITICAL zero-value `RUN_BLOCKED` break, holding
+its source VISIBLY: a later matchable run of the held source proven untouched.
+**The doors** (`GET /v1/operator/reconciliation/runs[/{id}]`, `/decisions/{id}`,
+`/allocations/{id}`, all `RECONCILIATION_INVESTIGATE`, bounded at 100 with `truncated`):
+a decision explains itself from stored rows alone — rule, priority, key, cardinality,
+every candidate with its remainder_before, the allocations, the run's counts per outcome
+— negatives three ways over HTTP (anonymous 401, role-less 403, the controller's
+disjoint desk 403), unknown AND malformed ids ONE named 404 each recording nothing
+(`reconciliation.RunNotFound` / `.DecisionNotFound` / `.AllocationNotFound` —
+`ERROR_CONTRACT` §3's new section, the `settlement.FileNotFound` departure's reasoning),
+not audited per serving (the `-008` batch-read precedent). **Events and audit**:
+`reconciliation.SettlementExpectationSettled` on the settling edge and
+`reconciliation.ReconciliationRunCompleted` once per run with its counts (sourceId, the
+`-008` payload stance — the drafted sourceCode deviation recorded), the acting-only
+`reconciliation.RunCompleted` audit record (counts, never an amount), no bespoke span
+(the `-008` precedent). **The gauges**: `finapp.reconciliation.run.pending`, `.age` (from
+stored `created_at`) and `.blocked` (must read 0, alerted) — PER DECLARED SOURCE, the
+codes mapped in the app over the settlement source rows, eager, NaN never zero, floored,
+`max()`; the sweeper's enabled gauge eager either way, off in test contexts.
+**The registers**: `LEASE_PROTECTED_SCHEDULERS` +1 (`ReconciliationSchedule`, leaderless,
+its argument written), `SystemActorCallSitesAreEnumeratedTest` +1 (`Matching.sweep` — a
+scheduled decision over locked stored rows has no person), four
+`RoutePermissionRegisterTest` rows, `AUDITABLE_ACTIONS` +1, `DATA_CLASSIFICATION` +40
+rows (candidate and allocation amounts RESTRICTED-FINANCIAL), the OpenAPI baseline
+regenerated with every flagged row reviewed, and the namespace-4 pin at the CODE rank
+(`AdvisoryNamespaceIsPinnedTest` — no migration statement carries the number; the try
+and blocking forms proven to share it). **THE BUILD'S FINDS, EACH FIXED**: the rule
+table's `key_kind` on a CHECK/CORRECTION row is ITEM-side vocabulary (`ORIGINAL_REF`),
+so the store surfaces the expectation-side `KeyKind` only for landed rules — the first
+sweep died on it in the container, and the fix is the vocabulary's own seam;
+`P8-TSK-010`'s raw decision-subject fixture now plants a REAL `match_decision` (the
+`break_decision_fk` arrived); the register suite's raw machine fixtures moved onto
+`resolved_minor` — a raw `allocated_minor` without its rows is REFUSED since `V005`,
+which is the invariant working — and its V002-seed guard scoped to the migration's own
+correlation; the `-007` suite's remainders-equal-balance special case restated as the
+items-term identity, and BOTH emptied-register wipes scoped around history-held
+expectations (an allocated expectation is held by history's own foreign keys — exactly
+the immutability the records claim); the collision race's global created-count made
+order-independent, THIS subject's convergence the assertion. **Five probe runs, five
+caught, one equivalence demonstrated** (`MUTATION_TESTING` §2 +3 rows under `INV-REC-04`,
+`INV-REC-07` and `INV-REC-02`): claimant order reversed — the walk itself broke loudly
+(three decided where five belong, runs left OPEN); the expectation-side Σ trigger
+dropped — the raw over-allocation COMMITTED where the sum must refuse; the pair unique
+dropped — the direct two-raw-inserts probe ADMITTED a second positive allocation while
+the bypassed ten-sweeper race stayed HONESTLY GREEN (the conservation CHECK and the
+savepoint containment kept money single — demonstrated, never assumed, the `-008`
+SKIP-LOCKED precedent); the candidate snapshot omitted — the door's empty snapshot and
+the re-decide's own guard both fell; a definitive class sent to wait — expected PARKED,
+was UNMATCHED, the machine's own words. Every verdict read from the failing testcase,
+every restore byte-identical. Multi-instance **PASS** — ten sweepers WITH the lock (one
+decision per item, exactly) and with it BYPASSED (money moved once; a bypassed loser may
+record its losing evaluation, an honest `ERRORED` decision), the item's conditional
+exits, the pair unique and the deferred sums arbitrating for any writer the lock misses,
+the cursor resuming on any instance, the gauges deciding nothing. FOUR routes, THREE
+error-contract rows, ONE audit action, TWO events, NO migration outside reconciliation
+`V005`. Verified by targeted tiers from fresh runs on the final code — reconciliation hermetic 35 across 8 suites (the engine's verdict matrix with the seeded shuffled-order property, the V005 reconciliations and the namespace pin within) and database 29 across 4 suites (the matcher suite's seven ordered tests with both ten-sweeper races, the record-binding refusals and the stored-snapshot re-decide within; the register suite's raw fixtures moved onto resolved_minor and its seed guard scoped to the migration's own rows; the collision race's global count made order-independent), app hermetic 571 across 106 suites (the LEASE register's eleventh row, the matcher's system-actor site, the four route rows, the per-source run gauges' eager-NaN proof and the regenerated OpenAPI baseline within — 111 flagged rows reviewed, every one the four new routes' own schemas, the three required-path-parameter rows the new-route precedent's), the five affected app database suites in ONE shared container (13 across 5: the composed matcher suite with the doors' negatives three ways and the named 404s, the opening suite with its identity restated to the items-term form, the suspense suite, acceptance with its rebuild proof and the storm with its emptied-register rebuild — both wipes scoped around history-held expectations), and the document guards (140 across 23 suites) re-run fresh after the records landed, ALL 0 FAILURES — ledger, settlement, payments and merchant untouched by this task (their `P8-TSK-010` tiers stand), the full battery and the fleet-wide database and kafka tiers deliberately skipped on the owner's instruction.
+
+### Previously
+
+**`P8-TSK-010` — Breaks and suspense as records** — `COMPLETE` (2026-09-29).
+**M8.3, Evidence becomes canonical lines, at 3 of 6**: every discrepancy can now be a
+classified, severity-graded record that is never deleted, and every unit of parked value
+names the one break answering for it — the records and their writers, before any engine
+produces them (ADR-0069, ADR-0070; `INV-REC-02`, `INV-REC-09`). **Reconciliation `V004`**:
+`break` (+`_event`, `_note`, `_evidence_link`), `suspense_item`, `suspense_release` and `park`
+— the fourteen types, twenty-four causes and four severities generated from their enums;
+the break machine stated whole with only birth produced; the four one-open-per-(type,
+subject) partial uniques; severity and `residual_version` forward-only and the frozen
+columns held by trigger; the note body's bounds and its PAN screen by a new IMMUTABLE
+plpgsql Luhn-run function plus the IBAN shape (`INV-PAY-02`, `INV-RAIL-03` at the database
+rank, over-refusal recorded); NO `DELETE` for any writer — grant absent AND a refusing
+trigger on every table, the migrator included. **The recorded pairing decision**: the
+type—cause pairing binds the RAISE by a `BEFORE INSERT` trigger, deliberately not a
+table `CHECK` — a reclassification moves the type while the cause stays frozen — and
+an investigator's reclassification raises nothing, so the closed cause enum carries no
+member for it. **`BreakRegister.raise`**: converging on the partial uniques (`ON CONFLICT
+DO NOTHING`, losers record no history, no audit, no event), severity assessed INSIDE the
+raise — the one pure seat (`BreakSeverity`) plus the pinned rule set's own
+`severity_threshold` read, so a raiser cannot pass a quieter grade; at exactly
+`high_value_minor` one level up and not one unit below (O7's ≥); OUTBOUND unknowns
+CRITICAL; a recurrence is a NEW break naming its predecessor. **Suspense**: park, unpark
+and the release primitive over the ledger's own `PostingService` (reconciliation's one
+permitted sibling edge) — one entry per (position, value date) of at most four lines,
+keyed `recon-suspense:<parkId>`, posting-dated the park row's stamped-once `decided_on`
+and value-dated the items' settlement date; the `park` and `suspense_item` rows inserted
+AFTER the posting carrying their entry ids whole (ADR-0070's entry-id question ANSWERED:
+the `P8-TSK-009` D3 shape); the unpark the EXACT inverse from frozen facts (side,
+position, the original park's value date) under a NEW park id; every release appended,
+conditional under the item's lock, bumping the owning break's `residual_version`.
+**`INV-REC-09` at three ranks**: `break_id NOT NULL`, the `V004` owner trigger (a
+never-parking or RESOLVED owner refused for every writer), and the domain's pre-park
+verification — `park` refuses a missing, resolved or never-parking break by the API's
+shape. **The proofs**: the suspense identity joins `PositionProof` per currency —
+CR−DR = § CREDIT − § DEBIT remainders plus the NAMED Phase 7 term (the parkings no
+item's `origin_ref` claims), exact with or without other suites' parkings in the
+container — publishing through `finapp.reconciliation.position.proof` under its own
+purpose; park entries and every item's entry join the completeness verifier's known
+classes; the three gauges (`suspense.open`, `.age`, `.unowned`) eager, NaN never zero,
+the unowned reading flipped by a planted defect observed in its own uncommitted
+transaction and never inherited by the shared container. **The lookup**
+(`InternalReferenceLookup`, the port in reconciliation, `JdbcInternalReferenceLookup` in
+`app` over payments' and merchant's public read stores, five new lock-free reference
+finders): the strongest knowledge wins (`COMPLETED` over `TERMINAL` over `IN_FLIGHT` over
+`UNKNOWN`), frozen on the break; THE GATE'S FIND — no test covered the classification
+over the named states — made the mappings pure and proven EXHAUSTIVELY over every
+member of every status enum (a new member fails loudly), with the wired smoke over the
+live schema; `ACQUIRER_REF` answers `UNKNOWN` here (the ARN's alias resolution is the
+matcher's, recorded). **The key-collision leg**: `DUPLICATE_INTERNAL` from the recorded
+`KEY_COLLISION` events — subject the colliding expectation, value its own amount,
+never parked — once under ten legs; a collision after an earlier break resolved is
+suppressed by the any-status guard (the recurrence refinement is `-013`'s, recorded).
+**Events and audit**: `reconciliation.ReconciliationBreakRaised` (sourceId, the recorded
+`-008` stance) through the outbox on the acting connection; `reconciliation.BreakRaised`
+acting-only with identifiers-only summary; `AUDITABLE_ACTIONS` +1, `DATA_CLASSIFICATION`
++91 rows. **Six probe runs, five caught, one honest survival resolved, one test
+tightened** (`MUTATION_TESTING` §2 +2 rows under `INV-REC-02` and `INV-REC-09`): the
+partial unique dropped — ten raisers wrote ten rows where one belongs; `break_id NOT
+NULL` dropped alone SURVIVED (the owner trigger is the equivalent arbiter, refusing the
+NULL insert in its own words) and fell with the trigger dropped beside it — the raw
+NULL-break insert ADMITTED where the database must refuse any writer; the DELETE
+trigger dropped first SURVIVED on foreign-key noise — the TEST was tightened, not the
+probe: the migrator's deletes now target planted CHILDLESS rows, so only the trigger
+can refuse them — and the re-run caught the admitted delete; the threshold compared
+with > for ≥ fell at exactly the seeded value; the unpark posting the park's own
+direction fell in the ledger's own words (the swapped accounts named). Every verdict
+read from the failing testcase, every restore byte-identical. Multi-instance **PASS** —
+ten raisers and ten parks counted (the conditional transition, the partial uniques,
+`UNIQUE (external_item_id)` and `origin_ref` arbitrate for any writer), the §3 lock
+order's first taker built and recorded, windows on stored dates, the gauges decide
+nothing. NO route, NO migration outside reconciliation `V004`, NO API change.
+Verified by targeted tiers from fresh runs on the final code — reconciliation hermetic 17 across 5 suites and database 22 across 3 suites (V004's reconciliations, the severity policy, the break and suspense suite with its races and the widened schema floor within), payments hermetic 246 across 35 suites and merchant hermetic 135 across 19 suites (the new reference finders and the widened fakes within), and app hermetic 571 across 106 suites (the opener register's recon-suspense row, the exhaustive lookup mappings, the ownership sweep and the doc guards within) — plus the affected app database suites in ONE shared container (37 tests across 6 suites: the composed suspense suite with the wired-lookup smoke and the planted-defect flip, the acceptance suite with its rebuild proof, the opening suite, the storm with its emptied-register rebuild beside parked suspense value, the settlement routes and the adjustment suite) and the document guards (143 across 25 suites) re-run fresh after the records landed, ALL 0 FAILURES — ledger and settlement untouched by this task (their `P8-TSK-009` tiers stand), and the full battery and the fleet-wide database and kafka tiers deliberately skipped on the owner's instruction.
+
+### Previously
+
+**`P8-TSK-009` — Acceptance: fee recognition, remittance expectation and reconciliation intake**
+— `COMPLETE` (2026-09-29). **M8.3, Evidence becomes canonical lines, at 2 of 6**: hop 1 posts —
+an eligible `PARSED` batch is `ACCEPTED` once, from its own stored evidence, in ONE transaction
+(ADR-0065 §2 shipped for the card PSP). **Ledger `V016`**: `PROCESSING_COSTS` (EXPENSE) joins
+the chart with the `V011`–`V014` ceremony — four regenerated constraints, three seeded
+currency rows below the UUIDv7 ceiling — AND `reconciledPositions()`, so no person can adjust
+the platform's own cost book outside a break resolution (the `-006` binding re-stated, refused
+at the door and the database in the suites). **Settlement `V004`**: `ACCEPTED` joins both
+machines with the four acceptance facts once-only by trigger, the honesty `CHECK` —
+`(journal_entry_id IS NULL) = posting_omitted` — and `UNIQUE (source_id, source_sequence)`;
+a retired source rejects `SOURCE_RETIRED`, RETAINED. **The accept leg** (`SettlementIntakeSchedule`'s
+second leg — leaderless, a SYSTEM actor site): eligibility is authentication — a pull always,
+an upload only past its second person (the one `ELIGIBLE` text in claim and re-read, `V002`'s
+`CHECK` beneath for every writer) — the source row `FOR UPDATE` gives the gapless sequence
+(a rollback releases its number, proven by the injected failure), `accepted_on` stamped once,
+the value date the batch's STORED business date (the design's D2), and the recognition posted
+keyed `settlement-batch:<batchId>` with stored dates BEFORE the accepting `UPDATE` (D3: the
+honesty `CHECK` wants the entry id in that statement; the posting stays the last CONTENDED
+write) — so a retry, a takeover or a later-day replay converges. **`BatchRecognition`, pure**:
+only the fees post — F folded with `Money` per row, DR `PROCESSING_COSTS` / CR the position
+(the mirror for a net rebate), a zero F omitted honestly, 16 lines pinned. **The intake**
+(ADR-0064's second app-composed join, `ReconciliationIntake`): the run born `OPEN` (kind `BATCH`,
+pinned to the ACTIVE rule set), one `PENDING` item per canonical line with its typed keys over
+the name-equal mirrored enums (`ReconciliationMirrorsSettlementVocabularyTest`, planted-violation
+controls), and the `REMITTANCE` of the net's magnitude keyed by the trailer's reference,
+`expected_by = value date + funding lag`, no entry — a zero net opens none. **Reconciliation
+`V003`**: both machines stated whole and generated into `CHECK`s and every-writer triggers, birth
+the only produced edge, `UNIQUE (batch_id)`, `UNIQUE (settlement_line_id)`, the value-conservation
+`CHECK`, append-only with no `DELETE` anywhere — and the `-001` schema floor widened with
+exactly the five new tables (the gate's second find: the pin had not moved). **`INV-REC-06`
+extended**: balance = open expectation remainders − open item remainders (allocating items
+`PENDING`/`UNMATCHED`; `PROCESSING_FEE` never allocates — its effect IS the recognition entry),
+the completeness verifier knowing every recognition entry by the batch's own row, and the
+positions report carrying `openItems`/`openItemCount` (the OpenAPI baseline regenerated, every
+flagged row reviewed: five rows, ALL COMPATIBLE ADDED). **THE GATE'S FIND**: the storm's
+emptied-register equivalence would have broken — a remittance is evidence's promise, no
+completion re-derives it — so the opening-position backfill walks ACCEPTED batches too,
+re-deriving each remittance from the row's stored facts THROUGH THE LIVE INTAKE'S OWN OPENER
+(ADR-0067 §8 kept true; the opener register's first `PHASE_8_RECORD` row, `settlement-batch:`),
+proven by wipe-and-rebuild with the re-derived row substance-equal to the live one, and by the
+five affected app database suites in ONE shared container (the storm's rebuild among them, 34
+tests across 5 suites). **Recorded deviations and minors**: the accepted event's payload carries
+`sourceId` (the `-008` `EventPayload` stance); the acceptance series stay `P8-TSK-024`'s (the
+observer widens there, the parse precedent); the leg carries no bespoke span (the `-008`
+precedent — correlation is the trace). **Eight probe runs, six caught and two honest
+survivals resolved** (`MUTATION_TESTING` §2 +3 rows under `INV-SET-07`, `INV-SET-04`,
+`INV-REC-06`): the attestation predicate dropped alone SURVIVED — both code ranks share the
+one `ELIGIBLE` text and `V002`'s `CHECK` refused the acceptance whole for every writer — and
+fell with the `CHECK` disarmed beside it ("inert until its second person": expected PARSED,
+was ACCEPTED); `claimNextSequence`'s lock dropped alone SURVIVED (`sourceByIdForUpdate`, taken
+first for the retirement judgement, is the equivalent arbiter) and BOTH source locks dropped
+were caught by the gapless-sequence race; the clock-dated posting conflicted exactly as the
+design predicted (`IdempotencyConflictException`, `INV-IDEM-03`); the posted transaction lines
+flipped the identity in its own words (SETTLEMENT_CLEARING EUR: 58.00 = 58.00 − 59.75, false);
+the inverted remittance answered OUTBOUND:5800 where INBOUND:5800 belongs; the removed batch
+walk rebuilt 0 remittances where at least 1 belongs. Every verdict read from the failing
+testcase, every restore byte-identical. Multi-instance **PASS** — the claim skips, the
+conditional edges, the source lock and three uniques arbitrate for any writer, the posting
+key's fingerprint binds stored dates, and the counted ten-acceptor race proves one entry, one
+run and gapless sequences.
+Verified by targeted tiers from fresh runs on the final code — ledger hermetic 83 across 16 suites (the chart ceremony and the binding within), reconciliation hermetic 10 across 3 suites and database 11 across 2 suites (the V003 reconciliations and the widened schema floor within), settlement hermetic 51 across 9 suites and database 39 across 6 suites (the accept leg, the races, the replay and the eligibility ranks within), and app hermetic 567 across 105 suites (the opener register's PHASE_8_RECORD row, the mirror guard, OpenAPI and the system-actor register within) — plus the five affected app database suites in ONE shared container (34 tests across 5 suites: the acceptance suite with the rebuild proof, the opening suite, the storm with its emptied-register rebuild, the settlement routes and the adjustment suite) and the document guards (143 across 25 suites) re-run fresh after the records landed, ALL 0 FAILURES — the full battery and the fleet-wide database and kafka tiers deliberately skipped on the owner's instruction.
+
+**`P8-TSK-008` — The PSP format: parse, normalise, reject whole** — `COMPLETE` (2026-09-29).
+**M8.3, Evidence becomes canonical lines, OPENS at 1 of 6**: settlement evidence is now DATA —
+one whole, canonical, immutable batch of typed lines per file, or a whole rejection with its
+errors on the record (`INV-SET-07`'s first half). **The `SettlementFormat` SPI** (pure — no
+I/O, clock or database) with **`SIM_PSP_CSV` v1 frozen by its golden file** (the
+`RailMoneySemanticsArePinnedTest` rule: the fingerprint algorithm pinned by hex literal, a
+behaviour change is a NEW version); the provider's vocabulary — `SALE` and its siblings —
+confined to `com.finapp.settlement.format.simpsp` by the new
+`SettlementVocabularyIsConfinedTest` with planted-violation controls (`INV-PAY-03`), an
+unknown type kept as `OTHER_IN`/`OTHER_OUT` by sign and never a success (`INV-REC-02`), and
+the gross-plus-fee split (a fee-bearing record becomes its transaction line plus a
+`PROCESSING_FEE` line carrying `ORIGINAL_REF`, the record digest shared). **The field-class
+screen fills the door's seam** (ADR-0066 §3, C6): reference fields by shape — a Luhn-valid
+15-digit network transaction id is never tested as free text — amounts and dates by type,
+only the descriptor free text, and a field failing its declared class screened as free text,
+so a PAN in a reference column is refused, never retained. **Settlement `V003`**: the file
+machine's real edges regenerated from `FileStatus.permittedTransitions()` (`ACCEPTED` still
+has no producer), `batch` born `PARSED` with `batch_event`, `batch_total` (the `Money` fold
+per type and direction, the attester's reading), `line` (the ADR-0003 triple;
+`canonical_fingerprint` indexed and deliberately NOT unique so a duplicate survives to become
+`DUPLICATE_EXTERNAL` at matching), `line_reference` (bank-identifier and alias shapes refused
+by `CHECK`), `ingestion_error` (≤100; no content column exists), the attestation gated to
+non-terminal files by trigger, a rejection verdict frozen once set, and **the live unique
+written whole** — `UNIQUE (source_id, external_batch_ref, currency) WHERE status NOT IN
+('REJECTED', 'REPUDIATED')` — so `-023` changes no index. **The parse leg** (`FileParsing` +
+`SettlementIntakeSchedule`, the scheduler register's row rewritten from the code, LEASE
+register 9 → 10, the sweep a SYSTEM actor site): candidates lock-free oldest first, the claim
+`FOR UPDATE SKIP LOCKED` inside each file's own transaction, one transaction per outcome —
+the batch whole with its edge and history, or the errors, verdict, acting-only audit record
+(`settlement.SettlementFileRejected`) and settlement's FIRST outbox event together — and OUR
+failure never rejects evidence: `parse_failures + 1` and the back-off in a second transaction
+that survives the rollback, the `RECEIVED → RECEIVED` history row the record. **The decline**
+(moved from `-003`): `RECEIVED | PARSED → REJECTED(DECLINED)`, the batch with it, the live
+key freed at commit and the genuine re-issue admitted; idempotent by state (a terminal file
+answers `409 settlement.FileNotAttestable`); `settlement.SettlementFileDeclined` requires its
+reason. **The batch read** (`GET /v1/operator/settlement/batches/{id}`,
+`RECONCILIATION_INVESTIGATE`; `404 settlement.BatchNotFound`, the `FileNotFound` departure's
+reasoning) serves the parsed totals an attester examines — and attestation now admits
+`PARSED`, the explicit relaxation `-003` designed for. `SimulatedSettlementReports` renders
+the format for the later legs, each parse-level fault pinned to the defect it claims.
+**Recorded deviations**: the rejection event's payload carries `sourceId`, not the drafted
+`sourceCode` — `EventPayload`'s vocabulary is identifiers and enumerated names
+(`INV-AUD-02`), a dotted code is neither (ADR-0066's implemented note); the decline is
+permission-gated (`SETTLEMENT_INGEST`), not person-restricted — the `-003` attestation
+precedent; a structurally corrupt file whose OTHER rows carry Luhn-valid references is
+over-refused by the conservative fallback, ADR-0066 §4's stated asymmetry, recovery
+re-presentation. **Five probe runs, four caught and one demonstration**: the trailer's net check dropped
+(the net-mismatched golden PARSED where Rejected belongs); the whole-file rule broken
+(defects ignored, the malformed-seq verdict falling through to CONTROL_TOTAL_MISMATCH
+where MALFORMED with its named line and field belongs); the live unique dropped from
+`V003` (a second raw live batch ADMITTED where the database must refuse any writer — the
+gate's own find made this deterministic: the sequential conflict is the pre-check's
+answer, so `theLiveUniqueIsTheArbiter` probes the arbiter directly); the field-class
+screen's C6 clause disarmed (the PAN in a reference column screened clean where
+PRIMARY_ACCOUNT_NUMBER belongs); and `SKIP LOCKED` reduced to a plain lock with the
+ten-parser race STILL GREEN — the conditional and the uniques are the arbiter,
+demonstrated rather than assumed. Every verdict read from the failing testcase, every
+restore byte-identical (`MUTATION_TESTING` section 2 +3 rows under `INV-SET-07`,
+`INV-SET-04` and `INV-PAY-02`). **The gate's second find, fixed**:
+`SimulatedSettlementReports` — the backlog's fixture — was unbuilt at implementation's
+end; it now renders the format for the later legs, each parse-level fault pinned to the
+defect it claims, and the HTTP flow uploads its render.
+Verified by targeted tiers from fresh runs on the final code — settlement hermetic
+46 across 8 suites and database 33 across 5 suites (the golden file, the
+faults, the field-class screen, the parse leg, the races and the arbiter within), app
+hermetic 564 across 104 suites (the vocabulary confinement, the scheduler and
+system-actor registers, OpenAPI and the fixture within) and the settlement routes suite
+green in the app database tier (negatives three ways on both new routes, the parse leg
+over the composed wiring, the committed meters), plus the document guards re-run fresh
+after the records landed, ALL 0 FAILURES — the full battery and the fleet-wide database
+and kafka tiers deliberately skipped on the owner's instruction.
+
+**`P8-TSK-007` — The opening position, the position proof and the completeness verifier** —
+`COMPLETE` (2026-09-29). **M8.2, Every settling completion is expected, CLOSES at 4 of 4**:
+history adopted and both verdicts published. **Identity `V017`** (owner decision O1's second,
+disjoint role): `RECONCILIATION_ADMINISTER`, held by **`RECONCILIATION_CONTROLLER`** alone —
+adopting history decides what every proof and break is judged against, so the controller is
+disjoint even from the operator desk it oversees (exact grants and pairwise disjointness in
+`RoleNameTest`; refused across desks over HTTP in both directions). **The backfill**
+(`POST /v1/operator/reconciliation/opening-position {reason}`): leaderless, paged by id — one
+bounded page per transaction, a crash leaves a prefix — walking every completed clearing
+operation through payments' and merchant's public read stores (seven new paging reads, each an
+administered, lock-free read), finding each entry by its posting key through the ledger's new
+`findByIdempotencyScope`, and opening **through the live recorder's own path** under
+`ON CONFLICT DO NOTHING` — an operation whose entry the key cannot find is skipped and
+counted, never guessed. The key records (per principal, the counts replayed byte for byte);
+the uniques converge the effect — proven by ten backfills racing a live burst, one expectation
+per operation, and by the storm's register **emptied as the platform's own root and rebuilt
+from the books alone**, every kind's copy returning. Audited
+`reconciliation.OpeningPositionRecorded` (reason required; counts only). **The verdicts**
+(`PositionProof`, the `TrialBalance` shape — lock-free, report and never repair, one
+`REPEATABLE READ` snapshot): the position proof — DR−CR per clearing and currency equals the
+signed `Money` fold of open remainders (`INBOUND` +, `OUTBOUND` −, never a SQL `SUM`) — and
+the completeness verifier — every line on a reconciled position known to the register, the
+every-writer detection ADR-0067 §9 buys without a ledger trigger. Published as
+`finapp.reconciliation.position.proof` and `.line.unattributed` per `purpose` (both must read
+0, both alerted; `SUSPENSE_UNMATCHED` honestly counts Phase 7's parkings until `-020`) and
+`.expectation.open` per `source` — counts never amounts (ADR-0072), NaN never zero, floored,
+`max()` never `sum()`. **The positions report**
+(`GET /v1/operator/reports/reconciliation/positions`, `RECONCILIATION_INVESTIGATE`): both
+sides of the identity with the difference — amounts, so every serving is audited
+(`reconciliation.ReportRead`). **Proven live**: the pre-Phase-8 world driven with quiet
+doubles then adopted, every adopted row proven against the LEDGER with the live openers' own
+helper; a planted missing expectation flips the proof AND completeness, repaired only by the
+reasoned backfill; a raw-SQL clearing line counted at once (observed in the writer's own
+uncommitted transaction, so the shared container never inherits the plant); the storm at rest:
+backfill adds nothing, every clearing purpose at proof 0 and unattributed 0, suspense counting
+exactly its parkings. **Six probe runs over five breaks, two honest survivals resolved**: the proof's sign
+convention inverted SURVIVED its first run — the suite's one captured-and-refunded world
+netted every clearing to zero, and zero is sign-blind — so the TEST was tightened, never
+the probe (a second, UNREFUNDED capture makes the card position's identity a judgment on
+a non-zero balance, asserted positive and equal to its remainders), and the re-run caught
+it in the identity's own words (DR-CR 12.00 EUR = open remainders -12.00 EUR); every line
+treated as known and the identity comparison bypassed each caught first run;
+`expectation_operation_once` dropped alone SURVIVED HONESTLY — `expectation_line_once`
+converged the ten racing backfills by itself, the equivalent mutant for this path (the
+operation unique's own kill is `P8-TSK-004`'s direct-register race) — and dropping BOTH
+uniques was caught, ten rows where exactly one belongs; every verdict read from the
+failing testcase, every restore byte-identical (`MUTATION_TESTING` section 2 +2 rows
+under `INV-REC-06` and `INV-SET-02`). **The gate's finds, each fixed**: the report's
+bound and `truncated` flag untested and untestable over HTTP (the live ceiling is ~12
+rows) — `render` became a package-private seam with a hermetic proof of the 101st row's
+announcement and each row's honest copy; the FULL app tier caught two registers the
+targeted runs never ran — `pageCompleted` classified `ADMINISTERED` in
+`OwnershipIsScopedTest` (the cursor is never a target) and `OpeningPositionRequest`
+pinned in `CredentialReachesNoEmittedSinkTest` (a REASON only); the storm's adds-nothing
+count was GLOBAL where its claim is the storm's own — in the full tier's shared container
+the backfill rightly adopts earlier suites' residue, so the assertion now scopes to the
+storm's entries; and ADR-0072's follow-up still said nothing-is-implemented-yet, stale
+since `P8-TSK-002` — corrected with the implemented ledger.
+Verified by targeted tiers from fresh runs on the final code — identity hermetic 124
+across 16 suites, ledger hermetic 83 across 16, payments hermetic 246 across 35,
+merchant hermetic 135 across 19, reconciliation hermetic 7 and database 11, app hermetic
+558 across 102 suites, the opening suite (4) and the storm re-run green targeted in the
+database tier, plus the document guards re-run fresh after the records landed, ALL 0
+FAILURES. One full app database sweep ran during the gate (1104 tests): its single
+failure was the storm's wrong-scoped adds-nothing count — the gate's own find, fixed and
+re-proven — and per the owner's instruction the tier was not re-run whole; the full
+battery deliberately skipped likewise, no fleet-wide database or kafka counts claimed.
 
 ### Previously
 

@@ -384,11 +384,29 @@ class CredentialReachesNoEmittedSinkTest {
                         // read INV-REC-10 requires). No secret; the VoidPaymentRequest
                         // shape, at the evidence door.
                         "SettlementContentReadRequest",
+                        // P8-TSK-008. Carries only a REASON (free prose by the operator who
+                        // declines a settlement file, bound for the file history's and the
+                        // audit record's reason columns - INV-AUD-03). No secret; the
+                        // SettlementContentReadRequest shape, at the decline.
+                        "SettlementFileDeclineRequest",
                         // P8-TSK-007. Carries only a REASON (free prose by the reconciliation
                         // controller, bound for the audit record's reason column - the
                         // opening-position backfill INV-AUD-03 requires a reason for). No
                         // secret; the SettlementContentReadRequest shape, at the register.
                         "OpeningPositionRequest",
+                        // P8-TSK-014: the investigator's case file. No secret in any of them.
+                        // The assignee is an identity identifier; the classification carries a
+                        // type and a REASON (screened like a note for card-number and account
+                        // shapes, bound for the break history's and the audit record's reason
+                        // columns); the link carries a target kind and an IDENTIFIER, screened
+                        // the same way. The note BODY is CONFIDENTIAL free prose - screened at
+                        // the domain and by V004's CHECKs, stored in break_note alone, and never
+                        // logged, evented, audited or held in the idempotency receipt
+                        // (ReconciliationInvestigationDatabaseTest proves each sink empty).
+                        "BreakAssignmentRequest",
+                        "BreakClassificationRequest",
+                        "BreakEvidenceLinkRequest",
+                        "BreakNoteRequest",
                         // P3-TSK-017. Carries dates, a reference, a REASON (free prose by a
                         // person, bound for the reason columns - RESTRICTED-FINANCIAL, never
                         // rendered by any toString) and lines of account/direction/amount/
