@@ -674,6 +674,14 @@ Four surfaces are checked:
 - reads and writes of a floating-point field.
   *(ArchUnit: `noFloatingPointFieldIsAccessed`)*
 
+**Generic signatures are walked to the end.** The field and signature rules follow type
+arguments, array components, wildcard bounds and type-variable bounds, so `List<Double>` and
+`<T extends Supplier<Double>>` are violations rather than `List` and `T`. Each type variable is
+walked once: a bound may name its own variable (`E extends Enum<E>`), and following it again
+never ends - a `P8-TSK-014` helper crashed the suite with `StackOverflowError` that way until
+the walk was made cycle-safe. Skipping only the repeat, never the variable's other bounds, keeps a
+`Double` behind the cycle in view; both halves are proven in-suite by recursive-bound fixtures.
+
 **Coverage guard.** Both rule suites derive the set of modules they must have analysed from
 the classpath (`ProductionModules`), because an ArchUnit rule is vacuously satisfied over
 classes it never imported. A guard that names what it expects to see by hand does not notice a

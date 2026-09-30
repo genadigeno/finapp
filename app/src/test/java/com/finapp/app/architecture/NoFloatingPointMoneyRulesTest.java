@@ -3,7 +3,7 @@ package com.finapp.app.architecture;
 import static com.tngtech.archunit.lang.syntax.ArchRuleDefinition.classes;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatCode;
-import static org.assertj.core.api.Assertions.assertThatThrownBy;
+import static org.assertj.core.api.Assertions.catchThrowable;
 
 import com.tngtech.archunit.core.domain.JavaClass;
 import com.tngtech.archunit.core.domain.JavaClasses;
@@ -27,9 +27,14 @@ import com.tngtech.archunit.lang.ArchRule;
 import com.tngtech.archunit.lang.ConditionEvents;
 import com.tngtech.archunit.lang.SimpleConditionEvent;
 import java.math.BigDecimal;
+import java.util.Collections;
+import java.util.IdentityHashMap;
 import java.util.List;
+import java.util.Map;
 import java.util.Objects;
+import java.util.Optional;
 import java.util.Set;
+import java.util.function.Supplier;
 import java.util.stream.Collectors;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Tag;
@@ -366,10 +371,52 @@ class NoFloatingPointMoneyRulesTest {
                 .doesNotThrowAnyException();
     }
 
+    // ---------------------------------------------------------------------
+    // Recursive bounds.
+    //
+    // A type variable's bound may name the variable itself - E extends Enum<E>,
+    // T extends Comparable<T> - and ArchUnit models that as the cyclic object
+    // graph it is. The walk below once followed it forever: during P8-TSK-014 a
+    // production helper declared <E extends Enum<E>> made this suite throw
+    // StackOverflowError, which is neither a pass nor a failure, and the helper
+    // was rewritten to get past a crash in the rule rather than a finding.
+    //
+    // Two properties, so a fix cannot buy one with the other: the walk ends,
+    // and a floating-point type reached only THROUGH such a bound is still
+    // found. Stopping at every type variable would satisfy the first and go
+    // blind to the second.
+    // ---------------------------------------------------------------------
+
+    @Test
+    @DisplayName("a recursive type bound is walked to an end, so exact code declaring one passes")
+    void recursiveBoundsDoNotOverflowTheWalk() {
+        JavaClasses clean = new ClassFileImporter().importClasses(RecursivelyBoundExactCode.class);
+
+        assertThatCode(
+                        () -> {
+                            noFieldHoldsAFloatingPointValue.check(clean);
+                            noSignatureCarriesAFloatingPointValue.check(clean);
+                            noCallReachesAFloatingPointApi.check(clean);
+                            noFloatingPointFieldIsAccessed.check(clean);
+                        })
+                .doesNotThrowAnyException();
+    }
+
+    @Test
+    @DisplayName("a floating-point type reached only through a recursive bound is still rejected")
+    void recursiveBoundsDoNotHideFloatingPoint() {
+        assertRejects(noSignatureCarriesAFloatingPointValue, DoubleBehindARecursiveBound.class);
+        assertRejects(noSignatureCarriesAFloatingPointValue, FloatInsideARecursiveBound.class);
+        assertRejects(noFieldHoldsAFloatingPointValue, RecursivelyBoundDoubleField.class);
+    }
+
     private static void assertRejects(ArchRule rule, Class<?> violation) {
         JavaClasses violating = new ClassFileImporter().importClasses(violation);
 
-        assertThatThrownBy(() -> rule.check(violating))
+        // Caught first and asserted after: assertThatThrownBy fails on a clean pass before .as()
+        // is applied, so a rule gone blind reported "Expecting code to raise a throwable" without
+        // naming the fixture it let through - the one failure this helper exists to explain.
+        assertThat(catchThrowable(() -> rule.check(violating)))
                 .as("%s must reject %s", rule.getDescription(), violation.getSimpleName())
                 .isInstanceOf(AssertionError.class)
                 .hasMessageContaining(violation.getSimpleName());
@@ -522,8 +569,24 @@ class NoFloatingPointMoneyRulesTest {
      * violations rather than {@code List} and {@code Map}. A rule that only inspected the raw
      * type would let a collection of amounts through, and a collection of amounts is where the
      * error compounds fastest.
+     *
+     * <p><strong>Each type variable is walked once.</strong> A bound may name its own variable -
+     * {@code E extends Enum<E>} - and ArchUnit returns that cycle as it is, so following bounds
+     * unconditionally never ends: {@code P8-TSK-014} met it as a {@code StackOverflowError}. A
+     * variable met again answers {@code false}, and that is exact rather than a guess. The
+     * verdict is a pure disjunction, so the earlier visit has either answered {@code false}
+     * already - a {@code true} would have ended the walk - or is still being answered further up,
+     * over the very bounds the repeat would re-read. Only the repeat is skipped, never the
+     * variable's other bounds, which is what keeps a {@code Double} behind the cycle in view.
+     *
+     * <p>Visits are tracked by identity: a variable is its declaration, and two methods may each
+     * declare a {@code T} with different bounds.
      */
     private static boolean isFloatingPoint(JavaType type) {
+        return isFloatingPoint(type, Collections.newSetFromMap(new IdentityHashMap<>()));
+    }
+
+    private static boolean isFloatingPoint(JavaType type, Set<JavaTypeVariable<?>> walked) {
         // The erasure covers the plain and array cases: List<Double> erases to List, but
         // double[] and Double[] erase to themselves.
         if (isFloatingPointErasure(type.toErasure())) {
@@ -531,12 +594,13 @@ class NoFloatingPointMoneyRulesTest {
         }
         return switch (type) {
             case JavaParameterizedType parameterized ->
-                    parameterized.getActualTypeArguments().stream()
-                            .anyMatch(NoFloatingPointMoneyRulesTest::isFloatingPoint);
-            case JavaGenericArrayType array -> isFloatingPoint(array.getComponentType());
+                    anyType(parameterized.getActualTypeArguments(), walked);
+            case JavaGenericArrayType array -> isFloatingPoint(array.getComponentType(), walked);
             case JavaWildcardType wildcard ->
-                    anyType(wildcard.getUpperBounds()) || anyType(wildcard.getLowerBounds());
-            case JavaTypeVariable<?> variable -> anyType(variable.getUpperBounds());
+                    anyType(wildcard.getUpperBounds(), walked)
+                            || anyType(wildcard.getLowerBounds(), walked);
+            case JavaTypeVariable<?> variable ->
+                    walked.add(variable) && anyType(variable.getUpperBounds(), walked);
             default -> false;
         };
     }
@@ -546,8 +610,8 @@ class NoFloatingPointMoneyRulesTest {
         return FLOATING_POINT_TYPES.contains(base.getName());
     }
 
-    private static boolean anyType(List<JavaType> types) {
-        return types.stream().anyMatch(NoFloatingPointMoneyRulesTest::isFloatingPoint);
+    private static boolean anyType(List<JavaType> types, Set<JavaTypeVariable<?>> walked) {
+        return types.stream().anyMatch(type -> isFloatingPoint(type, walked));
     }
 
     // ---------------------------------------------------------------------
@@ -643,5 +707,54 @@ class NoFloatingPointMoneyRulesTest {
         BigDecimal toAmount(int scale) {
             return BigDecimal.valueOf(minorUnits, scale);
         }
+    }
+
+    /**
+     * Exact code whose generics name themselves: the shapes that overflowed the walk. {@code
+     * enumParam} is the {@code P8-TSK-014} helper's signature verbatim; the class's own bound is
+     * the self-typed builder's, reached through a field; {@code ordered} closes a cycle of two
+     * variables rather than one.
+     */
+    @SuppressWarnings("unused")
+    static class RecursivelyBoundExactCode<S extends RecursivelyBoundExactCode<S>> {
+        private S self;
+
+        private static <E extends Enum<E>> Optional<E> enumParam(
+                String name, String value, Class<E> type) {
+            return value == null ? Optional.empty() : Optional.of(Enum.valueOf(type, value));
+        }
+
+        <T extends Comparable<T>> T larger(T left, T right) {
+            return left.compareTo(right) >= 0 ? left : right;
+        }
+
+        <A extends Comparable<B>, B extends Comparable<A>> boolean ordered(A first, B second) {
+            return first.compareTo(second) <= 0;
+        }
+    }
+
+    /**
+     * The {@code Double} sits in the bound AFTER the one that recurses, so a walk that abandons a
+     * variable on meeting its cycle - rather than skipping only the repeated visit - misses it.
+     */
+    @SuppressWarnings("unused")
+    static final class DoubleBehindARecursiveBound {
+        <T extends Comparable<T> & Supplier<Double>> long toCents(T amount) {
+            return 0L; // The signature is the violation.
+        }
+    }
+
+    /** The {@code float[]} sits in the recursing bound itself, beside the self-reference. */
+    @SuppressWarnings("unused")
+    static final class FloatInsideARecursiveBound {
+        <E extends Map<E, float[]>> Optional<E> rates() {
+            return Optional.empty();
+        }
+    }
+
+    /** A class-level recursive bound carrying a {@code Double}, reached through a field. */
+    @SuppressWarnings("unused")
+    static final class RecursivelyBoundDoubleField<S extends Comparable<S> & Supplier<Double>> {
+        private S rate;
     }
 }
