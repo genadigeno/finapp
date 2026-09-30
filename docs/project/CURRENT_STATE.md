@@ -530,7 +530,8 @@ normal balance (`readFrom`) — DR−CR on clearing, CR−DR on suspense. `SETTL
 (`MUTATION_TESTING` §2, change log). **Found, not fixed**: `MerchantPayoutDatabaseTest`'s
 `funded()` fixture posts to `SETTLEMENT_CLEARING` with no expectation, so the opening suite
 fails whenever that class runs before it in one container — a fleet-wide `:app:databaseTest`
-does; recorded for its own fix.
+does; recorded for its own fix. *(Fixed since, with three more residues it uncovered — the
+clearing residue note below.)*
 
 ### Since: the storm's at-rest suspense count (2026-09-30, outside the task loop)
 
@@ -542,6 +543,21 @@ reproduced by forcing the class order; the local order runs the storm first, whi
 count is now the term the proof names — the suspense lines of Phase 7 parkings no
 `UNMATCHED_CONFIRMATION` suspense item claims — guarded as positive; a planted raw suspense line
 is still caught (change log). No production code changed.
+
+### Since: the shared container's clearing residue (2026-09-30, outside the task loop)
+
+**Four test-only defects, fixed; no production code changed.** The merchant payout fixtures
+(`MerchantPayoutDatabaseTest`, and its twin in `MerchantPayoutEndpointDatabaseTest`) posted
+capture-shaped `SETTLEMENT_CLEARING` lines with no expectation, failing the multi-rail storm and
+the opening suite in natural order (EUR 3,875.00 unexplained) — they now open the capture's or
+refund's copy through the live recorder in the posting's transaction and prove it. That exposed
+the storm's and the acceptance suite's "rebuilt from the books" steps emptying the WHOLE shared
+register, destroying any row the backfill cannot re-derive — each now empties only its own rows,
+guarded — and that in turn exposed a phantom EUR 12.00 expectation, with no line behind it,
+planted by `SettlementExpectationDatabaseTest`'s collision test, which the wipes had been hiding;
+it is now a real first writer. Both merchant suites, the storm and every `reconciliation` and
+`settlement` app suite run 70/70 in one container, natural order; three probes caught (change
+log). The rest of the database tier has not been re-run in fleet order.
 
 ### Previously
 

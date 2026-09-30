@@ -2,6 +2,7 @@ package com.finapp.app.merchant;
 
 import static org.assertj.core.api.Assertions.assertThat;
 
+import com.finapp.app.reconciliation.ClearingLineCopies;
 import com.finapp.identity.Authorization;
 import com.finapp.identity.IdentityId;
 import com.finapp.identity.RoleName;
@@ -14,12 +15,14 @@ import com.finapp.ledger.LedgerAccount;
 import com.finapp.ledger.LedgerAccountId;
 import com.finapp.ledger.LedgerAccountStore;
 import com.finapp.ledger.PostingCommand;
+import com.finapp.ledger.PostingResult;
 import com.finapp.ledger.PostingService;
 import com.finapp.merchant.MerchantPayoutOutcomes;
 import com.finapp.merchant.MerchantPayoutResolution;
 import com.finapp.merchant.MerchantPayoutStore;
 import com.finapp.merchant.PayoutEvidenceStore;
 import com.finapp.merchant.SimulatedPayoutProvider;
+import com.finapp.payments.SettlementExpectations;
 import com.finapp.platform.api.IdempotencyKeyHeader;
 import com.finapp.platform.correlation.CorrelationContext;
 import com.finapp.platform.security.Actor;
@@ -27,6 +30,8 @@ import com.finapp.platform.security.ActorType;
 import com.finapp.platform.security.SecurityContext;
 import com.finapp.platform.testing.database.DatabaseRoles;
 import com.finapp.platform.testing.provider.SimulatedProvider;
+import com.finapp.reconciliation.ExpectationDirection;
+import com.finapp.reconciliation.ExpectationKind;
 import com.finapp.sharedkernel.correlation.Correlation;
 import com.finapp.sharedkernel.correlation.CorrelationId;
 import com.finapp.sharedkernel.id.IdGenerator;
@@ -48,6 +53,7 @@ import java.time.LocalDate;
 import java.time.ZoneOffset;
 import java.util.ArrayList;
 import java.util.List;
+import java.util.Optional;
 import java.util.UUID;
 import java.util.function.Function;
 import java.util.regex.Matcher;
@@ -95,6 +101,7 @@ class MerchantPayoutEndpointDatabaseTest {
     @Autowired private Authorization authorization;
     @Autowired private LedgerAccountStore<Connection> ledgerAccountStore;
     @Autowired private PostingService postings;
+    @Autowired private SettlementExpectations settlementExpectations;
     @Autowired private io.micrometer.core.instrument.MeterRegistry meterRegistry;
     @Autowired private MerchantPayoutStore<Connection> payoutStore;
     @Autowired private MerchantPayoutOutcomes outcomes;
@@ -403,25 +410,57 @@ class MerchantPayoutEndpointDatabaseTest {
                                                         AccountPurpose.MERCHANT_PAYABLE, EUR, id))
                                         .account()
                                         .id());
+        // A capture-shaped entry, and capture-shaped for the register too: its clearing line's
+        // CARD_CAPTURE expectation opened in the posting's own transaction through the live
+        // recorder, as the capture applier does (P8-TSK-004). Without it every funded payable
+        // left an unexplained SETTLEMENT_CLEARING line in the shared container, failing the
+        // position proof in the later suites that judge the whole database. Proven below, so
+        // a fixture that stops opening it fails here rather than in a distant suite.
+        UUID reference = UUID.randomUUID();
+        String postingKey = "payout-endpoint-fixture:" + reference;
         asOperator(
                 uow -> {
                     LedgerAccount clearing =
                             new ChartOfAccounts<>(ledgerAccountStore)
                                     .resolve(uow, AccountPurpose.SETTLEMENT_CLEARING, EUR);
                     LocalDate today = LocalDate.now(CLOCK);
-                    UUID reference = UUID.randomUUID();
                     Money funds = Money.of(new BigDecimal(amount), EUR);
-                    return postings.post(
+                    PostingResult posted =
+                            postings.post(
+                                    uow,
+                                    new PostingCommand(
+                                            postingKey,
+                                            today,
+                                            today,
+                                            reference.toString(),
+                                            List.of(
+                                                    new JournalLine(
+                                                            clearing.id(), Direction.DEBIT, funds),
+                                                    new JournalLine(
+                                                            payable, Direction.CREDIT, funds))));
+                    settlementExpectations.open(
                             uow,
-                            new PostingCommand(
-                                    "payout-endpoint-fixture:" + reference,
-                                    today,
-                                    today,
+                            new SettlementExpectations.Opening(
+                                    SettlementExpectations.Kind.CARD_CAPTURE,
                                     reference.toString(),
+                                    postingKey,
+                                    AccountPurpose.SETTLEMENT_CLEARING,
+                                    clearing.id(),
+                                    posted.entryId(),
+                                    Optional.empty(),
                                     List.of(
-                                            new JournalLine(clearing.id(), Direction.DEBIT, funds),
-                                            new JournalLine(payable, Direction.CREDIT, funds))));
+                                            new SettlementExpectations.Key(
+                                                    SettlementExpectations.ReferenceKind
+                                                            .PSP_CAPTURE_REF,
+                                                    "payout-endpoint-fixture-" + reference)),
+                                    CorrelationContext.current().orElseThrow()));
+                    return posted;
                 });
+        ClearingLineCopies.assertOpensItsClearingLinesCopy(
+                ExpectationKind.CARD_CAPTURE,
+                reference.toString(),
+                postingKey,
+                ExpectationDirection.INBOUND);
         String administrator = sessionWith(RoleName.MERCHANT_ADMINISTRATOR);
         HttpResponse<String> issued =
                 post("/v1/operator/merchants/" + id + "/api-keys", null, administrator, someKey());

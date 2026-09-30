@@ -51,8 +51,6 @@ import com.finapp.platform.testing.database.SimulatedInstance;
 import com.finapp.reconciliation.ExpectationRegister;
 import com.finapp.reconciliation.JdbcExpectationRegister;
 import com.finapp.reconciliation.JdbcRuleSets;
-import com.finapp.reconciliation.KeyKind;
-import com.finapp.reconciliation.NewExpectation;
 import com.finapp.settlement.DeliveryChannel;
 import com.finapp.settlement.JdbcSettlementFileStore;
 import com.finapp.settlement.SettlementFileCipher;
@@ -106,7 +104,6 @@ class SettlementExpectationDatabaseTest {
     private static final IdGenerator IDS = new IdGenerator(CLOCK, new SecureRandom());
     private static final CurrencyCode EUR = CurrencyCode.of("EUR");
     private static final Money AMOUNT = Money.ofMinorUnits(12_00, EUR);
-    private static final Actor PLATFORM = Actor.SYSTEM;
 
     /** The psp source's seeded identity and rule set (settlement/reconciliation V002). */
     private static final UUID PSP_SOURCE = UUID.fromString("01a0e2bc-8200-7001-8000-000000000001");
@@ -724,33 +721,76 @@ class SettlementExpectationDatabaseTest {
     }
 
     /** A standing expectation holding the colliding key, planted through the register. */
+    /**
+     * The first writer of {@code pspRef}: a real capture-shaped clearing line (DR
+     * {@code SETTLEMENT_CLEARING} / CR {@code FEE_REVENUE}, the operational counterpart) and
+     * its {@code CARD_CAPTURE} copy opened through the recorder, carrying the key. Never a
+     * bare register row: an expectation with no line behind it stood OPEN in the shared
+     * container, 12.00 of remainders above the ledger, and failed every later suite's
+     * whole-database position proof (a whole-register wipe in the acceptance suite had been
+     * deleting it).
+     */
     private UUID plantExpectationWithKey(String pspRef) throws SQLException {
-        try (SecurityContext.Scope scope = SecurityContext.enterSystem()) {
+        try (SecurityContext.Scope scope = SecurityContext.enterSystem();
+                CorrelationContext.Scope inFlow = CorrelationContext.enter(flow())) {
             String planted = "planted-" + UUID.randomUUID();
+            String postingKey = "planted-capture:" + planted;
+            PostingService postings =
+                    new PostingService(
+                            executor(),
+                            new JdbcJournalEntryStore(IDS),
+                            new JdbcAuditWriter(),
+                            new JdbcOutboxWriter(),
+                            new JdbcBalanceProjection(),
+                            IDS,
+                            CLOCK,
+                            PostingObserver.NONE);
             runner.inTransaction(
                     uow -> {
-                        register.open(
-                                uow,
-                                new NewExpectation(
-                                        com.finapp.reconciliation.ExpectationKind.CARD_CAPTURE,
-                                        planted,
-                                        "payment-capture:" + planted,
-                                        PSP_SOURCE,
-                                        AccountPurpose.SETTLEMENT_CLEARING,
-                                        UUID.randomUUID(),
-                                        com.finapp.reconciliation.ExpectationDirection.INBOUND,
-                                        AMOUNT,
-                                        Optional.of(UUID.randomUUID()),
-                                        LocalDate.now(ZoneOffset.UTC),
-                                        Optional.empty(),
-                                        LocalDate.now(ZoneOffset.UTC).plusDays(3),
-                                        PSP_RULE_SET,
-                                        List.of(
-                                                new NewExpectation.ExpectationKey(
-                                                        KeyKind.PSP_CAPTURE_REF, pspRef)),
-                                        PLATFORM,
-                                        CLOCK.instant(),
-                                        CorrelationId.of("p8t4-plant")));
+                        ChartOfAccounts<Connection> chart = new ChartOfAccounts<>(ledgerAccounts);
+                        LedgerAccountId clearing =
+                                chart.resolve(uow, AccountPurpose.SETTLEMENT_CLEARING, EUR).id();
+                        LocalDate today = LocalDate.now(ZoneOffset.UTC);
+                        com.finapp.ledger.PostingResult posted =
+                                postings.post(
+                                        uow,
+                                        new com.finapp.ledger.PostingCommand(
+                                                postingKey,
+                                                today,
+                                                today,
+                                                planted,
+                                                List.of(
+                                                        new com.finapp.ledger.JournalLine(
+                                                                clearing,
+                                                                com.finapp.ledger.Direction.DEBIT,
+                                                                AMOUNT),
+                                                        new com.finapp.ledger.JournalLine(
+                                                                chart.resolve(
+                                                                                uow,
+                                                                                AccountPurpose
+                                                                                        .FEE_REVENUE,
+                                                                                EUR)
+                                                                        .id(),
+                                                                com.finapp.ledger.Direction.CREDIT,
+                                                                AMOUNT))));
+                        recorder()
+                                .open(
+                                        uow,
+                                        new SettlementExpectations.Opening(
+                                                SettlementExpectations.Kind.CARD_CAPTURE,
+                                                planted,
+                                                postingKey,
+                                                AccountPurpose.SETTLEMENT_CLEARING,
+                                                clearing,
+                                                posted.entryId(),
+                                                Optional.empty(),
+                                                List.of(
+                                                        new SettlementExpectations.Key(
+                                                                SettlementExpectations
+                                                                        .ReferenceKind
+                                                                        .PSP_CAPTURE_REF,
+                                                                pspRef)),
+                                                flow()));
                         return null;
                     });
             return keyOwner("PSP_CAPTURE_REF", pspRef);

@@ -512,11 +512,14 @@ class MultiRailConservationStormDatabaseTest {
                     .isEqualTo(expectationsBefore);
             assertProofHoldsAtRest(app);
 
-            // THE ALL-KINDS ADOPTION EQUIVALENCE: the register emptied (the platform's own
-            // root, triggers disabled - history's shape, not a production path) and rebuilt
-            // by the backfill alone - every clearing line's copy returns and the proof holds
-            // again, which is section 8's whole claim demonstrated across EVERY kind the
-            // storm drove.
+            // THE ALL-KINDS ADOPTION EQUIVALENCE: the storm's own register rows emptied (the
+            // platform's own root, triggers disabled - history's shape, not a production path)
+            // and rebuilt by the backfill alone - every clearing line's copy returns and the
+            // proof holds again, which is section 8's whole claim demonstrated across EVERY
+            // kind the storm drove. Scoped to the storm's entries, exactly as the copies are
+            // judged: emptying the WHOLE shared register destroyed other suites' rows the
+            // backfill has no domain record to re-derive (the merchant payout fixtures'
+            // capture-shaped expectations), failing this proof and every later suite's.
             try (Connection root = DatabaseRoles.bootstrap()) {
                 root.setAutoCommit(false);
                 execute(root, "ALTER TABLE reconciliation.expectation_key DISABLE TRIGGER"
@@ -534,12 +537,21 @@ class MultiRailConservationStormDatabaseTest {
                     String unheld = " NOT IN (SELECT expectation_id FROM"
                             + " reconciliation.allocation UNION SELECT expectation_id"
                             + " FROM reconciliation.match_candidate)";
+                    String stormOwned = " IN (SELECT id FROM reconciliation.expectation"
+                            + " WHERE journal_entry_id IN (" + STORM_ENTRIES + ")"
+                            + "   AND id" + unheld + ")";
+                    assertThat(sum(root, stormExpectations, stormAccounts, stormAccounts))
+                            .as("the storm's own register rows exist to empty")
+                            .isPositive();
                     execute(root, "DELETE FROM reconciliation.expectation_key WHERE"
-                            + " expectation_id" + unheld);
+                            + " expectation_id" + stormOwned, stormAccounts, stormAccounts);
                     execute(root, "DELETE FROM reconciliation.expectation_event WHERE"
-                            + " expectation_id" + unheld);
+                            + " expectation_id" + stormOwned, stormAccounts, stormAccounts);
                     execute(root, "DELETE FROM reconciliation.expectation WHERE id"
-                            + unheld);
+                            + stormOwned, stormAccounts, stormAccounts);
+                    assertThat(sum(root, stormExpectations, stormAccounts, stormAccounts))
+                            .as("emptied: none of the storm's own register rows remains")
+                            .isZero();
                 } finally {
                     execute(root, "ALTER TABLE reconciliation.expectation ENABLE TRIGGER"
                             + " expectation_is_never_deleted");

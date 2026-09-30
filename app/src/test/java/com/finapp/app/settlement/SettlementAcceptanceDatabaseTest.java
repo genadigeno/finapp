@@ -306,8 +306,11 @@ class SettlementAcceptanceDatabaseTest {
         String before = scalar(substanceSql, batchId.toString());
         assertThat(before).isNotNull();
 
-        // The register emptied as the platform's own root (the storm's block: history's
-        // shape, not a production path).
+        // This remittance's register rows emptied as the platform's own root (the storm's
+        // block: history's shape, not a production path). Scoped to the row whose
+        // re-derivation is asserted: emptying the WHOLE shared register destroyed other
+        // suites' rows the backfill has no domain record to re-derive (the merchant payout
+        // fixtures' capture-shaped expectations), failing every verdict below.
         try (Connection root = DatabaseRoles.bootstrap()) {
             root.setAutoCommit(false);
             execute(root, "ALTER TABLE reconciliation.expectation_key DISABLE TRIGGER"
@@ -317,19 +320,16 @@ class SettlementAcceptanceDatabaseTest {
             execute(root, "ALTER TABLE reconciliation.expectation DISABLE TRIGGER"
                     + " expectation_is_never_deleted");
             try {
-                // Since P8-TSK-011 an expectation history names - an allocation or a
-                // candidate snapshot - is held by those rows' foreign keys, exactly the
-                // immutability the records claim; the emptied-register equivalence is
-                // judged over the rest (another suite's matched fixtures may stand in
-                // the shared container, and this suite's remittance is never allocated).
-                String unheld = " NOT IN (SELECT expectation_id FROM"
-                        + " reconciliation.allocation UNION SELECT expectation_id FROM"
-                        + " reconciliation.match_candidate)";
+                // This suite's remittance is never allocated, so no allocation or candidate
+                // snapshot holds it (P8-TSK-011's foreign keys would refuse the delete).
+                String remittance = " IN (SELECT id FROM reconciliation.expectation"
+                        + " WHERE kind = 'REMITTANCE' AND operation_ref = ?)";
                 execute(root, "DELETE FROM reconciliation.expectation_key WHERE"
-                        + " expectation_id" + unheld);
+                        + " expectation_id" + remittance, batchId.toString());
                 execute(root, "DELETE FROM reconciliation.expectation_event WHERE"
-                        + " expectation_id" + unheld);
-                execute(root, "DELETE FROM reconciliation.expectation WHERE id" + unheld);
+                        + " expectation_id" + remittance, batchId.toString());
+                execute(root, "DELETE FROM reconciliation.expectation WHERE id" + remittance,
+                        batchId.toString());
             } finally {
                 execute(root, "ALTER TABLE reconciliation.expectation ENABLE TRIGGER"
                         + " expectation_is_never_deleted");
@@ -386,8 +386,12 @@ class SettlementAcceptanceDatabaseTest {
 
     // -----------------------------------------------------------------
 
-    private static void execute(Connection connection, String sql) throws SQLException {
+    private static void execute(Connection connection, String sql, Object... arguments)
+            throws SQLException {
         try (PreparedStatement statement = connection.prepareStatement(sql)) {
+            for (int i = 0; i < arguments.length; i++) {
+                statement.setObject(i + 1, arguments[i]);
+            }
             statement.executeUpdate();
         }
     }

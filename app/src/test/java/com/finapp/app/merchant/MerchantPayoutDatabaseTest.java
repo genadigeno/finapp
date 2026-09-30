@@ -23,6 +23,7 @@ import com.finapp.ledger.LedgerAccount;
 import com.finapp.ledger.LedgerAccountId;
 import com.finapp.ledger.LedgerAccountStore;
 import com.finapp.ledger.PostingCommand;
+import com.finapp.ledger.PostingResult;
 import com.finapp.ledger.PostingService;
 import com.finapp.merchant.MerchantId;
 import com.finapp.merchant.MerchantNotTradingException;
@@ -47,6 +48,7 @@ import com.finapp.merchant.PayoutFailureReason;
 import com.finapp.merchant.PayoutProvider;
 import com.finapp.merchant.PayoutQueryAnswer;
 import com.finapp.merchant.SimulatedPayoutProvider;
+import com.finapp.payments.SettlementExpectations;
 import com.finapp.platform.audit.AuditWriter;
 import com.finapp.platform.correlation.CorrelationContext;
 import com.finapp.platform.idempotency.IdempotentExecutor;
@@ -136,6 +138,7 @@ class MerchantPayoutDatabaseTest {
     @Autowired private LedgerAccountStore<Connection> ledgerAccountStore;
     @Autowired private HoldService holds;
     @Autowired private PostingService postings;
+    @Autowired private SettlementExpectations settlementExpectations;
     @Autowired private IdempotentExecutor idempotentExecutor;
     @Autowired private AuditWriter<Connection> auditWriter;
     @Autowired private MerchantPayableQuery payables;
@@ -1309,29 +1312,70 @@ class MerchantPayoutDatabaseTest {
     /**
      * A capture-shaped entry ({@code CREDIT}: DR settlement clearing / CR payable) or a
      * refund-shaped one ({@code DEBIT}), so the payable view reads it as captured or refunded.
+     *
+     * <p>Capture-shaped for the register too: the clearing line's expectation is opened in
+     * the posting's own transaction through the live recorder, exactly as the capture and
+     * refund appliers do since `P8-TSK-004` — {@code CARD_CAPTURE} inbound,
+     * {@code CARD_REFUND} outbound. Without it every funded payable left an unexplained,
+     * unknown {@code SETTLEMENT_CLEARING} line in the shared container, and the position
+     * proof failed in whichever later suite judged the whole database - the multi-rail
+     * storm and the opening suite, both run after {@code merchant}. The copy is proven here,
+     * so a fixture that stops opening it fails in this suite rather than a distant one.
      */
     private void post(Funded merchant, String amount, Direction payableSide) throws Exception {
+        UUID reference = UUID.randomUUID();
+        String postingKey = "payout-test-fixture:" + reference;
+        boolean capture = payableSide == Direction.CREDIT;
         asOperator(
                 uow -> {
                     LedgerAccount clearing =
                             new ChartOfAccounts<>(ledgerAccountStore)
                                     .resolve(uow, AccountPurpose.SETTLEMENT_CLEARING, EUR);
                     LocalDate today = LocalDate.now(CLOCK.withZone(ZoneOffset.UTC));
-                    Direction clearingSide =
-                            payableSide == Direction.CREDIT ? Direction.DEBIT : Direction.CREDIT;
-                    UUID reference = UUID.randomUUID();
-                    return postings.post(
+                    Direction clearingSide = capture ? Direction.DEBIT : Direction.CREDIT;
+                    PostingResult posted =
+                            postings.post(
+                                    uow,
+                                    new PostingCommand(
+                                            postingKey,
+                                            today,
+                                            today,
+                                            reference.toString(),
+                                            List.of(
+                                                    new JournalLine(
+                                                            clearing.id(), clearingSide, eur(amount)),
+                                                    new JournalLine(
+                                                            merchant.payable(),
+                                                            payableSide,
+                                                            eur(amount)))));
+                    settlementExpectations.open(
                             uow,
-                            new PostingCommand(
-                                    "payout-test-fixture:" + reference,
-                                    today,
-                                    today,
+                            new SettlementExpectations.Opening(
+                                    capture
+                                            ? SettlementExpectations.Kind.CARD_CAPTURE
+                                            : SettlementExpectations.Kind.CARD_REFUND,
                                     reference.toString(),
+                                    postingKey,
+                                    AccountPurpose.SETTLEMENT_CLEARING,
+                                    clearing.id(),
+                                    posted.entryId(),
+                                    Optional.empty(),
                                     List.of(
-                                            new JournalLine(clearing.id(), clearingSide, eur(amount)),
-                                            new JournalLine(
-                                                    merchant.payable(), payableSide, eur(amount)))));
+                                            new SettlementExpectations.Key(
+                                                    capture
+                                                            ? SettlementExpectations.ReferenceKind
+                                                                    .PSP_CAPTURE_REF
+                                                            : SettlementExpectations.ReferenceKind
+                                                                    .PSP_REFUND_REF,
+                                                    "payout-fixture-" + reference)),
+                                    CorrelationContext.current().orElseThrow()));
+                    return posted;
                 });
+        ClearingLineCopies.assertOpensItsClearingLinesCopy(
+                capture ? ExpectationKind.CARD_CAPTURE : ExpectationKind.CARD_REFUND,
+                reference.toString(),
+                postingKey,
+                capture ? ExpectationDirection.INBOUND : ExpectationDirection.OUTBOUND);
     }
 
     private void hold(Funded merchant, String amount) throws Exception {
