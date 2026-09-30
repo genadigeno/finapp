@@ -517,6 +517,18 @@ residue — with the matcher and the storm), ALL 0 FAILURES — ledger untouched
 battery and the fleet-wide database and kafka tiers deliberately skipped on the owner's
 instruction.
 
+### Since: the PSP format's defect cap no longer decides a record (2026-09-30, outside the task loop)
+
+**A production defect in `P8-TSK-008`'s `SimPspCsvFormat`, fixed** (`INV-SET-07`). `detail(…)`
+judged a record clean when the shared defect list had not grown, but that list drops defects
+past `MAX_DEFECTS` (100). So in a file with more than a hundred defects, every later malformed
+record read as clean and threw a `NullPointerException` on its missing amount. The file stayed
+`RECEIVED` and was retried forever, never rejected whole as `MALFORMED`. Each record's defects
+are now gathered locally, copied into the capped list, and judged from the local list. The shared
+list gets the same defects in the same order, so v1's verdicts are unchanged and no new format
+version is needed. Red-first test `defectOverflowRejectsWhole` and two probes are recorded
+(`MUTATION_TESTING` §2, change log).
+
 ### Since: the shared container's residue, judged last (2026-09-30, outside the task loop)
 
 **The fixture class below cannot return unseen** (test infrastructure, no production code,

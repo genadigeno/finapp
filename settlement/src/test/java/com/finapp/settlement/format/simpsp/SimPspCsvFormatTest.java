@@ -301,6 +301,36 @@ class SimPspCsvFormatTest {
         }
 
         @Test
+        @DisplayName("more malformed records than the bounded defect list holds still reject"
+                + " the whole file MALFORMED with the first hundred - whether a record is read"
+                + " is its own defects' verdict, never the list's room")
+        void defectOverflowRejectsWhole() {
+            // One defect a record (ADJUSTMENT declares no sign), so records 101-120 meet a FULL
+            // list. Judged by the list's growth, each would read as clean and its null amount
+            // would throw - leaving the file RECEIVED and retried forever (INV-SET-07).
+            int records = 120;
+            StringBuilder file =
+                    new StringBuilder("H,SIM_PSP_CSV,1,PSPB-2026-09-25-01,EUR,2026-09-25\n");
+            for (int seq = 1; seq <= records; seq++) {
+                file.append("D,").append(seq).append(",ADJUSTMENT,25O.50,,EUR,2026-09-25,,,ADJ-")
+                        .append(seq).append(",,,,\n");
+            }
+            file.append("T,").append(records).append(",0.00,PSP-REM-20260925\n");
+
+            SettlementFormat.Result.Rejected verdict = rejected(file.toString());
+            assertThat(verdict.code()).isEqualTo(RejectionCode.MALFORMED);
+            assertThat(verdict.defects())
+                    .as("bounded like V003's table: the first hundred tell the story")
+                    .hasSize(100);
+            for (int i = 0; i < verdict.defects().size(); i++) {
+                FormatDefect defect = verdict.defects().get(i);
+                assertThat(defect.code()).isEqualTo(RejectionCode.MALFORMED);
+                assertThat(defect.lineNo()).as("defect %s", i).contains(i + 2);
+                assertThat(defect.field()).contains("amount");
+            }
+        }
+
+        @Test
         @DisplayName("no defect ever carries a value: fields are NAMES, positions are"
                 + " numbers")
         void defectsCarryNoValue() {

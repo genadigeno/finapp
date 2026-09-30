@@ -441,31 +441,33 @@ public final class SimPspCsvFormat implements SettlementFormat {
             List<FormatDefect> defects) {
         String[] f = record.fields();
         int line = record.physicalLine();
-        int before = defects.size();
+        // This record's own defects, gathered apart: whether it is read must never depend on
+        // whether the file's bounded list still had room to record them.
+        List<FormatDefect> found = new ArrayList<>();
 
-        long seq = number(f[1], line, "seq", defects);
+        long seq = number(f[1], line, "seq", found);
         if (seq >= 1 && !seenSeqs.add(seq)) {
-            defect(defects, FormatDefect.at(RejectionCode.MALFORMED, line, "seq"));
+            defect(found, FormatDefect.at(RejectionCode.MALFORMED, line, "seq"));
         }
-        Money magnitude = amount(f[3], currency, scale, true, line, "amount", defects);
+        Money magnitude = amount(f[3], currency, scale, true, line, "amount", found);
         Money fee =
                 f[4].isEmpty()
                         ? null
-                        : amount(f[4], currency, scale, false, line, "fee", defects);
+                        : amount(f[4], currency, scale, false, line, "fee", found);
         if (!f[5].equals(currency.code())) {
             // One batch, one currency (INV-SET-07): a stray currency is the record's defect.
-            defect(defects, FormatDefect.at(RejectionCode.MALFORMED, line, "currency"));
+            defect(found, FormatDefect.at(RejectionCode.MALFORMED, line, "currency"));
         }
 
         Detail detail = new Detail();
-        detail.businessDate = date(f[6], line, "businessDate", defects).orElse(null);
+        detail.businessDate = date(f[6], line, "businessDate", found).orElse(null);
         detail.settlementDate = date(f[7].isEmpty() ? null : f[7], line, "settlementDate",
-                defects);
-        detail.valueDate = date(f[8].isEmpty() ? null : f[8], line, "valueDate", defects);
+                found);
+        detail.valueDate = date(f[8].isEmpty() ? null : f[8], line, "valueDate", found);
 
         boolean inbound = magnitude != null && magnitude.minorUnits() > 0;
         if (magnitude != null && magnitude.minorUnits() == 0) {
-            defect(defects, FormatDefect.at(RejectionCode.MALFORMED, line, "amount"));
+            defect(found, FormatDefect.at(RejectionCode.MALFORMED, line, "amount"));
         }
         // The provider's vocabulary, mapped here and nowhere else (INV-PAY-03). An unknown
         // type is kept as OTHER_IN/OTHER_OUT by its sign - never dropped, never a success
@@ -475,27 +477,27 @@ public final class SimPspCsvFormat implements SettlementFormat {
             case P_SALE -> {
                 detail.type = SettlementLineType.CAPTURE;
                 primaryKind = LineReferenceKind.PSP_CAPTURE_REF;
-                requireSign(inbound, true, line, defects);
+                requireSign(inbound, true, line, found);
             }
             case P_REFUND -> {
                 detail.type = SettlementLineType.REFUND;
                 primaryKind = LineReferenceKind.PSP_REFUND_REF;
-                requireSign(inbound, false, line, defects);
+                requireSign(inbound, false, line, found);
             }
             case P_CHARGEBACK -> {
                 detail.type = SettlementLineType.CHARGEBACK;
                 primaryKind = LineReferenceKind.DISPUTE_REF;
-                requireSign(inbound, false, line, defects);
+                requireSign(inbound, false, line, found);
             }
             case P_CB_REVERSAL -> {
                 detail.type = SettlementLineType.CHARGEBACK_REVERSAL;
                 primaryKind = LineReferenceKind.DISPUTE_REF;
-                requireSign(inbound, true, line, defects);
+                requireSign(inbound, true, line, found);
             }
             case P_DISPUTE_FEE -> {
                 detail.type = SettlementLineType.DISPUTE_FEE;
                 primaryKind = LineReferenceKind.DISPUTE_REF;
-                requireSign(inbound, false, line, defects);
+                requireSign(inbound, false, line, found);
             }
             case P_ADJUSTMENT -> {
                 detail.type = SettlementLineType.COUNTERPARTY_ADJUSTMENT;
@@ -509,24 +511,27 @@ public final class SimPspCsvFormat implements SettlementFormat {
         }
         detail.direction = inbound ? LineDirection.INBOUND : LineDirection.OUTBOUND;
 
-        reference(detail, primaryKind, f[9], true, line, "pspRef", PSP_REFERENCE, defects);
+        reference(detail, primaryKind, f[9], true, line, "pspRef", PSP_REFERENCE, found);
         reference(detail, LineReferenceKind.ACQUIRER_REF, f[10], false, line, "acquirerRef",
-                ACQUIRER_REFERENCE, defects);
+                ACQUIRER_REFERENCE, found);
         if (primaryKind == LineReferenceKind.DISPUTE_REF && !f[11].isEmpty()) {
             // A dispute-stage record's primary reference IS its dispute reference; a second
             // one would make the typed map ambiguous.
-            defect(defects, FormatDefect.at(RejectionCode.MALFORMED, line, "disputeRef"));
+            defect(found, FormatDefect.at(RejectionCode.MALFORMED, line, "disputeRef"));
         } else {
             reference(detail, LineReferenceKind.DISPUTE_REF, f[11], false, line, "disputeRef",
-                    PSP_REFERENCE, defects);
+                    PSP_REFERENCE, found);
         }
         reference(detail, LineReferenceKind.OUR_REF, f[12], false, line, "ourRef",
-                PSP_REFERENCE, defects);
+                PSP_REFERENCE, found);
         if (f[13].length() > 200) {
-            defect(defects, FormatDefect.at(RejectionCode.MALFORMED, line, "descriptor"));
+            defect(found, FormatDefect.at(RejectionCode.MALFORMED, line, "descriptor"));
         }
 
-        if (defects.size() > before) {
+        for (FormatDefect each : found) {
+            defect(defects, each);
+        }
+        if (!found.isEmpty()) {
             return null;
         }
         detail.magnitude = magnitude.minorUnits() > 0 ? magnitude : magnitude.negated();
