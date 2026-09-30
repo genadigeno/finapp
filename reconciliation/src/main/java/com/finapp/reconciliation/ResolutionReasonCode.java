@@ -28,9 +28,20 @@ public enum ResolutionReasonCode {
     LOSS_ACCEPTED,
     EVIDENCE_REPUDIATED;
 
-    /** The value list `V007` regenerates into the widened {@code CHECK}. */
+    /** The value list of every member (`V006`'s migration test reads it). */
     public static String sqlValueList() {
+        return sqlValueList(java.util.EnumSet.allOf(ResolutionReasonCode.class));
+    }
+
+    /** The codes `V007` admits: every code but the repudiation's (`V009`, `-023`). */
+    public static java.util.Set<ResolutionReasonCode> admittedByV007() {
+        return java.util.EnumSet.complementOf(java.util.EnumSet.of(EVIDENCE_REPUDIATED));
+    }
+
+    /** The value list of {@code codes}, in declaration order. */
+    public static String sqlValueList(java.util.Set<ResolutionReasonCode> codes) {
         return Arrays.stream(values())
+                .filter(codes::contains)
                 .map(value -> "'" + value.name() + "'")
                 .collect(Collectors.joining(", "));
     }

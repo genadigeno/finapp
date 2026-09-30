@@ -64,7 +64,7 @@ import lombok.RequiredArgsConstructor;
  *
  * <p>Every bucket came from the one statement the position was folded from, so
  * {@code position = captured − fees − refunded + feesReturned − paidOut − chargedBack +
- * chargebacksReversed + other} is an identity of the breakdown, not a reconciliation this class
+ * chargebacksReversed ± reconciliationAttributed + other} is an identity of the breakdown, not a reconciliation this class
  * performs. {@link Payable#terms()} restates it so a caller can check it without re-deriving the
  * sign convention. A payable below zero after a chargeback is merchant debt ({@code INV-MER-07}
  * amended): never more than the sale credited, recovered from later captures before any payout.
@@ -88,6 +88,10 @@ public final class MerchantPayable {
      * @param chargedBack the chargebacks attributed to this merchant (`P7-TSK-013`) — its
      *     sales' shares, charged out of {@code CHARGEBACK_RECOVERABLE}
      * @param chargebacksReversed what won chargebacks gave back (`P7-TSK-013`)
+     * @param reconciliationAttributed value an approved break resolution attributed to or
+     *     from the payable (`P8-TSK-015`, ADR-0071 §2), SIGNED — every payable line of a
+     *     {@code RECONCILIATION}-origin {@code ADJUSTMENT} entry, whatever it faces, classified
+     *     FIRST (ADR-0073 §6's origin rule)
      * @param other movements that are none of the above, SIGNED — an operator adjustment today
      */
     public record Payable(
@@ -99,6 +103,7 @@ public final class MerchantPayable {
             Money paidOut,
             Money chargedBack,
             Money chargebacksReversed,
+            Money reconciliationAttributed,
             Money other) {
 
         public Payable {
@@ -110,6 +115,8 @@ public final class MerchantPayable {
             Objects.requireNonNull(paidOut, "paidOut must not be null");
             Objects.requireNonNull(chargedBack, "chargedBack must not be null");
             Objects.requireNonNull(chargebacksReversed, "chargebacksReversed must not be null");
+            Objects.requireNonNull(
+                    reconciliationAttributed, "reconciliationAttributed must not be null");
             Objects.requireNonNull(other, "other must not be null");
         }
 
@@ -121,6 +128,7 @@ public final class MerchantPayable {
                     .minus(paidOut)
                     .minus(chargedBack)
                     .plus(chargebacksReversed)
+                    .plus(reconciliationAttributed)
                     .plus(other);
         }
     }
@@ -179,11 +187,20 @@ public final class MerchantPayable {
         Money paidOut = zero;
         Money chargedBack = zero;
         Money chargebacksReversed = zero;
+        Money reconciliationAttributed = zero;
         Money other = zero;
         for (PositionBreakdown.Bucket bucket : breakdown.buckets()) {
             Optional<PositionBreakdown.Counterparty> counterparty = bucket.counterparty();
             boolean credit = bucket.direction() == Direction.CREDIT;
-            if (counterparty.isPresent() && saleClearing(counterparty.get().purpose())) {
+            if (bucket.reconciliationAttributed()) {
+                // An approved break resolution's attribution (P8-TSK-015), classified by its
+                // origin FIRST: a transfer of an OUTBOUND clearing remainder faces the clearing
+                // and would otherwise read as a capture. Signed as the liability reads it.
+                reconciliationAttributed =
+                        credit
+                                ? reconciliationAttributed.plus(bucket.total())
+                                : reconciliationAttributed.minus(bucket.total());
+            } else if (counterparty.isPresent() && saleClearing(counterparty.get().purpose())) {
                 if (counterparty.get().direction() == Direction.DEBIT) {
                     // A capture: money arrived in clearing, the gross was credited, the fee
                     // debited.
@@ -231,7 +248,7 @@ public final class MerchantPayable {
         }
         return new Payable(
                 breakdown.position(), captured, fees, refunded, feesReturned, paidOut,
-                chargedBack, chargebacksReversed, other);
+                chargedBack, chargebacksReversed, reconciliationAttributed, other);
     }
 
     /** The platform's side of a chargeback's attribution entries — never a sale clearing. */

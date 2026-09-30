@@ -596,6 +596,13 @@ removes an expectation's remainder moves it to `RESOLVED_BY_ADJUSTMENT`. `RECONC
   payout returned; the customer statement labels the same lines `RECONCILIATION_ATTRIBUTION`. Both
   ship with `P8-TSK-015`, the first poster; `P8-TSK-019` adds only `payoutsReturned`. *(The Phase 7
   → 8 transition's consistency review, A12 and A13.)*
+- **As built (`P8-TSK-015`).** Every kind above but `REPUDIATE_BATCH` is live (reconciliation
+  `V007`, ledger `V017`). One disposal can close more than one break: the remainder an
+  `AMOUNT_MISMATCH` and a later `MISSING_EXTERNAL` both answer for closes both with the approval
+  that disposes of it, and an offset closes its two items' breaks; in each case one live proposal
+  stands across them. Every resolution command takes the source's advisory first. Withdrawal is the
+  proposer's alone and rejection another person's; the proposal's own edges live in its history
+  (`resolution_event`), the break's history names the resolution that closed it.
 - **Repudiation reverses, never deletes.** An approved `REPUDIATE_BATCH` reverses the recognition
   entry, counter-allocates every allocation of the batch's items, releases their parks — opening a
   `REPUDIATION` suspense item with its `PROCESSING_ERROR` break for a `BANK_UNATTRIBUTED` item a

@@ -134,7 +134,8 @@ public enum RoleName {
      * introduces settlement evidence, attests another person's upload, and investigates what
      * arrived over the surfaces that check {@link PermissionName#SETTLEMENT_INGEST} and
      * {@link PermissionName#RECONCILIATION_INVESTIGATE}.
-     * `P8-TSK-015`'s {@code RECONCILIATION_RESOLVE} joins it when break resolution exists.
+     * Since `P8-TSK-015` it also resolves breaks ({@link PermissionName#RECONCILIATION_RESOLVE}):
+     * the template-bound, four-eyes resolution through the ledger's owned adjustment calls.
      *
      * <p><strong>A fifth role, because this IS a distinct trust decision</strong>: judging
      * whether the outside world's account of the money matches ours is neither operating the
@@ -152,7 +153,8 @@ public enum RoleName {
     RECONCILIATION_OPERATOR(
             EnumSet.of(
                     PermissionName.SETTLEMENT_INGEST,
-                    PermissionName.RECONCILIATION_INVESTIGATE)),
+                    PermissionName.RECONCILIATION_INVESTIGATE,
+                    PermissionName.RECONCILIATION_RESOLVE)),
 
     /**
      * Controls the reconciliation register (`P8-TSK-007`, ADR-0067 §8, owner decision O1's

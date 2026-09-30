@@ -140,7 +140,7 @@ class MatchingDatabaseTest {
         if (bypassTheLock) {
             return new Matching(
                     store, new MatchingRules(), register, suspense,
-                    new JdbcResolutions(new JdbcOutboxWriter(), new JdbcAuditWriter(), IDS),
+                    ResolutionFixtures.resolutions(IDS, CLOCK),
                     LOOKUP,
                     new JdbcLedgerAccountStore(), new JdbcOutboxWriter(),
                     new JdbcAuditWriter(), IDS, CLOCK, config, runner()) {
@@ -152,7 +152,7 @@ class MatchingDatabaseTest {
         }
         return new Matching(
                 store, new MatchingRules(), register, suspense,
-                new JdbcResolutions(new JdbcOutboxWriter(), new JdbcAuditWriter(), IDS),
+                ResolutionFixtures.resolutions(IDS, CLOCK),
                 LOOKUP,
                 new JdbcLedgerAccountStore(), new JdbcOutboxWriter(),
                 new JdbcAuditWriter(), IDS, CLOCK, config, runner());

@@ -58,7 +58,73 @@ public enum ReconciliationErrorCode implements ErrorCode {
     EXPECTATION_NOT_FOUND(
             "reconciliation.ExpectationNotFound",
             404,
-            "No settlement expectation matches.");
+            "No settlement expectation matches."),
+
+    /** No resolution has this id — unknown and malformed alike (`P8-TSK-015`). */
+    RESOLUTION_NOT_FOUND(
+            "reconciliation.ResolutionNotFound",
+            404,
+            "No break resolution has this identifier."),
+
+    /** The break already carries a live proposal — one per break (ADR-0071 §1). */
+    RESOLUTION_ALREADY_PROPOSED(
+            "reconciliation.ResolutionAlreadyProposed",
+            409,
+            "This break already carries a live resolution proposal."),
+
+    /** The resolution was already decided — by somebody else, or differently. */
+    RESOLUTION_NOT_PENDING(
+            "reconciliation.ResolutionNotPending",
+            409,
+            "This resolution is no longer pending."),
+
+    /** The proposer tried to approve or reject their own resolution (INV-REC-03). */
+    SELF_APPROVAL_REFUSED(
+            "reconciliation.SelfApprovalRefused",
+            409,
+            "A resolution's proposer cannot decide it; a second person must."),
+
+    /** Somebody other than the proposer tried to withdraw it (ADR-0071 §10). */
+    NOT_THE_PROPOSER(
+            "reconciliation.NotTheProposer",
+            409,
+            "Only a resolution's proposer withdraws it; another person rejects it."),
+
+    /** The subject's remainder or the break's residual moved since the proposal (§8). */
+    RESOLUTION_STALE(
+            "reconciliation.ResolutionStale",
+            409,
+            "The break's subject changed since the proposal; withdraw and re-propose."),
+
+    /** A manual match collided with an allocation already recorded for the pair. */
+    RECORD_ALREADY_MATCHED(
+            "reconciliation.RecordAlreadyMatched",
+            409,
+            "The item is already allocated to the chosen expectation."),
+
+    /** The kind is not the break type's, not a person's, or not the subject's side (§2). */
+    RESOLUTION_KIND_NOT_ALLOWED(
+            "reconciliation.ResolutionKindNotAllowed",
+            422,
+            "This resolution kind does not apply to this break."),
+
+    /** The reason code is outside the kind's admitted subset (ADR-0071 §5). */
+    REASON_CODE_NOT_ALLOWED(
+            "reconciliation.ReasonCodeNotAllowed",
+            422,
+            "This reason code is not admitted for this resolution kind."),
+
+    /** A transfer target, offset item or chosen candidate the template refuses (§2). */
+    RESOLUTION_TARGET_REFUSED(
+            "reconciliation.ResolutionTargetRefused",
+            422,
+            "The resolution's target, offset item or chosen candidate is refused."),
+
+    /** A gain before the pinned minimum age, judged on the database clock (§2). */
+    GAIN_NOT_YET_ELIGIBLE(
+            "reconciliation.GainNotYetEligible",
+            422,
+            "The suspense item is not yet old enough to be recognised as a gain.");
 
     private final String code;
     private final int status;

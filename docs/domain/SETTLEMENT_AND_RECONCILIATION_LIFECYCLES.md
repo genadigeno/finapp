@@ -731,7 +731,33 @@ born APPROVED: EVIDENCED (the platform) · a zero-value ACKNOWLEDGE (one person)
   `DUPLICATE_BY_COUNTERPARTY`, `FUNDS_ATTRIBUTED`, `UNATTRIBUTABLE_AGED`, `TIMING_CONFIRMED`,
   `FEE_ACCEPTED_AS_CHARGED`, `FEE_RECOVERED`, `AMBIGUITY_RESOLVED_BY_EVIDENCE`,
   `IMMATERIAL_DIFFERENCE`, `LOSS_ACCEPTED`, `EVIDENCE_REPUDIATED`, and `EVIDENCE_RECEIVED`
-  (the platform's only).
+  (the platform's only). Each kind admits exactly this subset — `ResolutionKind.admittedReasonCodes()`,
+  generated into `V007`'s pairing `CHECK` and pinned per kind by `ReconciliationV007MigrationTest`
+  (`P8-TSK-015`; changing one is a reviewed code change):
+
+  | Kind | Admitted reason codes |
+  |---|---|
+  | `EVIDENCED` | `EVIDENCE_RECEIVED` — no other kind admits it |
+  | `ACKNOWLEDGE` | `TIMING_CONFIRMED`, `FEE_ACCEPTED_AS_CHARGED`, `FEE_RECOVERED`, `IMMATERIAL_DIFFERENCE`, `INTERNAL_PROCESSING_ERROR`, `COUNTERPARTY_ERROR_CONFIRMED` |
+  | `WRITE_OFF` | `LOSS_ACCEPTED`, `IMMATERIAL_DIFFERENCE`, `COUNTERPARTY_ERROR_CONFIRMED`, `INTERNAL_PROCESSING_ERROR`, `UNATTRIBUTABLE_AGED` |
+  | `TRANSFER_TO_ACCOUNT` | `FUNDS_ATTRIBUTED`, `INTERNAL_PROCESSING_ERROR`, `COUNTERPARTY_ERROR_CONFIRMED` |
+  | `OFFSET_SUSPENSE` | `DUPLICATE_BY_COUNTERPARTY`, `COUNTERPARTY_ERROR_CONFIRMED`, `INTERNAL_PROCESSING_ERROR` |
+  | `RECOGNISE_GAIN` | `UNATTRIBUTABLE_AGED` |
+  | `MANUAL_MATCH` | `AMBIGUITY_RESOLVED_BY_EVIDENCE` |
+  | `REPUDIATE_BATCH` | `EVIDENCE_REPUDIATED` (`V009`, `P8-TSK-023`) |
+
+- **As built (`P8-TSK-015`).** Every resolution command — propose, approve, reject, withdraw —
+  takes the break's source advisory first (both sources, sorted, for an offset spanning two),
+  then the break rows sorted by id, then the resolution row. Withdrawal is the proposer's alone
+  (`reconciliation.NotTheProposer`); a rejection is never the proposer's
+  (`reconciliation.SelfApprovalRefused`); the same person's retry of any decision converges. The
+  proposal, rejection and withdrawal edges are recorded in `resolution_event`; the break's own
+  history records the terminal edge naming the resolution. **Remainder siblings:** an
+  `AMOUNT_MISMATCH` and a `MISSING_EXTERNAL` on one expectation answer for the same remainder, so
+  one live proposal stands across them and the approval that disposes of the remainder closes
+  both (each `break_event` naming the resolution). A manual match allocates only when the chosen
+  stored candidate absorbs the whole parked value, and names its decision, park and entry on the
+  resolution; an approved closing resolution appends the expectation's `RESOLVED` event.
 - **Invalid:** self-approval, at all three ranks; approving anything not `PROPOSED`
   (`reconciliation.ResolutionNotPending`); approving or rejecting a `RECONCILIATION`-origin
   proposal through `/v1/ledger/adjustments` (`409 ledger.AdjustmentOriginMismatch`) — and

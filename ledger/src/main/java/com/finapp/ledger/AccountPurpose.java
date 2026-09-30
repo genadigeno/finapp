@@ -108,8 +108,27 @@ public enum AccountPurpose {
      */
     PROCESSING_COSTS(OwnerKind.OPERATIONAL),
 
+    /**
+     * What unexplained value cost the platform (ADR-0071 §2, `P8-TSK-015`): an operational
+     * EXPENSE posted ONLY by an approved four-eyes {@code WRITE_OFF} resolution — an INBOUND
+     * remainder that will never arrive, or a DEBIT suspense item nobody can recover (DR here /
+     * CR the position or {@code SUSPENSE_UNMATCHED}). A reconciled position: only a
+     * {@code RECONCILIATION}-origin proposal reaches it, and only through the ledger's owned
+     * approval. Added with its first poster beside `V017`.
+     */
+    RECONCILIATION_LOSSES(OwnerKind.OPERATIONAL),
+
     /** Fees earned. Phase 6's seam; nothing posts to it before then. */
     FEE_REVENUE(OwnerKind.OPERATIONAL),
+
+    /**
+     * Unclaimed value the platform recognised as its own (ADR-0070 §4, ADR-0071 §2,
+     * `P8-TSK-015`): operational REVENUE posted ONLY by an approved four-eyes
+     * {@code RECOGNISE_GAIN} resolution of a CREDIT suspense item older than the pinned
+     * {@code gain_min_age_days} (DR {@code SUSPENSE_UNMATCHED} / CR here). A reconciled
+     * position, closed to free adjustments like its loss twin. Added beside `V017`.
+     */
+    RECONCILIATION_GAINS(OwnerKind.OPERATIONAL),
 
     /** The platform's position from currency conversion. Phase 9's seam ({@code INV-FX-01}). */
     FX_POSITION(OwnerKind.OPERATIONAL),
@@ -136,9 +155,9 @@ public enum AccountPurpose {
      * that a break existed. `PROCESSING_COSTS` joined with its poster (`P8-TSK-009`, `V016`
      * re-stating the generated binding list — the `V014` pattern): its every line is a
      * recognition entry's, so a free adjustment there would un-explain an accepted report.
-     * The remaining Phase 8 purposes (`RECONCILIATION_LOSSES`, `RECONCILIATION_GAINS`,
-     * `CASH_AT_BANK`) join with their tasks (`-015`, `-016`), re-stating it again
-     * (`V017`–`V018`).
+     * `RECONCILIATION_LOSSES` and `RECONCILIATION_GAINS` joined with their poster, the
+     * four-eyes resolution (`P8-TSK-015`, `V017`): posted by nothing but approved
+     * resolutions. `CASH_AT_BANK` joins with `-016`, re-stating it again (`V018`).
      */
     public static java.util.Set<AccountPurpose> reconciledPositions() {
         return java.util.EnumSet.of(
@@ -146,7 +165,9 @@ public enum AccountPurpose {
                 INSTANT_CLEARING,
                 PAYOUT_CLEARING,
                 SUSPENSE_UNMATCHED,
-                PROCESSING_COSTS);
+                PROCESSING_COSTS,
+                RECONCILIATION_LOSSES,
+                RECONCILIATION_GAINS);
     }
 
     /** The reconciled positions as a SQL literal list, for `V015`'s binding trigger. */

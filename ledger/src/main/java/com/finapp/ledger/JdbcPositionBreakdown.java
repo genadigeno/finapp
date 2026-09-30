@@ -71,6 +71,10 @@ public final class JdbcPositionBreakdown implements PositionBreakdown<Connection
                             unitOfWork.prepareStatement(
                                     "SELECT line.direction, line.amount_minor, line.currency,"
                                             + " line.scale,"
+                                            + " EXISTS (SELECT 1 FROM ledger.adjustment_proposal p"
+                                            + "          WHERE p.journal_entry_id = line.entry_id"
+                                            + "            AND p.origin = 'RECONCILIATION')"
+                                            + "   AS attributed,"
                                             + " (SELECT other_account.purpose || '|'"
                                             + "         || other.direction"
                                             + "    FROM ledger.journal_line other"
@@ -99,9 +103,14 @@ public final class JdbcPositionBreakdown implements PositionBreakdown<Connection
                                     row.getLong("amount_minor"), lineCurrency,
                                     row.getShort("scale"));
                     Direction direction = Direction.valueOf(row.getString("direction"));
+                    // The origin rule first (P8-TSK-015, ADR-0073 section 6): a resolution's
+                    // attribution is never read by what it faces.
+                    boolean attributed = row.getBoolean("attributed");
                     Optional<Counterparty> other =
-                            Optional.ofNullable(row.getString("counterparty"))
-                                    .map(JdbcPositionBreakdown::counterparty);
+                            attributed
+                                    ? Optional.empty()
+                                    : Optional.ofNullable(row.getString("counterparty"))
+                                            .map(JdbcPositionBreakdown::counterparty);
 
                     if (direction == Direction.DEBIT) {
                         debits = JournalEntry.sum(debits, amount);
@@ -110,15 +119,18 @@ public final class JdbcPositionBreakdown implements PositionBreakdown<Connection
                     }
                     String key =
                             direction + "|"
-                                    + other.map(c -> c.purpose() + ":" + c.direction())
-                                            .orElse("NONE");
+                                    + (attributed
+                                            ? "RECONCILIATION"
+                                            : other.map(c -> c.purpose() + ":" + c.direction())
+                                                    .orElse("NONE"));
                     Bucket so = buckets.get(key);
                     buckets.put(
                             key,
                             new Bucket(
                                     direction,
                                     other,
-                                    so == null ? amount : JournalEntry.sum(so.total(), amount)));
+                                    so == null ? amount : JournalEntry.sum(so.total(), amount),
+                                    attributed));
                 }
             } catch (ScaleMismatchException mixedScales) {
                 throw refused(account, "its history mixes scales within " + currency.code()

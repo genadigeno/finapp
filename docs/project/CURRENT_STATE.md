@@ -7,7 +7,7 @@ Conversation history is not. Read this first in every session
 **History lives in [`history/`](history/)** — per-task records, closed milestones, completed
 capabilities and the change log. This document stays current; the archives stay archived.
 
-Last updated: 2026-09-30 (`P8-TSK-014` — break reads, the case file and the settlement-status trail; **M8.4 at 1 of 2**, next `P8-TSK-015`) *(this line read `P8-TSK-002` from that gate until `P8-TSK-013`'s record found it — the stale-second-copy class, in the document's own dateline)*
+Last updated: 2026-09-30 (`P8-TSK-015` — four-eyes resolution through the ledger; **M8.4 `CLOSED` at 2 of 2**, next `P8-TSK-016`) *(this line read `P8-TSK-002` from that gate until `P8-TSK-013`'s record found it — the stale-second-copy class, in the document's own dateline)*
 
 ---
 
@@ -377,9 +377,9 @@ adjustment machinery; amounts never enter metrics; a payout return applied from 
 evidence. The transition catalogued nine invariants, taking the platform to **110**, and the
 Phase 8 set is **twenty-two**. 27 backlog items across eight milestones (M8.1–M8.8);
 [`SETTLEMENT_AND_RECONCILIATION_LIFECYCLES.md`](../domain/SETTLEMENT_AND_RECONCILIATION_LIFECYCLES.md)
-states nine machines and one born-once fact. **14 of 27 items complete** (M8.1 `CLOSED` at 3 of 3,
+states nine machines and one born-once fact. **15 of 27 items complete** (M8.1 `CLOSED` at 3 of 3,
 M8.2 `CLOSED` at 4 of 4, M8.3 `CLOSED` at 6 of 6, **M8.4, Investigation and controlled
-resolution, at 1 of 2**): the modules
+resolution, `CLOSED` at 2 of 2**): the modules
 and floors (`P8-TSK-001`), the source register, the file store and the door screen
 (`P8-TSK-002`), the upload door and attestation (`P8-TSK-003`), the expectation register with
 the card openers (`P8-TSK-004`), every other opener with the register that proves them
@@ -392,8 +392,9 @@ decision snapshots, the run leg and the explanation doors (`P8-TSK-011`) — and
 checks and counterparty corrections with the first `EVIDENCED` resolutions (`P8-TSK-012`) —
 and grace, ageing, rematch and late evidence, time made explicit, closing the milestone
 (`P8-TSK-013`) — and the investigator's desk: break reads, the case file, the trace
-and the settlement-status trail (`P8-TSK-014`); next **`P8-TSK-015` — four-eyes
-resolution through the ledger** — `READY` ([§Current Task](#current-task) is kept current). *(This paragraph read "2 of 27 items complete
+and the settlement-status trail (`P8-TSK-014`) — and four-eyes resolution through the
+ledger, every break type now closable, closing the milestone (`P8-TSK-015`); next
+**`P8-TSK-016` — the bank statement: cash recognised, remittances matched** — `READY` ([§Current Task](#current-task) is kept current). *(This paragraph read "2 of 27 items complete
 (M8.1 at 2 of 3) ... next `P8-TSK-003`" through `P8-TSK-003`'s and `P8-TSK-004`'s gates, until
 `P8-TSK-005`'s record found it: the stale-second-copy class again, in the paragraph neither gate's
 record reached.)*
@@ -411,115 +412,120 @@ since M0.1". Moved, not edited.)*
 
 ## Current Task
 
-**`P8-TSK-015` — Four-eyes resolution through the ledger** —
-`READY`. A person resolves a break — write-off, transfer, offset, gain, manual match or
-acknowledgement — proposed and approved by two people where value is at issue, the
-resolution and its compensating posting committing together through the ledger's owned
-adjustment calls. Its entry and field set — with `P8-TSK-014`'s recorded design input
-on `V007` — are in [`BACKLOG.md`](BACKLOG.md). **Not started.**
+**`P8-TSK-016` — The bank statement: cash recognised, remittances matched** —
+`READY`. Cash moves on the platform's books only on the bank's own statement, against each
+attributed counterparty's own clearing position, and the bank's lines discharge the
+remittances the reports opened; `CASH_AT_BANK` equals the closing balance of an unbroken
+statement chain (`INV-SET-06`). Its entry and field set — with ADR-0071's recorded input on
+an unattributed remittance credit — are in [`BACKLOG.md`](BACKLOG.md). **Not started.**
 
 ### Just completed
 
-**`P8-TSK-014` — Break reads, the case file and the settlement-status trail** — `COMPLETE`
-(2026-09-30). **M8.4, Investigation and controlled resolution, at 1 of 2**: an investigator
-can now find, own, annotate and reclassify a break, and walk from any break — or any
-operation — to its raw evidence and journal entries by stored identifiers alone; the
-investigation is the break's own case file, never a third aggregate (ADR-0069 §7;
-`INV-REC-01`, `INV-AUD-01`, `INV-AUD-02`, `INV-PAY-02`; protected `INV-RAIL-03`, `INV-REC-02`).
-**No migration**: `V004` already granted the moving columns and held the case-file tables.
-**The case file** (`BreakCaseFile`, one transaction per command, the source's namespace-4
-advisory BEFORE the break row — the `P8-TSK-012` register fact — `FOR UPDATE` to move it,
-`FOR SHARE` to append beside it): ASSIGNMENT moves `OPEN → INVESTIGATING` on the first one
-only and publishes `reconciliation.BreakInvestigationStarted` once (ten racers, one event,
-counted; every loser a recorded handover), a repeat of the standing assignee converging;
-NOTES and EVIDENCE LINKS are keyed per principal from birth (`reconciliation.break-note:` and
-`reconciliation.break-evidence-link:<actorType>:<actorId>`) — the note screen, a pure
-`NoteScreen` mirroring `V004`'s Luhn function and account shape window for window, runs BEFORE
-the claim (a refused body stores nothing, not even a claim), the state and the target's
-EXISTENCE judged inside it (a link to nothing refused, never stored dangling), and the stored
-receipt carries NO body — the idempotency record would otherwise be a second, unscreened home
-for CONFIDENTIAL text; RECLASSIFICATION only in `OPEN` and `INVESTIGATING`, onto a type that
-stands on the break's own subject and parks exactly when the break holds unreleased suspense
-(`BreakType.admits`/`parksOn`, ADR-0069 §2's Subject and Parked columns read per subject),
-never onto an occupied (type, subject) seat (the pre-check, and the partial unique for any
-writer), reasoned (the reason screened like a note), severity the higher of stored and
-recomputed, `residual_version` bumped, and ONLY a `RECLASSIFIED` event appended — a
-`SEVERITY_ESCALATED` row would corrupt the sweep's band counter; ten racers move it once. A
-`RESOLVED` break takes none of the four (`409 reconciliation.BreakTerminal`). **The reads**, one
-`REPEATABLE READ` read-only snapshot each (`reconciliationSnapshotReads`): the break list (type,
-status, severity, source, assignee, `agedOver` on the database clock; bounded at 100 with
-`truncated`), the case file whole, expectation list and detail, the SETTLEMENT STATUS —
-derived, never stored: `RESOLVED` > `CASH_CONFIRMED` > `REPORTED` > `OVERDUE` > `PENDING`, the
-trail expectation → allocations → items → batches → remittances → bank items inside
-reconciliation (a remittance's operation IS its batch id), `CASH_CONFIRMED` derived now and
-reachable with `P8-TSK-016` — and the TRACE: a bounded breadth-first walk of typed steps
-(`BreakTraces`, at most 500) from the break through its subject, items, lines, runs, batches
-and files, decisions, allocations, parks and releases, resolutions and proposals, to the
-journal entries, and on the internal side expectation → entry → operation → provider
-evidence — for a Phase 7 parking through the evidence's fifth subject. The walk's steps beyond
-reconciliation are two declared ports (`EvidenceTargets`, `TraceEvidence`) implemented in
-`app` by `ComposedCaseFileEvidence` over settlement's, the ledger's and payments' public read
-stores, identifiers and metadata only; settlement gains `recognitionEntryOf` and `batchOfLine`,
-payments metadata-only `evidenceMetadataFor` (by subject) and `evidenceExists`. **The build's
-finds, each fixed**: an investigator's UUIDv4 in a link reference crashed a typed platform id
-(ADR-0013's UUIDv7) with a 500 — the composition now answers "absent" (a 422), the same
-guard on the walk's typed ids; the ownership register was BLIND to the typed evidence finders
-while their SQL sat in a shared helper — inlined so the register sees and classifies them
-(`ADMINISTERED`, with `JdbcDisputeStore.findById`'s entry restated for the trace's use); a
-recursive `<E extends Enum<E>>` bound overflowed the floating-point money rule's signature
-walk — replaced by a constants-based parser (the rule's latent recursion recorded for its own
-fix); the credential-sink guard named the four new request schemas; and the composed suite
-now also proves the refused card number reaches no log. **Registers**: ten
-`RoutePermissionRegisterTest` rows (all `RECONCILIATION_INVESTIGATE`), three error codes
-(`BreakNotFound`, `BreakTerminal`, `ExpectationNotFound`) with their `ERROR_CONTRACT` rows, four
-`AUDITABLE_ACTIONS` rows (`BreakReclassified` reason-required), one event, the OpenAPI baseline
-regenerated (299 compatible additions; the 30 flagged rows all `required` markers inside the ten
-new routes and four new request schemas — the new-route precedent), no classification rows,
-`DISTRIBUTED_EXECUTION` §3 (a case-file register row, the lock-order row's new takers),
-MODULE_ARCHITECTURE (the built paragraph caught up from `P8-TSK-011` on — the
-stale-second-copy class through three gates — and the two new ports), the lifecycle
-document's status precedence decided, ADR-0069's implemented note with three recorded
-deviations (the backlog's "expectation" link served by `V004`'s closed `OPERATION` kind; the
-reason screened; the parking rule's database rank deferred), and the design input recorded on
-`P8-TSK-015` (`V007` for every-writer triggers on `break.type` — the parking rule AND the state
-rule, which the probe proved no database rank holds today). **Four probe runs, four caught**
-(`MUTATION_TESTING` §2 +4 rows under `INV-PAY-02`, `INV-REC-01`, `INV-REC-02`,
-`INV-EVT-01`): the note screen disarmed fell hermetically on four card-number cases and at the
-command tier on the database's own CHECK answering where the domain's 422 belongs (nothing
-stored — the second rank standing); the item's decisions joined by `decided_at` dragged the
-two same-instant siblings into the decision break's trace (one chunk, one fixed clock); the
-state rule dropped at both code ranks let a type move under a proposed resolution; the start
-event published on every assignment reported a handover as a start and ten racers as ten —
-every verdict read from the failing testcase, every restore byte-identical (sha256-verified).
-Multi-instance **PASS** — the break row (after the source's advisory) and the expected-value
-updates serialise assignment and reclassification (counted ten-way races), the partial uniques
-arbitrate a reclassification collision for any writer, notes and links are keyed per
-principal, and every read is one snapshot. Recorded minors: the assignee's existence and
-permission are not verified (the audit record names them; Phase 15's operator directory);
-operators are audited with actor type `CUSTOMER` (the known Phase 15 debt); a merchant payout's
-statements (`merchant.payout_evidence`) are not walked — the trace names the operation and
-stops; the trace's 500-step and the listings' 100-row truncation are bounded in code, not
-exercised by a test (the `P8-TSK-011` listing precedent); an operation settled from a zero-net
-batch stays `REPORTED`; duplicate links by different keys are admitted (append-only, harmless).
-Verified by targeted tiers from fresh runs on the final code — reconciliation hermetic 76
-across 13 suites (the case file's pure rules within) and database 56 across 7 (the case-file
-suite's ten ordered tests: every subject kind's trace with same-instant decoys, the four
-reachable statuses, assignment and its ten-way race, the notes at both ranks, verified links,
-the reclassification rules, the proposed-resolution refusal, the ten-way reclassification race,
-the resolved break's four refusals), payments and settlement compiled with the widened fakes,
-app hermetic 571 across 106 suites (the ten route rows, the ownership entries, the catalogues, the
-credential-sink guard and the regenerated baseline within, the document guards among them), and
-the six affected app database suites in ONE shared container 18 across 6 (the composed desk
-over HTTP with every door's negatives three ways, the real accepted batch's trace, the parking
-walk through the fifth subject, the note needle absent from logs, events, audit and idempotency
-records — run before the opening, suspense and acceptance proofs, which then passed over its
-residue — with the matcher and the storm), ALL 0 FAILURES — ledger untouched; the full
-battery and the fleet-wide database and kafka tiers deliberately skipped on the owner's
-instruction.
+**`P8-TSK-015` — Four-eyes resolution through the ledger** — `COMPLETE`
+(2026-09-30). **M8.4, Investigation and controlled resolution, `CLOSED` at 2 of 2**: a person
+now resolves a break only through a template-bound, reason-coded resolution whose lines are
+derived from the subject's current remainder, approved by a second person whenever value is at
+issue or it posts, the resolution and its compensating `ADJUSTMENT` committing together through
+the ledger's owned door — every break type can now be closed (ADR-0071; `INV-REC-03`,
+`INV-AUD-04`, `INV-REV-04`, `INV-REC-06`, `INV-REC-09`; protected `INV-REC-05`, `INV-REC-07`,
+`INV-LED-01`, `INV-BAL-03`, `INV-MER-02` as amended). **Ledger `V017`**: `RECONCILIATION_LOSSES`
+(EXPENSE) and `RECONCILIATION_GAINS` (REVENUE) per currency with the ceremony — four
+regenerated constraints, the binding function's list re-stated so both are closed to `MANUAL`
+lines (proven at both ranks over HTTP and raw SQL), `SEEDED_TYPES` +2, `SEED_MIGRATIONS` +1 — and
+posted by nothing but approved resolutions (counted). **Identity**: `RECONCILIATION_RESOLVE`
+joins `RECONCILIATION_OPERATOR` alone (`RoleNameTest`'s exact grants; the controller who can
+loosen a tolerance cannot resolve). **Reconciliation `V007`**: the kind, status and reason
+`CHECK`s regenerated from the enums (every kind but `REPUDIATE_BATCH`, every code but
+`EVIDENCE_REPUDIATED` — `V009`'s), the generated (kind, reason) pairing, the DERIVED
+`four_eyes`, the one-to-one ledger binding and each kind's operand, `V006`'s blanket freeze
+replaced by the machine's every-writer trigger under a narrowed `UPDATE` grant (payload frozen,
+`PROPOSED →` the three terminals only, what an approval produced named once, no delete), the
+expectation history's `RESOLVED` event, and `P8-TSK-014`'s design input — a break's type moves
+only in `OPEN`/`INVESTIGATING`, and a suspense owner only onto an owning type. **The machine**
+(`ResolutionTemplates`, pure: ADR-0069 §2's admission table, the side rule, the whole-residual
+amount and the lines; `ResolutionMachine`: propose, approve, reject, withdraw, each ONE
+transaction, EVERY command taking the source's namespace-4 advisory first — both sources,
+sorted, for an offset — then break rows sorted, then the resolution row, then the subject rows,
+then a transfer target `FOR SHARE`, then inside `approveOwned` the ledger proposal and the
+projections, the posting last): `WRITE_OFF` DR losses / CR the position or suspense, `TRANSFER`
+DR suspense or the OUTBOUND position / CR an owned, same-currency, `ACTIVE` wallet or payable,
+`RECOGNISE_GAIN` DR suspense / CR gains only at the pinned age judged in SQL on the DATABASE
+clock, `OFFSET_SUSPENSE` releasing both items and closing both breaks, `MANUAL_MATCH` a `MANUAL`
+decision over a STORED candidate absorbing the whole parked value, then the allocation, the
+item `MATCHED` and the park's exact inverse, and `ACKNOWLEDGE` born `APPROVED` by one person at
+zero value, two otherwise; approval re-derives the amount AND the lines under the locks and
+compares the break's `residual_version`, refusing any move as `ResolutionStale` with nothing
+written; the same person's retry of any decision converges; withdrawal is the proposer's alone
+(`NotTheProposer`, a code beyond the ADR's list) and rejection never the proposer's. **Evidence
+wins**: the evidence writer now withdraws a pending proposal and rejects its ledger half in the
+evidence's own transaction (proven through the real matcher's L1). **The build's find, fixed**:
+a partial allocation raises `AMOUNT_MISMATCH` on the expectation and ageing later raises
+`MISSING_EXTERNAL` on the SAME remainder — disposing of it through one would have left the other
+open over a value no person kind could still dispose of; the disposal now closes every such
+sibling with the same resolution (the offset's two-break precedent) and one live proposal stands
+across them. **The doors** (`BreakResolutionDesk`, all `RECONCILIATION_RESOLVE`): the proposal
+keyed per principal (`reconciliation.resolve:<actorType>:<actorId>`), the shape screened BEFORE
+the claim, the stored receipt carrying no narrative; approval, rejection and withdrawal by
+state. **The attribution reads**: the ledger's breakdown bucket and statement line flag a
+`RECONCILIATION`-origin entry's lines, `MerchantPayable.reconciliationAttributed` reads them FIRST
+(an OUTBOUND clearing remainder's transfer never a capture, counted) and the customer statement
+labels them `RECONCILIATION_ATTRIBUTION`; `INV-MER-02` amended as built. **Registers**: four
+`RoutePermissionRegisterTest` rows, eleven error codes with their `ERROR_CONTRACT` rows, four
+`AUDITABLE_ACTIONS` rows (`ResolutionProposed` and `ResolutionRejected` reason-required), the
+completeness verifier learning resolution entries, the OpenAPI baseline regenerated (every
+flagged row a `required` marker inside the four new routes and two new request schemas — the
+new-route precedent; the payable and statement fields compatible additions), the credential-sink
+guard's two new schemas, no classification rows (`V007` adds no column), ADR-0071's implemented
+note with every deviation named (the uniform advisory, the siblings, the break history's
+terminal-only edge, `NotTheProposer`, the manual match's named decision and whole-value rule,
+the one-item template, no bespoke span, meters `P8-TSK-024`'s; no step-up and a refused
+self-approval writing nothing, the two recorded questions decided), the lifecycle document's
+reason-code matrix, `RECONCILIATION_MODEL` §10, `DISTRIBUTED_EXECUTION` §3's lock-order row
+(the third taker built) and MODULE_ARCHITECTURE. Two shared-container test wipes now scope
+around expectations a break or a resolution names (their NULLs filtered). **Seven probe runs,
+seven caught** (`MUTATION_TESTING` §2 +7 rows under `INV-AUD-04`, `INV-REC-03`, `INV-REC-06`,
+`INV-REC-05`, `INV-REC-02`): the distinctness CHECK dropped admitted a raw self-approved row;
+the stale comparison dropped approved over a moved residual; the target's share lock dropped let
+a `FOR NO KEY UPDATE` writer past an uncommitted approval (the posting's own key-share lock does
+not exclude it — the test was written for the probe, the lock's meaning demonstrated); the
+break's frozen value posted in place of the remainder showed 80.00 lines where 50.00 belong; the
+minimum age ignored admitted a gain one day short; the siblings left standing kept the shortfall
+break `OPEN`; evidence without the withdrawal left the pending proposal `PROPOSED` — every
+verdict read from the failing testcase, every restore byte-identical (sha256-verified).
+Multi-instance **PASS** — the source's advisory, then the break row, then the resolution row
+serialise every command (ten racing approvers post ONE entry and ONE `BreakResolved`, counted),
+the partial unique and the keyed propose arbitrate proposals for any writer, the conditional
+decision and `UNIQUE adjustment_proposal_id`/`journal_entry_id` beneath, and the evidence writer
+takes the break row first. Recorded minors: `RecordAlreadyMatched` maps the pair unique but the
+pre-checks refuse first, so it is defensive and untested; a break owning more than one open
+suspense item is refused by the template; operators are audited with actor type `CUSTOMER`
+(the Phase 15 debt; distinctness holds by id); and a LATENT defect found in passing and flagged
+for its own task — `PositionProof` compares `PAYOUT_CLEARING`'s credit-normal settled balance
+(CR−DR) against remainders signed DR−CR, so any open payout expectation fails the
+verdict (seen when the merchant storm shared the proofs' container; the proof suites' own group
+never includes it). Verified by targeted tiers from fresh runs on the final code —
+reconciliation hermetic 85 across 15 suites (the templates' table and side rules, the shape
+screen, `V007`'s reconciliations) and database 70 across 8 (the machine suite's fourteen ordered
+tests: each kind's lines against `ledger.journal_line`, the refusals at both ranks, self-approval
+at all three (the domain, the resolution CHECK and ledger `V010` for a posting kind), the gain one
+day short and at, the closed target, the value-bearing `FEE_MISMATCH` acknowledgement, the raw
+writers, the ten-way race, evidence both ways, the stale refusal by a moved version and by the
+real matcher's partial arrival, the withdraw/reject edges, the manual match, the siblings, the
+share lock), ledger
+hermetic 83 across 16, identity 124 across 16, merchant 135 across 19, app hermetic
+571 across 106 suites (the route rows, the catalogues, the credential-sink guard, the regenerated
+baseline and the document guards within), the eight proof-group app database suites in ONE
+shared container 40 across 8 (the resolver's desk over HTTP — the keyed replay, the second key,
+the generic ledger doors refusing a REAL reconciliation proposal both ways, self-approval, the
+narrative absent from every sink, the attributions counted, the P&L positions closed — the
+investigation, matcher, opening, suspense and acceptance proofs over its residue, the multi-rail
+storm and the adjustment suite), and the payable and statement suites in their own container
+54 across 4, ALL 0 FAILURES — the full battery and the fleet-wide database and kafka
+tiers deliberately skipped on the owner's instruction.
 
 ### Previously
 
-The per-task completion records — 177 blocks, from `P8-TSK-013` back to project initiation
+The per-task completion records — 178 blocks, from `P8-TSK-014` back to project initiation
 (`X-TSK-004` cross-cutting, standing between `P7-TSK-001` and the Phase 6 → 7 transition) —
 are archived in [`history/TASK_HISTORY.md`](history/TASK_HISTORY.md).
 *(This pointer read "130 blocks, from `P6-TSK-005`" through four archivals — corrected by
@@ -538,10 +544,10 @@ archived verbatim in
 
 ## Active Work
 
-**Phase 8 is `IN_PROGRESS`** (2026-09-28) — 14 of 27 items complete; **M8.1 `CLOSED` at 3 of 3;
+**Phase 8 is `IN_PROGRESS`** (2026-09-28) — 15 of 27 items complete; **M8.1 `CLOSED` at 3 of 3;
 M8.2 `CLOSED` at 4 of 4; M8.3 `CLOSED` at 6 of 6; M8.4, Investigation and controlled resolution,
-at 1 of 2** — the investigator's desk stands: break reads, the case file, the trace and the
-settlement-status trail; next `P8-TSK-015`, four-eyes resolution through the ledger
+`CLOSED` at 2 of 2** — every break type can now be closed: investigated on its case file and
+resolved under four-eyes through the ledger; next `P8-TSK-016`, the bank statement
 ([§Current Task](#current-task) is kept current). *(This paragraph read "10 of 27 … next
 `P8-TSK-011`" from `P8-TSK-010`'s gate until `P8-TSK-013`'s record found it — the
 stale-second-copy class, again in a paragraph no gate's record reached.)* Phase 7 is `COMPLETE` — 18 of 18
@@ -823,6 +829,7 @@ carries, what triggers paying it down, and the owning phase.
 
 | Deferred | Why | Risk carried | Trigger | Owning phase |
 |---|---|---|---|---|
+| **`PositionProof` reads a credit-normal clearing's balance with the wrong sign** — it compares `derive(...).settled()`, signed by the account's NORMAL balance, against remainders signed DR−CR; `PAYOUT_CLEARING` is seeded `LIABILITY`/`CREDIT` (ledger `V012`), so any open merchant-payout expectation fails the verdict (ledger +X against remainders −X) | Found in passing by `P8-TSK-015`'s verification, when the merchant storm shared the proofs' container; outside the resolution machine's scope, and the proof suites' own container group never includes a suite that leaves a payout expectation open | `finapp.reconciliation.position.proof` and the positions report read a FALSE failure for `PAYOUT_CLEARING` whenever a payout is in flight — an alert that cries wolf hides the real break it exists to show | Its own task, flagged 2026-09-30: derive DR−CR explicitly (or negate for a credit-normal position), with a test holding an open payout expectation and its probe | 8 |
 | **One corrupt (non-UUIDv7) `payment_attempt.id` stalls every instance's whole card sweep** — `findSweepable` rehydrates typed ids while LISTING candidates, so the refusal (`EntityId`, ADR-0013) throws before the per-row containment (`P5-TSK-014`'s one-failing-row discipline) ever starts. Surfaced by `P7-TSK-003`'s battery when raw test fixtures minted v4 ids and poisoned every later suite's sweep | No domain writer can produce one — `EntityId` refuses at birth and every store insert goes through it — so the exposure is a raw writer (migrator, operator SQL) corrupting an id, which today would also be caught by nothing else | Bounded: the sweep crashes loudly and repeatedly rather than resolving wrongly; money is not misjudged, it is unattended — the same failure a poisoned row causes, one rank earlier. *(The Phase 7 review widened this row: Phase 7's four new sweeps list the same way - `JdbcWithdrawalStore`'s, `JdbcDisputeResponseStore`'s, `JdbcRefundStore.findSweepableReturns` and `JdbcPaymentAttemptStore.findResolvableInitiations` - so one corrupt id stalls that sweep likewise.)* | The fixtures now mint v7 (the immediate repair); every candidate list should skip-and-count an unrehydratable row exactly as the per-row loop does | Phase 15 |
 | **`payment_intent.wallet_account_id` holds a merchant payable for a merchant-bound payment.** The column's own comment defines it as *the wallet's ledger account - where the capture will credit*, so its MEANING is right and its NAME is narrower than its meaning (`P6-TSK-005`) | Renaming a column of applied history needs a new migration plus the every-writer trigger's recreation on the platform's most critical table, and the first PRODUCTION writer of a merchant-bound intent does not exist yet - `P6-TSK-007` brings it. Renaming before its real consumer exists would be guessing at what the consumer wants to call it | **Naming only, and bounded**: nothing reads it as a wallet - the capture credits whatever account it names, and the settlement REFUSES a capture whose credit account is not the pinned merchant's payable, so a mismatch is loud rather than silent. The cost is a reader of the schema being misled | **Re-owned by the Phase 6 review (`P6-DOC-001`)**: `P6-TSK-007`, this row's trigger, completed without the rename. The next migration that must recreate `payment_intent`'s every-writer trigger anyway carries the rename with it | **PAID — `P7-TSK-002`** (payments `V012` renamed the column under the recreated trigger; every reader, writer, test and register row follows the new name, the old one kept only in applied history and provenance notes) |
 | **Every session actor is audited as `CUSTOMER`, including operators.** `SessionAuthenticationInterceptor` enters `new Actor(identityId, ActorType.CUSTOMER)` for every authenticated session, so an operator's privileged acts — a manual adjustment, a transfer reversal, a refund, a merchant suspension, an API-key revocation — are recorded with the wrong actor TYPE. Found at `P6-TSK-002`'s implementation, while asserting that issuance names its operator: the test expected `EMPLOYEE` and the trail said `CUSTOMER` | The identifier is right — `actor_id` is the acting identity, so every record still names the person and `INV-AUD-01`'s attributability holds. What is wrong is the vocabulary that says which POPULATION acted, which is the field an auditor filters on to answer *what did staff do*. Correcting it means deriving the type from the identity's roles at authentication time and touches every audited session path on the platform — not a merchant task's to change, and not a change to make without its own negative tests | **Bounded but real**: no record is missing and none names the wrong person; a report separating staff activity from customers' cannot be built from `actor_type` alone today, and `ActorType.EMPLOYEE`'s own javadoc (*a human acting in an operational or administrative capacity*) describes a value nothing currently produces | An audit-completeness review, or the first report that must distinguish staff from customers | Phase 15 (audit completeness verification) |
@@ -946,9 +953,9 @@ Resolved during initiation:
 
 ## Next Task
 
-**`P8-TSK-015` — four-eyes resolution through the ledger** — `READY` (the Current
-Task), marked by `P8-TSK-014`'s completion gate — the adjustment closure it posts through
-(`-006`) and the case file whose breaks it resolves (`-014`) are `COMPLETE`.
+**`P8-TSK-016` — the bank statement: cash recognised, remittances matched** — `READY`
+(the Current Task), marked by `P8-TSK-015`'s completion gate — the matcher it extends
+(`-011`) and the resolution machine its breaks close through (`-015`) are `COMPLETE`.
 *(This section read "`P8-TSK-009` — `READY`" from `P8-TSK-008`'s gate until
 `P8-TSK-013`'s record found it — the stale-second-copy class, in the section whose
 whole job is to mirror.)*

@@ -116,20 +116,23 @@ class RoleNameTest {
     }
 
     @Test
-    @DisplayName("RECONCILIATION_OPERATOR grants exactly the two evidence permissions")
+    @DisplayName("RECONCILIATION_OPERATOR grants exactly the two evidence permissions and the"
+            + " resolve permission")
     void reconciliationOperatorGrantsExactlyTwo() {
         // The fifth population (P8-TSK-003, ADR-0066, owner decision O1): introducing and
         // attesting settlement evidence, and investigating it, are one desk today - and that
         // desk CHECKS the money-operating desk's work, so the exact set is what keeps it from
         // quietly gaining a posting or refund permission and becoming able to both move money
-        // and vouch for the evidence that reconciles it. RECONCILIATION_RESOLVE joins with
-        // P8-TSK-015; this pin is edited in that same change (the MERCHANT_ADMINISTRATOR
-        // discipline above).
+        // and vouch for the evidence that reconciles it. RECONCILIATION_RESOLVE joined with
+        // P8-TSK-015 (ADR-0071 section 10): a template-bound, four-eyes correction through
+        // the ledger's OWNED calls - never a posting or adjustment permission - and never
+        // the controller's, whose tolerances it would otherwise let hide its own breaks.
         assertThat(RoleName.RECONCILIATION_OPERATOR.permissions())
                 .as("checking the money's reconciliation is not operating the money")
                 .containsExactlyInAnyOrder(
                         PermissionName.SETTLEMENT_INGEST,
-                        PermissionName.RECONCILIATION_INVESTIGATE);
+                        PermissionName.RECONCILIATION_INVESTIGATE,
+                        PermissionName.RECONCILIATION_RESOLVE);
     }
 
     @Test

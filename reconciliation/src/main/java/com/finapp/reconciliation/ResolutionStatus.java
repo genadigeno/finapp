@@ -37,6 +37,20 @@ public enum ResolutionStatus {
         return permittedTransitions().isEmpty();
     }
 
+    /** `V007`'s transition trigger's edge condition — reconciled by its migration test. */
+    public static String sqlTransitionRule() {
+        return Arrays.stream(values())
+                .filter(from -> !from.permittedTransitions().isEmpty())
+                .map(
+                        from ->
+                                "(OLD.status = '" + from.name() + "' AND NEW.status IN ("
+                                        + from.permittedTransitions().stream()
+                                                .map(to -> "'" + to.name() + "'")
+                                                .collect(Collectors.joining(", "))
+                                        + "))")
+                .collect(Collectors.joining(" OR "));
+    }
+
     /** The value list `V007` regenerates into the widened {@code CHECK}. */
     public static String sqlValueList() {
         return Arrays.stream(values())

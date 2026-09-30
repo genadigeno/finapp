@@ -265,18 +265,67 @@ public class ReconciliationBeans {
     }
 
     /**
-     * The resolutions' writer (`P8-TSK-012`, ADR-0071): the platform's {@code EVIDENCED}
-     * kind only — born {@code APPROVED} in the transaction whose zero-residual
-     * allocation or offset explained the break; the person kinds arrive with
-     * `P8-TSK-015`'s door.
+     * The resolutions' evidence writer (`P8-TSK-012`, ADR-0071): the platform's
+     * {@code EVIDENCED} kind — born {@code APPROVED} in the transaction whose zero-residual
+     * allocation or offset explained the break — and, since `P8-TSK-015`, the withdrawal of a
+     * person's pending proposal the evidence overtook, its ledger half rejected through the
+     * owned door (evidence wins, §9).
      */
     @Bean
     com.finapp.reconciliation.Resolutions resolutions(
             com.finapp.platform.outbox.OutboxWriter<Connection> outboxWriter,
             com.finapp.platform.audit.AuditWriter<Connection> auditWriter,
-            IdGenerator idGenerator) {
+            IdGenerator idGenerator,
+            com.finapp.ledger.AdjustmentService adjustmentService) {
         return new com.finapp.reconciliation.JdbcResolutions(
-                outboxWriter, auditWriter, idGenerator);
+                outboxWriter,
+                auditWriter,
+                idGenerator,
+                new com.finapp.reconciliation.JdbcResolutionStore(),
+                adjustmentService);
+    }
+
+    /**
+     * The person's resolution machine (`P8-TSK-015`, ADR-0071): template-bound kinds under
+     * four-eyes, the ledger half through {@code AdjustmentService}'s owned door in the same
+     * transaction, every command in the Phase 8 lock order.
+     */
+    @Bean
+    com.finapp.reconciliation.ResolutionMachine resolutionMachine(
+            com.finapp.reconciliation.Suspense suspense,
+            com.finapp.reconciliation.MatchingStore matchingStore,
+            com.finapp.reconciliation.Resolutions resolutions,
+            RuleSets ruleSets,
+            com.finapp.ledger.AdjustmentService adjustmentService,
+            com.finapp.ledger.LedgerAccountStore<Connection> ledgerAccountStore,
+            com.finapp.platform.outbox.OutboxWriter<Connection> outboxWriter,
+            com.finapp.platform.audit.AuditWriter<Connection> auditWriter,
+            IdGenerator idGenerator,
+            Clock clock) {
+        return new com.finapp.reconciliation.ResolutionMachine(
+                new com.finapp.reconciliation.JdbcResolutionStore(),
+                new com.finapp.reconciliation.JdbcBreakCaseStore(),
+                suspense,
+                matchingStore,
+                resolutions,
+                ruleSets,
+                adjustmentService,
+                ledgerAccountStore,
+                outboxWriter,
+                auditWriter,
+                idGenerator,
+                clock);
+    }
+
+    /** The resolver's desk (`P8-TSK-015`): the four doors' one-transaction commands. */
+    @Bean
+    BreakResolutionDesk breakResolutionDesk(
+            com.finapp.reconciliation.ResolutionMachine resolutionMachine,
+            com.finapp.platform.idempotency.IdempotentExecutor idempotentExecutor,
+            TransactionTemplate reconciliationTransactions,
+            javax.sql.DataSource dataSource) {
+        return new BreakResolutionDesk(
+                resolutionMachine, idempotentExecutor, reconciliationTransactions, dataSource);
     }
 
     /** One transaction per chunk — the run leg's containment (the parse leg's shape). */

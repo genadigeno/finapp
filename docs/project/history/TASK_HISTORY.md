@@ -1,6 +1,6 @@
 # Task History
 
-The per-task completion records that accumulated behind `## Current Task` - 177 "Previously" blocks, newest first, from `P8-TSK-013` back to project initiation. *(`X-TSK-004` is cross-cutting and completed after the Phase 6 → 7 transition, so it stands second, between `P7-TSK-001` and the transition's record - the transition's block moved here by `P7-TSK-001`'s gate, exactly as an earlier form of this note said it would.)*
+The per-task completion records that accumulated behind `## Current Task` - 178 "Previously" blocks, newest first, from `P8-TSK-014` back to project initiation. *(`X-TSK-004` is cross-cutting and completed after the Phase 6 → 7 transition, so it stands second, between `P7-TSK-001` and the transition's record - the transition's block moved here by `P7-TSK-001`'s gate, exactly as an earlier form of this note said it would.)*
 
 **Archive.** These records were moved verbatim out of
 [`CURRENT_STATE.md`](../CURRENT_STATE.md) on 2026-09-20 so that the canonical description of
@@ -12,6 +12,105 @@ Current state: [`CURRENT_STATE.md`](../CURRENT_STATE.md) ·
 Authoritative backlog: [`BACKLOG.md`](../BACKLOG.md)
 
 ---
+
+### Previously
+
+**`P8-TSK-014` — Break reads, the case file and the settlement-status trail** — `COMPLETE`
+(2026-09-30). **M8.4, Investigation and controlled resolution, at 1 of 2**: an investigator
+can now find, own, annotate and reclassify a break, and walk from any break — or any
+operation — to its raw evidence and journal entries by stored identifiers alone; the
+investigation is the break's own case file, never a third aggregate (ADR-0069 §7;
+`INV-REC-01`, `INV-AUD-01`, `INV-AUD-02`, `INV-PAY-02`; protected `INV-RAIL-03`, `INV-REC-02`).
+**No migration**: `V004` already granted the moving columns and held the case-file tables.
+**The case file** (`BreakCaseFile`, one transaction per command, the source's namespace-4
+advisory BEFORE the break row — the `P8-TSK-012` register fact — `FOR UPDATE` to move it,
+`FOR SHARE` to append beside it): ASSIGNMENT moves `OPEN → INVESTIGATING` on the first one
+only and publishes `reconciliation.BreakInvestigationStarted` once (ten racers, one event,
+counted; every loser a recorded handover), a repeat of the standing assignee converging;
+NOTES and EVIDENCE LINKS are keyed per principal from birth (`reconciliation.break-note:` and
+`reconciliation.break-evidence-link:<actorType>:<actorId>`) — the note screen, a pure
+`NoteScreen` mirroring `V004`'s Luhn function and account shape window for window, runs BEFORE
+the claim (a refused body stores nothing, not even a claim), the state and the target's
+EXISTENCE judged inside it (a link to nothing refused, never stored dangling), and the stored
+receipt carries NO body — the idempotency record would otherwise be a second, unscreened home
+for CONFIDENTIAL text; RECLASSIFICATION only in `OPEN` and `INVESTIGATING`, onto a type that
+stands on the break's own subject and parks exactly when the break holds unreleased suspense
+(`BreakType.admits`/`parksOn`, ADR-0069 §2's Subject and Parked columns read per subject),
+never onto an occupied (type, subject) seat (the pre-check, and the partial unique for any
+writer), reasoned (the reason screened like a note), severity the higher of stored and
+recomputed, `residual_version` bumped, and ONLY a `RECLASSIFIED` event appended — a
+`SEVERITY_ESCALATED` row would corrupt the sweep's band counter; ten racers move it once. A
+`RESOLVED` break takes none of the four (`409 reconciliation.BreakTerminal`). **The reads**, one
+`REPEATABLE READ` read-only snapshot each (`reconciliationSnapshotReads`): the break list (type,
+status, severity, source, assignee, `agedOver` on the database clock; bounded at 100 with
+`truncated`), the case file whole, expectation list and detail, the SETTLEMENT STATUS —
+derived, never stored: `RESOLVED` > `CASH_CONFIRMED` > `REPORTED` > `OVERDUE` > `PENDING`, the
+trail expectation → allocations → items → batches → remittances → bank items inside
+reconciliation (a remittance's operation IS its batch id), `CASH_CONFIRMED` derived now and
+reachable with `P8-TSK-016` — and the TRACE: a bounded breadth-first walk of typed steps
+(`BreakTraces`, at most 500) from the break through its subject, items, lines, runs, batches
+and files, decisions, allocations, parks and releases, resolutions and proposals, to the
+journal entries, and on the internal side expectation → entry → operation → provider
+evidence — for a Phase 7 parking through the evidence's fifth subject. The walk's steps beyond
+reconciliation are two declared ports (`EvidenceTargets`, `TraceEvidence`) implemented in
+`app` by `ComposedCaseFileEvidence` over settlement's, the ledger's and payments' public read
+stores, identifiers and metadata only; settlement gains `recognitionEntryOf` and `batchOfLine`,
+payments metadata-only `evidenceMetadataFor` (by subject) and `evidenceExists`. **The build's
+finds, each fixed**: an investigator's UUIDv4 in a link reference crashed a typed platform id
+(ADR-0013's UUIDv7) with a 500 — the composition now answers "absent" (a 422), the same
+guard on the walk's typed ids; the ownership register was BLIND to the typed evidence finders
+while their SQL sat in a shared helper — inlined so the register sees and classifies them
+(`ADMINISTERED`, with `JdbcDisputeStore.findById`'s entry restated for the trace's use); a
+recursive `<E extends Enum<E>>` bound overflowed the floating-point money rule's signature
+walk — replaced by a constants-based parser (the rule's latent recursion recorded for its own
+fix); the credential-sink guard named the four new request schemas; and the composed suite
+now also proves the refused card number reaches no log. **Registers**: ten
+`RoutePermissionRegisterTest` rows (all `RECONCILIATION_INVESTIGATE`), three error codes
+(`BreakNotFound`, `BreakTerminal`, `ExpectationNotFound`) with their `ERROR_CONTRACT` rows, four
+`AUDITABLE_ACTIONS` rows (`BreakReclassified` reason-required), one event, the OpenAPI baseline
+regenerated (299 compatible additions; the 30 flagged rows all `required` markers inside the ten
+new routes and four new request schemas — the new-route precedent), no classification rows,
+`DISTRIBUTED_EXECUTION` §3 (a case-file register row, the lock-order row's new takers),
+MODULE_ARCHITECTURE (the built paragraph caught up from `P8-TSK-011` on — the
+stale-second-copy class through three gates — and the two new ports), the lifecycle
+document's status precedence decided, ADR-0069's implemented note with three recorded
+deviations (the backlog's "expectation" link served by `V004`'s closed `OPERATION` kind; the
+reason screened; the parking rule's database rank deferred), and the design input recorded on
+`P8-TSK-015` (`V007` for every-writer triggers on `break.type` — the parking rule AND the state
+rule, which the probe proved no database rank holds today). **Four probe runs, four caught**
+(`MUTATION_TESTING` §2 +4 rows under `INV-PAY-02`, `INV-REC-01`, `INV-REC-02`,
+`INV-EVT-01`): the note screen disarmed fell hermetically on four card-number cases and at the
+command tier on the database's own CHECK answering where the domain's 422 belongs (nothing
+stored — the second rank standing); the item's decisions joined by `decided_at` dragged the
+two same-instant siblings into the decision break's trace (one chunk, one fixed clock); the
+state rule dropped at both code ranks let a type move under a proposed resolution; the start
+event published on every assignment reported a handover as a start and ten racers as ten —
+every verdict read from the failing testcase, every restore byte-identical (sha256-verified).
+Multi-instance **PASS** — the break row (after the source's advisory) and the expected-value
+updates serialise assignment and reclassification (counted ten-way races), the partial uniques
+arbitrate a reclassification collision for any writer, notes and links are keyed per
+principal, and every read is one snapshot. Recorded minors: the assignee's existence and
+permission are not verified (the audit record names them; Phase 15's operator directory);
+operators are audited with actor type `CUSTOMER` (the known Phase 15 debt); a merchant payout's
+statements (`merchant.payout_evidence`) are not walked — the trace names the operation and
+stops; the trace's 500-step and the listings' 100-row truncation are bounded in code, not
+exercised by a test (the `P8-TSK-011` listing precedent); an operation settled from a zero-net
+batch stays `REPORTED`; duplicate links by different keys are admitted (append-only, harmless).
+Verified by targeted tiers from fresh runs on the final code — reconciliation hermetic 76
+across 13 suites (the case file's pure rules within) and database 56 across 7 (the case-file
+suite's ten ordered tests: every subject kind's trace with same-instant decoys, the four
+reachable statuses, assignment and its ten-way race, the notes at both ranks, verified links,
+the reclassification rules, the proposed-resolution refusal, the ten-way reclassification race,
+the resolved break's four refusals), payments and settlement compiled with the widened fakes,
+app hermetic 571 across 106 suites (the ten route rows, the ownership entries, the catalogues, the
+credential-sink guard and the regenerated baseline within, the document guards among them), and
+the six affected app database suites in ONE shared container 18 across 6 (the composed desk
+over HTTP with every door's negatives three ways, the real accepted batch's trace, the parking
+walk through the fifth subject, the note needle absent from logs, events, audit and idempotency
+records — run before the opening, suspense and acceptance proofs, which then passed over its
+residue — with the matcher and the storm), ALL 0 FAILURES — ledger untouched; the full
+battery and the fleet-wide database and kafka tiers deliberately skipped on the owner's
+instruction.
 
 ### Previously
 

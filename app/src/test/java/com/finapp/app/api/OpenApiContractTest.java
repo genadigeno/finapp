@@ -536,6 +536,15 @@ class OpenApiContractTest {
                         ApiVersion.CURRENT_PREFIX + "/operator/reconciliation/expectations",
                         ApiVersion.CURRENT_PREFIX + "/operator/reconciliation/expectations/{id}",
                         ApiVersion.CURRENT_PREFIX + "/operator/reconciliation/settlement-status",
+                        // P8-TSK-015: the resolver's doors - propose, approve, reject and
+                        // withdraw a template-bound break resolution (RECONCILIATION_RESOLVE).
+                        ApiVersion.CURRENT_PREFIX
+                                + "/operator/reconciliation/breaks/{id}/resolutions",
+                        ApiVersion.CURRENT_PREFIX
+                                + "/operator/reconciliation/resolutions/{id}/approval",
+                        ApiVersion.CURRENT_PREFIX
+                                + "/operator/reconciliation/resolutions/{id}/rejection",
+                        ApiVersion.CURRENT_PREFIX + "/operator/reconciliation/resolutions/{id}",
                         ApiVersion.CURRENT_PREFIX + "/sessions/{id}",
                         ApiVersion.CURRENT_PREFIX + "/sessions/current",
                         ApiVersion.CURRENT_PREFIX + "/me/mfa",

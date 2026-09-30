@@ -45,12 +45,14 @@ public class MerchantPayableController {
     /**
      * One currency's payable. Every figure is a decimal string; {@code position} equals
      * {@code captured − fees − refunded + feesReturned − paidOut − chargedBack +
-     * chargebacksReversed + other} exactly. {@code paidOut} is what the payout rail accepted
+     * chargebacksReversed + reconciliationAttributed + other} exactly. {@code paidOut} is what the payout rail accepted
      * (`P6-TSK-012`; a payout in flight is a hold, not a posting, and appears in no term);
      * {@code chargedBack} is the chargebacks attributed to this merchant's sales and
      * {@code chargebacksReversed} what won ones gave back (`P7-TSK-013`, ADR-0061 §4) — a
      * position below zero after a chargeback is merchant debt, recovered from later captures
-     * before any payout; and {@code other} is signed — an operator adjustment today.
+     * before any payout; {@code reconciliationAttributed} is signed — value an approved break
+     * resolution attributed to or from the payable (`P8-TSK-015`, ADR-0071 §2), whatever the
+     * entry faced; and {@code other} is signed — an operator adjustment today.
      */
     public record PayableLine(
             String currency,
@@ -62,6 +64,7 @@ public class MerchantPayableController {
             String paidOut,
             String chargedBack,
             String chargebacksReversed,
+            String reconciliationAttributed,
             String other) {}
 
     /** {@code kind} is always {@code "DERIVED"} — see the class javadoc. */
@@ -87,6 +90,7 @@ public class MerchantPayableController {
                 decimal(payable.paidOut()),
                 decimal(payable.chargedBack()),
                 decimal(payable.chargebacksReversed()),
+                decimal(payable.reconciliationAttributed()),
                 decimal(payable.other()));
     }
 

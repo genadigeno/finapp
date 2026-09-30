@@ -746,7 +746,7 @@ class BreakCaseFileDatabaseTest {
         return new Matching(
                 new JdbcMatchingStore(), new MatchingRules(), register,
                 new Suspense(postingService(), new JdbcLedgerAccountStore(), IDS),
-                new JdbcResolutions(new JdbcOutboxWriter(), new JdbcAuditWriter(), IDS),
+                ResolutionFixtures.resolutions(IDS, CLOCK),
                 (unitOfWork, subject) -> InternalReferenceLookup.InternalReference.unknown(),
                 new JdbcLedgerAccountStore(), new JdbcOutboxWriter(), new JdbcAuditWriter(), IDS,
                 CLOCK, new Matching.Config(200, 2), runner());

@@ -11266,7 +11266,7 @@ trigger on `break.type` — and for the state rule beside it: `P8-TSK-014`'s pro
 predicate refuse today. Every case-file door takes the source's namespace-4 advisory before the
 break row, as the approval door must.)*
 
-**P8-TSK-015 — Four-eyes resolution through the ledger** — `READY` (marked by `P8-TSK-014`'s completion gate)
+**P8-TSK-015 — Four-eyes resolution through the ledger** — `COMPLETE` (2026-09-30)
 - **Objective**: ADR-0071. A person resolves a break only through a template-bound, reason-coded
   resolution whose lines are derived from the subject's current remainder, approved by a second
   person whenever value is at issue or it posts, and posted through the ledger's adjustment
@@ -11476,7 +11476,7 @@ break row, as the approval door must.)*
   and thresholds, the lifecycle document's resolution machine and reason-code matrix, `INV-MER-02`'s
   amended statement and `RECONCILIATION_MODEL.md` current against the build). **Risk**: High. **Cx**: L.
 
-**P8-TSK-016 — The bank statement: cash recognised, remittances matched** — `PLANNED`
+**P8-TSK-016 — The bank statement: cash recognised, remittances matched** — `READY` (marked by `P8-TSK-015`'s completion gate)
 - **Objective**: hop 2 of ADR-0065. Cash moves on the platform's books only on the bank's own
   statement, against each attributed counterparty's own clearing position, and the bank's lines
   discharge the remittances the reports opened. `CASH_AT_BANK` equals the closing balance of an

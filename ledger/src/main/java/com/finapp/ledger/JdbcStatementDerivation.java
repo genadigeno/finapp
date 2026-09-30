@@ -138,7 +138,8 @@ public final class JdbcStatementDerivation implements StatementDerivation<Connec
                                 JournalEntryType.valueOf(rows.getString("entry_type")),
                                 rows.getString("reference"),
                                 direction,
-                                amount));
+                                amount,
+                                rows.getBoolean("attributed")));
             }
         } catch (SQLException failure) {
             throw new LedgerStorageException(
@@ -182,7 +183,12 @@ public final class JdbcStatementDerivation implements StatementDerivation<Connec
                         "SELECT line.entry_id, line.direction, line.amount_minor,"
                                 + " line.currency, line.scale,"
                                 + " entry.posting_date, entry.value_date, entry.entry_type,"
-                                + " entry.reference"
+                                + " entry.reference,"
+                                // The origin rule (P8-TSK-015, ADR-0073 section 6): a line of a
+                                // resolution's ADJUSTMENT entry is an attribution.
+                                + " EXISTS (SELECT 1 FROM ledger.adjustment_proposal p"
+                                + "          WHERE p.journal_entry_id = line.entry_id"
+                                + "            AND p.origin = 'RECONCILIATION') AS attributed"
                                 + " FROM ledger.journal_line line"
                                 + " JOIN ledger.journal_entry entry ON entry.id = line.entry_id"
                                 + " WHERE line.ledger_account_id = ?"

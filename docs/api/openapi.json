@@ -3167,6 +3167,356 @@
           }
         }
       },
+      "reconciliation.GainNotYetEligible": {
+        "content": {
+          "application/problem+json": {
+            "schema": {
+              "allOf": [
+                {
+                  "$ref": "#/components/schemas/ProblemDetail"
+                },
+                {
+                  "properties": {
+                    "code": {
+                      "const": "reconciliation.GainNotYetEligible"
+                    },
+                    "status": {
+                      "const": 422
+                    },
+                    "type": {
+                      "const": "https://finapp.example/problems/reconciliation.GainNotYetEligible"
+                    }
+                  }
+                }
+              ]
+            }
+          }
+        },
+        "description": "[422] The suspense item is not yet old enough to be recognised as a gain.",
+        "headers": {
+          "X-Client-Correlation-Id": {
+            "$ref": "#/components/headers/X-Client-Correlation-Id"
+          },
+          "X-Correlation-Id": {
+            "$ref": "#/components/headers/X-Correlation-Id"
+          }
+        }
+      },
+      "reconciliation.NotTheProposer": {
+        "content": {
+          "application/problem+json": {
+            "schema": {
+              "allOf": [
+                {
+                  "$ref": "#/components/schemas/ProblemDetail"
+                },
+                {
+                  "properties": {
+                    "code": {
+                      "const": "reconciliation.NotTheProposer"
+                    },
+                    "status": {
+                      "const": 409
+                    },
+                    "type": {
+                      "const": "https://finapp.example/problems/reconciliation.NotTheProposer"
+                    }
+                  }
+                }
+              ]
+            }
+          }
+        },
+        "description": "[409] Only a resolution's proposer withdraws it; another person rejects it.",
+        "headers": {
+          "X-Client-Correlation-Id": {
+            "$ref": "#/components/headers/X-Client-Correlation-Id"
+          },
+          "X-Correlation-Id": {
+            "$ref": "#/components/headers/X-Correlation-Id"
+          }
+        }
+      },
+      "reconciliation.ReasonCodeNotAllowed": {
+        "content": {
+          "application/problem+json": {
+            "schema": {
+              "allOf": [
+                {
+                  "$ref": "#/components/schemas/ProblemDetail"
+                },
+                {
+                  "properties": {
+                    "code": {
+                      "const": "reconciliation.ReasonCodeNotAllowed"
+                    },
+                    "status": {
+                      "const": 422
+                    },
+                    "type": {
+                      "const": "https://finapp.example/problems/reconciliation.ReasonCodeNotAllowed"
+                    }
+                  }
+                }
+              ]
+            }
+          }
+        },
+        "description": "[422] This reason code is not admitted for this resolution kind.",
+        "headers": {
+          "X-Client-Correlation-Id": {
+            "$ref": "#/components/headers/X-Client-Correlation-Id"
+          },
+          "X-Correlation-Id": {
+            "$ref": "#/components/headers/X-Correlation-Id"
+          }
+        }
+      },
+      "reconciliation.RecordAlreadyMatched": {
+        "content": {
+          "application/problem+json": {
+            "schema": {
+              "allOf": [
+                {
+                  "$ref": "#/components/schemas/ProblemDetail"
+                },
+                {
+                  "properties": {
+                    "code": {
+                      "const": "reconciliation.RecordAlreadyMatched"
+                    },
+                    "status": {
+                      "const": 409
+                    },
+                    "type": {
+                      "const": "https://finapp.example/problems/reconciliation.RecordAlreadyMatched"
+                    }
+                  }
+                }
+              ]
+            }
+          }
+        },
+        "description": "[409] The item is already allocated to the chosen expectation.",
+        "headers": {
+          "X-Client-Correlation-Id": {
+            "$ref": "#/components/headers/X-Client-Correlation-Id"
+          },
+          "X-Correlation-Id": {
+            "$ref": "#/components/headers/X-Correlation-Id"
+          }
+        }
+      },
+      "reconciliation.ResolutionAlreadyProposed": {
+        "content": {
+          "application/problem+json": {
+            "schema": {
+              "allOf": [
+                {
+                  "$ref": "#/components/schemas/ProblemDetail"
+                },
+                {
+                  "properties": {
+                    "code": {
+                      "const": "reconciliation.ResolutionAlreadyProposed"
+                    },
+                    "status": {
+                      "const": 409
+                    },
+                    "type": {
+                      "const": "https://finapp.example/problems/reconciliation.ResolutionAlreadyProposed"
+                    }
+                  }
+                }
+              ]
+            }
+          }
+        },
+        "description": "[409] This break already carries a live resolution proposal.",
+        "headers": {
+          "X-Client-Correlation-Id": {
+            "$ref": "#/components/headers/X-Client-Correlation-Id"
+          },
+          "X-Correlation-Id": {
+            "$ref": "#/components/headers/X-Correlation-Id"
+          }
+        }
+      },
+      "reconciliation.ResolutionKindNotAllowed": {
+        "content": {
+          "application/problem+json": {
+            "schema": {
+              "allOf": [
+                {
+                  "$ref": "#/components/schemas/ProblemDetail"
+                },
+                {
+                  "properties": {
+                    "code": {
+                      "const": "reconciliation.ResolutionKindNotAllowed"
+                    },
+                    "status": {
+                      "const": 422
+                    },
+                    "type": {
+                      "const": "https://finapp.example/problems/reconciliation.ResolutionKindNotAllowed"
+                    }
+                  }
+                }
+              ]
+            }
+          }
+        },
+        "description": "[422] This resolution kind does not apply to this break.",
+        "headers": {
+          "X-Client-Correlation-Id": {
+            "$ref": "#/components/headers/X-Client-Correlation-Id"
+          },
+          "X-Correlation-Id": {
+            "$ref": "#/components/headers/X-Correlation-Id"
+          }
+        }
+      },
+      "reconciliation.ResolutionNotFound": {
+        "content": {
+          "application/problem+json": {
+            "schema": {
+              "allOf": [
+                {
+                  "$ref": "#/components/schemas/ProblemDetail"
+                },
+                {
+                  "properties": {
+                    "code": {
+                      "const": "reconciliation.ResolutionNotFound"
+                    },
+                    "status": {
+                      "const": 404
+                    },
+                    "type": {
+                      "const": "https://finapp.example/problems/reconciliation.ResolutionNotFound"
+                    }
+                  }
+                }
+              ]
+            }
+          }
+        },
+        "description": "[404] No break resolution has this identifier.",
+        "headers": {
+          "X-Client-Correlation-Id": {
+            "$ref": "#/components/headers/X-Client-Correlation-Id"
+          },
+          "X-Correlation-Id": {
+            "$ref": "#/components/headers/X-Correlation-Id"
+          }
+        }
+      },
+      "reconciliation.ResolutionNotPending": {
+        "content": {
+          "application/problem+json": {
+            "schema": {
+              "allOf": [
+                {
+                  "$ref": "#/components/schemas/ProblemDetail"
+                },
+                {
+                  "properties": {
+                    "code": {
+                      "const": "reconciliation.ResolutionNotPending"
+                    },
+                    "status": {
+                      "const": 409
+                    },
+                    "type": {
+                      "const": "https://finapp.example/problems/reconciliation.ResolutionNotPending"
+                    }
+                  }
+                }
+              ]
+            }
+          }
+        },
+        "description": "[409] This resolution is no longer pending.",
+        "headers": {
+          "X-Client-Correlation-Id": {
+            "$ref": "#/components/headers/X-Client-Correlation-Id"
+          },
+          "X-Correlation-Id": {
+            "$ref": "#/components/headers/X-Correlation-Id"
+          }
+        }
+      },
+      "reconciliation.ResolutionStale": {
+        "content": {
+          "application/problem+json": {
+            "schema": {
+              "allOf": [
+                {
+                  "$ref": "#/components/schemas/ProblemDetail"
+                },
+                {
+                  "properties": {
+                    "code": {
+                      "const": "reconciliation.ResolutionStale"
+                    },
+                    "status": {
+                      "const": 409
+                    },
+                    "type": {
+                      "const": "https://finapp.example/problems/reconciliation.ResolutionStale"
+                    }
+                  }
+                }
+              ]
+            }
+          }
+        },
+        "description": "[409] The break's subject changed since the proposal; withdraw and re-propose.",
+        "headers": {
+          "X-Client-Correlation-Id": {
+            "$ref": "#/components/headers/X-Client-Correlation-Id"
+          },
+          "X-Correlation-Id": {
+            "$ref": "#/components/headers/X-Correlation-Id"
+          }
+        }
+      },
+      "reconciliation.ResolutionTargetRefused": {
+        "content": {
+          "application/problem+json": {
+            "schema": {
+              "allOf": [
+                {
+                  "$ref": "#/components/schemas/ProblemDetail"
+                },
+                {
+                  "properties": {
+                    "code": {
+                      "const": "reconciliation.ResolutionTargetRefused"
+                    },
+                    "status": {
+                      "const": 422
+                    },
+                    "type": {
+                      "const": "https://finapp.example/problems/reconciliation.ResolutionTargetRefused"
+                    }
+                  }
+                }
+              ]
+            }
+          }
+        },
+        "description": "[422] The resolution's target, offset item or chosen candidate is refused.",
+        "headers": {
+          "X-Client-Correlation-Id": {
+            "$ref": "#/components/headers/X-Client-Correlation-Id"
+          },
+          "X-Correlation-Id": {
+            "$ref": "#/components/headers/X-Correlation-Id"
+          }
+        }
+      },
       "reconciliation.RunNotFound": {
         "content": {
           "application/problem+json": {
@@ -3193,6 +3543,41 @@
           }
         },
         "description": "[404] No reconciliation run has this identifier.",
+        "headers": {
+          "X-Client-Correlation-Id": {
+            "$ref": "#/components/headers/X-Client-Correlation-Id"
+          },
+          "X-Correlation-Id": {
+            "$ref": "#/components/headers/X-Correlation-Id"
+          }
+        }
+      },
+      "reconciliation.SelfApprovalRefused": {
+        "content": {
+          "application/problem+json": {
+            "schema": {
+              "allOf": [
+                {
+                  "$ref": "#/components/schemas/ProblemDetail"
+                },
+                {
+                  "properties": {
+                    "code": {
+                      "const": "reconciliation.SelfApprovalRefused"
+                    },
+                    "status": {
+                      "const": 409
+                    },
+                    "type": {
+                      "const": "https://finapp.example/problems/reconciliation.SelfApprovalRefused"
+                    }
+                  }
+                }
+              ]
+            }
+          }
+        },
+        "description": "[409] A resolution's proposer cannot decide it; a second person must.",
         "headers": {
           "X-Client-Correlation-Id": {
             "$ref": "#/components/headers/X-Client-Correlation-Id"
@@ -5852,6 +6237,9 @@
           "position": {
             "type": "string"
           },
+          "reconciliationAttributed": {
+            "type": "string"
+          },
           "refunded": {
             "type": "string"
           }
@@ -6435,6 +6823,88 @@
         ],
         "type": "object"
       },
+      "ResolutionDecision": {
+        "properties": {
+          "breakId": {
+            "type": "string"
+          },
+          "journalEntryId": {
+            "type": "string"
+          },
+          "resolutionId": {
+            "type": "string"
+          },
+          "status": {
+            "type": "string"
+          }
+        },
+        "type": "object"
+      },
+      "ResolutionProposalRequest": {
+        "properties": {
+          "chosenExpectationId": {
+            "type": "string"
+          },
+          "kind": {
+            "type": "string"
+          },
+          "narrative": {
+            "type": "string"
+          },
+          "offsetItemId": {
+            "type": "string"
+          },
+          "reasonCode": {
+            "type": "string"
+          },
+          "targetAccountId": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "kind",
+          "narrative",
+          "reasonCode"
+        ],
+        "type": "object"
+      },
+      "ResolutionReceipt": {
+        "properties": {
+          "adjustmentProposalId": {
+            "type": "string"
+          },
+          "breakId": {
+            "type": "string"
+          },
+          "fourEyes": {
+            "type": "boolean"
+          },
+          "kind": {
+            "type": "string"
+          },
+          "proposedAt": {
+            "type": "string"
+          },
+          "resolutionId": {
+            "type": "string"
+          },
+          "status": {
+            "type": "string"
+          }
+        },
+        "type": "object"
+      },
+      "ResolutionRejectionRequest": {
+        "properties": {
+          "reason": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "reason"
+        ],
+        "type": "object"
+      },
       "ResolutionRequest": {
         "properties": {
           "reason": {
@@ -6975,6 +7445,9 @@
             "type": "string"
           },
           "entryType": {
+            "type": "string"
+          },
+          "label": {
             "type": "string"
           },
           "postingDate": {
@@ -10115,6 +10588,51 @@
         }
       }
     },
+    "/v1/operator/reconciliation/breaks/{id}/resolutions": {
+      "post": {
+        "operationId": "proposeReconciliationBreakResolution",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "id",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "in": "header",
+            "name": "Idempotency-Key",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ResolutionProposalRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "201": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ResolutionReceipt"
+                }
+              }
+            },
+            "description": "Created"
+          }
+        }
+      }
+    },
     "/v1/operator/reconciliation/breaks/{id}/trace": {
       "get": {
         "operationId": "traceReconciliationBreak",
@@ -10268,6 +10786,97 @@
               "application/json": {
                 "schema": {
                   "$ref": "#/components/schemas/Adopted"
+                }
+              }
+            },
+            "description": "OK"
+          }
+        }
+      }
+    },
+    "/v1/operator/reconciliation/resolutions/{id}": {
+      "delete": {
+        "operationId": "withdrawReconciliationResolution",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "id",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ResolutionDecision"
+                }
+              }
+            },
+            "description": "OK"
+          }
+        }
+      }
+    },
+    "/v1/operator/reconciliation/resolutions/{id}/approval": {
+      "post": {
+        "operationId": "approveReconciliationResolution",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "id",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ResolutionDecision"
+                }
+              }
+            },
+            "description": "OK"
+          }
+        }
+      }
+    },
+    "/v1/operator/reconciliation/resolutions/{id}/rejection": {
+      "post": {
+        "operationId": "rejectReconciliationResolution",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "id",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ResolutionRejectionRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ResolutionDecision"
                 }
               }
             },

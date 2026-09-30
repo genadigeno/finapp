@@ -42,7 +42,8 @@ public interface SuspenseReadings {
 
     /**
      * Every entry a park posted or a suspense item owns — the completeness verifier's
-     * known-entry classes this task adds (ADR-0067 §9, ADR-0070 §7).
+     * known-entry classes this task adds (ADR-0067 §9, ADR-0070 §7) — and, since
+     * `P8-TSK-015`, every approved resolution's entry (ADR-0071 §6).
      */
     List<UUID> knownEntries(Connection unitOfWork);
 }

@@ -618,6 +618,49 @@ stored resolution, ADR-0069's amendment), `INV-REC-06`, `INV-REC-09`, `INV-SET-0
   must take the same advisory before its break → resolution → subject locks,
   or restate the register's row. The withdraw-pending-proposal-on-evidence clause has
   no producer yet (no `PROPOSED` rows exist) and lands with `-015`.
+- **`P8-TSK-015` — implemented** (2026-09-30): the person's machine. Ledger `V017` adds
+  `RECONCILIATION_LOSSES` (EXPENSE) and `RECONCILIATION_GAINS` (REVENUE) per currency, both
+  reconciled positions (the binding function's list re-stated), so only an approved resolution
+  posts there. Reconciliation `V007` regenerates the kind, status and reason `CHECK`s from the
+  enums (every kind but `REPUDIATE_BATCH`, every code but `EVIDENCE_REPUDIATED` — `V009`'s),
+  adds the generated (kind, reason) pairing, §3's derived `four_eyes`, the one-to-one ledger
+  binding (a posting kind names its proposal, an approved one its entry) and each kind's operand,
+  and replaces `V006`'s blanket freeze with the machine's every-writer trigger (payload frozen,
+  `PROPOSED →` the three terminals only, what an approval produced named once, no delete) under a
+  narrowed `UPDATE` grant; it also carries `P8-TSK-014`'s design input — a break's type moves only
+  in `OPEN`/`INVESTIGATING`, and a suspense owner only onto an owning type. `ResolutionTemplates`
+  is §2's one pure seat (the admission table, the side rule, the whole-residual amount, the lines);
+  `ResolutionMachine` proposes, approves, rejects and withdraws, each one transaction in §9's
+  order; the four doors are `RECONCILIATION_RESOLVE`'s, the proposal keyed per principal with the
+  shape screened before the claim and the stored receipt carrying no narrative; the evidence
+  writer withdraws a pending proposal and rejects its ledger half (§9's first row, produced);
+  `MerchantPayable.reconciliationAttributed` and the statement's `RECONCILIATION_ATTRIBUTION`
+  read by origin first. **Deviations and decisions, each recorded:** (a) **every** resolution
+  command takes the source's namespace-4 advisory first, not only the allocating kinds — §9's
+  register fact made uniform (an offset spanning two sources takes both, sorted); (b) the
+  **remainder siblings**: a partial allocation raises `AMOUNT_MISMATCH` on the expectation and
+  ageing later raises `MISSING_EXTERNAL` on the same remainder, so a disposal of an expectation's
+  remainder closes every such sibling with the same resolution (its `break_event` naming it, one
+  `BreakResolved` each — the offset's two-break precedent), and a second live proposal across the
+  siblings is `ResolutionAlreadyProposed` — found during implementation, since otherwise the second
+  break would stand open over a value no person kind could still dispose of; (c) the break's own
+  history records only its terminal edge — the proposal, rejection and withdrawal edges are the
+  resolution's own history (`resolution_event`), one record per act; (d) withdrawal is the
+  proposer's alone (`reconciliation.NotTheProposer`, a code beyond §11's list) and a rejection is
+  never the proposer's (`SelfApprovalRefused`); (e) a manual match's decision, unpark park and
+  entry are named on the resolution at approval (`V007` admits `decision_id` and `park_id` once,
+  like the entry), the candidate must absorb the WHOLE parked value (the rematch rule — a partial
+  unpark never happens; a remainder that moved is `ResolutionStale`), and a settling manual match
+  closes the candidate's open `MISSING_EXTERNAL` by evidence (`P8-TSK-013`'s L1);
+  `RecordAlreadyMatched` maps the pair unique but the pre-checks refuse first, so it is defensive;
+  (f) a break owning more than one open suspense item is refused (`ResolutionKindNotAllowed`: a
+  template disposes of one); (g) the expectation's history gains `RESOLVED` (`V007` regenerates
+  the event list); (h) no bespoke `reconciliation.resolve` span (the `P8-TSK-008` precedent: the
+  request span and the audit trail carry the act) and the meters are `P8-TSK-024`'s. The two
+  recorded questions below are **decided**: no step-up (the ledger's adjustment approval takes
+  none; the step-up debt row is unchanged), and a refused self-approval writes nothing (the
+  `AdjustmentService` precedent — a `DENIED` record would be the destination approval's shape, not
+  this machine's).
 
 
 - Until Phase 8's first task lands, nothing in this ADR is implemented; every statement is the
@@ -662,7 +705,8 @@ stored resolution, ADR-0069's amendment), `INV-REC-06`, `INV-REC-09`, `INV-SET-0
   `proposeOwned`/`approveOwned`/`rejectOwned` confined to `com.finapp.reconciliation` by a static
   rule); the generic door assigns `MANUAL_CORRECTION` server-side with the request shape unchanged.
   The resolution machine that calls the owned methods stays `P8-TSK-015`'s.
-- **Recorded for `P8-TSK-015`'s design, not decided here.**
+- **Recorded for `P8-TSK-015`'s design, not decided here** *(decided at `P8-TSK-015`: no step-up;
+  a refused self-approval writes nothing — the implemented note above)*.
   - Whether proposal and approval take `P4-TSK-007`'s conditional step-up. The ledger's adjustment
     approval does not today, and a sixth caller is the step-up debt row's extraction trigger
     (`CURRENT_STATE.md`).

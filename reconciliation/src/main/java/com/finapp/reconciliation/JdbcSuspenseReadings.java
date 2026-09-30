@@ -109,7 +109,12 @@ public final class JdbcSuspenseReadings implements SuspenseReadings {
                 unitOfWork.prepareStatement(
                         "SELECT journal_entry_id AS entry_id FROM reconciliation.park"
                                 + " UNION"
-                                + " SELECT entry_id FROM reconciliation.suspense_item")) {
+                                + " SELECT entry_id FROM reconciliation.suspense_item"
+                                // An approved resolution's ADJUSTMENT entry (P8-TSK-015,
+                                // ADR-0071 section 6): a known class the moment it posts.
+                                + " UNION"
+                                + " SELECT journal_entry_id FROM reconciliation.resolution"
+                                + " WHERE journal_entry_id IS NOT NULL")) {
             try (ResultSet rows = read.executeQuery()) {
                 List<UUID> entries = new ArrayList<>();
                 while (rows.next()) {

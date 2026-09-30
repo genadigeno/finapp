@@ -1401,11 +1401,16 @@ posting while the payout stays `COMPLETED` (`P8-TSK-019`, which names it `payout
 a reconciliation attribution is every payable line in a `RECONCILIATION`-origin `ADJUSTMENT`
 entry — an approved resolution such as a `TRANSFER_TO_ACCOUNT`, whatever the line faces, suspense
 or a clearing position (`P8-TSK-015`, with its first poster, which names it
-`reconciliationAttributed`); today both fall into
+`reconciliationAttributed`); until each is built it falls into
 `MerchantPayable`'s `other`. If `P8-TSK-019` is deferred (owner decision O6), a returned payout
 reaches the payable only as an attribution. The attribution is ADR-0073 §6's origin rule, widened
 from "an approved `TRANSFER_TO_ACCOUNT` credits it from `SUSPENSE_UNMATCHED`", and its ownership
-settled on `P8-TSK-015`, by the transition's consistency review, A12, A13 and C8.)* No table
+settled on `P8-TSK-015`, by the transition's consistency review, A12, A13 and C8.)* *(Built by
+`P8-TSK-015`: `MerchantPayable.reconciliationAttributed` is the signed term — every payable line
+of an `ADJUSTMENT` entry whose ledger proposal is of origin `RECONCILIATION`, classified before
+any counterparty rule, so a transfer of an OUTBOUND clearing remainder never reads as a capture —
+and the customer statement labels a wallet line of such an entry `RECONCILIATION_ATTRIBUTION` by
+the same rule; `payoutsReturned` stays `P8-TSK-019`'s.)* No table
 stores a merchant balance; every payout decision derives the available payable inside the account
 lock.
 **Why:** A stored payable is a second balance authority (`INV-BAL-01`'s reasoning at the
@@ -1413,7 +1418,9 @@ merchant boundary); two authorities drift, and drift in a liability to a counter
 dispute the books cannot win.
 **Enforce:** `DOMAIN` + schema review — no payable column exists to mutate.
 **Verify:** The payable reconciles against independent SQL over the payment, fee and payout
-records; schema sweep asserts no stored-balance column in `merchant`.
+records; schema sweep asserts no stored-balance column in `merchant`; the resolution suite
+counts an approved transfer to a payable — from suspense and from an OUTBOUND clearing
+remainder — as `reconciliationAttributed`, never `captured` (`P8-TSK-015`).
 **Phase:** 6
 
 ### INV-MER-03 — Fees are deterministic and version-pinned

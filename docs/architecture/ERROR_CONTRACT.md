@@ -604,6 +604,17 @@ recorded.
 | `reconciliation.BreakNotFound` | 404 | No reconciliation break has this identifier. |
 | `reconciliation.BreakTerminal` | 409 | This break is resolved; its case continues on its successor. |
 | `reconciliation.ExpectationNotFound` | 404 | No settlement expectation matches. |
+| `reconciliation.ResolutionNotFound` | 404 | No break resolution has this identifier. |
+| `reconciliation.ResolutionAlreadyProposed` | 409 | This break already carries a live resolution proposal. |
+| `reconciliation.ResolutionNotPending` | 409 | This resolution is no longer pending. |
+| `reconciliation.SelfApprovalRefused` | 409 | A resolution's proposer cannot decide it; a second person must. |
+| `reconciliation.NotTheProposer` | 409 | Only a resolution's proposer withdraws it; another person rejects it. |
+| `reconciliation.ResolutionStale` | 409 | The break's subject changed since the proposal; withdraw and re-propose. |
+| `reconciliation.RecordAlreadyMatched` | 409 | The item is already allocated to the chosen expectation. |
+| `reconciliation.ResolutionKindNotAllowed` | 422 | This resolution kind does not apply to this break. |
+| `reconciliation.ReasonCodeNotAllowed` | 422 | This reason code is not admitted for this resolution kind. |
+| `reconciliation.ResolutionTargetRefused` | 422 | The resolution's target, offset item or chosen candidate is refused. |
+| `reconciliation.GainNotYetEligible` | 422 | The suspense item is not yet old enough to be recognised as a gain. |
 
 The matcher's explanation doors (`P8-TSK-011`, ADR-0068 §7). All three follow the
 `settlement.FileNotFound` departure: every route sits behind
@@ -612,6 +623,8 @@ and an investigator chasing a break is told plainly that the id is wrong — unk
 malformed ids are still ONE answer, and a guessed id records nothing.
 
 The investigator's desk (`P8-TSK-014`, ADR-0069 §7) adds three. `reconciliation.BreakNotFound` and `reconciliation.ExpectationNotFound` are the same departure at the break and expectation doors — and `ExpectationNotFound` also answers a settlement-status query naming a (kind, operation) no expectation tracks, because an operation that settles internally opens none. `reconciliation.BreakTerminal` (409) refuses every case-file write — assignment, note, evidence link, reclassification — to a `RESOLVED` break: the caller holds the permission; the break's own state refuses the act, and the remedy is its successor (`follows_break_id`). The desk's other refusals use the platform's codes: a refused note or link body (a card-number or bank-account shape, an out-of-bounds length, a target that does not exist) is `api.ValidationFailed` with nothing stored and the offending text never echoed; a reclassification onto an occupied (type, subject) seat, or of a break whose resolution is proposed, is `api.Conflict`.
+
+The resolver's doors (`P8-TSK-015`, ADR-0071 §11) add eleven. `reconciliation.ResolutionNotFound` is the `FileNotFound` departure at the resolution doors. The 409s are the machine's own states: `ResolutionAlreadyProposed` (one live proposal per break — and per remainder, across the breaks answering for it), `ResolutionNotPending` (decided already — the same person's retry is not an error, it converges), `SelfApprovalRefused` (the proposer approving or rejecting their own — four-eyes, `INV-REC-03`; nothing written), `NotTheProposer` (a withdrawal is the proposer's; another person rejects), `ResolutionStale` (the remainder or the break's `residual_version` moved since the proposal — ADR-0071 §8; nothing written, the resolution still `PROPOSED`) and `RecordAlreadyMatched` (a manual match colliding with an allocation of the same pair). The 422s are the templates' refusals: a kind the break type's row does not list, a person proposing `EVIDENCED`, or a kind whose lines the subject's side cannot carry (`ResolutionKindNotAllowed`); a reason code outside the kind's subset (`ReasonCodeNotAllowed`); a transfer target that is not an owned `CUSTOMER_WALLET` or `MERCHANT_PAYABLE` in the subject's currency, an offset item that is not the other side's equal, or a candidate the stored snapshot never saw (`ResolutionTargetRefused`); and a gain before the pinned minimum age on the database clock (`GainNotYetEligible`). A malformed narrative or rejection reason (empty, over 1,000 characters, a card-number or bank-account shape) is `api.ValidationFailed`, judged before any claim and never echoed. A transfer target the ledger stopped accepting postings for between proposal and approval fails the approval as `ledger.AccountNotPostable` (409), nothing written; the generic ledger doors refuse a resolution's own proposal as `ledger.AdjustmentOriginMismatch` (409).
 
 ## 3a. Rejection at the boundary
 

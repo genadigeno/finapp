@@ -520,9 +520,15 @@ class MultiRailConservationStormDatabaseTest {
                     // exactly the immutability the records claim; the emptied-register
                     // equivalence is judged over the rest (the storm's own rows are
                     // never allocated - no matcher runs here).
+                    // Since P8-TSK-015 a break or a resolution naming an expectation holds
+                    // it too; their NULLs filtered (NOT IN over a NULL matches nothing).
                     String unheld = " NOT IN (SELECT expectation_id FROM"
                             + " reconciliation.allocation UNION SELECT expectation_id"
-                            + " FROM reconciliation.match_candidate)";
+                            + " FROM reconciliation.match_candidate UNION SELECT"
+                            + " expectation_id FROM reconciliation.break WHERE"
+                            + " expectation_id IS NOT NULL UNION SELECT chosen_expectation_id"
+                            + " FROM reconciliation.resolution WHERE chosen_expectation_id IS"
+                            + " NOT NULL)";
                     execute(root, "DELETE FROM reconciliation.expectation_key WHERE"
                             + " expectation_id" + unheld);
                     execute(root, "DELETE FROM reconciliation.expectation_event WHERE"

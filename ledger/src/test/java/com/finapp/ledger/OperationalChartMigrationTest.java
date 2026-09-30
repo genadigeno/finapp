@@ -37,7 +37,9 @@ class OperationalChartMigrationTest {
                     // P7-TSK-013: the dispute accounts, each with its first poster.
                     "db/migration/ledger/V014__dispute_accounts_join_the_chart.sql",
                     // P8-TSK-009: the counterparties' processing costs, with hop 1's poster.
-                    "db/migration/ledger/V016__processing_costs_joins_the_chart.sql");
+                    "db/migration/ledger/V016__processing_costs_joins_the_chart.sql",
+                    // P8-TSK-015: the resolution's P&L accounts, with their poster.
+                    "db/migration/ledger/V017__reconciliation_losses_and_gains_join_the_chart.sql");
 
     /**
      * The seed's type decisions, pinned as its contract. Changing one is a reclassification of
@@ -62,7 +64,12 @@ class OperationalChartMigrationTest {
                     // recognised at its report's acceptance - growing on the debit side the
                     // recognition debits, a rebate crediting it back.
                     Map.entry(AccountPurpose.PROCESSING_COSTS, AccountType.EXPENSE),
+                    // ADR-0071 section 2 (P8-TSK-015): an approved WRITE_OFF's loss - growing
+                    // on the debit side the write-off debits.
+                    Map.entry(AccountPurpose.RECONCILIATION_LOSSES, AccountType.EXPENSE),
                     Map.entry(AccountPurpose.FEE_REVENUE, AccountType.REVENUE),
+                    // ADR-0070 section 4 (P8-TSK-015): an approved RECOGNISE_GAIN's income.
+                    Map.entry(AccountPurpose.RECONCILIATION_GAINS, AccountType.REVENUE),
                     Map.entry(AccountPurpose.FX_POSITION, AccountType.ASSET),
                     Map.entry(AccountPurpose.ROUNDING_RESIDUAL, AccountType.EXPENSE),
                     Map.entry(AccountPurpose.SUSPENSE_UNMATCHED, AccountType.LIABILITY));
