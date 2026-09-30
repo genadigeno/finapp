@@ -173,14 +173,35 @@ public class ReconciliationBeans {
             com.finapp.payments.WithdrawalStore<Connection> withdrawalStore,
             com.finapp.merchant.MerchantPayoutStore<Connection> merchantPayoutStore,
             com.finapp.payments.SchemeExecutionClaimStore<Connection>
-                    schemeExecutionClaimStore) {
+                    schemeExecutionClaimStore,
+            com.finapp.settlement.SettlementFileStore<Connection> settlementFileStore,
+            com.finapp.settlement.SettlementSources settlementSources,
+            com.finapp.payments.PaymentRails paymentRails) {
         return new JdbcInternalReferenceLookup(
                 paymentAttemptStore,
                 refundStore,
                 disputeStore,
                 withdrawalStore,
                 merchantPayoutStore,
-                schemeExecutionClaimStore);
+                schemeExecutionClaimStore,
+                // A source's rail (P8-TSK-017): its seeded row's code, the compiled descriptor's
+                // settled position, and the ONE declared rail whose clearing purpose that is -
+                // the register composed here, so reconciliation never names a rail.
+                (unitOfWork, sourceId) ->
+                        settlementFileStore.sources(unitOfWork).stream()
+                                .filter(row -> row.id().equals(sourceId))
+                                .findFirst()
+                                .flatMap(row -> settlementSources.byCode(row.code()))
+                                .flatMap(com.finapp.settlement.SettlementSourceDescriptor
+                                        ::settledPosition)
+                                .flatMap(position ->
+                                        paymentRails.declaredIds().stream()
+                                                .filter(rail ->
+                                                        paymentRails.capabilitiesOf(rail)
+                                                                .clearingPurpose()
+                                                                .equals(java.util.Optional.of(
+                                                                        position)))
+                                                .findFirst()));
     }
 
     /**

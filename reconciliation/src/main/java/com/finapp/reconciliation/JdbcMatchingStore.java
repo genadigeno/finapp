@@ -30,7 +30,7 @@ public final class JdbcMatchingStore implements MatchingStore {
 
     private static final String RUN_COLUMNS =
             "id, source_id, batch_id, status, rule_set_id, source_sequence, item_count,"
-                    + " cursor, failures, business_date, correlation_id";
+                    + " cursor, failures, business_date, correlation_id, settlement_cycle";
 
     @Override
     public List<UUID> sourcesWithWork(Connection unitOfWork) {
@@ -90,7 +90,8 @@ public final class JdbcMatchingStore implements MatchingStore {
                 row.getLong("cursor"),
                 row.getInt("failures"),
                 row.getObject("business_date", LocalDate.class),
-                row.getString("correlation_id"));
+                row.getString("correlation_id"),
+                Optional.ofNullable(row.getString("settlement_cycle")));
     }
 
     @Override
@@ -295,7 +296,9 @@ public final class JdbcMatchingStore implements MatchingStore {
             UUID sourceId,
             Collection<UUID> heldAttributions,
             int limit) {
-        record RunFacts(UUID runId, UUID sourceId, UUID ruleSetId, String correlationId) {}
+        record RunFacts(
+                UUID runId, UUID sourceId, UUID ruleSetId, String correlationId,
+                Optional<String> cycle) {}
         Map<UUID, ChunkItemBuilder> builders = new LinkedHashMap<>();
         Map<UUID, RunFacts> facts = new HashMap<>();
         try (PreparedStatement read = unitOfWork.prepareStatement(sql)) {
@@ -315,7 +318,8 @@ public final class JdbcMatchingStore implements MatchingStore {
                                     rows.getObject("run_id", UUID.class),
                                     rows.getObject("source_id", UUID.class),
                                     rows.getObject("rule_set_id", UUID.class),
-                                    rows.getString("correlation_id")));
+                                    rows.getString("correlation_id"),
+                                    Optional.ofNullable(rows.getString("settlement_cycle"))));
                 }
             }
         } catch (SQLException failure) {
@@ -331,7 +335,7 @@ public final class JdbcMatchingStore implements MatchingStore {
                     RunFacts fact = facts.get(builder.id);
                     return new ResidualItem(
                             builder.build(), fact.runId(), fact.sourceId(),
-                            fact.ruleSetId(), fact.correlationId());
+                            fact.ruleSetId(), fact.correlationId(), fact.cycle());
                 })
                 .toList();
     }
@@ -341,7 +345,7 @@ public final class JdbcMatchingStore implements MatchingStore {
                     + " i.position_purpose, i.attributed_source_id, i.currency, i.scale,"
                     + " i.business_date, i.settlement_date, i.value_date,"
                     + " i.canonical_fingerprint, i.run_id, i.source_id, r.source_sequence,"
-                    + " r.rule_set_id, r.correlation_id"
+                    + " r.rule_set_id, r.correlation_id, r.settlement_cycle"
                     + " FROM reconciliation.external_item i"
                     + " JOIN reconciliation.reconciliation_batch r ON r.id = i.run_id";
 
@@ -894,7 +898,7 @@ public final class JdbcMatchingStore implements MatchingStore {
                     unitOfWork.prepareStatement(
                             "SELECT kind, direction, amount_minor, currency, scale,"
                                     + " allocated_minor, resolved_minor, opened_at,"
-                                    + " expected_by, status, operation_ref"
+                                    + " expected_by, status, operation_ref, settlement_cycle"
                                     + " FROM reconciliation.expectation WHERE id = ?"
                                     + " FOR UPDATE")) {
                 read.setObject(1, id);
@@ -925,7 +929,10 @@ public final class JdbcMatchingStore implements MatchingStore {
                                     row.getTimestamp("opened_at").toInstant(),
                                     row.getObject("expected_by", LocalDate.class),
                                     Optional.ofNullable(reachedBy.get(id)),
-                                    row.getString("operation_ref")));
+                                    row.getString("operation_ref"),
+                                    // The cycle the completion announced - frozen on the row
+                                    // (V002's trigger), so the live read IS the snapshot.
+                                    Optional.ofNullable(row.getString("settlement_cycle"))));
                 }
             } catch (SQLException failure) {
                 throw new ReconciliationStorageException(
@@ -1354,6 +1361,25 @@ public final class JdbcMatchingStore implements MatchingStore {
         } catch (SQLException failure) {
             throw new ReconciliationStorageException(
                     "could not read the expectation's amount", failure);
+        }
+    }
+
+    @Override
+    public void recordLearnedCycle(Connection unitOfWork, UUID itemId, String cycle) {
+        try (PreparedStatement update =
+                unitOfWork.prepareStatement(
+                        "UPDATE reconciliation.external_item SET learned_cycle = ?"
+                                + " WHERE id = ? AND learned_cycle IS NULL")) {
+            update.setString(1, cycle);
+            update.setObject(2, itemId);
+            if (update.executeUpdate() != 1) {
+                throw new ReconciliationStorageException(
+                        "item " + itemId + " already learned a cycle under a held lock",
+                        new SQLException("learned_cycle conditional missed"));
+            }
+        } catch (SQLException failure) {
+            throw new ReconciliationStorageException(
+                    "could not record the learned cycle", failure);
         }
     }
 

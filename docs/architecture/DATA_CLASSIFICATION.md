@@ -1254,6 +1254,7 @@ counters and dates of things.
 | `reconciliation_batch` | `created_at` | `INTERNAL` | When the acceptance birthed it |
 | `reconciliation_batch` | `status_changed_at` | `INTERNAL` | When the machine last moved |
 | `reconciliation_batch` | `correlation_id` | `INTERNAL` | The flow's correlation |
+| `reconciliation_batch` | `settlement_cycle` | `INTERNAL` | A scheme report's cycle token, frozen at birth - `expectation.settlement_cycle`'s reasoning, a bucket name (`P8-TSK-017`) |
 | `reconciliation_batch_event` | `seq` | `INTERNAL` | The history's server-assigned order |
 | `reconciliation_batch_event` | `run_id` | `INTERNAL` | The moved run - an identifier of a thing |
 | `reconciliation_batch_event` | `from_status` | `INTERNAL` | The edge's origin, NULL at birth |
@@ -1287,6 +1288,7 @@ counters and dates of things.
 | `external_item` | `status_changed_at` | `INTERNAL` | When the machine last moved |
 | `external_item` | `correlation_id` | `INTERNAL` | The flow's correlation |
 | `external_item` | `attributed_source_id` | `INTERNAL` | A bank item's attributed source - its key scope (`P8-TSK-016`) - an identifier of a thing |
+| `external_item` | `learned_cycle` | `INTERNAL` | The cycle a return learned from the report that allocated it - `expectation.settlement_cycle`'s reasoning (`P8-TSK-017`) |
 | `external_item_event` | `seq` | `INTERNAL` | The history's server-assigned order |
 | `external_item_event` | `item_id` | `INTERNAL` | The moved item - an identifier of a thing |
 | `external_item_event` | `from_status` | `INTERNAL` | The edge's origin, NULL at birth |

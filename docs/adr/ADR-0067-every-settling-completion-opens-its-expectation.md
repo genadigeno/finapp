@@ -539,6 +539,17 @@ transaction).
   evidence in the world (`SettlementAcceptanceDatabaseTest`), the re-derived row substance-equal
   to the live one.
 - `P8-TSK-010`: `DUPLICATE_INTERNAL` raised from recorded collisions.
+- `P8-TSK-017` — **implemented** (2026-09-30): point 5's cycle attribute is compared. The report's
+  cycle token rides on the run (`reconciliation_batch.settlement_cycle`, frozen), and the pure
+  `decide` compares it with the candidate's stored `settlement_cycle`: a shift allocates normally
+  and raises `TIMING_DIFFERENCE` (`CYCLE_MISMATCH`, value 0) — or, when an open `MISSING_EXTERNAL`
+  stands, resolves that break `EVIDENCED` instead (one fact, one break). An expectation without a
+  cycle — a return always, a pay-in or a parking whose cycle went unannounced — has the allocating
+  item record its token in `external_item.learned_cycle`, on the first allocation and on a parked
+  line's re-match alike. Recorded
+  deviation: the cycle is not a tie-breaker between candidates as point 5 says; since payments
+  `V023` a scheme reference reaches one claimant, and two reachable candidates stay
+  `AMBIGUOUS_MATCH`, never settled by a cycle.
 - `P8-TSK-019`: the payout return's expectation through `PayoutSettlementExpectations`, opening
   no key and reached through its operation (point 5), and the return worker that the
   operation-anchored rule waits for (automated returns are owner decision O2, a transition

@@ -280,7 +280,8 @@ public class Matching {
         // a waiting item as a duplicate of itself.
         Optional<MatchEngine.FiredRule> fired = firedRule(resolution, lockedHits);
         MatchEngine.Verdict verdict =
-                MatchEngine.decide(facts(item), fired, resolution.anyLandedRule(), tolerance);
+                MatchEngine.decide(
+                        facts(run, item), fired, resolution.anyLandedRule(), tolerance);
         UUID decisionId = ids.next();
         LocalDate decidedOn = LocalDate.ofInstant(now, ZoneOffset.UTC);
         switch (verdict.kind()) {
@@ -334,9 +335,9 @@ public class Matching {
                     }
                 }
                 InternalReferenceLookup.InternalReference internal =
-                        classifyThroughLookup(unitOfWork, item);
+                        classifyThroughLookup(unitOfWork, run, item);
                 if (internal.classification() == InternalClassification.TERMINAL) {
-                    boolean refund = item.lineType() == ExternalLineType.REFUND;
+                    boolean refund = namesARefund(item, internal);
                     applyDefinitive(
                             unitOfWork, run, item, Optional.empty(), decisionId,
                             decidedOn,
@@ -437,7 +438,9 @@ public class Matching {
         int tolerance = rules.settlementDateToleranceDays(unitOfWork, residual.ruleSetId());
         Optional<MatchEngine.FiredRule> fired = firedRule(resolution, lockedHits);
         MatchEngine.Verdict verdict =
-                MatchEngine.decide(facts(item), fired, resolution.anyLandedRule(), tolerance);
+                MatchEngine.decide(
+                        facts(syntheticRun(residual), item), fired, resolution.anyLandedRule(),
+                        tolerance);
         if (verdict.kind() == MatchEngine.VerdictKind.NO_CANDIDATES
                 && resolution.groupRule().isPresent()) {
             // A waiting item's value-date group, re-judged now a candidate opened after its
@@ -559,6 +562,30 @@ public class Matching {
         store.markItemMatchedFrom(
                 unitOfWork, item.id(), "PARKED", parkedRemainder,
                 SecurityContext.require(), now, correlation);
+        // The cycle observed here as on any allocation (P8-TSK-017, the gate's find): a parked
+        // line re-matched to a completion that announced another cycle is its zero-value
+        // TIMING_DIFFERENCE - unless an open MISSING_EXTERNAL already states the timing, the L1
+        // rule - and one that announced none (a return) learns its run's cycle. The date
+        // deviation alone raises nothing on this path, as P8-TSK-013 built it.
+        boolean overdueStands =
+                overdueBreak.isPresent()
+                        || (!settles
+                                && store.openBreakExistsOn(
+                                        unitOfWork, candidate.expectationId(),
+                                        BreakType.MISSING_EXTERNAL));
+        if (verdict.timing().map(MatchEngine.Verdict.Timing::cycleShift).orElse(false)
+                && !overdueStands) {
+            breaks.raise(
+                    unitOfWork,
+                    newBreak(
+                            syntheticRun(residual), item, BreakType.TIMING_DIFFERENCE,
+                            BreakCause.CYCLE_MISMATCH, BreakRegister.Subject.decision(decisionId),
+                            Money.ofPersisted(0, amount.currency(), amount.scale()),
+                            Optional.empty(), now));
+        }
+        if (residual.runCycle().isPresent() && candidate.settlementCycle().isEmpty()) {
+            store.recordLearnedCycle(unitOfWork, item.id(), residual.runCycle().get());
+        }
         unparks.add(
                 new OffsetIntent(decisionId, suspenseRow, amount, ReleaseCause.UNPARK));
         overdueBreak.ifPresent(
@@ -594,7 +621,8 @@ public class Matching {
                 0L,
                 0,
                 residual.item().businessDate(),
-                residual.correlationId());
+                residual.correlationId(),
+                residual.runCycle());
     }
 
     /**
@@ -644,7 +672,8 @@ public class Matching {
                                                         hit.openedAt(),
                                                         hit.expectedBy(),
                                                         rule.keyKind(),
-                                                        hit.operationRef()))
+                                                        hit.operationRef(),
+                                                        hit.settlementCycle()))
                                         .toList()));
     }
 
@@ -691,7 +720,8 @@ public class Matching {
                                         hit.openedAt(),
                                         hit.expectedBy(),
                                         Optional.empty(),
-                                        hit.operationRef()))
+                                        hit.operationRef(),
+                                        hit.settlementCycle()))
                         .toList();
         return GroupMatch.decide(
                 facts(item), item.groupDate(), rule.expectationKind(), candidates,
@@ -1239,6 +1269,9 @@ public class Matching {
                     case OUR_REF -> ItemKeyKind.OUR_REF;
                     // The bank line's structured reference (`P8-TSK-016`).
                     case REMITTANCE_REF -> ItemKeyKind.REMITTANCE_REF;
+                    // The scheme's reference and our end-to-end reference (`P8-TSK-017`).
+                    case SCHEME_REF -> ItemKeyKind.SCHEME_REF;
+                    case END_TO_END_REF -> ItemKeyKind.END_TO_END_REF;
                     default -> null; // The other sources' kinds arrive with their tasks.
                 };
         return itemKind == null
@@ -1290,7 +1323,8 @@ public class Matching {
                         item.amount(),
                         item.businessDate(),
                         item.settlementDate(),
-                        fingerprintSeen);
+                        fingerprintSeen,
+                        run.settlementCycle());
         // The unlanded cardinalities route before the engine (`P8-TSK-012`): a fee
         // line's value was expensed at acceptance and is JUDGED, never parked - each
         // expensed line checked, a repeated one included; a correction is the
@@ -1482,7 +1516,8 @@ public class Matching {
                             member.openedAt(),
                             member.expectedBy(),
                             member.reachedBy(),
-                            member.operationRef()));
+                            member.operationRef(),
+                            member.settlementCycle()));
             if (status == ExpectationStatus.SETTLED) {
                 ReconciliationEvents.expectationSettled(
                         outbox, unitOfWork, ids, member.expectationId(), member.kind(),
@@ -1638,7 +1673,8 @@ public class Matching {
                         candidate.openedAt(),
                         candidate.expectedBy(),
                         candidate.reachedBy(),
-                        candidate.operationRef()));
+                        candidate.operationRef(),
+                        candidate.settlementCycle()));
         if (status == ExpectationStatus.SETTLED) {
             ReconciliationEvents.expectationSettled(
                     outbox, unitOfWork, ids, candidate.expectationId(), candidate.kind(),
@@ -1695,14 +1731,26 @@ public class Matching {
             breaks.raise(unitOfWork, shortfall);
         }
         if (verdict.timing().isPresent() && !overdueStands) {
+            // A cycle shift names the more specific cause (P8-TSK-017): the report settled the
+            // line in a cycle other than the one the completion announced - the money matched,
+            // only the timing differs. One break per decision either way.
             breaks.raise(
                     unitOfWork,
                     newBreak(
-                            run, item, BreakType.TIMING_DIFFERENCE, BreakCause.LATE_MATCH,
+                            run, item, BreakType.TIMING_DIFFERENCE,
+                            verdict.timing().get().cycleShift()
+                                    ? BreakCause.CYCLE_MISMATCH
+                                    : BreakCause.LATE_MATCH,
                             BreakRegister.Subject.decision(decisionId),
                             Money.ofPersisted(
                                     0, item.amount().currency(), item.amount().scale()),
                             Optional.empty(), now));
+        }
+        // The learned cycle (P8-TSK-017, ADR-0062's follow-up): an expectation that announced no
+        // cycle - a return - learns it from the report that settled it; the item records its
+        // run's cycle, once, in this chunk (V009's every-writer rule beneath).
+        if (run.settlementCycle().isPresent() && candidate.settlementCycle().isEmpty()) {
+            store.recordLearnedCycle(unitOfWork, item.id(), run.settlementCycle().get());
         }
         // The money arrived, late but whole: the overdue break is explained to zero
         // and closes EVIDENCED, the timing already on the decision (INV-SET-03).
@@ -1770,11 +1818,13 @@ public class Matching {
                     Optional.of(
                             Money.ofPersisted(
                                     0, item.amount().currency(), item.amount().scale()));
-        } else if (originalRef != null) {
+        } else if (originalRef != null && item.lineType().originalKeyKind().isPresent()) {
+            // The original by the fee line type's own key (P8-TSK-017): the PSP's fee names a
+            // capture, the scheme's an execution - never one key for every counterparty's fee.
             gross =
                     store.expectationsByKey(
                                     unitOfWork, item.keyScope(run.sourceId()),
-                                    KeyKind.PSP_CAPTURE_REF, originalRef)
+                                    item.lineType().originalKeyKind().get(), originalRef)
                             .stream()
                             .findFirst()
                             .flatMap(id -> store.expectationAmount(unitOfWork, id));
@@ -2166,9 +2216,9 @@ public class Matching {
             Instant now,
             CorrelationId correlation) {
         InternalReferenceLookup.InternalReference internal =
-                classifyThroughLookup(unitOfWork, item);
+                classifyThroughLookup(unitOfWork, run, item);
         if (internal.classification() == InternalClassification.TERMINAL) {
-            boolean refund = item.lineType() == ExternalLineType.REFUND;
+            boolean refund = namesARefund(item, internal);
             applyDefinitive(
                     unitOfWork, run, item, Optional.empty(), decisionId, decidedOn,
                     refund ? BreakType.REFUND_MISMATCH : BreakType.REVERSAL_MISMATCH,
@@ -2186,15 +2236,30 @@ public class Matching {
     /** The lookup's frozen answer over the item's own keys — for typing only, never
      * for allocation (ADR-0068 §1). */
     private InternalReferenceLookup.InternalReference classifyThroughLookup(
-            Connection unitOfWork, MatchingStore.ChunkItem item) {
+            Connection unitOfWork, MatchingStore.RunRow run, MatchingStore.ChunkItem item) {
+        UUID scope = item.keyScope(run.sourceId());
         Map<KeyKind, String> lookupKeys = new java.util.EnumMap<>(KeyKind.class);
         item.keys()
                 .forEach(
                         (kind, value) ->
                                 lookupKeys.put(KeyKind.valueOf(mapToLookup(kind)), value));
+        // The item's key-scope source rides with the subject, so the composition can name the
+        // rail a scheme reference is claimed under (P8-TSK-017) - reconciliation names none.
         return lookup.classify(
                 unitOfWork,
-                new InternalReferenceLookup.LookupSubject(Optional.empty(), lookupKeys));
+                new InternalReferenceLookup.LookupSubject(
+                        Optional.empty(), lookupKeys, Optional.of(scope)));
+    }
+
+    /**
+     * Whether a terminal answer contradicts a refund (`P8-TSK-017`): a {@code REFUND} line, or
+     * any line whose references named a refund - a scheme's {@code DEBIT_OUT} naming a return
+     * the platform concluded {@code FAILED} is a refund's mismatch, never a reversal's.
+     */
+    private static boolean namesARefund(
+            MatchingStore.ChunkItem item, InternalReferenceLookup.InternalReference internal) {
+        return item.lineType() == ExternalLineType.REFUND
+                || internal.subject().equals(Optional.of(InternalSubject.REFUND));
     }
 
     /** The item-side key vocabulary onto the lookup's (the design's D8, inverted). */
@@ -2327,6 +2392,14 @@ public class Matching {
         return new MatchEngine.ItemFacts(
                 item.id(), item.lineType(), item.direction(), item.amount(),
                 item.businessDate(), item.settlementDate(), false);
+    }
+
+    /** The item's facts with its run's cycle — what the cycle comparison reads (`P8-TSK-017`). */
+    private static MatchEngine.ItemFacts facts(
+            MatchingStore.RunRow run, MatchingStore.ChunkItem item) {
+        return new MatchEngine.ItemFacts(
+                item.id(), item.lineType(), item.direction(), item.amount(),
+                item.businessDate(), item.settlementDate(), false, run.settlementCycle());
     }
 
     private UUID positionAccount(Connection unitOfWork, MatchingStore.ChunkItem item) {

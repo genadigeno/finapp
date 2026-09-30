@@ -632,6 +632,13 @@ postings (ADR-0071) move money, each in a transaction that names its break.
   ageing's `MISSING_EXTERNAL` included — answers to one advisory, and the resolution machine's
   sibling closure treats it as `AMOUNT_MISMATCH`'s peer. Recorded minors: a gap raised at |opening|
   keeps that value when a non-stitching fill arrives (nothing re-states a frozen value).
+- `P8-TSK-017` — **implemented** (2026-09-30): `TIMING_DIFFERENCE` gains its second cause,
+  `CYCLE_MISMATCH` (value 0, the deciding chunk, the decision its subject), raised when a matched
+  scheme line's cycle differs from its expectation's announced one — whatever the day deviation,
+  one break per decision — and `LATE_MATCH` only when the deviation alone exceeds the tolerance.
+  The terminal typing reads the
+  internal SUBJECT: a line naming a refund whose operation failed is `REFUND_MISMATCH` whether it
+  arrived as a card `REFUND` or a scheme `DEBIT_OUT` naming a return.
 - `P8-TSK-011` (the definitive classes, errored items, blocked runs), `P8-TSK-012` (`FEE_MISMATCH`,
   `CORRECTION` and the `EVIDENCED` resolution row, reconciliation `V006`, and the first
   `reconciliation.BreakResolved`, for `EVIDENCED`), `P8-TSK-013` (grace, ageing, rematch, severity

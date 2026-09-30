@@ -485,6 +485,24 @@ ceiling), ADR-0046 (no connection across a pull), ADR-0008 (the collector SPI).
   for any LIVE statement (`PARSED` or `ACCEPTED`): the parse's pre-check and settlement `V005`'s
   partial unique answer `CONFLICTING_BATCH`, retained. The statement's continuity facts ride out
   of the parse (`ParsedBatch.StatementFacts`) and are frozen with the parse statement.
+- `P8-TSK-017` — **implemented** (2026-09-30): `SIM_SCHEME_JSON` v1, one JSON object per cycle
+  report (amounts JSON strings, never numbers — a number invites a binary float), frozen by its
+  golden file, its entry codes `CT` and `RT` confined to the adapter. §3 over a structured format:
+  every DECODED string and every number token is held to its member's class and, failing it,
+  screened as free text; an undeclared member's name is free text too; bytes that are not one
+  well-formed object fall back to the conservative stream; the screen's record count is the
+  entries', never the physical lines (a minified report is one line). No class admits an
+  instrument shape — with one exact exception, decided here from a delegated build's find: the
+  end-to-end and our-reference classes also admit the platform's OWN minted reference, a dashless
+  UUIDv7, whose hex holds a card-length digit run about once in sixty (the acquirer reference's
+  precedent: a class admitting its own legitimate digit runs); without it the platform's own
+  references would have been refused at random. A file declaring several cycles is
+  `UNSUPPORTED_FORMAT`. Recorded limits: a scheme reference is bounded at the canonical line's 100
+  characters though payments admits 128, and the cycle token at the reference alphabet though
+  payments admits any 1..64 characters, with no digit run of card length even across single
+  dashes (`CYC-2026-09-26-01`, the simulated scheme's shape, joins ten digits; a date running
+  into a five-digit sequence would join thirteen and be refused — found by the gate as a flaky
+  fixture, the fixture corrected, never the class) — a scheme exceeding any of these needs v2.
 - M8.7: `P8-TSK-021` (pull acquisition, the four credentials, `pull_permit`, source silence, and
   `ProviderTransportGuard` extended to every pull source's URL (point 1); the first deferral
   candidate) and `P8-TSK-022` (readmission, including the attested readmission of an unattested

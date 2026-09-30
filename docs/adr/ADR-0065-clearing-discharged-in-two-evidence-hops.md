@@ -420,7 +420,7 @@ Three designs were weighed at the transition:
     `MATCHED → UNMATCHED` reopening (a bank item of another batch, step 2), the expectations'
     reopening edges, the suspense item's `REPUDIATION` origin (ADR-0070 point 2), the
     `REPUDIATE_BATCH` kind and its batch subject arrive with
-    `P8-TSK-023`'s reconciliation `V010`, after `P8-TSK-022`'s `V009` (renumbered when `P8-TSK-016` took `V008`).
+    `P8-TSK-023`'s reconciliation `V011`, after `P8-TSK-022`'s `V010` (renumbered when `P8-TSK-016` and `P8-TSK-017` took `V008` and `V009`).
 
     *(The remittance rule, the write order, the already-released rule and the migration were
     settled by the Phase 7 → 8 transition's consistency review: A8, A9, A10 and B5.)*
@@ -580,13 +580,26 @@ converted, `INV-MON-04`).
   to `V009` and `V010`); (3) the statement's value date is its closing balance's date (the
   batch's business date), point 6's rule unchanged; (4) point 3's "exactly two posters" holds one
   until `P8-TSK-023` builds the repudiation.
+  `P8-TSK-017` (2026-09-30) shipped HOP 1 for the instant scheme — `SIM_SCHEME_JSON` v1 (settlement
+  `V006`: `CREDIT_IN`, `DEBIT_OUT`, `SCHEME_FEE` and the `SCHEME_REF` and `END_TO_END_REF`
+  references; the provider codes confined to the adapter), one cycle token per file as the batch's
+  `external_batch_ref`, point 2's recognition with the scheme's fees beside the PSP's (the report
+  fees, `SettlementLineType.isReportFee`: DR `PROCESSING_COSTS` / CR the source's declared
+  position, `INSTANT_CLEARING`), the report's transaction lines posting nothing, and the cycle net's
+  `REMITTANCE` discharged by `P8-TSK-016`'s statement against `INSTANT_CLEARING` alone
+  (`INV-RAIL-04`, `INV-SET-05`) — both a net-receivable and a net-payable cycle proven through the
+  bank to `CASH_CONFIRMED`. The accepted batch carries its cycle to the run
+  (`reconciliation_batch.settlement_cycle`, reconciliation `V009`, frozen), never as a line
+  reference. Recorded deviation: the backlog's "Persistence: none new" did not hold — neither the
+  scheme's vocabulary nor `learned_cycle` existed — so settlement `V006` and reconciliation `V009`
+  were added, and the plan renumbered `-022` and `-023` again, to `V010` and `V011`.
 - `P8-TSK-009` (`PROCESSING_COSTS`, acceptance, fee recognition and the remittance expectation),
   `P8-TSK-016` (`CASH_AT_BANK`, attribution, bank recognition, continuity, the cash proof and the
   single-poster rule), `P8-TSK-015` (`RECONCILIATION_LOSSES` and `RECONCILIATION_GAINS` with
   their resolutions), `P8-TSK-017` and `P8-TSK-018` (the scheme's and the payout provider's
   positions discharged the same way), `P8-TSK-007` (the position proof and the completeness
   verifier), `P8-TSK-012` (the fee check), `P8-TSK-023` (repudiation, with reconciliation
-  `V010`), `P8-TST-001` (the proofs and the trial balance in every round of the storm),
+  `V011`), `P8-TST-001` (the proofs and the trial balance in every round of the storm),
   `P8-DOC-001`.
 - **The repudiated report's `REMITTANCE`, now decided** (point 10, step 2). This read "recorded
   for `P8-TSK-023`'s design, not decided here": the paid case needed a rule the item machine did

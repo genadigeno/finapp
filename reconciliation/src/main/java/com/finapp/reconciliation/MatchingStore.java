@@ -33,7 +33,30 @@ public interface MatchingStore {
             long cursor,
             int failures,
             LocalDate businessDate,
-            String correlationId) {}
+            String correlationId,
+            Optional<String> settlementCycle) {
+
+        public RunRow {
+            java.util.Objects.requireNonNull(settlementCycle, "settlementCycle must not be null");
+        }
+
+        /** A run of a source with no cycles — the `P8-TSK-011` shape. */
+        public RunRow(
+                UUID id,
+                UUID sourceId,
+                UUID batchId,
+                RunStatus status,
+                UUID ruleSetId,
+                long sourceSequence,
+                int itemCount,
+                long cursor,
+                int failures,
+                LocalDate businessDate,
+                String correlationId) {
+            this(id, sourceId, batchId, status, ruleSetId, sourceSequence, itemCount, cursor,
+                    failures, businessDate, correlationId, Optional.empty());
+        }
+    }
 
     /** Sources holding a non-terminal {@code BATCH} run — the sweep's worklist. */
     List<UUID> sourcesWithWork(Connection unitOfWork);
@@ -295,6 +318,13 @@ public interface MatchingStore {
     /** The break's staleness counter as stored — frozen onto the resolution it closes. */
     long breakResidualVersion(Connection unitOfWork, UUID breakId);
 
+    /**
+     * Records the cycle a cycle-less expectation learned from this item's report
+     * (`P8-TSK-017`): written once, equal to the item's run's cycle — `V009`'s every-writer rule
+     * refuses a second write and any other value.
+     */
+    void recordLearnedCycle(Connection unitOfWork, UUID itemId, String cycle);
+
     /** The expectation's pinned rule set — the one its own breaks are judged under. */
     UUID expectationRuleSet(Connection unitOfWork, UUID expectationId);
 
@@ -311,7 +341,19 @@ public interface MatchingStore {
     /** One residual item with its run's pinned facts (`P8-TSK-013`). */
     record ResidualItem(
             ChunkItem item, UUID runId, UUID sourceId, UUID ruleSetId,
-            String correlationId) {}
+            String correlationId, Optional<String> runCycle) {
+
+        public ResidualItem {
+            java.util.Objects.requireNonNull(runCycle, "runCycle must not be null");
+        }
+
+        /** A residual of a source with no cycles — the `P8-TSK-013` shape. */
+        public ResidualItem(
+                ChunkItem item, UUID runId, UUID sourceId, UUID ruleSetId,
+                String correlationId) {
+            this(item, runId, sourceId, ruleSetId, correlationId, Optional.empty());
+        }
+    }
 
     /** Sources holding an {@code UNMATCHED} item whose grace has passed (database clock). */
     List<UUID> sourcesWithExpiredGrace(Connection unitOfWork);

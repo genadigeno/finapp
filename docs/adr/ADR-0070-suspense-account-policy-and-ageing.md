@@ -84,7 +84,7 @@ Netting them inside one balance hides two open problems behind one number.
      suspense account and no new owner kind (Alternatives).
    - Every unit of value in it belongs to a `reconciliation.suspense_item` (reconciliation `V004`,
      `P8-TSK-010`): `break_id NOT NULL`, `external_item_id UNIQUE NULL`, `origin` (`RECON_PARK` |
-     `BANK_UNATTRIBUTED` | `UNMATCHED_CONFIRMATION`; `REPUDIATION` added by reconciliation `V010`,
+     `BANK_UNATTRIBUTED` | `UNMATCHED_CONFIRMATION`; `REPUDIATION` added by reconciliation `V011`,
      `P8-TSK-023`), `origin_ref UNIQUE`, `side` (CREDIT | DEBIT), the ADR-0003 money triple,
      `released_minor`, `status`, `opened_on`, `entry_id`.
    - Its machine is `OPEN → PARTIALLY_RELEASED → RELEASED` (terminal), with
@@ -109,7 +109,7 @@ Netting them inside one balance hides two open problems behind one number.
 
    *(The fourth opener was named by the Phase 7 → 8 transition's re-check, R3: point 10 already
    opened this item, while the list said "three openers, and no fourth". Its enum value arrives
-   with reconciliation `V010`, not `V004`, which creates the three others.)*
+   with reconciliation `V011`, not `V004`, which creates the three others.)*
 
    - **`opened_on` comes from stored data and never restarts.** It is the date the value entered
      suspense: the park row's `decided_on` (stamped once), the batch's `accepted_on`, the
@@ -601,7 +601,7 @@ Constraints this decision must preserve:
   first `TRANSFER_TO_ACCOUNT`), `P8-TSK-016` (bank recognition's unattributed lines), `P8-TSK-019`
   (the payout return's fallback through suspense), `P8-TSK-020` (the unmatched confirmation
   adopted; the payments gauges' descriptions), `P8-TSK-023` (repudiation's reach into suspense and
-  its `REPUDIATION` origin, under reconciliation `V010`), `P8-TSK-024` (the suspense
+  its `REPUDIATION` origin, under reconciliation `V011`), `P8-TSK-024` (the suspense
   report, the dashboard row and its alerts), `P8-TST-001` (the suspense proof and ownership in every
   round of the storm), `P8-TST-002` (every exit crossed with every owning type; the gains and losses
   accounts posted only by approvals), `P8-DOC-001`.

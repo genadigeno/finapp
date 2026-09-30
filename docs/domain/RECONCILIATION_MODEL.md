@@ -186,11 +186,15 @@ joins another module's rows. It is keyed on `(journal_entry_id, ledger_account_i
   `DUPLICATE_INTERNAL` it is.
 - **The announced cycle is an attribute, not a key** (ADR-0067 §5). The settlement cycle a pay-in's
   confirmation announced, or a withdrawal stored, is a column of the expectation row (reconciliation
-  `V002`): a matching tie-breaker (a different cycle is `TIMING_DIFFERENCE`) and a report
-  dimension, never an `expectation_key` kind, because one cycle names many operations. *(The Phase
-  7 → 8 transition's consistency review, A5.)*
+  `V002`): compared at matching (a different cycle is `TIMING_DIFFERENCE`, cause `CYCLE_MISMATCH`)
+  and a report dimension, never an `expectation_key` kind, because one cycle names many operations.
+  *(The Phase 7 → 8 transition's consistency review, A5. As built by `P8-TSK-017`: the report's
+  cycle token rides on the run, `reconciliation_batch.settlement_cycle`; it is compared, not used
+  to choose between candidates — two reachable candidates stay `AMBIGUOUS_MATCH`.)*
 - **A return's cycle is learned, not stored.** A return keeps no settlement cycle; the scheme's
-  report supplies it, recorded on the item (`learned_cycle`). No payments migration.
+  report supplies it, recorded on the item (`learned_cycle`). No payments migration. *(As built by
+  `P8-TSK-017`, reconciliation `V009`: written once by the allocating chunk, only equal to the
+  run's cycle and never at birth, for every writer.)*
 - **A payout return is a merchant fact** (ADR-0073), applied from settlement evidence by
   `PayoutReturnSchedule` through `merchant.PayoutReturns.apply`, which finds the payout through its
   stored provider reference, posts `merchant-payout-return:<payoutId>`, then records the return
@@ -262,7 +266,7 @@ allocation is explainable from rows alone.
 | | `COUNTERPARTY_ADJUSTMENT` | `ORIGINAL_REF` | the original's remainder, or the original item's parked excess | `CORRECTION` |
 | Scheme | `CREDIT_IN` | `SCHEME_REF`, then `END_TO_END_REF` | `PUSH_PAY_IN` or `UNMATCHED_CONFIRMATION` | `ONE_TO_ONE` |
 | | `DEBIT_OUT` | `SCHEME_REF`, then `END_TO_END_REF`, then `OUR_REF` | `PUSH_WITHDRAWAL` or `PUSH_RETURN` | `ONE_TO_ONE` |
-| | `SCHEME_FEE` | — | — | `CHECK` |
+| | `SCHEME_FEE` | `ORIGINAL_REF` → the execution, by its `SCHEME_REF` *(`P8-TSK-017`)* | — | `CHECK` |
 | Payout | `PAYOUT_EXECUTED` | `PAYOUT_PROVIDER_REF`, then `OUR_REF` (`pyo-…`) | `MERCHANT_PAYOUT` | `ONE_TO_ONE` |
 | | `PAYOUT_RETURNED` | **Operation-anchored, never key-matched**: `PAYOUT_PROVIDER_REF`, then `OUR_REF`, name the payout's operation through its `MERCHANT_PAYOUT` expectation's key, and the item is allocated to that operation's `PAYOUT_RETURN` (`UNIQUE (kind, operation_ref)`) once the return worker has applied it; until then it waits `UNMATCHED`, no break raised by the matcher | `PAYOUT_RETURN` | `ONE_TO_ONE` |
 | Bank | `BANK_CREDIT`, `BANK_DEBIT` (attributed) | `REMITTANCE_REF`, then the value date | `REMITTANCE` of the attributed position | `ONE_TO_ONE`, then `GROUP_BY_VALUE_DATE` |
@@ -288,7 +292,8 @@ A pay-in's claim is taken at `EXECUTED`, a withdrawal's or return's at `COMPLETE
 line for an operation still in flight has no claim yet: a scheme reference no claim holds names no
 completed execution — after grace it types `MISSING_INTERNAL` when its other references name an
 operation still in flight, and `UNKNOWN_EXTERNAL` otherwise. The claim types; the expectation's
-keys allocate.
+keys allocate. *(As built by `P8-TSK-017`: the lookup is handed the item's key scope, and `app`
+answers the rail as the one whose declared clearing purpose is that source's settled position.)*
 
 ### 6.2 The decision
 
@@ -374,7 +379,7 @@ resolution or repudiation — committed matches stand as history.
 
 1. **Decision replay** re-runs `decide` over every stored decision's candidate snapshot under its
    pinned rule set and compares outcome and allocations. It appends a `reconciliation.run_replay`
-   verdict (reconciliation `V009`, `P8-TSK-022`) — `IDENTICAL` or `DIVERGED` — and writes nothing
+   verdict (reconciliation `V010`, `P8-TSK-022`) — `IDENTICAL` or `DIVERGED` — and writes nothing
    else; `DIVERGED` raises a CRITICAL
    `PROCESSING_ERROR`. An item whose rematch is merely pending is reported `PENDING_REMATCH`, not as
    divergence.
@@ -483,7 +488,7 @@ posters, and no others:
 | `RECON_PARK` | A match decision, the grace leg or a rematch parks an item's remainder | the item's break |
 | `BANK_UNATTRIBUTED` | Bank recognition meets a line no source's pattern attributes | `UNKNOWN_EXTERNAL`, cause `BANK_LINE_UNATTRIBUTED` |
 | `UNMATCHED_CONFIRMATION` | Phase 7's unmatched pay-in confirmation, through the port; existing rows adopted by an idempotent backfill. The item keys on the parking's stored facts (payments `V023`): `named_reference`, `settlement_cycle`, `cause` and, exactly when attributed, `attempt_id` | `UNKNOWN_EXTERNAL`, cause `PARKED_ON_RECEIPT` |
-| `REPUDIATION` | An approved `REPUDIATE_BATCH`, in its approval transaction, meets a `BANK_UNATTRIBUTED` item a posting resolution had already released: the recognition's reversal (`ReversalService`, scope `ledger.reverse`, key `settlement-batch:<batchId>`) still carries that item's suspense line, which opens a new item of the opposite side. `origin_ref` is the released item's id — an item is repudiated once — and the item opens on the reversal entry's posting date. The origin is admitted by `P8-TSK-023`'s reconciliation `V010` | a new `PROCESSING_ERROR`, raised in the same transaction |
+| `REPUDIATION` | An approved `REPUDIATE_BATCH`, in its approval transaction, meets a `BANK_UNATTRIBUTED` item a posting resolution had already released: the recognition's reversal (`ReversalService`, scope `ledger.reverse`, key `settlement-batch:<batchId>`) still carries that item's suspense line, which opens a new item of the opposite side. `origin_ref` is the released item's id — an item is repudiated once — and the item opens on the reversal entry's posting date. The origin is admitted by `P8-TSK-023`'s reconciliation `V011` | a new `PROCESSING_ERROR`, raised in the same transaction |
 
 *(The Phase 7 → 8 transition's re-check, R3: the table had named three posters, while ADR-0070
 point 10 already had a repudiation open an item for value a resolution had released.)*
@@ -617,7 +622,7 @@ removes an expectation's remainder moves it to `RESOLVED_BY_ADJUSTMENT`. `RECONC
   is then re-presented and accepted normally, or readmitted when it was itself rejected
   `CONFLICTING_BATCH` against the repudiated batch (§3). These states, the `MATCHED → UNMATCHED`
   reopening, the `REPUDIATION` suspense origin and the `REPUDIATE_BATCH` kind arrive with
-  `P8-TSK-023`'s reconciliation `V010`. *(The Phase 7 → 8 transition's consistency review, A8, A9
+  `P8-TSK-023`'s reconciliation `V011`. *(The Phase 7 → 8 transition's consistency review, A8, A9
   and A11; its re-check, R3.)*
 - **Who.** `RECONCILIATION_RESOLVE` is held by `RECONCILIATION_OPERATOR`; `RECONCILIATION_ADMINISTER`
   — rule sets, reprocessing, requeue, readmission, backfill — by `RECONCILIATION_CONTROLLER`. The

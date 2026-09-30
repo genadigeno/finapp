@@ -33,7 +33,7 @@ public enum ResolutionReasonCode {
         return sqlValueList(java.util.EnumSet.allOf(ResolutionReasonCode.class));
     }
 
-    /** The codes `V007` admits: every code but the repudiation's (`V010`, `-023`). */
+    /** The codes `V007` admits: every code but the repudiation's (`V011`, `-023`). */
     public static java.util.Set<ResolutionReasonCode> admittedByV007() {
         return java.util.EnumSet.complementOf(java.util.EnumSet.of(EVIDENCE_REPUDIATED));
     }

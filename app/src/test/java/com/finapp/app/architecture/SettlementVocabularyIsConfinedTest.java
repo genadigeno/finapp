@@ -25,8 +25,9 @@ import org.junit.jupiter.api.Test;
  * the platform says {@code CAPTURE} — and the mapping lives in exactly one package,
  * {@code com.finapp.settlement.format.<format>}, so core settlement and reconciliation code
  * can never branch on a provider's word, and `-016`…`-018`'s formats arrive additively (the
- * simulated bank's record tags, `P8-TSK-016`, are the second adapter's words, each adapter held
- * to declaring its own).
+ * simulated bank's record tags, `P8-TSK-016`, are the second adapter's words, and the simulated
+ * instant scheme's entry codes, `P8-TSK-017`, the third's — each adapter held to declaring its
+ * own).
  *
  * <p>The {@code RailVocabularyIsConfinedTest} mechanism: comment-stripped whole string
  * literals for the words, comment-and-literal-stripped code for the adapter type, each with
@@ -38,9 +39,10 @@ import org.junit.jupiter.api.Test;
 class SettlementVocabularyIsConfinedTest {
 
     /**
-     * Each adapter's own words, by adapter type: SIM_PSP_CSV v1's provider types, and
-     * SIM_STATEMENT_TAGGED v1's record tags (`P8-TSK-016`). Per adapter, so the non-vacuity guard
-     * holds for each one — a second adapter's words can never stand in for a first's.
+     * Each adapter's own words, by adapter type: SIM_PSP_CSV v1's provider types,
+     * SIM_STATEMENT_TAGGED v1's record tags (`P8-TSK-016`), and SIM_SCHEME_JSON v1's entry codes
+     * (`P8-TSK-017`). Per adapter, so the non-vacuity guard holds for each one — a second
+     * adapter's words can never stand in for a first's.
      */
     private static final Map<String, Set<String>> PROVIDER_WORDS_BY_ADAPTER =
             Map.of(
@@ -48,7 +50,9 @@ class SettlementVocabularyIsConfinedTest {
                     Set.of("SALE", "REFUND", "CHARGEBACK", "CB_REVERSAL", "DISPUTE_FEE",
                             "ADJUSTMENT"),
                     "SimStatementTaggedFormat",
-                    Set.of(":20:", ":25:", ":28C:", ":60F:", ":61:", ":86:", ":62F:"));
+                    Set.of(":20:", ":25:", ":28C:", ":60F:", ":61:", ":86:", ":62F:"),
+                    "SimSchemeJsonFormat",
+                    Set.of("CT", "RT"));
 
     /** Every adapter's words together — none may appear as a literal outside the adapters. */
     private static final Set<String> PROVIDER_WORDS =
@@ -58,7 +62,7 @@ class SettlementVocabularyIsConfinedTest {
 
     /** Each adapter type, confined to its own package and the composition root. */
     private static final Set<String> ADAPTER_TYPES =
-            Set.of("SimPspCsvFormat", "SimStatementTaggedFormat");
+            Set.of("SimPspCsvFormat", "SimStatementTaggedFormat", "SimSchemeJsonFormat");
 
     /** The composition root may bind an adapter; nothing else outside its package may. */
     private static final Set<String> CONFIGURATION_FILES = Set.of("SettlementBeans.java");
@@ -165,11 +169,19 @@ class SettlementVocabularyIsConfinedTest {
                 stringLiteralsOf("if (record.startsWith(\":61:\")) { bankLine(); }").split("\n");
         assertThat(plantedTag).contains(":61:");
         assertThat(PROVIDER_WORDS).contains(":61:");
+        // The planted scheme-code leak (P8-TSK-017): core code branching on the scheme's credit
+        // transfer code instead of the canonical line type - a word the scan knows.
+        String[] plantedCode =
+                stringLiteralsOf("if (entry.code().equals(\"CT\")) { creditIn(); }").split("\n");
+        assertThat(plantedCode).contains("CT");
+        assertThat(PROVIDER_WORDS).contains("CT", "RT");
         // The planted adapter types outside com.finapp.settlement.format.<format>.
         assertThat(codeOf("Object format = SimPspCsvFormat.INSTANCE;"))
                 .contains("SimPspCsvFormat");
         assertThat(codeOf("SettlementFormat format = new SimStatementTaggedFormat(accounts);"))
                 .contains("SimStatementTaggedFormat");
+        assertThat(codeOf("SettlementFormat format = SimSchemeJsonFormat.INSTANCE;"))
+                .contains("SimSchemeJsonFormat");
         // Prose is not a control, and only a WHOLE literal matches a word.
         assertThat(codeOf("// SimPspCsvFormat maps SALE\n/** SimPspCsvFormat */ int x;"))
                 .doesNotContain("SimPspCsvFormat");
@@ -178,6 +190,8 @@ class SettlementVocabularyIsConfinedTest {
         assertThat(stringLiteralsOf("String s = \":61:2026-09-25,C,1.00\"; // :61: in prose")
                         .split("\n"))
                 .doesNotContain(":61:");
+        assertThat(stringLiteralsOf("String s = \"CTRL\"; // CT in prose").split("\n"))
+                .doesNotContain("CT");
     }
 
     // ----------------------------------------------------------------- the shared scanners

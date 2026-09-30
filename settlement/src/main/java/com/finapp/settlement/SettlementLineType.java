@@ -60,11 +60,40 @@ public enum SettlementLineType {
      * The settlement bank's own charge (`P8-TSK-016`): posted DR {@code PROCESSING_COSTS} at the
      * recognition, so its line is checked against the pinned bank fee terms, never allocated.
      */
-    BANK_FEE;
+    BANK_FEE,
+
+    /**
+     * A credit the instant scheme reports settled into the platform in its cycle (`P8-TSK-017`)
+     * — a pay-in's, or a parked execution's — allocating, posting nothing.
+     */
+    CREDIT_IN,
+
+    /** A debit the instant scheme reports settled out of the platform — a withdrawal or return. */
+    DEBIT_OUT,
+
+    /**
+     * The instant scheme's own charge (`P8-TSK-017`) — posted DR {@code PROCESSING_COSTS} at the
+     * report's recognition like the PSP's fee, carrying {@code ORIGINAL_REF} to its entry.
+     */
+    SCHEME_FEE;
 
     /** The report vocabulary `V003` admitted; the bank members arrived with `V005`. */
     public static java.util.Set<SettlementLineType> reportVocabulary() {
         return java.util.EnumSet.range(CAPTURE, OTHER_OUT);
+    }
+
+    /** The vocabulary through the bank statement — what `V005` admitted. */
+    public static java.util.Set<SettlementLineType> bankVocabulary() {
+        return java.util.EnumSet.range(CAPTURE, BANK_FEE);
+    }
+
+    /**
+     * Whether this is a report's own fee — what hop 1's recognition posts, DR
+     * {@code PROCESSING_COSTS} against the source's position (`P8-TSK-009`, `P8-TSK-017`). The
+     * bank's fee is hop 2's ({@code BankRecognition}).
+     */
+    public boolean isReportFee() {
+        return this == PROCESSING_FEE || this == SCHEME_FEE;
     }
 
     /** Whether this is a bank statement's line (`P8-TSK-016`). */
@@ -80,7 +109,7 @@ public enum SettlementLineType {
                 .collect(Collectors.joining(", "));
     }
 
-    /** The whole {@code CHECK} value list (`V005`) — reconciled by the migration test. */
+    /** The whole {@code CHECK} value list (`V006`) — reconciled by the migration test. */
     public static String sqlValueList() {
         return Arrays.stream(values())
                 .map(value -> "'" + value.name() + "'")

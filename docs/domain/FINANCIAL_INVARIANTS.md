@@ -451,6 +451,11 @@ guarantee is documented per rail.
 **Verify:** Lifecycle tests per rail.
 **Phase:** 5, 7, 8
 
+*(Phase 8 on the instant rail, as built by `P8-TSK-017`: a pay-in `EXECUTED`, a withdrawal or
+return `COMPLETED` is the expectation's `PENDING`, the scheme's cycle report its `REPORTED`, and
+only the bank statement's recognition of the cycle's net its `CASH_CONFIRMED` —
+`SchemeCycleCashDatabaseTest` walks all three for a net-receivable and a net-payable cycle.)*
+
 ### INV-SET-02 — Settlement expectations are tracked
 **Statement:** Every operation expected to settle externally creates a tracked expectation
 that ages and alerts when unmet.
@@ -839,7 +844,7 @@ when attributed, `attempt_id` (payments `V023`); a probe bypassing the port caug
 an attributed parking, `ATTEMPT_CONCLUDED` or `AMOUNT_MISMATCH`, names the attempt its value
 belongs to, and its owning break is resolved by a four-eyes `TRANSFER_TO_ACCOUNT` crediting that
 attempt's counterparty, never by a guess. The repudiation is the fourth opener, origin
-`REPUDIATION`, admitted by reconciliation `V010` (`P8-TSK-023`), its `origin_ref` the released
+`REPUDIATION`, admitted by reconciliation `V011` (`P8-TSK-023`), its `origin_ref` the released
 item's id — the transition's re-check, R3.)*
 
 ### INV-REC-10 — Settlement evidence is screened, encrypted, and every content access audited
@@ -1617,6 +1622,11 @@ break unexplainable (`INV-SET-01`, ADR-0059 §4).
 **Verify:** Per-rail posting tests asserting the purpose; the multi-rail storm reconciling each
 clearing position against its own rail's records.
 **Phase:** 7
+
+*(Phase 8's discharge side, as built by `P8-TSK-017`: the scheme's evidence — its report's fees and
+its remittance's cash — reaches only `INSTANT_CLEARING`, the position read from the source's
+declaration; `SETTLEMENT_CLEARING` stands unmoved beside it (`SchemeCycleCashDatabaseTest`, the
+position probe recorded in `MUTATION_TESTING.md` §2).)*
 
 ---
 

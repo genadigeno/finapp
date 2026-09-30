@@ -82,7 +82,8 @@ public interface AcceptedBatchIntake {
             Actor actor,
             Instant at,
             Correlation correlation,
-            Optional<StatementContinuity> statement) {
+            Optional<StatementContinuity> statement,
+            Optional<String> settlementCycle) {
 
         public AcceptedBatch {
             Objects.requireNonNull(batchId, "batchId must not be null");
@@ -99,6 +100,11 @@ public interface AcceptedBatchIntake {
             Objects.requireNonNull(at, "at must not be null");
             Objects.requireNonNull(correlation, "correlation must not be null");
             Objects.requireNonNull(statement, "statement must not be null");
+            Objects.requireNonNull(settlementCycle, "settlementCycle must not be null");
+            if (settlementCycle.isPresent() && statement.isPresent()) {
+                throw new IllegalArgumentException(
+                        "a scheme cycle is a report's (P8-TSK-017), never a statement's");
+            }
             if (sourceSequence < 1) {
                 throw new IllegalArgumentException("a source sequence is 1-based");
             }
@@ -134,7 +140,37 @@ public interface AcceptedBatchIntake {
                     businessDate, valueDate, acceptedOn, sourceSequence,
                     Optional.of(Objects.requireNonNull(remittanceReference,
                             "remittanceReference must not be null")),
-                    net, lines, actor, at, correlation, Optional.empty());
+                    net, lines, actor, at, correlation, Optional.empty(), Optional.empty());
+        }
+
+        /** A statement's or a cycle-less report's acceptance (`P8-TSK-016`'s shape). */
+        public AcceptedBatch(
+                UUID batchId,
+                UUID fileId,
+                UUID sourceId,
+                Optional<AccountPurpose> positionPurpose,
+                LocalDate businessDate,
+                LocalDate valueDate,
+                LocalDate acceptedOn,
+                long sourceSequence,
+                Optional<String> remittanceReference,
+                Money net,
+                List<CanonicalLine> lines,
+                Actor actor,
+                Instant at,
+                Correlation correlation,
+                Optional<StatementContinuity> statement) {
+            this(batchId, fileId, sourceId, positionPurpose, businessDate, valueDate, acceptedOn,
+                    sourceSequence, remittanceReference, net, lines, actor, at, correlation,
+                    statement, Optional.empty());
+        }
+
+        /** A report settling a scheme cycle (`P8-TSK-017`): the cycle token rides with it. */
+        public AcceptedBatch withSettlementCycle(String cycle) {
+            return new AcceptedBatch(
+                    batchId, fileId, sourceId, positionPurpose, businessDate, valueDate,
+                    acceptedOn, sourceSequence, remittanceReference, net, lines, actor, at,
+                    correlation, statement, Optional.of(cycle));
         }
     }
 

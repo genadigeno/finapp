@@ -1,6 +1,6 @@
 # Task History
 
-The per-task completion records that accumulated behind `## Current Task` - 179 "Previously" blocks, newest first, from `P8-TSK-015` back to project initiation. *(`X-TSK-004` is cross-cutting and completed after the Phase 6 → 7 transition, so it stands second, between `P7-TSK-001` and the transition's record - the transition's block moved here by `P7-TSK-001`'s gate, exactly as an earlier form of this note said it would.)*
+The per-task completion records that accumulated behind `## Current Task` - 180 "Previously" blocks, newest first, from `P8-TSK-016` back to project initiation. *(`X-TSK-004` is cross-cutting and completed after the Phase 6 → 7 transition, so it stands second, between `P7-TSK-001` and the transition's record - the transition's block moved here by `P7-TSK-001`'s gate, exactly as an earlier form of this note said it would.)*
 
 **Archive.** These records were moved verbatim out of
 [`CURRENT_STATE.md`](../CURRENT_STATE.md) on 2026-09-20 so that the canonical description of
@@ -14,6 +14,88 @@ Authoritative backlog: [`BACKLOG.md`](../BACKLOG.md)
 ---
 
 ### Previously
+
+**`P8-TSK-016` — The bank statement: cash recognised, remittances matched** — `COMPLETE`
+(2026-09-30). **M8.5, Cash confirmed, `CLOSED` at 1 of 1**: cash now moves on the platform's books
+only on the bank's own statement, against each attributed counterparty's own clearing position;
+the bank's lines discharge the remittances the reports opened, and `CASH_AT_BANK` equals the
+closing balance of an unbroken statement chain — a card capture now reads `CASH_CONFIRMED` over the
+wire (ADR-0065 §3; `INV-SET-06`, `INV-SET-05`, `INV-REC-06`, `INV-RAIL-03`; protected `INV-SET-01`,
+`INV-REC-09`, `INV-PAY-02`, `INV-HIST-02`, `INV-RAIL-04`). **THREE MIGRATIONS, A RECORDED
+DEVIATION**: the backlog's "no settlement or reconciliation migration" did not hold against the
+schema — ledger `V018` (`CASH_AT_BANK`, ASSET, per currency, joining `reconciledPositions()` so a
+`MANUAL` line on cash is refused at both ranks), settlement `V005` (the statement's sequence and
+SIGNED opening and closing on the batch, a batch a report or a statement exactly one, the net their
+difference by `CHECK`, the live statement-sequence unique, the bank line types and `REMITTANCE_REF`,
+attribution a bank credit's or debit's alone, the facts frozen), reconciliation `V008` (the item's
+attribution and nullable position under the position rule, the bank types, keyless value-date
+candidates) — which moved `P8-TSK-022` to `V009` and `P8-TSK-023` to `V010` in the plan, backlog,
+ADRs and javadocs. **THE STATEMENT**: `SIM_STATEMENT_TAGGED` v1, MT940-shaped, golden-filed and
+confined, its reference classes excluding instrument shapes so an IBAN anywhere meets the door's
+screen; a well-shaped `:25:` not the configured opaque reference for the currency rejects the file
+whole `MALFORMED(accountRef)` (decided among the file machine's codes); the references are
+construction-time CONFIDENTIAL configuration. **ATTRIBUTION** at parse: the unique FULL match of
+the compiled patterns, zero or two leaving the line unattributed, written with the append-only
+line. **HOP 2's RECOGNITION** (`BankRecognition`, pure): cash the net on one line, each attributed
+source's clearing position the opposite of its lines' fold, the bank's fees DR `PROCESSING_COSTS`,
+and `SUSPENSE_UNMATCHED` a CREDIT line of the unattributed credits and a DEBIT line of the
+unattributed debits, NEVER netted — so an entry exists whenever an unattributed line does; the
+continuity neighbours read under the source row lock that serialises every acceptance; the
+unattributed lines' `UNKNOWN_EXTERNAL(BANK_LINE_UNATTRIBUTED)` breaks (CRITICAL for a debit) and
+`PENDING → PARKED` in the intake, their `BANK_UNATTRIBUTED` suspense items AFTER the posting through
+the port's new `recognised` call, carrying the entry. **CONTINUITY** (`StatementChain`): a missing
+predecessor or a mis-stitched opening is `STATEMENT_GAP`, a non-zero FIRST opening
+`OPENING_BALANCE` (the lifecycle's taxonomy — the build first had the mis-stitch as an opening
+balance, corrected), both CRITICAL on the statement's run (no subject column: the run names the
+batch — the lifecycle's open note confirmed), never posted around; a gap whose missing statement
+later stitches closes `EVIDENCED` naming that statement (`Resolutions.Evidence` names a decision or
+a filling statement, exactly one; `INV-REC-02` widened with provenance), under the bank source's
+blocking advisory. **THE MATCHER** (built in parallel by a delegated agent, reviewed and corrected):
+keys in the item's scope `COALESCE(attributed_source_id, source_id)`; `REMITTANCE_REF` one-to-one; a
+remittance difference `SETTLEMENT_MISMATCH(REMITTANCE_DIFFERS)`, the expectation's shortfall stamped
+with the EXPECTATION's source and rule set so every break on one remainder answers to one advisory;
+`GROUP_BY_VALUE_DATE` (`GroupMatch`, pure) only when the reference reaches nothing — every untouched
+same-date remittance no other line's key claims, exact total, no subset search, membership re-read
+under the locks; the chunk reads only `PENDING`; the rematch worklist in the attributed scope with a
+group predicate; the bank's fee checked against an explicit zero gross (0.50); the bank legs TRY the
+attributed sources' advisories and skip on refusal (the agent's find: a blocking wait could close a
+cycle with a two-source offset). **THE BUILD'S FINDS, EACH FIXED**: the mis-stitched opening's
+cause; the blocking attributed advisory's latent cycle; the shortfall stamp; a remittance paid in
+two tranches left its first shortfall OPEN over a SETTLED remittance with no disposable holding —
+the settling allocation now closes it `EVIDENCED`; the resolution machine's sibling closure and the
+keyless snapshot read. **APP**: `PositionProof.CashVerdict` in the one snapshot, the positions
+report's trailing `cash` rows (additive; the OpenAPI baseline regenerated, 13 compatible additions,
+none breaking), `finapp.reconciliation.cash.proof{currency}` (0/1, eager, NaN never zero),
+`CashAtBankHasOnePosterTest` (a planted poster in each spelling), the `DATA_CLASSIFICATION` rows and
+a non-column paragraph for the configuration. **DOCUMENTS**: ADR-0065/0066/0068/0069/0070/0072
+implemented notes, the lifecycle document, `RECONCILIATION_MODEL.md`'s bank pair and attribution,
+`INV-SET-05`/`-06`'s and `INV-RAIL-03`'s as-built notes, `DISTRIBUTED_EXECUTION` §3 (the accept leg's
+statement path and the lock order's fourth taker), `MODULE_ARCHITECTURE`, the plan's migration
+table. **SEVEN PROBE RUNS, SEVEN CAUGHT, ONE AFTER A FIX** (`MUTATION_TESTING` §2 +7 rows under
+`INV-SET-05` ×2, `INV-SET-06` ×2, `INV-REC-08`, `INV-REC-09`, `INV-REC-02`): attribution taking the
+first of two; cash posted from a report's recognition; continuity dropped; the group accepting a
+subset — which SURVIVED its first run because the hermetic test's random ids only sometimes put the
+subset first, the test now judging every id ordering (the gate's find); the suspense lines netted;
+the key scope dropped; the last tranche's closure removed — every restore byte-identical (sha256).
+The backlog's fifth probe (the cash proof read under `READ COMMITTED`) was replaced: no test can
+observe an isolation level without a torn read to catch, and a probe no test can catch is not a
+demonstration (recorded). **Multi-instance PASS**: the source row lock serialises acceptances and
+the live statement unique arbitrates for any writer (ten parsers-and-acceptors over competing
+statements produce one statement per sequence, one recognition per batch, a stitched chain whatever
+the order — counted); ten matchers over a bank run decide each line once (counted); the attributed
+sources are tried, never waited on. **RECORDED MINORS**: the rematch key join ignores the key kind
+(pre-existing); a gap's frozen value is not re-stated by a non-stitching fill; `format_id` is tied to
+the source's kind at the domain only; `SettlementExpectationSettled.sourceId` for a bank-settled
+remittance is the bank run's (the convention); an attributed source's try-lock can defer a bank run
+under sustained contention (availability, never money); the needle rides this task's own suite
+rather than `PayByBankDatabaseTest`; in one shared proof-container run the EUR clearing identity
+read unexplained at the end of the cash suite's first case — a standing difference its flow did
+not make (the suite passed alone; the baseline-relative form passes in the shared container, and
+`SettlementAcceptanceDatabaseTest`'s all-positions proof passes after it) — so the suite asserts
+its flow moves that identity by exactly zero, the `P8-TSK-015` precedent, the difference's source
+left for `P8-TST-001`'s storm to pin. **NEXT**: `P8-TSK-017` `READY` (the instant scheme's cycle
+report, opening M8.6). **Verified** by targeted tiers from fresh runs on the final code — settlement hermetic 97 across 14 suites and database 45 across 7 (the golden statement, attribution, `BankRecognition`, `V005`'s rules for every writer, competing statements, acceptance handing the continuity), reconciliation hermetic 101 across 18 and database 89 across 10 (the bank matching suite's eleven ordered cases with the ten-sweeper race, the two tranches and the three-member group; the statement chain at both tiers; `V008`), ledger hermetic 83 across 16 (`V018`'s pins), app hermetic 573 across 107 suites (the single-poster rule, the eager cash gauge, the regenerated baseline and the document guards within), the twelve proof-group app database suites in ONE shared container 62 across 12 (the cash suite's capture to `CASH_CONFIRMED` over the wire, the gap filled, the non-zero opening, the ten racing acceptors and the IBAN needle; the adjustment suite's cash closure at both ranks; the investigation, matcher, opening, suspense, resolution and acceptance proofs, the multi-rail storm, the settlement routes, register and card openers), and the payable and statement suites in their own container 54 across 4, ALL 0 FAILURES — the full battery and the fleet-wide database and kafka tiers deliberately skipped on the owner's
+instruction.
 
 **`P8-TSK-015` — Four-eyes resolution through the ledger** — `COMPLETE`
 (2026-09-30). **M8.4, Investigation and controlled resolution, `CLOSED` at 2 of 2**: a person

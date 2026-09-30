@@ -406,8 +406,7 @@ public final class BatchAcceptance {
                         batch.netScale(),
                         costsAccount,
                         positionAccount.id());
-        return new Recognised(
-                recognition.entryLines(),
+        AcceptedBatchIntake.AcceptedBatch accepted =
                 new AcceptedBatchIntake.AcceptedBatch(
                         batch.id(),
                         file.id(),
@@ -427,7 +426,14 @@ public final class BatchAcceptance {
                         canonicalLines(lines, Map.of()),
                         actor,
                         now,
-                        correlation));
+                        correlation);
+        // A scheme's cycle report settles ONE cycle, and its token is the batch's identity
+        // (settlement V006): it rides to the run, where the matcher compares it with each
+        // matched completion's announced cycle (P8-TSK-017).
+        if (declared.kind() == SourceKind.SCHEME_CYCLE_REPORT) {
+            accepted = accepted.withSettlementCycle(batch.externalBatchRef());
+        }
+        return new Recognised(recognition.entryLines(), accepted);
     }
 
     /**

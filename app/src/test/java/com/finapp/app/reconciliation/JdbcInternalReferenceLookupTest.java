@@ -129,4 +129,31 @@ class JdbcInternalReferenceLookupTest {
                 .isEqualTo(completed);
         assertThat(unknown.classification()).isEqualTo(InternalClassification.UNKNOWN);
     }
+
+    @Test
+    @DisplayName("every claim subject names its operation in reconciliation's words (P8-TSK-017):"
+            + " a claimed RETURN is a refund - the subject the terminal typing reads")
+    void everyClaimSubjectIsNamed() {
+        java.util.Map<com.finapp.payments.SchemeExecutionClaim.Subject,
+                        com.finapp.reconciliation.InternalSubject>
+                expected =
+                        java.util.Map.of(
+                                com.finapp.payments.SchemeExecutionClaim.Subject.PAY_IN,
+                                com.finapp.reconciliation.InternalSubject.PAYMENT_ATTEMPT,
+                                com.finapp.payments.SchemeExecutionClaim.Subject.WITHDRAWAL,
+                                com.finapp.reconciliation.InternalSubject.WITHDRAWAL,
+                                com.finapp.payments.SchemeExecutionClaim.Subject.RETURN,
+                                com.finapp.reconciliation.InternalSubject.REFUND,
+                                com.finapp.payments.SchemeExecutionClaim.Subject.UNMATCHED,
+                                com.finapp.reconciliation.InternalSubject.PARKING);
+        assertThat(expected.keySet())
+                .as("exhaustive: a new claim subject fails here")
+                .containsExactlyInAnyOrder(
+                        com.finapp.payments.SchemeExecutionClaim.Subject.values());
+        expected.forEach(
+                (subject, named) ->
+                        assertThat(JdbcInternalReferenceLookup.subjectOf(subject))
+                                .as("%s", subject)
+                                .isEqualTo(named));
+    }
 }

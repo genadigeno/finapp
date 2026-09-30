@@ -27,7 +27,11 @@ public final class MatchEngine {
 
     private MatchEngine() {}
 
-    /** The item, as the chunk read it — keys resolved by the caller, facts frozen here. */
+    /**
+     * The item, as the chunk read it — keys resolved by the caller, facts frozen here.
+     * {@code cycle} is the scheme cycle its report settles (its run's, `P8-TSK-017`); empty for
+     * every other source.
+     */
     public record ItemFacts(
             UUID itemId,
             ExternalLineType lineType,
@@ -35,7 +39,8 @@ public final class MatchEngine {
             Money amount,
             LocalDate businessDate,
             Optional<LocalDate> settlementDate,
-            boolean fingerprintSeenEarlier) {
+            boolean fingerprintSeenEarlier,
+            Optional<String> cycle) {
 
         public ItemFacts {
             Objects.requireNonNull(itemId, "itemId must not be null");
@@ -44,6 +49,20 @@ public final class MatchEngine {
             Objects.requireNonNull(amount, "amount must not be null");
             Objects.requireNonNull(businessDate, "businessDate must not be null");
             Objects.requireNonNull(settlementDate, "settlementDate must not be null");
+            Objects.requireNonNull(cycle, "cycle must not be null");
+        }
+
+        /** An item of a source with no cycles — the `P8-TSK-011` shape. */
+        public ItemFacts(
+                UUID itemId,
+                ExternalLineType lineType,
+                ExpectationDirection direction,
+                Money amount,
+                LocalDate businessDate,
+                Optional<LocalDate> settlementDate,
+                boolean fingerprintSeenEarlier) {
+            this(itemId, lineType, direction, amount, businessDate, settlementDate,
+                    fingerprintSeenEarlier, Optional.empty());
         }
 
         /** The date timing judges: the counterparty's settlement day, else the business day. */
@@ -56,7 +75,9 @@ public final class MatchEngine {
      * One expectation a key reached, snapshotted under the chunk's lock. {@code reachedBy} is
      * empty exactly for a value-date group's candidate (`P8-TSK-016`, {@link GroupMatch}): it
      * was reached by its date, never by a key, and its snapshot row carries no key kind
-     * (`V008`).
+     * (`V008`). {@code settlementCycle} is the cycle the completion ANNOUNCED — the
+     * expectation's attribute, never a key (ADR-0067 §5, `P8-TSK-017`); empty when it announced
+     * none (a return, every card stage).
      */
     public record HitFacts(
             UUID expectationId,
@@ -67,7 +88,8 @@ public final class MatchEngine {
             Instant openedAt,
             LocalDate expectedBy,
             Optional<KeyKind> reachedBy,
-            String operationRef) {
+            String operationRef,
+            Optional<String> settlementCycle) {
 
         public HitFacts {
             Objects.requireNonNull(expectationId, "expectationId must not be null");
@@ -78,6 +100,22 @@ public final class MatchEngine {
             Objects.requireNonNull(expectedBy, "expectedBy must not be null");
             Objects.requireNonNull(reachedBy, "reachedBy must not be null");
             Objects.requireNonNull(operationRef, "operationRef must not be null");
+            Objects.requireNonNull(settlementCycle, "settlementCycle must not be null");
+        }
+
+        /** A hit that announced no cycle — the `P8-TSK-016` shape. */
+        public HitFacts(
+                UUID expectationId,
+                ExpectationKind kind,
+                ExpectationDirection direction,
+                Money amount,
+                long remainderMinor,
+                Instant openedAt,
+                LocalDate expectedBy,
+                Optional<KeyKind> reachedBy,
+                String operationRef) {
+            this(expectationId, kind, direction, amount, remainderMinor, openedAt, expectedBy,
+                    reachedBy, operationRef, Optional.empty());
         }
 
         /** A key's hit — the `P8-TSK-011` shape. */
@@ -142,7 +180,19 @@ public final class MatchEngine {
             Optional<Money> underRemainder,
             Optional<Timing> timing) {
 
-        public record Timing(int deviationDays, int toleranceDays) {}
+        /**
+         * A match's timing observation: the date deviation beyond its tolerance, and/or a cycle
+         * shift — the report settled the line in a cycle other than the one the completion
+         * announced (`P8-TSK-017`). Either is a zero-value {@code TIMING_DIFFERENCE}, never a
+         * refusal; the shift names the more specific cause.
+         */
+        public record Timing(int deviationDays, int toleranceDays, boolean cycleShift) {
+
+            /** A date deviation alone — the `P8-TSK-011` shape. */
+            public Timing(int deviationDays, int toleranceDays) {
+                this(deviationDays, toleranceDays, false);
+            }
+        }
     }
 
     /**
@@ -249,11 +299,19 @@ public final class MatchEngine {
         long deviation =
                 java.time.temporal.ChronoUnit.DAYS.between(
                         candidate.expectedBy(), item.effectiveSettlementDate());
+        // The cycle comparison (ADR-0067 §5, `P8-TSK-017`): the report's cycle against the one
+        // the completion announced - only when both exist; a return announced none, so it
+        // LEARNS its cycle instead (the caller's write), and a card stage has none at all.
+        boolean cycleShift =
+                item.cycle().isPresent()
+                        && candidate.settlementCycle().isPresent()
+                        && !item.cycle().get().equals(candidate.settlementCycle().get());
         Optional<Verdict.Timing> timing =
-                deviation > settlementDateToleranceDays
+                deviation > settlementDateToleranceDays || cycleShift
                         ? Optional.of(
                                 new Verdict.Timing(
-                                        (int) deviation, settlementDateToleranceDays))
+                                        (int) deviation, settlementDateToleranceDays,
+                                        cycleShift))
                         : Optional.empty();
 
         return new Verdict(

@@ -37,11 +37,25 @@ public enum LineReferenceKind {
      * attribution normalises the line by, and what the matcher reaches the attributed
      * counterparty's {@code REMITTANCE} by. Never a name or an account identifier.
      */
-    REMITTANCE_REF;
+    REMITTANCE_REF,
+
+    /**
+     * The instant scheme's own reference for an execution (`P8-TSK-017`) — the key its
+     * {@code payments.scheme_execution_claim} gives exactly one subject.
+     */
+    SCHEME_REF,
+
+    /** The end-to-end reference the platform gave a push execution, echoed by the scheme. */
+    END_TO_END_REF;
 
     /** The report vocabulary `V003` admitted; {@code REMITTANCE_REF} arrived with `V005`. */
     public static java.util.Set<LineReferenceKind> reportVocabulary() {
         return java.util.EnumSet.range(PSP_CAPTURE_REF, ORIGINAL_REF);
+    }
+
+    /** The vocabulary through the bank statement — what `V005` admitted. */
+    public static java.util.Set<LineReferenceKind> bankVocabulary() {
+        return java.util.EnumSet.range(PSP_CAPTURE_REF, REMITTANCE_REF);
     }
 
     /** A subset's {@code CHECK} value list, in declaration order. */
@@ -52,7 +66,7 @@ public enum LineReferenceKind {
                 .collect(Collectors.joining(", "));
     }
 
-    /** The whole {@code CHECK} value list (`V005`) — reconciled by the migration test. */
+    /** The whole {@code CHECK} value list (`V006`) — reconciled by the migration test. */
     public static String sqlValueList() {
         return Arrays.stream(values())
                 .map(value -> "'" + value.name() + "'")

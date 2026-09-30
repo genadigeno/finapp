@@ -4,6 +4,7 @@ import java.sql.Connection;
 import java.util.Map;
 import java.util.Objects;
 import java.util.Optional;
+import java.util.UUID;
 
 /**
  * What the platform's own records say about an external subject's references
@@ -27,26 +28,50 @@ public interface InternalReferenceLookup {
      *     needs it; empty for the card PSP's references (payments' {@code RailId} is not
      *     this module's to name, so it rides as its string value)
      * @param references the item's typed keys, as stored
+     * @param scopeSourceId the item's key-scope source (`P8-TSK-017`) — what the composition
+     *     reads a rail off when {@code rail} is empty: the matcher names no rail, the source
+     *     register composed in {@code app} does
      */
-    record LookupSubject(Optional<String> rail, Map<KeyKind, String> references) {
+    record LookupSubject(
+            Optional<String> rail, Map<KeyKind, String> references, Optional<UUID> scopeSourceId) {
 
         public LookupSubject {
             Objects.requireNonNull(rail, "rail must not be null");
             Objects.requireNonNull(references, "references must not be null");
+            Objects.requireNonNull(scopeSourceId, "scopeSourceId must not be null");
             references = Map.copyOf(references);
+        }
+
+        /** A subject naming its rail, or none — the `P8-TSK-010` shape. */
+        public LookupSubject(Optional<String> rail, Map<KeyKind, String> references) {
+            this(rail, references, Optional.empty());
         }
     }
 
-    /** The frozen answer: classification, and the strongest hit's own identifiers. */
+    /**
+     * The frozen answer: classification, the strongest hit's own identifiers, and — since
+     * `P8-TSK-017` — WHAT it found, so a terminal refund is typed a refund's mismatch whatever
+     * line named it.
+     */
     record InternalReference(
             InternalClassification classification,
             Optional<String> operationRef,
-            Optional<String> state) {
+            Optional<String> state,
+            Optional<InternalSubject> subject) {
 
         public InternalReference {
             Objects.requireNonNull(classification, "classification must not be null");
             Objects.requireNonNull(operationRef, "operationRef must not be null");
             Objects.requireNonNull(state, "state must not be null");
+            Objects.requireNonNull(subject, "subject must not be null");
+        }
+
+        /** An answer that does not say what it found — the `P8-TSK-010` shape. */
+        public InternalReference(
+                InternalClassification classification,
+                Optional<String> operationRef,
+                Optional<String> state) {
+            this(classification, operationRef, state, Optional.empty());
         }
 
         public static InternalReference unknown() {

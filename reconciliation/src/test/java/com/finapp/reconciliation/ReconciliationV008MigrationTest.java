@@ -55,13 +55,16 @@ class ReconciliationV008MigrationTest {
         assertThat(sql)
                 .contains(normalized(
                         "ADD CONSTRAINT external_item_line_type CHECK (line_type IN ("
-                                + ExternalLineType.sqlValueList() + "))"))
+                                + ExternalLineType.sqlValueList(ExternalLineType.bankVocabulary())
+                                + "))"))
                 .contains(normalized(
                         "ADD CONSTRAINT external_item_key_kind CHECK (key_kind IN ("
-                                + ItemKeyKind.sqlValueList() + "))"));
+                                + ItemKeyKind.sqlValueList(ItemKeyKind.bankVocabulary()) + "))"));
 
-        assertThat(EnumSet.complementOf(
-                        EnumSet.copyOf(ExternalLineType.reportVocabulary())))
+        java.util.Set<ExternalLineType> bankMembers =
+                EnumSet.copyOf(ExternalLineType.bankVocabulary());
+        bankMembers.removeAll(ExternalLineType.reportVocabulary());
+        assertThat(bankMembers)
                 .containsExactlyInAnyOrder(
                         ExternalLineType.BANK_CREDIT,
                         ExternalLineType.BANK_DEBIT,
@@ -75,8 +78,9 @@ class ReconciliationV008MigrationTest {
         assertThat(ExternalLineType.BANK_FEE.allocating())
                 .as("a bank fee's effect IS the recognition's PROCESSING_COSTS line")
                 .isFalse();
-        assertThat(EnumSet.complementOf(EnumSet.copyOf(ItemKeyKind.reportVocabulary())))
-                .containsExactly(ItemKeyKind.REMITTANCE_REF);
+        java.util.Set<ItemKeyKind> bankKeys = EnumSet.copyOf(ItemKeyKind.bankVocabulary());
+        bankKeys.removeAll(ItemKeyKind.reportVocabulary());
+        assertThat(bankKeys).containsExactly(ItemKeyKind.REMITTANCE_REF);
     }
 
     @Test

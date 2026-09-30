@@ -13,7 +13,8 @@ import java.util.stream.Collectors;
  * `INV-REC-06`): a {@code PROCESSING_FEE} line's effect IS the recognition entry, so it
  * never allocates against an expectation and never enters the position identity's items
  * term — it takes the {@code CHECKED} path at matching. A {@code BANK_FEE} is the same fact at
- * the bank (`P8-TSK-016`: posted DR {@code PROCESSING_COSTS} at the statement's recognition).
+ * the bank (`P8-TSK-016`: posted DR {@code PROCESSING_COSTS} at the statement's recognition), and a
+ * {@code SCHEME_FEE} the same fact in the instant scheme's cycle report (`P8-TSK-017`).
  * Everything else asserts value already in the position and allocates.
  */
 public enum ExternalLineType {
@@ -28,11 +29,27 @@ public enum ExternalLineType {
     OTHER_OUT,
     BANK_CREDIT,
     BANK_DEBIT,
-    BANK_FEE;
+    BANK_FEE,
+    CREDIT_IN,
+    DEBIT_OUT,
+    SCHEME_FEE;
 
     /** Whether this line claims value in the position — false exactly for the fees. */
     public boolean allocating() {
-        return this != PROCESSING_FEE && this != BANK_FEE;
+        return this != PROCESSING_FEE && this != BANK_FEE && this != SCHEME_FEE;
+    }
+
+    /**
+     * The key a report fee's {@code ORIGINAL_REF} reaches its transaction's expectation by
+     * (`P8-TSK-017`): the PSP's fee names a capture, the scheme's an execution. Empty for every
+     * other line — the bank's fee has no original (it is judged against a zero gross).
+     */
+    public java.util.Optional<KeyKind> originalKeyKind() {
+        return switch (this) {
+            case PROCESSING_FEE -> java.util.Optional.of(KeyKind.PSP_CAPTURE_REF);
+            case SCHEME_FEE -> java.util.Optional.of(KeyKind.SCHEME_REF);
+            default -> java.util.Optional.empty();
+        };
     }
 
     /** Whether this is a bank statement's line (`P8-TSK-016`). */
@@ -45,6 +62,11 @@ public enum ExternalLineType {
         return java.util.EnumSet.range(CAPTURE, OTHER_OUT);
     }
 
+    /** The vocabulary through the bank statement — what `V008` admitted. */
+    public static java.util.Set<ExternalLineType> bankVocabulary() {
+        return java.util.EnumSet.range(CAPTURE, BANK_FEE);
+    }
+
     /** A subset's {@code CHECK} value list, in declaration order. */
     public static String sqlValueList(java.util.Set<ExternalLineType> members) {
         return Arrays.stream(values())
@@ -53,7 +75,7 @@ public enum ExternalLineType {
                 .collect(Collectors.joining(", "));
     }
 
-    /** The whole {@code CHECK} value list (`V008`) — reconciled by the migration test. */
+    /** The whole {@code CHECK} value list (`V009`) — reconciled by the migration test. */
     public static String sqlValueList() {
         return Arrays.stream(values())
                 .map(value -> "'" + value.name() + "'")

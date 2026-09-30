@@ -93,7 +93,9 @@ public class ReconciliationIntake implements AcceptedBatchIntake {
                         Optional.empty(),
                         batch.actor(),
                         batch.at(),
-                        batch.correlation().correlationId()));
+                        batch.correlation().correlationId(),
+                        // The scheme cycle the report settles (P8-TSK-017), frozen on the run.
+                        batch.settlementCycle()));
 
         List<ExternalItems.NewItem> newItems = new ArrayList<>(batch.lines().size());
         for (CanonicalLine line : batch.lines()) {

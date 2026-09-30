@@ -682,11 +682,33 @@ adapters). Catalogued with this ADR:
   `ONE_TO_ONE` settling allocation closes no shortfall break (the pre-existing `AMOUNT_MISMATCH`
   behaviour; only a `CORRECTION` top-up does) — so the break is disposed by a person, a known
   limitation carried to `P8-TST-002`'s battery.
+  **`P8-TSK-017` implemented** (2026-09-30): §2's instant rows run for the first time, unchanged —
+  `CREDIT_IN` by `SCHEME_REF` then `END_TO_END_REF`, `DEBIT_OUT` by `SCHEME_REF`, `END_TO_END_REF`
+  then `OUR_REF`, `SCHEME_FEE` as `CHECK`. Four build facts. (1) The cycle comparison lives in the
+  pure `decide`: the item's cycle is its run's, and a difference from the candidate's announced
+  cycle is `Verdict.Timing` with `cycleShift` set — `TIMING_DIFFERENCE` (`CYCLE_MISMATCH`, value 0)
+  beside a normal allocation, suppressed under an open `MISSING_EXTERNAL` like any timing; the grace
+  and rematch legs read the same cycle from the item's run. (2) A fee's original is reached by the
+  fee LINE TYPE's own key (`ExternalLineType.originalKeyKind`: `PROCESSING_FEE` → `PSP_CAPTURE_REF`,
+  `SCHEME_FEE` → `SCHEME_REF`) — the scheme's fee line carries its execution's reference as
+  `ORIGINAL_REF`; without that key a scheme fee was judged against an expected fee of zero (F1).
+  The scheme's rule set seeds no fee tolerance, so it reads zero (F2): "inside" collapses onto "at"
+  (recorded). The per-batch fee comparison remains the processing fee's alone. (3) The lookup's
+  subject carries the item's key scope, and `app` answers the rail from the source's declared
+  settled position — the rail whose `clearingPurpose()` it is — so a scheme reference is typed
+  through `payments.scheme_execution_claim` for the right rail; before, an item's subject named no
+  rail and every scheme reference read unknown. (4) A terminal answer is `REFUND_MISMATCH` when the
+  internal subject is a refund (`InternalReference.subject`), whatever the line type — a
+  `DEBIT_OUT` naming a failed return among them. THE BUILD'S FIND, FIXED: the cycle was first
+  observed only on the allocating path — a line PARKED at once (a terminal answer, a contradicted
+  direction) and later re-matched `PARKED → MATCHED` neither learned a return's cycle nor raised a
+  shift; the parked re-match now does both (the date deviation alone still raises nothing there,
+  as `P8-TSK-013` built it).
 - `P8-TSK-019` builds the return worker that the operation-anchored `PAYOUT_RETURNED` rule waits
   for, and the `PAYOUT_RETURN` expectation it reaches (ADR-0067 §5, ADR-0073).
 - `P8-TSK-022` builds rule-set administration under four-eyes, `REPROCESS` runs, requeue,
-  `run_replay` (reconciliation `V009`) and the replay-perturbation probe. `P8-TSK-023`'s
-  repudiation, the only path that adds counter-allocations, follows in reconciliation `V010`.
+  `run_replay` (reconciliation `V010`) and the replay-perturbation probe. `P8-TSK-023`'s
+  repudiation, the only path that adds counter-allocations, follows in reconciliation `V011`.
 - `P8-TST-001` (the storm: replay `IDENTICAL` every round, at most one positive allocation per item
   and expectation, ten matcher instances) and `P8-TST-002` (the break and resolution battery).
 - Deferred and recorded as not implemented in Phase 8: fuzzy or subset-sum matching, business-day

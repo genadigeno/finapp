@@ -15,8 +15,9 @@ public final class JdbcReconciliationRuns implements ReconciliationRuns {
                         "INSERT INTO reconciliation.reconciliation_batch (id, source_id,"
                                 + " batch_id, kind, rule_set_id, business_date,"
                                 + " source_sequence, status, item_count, created_at,"
-                                + " status_changed_at, correlation_id, requested_by, reason)"
-                                + " VALUES (?, ?, ?, ?, ?, ?, ?, 'OPEN', ?, ?, ?, ?, ?, ?)")) {
+                                + " status_changed_at, correlation_id, requested_by, reason,"
+                                + " settlement_cycle)"
+                                + " VALUES (?, ?, ?, ?, ?, ?, ?, 'OPEN', ?, ?, ?, ?, ?, ?, ?)")) {
             insert.setObject(1, run.id());
             insert.setObject(2, run.sourceId());
             insert.setObject(3, run.batchId().orElse(null));
@@ -30,6 +31,7 @@ public final class JdbcReconciliationRuns implements ReconciliationRuns {
             insert.setString(11, run.correlation().value());
             insert.setString(12, run.requestedBy().orElse(null));
             insert.setString(13, run.reason().orElse(null));
+            insert.setString(14, run.settlementCycle().orElse(null));
             insert.executeUpdate();
         } catch (SQLException failure) {
             throw new ReconciliationStorageException(

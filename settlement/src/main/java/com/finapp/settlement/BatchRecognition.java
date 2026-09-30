@@ -65,7 +65,8 @@ public final class BatchRecognition {
         Objects.requireNonNull(position, "position must not be null");
         Money fee = Money.ofPersisted(0, currency, scale);
         for (SettlementBatchStore.LineRow line : lines) {
-            if (line.lineType() != SettlementLineType.PROCESSING_FEE) {
+            // A report's own fees - the PSP's processing fee, the scheme's fee (P8-TSK-017).
+            if (!line.lineType().isReportFee()) {
                 continue;
             }
             Money amount =

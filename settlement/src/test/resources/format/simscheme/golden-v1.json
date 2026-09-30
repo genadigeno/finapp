@@ -1,0 +1,47 @@
+{
+  "format": "SIM_SCHEME_JSON",
+  "version": 1,
+  "cycle": "2026-09-25-C1",
+  "currency": "EUR",
+  "businessDate": "2026-09-25",
+  "remittanceReference": "SCH-REM-20260925",
+  "entries": [
+    {
+      "seq": 1,
+      "code": "CT",
+      "dir": "C",
+      "amount": "25.00",
+      "fee": "0.10",
+      "schemeRef": "SCH-PAYIN-0001",
+      "endToEndRef": "E2E-PAYIN-0001",
+      "narrative": "Pay-in for order 42"
+    },
+    {
+      "seq": 2,
+      "code": "CT",
+      "dir": "D",
+      "amount": "10.00",
+      "fee": "0.10",
+      "schemeRef": "SCH-WDL-0002",
+      "endToEndRef": "E2E-WDL-0002"
+    },
+    {
+      "seq": 3,
+      "code": "RT",
+      "dir": "D",
+      "amount": "5.00",
+      "fee": "0.10",
+      "schemeRef": "SCH-RTN-0003",
+      "ourRef": "RTN-0003"
+    },
+    {
+      "seq": 4,
+      "code": "CT",
+      "dir": "C",
+      "amount": "7.50",
+      "schemeRef": "SCH-PARK-0004"
+    }
+  ],
+  "net": "17.20",
+  "entryCount": 4
+}
