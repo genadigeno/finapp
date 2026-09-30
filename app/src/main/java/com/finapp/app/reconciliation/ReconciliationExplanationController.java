@@ -101,7 +101,12 @@ public class ReconciliationExplanationController {
             String decidedAt,
             String decidedOn,
             List<CandidateView> candidates,
-            List<AllocationView> allocations) {}
+            List<AllocationView> allocations,
+            // The fee comparison, where a CHECK decision stored one (P8-TSK-012);
+            // added at the end, additive under ADR-0015.
+            String feeExpected,
+            String feeReported,
+            String feeTolerance) {}
 
     // ------------------------------------------------------------------ doors
 
@@ -154,7 +159,8 @@ public class ReconciliationExplanationController {
                     return decisionView(
                             decision,
                             store.candidatesOf(unitOfWork, id),
-                            store.allocationsOfDecision(unitOfWork, id));
+                            store.allocationsOfDecision(unitOfWork, id),
+                            itemScale(unitOfWork, decision.externalItemId()));
                 });
     }
 
@@ -196,10 +202,26 @@ public class ReconciliationExplanationController {
                                         Map.Entry::getValue)));
     }
 
+    /** The fee triple's scale is the decided item's own (INV-MON-05). */
+    private int itemScale(Connection unitOfWork, UUID itemId) {
+        try (java.sql.PreparedStatement read =
+                unitOfWork.prepareStatement(
+                        "SELECT scale FROM reconciliation.external_item WHERE id = ?")) {
+            read.setObject(1, itemId);
+            try (java.sql.ResultSet row = read.executeQuery()) {
+                row.next();
+                return row.getInt("scale");
+            }
+        } catch (java.sql.SQLException failure) {
+            throw new IllegalStateException("the decided item carries its scale", failure);
+        }
+    }
+
     private static DecisionView decisionView(
             MatchingStore.DecisionRow decision,
             List<MatchingStore.CandidateRow> candidates,
-            List<MatchingStore.AllocationRow> allocations) {
+            List<MatchingStore.AllocationRow> allocations,
+            int scale) {
         return new DecisionView(
                 decision.id().toString(),
                 decision.externalItemId().toString(),
@@ -234,7 +256,10 @@ public class ReconciliationExplanationController {
                         .toList(),
                 allocations.stream()
                         .map(ReconciliationExplanationController::allocationView)
-                        .toList());
+                        .toList(),
+                decision.feeExpectedMinor().map(fee -> plain(fee, scale)).orElse(null),
+                decision.feeReportedMinor().map(fee -> plain(fee, scale)).orElse(null),
+                decision.feeToleranceMinor().map(fee -> plain(fee, scale)).orElse(null));
     }
 
     private static AllocationView allocationView(MatchingStore.AllocationRow row) {

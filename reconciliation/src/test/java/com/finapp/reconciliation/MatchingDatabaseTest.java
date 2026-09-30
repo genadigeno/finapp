@@ -139,7 +139,9 @@ class MatchingDatabaseTest {
                 new Suspense(postingService(), new JdbcLedgerAccountStore(), IDS);
         if (bypassTheLock) {
             return new Matching(
-                    store, new MatchingRules(), register, suspense, LOOKUP,
+                    store, new MatchingRules(), register, suspense,
+                    new JdbcResolutions(new JdbcOutboxWriter(), new JdbcAuditWriter(), IDS),
+                    LOOKUP,
                     new JdbcLedgerAccountStore(), new JdbcOutboxWriter(),
                     new JdbcAuditWriter(), IDS, CLOCK, config, runner()) {
                 @Override
@@ -149,7 +151,9 @@ class MatchingDatabaseTest {
             };
         }
         return new Matching(
-                store, new MatchingRules(), register, suspense, LOOKUP,
+                store, new MatchingRules(), register, suspense,
+                new JdbcResolutions(new JdbcOutboxWriter(), new JdbcAuditWriter(), IDS),
+                LOOKUP,
                 new JdbcLedgerAccountStore(), new JdbcOutboxWriter(),
                 new JdbcAuditWriter(), IDS, CLOCK, config, runner());
     }
@@ -274,7 +278,9 @@ class MatchingDatabaseTest {
         // The decisions, per outcome.
         Map<DecisionOutcome, Long> counts = store.outcomeCounts(application, runId);
         assertThat(counts).containsEntry(DecisionOutcome.MATCHED, 2L);
-        assertThat(counts).containsEntry(DecisionOutcome.UNMATCHED, 3L);
+        assertThat(counts).containsEntry(DecisionOutcome.UNMATCHED, 2L);
+        // Since P8-TSK-012 the fee line is JUDGED, not left waiting.
+        assertThat(counts).containsEntry(DecisionOutcome.CHECKED, 1L);
 
         // Both expectations settled through the live path, once each, with the event.
         for (UUID expectation : List.of(settled, settledToo)) {
@@ -298,13 +304,13 @@ class MatchingDatabaseTest {
                 + " 'reconciliation.ReconciliationRunCompleted' AND aggregate_id = ?",
                 runId)).isEqualTo(1);
 
-        // The waiting: a graced clock where a landed rule reached nothing, NO clock where
-        // no landed rule serves the line type (P8-TSK-012's CHECK will dispose of it).
+        // The waiting: a graced clock where a landed rule reached nothing; the fee line
+        // is CHECKED - judged at once, no clock, never parked (P8-TSK-012).
         assertThat(count("SELECT count(*) FROM reconciliation.external_item WHERE"
                 + " run_id = ? AND status = 'UNMATCHED' AND grace_until IS NOT NULL",
                 runId)).isEqualTo(2);
         assertThat(count("SELECT count(*) FROM reconciliation.external_item WHERE"
-                + " run_id = ? AND line_type = 'PROCESSING_FEE' AND status = 'UNMATCHED'"
+                + " run_id = ? AND line_type = 'PROCESSING_FEE' AND status = 'CHECKED'"
                 + " AND grace_until IS NULL", runId)).isEqualTo(1);
 
         // The explanation, from stored rows alone: the snapshot names the rule, the key,

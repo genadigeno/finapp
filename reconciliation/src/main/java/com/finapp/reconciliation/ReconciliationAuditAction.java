@@ -51,6 +51,20 @@ public enum ReconciliationAuditAction implements AuditableAction {
             false),
 
     /**
+     * The platform resolved a break by evidence (`P8-TSK-012`, ADR-0071 §2) —
+     * acting-only: a counterparty's own correction or claw-back explained the break to a
+     * zero residual, and the {@code EVIDENCED} resolution closed it with no person
+     * deciding. The change summary names the resolution, the decision and the park —
+     * identifiers and enumerated names only, never an amount ({@code INV-AUD-02}).
+     */
+    BREAK_RESOLVED_BY_EVIDENCE(
+            "reconciliation.BreakResolvedByEvidence",
+            "The platform closed a break whose discrepancy the counterparty's own"
+                    + " correction explained to zero; the record names the resolution,"
+                    + " decision and park, never a value.",
+            false),
+
+    /**
      * Somebody read a reconciliation report (`P8-TSK-007`, ADR-0072; the
      * {@code payments.ChargebackRatioRead} precedent): the positions report carries
      * amounts, so every serving is on the record — the report's name and period, never its

@@ -383,6 +383,7 @@ public final class Suspense {
             Connection unitOfWork,
             UUID suspenseItemId,
             Money amount,
+            ReleaseCause cause,
             String causeRef,
             LocalDate decidedOn,
             Actor actor,
@@ -390,8 +391,15 @@ public final class Suspense {
             CorrelationId correlation) {
         Objects.requireNonNull(suspenseItemId, "suspenseItemId must not be null");
         Objects.requireNonNull(amount, "amount must not be null");
+        Objects.requireNonNull(cause, "cause must not be null");
         Objects.requireNonNull(causeRef, "causeRef must not be null");
         Objects.requireNonNull(decidedOn, "decidedOn must not be null");
+        if (cause != ReleaseCause.UNPARK && cause != ReleaseCause.CORRECTION_OFFSET) {
+            // The inverse-posting exits only; RESOLUTION and OFFSET_SUSPENSE release
+            // through their own paths (-015), REPUDIATION through -023's.
+            throw new IllegalArgumentException(
+                    "an unpark's cause is UNPARK or CORRECTION_OFFSET (ADR-0070 section 3)");
+        }
         if (amount.minorUnits() <= 0) {
             throw new IllegalArgumentException("an unpark moves a positive amount");
         }
@@ -443,9 +451,21 @@ public final class Suspense {
                 locked.positionAccountId(), locked.currency(), decidedOn, valueDate, entryId,
                 actor, at, correlation);
         releaseLocked(
-                unitOfWork, locked, amount.minorUnits(), ReleaseCause.UNPARK, causeRef,
+                unitOfWork, locked, amount.minorUnits(), cause, causeRef,
                 Optional.of(parkId), actor, at, correlation);
         return new Unparked(parkId, entryId);
+    }
+
+    /**
+     * The multi-entry pre-lock, for a caller whose one transaction will drive SEVERAL
+     * postings through this class (`P8-TSK-012`: a chunk's parks beside its offset
+     * unparks): the union of the projection rows, in the projection's own order, before
+     * the first posting — {@code park}'s internal pre-lock covers only its own groups.
+     */
+    public void lockBalancesInOrder(Connection unitOfWork, List<UUID> accountIds) {
+        posting.lockBalancesInOrder(
+                unitOfWork,
+                accountIds.stream().sorted().map(LedgerAccountId::of).toList());
     }
 
     // ----------------------------------------------------------------- release

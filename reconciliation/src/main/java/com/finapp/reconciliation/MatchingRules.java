@@ -69,6 +69,70 @@ public final class MatchingRules {
         }
     }
 
+    /**
+     * The pinned provider terms for one line type and currency (`P8-TSK-012`,
+     * `INV-MON-03`): rate, fixed part and the NAMED rounding policy. Absent means the
+     * fee cannot be priced — the caller's conservative zero (the design's F2).
+     */
+    public java.util.Optional<FeeCheck.Schedule> feeScheduleFor(
+            Connection unitOfWork,
+            UUID ruleSetId,
+            ExternalLineType lineType,
+            com.finapp.sharedkernel.money.CurrencyCode currency) {
+        try (PreparedStatement read =
+                unitOfWork.prepareStatement(
+                        "SELECT rate, fixed_minor, scale, rounding_policy"
+                                + " FROM reconciliation.provider_fee_schedule"
+                                + " WHERE rule_set_id = ? AND line_type = ? AND"
+                                + " currency = ?")) {
+            read.setObject(1, ruleSetId);
+            read.setString(2, lineType.name());
+            read.setString(3, currency.code());
+            try (ResultSet row = read.executeQuery()) {
+                if (!row.next()) {
+                    return java.util.Optional.empty();
+                }
+                return java.util.Optional.of(
+                        new FeeCheck.Schedule(
+                                row.getBigDecimal("rate"),
+                                row.getLong("fixed_minor"),
+                                row.getInt("scale"),
+                                java.math.RoundingMode.valueOf(
+                                        row.getString("rounding_policy"))));
+            }
+        } catch (SQLException failure) {
+            throw new ReconciliationStorageException(
+                    "could not read the pinned fee schedule", failure);
+        }
+    }
+
+    /**
+     * The pinned fee bound for one comparison and currency (`INV-REC-08`: the tolerance
+     * model's ONLY amount-shaped members are the fee bounds, comparing unposted
+     * quantities). Absent reads zero — conservative, never loosened.
+     */
+    public long feeToleranceMinor(
+            Connection unitOfWork,
+            UUID ruleSetId,
+            String comparison,
+            com.finapp.sharedkernel.money.CurrencyCode currency) {
+        try (PreparedStatement read =
+                unitOfWork.prepareStatement(
+                        "SELECT absolute_minor FROM reconciliation.tolerance"
+                                + " WHERE rule_set_id = ? AND comparison = ? AND"
+                                + " currency = ?")) {
+            read.setObject(1, ruleSetId);
+            read.setString(2, comparison);
+            read.setString(3, currency.code());
+            try (ResultSet row = read.executeQuery()) {
+                return row.next() ? row.getLong("absolute_minor") : 0L;
+            }
+        } catch (SQLException failure) {
+            throw new ReconciliationStorageException(
+                    "could not read the fee tolerance", failure);
+        }
+    }
+
     /** The pinned date window; absent means zero days — never a loosened default. */
     public int settlementDateToleranceDays(Connection unitOfWork, UUID ruleSetId) {
         try (PreparedStatement read =

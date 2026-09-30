@@ -1416,6 +1416,43 @@ counters and dates of things.
 | `allocation` | `reverses_allocation_id` | `INTERNAL` | The reversed allocation, on a repudiation's counter-row - an identifier of a thing |
 | `allocation` | `created_at` | `INTERNAL` | When it was recorded |
 | `allocation` | `correlation_id` | `INTERNAL` | The flow's correlation |
+| `resolution` | `id` | `INTERNAL` | A record identifier. Generated |
+| `resolution` | `break_id` | `INTERNAL` | The closed break - an identifier of a thing |
+| `resolution` | `kind` | `INTERNAL` | EVIDENCED and its siblings - a closed vocabulary |
+| `resolution` | `status` | `INTERNAL` | The machine's position - a closed vocabulary |
+| `resolution` | `reason_code` | `INTERNAL` | The closed reason (ADR-0071) - never the narrative |
+| `resolution` | `narrative` | `CONFIDENTIAL` | **The resolver's own words** - never logged, evented or audited; screened at the database for PAN and IBAN shapes (INV-PAY-02, INV-RAIL-03) |
+| `resolution` | `four_eyes` | `INTERNAL` | Whether a second person was required |
+| `resolution` | `proposed_amount_minor` | `RESTRICTED-FINANCIAL` | **The value the resolution explains or moves** - frozen at write, never in a metric, event or log |
+| `resolution` | `currency` | `INTERNAL` | An enumeration; part of the monetary shape |
+| `resolution` | `scale` | `INTERNAL` | The monetary shape's scale (INV-MON-05) |
+| `resolution` | `residual_version` | `INTERNAL` | The break's staleness counter as frozen (ADR-0071) |
+| `resolution` | `target_account_id` | `INTERNAL` | The named account, where a transfer names one - an identifier of a thing |
+| `resolution` | `offset_item_id` | `INTERNAL` | The released suspense item - an identifier of a thing |
+| `resolution` | `chosen_expectation_id` | `INTERNAL` | The manual match's choice (`P8-TSK-015`) - an identifier of a thing |
+| `resolution` | `decision_id` | `INTERNAL` | The explaining decision - an identifier of a thing |
+| `resolution` | `park_id` | `INTERNAL` | The offset's unpark - an identifier of a thing |
+| `resolution` | `rule_set_id` | `INTERNAL` | The version active when written (INV-HIST-04) |
+| `resolution` | `adjustment_proposal_id` | `INTERNAL` | The bound ledger proposal (`P8-TSK-015`) - an identifier of a thing |
+| `resolution` | `journal_entry_id` | `INTERNAL` | The posted entry, where one posts - an identifier of a thing |
+| `resolution` | `proposed_by` | `CONFIDENTIAL` | Who proposed (`audit_record.actor`'s reasoning; the platform for EVIDENCED) |
+| `resolution` | `proposed_by_type` | `INTERNAL` | The proposer's kind - a closed vocabulary |
+| `resolution` | `proposed_at` | `INTERNAL` | When it was proposed |
+| `resolution` | `decided_by` | `CONFIDENTIAL` | Who decided (`audit_record.actor`'s reasoning) |
+| `resolution` | `decided_by_type` | `INTERNAL` | The decider's kind - a closed vocabulary |
+| `resolution` | `decided_at` | `INTERNAL` | When it was decided |
+| `resolution` | `created_at` | `INTERNAL` | When it was recorded |
+| `resolution` | `status_changed_at` | `INTERNAL` | When the machine last moved |
+| `resolution` | `correlation_id` | `INTERNAL` | The flow's correlation |
+| `resolution_event` | `seq` | `INTERNAL` | The history's server-assigned order |
+| `resolution_event` | `resolution_id` | `INTERNAL` | The moved resolution - an identifier of a thing |
+| `resolution_event` | `from_status` | `INTERNAL` | The edge's origin - a closed vocabulary |
+| `resolution_event` | `to_status` | `INTERNAL` | The edge's target - a closed vocabulary |
+| `resolution_event` | `actor` | `CONFIDENTIAL` | Who drove the edge (`audit_record.actor`'s reasoning) |
+| `resolution_event` | `actor_type` | `INTERNAL` | The actor's kind - a closed vocabulary |
+| `resolution_event` | `reason` | `CONFIDENTIAL` | The edge's stated reason - a person's prose where one is |
+| `resolution_event` | `occurred_at` | `INTERNAL` | When the edge was driven |
+| `resolution_event` | `correlation_id` | `INTERNAL` | The flow's correlation |
 
 ### `consent.consent_text` and `consent.consent_record` — *added by `P2-TSK-017`*
 

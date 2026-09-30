@@ -143,7 +143,10 @@ class ReconciliationMigrationTest {
                         // V005 (P8-TSK-011): the decisions, candidates and allocations.
                         "match_decision",
                         "match_candidate",
-                        "allocation");
+                        "allocation",
+                        // V006 (P8-TSK-012): the resolution record, EVIDENCED first.
+                        "resolution",
+                        "resolution_event");
 
         assertThatExceptionOfType(SQLException.class)
                 .isThrownBy(() -> asApplication(

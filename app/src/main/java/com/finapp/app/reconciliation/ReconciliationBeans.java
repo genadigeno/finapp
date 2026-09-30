@@ -264,6 +264,21 @@ public class ReconciliationBeans {
         return new com.finapp.reconciliation.JdbcRunReadings();
     }
 
+    /**
+     * The resolutions' writer (`P8-TSK-012`, ADR-0071): the platform's {@code EVIDENCED}
+     * kind only — born {@code APPROVED} in the transaction whose zero-residual
+     * allocation or offset explained the break; the person kinds arrive with
+     * `P8-TSK-015`'s door.
+     */
+    @Bean
+    com.finapp.reconciliation.Resolutions resolutions(
+            com.finapp.platform.outbox.OutboxWriter<Connection> outboxWriter,
+            com.finapp.platform.audit.AuditWriter<Connection> auditWriter,
+            IdGenerator idGenerator) {
+        return new com.finapp.reconciliation.JdbcResolutions(
+                outboxWriter, auditWriter, idGenerator);
+    }
+
     /** One transaction per chunk — the run leg's containment (the parse leg's shape). */
     @Bean
     com.finapp.reconciliation.TransactionRunner reconciliationTransactionRunner(
@@ -298,6 +313,7 @@ public class ReconciliationBeans {
             com.finapp.reconciliation.MatchingRules matchingRules,
             com.finapp.reconciliation.BreakRegister breakRegister,
             com.finapp.reconciliation.Suspense suspense,
+            com.finapp.reconciliation.Resolutions resolutions,
             com.finapp.reconciliation.InternalReferenceLookup internalReferenceLookup,
             com.finapp.ledger.LedgerAccountStore<Connection> ledgerAccountStore,
             com.finapp.platform.outbox.OutboxWriter<Connection> outboxWriter,
@@ -316,6 +332,7 @@ public class ReconciliationBeans {
                 matchingRules,
                 breakRegister,
                 suspense,
+                resolutions,
                 internalReferenceLookup,
                 ledgerAccountStore,
                 outboxWriter,

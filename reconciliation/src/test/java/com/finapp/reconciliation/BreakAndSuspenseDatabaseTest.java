@@ -444,7 +444,7 @@ class BreakAndSuspenseDatabaseTest {
         Suspense.Unparked creditBack =
                 asPlatform(() -> suspense.unpark(application, creditItem,
                         Money.ofPersisted(10_00, EUR, 2),
-                        "rematch-sim", DECIDED_ON, PLATFORM, Instant.now(CLOCK),
+                        ReleaseCause.UNPARK, "rematch-sim", DECIDED_ON, PLATFORM, Instant.now(CLOCK),
                         CorrelationId.generate(IDS)));
         assertThat(lines(creditBack.entryId()))
                 .containsExactlyInAnyOrder(
@@ -452,7 +452,7 @@ class BreakAndSuspenseDatabaseTest {
         Suspense.Unparked debitBack =
                 asPlatform(() -> suspense.unpark(application, debitItem,
                         Money.ofPersisted(7_50, EUR, 2),
-                        "rematch-sim", DECIDED_ON, PLATFORM, Instant.now(CLOCK),
+                        ReleaseCause.UNPARK, "rematch-sim", DECIDED_ON, PLATFORM, Instant.now(CLOCK),
                         CorrelationId.generate(IDS)));
         assertThat(lines(debitBack.entryId()))
                 .containsExactlyInAnyOrder(
@@ -511,13 +511,13 @@ class BreakAndSuspenseDatabaseTest {
 
         UUID item = result.parked().get(0).suspenseItemId();
         asPlatform(() -> suspense.unpark(application, item,
-                Money.ofPersisted(4_00, EUR, 2), "partial",
+                Money.ofPersisted(4_00, EUR, 2), ReleaseCause.UNPARK, "partial",
                 DECIDED_ON, PLATFORM, Instant.now(CLOCK), CorrelationId.generate(IDS)));
         assertThat(scalar("SELECT status || ':' || released_minor::text FROM"
                 + " reconciliation.suspense_item WHERE id = ?", item))
                 .isEqualTo("PARTIALLY_RELEASED:400");
         asPlatform(() -> suspense.unpark(application, item,
-                Money.ofPersisted(6_00, EUR, 2), "rest",
+                Money.ofPersisted(6_00, EUR, 2), ReleaseCause.UNPARK, "rest",
                 DECIDED_ON, PLATFORM, Instant.now(CLOCK), CorrelationId.generate(IDS)));
         assertThat(scalar("SELECT status FROM reconciliation.suspense_item WHERE id = ?",
                 item))
@@ -525,7 +525,7 @@ class BreakAndSuspenseDatabaseTest {
         assertThatThrownBy(
                         () ->
                                 asPlatform(() -> suspense.unpark(application, item,
-                                        Money.ofPersisted(1, EUR, 2), "over", DECIDED_ON,
+                                        Money.ofPersisted(1, EUR, 2), ReleaseCause.UNPARK, "over", DECIDED_ON,
                                         PLATFORM, Instant.now(CLOCK),
                                         CorrelationId.generate(IDS))))
                 .as("a release beyond the amount is refused")
@@ -658,7 +658,7 @@ class BreakAndSuspenseDatabaseTest {
         UUID parkedItem = (UUID) queryOne("SELECT id FROM"
                 + " reconciliation.suspense_item WHERE external_item_id = ?", item);
         asPlatform(() -> suspense.unpark(application, parkedItem,
-                Money.ofPersisted(100, EUR, 2), "for-history", DECIDED_ON, PLATFORM,
+                Money.ofPersisted(100, EUR, 2), ReleaseCause.UNPARK, "for-history", DECIDED_ON, PLATFORM,
                 Instant.now(CLOCK), CorrelationId.generate(IDS)));
         application.commit();
 

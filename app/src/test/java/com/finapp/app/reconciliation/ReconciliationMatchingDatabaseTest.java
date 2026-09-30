@@ -93,6 +93,7 @@ class ReconciliationMatchingDatabaseTest {
     @LocalServerPort private int port;
     @Autowired private Authorization authorization;
     @Autowired private Matching matching;
+    @Autowired private PositionProof positionProof;
 
     private final HttpClient http = HttpClient.newHttpClient();
     private final SessionStore<Connection> sessions = new JdbcSessionStore();
@@ -110,16 +111,20 @@ class ReconciliationMatchingDatabaseTest {
         seedPrivateRuleSet();
         String key = "CAP-APP-" + UUID.randomUUID().toString().substring(0, 8);
         UUID expectation = openExpectation(key, 77_00);
-        // The waiting item's own expectation, under a key the run never quotes: the
-        // container's position identity stays exact - open remainders equal open items -
-        // so the suites that prove it after this one inherit a consistent world.
-        openExpectation("CAP-APP-ORPHAN-" + UUID.randomUUID(), 12_00);
+        // The waiting item's balancing expectation, under a key line 3 PARTIALLY
+        // allocates: the container's position identity stays exact (open remainders
+        // equal open items), and the balancer is HELD by its own allocation row - the
+        // acceptance suite's platform-root register wipe deletes only UNHELD rows, so
+        // this suite's residue survives it consistent for every later global proof.
+        String balancing = "CAP-APP-BAL-" + UUID.randomUUID().toString().substring(0, 8);
+        openExpectation(balancing, 13_00);
         UUID runId =
                 seedRun(
                         item(1, 77_00, key),
                         // A capture reference no payments row carries: the COMPOSED
                         // lookup answers UNKNOWN over the real stores, so it waits.
-                        item(2, 12_00, "CAP-APP-NOBODY-" + UUID.randomUUID()));
+                        item(2, 12_00, "CAP-APP-NOBODY-" + UUID.randomUUID()),
+                        item(3, 1_00, balancing));
 
         matching.sweep();
 
@@ -134,13 +139,35 @@ class ReconciliationMatchingDatabaseTest {
                     + " NULL", runId)).isEqualTo(1);
         }
 
+        // The position identity holds over this suite's residue: the settled pair nets
+        // to zero and the waiting item is balanced by its own expectation (INV-REC-06).
+        try (Connection app = DatabaseRoles.application()) {
+            app.setAutoCommit(false);
+            PositionProof.Report report = positionProof.sweep(app);
+            PositionProof.PositionVerdict clearing =
+                    report.verdicts().stream()
+                            .filter(verdict ->
+                                    verdict.purpose() == AccountPurpose.SETTLEMENT_CLEARING
+                                            && verdict.currency().equals(
+                                                    com.finapp.sharedkernel.money
+                                                            .CurrencyCode.of("EUR")))
+                            .findFirst()
+                            .orElseThrow();
+            assertThat(clearing.explained())
+                    .as("SETTLEMENT_CLEARING EUR: %s = %s - %s",
+                            clearing.ledgerBalance(), clearing.openRemainders(),
+                            clearing.openItems())
+                    .isTrue();
+            app.rollback();
+        }
+
         // The doors, as the investigator, from stored rows alone.
         Session operator = operatorSession();
         HttpResponse<String> run = door(operator.token(), "/runs/" + runId);
         assertThat(run.statusCode()).isEqualTo(200);
         assertThat(run.body())
                 .contains("\"COMPLETED\"")
-                .contains("\"MATCHED\":1")
+                .contains("\"MATCHED\":2")
                 .contains("\"UNMATCHED\":1");
         assertThat(door(operator.token(), "/runs").body()).contains(runId.toString());
 

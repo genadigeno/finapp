@@ -10929,7 +10929,7 @@ posting-date documentation reconciled with the Phase 5–7 practice, with no ret
   expectation machines, `RECONCILIATION_MODEL.md`'s matching section and `DISTRIBUTED_EXECUTION.md`
   §3's namespace-4 and lock-order rows current against the build). **Risk**: High. **Cx**: L.
 
-**P8-TSK-012 — Processing fees and counterparty corrections** — `READY` (marked by `P8-TSK-011`'s completion gate)
+**P8-TSK-012 — Processing fees and counterparty corrections** — `COMPLETE` (2026-09-30)
 - **Objective**: the PSP's fees are checked against pinned terms — the one place a tolerance is
   legitimate, because the fee was never posted before its evidence — and the counterparty's own
   corrections net automatically, closing the breaks they explain as `EVIDENCED`, the one resolution
@@ -11029,7 +11029,7 @@ posting-date documentation reconciled with the Phase 5–7 practice, with no ret
   and an under-payment `EVIDENCED`; the expected fee is reproduced from the pinned version.
 - **Definition of done**: `DOD-FIN`, `DOD-TEST`. **Risk**: Medium. **Cx**: M.
 
-**P8-TSK-013 — Grace, ageing, rematch and late evidence** — `PLANNED`
+**P8-TSK-013 — Grace, ageing, rematch and late evidence** — `READY` (marked by `P8-TSK-012`'s completion gate)
 - **Objective**: time becomes explicit. Unexplained external value waits out a pinned grace window
   and then parks with its break; internal records that never settle age into `MISSING_EXTERNAL`;
   late evidence on either side is found and closes what it explains. Nothing is ever refused as

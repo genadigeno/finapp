@@ -128,10 +128,40 @@ public interface MatchingStore {
             Optional<Integer> claimantCount,
             Optional<Integer> dateDeviationDays,
             Optional<Integer> timingToleranceDays,
+            Optional<Long> feeExpectedMinor,
+            Optional<Long> feeReportedMinor,
+            Optional<Long> feeToleranceMinor,
             Actor decidedBy,
             Instant decidedAt,
             LocalDate decidedOn,
-            CorrelationId correlation) {}
+            CorrelationId correlation) {
+
+        /** The pre-`P8-TSK-012` shape: no fee comparison on the row. */
+        public NewDecision(
+                UUID id,
+                UUID externalItemId,
+                UUID runId,
+                DecisionOrigin origin,
+                UUID ruleSetId,
+                Optional<Integer> rulePriority,
+                Optional<Cardinality> strategy,
+                Optional<KeyKind> matchedKeyKind,
+                DecisionOutcome outcome,
+                Optional<Integer> claimantRank,
+                Optional<Integer> claimantCount,
+                Optional<Integer> dateDeviationDays,
+                Optional<Integer> timingToleranceDays,
+                Actor decidedBy,
+                Instant decidedAt,
+                LocalDate decidedOn,
+                CorrelationId correlation) {
+            this(id, externalItemId, runId, origin, ruleSetId, rulePriority, strategy,
+                    matchedKeyKind, outcome, claimantRank, claimantCount,
+                    dateDeviationDays, timingToleranceDays, Optional.empty(),
+                    Optional.empty(), Optional.empty(), decidedBy, decidedAt, decidedOn,
+                    correlation);
+        }
+    }
 
     void insertDecision(Connection unitOfWork, NewDecision decision);
 
@@ -183,6 +213,65 @@ public interface MatchingStore {
     /** Records the allocated part on a {@code PENDING} item that will PARK its excess. */
     void recordItemAllocation(Connection unitOfWork, UUID itemId, long allocatedMinor);
 
+    /** The item's conditional {@code PENDING → CHECKED} — a fee judged (`P8-TSK-012`). */
+    boolean markItemChecked(
+            Connection unitOfWork, UUID itemId, Actor actor, Instant at,
+            CorrelationId correlation);
+
+    /**
+     * The correcting item's conditional {@code PENDING → OFFSET}, its value recorded as
+     * offset ({@code offset_minor} — the `V003` conservation's own column).
+     */
+    boolean markItemOffset(
+            Connection unitOfWork,
+            UUID itemId,
+            long offsetMinor,
+            Actor actor,
+            Instant at,
+            CorrelationId correlation);
+
+    /** The ORIGINAL item's conditional {@code PARKED → RESOLVED} when its excess offsets. */
+    boolean markParkedItemResolved(
+            Connection unitOfWork, UUID itemId, Actor actor, Instant at,
+            CorrelationId correlation);
+
+    /** Original items reached by one item-side key, per source (`P8-TSK-012`). */
+    List<UUID> itemsByKey(
+            Connection unitOfWork, UUID sourceId, ItemKeyKind kind, String value);
+
+    /**
+     * The originals' open parked value, LOCKED in the §3 order — each break row first,
+     * then its suspense item, then the original external item — oldest suspense first;
+     * rows whose owning break is already {@code RESOLVED} are skipped, never offset.
+     */
+    List<CorrectionEngine.ParkedOriginal> lockParkedOriginals(
+            Connection unitOfWork, Collection<UUID> originalItemIds);
+
+    /** One expectation's amount, lock-free — the fee check's gross (`P8-TSK-012`). */
+    Optional<Money> expectationAmount(Connection unitOfWork, UUID expectationId);
+
+    /** The break's staleness counter as stored — frozen onto the resolution it closes. */
+    long breakResidualVersion(Connection unitOfWork, UUID breakId);
+
+    /**
+     * The one open break of this type on the expectation, LOCKED — taken before the
+     * allocation that might settle it, so the evidence write holds the §3 break-first
+     * order against any other writer of that break.
+     */
+    Optional<UUID> lockOpenBreakOn(
+            Connection unitOfWork, UUID expectationId, BreakType type);
+
+    /** One fee decision per row of the run, in claimant order — the per-batch fold. */
+    record FeeDecisionRow(
+            UUID itemId,
+            long lineNo,
+            String currency,
+            int scale,
+            long feeExpectedMinor,
+            long feeReportedMinor) {}
+
+    List<FeeDecisionRow> feeDecisionsOf(Connection unitOfWork, UUID runId);
+
     /**
      * The item's conditional {@code PENDING → UNMATCHED}; {@code graceHours} empty leaves
      * no clock running (an unlanded cardinality's item, `P8-TSK-012`'s to dispose).
@@ -211,6 +300,9 @@ public interface MatchingStore {
             Optional<Integer> claimantCount,
             Optional<Integer> dateDeviationDays,
             Optional<Integer> timingToleranceDays,
+            Optional<Long> feeExpectedMinor,
+            Optional<Long> feeReportedMinor,
+            Optional<Long> feeToleranceMinor,
             Instant decidedAt,
             LocalDate decidedOn) {}
 

@@ -446,10 +446,12 @@ public final class JdbcMatchingStore implements MatchingStore {
                                 + " run_id, origin, rule_set_id, rule_priority, strategy,"
                                 + " matched_key_kind, outcome, claimant_rank,"
                                 + " claimant_count, date_deviation_days,"
-                                + " timing_tolerance_days, decided_by, decided_by_type,"
-                                + " decided_at, decided_on, correlation_id)"
+                                + " timing_tolerance_days, fee_expected_minor,"
+                                + " fee_reported_minor, fee_tolerance_minor, decided_by,"
+                                + " decided_by_type, decided_at, decided_on,"
+                                + " correlation_id)"
                                 + " VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?,"
-                                + " ?, ?, ?)")) {
+                                + " ?, ?, ?, ?, ?, ?)")) {
             insert.setObject(1, decision.id());
             insert.setObject(2, decision.externalItemId());
             insert.setObject(3, decision.runId());
@@ -463,11 +465,14 @@ public final class JdbcMatchingStore implements MatchingStore {
             insert.setObject(11, decision.claimantCount().orElse(null));
             insert.setObject(12, decision.dateDeviationDays().orElse(null));
             insert.setObject(13, decision.timingToleranceDays().orElse(null));
-            insert.setString(14, decision.decidedBy().id());
-            insert.setString(15, decision.decidedBy().type().name());
-            insert.setTimestamp(16, Timestamp.from(decision.decidedAt()));
-            insert.setObject(17, decision.decidedOn());
-            insert.setString(18, decision.correlation().value());
+            insert.setObject(14, decision.feeExpectedMinor().orElse(null));
+            insert.setObject(15, decision.feeReportedMinor().orElse(null));
+            insert.setObject(16, decision.feeToleranceMinor().orElse(null));
+            insert.setString(17, decision.decidedBy().id());
+            insert.setString(18, decision.decidedBy().type().name());
+            insert.setTimestamp(19, Timestamp.from(decision.decidedAt()));
+            insert.setObject(20, decision.decidedOn());
+            insert.setString(21, decision.correlation().value());
             insert.executeUpdate();
         } catch (SQLException failure) {
             throw new ReconciliationStorageException(
@@ -646,6 +651,297 @@ public final class JdbcMatchingStore implements MatchingStore {
     }
 
     @Override
+    public boolean markItemChecked(
+            Connection unitOfWork, UUID itemId, Actor actor, Instant at,
+            CorrelationId correlation) {
+        try (PreparedStatement update =
+                unitOfWork.prepareStatement(
+                        "UPDATE reconciliation.external_item SET status = 'CHECKED',"
+                                + " status_changed_at = ?"
+                                + " WHERE id = ? AND status = 'PENDING'")) {
+            update.setTimestamp(1, Timestamp.from(at));
+            update.setObject(2, itemId);
+            if (update.executeUpdate() != 1) {
+                return false;
+            }
+        } catch (SQLException failure) {
+            throw new ReconciliationStorageException("could not check the item", failure);
+        }
+        appendItemEvent(unitOfWork, itemId, "PENDING", "CHECKED", actor, at, correlation);
+        return true;
+    }
+
+    @Override
+    public boolean markItemOffset(
+            Connection unitOfWork,
+            UUID itemId,
+            long offsetMinor,
+            Actor actor,
+            Instant at,
+            CorrelationId correlation) {
+        try (PreparedStatement update =
+                unitOfWork.prepareStatement(
+                        "UPDATE reconciliation.external_item SET status = 'OFFSET',"
+                                + " offset_minor = offset_minor + ?, status_changed_at = ?"
+                                + " WHERE id = ? AND status = 'PENDING'")) {
+            update.setLong(1, offsetMinor);
+            update.setTimestamp(2, Timestamp.from(at));
+            update.setObject(3, itemId);
+            if (update.executeUpdate() != 1) {
+                return false;
+            }
+        } catch (SQLException failure) {
+            throw new ReconciliationStorageException("could not offset the item", failure);
+        }
+        appendItemEvent(unitOfWork, itemId, "PENDING", "OFFSET", actor, at, correlation);
+        return true;
+    }
+
+    @Override
+    public boolean markParkedItemResolved(
+            Connection unitOfWork, UUID itemId, Actor actor, Instant at,
+            CorrelationId correlation) {
+        try (PreparedStatement update =
+                unitOfWork.prepareStatement(
+                        "UPDATE reconciliation.external_item SET status = 'RESOLVED',"
+                                + " status_changed_at = ?"
+                                + " WHERE id = ? AND status = 'PARKED'")) {
+            update.setTimestamp(1, Timestamp.from(at));
+            update.setObject(2, itemId);
+            if (update.executeUpdate() != 1) {
+                return false;
+            }
+        } catch (SQLException failure) {
+            throw new ReconciliationStorageException(
+                    "could not resolve the parked item", failure);
+        }
+        appendItemEvent(unitOfWork, itemId, "PARKED", "RESOLVED", actor, at, correlation);
+        return true;
+    }
+
+    @Override
+    public List<UUID> itemsByKey(
+            Connection unitOfWork, UUID sourceId, ItemKeyKind kind, String value) {
+        try (PreparedStatement read =
+                unitOfWork.prepareStatement(
+                        "SELECT k.item_id FROM reconciliation.external_item_key k"
+                                + " JOIN reconciliation.external_item i"
+                                + " ON i.id = k.item_id"
+                                + " WHERE i.source_id = ? AND k.key_kind = ? AND"
+                                + " k.key_value = ? ORDER BY k.item_id")) {
+            read.setObject(1, sourceId);
+            read.setString(2, kind.name());
+            read.setString(3, value);
+            try (ResultSet rows = read.executeQuery()) {
+                List<UUID> items = new ArrayList<>();
+                while (rows.next()) {
+                    items.add(rows.getObject("item_id", UUID.class));
+                }
+                return List.copyOf(items);
+            }
+        } catch (SQLException failure) {
+            throw new ReconciliationStorageException(
+                    "could not resolve the original items", failure);
+        }
+    }
+
+    @Override
+    public List<CorrectionEngine.ParkedOriginal> lockParkedOriginals(
+            Connection unitOfWork, Collection<UUID> originalItemIds) {
+        if (originalItemIds.isEmpty()) {
+            return List.of();
+        }
+        record Candidate(UUID suspenseItemId, UUID breakId, UUID originalItemId) {}
+        List<Candidate> candidates = new ArrayList<>();
+        try (PreparedStatement read =
+                unitOfWork.prepareStatement(
+                        "SELECT id, break_id, external_item_id"
+                                + " FROM reconciliation.suspense_item"
+                                + " WHERE external_item_id = ANY (?)"
+                                + " AND status <> 'RELEASED'"
+                                + " ORDER BY opened_on, id")) {
+            read.setArray(
+                    1,
+                    unitOfWork.createArrayOf(
+                            "uuid", new TreeSet<>(originalItemIds).toArray()));
+            try (ResultSet rows = read.executeQuery()) {
+                while (rows.next()) {
+                    candidates.add(
+                            new Candidate(
+                                    rows.getObject("id", UUID.class),
+                                    rows.getObject("break_id", UUID.class),
+                                    rows.getObject("external_item_id", UUID.class)));
+                }
+            }
+        } catch (SQLException failure) {
+            throw new ReconciliationStorageException(
+                    "could not find the parked originals", failure);
+        }
+        List<CorrectionEngine.ParkedOriginal> parked = new ArrayList<>();
+        for (Candidate candidate : candidates) {
+            try {
+                // The section-3 order for the contended rows: the break row first, then
+                // the suspense item, then the original external item.
+                try (PreparedStatement lockBreak =
+                        unitOfWork.prepareStatement(
+                                "SELECT status FROM reconciliation.break WHERE id = ?"
+                                        + " FOR UPDATE")) {
+                    lockBreak.setObject(1, candidate.breakId());
+                    try (ResultSet row = lockBreak.executeQuery()) {
+                        row.next();
+                        if ("RESOLVED".equals(row.getString("status"))) {
+                            continue; // A resolved owner takes no new disposition.
+                        }
+                    }
+                }
+                try (PreparedStatement lockSuspense =
+                        unitOfWork.prepareStatement(
+                                "SELECT side, amount_minor, released_minor, currency,"
+                                        + " scale, position_account_id"
+                                        + " FROM reconciliation.suspense_item"
+                                        + " WHERE id = ? AND status <> 'RELEASED'"
+                                        + " FOR UPDATE")) {
+                    lockSuspense.setObject(1, candidate.suspenseItemId());
+                    try (ResultSet row = lockSuspense.executeQuery()) {
+                        if (!row.next()) {
+                            continue; // Released since the lock-free read: converge.
+                        }
+                        long remainder =
+                                row.getLong("amount_minor") - row.getLong("released_minor");
+                        if (remainder <= 0) {
+                            continue;
+                        }
+                        try (PreparedStatement lockItem =
+                                unitOfWork.prepareStatement(
+                                        "SELECT id FROM reconciliation.external_item"
+                                                + " WHERE id = ? AND status = 'PARKED'"
+                                                + " FOR UPDATE")) {
+                            lockItem.setObject(1, candidate.originalItemId());
+                            try (ResultSet item = lockItem.executeQuery()) {
+                                if (!item.next()) {
+                                    continue; // Already re-allocated or resolved.
+                                }
+                            }
+                        }
+                        parked.add(
+                                new CorrectionEngine.ParkedOriginal(
+                                        candidate.originalItemId(),
+                                        candidate.suspenseItemId(),
+                                        candidate.breakId(),
+                                        SuspenseSide.valueOf(row.getString("side")),
+                                        remainder,
+                                        CurrencyCode.of(
+                                                row.getString("currency").trim()),
+                                        row.getInt("scale"),
+                                        row.getObject(
+                                                "position_account_id", UUID.class)));
+                    }
+                }
+            } catch (SQLException failure) {
+                throw new ReconciliationStorageException(
+                        "could not lock the parked original", failure);
+            }
+        }
+        return List.copyOf(parked);
+    }
+
+    @Override
+    public Optional<Money> expectationAmount(Connection unitOfWork, UUID expectationId) {
+        try (PreparedStatement read =
+                unitOfWork.prepareStatement(
+                        "SELECT amount_minor, currency, scale FROM"
+                                + " reconciliation.expectation WHERE id = ?")) {
+            read.setObject(1, expectationId);
+            try (ResultSet row = read.executeQuery()) {
+                if (!row.next()) {
+                    return Optional.empty();
+                }
+                return Optional.of(
+                        Money.ofPersisted(
+                                row.getLong("amount_minor"),
+                                CurrencyCode.of(row.getString("currency").trim()),
+                                row.getInt("scale")));
+            }
+        } catch (SQLException failure) {
+            throw new ReconciliationStorageException(
+                    "could not read the expectation's amount", failure);
+        }
+    }
+
+    @Override
+    public long breakResidualVersion(Connection unitOfWork, UUID breakId) {
+        try (PreparedStatement read =
+                unitOfWork.prepareStatement(
+                        "SELECT residual_version FROM reconciliation.break"
+                                + " WHERE id = ?")) {
+            read.setObject(1, breakId);
+            try (ResultSet row = read.executeQuery()) {
+                if (!row.next()) {
+                    throw new ReconciliationStorageException(
+                            "break " + breakId + " vanished under its lock");
+                }
+                return row.getLong("residual_version");
+            }
+        } catch (SQLException failure) {
+            throw new ReconciliationStorageException(
+                    "could not read the break's residual version", failure);
+        }
+    }
+
+    @Override
+    public Optional<UUID> lockOpenBreakOn(
+            Connection unitOfWork, UUID expectationId, BreakType type) {
+        try (PreparedStatement read =
+                unitOfWork.prepareStatement(
+                        "SELECT id FROM reconciliation.break WHERE expectation_id = ?"
+                                + " AND type = ? AND status <> 'RESOLVED' FOR UPDATE")) {
+            read.setObject(1, expectationId);
+            read.setString(2, type.name());
+            try (ResultSet row = read.executeQuery()) {
+                return row.next()
+                        ? Optional.of(row.getObject("id", UUID.class))
+                        : Optional.empty();
+            }
+        } catch (SQLException failure) {
+            throw new ReconciliationStorageException(
+                    "could not lock the expectation's open break", failure);
+        }
+    }
+
+    @Override
+    public List<FeeDecisionRow> feeDecisionsOf(Connection unitOfWork, UUID runId) {
+        try (PreparedStatement read =
+                unitOfWork.prepareStatement(
+                        "SELECT i.id, i.line_no, i.currency, i.scale,"
+                                + " d.fee_expected_minor, d.fee_reported_minor"
+                                + " FROM reconciliation.match_decision d"
+                                + " JOIN reconciliation.external_item i"
+                                + " ON i.id = d.external_item_id"
+                                + " WHERE d.run_id = ? AND d.outcome = 'CHECKED'"
+                                + " AND d.fee_reported_minor IS NOT NULL"
+                                + " ORDER BY i.line_no")) {
+            read.setObject(1, runId);
+            try (ResultSet rows = read.executeQuery()) {
+                List<FeeDecisionRow> decisions = new ArrayList<>();
+                while (rows.next()) {
+                    decisions.add(
+                            new FeeDecisionRow(
+                                    rows.getObject("id", UUID.class),
+                                    rows.getLong("line_no"),
+                                    rows.getString("currency").trim(),
+                                    rows.getInt("scale"),
+                                    rows.getLong("fee_expected_minor"),
+                                    rows.getLong("fee_reported_minor")));
+                }
+                return List.copyOf(decisions);
+            }
+        } catch (SQLException failure) {
+            throw new ReconciliationStorageException(
+                    "could not read the run's fee decisions", failure);
+        }
+    }
+
+    @Override
     public boolean markItemUnmatched(
             Connection unitOfWork,
             UUID itemId,
@@ -715,7 +1011,9 @@ public final class JdbcMatchingStore implements MatchingStore {
                         "SELECT id, external_item_id, run_id, origin, rule_set_id,"
                                 + " rule_priority, strategy, matched_key_kind, outcome,"
                                 + " claimant_rank, claimant_count, date_deviation_days,"
-                                + " timing_tolerance_days, decided_at, decided_on"
+                                + " timing_tolerance_days, fee_expected_minor,"
+                                + " fee_reported_minor, fee_tolerance_minor, decided_at,"
+                                + " decided_on"
                                 + " FROM reconciliation.match_decision WHERE id = ?")) {
             read.setObject(1, decisionId);
             try (ResultSet row = read.executeQuery()) {
@@ -744,6 +1042,12 @@ public final class JdbcMatchingStore implements MatchingStore {
                                 Optional.ofNullable(
                                         row.getObject(
                                                 "timing_tolerance_days", Integer.class)),
+                                Optional.ofNullable(
+                                        row.getObject("fee_expected_minor", Long.class)),
+                                Optional.ofNullable(
+                                        row.getObject("fee_reported_minor", Long.class)),
+                                Optional.ofNullable(
+                                        row.getObject("fee_tolerance_minor", Long.class)),
                                 row.getTimestamp("decided_at").toInstant(),
                                 row.getObject("decided_on", LocalDate.class)));
             }

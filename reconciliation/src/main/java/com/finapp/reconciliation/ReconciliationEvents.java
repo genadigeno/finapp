@@ -26,6 +26,7 @@ public final class ReconciliationEvents {
             "reconciliation.ReconciliationRunCompleted";
     static final String EXPECTATION_SETTLED_EVENT_TYPE =
             "reconciliation.SettlementExpectationSettled";
+    static final String BREAK_RESOLVED_EVENT_TYPE = "reconciliation.BreakResolved";
 
     private ReconciliationEvents() {}
 
@@ -64,6 +65,47 @@ public final class ReconciliationEvents {
                         PRODUCER,
                         correlation,
                         CausationId.of(runId.toString())),
+                payload.toBytes(),
+                EventPayload.MEDIA_TYPE);
+    }
+
+    /**
+     * Announced once, on the break's terminal edge (`P8-TSK-012` the {@code EVIDENCED}
+     * producer; `P8-TSK-015` extends to the person kinds) — identifiers and enumerated
+     * names only, never an amount; the unpark's entry rides as its identifier when an
+     * offset explained the break.
+     */
+    static void breakResolved(
+            OutboxWriter<Connection> outbox,
+            Connection unitOfWork,
+            IdGenerator ids,
+            UUID breakId,
+            UUID resolutionId,
+            ResolutionKind kind,
+            ResolutionReasonCode reasonCode,
+            java.util.Optional<UUID> journalEntryId,
+            Instant occurredAt,
+            CorrelationId correlation) {
+        EventPayload payload =
+                EventPayload.of()
+                        .with("breakId", breakId.toString())
+                        .with("resolutionId", resolutionId.toString())
+                        .with("kind", kind.name())
+                        .with("reasonCode", reasonCode.name());
+        journalEntryId.ifPresent(entry -> payload.with("journalEntryId", entry.toString()));
+        outbox.write(
+                unitOfWork,
+                new EventEnvelope(
+                        EventId.next(ids),
+                        BREAK_RESOLVED_EVENT_TYPE,
+                        EVENT_VERSION,
+                        EventEnvelope.CURRENT_SCHEMA_VERSION,
+                        BreakId.of(breakId),
+                        "reconciliation_break",
+                        occurredAt,
+                        PRODUCER,
+                        correlation,
+                        CausationId.of(resolutionId.toString())),
                 payload.toBytes(),
                 EventPayload.MEDIA_TYPE);
     }

@@ -77,6 +77,7 @@ public class Matching {
     private final MatchingRules rules;
     private final BreakRegister breaks;
     private final Suspense suspense;
+    private final Resolutions resolutions;
     private final InternalReferenceLookup lookup;
     private final LedgerAccountStore<Connection> accounts;
     private final OutboxWriter<Connection> outbox;
@@ -91,6 +92,7 @@ public class Matching {
             MatchingRules rules,
             BreakRegister breaks,
             Suspense suspense,
+            Resolutions resolutions,
             InternalReferenceLookup lookup,
             LedgerAccountStore<Connection> accounts,
             OutboxWriter<Connection> outbox,
@@ -103,6 +105,8 @@ public class Matching {
         this.rules = Objects.requireNonNull(rules, "rules must not be null");
         this.breaks = Objects.requireNonNull(breaks, "breaks must not be null");
         this.suspense = Objects.requireNonNull(suspense, "suspense must not be null");
+        this.resolutions =
+                Objects.requireNonNull(resolutions, "resolutions must not be null");
         this.lookup = Objects.requireNonNull(lookup, "lookup must not be null");
         this.accounts = Objects.requireNonNull(accounts, "accounts must not be null");
         this.outbox = Objects.requireNonNull(outbox, "outbox must not be null");
@@ -289,6 +293,7 @@ public class Matching {
         store.lockItems(unitOfWork, items.stream().map(MatchingStore.ChunkItem::id).toList());
 
         List<Suspense.ParkedItem> parks = new ArrayList<>();
+        List<OffsetIntent> offsets = new ArrayList<>();
         // The chunk's own claimant ledger: each allocation diminishes the remainder the
         // NEXT item in claimant order sees (INV-REC-07 inside one chunk), and ranks count.
         Map<UUID, Integer> claimantRanks = new HashMap<>();
@@ -299,7 +304,7 @@ public class Matching {
             try {
                 decideAndApply(
                         unitOfWork, run, item, resolutions.get(item.id()), lockedHits,
-                        claimantRanks, tolerance, parks, now, correlation);
+                        claimantRanks, tolerance, parks, offsets, now, correlation);
             } catch (RuntimeException poisoned) {
                 rollbackTo(unitOfWork, savepoint);
                 containPoisoned(unitOfWork, run, item, parks, now, correlation, poisoned);
@@ -312,7 +317,13 @@ public class Matching {
         if (lastChunk) {
             completeRun(unitOfWork, run, now, correlation);
         }
-        // The parks: one aggregated entry per (position, value date), POSTED LAST.
+        // THE POSTINGS, LAST (the §3 rule). A chunk posting more than one entry over the
+        // platform's shared projection rows pre-locks their union in the projection's own
+        // order before its first posting: Suspense.park's internal pre-lock covers only
+        // its OWN groups, so a one-park-plus-one-unpark chunk pre-locks here or nowhere.
+        if (parks.size() + offsets.size() > 1) {
+            preLockPostingUnion(unitOfWork, parks, offsets);
+        }
         if (!parks.isEmpty()) {
             suspense.park(
                     unitOfWork,
@@ -324,10 +335,91 @@ public class Matching {
                             now,
                             correlation));
         }
+        // The offsets (`P8-TSK-012`): each unpark is the original park's exact inverse
+        // with cause CORRECTION_OFFSET, then the EVIDENCED resolution carrying its entry
+        // - the rows after the posting are the transaction's own claims (the D3 shape).
+        for (OffsetIntent offset : offsets) {
+            applyOffsetPostingAndEvidence(unitOfWork, run, offset, now, correlation);
+        }
         return new ChunkOutcome(
                 lastChunk ? ChunkOutcome.Kind.COMPLETED : ChunkOutcome.Kind.CHUNKED,
                 run.id(),
                 decided);
+    }
+
+    /** One recorded offset awaiting its posting phase: the locked original's facts. */
+    private record OffsetIntent(
+            UUID decisionId, CorrectionEngine.ParkedOriginal parked, Money amount) {}
+
+    private void preLockPostingUnion(
+            Connection unitOfWork,
+            List<Suspense.ParkedItem> parks,
+            List<OffsetIntent> offsets) {
+        java.util.TreeSet<UUID> union = new java.util.TreeSet<>();
+        for (Suspense.ParkedItem park : parks) {
+            union.add(park.positionAccountId());
+            union.add(suspenseAccount(unitOfWork, park.remainder().currency()));
+        }
+        for (OffsetIntent offset : offsets) {
+            union.add(offset.parked().positionAccountId());
+            union.add(suspenseAccount(unitOfWork, offset.amount().currency()));
+        }
+        suspense.lockBalancesInOrder(unitOfWork, List.copyOf(union));
+    }
+
+    private UUID suspenseAccount(Connection unitOfWork, CurrencyCode currency) {
+        return accounts
+                .findOperational(
+                        unitOfWork, com.finapp.ledger.AccountPurpose.SUSPENSE_UNMATCHED,
+                        currency)
+                .orElseThrow(
+                        () ->
+                                new IllegalStateException(
+                                        "the chart seeds suspense per currency"))
+                .id()
+                .value();
+    }
+
+    private void applyOffsetPostingAndEvidence(
+            Connection unitOfWork,
+            MatchingStore.RunRow run,
+            OffsetIntent offset,
+            Instant now,
+            CorrelationId correlation) {
+        Suspense.Unparked unparked =
+                suspense.unpark(
+                        unitOfWork,
+                        offset.parked().suspenseItemId(),
+                        offset.amount(),
+                        ReleaseCause.CORRECTION_OFFSET,
+                        "decision=" + offset.decisionId(),
+                        LocalDate.ofInstant(now, ZoneOffset.UTC),
+                        SecurityContext.require(),
+                        now,
+                        correlation);
+        boolean closed =
+                resolutions.evidence(
+                        unitOfWork,
+                        new Resolutions.Evidence(
+                                ids.next(),
+                                offset.parked().breakId(),
+                                offset.amount(),
+                                store.breakResidualVersion(
+                                        unitOfWork, offset.parked().breakId()),
+                                offset.decisionId(),
+                                Optional.of(unparked.parkId()),
+                                Optional.of(offset.parked().suspenseItemId()),
+                                Optional.of(unparked.entryId()),
+                                run.ruleSetId(),
+                                SecurityContext.require(),
+                                now,
+                                correlation));
+        if (!closed) {
+            // The break row was locked at the decision and screened not-RESOLVED, so
+            // this transaction's own release cannot find it closed.
+            throw new IllegalStateException(
+                    "an offset's owning break vanished under its lock (INV-REC-09)");
+        }
     }
 
     private void completeRun(
@@ -337,6 +429,51 @@ public class Matching {
             CorrelationId correlation) {
         if (!store.completeRun(unitOfWork, run.id(), SecurityContext.require(), now)) {
             return; // Another edge won; the deferred trigger guards the claim anyway.
+        }
+        // The per-batch fee comparison (`P8-TSK-012`, ADR-0068 §7), judged once by the
+        // completing edge's one winner: the signed fold of reported - expected per
+        // currency over the run's CHECKED fee decisions (one currency's minor units -
+        // Java arithmetic, never SQL SUM), its subject the run's FIRST fee item in
+        // claimant order (the design's D: the taxonomy names the item, and the batch's
+        // fee narrative starts at its first line), converging on the one-open unique.
+        Map<String, long[]> foldByCurrency = new LinkedHashMap<>();
+        Map<String, MatchingStore.FeeDecisionRow> firstByCurrency = new LinkedHashMap<>();
+        for (MatchingStore.FeeDecisionRow fee : store.feeDecisionsOf(unitOfWork, run.id())) {
+            foldByCurrency
+                    .computeIfAbsent(fee.currency(), currency -> new long[] {0L, fee.scale()})
+                    [0] += fee.feeReportedMinor() - fee.feeExpectedMinor();
+            firstByCurrency.putIfAbsent(fee.currency(), fee);
+        }
+        for (Map.Entry<String, long[]> fold : foldByCurrency.entrySet()) {
+            CurrencyCode currency = CurrencyCode.of(fold.getKey());
+            long batchTolerance =
+                    rules.feeToleranceMinor(
+                            unitOfWork, run.ruleSetId(), "PROCESSING_FEE_PER_BATCH",
+                            currency);
+            long deviation = Math.abs(fold.getValue()[0]);
+            if (deviation > batchTolerance) {
+                MatchingStore.FeeDecisionRow first = firstByCurrency.get(fold.getKey());
+                breaks.raise(
+                        unitOfWork,
+                        new BreakRegister.NewBreak(
+                                ids.next(),
+                                BreakType.FEE_MISMATCH,
+                                BreakCause.FEE_BEYOND_TOLERANCE,
+                                BreakRegister.Subject.externalItem(first.itemId()),
+                                run.sourceId(),
+                                run.ruleSetId(),
+                                Money.ofPersisted(
+                                        deviation, currency, (int) fold.getValue()[1]),
+                                Optional.empty(),
+                                Optional.empty(),
+                                Optional.empty(),
+                                Optional.empty(),
+                                Optional.empty(),
+                                Optional.empty(),
+                                SecurityContext.require(),
+                                now,
+                                correlation));
+            }
         }
         Map<DecisionOutcome, Long> counts = store.outcomeCounts(unitOfWork, run.id());
         StringBuilder summary = new StringBuilder("items=").append(run.itemCount());
@@ -372,7 +509,8 @@ public class Matching {
             boolean anyLandedRule,
             List<UUID> hitIds,
             KeyKind reachedBy,
-            Optional<Integer> waitingGraceHours) {}
+            Optional<Integer> waitingGraceHours,
+            Optional<MatchingRules.RuleRow> unlandedRule) {}
 
     private Resolution resolve(
             Connection unitOfWork, MatchingStore.RunRow run, MatchingStore.ChunkItem item) {
@@ -381,14 +519,24 @@ public class Matching {
         boolean anyLanded =
                 lineRules.stream()
                         .anyMatch(rule -> rule.cardinality() == Cardinality.ONE_TO_ONE);
+        // The CHECK or CORRECTION rule this line type rides when no landed rule serves
+        // it (`P8-TSK-012`); GROUP_BY_VALUE_DATE stays `-016`'s, PARTIAL has no v1 rule.
+        Optional<MatchingRules.RuleRow> unlanded =
+                lineRules.stream()
+                        .filter(rule ->
+                                rule.cardinality() == Cardinality.CHECK
+                                        || rule.cardinality() == Cardinality.CORRECTION)
+                        .findFirst();
         Optional<Integer> waitingGrace =
                 lineRules.stream()
                         .filter(rule -> rule.cardinality() == Cardinality.ONE_TO_ONE)
                         .findFirst()
-                        .map(MatchingRules.RuleRow::graceHours);
+                        .map(MatchingRules.RuleRow::graceHours)
+                        // A correction that reaches nothing waits under ITS rule's clock.
+                        .or(() -> unlanded.map(MatchingRules.RuleRow::graceHours));
         for (MatchingRules.RuleRow rule : lineRules) {
             if (rule.cardinality() != Cardinality.ONE_TO_ONE || rule.keyKind().isEmpty()) {
-                continue; // CHECK and CORRECTION are P8-TSK-012's; PARTIAL has no v1 rule.
+                continue;
             }
             KeyKind keyKind = rule.keyKind().get();
             Optional<String> value = itemKeyValue(item, keyKind);
@@ -399,11 +547,13 @@ public class Matching {
                     resolveKey(unitOfWork, run.sourceId(), keyKind, value.get());
             if (!hits.isEmpty()) {
                 return new Resolution(
-                        Optional.of(rule), anyLanded, hits, keyKind, waitingGrace);
+                        Optional.of(rule), anyLanded, hits, keyKind, waitingGrace,
+                        unlanded);
             }
         }
         return new Resolution(
-                Optional.empty(), anyLanded, List.of(), KeyKind.OUR_REF, waitingGrace);
+                Optional.empty(), anyLanded, List.of(), KeyKind.OUR_REF, waitingGrace,
+                unlanded);
     }
 
     /**
@@ -451,6 +601,7 @@ public class Matching {
             Map<UUID, Integer> claimantRanks,
             int toleranceDays,
             List<Suspense.ParkedItem> parks,
+            List<OffsetIntent> offsets,
             Instant now,
             CorrelationId correlation) {
         boolean fingerprintSeen =
@@ -469,6 +620,24 @@ public class Matching {
                         item.businessDate(),
                         item.settlementDate(),
                         fingerprintSeen);
+        // The unlanded cardinalities route before the engine (`P8-TSK-012`): a fee
+        // line's value was expensed at acceptance and is JUDGED, never parked - each
+        // expensed line checked, a repeated one included; a correction is the
+        // counterparty's own evidence against its original, and a repeated correction
+        // is the fingerprint duplicate it always was.
+        if (resolution.firedRule().isEmpty() && resolution.unlandedRule().isPresent()) {
+            MatchingRules.RuleRow unlanded = resolution.unlandedRule().get();
+            if (unlanded.cardinality() == Cardinality.CHECK) {
+                applyFeeCheck(unitOfWork, run, item, unlanded, now, correlation);
+                return;
+            }
+            if (unlanded.cardinality() == Cardinality.CORRECTION) {
+                applyCorrection(
+                        unitOfWork, run, item, facts, resolution, unlanded,
+                        claimantRanks, parks, offsets, now, correlation);
+                return;
+            }
+        }
         Optional<MatchEngine.FiredRule> fired =
                 resolution.firedRule()
                         .map(rule ->
@@ -666,6 +835,290 @@ public class Matching {
         }
     }
 
+    /**
+     * The {@code CHECK} cardinality (`P8-TSK-012`, ADR-0068 §7): the reported fee against
+     * round(rate × gross + fixed) under the pinned schedule and the per-line bound —
+     * strict, so exactly at the tolerance raises nothing. The item is {@code CHECKED}
+     * whatever the verdict; a breach is `FEE_MISMATCH`, commercial, NEVER parked — the
+     * value was expensed at acceptance. An unreachable original or an absent schedule
+     * prices the expected fee at zero (the design's F1/F2, conservative).
+     */
+    private void applyFeeCheck(
+            Connection unitOfWork,
+            MatchingStore.RunRow run,
+            MatchingStore.ChunkItem item,
+            MatchingRules.RuleRow rule,
+            Instant now,
+            CorrelationId correlation) {
+        Optional<Money> gross = Optional.empty();
+        String originalRef = item.keys().get(ItemKeyKind.ORIGINAL_REF);
+        if (originalRef != null) {
+            gross =
+                    store.expectationsByKey(
+                                    unitOfWork, run.sourceId(), KeyKind.PSP_CAPTURE_REF,
+                                    originalRef)
+                            .stream()
+                            .findFirst()
+                            .flatMap(id -> store.expectationAmount(unitOfWork, id));
+        }
+        long tolerance =
+                rules.feeToleranceMinor(
+                        unitOfWork, run.ruleSetId(), "PROCESSING_FEE_PER_LINE",
+                        item.amount().currency());
+        FeeCheck.Verdict verdict =
+                FeeCheck.check(
+                        item.amount(),
+                        gross,
+                        rules.feeScheduleFor(
+                                unitOfWork, run.ruleSetId(), item.lineType(),
+                                item.amount().currency()),
+                        tolerance);
+        store.insertDecision(
+                unitOfWork,
+                new MatchingStore.NewDecision(
+                        ids.next(),
+                        item.id(),
+                        run.id(),
+                        DecisionOrigin.RUN,
+                        run.ruleSetId(),
+                        Optional.of(rule.priority()),
+                        Optional.of(Cardinality.CHECK),
+                        Optional.empty(),
+                        DecisionOutcome.CHECKED,
+                        Optional.empty(),
+                        Optional.empty(),
+                        Optional.empty(),
+                        Optional.empty(),
+                        Optional.of(verdict.expectedMinor()),
+                        Optional.of(item.amount().minorUnits()),
+                        Optional.of(tolerance),
+                        SecurityContext.require(),
+                        now,
+                        LocalDate.ofInstant(now, ZoneOffset.UTC),
+                        correlation));
+        store.markItemChecked(
+                unitOfWork, item.id(), SecurityContext.require(), now, correlation);
+        if (verdict.beyondTolerance()) {
+            breaks.raise(
+                    unitOfWork,
+                    newBreak(
+                            run, item, BreakType.FEE_MISMATCH,
+                            BreakCause.FEE_BEYOND_TOLERANCE,
+                            BreakRegister.Subject.externalItem(item.id()),
+                            Money.ofPersisted(
+                                    verdict.deviationMinor(),
+                                    item.amount().currency(),
+                                    item.amount().scale()),
+                            Optional.empty(), now));
+        }
+    }
+
+    /**
+     * The {@code CORRECTION} cardinality (`P8-TSK-012`, the plan's §12.5): the
+     * counterparty's own evidence against its original — a same-direction top-up of the
+     * open remainder, or an exact opposite offset of the parked excess, resolving the
+     * break it explains {@code EVIDENCED}; matching neither, it waits like any
+     * grace-class remainder.
+     */
+    private void applyCorrection(
+            Connection unitOfWork,
+            MatchingStore.RunRow run,
+            MatchingStore.ChunkItem item,
+            MatchEngine.ItemFacts facts,
+            Resolution resolution,
+            MatchingRules.RuleRow rule,
+            Map<UUID, Integer> claimantRanks,
+            List<Suspense.ParkedItem> parks,
+            List<OffsetIntent> offsets,
+            Instant now,
+            CorrelationId correlation) {
+        if (facts.fingerprintSeenEarlier()) {
+            applyDefinitive(
+                    unitOfWork, run, item, Optional.empty(), ids.next(),
+                    LocalDate.ofInstant(now, ZoneOffset.UTC),
+                    BreakType.DUPLICATE_EXTERNAL, BreakCause.REPEATED_FINGERPRINT,
+                    Optional.empty(), parks, now, correlation);
+            return;
+        }
+        String originalRef = item.keys().get(ItemKeyKind.ORIGINAL_REF);
+        List<MatchEngine.HitFacts> hits = List.of();
+        List<CorrectionEngine.ParkedOriginal> parkedOriginals = List.of();
+        if (originalRef != null) {
+            Map<UUID, KeyKind> reachedBy = new LinkedHashMap<>();
+            for (KeyKind kind : List.of(KeyKind.PSP_CAPTURE_REF, KeyKind.PSP_REFUND_REF)) {
+                for (UUID id :
+                        store.expectationsByKey(
+                                unitOfWork, run.sourceId(), kind, originalRef)) {
+                    reachedBy.putIfAbsent(id, kind);
+                }
+            }
+            hits = store.lockExpectations(unitOfWork, reachedBy.keySet(), reachedBy);
+            java.util.LinkedHashSet<UUID> originalItems = new java.util.LinkedHashSet<>();
+            for (ItemKeyKind kind :
+                    List.of(ItemKeyKind.PSP_CAPTURE_REF, ItemKeyKind.PSP_REFUND_REF)) {
+                originalItems.addAll(
+                        store.itemsByKey(unitOfWork, run.sourceId(), kind, originalRef));
+            }
+            originalItems.remove(item.id()); // Never its own original.
+            parkedOriginals = store.lockParkedOriginals(unitOfWork, originalItems);
+        }
+        CorrectionEngine.Verdict verdict =
+                CorrectionEngine.decide(facts, hits, parkedOriginals);
+        UUID decisionId = ids.next();
+        LocalDate decidedOn = LocalDate.ofInstant(now, ZoneOffset.UTC);
+        switch (verdict.kind()) {
+            case TOP_UP ->
+                    applyTopUp(
+                            unitOfWork, run, item, rule, verdict, decisionId, decidedOn,
+                            claimantRanks, parks, now, correlation);
+            case OFFSET -> {
+                CorrectionEngine.ParkedOriginal parked = verdict.offset().orElseThrow();
+                store.insertDecision(
+                        unitOfWork,
+                        new MatchingStore.NewDecision(
+                                decisionId,
+                                item.id(),
+                                run.id(),
+                                DecisionOrigin.RUN,
+                                run.ruleSetId(),
+                                Optional.of(rule.priority()),
+                                Optional.of(Cardinality.CORRECTION),
+                                Optional.empty(),
+                                DecisionOutcome.OFFSET,
+                                Optional.empty(),
+                                Optional.empty(),
+                                Optional.empty(),
+                                Optional.empty(),
+                                SecurityContext.require(),
+                                now,
+                                decidedOn,
+                                correlation));
+                store.markItemOffset(
+                        unitOfWork, item.id(), item.amount().minorUnits(),
+                        SecurityContext.require(), now, correlation);
+                store.markParkedItemResolved(
+                        unitOfWork, parked.originalItemId(), SecurityContext.require(),
+                        now, correlation);
+                offsets.add(new OffsetIntent(decisionId, parked, item.amount()));
+            }
+            case UNREACHED ->
+                    applyUnreached(
+                            unitOfWork, run, item, resolution, decisionId, decidedOn,
+                            parks, now, correlation);
+        }
+    }
+
+    /** The correction's allocating half: `ONE_TO_ONE`'s arithmetic, `EVIDENCED` at zero. */
+    private void applyTopUp(
+            Connection unitOfWork,
+            MatchingStore.RunRow run,
+            MatchingStore.ChunkItem item,
+            MatchingRules.RuleRow rule,
+            CorrectionEngine.Verdict verdict,
+            UUID decisionId,
+            LocalDate decidedOn,
+            Map<UUID, Integer> claimantRanks,
+            List<Suspense.ParkedItem> parks,
+            Instant now,
+            CorrelationId correlation) {
+        MatchEngine.HitFacts candidate = verdict.candidate().orElseThrow();
+        Money allocation = verdict.allocation().orElseThrow();
+        boolean settles = allocation.minorUnits() == candidate.remainderMinor();
+        // The break BEFORE the settling allocation (the §3 order): the one this top-up
+        // may close is locked first, so the evidence write serialises break-first with
+        // any other writer of that break.
+        Optional<UUID> explained =
+                settles
+                        ? store.lockOpenBreakOn(
+                                unitOfWork, candidate.expectationId(),
+                                BreakType.AMOUNT_MISMATCH)
+                        : Optional.empty();
+        int claimantRank =
+                claimantRanks.merge(candidate.expectationId(), 1, Integer::sum);
+        store.insertDecision(
+                unitOfWork,
+                new MatchingStore.NewDecision(
+                        decisionId,
+                        item.id(),
+                        run.id(),
+                        DecisionOrigin.RUN,
+                        run.ruleSetId(),
+                        Optional.of(rule.priority()),
+                        Optional.of(Cardinality.CORRECTION),
+                        Optional.of(candidate.reachedBy()),
+                        verdict.excess().isPresent()
+                                ? DecisionOutcome.PARKED
+                                : DecisionOutcome.MATCHED,
+                        Optional.of(claimantRank),
+                        Optional.of(1),
+                        Optional.empty(),
+                        Optional.empty(),
+                        SecurityContext.require(),
+                        now,
+                        decidedOn,
+                        correlation));
+        store.insertCandidates(unitOfWork, decisionId, List.of(candidate));
+        store.insertAllocation(
+                unitOfWork,
+                new MatchingStore.NewAllocation(
+                        ids.next(), decisionId, item.id(), candidate.expectationId(),
+                        allocation, now, correlation));
+        ExpectationStatus status =
+                store.allocateToExpectation(
+                        unitOfWork,
+                        candidate.expectationId(),
+                        allocation,
+                        "decision=" + decisionId,
+                        SecurityContext.require(),
+                        now,
+                        correlation);
+        store.bumpResidualOnSubjects(unitOfWork, candidate.expectationId(), item.id());
+        if (status == ExpectationStatus.SETTLED) {
+            ReconciliationEvents.expectationSettled(
+                    outbox, unitOfWork, ids, candidate.expectationId(), candidate.kind(),
+                    candidate.operationRef(), run.sourceId(), now, correlation);
+        }
+        if (verdict.excess().isPresent()) {
+            Money excess = verdict.excess().get();
+            store.recordItemAllocation(unitOfWork, item.id(), allocation.minorUnits());
+            BreakRegister.Raised raised =
+                    breaks.raise(
+                            unitOfWork,
+                            newBreak(
+                                    run, item, BreakType.AMOUNT_MISMATCH,
+                                    BreakCause.AMOUNT_DIFFERS,
+                                    BreakRegister.Subject.externalItem(item.id()), excess,
+                                    Optional.empty(), now));
+            parks.add(
+                    new Suspense.ParkedItem(
+                            item.id(), raised.breakId(), excess,
+                            positionAccount(unitOfWork, item)));
+        } else {
+            store.markItemMatched(
+                    unitOfWork, item.id(), allocation.minorUnits(),
+                    SecurityContext.require(), now, correlation);
+        }
+        // A zero remainder EXPLAINS the under-payment's own break: EVIDENCED, in this
+        // transaction, no posting of its own - the allocation is the effect.
+        explained.ifPresent(
+                breakId ->
+                        resolutions.evidence(
+                                unitOfWork,
+                                new Resolutions.Evidence(
+                                        ids.next(),
+                                        breakId,
+                                        allocation,
+                                        store.breakResidualVersion(unitOfWork, breakId),
+                                        decisionId,
+                                        Optional.empty(),
+                                        Optional.empty(),
+                                        Optional.empty(),
+                                        run.ruleSetId(),
+                                        SecurityContext.require(),
+                                        now,
+                                        correlation)));
+    }
+
     private void applyDefinitive(
             Connection unitOfWork,
             MatchingStore.RunRow run,
@@ -825,6 +1278,43 @@ public class Matching {
                 poisoned.getClass().getSimpleName());
         // Whatever the failed attempt queued for this item rolled back with it.
         parks.removeIf(queued -> queued.externalItemId().equals(item.id()));
+        // A poisoned FEE line is contained WITHOUT a park (`P8-TSK-012`): its value was
+        // expensed at acceptance, so nothing of it sits in the position - it is left
+        // UNMATCHED with no grace clock, its ERRORED decision and unparked
+        // PROCESSING_ERROR break the honest record.
+        if (item.lineType() == ExternalLineType.PROCESSING_FEE) {
+            UUID feeDecision = ids.next();
+            store.insertDecision(
+                    unitOfWork,
+                    new MatchingStore.NewDecision(
+                            feeDecision,
+                            item.id(),
+                            run.id(),
+                            DecisionOrigin.RUN,
+                            run.ruleSetId(),
+                            Optional.empty(),
+                            Optional.empty(),
+                            Optional.empty(),
+                            DecisionOutcome.ERRORED,
+                            Optional.empty(),
+                            Optional.empty(),
+                            Optional.empty(),
+                            Optional.empty(),
+                            SecurityContext.require(),
+                            now,
+                            LocalDate.ofInstant(now, ZoneOffset.UTC),
+                            correlation));
+            breaks.raise(
+                    unitOfWork,
+                    newBreak(
+                            run, item, BreakType.PROCESSING_ERROR, BreakCause.ITEM_ERRORED,
+                            BreakRegister.Subject.externalItem(item.id()), item.amount(),
+                            Optional.empty(), now));
+            store.markItemUnmatched(
+                    unitOfWork, item.id(), Optional.empty(), SecurityContext.require(),
+                    now, correlation);
+            return;
+        }
         UUID decisionId = ids.next();
         store.insertDecision(
                 unitOfWork,
