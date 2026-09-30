@@ -524,7 +524,13 @@ payable bounds the next payout).
   payout source's `PAYOUT_RETURNED` rule OPERATION-ANCHORED (point 3). `P8-TSK-005` switches
   `MerchantPayoutOutcomes` to it and opens `MERCHANT_PAYOUT` through the port.
 - `P8-TSK-013`: the grace leg judges a `PAYOUT_RETURNED` item on its locked row (point 7), and
-  shares the worker-against-grace-leg race and its test with `P8-TSK-019`.
+  shares the worker-against-grace-leg race and its test with `P8-TSK-019`. **The grace side
+  implemented** (2026-09-30): `Matching`'s grace leg locks each expired item `FOR UPDATE` and
+  re-reads its candidates under that lock, so an expectation committed by a holder of the
+  item's share lock is allocated, never parked beside it — proven in
+  `GraceAndRematchDatabaseTest` with a share-lock holder standing in for the worker, and the
+  dropped-item-lock probe killed by that test. The worker's own side of the race stays
+  `P8-TSK-019`'s.
 - `P8-TSK-018`: the payout provider's report and rules.
 - `P8-TSK-015`: the fallback's `TRANSFER_TO_ACCOUNT`, and with it `reconciliationAttributed`, the
   customer statement's `RECONCILIATION_ATTRIBUTION` label and `INV-MER-02`'s attribution clause
@@ -538,6 +544,7 @@ payable bounds the next payout).
   (`REVERSAL_MISMATCH` crossed with its allowed resolutions, `TRANSFER_TO_ACCOUNT` among them).
 - At the transition, with provenance: ADR-0057's follow-up is annotated as paid by this ADR, and
   ADR-0062 §7 as evaluated, with its second trigger not fired.
-- Until `P8-TSK-019` lands, nothing in this ADR is implemented; every statement is the decided
-  design, corrected by the tasks that build it.
+- Until `P8-TSK-019` lands, nothing in this ADR is implemented but point 7's grace side
+  (`P8-TSK-013`, above); every other statement is the decided design, corrected by the tasks
+  that build it.
 - The Phase 8 review reads this ADR against the code before accepting it (`P8-DOC-001`).

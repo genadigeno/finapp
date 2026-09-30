@@ -7,7 +7,7 @@ Conversation history is not. Read this first in every session
 **History lives in [`history/`](history/)** — per-task records, closed milestones, completed
 capabilities and the change log. This document stays current; the archives stay archived.
 
-Last updated: 2026-09-29 (`P8-TSK-002` — the source register, the encrypted file store and the door screen; **M8.1 at 2 of 3**, next `P8-TSK-003`)
+Last updated: 2026-09-30 (`P8-TSK-013` — grace, ageing, rematch and late evidence; **M8.3 `CLOSED` at 6 of 6**, next `P8-TSK-014`) *(this line read `P8-TSK-002` from that gate until `P8-TSK-013`'s record found it — the stale-second-copy class, in the document's own dateline)*
 
 ---
 
@@ -377,8 +377,8 @@ adjustment machinery; amounts never enter metrics; a payout return applied from 
 evidence. The transition catalogued nine invariants, taking the platform to **110**, and the
 Phase 8 set is **twenty-two**. 27 backlog items across eight milestones (M8.1–M8.8);
 [`SETTLEMENT_AND_RECONCILIATION_LIFECYCLES.md`](../domain/SETTLEMENT_AND_RECONCILIATION_LIFECYCLES.md)
-states nine machines and one born-once fact. **12 of 27 items complete** (M8.1 `CLOSED` at 3 of 3,
-M8.2 `CLOSED` at 4 of 4, **M8.3, Evidence becomes canonical lines, at 5 of 6**): the modules
+states nine machines and one born-once fact. **13 of 27 items complete** (M8.1 `CLOSED` at 3 of 3,
+M8.2 `CLOSED` at 4 of 4, **M8.3, Evidence becomes canonical lines, `CLOSED` at 6 of 6**): the modules
 and floors (`P8-TSK-001`), the source register, the file store and the door screen
 (`P8-TSK-002`), the upload door and attestation (`P8-TSK-003`), the expectation register with
 the card openers (`P8-TSK-004`), every other opener with the register that proves them
@@ -388,8 +388,10 @@ published verdicts (`P8-TSK-007`) and the PSP format with the parse leg and the 
 the reconciliation intake (`P8-TSK-009`), the break and suspense records with their
 writers, proofs and gauges (`P8-TSK-010`) the matcher — ordered allocation with
 decision snapshots, the run leg and the explanation doors (`P8-TSK-011`) — and the fee
-checks and counterparty corrections with the first `EVIDENCED` resolutions (`P8-TSK-012`);
-next **`P8-TSK-013` — grace, ageing, rematch and late evidence** — `READY` ([§Current Task](#current-task) is kept current). *(This paragraph read "2 of 27 items complete
+checks and counterparty corrections with the first `EVIDENCED` resolutions (`P8-TSK-012`) —
+and grace, ageing, rematch and late evidence, time made explicit, closing the milestone
+(`P8-TSK-013`); next **`P8-TSK-014` — break reads, the case file and the
+settlement-status trail** — `READY` ([§Current Task](#current-task) is kept current). *(This paragraph read "2 of 27 items complete
 (M8.1 at 2 of 3) ... next `P8-TSK-003`" through `P8-TSK-003`'s and `P8-TSK-004`'s gates, until
 `P8-TSK-005`'s record found it: the stale-second-copy class again, in the paragraph neither gate's
 record reached.)*
@@ -407,118 +409,109 @@ since M0.1". Moved, not edited.)*
 
 ## Current Task
 
-**`P8-TSK-013` — Grace, ageing, rematch and late evidence** —
-`READY`. Time becomes explicit: unexplained external value waits out its pinned grace window and
-parks with its break, internal records that never settle age into `MISSING_EXTERNAL`, late
-evidence on either side is found and closes what it explains, and nothing is ever refused as
-stale (`INV-SET-02`, `INV-SET-03`). Its entry and field set are in [`BACKLOG.md`](BACKLOG.md).
-**Not started.**
+**`P8-TSK-014` — Break reads, the case file and the settlement-status trail** —
+`READY`. An investigator can find, own, annotate and reclassify a break, and walk from any
+break or any operation to its raw evidence and journal entries by stored identifiers alone.
+Its entry and field set are in [`BACKLOG.md`](BACKLOG.md). **Not started.**
 
 ### Just completed
 
-**`P8-TSK-012` — Processing fees and counterparty corrections** — `COMPLETE`
-(2026-09-30). **M8.3, Evidence becomes canonical lines, at 5 of 6**: the PSP's charges are
-now checkable against its own pinned terms — the ONE legitimate tolerance, comparing two
-unposted quantities — and the counterparty's own corrections net automatically, closing
-the breaks they explain `EVIDENCED`, the one resolution no person decides (`INV-REC-08`;
-`INV-REC-02` as amended; ADR-0068 §7, ADR-0071 §2). **Reconciliation `V006`**:
-`resolution` (+`_event`) with ADR-0071's full column set — the frozen amount, the
-break's `residual_version`, the named decision and park, `UNIQUE adjustment_proposal_id`
-and `UNIQUE journal_entry_id` — the vocabulary STATED WHOLE in code (`ResolutionKind`,
-`ResolutionStatus`, `ResolutionReasonCode`: eight kinds, four states, thirteen closed
-reasons) while the `CHECK`s deliberately admit only the produced subset (`EVIDENCED`,
-`APPROVED`, `EVIDENCE_RECEIVED`) exactly as the plan's §8 slices `V006`/`V007` — a
-narrowed RANK, not a narrowed vocabulary, the migration test pinning each admitted value
-as its enum's member; `EVIDENCED` the platform's at three ranks (the writer's system
-path; `CHECK (proposed_by_type = 'SYSTEM' AND status = 'APPROVED' AND NOT four_eyes)`
-refusing every raw writer, the migrator included; `-015`'s door to refuse the kind); the
-distinctness `CHECK` and the one-live-proposal partial unique stated now, inert; the
-narrative bounded 1..1000 and screened for PAN and IBAN shapes at the database (the break
-note's rank); both tables append-only for EVERY writer until `V007`. **The fee check
-(`CHECK` cardinality)**: one pure seat (`FeeCheck`) — expected = round(rate × gross
-+ fixed) under the pinned schedule's NAMED rounding (`INV-MON-03`; HALF_UP and DOWN proven
-to part ways), the comparison STRICT: at the tolerance nothing, one minor unit beyond a
-breach, the deviation absolute so under-charging is judged the same way; the gross is the
-capture expectation the fee's `ORIGINAL_REF` reaches; AN UNREACHABLE ORIGINAL IS JUDGED
-AT ONCE against an expected fee of ZERO (the design's F1 — waiting would hand `-013`'s
-grace leg a fee item, and the grace leg parks expirees, double-counting expensed value)
-and an absent schedule or tolerance row reads zero (F2, conservative, never loosened);
-the item moves `PENDING → CHECKED` whatever the verdict, the decision freezing
-expected, reported and tolerance (the `V005` columns, now written; the explanation door's
-view gains the triple, additive, the OpenAPI baseline regenerated with exactly its three
-flagged rows reviewed); a breach is `FEE_MISMATCH` (`FEE_BEYOND_TOLERANCE`), commercial,
-value |reported − expected|, NEVER parked — the reported fee was expensed at
-acceptance; and the PER-BATCH comparison folds signed reported − expected per currency
-ONCE, under the completing edge's one winner, its subject the run's FIRST fee item in
-claimant order (the design's D: the taxonomy names the item), converging on the one-open
-unique. A `DISPUTE_FEE` line differing from its expectation stays `AMOUNT_MISMATCH` under
-`ONE_TO_ONE`, proven. **The corrections (`CORRECTION` cardinality)**: one pure seat
-(`CorrectionEngine`) — a same-direction correction TOPS UP the original expectation's
-open remainder (min(item, remainder), any excess parked: C1, a correction is evidence
-like any line), an opposite-direction correction OFFSETS the original item's parked
-excess only at EXACT equality — never a partial offset — and the top-up wins when
-both could apply; matching neither, it waits under ITS rule's grace like any remainder.
-THE OFFSET, whole in the chunk: the correcting item `PENDING → OFFSET` (its value
-recorded in `offset_minor`), the original item `PARKED → RESOLVED`, the unpark the
-park's EXACT INVERSE (cause `CORRECTION_OFFSET` — `Suspense.unpark` gains the cause
-parameter — proven line for line against `ledger.journal_line`), the `EVIDENCED`
-resolution carrying the unpark's entry, the break's conditional `→ RESOLVED` (the
-`OPEN → RESOLVED` shortcut edge produced), `reconciliation.BreakResolved` on the
-terminal edge and the acting-only `reconciliation.BreakResolvedByEvidence` audit record
-— identifiers and enumerated names only. A settling TOP-UP locks the expectation's
-open `AMOUNT_MISMATCH` break BEFORE the allocation that closes it (the §3 break-first
-order) and resolves it `EVIDENCED` with no posting of its own; A NON-ZERO RESIDUAL NEVER
-RESOLVES — the partial top-up and the non-exact correction both proven to close
-nothing. A claw-back offsets a parked duplicate the same way, proven. THE POSTING PHASE:
-a chunk posting parks BESIDE offset unparks pre-locks the union of their projection rows
-itself (`Suspense.park`'s internal pre-lock covers only its own groups — the
-multi-entry rule held at the caller); a poisoned FEE item is contained WITHOUT a park
-(nothing of an expensed fee sits in the position — `UNMATCHED`, no clock, its
-`ERRORED` decision and unparked `PROCESSING_ERROR` break the record). **THE LOCK-ORDER
-FACT RECORDED FOR `-015`** (`DISTRIBUTED_EXECUTION` §3, ADR-0071's note): a chunk now
-locks COMMITTED break rows — safe today because every such writer holds the source's
-namespace-4 advisory first — and the approval door must take the same advisory or
-restate the row. **THE BUILD'S FIND, FIXED STRUCTURALLY**: the composed app suite's raw
-balancing expectation was WIPE-VULNERABLE — the acceptance suite's platform-root
-register wipe deletes unheld rows, and a raw seed is not book-derived, so the waiting
-item's balancer vanished and every later global identity read +12.00 — the balancer is
-now HELD by its own partial allocation (history's foreign keys, the same immutability the
-records claim), and the suite asserts the clearing identity over its own residue.
-**Registers**: `AUDITABLE_ACTIONS` +1, `DATA_CLASSIFICATION` +37 rows (the narrative
-CONFIDENTIAL, the frozen amount RESTRICTED-FINANCIAL), no new route, no new permission,
-no LEASE change; ADR-0068, ADR-0069 and ADR-0071 implemented notes with every deviation
-named. **Four probe runs, four caught** (`MUTATION_TESTING` §2 +3 rows under
-`INV-REC-08`, `INV-REC-06` and `INV-REC-02`): the tolerance compared with ≥ for >
-fell at exactly the boundary (deviation 2 = tolerance 2 suddenly a breach) and on the
-tiny-fee control; the NAMED rounding replaced with a fixed DOWN fell in the terms' own
-arithmetic (expected 27, answered 26); the offset releasing WITHOUT its unpark fell on
-the resolution's absent entry where the park's exact inverse belongs (the app tier's
-suspense proof the systemic catcher behind it); `EVIDENCED` forced over a residual fell
-in the machine's own words (expected OPEN, was RESOLVED, a 50.00 remainder standing) —
-every verdict read from the failing testcase, every restore byte-identical.
-Multi-instance **PASS** — ten sweepers over the offset produce ONE release (the item
-lock and `released_minor ≤ amount_minor`), ONE resolution and ONE `BreakResolved`
-(the break's conditional `→ RESOLVED`, the raise-loser precedent for racers), inside
-`P8-TSK-011`'s ordered chunk and arbiters; the fee check idempotent by the item's
-conditional exit; the per-batch verdict judged once by the completing edge's winner. NO
-route, ONE audit action, ONE event, NO migration outside reconciliation `V006`. Verified
-by targeted tiers from fresh runs on the final code — reconciliation hermetic 48
-across 11 suites (the fee and correction seats, the V006 reconciliations within) and
-database 37 across 5 (the fee-and-correction suite's eight ordered tests with the
-ten-instance race and the raw-writer refusals within; the matcher suite's fee line
-re-stated CHECKED), app hermetic 571 across 106 suites (the audit registry, the
-regenerated baseline within), the five affected app database suites in ONE shared
-container 13 across 5 (the composed matcher suite with its new clearing-identity assert,
-opening, suspense, acceptance with its rebuild proof and the storm), the platform
-classification guard 5 targeted over the +37 rows, and the document guards (140 across
-23 suites) re-run fresh after the records landed, ALL 0 FAILURES — ledger, settlement,
-payments and merchant untouched by this task (their `P8-TSK-010` tiers stand), the full
-battery and the fleet-wide database and kafka tiers deliberately skipped on the owner's
-instruction.
+**`P8-TSK-013` — Grace, ageing, rematch and late evidence** — `COMPLETE`
+(2026-09-30). **M8.3, Evidence becomes canonical lines, `CLOSED` at 6 of 6**: time is
+now explicit — unexplained external value waits out its pinned window and parks
+OWNED, internal records that never settle age into alertable breaks, and late evidence
+on either side is found and closes what it explains `EVIDENCED` — nothing refused
+as stale (`INV-SET-02`, `INV-SET-03`, `INV-REC-02`; ADR-0068, ADR-0069 §§4–6,
+ADR-0073 §7). **The grace and rematch legs ride `Matching.sweep`** — after the run
+loop, per source under the same namespace-4 try-lock, bounded batches, ONE transaction
+per batch: the grace leg re-judges each expired `UNMATCHED` item on its row locked
+`FOR UPDATE` through the same pure engine (the stored fingerprint was judged at run
+time — a waiting item is never re-parked as a duplicate of itself), candidates
+re-read under the lock — an expectation committed while another transaction held
+the item's share lock is ALLOCATED, never parked beside it (ADR-0073 §7, proven with
+a share-lock holder standing in for the return worker) — and only then types the
+true remainder through the lookup: `UNKNOWN_EXTERNAL` for a key the platform does not
+know, `MISSING_INTERNAL` for an operation known but not completed, the `-011`
+definitive types for a terminal answer LEARNED DURING THE WAIT (a run-time terminal
+answer parks in the chunk itself), cause `GRACE_EXPIRED`, parked with its break; the
+rematch leg re-decides residuals whose keys reach an expectation opened after their
+latest decision (origin `REMATCH`, only `ALLOCATE` acts): `UNMATCHED → MATCHED`, and
+`PARKED → MATCHED` only at candidate remainder ≥ parked remainder — the WHOLE
+parked value unparked (cause `UNPARK`, the park's exact inverse at the item's own
+amount, proven line for line against `ledger.journal_line`) and the owning break
+resolved `EVIDENCED` carrying the unpark's entry — a partial unpark never happens,
+and a skipped candidate is rescanned every tick (no decision row on a skip; bounded,
+recorded). **Late settlement (L1)**: a settling allocation locks the candidate's open
+`MISSING_EXTERNAL` break BEFORE allocating (the §3 break-first order extended) and
+resolves it `EVIDENCED` with no posting of its own, the timing frozen on the decision
+(deviation 60 against tolerance 2 in the proof), the `TIMING_DIFFERENCE` raise
+suppressed whenever an open `MISSING_EXTERNAL` stands — one fact, one break — and
+a partial arrival resolves NOTHING and still raises no second timing record.
+**`ReconciliationSweepSchedule`, time's observers** (leaderless, off in tests, a
+SYSTEM actor site with its argument): AGEING judges `expected_by +
+SETTLEMENT_DATE_DAYS < current_date` in SQL on the DATABASE clock and marks per row
+under the expectation's lock — the one-way `overdue_since` (NULL → value) the
+ten-sweeper arbiter, a loser writing NOTHING — raising `MISSING_EXTERNAL`
+(`EXPECTATION_OVERDUE`, value the remainder, never parked) and
+`reconciliation.SettlementExpectationOverdue` in the same transaction; nothing inside
+a window, a settled row never ages; ESCALATION owes bands crossed (2/7/30 days since
+`raised_at`, the database's own day count) minus `SEVERITY_ESCALATED` events already
+appended — an expected-value step under the forward-only trigger, capped CRITICAL,
+once per band under ten, the source's advisory held FIRST (the `-012` register fact
+honoured by every committed-break writer); RUN-BLOCK detection blocks a run whose
+recorded failures reached the bound but whose blocking transaction died, once, with
+its CRITICAL `RUN_BLOCKED` break; and `-010`'s key-collision leg is scheduled at
+last. **The clock discipline is structural**: the module suite pins the matcher's JVM
+clock MONTHS behind the database on purpose, so any window judged off the database
+clock fails every grace scenario at once. **THE BUILD'S FIND, FIXED**: the legs'
+batch posting phase first ran outside any correlation scope and the ledger's own
+`INV-LED-05` guard refused every grace park — each leg now posts LAST inside its
+own generated correlation scope, the per-item records keeping the ingesting flow's
+correlation. **Registers**: `LEASE_PROTECTED_SCHEDULERS` +1
+(`ReconciliationSweepSchedule`, leaderless, its argument written),
+`SystemActorCallSitesAreEnumeratedTest` +1 (`ReconciliationSweep.sweep`;
+`Matching.sweep`'s entry restated for the new legs), three ageing gauges per declared
+source (`finapp.reconciliation.expectation.overdue`, `.overdue.age`,
+`.item.unmatched` — eager, NaN never zero) beside the sweep's own enabled gauge; NO
+route, ONE event, NO migration — `grace_until` (`V003`), `overdue_since` (`V002`),
+`break_event` (`V004`) and `resolution` (`V006`) already stood, no classification
+rows; `DISTRIBUTED_EXECUTION` §3's schedule rows rewritten from the code (the
+planned markers dropped, the namespace-4 row restated with the blocking form's
+holders), ADR-0068/0069/0073 implemented notes with every deviation named (no bespoke
+spans — the `-008` precedent). **Five probe runs, five caught** (`MUTATION_TESTING`
+§2 +3 rows under `INV-SET-02`, `INV-SET-03`, `INV-REC-02`): the grace worklist
+judged on the application's injected clock found NOTHING (graced 0 where 3 belong —
+the months-behind pin the structural catcher); `break_one_open_per_expectation`
+weakened to a plain index ADMITTED a second raw OPEN `MISSING_EXTERNAL` where the
+database must refuse any writer (the direct two-raw-inserts probe, the `-008`
+precedent); the rematch worklist narrowed to `UNMATCHED` left the parked capture
+standing (rematched 0 where 1 belongs); the unscreened ageing marked the SETTLED
+fixture overdue (expected null, was a timestamp); the dropped item lock parked money
+beside its committed candidate (a suspense row where none belongs) — every verdict
+read from the failing testcase, every restore byte-identical (sha256-verified).
+Multi-instance **PASS** — ten ageing sweepers mark once (the conditional and the
+one-open seat, counted), ten escalators step once per band (the expected-value
+UPDATE), ten block-detectors block once (the run's conditional edge, blocked summed 1
+across the racers), the rematch unpark once by the item's conditional exit and
+`released_minor ≤ amount_minor`, the grace leg per source under the try-lock with
+every window judged in SQL on the database clock. Verified by targeted tiers from
+fresh runs on the final code — reconciliation hermetic 58 across 12 suites (the
+bands' arithmetic with its pinned bounds within) and database 46 across 6 (the
+grace-and-rematch suite's nine ordered tests: the typing, the meanwhile-committed
+candidate, the whole-value unpark with its inverse, the ten-sweeper ageing race with
+the per-source readings, L1 whole and partial, escalation and lost-block under ten,
+the share-lock holder, the raw one-open seat), app hermetic 571 across 106 suites
+(the two register rows, the three eager-NaN series and the arch rules within), the
+five affected app database suites in ONE shared container 13 across 5 (the composed
+matcher, opening, suspense, acceptance with its rebuild proof and the storm), and the
+document guards with the register and architecture rules (289 across 42 suites) re-run fresh after the records landed, ALL 0
+FAILURES — ledger, settlement, payments and merchant untouched by this task (their
+`P8-TSK-012` tiers stand), the full battery and the fleet-wide database and kafka
+tiers deliberately skipped on the owner's instruction.
 
 ### Previously
 
-The per-task completion records — 175 blocks, from `P8-TSK-011` back to project initiation
+The per-task completion records — 176 blocks, from `P8-TSK-012` back to project initiation
 (`X-TSK-004` cross-cutting, standing between `P7-TSK-001` and the Phase 6 → 7 transition) —
 are archived in [`history/TASK_HISTORY.md`](history/TASK_HISTORY.md).
 *(This pointer read "130 blocks, from `P6-TSK-005`" through four archivals — corrected by
@@ -537,10 +530,13 @@ archived verbatim in
 
 ## Active Work
 
-**Phase 8 is `IN_PROGRESS`** (2026-09-28) — 10 of 27 items complete; **M8.1 `CLOSED` at 3 of 3;
-M8.2 `CLOSED` at 4 of 4; M8.3, Evidence becomes canonical lines, at 3 of 6** — the PSP format,
-the parse leg, the decline, the acceptance and the break and suspense records; next
-`P8-TSK-011`, the matcher ([§Current Task](#current-task) is kept current). Phase 7 is `COMPLETE` — 18 of 18
+**Phase 8 is `IN_PROGRESS`** (2026-09-28) — 13 of 27 items complete; **M8.1 `CLOSED` at 3 of 3;
+M8.2 `CLOSED` at 4 of 4; M8.3, Evidence becomes canonical lines, `CLOSED` at 6 of 6** —
+evidence IS canonical lines, end to end: format, acceptance, records, matcher, fees and
+corrections, and time's own legs; next `P8-TSK-014`, the break desk
+([§Current Task](#current-task) is kept current). *(This paragraph read "10 of 27 … next
+`P8-TSK-011`" from `P8-TSK-010`'s gate until `P8-TSK-013`'s record found it — the
+stale-second-copy class, again in a paragraph no gate's record reached.)* Phase 7 is `COMPLETE` — 18 of 18
 items, M7.1–M7.8 closed, ruled by `P7-DOC-001` and confirmed after repair by the Phase 7 → 8
 transition ([`reviews/PHASE_7_TO_8_TRANSITION.md`](reviews/PHASE_7_TO_8_TRANSITION.md)). *(This
 paragraph read "6 of 18 items complete; M7.1, Rail foundations, opens at 1 of 3 (`P7-TSK-001`).
@@ -942,9 +938,13 @@ Resolved during initiation:
 
 ## Next Task
 
-**`P8-TSK-009`** — `READY` (the Current Task), marked by `P8-TSK-008`'s completion gate — the
-batch it accepts, the attestation it requires of uploads and the expectation register it opens
-into (`-004`, `-008`) are `COMPLETE`.
+**`P8-TSK-014` — break reads, the case file and the settlement-status trail** — `READY`
+(the Current Task), marked by `P8-TSK-013`'s completion gate — the records it reads
+(`-010`), the decisions and allocations it explains (`-011`, `-012`) and the ageing that
+feeds its desk (`-013`) are `COMPLETE`.
+*(This section read "`P8-TSK-009` — `READY`" from `P8-TSK-008`'s gate until
+`P8-TSK-013`'s record found it — the stale-second-copy class, in the section whose
+whole job is to mirror.)*
 
 ### Superseded: the Phase 7 → 8 transition lead (read until 2026-09-28)
 

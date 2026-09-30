@@ -211,7 +211,17 @@ class NoSingleInstanceAssumptionRulesTest {
                     // per pair between them, counted by the row count. Register row:
                     // DISTRIBUTED_EXECUTION.md section 3; the ten-sweeper races - locked
                     // AND bypassed - are MatchingDatabaseTest's.
-                    "com.finapp.app.reconciliation.ReconciliationSchedule");
+                    "com.finapp.app.reconciliation.ReconciliationSchedule",
+                    // P8-TSK-013: time's observers - the conditional-transition half
+                    // once more, with NO EXTERNAL CALL: every window judged in SQL on
+                    // the database clock against stored dates. The one-way
+                    // overdue_since (NULL -> value), the one-open break uniques, the
+                    // expected-value severity step and the run's conditional edge
+                    // arbitrate for any writer - ten sweepers age an expectation once,
+                    // escalate a band once and block a lost run once, counted. Register
+                    // row: DISTRIBUTED_EXECUTION.md section 3; the counted races are
+                    // GraceAndRematchDatabaseTest's.
+                    "com.finapp.app.reconciliation.ReconciliationSweepSchedule");
 
     /** Types that schedule work with no lease, so every instance runs it. */
     private static final Set<String> AMBIENT_SCHEDULERS =

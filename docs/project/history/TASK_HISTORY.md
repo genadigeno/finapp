@@ -1,6 +1,6 @@
 # Task History
 
-The per-task completion records that accumulated behind `## Current Task` - 175 "Previously" blocks, newest first, from `P8-TSK-011` back to project initiation. *(`X-TSK-004` is cross-cutting and completed after the Phase 6 → 7 transition, so it stands second, between `P7-TSK-001` and the transition's record - the transition's block moved here by `P7-TSK-001`'s gate, exactly as an earlier form of this note said it would.)*
+The per-task completion records that accumulated behind `## Current Task` - 176 "Previously" blocks, newest first, from `P8-TSK-012` back to project initiation. *(`X-TSK-004` is cross-cutting and completed after the Phase 6 → 7 transition, so it stands second, between `P7-TSK-001` and the transition's record - the transition's block moved here by `P7-TSK-001`'s gate, exactly as an earlier form of this note said it would.)*
 
 **Archive.** These records were moved verbatim out of
 [`CURRENT_STATE.md`](../CURRENT_STATE.md) on 2026-09-20 so that the canonical description of
@@ -12,6 +12,108 @@ Current state: [`CURRENT_STATE.md`](../CURRENT_STATE.md) ·
 Authoritative backlog: [`BACKLOG.md`](../BACKLOG.md)
 
 ---
+
+### Previously
+
+**`P8-TSK-012` — Processing fees and counterparty corrections** — `COMPLETE`
+(2026-09-30). **M8.3, Evidence becomes canonical lines, at 5 of 6**: the PSP's charges are
+now checkable against its own pinned terms — the ONE legitimate tolerance, comparing two
+unposted quantities — and the counterparty's own corrections net automatically, closing
+the breaks they explain `EVIDENCED`, the one resolution no person decides (`INV-REC-08`;
+`INV-REC-02` as amended; ADR-0068 §7, ADR-0071 §2). **Reconciliation `V006`**:
+`resolution` (+`_event`) with ADR-0071's full column set — the frozen amount, the
+break's `residual_version`, the named decision and park, `UNIQUE adjustment_proposal_id`
+and `UNIQUE journal_entry_id` — the vocabulary STATED WHOLE in code (`ResolutionKind`,
+`ResolutionStatus`, `ResolutionReasonCode`: eight kinds, four states, thirteen closed
+reasons) while the `CHECK`s deliberately admit only the produced subset (`EVIDENCED`,
+`APPROVED`, `EVIDENCE_RECEIVED`) exactly as the plan's §8 slices `V006`/`V007` — a
+narrowed RANK, not a narrowed vocabulary, the migration test pinning each admitted value
+as its enum's member; `EVIDENCED` the platform's at three ranks (the writer's system
+path; `CHECK (proposed_by_type = 'SYSTEM' AND status = 'APPROVED' AND NOT four_eyes)`
+refusing every raw writer, the migrator included; `-015`'s door to refuse the kind); the
+distinctness `CHECK` and the one-live-proposal partial unique stated now, inert; the
+narrative bounded 1..1000 and screened for PAN and IBAN shapes at the database (the break
+note's rank); both tables append-only for EVERY writer until `V007`. **The fee check
+(`CHECK` cardinality)**: one pure seat (`FeeCheck`) — expected = round(rate × gross
++ fixed) under the pinned schedule's NAMED rounding (`INV-MON-03`; HALF_UP and DOWN proven
+to part ways), the comparison STRICT: at the tolerance nothing, one minor unit beyond a
+breach, the deviation absolute so under-charging is judged the same way; the gross is the
+capture expectation the fee's `ORIGINAL_REF` reaches; AN UNREACHABLE ORIGINAL IS JUDGED
+AT ONCE against an expected fee of ZERO (the design's F1 — waiting would hand `-013`'s
+grace leg a fee item, and the grace leg parks expirees, double-counting expensed value)
+and an absent schedule or tolerance row reads zero (F2, conservative, never loosened);
+the item moves `PENDING → CHECKED` whatever the verdict, the decision freezing
+expected, reported and tolerance (the `V005` columns, now written; the explanation door's
+view gains the triple, additive, the OpenAPI baseline regenerated with exactly its three
+flagged rows reviewed); a breach is `FEE_MISMATCH` (`FEE_BEYOND_TOLERANCE`), commercial,
+value |reported − expected|, NEVER parked — the reported fee was expensed at
+acceptance; and the PER-BATCH comparison folds signed reported − expected per currency
+ONCE, under the completing edge's one winner, its subject the run's FIRST fee item in
+claimant order (the design's D: the taxonomy names the item), converging on the one-open
+unique. A `DISPUTE_FEE` line differing from its expectation stays `AMOUNT_MISMATCH` under
+`ONE_TO_ONE`, proven. **The corrections (`CORRECTION` cardinality)**: one pure seat
+(`CorrectionEngine`) — a same-direction correction TOPS UP the original expectation's
+open remainder (min(item, remainder), any excess parked: C1, a correction is evidence
+like any line), an opposite-direction correction OFFSETS the original item's parked
+excess only at EXACT equality — never a partial offset — and the top-up wins when
+both could apply; matching neither, it waits under ITS rule's grace like any remainder.
+THE OFFSET, whole in the chunk: the correcting item `PENDING → OFFSET` (its value
+recorded in `offset_minor`), the original item `PARKED → RESOLVED`, the unpark the
+park's EXACT INVERSE (cause `CORRECTION_OFFSET` — `Suspense.unpark` gains the cause
+parameter — proven line for line against `ledger.journal_line`), the `EVIDENCED`
+resolution carrying the unpark's entry, the break's conditional `→ RESOLVED` (the
+`OPEN → RESOLVED` shortcut edge produced), `reconciliation.BreakResolved` on the
+terminal edge and the acting-only `reconciliation.BreakResolvedByEvidence` audit record
+— identifiers and enumerated names only. A settling TOP-UP locks the expectation's
+open `AMOUNT_MISMATCH` break BEFORE the allocation that closes it (the §3 break-first
+order) and resolves it `EVIDENCED` with no posting of its own; A NON-ZERO RESIDUAL NEVER
+RESOLVES — the partial top-up and the non-exact correction both proven to close
+nothing. A claw-back offsets a parked duplicate the same way, proven. THE POSTING PHASE:
+a chunk posting parks BESIDE offset unparks pre-locks the union of their projection rows
+itself (`Suspense.park`'s internal pre-lock covers only its own groups — the
+multi-entry rule held at the caller); a poisoned FEE item is contained WITHOUT a park
+(nothing of an expensed fee sits in the position — `UNMATCHED`, no clock, its
+`ERRORED` decision and unparked `PROCESSING_ERROR` break the record). **THE LOCK-ORDER
+FACT RECORDED FOR `-015`** (`DISTRIBUTED_EXECUTION` §3, ADR-0071's note): a chunk now
+locks COMMITTED break rows — safe today because every such writer holds the source's
+namespace-4 advisory first — and the approval door must take the same advisory or
+restate the row. **THE BUILD'S FIND, FIXED STRUCTURALLY**: the composed app suite's raw
+balancing expectation was WIPE-VULNERABLE — the acceptance suite's platform-root
+register wipe deletes unheld rows, and a raw seed is not book-derived, so the waiting
+item's balancer vanished and every later global identity read +12.00 — the balancer is
+now HELD by its own partial allocation (history's foreign keys, the same immutability the
+records claim), and the suite asserts the clearing identity over its own residue.
+**Registers**: `AUDITABLE_ACTIONS` +1, `DATA_CLASSIFICATION` +37 rows (the narrative
+CONFIDENTIAL, the frozen amount RESTRICTED-FINANCIAL), no new route, no new permission,
+no LEASE change; ADR-0068, ADR-0069 and ADR-0071 implemented notes with every deviation
+named. **Four probe runs, four caught** (`MUTATION_TESTING` §2 +3 rows under
+`INV-REC-08`, `INV-REC-06` and `INV-REC-02`): the tolerance compared with ≥ for >
+fell at exactly the boundary (deviation 2 = tolerance 2 suddenly a breach) and on the
+tiny-fee control; the NAMED rounding replaced with a fixed DOWN fell in the terms' own
+arithmetic (expected 27, answered 26); the offset releasing WITHOUT its unpark fell on
+the resolution's absent entry where the park's exact inverse belongs (the app tier's
+suspense proof the systemic catcher behind it); `EVIDENCED` forced over a residual fell
+in the machine's own words (expected OPEN, was RESOLVED, a 50.00 remainder standing) —
+every verdict read from the failing testcase, every restore byte-identical.
+Multi-instance **PASS** — ten sweepers over the offset produce ONE release (the item
+lock and `released_minor ≤ amount_minor`), ONE resolution and ONE `BreakResolved`
+(the break's conditional `→ RESOLVED`, the raise-loser precedent for racers), inside
+`P8-TSK-011`'s ordered chunk and arbiters; the fee check idempotent by the item's
+conditional exit; the per-batch verdict judged once by the completing edge's winner. NO
+route, ONE audit action, ONE event, NO migration outside reconciliation `V006`. Verified
+by targeted tiers from fresh runs on the final code — reconciliation hermetic 48
+across 11 suites (the fee and correction seats, the V006 reconciliations within) and
+database 37 across 5 (the fee-and-correction suite's eight ordered tests with the
+ten-instance race and the raw-writer refusals within; the matcher suite's fee line
+re-stated CHECKED), app hermetic 571 across 106 suites (the audit registry, the
+regenerated baseline within), the five affected app database suites in ONE shared
+container 13 across 5 (the composed matcher suite with its new clearing-identity assert,
+opening, suspense, acceptance with its rebuild proof and the storm), the platform
+classification guard 5 targeted over the +37 rows, and the document guards (140 across
+23 suites) re-run fresh after the records landed, ALL 0 FAILURES — ledger, settlement,
+payments and merchant untouched by this task (their `P8-TSK-010` tiers stand), the full
+battery and the fleet-wide database and kafka tiers deliberately skipped on the owner's
+instruction.
 
 ### Previously
 

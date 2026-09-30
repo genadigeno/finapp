@@ -65,6 +65,16 @@ public final class ReconciliationMetrics {
     /** {@code finapp.reconciliation.run.blocked} — runs a person must requeue. */
     public static final String RUN_BLOCKED = "finapp.reconciliation.run.blocked";
 
+    /** {@code finapp.reconciliation.expectation.overdue} — aged gaps (`P8-TSK-013`). */
+    public static final String OVERDUE = "finapp.reconciliation.expectation.overdue";
+
+    /** {@code finapp.reconciliation.expectation.overdue.age} — the oldest, in seconds. */
+    public static final String OVERDUE_AGE =
+            "finapp.reconciliation.expectation.overdue.age";
+
+    /** {@code finapp.reconciliation.item.unmatched} — items waiting inside grace. */
+    public static final String ITEM_UNMATCHED = "finapp.reconciliation.item.unmatched";
+
     /** The floor: the sweep folds the open register, so it is dearer than a GROUP BY. */
     static final Duration MIN_REFRESH = Duration.ofSeconds(15);
 
@@ -208,6 +218,37 @@ public final class ReconciliationMetrics {
                                     + " max(), never sum()")
                     .strongReference(true)
                     .register(registry);
+            Gauge.builder(OVERDUE, this, self -> self.overdue(code))
+                    .tag("source", code)
+                    .description(
+                            "This source's expectations past their pinned window with no"
+                                    + " settling evidence (P8-TSK-013, INV-SET-02 with an"
+                                    + " age bound) - each owns a MISSING_EXTERNAL break."
+                                    + " Alerted. A count, never an amount. NaN when"
+                                    + " unreadable, never zero. Fleet-wide: aggregate"
+                                    + " with max(), never sum()")
+                    .strongReference(true)
+                    .register(registry);
+            Gauge.builder(OVERDUE_AGE, this, self -> self.overdueAgeSeconds(code))
+                    .tag("source", code)
+                    .baseUnit("seconds")
+                    .description(
+                            "Age of this source's oldest overdue expectation, from its"
+                                    + " stored overdue_since (P8-TSK-013). 0 when none;"
+                                    + " NaN when unreadable. Fleet-wide: aggregate with"
+                                    + " max(), never sum()")
+                    .strongReference(true)
+                    .register(registry);
+            Gauge.builder(ITEM_UNMATCHED, this, self -> self.itemsUnmatched(code))
+                    .tag("source", code)
+                    .description(
+                            "This source's items waiting inside their grace window"
+                                    + " (P8-TSK-013): late internal evidence is normal,"
+                                    + " and the window bounds it. A count, never an"
+                                    + " amount. NaN when unreadable, never zero."
+                                    + " Fleet-wide: aggregate with max(), never sum()")
+                    .strongReference(true)
+                    .register(registry);
         }
         for (SettlementSourceDescriptor source : sources.declared()) {
             String code = source.code();
@@ -319,9 +360,43 @@ public final class ReconciliationMetrics {
                 .orElse(Double.NaN);
     }
 
+    private double overdue(String code) {
+        return runReading()
+                .counters()
+                .map(byCode -> (double) counterOf(byCode, code).overdue())
+                .orElse(Double.NaN);
+    }
+
+    private double overdueAgeSeconds(String code) {
+        return runReading()
+                .counters()
+                .map(
+                        byCode ->
+                                counterOf(byCode, code)
+                                        .oldestOverdue()
+                                        .map(
+                                                oldest ->
+                                                        (double)
+                                                                Duration.between(
+                                                                                oldest,
+                                                                                clock
+                                                                                    .instant())
+                                                                        .getSeconds())
+                                        .orElse(0.0d))
+                .orElse(Double.NaN);
+    }
+
+    private double itemsUnmatched(String code) {
+        return runReading()
+                .counters()
+                .map(byCode -> (double) counterOf(byCode, code).unmatched())
+                .orElse(Double.NaN);
+    }
+
     private static RunCounters counterOf(
             java.util.Map<String, RunCounters> byCode, String code) {
-        return byCode.getOrDefault(code, new RunCounters(0, Optional.empty(), 0));
+        return byCode.getOrDefault(
+                code, new RunCounters(0, Optional.empty(), 0, 0, Optional.empty(), 0));
     }
 
     /** The run counters' own small read — three bounded counts, never the proof's fold. */
@@ -338,6 +413,12 @@ public final class ReconciliationMetrics {
                     runReadings.oldestPendingBySource(connection);
             java.util.Map<java.util.UUID, Long> blocked =
                     runReadings.blockedCountBySource(connection);
+            java.util.Map<java.util.UUID, Long> overdue =
+                    runReadings.overdueCountBySource(connection);
+            java.util.Map<java.util.UUID, Instant> oldestOverdue =
+                    runReadings.oldestOverdueBySource(connection);
+            java.util.Map<java.util.UUID, Long> unmatched =
+                    runReadings.unmatchedCountBySource(connection);
             // The declared codes onto the reconciliation rows' source ids - the
             // expectation.open gauge's mapping (P8-TSK-007), read the same way.
             java.util.Map<String, RunCounters> byCode = new java.util.LinkedHashMap<>();
@@ -352,7 +433,13 @@ public final class ReconciliationMetrics {
                                 id.map(key -> pending.getOrDefault(key, 0L)).orElse(0L),
                                 id.map(oldest::get).map(Optional::ofNullable).orElse(
                                         Optional.empty()),
-                                id.map(key -> blocked.getOrDefault(key, 0L)).orElse(0L)));
+                                id.map(key -> blocked.getOrDefault(key, 0L)).orElse(0L),
+                                id.map(key -> overdue.getOrDefault(key, 0L)).orElse(0L),
+                                id.map(oldestOverdue::get)
+                                        .map(Optional::ofNullable)
+                                        .orElse(Optional.empty()),
+                                id.map(key -> unmatched.getOrDefault(key, 0L))
+                                        .orElse(0L)));
             }
             fresh = new CachedRuns(clock.instant(), Optional.of(java.util.Map.copyOf(byCode)));
         } catch (Exception unreadable) {
@@ -395,7 +482,12 @@ public final class ReconciliationMetrics {
     }
 
     private record RunCounters(
-            long pending, Optional<Instant> oldestCreatedAt, long blocked) {}
+            long pending,
+            Optional<Instant> oldestCreatedAt,
+            long blocked,
+            long overdue,
+            Optional<Instant> oldestOverdue,
+            long unmatched) {}
 
     /** The run counters per declared code — per instance, deciding nothing. */
     private record CachedRuns(

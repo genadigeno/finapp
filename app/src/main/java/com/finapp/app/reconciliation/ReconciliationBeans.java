@@ -361,6 +361,71 @@ public class ReconciliationBeans {
     }
 
     /**
+     * Time's observers (`P8-TSK-013`): ageing, severity escalation, lost-block detection
+     * and the scheduled `P8-TSK-010` key-collision leg — every write a conditional whose
+     * racers converge.
+     */
+    @Bean
+    com.finapp.reconciliation.ReconciliationSweep reconciliationSweep(
+            com.finapp.reconciliation.MatchingStore matchingStore,
+            com.finapp.reconciliation.BreakRegister breakRegister,
+            com.finapp.reconciliation.KeyCollisionBreaks keyCollisionBreaks,
+            com.finapp.platform.outbox.OutboxWriter<Connection> outboxWriter,
+            IdGenerator idGenerator,
+            Clock clock,
+            @org.springframework.beans.factory.annotation.Value(
+                            "${finapp.reconciliation.sweep.batch:200}")
+                    int batch,
+            @org.springframework.beans.factory.annotation.Value(
+                            "${finapp.reconciliation.matching.block-after:3}")
+                    int blockAfterFailures,
+            com.finapp.reconciliation.TransactionRunner reconciliationTransactionRunner) {
+        return new com.finapp.reconciliation.ReconciliationSweep(
+                matchingStore,
+                breakRegister,
+                keyCollisionBreaks,
+                outboxWriter,
+                idGenerator,
+                clock,
+                new com.finapp.reconciliation.ReconciliationSweep.Config(
+                        batch, blockAfterFailures),
+                reconciliationTransactionRunner);
+    }
+
+    /**
+     * The observers' schedule — leaderless on every instance, off in test contexts (the
+     * relay's flag discipline); registered in {@code DISTRIBUTED_EXECUTION.md} §3.
+     */
+    @Bean
+    @org.springframework.boot.autoconfigure.condition.ConditionalOnProperty(
+            name = "finapp.reconciliation.sweep.enabled",
+            havingValue = "true",
+            matchIfMissing = true)
+    ReconciliationSweepSchedule reconciliationSweepSchedule(
+            com.finapp.reconciliation.ReconciliationSweep reconciliationSweep,
+            @org.springframework.beans.factory.annotation.Value(
+                            "${finapp.reconciliation.sweep.poll:PT60S}")
+                    java.time.Duration pollInterval) {
+        return new ReconciliationSweepSchedule(reconciliationSweep, pollInterval);
+    }
+
+    /**
+     * Whether this instance runs the reconciliation sweep — eager either way, so "off"
+     * reads as {@code 0} rather than as a missing series (`P1-TSK-029`'s rule).
+     */
+    @Bean
+    io.micrometer.core.instrument.Gauge reconciliationSweepEnabled(
+            @org.springframework.beans.factory.annotation.Value(
+                            "${finapp.reconciliation.sweep.enabled:true}")
+                    boolean enabled,
+            io.micrometer.core.instrument.MeterRegistry meterRegistry) {
+        return io.micrometer.core.instrument.Gauge.builder(
+                        "finapp.reconciliation.sweep.enabled", () -> enabled ? 1 : 0)
+                .description("Whether this instance runs the reconciliation sweep")
+                .register(meterRegistry);
+    }
+
+    /**
      * Whether this instance runs the matching sweeper — eager either way, so "off" reads as
      * {@code 0} rather than as a missing series (`P1-TSK-029`'s rule).
      */

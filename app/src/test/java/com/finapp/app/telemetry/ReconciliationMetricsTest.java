@@ -147,12 +147,17 @@ class ReconciliationMetricsTest {
         }
 
         // The run series (P8-TSK-011): pending, age and blocked - each eager PER DECLARED
-        // SOURCE, each NaN when the counters are unreadable, never a comforting zero.
+        // SOURCE, each NaN when the counters are unreadable, never a comforting zero. The
+        // ageing series (P8-TSK-013) join the same reading: overdue expectations, the
+        // oldest overdue's age and the unmatched items still waiting.
         for (String series :
                 java.util.List.of(
                         ReconciliationMetrics.RUN_PENDING,
                         ReconciliationMetrics.RUN_AGE,
-                        ReconciliationMetrics.RUN_BLOCKED)) {
+                        ReconciliationMetrics.RUN_BLOCKED,
+                        ReconciliationMetrics.OVERDUE,
+                        ReconciliationMetrics.OVERDUE_AGE,
+                        ReconciliationMetrics.ITEM_UNMATCHED)) {
             assertThat(registry.find(series)
                             .tag("source", "simulated-psp.settlement")
                             .gauge())

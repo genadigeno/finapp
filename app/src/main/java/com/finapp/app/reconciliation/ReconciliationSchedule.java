@@ -56,16 +56,19 @@ public final class ReconciliationSchedule implements SmartLifecycle {
     private void sweepQuietly() {
         try {
             Matching.SweepResult swept = matching.sweep();
-            if (swept.chunks() > 0 || swept.blockedRuns() > 0) {
-                // Counts only - identifiers live in the leg's own per-run records.
+            if (swept.chunks() > 0 || swept.blockedRuns() > 0 || swept.graced() > 0
+                    || swept.rematched() > 0) {
+                // Counts only - identifiers live in the legs' own per-item records.
                 log.info(
                         "Matching sweep: {} sources, {} chunks, {} decided, {} completed,"
-                                + " {} blocked",
+                                + " {} blocked, {} graced, {} rematched",
                         swept.sources(),
                         swept.chunks(),
                         swept.decided(),
                         swept.completedRuns(),
-                        swept.blockedRuns());
+                        swept.blockedRuns(),
+                        swept.graced(),
+                        swept.rematched());
             }
         } catch (RuntimeException failure) {
             // The class only: a JDBC message can name hosts and identifiers.

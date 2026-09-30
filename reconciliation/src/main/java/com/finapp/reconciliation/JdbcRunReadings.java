@@ -52,6 +52,49 @@ public final class JdbcRunReadings implements RunReadings {
                         + " WHERE status = 'BLOCKED' GROUP BY source_id");
     }
 
+    @Override
+    public Map<UUID, Long> overdueCountBySource(Connection unitOfWork) {
+        return counts(
+                unitOfWork,
+                "SELECT source_id, count(*) AS n FROM reconciliation.expectation"
+                        + " WHERE overdue_since IS NOT NULL"
+                        + " AND status IN ('OPEN', 'PARTIALLY_SETTLED')"
+                        + " GROUP BY source_id");
+    }
+
+    @Override
+    public Map<UUID, Instant> oldestOverdueBySource(Connection unitOfWork) {
+        try (PreparedStatement read =
+                unitOfWork.prepareStatement(
+                        "SELECT source_id, min(overdue_since) AS oldest"
+                                + " FROM reconciliation.expectation"
+                                + " WHERE overdue_since IS NOT NULL"
+                                + " AND status IN ('OPEN', 'PARTIALLY_SETTLED')"
+                                + " GROUP BY source_id")) {
+            try (ResultSet rows = read.executeQuery()) {
+                Map<UUID, Instant> oldest = new HashMap<>();
+                while (rows.next()) {
+                    oldest.put(
+                            rows.getObject("source_id", UUID.class),
+                            rows.getObject("oldest", java.time.OffsetDateTime.class)
+                                    .toInstant());
+                }
+                return Map.copyOf(oldest);
+            }
+        } catch (SQLException failure) {
+            throw new ReconciliationStorageException(
+                    "could not read the oldest overdue expectations", failure);
+        }
+    }
+
+    @Override
+    public Map<UUID, Long> unmatchedCountBySource(Connection unitOfWork) {
+        return counts(
+                unitOfWork,
+                "SELECT source_id, count(*) AS n FROM reconciliation.external_item"
+                        + " WHERE status = 'UNMATCHED' GROUP BY source_id");
+    }
+
     private Map<UUID, Long> counts(Connection unitOfWork, String sql) {
         try (PreparedStatement read = unitOfWork.prepareStatement(sql)) {
             try (ResultSet rows = read.executeQuery()) {

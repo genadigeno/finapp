@@ -27,6 +27,47 @@ public final class ReconciliationEvents {
     static final String EXPECTATION_SETTLED_EVENT_TYPE =
             "reconciliation.SettlementExpectationSettled";
     static final String BREAK_RESOLVED_EVENT_TYPE = "reconciliation.BreakResolved";
+    static final String EXPECTATION_OVERDUE_EVENT_TYPE =
+            "reconciliation.SettlementExpectationOverdue";
+
+    /**
+     * Announced once, when the ageing sweep marks an expectation overdue
+     * (`P8-TSK-013`, replacing the planned {@code settlement.SettlementExpectationUnmet})
+     * — identifiers, enumerated names and stored dates only, never an amount.
+     */
+    static void expectationOverdue(
+            OutboxWriter<Connection> outbox,
+            Connection unitOfWork,
+            IdGenerator ids,
+            UUID expectationId,
+            ExpectationKind kind,
+            String operationRef,
+            java.time.LocalDate expectedBy,
+            UUID breakId,
+            Instant occurredAt,
+            CorrelationId correlation) {
+        outbox.write(
+                unitOfWork,
+                new EventEnvelope(
+                        EventId.next(ids),
+                        EXPECTATION_OVERDUE_EVENT_TYPE,
+                        EVENT_VERSION,
+                        EventEnvelope.CURRENT_SCHEMA_VERSION,
+                        ExpectationId.of(expectationId),
+                        "settlement_expectation",
+                        occurredAt,
+                        PRODUCER,
+                        correlation,
+                        CausationId.of(expectationId.toString())),
+                EventPayload.of()
+                        .with("expectationId", expectationId.toString())
+                        .with("kind", kind.name())
+                        .with("operationRef", operationRef)
+                        .with("expectedBy", expectedBy.toString())
+                        .with("breakId", breakId.toString())
+                        .toBytes(),
+                EventPayload.MEDIA_TYPE);
+    }
 
     private ReconciliationEvents() {}
 

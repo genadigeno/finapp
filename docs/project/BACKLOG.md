@@ -11029,7 +11029,7 @@ posting-date documentation reconciled with the Phase 5–7 practice, with no ret
   and an under-payment `EVIDENCED`; the expected fee is reproduced from the pinned version.
 - **Definition of done**: `DOD-FIN`, `DOD-TEST`. **Risk**: Medium. **Cx**: M.
 
-**P8-TSK-013 — Grace, ageing, rematch and late evidence** — `READY` (marked by `P8-TSK-012`'s completion gate)
+**P8-TSK-013 — Grace, ageing, rematch and late evidence** — `COMPLETE` (2026-09-30)
 - **Objective**: time becomes explicit. Unexplained external value waits out a pinned grace window
   and then parks with its break; internal records that never settle age into `MISSING_EXTERNAL`;
   late evidence on either side is found and closes what it explains. Nothing is ever refused as
@@ -11154,7 +11154,7 @@ posting-date documentation reconciled with the Phase 5–7 practice, with no ret
   reported chain readable through the expectation; ten sweepers raise once.
 - **Definition of done**: `DOD-FIN`, `DOD-OBS`, `DOD-TEST`. **Risk**: Medium. **Cx**: M.
 
-**P8-TSK-014 — Break reads, the case file and the settlement-status trail** — `PLANNED`
+**P8-TSK-014 — Break reads, the case file and the settlement-status trail** — `READY` (marked by `P8-TSK-013`'s completion gate)
 - **Objective**: an investigator can find, own, annotate and reclassify a break, and walk from any
   break or any operation to its raw evidence and journal entries by stored identifiers alone.
   Investigation is a case file on the break, not a third aggregate (ADR-0069; `INV-REC-01`).

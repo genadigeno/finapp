@@ -201,15 +201,6 @@ public interface MatchingStore {
      */
     void bumpResidualOnSubjects(Connection unitOfWork, UUID expectationId, UUID itemId);
 
-    /** The item's conditional {@code PENDING → MATCHED}, allocation recorded, event appended. */
-    boolean markItemMatched(
-            Connection unitOfWork,
-            UUID itemId,
-            long allocatedMinor,
-            Actor actor,
-            Instant at,
-            CorrelationId correlation);
-
     /** Records the allocated part on a {@code PENDING} item that will PARK its excess. */
     void recordItemAllocation(Connection unitOfWork, UUID itemId, long allocatedMinor);
 
@@ -260,6 +251,99 @@ public interface MatchingStore {
      */
     Optional<UUID> lockOpenBreakOn(
             Connection unitOfWork, UUID expectationId, BreakType type);
+
+    // ------------------------------------------------------------------ time's legs
+
+    /** One residual item with its run's pinned facts (`P8-TSK-013`). */
+    record ResidualItem(
+            ChunkItem item, UUID runId, UUID sourceId, UUID ruleSetId,
+            String correlationId) {}
+
+    /** Sources holding an {@code UNMATCHED} item whose grace has passed (database clock). */
+    List<UUID> sourcesWithExpiredGrace(Connection unitOfWork);
+
+    /**
+     * The source's expired {@code UNMATCHED} items, LOCKED, oldest {@code grace_until}
+     * first — each judged on its locked row (ADR-0073 §7: a candidate committed by a
+     * holder of the item's share lock is found and allocated, never parked beside).
+     */
+    List<ResidualItem> lockExpiredItems(Connection unitOfWork, UUID sourceId, int limit);
+
+    /** Sources holding a residual item whose keys reach an expectation opened later. */
+    List<UUID> sourcesWithRematchWork(Connection unitOfWork);
+
+    /**
+     * The source's {@code UNMATCHED} or {@code PARKED} items whose keys now reach an
+     * expectation opened AFTER their latest decision, LOCKED, oldest first.
+     */
+    List<ResidualItem> lockRematchCandidates(Connection unitOfWork, UUID sourceId, int limit);
+
+    /** The item's conditional exit to {@code MATCHED} from the named non-terminal state. */
+    boolean markItemMatchedFrom(
+            Connection unitOfWork,
+            UUID itemId,
+            String fromStatus,
+            long allocatedMinor,
+            Actor actor,
+            Instant at,
+            CorrelationId correlation);
+
+    /** One overdue candidate: still open past its pinned window (`P8-TSK-013`). */
+    record OverdueCandidate(
+            UUID expectationId,
+            ExpectationKind kind,
+            ExpectationDirection direction,
+            String operationRef,
+            Money remainder,
+            UUID sourceId,
+            UUID ruleSetId,
+            LocalDate expectedBy,
+            String correlationId) {}
+
+    /**
+     * Expectations still {@code OPEN}/{@code PARTIALLY_SETTLED} past
+     * {@code expected_by + SETTLEMENT_DATE_DAYS} on the database clock with
+     * {@code overdue_since} unset — read lock-free; each is re-judged under its own row
+     * lock by {@link #lockAndMarkOverdue}.
+     */
+    List<OverdueCandidate> overdueCandidates(Connection unitOfWork, int limit);
+
+    /**
+     * The one-way fact: locks the expectation row and sets {@code overdue_since} iff
+     * still unset, still open and still past its window — false when another sweeper
+     * won or the money arrived meanwhile.
+     */
+    boolean lockAndMarkOverdue(Connection unitOfWork, UUID expectationId, Instant at);
+
+    /** One unresolved break with its ageing facts (`P8-TSK-013`). */
+    record EscalationRow(
+            UUID breakId, UUID sourceId, Severity severity, long daysSinceRaised,
+            long escalations) {}
+
+    /** Unresolved breaks with days-since-raise (database clock) and escalations counted. */
+    List<EscalationRow> unresolvedBreaks(Connection unitOfWork, int limit);
+
+    /**
+     * One escalation step: the expected-value predicate converges racers, the
+     * {@code SEVERITY_ESCALATED} event appended only by the winner.
+     */
+    boolean escalate(
+            Connection unitOfWork,
+            UUID breakId,
+            Severity from,
+            Severity to,
+            Actor actor,
+            Instant at,
+            CorrelationId correlation);
+
+    /** Runs whose recorded failures reached the bound but whose block was lost. */
+    List<RunRow> runsAtFailureBound(Connection unitOfWork, int bound);
+
+    /** Whether an open break of this type stands on the expectation — no lock. */
+    boolean openBreakExistsOn(Connection unitOfWork, UUID expectationId, BreakType type);
+
+    /** The item's stored status, read on the already-locked row. */
+    String itemStatus(Connection unitOfWork, UUID itemId);
 
     /** One fee decision per row of the run, in claimant order — the per-batch fold. */
     record FeeDecisionRow(

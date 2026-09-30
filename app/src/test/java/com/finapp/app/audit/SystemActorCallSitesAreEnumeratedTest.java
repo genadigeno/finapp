@@ -331,7 +331,22 @@ class SystemActorCallSitesAreEnumeratedTest {
                         + " design; a person's later act on a break runs as that person"
                         + " through the break's own doors. The scope wraps the whole"
                         + " sweep, one transaction per chunk inside it; the worklist read"
-                        + " claims nothing."));
+                        + " claims nothing. Since P8-TSK-013 the same sweep carries the"
+                        + " grace and rematch legs - a deadline passing and late evidence"
+                        + " arriving are the expiry-sweep case at the matcher: the clock"
+                        + " and the counterparty's file arrive, nobody asks."),
+                    Map.entry(
+                            "com.finapp.reconciliation.ReconciliationSweep.sweep",
+                    "Time's observers (P8-TSK-013, ADR-0069 sections 4 and 6): an"
+                        + " expectation ageing past its window, a break's severity band"
+                        + " crossing, a run lost at its failure bound and a recorded key"
+                        + " collision surfacing are all acts with no requester - the"
+                        + " expiry-sweep case, judged in SQL on the database clock against"
+                        + " stored dates. Attributing an overdue break or an escalation to"
+                        + " any person would record them as having judged lateness at a"
+                        + " moment they chose nothing. The scope wraps the whole sweep,"
+                        + " one transaction per row inside it; the candidate reads claim"
+                        + " nothing."));
 
     @Test
     @DisplayName("no production code claims the system actor without being enumerated")

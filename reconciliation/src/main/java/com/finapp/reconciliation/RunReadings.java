@@ -22,4 +22,13 @@ public interface RunReadings {
 
     /** Runs a person must requeue ({@code BLOCKED}) per source — must read 0, alerted. */
     Map<UUID, Long> blockedCountBySource(Connection unitOfWork);
+
+    /** Overdue expectations per source ({@code overdue_since} set, still open) — alerted. */
+    Map<UUID, Long> overdueCountBySource(Connection unitOfWork);
+
+    /** Each source's oldest {@code overdue_since} — how long the oldest gap has stood. */
+    Map<UUID, Instant> oldestOverdueBySource(Connection unitOfWork);
+
+    /** Items waiting inside grace ({@code UNMATCHED}) per source (`P8-TSK-013`). */
+    Map<UUID, Long> unmatchedCountBySource(Connection unitOfWork);
 }
