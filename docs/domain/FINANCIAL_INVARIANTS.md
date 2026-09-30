@@ -451,6 +451,15 @@ guarantee is documented per rail.
 **Verify:** Lifecycle tests per rail.
 **Phase:** 5, 7, 8
 
+*(Phase 8 on the instant rail, as built by `P8-TSK-017`: a pay-in `EXECUTED`, a withdrawal or
+return `COMPLETED` is the expectation's `PENDING`, the scheme's cycle report its `REPORTED`, and
+only the bank statement's recognition of the cycle's net its `CASH_CONFIRMED` —
+`SchemeCycleCashDatabaseTest` walks all three for a net-receivable and a net-payable cycle.)*
+*(And for the payout, as built by `P8-TSK-018`: a payout `COMPLETED` is instructed, its
+expectation `PENDING`; the provider's report its `REPORTED`; the bank's debit its
+`CASH_CONFIRMED` — and settlement moves no payout out of `COMPLETED` (`INV-LIFE-04`),
+`PayoutSettlementCashDatabaseTest` walking it over the wire.)*
+
 ### INV-SET-02 — Settlement expectations are tracked
 **Statement:** Every operation expected to settle externally creates a tracked expectation
 that ages and alerts when unmet.
@@ -528,9 +537,14 @@ reached through settlement (ADR-0064 §5, ADR-0065 §4).
 (the register composed from the declarations in `app`'s `SettlementBeans`, `settlement.source`
 holding no position column; a bank line attributed only to the unique source whose declared
 `remittancePattern` matches, zero or two matches leaving it unattributed and parked with its
-break; matching candidates restricted to the item's own source).
+break; matching candidates restricted to the item's own source — for an attributed bank item,
+its attributed source, the key scope `COALESCE(attributed_source_id, source_id)`).
 **Verify:** The coverage test failing on a planted uncovered rail; per-source position proofs in
 the settlement storm, each clearing position discharged only by its own source's evidence.
+*As built (`P8-TSK-016`):* `SettlementSources.attribute` answers the unique FULL match of the
+compiled patterns, empty for zero or two (`SettlementSourcesTest`, the two-pattern case), written
+on `settlement.line.attributed_source_id` at parse and copied to the item; the probe taking the
+first of two matches is recorded in `MUTATION_TESTING.md` §2.
 **Phase:** 8
 
 ### INV-SET-06 — Cash moves only on the bank's own statement
@@ -551,6 +565,16 @@ adjustment line on a `reconciledPositions()` purpose, `CASH_AT_BANK` among them)
 **Verify:** The static rule with a planted violation; gap, out-of-order and non-zero-opening
 tests; the cash proof, `finapp.reconciliation.cash.proof`, at 0 at rest and failing while a
 statement break is open.
+*As built (`P8-TSK-016`):* the static rule is `CashAtBankHasOnePosterTest` — the token, statically
+imported or by name, permitted only in `BatchAcceptance` (the poster, resolving the account for
+`BankRecognition`) and `PositionProof` (the reader), a planted poster in each spelling caught;
+continuity is `StatementChain` inside every statement's acceptance, under the settlement source
+row lock (`StatementChainTest`, `StatementChainDatabaseTest`, and `BankStatementCashDatabaseTest`'s
+gap filled `EVIDENCED`, non-zero first opening and ten racing acceptors); the cash proof is
+`PositionProof.CashVerdict` in the sweep's one `REPEATABLE READ` snapshot, published per currency
+and shown as the positions report's cash rows; the `MANUAL` refusal on `CASH_AT_BANK` at both ranks
+is `AdjustmentEndpointDatabaseTest#cashAtBankIsClosedToFreeAdjustments` (ledger `V018` re-stating
+the binding). The repudiation poster arrives with `P8-TSK-023`; until then the rule permits one.
 **Phase:** 8
 
 *(The first statement opening at zero is owner decision O4, settled at the Phase 7 → 8 transition
@@ -612,9 +636,10 @@ evidence of a break.
 ### INV-REC-02 — Breaks are classified, never discarded
 **Statement:** Every unmatched or mismatched record becomes a classified break record. No
 record is silently dropped, auto-cleared or suppressed. An `EVIDENCED` resolution — the platform
-closing a break because a later zero-residual allocation or offset explains it, stored as a
-Resolution row naming that decision and posting — is recorded, not silent, and is the only
-resolution no person decides.
+closing a break because later evidence explains it: a zero-residual allocation or offset, stored
+as a Resolution row naming that decision and posting, or an accepted bank statement restoring the
+chain, stored naming that statement — is recorded, not silent, and is the only resolution no person
+decides.
 **Why:** An unexplained difference that disappears is a loss nobody noticed.
 **Enforce:** `DOMAIN`.
 **Verify:** Tests for every break type; unmatched-count metric.
@@ -628,7 +653,11 @@ the decision and, where parked value moved, the park whose `recon-suspense:` ent
 posting. The alternative, recorded and not taken: the platform proposes and a person confirms.
 The wording is to be widened, with provenance, to the non-allocation evidence the break taxonomy
 also accepts — an accepted statement restoring the chain, a requeued run completing — by
-`P8-TSK-016` and `P8-TSK-022` (ADR-0069 §8).)*
+`P8-TSK-016` and `P8-TSK-022` (ADR-0069 §8).)* *(Widened by `P8-TSK-016` for the first: a
+`STATEMENT_GAP` closes `EVIDENCED` when the missing statement is accepted and its closing is the
+successor's opening, the resolution's narrative naming the filling statement's batch and its
+`decision_id` NULL — no decision is made there; `Resolutions.Evidence` names its decision or its
+filling statement, exactly one. The requeued run remains `P8-TSK-022`'s.)*
 
 ### INV-REC-03 — Resolution is a controlled adjustment
 **Statement:** A break is resolved by posting a compensating entry with a reason code and
@@ -819,7 +848,7 @@ when attributed, `attempt_id` (payments `V023`); a probe bypassing the port caug
 an attributed parking, `ATTEMPT_CONCLUDED` or `AMOUNT_MISMATCH`, names the attempt its value
 belongs to, and its owning break is resolved by a four-eyes `TRANSFER_TO_ACCOUNT` crediting that
 attempt's counterparty, never by a guess. The repudiation is the fourth opener, origin
-`REPUDIATION`, admitted by reconciliation `V009` (`P8-TSK-023`), its `origin_ref` the released
+`REPUDIATION`, admitted by reconciliation `V012` (`P8-TSK-023`), its `origin_ref` the released
 item's id — the transition's re-check, R3.)*
 
 ### INV-REC-10 — Settlement evidence is screened, encrypted, and every content access audited
@@ -1406,11 +1435,19 @@ posting while the payout stays `COMPLETED` (`P8-TSK-019`, which names it `payout
 a reconciliation attribution is every payable line in a `RECONCILIATION`-origin `ADJUSTMENT`
 entry — an approved resolution such as a `TRANSFER_TO_ACCOUNT`, whatever the line faces, suspense
 or a clearing position (`P8-TSK-015`, with its first poster, which names it
-`reconciliationAttributed`); today both fall into
+`reconciliationAttributed`); until each is built it falls into
 `MerchantPayable`'s `other`. If `P8-TSK-019` is deferred (owner decision O6), a returned payout
 reaches the payable only as an attribution. The attribution is ADR-0073 §6's origin rule, widened
 from "an approved `TRANSFER_TO_ACCOUNT` credits it from `SUSPENSE_UNMATCHED`", and its ownership
-settled on `P8-TSK-015`, by the transition's consistency review, A12, A13 and C8.)* No table
+settled on `P8-TSK-015`, by the transition's consistency review, A12, A13 and C8.)* *(Built by
+`P8-TSK-015`: `MerchantPayable.reconciliationAttributed` is the signed term — every payable line
+of an `ADJUSTMENT` entry whose ledger proposal is of origin `RECONCILIATION`, classified before
+any counterparty rule, so a transfer of an OUTBOUND clearing remainder never reads as a capture —
+and the customer statement labels a wallet line of such an entry `RECONCILIATION_ATTRIBUTION` by
+the same rule; `payoutsReturned` stays `P8-TSK-019`'s.)* *(Built by `P8-TSK-019`:
+`MerchantPayable.payoutsReturned` is every payable CREDIT facing `PAYOUT_CLEARING` — the return's
+posting `merchant-payout-return:<payoutId>` — classified after the attribution rule, so a
+reconciliation transfer never reads as a return, and served on the payable endpoint's line.)* No table
 stores a merchant balance; every payout decision derives the available payable inside the account
 lock.
 **Why:** A stored payable is a second balance authority (`INV-BAL-01`'s reasoning at the
@@ -1418,7 +1455,9 @@ merchant boundary); two authorities drift, and drift in a liability to a counter
 dispute the books cannot win.
 **Enforce:** `DOMAIN` + schema review — no payable column exists to mutate.
 **Verify:** The payable reconciles against independent SQL over the payment, fee and payout
-records; schema sweep asserts no stored-balance column in `merchant`.
+records; schema sweep asserts no stored-balance column in `merchant`; the resolution suite
+counts an approved transfer to a payable — from suspense and from an OUTBOUND clearing
+remainder — as `reconciliationAttributed`, never `captured` (`P8-TSK-015`).
 **Phase:** 6
 
 ### INV-MER-03 — Fees are deterministic and version-pinned
@@ -1573,7 +1612,14 @@ land: the sweep covers the `settlement` and `reconciliation` schemas; the needle
 statement whose free text carries an IBAN shape, and the delivery is refused at the door, storing
 metadata only; `settlement.line_reference` refuses bank-identifier and alias shapes by `CHECK`;
 the bank adapter extracts only the structured remittance reference, never a name or an account
-identifier; and a break note refuses an IBAN shape.)*
+identifier; and a break note refuses an IBAN shape.)* *(As built by `P8-TSK-016`: the statement
+needle is `BankStatementCashDatabaseTest#theIbanNeedleReachesNoSink` — an IBAN in a statement's
+`:86:` refused at the door as `ACCOUNT_IDENTIFIER`, recorded in `refused_delivery` by field name
+only, and absent from the captured log, every audit record, every event, `refused_delivery`,
+`line_reference` and every meter's tags — beside, rather than inside, `PayByBankDatabaseTest`,
+whose needle is the payment rail's; the adapter's reference classes exclude instrument shapes, so
+an IBAN put where a reference belongs meets the same screen; and the platform's own settlement
+account is configured only by the bank's opaque reference.)*
 **Phase:** 7
 
 ### INV-RAIL-04 — Every external rail's value in flight has its own clearing position
@@ -1588,6 +1634,11 @@ break unexplainable (`INV-SET-01`, ADR-0059 §4).
 **Verify:** Per-rail posting tests asserting the purpose; the multi-rail storm reconciling each
 clearing position against its own rail's records.
 **Phase:** 7
+
+*(Phase 8's discharge side, as built by `P8-TSK-017`: the scheme's evidence — its report's fees and
+its remittance's cash — reaches only `INSTANT_CLEARING`, the position read from the source's
+declaration; `SETTLEMENT_CLEARING` stands unmoved beside it (`SchemeCycleCashDatabaseTest`, the
+position probe recorded in `MUTATION_TESTING.md` §2).)*
 
 ---
 

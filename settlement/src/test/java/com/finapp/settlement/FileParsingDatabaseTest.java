@@ -103,6 +103,7 @@ class FileParsingDatabaseTest {
     private static FileParsing parsing;
     private static FileDecline decline;
     private static FileAttestation<Connection> attestation;
+    private static SettlementSources sources;
 
     private enum TestAction implements AuditableAction {
         RECEIVED;
@@ -128,7 +129,7 @@ class FileParsingDatabaseTest {
         application = DatabaseRoles.application();
         application.setAutoCommit(false);
         DatabaseRoles.assertCannotBypassPrivileges(application);
-        SettlementSources sources =
+        sources =
                 SettlementSources.of(
                         List.of(
                                 new SettlementSourceDescriptor(
@@ -184,7 +185,8 @@ class FileParsingDatabaseTest {
                 new JdbcAuditWriter(),
                 IDS,
                 CLOCK,
-                RUNNER);
+                RUNNER,
+                sources);
     }
 
     @AfterAll

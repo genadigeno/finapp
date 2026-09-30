@@ -20,6 +20,7 @@ import com.finapp.payments.Withdrawal;
 import com.finapp.payments.WithdrawalStore;
 import com.finapp.reconciliation.InternalClassification;
 import com.finapp.reconciliation.InternalReferenceLookup;
+import com.finapp.reconciliation.InternalSubject;
 import com.finapp.reconciliation.KeyKind;
 import java.sql.Connection;
 import java.util.Map;
@@ -50,6 +51,20 @@ public final class JdbcInternalReferenceLookup implements InternalReferenceLooku
     @NonNull private final WithdrawalStore<Connection> withdrawals;
     @NonNull private final MerchantPayoutStore<Connection> payouts;
     @NonNull private final SchemeExecutionClaimStore<Connection> claims;
+
+    /**
+     * The rail a subject's key-scope source settles (`P8-TSK-017`): reconciliation names no rail,
+     * so the matcher hands its item's source and the composition reads the rail off the
+     * compiled register — the source's settled position, the rail declaring that clearing
+     * purpose.
+     */
+    @NonNull private final RailOfSource railOfSource;
+
+    /** A source's rail, resolved by the composition over its compiled registers. */
+    @FunctionalInterface
+    public interface RailOfSource {
+        Optional<RailId> railOf(Connection unitOfWork, UUID sourceId);
+    }
 
     @Override
     public InternalReference classify(Connection unitOfWork, LookupSubject subject) {
@@ -125,13 +140,15 @@ public final class JdbcInternalReferenceLookup implements InternalReferenceLooku
 
     private InternalReference bySchemeReference(
             Connection unitOfWork, LookupSubject subject, String value) {
-        if (subject.rail().isEmpty()) {
+        Optional<RailId> rail =
+                subject.rail()
+                        .map(RailId::new)
+                        .or(() -> subject.scopeSourceId()
+                                .flatMap(source -> railOfSource.railOf(unitOfWork, source)));
+        if (rail.isEmpty()) {
             return InternalReference.unknown();
         }
-        return claims.findByExecution(
-                        unitOfWork,
-                        new RailId(subject.rail().get()),
-                        new ProviderReference(value))
+        return claims.findByExecution(unitOfWork, rail.get(), new ProviderReference(value))
                 .map(this::ofClaim)
                 .orElseGet(InternalReference::unknown);
     }
@@ -192,35 +209,40 @@ public final class JdbcInternalReferenceLookup implements InternalReferenceLooku
         return new InternalReference(
                 classifyAttempt(attempt.status()),
                 Optional.of(attempt.id().value().toString()),
-                Optional.of(attempt.status().name()));
+                Optional.of(attempt.status().name()),
+                Optional.of(InternalSubject.PAYMENT_ATTEMPT));
     }
 
     private InternalReference ofRefund(Refund refund) {
         return new InternalReference(
                 classifyRefund(refund.status()),
                 Optional.of(refund.id().value().toString()),
-                Optional.of(refund.status().name()));
+                Optional.of(refund.status().name()),
+                Optional.of(InternalSubject.REFUND));
     }
 
     private InternalReference ofWithdrawal(Withdrawal withdrawal) {
         return new InternalReference(
                 classifyWithdrawal(withdrawal.status()),
                 Optional.of(withdrawal.id().value().toString()),
-                Optional.of(withdrawal.status().name()));
+                Optional.of(withdrawal.status().name()),
+                Optional.of(InternalSubject.WITHDRAWAL));
     }
 
     private InternalReference ofPayout(MerchantPayout payout) {
         return new InternalReference(
                 classifyPayout(payout.status()),
                 Optional.of(payout.id().value().toString()),
-                Optional.of(payout.status().name()));
+                Optional.of(payout.status().name()),
+                Optional.of(InternalSubject.PAYOUT));
     }
 
     private InternalReference ofDispute(Dispute dispute) {
         return new InternalReference(
                 classifyDispute(dispute.stage()),
                 Optional.of(dispute.id().value().toString()),
-                Optional.of(dispute.stage().name()));
+                Optional.of(dispute.stage().name()),
+                Optional.of(InternalSubject.DISPUTE));
     }
 
     private InternalReference ofClaim(SchemeExecutionClaim claim) {
@@ -228,6 +250,17 @@ public final class JdbcInternalReferenceLookup implements InternalReferenceLooku
         return new InternalReference(
                 InternalClassification.COMPLETED,
                 Optional.of(claim.subjectId().toString()),
-                Optional.of(claim.subject().name()));
+                Optional.of(claim.subject().name()),
+                Optional.of(subjectOf(claim.subject())));
+    }
+
+    /** A claim's subject in reconciliation's own vocabulary. */
+    static InternalSubject subjectOf(SchemeExecutionClaim.Subject subject) {
+        return switch (subject) {
+            case PAY_IN -> InternalSubject.PAYMENT_ATTEMPT;
+            case WITHDRAWAL -> InternalSubject.WITHDRAWAL;
+            case RETURN -> InternalSubject.REFUND;
+            case UNMATCHED -> InternalSubject.PARKING;
+        };
     }
 }

@@ -322,4 +322,8 @@ Financial impact: `INSTANT_CLEARING` per currency; the withdrawal's hold on the 
   settlement report, or the refund gains the column. *(Decided at the Phase 7 → 8 transition,
   `PHASE_8_PLAN.md` §2: from the report. The cycle is learned from the scheme's cycle report and
   recorded on the reconciliation item (`learned_cycle`, `P8-TSK-017`), with no payments
-  migration. The cycle is an attribute there, never a matching key.)*
+  migration. The cycle is an attribute there, never a matching key.)* *(Paid by `P8-TSK-017`
+  (2026-09-30): the item that allocates to a `PUSH_RETURN` expectation records its report's cycle
+  token in `external_item.learned_cycle` — reconciliation `V009` created the column, which the
+  plan had wrongly counted as existing — written once, only equal to the item's run's cycle and
+  never at birth, for every writer. §7's convergence trigger is ADR-0073's, not that task's.)*

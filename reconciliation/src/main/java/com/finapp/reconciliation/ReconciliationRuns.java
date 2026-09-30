@@ -38,7 +38,8 @@ public interface ReconciliationRuns {
             Optional<String> reason,
             Actor actor,
             Instant at,
-            CorrelationId correlation) {
+            CorrelationId correlation,
+            Optional<String> settlementCycle) {
 
         public NewRun {
             Objects.requireNonNull(id, "id must not be null");
@@ -53,6 +54,14 @@ public interface ReconciliationRuns {
             Objects.requireNonNull(actor, "actor must not be null");
             Objects.requireNonNull(at, "at must not be null");
             Objects.requireNonNull(correlation, "correlation must not be null");
+            Objects.requireNonNull(settlementCycle, "settlementCycle must not be null");
+            settlementCycle.ifPresent(
+                    cycle -> {
+                        if (cycle.isEmpty() || cycle.length() > 64) {
+                            throw new IllegalArgumentException(
+                                    "a scheme cycle token is 1..64 characters (V009)");
+                        }
+                    });
             if (itemCount < 0) {
                 throw new IllegalArgumentException("an item count is never negative");
             }
@@ -69,6 +78,25 @@ public interface ReconciliationRuns {
                 throw new IllegalArgumentException(
                         "a REPROCESS run is a person's, keyed and reasoned (§5.3)");
             }
+        }
+
+        /** A run of a source with no cycles — the `P8-TSK-009` shape. */
+        public NewRun(
+                UUID id,
+                UUID sourceId,
+                Optional<UUID> batchId,
+                RunKind kind,
+                UUID ruleSetId,
+                LocalDate businessDate,
+                Optional<Long> sourceSequence,
+                int itemCount,
+                Optional<String> requestedBy,
+                Optional<String> reason,
+                Actor actor,
+                Instant at,
+                CorrelationId correlation) {
+            this(id, sourceId, batchId, kind, ruleSetId, businessDate, sourceSequence, itemCount,
+                    requestedBy, reason, actor, at, correlation, Optional.empty());
         }
     }
 }

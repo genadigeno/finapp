@@ -60,13 +60,27 @@ public interface PositionBreakdown<T> {
     /**
      * The total of the account's lines in one direction, from entries that touched a named
      * counterparty purpose one way — or touched none of them ({@code counterparty} empty).
+     *
+     * <p>{@code reconciliationAttributed} (`P8-TSK-015`, ADR-0071 §2, ADR-0073 §6's origin
+     * rule): the lines belong to an {@code ADJUSTMENT} entry whose proposal is of origin
+     * {@code RECONCILIATION} — an approved break resolution's attribution. Classified FIRST,
+     * whatever the entry faces, so its counterparty is empty: a transfer of an OUTBOUND clearing
+     * remainder faces the clearing and would otherwise read as a capture.
      */
-    record Bucket(Direction direction, Optional<Counterparty> counterparty, Money total) {
+    record Bucket(
+            Direction direction,
+            Optional<Counterparty> counterparty,
+            Money total,
+            boolean reconciliationAttributed) {
 
         public Bucket {
             Objects.requireNonNull(direction, "direction must not be null");
             Objects.requireNonNull(counterparty, "counterparty must not be null");
             Objects.requireNonNull(total, "total must not be null");
+            if (reconciliationAttributed && counterparty.isPresent()) {
+                throw new IllegalArgumentException(
+                        "an attribution is classified by its origin, never by its counterparty");
+            }
         }
     }
 

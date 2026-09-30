@@ -32,7 +32,11 @@ import com.finapp.settlement.SourceKind;
 import com.finapp.settlement.TransactionRunner;
 import com.finapp.settlement.format.SettlementFormat;
 import com.finapp.settlement.format.simpsp.SimPspCsvFormat;
+import com.finapp.settlement.format.simpayout.SimPayoutCsvFormat;
+import com.finapp.settlement.format.simscheme.SimSchemeJsonFormat;
+import com.finapp.settlement.format.simstatement.SimStatementTaggedFormat;
 import com.finapp.sharedkernel.id.IdGenerator;
+import com.finapp.sharedkernel.money.CurrencyCode;
 import io.micrometer.core.instrument.MeterRegistry;
 import java.security.SecureRandom;
 import java.sql.Connection;
@@ -101,7 +105,7 @@ public class SettlementBeans {
                                                                 .SimulatedInstantSchemeAdapter
                                                                 .RAIL.id())
                                                 .clearingPurpose(),
-                                        Optional.of("SCH-REM-[0-9]{4,12}")),
+                                        Optional.of(SimSchemeJsonFormat.REMITTANCE_REFERENCE)),
                                 new SettlementSourceDescriptor(
                                         "simulated-payout.settlement",
                                         SourceKind.PAYOUT_PROVIDER_REPORT,
@@ -109,7 +113,7 @@ public class SettlementBeans {
                                         1,
                                         Set.of(DeliveryChannel.UPLOAD, DeliveryChannel.PULL),
                                         Optional.of(PayoutSettlementDeclaration.CLEARING_PURPOSE),
-                                        Optional.of("PAY-REM-[0-9]{4,12}")),
+                                        Optional.of(SimPayoutCsvFormat.REMITTANCE_REFERENCE)),
                                 new SettlementSourceDescriptor(
                                         "simulated-bank.statement",
                                         SourceKind.BANK_STATEMENT,
@@ -185,10 +189,36 @@ public class SettlementBeans {
      * field-class screens and the parse leg both read, so a source cannot be screened under
      * one version and parsed under another. `SIM_PSP_CSV` v1 is the first; `-016`…`-018`
      * add theirs.
+     *
+     * <p>`SIM_STATEMENT_TAGGED` v1 (`P8-TSK-016`) is constructed with the bank's OPAQUE
+     * reference of the platform's settlement account per currency — deployment configuration,
+     * classified CONFIDENTIAL, never logged: a statement is ours only when its account record
+     * equals the reference configured for its currency ({@code INV-RAIL-03}). The defaults are
+     * the simulated bank's. `SIM_SCHEME_JSON` v1 (`P8-TSK-017`) is the instant scheme's cycle
+     * report and `SIM_PAYOUT_CSV` v1 (`P8-TSK-018`) the payout provider's daily report — both
+     * pure, singletons like the PSP's.
      */
     @Bean
-    Map<SettlementFormatId, SettlementFormat> settlementFormats() {
-        return Map.of(SettlementFormatId.SIM_PSP_CSV, SimPspCsvFormat.INSTANCE);
+    Map<SettlementFormatId, SettlementFormat> settlementFormats(
+            @Value("${finapp.settlement.bank.account-reference.EUR:SIMBANK-EUR-01}")
+                    String eurAccountReference,
+            @Value("${finapp.settlement.bank.account-reference.GBP:SIMBANK-GBP-01}")
+                    String gbpAccountReference,
+            @Value("${finapp.settlement.bank.account-reference.USD:SIMBANK-USD-01}")
+                    String usdAccountReference) {
+        return Map.of(
+                SettlementFormatId.SIM_PSP_CSV,
+                SimPspCsvFormat.INSTANCE,
+                SettlementFormatId.SIM_SCHEME_JSON,
+                SimSchemeJsonFormat.INSTANCE,
+                SettlementFormatId.SIM_PAYOUT_CSV,
+                SimPayoutCsvFormat.INSTANCE,
+                SettlementFormatId.SIM_STATEMENT_TAGGED,
+                new SimStatementTaggedFormat(
+                        Map.of(
+                                CurrencyCode.of("EUR"), eurAccountReference,
+                                CurrencyCode.of("GBP"), gbpAccountReference,
+                                CurrencyCode.of("USD"), usdAccountReference)));
     }
 
     /**
@@ -301,7 +331,8 @@ public class SettlementBeans {
             AuditWriter<Connection> auditWriter,
             IdGenerator idGenerator,
             Clock clock,
-            TransactionRunner settlementTransactionRunner) {
+            TransactionRunner settlementTransactionRunner,
+            SettlementSources settlementSources) {
         return new FileParsing(
                 settlementFileStore,
                 settlementBatchStore,
@@ -312,7 +343,8 @@ public class SettlementBeans {
                 auditWriter,
                 idGenerator,
                 clock,
-                settlementTransactionRunner);
+                settlementTransactionRunner,
+                settlementSources);
     }
 
     /**
@@ -329,14 +361,20 @@ public class SettlementBeans {
             com.finapp.reconciliation.ExpectationRegister expectationRegister,
             com.finapp.reconciliation.RuleSets ruleSets,
             com.finapp.ledger.LedgerAccountStore<Connection> ledgerAccountStore,
-            IdGenerator idGenerator) {
+            IdGenerator idGenerator,
+            com.finapp.reconciliation.BreakRegister breakRegister,
+            com.finapp.reconciliation.Suspense suspense,
+            com.finapp.reconciliation.StatementChain statementChain) {
         return new ReconciliationIntake(
                 reconciliationRuns,
                 externalItems,
                 expectationRegister,
                 ruleSets,
                 ledgerAccountStore,
-                idGenerator);
+                idGenerator,
+                breakRegister,
+                suspense,
+                statementChain);
     }
 
     /** The accept leg (`P8-TSK-009`): hop 1, once per batch, one transaction per file. */

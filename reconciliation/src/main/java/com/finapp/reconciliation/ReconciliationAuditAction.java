@@ -110,6 +110,51 @@ public enum ReconciliationAuditAction implements AuditableAction {
             true),
 
     /**
+     * An investigator proposed a resolution (`P8-TSK-015`, ADR-0071 §6): a template-bound
+     * kind with a closed reason code, the break moved to {@code RESOLUTION_PROPOSED}, a
+     * posting kind's ledger proposal recorded beside it. The reason is the kind and the code;
+     * the narrative is CONFIDENTIAL and never in the record, nor is an amount.
+     */
+    RESOLUTION_PROPOSED(
+            "reconciliation.ResolutionProposed",
+            "An investigator proposed a template-bound break resolution; the record names the"
+                    + " kind, reason code and break, never the narrative or a value.",
+            true),
+
+    /**
+     * A second person approved a resolution (`P8-TSK-015`, ADR-0071 §§4, 6): the entry posted
+     * (for a posting kind), the subject's value disposed of and the break {@code RESOLVED}, in
+     * one transaction. Also the one record of a zero-value {@code ACKNOWLEDGE}, one person's
+     * act, carrying its reason. Identifiers and enumerated names only.
+     */
+    RESOLUTION_APPROVED(
+            "reconciliation.ResolutionApproved",
+            "A resolution was approved and the break resolved; the record names the kind,"
+                    + " the proposer and the entry, never a value.",
+            false),
+
+    /**
+     * Another RESOLVE holder rejected a pending resolution (`P8-TSK-015`, ADR-0071 §10) — a
+     * reasoned act; the ledger proposal rejected beside it and the break back to
+     * {@code INVESTIGATING}.
+     */
+    RESOLUTION_REJECTED(
+            "reconciliation.ResolutionRejected",
+            "A pending break resolution was rejected by another person with a recorded"
+                    + " reason; the break returned to investigation.",
+            true),
+
+    /**
+     * A pending resolution was withdrawn (`P8-TSK-015`, ADR-0071 §§1, 9): by its proposer,
+     * or by the platform when evidence closed the break first. Nothing is deleted; the row
+     * moved to {@code WITHDRAWN} and its ledger proposal was rejected.
+     */
+    RESOLUTION_WITHDRAWN(
+            "reconciliation.ResolutionWithdrawn",
+            "A pending break resolution was withdrawn by its proposer, or by the platform"
+                    + " when evidence resolved the break first.",
+            false),
+    /**
      * Somebody read a reconciliation report (`P8-TSK-007`, ADR-0072; the
      * {@code payments.ChargebackRatioRead} precedent): the positions report carries
      * amounts, so every serving is on the record — the report's name and period, never its

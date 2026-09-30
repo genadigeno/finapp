@@ -168,9 +168,11 @@ class SettlementMigrationTest {
         // V003 keeps the current definitions it introduced: line types (twice - totals and
         // lines), directions, reference kinds, the error-row codes, and the live unique -
         // written WHOLE, so neither V004 nor P8-TSK-023 changes the index.
-        assertThat(v003).contains("line_type IN (" + SettlementLineType.sqlValueList() + ")");
+        assertThat(v003).contains("line_type IN ("
+                + SettlementLineType.sqlValueList(SettlementLineType.reportVocabulary()) + ")");
         assertThat(v003).contains("direction IN (" + LineDirection.sqlValueList() + ")");
-        assertThat(v003).contains("kind IN (" + LineReferenceKind.sqlValueList() + ")");
+        assertThat(v003).contains("kind IN ("
+                + LineReferenceKind.sqlValueList(LineReferenceKind.reportVocabulary()) + ")");
         assertThat(v003).contains("error_code IN (" + RejectionCode.sqlErrorRowList() + ")");
         assertThat(v003)
                 .contains("ON settlement.batch (source_id, external_batch_ref, currency)")

@@ -10606,7 +10606,7 @@ posting-date documentation reconciled with the Phase 5–7 practice, with no ret
     by trigger; `value_at_issue_*` ≥ 0; the note body's bounds and shape `CHECK`s (1..4000; no
     Luhn-valid 13–19-digit run, no IBAN shape), ready for their producer in `P8-TSK-014`;
     `suspense_item.break_id NOT NULL`, `external_item_id UNIQUE NULL`,
-    `origin (RECON_PARK|BANK_UNATTRIBUTED|UNMATCHED_CONFIRMATION)` (`REPUDIATION` added by `V009`,
+    `origin (RECON_PARK|BANK_UNATTRIBUTED|UNMATCHED_CONFIRMATION)` (`REPUDIATION` added by `V012`,
     `P8-TSK-023`) *(the Phase 7 → 8 transition's re-check, R3)*, `origin_ref UNIQUE`,
     `CHECK released_minor ≤ amount_minor`; `park.journal_entry_id UNIQUE`; no `DELETE` grant and a
     refusing trigger on every table.
@@ -10648,7 +10648,7 @@ posting-date documentation reconciled with the Phase 5–7 practice, with no ret
 - **Out of scope**: the matcher and every leg that decides to park (`P8-TSK-011`, `-013`);
   resolutions (`-012`, `-015`); the case file's routes (`-014`); the producers of the
   `BANK_UNATTRIBUTED` (`-016`) and `UNMATCHED_CONFIRMATION` (`-020`) origins, which `V004` admits,
-  and of the fourth, `REPUDIATION` (`-023`), which `V009` admits; the break meters (`-024`).
+  and of the fourth, `REPUDIATION` (`-023`), which `V012` admits; the break meters (`-024`).
 - **Domain changes**: `ReconciliationBreak` (type, cause, severity, status, subject, value at issue,
   residual version), `BreakType`, `BreakCause`, `Severity`, the pure severity policy,
   `BreakRegister`; `SuspenseItem`, `SuspenseRelease`, `Park`, `Suspense`; `InternalReferenceLookup`
@@ -11266,7 +11266,7 @@ trigger on `break.type` — and for the state rule beside it: `P8-TSK-014`'s pro
 predicate refuse today. Every case-file door takes the source's namespace-4 advisory before the
 break row, as the approval door must.)*
 
-**P8-TSK-015 — Four-eyes resolution through the ledger** — `READY` (marked by `P8-TSK-014`'s completion gate)
+**P8-TSK-015 — Four-eyes resolution through the ledger** — `COMPLETE` (2026-09-30)
 - **Objective**: ADR-0071. A person resolves a break only through a template-bound, reason-coded
   resolution whose lines are derived from the subject's current remainder, approved by a second
   person whenever value is at issue or it posts, and posted through the ledger's adjustment
@@ -11476,7 +11476,7 @@ break row, as the approval door must.)*
   and thresholds, the lifecycle document's resolution machine and reason-code matrix, `INV-MER-02`'s
   amended statement and `RECONCILIATION_MODEL.md` current against the build). **Risk**: High. **Cx**: L.
 
-**P8-TSK-016 — The bank statement: cash recognised, remittances matched** — `PLANNED`
+**P8-TSK-016 — The bank statement: cash recognised, remittances matched** — `COMPLETE` (2026-09-30)
 - **Objective**: hop 2 of ADR-0065. Cash moves on the platform's books only on the bank's own
   statement, against each attributed counterparty's own clearing position, and the bank's lines
   discharge the remittances the reports opened. `CASH_AT_BANK` equals the closing balance of an
@@ -11560,7 +11560,11 @@ break row, as the approval door must.)*
   the live statement-sequence unique and `attributed_source_id` (settlement `V003`), the
   `BANK_UNATTRIBUTED` origin (reconciliation `V004`) and the bank rules (rule set v1, reconciliation
   `V002`) already exist. Configuration: the settlement account's opaque reference per currency, with
-  a `DATA_CLASSIFICATION.md` row (`CONFIDENTIAL`).
+  a `DATA_CLASSIFICATION.md` row (`CONFIDENTIAL`). *(Corrected by the task's design: the claim did
+  not hold against the schema — the statement's columns and live unique were settlement `V005`'s
+  to add, and the external item's bank types, nullable position and attribution reconciliation
+  `V008`'s, which moved `P8-TSK-022`'s `run_replay` to `V009` and `P8-TSK-023`'s repudiation to
+  `V010`; the configuration's classification is a non-column paragraph, since nothing stores it.)*
 - **APIs**: none new. Statements arrive through `P8-TSK-003`'s upload with attestation;
   `CASH_CONFIRMED` becomes reachable at `P8-TSK-014`'s `/settlement-status`; `P8-TSK-007`'s
   positions report gains its cash rows (a response addition, additive under v1, ADR-0015).
@@ -11647,7 +11651,7 @@ break row, as the approval door must.)*
   document, `RECONCILIATION_MODEL.md`'s bank pair and `INV-SET-06`'s Verify line current against the
   build). **Risk**: High — the only path by which cash moves. **Cx**: L.
 
-**P8-TSK-017 — The instant scheme's cycle report** — `PLANNED`
+**P8-TSK-017 — The instant scheme's cycle report** — `COMPLETE` (2026-09-30)
 - **Objective**: `INSTANT_CLEARING` discharged by the scheme's own evidence (ADR-0065): every
   pay-in, withdrawal, return and unmatched confirmation allocated to its expectation per settlement
   cycle, the scheme's fees recognised, the cycle's net expected as a remittance and moved to cash
@@ -11703,7 +11707,10 @@ break row, as the approval door must.)*
   - `SimulatedSettlementReports` renders the scheme's report from the payments tables (executed
     pay-ins' `scheme_reference` and `settlement_cycle`, completed withdrawals, completed returns'
     `provider_reference`, unmatched confirmations), with the cycle-shift fault beside the shared
-    ones;
+    ones; *(as built: `SimulatedSchemeReports` renders `SIM_SCHEME_JSON` from the completions a
+    scenario seeds with their postings and expectations — the cycle-shift fault a report rendered
+    under another cycle — not from the payments tables, which the storm's rounds reach instead;
+    recorded)*
   - ADR-0062 annotated with provenance: the return's cycle follow-up paid; §7's convergence trigger
     is ADR-0073's, not this task's.
 - **Out of scope**: pulling the report (`P8-TSK-021`); a file declaring several cycles (refused
@@ -11722,6 +11729,14 @@ break row, as the approval door must.)*
   (reconciliation `V002`, `P8-TSK-004`) already exist with their
   `DATA_CLASSIFICATION.md` §4 rows. **No payments migration** — the claim table and the parking's
   cycle this task reads are payments `V023`, landed by the Phase 7 → 8 transition's repair.
+  *(Corrected by the task's design: the claim did not hold against the schema — the item had no
+  `learned_cycle` and neither schema admitted the scheme's line types or references. Settlement
+  `V006` admits `CREDIT_IN`, `DEBIT_OUT`, `SCHEME_FEE`, `SCHEME_REF` and `END_TO_END_REF`;
+  reconciliation `V009` the item's scheme vocabulary, `learned_cycle` under an every-writer rule and
+  the cycle on the RUN (`reconciliation_batch.settlement_cycle`). The cycle token is the batch's
+  `external_batch_ref`, never a `SETTLEMENT_CYCLE` line reference — a reference would have been
+  read as a key. `P8-TSK-022` and `-023` moved again, to `V010` and `V011`. The expectation-side
+  rows stood as claimed. No payments migration, as claimed.)*
 - **APIs**: none new. The report arrives through the upload door (`P8-TSK-003`); `GET
   /reconciliation/settlement-status` (`P8-TSK-014`) walks a pay-in, withdrawal or return `PENDING` →
   `REPORTED` → `CASH_CONFIRMED` with its identifier trail.
@@ -11800,7 +11815,7 @@ break row, as the approval door must.)*
   every probe caught.
 - **Definition of done**: `DOD-FIN`, `DOD-TEST`. **Risk**: Medium. **Cx**: M.
 
-**P8-TSK-018 — The payout provider's report** — `PLANNED`
+**P8-TSK-018 — The payout provider's report** — `COMPLETE` (2026-09-30)
 - **Objective**: `PAYOUT_CLEARING` — "instructed but unsettled" — discharged by the payout
   provider's own report and our bank debit (ADR-0065): each `PAYOUT_EXECUTED` line allocated to its
   `MERCHANT_PAYOUT` expectation, the provider's fees recognised, the day's remittance expected and
@@ -11852,7 +11867,16 @@ break row, as the approval door must.)*
   domain change (the declaration and the port exist).
 - **Persistence**: none new — the settlement and reconciliation tables of `P8-TSK-002`…`-016` carry
   every row, with their `DATA_CLASSIFICATION.md` §4 rows; no merchant migration (merchant `V008` is
-  `P8-TSK-019`'s).
+  `P8-TSK-019`'s). *(Corrected by the task's design, the third task running: neither schema admitted
+  the payout lines or `PAYOUT_PROVIDER_REF`, and the payout rule set v1 held no fee rule or schedule
+  to `CHECK` by — a fee line would have met `NO_RULE` and waited forever. Settlement `V007` admits
+  `PAYOUT_EXECUTED`, `PAYOUT_RETURNED`, `PAYOUT_FEE` and `PAYOUT_PROVIDER_REF`; reconciliation `V010`
+  the item's vocabulary, `PAYOUT_FEE` in the rule and fee schedule `CHECK`s, and the fee rule and
+  flat schedule appended to v1 behind a guard refusing once any run or decision names that rule set
+  — the recorded deviation from "a change is a new version" (ADR-0068). The provider's fee is its
+  own `PAYOUT_FEE` type (the `SCHEME_FEE` precedent), not the plan's `PROCESSING_FEE`. `P8-TSK-022`
+  and `-023` moved to `V011` and `V012`. No columns, so no classification rows; no merchant
+  migration, as claimed.)*
 - **APIs**: none new. `GET /reconciliation/settlement-status?kind=MERCHANT_PAYOUT&operationRef=`
   walks a payout `PENDING` → `REPORTED` → `CASH_CONFIRMED`.
 - **Events**: none new; `reconciliation.SettlementExpectationSettled` for each `MERCHANT_PAYOUT`
@@ -11913,7 +11937,7 @@ break row, as the approval door must.)*
   `/settlement-status` (the gate's *Settlement recognition* criterion); every probe caught.
 - **Definition of done**: `DOD-FIN`, `DOD-TEST`. **Risk**: Medium. **Cx**: M.
 
-**P8-TSK-019 — Payout returns** — `PLANNED`
+**P8-TSK-019 — Payout returns** — `COMPLETE` (2026-09-30)
 - **Objective**: ADR-0073 — a payout the beneficiary bank returned is a merchant fact applied from
   settlement evidence: the payable restored exactly once by its own posting, the return expected and
   matched, the payout still `COMPLETED`; ADR-0057's follow-up closed. A routine return needs no
@@ -11951,9 +11975,28 @@ break row, as the approval door must.)*
     transaction, **re-reads the item under a share lock** and proceeds only while it is still
     `UNMATCHED` — so it never applies an item the grace leg parked or a person resolved (ADR-0073
     §4, §7) — resolves the payout from the item's `PAYOUT_PROVIDER_REF` or `OUR_REF` through
-    merchant's read store, and calls `apply`; the rematch leg then allocates the item;
+    merchant's read store, and calls `apply`; the rematch leg then allocates the item
+    *(design input from `P8-TSK-018`, which built the anchored resolution in `Matching.resolve`
+    and the waiting and `RETURN_NOT_APPLICABLE` typing, but not this: the rematch worklist's
+    predicate (`JdbcMatchingStore.REMATCH_PREDICATE`) finds a residual only when its KEYS reach an
+    expectation opened after its latest decision — and a `PAYOUT_RETURN` opens no key, so the
+    worklist needs an anchored clause: key → anchor expectation → the anchored kind's expectation of
+    the same `operation_ref` opened after the item's latest decision. Until it lands, a return
+    whose `PAYOUT_RETURN` opens during the wait is allocated only at grace expiry, by the grace
+    leg's re-resolution, origin `RUN`. A test must not use `P8-TSK-018`'s pinned-clock setup to
+    prove the clause: with the matcher's clock months behind, every anchor reads "opened after"
+    and the leg passes for the wrong reason)*;
     `NoSingleInstanceAssumptionRulesTest.LEASE_PROTECTED_SCHEDULERS` +1 with its argument,
-    DISTRIBUTED_EXECUTION §3's scheduler register, `SystemActorCallSitesAreEnumeratedTest`;
+    DISTRIBUTED_EXECUTION §3's scheduler register, `SystemActorCallSitesAreEnumeratedTest`
+    *(as built: reconciliation's public read is the port `WaitingPayoutReturns` — a bounded page
+    in claimant order by keyset, walked to the end every tick, since a fixed first page of returns
+    that cannot apply yet would starve every return behind it until grace (the build's find); and
+    the item re-read `FOR SHARE` only while it is still an `UNMATCHED` `PAYOUT_RETURNED` item —
+    the payout found by `apply`'s own locking finders, the batch's `accepted_on` by settlement's
+    `acceptedOnOf`; the anchored clause built with a remainder condition — the reached
+    expectation still `OPEN` or `PARTIALLY_SETTLED` — so a duplicate line's reach to a SPENT
+    return leaves the worklist rather than being re-locked on every tick (the tests agent's find);
+    proven on REAL clocks, the design input's warning honoured)*;
   - how the `PAYOUT_RETURNED` rule reaches its expectation — **the operation-anchored mechanism**,
     the one Phase 8 uses: the line's `PAYOUT_PROVIDER_REF` and `OUR_REF` are the payout's own keys,
     already held by its `MERCHANT_PAYOUT` expectation under `UNIQUE (source_id, key_kind,
@@ -11981,7 +12024,12 @@ break row, as the approval door must.)*
 - **Domain changes**: `PayoutReturn` (a born-once fact, `RECORDED`), `PayoutReturns`,
   `PayoutReturnStore`; `MerchantPayable`'s `payoutsReturned` term.
 - **Persistence**: merchant `V008`, its `DATA_CLASSIFICATION.md` §4 rows in the same change
-  (`ColumnClassificationTest`); no payments, reconciliation or ledger migration.
+  (`ColumnClassificationTest`); no payments, reconciliation or ledger migration. *(Held as
+  built — the first Phase 8 task in four whose persistence claim did: `V008` also declares
+  `merchant_payout_money_is_unique UNIQUE (id, amount_minor, currency, scale)` on the payout, the
+  target the composite foreign key needs, and an insert trigger refusing a return naming a payout
+  that is not `COMPLETED` (`23514`) — the check's second rank for any writer; ten classification
+  rows.)*
 - **APIs**: none new; the payable's breakdown (`MerchantPayable`) shows `payoutsReturned`, beside
   `P8-TSK-015`'s `reconciliationAttributed`, wherever it is already served — an additive change
   under v1 (ADR-0015), the OpenAPI baseline regenerated if a view gains the field.
@@ -12059,7 +12107,7 @@ break row, as the approval door must.)*
   `other` whatever becomes of it *(the status moved to the title line alone and this note here by
   the Phase 7 → 8 transition's consistency review, C4; the terms' owner settled by A12)*.
 
-**P8-TSK-020 — Unmatched confirmations join suspense management** — `PLANNED`
+**P8-TSK-020 — Unmatched confirmations join suspense management** — `READY` (marked by `P8-TSK-019`'s completion gate)
 - **Objective**: Phase 7's unmatched confirmations become owned suspense (`INV-REC-05`,
   `INV-REC-09`): every parking opens, in its own transaction, a CREDIT suspense item with an
   `UNKNOWN_EXTERNAL` break (cause `PARKED_ON_RECEIPT`); existing rows are adopted once; the value
@@ -12326,8 +12374,8 @@ break row, as the approval door must.)*
   business-day calendars; value-banded approver escalation; automatic readmission.
 - **Domain changes**: `RuleSet`'s administration commands; `ReprocessRun`; `Readmission`;
   `RunReplay`; the re-parse verification.
-- **Persistence**: reconciliation `V008` `run_replay` (the number after `P8-TSK-015`'s `V007`, in task
-  order; `P8-TSK-023`'s is `V009` — the Phase 7 → 8 transition's consistency review, A8 and C9,
+- **Persistence**: reconciliation `V011` `run_replay` (renumbered: `P8-TSK-016` took `V008` for its bank items, `P8-TSK-017` `V009` for its scheme items and `P8-TSK-018` `V010` for its payout items; in task
+  order; `P8-TSK-023`'s is `V012` — the Phase 7 → 8 transition's consistency review, A8 and C9,
   where this read `V00x`) (`run_id`, `requested_by`, `verdict`,
   `divergences`, `pending_rematch`, `first_divergent_decision`, `at`; append-only), its
   `DATA_CLASSIFICATION.md` §4 rows in the same change; beside it a settlement migration of its own,
@@ -12466,15 +12514,15 @@ break row, as the approval door must.)*
   - the approval re-derives the counter-allocations and unparks from the rows under lock, and a
     change since the proposal is `409 reconciliation.ResolutionStale`;
   - settlement `V00x`, the next free settlement number (`batch` `ACCEPTED → REPUDIATED`; the live
-    uniques already exclude it); reconciliation `V009` (below).
+    uniques already exclude it); reconciliation `V012` (below).
 - **Out of scope**: repudiating single lines (the batch is the unit); automatic repudiation;
   deleting or editing the file or its lines (retained); re-allocating committed matches outside
   repudiation; reversing a write-off automatically on late evidence (deferred).
 - **Domain changes**: the `REPUDIATE_BATCH` kind on a batch subject; counter-allocations; the
   batch's single designed exit from `ACCEPTED`.
 - **Persistence**: settlement `V00x` (the batch state and its transition trigger regenerated) with
-  its `DATA_CLASSIFICATION.md` rows if any column changes; **reconciliation `V009`**, after
-  `P8-TSK-022`'s `V008` — the resolution's `REPUDIATE_BATCH` kind and its batch subject admitted,
+  its `DATA_CLASSIFICATION.md` rows if any column changes; **reconciliation `V012`**, after
+  `P8-TSK-022`'s `V011` — the resolution's `REPUDIATE_BATCH` kind and its batch subject admitted,
   the item's `REPUDIATED` state and its repudiation-only reopening edge, the expectation's
   reopening edges (`SETTLED | PARTIALLY_SETTLED → OPEN | PARTIALLY_SETTLED`), and the suspense
   item's fourth origin, `REPUDIATION` (`V004` created the three others), each generated `CHECK`

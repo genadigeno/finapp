@@ -23,9 +23,40 @@ public enum ItemKeyKind {
     ACQUIRER_REF,
     DISPUTE_REF,
     OUR_REF,
-    ORIGINAL_REF;
+    ORIGINAL_REF,
+    /** A bank statement line's structured remittance reference (`P8-TSK-016`). */
+    REMITTANCE_REF,
+    /** The instant scheme's reference for an execution (`P8-TSK-017`). */
+    SCHEME_REF,
+    /** The platform's end-to-end reference for a push execution, echoed by the scheme. */
+    END_TO_END_REF,
+    /** The payout provider's own reference for a payout it accepted (`P8-TSK-018`). */
+    PAYOUT_PROVIDER_REF;
 
-    /** The `V003` {@code CHECK}'s value list — reconciled by the migration test. */
+    /** The report vocabulary `V003` admitted; {@code REMITTANCE_REF} arrived with `V008`. */
+    public static java.util.Set<ItemKeyKind> reportVocabulary() {
+        return java.util.EnumSet.range(PSP_CAPTURE_REF, ORIGINAL_REF);
+    }
+
+    /** The vocabulary through the bank statement — what `V008` admitted. */
+    public static java.util.Set<ItemKeyKind> bankVocabulary() {
+        return java.util.EnumSet.range(PSP_CAPTURE_REF, REMITTANCE_REF);
+    }
+
+    /** The vocabulary through the scheme's cycle report — what `V009` admitted. */
+    public static java.util.Set<ItemKeyKind> schemeVocabulary() {
+        return java.util.EnumSet.range(PSP_CAPTURE_REF, END_TO_END_REF);
+    }
+
+    /** A subset's {@code CHECK} value list, in declaration order. */
+    public static String sqlValueList(java.util.Set<ItemKeyKind> members) {
+        return Arrays.stream(values())
+                .filter(members::contains)
+                .map(value -> "'" + value.name() + "'")
+                .collect(Collectors.joining(", "));
+    }
+
+    /** The whole {@code CHECK} value list (`V010`) — reconciled by the migration test. */
     public static String sqlValueList() {
         return Arrays.stream(values())
                 .map(value -> "'" + value.name() + "'")

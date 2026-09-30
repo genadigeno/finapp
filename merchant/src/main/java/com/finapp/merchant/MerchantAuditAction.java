@@ -217,6 +217,18 @@ public enum MerchantAuditAction implements AuditableAction {
             "merchant.MerchantPayoutOutcomeApplied",
             "The platform applied the payout provider's answer to a payout (completed, failed or"
                     + " unknown); acting transitions only.",
+            false),
+
+    /**
+     * The platform applied a payout return from settlement evidence (`P8-TSK-019`, ADR-0073 §4)
+     * through the return worker's enumerated {@code enterSystem()} site: the payable credited
+     * back by the return's own posting, the payout still {@code COMPLETED}. Acting only — a
+     * refusal or a losing racer writes nothing. No reason: no person decided anything.
+     */
+    PAYOUT_RETURN_APPLIED(
+            "merchant.PayoutReturnApplied",
+            "The platform applied a payout return from settlement evidence: the payable credited"
+                    + " back by the return's own posting, the payout still COMPLETED.",
             false);
 
     private final String code;

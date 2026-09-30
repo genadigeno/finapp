@@ -37,7 +37,11 @@ class OperationalChartMigrationTest {
                     // P7-TSK-013: the dispute accounts, each with its first poster.
                     "db/migration/ledger/V014__dispute_accounts_join_the_chart.sql",
                     // P8-TSK-009: the counterparties' processing costs, with hop 1's poster.
-                    "db/migration/ledger/V016__processing_costs_joins_the_chart.sql");
+                    "db/migration/ledger/V016__processing_costs_joins_the_chart.sql",
+                    // P8-TSK-015: the resolution's P&L accounts, with their poster.
+                    "db/migration/ledger/V017__reconciliation_losses_and_gains_join_the_chart.sql",
+                    // P8-TSK-016: the platform's cash, with its one poster.
+                    "db/migration/ledger/V018__cash_at_bank_joins_the_chart.sql");
 
     /**
      * The seed's type decisions, pinned as its contract. Changing one is a reclassification of
@@ -53,6 +57,9 @@ class OperationalChartMigrationTest {
                     // ADR-0062 §4: the net receivable on the instant scheme - pay-ins
                     // debit it, withdrawals credit it, Phase 8 discharges it per cycle.
                     Map.entry(AccountPurpose.INSTANT_CLEARING, AccountType.ASSET),
+                    // ADR-0065 section 3 (P8-TSK-016): the cash at the settlement bank -
+                    // debited by a statement's net credits, credited by its net debits.
+                    Map.entry(AccountPurpose.CASH_AT_BANK, AccountType.ASSET),
                     // ADR-0061 §3: a claim - on the network by representment, or on the
                     // counterparty for a parked share - growing on the debit side.
                     Map.entry(AccountPurpose.CHARGEBACK_RECOVERABLE, AccountType.ASSET),
@@ -62,7 +69,12 @@ class OperationalChartMigrationTest {
                     // recognised at its report's acceptance - growing on the debit side the
                     // recognition debits, a rebate crediting it back.
                     Map.entry(AccountPurpose.PROCESSING_COSTS, AccountType.EXPENSE),
+                    // ADR-0071 section 2 (P8-TSK-015): an approved WRITE_OFF's loss - growing
+                    // on the debit side the write-off debits.
+                    Map.entry(AccountPurpose.RECONCILIATION_LOSSES, AccountType.EXPENSE),
                     Map.entry(AccountPurpose.FEE_REVENUE, AccountType.REVENUE),
+                    // ADR-0070 section 4 (P8-TSK-015): an approved RECOGNISE_GAIN's income.
+                    Map.entry(AccountPurpose.RECONCILIATION_GAINS, AccountType.REVENUE),
                     Map.entry(AccountPurpose.FX_POSITION, AccountType.ASSET),
                     Map.entry(AccountPurpose.ROUNDING_RESIDUAL, AccountType.EXPENSE),
                     Map.entry(AccountPurpose.SUSPENSE_UNMATCHED, AccountType.LIABILITY));

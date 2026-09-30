@@ -1,5 +1,8 @@
 package com.finapp.settlement;
 
+import com.finapp.ledger.AccountPurpose;
+import com.finapp.ledger.JournalLine;
+import com.finapp.ledger.LedgerAccountId;
 import com.finapp.ledger.LedgerAccountStore;
 import com.finapp.ledger.PostingCommand;
 import com.finapp.ledger.PostingResult;
@@ -22,7 +25,9 @@ import java.time.Clock;
 import java.time.Instant;
 import java.time.LocalDate;
 import java.time.ZoneOffset;
+import java.util.HashMap;
 import java.util.List;
+import java.util.Map;
 import java.util.Optional;
 import java.util.UUID;
 import lombok.NonNull;
@@ -55,6 +60,16 @@ import lombok.extern.slf4j.Slf4j;
  * last CONTENDED write: every row after it — the batch, the file — is one this transaction
  * already exclusively claimed, so no new lock edge exists and the multi-entry order holds in
  * substance (`DISTRIBUTED_EXECUTION.md` §3's row records this).
+ *
+ * <h2>Two recognitions (`P8-TSK-016`)</h2>
+ *
+ * <p>A counterparty's REPORT posts only its fees ({@link BatchRecognition}, hop 1) and opens its
+ * remittance. A bank STATEMENT is hop 2 — the only way cash moves on the books
+ * ({@code INV-SET-06}): {@link BankRecognition} debits {@code CASH_AT_BANK} against each
+ * attributed counterparty's clearing position, the bank's fees and the unattributed lines'
+ * suspense, and the intake is handed the statement's continuity — the accepted predecessor and
+ * successor read under the SAME source row lock that serialises every acceptance of the source,
+ * so ten acceptors of one account see one chain.
  *
  * <h2>Eligibility is authentication</h2>
  *
@@ -201,64 +216,24 @@ public final class BatchAcceptance {
 
         // The evidence, whole, and its arithmetic - deterministic over stored rows.
         List<SettlementBatchStore.LineRow> lines = batches.linesOf(uow, batch.id());
-        var positionAccount =
-                accounts.findOperational(
-                                uow,
-                                declared.settledPosition()
-                                        .orElseThrow(
-                                                () ->
-                                                        new SettlementStorageException(
-                                                                "a report source declares"
-                                                                        + " its position"
-                                                                        + " (INV-SET-05)")),
-                                batch.currency())
-                        .orElseThrow(
-                                () ->
-                                        new SettlementStorageException(
-                                                "the chart seeds every position per"
-                                                        + " currency"));
-        var costsAccount =
-                accounts.findOperational(
-                                uow,
-                                com.finapp.ledger.AccountPurpose.PROCESSING_COSTS,
-                                batch.currency())
-                        .orElseThrow(
-                                () ->
-                                        new SettlementStorageException(
-                                                "V016 seeds PROCESSING_COSTS per currency"));
-        BatchRecognition.Recognition recognition =
-                BatchRecognition.recognise(
-                        lines,
-                        batch.currency(),
-                        batch.netScale(),
-                        costsAccount.id(),
-                        positionAccount.id());
-
-        // The intake: run, items, keys and the remittance, on this same connection.
         Money net = Money.ofPersisted(batch.netMinor(), batch.currency(), batch.netScale());
-        AcceptedBatchIntake.Intaken intaken =
-                intake.intake(
-                        uow,
-                        new AcceptedBatchIntake.AcceptedBatch(
-                                batch.id(),
-                                file.id(),
-                                file.sourceId(),
-                                declared.settledPosition().orElseThrow(),
-                                batch.businessDate(),
-                                valueDate,
-                                acceptedOn,
-                                sequence,
-                                batch.remittanceReference(),
-                                net,
-                                canonicalLines(lines),
-                                actor,
-                                now,
-                                correlation));
+        Recognised recognised =
+                batch.statement().isPresent()
+                        ? recogniseStatement(
+                                uow, file, batch, lines, net, sequence, acceptedOn, valueDate,
+                                actor, now, correlation)
+                        : recogniseReport(
+                                uow, file, batch, declared, lines, net, sequence, acceptedOn,
+                                valueDate, actor, now, correlation);
+
+        // The intake: run, items, keys, the remittance or the statement's breaks, on this
+        // same connection.
+        AcceptedBatchIntake.Intaken intaken = intake.intake(uow, recognised.accepted());
 
         // The recognition - the last CONTENDED write (D3); dates STORED, never the clock's
         // beyond accepted_on, so a later-day replay converges (INV-SET-04).
         Optional<UUID> entryId = Optional.empty();
-        if (!recognition.postingOmitted()) {
+        if (!recognised.entryLines().isEmpty()) {
             PostingResult posted =
                     posting.post(
                             uow,
@@ -267,9 +242,12 @@ public final class BatchAcceptance {
                                     acceptedOn,
                                     valueDate,
                                     batch.id().toString(),
-                                    recognition.entryLines()));
+                                    recognised.entryLines()));
             entryId = Optional.of(posted.entryId().value());
         }
+        // The rows that carry the entry whole - this transaction's own (P8-TSK-016).
+        intake.recognised(uow, recognised.accepted(), intaken, entryId);
+        boolean postingOmitted = recognised.entryLines().isEmpty();
 
         // The two edges, on rows this transaction already claimed.
         if (!batches.markAccepted(uow, batch.id(), sequence, acceptedOn, entryId, now)) {
@@ -317,8 +295,12 @@ public final class BatchAcceptance {
                                         + ", sequence=" + sequence
                                         + ", items=" + intaken.items()
                                         + ", remittance=" + intaken.remittanceOpened()
-                                        + ", postingOmitted="
-                                        + recognition.postingOmitted())));
+                                        + (batch.statement().isPresent()
+                                                ? ", unattributed=" + intaken.unattributed()
+                                                        + ", continuityBreaks="
+                                                        + intaken.continuityBreaks()
+                                                : "")
+                                        + ", postingOmitted=" + postingOmitted)));
         SettlementFileEvents.accepted(
                 outbox,
                 uow,
@@ -382,8 +364,197 @@ public final class BatchAcceptance {
         return Outcome.REJECTED;
     }
 
+    /** What a batch's branch hands the common tail: the entry and the intake's statement. */
+    private record Recognised(
+            List<JournalLine> entryLines, AcceptedBatchIntake.AcceptedBatch accepted) {}
+
+    /** Hop 1: a report posts its fees and opens its remittance (`P8-TSK-009`). */
+    private Recognised recogniseReport(
+            Connection uow,
+            SettlementFileStore.FileRow file,
+            SettlementBatchStore.BatchRow batch,
+            SettlementSourceDescriptor declared,
+            List<SettlementBatchStore.LineRow> lines,
+            Money net,
+            long sequence,
+            LocalDate acceptedOn,
+            LocalDate valueDate,
+            Actor actor,
+            Instant now,
+            Correlation correlation) {
+        var positionAccount =
+                accounts.findOperational(
+                                uow,
+                                declared.settledPosition()
+                                        .orElseThrow(
+                                                () ->
+                                                        new SettlementStorageException(
+                                                                "a report source declares"
+                                                                        + " its position"
+                                                                        + " (INV-SET-05)")),
+                                batch.currency())
+                        .orElseThrow(
+                                () ->
+                                        new SettlementStorageException(
+                                                "the chart seeds every position per"
+                                                        + " currency"));
+        var costsAccount = operational(uow, AccountPurpose.PROCESSING_COSTS, batch);
+        BatchRecognition.Recognition recognition =
+                BatchRecognition.recognise(
+                        lines,
+                        batch.currency(),
+                        batch.netScale(),
+                        costsAccount,
+                        positionAccount.id());
+        AcceptedBatchIntake.AcceptedBatch accepted =
+                new AcceptedBatchIntake.AcceptedBatch(
+                        batch.id(),
+                        file.id(),
+                        file.sourceId(),
+                        declared.settledPosition().orElseThrow(),
+                        batch.businessDate(),
+                        valueDate,
+                        acceptedOn,
+                        sequence,
+                        batch.remittanceReference()
+                                .orElseThrow(
+                                        () ->
+                                                new SettlementStorageException(
+                                                        "a report carries its remittance"
+                                                                + " reference (V005)")),
+                        net,
+                        canonicalLines(lines, Map.of()),
+                        actor,
+                        now,
+                        correlation);
+        // A scheme's cycle report settles ONE cycle, and its token is the batch's identity
+        // (settlement V006): it rides to the run, where the matcher compares it with each
+        // matched completion's announced cycle (P8-TSK-017).
+        if (declared.kind() == SourceKind.SCHEME_CYCLE_REPORT) {
+            accepted = accepted.withSettlementCycle(batch.externalBatchRef());
+        }
+        return new Recognised(recognition.entryLines(), accepted);
+    }
+
+    /**
+     * Hop 2: a bank statement recognises cash against its attributed counterparties' positions
+     * (`P8-TSK-016`, ADR-0065 §3) and hands the intake its place in the chain.
+     */
+    private Recognised recogniseStatement(
+            Connection uow,
+            SettlementFileStore.FileRow file,
+            SettlementBatchStore.BatchRow batch,
+            List<SettlementBatchStore.LineRow> lines,
+            Money net,
+            long sequence,
+            LocalDate acceptedOn,
+            LocalDate valueDate,
+            Actor actor,
+            Instant now,
+            Correlation correlation) {
+        SettlementBatchStore.StatementRow statement = batch.statement().orElseThrow();
+        // Each attributed source's clearing position, read off the compiled register - the
+        // attribution names a source row; the register names its position (INV-SET-05).
+        Map<UUID, String> codeById = new HashMap<>();
+        files.sources(uow).forEach(source -> codeById.put(source.id(), source.code()));
+        Map<UUID, AccountPurpose> positionBySource = new HashMap<>();
+        Map<UUID, LedgerAccountId> accountBySource = new HashMap<>();
+        for (SettlementBatchStore.LineRow line : lines) {
+            line.attributedSourceId()
+                    .ifPresent(
+                            sourceId -> {
+                                if (positionBySource.containsKey(sourceId)) {
+                                    return;
+                                }
+                                AccountPurpose purpose =
+                                        Optional.ofNullable(codeById.get(sourceId))
+                                                .flatMap(sources::byCode)
+                                                .flatMap(SettlementSourceDescriptor::settledPosition)
+                                                .orElseThrow(
+                                                        () ->
+                                                                new SettlementStorageException(
+                                                                        "an attributed source is a"
+                                                                                + " declared report"
+                                                                                + " source"
+                                                                                + " (INV-SET-05)"));
+                                positionBySource.put(sourceId, purpose);
+                                accountBySource.put(sourceId, operational(uow, purpose, batch));
+                            });
+        }
+        BankRecognition.Recognition recognition =
+                BankRecognition.recognise(
+                        lines,
+                        batch.currency(),
+                        batch.netScale(),
+                        net,
+                        new BankRecognition.Accounts(
+                                operational(uow, AccountPurpose.CASH_AT_BANK, batch),
+                                operational(uow, AccountPurpose.PROCESSING_COSTS, batch),
+                                operational(uow, AccountPurpose.SUSPENSE_UNMATCHED, batch),
+                                accountBySource));
+
+        // The chain's neighbours, read under the source row lock this transaction holds: no
+        // other acceptance of this source can commit between the read and our own commit.
+        long seq = statement.sequence();
+        Optional<AcceptedBatchIntake.Neighbour> predecessor =
+                seq > 1
+                        ? batches.acceptedStatement(uow, file.sourceId(), batch.currency(), seq - 1)
+                                .map(BatchAcceptance::neighbour)
+                        : Optional.empty();
+        Optional<AcceptedBatchIntake.Neighbour> successor =
+                batches.acceptedStatement(uow, file.sourceId(), batch.currency(), seq + 1)
+                        .map(BatchAcceptance::neighbour);
+        AcceptedBatchIntake.StatementContinuity continuity =
+                new AcceptedBatchIntake.StatementContinuity(
+                        seq,
+                        Money.ofPersisted(
+                                statement.openingMinor(), batch.currency(), batch.netScale()),
+                        Money.ofPersisted(
+                                statement.closingMinor(), batch.currency(), batch.netScale()),
+                        predecessor,
+                        successor);
+        return new Recognised(
+                recognition.entryLines(),
+                new AcceptedBatchIntake.AcceptedBatch(
+                        batch.id(),
+                        file.id(),
+                        file.sourceId(),
+                        Optional.empty(),
+                        batch.businessDate(),
+                        valueDate,
+                        acceptedOn,
+                        sequence,
+                        Optional.empty(),
+                        net,
+                        canonicalLines(lines, positionBySource),
+                        actor,
+                        now,
+                        correlation,
+                        Optional.of(continuity)));
+    }
+
+    private static AcceptedBatchIntake.Neighbour neighbour(
+            SettlementBatchStore.StatementLink link) {
+        return new AcceptedBatchIntake.Neighbour(
+                link.batchId(),
+                link.sequence(),
+                Money.ofPersisted(link.openingMinor(), link.currency(), link.scale()),
+                Money.ofPersisted(link.closingMinor(), link.currency(), link.scale()));
+    }
+
+    private LedgerAccountId operational(
+            Connection uow, AccountPurpose purpose, SettlementBatchStore.BatchRow batch) {
+        return accounts.findOperational(uow, purpose, batch.currency())
+                .orElseThrow(
+                        () ->
+                                new SettlementStorageException(
+                                        "the chart seeds " + purpose + " per currency"))
+                .id();
+    }
+
     private static List<AcceptedBatchIntake.CanonicalLine> canonicalLines(
-            List<SettlementBatchStore.LineRow> lines) {
+            List<SettlementBatchStore.LineRow> lines,
+            Map<UUID, AccountPurpose> positionBySource) {
         return lines.stream()
                 .map(
                         line ->
@@ -400,7 +571,9 @@ public final class BatchAcceptance {
                                         line.settlementDate(),
                                         line.valueDate(),
                                         line.canonicalFingerprint(),
-                                        line.references()))
+                                        line.references(),
+                                        line.attributedSourceId(),
+                                        line.attributedSourceId().map(positionBySource::get)))
                 .toList();
     }
 

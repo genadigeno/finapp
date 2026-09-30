@@ -407,6 +407,15 @@ class CredentialReachesNoEmittedSinkTest {
                         "BreakClassificationRequest",
                         "BreakEvidenceLinkRequest",
                         "BreakNoteRequest",
+                        // P8-TSK-015: the resolver's doors. No secret in either. The proposal
+                        // carries a kind, a closed reason code, identifiers (a transfer's target,
+                        // an offset item, a chosen candidate) and the NARRATIVE - CONFIDENTIAL
+                        // free prose, screened at the domain and by V006's CHECKs, stored on the
+                        // resolution alone and never logged, evented, audited or held in the
+                        // idempotency receipt; the rejection carries a REASON screened the same
+                        // way, bound for the resolution history's and audit record's reason.
+                        "ResolutionProposalRequest",
+                        "ResolutionRejectionRequest",
                         // P3-TSK-017. Carries dates, a reference, a REASON (free prose by a
                         // person, bound for the reason columns - RESTRICTED-FINANCIAL, never
                         // rendered by any toString) and lines of account/direction/amount/

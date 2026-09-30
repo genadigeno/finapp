@@ -84,7 +84,7 @@ class SimPspCsvFormatTest {
             assertThat(batch.externalBatchRef()).isEqualTo("PSPB-2026-09-25-01");
             assertThat(batch.declaredNet().currency().code()).isEqualTo("EUR");
             assertThat(batch.businessDate()).hasToString("2026-09-25");
-            assertThat(batch.remittanceReference()).isEqualTo("PSP-REM-20260925");
+            assertThat(batch.remittanceReference()).contains("PSP-REM-20260925");
             assertThat(batch.declaredLineCount()).isEqualTo(9);
             assertThat(batch.declaredNet().minorUnits()).isEqualTo(29_500L);
 

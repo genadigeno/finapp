@@ -65,8 +65,12 @@ public final class JdbcExpectationReadings implements ExpectationReadings<Connec
         try (PreparedStatement select =
                 unitOfWork.prepareStatement(
                         // Allocating lines only (fees' effect IS the recognition entry),
-                        // undisposed statuses only - the list generated from the enum.
-                        "SELECT source_id, position_purpose, direction, amount_minor,"
+                        // undisposed statuses only - the list generated from the enum. An
+                        // attributed bank line's remainder stands in its ATTRIBUTED source's
+                        // position identity - the recognition credited that source's
+                        // clearing position (P8-TSK-016).
+                        "SELECT COALESCE(attributed_source_id, source_id) AS source_id,"
+                                + " position_purpose, direction, amount_minor,"
                                 + " allocated_minor, parked_minor, offset_minor, currency,"
                                 + " scale"
                                 + " FROM reconciliation.external_item"
@@ -97,11 +101,20 @@ public final class JdbcExpectationReadings implements ExpectationReadings<Connec
                                                     rows.getLong("offset_minor"),
                                                     currency,
                                                     scale));
+                    String position = rows.getString("position_purpose");
+                    if (position == null) {
+                        // An unpositioned line (an unattributed bank line) is born PARKED
+                        // in its acceptance transaction and so never undisposed in any
+                        // snapshot: reaching here is a broken record, and a proof over it
+                        // fails loudly rather than skip value (INV-REC-06).
+                        throw new ReconciliationStorageException(
+                                "an undisposed allocating external item stands in no"
+                                        + " position (V008's position rule)");
+                    }
                     remainders.add(
                             new OpenItemRemainder(
                                     rows.getObject("source_id", UUID.class),
-                                    AccountPurpose.valueOf(
-                                            rows.getString("position_purpose")),
+                                    AccountPurpose.valueOf(position),
                                     ExpectationDirection.valueOf(rows.getString("direction")),
                                     remainder));
                 }

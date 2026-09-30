@@ -138,14 +138,14 @@ class AdjustmentProposalMigrationTest {
 
     @Test
     @DisplayName("the binding's purpose list is AccountPurpose.reconciledPositions(),"
-            + " generated (P8-TSK-006, ADR-0071) - its LATEST re-statement is V016's"
-            + " (P8-TSK-009: PROCESSING_COSTS joined with its poster)")
+            + " generated (P8-TSK-006, ADR-0071) - its LATEST re-statement is V018's"
+            + " (P8-TSK-015: the resolution's P&L accounts joined with their poster)")
     void theBindingListIsTheEnums() {
         assertThat(migrationV015())
                 .contains("CREATE TRIGGER adjustment_line_respects_reconciled_positions")
                 .contains("BEFORE INSERT ON ledger.adjustment_proposal_line");
         assertThat(read(
-                        "db/migration/ledger/V016__processing_costs_joins_the_chart.sql"))
+                        "db/migration/ledger/V018__cash_at_bank_joins_the_chart.sql"))
                 .as("the current generated list lives in the latest re-statement")
                 .contains(
                         "CREATE OR REPLACE FUNCTION"

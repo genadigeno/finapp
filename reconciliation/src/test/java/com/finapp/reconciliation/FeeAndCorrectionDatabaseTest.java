@@ -117,7 +117,7 @@ class FeeAndCorrectionDatabaseTest {
                 new MatchingRules(),
                 new JdbcBreakRegister(new JdbcOutboxWriter(), new JdbcAuditWriter(), IDS),
                 new Suspense(postingService(), new JdbcLedgerAccountStore(), IDS),
-                new JdbcResolutions(new JdbcOutboxWriter(), new JdbcAuditWriter(), IDS),
+                ResolutionFixtures.resolutions(IDS, CLOCK),
                 LOOKUP,
                 new JdbcLedgerAccountStore(),
                 new JdbcOutboxWriter(),
@@ -600,19 +600,28 @@ class FeeAndCorrectionDatabaseTest {
                     .as("the application role holds no UPDATE")
                     .hasStackTraceContaining("permission denied");
         }
+        // Since V007 the resolution's own trigger is the machine's (P8-TSK-015): a decided
+        // row's payload stays frozen and no row is ever deleted, for the migrator too; the
+        // history stays V006's append-only.
         try (Connection migrator = DatabaseRoles.migrator()) {
             migrator.setAutoCommit(false);
-            for (String sql :
+            for (Map.Entry<String, String> refused :
                     List.of(
-                            "UPDATE reconciliation.resolution SET narrative = 'edited'"
-                                    + " WHERE id = '" + resolutionId + "'",
-                            "DELETE FROM reconciliation.resolution WHERE id = '"
-                                    + resolutionId + "'",
-                            "DELETE FROM reconciliation.resolution_event WHERE"
-                                    + " resolution_id = '" + resolutionId + "'")) {
-                assertThatThrownBy(() -> execute(migrator, sql))
+                            Map.entry(
+                                    "UPDATE reconciliation.resolution SET narrative = 'edited'"
+                                            + " WHERE id = '" + resolutionId + "'",
+                                    "frozen when proposed"),
+                            Map.entry(
+                                    "DELETE FROM reconciliation.resolution WHERE id = '"
+                                            + resolutionId + "'",
+                                    "never deleted"),
+                            Map.entry(
+                                    "DELETE FROM reconciliation.resolution_event WHERE"
+                                            + " resolution_id = '" + resolutionId + "'",
+                                    "append-only"))) {
+                assertThatThrownBy(() -> execute(migrator, refused.getKey()))
                         .as("the trigger refuses the migrator too")
-                        .hasStackTraceContaining("append-only");
+                        .hasStackTraceContaining(refused.getValue());
                 migrator.rollback();
             }
         }

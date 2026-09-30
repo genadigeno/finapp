@@ -307,5 +307,23 @@ public enum PermissionName {
      * operator desk it oversees, exactly as that desk is disjoint from the money-operating
      * one it checks.
      */
-    RECONCILIATION_ADMINISTER
+    RECONCILIATION_ADMINISTER,
+
+    /**
+     * Resolve a reconciliation break by a person's act (`P8-TSK-015`, ADR-0071 §§2-4, owner
+     * decision O1): propose a template-bound, reason-coded resolution whose lines are derived
+     * from the subject's remainder - never typed - approve another person's proposal, reject
+     * one with a reason, or withdraw one's own. The routes are
+     * {@code POST .../breaks/'{id}'/resolutions}, {@code POST .../resolutions/'{id}'/approval},
+     * {@code .../rejection} and {@code DELETE .../resolutions/'{id}'}. Names the four
+     * {@code reconciliation.Resolution*} audit actions; ships with its real check sites.
+     *
+     * <p><strong>Distinct from {@link #RECONCILIATION_INVESTIGATE}</strong> because it moves
+     * money (a write-off, a transfer, a gain) under four-eyes, which reading and annotating a
+     * break never does; <strong>held by {@code RECONCILIATION_OPERATOR}, never by
+     * {@code RECONCILIATION_CONTROLLER}</strong> - whoever can loosen a tolerance cannot
+     * resolve the breaks it would hide. Four-eyes is distinct identities, not distinct
+     * permissions: the approver holds this like the proposer.
+     */
+    RECONCILIATION_RESOLVE
 }

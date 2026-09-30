@@ -120,6 +120,21 @@ class ReconciliationMetricsTest {
                         .gauge()
                         .value())
                 .isNaN();
+        // The cash proof (P8-TSK-016): eager per supported currency, NaN when unreadable -
+        // never a comforting zero over a chain nobody could read.
+        for (com.finapp.sharedkernel.money.CurrencyCode currency :
+                com.finapp.ledger.SupportedCurrencies.ALL) {
+            assertThat(registry.find(ReconciliationMetrics.CASH_PROOF)
+                            .tag("currency", currency.code())
+                            .gauge())
+                    .as("the cash proof series exists eagerly for %s", currency)
+                    .isNotNull();
+            assertThat(registry.find(ReconciliationMetrics.CASH_PROOF)
+                            .tag("currency", currency.code())
+                            .gauge()
+                            .value())
+                    .isNaN();
+        }
 
         // The suspense series (P8-TSK-010): the proof under its own purpose, and the
         // three gauges - each eager, each NaN when the sweep is unreadable.

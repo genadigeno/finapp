@@ -346,7 +346,19 @@ class SystemActorCallSitesAreEnumeratedTest {
                         + " any person would record them as having judged lateness at a"
                         + " moment they chose nothing. The scope wraps the whole sweep,"
                         + " one transaction per row inside it; the candidate reads claim"
-                        + " nothing."));
+                        + " nothing."),
+                    Map.entry(
+                            "com.finapp.app.merchant.PayoutReturnSweep.applyContained",
+                    "The payout return worker (P8-TSK-019, ADR-0073 section 4): a return the"
+                        + " beneficiary bank made, applied from the payout provider's own"
+                        + " evidence, has no requester - the ReturnResolution case at the"
+                        + " payout: the counterparty's file arrives, nobody asks. Attributing"
+                        + " the payable's restoration to any person would record them as"
+                        + " having credited a merchant at a moment they chose nothing; when a"
+                        + " person DOES decide - the four-eyes transfer of a return that could"
+                        + " not apply - they act as themselves through the break's own doors."
+                        + " The scope wraps each item's re-read-and-apply, one transaction per"
+                        + " item; the page read before it claims nothing."));
 
     @Test
     @DisplayName("no production code claims the system actor without being enumerated")

@@ -95,6 +95,14 @@ import org.springframework.transaction.support.TransactionTemplate;
  * re-derives its remittance from the row's stored facts (net, dates, reference), through
  * the live intake's own opener. Without this leg the register would no longer be
  * rebuildable from the books alone, and §8's recovery claim would quietly stop being true.
+ *
+ * <h2>Payout returns too</h2>
+ *
+ * <p>Since `P8-TSK-019` a returned payout's {@code PAYOUT_RETURN} is opened live by its
+ * return's application — so the walk also pages every recorded {@code payout_return} and
+ * re-opens its copy from the return's own posting, keyless as live: without this leg a
+ * rebuilt register would restore the payout's expectation and leave its return's clearing
+ * line unattributed.
  */
 @Slf4j
 @RequiredArgsConstructor
@@ -126,11 +134,13 @@ public class OpeningPosition {
     @NonNull private final com.finapp.settlement.SettlementSources settlementSources;
     @NonNull private final com.finapp.settlement.SettlementBatchStore<Connection> batches;
     @NonNull private final com.finapp.app.settlement.ReconciliationIntake batchIntake;
+    @NonNull private final com.finapp.merchant.PayoutReturnStore<Connection> payoutReturns;
 
     /**
      * What one recorded run adopted — counts only, never an amount ({@code INV-AUD-02}).
-     * {@code remittances} is last because the stored body appends it after `P8-TSK-009`:
-     * a record written before that replays with its old nine counts and zero remittances.
+     * {@code remittances} and {@code returns} are last because the stored body appends them
+     * after `P8-TSK-009` and `P8-TSK-019`: an older record replays with its own counts and
+     * honest zeros for what did not exist when it ran.
      */
     public record Adopted(
             long captures,
@@ -142,7 +152,8 @@ public class OpeningPosition {
             long payouts,
             long aliases,
             long skipped,
-            long remittances) {}
+            long remittances,
+            long returns) {}
 
     /** The command: walk, then record under the principal's key. */
     public Adopted record(String idempotencyKey, String reason) {
@@ -244,6 +255,10 @@ public class OpeningPosition {
                 (uow, after) -> payouts.pageCompleted(uow, after, PAGE),
                 payout -> payout.id().value(),
                 (uow, payout) -> adoptPayout(uow, payout, counters));
+        pageThrough(
+                (uow, after) -> payoutReturns.page(uow, after, PAGE),
+                com.finapp.merchant.PayoutReturn::id,
+                (uow, returned) -> adoptReturn(uow, returned, counters));
         pageThrough(
                 (uow, after) -> clearings.page(uow, after, PAGE),
                 record -> record.id().value(),
@@ -562,6 +577,38 @@ public class OpeningPosition {
     }
 
     /**
+     * One recorded return's {@code PAYOUT_RETURN}, re-opened from the return's own posting
+     * exactly as {@code PayoutReturns.apply} opened it: no key of its own — the
+     * operation-anchored rule reaches it through the payout's.
+     */
+    private void adoptReturn(
+            Connection uow, com.finapp.merchant.PayoutReturn returned, Counters counters) {
+        String postingKey =
+                com.finapp.merchant.PayoutReturns.POSTING_KEY_PREFIX
+                        + returned.payoutId().value();
+        Optional<JournalEntryId> entry = entryOf(uow, postingKey);
+        if (entry.isEmpty()) {
+            counters.skipped++;
+            return;
+        }
+        recorder.open(
+                uow,
+                new PayoutSettlementExpectations.Opening(
+                        PayoutSettlementExpectations.Kind.PAYOUT_RETURN,
+                        returned.payoutId().value().toString(),
+                        postingKey,
+                        PayoutSettlementDeclaration.CLEARING_PURPOSE,
+                        clearingAccount(
+                                uow,
+                                PayoutSettlementDeclaration.CLEARING_PURPOSE,
+                                returned.amount().currency()),
+                        entry.get(),
+                        List.of(),
+                        resolvedCorrelation()));
+        counters.returns++;
+    }
+
+    /**
      * One accepted batch's remittance, re-derived from the row's own stored facts through
      * the live intake's opener — never recomputed from lines, never re-dated from the
      * clock. A zero net opened none live and re-derives none here.
@@ -687,12 +734,13 @@ public class OpeningPosition {
         long aliases;
         long skipped;
         long remittances;
+        long returns;
 
-        // remittances stays LAST: a pre-P8-TSK-009 stored body is a strict prefix of this.
+        // remittances, then returns, stay LAST: an older stored body is a strict prefix.
         String render() {
             return captures + "|" + executions + "|" + refunds + "|" + withdrawals + "|"
                     + disputeStages + "|" + parkings + "|" + payouts + "|" + aliases + "|"
-                    + skipped + "|" + remittances;
+                    + skipped + "|" + remittances + "|" + returns;
         }
 
         String summary() {
@@ -700,13 +748,13 @@ public class OpeningPosition {
                     + refunds + ", withdrawals=" + withdrawals + ", disputeStages="
                     + disputeStages + ", parkings=" + parkings + ", payouts=" + payouts
                     + ", aliases=" + aliases + ", skipped=" + skipped + ", remittances="
-                    + remittances;
+                    + remittances + ", returns=" + returns;
         }
     }
 
     private static Adopted parse(byte[] body) {
-        String[] fields = new String(body, StandardCharsets.UTF_8).split("\\|", 10);
-        if (fields.length != 9 && fields.length != 10) {
+        String[] fields = new String(body, StandardCharsets.UTF_8).split("\\|", 11);
+        if (fields.length < 9 || fields.length > 11) {
             throw new IllegalStateException(
                     "a stored opening-position body always carries its counts");
         }
@@ -722,6 +770,8 @@ public class OpeningPosition {
                 Long.parseLong(fields[8]),
                 // A record written before P8-TSK-009 carries nine counts: no batch had
                 // ever been accepted when it ran, so its remittance count is honestly zero.
-                fields.length == 10 ? Long.parseLong(fields[9]) : 0L);
+                fields.length >= 10 ? Long.parseLong(fields[9]) : 0L,
+                // Likewise a record written before P8-TSK-019: no return had been applied.
+                fields.length == 11 ? Long.parseLong(fields[10]) : 0L);
     }
 }

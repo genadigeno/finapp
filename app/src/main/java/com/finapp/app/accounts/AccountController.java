@@ -182,7 +182,9 @@ public class AccountController {
      * the drill-down key ({@code INV-ACC-02}); {@code reference} is the caller's own economic
      * event. Deliberately absent: any counterparty account, and any {@code reason} — free
      * text written by a person is audit material, never statement material
-     * ({@code RESTRICTED-PII}).
+     * ({@code RESTRICTED-PII}). {@code label} is {@code RECONCILIATION_ATTRIBUTION} for a line
+     * an approved break resolution attributed to the account (`P8-TSK-015`, ADR-0071 §2), so
+     * the customer's own record names the act; absent otherwise.
      */
     public record StatementLineView(
             String entryId,
@@ -191,7 +193,8 @@ public class AccountController {
             String entryType,
             String direction,
             String amount,
-            String reference) {}
+            String reference,
+            String label) {}
 
     /** One currency's statement: opening, the lines, and the closing they reconcile to. */
     public record StatementSection(
@@ -232,7 +235,8 @@ public class AccountController {
                 line.entryType().name(),
                 line.direction().name(),
                 decimal(line.amount()),
-                line.reference());
+                line.reference(),
+                line.reconciliationAttribution() ? "RECONCILIATION_ATTRIBUTION" : null);
     }
 
     /**

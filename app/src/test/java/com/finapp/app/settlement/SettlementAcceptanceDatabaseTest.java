@@ -322,9 +322,15 @@ class SettlementAcceptanceDatabaseTest {
                 // immutability the records claim; the emptied-register equivalence is
                 // judged over the rest (another suite's matched fixtures may stand in
                 // the shared container, and this suite's remittance is never allocated).
+                // Since P8-TSK-015 a break or a resolution naming an expectation holds it
+                // the same way - a break is never deleted - and their NULLs are filtered,
+                // because NOT IN over a NULL matches nothing.
                 String unheld = " NOT IN (SELECT expectation_id FROM"
                         + " reconciliation.allocation UNION SELECT expectation_id FROM"
-                        + " reconciliation.match_candidate)";
+                        + " reconciliation.match_candidate UNION SELECT expectation_id FROM"
+                        + " reconciliation.break WHERE expectation_id IS NOT NULL UNION"
+                        + " SELECT chosen_expectation_id FROM reconciliation.resolution WHERE"
+                        + " chosen_expectation_id IS NOT NULL)";
                 execute(root, "DELETE FROM reconciliation.expectation_key WHERE"
                         + " expectation_id" + unheld);
                 execute(root, "DELETE FROM reconciliation.expectation_event WHERE"

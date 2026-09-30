@@ -161,7 +161,7 @@ class GraceAndRematchDatabaseTest {
                 new MatchingRules(),
                 new JdbcBreakRegister(new JdbcOutboxWriter(), new JdbcAuditWriter(), IDS),
                 new Suspense(postingService(), new JdbcLedgerAccountStore(), IDS),
-                new JdbcResolutions(new JdbcOutboxWriter(), new JdbcAuditWriter(), IDS),
+                ResolutionFixtures.resolutions(IDS, CLOCK),
                 LOOKUP,
                 new JdbcLedgerAccountStore(),
                 new JdbcOutboxWriter(),

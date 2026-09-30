@@ -61,6 +61,26 @@ public final class JdbcSettlementBatchStore implements SettlementBatchStore<Conn
     }
 
     @Override
+    public boolean liveStatementStands(
+            Connection unitOfWork, UUID sourceId, CurrencyCode currency, long statementSequence) {
+        try (PreparedStatement read =
+                unitOfWork.prepareStatement(
+                        "SELECT 1 FROM settlement.batch"
+                                + " WHERE source_id = ? AND currency = ?"
+                                + " AND statement_sequence = ?"
+                                + " AND status NOT IN ('REJECTED', 'REPUDIATED')")) {
+            read.setObject(1, sourceId);
+            read.setString(2, currency.code());
+            read.setLong(3, statementSequence);
+            try (ResultSet row = read.executeQuery()) {
+                return row.next();
+            }
+        } catch (SQLException failure) {
+            throw new SettlementStorageException("could not read the live statements", failure);
+        }
+    }
+
+    @Override
     public void insertParsedBatch(Connection unitOfWork, NewBatch batch) {
         ParsedBatch parsed = batch.parsed();
         CurrencyCode currency = parsed.declaredNet().currency();
@@ -72,9 +92,10 @@ public final class JdbcSettlementBatchStore implements SettlementBatchStore<Conn
                                     + " format_id, format_version, line_count,"
                                     + " declared_line_count, net_minor, net_scale,"
                                     + " remittance_reference, created_at, status_changed_at,"
-                                    + " correlation_id)"
+                                    + " correlation_id, statement_sequence, opening_minor,"
+                                    + " closing_minor)"
                                     + " VALUES (?, ?, ?, ?, ?, 'PARSED', ?, ?, ?, ?, ?, ?, ?,"
-                                    + " ?, ?, ?, ?)")) {
+                                    + " ?, ?, ?, ?, ?, ?, ?)")) {
                 insert.setObject(1, batch.batchId());
                 insert.setObject(2, batch.fileId());
                 insert.setObject(3, batch.sourceId());
@@ -87,10 +108,16 @@ public final class JdbcSettlementBatchStore implements SettlementBatchStore<Conn
                 insert.setInt(10, parsed.declaredLineCount());
                 insert.setLong(11, parsed.declaredNet().minorUnits());
                 insert.setShort(12, (short) parsed.declaredNet().scale());
-                insert.setString(13, parsed.remittanceReference());
+                insert.setString(13, parsed.remittanceReference().orElse(null));
                 insert.setTimestamp(14, Timestamp.from(batch.at()));
                 insert.setTimestamp(15, Timestamp.from(batch.at()));
                 insert.setString(16, batch.correlation().value());
+                insert.setObject(17, parsed.statement().map(ParsedBatch.StatementFacts::sequence)
+                        .orElse(null));
+                insert.setObject(18, parsed.statement().map(facts -> facts.opening().minorUnits())
+                        .orElse(null));
+                insert.setObject(19, parsed.statement().map(facts -> facts.closing().minorUnits())
+                        .orElse(null));
                 insert.executeUpdate();
             }
             try (PreparedStatement insert =
@@ -98,8 +125,9 @@ public final class JdbcSettlementBatchStore implements SettlementBatchStore<Conn
                             "INSERT INTO settlement.line (id, batch_id, file_id, line_no,"
                                     + " line_type, direction, amount_minor, amount_scale,"
                                     + " currency, business_date, settlement_date, value_date,"
-                                    + " raw_record_sha256, canonical_fingerprint)"
-                                    + " VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)");
+                                    + " raw_record_sha256, canonical_fingerprint,"
+                                    + " attributed_source_id)"
+                                    + " VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)");
                     PreparedStatement reference =
                             unitOfWork.prepareStatement(
                                     "INSERT INTO settlement.line_reference (line_id, kind,"
@@ -120,6 +148,9 @@ public final class JdbcSettlementBatchStore implements SettlementBatchStore<Conn
                     insert.setObject(12, line.valueDate().orElse(null));
                     insert.setBytes(13, line.rawRecordSha256());
                     insert.setBytes(14, line.canonicalFingerprint());
+                    // Attribution is written with the line (append-only): the parse leg
+                    // resolved it through the compiled register (P8-TSK-016).
+                    insert.setObject(15, batch.attributions().get(line.lineNo()));
                     insert.addBatch();
                     for (Map.Entry<LineReferenceKind, String> each :
                             line.references().entrySet()) {
@@ -172,7 +203,8 @@ public final class JdbcSettlementBatchStore implements SettlementBatchStore<Conn
                     + " b.external_batch_ref, b.currency, b.status, b.business_date,"
                     + " b.format_id, b.format_version, b.line_count, b.declared_line_count,"
                     + " b.net_minor, b.net_scale, b.remittance_reference, b.created_at,"
-                    + " b.correlation_id"
+                    + " b.correlation_id, b.statement_sequence, b.opening_minor,"
+                    + " b.closing_minor"
                     + " FROM settlement.batch b"
                     + " JOIN settlement.source s ON s.id = b.source_id";
 
@@ -210,9 +242,15 @@ public final class JdbcSettlementBatchStore implements SettlementBatchStore<Conn
                                 row.getInt("declared_line_count"),
                                 row.getLong("net_minor"),
                                 row.getShort("net_scale"),
-                                row.getString("remittance_reference"),
+                                Optional.ofNullable(row.getString("remittance_reference")),
                                 row.getTimestamp("created_at").toInstant(),
-                                CorrelationId.of(row.getString("correlation_id"))));
+                                CorrelationId.of(row.getString("correlation_id")),
+                                row.getObject("statement_sequence") == null
+                                        ? Optional.empty()
+                                        : Optional.of(new StatementRow(
+                                                row.getLong("statement_sequence"),
+                                                row.getLong("opening_minor"),
+                                                row.getLong("closing_minor")))));
             }
         } catch (SQLException failure) {
             throw new SettlementStorageException("could not read a settlement batch", failure);
@@ -310,7 +348,7 @@ public final class JdbcSettlementBatchStore implements SettlementBatchStore<Conn
                 unitOfWork.prepareStatement(
                         "SELECT id, line_no, line_type, direction, amount_minor, currency,"
                                 + " amount_scale, business_date, settlement_date, value_date,"
-                                + " canonical_fingerprint"
+                                + " canonical_fingerprint, attributed_source_id"
                                 + " FROM settlement.line WHERE batch_id = ?"
                                 + " ORDER BY line_no")) {
             read.setObject(1, batchId);
@@ -333,7 +371,9 @@ public final class JdbcSettlementBatchStore implements SettlementBatchStore<Conn
                                     Optional.ofNullable(
                                             rows.getObject("value_date", LocalDate.class)),
                                     rows.getBytes("canonical_fingerprint"),
-                                    references.getOrDefault(lineId, java.util.Map.of())));
+                                    references.getOrDefault(lineId, java.util.Map.of()),
+                                    Optional.ofNullable(
+                                            rows.getObject("attributed_source_id", UUID.class))));
                 }
                 return List.copyOf(lines);
             }
@@ -401,6 +441,8 @@ public final class JdbcSettlementBatchStore implements SettlementBatchStore<Conn
                                 + " FROM settlement.batch b"
                                 + " JOIN settlement.source s ON s.id = b.source_id"
                                 + " WHERE b.status = 'ACCEPTED' AND b.id > ?"
+                                // A statement opens no remittance (P8-TSK-016).
+                                + " AND b.remittance_reference IS NOT NULL"
                                 + " ORDER BY b.id"
                                 + " LIMIT ?")) {
             read.setObject(1, after);
@@ -428,6 +470,58 @@ public final class JdbcSettlementBatchStore implements SettlementBatchStore<Conn
         }
     }
 
+    private static final String STATEMENT_LINK_COLUMNS =
+            "SELECT id, source_id, currency, statement_sequence, opening_minor, closing_minor,"
+                    + " net_scale FROM settlement.batch"
+                    + " WHERE status = 'ACCEPTED' AND statement_sequence IS NOT NULL";
+
+    private static StatementLink statementLink(ResultSet row) throws SQLException {
+        return new StatementLink(
+                row.getObject("id", UUID.class),
+                row.getObject("source_id", UUID.class),
+                CurrencyCode.of(row.getString("currency")),
+                row.getLong("statement_sequence"),
+                row.getLong("opening_minor"),
+                row.getLong("closing_minor"),
+                row.getShort("net_scale"));
+    }
+
+    @Override
+    public Optional<StatementLink> acceptedStatement(
+            Connection unitOfWork, UUID sourceId, CurrencyCode currency, long sequence) {
+        try (PreparedStatement read =
+                unitOfWork.prepareStatement(
+                        STATEMENT_LINK_COLUMNS
+                                + " AND source_id = ? AND currency = ? AND statement_sequence = ?")) {
+            read.setObject(1, sourceId);
+            read.setString(2, currency.code());
+            read.setLong(3, sequence);
+            try (ResultSet row = read.executeQuery()) {
+                return row.next() ? Optional.of(statementLink(row)) : Optional.empty();
+            }
+        } catch (SQLException failure) {
+            throw new SettlementStorageException("could not read an accepted statement", failure);
+        }
+    }
+
+    @Override
+    public List<StatementLink> acceptedStatements(Connection unitOfWork) {
+        try (PreparedStatement read =
+                unitOfWork.prepareStatement(
+                        STATEMENT_LINK_COLUMNS
+                                + " ORDER BY source_id, currency, statement_sequence")) {
+            try (ResultSet rows = read.executeQuery()) {
+                List<StatementLink> chain = new ArrayList<>();
+                while (rows.next()) {
+                    chain.add(statementLink(rows));
+                }
+                return List.copyOf(chain);
+            }
+        } catch (SQLException failure) {
+            throw new SettlementStorageException("could not read the statement chain", failure);
+        }
+    }
+
     @Override
     public Optional<UUID> recognitionEntryOf(Connection unitOfWork, UUID batchId) {
         return singleUuid(
@@ -445,6 +539,24 @@ public final class JdbcSettlementBatchStore implements SettlementBatchStore<Conn
                 "SELECT batch_id FROM settlement.line WHERE id = ?",
                 lineId,
                 "could not read the line's batch");
+    }
+
+    @Override
+    public Optional<java.time.LocalDate> acceptedOnOf(Connection unitOfWork, UUID batchId) {
+        try (PreparedStatement read =
+                unitOfWork.prepareStatement(
+                        "SELECT accepted_on FROM settlement.batch"
+                                + " WHERE id = ? AND status = 'ACCEPTED'")) {
+            read.setObject(1, batchId);
+            try (ResultSet row = read.executeQuery()) {
+                return row.next() && row.getDate(1) != null
+                        ? Optional.of(row.getDate(1).toLocalDate())
+                        : Optional.empty();
+            }
+        } catch (SQLException failure) {
+            throw new SettlementStorageException(
+                    "could not read the batch's acceptance date", failure);
+        }
     }
 
     private static Optional<UUID> singleUuid(

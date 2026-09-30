@@ -46,10 +46,10 @@ class ReconciliationV003MigrationTest {
                                 + ItemStatus.sqlValueList() + "))"))
                 .contains(normalized(
                         "CONSTRAINT external_item_line_type CHECK (line_type IN ("
-                                + ExternalLineType.sqlValueList() + "))"))
+                                + ExternalLineType.sqlValueList(ExternalLineType.reportVocabulary()) + "))"))
                 .contains(normalized(
                         "CONSTRAINT external_item_key_kind CHECK (key_kind IN ("
-                                + ItemKeyKind.sqlValueList() + "))"))
+                                + ItemKeyKind.sqlValueList(ItemKeyKind.reportVocabulary()) + "))"))
                 .contains(ItemStatus.sqlTransitionRule());
     }
 

@@ -137,6 +137,19 @@ public class ReconciliationBeans {
                 postingService, ledgerAccountStore, idGenerator);
     }
 
+    /**
+     * Statement continuity (`P8-TSK-016`, {@code INV-SET-06}): judged inside each bank
+     * statement's acceptance by the intake.
+     */
+    @Bean
+    com.finapp.reconciliation.StatementChain statementChain(
+            com.finapp.reconciliation.BreakRegister breakRegister,
+            com.finapp.reconciliation.Resolutions resolutions,
+            IdGenerator idGenerator) {
+        return new com.finapp.reconciliation.StatementChain(
+                breakRegister, resolutions, idGenerator);
+    }
+
     /** The key-collision leg (`P8-TSK-010`); `P8-TSK-013`'s sweep schedules it. */
     @Bean
     com.finapp.reconciliation.KeyCollisionBreaks keyCollisionBreaks(
@@ -145,6 +158,12 @@ public class ReconciliationBeans {
             IdGenerator idGenerator) {
         return new com.finapp.reconciliation.KeyCollisionBreaks(
                 breakRegister, ruleSets, idGenerator);
+    }
+
+    /** The payout returns waiting for their worker (`P8-TSK-019`) - reconciliation's read. */
+    @Bean
+    com.finapp.reconciliation.WaitingPayoutReturns waitingPayoutReturns() {
+        return new com.finapp.reconciliation.JdbcWaitingPayoutReturns();
     }
 
     /**
@@ -160,21 +179,43 @@ public class ReconciliationBeans {
             com.finapp.payments.WithdrawalStore<Connection> withdrawalStore,
             com.finapp.merchant.MerchantPayoutStore<Connection> merchantPayoutStore,
             com.finapp.payments.SchemeExecutionClaimStore<Connection>
-                    schemeExecutionClaimStore) {
+                    schemeExecutionClaimStore,
+            com.finapp.settlement.SettlementFileStore<Connection> settlementFileStore,
+            com.finapp.settlement.SettlementSources settlementSources,
+            com.finapp.payments.PaymentRails paymentRails) {
         return new JdbcInternalReferenceLookup(
                 paymentAttemptStore,
                 refundStore,
                 disputeStore,
                 withdrawalStore,
                 merchantPayoutStore,
-                schemeExecutionClaimStore);
+                schemeExecutionClaimStore,
+                // A source's rail (P8-TSK-017): its seeded row's code, the compiled descriptor's
+                // settled position, and the ONE declared rail whose clearing purpose that is -
+                // the register composed here, so reconciliation never names a rail.
+                (unitOfWork, sourceId) ->
+                        settlementFileStore.sources(unitOfWork).stream()
+                                .filter(row -> row.id().equals(sourceId))
+                                .findFirst()
+                                .flatMap(row -> settlementSources.byCode(row.code()))
+                                .flatMap(com.finapp.settlement.SettlementSourceDescriptor
+                                        ::settledPosition)
+                                .flatMap(position ->
+                                        paymentRails.declaredIds().stream()
+                                                .filter(rail ->
+                                                        paymentRails.capabilitiesOf(rail)
+                                                                .clearingPurpose()
+                                                                .equals(java.util.Optional.of(
+                                                                        position)))
+                                                .findFirst()));
     }
 
     /**
      * The opening-position backfill (`P8-TSK-007`, ADR-0067 §8): history adopted through the
      * live recorder's own path, page by page, converging on the register's uniques — and
      * since `P8-TSK-009` the accepted batches' remittances re-derived through the live
-     * intake's own opener, so the register stays rebuildable from the books alone.
+     * intake's own opener, so the register stays rebuildable from the books alone — and
+     * since `P8-TSK-019` every recorded payout return's keyless {@code PAYOUT_RETURN}.
      */
     @Bean
     OpeningPosition openingPosition(
@@ -198,7 +239,8 @@ public class ReconciliationBeans {
             javax.sql.DataSource dataSource,
             SettlementSources settlementSources,
             com.finapp.settlement.SettlementBatchStore<Connection> settlementBatchStore,
-            com.finapp.app.settlement.ReconciliationIntake acceptedBatchIntake) {
+            com.finapp.app.settlement.ReconciliationIntake acceptedBatchIntake,
+            com.finapp.merchant.PayoutReturnStore<Connection> payoutReturnStore) {
         return new OpeningPosition(
                 paymentAttemptStore,
                 paymentIntentStore,
@@ -220,7 +262,8 @@ public class ReconciliationBeans {
                 dataSource,
                 settlementSources,
                 settlementBatchStore,
-                acceptedBatchIntake);
+                acceptedBatchIntake,
+                payoutReturnStore);
     }
 
     /**
@@ -265,18 +308,67 @@ public class ReconciliationBeans {
     }
 
     /**
-     * The resolutions' writer (`P8-TSK-012`, ADR-0071): the platform's {@code EVIDENCED}
-     * kind only — born {@code APPROVED} in the transaction whose zero-residual
-     * allocation or offset explained the break; the person kinds arrive with
-     * `P8-TSK-015`'s door.
+     * The resolutions' evidence writer (`P8-TSK-012`, ADR-0071): the platform's
+     * {@code EVIDENCED} kind — born {@code APPROVED} in the transaction whose zero-residual
+     * allocation or offset explained the break — and, since `P8-TSK-015`, the withdrawal of a
+     * person's pending proposal the evidence overtook, its ledger half rejected through the
+     * owned door (evidence wins, §9).
      */
     @Bean
     com.finapp.reconciliation.Resolutions resolutions(
             com.finapp.platform.outbox.OutboxWriter<Connection> outboxWriter,
             com.finapp.platform.audit.AuditWriter<Connection> auditWriter,
-            IdGenerator idGenerator) {
+            IdGenerator idGenerator,
+            com.finapp.ledger.AdjustmentService adjustmentService) {
         return new com.finapp.reconciliation.JdbcResolutions(
-                outboxWriter, auditWriter, idGenerator);
+                outboxWriter,
+                auditWriter,
+                idGenerator,
+                new com.finapp.reconciliation.JdbcResolutionStore(),
+                adjustmentService);
+    }
+
+    /**
+     * The person's resolution machine (`P8-TSK-015`, ADR-0071): template-bound kinds under
+     * four-eyes, the ledger half through {@code AdjustmentService}'s owned door in the same
+     * transaction, every command in the Phase 8 lock order.
+     */
+    @Bean
+    com.finapp.reconciliation.ResolutionMachine resolutionMachine(
+            com.finapp.reconciliation.Suspense suspense,
+            com.finapp.reconciliation.MatchingStore matchingStore,
+            com.finapp.reconciliation.Resolutions resolutions,
+            RuleSets ruleSets,
+            com.finapp.ledger.AdjustmentService adjustmentService,
+            com.finapp.ledger.LedgerAccountStore<Connection> ledgerAccountStore,
+            com.finapp.platform.outbox.OutboxWriter<Connection> outboxWriter,
+            com.finapp.platform.audit.AuditWriter<Connection> auditWriter,
+            IdGenerator idGenerator,
+            Clock clock) {
+        return new com.finapp.reconciliation.ResolutionMachine(
+                new com.finapp.reconciliation.JdbcResolutionStore(),
+                new com.finapp.reconciliation.JdbcBreakCaseStore(),
+                suspense,
+                matchingStore,
+                resolutions,
+                ruleSets,
+                adjustmentService,
+                ledgerAccountStore,
+                outboxWriter,
+                auditWriter,
+                idGenerator,
+                clock);
+    }
+
+    /** The resolver's desk (`P8-TSK-015`): the four doors' one-transaction commands. */
+    @Bean
+    BreakResolutionDesk breakResolutionDesk(
+            com.finapp.reconciliation.ResolutionMachine resolutionMachine,
+            com.finapp.platform.idempotency.IdempotentExecutor idempotentExecutor,
+            TransactionTemplate reconciliationTransactions,
+            javax.sql.DataSource dataSource) {
+        return new BreakResolutionDesk(
+                resolutionMachine, idempotentExecutor, reconciliationTransactions, dataSource);
     }
 
     /** One transaction per chunk — the run leg's containment (the parse leg's shape). */

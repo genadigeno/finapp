@@ -141,7 +141,15 @@ class RoutePermissionRegisterTest {
                     entry("POST /v1/operator/reconciliation/breaks/{id}/classification", PermissionName.RECONCILIATION_INVESTIGATE),
                     entry("GET /v1/operator/reconciliation/expectations", PermissionName.RECONCILIATION_INVESTIGATE),
                     entry("GET /v1/operator/reconciliation/expectations/{id}", PermissionName.RECONCILIATION_INVESTIGATE),
-                    entry("GET /v1/operator/reconciliation/settlement-status", PermissionName.RECONCILIATION_INVESTIGATE)));
+                    entry("GET /v1/operator/reconciliation/settlement-status", PermissionName.RECONCILIATION_INVESTIGATE),
+                    // P8-TSK-015: the resolver's doors - money-moving, template-bound
+                    // correction under four-eyes (ADR-0071 section 10). RESOLVE is the
+                    // operator's alone: the controller who can loosen a tolerance cannot
+                    // resolve the breaks it would hide.
+                    entry("POST /v1/operator/reconciliation/breaks/{id}/resolutions", PermissionName.RECONCILIATION_RESOLVE),
+                    entry("POST /v1/operator/reconciliation/resolutions/{id}/approval", PermissionName.RECONCILIATION_RESOLVE),
+                    entry("POST /v1/operator/reconciliation/resolutions/{id}/rejection", PermissionName.RECONCILIATION_RESOLVE),
+                    entry("DELETE /v1/operator/reconciliation/resolutions/{id}", PermissionName.RECONCILIATION_RESOLVE)));
 
     /** The MVC mapping, by name - actuator registers a second one (the rule test's reason). */
     @Autowired

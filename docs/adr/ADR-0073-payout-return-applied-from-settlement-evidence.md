@@ -520,6 +520,23 @@ payable bounds the next payout).
     closed payable yields `REVERSAL_MISMATCH` with nothing posted; worker against grace leg, both
     ways; a later-day retry converges on the key; a failure injected after the posting rolls back
     the return, the posting and the expectation together.
+  - **Implemented** (2026-09-30), as listed, with four facts the list left open: `V008` also
+    declares `merchant_payout_money_is_unique UNIQUE (id, amount_minor, currency, scale)` on the
+    payout, the target the composite foreign key needs, and its insert trigger refuses a
+    return naming a payout that is not `COMPLETED` (`23514`) — the second rank beside
+    `apply`'s check; `apply` answers a typed outcome (`APPLIED`, `ALREADY_RETURNED`,
+    `NO_PAYOUT`, `PAYOUT_NOT_COMPLETED`, `AMOUNT_DIFFERS`, `PAYABLE_NOT_POSTABLE`) and every
+    outcome but the first writes nothing, so the item waits out its grace and is typed there;
+    the worker reads reconciliation's items through a port it declares (`WaitingPayoutReturns`:
+    a bounded page in claimant order, and the item re-read `FOR SHARE` only while it is still
+    an `UNMATCHED` `PAYOUT_RETURNED` item) and the batch's stored `accepted_on` through
+    settlement's `acceptedOnOf`; and the rematch worklist gained `P8-TSK-018`'s recorded
+    anchored clause — an item whose key reaches an anchor whose operation's anchored kind
+    opened, under the anchor's source, after the item's latest decision and still holds a
+    remainder — without which the applied return's expectation, holding no key, would never
+    be re-decided (the remainder condition keeps a duplicate line's reach to a SPENT return
+    out of the worklist, where it would be re-locked on every tick). Proven with REAL
+    clocks in `PayoutMatchingDatabaseTest` and end to end in `PayoutReturnDatabaseTest`.
 - `P8-TSK-002` declares `PayoutSettlementDeclaration`. `P8-TSK-004` seeds rule set v1 with the
   payout source's `PAYOUT_RETURNED` rule OPERATION-ANCHORED (point 3). `P8-TSK-005` switches
   `MerchantPayoutOutcomes` to it and opens `MERCHANT_PAYOUT` through the port.
@@ -531,7 +548,11 @@ payable bounds the next payout).
   `GraceAndRematchDatabaseTest` with a share-lock holder standing in for the worker, and the
   dropped-item-lock probe killed by that test. The worker's own side of the race stays
   `P8-TSK-019`'s.
-- `P8-TSK-018`: the payout provider's report and rules.
+- `P8-TSK-018`: the payout provider's report and rules. **Implemented** (2026-09-30): the
+  `PAYOUT_RETURNED` line is held as an item under the operation-anchored rule, never a candidate of
+  its payout's `MERCHANT_PAYOUT`; it waits `UNMATCHED` with no break, and at grace types
+  `RETURN_NOT_APPLICABLE` and parks — the fallback this ADR names while `P8-TSK-019`'s worker does
+  not exist — the four-eyes transfer crediting the payable back, the payout still `COMPLETED`.
 - `P8-TSK-015`: the fallback's `TRANSFER_TO_ACCOUNT`, and with it `reconciliationAttributed`, the
   customer statement's `RECONCILIATION_ATTRIBUTION` label and `INV-MER-02`'s attribution clause
   (point 6), so cutting `P8-TSK-019` takes none of them. `P8-TSK-006`: the `origin` column the

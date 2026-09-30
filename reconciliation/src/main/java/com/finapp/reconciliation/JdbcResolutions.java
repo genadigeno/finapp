@@ -1,5 +1,7 @@
 package com.finapp.reconciliation;
 
+import com.finapp.ledger.AdjustmentProposalId;
+import com.finapp.ledger.AdjustmentService;
 import com.finapp.platform.audit.AuditId;
 import com.finapp.platform.audit.AuditOutcome;
 import com.finapp.platform.audit.AuditRecord;
@@ -23,6 +25,13 @@ public final class JdbcResolutions implements Resolutions {
     @NonNull private final OutboxWriter<Connection> outbox;
     @NonNull private final AuditWriter<Connection> audit;
     @NonNull private final IdGenerator ids;
+
+    /**
+     * The person's machine's rows and the ledger's owned door (`P8-TSK-015`): evidence
+     * arriving over a pending proposal withdraws it, in the evidence's own transaction.
+     */
+    @NonNull private final ResolutionStore resolutions;
+    @NonNull private final AdjustmentService adjustments;
 
     @Override
     public boolean evidence(Connection unitOfWork, Evidence evidence) {
@@ -61,9 +70,12 @@ public final class JdbcResolutions implements Resolutions {
             throw new ReconciliationStorageException(
                     "could not append the break's history", failure);
         }
+        withdrawPending(unitOfWork, evidence);
 
         String narrative =
-                "decision=" + evidence.decisionId()
+                evidence.decisionId()
+                                .map(decision -> "decision=" + decision)
+                                .orElseGet(() -> "statement=" + evidence.fillingStatementId().get())
                         + evidence.parkId().map(park -> ", park=" + park).orElse("");
         try (PreparedStatement insert =
                 unitOfWork.prepareStatement(
@@ -86,7 +98,7 @@ public final class JdbcResolutions implements Resolutions {
             insert.setInt(6, evidence.explained().scale());
             insert.setLong(7, evidence.residualVersion());
             insert.setObject(8, evidence.offsetItemId().orElse(null));
-            insert.setObject(9, evidence.decisionId());
+            insert.setObject(9, evidence.decisionId().orElse(null));
             insert.setObject(10, evidence.parkId().orElse(null));
             insert.setObject(11, evidence.ruleSetId());
             insert.setObject(12, evidence.journalEntryId().orElse(null));
@@ -151,5 +163,57 @@ public final class JdbcResolutions implements Resolutions {
                 evidence.at(),
                 evidence.correlation());
         return true;
+    }
+
+    /**
+     * Evidence wins (ADR-0071 section 9): a proposal pending on the break becomes
+     * {@code WITHDRAWN} by the platform and its ledger proposal is rejected through
+     * {@code rejectOwned} - under the break row this transaction already holds, so a racing
+     * approval either committed first (and this evidence found the break {@code RESOLVED})
+     * or waits and finds the proposal withdrawn.
+     */
+    private void withdrawPending(Connection unitOfWork, Evidence evidence) {
+        resolutions
+                .lockProposedOf(unitOfWork, evidence.breakId())
+                .ifPresent(
+                        pending -> {
+                            pending.adjustmentProposalId()
+                                    .ifPresent(
+                                            proposal ->
+                                                    adjustments.rejectOwned(
+                                                            unitOfWork,
+                                                            AdjustmentProposalId.of(proposal)));
+                            if (!resolutions.decide(
+                                    unitOfWork, pending.id(), ResolutionStatus.WITHDRAWN,
+                                    evidence.actor(), evidence.at(), Optional.empty(),
+                                    Optional.empty(), Optional.empty())) {
+                                throw new IllegalStateException(
+                                        "the locked proposal was decided by another writer");
+                            }
+                            String detail = "evidence=" + evidence.resolutionId();
+                            resolutions.appendEvent(
+                                    unitOfWork, pending.id(),
+                                    Optional.of(ResolutionStatus.PROPOSED),
+                                    ResolutionStatus.WITHDRAWN, evidence.actor(),
+                                    Optional.of(detail), evidence.at(),
+                                    evidence.correlation());
+                            audit.append(
+                                    unitOfWork,
+                                    new AuditRecord(
+                                            AuditId.next(ids),
+                                            evidence.actor(),
+                                            evidence.at(),
+                                            ReconciliationAuditAction.RESOLUTION_WITHDRAWN,
+                                            TARGET_TYPE,
+                                            pending.id().toString(),
+                                            Optional.empty(),
+                                            AuditOutcome.SUCCEEDED,
+                                            evidence.correlation(),
+                                            Optional.of(
+                                                    "break=" + evidence.breakId()
+                                                            + ", kind=" + pending.kind().name()
+                                                            + ", withdrawnBy=EVIDENCE, "
+                                                            + detail)));
+                        });
     }
 }

@@ -469,6 +469,53 @@ ceiling), ADR-0046 (no connection across a pull), ADR-0008 (the collector SPI).
   *(The decline was listed under `P8-TSK-003` until the Phase 7 → 8 transition's consistency
   review, B4. It needs the `REJECTED` state, which arrives with `P8-TSK-008`'s settlement
   `V003`, so the backlog moved it there.)*
+- `P8-TSK-016` — **implemented** (2026-09-30): `SIM_STATEMENT_TAGGED` v1, MT940-shaped
+  (`:20:`, `:25:`, `:28C:`, `:60F:`, `:61:`, `:86:`, `:62F:`), frozen by its golden file and
+  confined to its adapter (`SettlementVocabularyIsConfinedTest`, now per adapter). §3's field-class
+  screen holds field by field; so that an account identifier put where a reference belongs meets
+  the free-text screen, the statement and remittance reference classes themselves exclude the
+  international account shape and card-length digit runs — an IBAN in `:25:`, `:20:`, a line's
+  reference or the `:86:` narrative is refused at the door, metadata only (§7's needle,
+  `BankStatementCashDatabaseTest#theIbanNeedleReachesNoSink`). Decided here, as the backlog left
+  it: a well-shaped `:25:` that is not the reference configured for the statement's currency
+  rejects the file whole `MALFORMED` with the field `accountRef` — among §9's codes, the field
+  failing its one admitted value; no new code — the value never echoed. The configured references
+  (`finapp.settlement.bank.account-reference.*`) are construction-time configuration of a pure
+  adapter, classified `CONFIDENTIAL`. §5's "a statement sequence already accepted" is enforced
+  for any LIVE statement (`PARSED` or `ACCEPTED`): the parse's pre-check and settlement `V005`'s
+  partial unique answer `CONFLICTING_BATCH`, retained. The statement's continuity facts ride out
+  of the parse (`ParsedBatch.StatementFacts`) and are frozen with the parse statement.
+- `P8-TSK-017` — **implemented** (2026-09-30): `SIM_SCHEME_JSON` v1, one JSON object per cycle
+  report (amounts JSON strings, never numbers — a number invites a binary float), frozen by its
+  golden file, its entry codes `CT` and `RT` confined to the adapter. §3 over a structured format:
+  every DECODED string and every number token is held to its member's class and, failing it,
+  screened as free text; an undeclared member's name is free text too; bytes that are not one
+  well-formed object fall back to the conservative stream; the screen's record count is the
+  entries', never the physical lines (a minified report is one line). No class admits an
+  instrument shape — with one exact exception, decided here from a delegated build's find: the
+  end-to-end and our-reference classes also admit the platform's OWN minted reference, a dashless
+  UUIDv7, whose hex holds a card-length digit run about once in sixty (the acquirer reference's
+  precedent: a class admitting its own legitimate digit runs); without it the platform's own
+  references would have been refused at random. A file declaring several cycles is
+  `UNSUPPORTED_FORMAT`. Recorded limits: a scheme reference is bounded at the canonical line's 100
+  characters though payments admits 128, and the cycle token at the reference alphabet though
+  payments admits any 1..64 characters, with no digit run of card length even across single
+  dashes (`CYC-2026-09-26-01`, the simulated scheme's shape, joins ten digits; a date running
+  into a five-digit sequence would join thirteen and be refused — found by the gate as a flaky
+  fixture, the fixture corrected, never the class) — a scheme exceeding any of these needs v2.
+- `P8-TSK-018` — **implemented** (2026-09-30): `SIM_PAYOUT_CSV` v1, the PSP report's sibling
+  (`H`/`D`/`T` records, signed amounts, the gross-plus-fee split naming the payout by
+  `ORIGINAL_REF`), built by a delegated agent, golden-filed with pinned fingerprints, its codes
+  `SETTLED` and `RETURNED` confined. §3 field by field: the beneficiary name is the one declared
+  free-text field, always screened (a card number or an account identifier refused at the door,
+  metadata only — `INV-RAIL-03`); the provider reference is held to the no-instrument class; our
+  reference admits the platform's OWN minted `pyo-` UUIDv7 EXACTLY (its dash-joined hex reaches a
+  card-length run about once in several dozen — `P8-TSK-017`'s rule, dashed form). Differences from
+  the PSP adapter, each deliberate: amounts at twelve integer digits, the header's name and version
+  screened by class, a well-formed code required before an unknown one maps to `OTHER_IN`/`OTHER_OUT`,
+  and each record's defects gathered apart — the PSP adapter's defect-cap crash, recorded as debt,
+  does not recur here. Recorded limits: references bounded at the canonical line's 100 characters
+  though merchant admits 128; no quoting, so a comma in the beneficiary rejects the file whole.
 - M8.7: `P8-TSK-021` (pull acquisition, the four credentials, `pull_permit`, source silence, and
   `ProviderTransportGuard` extended to every pull source's URL (point 1); the first deferral
   candidate) and `P8-TSK-022` (readmission, including the attested readmission of an unattested

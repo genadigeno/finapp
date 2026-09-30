@@ -37,12 +37,13 @@ public interface PayoutSettlementExpectations {
     void open(Connection unitOfWork, Opening opening);
 
     /**
-     * The payout completions this module opens (ADR-0067 §2's table) — the payout's own;
-     * {@code PAYOUT_RETURN}, reached through its operation and opening no key, arrives with
-     * `P8-TSK-019` (ADR-0073).
+     * The payout completions this module opens (ADR-0067 §2's table) — the payout's own, and
+     * since `P8-TSK-019` its return (ADR-0073): {@code PAYOUT_RETURN}, reached through its
+     * operation and opening no key.
      */
     enum Kind {
-        MERCHANT_PAYOUT
+        MERCHANT_PAYOUT,
+        PAYOUT_RETURN
     }
 
     /** The typed references the payout provider's report will quote (ADR-0067 §5). */

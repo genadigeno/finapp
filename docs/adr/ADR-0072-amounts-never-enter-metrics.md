@@ -463,6 +463,12 @@ Financial impact:
   `P8-TSK-007` (2026-09-29) the `positions` report with the clearing rows — one open-remainders
   figure per row until `P8-TSK-009`'s `REMITTANCE` expectations give the split —
   `reconciliation.ReportRead`, both verdict gauges and `finapp.reconciliation.expectation.open`.
+  `P8-TSK-016` (2026-09-30) the `positions` report's cash rows — a trailing `cash` list, additive
+  under v1: per currency the `CASH_AT_BANK` balance, the head closing of the statement chain,
+  their difference, the latest accepted sequence and the `unbroken` and `explained` verdicts, from
+  the same one-snapshot sweep — and `finapp.reconciliation.cash.proof` by `currency`: 1 when the
+  currency's cash is not the unbroken chain's closing, else 0, eager per supported currency, NaN
+  never zero, aggregated with `max()`; a verdict, never an amount (§8).
 - **The tasks that build it:**
   - `P8-TSK-002` — **implemented** (2026-09-29) — brings the `source` key with its written
     argument, and the first series under it
@@ -480,7 +486,8 @@ Financial impact:
     (`finapp.reconciliation.break.raised`, `.open` and `.age`) and the `severity` key's argument
     are `P8-TSK-024`'s. *(This line gave the break gauges to `P8-TSK-010` and `P8-TSK-013` until
     the transition's consistency review, B6.)*
-  - `P8-TSK-016` adds the cash rows and `finapp.reconciliation.cash.proof`.
+  - `P8-TSK-016` — **implemented** (2026-09-30) — adds the cash rows and
+    `finapp.reconciliation.cash.proof`.
   - `P8-TSK-020` corrects the descriptions of Phase 7's suspense gauges.
   - `P8-TSK-021` adds `finapp.settlement.source.silence` and `finapp.settlement.pull.failure`. If
     it is cut, silence moves to `P8-TSK-024` (point 10, O6).

@@ -36,6 +36,15 @@ import lombok.RequiredArgsConstructor;
  * Park, unpark and the release primitive (`P8-TSK-010`, ADR-0070 §§2–3) — the only movers
  * of value between a counterparty's position and {@code SUSPENSE_UNMATCHED}.
  *
+ * <p>One further opener records value that enters suspense from CASH, not from a position
+ * (`P8-TSK-016`, ADR-0070 §2's {@code BANK_UNATTRIBUTED} row): a bank statement's line no
+ * remittance pattern attributes. It posts nothing itself — the statement's recognition already
+ * put the line in {@code SUSPENSE_UNMATCHED} against {@code CASH_AT_BANK} — so it only moves the
+ * item {@code PENDING → PARKED} beside its freshly raised owner ({@link #bornParked}) and, after
+ * the posting, opens the owned item carrying the recognition's entry
+ * ({@link #openUnattributed}). No park row exists, and {@link #unpark} refuses the item: it
+ * leaves only through a resolution's {@link #release}.
+ *
  * <p><strong>{@code INV-REC-09} by the API's shape:</strong> every parked item names its
  * owning break, the command refuses a break that is missing or {@code RESOLVED}, and the
  * caller raised that break on this same connection — value enters suspense only in the
@@ -110,6 +119,160 @@ public final class Suspense {
     public record ParkResult(List<ParkedOutcome> parked, List<UUID> converged) {}
 
     public record Unparked(UUID parkId, UUID entryId) {}
+
+    // ------------------------------------------------------- bank-unattributed
+
+    /** One unattributed bank line's item and the {@code UNKNOWN_EXTERNAL} break that owns it. */
+    public record Unattributed(UUID externalItemId, UUID breakId) {
+
+        public Unattributed {
+            Objects.requireNonNull(externalItemId, "externalItemId must not be null");
+            Objects.requireNonNull(breakId, "breakId must not be null");
+        }
+    }
+
+    /**
+     * Moves each unattributed bank line's item {@code PENDING → PARKED} with its whole value,
+     * in the acceptance transaction that birthed it and raised its owner — the item is this
+     * transaction's own row, so the conditional edge has no racer; a miss is a defect and
+     * throws. The owning break is verified like a park's ({@code INV-REC-09}'s domain half).
+     */
+    public void bornParked(
+            Connection unitOfWork,
+            List<Unattributed> items,
+            Actor actor,
+            Instant at,
+            CorrelationId correlation) {
+        items.stream()
+                .sorted(Comparator.comparing(Unattributed::breakId))
+                .forEach(item -> verifyOwner(unitOfWork, item.breakId(), item.externalItemId()));
+        List<Unattributed> byItemId =
+                items.stream().sorted(Comparator.comparing(Unattributed::externalItemId)).toList();
+        for (Unattributed item : byItemId) {
+            try (PreparedStatement update =
+                    unitOfWork.prepareStatement(
+                            "UPDATE reconciliation.external_item SET status = 'PARKED',"
+                                    + " parked_minor = amount_minor, status_changed_at = ?"
+                                    + " WHERE id = ? AND status = 'PENDING'"
+                                    + " AND attributed_source_id IS NULL"
+                                    + " AND line_type IN ('BANK_CREDIT', 'BANK_DEBIT')")) {
+                update.setTimestamp(1, Timestamp.from(at));
+                update.setObject(2, item.externalItemId());
+                if (update.executeUpdate() != 1) {
+                    throw new IllegalStateException(
+                            "item " + item.externalItemId() + " is not an unattributed bank"
+                                    + " line born in this acceptance");
+                }
+            } catch (SQLException failure) {
+                throw new ReconciliationStorageException(
+                        "could not park the unattributed line", failure);
+            }
+            appendItemEvent(
+                    unitOfWork, item.externalItemId(), "PENDING", "PARKED", actor, at,
+                    correlation);
+        }
+    }
+
+    /**
+     * Opens the owned {@code BANK_UNATTRIBUTED} suspense item of every unattributed bank line
+     * {@link #bornParked} moved in this run — AFTER the recognition posted, carrying its entry
+     * whole ({@code suspense_item.entry_id}). Side from the direction, never netted; value the
+     * line's whole amount; no park, no position. Returns the number opened.
+     */
+    public int openUnattributed(
+            Connection unitOfWork,
+            UUID runId,
+            java.time.LocalDate openedOn,
+            UUID entryId,
+            Instant at,
+            CorrelationId correlation) {
+        record Row(UUID itemId, UUID breakId, String direction, long amount, String currency,
+                int scale) {}
+        List<Row> rows = new ArrayList<>();
+        try (PreparedStatement read =
+                unitOfWork.prepareStatement(
+                        "SELECT i.id, b.id AS break_id, i.direction, i.amount_minor,"
+                                + " i.currency, i.scale"
+                                + " FROM reconciliation.external_item i"
+                                + " JOIN reconciliation.break b ON b.external_item_id = i.id"
+                                + " AND b.type = 'UNKNOWN_EXTERNAL'"
+                                + " AND b.cause = 'BANK_LINE_UNATTRIBUTED'"
+                                + " AND b.status <> 'RESOLVED'"
+                                + " WHERE i.run_id = ? AND i.status = 'PARKED'"
+                                + " AND i.attributed_source_id IS NULL"
+                                + " AND i.line_type IN ('BANK_CREDIT', 'BANK_DEBIT')"
+                                + " ORDER BY i.id")) {
+            read.setObject(1, runId);
+            try (ResultSet row = read.executeQuery()) {
+                while (row.next()) {
+                    rows.add(
+                            new Row(
+                                    row.getObject("id", UUID.class),
+                                    row.getObject("break_id", UUID.class),
+                                    row.getString("direction"),
+                                    row.getLong("amount_minor"),
+                                    row.getString("currency").trim(),
+                                    row.getInt("scale")));
+                }
+            }
+        } catch (SQLException failure) {
+            throw new ReconciliationStorageException(
+                    "could not read the unattributed lines", failure);
+        }
+        for (Row row : rows) {
+            try (PreparedStatement insert =
+                    unitOfWork.prepareStatement(
+                            "INSERT INTO reconciliation.suspense_item (id, break_id,"
+                                    + " external_item_id, origin, origin_ref, side,"
+                                    + " amount_minor, currency, scale, released_minor, status,"
+                                    + " opened_on, entry_id, park_id, position_account_id,"
+                                    + " status_changed_at, correlation_id)"
+                                    + " VALUES (?, ?, ?, 'BANK_UNATTRIBUTED', ?, ?, ?, ?, ?, 0,"
+                                    + " 'OPEN', ?, ?, NULL, NULL, ?, ?)")) {
+                insert.setObject(1, ids.next());
+                insert.setObject(2, row.breakId());
+                insert.setObject(3, row.itemId());
+                insert.setString(4, row.itemId().toString());
+                insert.setString(
+                        5, SuspenseSide.of(ExpectationDirection.valueOf(row.direction())).name());
+                insert.setLong(6, row.amount());
+                insert.setString(7, row.currency());
+                insert.setInt(8, row.scale());
+                insert.setObject(9, openedOn);
+                insert.setObject(10, entryId);
+                insert.setTimestamp(11, Timestamp.from(at));
+                insert.setString(12, correlation.value());
+                insert.executeUpdate();
+            } catch (SQLException failure) {
+                throw new ReconciliationStorageException(
+                        "could not open the unattributed suspense item", failure);
+            }
+        }
+        return rows.size();
+    }
+
+    /** The owner exists, is open, parks, and stands on THIS item (its subject). */
+    private static void verifyOwner(Connection unitOfWork, UUID breakId, UUID externalItemId) {
+        try (PreparedStatement read =
+                unitOfWork.prepareStatement(
+                        "SELECT status, type, external_item_id FROM reconciliation.break"
+                                + " WHERE id = ?")) {
+            read.setObject(1, breakId);
+            try (ResultSet row = read.executeQuery()) {
+                if (!row.next()
+                        || "RESOLVED".equals(row.getString("status"))
+                        || !BreakType.valueOf(row.getString("type")).mayOwnSuspense()
+                        || !externalItemId.equals(
+                                row.getObject("external_item_id", UUID.class))) {
+                    throw new IllegalStateException(
+                            "an unattributed line parks owned by the open break raised in its"
+                                    + " own transaction (INV-REC-09): break " + breakId);
+                }
+            }
+        } catch (SQLException failure) {
+            throw new ReconciliationStorageException("could not verify the owning break", failure);
+        }
+    }
 
     // ----------------------------------------------------------------- park
 

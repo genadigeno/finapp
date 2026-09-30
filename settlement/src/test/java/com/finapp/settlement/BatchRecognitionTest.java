@@ -84,6 +84,73 @@ class BatchRecognitionTest {
     }
 
     @Test
+    @DisplayName("the scheme's fees are a report's own fees too (P8-TSK-017): posted against the"
+            + " position exactly like the PSP's, the credit and debit transfers contributing"
+            + " nothing")
+    void theSchemesFeesPost() {
+        BatchRecognition.Recognition recognition =
+                BatchRecognition.recognise(
+                        List.of(
+                                line(SettlementLineType.CREDIT_IN, LineDirection.INBOUND, 2_500),
+                                line(SettlementLineType.SCHEME_FEE, LineDirection.OUTBOUND, 10),
+                                line(SettlementLineType.DEBIT_OUT, LineDirection.OUTBOUND, 1_000),
+                                line(SettlementLineType.SCHEME_FEE, LineDirection.OUTBOUND, 10)),
+                        EUR,
+                        2,
+                        COSTS,
+                        POSITION);
+        assertThat(recognition.fee().minorUnits()).isEqualTo(20L);
+        assertThat(recognition.entryLines())
+                .containsExactly(
+                        new com.finapp.ledger.JournalLine(
+                                COSTS,
+                                Direction.DEBIT,
+                                com.finapp.sharedkernel.money.Money.ofPersisted(20, EUR, 2)),
+                        new com.finapp.ledger.JournalLine(
+                                POSITION,
+                                Direction.CREDIT,
+                                com.finapp.sharedkernel.money.Money.ofPersisted(20, EUR, 2)));
+        assertThat(java.util.Arrays.stream(SettlementLineType.values())
+                        .filter(SettlementLineType::isReportFee))
+                .as("hop 1 posts the report fees; the bank's fee is hop 2's (BankRecognition)")
+                .containsExactlyInAnyOrder(
+                        SettlementLineType.PROCESSING_FEE,
+                        SettlementLineType.SCHEME_FEE,
+                        SettlementLineType.PAYOUT_FEE);
+    }
+
+    @Test
+    @DisplayName("the payout provider's fees are a report's own fees too (P8-TSK-018): DR costs /"
+            + " CR the position - on the credit-normal PAYOUT_CLEARING the liability grows, the"
+            + " provider owed its fee - while executed and returned payouts post nothing")
+    void thePayoutProvidersFeesPost() {
+        BatchRecognition.Recognition recognition =
+                BatchRecognition.recognise(
+                        List.of(
+                                line(SettlementLineType.PAYOUT_EXECUTED, LineDirection.OUTBOUND,
+                                        4_000),
+                                line(SettlementLineType.PAYOUT_FEE, LineDirection.OUTBOUND, 25),
+                                line(SettlementLineType.PAYOUT_RETURNED, LineDirection.INBOUND,
+                                        700),
+                                line(SettlementLineType.PAYOUT_FEE, LineDirection.OUTBOUND, 25)),
+                        EUR,
+                        2,
+                        COSTS,
+                        POSITION);
+        assertThat(recognition.fee().minorUnits()).isEqualTo(50L);
+        assertThat(recognition.entryLines())
+                .containsExactly(
+                        new com.finapp.ledger.JournalLine(
+                                COSTS,
+                                Direction.DEBIT,
+                                com.finapp.sharedkernel.money.Money.ofPersisted(50, EUR, 2)),
+                        new com.finapp.ledger.JournalLine(
+                                POSITION,
+                                Direction.CREDIT,
+                                com.finapp.sharedkernel.money.Money.ofPersisted(50, EUR, 2)));
+    }
+
+    @Test
     @DisplayName("a rebate folds the opposite direction, and a NET rebate posts the mirror")
     void aNetRebatePostsTheMirror() {
         BatchRecognition.Recognition recognition =

@@ -398,6 +398,7 @@ record nothing.
 | `merchant.MerchantPayoutInitiated` | No | A merchant initiated a payout of its payable with its API key; the record names the payout, the destination and the key by identifier. |
 | `merchant.MerchantPayoutInitiatedByOperator` | **Yes** | An operator initiated a payout of a merchant's payable on its behalf; the reason is required. |
 | `merchant.MerchantPayoutOutcomeApplied` | No | The platform applied the payout provider's answer to a payout (completed, failed or unknown); acting transitions only. |
+| `merchant.PayoutReturnApplied` | No | The platform applied a payout return from settlement evidence: the payable credited back by the return's own posting, the payout still COMPLETED. |
 
 The three pricing actions arrive with `P6-TSK-004`, and their reason split is the
 `MerchantApiKeyIssued`/`Revoked` split restated: **creating a named schedule needs no reason**
@@ -428,7 +429,13 @@ operator moving a merchant's money on its behalf is a judgement the trail must e
 transaction or the resolution sweep, through enumerated `enterSystem()` sites, written only on
 an acting transition — so ten racing resolvers leave one record per move, not ten. No record
 carries the destination's provider reference (`INV-AUD-02`). The ledger's own hold and posting
-records sit beside these, as they do for the refund.
+records sit beside these, as they do for the refund. `merchant.PayoutReturnApplied`
+(`P8-TSK-019`, ADR-0073 §4) is the platform's too: the return worker's enumerated `enterSystem()`
+site applies a return the beneficiary bank made, from the payout provider's own evidence, written
+only when it applies — a refusal (the payout not completed, another amount, the payable closed)
+and a losing racer write nothing, so ten workers on one return leave one record. When a return
+cannot apply, the person who later transfers its value is recorded by the resolution desk's own
+actions, as themselves.
 
 ### `checkout` — `CheckoutAuditAction`
 
@@ -488,6 +495,10 @@ The pull's actions arrive with the pull (`P8-TSK-021`); the readmission's with `
 | `reconciliation.BreakNoteAdded` | No | An investigator appended a note to a break's case file (`P8-TSK-014`). **The body is never in the record**: it is CONFIDENTIAL, screened at the domain and the database for card-number and bank-account shapes, and lives only in `break_note` — the summary names the note's id and length. |
 | `reconciliation.BreakEvidenceLinked` | No | An investigator linked stored evidence to a break by identifier (`P8-TSK-014`): a settlement file, batch or line, a journal entry, an operation, a provider evidence row, a run or a decision, verified to exist in the same transaction. The summary names the link, the target kind and the target's identifier. |
 | `reconciliation.BreakReclassified` | **Yes** | An investigator moved a break's type (`P8-TSK-014`, ADR-0069 §7) — in `OPEN` or `INVESTIGATING` only, onto a type that stands on the break's subject and parks exactly when it holds parked value (`INV-REC-09`). The reason is the investigator's own (screened like a note); the summary names the type and the severity before and after — the cause, subject and value at issue never change. |
+| `reconciliation.ResolutionProposed` | **Yes** | An investigator proposed a template-bound break resolution (`P8-TSK-015`, ADR-0071 §6): the break moved to `RESOLUTION_PROPOSED` and, for a posting kind, the ledger proposal was recorded beside it through the owned door (`ledger.AdjustmentProposed` then names the same person). The reason is the kind and the reason code; the summary names the break, the four-eyes flag and the ledger proposal — **never the narrative** (CONFIDENTIAL, stored on the resolution alone) and never an amount (`INV-AUD-02`). |
+| `reconciliation.ResolutionApproved` | No | A second person approved a resolution (`P8-TSK-015`, ADR-0071 §§4, 6): for a posting kind the `ADJUSTMENT` entry posted (`ledger.AdjustmentPosted` names the same approver), the subject's value was disposed of and the break — with any sibling break answering for the same remainder, or the offset's partner — moved to `RESOLVED`, all in one transaction. Also the ONE record of a zero-value `ACKNOWLEDGE`, one person's act, which then carries its reason (the kind and code). The summary names the break, kind, code, proposer and entry — identifiers and enumerated names only. |
+| `reconciliation.ResolutionRejected` | **Yes** | Another `RECONCILIATION_RESOLVE` holder rejected a pending resolution (`P8-TSK-015`, ADR-0071 §10) — a reasoned act, screened like a note; the ledger proposal was rejected beside it and the break returned to `INVESTIGATING`. |
+| `reconciliation.ResolutionWithdrawn` | No | A pending resolution was withdrawn (`P8-TSK-015`, ADR-0071 §§1, 9): by its proposer, or by the platform when evidence closed the break first (the summary then says `withdrawnBy=EVIDENCE` and names the evidencing resolution). Nothing is deleted — the row moved to `WITHDRAWN` — and the ledger proposal was rejected. |
 | `reconciliation.ReportRead` | No | Somebody was served a reconciliation report that carries amounts — the positions report first (`P8-TSK-007`, ADR-0072; the `payments.ChargebackRatioRead` precedent). One record per serving, committed in the reading's own transaction; the summary names the report and its shape, never its figures. |
 
 Matching's, the breaks' and the resolutions' actions arrive with their tasks (`P8-TSK-010`,

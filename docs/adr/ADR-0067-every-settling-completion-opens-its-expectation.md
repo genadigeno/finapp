@@ -539,11 +539,37 @@ transaction).
   evidence in the world (`SettlementAcceptanceDatabaseTest`), the re-derived row substance-equal
   to the live one.
 - `P8-TSK-010`: `DUPLICATE_INTERNAL` raised from recorded collisions.
+- `P8-TSK-017` — **implemented** (2026-09-30): point 5's cycle attribute is compared. The report's
+  cycle token rides on the run (`reconciliation_batch.settlement_cycle`, frozen), and the pure
+  `decide` compares it with the candidate's stored `settlement_cycle`: a shift allocates normally
+  and raises `TIMING_DIFFERENCE` (`CYCLE_MISMATCH`, value 0) — or, when an open `MISSING_EXTERNAL`
+  stands, resolves that break `EVIDENCED` instead (one fact, one break). An expectation without a
+  cycle — a return always, a pay-in or a parking whose cycle went unannounced — has the allocating
+  item record its token in `external_item.learned_cycle`, on the first allocation and on a parked
+  line's re-match alike. Recorded
+  deviation: the cycle is not a tie-breaker between candidates as point 5 says; since payments
+  `V023` a scheme reference reaches one claimant, and two reachable candidates stay
+  `AMBIGUOUS_MATCH`, never settled by a cycle.
+- `P8-TSK-018` — **implemented** (2026-09-30): the `MERCHANT_PAYOUT` expectations `P8-TSK-005`
+  opens are discharged by the payout provider's report and the bank. The position proof is now
+  signed DR−CR for EVERY reconciled position, as its javadoc always said: `PositionProof` read
+  `settled()`, signed by the account's normal balance, so the credit-normal `PAYOUT_CLEARING`
+  (a LIABILITY) read CR−DR against remainders signed DR−CR and every in-flight payout failed the
+  verdict — the debt `P8-TSK-015` recorded, paid here and proven with an open payout's expectation
+  (the positions report's `ledgerBalance` for `PAYOUT_CLEARING` is DR−CR accordingly).
 - `P8-TSK-019`: the payout return's expectation through `PayoutSettlementExpectations`, opening
   no key and reached through its operation (point 5), and the return worker that the
   operation-anchored rule waits for (automated returns are owner decision O2, a transition
   decision the owner may revisit). If `P8-TSK-019` is cut (owner decision O6, likewise revisitable), its opener and
   its register row go with it, and nothing else here changes.
+  **Implemented** (2026-09-30): `PayoutReturns.apply` opens the `PAYOUT_RETURN` through the port
+  after the return's posting, keyless, and the register row `merchant-payout-return:` is proved
+  by the routine return's ledger-backed copy. Point 8's backfill gained a leg the list above did
+  not name: it pages every recorded `payout_return` and re-opens its copy from the return's own
+  posting, because without it a rebuilt register restores the payout's expectation and leaves
+  its return's clearing line unattributed (`P8-TSK-009`'s rule for every kind the register
+  holds); `Adopted` gains a trailing `returns` count, an older record replaying with an honest
+  zero.
 - `P8-TSK-020`: the unmatched confirmation's suspense item and break through the same call.
 - `P8-TST-001`: completeness and the position proof read in every storm round and at rest.
 - Until `P8-TSK-004` lands, nothing in this ADR is implemented: every statement is the decided

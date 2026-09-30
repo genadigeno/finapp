@@ -51,6 +51,10 @@ public interface StatementDerivation<T> {
      * <p>{@code entry} is the drill-down key ({@code INV-ACC-02}): the figure traces to the
      * journal row that composes it. {@code reference} is the originating economic event —
      * the account owner's own transaction identifier from Phase 4 on.
+     *
+     * <p>{@code reconciliationAttribution} (`P8-TSK-015`, ADR-0071 §2): the line belongs to an
+     * {@code ADJUSTMENT} entry of a {@code RECONCILIATION}-origin proposal — an approved break
+     * resolution attributing value to this account — so the owner's own record names the act.
      */
     record StatementLine(
             JournalEntryId entry,
@@ -59,7 +63,8 @@ public interface StatementDerivation<T> {
             JournalEntryType entryType,
             String reference,
             Direction direction,
-            Money amount) {
+            Money amount,
+            boolean reconciliationAttribution) {
 
         public StatementLine {
             Objects.requireNonNull(entry, "entry must not be null");

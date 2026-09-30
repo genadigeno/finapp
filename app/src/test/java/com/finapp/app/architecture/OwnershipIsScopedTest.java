@@ -1072,6 +1072,30 @@ class OwnershipIsScopedTest {
                                         + " statement's previous page. Nothing it returns is"
                                         + " served to a tenant: the walk opens expectations"
                                         + " through the recorder and answers counts.")),
+                    Map.entry(
+                            "com.finapp.merchant.JdbcPayoutReturnStore.page",
+                            new Entry(
+                                    Scope.ADMINISTERED,
+                                    "P8-TSK-019. The opening-position backfill's walk over"
+                                        + " every recorded payout return, deliberately"
+                                        + " cross-tenant, under RECONCILIATION_ADMINISTER - the"
+                                        + " JdbcMerchantPayoutStore.pageCompleted reasoning. The"
+                                        + " UUID is a paging cursor, never a target: rows are"
+                                        + " selected by id > ? only to order the walk, the"
+                                        + " cursor the last id of this statement's previous"
+                                        + " page, and nothing is served to a tenant.")),
+                    Map.entry(
+                            "com.finapp.merchant.JdbcPayoutReturnStore.findByPayout",
+                            new Entry(
+                                    Scope.ADMINISTERED,
+                                    "P8-TSK-019. The payout return worker's converge check:"
+                                        + " the identifier is the payout PayoutReturns.apply has"
+                                        + " just locked FOR UPDATE, found by the provider's or"
+                                        + " our reference off accepted settlement evidence -"
+                                        + " never an identifier from a request. No route serves"
+                                        + " it; the worker acts as the platform"
+                                        + " (SystemActorCallSitesAreEnumeratedTest) and answers"
+                                        + " a typed outcome, identifiers only.")),
                     // P8-TSK-010's reference finders (findByCaptureProviderReference,
                     // the dispute's and payout's findByProviderReference, the claim's
                     // findByExecution) carry no entry HERE deliberately: the sweep
