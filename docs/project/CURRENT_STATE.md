@@ -517,6 +517,17 @@ residue — with the matcher and the storm), ALL 0 FAILURES — ledger untouched
 battery and the fleet-wide database and kafka tiers deliberately skipped on the owner's
 instruction.
 
+### Since: no app test fixture leaves an unexplained reconciled line (2026-09-30, outside the task loop)
+
+**The fixture defect below, fixed with its whole class** (test-only, `INV-REC-06`). Twenty-one
+app database suites posted fixture entries onto `SETTLEMENT_CLEARING` with no expectation —
+lines no backfill can adopt, left in the shared container to fail the opening suite's and the
+multi-rail storm's proofs whenever they ran first (EUR, GBP and USD all failed in the control
+run). Each moved to the counterparty its assertions need: a payer's `CUSTOMER_WALLET` (the book
+rail's shape, so the payable view still reads captured/refunded), `FEE_REVENUE` for wallet
+funders, `CHARGEBACK_RECOVERABLE` where a debit-normal account is the point. The adoptable
+dispute captures stay by design. Details, runs and counts: the change log.
+
 ### Since: the position proof's sign on `PAYOUT_CLEARING` (2026-09-30, outside the task loop)
 
 **A production defect in `P8-TSK-007`'s `PositionProof`, fixed** (`INV-REC-06`). The proof
@@ -527,10 +538,9 @@ positions report showed a 2X difference on a correct position. The invariant and
 already said DR−CR; the code now reads each identity's named side from the account's stored
 normal balance (`readFrom`) — DR−CR on clearing, CR−DR on suspense. `SETTLEMENT_CLEARING` and
 `INSTANT_CLEARING` (DEBIT-normal) were unaffected. Red-first test and three probes recorded
-(`MUTATION_TESTING` §2, change log). **Found, not fixed**: `MerchantPayoutDatabaseTest`'s
-`funded()` fixture posts to `SETTLEMENT_CLEARING` with no expectation, so the opening suite
-fails whenever that class runs before it in one container — a fleet-wide `:app:databaseTest`
-does; recorded for its own fix.
+(`MUTATION_TESTING` §2, change log). **Found, not fixed** at the time, fixed since (above):
+`MerchantPayoutDatabaseTest`'s `funded()` fixture posted to `SETTLEMENT_CLEARING` with no
+expectation, so the opening suite failed whenever that class ran before it in one container.
 
 ### Previously
 
