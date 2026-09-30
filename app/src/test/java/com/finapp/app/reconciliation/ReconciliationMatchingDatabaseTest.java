@@ -441,7 +441,7 @@ class ReconciliationMatchingDatabaseTest {
         RANDOMNESS.nextBytes(bytes);
         String plaintext =
                 java.util.Base64.getUrlEncoder().withoutPadding().encodeToString(bytes);
-        com.finapp.identity.Session session =
+        com.finapp.identity.Session.Draft session =
                 com.finapp.identity.Session.issue(
                         IDS,
                         CLOCK,
