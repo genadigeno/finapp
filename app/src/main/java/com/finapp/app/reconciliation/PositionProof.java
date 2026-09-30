@@ -7,6 +7,7 @@ import com.finapp.ledger.JournalEntryStore;
 import com.finapp.ledger.LedgerAccount;
 import com.finapp.ledger.LedgerAccountId;
 import com.finapp.ledger.LedgerAccountStore;
+import com.finapp.ledger.NormalBalance;
 import com.finapp.ledger.SupportedCurrencies;
 import com.finapp.reconciliation.ExpectationDirection;
 import com.finapp.reconciliation.ExpectationReadings;
@@ -42,7 +43,9 @@ import lombok.RequiredArgsConstructor;
  * <ul>
  *   <li><strong>The proof</strong>: per clearing position and currency, DR−CR of the ledger
  *       account equals the signed sum of open expectation remainders — {@code INBOUND}
- *       positive, {@code OUTBOUND} negative, the ledger's own sign (ADR-0067 §3). Folded
+ *       positive, {@code OUTBOUND} negative, the ledger's own sign (ADR-0067 §3). DR−CR
+ *       whatever the account's normal balance: {@code PAYOUT_CLEARING} is CREDIT-normal, so
+ *       its derived balance is negated before it is compared ({@code readFrom}). Folded
  *       through {@code Money}, never a SQL {@code SUM} (`P3-TSK-008`).
  *   <li><strong>Completeness</strong>: every {@code (entry, account)} line on a reconciled
  *       position is one the register knows — an expectation names it; the suspense item
@@ -88,7 +91,8 @@ public final class PositionProof {
      * Since `P8-TSK-009` the identity carries the items term ({@code INV-REC-06} extended
      * at acceptance): balance = open remainders − open item remainders, with every accepted
      * line's undisposed claim subtracted — fee items excluded, their effect being the
-     * recognition entry itself.
+     * recognition entry itself. {@code ledgerBalance} is DR−CR on every position, never the
+     * normal-signed settled balance.
      */
     public record PositionVerdict(
             AccountPurpose purpose,
@@ -105,7 +109,8 @@ public final class PositionProof {
      * CR−DR of {@code SUSPENSE_UNMATCHED} = Σ CREDIT remainders − Σ DEBIT remainders,
      * plus the NAMED term for Phase 7's parkings no suspense item's {@code origin_ref}
      * claims — exact before and after `-020`'s adoption, reading zero at rest once it runs.
-     * The account is CREDIT-normal, so its settled balance already reads CR−DR.
+     * {@code ledgerBalance} is read from the CREDIT side explicitly ({@code readFrom}),
+     * never by leaning on the account being CREDIT-normal.
      */
     public record SuspenseVerdict(
             CurrencyCode currency,
@@ -222,8 +227,7 @@ public final class PositionProof {
             for (Map.Entry<CurrencyCode, LedgerAccount> position :
                     positions.get(purpose).entrySet()) {
                 Money balance =
-                        balances.derive(unitOfWork, position.getValue().id(), AsOf.latest())
-                                .settled();
+                        readFrom(NormalBalance.DEBIT, unitOfWork, position.getValue());
                 Money remainders =
                         Optional.ofNullable(folded.get(purpose))
                                 .map(sums -> sums.get(position.getKey()))
@@ -368,9 +372,7 @@ public final class PositionProof {
         for (Map.Entry<CurrencyCode, LedgerAccount> position :
                 positions.get(AccountPurpose.SUSPENSE_UNMATCHED).entrySet()) {
             CurrencyCode currency = position.getKey();
-            Money balance =
-                    balances.derive(unitOfWork, position.getValue().id(), AsOf.latest())
-                            .settled();
+            Money balance = readFrom(NormalBalance.CREDIT, unitOfWork, position.getValue());
             Money zero = Money.ofPersisted(0, currency, balance.scale());
             Money credit = credits.getOrDefault(currency, zero);
             Money debit = debits.getOrDefault(currency, zero);
@@ -386,5 +388,21 @@ public final class PositionProof {
                             balance.equals(credit.minus(debit).plus(phase7))));
         }
         return List.copyOf(verdicts);
+    }
+
+    /**
+     * {@code account}'s balance read from {@code side}: DR−CR for {@code DEBIT}, CR−DR for
+     * {@code CREDIT}. The derivation signs by the account's <em>normal</em> balance
+     * ({@link com.finapp.ledger.DerivedBalance}), so where the stored normal side differs
+     * from the side an identity reads, its answer is negated — through {@code Money}, still
+     * never a SQL {@code SUM}. Each identity names its side; neither leans on the chart's
+     * classification. The clearing positions are not uniform: {@code SETTLEMENT_CLEARING}
+     * and {@code INSTANT_CLEARING} are DEBIT-normal, {@code PAYOUT_CLEARING} CREDIT-normal
+     * (ledger {@code V012}) — read unflipped, every open payout was judged against its own
+     * negation.
+     */
+    private Money readFrom(NormalBalance side, Connection unitOfWork, LedgerAccount account) {
+        Money settled = balances.derive(unitOfWork, account.id(), AsOf.latest()).settled();
+        return account.normalBalance() == side ? settled : settled.negated();
     }
 }
