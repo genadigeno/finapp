@@ -451,7 +451,7 @@ deferral renumbers.
 | `V007` (`-018`) | The payout provider report's vocabulary: `PAYOUT_EXECUTED`, `PAYOUT_RETURNED`, `PAYOUT_FEE`; the `PAYOUT_PROVIDER_REF` reference | The regenerated `CHECK`s |
 | `V008` (`-021`) | `pull_permit` | A forward-only `last_attempt_at` under a conditional upsert, strictly advancing on every renewal — the trigger refusing an EQUAL instant as a step back — and `attempts` only growing (the send permits' shape as the transition's gate repaired it); `SELECT, INSERT` and `UPDATE` on those two columns alone, never deleted |
 | `V009` (`-022`) | The readmission's attestation rule on `file` | A trigger refusing `ACCEPTED` for a `READMISSION` of a never-attested original unless the readmission's `attested_by` is set and differs from the readmitter (its `received_by`) and from the original's `received_by` — `V002`'s `CHECK`s bind only `UPLOAD`, and a cross-row rule needs a trigger |
-| Next free (`-023`) | The batch's `REPUDIATED` | The live uniques exclude it, so a genuine batch can follow |
+| `V010` (`-023`) | The batch's `REPUDIATED` (built: the status `CHECK`, the trigger's `ACCEPTED → REPUDIATED` edge with the acceptance facts frozen, the honesty `CHECK`s widened to a repudiated row) | The live uniques exclude it, so a genuine batch can follow |
 
 *(The `-022` row added by the Phase 7 → 8 transition's re-check, R5: the readmission's attestation
 held at the database, as `V002` holds the upload's.)*

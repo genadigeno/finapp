@@ -184,7 +184,34 @@ public enum ReconciliationErrorCode implements ErrorCode {
     RUN_NOT_BLOCKED(
             "reconciliation.RunNotBlocked",
             409,
-            "Only a blocked reconciliation run can be requeued.");
+            "Only a blocked reconciliation run can be requeued."),
+
+    /**
+     * No settlement batch has this id (`P8-TSK-023`): the repudiation door's named 404, as every
+     * reconciliation operator door names its own — unknown and malformed ids one answer.
+     */
+    BATCH_NOT_FOUND(
+            "reconciliation.BatchNotFound",
+            404,
+            "No settlement batch has this identifier."),
+
+    /** The batch is not ACCEPTED: only accepted evidence is repudiated (`P8-TSK-023`). */
+    BATCH_NOT_REPUDIABLE(
+            "reconciliation.BatchNotRepudiable",
+            409,
+            "Only an accepted settlement batch can be repudiated."),
+
+    /** An item of the batch is still PENDING: its run disposes of every item first. */
+    BATCH_NOT_DISPOSED(
+            "reconciliation.BatchNotDisposed",
+            409,
+            "The batch's run has not yet disposed of every item."),
+
+    /** A shape this phase does not compensate, refused before anything is written. */
+    REPUDIATION_NOT_SUPPORTED(
+            "reconciliation.RepudiationNotSupported",
+            409,
+            "This batch's repudiation needs a compensation this phase does not provide.");
 
     private final String code;
     private final int status;

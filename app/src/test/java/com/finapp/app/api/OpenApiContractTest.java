@@ -557,6 +557,10 @@ class OpenApiContractTest {
                         // withdraw a template-bound break resolution (RECONCILIATION_RESOLVE).
                         ApiVersion.CURRENT_PREFIX
                                 + "/operator/reconciliation/breaks/{id}/resolutions",
+                        // P8-TSK-023: a settlement batch's repudiation.
+                        ApiVersion.CURRENT_PREFIX
+                                + "/operator/reconciliation/batches/{settlementBatchId}"
+                                + "/repudiation",
                         ApiVersion.CURRENT_PREFIX
                                 + "/operator/reconciliation/resolutions/{id}/approval",
                         ApiVersion.CURRENT_PREFIX

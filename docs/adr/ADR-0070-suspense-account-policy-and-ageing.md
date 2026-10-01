@@ -373,7 +373,12 @@ Netting them inside one balance hides two open problems behind one number.
       item already released posts no unpark; what its position then owes is `P8-TSK-023`'s
       question, with the position proof as its test, and if that task posts a line into suspense
       for it, the same rule binds the line. `INV-REC-09` binds repudiation like every other
-      poster. *(Resolved at the transition: the design's
+      poster. *(`P8-TSK-023`, 2026-10-01, decided the question: the park's exact inverse is posted
+      for the released part - the position restored as if the value were still parked - and its
+      suspense line opens a `REPUDIATION` item on the opposite side, owned by a new
+      `PROCESSING_ERROR` break; a value released by a late allocation's unpark or a correction's
+      offset went back to the position already and needs no answer.)* *(Resolved at the
+      transition: the design's
       repudiation steps assumed every parked item was still parked. The new item was named point
       2's fourth opener by the transition's re-check, R3.)*
 

@@ -541,7 +541,28 @@ its excess** (an over-payment) has no reopening edge, and the task settles it. *
 transition's consistency review, A8, A9 and A10; its re-check, R3: the released item's new item
 named no origin, while ADR-0070 point 10 makes the repudiation a fourth opener.)*
 
-### 5.3 Reconciliation batch — the run (`reconciliation.reconciliation_batch`)
+*(As built by `P8-TSK-023`, 2026-10-01: the repudiation is the `REPUDIATE_BATCH` resolution
+on a batch subject (reconciliation `V013`: `resolution.settlement_batch_id`, exactly one subject,
+one live proposal and one approval per batch), proposed at `POST /v1/operator/reconciliation/
+batches/{settlementBatchId}/repudiation` and decided through the resolution doors. The proposal
+digests the plan derived from the rows (`subject_digest`, SHA-256); the approval re-derives it
+under the locks and refuses a moved subject `reconciliation.ResolutionStale`. Decided at design:
+**every item of the batch leaves to `REPUDIATED`**, a `RESOLVED` one included (`V013`'s edge);
+**an item still `PENDING` refuses the repudiation** (`reconciliation.BatchNotDisposed`); **an
+over-paying bank item matched to the repudiated remittance reopens whole** (`PARKED → UNMATCHED`,
+its excess unparked); **a `RECON_PARK` value a resolution already released is answered like the
+unattributed one** - the park's exact inverse is posted (the position restored as if it were still
+parked) and its suspense line opens a `REPUDIATION` item on the opposite side, owned by a new
+`PROCESSING_ERROR` break (ADR-0070 §10's "the same rule binds the line"); **a batch-subject
+resolution closes every open break whose subject it empties** - on the items, the run, the
+remittance, the suspense items it releases, and any break a decision on the items raised - each
+with a `repudiation_closure` row naming the repudiation, a pending proposal on it withdrawn; a
+payout return applied from the batch stands, its expectation reopened to age. Refused and
+recorded as debt, never half-done: a batch holding a correction `OFFSET`, an allocation whose
+expectation a person already closed `RESOLVED_BY_ADJUSTMENT`, a bank item matched to the remittance
+that a person already `RESOLVED` (`reconciliation.RepudiationNotSupported`).)*
+
+### 5.4 External item — the run (`reconciliation.reconciliation_batch`)
 
 ```
 OPEN ──first chunk──> IN_PROGRESS ──last chunk──> COMPLETED
@@ -589,6 +610,8 @@ UNMATCHED ──grace expired, or a definitive class──> PARKED
 PARKED ──rematch, or an approved MANUAL_MATCH (unpark)──> MATCHED
 PARKED ──an approved closing resolution──> RESOLVED
 MATCHED ──an approved REPUDIATE_BATCH of the batch whose remittance it matched (a bank item)──> UNMATCHED
+PARKED ──the same, for an over-paying bank item (reopened whole, its excess unparked)──> UNMATCHED
+RESOLVED ──batch repudiated──> REPUDIATED
 ```
 
 Born `PENDING` in the acceptance transaction, one per settlement line (`UNIQUE

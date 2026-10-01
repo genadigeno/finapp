@@ -7,7 +7,8 @@ import lombok.RequiredArgsConstructor;
  * The settlement module's auditable actions ({@code AUDITABLE_ACTIONS.md}), arriving with the
  * commands whose designs fix their meaning — the {@code PaymentsAuditAction} rule. The door's
  * own actions arrived with the door (`P8-TSK-003`); the pull's arrive with the pull
- * (`P8-TSK-021`); readmission's and the re-parse verification's with them (`P8-TSK-022`).
+ * (`P8-TSK-021`); readmission's and the re-parse verification's with them (`P8-TSK-022`); the
+ * repudiation's with it (`P8-TSK-023`).
  */
 @RequiredArgsConstructor
 public enum SettlementAuditAction implements AuditableAction {
@@ -152,7 +153,22 @@ public enum SettlementAuditAction implements AuditableAction {
             "An operator verified a stored settlement file by re-parsing it under its recorded"
                     + " format version, with the recorded reason; the record names the verdict,"
                     + " never a value from the file.",
-            true);
+            true),
+
+    /**
+     * An accepted batch moved {@code ACCEPTED → REPUDIATED} by an approved
+     * {@code REPUDIATE_BATCH} resolution (`P8-TSK-023`, ADR-0065 §10): written in the
+     * approval's transaction, after its postings, the approver the actor. No reason at this
+     * rank - the reasoned, four-eyes act is the reconciliation resolution, which this record
+     * names. The change summary carries identifiers only: the source, the file, the resolution
+     * and the reversal entry when one was posted - never an amount.
+     */
+    SETTLEMENT_BATCH_REPUDIATED(
+            "settlement.SettlementBatchRepudiated",
+            "An approved REPUDIATE_BATCH resolution repudiated an accepted settlement batch;"
+                    + " the record names the resolution and the reversal entry - identifiers"
+                    + " only.",
+            false);
 
     private final String code;
     private final String description;

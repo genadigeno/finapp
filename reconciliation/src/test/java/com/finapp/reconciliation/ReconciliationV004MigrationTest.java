@@ -59,7 +59,7 @@ class ReconciliationV004MigrationTest {
         assertThat(sql)
                 .contains(normalized(
                         "CONSTRAINT suspense_item_origin CHECK (origin IN ("
-                                + SuspenseOrigin.sqlValueList() + "))"))
+                                + SuspenseOrigin.sqlValueListBeforeV013() + "))"))
                 .contains(normalized(
                         "CONSTRAINT suspense_item_side CHECK (side IN ("
                                 + SuspenseSide.sqlValueList() + "))"))

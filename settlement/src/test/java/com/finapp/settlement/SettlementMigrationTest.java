@@ -157,14 +157,17 @@ class SettlementMigrationTest {
                 "db/migration/settlement/V003__the_psp_format_parse_normalise_reject_whole.sql"));
         String v004 = collapsed(migration(
                 "db/migration/settlement/V004__acceptance_joins_the_machines.sql"));
+        String v010 = collapsed(migration(
+                "db/migration/settlement/V010__the_repudiated_batch.sql"));
 
-        // The machines and the rejection codes were re-stated by V004 (ACCEPTED and
+        // The file machine and the rejection codes were re-stated by V004 (ACCEPTED and
         // SOURCE_RETIRED arrived with their producers) - the current definitions live there.
         assertThat(v004).contains("status IN (" + FileStatus.sqlValueList() + ")");
         assertThat(v004).contains(FileStatus.sqlTransitionRule());
-        assertThat(v004).contains("status IN (" + BatchStatus.sqlValueList() + ")");
-        assertThat(v004).contains(BatchStatus.sqlTransitionRule());
         assertThat(v004).contains("rejection_code IN (" + RejectionCode.sqlValueList() + ")");
+        // The batch machine was re-stated whole by V010 (REPUDIATED arrived with P8-TSK-023).
+        assertThat(v010).contains("status IN (" + BatchStatus.sqlValueList() + ")");
+        assertThat(v010).contains(BatchStatus.sqlTransitionRule());
 
         // V003 keeps the current definitions it introduced: line types (twice - totals and
         // lines), directions, reference kinds, the error-row codes, and the live unique -
@@ -179,17 +182,20 @@ class SettlementMigrationTest {
                 .contains("ON settlement.batch (source_id, external_batch_ref, currency)")
                 .contains("WHERE status NOT IN ('REJECTED', 'REPUDIATED')");
 
-        // V004's own arbiters and honesty rules.
+        // V004's own arbiter; its honesty rules, widened by V010 to the repudiated row - a
+        // repudiated batch WAS accepted, and keeps what its acceptance recorded.
         assertThat(v004)
-                .contains("CONSTRAINT batch_sequence_once UNIQUE (source_id, source_sequence)")
+                .contains("CONSTRAINT batch_sequence_once UNIQUE (source_id, source_sequence)");
+        assertThat(v010)
                 .contains(normalizedFragment(
                         "CONSTRAINT batch_accepted_carries_its_facts CHECK ("
-                                + " status <> 'ACCEPTED' OR (source_sequence IS NOT NULL AND"
+                                + " status NOT IN ('ACCEPTED', 'REPUDIATED')"
+                                + " OR (source_sequence IS NOT NULL AND"
                                 + " accepted_on IS NOT NULL))"))
                 .contains(normalizedFragment(
                         "CONSTRAINT batch_posting_omitted_is_honest CHECK ("
-                                + " status <> 'ACCEPTED' OR ((journal_entry_id IS NULL) ="
-                                + " posting_omitted))"));
+                                + " status NOT IN ('ACCEPTED', 'REPUDIATED')"
+                                + " OR ((journal_entry_id IS NULL) = posting_omitted))"));
     }
 
     private static String normalizedFragment(String fragment) {

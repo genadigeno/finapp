@@ -142,11 +142,17 @@ public final class JdbcBreakInquiries implements BreakInquiries {
     public List<ResolutionRow> resolutions(Connection unitOfWork, UUID breakId) {
         return list(
                 unitOfWork,
-                "SELECT id, kind, status, reason_code, narrative, proposed_amount_minor,"
-                        + " currency, scale, decision_id, park_id, adjustment_proposal_id,"
-                        + " journal_entry_id, proposed_by, proposed_by_type, proposed_at,"
-                        + " decided_by, decided_at FROM reconciliation.resolution"
-                        + " WHERE break_id = ? ORDER BY proposed_at, id",
+                // The break's own resolutions, and the batch repudiation that closed it
+                // (P8-TSK-023: a batch-subject resolution names no break - its closure does).
+                "WITH subject(break_id) AS (SELECT ?::uuid)"
+                        + " SELECT r.id, r.kind, r.status, r.reason_code, r.narrative,"
+                        + " r.proposed_amount_minor, r.currency, r.scale, r.decision_id,"
+                        + " r.park_id, r.adjustment_proposal_id, r.journal_entry_id,"
+                        + " r.proposed_by, r.proposed_by_type, r.proposed_at, r.decided_by,"
+                        + " r.decided_at FROM reconciliation.resolution r, subject s"
+                        + " WHERE r.break_id = s.break_id OR r.id IN (SELECT c.resolution_id"
+                        + " FROM reconciliation.repudiation_closure c"
+                        + " WHERE c.break_id = s.break_id) ORDER BY r.proposed_at, r.id",
                 breakId,
                 row ->
                         new ResolutionRow(

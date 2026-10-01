@@ -425,6 +425,18 @@ Three designs were weighed at the transition:
     *(The remittance rule, the write order, the already-released rule and the migration were
     settled by the Phase 7 → 8 transition's consistency review: A8, A9, A10 and B5.)*
 
+    *(Implemented by `P8-TSK-023`, 2026-10-01, with settlement `V010` (the batch's `REPUDIATED`)
+    and reconciliation `V013`; the five effects in the approval transaction, the reversal posted
+    as a `REVERSAL` entry under `ledger.reverse:settlement-batch:<batchId>`, mirroring the
+    recognition line by line, posting-dated the approval and value-dated the original. The
+    consequences the transition left open are decided as the lifecycle document §5.2 records -
+    an already-released parked value is answered by the inverse posting and an opposite
+    `REPUDIATION` item, every item including a `RESOLVED` one leaves to `REPUDIATED`, a `PENDING`
+    item refuses, the over-paying bank item reopens whole - and three shapes are refused rather
+    than half-done (`RepudiationNotSupported`). The completeness proof keeps the repudiated
+    batch's original entry known (`acceptedRecognitionEntries` reads `ACCEPTED | REPUDIATED`) and
+    the reversal through `resolution.journal_entry_id`.)*
+
     The file and its content are retained, and the genuine file is then re-presented and accepted
     normally. If the genuine file was already rejected `CONFLICTING_BATCH` beside the fabricated
     batch, it is readmitted instead (ADR-0066 §8). Repudiating a statement is the only poster of

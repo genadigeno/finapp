@@ -819,6 +819,9 @@ public final class JdbcMatchingStore implements MatchingStore {
                                 + " JOIN reconciliation.reconciliation_batch r"
                                 + " ON r.id = i.run_id"
                                 + " WHERE i.source_id = ? AND i.canonical_fingerprint = ?"
+                                // A repudiated line is no longer evidence: the genuine
+                                // line that replaces it is never its duplicate (P8-TSK-023).
+                                + " AND i.status <> 'REPUDIATED'"
                                 + " AND (r.source_sequence < ? OR (r.source_sequence = ?"
                                 + " AND i.line_no < ?)) LIMIT 1")) {
             read.setObject(1, sourceId);

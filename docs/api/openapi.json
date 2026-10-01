@@ -3027,6 +3027,111 @@
           }
         }
       },
+      "reconciliation.BatchNotDisposed": {
+        "content": {
+          "application/problem+json": {
+            "schema": {
+              "allOf": [
+                {
+                  "$ref": "#/components/schemas/ProblemDetail"
+                },
+                {
+                  "properties": {
+                    "code": {
+                      "const": "reconciliation.BatchNotDisposed"
+                    },
+                    "status": {
+                      "const": 409
+                    },
+                    "type": {
+                      "const": "https://finapp.example/problems/reconciliation.BatchNotDisposed"
+                    }
+                  }
+                }
+              ]
+            }
+          }
+        },
+        "description": "[409] The batch's run has not yet disposed of every item.",
+        "headers": {
+          "X-Client-Correlation-Id": {
+            "$ref": "#/components/headers/X-Client-Correlation-Id"
+          },
+          "X-Correlation-Id": {
+            "$ref": "#/components/headers/X-Correlation-Id"
+          }
+        }
+      },
+      "reconciliation.BatchNotFound": {
+        "content": {
+          "application/problem+json": {
+            "schema": {
+              "allOf": [
+                {
+                  "$ref": "#/components/schemas/ProblemDetail"
+                },
+                {
+                  "properties": {
+                    "code": {
+                      "const": "reconciliation.BatchNotFound"
+                    },
+                    "status": {
+                      "const": 404
+                    },
+                    "type": {
+                      "const": "https://finapp.example/problems/reconciliation.BatchNotFound"
+                    }
+                  }
+                }
+              ]
+            }
+          }
+        },
+        "description": "[404] No settlement batch has this identifier.",
+        "headers": {
+          "X-Client-Correlation-Id": {
+            "$ref": "#/components/headers/X-Client-Correlation-Id"
+          },
+          "X-Correlation-Id": {
+            "$ref": "#/components/headers/X-Correlation-Id"
+          }
+        }
+      },
+      "reconciliation.BatchNotRepudiable": {
+        "content": {
+          "application/problem+json": {
+            "schema": {
+              "allOf": [
+                {
+                  "$ref": "#/components/schemas/ProblemDetail"
+                },
+                {
+                  "properties": {
+                    "code": {
+                      "const": "reconciliation.BatchNotRepudiable"
+                    },
+                    "status": {
+                      "const": 409
+                    },
+                    "type": {
+                      "const": "https://finapp.example/problems/reconciliation.BatchNotRepudiable"
+                    }
+                  }
+                }
+              ]
+            }
+          }
+        },
+        "description": "[409] Only an accepted settlement batch can be repudiated.",
+        "headers": {
+          "X-Client-Correlation-Id": {
+            "$ref": "#/components/headers/X-Client-Correlation-Id"
+          },
+          "X-Correlation-Id": {
+            "$ref": "#/components/headers/X-Correlation-Id"
+          }
+        }
+      },
       "reconciliation.BreakNotFound": {
         "content": {
           "application/problem+json": {
@@ -3333,6 +3438,41 @@
           }
         },
         "description": "[409] A reprocessing run is already open for this source.",
+        "headers": {
+          "X-Client-Correlation-Id": {
+            "$ref": "#/components/headers/X-Client-Correlation-Id"
+          },
+          "X-Correlation-Id": {
+            "$ref": "#/components/headers/X-Correlation-Id"
+          }
+        }
+      },
+      "reconciliation.RepudiationNotSupported": {
+        "content": {
+          "application/problem+json": {
+            "schema": {
+              "allOf": [
+                {
+                  "$ref": "#/components/schemas/ProblemDetail"
+                },
+                {
+                  "properties": {
+                    "code": {
+                      "const": "reconciliation.RepudiationNotSupported"
+                    },
+                    "status": {
+                      "const": 409
+                    },
+                    "type": {
+                      "const": "https://finapp.example/problems/reconciliation.RepudiationNotSupported"
+                    }
+                  }
+                }
+              ]
+            }
+          }
+        },
+        "description": "[409] This batch's repudiation needs a compensation this phase does not provide.",
         "headers": {
           "X-Client-Correlation-Id": {
             "$ref": "#/components/headers/X-Client-Correlation-Id"
@@ -4691,6 +4831,21 @@
             "type": "string"
           }
         },
+        "type": "object"
+      },
+      "BatchRepudiationRequest": {
+        "properties": {
+          "narrative": {
+            "type": "string"
+          },
+          "reasonCode": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "narrative",
+          "reasonCode"
+        ],
         "type": "object"
       },
       "BatchTotalView": {
@@ -7388,6 +7543,53 @@
         ],
         "type": "object"
       },
+      "RepudiationReceipt": {
+        "properties": {
+          "answered": {
+            "format": "int32",
+            "type": "integer"
+          },
+          "breaksClosed": {
+            "format": "int32",
+            "type": "integer"
+          },
+          "counterAllocations": {
+            "format": "int32",
+            "type": "integer"
+          },
+          "items": {
+            "format": "int32",
+            "type": "integer"
+          },
+          "proposedAt": {
+            "type": "string"
+          },
+          "remittanceClosed": {
+            "type": "boolean"
+          },
+          "reopenedItems": {
+            "format": "int32",
+            "type": "integer"
+          },
+          "resolutionId": {
+            "type": "string"
+          },
+          "reversesRecognition": {
+            "type": "boolean"
+          },
+          "settlementBatchId": {
+            "type": "string"
+          },
+          "status": {
+            "type": "string"
+          },
+          "unparks": {
+            "format": "int32",
+            "type": "integer"
+          }
+        },
+        "type": "object"
+      },
       "ResolutionDecision": {
         "properties": {
           "breakId": {
@@ -7397,6 +7599,9 @@
             "type": "string"
           },
           "resolutionId": {
+            "type": "string"
+          },
+          "settlementBatchId": {
             "type": "string"
           },
           "status": {
@@ -11344,6 +11549,51 @@
               }
             },
             "description": "OK"
+          }
+        }
+      }
+    },
+    "/v1/operator/reconciliation/batches/{settlementBatchId}/repudiation": {
+      "post": {
+        "operationId": "proposeReconciliationBatchRepudiation",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "settlementBatchId",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "in": "header",
+            "name": "Idempotency-Key",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/BatchRepudiationRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "201": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/RepudiationReceipt"
+                }
+              }
+            },
+            "description": "Created"
           }
         }
       }

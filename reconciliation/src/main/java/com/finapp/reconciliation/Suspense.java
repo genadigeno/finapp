@@ -557,11 +557,15 @@ public final class Suspense {
         Objects.requireNonNull(cause, "cause must not be null");
         Objects.requireNonNull(causeRef, "causeRef must not be null");
         Objects.requireNonNull(decidedOn, "decidedOn must not be null");
-        if (cause != ReleaseCause.UNPARK && cause != ReleaseCause.CORRECTION_OFFSET) {
+        if (cause != ReleaseCause.UNPARK
+                && cause != ReleaseCause.CORRECTION_OFFSET
+                && cause != ReleaseCause.REPUDIATION) {
             // The inverse-posting exits only; RESOLUTION and OFFSET_SUSPENSE release
-            // through their own paths (-015), REPUDIATION through -023's.
+            // through their own paths (-015). A repudiation's unpark returns a parked
+            // value still held to its position (-023, ADR-0070 section 10).
             throw new IllegalArgumentException(
-                    "an unpark's cause is UNPARK or CORRECTION_OFFSET (ADR-0070 section 3)");
+                    "an unpark's cause is UNPARK, CORRECTION_OFFSET or REPUDIATION"
+                            + " (ADR-0070 sections 3 and 10)");
         }
         if (amount.minorUnits() <= 0) {
             throw new IllegalArgumentException("an unpark moves a positive amount");
@@ -617,6 +621,123 @@ public final class Suspense {
                 unitOfWork, locked, amount.minorUnits(), cause, causeRef,
                 Optional.of(parkId), actor, at, correlation);
         return new Unparked(parkId, entryId);
+    }
+
+    // ----------------------------------------------------------------- repudiation
+
+    /**
+     * A repudiation's answer to a parked value a resolution already released
+     * (`P8-TSK-023`, ADR-0070 §10): the park's EXACT inverse for {@code amount} — the value
+     * returned to the position as if it were still parked — but no release, because the
+     * item has nothing left to release. Its suspense line lands on the side opposite the
+     * item, and the caller opens the {@code REPUDIATION} item that owns it
+     * ({@link #openRepudiation}) with a new owner, in this same transaction
+     * ({@code INV-REC-09}). The caller holds the source's advisory and the item's row.
+     */
+    public Unparked repostReleased(
+            Connection unitOfWork,
+            UUID suspenseItemId,
+            long amountMinor,
+            LocalDate decidedOn,
+            Actor actor,
+            Instant at,
+            CorrelationId correlation) {
+        ItemRow item = lockItem(unitOfWork, suspenseItemId);
+        if (item.origin() != SuspenseOrigin.RECON_PARK) {
+            throw new IllegalStateException(
+                    "only a RECON_PARK item has a park to invert (ADR-0070 section 3)");
+        }
+        if (amountMinor <= 0 || amountMinor > item.releasedMinor()) {
+            throw new IllegalArgumentException(
+                    "a repost answers a positive part of what was already released");
+        }
+        Money amount = Money.ofPersisted(amountMinor, item.currency(), item.scale());
+        LocalDate valueDate = parkValueDate(unitOfWork, item.parkId());
+        LedgerAccountId position = LedgerAccountId.of(item.positionAccountId());
+        LedgerAccountId suspense = suspenseAccount(unitOfWork, item.currency());
+        List<JournalLine> lines =
+                item.side() == SuspenseSide.CREDIT
+                        ? List.of(
+                                new JournalLine(suspense, Direction.DEBIT, amount),
+                                new JournalLine(position, Direction.CREDIT, amount))
+                        : List.of(
+                                new JournalLine(position, Direction.DEBIT, amount),
+                                new JournalLine(suspense, Direction.CREDIT, amount));
+        UUID parkId = ids.next();
+        PostingResult posted =
+                posting.post(
+                        unitOfWork,
+                        new PostingCommand(
+                                POSTING_KEY_PREFIX + parkId,
+                                decidedOn,
+                                valueDate,
+                                parkId.toString(),
+                                lines));
+        UUID entryId = posted.entryId().value();
+        insertPark(
+                unitOfWork, parkId, breakSource(unitOfWork, item.breakId()), ParkKind.UNPARK,
+                item.positionAccountId(), item.currency(), decidedOn, valueDate, entryId,
+                actor, at, correlation);
+        return new Unparked(parkId, entryId);
+    }
+
+    /** One {@code REPUDIATION} item: the line a repudiation's posting put in suspense. */
+    public record Repudiated(
+            UUID suspenseItemId,
+            UUID breakId,
+            UUID releasedItemId,
+            SuspenseSide side,
+            Money amount,
+            LocalDate openedOn,
+            UUID entryId) {
+
+        public Repudiated {
+            Objects.requireNonNull(suspenseItemId, "suspenseItemId must not be null");
+            Objects.requireNonNull(breakId, "breakId must not be null");
+            Objects.requireNonNull(releasedItemId, "releasedItemId must not be null");
+            Objects.requireNonNull(side, "side must not be null");
+            Objects.requireNonNull(amount, "amount must not be null");
+            Objects.requireNonNull(openedOn, "openedOn must not be null");
+            Objects.requireNonNull(entryId, "entryId must not be null");
+            if (amount.minorUnits() <= 0) {
+                throw new IllegalArgumentException("a suspense item holds a positive value");
+            }
+        }
+    }
+
+    /**
+     * The fourth opener (ADR-0070 §2, `V013`): the item a repudiation's posting carries,
+     * owned by the {@code PROCESSING_ERROR} break the caller raised on this connection,
+     * its {@code origin_ref} the released item — {@code UNIQUE (origin_ref)} makes it once.
+     * No external item, no park, no position; the entry is the line's.
+     */
+    public void openRepudiation(
+            Connection unitOfWork, Repudiated item, Instant at, CorrelationId correlation) {
+        try (PreparedStatement insert =
+                unitOfWork.prepareStatement(
+                        "INSERT INTO reconciliation.suspense_item (id, break_id,"
+                                + " external_item_id, origin, origin_ref, side,"
+                                + " amount_minor, currency, scale, released_minor, status,"
+                                + " opened_on, entry_id, park_id, position_account_id,"
+                                + " status_changed_at, correlation_id)"
+                                + " VALUES (?, ?, NULL, 'REPUDIATION', ?, ?, ?, ?, ?, 0,"
+                                + " 'OPEN', ?, ?, NULL, NULL, ?, ?)")) {
+            insert.setObject(1, item.suspenseItemId());
+            insert.setObject(2, item.breakId());
+            insert.setString(3, item.releasedItemId().toString());
+            insert.setString(4, item.side().name());
+            insert.setLong(5, item.amount().minorUnits());
+            insert.setString(6, item.amount().currency().code());
+            insert.setInt(7, item.amount().scale());
+            insert.setObject(8, item.openedOn());
+            insert.setObject(9, item.entryId());
+            insert.setTimestamp(10, Timestamp.from(at));
+            insert.setString(11, correlation.value());
+            insert.executeUpdate();
+        } catch (SQLException failure) {
+            throw new ReconciliationStorageException(
+                    "could not open the repudiation's suspense item", failure);
+        }
     }
 
     /**

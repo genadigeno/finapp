@@ -53,6 +53,13 @@ public class ReconciliationResolutionController {
     /** The rejecting person's reason (1..1000 characters). */
     public record ResolutionRejectionRequest(@NotNull String reason) {}
 
+    /**
+     * A batch's repudiation: the closed reason code ({@code EVIDENCE_REPUDIATED}) and the
+     * investigator's narrative - CONFIDENTIAL, screened, never logged, evented or audited.
+     * No amount and no account: the plan is derived from the rows.
+     */
+    public record BatchRepudiationRequest(@NotNull String reasonCode, @NotNull String narrative) {}
+
     /** Proposes a template-bound resolution, keyed per principal; one live per break. */
     @PostMapping(path = "/breaks/{id}/resolutions", consumes = MediaType.APPLICATION_JSON_VALUE)
     @RequiresPermission(PermissionName.RECONCILIATION_RESOLVE)
@@ -65,6 +72,25 @@ public class ReconciliationResolutionController {
         return desk.propose(
                 breakId, idempotencyKey, body.kind(), body.reasonCode(), body.narrative(),
                 body.targetAccountId(), body.offsetItemId(), body.chosenExpectationId());
+    }
+
+    /**
+     * Proposes a settlement batch's repudiation (`P8-TSK-023`, ADR-0065 §10) - keyed per
+     * principal, one live per batch; a second person approves it through the resolution
+     * doors below.
+     */
+    @PostMapping(
+            path = "/batches/{settlementBatchId}/repudiation",
+            consumes = MediaType.APPLICATION_JSON_VALUE)
+    @RequiresPermission(PermissionName.RECONCILIATION_RESOLVE)
+    @RequiresIdempotencyKey
+    @ResponseStatus(HttpStatus.CREATED)
+    public BreakResolutionDesk.RepudiationReceipt proposeReconciliationBatchRepudiation(
+            @PathVariable("settlementBatchId") String settlementBatchId,
+            @RequestHeader(IdempotencyKeyHeader.NAME) String idempotencyKey,
+            @Valid @RequestBody BatchRepudiationRequest body) {
+        return desk.proposeRepudiation(
+                settlementBatchId, idempotencyKey, body.reasonCode(), body.narrative());
     }
 
     /** Approves a pending resolution — a second person's act; synchronous, one transaction. */

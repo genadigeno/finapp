@@ -365,6 +365,11 @@ original).
 **Verify:** Test asserting the original is byte-identical after reversal.
 **Phase:** 3
 
+*(Extended by `P8-TSK-023`, 2026-10-01, to accepted settlement evidence and its matches: a
+batch's repudiation reverses its recognition through `ReversalService` and undoes each
+allocation by an append-only counter-allocation bound to its original - once, its exact mirror -
+for every writer (reconciliation `V013`); the batch, its file and its lines stay as they were.)*
+
 ### INV-REV-02 — A reversal is bounded by the original
 **Statement:** The reversed amount never exceeds the original effect, accounting for
 previous partial reversals.

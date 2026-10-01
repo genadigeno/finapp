@@ -432,6 +432,9 @@ class CredentialReachesNoEmittedSinkTest {
                         // idempotency receipt; the rejection carries a REASON screened the same
                         // way, bound for the resolution history's and audit record's reason.
                         "ResolutionProposalRequest",
+                        // P8-TSK-023: a repudiation carries a reason code and a screened
+                        // CONFIDENTIAL narrative - no secret.
+                        "BatchRepudiationRequest",
                         "ResolutionRejectionRequest",
                         // P3-TSK-017. Carries dates, a reference, a REASON (free prose by a
                         // person, bound for the reason columns - RESTRICTED-FINANCIAL, never

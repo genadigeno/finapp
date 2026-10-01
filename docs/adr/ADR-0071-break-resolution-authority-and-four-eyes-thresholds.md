@@ -98,6 +98,12 @@ The three designs weighed at the transition differed on exactly the undefined pa
    suspense item's `REPUDIATION` origin — each state with its producer). Its subject is
    **exactly one** of `break_id` or `settlement_batch_id` (the latter for `REPUDIATE_BATCH` only,
    from `V009`).
+   *(Built by `P8-TSK-023`, 2026-10-01, in reconciliation `V013`: the batch subject
+   `settlement_batch_id` with `resolution_one_subject`, the repudiation's `subject_digest` - a batch
+   has no `residual_version` of its own, so the plan's SHA-256 is what the approver must find
+   unchanged - one live proposal and one approval per batch, and `repudiation_closure`, the record
+   of each break whose subject the repudiation emptied, since a batch-subject resolution names no
+   break of its own.)*
    *(The migration numbers are the transition's consistency review's, A8: `V008` is
    `P8-TSK-022`'s `run_replay`.)* It carries `kind`,
    `reason_code`, `narrative`, `status`, `four_eyes`, `proposed_amount_*`, `residual_version`,

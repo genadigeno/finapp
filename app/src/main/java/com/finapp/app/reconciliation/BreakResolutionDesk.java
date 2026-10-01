@@ -10,6 +10,7 @@ import com.finapp.platform.idempotency.RequestFingerprint;
 import com.finapp.platform.idempotency.StoredResponse;
 import com.finapp.platform.security.Actor;
 import com.finapp.platform.security.SecurityContext;
+import com.finapp.reconciliation.BatchRepudiations;
 import com.finapp.reconciliation.BreakCaseFile;
 import com.finapp.reconciliation.ReconciliationErrorCode;
 import com.finapp.reconciliation.ResolutionKind;
@@ -50,6 +51,7 @@ public class BreakResolutionDesk {
     @NonNull private final IdempotentExecutor executor;
     @NonNull private final TransactionTemplate reconciliationTransactions;
     @NonNull private final DataSource dataSource;
+    @NonNull private final BatchRepudiations repudiations;
 
     /** A proposal's receipt — identifiers, the kind and state, never the narrative or amount. */
     public record ResolutionReceipt(
@@ -61,9 +63,85 @@ public class BreakResolutionDesk {
             String adjustmentProposalId,
             String proposedAt) {}
 
-    /** A decision's outcome; {@code journalEntryId} for an approval that posted. */
+    /**
+     * A decision's outcome; {@code journalEntryId} for an approval that posted. A break's
+     * resolution names its break; a batch's repudiation names its settlement batch
+     * (`P8-TSK-023`) - exactly one of the two.
+     */
     public record ResolutionDecision(
-            String resolutionId, String breakId, String status, String journalEntryId) {}
+            String resolutionId,
+            String breakId,
+            String settlementBatchId,
+            String status,
+            String journalEntryId) {}
+
+    /**
+     * A repudiation proposal's receipt: identifiers, the state and what the approval will
+     * do, in counts - never the narrative or an amount.
+     */
+    public record RepudiationReceipt(
+            String resolutionId,
+            String settlementBatchId,
+            String status,
+            int items,
+            int counterAllocations,
+            int reopenedItems,
+            int unparks,
+            int answered,
+            int breaksClosed,
+            boolean remittanceClosed,
+            boolean reversesRecognition,
+            String proposedAt) {}
+
+    /**
+     * Proposes a settlement batch's repudiation (`P8-TSK-023`, ADR-0065 §10): keyed per
+     * principal in the resolve scope, the narrative screened before any claim; one live
+     * proposal per batch.
+     */
+    public RepudiationReceipt proposeRepudiation(
+            String rawBatchId, String idempotencyKey, String reasonCode, String narrative) {
+        UUID batchId = parsed(rawBatchId, ReconciliationErrorCode.BATCH_NOT_FOUND);
+        ResolutionReasonCode code =
+                enumParam("reasonCode", reasonCode, ResolutionReasonCode.values());
+        String text = narrative == null ? "" : narrative;
+        guarded(() -> {
+            ResolutionMachine.refuseNarrative(text);
+            return null;
+        });
+        Actor actor = SecurityContext.require();
+        Correlation correlation = resolvedCorrelation();
+        IdempotencyKey key =
+                new IdempotencyKey(
+                        PROPOSE_SCOPE + actor.type().name() + ":" + actor.id(), idempotencyKey);
+        RequestFingerprint fingerprint =
+                RequestFingerprint.sha256(
+                        String.join("|", "repudiation", batchId.toString(), code.name(), text)
+                                .getBytes(StandardCharsets.UTF_8));
+        Function<Connection, CommandResult> proposal =
+                uow -> CommandResult.succeeded(stored(repudiationReceipt(
+                        repudiations.propose(
+                                uow, batchId, code, text, actor,
+                                correlation.correlationId()))));
+        IdempotentExecutor.ExecutionOutcome outcome =
+                guarded(() -> command(unitOfWork -> executor.execute(
+                        unitOfWork, key, fingerprint, proposal::apply)));
+        byte[] body =
+                outcome.body()
+                        .orElseThrow(
+                                () ->
+                                        new IllegalStateException(
+                                                "a recorded proposal always carries its"
+                                                        + " receipt"));
+        String[] f = new String(body, StandardCharsets.UTF_8).split("\\|", 12);
+        if (f.length != 12) {
+            throw new IllegalStateException("a stored repudiation receipt is malformed");
+        }
+        return new RepudiationReceipt(
+                f[0], f[1], f[2], Integer.parseInt(f[3]), Integer.parseInt(f[4]),
+                Integer.parseInt(f[5]), Integer.parseInt(f[6]), Integer.parseInt(f[7]),
+                Integer.parseInt(f[8]), Boolean.parseBoolean(f[9]),
+                Boolean.parseBoolean(f[10]), f[11]);
+    }
 
     public ResolutionReceipt propose(
             String rawBreakId,
@@ -135,8 +213,11 @@ public class BreakResolutionDesk {
         UUID resolutionId = parsed(rawResolutionId, ReconciliationErrorCode.RESOLUTION_NOT_FOUND);
         Actor actor = SecurityContext.require();
         Correlation correlation = resolvedCorrelation();
-        return view(guarded(() -> command(uow -> machine.approve(
-                uow, resolutionId, actor, correlation.correlationId()))));
+        return guarded(() -> command(uow -> repudiations.isRepudiation(uow, resolutionId)
+                ? view(repudiations.approve(
+                        uow, resolutionId, actor, correlation.correlationId()))
+                : view(machine.approve(
+                        uow, resolutionId, actor, correlation.correlationId()))));
     }
 
     public ResolutionDecision reject(String rawResolutionId, String reason) {
@@ -148,16 +229,22 @@ public class BreakResolutionDesk {
         });
         Actor actor = SecurityContext.require();
         Correlation correlation = resolvedCorrelation();
-        return view(guarded(() -> command(uow -> machine.reject(
-                uow, resolutionId, text, actor, correlation.correlationId()))));
+        return guarded(() -> command(uow -> repudiations.isRepudiation(uow, resolutionId)
+                ? view(repudiations.reject(
+                        uow, resolutionId, text, actor, correlation.correlationId()))
+                : view(machine.reject(
+                        uow, resolutionId, text, actor, correlation.correlationId()))));
     }
 
     public ResolutionDecision withdraw(String rawResolutionId) {
         UUID resolutionId = parsed(rawResolutionId, ReconciliationErrorCode.RESOLUTION_NOT_FOUND);
         Actor actor = SecurityContext.require();
         Correlation correlation = resolvedCorrelation();
-        return view(guarded(() -> command(uow -> machine.withdraw(
-                uow, resolutionId, actor, correlation.correlationId()))));
+        return guarded(() -> command(uow -> repudiations.isRepudiation(uow, resolutionId)
+                ? view(repudiations.withdraw(
+                        uow, resolutionId, actor, correlation.correlationId()))
+                : view(machine.withdraw(
+                        uow, resolutionId, actor, correlation.correlationId()))));
     }
 
     // ================================================================== rendering
@@ -178,8 +265,36 @@ public class BreakResolutionDesk {
         return new ResolutionDecision(
                 decided.resolutionId().toString(),
                 decided.breakId().toString(),
+                null,
                 decided.status().name(),
                 decided.journalEntryId().map(UUID::toString).orElse(null));
+    }
+
+    private static ResolutionDecision view(BatchRepudiations.Decided decided) {
+        return new ResolutionDecision(
+                decided.resolutionId().toString(),
+                null,
+                decided.settlementBatchId().toString(),
+                decided.status().name(),
+                decided.journalEntryId().map(UUID::toString).orElse(null));
+    }
+
+    private static String repudiationReceipt(BatchRepudiations.Proposed proposed) {
+        BatchRepudiations.Counts counts = proposed.counts();
+        return String.join(
+                "|",
+                proposed.resolutionId().toString(),
+                proposed.settlementBatchId().toString(),
+                proposed.status().name(),
+                Integer.toString(counts.items()),
+                Integer.toString(counts.counterAllocations()),
+                Integer.toString(counts.reopenedItems()),
+                Integer.toString(counts.unparks()),
+                Integer.toString(counts.answered()),
+                Integer.toString(counts.breaksClosed()),
+                Boolean.toString(counts.remittanceClosed()),
+                Boolean.toString(counts.reversesRecognition()),
+                proposed.proposedAt().toString());
     }
 
     // ================================================================== plumbing
@@ -216,6 +331,14 @@ public class BreakResolutionDesk {
             throw refused(ReconciliationErrorCode.GAIN_NOT_YET_ELIGIBLE, young);
         } catch (ResolutionMachine.ResolutionRefused shape) {
             throw invalid(shape.getMessage());
+        } catch (BatchRepudiations.BatchNotFound unknown) {
+            throw notFound(ReconciliationErrorCode.BATCH_NOT_FOUND);
+        } catch (BatchRepudiations.BatchNotRepudiable accepted) {
+            throw refused(ReconciliationErrorCode.BATCH_NOT_REPUDIABLE, accepted);
+        } catch (BatchRepudiations.BatchNotDisposed pending) {
+            throw refused(ReconciliationErrorCode.BATCH_NOT_DISPOSED, pending);
+        } catch (BatchRepudiations.RepudiationNotSupported shape) {
+            throw refused(ReconciliationErrorCode.REPUDIATION_NOT_SUPPORTED, shape);
         }
     }
 

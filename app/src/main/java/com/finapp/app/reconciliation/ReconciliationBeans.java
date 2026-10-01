@@ -446,9 +446,46 @@ public class ReconciliationBeans {
             com.finapp.reconciliation.ResolutionMachine resolutionMachine,
             com.finapp.platform.idempotency.IdempotentExecutor idempotentExecutor,
             TransactionTemplate reconciliationTransactions,
-            javax.sql.DataSource dataSource) {
+            javax.sql.DataSource dataSource,
+            com.finapp.reconciliation.BatchRepudiations batchRepudiations) {
         return new BreakResolutionDesk(
-                resolutionMachine, idempotentExecutor, reconciliationTransactions, dataSource);
+                resolutionMachine, idempotentExecutor, reconciliationTransactions, dataSource,
+                batchRepudiations);
+    }
+
+    /**
+     * A settlement batch's repudiation (`P8-TSK-023`, ADR-0065 §10): the batch-subject
+     * resolution under four-eyes, settlement reached through the composed seam, the
+     * recognition reversed through the ledger's {@code ReversalService} - one transaction.
+     */
+    @Bean
+    com.finapp.reconciliation.BatchRepudiations batchRepudiations(
+            com.finapp.reconciliation.BreakRegister breakRegister,
+            com.finapp.reconciliation.Suspense suspense,
+            com.finapp.settlement.BatchRepudiation batchRepudiation,
+            com.finapp.ledger.ReversalService reversalService,
+            com.finapp.ledger.JournalEntryStore<Connection> journalEntryStore,
+            com.finapp.ledger.AdjustmentService adjustmentService,
+            com.finapp.ledger.LedgerAccountStore<Connection> ledgerAccountStore,
+            com.finapp.platform.outbox.OutboxWriter<Connection> outboxWriter,
+            com.finapp.platform.audit.AuditWriter<Connection> auditWriter,
+            IdGenerator idGenerator,
+            Clock clock) {
+        return new com.finapp.reconciliation.BatchRepudiations(
+                new com.finapp.reconciliation.JdbcRepudiationStore(),
+                new com.finapp.reconciliation.JdbcResolutionStore(),
+                new com.finapp.reconciliation.JdbcBreakCaseStore(),
+                breakRegister,
+                suspense,
+                new ComposedBatchRepudiations(batchRepudiation),
+                reversalService,
+                journalEntryStore,
+                adjustmentService,
+                ledgerAccountStore,
+                outboxWriter,
+                auditWriter,
+                idGenerator,
+                clock);
     }
 
     /** One transaction per chunk — the run leg's containment (the parse leg's shape). */

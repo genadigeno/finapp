@@ -1510,6 +1510,12 @@ counters and dates of things.
 | `resolution` | `created_at` | `INTERNAL` | When it was recorded |
 | `resolution` | `status_changed_at` | `INTERNAL` | When the machine last moved |
 | `resolution` | `correlation_id` | `INTERNAL` | The flow's correlation |
+| `resolution` | `settlement_batch_id` | `INTERNAL` | A repudiation's subject (`P8-TSK-023`, `V013`) - an identifier of a thing |
+| `resolution` | `subject_digest` | `INTERNAL` | The repudiation plan's SHA-256 - a hash of identifiers, states and counts |
+| `repudiation_closure` | `break_id` | `INTERNAL` | The break a repudiation closed (`P8-TSK-023`, `V013`) - an identifier of a thing |
+| `repudiation_closure` | `resolution_id` | `INTERNAL` | The repudiation that emptied its subject - an identifier of a thing |
+| `repudiation_closure` | `closed_at` | `INTERNAL` | When it closed |
+| `repudiation_closure` | `correlation_id` | `INTERNAL` | The flow's correlation |
 | `resolution_event` | `seq` | `INTERNAL` | The history's server-assigned order |
 | `resolution_event` | `resolution_id` | `INTERNAL` | The moved resolution - an identifier of a thing |
 | `resolution_event` | `from_status` | `INTERNAL` | The edge's origin - a closed vocabulary |

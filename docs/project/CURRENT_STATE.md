@@ -424,100 +424,85 @@ since M0.1". Moved, not edited.)*
 
 ## Current Task
 
-**`P8-TSK-023` — Batch repudiation** — `READY`, M8.7, Operating it, at 2 of 4 (`INV-REV-01`,
-`INV-AUD-04`, `INV-REC-07`, `INV-SET-06`): an accepted batch proven fabricated or mis-normalised
-is repudiated under four-eyes — its recognition reversed, its matches counter-allocated, its parks
-released, the file retained — and the genuine file then accepted, recovered through
-`P8-TSK-022`'s readmission. Its entry and field set are in [`BACKLOG.md`](BACKLOG.md). **Not
-started.**
+**`P8-TSK-024` — Meters, the dashboard row and operator reports** — `READY`, M8.7, Operating it,
+at 3 of 4: every `PHASE_8_PLAN.md` §15 series not yet shipped, eagerly registered per compiled
+source, severity and type, and the audited operator reports - the operator's reading of the
+proofs' inputs, never a metric of an amount (ADR-0072). Its entry and field set are in
+[`BACKLOG.md`](BACKLOG.md). **Not started.**
 
 ### Just completed
 
-**`P8-TSK-022` — Rule-set administration, reprocessing, readmission, run requeue and replay** —
-`COMPLETE` (2026-10-01). **M8.7, Operating it, at 2 of 4**: the platform is operated without
-editing history (`INV-HIST-04`, `INV-REC-04`, `INV-AUD-04`; protected `INV-REC-07`, `INV-REC-08`,
-`INV-SET-07`, `INV-SET-04`, `INV-IDEM-01`) — matching policy changes only forward and only under
-four-eyes, residual items are re-decided under the new version, a file our own defect rejected is
-readmitted, a blocked run is requeued, every run's decisions replay from their snapshots, and a
-stored file's normalisation is re-verifiable. **TWO MIGRATIONS, AS CLAIMED**: reconciliation `V012`
-and settlement `V009`. **`V012` MADE GOOD FOUR FINDINGS OF THE DESIGN**: (1) the rule set had no
-machine — `ACTIVE` alone, every update frozen — so `PROPOSED → ACTIVE | REJECTED`, `ACTIVE →
-RETIRED` was built by trigger for every writer, the four-eyes `CHECK` (the seed's
-`migration:V002` alone exempt), one proposal per source, `rule_set_event`, members admitted only
-beside their own proposal born in the same transaction (an `xmin` guard, an existing key passing
-through to its unique), `tolerance_once` `NULLS NOT DISTINCT`, and a retirement committed only
-beside its successor (a deferred constraint trigger — exactly one active version per source, the
-build agent's find); (2) the rematch leg pinned the ORIGINAL run's version against ADR-0068 §8 — it
-now reads the source's active version once per batch, grace staying pinned to its run; (3) "a
-decision is a pure function of its stored snapshot" did not hold for the snapshot as stored — six
-columns (`verdict`, `judged_status`, `judged_minor`, `fingerprint_seen_earlier`,
-`group_membership_complete`, `fee_gross_minor`) and `match_parked_original` complete it, every
-writer filling them and an insert trigger requiring them; (4) a blocked run's break could never
-close — a requeued run's completion closes it `EVIDENCED` naming the run, and a diverged replay's
-break admits a person's `ACKNOWLEDGE`. Also `run_replay` (append-only) and
-`break_one_open_per_decision`. **`V009`**: `settlement.file_inherits_authentication`,
-`file_submitters` and `file_authenticates_readmission`, the one rule the trigger refuses by (on
-INSERT and every UPDATE, judging a row by its ORIGINAL's id), the accept leg claims by and the
-attestation's domain rank reads. **THE DOORS**: seven reconciliation routes — rule sets listed,
-proposed (keyed, `201`), approved and rejected under `RECONCILIATION_ADMINISTER`; reprocessing
-(keyed, `202`) and requeue under the same; replay under `RECONCILIATION_INVESTIGATE` — and two
-settlement routes: readmission (keyed per principal, `202`) under `RECONCILIATION_ADMINISTER` and
-the re-parse verification under `RECONCILIATION_INVESTIGATE`; nine reconciliation and three
-settlement error codes; six reconciliation and two settlement audit actions;
-`finapp.reconciliation.replay` (`outcome`, eager). The OpenAPI baseline regenerated: +1,275 lines,
-zero removed or changed (verified structurally; the 37 `BREAKING` labels are required flags on the
-new paths and schemas). **DECIDED AT DESIGN, AS BUILT**: a `DECLINED` file IS readmissible,
-inheriting nothing (ADR-0066 §8's recorded question); a `CONFLICTING_BATCH` original is judged by
-its conflict, not by the word `REPUDIATED` — its bytes re-parsed in memory and admitted only when no
-live batch holds their identity, proven by declining the standing file (repudiation is
-`P8-TSK-023`'s, and its test of readmission after a repudiation is recorded in its entry); a
-readmission's attester differs from EVERY submitter along the chain; the verification's door is an
-audited, reasoned operator request with five verdicts (`MATCHES`, `DIFFERS`, `NOT_PARSED`,
-`FORMAT_VERSION_UNAVAILABLE`, `CORRUPT`), replacing nothing. **THE REPLAY**: one repeatable-read
-read-only snapshot re-running each decision through the pure function its stored verdict names
-under its pinned version (the matching engine, the value-date group, the correction engine, the fee
-check; a manual choice structurally; a contained `ERRORED` decision counted apart), then one
-append — a divergence raising one CRITICAL `PROCESSING_ERROR(REPLAY_DIVERGED)` on the first
-divergent decision. **THE BUILD'S FINDS, EACH FIXED**: every existing rule-set fixture broke under
-the machine (each now proposes, then activates as a second actor); the credential-sink guard names
-top-level request bodies only (three nested schemas removed from its list); the readmission
-refusal's log line named an upload and the content-read javadoc was orphaned (the tests agent's
-finds). **THE GATE'S FINDS, EACH FIXED**: (a) no test proved the replay judges under the PINNED
-version — a replay reading the active one survived every case (probe 9); the suite now activates a
-version 5 with no rule where version 1's decisions fired and requires version 1's run to replay
-`IDENTICAL`; (b) **the reprocess leg's only arbiter was the source's try-lock**, against the
-matcher's own contract that the try-lock only orders: a line examined unchanged has no row update
-for a second instance's item lock to re-check, so ten sweepers with the try-lock bypassed over
-three-line chunks examined 17 lines twice — the `REPROCESS` run's row is now locked after every
-advisory and before any item, its status re-checked, proven by a module race with the lock bypassed
-(`MatchingDatabaseTest`) and by ten racing sweepers over HTTP; (c) the backlog's "reprocess
-allocations counted on `finapp.reconciliation.rematch`" names a meter `P8-TSK-024` owns —
-recorded in that entry. **RECORDED, NOT DEFECTS**: the approval's converged retry answers the
-version's state without the retired predecessor the first answer named; a keyed proposal replays
-its original receipt (`PROPOSED`) whatever the version became — idempotent replay semantics.
-**DOCUMENTS**: ADR-0066 and ADR-0068 implemented notes, `INV-SET-07` and `INV-HIST-04` as built,
-the lifecycle document, `DISTRIBUTED_EXECUTION` §3 (the controller's row and the reprocess leg's
-arbiter), `AUDITABLE_ACTIONS` +8, `ERROR_CONTRACT` +12, `DATA_CLASSIFICATION` +37,
-`MODULE_ARCHITECTURE`, the plan's migration tables. **FOURTEEN PROBE RUNS OVER ELEVEN SITES**
-(`MUTATION_TESTING.md` §2 +12 rows under `INV-HIST-04` ×3, `INV-AUD-04` ×3, `INV-SET-07` ×2,
-`INV-CON-02` ×2, `INV-REC-07`, `INV-REC-04`): the member guard, reprocess over matched items, the
-rematch reverted to the run's version, self-activation at the domain (read twice — the `CHECK`
-standing alone, and over HTTP a 500 where the domain's 409 belongs) and at the `CHECK`, the replay
-perturbation (caught by golden snapshots), `V009`'s trigger, the accept leg's eligibility — each
-caught; the replay's pin caught only after the gate's version-5 step; the try-lock bypassed over
-HTTP SURVIVED, rightly by contract but for the wrong reason (the race never left the first chunk,
-whose `OPEN → IN_PROGRESS` edge serializes it), which led to the run-row lock, whose removal is
-caught (a first run on one large chunk survived; the case now uses three-line chunks) — every
-restore byte-identical (sha256-verified). **Multi-instance PASS**: ten approvers activate once and
-retire once; ten proposers leave one proposal; ten reprocess requests open one run; ten reprocess
-sweepers over HTTP, and ten with the try-lock bypassed, decide each residual once and complete the
-run once; ten requeues have one winner; ten replays append ten verdicts and one break; ten
-readmissions land one file, in the module and over HTTP (counted). **NEXT**: `P8-TSK-023` `READY`
-(batch repudiation). **Verified** by targeted tiers from fresh runs on the final code — settlement hermetic 166 across 27 and database 60 across 9, reconciliation hermetic 165 across 30 and database 129 across 14, app hermetic 587 across 111 suites, the administration suite in its own container 7 across 1, the readmission suite 10 across 1, the twelve proof-group suites in ONE shared container 62 across 12, the unmatched-confirmation suite 9 across 1, the pull suite 11 across 1, the payout cash suite 5 across 1, the scheme cash suite 4 across 1, the payout return suite 14 across 1, the column-classification guard 5, and the document guards re-run after the records landed, ALL 0 FAILURES — the full battery and the fleet-wide database and kafka tiers deliberately skipped on the owner's instruction.
+**`P8-TSK-023` — Batch repudiation** — `COMPLETE` (2026-10-01). **M8.7, Operating it, at 3 of
+4**: an accepted settlement batch proven fabricated or mis-normalised is repudiated under four-eyes
+by compensation alone - its recognition reversed through `ReversalService`, every allocation of its
+items mirrored by an append-only counter-allocation, its parks released, the breaks it emptied
+closed, the file retained byte-identical - and the genuine file then accepted (`INV-REV-01`,
+`INV-AUD-04`, `INV-REC-07`, `INV-SET-06`; protected `INV-REV-02`, `INV-SET-04`, `INV-HIST-02`,
+`INV-REC-06`, `-09`). Kept, not deferred (transition decision O6). **TWO MIGRATIONS, AS CLAIMED**:
+settlement `V010` (the batch's `REPUDIATED`: the status `CHECK`, the trigger's one new edge
+`ACCEPTED → REPUDIATED` with the acceptance facts frozen, the honesty `CHECK`s widened to a
+repudiated row) and reconciliation `V013`. **THE DESIGN'S FINDS, MADE GOOD IN `V013`**: the
+backlog's `allocation.reverses_allocation_id UNIQUE` and `resolution.settlement_batch_id` did not
+exist - the counter-allocation is now bound to its original once and exactly
+(`allocation_reversed_once` and a mirror trigger, for every writer), and the resolution has its
+batch subject (exactly one subject; one live proposal and one approval per batch; the plan's
+SHA-256 `subject_digest`, since a batch has no `residual_version`); `repudiation_closure` records
+each break a batch-subject resolution emptied; the item machine gains the two edges the design
+decided (`PARKED → UNMATCHED`, `RESOLVED → REPUDIATED`); the expectation event `REOPENED`; the
+suspense origin `REPUDIATION`. **THE DOOR**: `POST /v1/operator/reconciliation/batches/
+{settlementBatchId}/repudiation` under `RECONCILIATION_RESOLVE`, keyed per principal, `201` with the
+plan in counts; approval, rejection and withdrawal through the resolution doors, routed by the
+subject; four reconciliation codes; settlement's `BatchRepudiation` behind reconciliation's port
+`SettlementBatchRepudiations`, composed by `app`; `settlement.SettlementBatchRepudiated` (event and
+audit); the OpenAPI baseline +250 lines, zero removed or changed. **DECIDED AT DESIGN, AS BUILT**:
+every item of the batch leaves to `REPUDIATED`, a `RESOLVED` one included; a `PENDING` item
+refuses (`BatchNotDisposed`); the batch's `REMITTANCE` closes `RESOLVED_BY_ADJUSTMENT` after its
+bank allocations are countered; a bank item matched to it reopens (`MATCHED → UNMATCHED`, an
+over-payer whole, `PARKED → UNMATCHED`, its excess unparked) with a fresh grace from its source's
+active rule; a value a resolution already released is answered, never released twice - for an
+unattributed line by the reversal's own suspense line, for a parked value by the park's exact
+inverse posting - each opening a `REPUDIATION` item on the opposite side owned by a new
+`PROCESSING_ERROR` break; every open break whose subject the repudiation empties closes with its
+closure row, a pending proposal on it withdrawn; a payout return applied from the batch stands, its
+expectation reopened to age. Refused before anything is written and recorded as debt: a correction
+`OFFSET` in the batch, an expectation a person already closed, a matched bank item a person already
+resolved (`RepudiationNotSupported`). **THE APPROVAL**: namespace-4 advisories for every affected
+source, blocking and sorted; the breaks to close; the resolution row; the items, expectations and
+suspense items sorted; the plan re-derived and its digest compared (`ResolutionStale`); the
+counter-allocations and edges; settlement's conditional edge; the union of projection rows
+pre-locked; the reversal and the unparks last; the answers, the closures, the event and the audits -
+one transaction. **THE BUILD'S FINDS, EACH FIXED**: a losing approver whose lock-free reads
+straddled the winner's commit answered the half-seen batch (`BatchNotRepudiable`, or
+`RepudiationNotSupported` on the remittance the winner closed) - it now re-reads the resolution and
+answers `ResolutionNotPending` (the tests agent's find, one path found in self-review); an
+over-payer's parked value released elsewhere stayed counted as parked; the closure trigger admitted
+a closure of an open break (the migration agent's find - it now requires a `RESOLVED` break); **the
+matcher judged the genuine line a duplicate of the fabrication it replaces** -
+`fingerprintSeenEarlier` counted `REPUDIATED` lines (the suite's first run). **THE GATE'S FINDS,
+EACH FIXED**: a closed break's case file lost the repudiation that closed it (a batch-subject
+resolution names no break) - `JdbcBreakInquiries` now reads it through `repudiation_closure`; the
+backlog's repudiation-against-a-matcher race, payout-return outcome and case-file trail had no case -
+added; `INV-SET-06` had no demonstration - added. **RECORDED, NOT BUILT**: the reopened
+`PAYOUT_RETURN`'s ageing into `MISSING_EXTERNAL` is the ageing sweep's, never driven by the suite;
+`finapp.reconciliation.resolution` (type `REPUDIATE_BATCH`) and the span are `P8-TSK-024`'s series.
+**DOCUMENTS**: ADR-0065 §10, ADR-0070 §10 and ADR-0071 implemented notes, `INV-REV-01` extended,
+the lifecycle document §5.2 (decided) and §5.4 (edges), `DISTRIBUTED_EXECUTION` §3 (the approval's
+row), `AUDITABLE_ACTIONS` +1, `ERROR_CONTRACT` +4, `DATA_CLASSIFICATION` +6, the plan's migration
+table. **ELEVEN PROBE RUNS OVER NINE SITES** (`MUTATION_TESTING.md` §2 +9 rows): a counter omitted
+(the deferred sums refused at commit), the remittance left open, an already-released value released
+again, the answer dropped, a repudiated line counted as a duplicate, self-approval at the domain
+(the `CHECK` alone answering, 500 not 409), the recognition never reversed, the case file without
+its closure - each caught; the namespace-4 advisories dropped SURVIVED, by the matcher's contract
+that the advisory orders and the locked re-derivation arbitrates - recorded, not claimed - every
+restore byte-identical (sha256-verified). **Multi-instance PASS**: ten approvers give one reversal,
+one counter per allocation, one batch edge, one event (counted); the matcher first makes the
+proposal stale, the repudiation first leaves the matcher nothing, and the true race lands exactly
+one coherent outcome, never a 500. **NEXT**: `P8-TSK-024` `READY` (meters, the dashboard row and
+operator reports). **Verified** by targeted tiers from fresh runs on the final code — settlement hermetic 166 across 27 and database 70 across 11, reconciliation hermetic 165 across 30 and database 140 across 15, app hermetic 587 across 111 suites, the repudiation suite in its own container 13 across 1, the twelve proof-group suites in ONE shared container 62 across 12, the unmatched-confirmation suite 9, the pull suite 11, the payout cash suite 5, the scheme cash suite 4, the payout return suite 14, the readmission suite 10, the administration suite 7, the column-classification guard 5, and the document guards 125 across 22 re-run after the records landed, ALL 0 FAILURES — the full battery and the fleet-wide database and kafka tiers deliberately skipped on the owner's instruction.
 
 ### Previously
 
-The per-task completion records — 185 blocks, from `P8-TSK-021` back to project initiation
+The per-task completion records — 186 blocks, from `P8-TSK-022` back to project initiation
 (`X-TSK-004` cross-cutting, standing between `P7-TSK-001` and the Phase 6 → 7 transition) —
 are archived in [`history/TASK_HISTORY.md`](history/TASK_HISTORY.md).
 *(This pointer read "130 blocks, from `P6-TSK-005`" through four archivals — corrected by
@@ -832,6 +817,7 @@ carries, what triggers paying it down, and the owning phase.
 | **One corrupt (non-UUIDv7) `payment_attempt.id` stalls every instance's whole card sweep** — `findSweepable` rehydrates typed ids while LISTING candidates, so the refusal (`EntityId`, ADR-0013) throws before the per-row containment (`P5-TSK-014`'s one-failing-row discipline) ever starts. Surfaced by `P7-TSK-003`'s battery when raw test fixtures minted v4 ids and poisoned every later suite's sweep | No domain writer can produce one — `EntityId` refuses at birth and every store insert goes through it — so the exposure is a raw writer (migrator, operator SQL) corrupting an id, which today would also be caught by nothing else | Bounded: the sweep crashes loudly and repeatedly rather than resolving wrongly; money is not misjudged, it is unattended — the same failure a poisoned row causes, one rank earlier. *(The Phase 7 review widened this row: Phase 7's four new sweeps list the same way - `JdbcWithdrawalStore`'s, `JdbcDisputeResponseStore`'s, `JdbcRefundStore.findSweepableReturns` and `JdbcPaymentAttemptStore.findResolvableInitiations` - so one corrupt id stalls that sweep likewise.)* | The fixtures now mint v7 (the immediate repair); every candidate list should skip-and-count an unrehydratable row exactly as the per-row loop does | Phase 15 |
 | **`payment_intent.wallet_account_id` holds a merchant payable for a merchant-bound payment.** The column's own comment defines it as *the wallet's ledger account - where the capture will credit*, so its MEANING is right and its NAME is narrower than its meaning (`P6-TSK-005`) | Renaming a column of applied history needs a new migration plus the every-writer trigger's recreation on the platform's most critical table, and the first PRODUCTION writer of a merchant-bound intent does not exist yet - `P6-TSK-007` brings it. Renaming before its real consumer exists would be guessing at what the consumer wants to call it | **Naming only, and bounded**: nothing reads it as a wallet - the capture credits whatever account it names, and the settlement REFUSES a capture whose credit account is not the pinned merchant's payable, so a mismatch is loud rather than silent. The cost is a reader of the schema being misled | **Re-owned by the Phase 6 review (`P6-DOC-001`)**: `P6-TSK-007`, this row's trigger, completed without the rename. The next migration that must recreate `payment_intent`'s every-writer trigger anyway carries the rename with it | **PAID — `P7-TSK-002`** (payments `V012` renamed the column under the recreated trigger; every reader, writer, test and register row follows the new name, the old one kept only in applied history and provenance notes) |
 | **Every session actor is audited as `CUSTOMER`, including operators.** `SessionAuthenticationInterceptor` enters `new Actor(identityId, ActorType.CUSTOMER)` for every authenticated session, so an operator's privileged acts — a manual adjustment, a transfer reversal, a refund, a merchant suspension, an API-key revocation — are recorded with the wrong actor TYPE. Found at `P6-TSK-002`'s implementation, while asserting that issuance names its operator: the test expected `EMPLOYEE` and the trail said `CUSTOMER` | The identifier is right — `actor_id` is the acting identity, so every record still names the person and `INV-AUD-01`'s attributability holds. What is wrong is the vocabulary that says which POPULATION acted, which is the field an auditor filters on to answer *what did staff do*. Correcting it means deriving the type from the identity's roles at authentication time and touches every audited session path on the platform — not a merchant task's to change, and not a change to make without its own negative tests | **Bounded but real**: no record is missing and none names the wrong person; a report separating staff activity from customers' cannot be built from `actor_type` alone today, and `ActorType.EMPLOYEE`'s own javadoc (*a human acting in an operational or administrative capacity*) describes a value nothing currently produces | An audit-completeness review, or the first report that must distinguish staff from customers | Phase 15 (audit completeness verification) |
+| **Three repudiation shapes are refused, not compensated** (`P8-TSK-023`) - a batch holding a correction `OFFSET`, an allocation whose expectation a person already closed `RESOLVED_BY_ADJUSTMENT`, and a bank item matched to the batch's remittance that a person already `RESOLVED` answer `reconciliation.RepudiationNotSupported` before anything is written | Each needs a compensation of its own (re-parking an offset original's excess, reopening a person's closure, a resolved item's reopening edge) that no Phase 8 task designs; refusing is honest, half-doing would break a proof | A fabricated batch of one of these shapes is contained by its breaks and resolutions only, as before this task | The first such batch met in operation, or the Phase 8 exit review | Phase 9 |
 | ~~**Broker adapter behind `EventPublisher`.**~~ - **closed 2026-09-09** by `P2-TSK-001`. `KafkaEventPublisher` publishes every outbox event to Kafka - payload bytes verbatim, envelope as record headers, aggregate as the record key, one topic per producing module - and `OutboxRelaySchedule` polls on every instance, safely, because the per-aggregate advisory lock is the lease (`DISTRIBUTED_EXECUTION.md` §3). Delivery is at-least-once with `finapp.eventId` as the consumer dedupe key, and the crash duplicate is DEMONSTRATED in `KafkaOutboxDeliveryKafkaTest` rather than hidden. | - | - | - | - |
 | **Outbox retention.** Published rows are never deleted | `V005` says a published row may be deleted once retained long enough for diagnosis; the sweep is a scheduled job with its own cluster-safety question, and no task owned it | Unbounded table growth. The partial pending index does **not** grow with it — published rows leave it — so the cost is storage and vacuum, not relay latency | Table size becoming operationally material | Phase 15 (data retention and deletion) |
 | ~~**Relay metrics.**~~ - **paid in full 2026-09-09** (`P0-TSK-029` the gauges, `P2-TSK-001` the counters): `finapp.outbox.publication` by outcome (published, failed, deadlettered), registered eagerly and fed from `RelayPollResult` by the schedule that now actually runs. The eager series is asserted before any flow in `OutboxRelayScheduleKafkaTest` | Nothing schedules a relay, so those meters would be structurally always zero - which reads as "nothing is failing" rather than "nothing is running" | The remaining risk is narrower: a relay that is running but failing is visible as a growing backlog, not as a failure count | A scheduled relay | Phase 3 |
@@ -952,10 +938,9 @@ Resolved during initiation:
 
 ## Next Task
 
-**`P8-TSK-023` — batch repudiation** — `READY` (the Current Task), marked by `P8-TSK-022`'s
-completion gate — its dependencies, the resolution machinery (`-015`) and the bank statement
-(`-016`), are both `COMPLETE`, and the readmission a genuine file's recovery needs (`-022`) now
-exists.
+**`P8-TSK-024` — meters, the dashboard row and operator reports** — `READY` (the Current Task),
+marked by `P8-TSK-023`'s completion gate — its dependencies, the cash proof (`-016`), suspense
+complete (`-020`) and the position proof (`-007`), are all `COMPLETE`.
 *(This section read "`P8-TSK-009` — `READY`" from `P8-TSK-008`'s gate until
 `P8-TSK-013`'s record found it — the stale-second-copy class, in the section whose
 whole job is to mirror.)*

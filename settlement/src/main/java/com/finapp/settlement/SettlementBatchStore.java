@@ -249,9 +249,10 @@ public interface SettlementBatchStore<T> {
             CorrelationId correlation);
 
     /**
-     * Every ACCEPTED batch's recognition entry id (`P8-TSK-009`) — the completeness
-     * verifier's second known-entry class: a recognition entry's every line is explained by
-     * the acceptance that posted it (ADR-0067 §9).
+     * Every ACCEPTED or REPUDIATED batch's recognition entry id (`P8-TSK-009`) — the
+     * completeness verifier's second known-entry class: a recognition entry's every line is
+     * explained by the acceptance that posted it (ADR-0067 §9). A repudiated batch's entry
+     * still stands, reversed (`P8-TSK-023`): its lines are explained by the same acceptance.
      */
     List<UUID> acceptedRecognitionEntries(T unitOfWork);
 
@@ -343,6 +344,39 @@ public interface SettlementBatchStore<T> {
      * accepted. Lock-free.
      */
     java.util.Map<UUID, Instant> lastAcceptedAt(T unitOfWork);
+
+    // ----------------------------------------------------------- the repudiation (P8-TSK-023)
+
+    /**
+     * One batch as a repudiation reads it (`P8-TSK-023`, ADR-0065 §10): identity, verdict, the
+     * stored recognition entry WHATEVER the status — a repudiated batch's entry stands, now
+     * reversed — and the identity a reversal needs. Never an amount.
+     */
+    record RepudiableRow(
+            UUID id,
+            UUID fileId,
+            UUID sourceId,
+            BatchStatus status,
+            Optional<UUID> journalEntryId,
+            CurrencyCode currency,
+            LocalDate businessDate) {}
+
+    /** The batch as a repudiation reads it, or empty. Lock-free. */
+    Optional<RepudiableRow> repudiable(T unitOfWork, UUID batchId);
+
+    /**
+     * The conditional {@code ACCEPTED → REPUDIATED} — the row locked by the {@code UPDATE}
+     * itself — with its history row; false when the batch was not {@code ACCEPTED}, and then
+     * nothing is written. The acceptance facts are not in the statement: `V010`'s trigger keeps
+     * them frozen across the edge.
+     */
+    boolean markRepudiated(
+            T unitOfWork,
+            UUID batchId,
+            Actor actor,
+            Optional<String> reason,
+            Instant at,
+            CorrelationId correlation);
 
     /** The live unique refused an insert: another batch claimed the identity first. */
     final class LiveBatchConflict extends RuntimeException {

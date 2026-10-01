@@ -1,6 +1,6 @@
 # Task History
 
-The per-task completion records that accumulated behind `## Current Task` - 185 "Previously" blocks, newest first, from `P8-TSK-021` back to project initiation. *(`X-TSK-004` is cross-cutting and completed after the Phase 6 → 7 transition, so it stands second, between `P7-TSK-001` and the transition's record - the transition's block moved here by `P7-TSK-001`'s gate, exactly as an earlier form of this note said it would.)*
+The per-task completion records that accumulated behind `## Current Task` - 186 "Previously" blocks, newest first, from `P8-TSK-022` back to project initiation. *(`X-TSK-004` is cross-cutting and completed after the Phase 6 → 7 transition, so it stands second, between `P7-TSK-001` and the transition's record - the transition's block moved here by `P7-TSK-001`'s gate, exactly as an earlier form of this note said it would.)*
 
 **Archive.** These records were moved verbatim out of
 [`CURRENT_STATE.md`](../CURRENT_STATE.md) on 2026-09-20 so that the canonical description of
@@ -14,6 +14,89 @@ Authoritative backlog: [`BACKLOG.md`](../BACKLOG.md)
 ---
 
 ### Previously
+
+**`P8-TSK-022` — Rule-set administration, reprocessing, readmission, run requeue and replay** —
+`COMPLETE` (2026-10-01). **M8.7, Operating it, at 2 of 4**: the platform is operated without
+editing history (`INV-HIST-04`, `INV-REC-04`, `INV-AUD-04`; protected `INV-REC-07`, `INV-REC-08`,
+`INV-SET-07`, `INV-SET-04`, `INV-IDEM-01`) — matching policy changes only forward and only under
+four-eyes, residual items are re-decided under the new version, a file our own defect rejected is
+readmitted, a blocked run is requeued, every run's decisions replay from their snapshots, and a
+stored file's normalisation is re-verifiable. **TWO MIGRATIONS, AS CLAIMED**: reconciliation `V012`
+and settlement `V009`. **`V012` MADE GOOD FOUR FINDINGS OF THE DESIGN**: (1) the rule set had no
+machine — `ACTIVE` alone, every update frozen — so `PROPOSED → ACTIVE | REJECTED`, `ACTIVE →
+RETIRED` was built by trigger for every writer, the four-eyes `CHECK` (the seed's
+`migration:V002` alone exempt), one proposal per source, `rule_set_event`, members admitted only
+beside their own proposal born in the same transaction (an `xmin` guard, an existing key passing
+through to its unique), `tolerance_once` `NULLS NOT DISTINCT`, and a retirement committed only
+beside its successor (a deferred constraint trigger — exactly one active version per source, the
+build agent's find); (2) the rematch leg pinned the ORIGINAL run's version against ADR-0068 §8 — it
+now reads the source's active version once per batch, grace staying pinned to its run; (3) "a
+decision is a pure function of its stored snapshot" did not hold for the snapshot as stored — six
+columns (`verdict`, `judged_status`, `judged_minor`, `fingerprint_seen_earlier`,
+`group_membership_complete`, `fee_gross_minor`) and `match_parked_original` complete it, every
+writer filling them and an insert trigger requiring them; (4) a blocked run's break could never
+close — a requeued run's completion closes it `EVIDENCED` naming the run, and a diverged replay's
+break admits a person's `ACKNOWLEDGE`. Also `run_replay` (append-only) and
+`break_one_open_per_decision`. **`V009`**: `settlement.file_inherits_authentication`,
+`file_submitters` and `file_authenticates_readmission`, the one rule the trigger refuses by (on
+INSERT and every UPDATE, judging a row by its ORIGINAL's id), the accept leg claims by and the
+attestation's domain rank reads. **THE DOORS**: seven reconciliation routes — rule sets listed,
+proposed (keyed, `201`), approved and rejected under `RECONCILIATION_ADMINISTER`; reprocessing
+(keyed, `202`) and requeue under the same; replay under `RECONCILIATION_INVESTIGATE` — and two
+settlement routes: readmission (keyed per principal, `202`) under `RECONCILIATION_ADMINISTER` and
+the re-parse verification under `RECONCILIATION_INVESTIGATE`; nine reconciliation and three
+settlement error codes; six reconciliation and two settlement audit actions;
+`finapp.reconciliation.replay` (`outcome`, eager). The OpenAPI baseline regenerated: +1,275 lines,
+zero removed or changed (verified structurally; the 37 `BREAKING` labels are required flags on the
+new paths and schemas). **DECIDED AT DESIGN, AS BUILT**: a `DECLINED` file IS readmissible,
+inheriting nothing (ADR-0066 §8's recorded question); a `CONFLICTING_BATCH` original is judged by
+its conflict, not by the word `REPUDIATED` — its bytes re-parsed in memory and admitted only when no
+live batch holds their identity, proven by declining the standing file (repudiation is
+`P8-TSK-023`'s, and its test of readmission after a repudiation is recorded in its entry); a
+readmission's attester differs from EVERY submitter along the chain; the verification's door is an
+audited, reasoned operator request with five verdicts (`MATCHES`, `DIFFERS`, `NOT_PARSED`,
+`FORMAT_VERSION_UNAVAILABLE`, `CORRUPT`), replacing nothing. **THE REPLAY**: one repeatable-read
+read-only snapshot re-running each decision through the pure function its stored verdict names
+under its pinned version (the matching engine, the value-date group, the correction engine, the fee
+check; a manual choice structurally; a contained `ERRORED` decision counted apart), then one
+append — a divergence raising one CRITICAL `PROCESSING_ERROR(REPLAY_DIVERGED)` on the first
+divergent decision. **THE BUILD'S FINDS, EACH FIXED**: every existing rule-set fixture broke under
+the machine (each now proposes, then activates as a second actor); the credential-sink guard names
+top-level request bodies only (three nested schemas removed from its list); the readmission
+refusal's log line named an upload and the content-read javadoc was orphaned (the tests agent's
+finds). **THE GATE'S FINDS, EACH FIXED**: (a) no test proved the replay judges under the PINNED
+version — a replay reading the active one survived every case (probe 9); the suite now activates a
+version 5 with no rule where version 1's decisions fired and requires version 1's run to replay
+`IDENTICAL`; (b) **the reprocess leg's only arbiter was the source's try-lock**, against the
+matcher's own contract that the try-lock only orders: a line examined unchanged has no row update
+for a second instance's item lock to re-check, so ten sweepers with the try-lock bypassed over
+three-line chunks examined 17 lines twice — the `REPROCESS` run's row is now locked after every
+advisory and before any item, its status re-checked, proven by a module race with the lock bypassed
+(`MatchingDatabaseTest`) and by ten racing sweepers over HTTP; (c) the backlog's "reprocess
+allocations counted on `finapp.reconciliation.rematch`" names a meter `P8-TSK-024` owns —
+recorded in that entry. **RECORDED, NOT DEFECTS**: the approval's converged retry answers the
+version's state without the retired predecessor the first answer named; a keyed proposal replays
+its original receipt (`PROPOSED`) whatever the version became — idempotent replay semantics.
+**DOCUMENTS**: ADR-0066 and ADR-0068 implemented notes, `INV-SET-07` and `INV-HIST-04` as built,
+the lifecycle document, `DISTRIBUTED_EXECUTION` §3 (the controller's row and the reprocess leg's
+arbiter), `AUDITABLE_ACTIONS` +8, `ERROR_CONTRACT` +12, `DATA_CLASSIFICATION` +37,
+`MODULE_ARCHITECTURE`, the plan's migration tables. **FOURTEEN PROBE RUNS OVER ELEVEN SITES**
+(`MUTATION_TESTING.md` §2 +12 rows under `INV-HIST-04` ×3, `INV-AUD-04` ×3, `INV-SET-07` ×2,
+`INV-CON-02` ×2, `INV-REC-07`, `INV-REC-04`): the member guard, reprocess over matched items, the
+rematch reverted to the run's version, self-activation at the domain (read twice — the `CHECK`
+standing alone, and over HTTP a 500 where the domain's 409 belongs) and at the `CHECK`, the replay
+perturbation (caught by golden snapshots), `V009`'s trigger, the accept leg's eligibility — each
+caught; the replay's pin caught only after the gate's version-5 step; the try-lock bypassed over
+HTTP SURVIVED, rightly by contract but for the wrong reason (the race never left the first chunk,
+whose `OPEN → IN_PROGRESS` edge serializes it), which led to the run-row lock, whose removal is
+caught (a first run on one large chunk survived; the case now uses three-line chunks) — every
+restore byte-identical (sha256-verified). **Multi-instance PASS**: ten approvers activate once and
+retire once; ten proposers leave one proposal; ten reprocess requests open one run; ten reprocess
+sweepers over HTTP, and ten with the try-lock bypassed, decide each residual once and complete the
+run once; ten requeues have one winner; ten replays append ten verdicts and one break; ten
+readmissions land one file, in the module and over HTTP (counted). **NEXT**: `P8-TSK-023` `READY`
+(batch repudiation). **Verified** by targeted tiers from fresh runs on the final code — settlement hermetic 166 across 27 and database 60 across 9, reconciliation hermetic 165 across 30 and database 129 across 14, app hermetic 587 across 111 suites, the administration suite in its own container 7 across 1, the readmission suite 10 across 1, the twelve proof-group suites in ONE shared container 62 across 12, the unmatched-confirmation suite 9 across 1, the pull suite 11 across 1, the payout cash suite 5 across 1, the scheme cash suite 4 across 1, the payout return suite 14 across 1, the column-classification guard 5, and the document guards re-run after the records landed, ALL 0 FAILURES — the full battery and the fleet-wide database and kafka tiers deliberately skipped on the owner's instruction.
+
 
 **`P8-TSK-021` — Pull acquisition, per-source credentials and source silence** — `COMPLETE`
 (2026-10-01). **M8.7, Operating it, OPENS at 1 of 4**: each source's evidence is fetched on schedule

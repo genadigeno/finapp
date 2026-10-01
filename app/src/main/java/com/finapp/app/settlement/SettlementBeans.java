@@ -520,6 +520,20 @@ public class SettlementBeans {
                 idGenerator);
     }
 
+    /**
+     * The batch's repudiation edge (`P8-TSK-023`, ADR-0065 §10): settlement's half of the
+     * seam reconciliation's {@code REPUDIATE_BATCH} approval drives on its own connection.
+     */
+    @Bean
+    com.finapp.settlement.BatchRepudiation batchRepudiation(
+            SettlementBatchStore<Connection> settlementBatchStore,
+            OutboxWriter<Connection> outboxWriter,
+            AuditWriter<Connection> auditWriter,
+            IdGenerator idGenerator) {
+        return new com.finapp.settlement.BatchRepudiation(
+                settlementBatchStore, outboxWriter, auditWriter, idGenerator);
+    }
+
     /** The re-parse verification (`P8-TSK-022`, ADR-0066 §9): reasoned, audited, read-only. */
     @Bean
     com.finapp.settlement.FileVerification fileVerification(

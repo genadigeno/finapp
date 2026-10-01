@@ -12462,7 +12462,8 @@ break row, as the approval door must.)*
   probe `DIVERGED`; readmission is audited and reasoned; every probe caught.
 - **Definition of done**: `DOD-FIN`, `DOD-API`, `DOD-SEC`, `DOD-TEST`. **Risk**: Medium. **Cx**: L.
 
-**P8-TSK-023 — Batch repudiation** — `READY` (marked by `P8-TSK-022`'s completion gate)
+**P8-TSK-023 — Batch repudiation** — `COMPLETE` (2026-10-01)
+- **As built** (2026-10-01): as `CURRENT_STATE.md` §Just completed and `history/TASK_HISTORY.md` record. Two migrations as claimed (settlement `V010`, reconciliation `V013`); the backlog's "`allocation.reverses_allocation_id UNIQUE` and `resolution.settlement_batch_id` exist" did not hold - both built in `V013`. Deviations: an unknown batch is the named `reconciliation.BatchNotFound` (every reconciliation operator door names its 404), not `api.NotFound`; three shapes are refused (`RepudiationNotSupported`, recorded debt); the `REPUDIATE_BATCH` series of `finapp.reconciliation.resolution` and the span are `P8-TSK-024`'s (recorded there); the reopened `PAYOUT_RETURN`'s ageing is the sweep's, not driven by the suite.
 - *Design inputs from `P8-TSK-022` (2026-10-01)*: the settlement migration is `V010` (`V009` is the readmission rule's); readmission judges a `CONFLICTING_BATCH` original by its conflict - admitted when no live batch holds the identity its bytes declare - so this task's test of the genuine file's recovery is: repudiate the fabricated batch, readmit the genuine file (`POST /settlement/files/{id}/readmission`), and see it accepted; a repudiation's reopened items and released parks are residuals the `REPROCESS` leg can re-decide.
 - **Objective**: the repudiation of ADR-0065 and ADR-0071 — an accepted batch proven fabricated or
   mis-normalised is repudiated under four-eyes: its recognition reversed, its matches
@@ -12611,7 +12612,8 @@ break row, as the approval door must.)*
   is recorded with an owning phase against F4 and the gate's *Replay and reprocessing* criterion
   ("repudiation, if not deferred").
 
-**P8-TSK-024 — Meters, the dashboard row and operator reports** — `PLANNED`
+**P8-TSK-024 — Meters, the dashboard row and operator reports** — `READY` (marked by `P8-TSK-023`'s completion gate)
+- *Design inputs from `P8-TSK-023` (2026-10-01)*: `finapp.reconciliation.resolution` counts the `REPUDIATE_BATCH` kind too (its type label), and the span `reconciliation.resolve` covers a repudiation's approval - both deferred here with their series.
 - **Objective**: `PHASE_8_PLAN.md` §15 whole — every settlement and reconciliation health signal
   visible on a running instance as counts, ages and verdicts, and every amount answered by an
   audited operator report, never a metric (ADR-0072).

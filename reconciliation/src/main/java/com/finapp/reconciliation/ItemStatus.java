@@ -49,13 +49,23 @@ public enum ItemStatus {
         return switch (this) {
             case PENDING -> EnumSet.of(MATCHED, CHECKED, OFFSET, UNMATCHED, PARKED);
             // The repudiation's reopening (a bank item of ANOTHER batch), and its own
-            // batch's REPUDIATED - both -023's producers, stated now.
+            // batch's REPUDIATED - both -023's producers.
             case MATCHED -> EnumSet.of(UNMATCHED, REPUDIATED);
             case CHECKED, OFFSET -> EnumSet.of(REPUDIATED);
             case UNMATCHED -> EnumSet.of(MATCHED, PARKED, REPUDIATED);
-            case PARKED -> EnumSet.of(MATCHED, RESOLVED, REPUDIATED);
-            case RESOLVED, REPUDIATED -> EnumSet.noneOf(ItemStatus.class);
+            // PARKED -> UNMATCHED: an over-paying bank item of ANOTHER batch reopened whole,
+            // its excess unparked, when the remittance it matched is repudiated (`V013`).
+            case PARKED -> EnumSet.of(MATCHED, UNMATCHED, RESOLVED, REPUDIATED);
+            // A resolved item of a repudiated batch leaves the live evidence too (`V013`):
+            // RESOLVED is terminal but for its batch's repudiation.
+            case RESOLVED -> EnumSet.of(REPUDIATED);
+            case REPUDIATED -> EnumSet.noneOf(ItemStatus.class);
         };
+    }
+
+    /** The edges `V013` (`P8-TSK-023`) adds - absent from every earlier restatement. */
+    static boolean addedByV013(ItemStatus from, ItemStatus to) {
+        return (from == PARKED && to == UNMATCHED) || (from == RESOLVED && to == REPUDIATED);
     }
 
     public boolean isTerminal() {
@@ -69,17 +79,31 @@ public enum ItemStatus {
                 .collect(Collectors.joining(", "));
     }
 
-    /** The `V003` transition trigger's edge condition — reconciled by the migration test. */
+    /** The transition trigger's edge condition as `V013` re-states it — the migration test's. */
     public static String sqlTransitionRule() {
+        return sqlTransitionRule(false);
+    }
+
+    /** The edge condition every restatement before `V013` carried (`V003`, `V008`, `V009`). */
+    public static String sqlTransitionRuleBeforeV013() {
+        return sqlTransitionRule(true);
+    }
+
+    private static String sqlTransitionRule(boolean beforeV013) {
         return Arrays.stream(values())
-                .filter(from -> !from.permittedTransitions().isEmpty())
+                .filter(from -> edges(from, beforeV013).length() > 0)
                 .map(
                         from ->
                                 "(OLD.status = '" + from.name() + "' AND NEW.status IN ("
-                                        + from.permittedTransitions().stream()
-                                                .map(to -> "'" + to.name() + "'")
-                                                .collect(Collectors.joining(", "))
-                                        + "))")
+                                        + edges(from, beforeV013) + "))")
                 .collect(Collectors.joining(" OR "));
+    }
+
+    private static String edges(ItemStatus from, boolean beforeV013) {
+        return Arrays.stream(values())
+                .filter(from.permittedTransitions()::contains)
+                .filter(to -> !beforeV013 || !addedByV013(from, to))
+                .map(to -> "'" + to.name() + "'")
+                .collect(Collectors.joining(", "));
     }
 }

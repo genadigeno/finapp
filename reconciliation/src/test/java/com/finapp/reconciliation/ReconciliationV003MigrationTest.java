@@ -50,7 +50,7 @@ class ReconciliationV003MigrationTest {
                 .contains(normalized(
                         "CONSTRAINT external_item_key_kind CHECK (key_kind IN ("
                                 + ItemKeyKind.sqlValueList(ItemKeyKind.reportVocabulary()) + "))"))
-                .contains(ItemStatus.sqlTransitionRule());
+                .contains(ItemStatus.sqlTransitionRuleBeforeV013());
     }
 
     @Test

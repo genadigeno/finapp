@@ -151,7 +151,9 @@ class ReconciliationMigrationTest {
                         // and the replay record.
                         "rule_set_event",
                         "match_parked_original",
-                        "run_replay");
+                        "run_replay",
+                        // V013 (P8-TSK-023): the breaks a repudiation closed.
+                        "repudiation_closure");
 
         assertThatExceptionOfType(SQLException.class)
                 .isThrownBy(() -> asApplication(

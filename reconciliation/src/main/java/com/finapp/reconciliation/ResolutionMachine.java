@@ -268,7 +268,15 @@ public final class ResolutionMachine {
                 kind == ResolutionKind.OFFSET_SUSPENSE, kind);
         operand("chosenExpectationId", request.chosenExpectationId(),
                 kind == ResolutionKind.MANUAL_MATCH, kind);
-        String narrative = request.narrative();
+        refuseNarrative(request.narrative());
+    }
+
+    /**
+     * A proposal's narrative, judged before any lock — the break door's and the batch's
+     * repudiation door's one rule (`P8-TSK-023`): 1..1000 characters, no instrument shape.
+     */
+    public static void refuseNarrative(String narrative) {
+        Objects.requireNonNull(narrative, "narrative must not be null");
         if (narrative.isBlank() || narrative.length() > MAX_NARRATIVE_LENGTH) {
             throw new ResolutionRefused(
                     "narrative is required: 1.." + MAX_NARRATIVE_LENGTH + " characters");
@@ -1056,6 +1064,12 @@ public final class ResolutionMachine {
             Connection unitOfWork, UUID resolutionId) {
         ResolutionStore.ResolutionRow unlocked =
                 store.byId(unitOfWork, resolutionId).orElseThrow(ResolutionNotFound::new);
+        if (unlocked.breakId() == null) {
+            // A batch's repudiation has no break: BatchRepudiations decides it (P8-TSK-023).
+            throw new IllegalArgumentException(
+                    "resolution " + resolutionId + " is a batch's repudiation, decided through"
+                            + " BatchRepudiations");
+        }
         Optional<UUID> offsetBreak =
                 unlocked.offsetItemId().flatMap(item -> store.breakOfSuspenseItem(unitOfWork,
                         item));
