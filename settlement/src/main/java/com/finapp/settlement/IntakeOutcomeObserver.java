@@ -1,5 +1,6 @@
 package com.finapp.settlement;
 
+import com.finapp.platform.telemetry.Spans;
 import java.time.Duration;
 
 /**
@@ -15,6 +16,17 @@ public interface IntakeOutcomeObserver {
 
     /** A file was rejected — the parse leg's verdicts and the decline alike. */
     void rejected(String sourceCode, RejectionCode code, Duration sinceReceipt);
+
+    /**
+     * A batch was accepted (`P8-TSK-024`): its source, and the door-to-accepted age -
+     * {@code finapp.settlement.batch.accepted} and the latency's {@code accept} stage.
+     */
+    default void accepted(String sourceCode, Duration sinceReceipt) {}
+
+    /** Where the parse and accept legs record their spans (`P8-TSK-024`). */
+    default Spans spans() {
+        return Spans.NONE;
+    }
 
     IntakeOutcomeObserver NONE =
             new IntakeOutcomeObserver() {

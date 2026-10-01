@@ -47,6 +47,7 @@ final class ResolutionFixtures {
                 new JdbcAuditWriter(),
                 ids,
                 new JdbcResolutionStore(),
-                adjustments(ids, clock));
+                adjustments(ids, clock),
+                ReconciliationTelemetry.NONE);
     }
 }

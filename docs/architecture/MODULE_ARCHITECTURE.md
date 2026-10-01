@@ -659,7 +659,10 @@ through the `double` a Micrometer gauge or counter imposes at the registry bound
 gauge classes `OutboxMetrics`, `IdentityMetrics`, `KycMetrics`, `LedgerMetrics`,
 `PaymentMetrics`, and Phase 6's `MerchantMetrics` and `MerchantPayoutMetrics`, each with its
 cached readings, and the counters of `OutboxRelaySchedule` and `InboxConsumers$Loop`. *(This said
-"currently empty" until the Phase 6 review, `P6-DOC-001`.)*
+"currently empty" until the Phase 6 review, `P6-DOC-001`.)* Phases 7 and 8 added `PayInMetrics`,
+`NegativePositionMetrics`, `DisputeDeadlineMetrics`, `DisputeStageMetrics`,
+`StuckOperationMetrics`, `SettlementFileMetrics`, `ReconciliationMetrics`, `SettlementPullMetrics`,
+`BreakMetrics` and the counters of `ReconciliationOutcomeMeters` (`P8-TSK-024`), on the same argument.
 
 Four surfaces are checked:
 
@@ -673,6 +676,12 @@ Four surfaces are checked:
   *(ArchUnit: `noCallReachesAFloatingPointApi`)*
 - reads and writes of a floating-point field.
   *(ArchUnit: `noFloatingPointFieldIsAccessed`)*
+
+**The exemptions stay off money** (ADR-0072 point 1, `P8-TSK-024`). An exempt class publishes
+counts, ages and verdicts, so it may not depend on `Money` or `MoneyColumns` - the types an
+amount travels in. A `CurrencyCode` stays permitted, since a currency is a tag value. The
+known edge: a store method returning a monetary `long` passes, which is why each exemption's
+argument names what it counts. *(ArchUnit: `noExemptClassDependsOnMoney`)*
 
 **Coverage guard.** Both rule suites derive the set of modules they must have analysed from
 the classpath (`ProductionModules`), because an ArchUnit rule is vacuously satisfied over

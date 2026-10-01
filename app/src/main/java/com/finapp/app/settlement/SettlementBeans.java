@@ -180,8 +180,9 @@ public class SettlementBeans {
     }
 
     @Bean
-    ReceptionOutcomeObserver receptionOutcomeObserver(SettlementMeters settlementMeters) {
-        return new CommittedReceptionOutcomes(settlementMeters);
+    ReceptionOutcomeObserver receptionOutcomeObserver(
+            SettlementMeters settlementMeters, com.finapp.platform.telemetry.Spans domainSpans) {
+        return new CommittedReceptionOutcomes(settlementMeters, domainSpans);
     }
 
     /**
@@ -314,8 +315,9 @@ public class SettlementBeans {
     }
 
     @Bean
-    IntakeOutcomeObserver intakeOutcomeObserver(SettlementMeters settlementMeters) {
-        return new CommittedIntakeOutcomes(settlementMeters);
+    IntakeOutcomeObserver intakeOutcomeObserver(
+            SettlementMeters settlementMeters, com.finapp.platform.telemetry.Spans domainSpans) {
+        return new CommittedIntakeOutcomes(settlementMeters, domainSpans);
     }
 
     @Bean

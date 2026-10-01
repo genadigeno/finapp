@@ -661,6 +661,46 @@ public final class JdbcSettlementBatchStore implements SettlementBatchStore<Conn
         }
     }
 
+    @Override
+    public List<RecognisedBatch> recognisedBetween(
+            Connection unitOfWork, LocalDate from, LocalDate until) {
+        Objects.requireNonNull(from, "from must not be null");
+        Objects.requireNonNull(until, "until must not be null");
+        try (PreparedStatement read =
+                unitOfWork.prepareStatement(
+                        "SELECT b.id, b.source_id, s.code, b.currency, b.status, b.accepted_on,"
+                                + " b.journal_entry_id"
+                                + " FROM settlement.batch b"
+                                + " JOIN settlement.source s ON s.id = b.source_id"
+                                // A repudiated batch's recognition stands on its own posting
+                                // date, reversed by a later posting (P8-TSK-023).
+                                + " WHERE b.status IN ('ACCEPTED', 'REPUDIATED')"
+                                + " AND b.accepted_on >= ? AND b.accepted_on < ?"
+                                + " ORDER BY b.accepted_on, b.id")) {
+            read.setObject(1, from);
+            read.setObject(2, until);
+            try (ResultSet rows = read.executeQuery()) {
+                List<RecognisedBatch> batches = new ArrayList<>();
+                while (rows.next()) {
+                    batches.add(
+                            new RecognisedBatch(
+                                    rows.getObject("id", UUID.class),
+                                    rows.getObject("source_id", UUID.class),
+                                    rows.getString("code"),
+                                    CurrencyCode.of(rows.getString("currency").trim()),
+                                    BatchStatus.valueOf(rows.getString("status")),
+                                    rows.getObject("accepted_on", LocalDate.class),
+                                    Optional.ofNullable(
+                                            rows.getObject("journal_entry_id", UUID.class))));
+                }
+                return List.copyOf(batches);
+            }
+        } catch (SQLException failure) {
+            throw new SettlementStorageException(
+                    "could not read the period's accepted batches", failure);
+        }
+    }
+
     // ----------------------------------------------------------- the repudiation (P8-TSK-023)
 
     @Override

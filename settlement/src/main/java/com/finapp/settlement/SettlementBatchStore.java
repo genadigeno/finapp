@@ -345,6 +345,42 @@ public interface SettlementBatchStore<T> {
      */
     java.util.Map<UUID, Instant> lastAcceptedAt(T unitOfWork);
 
+    /**
+     * One recognised batch as the provider-costs report reads it (`P8-TSK-024`, ADR-0072 §6):
+     * its identity, its source's code, its currency, its verdict ({@code ACCEPTED}, or
+     * {@code REPUDIATED} since), its stored {@code accepted_on} — the recognition's posting
+     * date — and the recognition entry its acceptance posted, empty when the posting was
+     * honestly omitted. Never an amount: the costs are the ledger's lines, read from the ledger.
+     */
+    record RecognisedBatch(
+            UUID batchId,
+            UUID sourceId,
+            String sourceCode,
+            CurrencyCode currency,
+            BatchStatus status,
+            LocalDate acceptedOn,
+            Optional<UUID> journalEntryId) {
+
+        public RecognisedBatch {
+            Objects.requireNonNull(batchId, "batchId must not be null");
+            Objects.requireNonNull(sourceId, "sourceId must not be null");
+            Objects.requireNonNull(sourceCode, "sourceCode must not be null");
+            Objects.requireNonNull(currency, "currency must not be null");
+            Objects.requireNonNull(status, "status must not be null");
+            Objects.requireNonNull(acceptedOn, "acceptedOn must not be null");
+            Objects.requireNonNull(journalEntryId, "journalEntryId must not be null");
+        }
+    }
+
+    /**
+     * Every batch ever accepted — {@code ACCEPTED} or {@code REPUDIATED} since, reports and bank
+     * statements alike — whose stored {@code accepted_on} falls in {@code [from, until)}, by
+     * acceptance date then id. A repudiated batch is here because its recognition still stands
+     * on its posting date; its reversal is a separate posting on the approval's date. Lock-free;
+     * bounded by the period.
+     */
+    List<RecognisedBatch> recognisedBetween(T unitOfWork, LocalDate from, LocalDate until);
+
     // ----------------------------------------------------------- the repudiation (P8-TSK-023)
 
     /**

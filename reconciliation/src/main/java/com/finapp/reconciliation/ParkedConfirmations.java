@@ -51,6 +51,12 @@ public final class ParkedConfirmations {
 
     @NonNull private final BreakRegister breaks;
     @NonNull private final IdGenerator ids;
+    @NonNull private final ReconciliationTelemetry telemetry;
+
+    /** The opener counting nothing - the module's tests and any caller without meters. */
+    public ParkedConfirmations(BreakRegister breaks, IdGenerator ids) {
+        this(breaks, ids, ReconciliationTelemetry.NONE);
+    }
 
     /**
      * One parking's value, as its entry holds it: side, amount and date read off the entry's
@@ -120,6 +126,8 @@ public final class ParkedConfirmations {
         }
         try {
             Savepoint beforeOwner = unitOfWork.setSavepoint("parked_confirmation_owner");
+            // The losing racer's raise is undone below with its rows - and its count with it.
+            int countMark = telemetry.countMark();
             UUID itemId = ids.next();
             UUID breakId = ids.next();
             constraint(unitOfWork, "DEFERRED");
@@ -154,6 +162,7 @@ public final class ParkedConfirmations {
                 // Another opener won the parking: its break, event and audit stand, ours never
                 // existed.
                 unitOfWork.rollback(beforeOwner);
+                telemetry.discardCountsAfter(countMark);
                 constraint(unitOfWork, "IMMEDIATE");
                 return standing(unitOfWork, opening.parkingId())
                         .orElseThrow(

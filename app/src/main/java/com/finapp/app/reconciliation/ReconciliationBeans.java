@@ -119,9 +119,53 @@ public class ReconciliationBeans {
     com.finapp.reconciliation.BreakRegister breakRegister(
             com.finapp.platform.outbox.OutboxWriter<Connection> outboxWriter,
             com.finapp.platform.audit.AuditWriter<Connection> auditWriter,
-            IdGenerator idGenerator) {
-        return new com.finapp.reconciliation.JdbcBreakRegister(
-                outboxWriter, auditWriter, idGenerator);
+            IdGenerator idGenerator,
+            com.finapp.app.telemetry.ReconciliationOutcomeMeters reconciliationOutcomeMeters) {
+        // finapp.reconciliation.break.raised at the one door (P8-TSK-024).
+        return new com.finapp.app.telemetry.MeteredBreakRegister(
+                new com.finapp.reconciliation.JdbcBreakRegister(
+                        outboxWriter, auditWriter, idGenerator),
+                reconciliationOutcomeMeters);
+    }
+
+    /**
+     * The domain spans (`P8-TSK-024`, `PHASE_8_PLAN.md` §15): the legs' units of work, identifier
+     * attributes only, over the platform's tracer when one exists.
+     */
+    @Bean
+    com.finapp.platform.telemetry.Spans domainSpans(
+            org.springframework.beans.factory.ObjectProvider<io.micrometer.tracing.Tracer> tracers) {
+        return new com.finapp.app.telemetry.TracerSpans(tracers);
+    }
+
+    /** Reconciliation's counters and timers, counted after commit (`P8-TSK-024`). */
+    @Bean
+    com.finapp.app.telemetry.ReconciliationOutcomeMeters reconciliationOutcomeMeters(
+            io.micrometer.core.instrument.MeterRegistry meterRegistry,
+            SettlementSources settlementSources,
+            SettlementFileStore<Connection> settlementFileStore,
+            javax.sql.DataSource dataSource,
+            Clock clock,
+            com.finapp.platform.telemetry.Spans domainSpans) {
+        return new com.finapp.app.telemetry.ReconciliationOutcomeMeters(
+                meterRegistry,
+                settlementSources,
+                new com.finapp.app.telemetry.SeededSourceCodes(
+                        settlementFileStore, dataSource, clock),
+                domainSpans);
+    }
+
+    /** The open breaks' gauges (`P8-TSK-024`): per type and severity, and the oldest age. */
+    @Bean
+    com.finapp.app.telemetry.BreakMetrics breakMetrics(
+            javax.sql.DataSource dataSource,
+            Clock clock,
+            io.micrometer.core.instrument.MeterRegistry meterRegistry) {
+        return new com.finapp.app.telemetry.BreakMetrics(
+                new com.finapp.reconciliation.JdbcBreakReadings(),
+                dataSource::getConnection,
+                clock,
+                meterRegistry);
     }
 
     /**
@@ -399,13 +443,15 @@ public class ReconciliationBeans {
             com.finapp.platform.outbox.OutboxWriter<Connection> outboxWriter,
             com.finapp.platform.audit.AuditWriter<Connection> auditWriter,
             IdGenerator idGenerator,
-            com.finapp.ledger.AdjustmentService adjustmentService) {
+            com.finapp.ledger.AdjustmentService adjustmentService,
+            com.finapp.app.telemetry.ReconciliationOutcomeMeters reconciliationOutcomeMeters) {
         return new com.finapp.reconciliation.JdbcResolutions(
                 outboxWriter,
                 auditWriter,
                 idGenerator,
                 new com.finapp.reconciliation.JdbcResolutionStore(),
-                adjustmentService);
+                adjustmentService,
+                reconciliationOutcomeMeters);
     }
 
     /**
@@ -424,7 +470,8 @@ public class ReconciliationBeans {
             com.finapp.platform.outbox.OutboxWriter<Connection> outboxWriter,
             com.finapp.platform.audit.AuditWriter<Connection> auditWriter,
             IdGenerator idGenerator,
-            Clock clock) {
+            Clock clock,
+            com.finapp.app.telemetry.ReconciliationOutcomeMeters reconciliationOutcomeMeters) {
         return new com.finapp.reconciliation.ResolutionMachine(
                 new com.finapp.reconciliation.JdbcResolutionStore(),
                 new com.finapp.reconciliation.JdbcBreakCaseStore(),
@@ -437,7 +484,8 @@ public class ReconciliationBeans {
                 outboxWriter,
                 auditWriter,
                 idGenerator,
-                clock);
+                clock,
+                reconciliationOutcomeMeters);
     }
 
     /** The resolver's desk (`P8-TSK-015`): the four doors' one-transaction commands. */
@@ -447,10 +495,11 @@ public class ReconciliationBeans {
             com.finapp.platform.idempotency.IdempotentExecutor idempotentExecutor,
             TransactionTemplate reconciliationTransactions,
             javax.sql.DataSource dataSource,
-            com.finapp.reconciliation.BatchRepudiations batchRepudiations) {
+            com.finapp.reconciliation.BatchRepudiations batchRepudiations,
+            com.finapp.platform.telemetry.Spans domainSpans) {
         return new BreakResolutionDesk(
                 resolutionMachine, idempotentExecutor, reconciliationTransactions, dataSource,
-                batchRepudiations);
+                batchRepudiations, domainSpans);
     }
 
     /**
@@ -470,7 +519,8 @@ public class ReconciliationBeans {
             com.finapp.platform.outbox.OutboxWriter<Connection> outboxWriter,
             com.finapp.platform.audit.AuditWriter<Connection> auditWriter,
             IdGenerator idGenerator,
-            Clock clock) {
+            Clock clock,
+            com.finapp.app.telemetry.ReconciliationOutcomeMeters reconciliationOutcomeMeters) {
         return new com.finapp.reconciliation.BatchRepudiations(
                 new com.finapp.reconciliation.JdbcRepudiationStore(),
                 new com.finapp.reconciliation.JdbcResolutionStore(),
@@ -485,7 +535,8 @@ public class ReconciliationBeans {
                 outboxWriter,
                 auditWriter,
                 idGenerator,
-                clock);
+                clock,
+                reconciliationOutcomeMeters);
     }
 
     /** One transaction per chunk — the run leg's containment (the parse leg's shape). */
@@ -535,7 +586,8 @@ public class ReconciliationBeans {
             @org.springframework.beans.factory.annotation.Value(
                             "${finapp.reconciliation.matching.block-after:3}")
                     int blockAfterFailures,
-            com.finapp.reconciliation.TransactionRunner reconciliationTransactionRunner) {
+            com.finapp.reconciliation.TransactionRunner reconciliationTransactionRunner,
+            com.finapp.app.telemetry.ReconciliationOutcomeMeters reconciliationOutcomeMeters) {
         return new com.finapp.reconciliation.Matching(
                 matchingStore,
                 matchingRules,
@@ -549,7 +601,8 @@ public class ReconciliationBeans {
                 idGenerator,
                 clock,
                 new com.finapp.reconciliation.Matching.Config(chunkSize, blockAfterFailures),
-                reconciliationTransactionRunner);
+                reconciliationTransactionRunner,
+                reconciliationOutcomeMeters);
     }
 
     /**
@@ -588,7 +641,8 @@ public class ReconciliationBeans {
             @org.springframework.beans.factory.annotation.Value(
                             "${finapp.reconciliation.matching.block-after:3}")
                     int blockAfterFailures,
-            com.finapp.reconciliation.TransactionRunner reconciliationTransactionRunner) {
+            com.finapp.reconciliation.TransactionRunner reconciliationTransactionRunner,
+            com.finapp.app.telemetry.ReconciliationOutcomeMeters reconciliationOutcomeMeters) {
         return new com.finapp.reconciliation.ReconciliationSweep(
                 matchingStore,
                 breakRegister,
@@ -598,7 +652,8 @@ public class ReconciliationBeans {
                 clock,
                 new com.finapp.reconciliation.ReconciliationSweep.Config(
                         batch, blockAfterFailures),
-                reconciliationTransactionRunner);
+                reconciliationTransactionRunner,
+                reconciliationOutcomeMeters);
     }
 
     /**
@@ -660,7 +715,8 @@ public class ReconciliationBeans {
             ExpectationRegister expectationRegister,
             Clock clock,
             com.finapp.reconciliation.BreakRegister breakRegister,
-            IdGenerator idGenerator) {
+            IdGenerator idGenerator,
+            com.finapp.app.telemetry.ReconciliationOutcomeMeters reconciliationOutcomeMeters) {
         return new ReconciliationExpectationRecorder(
                 settlementSources,
                 settlementFileStore,
@@ -668,7 +724,8 @@ public class ReconciliationBeans {
                 ruleSets,
                 expectationRegister,
                 clock,
-                new com.finapp.reconciliation.ParkedConfirmations(breakRegister, idGenerator));
+                new com.finapp.reconciliation.ParkedConfirmations(
+                        breakRegister, idGenerator, reconciliationOutcomeMeters));
     }
 
     // ------------------------------------------------------------------ the desk (P8-TSK-014)

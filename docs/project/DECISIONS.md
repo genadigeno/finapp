@@ -691,7 +691,8 @@ audited operator reports.** No series carries an amount as a tag or as its value
 widened from the tag to the sample. Five reports, each one audited `REPEATABLE READ` snapshot,
 folded with `Money`, per currency and bounded. Value reaches alerting only as a break's severity
 under the pinned rule set. The per-rail cost meter Phase 7 deferred is settled as the
-`PROCESSING_COSTS` ledger fact plus the provider-costs report, never a meter. →
+`PROCESSING_COSTS` ledger fact plus the provider-costs report, never a meter (built by
+`P8-TSK-024`, 2026-10-01). →
 [ADR-0072](../adr/ADR-0072-amounts-never-enter-metrics.md)
 
 **A payout return is a merchant fact applied from settlement evidence, and the payout stays

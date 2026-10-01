@@ -36,8 +36,14 @@ public final class SettlementMeters {
     /** Door-to-verdict age per intake stage — {@code stage=parse} today (`P8-TSK-008`). */
     public static final String INGESTION_LATENCY = "finapp.settlement.ingestion.latency";
 
-    /** The one intake stage that exists; acceptance brings its own (`P8-TSK-009`). */
+    /** The parse leg's stage (`P8-TSK-008`). */
     public static final String PARSE_STAGE = "parse";
+
+    /** The accept leg's stage, door to accepted (`P8-TSK-024`). */
+    public static final String ACCEPT_STAGE = "accept";
+
+    /** Batches recognised, by source (`P8-TSK-024`, `PHASE_8_PLAN.md` §15). */
+    public static final String BATCH_ACCEPTED = "finapp.settlement.batch.accepted";
 
     private final MeterRegistry registry;
 
@@ -58,7 +64,9 @@ public final class SettlementMeters {
             for (RejectionCode code : RejectionCode.values()) {
                 rejected(source.code(), code);
             }
-            latency(source.code());
+            latency(source.code(), PARSE_STAGE);
+            latency(source.code(), ACCEPT_STAGE);
+            accepted(source.code());
         }
     }
 
@@ -75,7 +83,22 @@ public final class SettlementMeters {
     }
 
     public void recordParseLatency(String sourceCode, Duration sinceReceipt) {
-        latency(sourceCode).record(sinceReceipt);
+        latency(sourceCode, PARSE_STAGE).record(sinceReceipt);
+    }
+
+    /** A batch accepted: the count and its door-to-accepted age (`P8-TSK-024`). */
+    public void countAccepted(String sourceCode, Duration sinceReceipt) {
+        accepted(sourceCode).increment();
+        latency(sourceCode, ACCEPT_STAGE).record(sinceReceipt);
+    }
+
+    private Counter accepted(String sourceCode) {
+        return Counter.builder(BATCH_ACCEPTED)
+                .tag("source", sourceCode)
+                .description(
+                        "Settlement batches recognised by the accept leg - settlement"
+                                + " throughput, a count and never an amount (ADR-0072)")
+                .register(registry);
     }
 
     private Counter received(String sourceCode, SettlementFileStore.ReceiptOutcome outcome) {
@@ -104,13 +127,13 @@ public final class SettlementMeters {
                 .register(registry);
     }
 
-    private Timer latency(String sourceCode) {
+    private Timer latency(String sourceCode, String stage) {
         return Timer.builder(INGESTION_LATENCY)
                 .tag("source", sourceCode)
-                .tag("stage", PARSE_STAGE)
+                .tag("stage", stage)
                 .description(
-                        "Door-to-verdict age of settlement files per intake stage - a slow"
-                                + " parse leg ages evidence")
+                        "Door-to-verdict age of settlement files per intake stage - parse,"
+                                + " and accept (door to accepted): a slow leg ages evidence")
                 .register(registry);
     }
 }

@@ -18,6 +18,7 @@ import java.sql.PreparedStatement;
 import java.sql.SQLException;
 import java.sql.Savepoint;
 import java.time.Clock;
+import java.time.Duration;
 import java.time.Instant;
 import java.time.LocalDate;
 import java.time.ZoneOffset;
@@ -102,7 +103,9 @@ public class Matching {
     private final Clock clock;
     private final Config config;
     private final TransactionRunner transactions;
+    private final ReconciliationTelemetry telemetry;
 
+    /** The matcher without telemetry - its suites' shape (`P8-TSK-024`). */
     public Matching(
             MatchingStore store,
             MatchingRules rules,
@@ -117,6 +120,25 @@ public class Matching {
             Clock clock,
             Config config,
             TransactionRunner transactions) {
+        this(store, rules, breaks, suspense, resolutions, lookup, accounts, outbox, audit, ids,
+                clock, config, transactions, ReconciliationTelemetry.NONE);
+    }
+
+    public Matching(
+            MatchingStore store,
+            MatchingRules rules,
+            BreakRegister breaks,
+            Suspense suspense,
+            Resolutions resolutions,
+            InternalReferenceLookup lookup,
+            LedgerAccountStore<Connection> accounts,
+            OutboxWriter<Connection> outbox,
+            AuditWriter<Connection> audit,
+            IdGenerator ids,
+            Clock clock,
+            Config config,
+            TransactionRunner transactions,
+            ReconciliationTelemetry telemetry) {
         this.store = Objects.requireNonNull(store, "store must not be null");
         this.rules = Objects.requireNonNull(rules, "rules must not be null");
         this.breaks = Objects.requireNonNull(breaks, "breaks must not be null");
@@ -132,6 +154,7 @@ public class Matching {
         this.config = Objects.requireNonNull(config, "config must not be null");
         this.transactions =
                 Objects.requireNonNull(transactions, "transactions must not be null");
+        this.telemetry = Objects.requireNonNull(telemetry, "telemetry must not be null");
     }
 
     /**
@@ -197,7 +220,15 @@ public class Matching {
         while (true) {
             int step;
             try {
-                step = transactions.inTransaction(unitOfWork -> batch.apply(unitOfWork, source));
+                step =
+                        "rematch".equals(leg)
+                                ? telemetry.spans().within(
+                                        "reconciliation.rematch",
+                                        Map.of("source.id", source.toString()),
+                                        () -> transactions.inTransaction(
+                                                unitOfWork -> batch.apply(unitOfWork, source)))
+                                : transactions.inTransaction(
+                                        unitOfWork -> batch.apply(unitOfWork, source));
             } catch (RuntimeException failure) {
                 // Rolled back whole; oldest-first, the next tick retries.
                 log.warn(
@@ -247,7 +278,7 @@ public class Matching {
             CorrelationId correlation = CorrelationId.of(residual.correlationId());
             try (CorrelationContext.Scope scope =
                     CorrelationContext.enter(Correlation.startingWith(correlation))) {
-                Savepoint savepoint = savepoint(unitOfWork, residual.item());
+                ItemSavepoint savepoint = savepoint(unitOfWork, residual.item());
                 try {
                     graceOne(unitOfWork, residual, claimantRanks, parks, now, correlation);
                 } catch (RuntimeException poisoned) {
@@ -437,7 +468,7 @@ public class Matching {
             CorrelationId correlation = CorrelationId.of(residual.correlationId());
             try (CorrelationContext.Scope scope =
                     CorrelationContext.enter(Correlation.startingWith(correlation))) {
-                Savepoint savepoint = savepoint(unitOfWork, residual.item());
+                ItemSavepoint savepoint = savepoint(unitOfWork, residual.item());
                 try {
                     if (rematchOne(
                             unitOfWork, residual, syntheticRun(residual, ruleSetId),
@@ -604,7 +635,7 @@ public class Matching {
             Map<UUID, Integer> claimantRanks = new HashMap<>();
             for (MatchingStore.ResidualItem residual : residuals) {
                 MatchingStore.RunRow decisionRun = reprocessView(run, residual);
-                Savepoint savepoint = savepoint(unitOfWork, residual.item());
+                ItemSavepoint savepoint = savepoint(unitOfWork, residual.item());
                 try {
                     reprocessOne(
                             unitOfWork, residual, decisionRun, claimantRanks, parks, unparks,
@@ -720,7 +751,8 @@ public class Matching {
             DecisionOutcome outcome,
             Instant now,
             CorrelationId correlation) {
-        store.insertDecision(
+        insertDecision(
+                run,
                 unitOfWork,
                 new MatchingStore.NewDecision(
                         decisionId,
@@ -812,7 +844,8 @@ public class Matching {
                                 BreakType.MISSING_EXTERNAL)
                         : Optional.empty();
         UUID decisionId = ids.next();
-        store.insertDecision(
+        insertDecision(
+                run,
                 unitOfWork,
                 new MatchingStore.NewDecision(
                         decisionId,
@@ -1060,11 +1093,32 @@ public class Matching {
         }
     }
 
+    /**
+     * Every decision this matcher writes, through one door: a late leg's (`REMATCH`,
+     * `REPROCESS`) is reported to telemetry, which counts it after the commit (`P8-TSK-024`).
+     */
+    private void insertDecision(
+            MatchingStore.RunRow run,
+            Connection unitOfWork,
+            MatchingStore.NewDecision decision) {
+        store.insertDecision(unitOfWork, decision);
+        // A late leg's decision, by outcome; a REPROCESS decision only when it allocated -
+        // an examination that changed nothing is no late record found (the gate's find).
+        if (decision.origin() == DecisionOrigin.REMATCH
+                || (decision.origin() == DecisionOrigin.REPROCESS
+                        && decision.outcome() == DecisionOutcome.MATCHED)) {
+            telemetry.rematched(run.sourceId(), decision.outcome());
+        }
+    }
+
     /** One chunk, contained: its failure is the run's failure, never the sweep's. */
     private ChunkOutcome chunkContained(UUID source) {
         UUID[] runHolder = new UUID[1];
         try {
-            return transactions.inTransaction(uow -> chunk(uow, source, runHolder));
+            return telemetry.spans().within(
+                    "reconciliation.chunk",
+                    Map.of("source.id", source.toString()),
+                    () -> transactions.inTransaction(uow -> chunk(uow, source, runHolder)));
         } catch (RuntimeException chunkFailure) {
             UUID runId = runHolder[0];
             if (runId == null) {
@@ -1250,7 +1304,7 @@ public class Matching {
         int decided = 0;
         long lastLineNo = run.cursor();
         for (MatchingStore.ChunkItem item : items) {
-            Savepoint savepoint = savepoint(unitOfWork, item);
+            ItemSavepoint savepoint = savepoint(unitOfWork, item);
             try {
                 decideAndApply(
                         unitOfWork, run, item, resolutions.get(item.id()), lockedHits,
@@ -1475,6 +1529,19 @@ public class Matching {
             }
         }
         Map<DecisionOutcome, Long> counts = store.outcomeCounts(unitOfWork, run.id());
+        if (run.batchId() != null) {
+            // A BATCH run only, and its FIRST decisions only (origin RUN): a rematch or grace
+            // decision carries the original run's id, and between two chunks another
+            // instance's leg may already have re-decided an item - counted on the rematch
+            // series, never twice on the match rate (the gate's find). A REPROCESS run's
+            // birth is a person's request - it never belongs on the match rate.
+            telemetry.runCompleted(
+                    run.sourceId(),
+                    store.firstDecisionCounts(unitOfWork, run.id()),
+                    store.runBornAt(unitOfWork, run.id())
+                            .map(born -> Duration.between(born, now))
+                            .filter(age -> !age.isNegative()));
+        }
         StringBuilder summary = new StringBuilder("items=").append(run.itemCount());
         counts.forEach(
                 (outcome, count) ->
@@ -1880,7 +1947,8 @@ public class Matching {
         }
         int deviation =
                 (int) ChronoUnit.DAYS.between(members.get(0).expectedBy(), item.groupDate());
-        store.insertDecision(
+        insertDecision(
+                run,
                 unitOfWork,
                 new MatchingStore.NewDecision(
                         decisionId,
@@ -2044,7 +2112,8 @@ public class Matching {
                                 candidate.expectedBy(), facts(item).effectiveSettlementDate());
         DecisionOutcome outcome =
                 verdict.excess().isPresent() ? DecisionOutcome.PARKED : DecisionOutcome.MATCHED;
-        store.insertDecision(
+        insertDecision(
+                run,
                 unitOfWork,
                 new MatchingStore.NewDecision(
                         decisionId,
@@ -2270,7 +2339,8 @@ public class Matching {
                                 unitOfWork, run.ruleSetId(), item.lineType(),
                                 item.amount().currency()),
                         tolerance);
-        store.insertDecision(
+        insertDecision(
+                run,
                 unitOfWork,
                 new MatchingStore.NewDecision(
                         ids.next(),
@@ -2380,7 +2450,8 @@ public class Matching {
                             decisionId, decidedOn, claimantRanks, parks, now, correlation);
             case OFFSET -> {
                 CorrectionEngine.ParkedOriginal parked = verdict.offset().orElseThrow();
-                store.insertDecision(
+                insertDecision(
+                        run,
                         unitOfWork,
                         new MatchingStore.NewDecision(
                                 decisionId,
@@ -2458,7 +2529,8 @@ public class Matching {
                         : Optional.empty();
         int claimantRank =
                 claimantRanks.merge(candidate.expectationId(), 1, Integer::sum);
-        store.insertDecision(
+        insertDecision(
+                run,
                 unitOfWork,
                 new MatchingStore.NewDecision(
                         decisionId,
@@ -2561,7 +2633,8 @@ public class Matching {
             List<Suspense.ParkedItem> parks,
             Instant now,
             CorrelationId correlation) {
-        store.insertDecision(
+        insertDecision(
+                run,
                 unitOfWork,
                 new MatchingStore.NewDecision(
                         decisionId,
@@ -2631,7 +2704,8 @@ public class Matching {
             MatchingStore.Basis basis,
             Instant now,
             CorrelationId correlation) {
-        store.insertDecision(
+        insertDecision(
+                run,
                 unitOfWork,
                 new MatchingStore.NewDecision(
                         decisionId,
@@ -2749,7 +2823,8 @@ public class Matching {
         // line standing in no position has nothing a park could move (`P8-TSK-016`).
         if (!item.lineType().allocating() || item.positionPurpose().isEmpty()) {
             UUID feeDecision = ids.next();
-            store.insertDecision(
+            insertDecision(
+                    run,
                     unitOfWork,
                     new MatchingStore.NewDecision(
                             feeDecision,
@@ -2784,7 +2859,8 @@ public class Matching {
             return;
         }
         UUID decisionId = ids.next();
-        store.insertDecision(
+        insertDecision(
+                run,
                 unitOfWork,
                 new MatchingStore.NewDecision(
                         decisionId,
@@ -2886,18 +2962,26 @@ public class Matching {
                 .value();
     }
 
-    private Savepoint savepoint(Connection unitOfWork, MatchingStore.ChunkItem item) {
+    /**
+     * An item's savepoint and the count mark beside it: a rollback to it drops the counts the
+     * undone attempt deferred too (`P8-TSK-024`'s gate), never only its rows.
+     */
+    private record ItemSavepoint(Savepoint savepoint, int countMark) {}
+
+    private ItemSavepoint savepoint(Connection unitOfWork, MatchingStore.ChunkItem item) {
         try {
-            return unitOfWork.setSavepoint("item_" + item.lineNo());
+            return new ItemSavepoint(
+                    unitOfWork.setSavepoint("item_" + item.lineNo()), telemetry.countMark());
         } catch (SQLException failure) {
             throw new ReconciliationStorageException(
                     "could not set the item's savepoint", failure);
         }
     }
 
-    private void rollbackTo(Connection unitOfWork, Savepoint savepoint) {
+    private void rollbackTo(Connection unitOfWork, ItemSavepoint savepoint) {
         try {
-            unitOfWork.rollback(savepoint);
+            unitOfWork.rollback(savepoint.savepoint());
+            telemetry.discardCountsAfter(savepoint.countMark());
         } catch (SQLException failure) {
             throw new ReconciliationStorageException(
                     "could not contain the poisoned item", failure);

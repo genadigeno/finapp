@@ -31,6 +31,7 @@ import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
 import java.util.concurrent.Future;
 import java.util.concurrent.TimeUnit;
+import java.util.concurrent.atomic.AtomicLong;
 import org.junit.jupiter.api.AfterAll;
 import org.junit.jupiter.api.BeforeAll;
 import org.junit.jupiter.api.DisplayName;
@@ -236,6 +237,70 @@ class ParkedConfirmationsDatabaseTest {
                     .as("one BreakRaised record: the losers' were rolled back with them")
                     .isEqualTo(1);
         }
+    }
+
+    @Test
+    @DisplayName("ten openers of one parking at once count ONE raise: each loser's raise is"
+            + " dropped with its savepoint, never counted at its commit (P8-TSK-024's gate)")
+    void tenOpenersCountOneRaise() throws Exception {
+        UUID parkingId = IDS.next();
+        UUID entryId = IDS.next();
+        AtomicLong committedRaises = new AtomicLong();
+        CountDownLatch start = new CountDownLatch(1);
+        ExecutorService pool = Executors.newFixedThreadPool(RACERS);
+        List<Future<?>> racers = new ArrayList<>();
+        try {
+            for (int i = 0; i < RACERS; i++) {
+                racers.add(pool.submit(() -> {
+                    // One transaction's deferred counts, as the app's meters keep them: a raise
+                    // the register created is deferred, the savepoint's mark drops what its
+                    // rollback undid, and only a commit counts what is left.
+                    List<String> deferred = new ArrayList<>();
+                    ReconciliationTelemetry telemetry =
+                            new ReconciliationTelemetry() {
+                                @Override
+                                public int countMark() {
+                                    return deferred.size();
+                                }
+
+                                @Override
+                                public void discardCountsAfter(int mark) {
+                                    deferred.subList(mark, deferred.size()).clear();
+                                }
+                            };
+                    BreakRegister register =
+                            new JdbcBreakRegister(new JdbcOutboxWriter(), new JdbcAuditWriter(), IDS);
+                    BreakRegister counting = (unitOfWork, newBreak) -> {
+                        BreakRegister.Raised raised = register.raise(unitOfWork, newBreak);
+                        if (raised.created()) {
+                            deferred.add(newBreak.type().name());
+                        }
+                        return raised;
+                    };
+                    try (Connection racer = DatabaseRoles.application()) {
+                        racer.setAutoCommit(false);
+                        start.await();
+                        new ParkedConfirmations(counting, IDS, telemetry)
+                                .open(racer,
+                                        parking(parkingId, entryId, BreakCause.PARKED_ON_RECEIPT,
+                                                InternalClassification.UNKNOWN,
+                                                Optional.empty()));
+                        racer.commit();
+                        committedRaises.addAndGet(deferred.size());
+                    }
+                    return null;
+                }));
+            }
+            start.countDown();
+            for (Future<?> racer : racers) {
+                racer.get(2, TimeUnit.MINUTES);
+            }
+        } finally {
+            pool.shutdownNow();
+        }
+        assertThat(committedRaises.get())
+                .as("one break stands, so one raise is counted - never one per racer")
+                .isEqualTo(1L);
     }
 
     @Test

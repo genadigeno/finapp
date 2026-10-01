@@ -492,10 +492,38 @@ Financial impact:
     suspense gauges ("parked, ever"), names unchanged, the Phase 7 plan's rows annotated.
   - `P8-TSK-021` adds `finapp.settlement.source.silence` and `finapp.settlement.pull.failure`. If
     it is cut, silence moves to `P8-TSK-024` (point 10, O6).
-  - `P8-TSK-024` adds every remaining series, completes the tag arguments, and builds the
-    `suspense`, `unmatched`, `summary` and `provider-costs` reports, the dashboard row and its
-    alerts, and the static rule with its planted violation. Its acceptance: a fresh instance
-    publishes every series; `NaN` never zero; reports bounded and audited; no amount in any series.
+  - `P8-TSK-024` — **implemented** (2026-10-01) — adds every remaining series, completes the tag
+    arguments, and builds the `suspense`, `unmatched`, `summary` and `provider-costs` reports,
+    the dashboard row and its alerts, and the static rule with its planted violation. As built:
+    the ten missing series (`finapp.settlement.batch.accepted` and the latency's `accept` stage;
+    `finapp.reconciliation.item`, `.rematch` - a `REPROCESS` decision counted there and never on
+    the match rate - `.run.latency`, `.break.raised`, `.break.open`, `.break.age`,
+    `.resolution` - with `stale`, counted at the refusal since it commits nothing - `.resolution.latency`
+    and `.adjustment`) through reconciliation's `ReconciliationTelemetry` port and settlement's
+    observers, counted after commit; `break.raised` by a decorator over `BreakRegister`, so a
+    converged raise counts nothing; `severity` joined `MetricNames` with its argument, its values
+    lowercase like `outcome` and `type` (an enum-valued `purpose` and a `currency` code keep
+    their declared case). Point 1's static rank is `NoFloatingPointMoneyRulesTest`'s
+    `noExemptClassDependsOnMoney`, its planted violation caught in-suite. Point 7's spans run
+    through the platform `Spans` port, whose implementation drops any attribute that is not one
+    of six identifier keys with a UUID value. The alerts are
+    `infra/prometheus/rules/settlement-reconciliation.yml`, loaded by `prometheus.yml` and
+    resolved against the live scrape by `AlertRulesResolveTest` - invariant alerts, not Phase 15's
+    SLO paging; a `MustBeZeroGaugeUnreadable` rule covers the NaN a threshold can never compare.
+    The provider-costs report's "charged" counts a batch's recognition in its acceptance month
+    and a repudiation's reversal in its own posting month (point 6, item 1). The completion gate's
+    finds, each fixed: a count deferred inside a JDBC savepoint that rolled back still ran at the
+    outer commit (Spring never sees a `rollback(savepoint)`) - the deferred counts are now one
+    transaction-bound list and the port's `countMark` / `discardCountsAfter` drop what the
+    savepoint undid, at Matching's item savepoints and the parking opener's; the match rate
+    counted every decision carrying a run's id, a later leg's included - it counts a `BATCH`
+    run's first (`RUN`) decisions only; an unchanged `REPROCESS` examination counted as a
+    rematch - only a reprocess allocation does; a source never accepted could never alert on
+    silence (`NaN`) - `SettlementSourceNeverAccepted` covers it, beside `SettlementFileStuck` and
+    `ReconciliationRunStalled` for the two ages the plan marks alertable. Recorded, not fixed: the
+    domain spans open before the leg restores its correlation, so a chunk span carries
+    `source.id` and the outer correlation, not the run's; the per-source report rows are bounded
+    in key order, never truncated while the compiled register stays under the bound.
   - `P8-TST-001` asserts the meters' tally against the tables in every round. `P8-DOC-001` reads
     every new exemption against its query (point 1) and rules on the "Observability" criterion.
 - **At the transition, with provenance:** the `DELIVERY_PLAN.md` Phase 8 addendum (§10);

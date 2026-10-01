@@ -132,7 +132,8 @@ class ResolutionMachineDatabaseTest {
                         new JdbcOutboxWriter(),
                         new JdbcAuditWriter(),
                         IDS,
-                        CLOCK);
+                        CLOCK,
+                        ReconciliationTelemetry.NONE);
         LocalDate today = (LocalDate) one("SELECT current_date");
         parkedOn = today.minusDays(10);
         seedRuleSet(SOURCE, RULE_SET, 90);

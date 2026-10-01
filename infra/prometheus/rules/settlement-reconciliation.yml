@@ -1,0 +1,203 @@
+# Settlement and reconciliation alerts (P8-TSK-024, PHASE_8_PLAN.md section 15).
+#
+# Every "must be 0" gauge, source silence, overdue expectations, suspense age, break age per
+# severity, refused deliveries and blocked runs. Every expression names a series the application
+# publishes - AlertRulesResolveTest checks each one against a live scrape, because a rule over a
+# series that does not exist never fires and looks exactly like a healthy system.
+#
+# Conventions:
+# - Gauges read the shared database, so every instance publishes the same reading: aggregate with
+#   max(), never sum(). Counters are per instance: sum(increase(...)).
+# - A gauge that cannot be read is NaN, never zero, and a comparison with NaN is false - so the
+#   threshold alerts below cannot see an unreadable gauge. MustBeZeroGaugeUnreadable can.
+# - No amount anywhere: labels and annotations name sources, purposes, currencies and severities,
+#   and the follow-up is the audited operator report or route that answers the amount.
+# - `severity` is the ALERT's kind (page or ticket). The break-age rules carry the break's own
+#   severity as `break_severity`, because a rule label overrides the series label of the same name.
+# - Local development only: no Alertmanager is wired; routing and paging are Phase 15's.
+
+groups:
+  - name: settlement-reconciliation
+    rules:
+      # ---------------------------------------------------------------- must be 0
+
+      - alert: PositionProofFailing
+        expr: max by (purpose) (finapp_reconciliation_position_proof) > 0
+        for: 2m
+        labels:
+          severity: page
+        annotations:
+          summary: "Position proof failing for {{ $labels.purpose }} (INV-REC-06)"
+          description: "{{ $value }} currencies of {{ $labels.purpose }} fail the position proof. Follow up with GET /v1/operator/reports/reconciliation/positions."
+
+      - alert: UnattributedLinesOnReconciledPosition
+        expr: max by (purpose) (finapp_reconciliation_line_unattributed) > 0
+        for: 2m
+        labels:
+          severity: page
+        annotations:
+          summary: "Unattributed lines on the reconciled position {{ $labels.purpose }}"
+          description: "{{ $value }} lines on {{ $labels.purpose }} answer to no expectation. Follow up with GET /v1/operator/reports/reconciliation/positions."
+
+      - alert: CashProofFailing
+        expr: max by (currency) (finapp_reconciliation_cash_proof) > 0
+        for: 2m
+        labels:
+          severity: page
+        annotations:
+          summary: "Cash proof failing in {{ $labels.currency }} (INV-SET-06)"
+          description: "Cash at bank in {{ $labels.currency }} is not the head closing of an unbroken statement chain. Follow up with GET /v1/operator/reports/reconciliation/positions and the bank statements at GET /v1/operator/settlement/files."
+
+      - alert: SuspenseItemUnowned
+        expr: max(finapp_reconciliation_suspense_unowned) > 0
+        for: 2m
+        labels:
+          severity: page
+        annotations:
+          summary: "Suspense items with no open break answering for them (INV-REC-09)"
+          description: "{{ $value }} suspense items hold a remainder no open break owns. Follow up with GET /v1/operator/reports/reconciliation/suspense."
+
+      - alert: ReconciliationRunBlocked
+        expr: max by (source) (finapp_reconciliation_run_blocked) > 0
+        for: 5m
+        labels:
+          severity: page
+        annotations:
+          summary: "Blocked reconciliation run for {{ $labels.source }}"
+          description: "{{ $value }} runs of {{ $labels.source }} are blocked - an accepted batch nobody is matching. Follow up with GET /v1/operator/reconciliation/runs, then POST /v1/operator/reconciliation/runs/{id}/requeue."
+
+      - alert: ReconciliationRunStalled
+        # Incomplete after an hour yet not BLOCKED: chunks failing below the block threshold, or
+        # no instance sweeping.
+        expr: max by (source) (finapp_reconciliation_run_age_seconds) > 3600
+        for: 15m
+        labels:
+          severity: ticket
+        annotations:
+          summary: "A reconciliation run of {{ $labels.source }} is over an hour old"
+          description: "The oldest incomplete run of {{ $labels.source }} is {{ $value | humanizeDuration }} old. Follow up with GET /v1/operator/reconciliation/runs."
+
+      - alert: MustBeZeroGaugeUnreadable
+        # x != x holds only for NaN: the gauge could not read the database. Each leg names its
+        # gauge in a `gauge` label, because an alert drops the metric name and two gauges sharing
+        # a purpose would otherwise collide into one label set.
+        expr: >-
+          label_replace(finapp_reconciliation_position_proof != finapp_reconciliation_position_proof, "gauge", "position.proof", "", "")
+          or label_replace(finapp_reconciliation_line_unattributed != finapp_reconciliation_line_unattributed, "gauge", "line.unattributed", "", "")
+          or label_replace(finapp_reconciliation_cash_proof != finapp_reconciliation_cash_proof, "gauge", "cash.proof", "", "")
+          or label_replace(finapp_reconciliation_suspense_unowned != finapp_reconciliation_suspense_unowned, "gauge", "suspense.unowned", "", "")
+          or label_replace(finapp_reconciliation_run_blocked != finapp_reconciliation_run_blocked, "gauge", "run.blocked", "", "")
+        for: 10m
+        labels:
+          severity: ticket
+        annotations:
+          summary: "The must-be-0 gauge {{ $labels.gauge }} is unreadable (NaN)"
+          description: "finapp.reconciliation.{{ $labels.gauge }} on {{ $labels.instance }} reads NaN - its proof is not being checked there, and its threshold alert cannot fire. Follow up with that instance's database connectivity and logs."
+
+      # ---------------------------------------------------------------- evidence arriving
+
+      - alert: SettlementSourceSilent
+        # A day without an accepted batch. Every compiled source reports at least daily; a source
+        # with a slower cadence would need its own rule, not a wider one for all.
+        expr: max by (source) (finapp_settlement_source_silence) > 86400
+        for: 15m
+        labels:
+          severity: ticket
+        annotations:
+          summary: "No accepted settlement batch from {{ $labels.source }} for over a day"
+          description: "{{ $labels.source }} has been silent for {{ $value | humanizeDuration }}. Follow up with GET /v1/operator/settlement/sources and GET /v1/operator/settlement/files; a pullable source can be fetched with POST /v1/operator/settlement/sources/{code}/fetch."
+
+      - alert: SettlementSourceNeverAccepted
+        # NaN: no batch of this source was ever accepted (or the register is unreadable). A
+        # threshold never compares a NaN, and a file that never arrives must stay visible
+        # (ADR-0072 O6) - x != x holds only for NaN.
+        expr: max by (source) (finapp_settlement_source_silence != finapp_settlement_source_silence)
+        for: 1d
+        labels:
+          severity: ticket
+        annotations:
+          summary: "No settlement batch from {{ $labels.source }} has ever been accepted"
+          description: "{{ $labels.source }}'s silence cannot be measured: it has no accepted batch, or its register is unreadable. Follow up with GET /v1/operator/settlement/sources and GET /v1/operator/settlement/files."
+
+      - alert: SettlementFileStuck
+        # A file not terminal after an hour: the parse or accept leg is not keeping up, or the
+        # file waits on a second person's attestation.
+        expr: max by (source) (finapp_settlement_file_age) > 3600
+        for: 15m
+        labels:
+          severity: ticket
+        annotations:
+          summary: "A settlement file of {{ $labels.source }} has waited over an hour"
+          description: "The oldest non-terminal file of {{ $labels.source }} has waited {{ $value | humanizeDuration }}. Follow up with GET /v1/operator/settlement/files."
+
+      - alert: SettlementDeliveryRefused
+        expr: sum by (source, outcome) (increase(finapp_settlement_delivery_refused_total[15m])) > 0
+        for: 1m
+        labels:
+          severity: ticket
+        annotations:
+          summary: "Settlement deliveries refused for {{ $labels.source }} ({{ $labels.outcome }})"
+          description: "Deliveries from {{ $labels.source }} were refused in the last 15 minutes, reason {{ $labels.outcome }}. Follow up with GET /v1/operator/settlement/refused-deliveries."
+
+      - alert: SettlementExpectationOverdue
+        expr: max by (source) (finapp_reconciliation_expectation_overdue) > 0
+        for: 15m
+        labels:
+          severity: ticket
+        annotations:
+          summary: "Overdue settlement expectations for {{ $labels.source }} (INV-SET-02)"
+          description: "{{ $value }} expectations of {{ $labels.source }} are past their window with no settling evidence. Follow up with GET /v1/operator/reconciliation/expectations and GET /v1/operator/reconciliation/breaks."
+
+      # ---------------------------------------------------------------- suspense and breaks
+
+      - alert: SuspenseItemAged
+        # 30 days (2592000 s). Suspense is never a permanent resting place (INV-REC-05); an item
+        # a month old has outlived any routine investigation. The operator's follow-up is the
+        # audited suspense report, which shows each item's age and value gross.
+        expr: max(finapp_reconciliation_suspense_age_seconds) > 2592000
+        for: 1h
+        labels:
+          severity: ticket
+        annotations:
+          summary: "A suspense item has been open for over 30 days (INV-REC-05)"
+          description: "The oldest suspense item has been open {{ $value | humanizeDuration }}. Follow up with GET /v1/operator/reports/reconciliation/suspense."
+
+      - alert: BreakAgeCritical
+        expr: max by (severity) (finapp_reconciliation_break_age{severity="critical"}) > 0
+        for: 1m
+        labels:
+          severity: page
+          break_severity: critical
+        annotations:
+          summary: "An open CRITICAL reconciliation break"
+          description: "The oldest open CRITICAL break has stood {{ $value | humanizeDuration }}; a CRITICAL break is alerted at once. Follow up with GET /v1/operator/reconciliation/breaks."
+
+      - alert: BreakAgeHigh
+        expr: max by (severity) (finapp_reconciliation_break_age{severity="high"}) > 86400
+        for: 5m
+        labels:
+          severity: page
+          break_severity: high
+        annotations:
+          summary: "A HIGH reconciliation break open for over a day"
+          description: "The oldest open HIGH break has stood {{ $value | humanizeDuration }}. Follow up with GET /v1/operator/reconciliation/breaks."
+
+      - alert: BreakAgeMedium
+        expr: max by (severity) (finapp_reconciliation_break_age{severity="medium"}) > 432000
+        for: 15m
+        labels:
+          severity: ticket
+          break_severity: medium
+        annotations:
+          summary: "A MEDIUM reconciliation break open for over five days"
+          description: "The oldest open MEDIUM break has stood {{ $value | humanizeDuration }}. Follow up with GET /v1/operator/reconciliation/breaks."
+
+      - alert: BreakAgeLow
+        expr: max by (severity) (finapp_reconciliation_break_age{severity="low"}) > 1296000
+        for: 1h
+        labels:
+          severity: ticket
+          break_severity: low
+        annotations:
+          summary: "A LOW reconciliation break open for over fifteen days"
+          description: "The oldest open LOW break has stood {{ $value | humanizeDuration }}. Follow up with GET /v1/operator/reconciliation/breaks."

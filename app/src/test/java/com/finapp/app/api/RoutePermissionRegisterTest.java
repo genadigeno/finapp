@@ -137,6 +137,12 @@ class RoutePermissionRegisterTest {
                     entry("POST /v1/operator/reconciliation/runs/{id}/requeue", PermissionName.RECONCILIATION_ADMINISTER),
                     entry("POST /v1/operator/reconciliation/runs/{id}/replay", PermissionName.RECONCILIATION_INVESTIGATE),
                     entry("GET /v1/operator/reports/reconciliation/positions", PermissionName.RECONCILIATION_INVESTIGATE),
+                    // P8-TSK-024: the four remaining reports (ADR-0072 section 3) - amounts,
+                    // so the investigator's alone, every serving audited.
+                    entry("GET /v1/operator/reports/reconciliation/suspense", PermissionName.RECONCILIATION_INVESTIGATE),
+                    entry("GET /v1/operator/reports/reconciliation/unmatched", PermissionName.RECONCILIATION_INVESTIGATE),
+                    entry("GET /v1/operator/reports/reconciliation/summary", PermissionName.RECONCILIATION_INVESTIGATE),
+                    entry("GET /v1/operator/reports/reconciliation/provider-costs", PermissionName.RECONCILIATION_INVESTIGATE),
                     // The matcher's explanation doors (P8-TSK-011, ADR-0068 section 7):
                     // a decision explains itself from stored rows alone; every door the
                     // investigator's, read-only.

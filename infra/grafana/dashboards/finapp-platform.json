@@ -1185,6 +1185,270 @@
         "legend": { "displayMode": "list", "placement": "bottom", "showLegend": true },
         "tooltip": { "mode": "multi", "sort": "none" }
       }
+    },
+    {
+      "type": "row",
+      "title": "Settlement and reconciliation — what the counterparties said, and whether it matched",
+      "gridPos": { "h": 1, "w": 24, "x": 0, "y": 141 },
+      "collapsed": false,
+      "panels": []
+    },
+    {
+      "type": "stat",
+      "title": "Proofs that must read 0",
+      "description": "The four must-be-0 verdicts (P8-TSK-024, PHASE_8_PLAN section 15): finapp.reconciliation.position.proof (currencies failing INV-REC-06, by purpose), finapp.reconciliation.line.unattributed (unknown lines on reconciled positions, by purpose), finapp.reconciliation.cash.proof (INV-SET-06, by currency) and finapp.reconciliation.suspense.unowned (INV-REC-09). Each tile is the worst purpose or currency; the alert names which. Counts and verdicts, never an amount - the amounts are the positions and suspense reports'. Fleet-wide: max(). No data means UNREADABLE, never healthy.",
+      "datasource": { "type": "prometheus", "uid": "finapp-prometheus" },
+      "gridPos": { "h": 7, "w": 8, "x": 0, "y": 142 },
+      "targets": [
+        { "refId": "A", "expr": "max(finapp_reconciliation_position_proof)", "legendFormat": "position proof" },
+        { "refId": "B", "expr": "max(finapp_reconciliation_line_unattributed)", "legendFormat": "unattributed lines" },
+        { "refId": "C", "expr": "max(finapp_reconciliation_cash_proof)", "legendFormat": "cash proof" },
+        { "refId": "D", "expr": "max(finapp_reconciliation_suspense_unowned)", "legendFormat": "unowned suspense" }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "short",
+          "decimals": 0,
+          "noValue": "UNREADABLE (NaN, not zero)",
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              { "color": "green", "value": null },
+              { "color": "red", "value": 1 }
+            ]
+          }
+        },
+        "overrides": []
+      },
+      "options": {
+        "colorMode": "background",
+        "graphMode": "none",
+        "reduceOptions": { "calcs": ["lastNotNull"], "fields": "", "values": false }
+      }
+    },
+    {
+      "type": "timeseries",
+      "title": "Settlement files pending, and the oldest",
+      "description": "finapp.settlement.file.pending and finapp.settlement.file.age (P8-TSK-003): non-terminal files by source - those awaiting a second person's attestation included - and how long the oldest has waited (right axis). A growing age with a flat count is a file nobody is attesting or a parse that is not finishing. Fleet-wide: max().",
+      "datasource": { "type": "prometheus", "uid": "finapp-prometheus" },
+      "gridPos": { "h": 7, "w": 8, "x": 8, "y": 142 },
+      "targets": [
+        { "refId": "A", "expr": "max by (source) (finapp_settlement_file_pending)", "legendFormat": "{{source}} pending" },
+        { "refId": "B", "expr": "max by (source) (finapp_settlement_file_age)", "legendFormat": "{{source}} oldest" }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "custom": { "drawStyle": "line", "lineWidth": 2, "fillOpacity": 8, "showPoints": "never" },
+          "unit": "none",
+          "noValue": "UNREADABLE (NaN, not zero)"
+        },
+        "overrides": [
+          {
+            "matcher": { "id": "byFrameRefID", "options": "B" },
+            "properties": [{ "id": "unit", "value": "s" }, { "id": "custom.axisPlacement", "value": "right" }]
+          }
+        ]
+      },
+      "options": {
+        "legend": { "displayMode": "list", "placement": "bottom", "showLegend": true },
+        "tooltip": { "mode": "multi", "sort": "none" }
+      }
+    },
+    {
+      "type": "timeseries",
+      "title": "Source silence",
+      "description": "finapp.settlement.source.silence (P8-TSK-021): seconds since each source's last ACCEPTED batch, by any channel - a file that never came shows here before its expectations age into breaks. The silent-source alert's series. A source that has never been accepted reads NaN, never zero. Fleet-wide: max().",
+      "datasource": { "type": "prometheus", "uid": "finapp-prometheus" },
+      "gridPos": { "h": 7, "w": 8, "x": 16, "y": 142 },
+      "targets": [
+        { "refId": "A", "expr": "max by (source) (finapp_settlement_source_silence)", "legendFormat": "{{source}}" }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "custom": { "drawStyle": "line", "lineWidth": 2, "fillOpacity": 8, "showPoints": "never" },
+          "unit": "s",
+          "noValue": "UNREADABLE (NaN, not zero)"
+        },
+        "overrides": []
+      },
+      "options": {
+        "legend": { "displayMode": "list", "placement": "bottom", "showLegend": true },
+        "tooltip": { "mode": "multi", "sort": "none" }
+      }
+    },
+    {
+      "type": "timeseries",
+      "title": "Reconciliation runs pending, blocked, and the oldest",
+      "description": "finapp.reconciliation.run.pending, .run.blocked and .run.age (P8-TSK-011): incomplete runs by source, blocked ones (MUST read 0 - each is a batch nobody is matching, alerted; requeued at POST /v1/operator/reconciliation/runs/{id}/requeue) and the oldest incomplete run's age (right axis). Fleet-wide: max().",
+      "datasource": { "type": "prometheus", "uid": "finapp-prometheus" },
+      "gridPos": { "h": 7, "w": 8, "x": 0, "y": 149 },
+      "targets": [
+        { "refId": "A", "expr": "max by (source) (finapp_reconciliation_run_pending)", "legendFormat": "{{source}} pending" },
+        { "refId": "B", "expr": "max by (source) (finapp_reconciliation_run_blocked)", "legendFormat": "{{source}} blocked" },
+        { "refId": "C", "expr": "max by (source) (finapp_reconciliation_run_age_seconds)", "legendFormat": "{{source}} oldest" }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "custom": { "drawStyle": "line", "lineWidth": 2, "fillOpacity": 8, "showPoints": "never" },
+          "unit": "none",
+          "noValue": "UNREADABLE (NaN, not zero)"
+        },
+        "overrides": [
+          {
+            "matcher": { "id": "byFrameRefID", "options": "C" },
+            "properties": [{ "id": "unit", "value": "s" }, { "id": "custom.axisPlacement", "value": "right" }]
+          }
+        ]
+      },
+      "options": {
+        "legend": { "displayMode": "list", "placement": "bottom", "showLegend": true },
+        "tooltip": { "mode": "multi", "sort": "none" }
+      }
+    },
+    {
+      "type": "timeseries",
+      "title": "Item dispositions and late matches",
+      "description": "finapp.reconciliation.item (P8-TSK-024): every settlement line's committed disposition - matched, unmatched, parked, checked, offset, errored - counted once after its chunk committed; the match rate is matched over the total. finapp.reconciliation.rematch: late records found for lines that waited, REPROCESS allocations included. Per instance: sum().",
+      "datasource": { "type": "prometheus", "uid": "finapp-prometheus" },
+      "gridPos": { "h": 7, "w": 8, "x": 8, "y": 149 },
+      "targets": [
+        { "refId": "A", "expr": "sum by (outcome) (rate(finapp_reconciliation_item_total[5m]))", "legendFormat": "{{outcome}}" },
+        { "refId": "B", "expr": "sum by (outcome) (rate(finapp_reconciliation_rematch_total[5m]))", "legendFormat": "rematch {{outcome}}" }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "custom": { "drawStyle": "line", "lineWidth": 2, "fillOpacity": 8, "showPoints": "never" },
+          "unit": "none"
+        },
+        "overrides": []
+      },
+      "options": {
+        "legend": { "displayMode": "list", "placement": "bottom", "showLegend": true },
+        "tooltip": { "mode": "multi", "sort": "none" }
+      }
+    },
+    {
+      "type": "timeseries",
+      "title": "Expectations open and overdue",
+      "description": "finapp.reconciliation.expectation.open, .expectation.overdue and .expectation.overdue.age (P8-TSK-007, -013): what the platform expects a counterparty to report, by source; those past their window (INV-SET-02, alerted); and the oldest overdue one's age (right axis). Fleet-wide: max().",
+      "datasource": { "type": "prometheus", "uid": "finapp-prometheus" },
+      "gridPos": { "h": 7, "w": 8, "x": 16, "y": 149 },
+      "targets": [
+        { "refId": "A", "expr": "max by (source) (finapp_reconciliation_expectation_open)", "legendFormat": "{{source}} open" },
+        { "refId": "B", "expr": "max by (source) (finapp_reconciliation_expectation_overdue)", "legendFormat": "{{source}} overdue" },
+        { "refId": "C", "expr": "max by (source) (finapp_reconciliation_expectation_overdue_age_seconds)", "legendFormat": "{{source}} oldest overdue" }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "custom": { "drawStyle": "line", "lineWidth": 2, "fillOpacity": 8, "showPoints": "never" },
+          "unit": "none",
+          "noValue": "UNREADABLE (NaN, not zero)"
+        },
+        "overrides": [
+          {
+            "matcher": { "id": "byFrameRefID", "options": "C" },
+            "properties": [{ "id": "unit", "value": "s" }, { "id": "custom.axisPlacement", "value": "right" }]
+          }
+        ]
+      },
+      "options": {
+        "legend": { "displayMode": "list", "placement": "bottom", "showLegend": true },
+        "tooltip": { "mode": "multi", "sort": "none" }
+      }
+    },
+    {
+      "type": "timeseries",
+      "title": "Open breaks by severity",
+      "description": "finapp.reconciliation.break.open (P8-TSK-024): the break backlog. The gauge is tagged by break type and severity; each series is collapsed fleet-wide with max() first, then the types are summed within a severity - summing instances would multiply the backlog by the instance count. The list is GET /v1/operator/reconciliation/breaks.",
+      "datasource": { "type": "prometheus", "uid": "finapp-prometheus" },
+      "gridPos": { "h": 7, "w": 8, "x": 0, "y": 156 },
+      "targets": [
+        { "refId": "A", "expr": "sum by (severity) (max by (type, severity) (finapp_reconciliation_break_open))", "legendFormat": "{{severity}}" }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "custom": { "drawStyle": "line", "lineWidth": 2, "fillOpacity": 8, "showPoints": "never" },
+          "unit": "none",
+          "noValue": "UNREADABLE (NaN, not zero)"
+        },
+        "overrides": []
+      },
+      "options": {
+        "legend": { "displayMode": "list", "placement": "bottom", "showLegend": true },
+        "tooltip": { "mode": "multi", "sort": "none" }
+      }
+    },
+    {
+      "type": "timeseries",
+      "title": "Oldest open break by severity",
+      "description": "finapp.reconciliation.break.age (P8-TSK-024): how long the oldest open break of each severity has stood. The break-age alerts' series: CRITICAL above 0, HIGH above a day, MEDIUM above five days, LOW above fifteen. Fleet-wide: max().",
+      "datasource": { "type": "prometheus", "uid": "finapp-prometheus" },
+      "gridPos": { "h": 7, "w": 8, "x": 8, "y": 156 },
+      "targets": [
+        { "refId": "A", "expr": "max by (severity) (finapp_reconciliation_break_age)", "legendFormat": "{{severity}}" }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "custom": { "drawStyle": "line", "lineWidth": 2, "fillOpacity": 8, "showPoints": "never" },
+          "unit": "s",
+          "noValue": "UNREADABLE (NaN, not zero)"
+        },
+        "overrides": []
+      },
+      "options": {
+        "legend": { "displayMode": "list", "placement": "bottom", "showLegend": true },
+        "tooltip": { "mode": "multi", "sort": "none" }
+      }
+    },
+    {
+      "type": "timeseries",
+      "title": "Suspense open, and the oldest",
+      "description": "finapp.reconciliation.suspense.open and .suspense.age (P8-TSK-010, INV-REC-05): suspense items still holding a remainder, and the oldest one's age (right axis) - suspense is never a permanent resting place. A count and an age, never an amount: the balance, CREDIT and DEBIT gross, is the audited suspense report's. Fleet-wide: max().",
+      "datasource": { "type": "prometheus", "uid": "finapp-prometheus" },
+      "gridPos": { "h": 7, "w": 8, "x": 16, "y": 156 },
+      "targets": [
+        { "refId": "A", "expr": "max(finapp_reconciliation_suspense_open)", "legendFormat": "open" },
+        { "refId": "B", "expr": "max(finapp_reconciliation_suspense_age_seconds)", "legendFormat": "oldest" }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "custom": { "drawStyle": "line", "lineWidth": 2, "fillOpacity": 8, "showPoints": "never" },
+          "unit": "none",
+          "noValue": "UNREADABLE (NaN, not zero)"
+        },
+        "overrides": [
+          {
+            "matcher": { "id": "byFrameRefID", "options": "B" },
+            "properties": [{ "id": "unit", "value": "s" }, { "id": "custom.axisPlacement", "value": "right" }]
+          }
+        ]
+      },
+      "options": {
+        "legend": { "displayMode": "list", "placement": "bottom", "showLegend": true },
+        "tooltip": { "mode": "multi", "sort": "none" }
+      }
+    },
+    {
+      "type": "timeseries",
+      "title": "Resolutions and replays",
+      "description": "finapp.reconciliation.resolution (P8-TSK-024): resolutions by kind and outcome - approved, rejected, withdrawn, evidenced, stale - REPUDIATE_BATCH included. finapp.reconciliation.replay (P8-TSK-022): decision replays by verdict; any diverged is a stored decision that no longer follows from its own snapshot, and raises a CRITICAL break. Per instance: sum().",
+      "datasource": { "type": "prometheus", "uid": "finapp-prometheus" },
+      "gridPos": { "h": 7, "w": 8, "x": 0, "y": 163 },
+      "targets": [
+        { "refId": "A", "expr": "sum by (type, outcome) (rate(finapp_reconciliation_resolution_total[5m]))", "legendFormat": "{{type}} {{outcome}}" },
+        { "refId": "B", "expr": "sum by (outcome) (rate(finapp_reconciliation_replay_total[5m]))", "legendFormat": "replay {{outcome}}" }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "custom": { "drawStyle": "line", "lineWidth": 2, "fillOpacity": 8, "showPoints": "never" },
+          "unit": "none"
+        },
+        "overrides": []
+      },
+      "options": {
+        "legend": { "displayMode": "list", "placement": "bottom", "showLegend": true },
+        "tooltip": { "mode": "multi", "sort": "none" }
+      }
     }
   ]
 }

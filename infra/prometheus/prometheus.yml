@@ -14,6 +14,13 @@ global:
   scrape_interval: 5s
   evaluation_interval: 5s
 
+# Alert rules (P8-TSK-024: the settlement and reconciliation alerts). Resolved relative to THIS
+# file, so compose mounts infra/prometheus/rules beside it at /etc/prometheus/rules. Evaluated and
+# shown at /alerts; no Alertmanager is wired - routing and paging are Phase 15's, and the
+# `severity` label only says which kind each alert will be.
+rule_files:
+  - "rules/*.yml"
+
 scrape_configs:
   - job_name: finapp
     metrics_path: /actuator/prometheus

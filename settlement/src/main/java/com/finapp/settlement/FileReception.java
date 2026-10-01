@@ -130,6 +130,11 @@ public final class FileReception<T> {
     public Result receive(T unitOfWork, Delivery delivery) {
         Objects.requireNonNull(unitOfWork, "unitOfWork must not be null");
         Objects.requireNonNull(delivery, "delivery must not be null");
+        return observer.spans().within(
+                "settlement.receive", Map.of(), () -> received(unitOfWork, delivery));
+    }
+
+    private Result received(T unitOfWork, Delivery delivery) {
 
         // 1. The source: compiled declaration AND seeded identity, or nothing is written.
         SettlementSourceDescriptor declared =

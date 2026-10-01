@@ -5487,6 +5487,76 @@
         },
         "type": "object"
       },
+      "DailySummaryReport": {
+        "properties": {
+          "date": {
+            "type": "string"
+          },
+          "sources": {
+            "items": {
+              "$ref": "#/components/schemas/DailySummarySource"
+            },
+            "type": "array"
+          },
+          "truncated": {
+            "type": "boolean"
+          }
+        },
+        "type": "object"
+      },
+      "DailySummarySource": {
+        "properties": {
+          "batchesAccepted": {
+            "format": "int64",
+            "type": "integer"
+          },
+          "breaksRaised": {
+            "items": {
+              "$ref": "#/components/schemas/SummaryBreaks"
+            },
+            "type": "array"
+          },
+          "breaksResolved": {
+            "items": {
+              "$ref": "#/components/schemas/SummaryBreaks"
+            },
+            "type": "array"
+          },
+          "items": {
+            "items": {
+              "$ref": "#/components/schemas/SummaryDisposition"
+            },
+            "type": "array"
+          },
+          "itemsCounted": {
+            "format": "int64",
+            "type": "integer"
+          },
+          "itemsMatched": {
+            "format": "int64",
+            "type": "integer"
+          },
+          "matchRate": {
+            "type": "string"
+          },
+          "openBreaksByAge": {
+            "items": {
+              "$ref": "#/components/schemas/SummaryAgeingBand"
+            },
+            "type": "array"
+          },
+          "resolutionsApproved": {
+            "items": {
+              "$ref": "#/components/schemas/SummaryResolutions"
+            },
+            "type": "array"
+          },
+          "source": {
+            "type": "string"
+          }
+        },
+        "type": "object"
+      },
       "DecisionRequest": {
         "properties": {
           "outcome": {
@@ -7299,6 +7369,88 @@
         ],
         "type": "object"
       },
+      "ProviderCostRow": {
+        "properties": {
+          "batches": {
+            "format": "int64",
+            "type": "integer"
+          },
+          "charged": {
+            "type": "string"
+          },
+          "currency": {
+            "type": "string"
+          },
+          "evidence": {
+            "items": {
+              "$ref": "#/components/schemas/ProviderFeeEvidence"
+            },
+            "type": "array"
+          },
+          "evidenceAgrees": {
+            "type": "boolean"
+          },
+          "evidenceTotal": {
+            "type": "string"
+          },
+          "expected": {
+            "type": "string"
+          },
+          "feeMismatchBreaks": {
+            "format": "int64",
+            "type": "integer"
+          },
+          "feeMismatchOpen": {
+            "format": "int64",
+            "type": "integer"
+          },
+          "feeMismatchValueAtIssue": {
+            "type": "string"
+          },
+          "repudiations": {
+            "format": "int64",
+            "type": "integer"
+          },
+          "source": {
+            "type": "string"
+          }
+        },
+        "type": "object"
+      },
+      "ProviderCostsReport": {
+        "properties": {
+          "costs": {
+            "items": {
+              "$ref": "#/components/schemas/ProviderCostRow"
+            },
+            "type": "array"
+          },
+          "from": {
+            "type": "string"
+          },
+          "month": {
+            "type": "string"
+          },
+          "truncated": {
+            "type": "boolean"
+          },
+          "until": {
+            "type": "string"
+          }
+        },
+        "type": "object"
+      },
+      "ProviderFeeEvidence": {
+        "properties": {
+          "lineType": {
+            "type": "string"
+          },
+          "value": {
+            "type": "string"
+          }
+        },
+        "type": "object"
+      },
       "PurposeBasisResponse": {
         "properties": {
           "currentText": {
@@ -8706,6 +8858,162 @@
         },
         "type": "object"
       },
+      "SummaryAgeingBand": {
+        "properties": {
+          "band": {
+            "type": "string"
+          },
+          "openBreaks": {
+            "format": "int64",
+            "type": "integer"
+          }
+        },
+        "type": "object"
+      },
+      "SummaryBreaks": {
+        "properties": {
+          "count": {
+            "format": "int64",
+            "type": "integer"
+          },
+          "currency": {
+            "type": "string"
+          },
+          "severity": {
+            "type": "string"
+          },
+          "type": {
+            "type": "string"
+          },
+          "valueAtIssue": {
+            "type": "string"
+          }
+        },
+        "type": "object"
+      },
+      "SummaryDisposition": {
+        "properties": {
+          "currency": {
+            "type": "string"
+          },
+          "items": {
+            "format": "int64",
+            "type": "integer"
+          },
+          "status": {
+            "type": "string"
+          },
+          "value": {
+            "type": "string"
+          }
+        },
+        "type": "object"
+      },
+      "SummaryResolutions": {
+        "properties": {
+          "approved": {
+            "format": "int64",
+            "type": "integer"
+          },
+          "currency": {
+            "type": "string"
+          },
+          "kind": {
+            "type": "string"
+          },
+          "posted": {
+            "type": "string"
+          }
+        },
+        "type": "object"
+      },
+      "SuspenseReport": {
+        "properties": {
+          "currencies": {
+            "items": {
+              "$ref": "#/components/schemas/SuspenseReportCurrency"
+            },
+            "type": "array"
+          },
+          "items": {
+            "items": {
+              "$ref": "#/components/schemas/SuspenseReportItem"
+            },
+            "type": "array"
+          },
+          "truncated": {
+            "type": "boolean"
+          }
+        },
+        "type": "object"
+      },
+      "SuspenseReportCurrency": {
+        "properties": {
+          "creditItems": {
+            "format": "int64",
+            "type": "integer"
+          },
+          "creditUnreleased": {
+            "type": "string"
+          },
+          "currency": {
+            "type": "string"
+          },
+          "debitItems": {
+            "format": "int64",
+            "type": "integer"
+          },
+          "debitUnreleased": {
+            "type": "string"
+          },
+          "explained": {
+            "type": "boolean"
+          },
+          "ledgerBalance": {
+            "type": "string"
+          },
+          "unadoptedParkings": {
+            "type": "string"
+          }
+        },
+        "type": "object"
+      },
+      "SuspenseReportItem": {
+        "properties": {
+          "ageDays": {
+            "format": "int64",
+            "type": "integer"
+          },
+          "breakId": {
+            "type": "string"
+          },
+          "breakSeverity": {
+            "type": "string"
+          },
+          "breakType": {
+            "type": "string"
+          },
+          "currency": {
+            "type": "string"
+          },
+          "id": {
+            "type": "string"
+          },
+          "openedOn": {
+            "type": "string"
+          },
+          "origin": {
+            "type": "string"
+          },
+          "side": {
+            "type": "string"
+          },
+          "unreleased": {
+            "type": "string"
+          }
+        },
+        "type": "object"
+      },
       "SuspensionRequest": {
         "properties": {
           "reason": {
@@ -8912,6 +9220,146 @@
             "type": "string"
           },
           "status": {
+            "type": "string"
+          }
+        },
+        "type": "object"
+      },
+      "UnmatchedFigure": {
+        "properties": {
+          "count": {
+            "format": "int64",
+            "type": "integer"
+          },
+          "oldestAgeDays": {
+            "format": "int64",
+            "type": "integer"
+          },
+          "value": {
+            "type": "string"
+          }
+        },
+        "type": "object"
+      },
+      "UnmatchedReport": {
+        "properties": {
+          "groups": {
+            "items": {
+              "$ref": "#/components/schemas/UnmatchedReportGroup"
+            },
+            "type": "array"
+          },
+          "groupsTruncated": {
+            "type": "boolean"
+          },
+          "items": {
+            "items": {
+              "$ref": "#/components/schemas/UnmatchedReportItem"
+            },
+            "type": "array"
+          },
+          "openBreaks": {
+            "items": {
+              "$ref": "#/components/schemas/UnmatchedReportBreaks"
+            },
+            "type": "array"
+          },
+          "openBreaksTruncated": {
+            "type": "boolean"
+          },
+          "truncated": {
+            "type": "boolean"
+          }
+        },
+        "type": "object"
+      },
+      "UnmatchedReportBreaks": {
+        "properties": {
+          "count": {
+            "format": "int64",
+            "type": "integer"
+          },
+          "currency": {
+            "type": "string"
+          },
+          "severity": {
+            "type": "string"
+          },
+          "type": {
+            "type": "string"
+          },
+          "valueAtIssue": {
+            "type": "string"
+          }
+        },
+        "type": "object"
+      },
+      "UnmatchedReportGroup": {
+        "properties": {
+          "currency": {
+            "type": "string"
+          },
+          "direction": {
+            "type": "string"
+          },
+          "expectationsInWindow": {
+            "$ref": "#/components/schemas/UnmatchedFigure"
+          },
+          "expectationsOverdue": {
+            "$ref": "#/components/schemas/UnmatchedFigure"
+          },
+          "parkedItems": {
+            "$ref": "#/components/schemas/UnmatchedFigure"
+          },
+          "source": {
+            "type": "string"
+          },
+          "unmatchedItems": {
+            "$ref": "#/components/schemas/UnmatchedFigure"
+          }
+        },
+        "type": "object"
+      },
+      "UnmatchedReportItem": {
+        "properties": {
+          "ageDays": {
+            "format": "int64",
+            "type": "integer"
+          },
+          "breakId": {
+            "type": "string"
+          },
+          "breakSeverity": {
+            "type": "string"
+          },
+          "breakType": {
+            "type": "string"
+          },
+          "businessDate": {
+            "type": "string"
+          },
+          "currency": {
+            "type": "string"
+          },
+          "direction": {
+            "type": "string"
+          },
+          "graceUntil": {
+            "type": "string"
+          },
+          "id": {
+            "type": "string"
+          },
+          "lineType": {
+            "type": "string"
+          },
+          "source": {
+            "type": "string"
+          },
+          "status": {
+            "type": "string"
+          },
+          "value": {
             "type": "string"
           }
         },
@@ -12514,6 +12962,94 @@
               "application/json": {
                 "schema": {
                   "$ref": "#/components/schemas/PositionsReport"
+                }
+              }
+            },
+            "description": "OK"
+          }
+        }
+      }
+    },
+    "/v1/operator/reports/reconciliation/provider-costs": {
+      "get": {
+        "operationId": "readReconciliationProviderCostsReport",
+        "parameters": [
+          {
+            "in": "query",
+            "name": "month",
+            "required": false,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProviderCostsReport"
+                }
+              }
+            },
+            "description": "OK"
+          }
+        }
+      }
+    },
+    "/v1/operator/reports/reconciliation/summary": {
+      "get": {
+        "operationId": "readReconciliationDailySummaryReport",
+        "parameters": [
+          {
+            "in": "query",
+            "name": "date",
+            "required": false,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/DailySummaryReport"
+                }
+              }
+            },
+            "description": "OK"
+          }
+        }
+      }
+    },
+    "/v1/operator/reports/reconciliation/suspense": {
+      "get": {
+        "operationId": "readReconciliationSuspenseReport",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/SuspenseReport"
+                }
+              }
+            },
+            "description": "OK"
+          }
+        }
+      }
+    },
+    "/v1/operator/reports/reconciliation/unmatched": {
+      "get": {
+        "operationId": "readReconciliationUnmatchedReport",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/UnmatchedReport"
                 }
               }
             },

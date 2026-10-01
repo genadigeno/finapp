@@ -22,6 +22,9 @@ public interface MatchingStore {
 
     // ------------------------------------------------------------------ runs
 
+    /** When the run was born - the start of {@code finapp.reconciliation.run.latency}. */
+    Optional<java.time.Instant> runBornAt(Connection unitOfWork, UUID runId);
+
     record RunRow(
             UUID id,
             UUID sourceId,
@@ -696,4 +699,10 @@ public interface MatchingStore {
 
     /** The run's decisions per outcome — the completion event's counts. */
     Map<DecisionOutcome, Long> outcomeCounts(Connection unitOfWork, UUID runId);
+
+    /**
+     * The run's FIRST decisions per outcome - origin {@code RUN} alone, never a later leg's
+     * decision that carries the run's id (`P8-TSK-024`, the match rate's numerator).
+     */
+    Map<DecisionOutcome, Long> firstDecisionCounts(Connection unitOfWork, UUID runId);
 }

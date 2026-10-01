@@ -19,6 +19,7 @@ import com.finapp.reconciliation.ResolutionReasonCode;
 import com.finapp.sharedkernel.correlation.Correlation;
 import java.nio.charset.StandardCharsets;
 import java.sql.Connection;
+import java.util.Map;
 import java.util.Optional;
 import java.util.UUID;
 import java.util.function.Function;
@@ -52,6 +53,7 @@ public class BreakResolutionDesk {
     @NonNull private final TransactionTemplate reconciliationTransactions;
     @NonNull private final DataSource dataSource;
     @NonNull private final BatchRepudiations repudiations;
+    @NonNull private final com.finapp.platform.telemetry.Spans spans;
 
     /** A proposal's receipt — identifiers, the kind and state, never the narrative or amount. */
     public record ResolutionReceipt(
@@ -123,8 +125,9 @@ public class BreakResolutionDesk {
                                 uow, batchId, code, text, actor,
                                 correlation.correlationId()))));
         IdempotentExecutor.ExecutionOutcome outcome =
-                guarded(() -> command(unitOfWork -> executor.execute(
-                        unitOfWork, key, fingerprint, proposal::apply)));
+                resolving(Map.of("batch.id", batchId.toString()), () -> guarded(
+                        () -> command(unitOfWork -> executor.execute(
+                                unitOfWork, key, fingerprint, proposal::apply))));
         byte[] body =
                 outcome.body()
                         .orElseThrow(
@@ -185,7 +188,7 @@ public class BreakResolutionDesk {
                                                 request.chosenExpectationId().orElse(null)))
                                 .getBytes(StandardCharsets.UTF_8));
         IdempotentExecutor.ExecutionOutcome outcome =
-                guarded(
+                resolving(Map.of("break.id", breakId.toString()), () -> guarded(
                         () ->
                                 command(
                                         unitOfWork ->
@@ -202,7 +205,7 @@ public class BreakResolutionDesk {
                                                                                     .correlationId());
                                                             return CommandResult.succeeded(
                                                                     stored(receipt(proposed)));
-                                                        })));
+                                                        }))));
         String[] fields = recorded(outcome);
         return new ResolutionReceipt(
                 fields[0], fields[1], fields[2], fields[3], Boolean.parseBoolean(fields[4]),
@@ -213,11 +216,12 @@ public class BreakResolutionDesk {
         UUID resolutionId = parsed(rawResolutionId, ReconciliationErrorCode.RESOLUTION_NOT_FOUND);
         Actor actor = SecurityContext.require();
         Correlation correlation = resolvedCorrelation();
-        return guarded(() -> command(uow -> repudiations.isRepudiation(uow, resolutionId)
+        return resolving(Map.of("resolution.id", resolutionId.toString()),
+                () -> guarded(() -> command(uow -> repudiations.isRepudiation(uow, resolutionId)
                 ? view(repudiations.approve(
                         uow, resolutionId, actor, correlation.correlationId()))
                 : view(machine.approve(
-                        uow, resolutionId, actor, correlation.correlationId()))));
+                        uow, resolutionId, actor, correlation.correlationId())))));
     }
 
     public ResolutionDecision reject(String rawResolutionId, String reason) {
@@ -229,22 +233,24 @@ public class BreakResolutionDesk {
         });
         Actor actor = SecurityContext.require();
         Correlation correlation = resolvedCorrelation();
-        return guarded(() -> command(uow -> repudiations.isRepudiation(uow, resolutionId)
+        return resolving(Map.of("resolution.id", resolutionId.toString()),
+                () -> guarded(() -> command(uow -> repudiations.isRepudiation(uow, resolutionId)
                 ? view(repudiations.reject(
                         uow, resolutionId, text, actor, correlation.correlationId()))
                 : view(machine.reject(
-                        uow, resolutionId, text, actor, correlation.correlationId()))));
+                        uow, resolutionId, text, actor, correlation.correlationId())))));
     }
 
     public ResolutionDecision withdraw(String rawResolutionId) {
         UUID resolutionId = parsed(rawResolutionId, ReconciliationErrorCode.RESOLUTION_NOT_FOUND);
         Actor actor = SecurityContext.require();
         Correlation correlation = resolvedCorrelation();
-        return guarded(() -> command(uow -> repudiations.isRepudiation(uow, resolutionId)
+        return resolving(Map.of("resolution.id", resolutionId.toString()),
+                () -> guarded(() -> command(uow -> repudiations.isRepudiation(uow, resolutionId)
                 ? view(repudiations.withdraw(
                         uow, resolutionId, actor, correlation.correlationId()))
                 : view(machine.withdraw(
-                        uow, resolutionId, actor, correlation.correlationId()))));
+                        uow, resolutionId, actor, correlation.correlationId())))));
     }
 
     // ================================================================== rendering
@@ -298,6 +304,11 @@ public class BreakResolutionDesk {
     }
 
     // ================================================================== plumbing
+
+    /** One {@code reconciliation.resolve} span per decision door (`P8-TSK-024`). */
+    private <R> R resolving(Map<String, String> identifiers, Supplier<R> work) {
+        return spans.within("reconciliation.resolve", identifiers, work);
+    }
 
     /** The machine's refusals, in the API's words — never a narrative in either. */
     private static <R> R guarded(Supplier<R> work) {

@@ -1,6 +1,6 @@
 # Task History
 
-The per-task completion records that accumulated behind `## Current Task` - 186 "Previously" blocks, newest first, from `P8-TSK-022` back to project initiation. *(`X-TSK-004` is cross-cutting and completed after the Phase 6 → 7 transition, so it stands second, between `P7-TSK-001` and the transition's record - the transition's block moved here by `P7-TSK-001`'s gate, exactly as an earlier form of this note said it would.)*
+The per-task completion records that accumulated behind `## Current Task` - 187 "Previously" blocks, newest first, from `P8-TSK-023` back to project initiation. *(`X-TSK-004` is cross-cutting and completed after the Phase 6 → 7 transition, so it stands second, between `P7-TSK-001` and the transition's record - the transition's block moved here by `P7-TSK-001`'s gate, exactly as an earlier form of this note said it would.)*
 
 **Archive.** These records were moved verbatim out of
 [`CURRENT_STATE.md`](../CURRENT_STATE.md) on 2026-09-20 so that the canonical description of
@@ -12,6 +12,76 @@ Current state: [`CURRENT_STATE.md`](../CURRENT_STATE.md) ·
 Authoritative backlog: [`BACKLOG.md`](../BACKLOG.md)
 
 ---
+
+### Previously
+
+**`P8-TSK-023` — Batch repudiation** — `COMPLETE` (2026-10-01). **M8.7, Operating it, at 3 of
+4**: an accepted settlement batch proven fabricated or mis-normalised is repudiated under four-eyes
+by compensation alone - its recognition reversed through `ReversalService`, every allocation of its
+items mirrored by an append-only counter-allocation, its parks released, the breaks it emptied
+closed, the file retained byte-identical - and the genuine file then accepted (`INV-REV-01`,
+`INV-AUD-04`, `INV-REC-07`, `INV-SET-06`; protected `INV-REV-02`, `INV-SET-04`, `INV-HIST-02`,
+`INV-REC-06`, `-09`). Kept, not deferred (transition decision O6). **TWO MIGRATIONS, AS CLAIMED**:
+settlement `V010` (the batch's `REPUDIATED`: the status `CHECK`, the trigger's one new edge
+`ACCEPTED → REPUDIATED` with the acceptance facts frozen, the honesty `CHECK`s widened to a
+repudiated row) and reconciliation `V013`. **THE DESIGN'S FINDS, MADE GOOD IN `V013`**: the
+backlog's `allocation.reverses_allocation_id UNIQUE` and `resolution.settlement_batch_id` did not
+exist - the counter-allocation is now bound to its original once and exactly
+(`allocation_reversed_once` and a mirror trigger, for every writer), and the resolution has its
+batch subject (exactly one subject; one live proposal and one approval per batch; the plan's
+SHA-256 `subject_digest`, since a batch has no `residual_version`); `repudiation_closure` records
+each break a batch-subject resolution emptied; the item machine gains the two edges the design
+decided (`PARKED → UNMATCHED`, `RESOLVED → REPUDIATED`); the expectation event `REOPENED`; the
+suspense origin `REPUDIATION`. **THE DOOR**: `POST /v1/operator/reconciliation/batches/
+{settlementBatchId}/repudiation` under `RECONCILIATION_RESOLVE`, keyed per principal, `201` with the
+plan in counts; approval, rejection and withdrawal through the resolution doors, routed by the
+subject; four reconciliation codes; settlement's `BatchRepudiation` behind reconciliation's port
+`SettlementBatchRepudiations`, composed by `app`; `settlement.SettlementBatchRepudiated` (event and
+audit); the OpenAPI baseline +250 lines, zero removed or changed. **DECIDED AT DESIGN, AS BUILT**:
+every item of the batch leaves to `REPUDIATED`, a `RESOLVED` one included; a `PENDING` item
+refuses (`BatchNotDisposed`); the batch's `REMITTANCE` closes `RESOLVED_BY_ADJUSTMENT` after its
+bank allocations are countered; a bank item matched to it reopens (`MATCHED → UNMATCHED`, an
+over-payer whole, `PARKED → UNMATCHED`, its excess unparked) with a fresh grace from its source's
+active rule; a value a resolution already released is answered, never released twice - for an
+unattributed line by the reversal's own suspense line, for a parked value by the park's exact
+inverse posting - each opening a `REPUDIATION` item on the opposite side owned by a new
+`PROCESSING_ERROR` break; every open break whose subject the repudiation empties closes with its
+closure row, a pending proposal on it withdrawn; a payout return applied from the batch stands, its
+expectation reopened to age. Refused before anything is written and recorded as debt: a correction
+`OFFSET` in the batch, an expectation a person already closed, a matched bank item a person already
+resolved (`RepudiationNotSupported`). **THE APPROVAL**: namespace-4 advisories for every affected
+source, blocking and sorted; the breaks to close; the resolution row; the items, expectations and
+suspense items sorted; the plan re-derived and its digest compared (`ResolutionStale`); the
+counter-allocations and edges; settlement's conditional edge; the union of projection rows
+pre-locked; the reversal and the unparks last; the answers, the closures, the event and the audits -
+one transaction. **THE BUILD'S FINDS, EACH FIXED**: a losing approver whose lock-free reads
+straddled the winner's commit answered the half-seen batch (`BatchNotRepudiable`, or
+`RepudiationNotSupported` on the remittance the winner closed) - it now re-reads the resolution and
+answers `ResolutionNotPending` (the tests agent's find, one path found in self-review); an
+over-payer's parked value released elsewhere stayed counted as parked; the closure trigger admitted
+a closure of an open break (the migration agent's find - it now requires a `RESOLVED` break); **the
+matcher judged the genuine line a duplicate of the fabrication it replaces** -
+`fingerprintSeenEarlier` counted `REPUDIATED` lines (the suite's first run). **THE GATE'S FINDS,
+EACH FIXED**: a closed break's case file lost the repudiation that closed it (a batch-subject
+resolution names no break) - `JdbcBreakInquiries` now reads it through `repudiation_closure`; the
+backlog's repudiation-against-a-matcher race, payout-return outcome and case-file trail had no case -
+added; `INV-SET-06` had no demonstration - added. **RECORDED, NOT BUILT**: the reopened
+`PAYOUT_RETURN`'s ageing into `MISSING_EXTERNAL` is the ageing sweep's, never driven by the suite;
+`finapp.reconciliation.resolution` (type `REPUDIATE_BATCH`) and the span are `P8-TSK-024`'s series.
+**DOCUMENTS**: ADR-0065 §10, ADR-0070 §10 and ADR-0071 implemented notes, `INV-REV-01` extended,
+the lifecycle document §5.2 (decided) and §5.4 (edges), `DISTRIBUTED_EXECUTION` §3 (the approval's
+row), `AUDITABLE_ACTIONS` +1, `ERROR_CONTRACT` +4, `DATA_CLASSIFICATION` +6, the plan's migration
+table. **ELEVEN PROBE RUNS OVER NINE SITES** (`MUTATION_TESTING.md` §2 +9 rows): a counter omitted
+(the deferred sums refused at commit), the remittance left open, an already-released value released
+again, the answer dropped, a repudiated line counted as a duplicate, self-approval at the domain
+(the `CHECK` alone answering, 500 not 409), the recognition never reversed, the case file without
+its closure - each caught; the namespace-4 advisories dropped SURVIVED, by the matcher's contract
+that the advisory orders and the locked re-derivation arbitrates - recorded, not claimed - every
+restore byte-identical (sha256-verified). **Multi-instance PASS**: ten approvers give one reversal,
+one counter per allocation, one batch edge, one event (counted); the matcher first makes the
+proposal stale, the repudiation first leaves the matcher nothing, and the true race lands exactly
+one coherent outcome, never a 500. **NEXT**: `P8-TSK-024` `READY` (meters, the dashboard row and
+operator reports). **Verified** by targeted tiers from fresh runs on the final code — settlement hermetic 166 across 27 and database 70 across 11, reconciliation hermetic 165 across 30 and database 140 across 15, app hermetic 587 across 111 suites, the repudiation suite in its own container 13 across 1, the twelve proof-group suites in ONE shared container 62 across 12, the unmatched-confirmation suite 9, the pull suite 11, the payout cash suite 5, the scheme cash suite 4, the payout return suite 14, the readmission suite 10, the administration suite 7, the column-classification guard 5, and the document guards 125 across 22 re-run after the records landed, ALL 0 FAILURES — the full battery and the fleet-wide database and kafka tiers deliberately skipped on the owner's instruction.
 
 ### Previously
 

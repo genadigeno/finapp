@@ -104,6 +104,7 @@ public final class BatchRepudiations {
     @NonNull private final AuditWriter<Connection> audit;
     @NonNull private final IdGenerator ids;
     @NonNull private final Clock clock;
+    @NonNull private final ReconciliationTelemetry telemetry;
 
     // ------------------------------------------------------------------ outcomes
 
@@ -491,11 +492,11 @@ public final class BatchRepudiations {
         Plan plan = derive(unitOfWork, batchId, run, true);
         if (!plan.sources().equals(seen.sources())
                 || !Arrays.equals(plan.digest(), seen.digest())) {
-            throw new ResolutionMachine.ResolutionStale(
+            throw stale(
                     "the batch's subject moved while its locks were taken");
         }
         if (!Arrays.equals(plan.digest(), row.subjectDigest())) {
-            throw new ResolutionMachine.ResolutionStale(
+            throw stale(
                     "the batch's subject moved since the proposal");
         }
 
@@ -683,6 +684,8 @@ public final class BatchRepudiations {
                 ResolutionStatus.APPROVED, actor, Optional.empty(), now, correlation);
         batches.announce(unitOfWork, batchId, resolutionId, reversalEntry, actor, now,
                 correlation);
+        telemetry.resolved(
+                ResolutionKind.REPUDIATE_BATCH, ResolutionOutcome.APPROVED, Optional.empty());
         Counts counts = plan.counts(reversalEntry.isPresent());
         audit(unitOfWork, actor, now, ReconciliationAuditAction.RESOLUTION_APPROVED,
                 resolutionId, Optional.empty(),
@@ -712,6 +715,12 @@ public final class BatchRepudiations {
                     now.journalEntryId(), true));
         }
         throw new ResolutionMachine.ResolutionNotPending(now.status());
+    }
+
+    /** A stale approval, counted at once - the refusal commits nothing (`P8-TSK-024`). */
+    private ResolutionMachine.ResolutionStale stale(String detail) {
+        telemetry.staleRefused(ResolutionKind.REPUDIATE_BATCH);
+        return new ResolutionMachine.ResolutionStale(detail);
     }
 
     /** The new owner and its {@code REPUDIATION} item, born together (V011's deferral). */
@@ -800,6 +809,8 @@ public final class BatchRepudiations {
                                 throw new IllegalStateException(
                                         "the locked proposal was decided by another writer");
                             }
+                            telemetry.resolved(
+                                    pending.kind(), ResolutionOutcome.WITHDRAWN, Optional.empty());
                             String detail = "repudiation=" + resolutionId;
                             resolutions.appendEvent(
                                     unitOfWork, pending.id(),
@@ -881,6 +892,12 @@ public final class BatchRepudiations {
             Actor actor,
             CorrelationId correlation) {
         Instant now = Instant.now(clock);
+        telemetry.resolved(
+                ResolutionKind.REPUDIATE_BATCH,
+                to == ResolutionStatus.REJECTED
+                        ? ResolutionOutcome.REJECTED
+                        : ResolutionOutcome.WITHDRAWN,
+                Optional.empty());
         if (!resolutions.decide(unitOfWork, row.id(), to, actor, now, Optional.empty(),
                 Optional.empty(), Optional.empty())) {
             throw new IllegalStateException(

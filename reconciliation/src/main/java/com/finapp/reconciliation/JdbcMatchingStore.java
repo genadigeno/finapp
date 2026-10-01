@@ -1988,6 +1988,23 @@ public final class JdbcMatchingStore implements MatchingStore {
     }
 
     @Override
+    public Optional<Instant> runBornAt(Connection unitOfWork, UUID runId) {
+        try (PreparedStatement read =
+                unitOfWork.prepareStatement(
+                        "SELECT created_at FROM reconciliation.reconciliation_batch WHERE id = ?")) {
+            read.setObject(1, runId);
+            try (ResultSet row = read.executeQuery()) {
+                return row.next()
+                        ? Optional.of(row.getObject("created_at", java.time.OffsetDateTime.class)
+                                .toInstant())
+                        : Optional.empty();
+            }
+        } catch (SQLException failure) {
+            throw new ReconciliationStorageException("could not read the run's birth", failure);
+        }
+    }
+
+    @Override
     public Optional<RunRow> lockRun(Connection unitOfWork, UUID runId) {
         try (PreparedStatement read =
                 unitOfWork.prepareStatement(
@@ -2070,6 +2087,28 @@ public final class JdbcMatchingStore implements MatchingStore {
                 unitOfWork.prepareStatement(
                         "SELECT outcome, count(*) AS n FROM reconciliation.match_decision"
                                 + " WHERE run_id = ? GROUP BY outcome")) {
+            read.setObject(1, runId);
+            try (ResultSet rows = read.executeQuery()) {
+                Map<DecisionOutcome, Long> counts = new HashMap<>();
+                while (rows.next()) {
+                    counts.put(
+                            DecisionOutcome.valueOf(rows.getString("outcome")),
+                            rows.getLong("n"));
+                }
+                return Map.copyOf(counts);
+            }
+        } catch (SQLException failure) {
+            throw new ReconciliationStorageException(
+                    "could not count the run's outcomes", failure);
+        }
+    }
+
+    @Override
+    public Map<DecisionOutcome, Long> firstDecisionCounts(Connection unitOfWork, UUID runId) {
+        try (PreparedStatement read =
+                unitOfWork.prepareStatement(
+                        "SELECT outcome, count(*) AS n FROM reconciliation.match_decision"
+                                + " WHERE run_id = ? AND origin = 'RUN' GROUP BY outcome")) {
             read.setObject(1, runId);
             try (ResultSet rows = read.executeQuery()) {
                 Map<DecisionOutcome, Long> counts = new HashMap<>();

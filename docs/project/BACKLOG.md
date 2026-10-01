@@ -12612,7 +12612,8 @@ break row, as the approval door must.)*
   is recorded with an owning phase against F4 and the gate's *Replay and reprocessing* criterion
   ("repudiation, if not deferred").
 
-**P8-TSK-024 — Meters, the dashboard row and operator reports** — `READY` (marked by `P8-TSK-023`'s completion gate)
+**P8-TSK-024 — Meters, the dashboard row and operator reports** — `COMPLETE` (2026-10-01; marked `READY` by `P8-TSK-023`'s completion gate)
+- **As built** (2026-10-01): as `CURRENT_STATE.md` §Just completed and `history/TASK_HISTORY.md` record. No persistence, as claimed. Every scope item built: the ten missing series (the rest adopted, never duplicated), `severity` with its argument, four report routes (+536 OpenAPI lines, zero removed), ten panels, seventeen alert rules (three beyond the scope's list: a never-accepted source, a stuck file and a stalled run - the ages §15 marks alertable), seven spans. Deviations: `finapp.reconciliation.rematch` counts `REMATCH` decisions by outcome and `REPROCESS` decisions only when they allocate; the match rate counts a `BATCH` run's first (`RUN`) decisions only; the domain spans open before the leg restores its correlation (recorded); per-source report rows are bounded in key order (the register is far under the bound). The gate fixed counts that a JDBC savepoint's rollback had undone - the port's `countMark` / `discardCountsAfter`.
 - *Design inputs from `P8-TSK-023` (2026-10-01)*: `finapp.reconciliation.resolution` counts the `REPUDIATE_BATCH` kind too (its type label), and the span `reconciliation.resolve` covers a repudiation's approval - both deferred here with their series.
 - **Objective**: `PHASE_8_PLAN.md` §15 whole — every settlement and reconciliation health signal
   visible on a running instance as counts, ages and verdicts, and every amount answered by an
@@ -12703,7 +12704,7 @@ break row, as the approval door must.)*
   and audited; no amount in any series (static check); every probe caught.
 - **Definition of done**: `DOD-OBS`, `DOD-TEST`, `DOD-DOC`. **Risk**: Low. **Cx**: M.
 
-**P8-TST-001 — The settlement and reconciliation storm** — `PLANNED`
+**P8-TST-001 — The settlement and reconciliation storm** — `READY` (marked by `P8-TSK-024`'s completion gate)
 - **Objective**: every source, every fault that produces a break and every recovery path at once
   under ten matcher instances, reconciled to the minor unit in every round and at rest — the proofs,
   the trial balance, the break census and the replay counted, not argued.

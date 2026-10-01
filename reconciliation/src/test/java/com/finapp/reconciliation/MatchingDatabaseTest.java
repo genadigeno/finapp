@@ -158,6 +158,39 @@ class MatchingDatabaseTest {
                 new JdbcAuditWriter(), IDS, CLOCK, config, runner());
     }
 
+    /** The run leg reporting into {@code telemetry} (`P8-TSK-024`). */
+    private static Matching matching(Matching.Config config, ReconciliationTelemetry telemetry) {
+        return new Matching(
+                store, new MatchingRules(),
+                new JdbcBreakRegister(new JdbcOutboxWriter(), new JdbcAuditWriter(), IDS),
+                new Suspense(postingService(), new JdbcLedgerAccountStore(), IDS),
+                ResolutionFixtures.resolutions(IDS, CLOCK),
+                LOOKUP,
+                new JdbcLedgerAccountStore(), new JdbcOutboxWriter(),
+                new JdbcAuditWriter(), IDS, CLOCK, config, runner(), telemetry);
+    }
+
+    /** What the run leg reported - the port's two run-leg calls, recorded. */
+    private static final class RecordedTelemetry implements ReconciliationTelemetry {
+        record Completion(UUID sourceId, Map<DecisionOutcome, Long> outcomes,
+                Optional<Duration> sinceBirth) {}
+
+        final List<Completion> completions =
+                java.util.Collections.synchronizedList(new ArrayList<>());
+        final AtomicLong rematches = new AtomicLong();
+
+        @Override
+        public void runCompleted(UUID sourceId, Map<DecisionOutcome, Long> outcomes,
+                Optional<Duration> sinceBirth) {
+            completions.add(new Completion(sourceId, Map.copyOf(outcomes), sinceBirth));
+        }
+
+        @Override
+        public void rematched(UUID sourceId, DecisionOutcome outcome) {
+            rematches.incrementAndGet();
+        }
+    }
+
     private static PostingService postingService() {
         return new PostingService(
                 new IdempotentExecutor(
@@ -872,6 +905,67 @@ class MatchingDatabaseTest {
 
     @Test
     @Order(8)
+    @DisplayName("the run leg reports what it decided (P8-TSK-024): a BATCH run's completion"
+            + " carries its FIRST decisions' outcome counts and its age, once; a late"
+            + " allocation reports as one rematch, an unchanged reprocess examination as"
+            + " none, and a REPROCESS run's completion never reaches the match rate")
+    void theRunLegReportsItsDecisions() throws Exception {
+        RecordedTelemetry telemetry = new RecordedTelemetry();
+        Matching reporting = matching(new Matching.Config(200, 2), telemetry);
+        String tag = Integer.toHexString(new SecureRandom().nextInt());
+        UUID batchRun =
+                seedRun(
+                        line(1, ExternalLineType.CAPTURE, 3_00, EUR,
+                                ItemKeyKind.PSP_CAPTURE_REF, "CAP-TELE-" + tag + "-1", SETTLED_ON),
+                        line(2, ExternalLineType.CAPTURE, 4_00, EUR,
+                                ItemKeyKind.PSP_CAPTURE_REF, "CAP-TELE-" + tag + "-2", SETTLED_ON));
+        for (int tick = 0; tick < 5 && !"COMPLETED".equals(status(batchRun)); tick++) {
+            reporting.sweep();
+        }
+        assertThat(status(batchRun)).isEqualTo("COMPLETED");
+        assertThat(telemetry.completions)
+                .as("the BATCH run's completion: its two items by outcome, and its age")
+                .anySatisfy(completion -> {
+                    assertThat(completion.sourceId()).isEqualTo(SOURCE);
+                    assertThat(completion.outcomes())
+                            .containsEntry(DecisionOutcome.UNMATCHED, 2L);
+                    assertThat(completion.outcomes().values().stream()
+                            .mapToLong(Long::longValue).sum()).isEqualTo(2L);
+                    assertThat(completion.sinceBirth()).hasValueSatisfying(age ->
+                            assertThat(age.isNegative()).isFalse());
+                });
+        int completionsBefore = telemetry.completions.size();
+        long rematchesBefore = telemetry.rematches.get();
+
+        // A late record: line 1's expectation opens now, so one leg - the rematch or the
+        // reprocess, whichever reaches it first - allocates it; every other residual the
+        // reprocess examines is left as it was.
+        openExpectation("CAP-TELE-" + tag + "-1", 3_00, EUR, ExpectationDirection.INBOUND);
+        RunAdministration administration =
+                new RunAdministration(store, runs, new JdbcAuditWriter(), IDS);
+        RunAdministration.Reprocessing opened =
+                runner().inTransaction(unitOfWork -> administration.requestReprocessing(
+                        unitOfWork, SOURCE, new Actor("op-telemetry", ActorType.EMPLOYEE),
+                        "re-decide the residuals", Instant.now(CLOCK),
+                        CorrelationId.generate(IDS)));
+        for (int tick = 0; tick < 10 && !"COMPLETED".equals(status(opened.runId())); tick++) {
+            reporting.sweep();
+        }
+        assertThat(status(opened.runId())).isEqualTo("COMPLETED");
+        assertThat(itemStatus(batchRun, 1)).isEqualTo("MATCHED");
+        assertThat(itemStatus(batchRun, 2)).isEqualTo("UNMATCHED");
+        assertThat(opened.itemCount()).as("the reprocess examined residuals")
+                .isGreaterThanOrEqualTo(1);
+        assertThat(telemetry.rematches.get() - rematchesBefore)
+                .as("the one late allocation, and no unchanged examination")
+                .isEqualTo(1L);
+        assertThat(telemetry.completions)
+                .as("a REPROCESS run's completion is never a run completion on the match rate")
+                .hasSize(completionsBefore);
+    }
+
+    @Test
+    @Order(9)
     @DisplayName("consecutive chunk failures block the run with its CRITICAL break, and"
             + " the blocked run holds its source visibly - a later run stays untouched")
     void consecutiveFailuresBlockTheRunVisibly() throws Exception {

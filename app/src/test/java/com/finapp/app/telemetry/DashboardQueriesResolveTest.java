@@ -84,7 +84,10 @@ class DashboardQueriesResolveTest {
                     "purpose",
                     // P7-TSK-015: the rail and dispute row groups by rail, judged type and
                     // dispute stage - labels, not series.
-                    "rail", "type", "stage");
+                    "rail", "type", "stage",
+                    // P8-TSK-024: the settlement and reconciliation row groups by settlement
+                    // source and break severity - labels, not series.
+                    "source", "severity");
 
     @LocalServerPort private int port;
 
@@ -140,6 +143,12 @@ class DashboardQueriesResolveTest {
         assertThat(queriedSeriesNames())
                 .as("the outbox panels are the ones this task added")
                 .contains("finapp_outbox_pending", "finapp_outbox_oldest_seconds");
+        assertThat(queriedSeriesNames())
+                .as("the settlement and reconciliation row (P8-TSK-024) is read too")
+                .contains(
+                        "finapp_reconciliation_break_age",
+                        "finapp_reconciliation_item_total",
+                        "finapp_settlement_source_silence");
         assertThat(publishedSeriesNames()).contains("finapp_outbox_pending");
     }
 

@@ -144,7 +144,10 @@ public final class BatchAcceptance {
 
     private Outcome acceptOne(UUID fileId) {
         try {
-            return transactions.inTransaction(uow -> handleClaimed(uow, fileId));
+            return observer.spans().within(
+                    "settlement.accept",
+                    java.util.Map.of("file.id", fileId.toString()),
+                    () -> transactions.inTransaction(uow -> handleClaimed(uow, fileId)));
         } catch (RuntimeException ourDefect) {
             // Contained per file: the transaction rolled back whole, the file stays PARSED
             // and visibly ages (ADR-0066 §9's stance at the accept leg). The class only.
@@ -254,6 +257,8 @@ public final class BatchAcceptance {
             throw new SettlementStorageException(
                     "batch " + batch.id() + " moved under a held claim");
         }
+        // Counted only once this transaction commits (the composition's afterCommit).
+        observer.accepted(file.sourceCode(), java.time.Duration.between(file.receivedAt(), now));
         batches.appendBatchEvent(
                 uow,
                 batch.id(),

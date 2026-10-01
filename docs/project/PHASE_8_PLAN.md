@@ -1303,6 +1303,12 @@ aggregated with `max()` fleet-wide; counters count committed facts after commit 
 their descriptions are corrected to "parked, ever", and the alertable signal becomes
 `finapp.reconciliation.suspense.*` (`P8-TSK-020`).
 
+*(As built by `P8-TSK-024`, 2026-10-01: all 32 rows published by a fresh instance -
+`PlannedMetersExistTest`'s Phase 8 method, ahead of the phase's flip. `severity` values are
+lowercase, like `outcome` and `type`. The spans run through the platform `Spans` port, identifier
+attributes only. The row's ten panels are in `finapp-platform.json` and the alerts in
+`infra/prometheus/rules/settlement-reconciliation.yml`, both resolved against the live scrape.)*
+
 **Tracing.** Spans `settlement.receive`, `settlement.parse`, `settlement.accept`,
 `reconciliation.chunk`, `reconciliation.rematch`, `reconciliation.age`, `reconciliation.resolve`,
 with identifier attributes only and one correlation restored per chunk. The durable trace is the

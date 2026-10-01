@@ -424,85 +424,75 @@ since M0.1". Moved, not edited.)*
 
 ## Current Task
 
-**`P8-TSK-024` — Meters, the dashboard row and operator reports** — `READY`, M8.7, Operating it,
-at 3 of 4: every `PHASE_8_PLAN.md` §15 series not yet shipped, eagerly registered per compiled
-source, severity and type, and the audited operator reports - the operator's reading of the
-proofs' inputs, never a metric of an amount (ADR-0072). Its entry and field set are in
+**`P8-TST-001` — The settlement and reconciliation storm** — `READY`, M8.8, Proof, at 0 of 3:
+every source, every fault that produces a break and every recovery path at once under ten matcher
+instances, reconciled to the minor unit in every round and at rest. Its entry and field set are in
 [`BACKLOG.md`](BACKLOG.md). **Not started.**
 
 ### Just completed
 
-**`P8-TSK-023` — Batch repudiation** — `COMPLETE` (2026-10-01). **M8.7, Operating it, at 3 of
-4**: an accepted settlement batch proven fabricated or mis-normalised is repudiated under four-eyes
-by compensation alone - its recognition reversed through `ReversalService`, every allocation of its
-items mirrored by an append-only counter-allocation, its parks released, the breaks it emptied
-closed, the file retained byte-identical - and the genuine file then accepted (`INV-REV-01`,
-`INV-AUD-04`, `INV-REC-07`, `INV-SET-06`; protected `INV-REV-02`, `INV-SET-04`, `INV-HIST-02`,
-`INV-REC-06`, `-09`). Kept, not deferred (transition decision O6). **TWO MIGRATIONS, AS CLAIMED**:
-settlement `V010` (the batch's `REPUDIATED`: the status `CHECK`, the trigger's one new edge
-`ACCEPTED → REPUDIATED` with the acceptance facts frozen, the honesty `CHECK`s widened to a
-repudiated row) and reconciliation `V013`. **THE DESIGN'S FINDS, MADE GOOD IN `V013`**: the
-backlog's `allocation.reverses_allocation_id UNIQUE` and `resolution.settlement_batch_id` did not
-exist - the counter-allocation is now bound to its original once and exactly
-(`allocation_reversed_once` and a mirror trigger, for every writer), and the resolution has its
-batch subject (exactly one subject; one live proposal and one approval per batch; the plan's
-SHA-256 `subject_digest`, since a batch has no `residual_version`); `repudiation_closure` records
-each break a batch-subject resolution emptied; the item machine gains the two edges the design
-decided (`PARKED → UNMATCHED`, `RESOLVED → REPUDIATED`); the expectation event `REOPENED`; the
-suspense origin `REPUDIATION`. **THE DOOR**: `POST /v1/operator/reconciliation/batches/
-{settlementBatchId}/repudiation` under `RECONCILIATION_RESOLVE`, keyed per principal, `201` with the
-plan in counts; approval, rejection and withdrawal through the resolution doors, routed by the
-subject; four reconciliation codes; settlement's `BatchRepudiation` behind reconciliation's port
-`SettlementBatchRepudiations`, composed by `app`; `settlement.SettlementBatchRepudiated` (event and
-audit); the OpenAPI baseline +250 lines, zero removed or changed. **DECIDED AT DESIGN, AS BUILT**:
-every item of the batch leaves to `REPUDIATED`, a `RESOLVED` one included; a `PENDING` item
-refuses (`BatchNotDisposed`); the batch's `REMITTANCE` closes `RESOLVED_BY_ADJUSTMENT` after its
-bank allocations are countered; a bank item matched to it reopens (`MATCHED → UNMATCHED`, an
-over-payer whole, `PARKED → UNMATCHED`, its excess unparked) with a fresh grace from its source's
-active rule; a value a resolution already released is answered, never released twice - for an
-unattributed line by the reversal's own suspense line, for a parked value by the park's exact
-inverse posting - each opening a `REPUDIATION` item on the opposite side owned by a new
-`PROCESSING_ERROR` break; every open break whose subject the repudiation empties closes with its
-closure row, a pending proposal on it withdrawn; a payout return applied from the batch stands, its
-expectation reopened to age. Refused before anything is written and recorded as debt: a correction
-`OFFSET` in the batch, an expectation a person already closed, a matched bank item a person already
-resolved (`RepudiationNotSupported`). **THE APPROVAL**: namespace-4 advisories for every affected
-source, blocking and sorted; the breaks to close; the resolution row; the items, expectations and
-suspense items sorted; the plan re-derived and its digest compared (`ResolutionStale`); the
-counter-allocations and edges; settlement's conditional edge; the union of projection rows
-pre-locked; the reversal and the unparks last; the answers, the closures, the event and the audits -
-one transaction. **THE BUILD'S FINDS, EACH FIXED**: a losing approver whose lock-free reads
-straddled the winner's commit answered the half-seen batch (`BatchNotRepudiable`, or
-`RepudiationNotSupported` on the remittance the winner closed) - it now re-reads the resolution and
-answers `ResolutionNotPending` (the tests agent's find, one path found in self-review); an
-over-payer's parked value released elsewhere stayed counted as parked; the closure trigger admitted
-a closure of an open break (the migration agent's find - it now requires a `RESOLVED` break); **the
-matcher judged the genuine line a duplicate of the fabrication it replaces** -
-`fingerprintSeenEarlier` counted `REPUDIATED` lines (the suite's first run). **THE GATE'S FINDS,
-EACH FIXED**: a closed break's case file lost the repudiation that closed it (a batch-subject
-resolution names no break) - `JdbcBreakInquiries` now reads it through `repudiation_closure`; the
-backlog's repudiation-against-a-matcher race, payout-return outcome and case-file trail had no case -
-added; `INV-SET-06` had no demonstration - added. **RECORDED, NOT BUILT**: the reopened
-`PAYOUT_RETURN`'s ageing into `MISSING_EXTERNAL` is the ageing sweep's, never driven by the suite;
-`finapp.reconciliation.resolution` (type `REPUDIATE_BATCH`) and the span are `P8-TSK-024`'s series.
-**DOCUMENTS**: ADR-0065 §10, ADR-0070 §10 and ADR-0071 implemented notes, `INV-REV-01` extended,
-the lifecycle document §5.2 (decided) and §5.4 (edges), `DISTRIBUTED_EXECUTION` §3 (the approval's
-row), `AUDITABLE_ACTIONS` +1, `ERROR_CONTRACT` +4, `DATA_CLASSIFICATION` +6, the plan's migration
-table. **ELEVEN PROBE RUNS OVER NINE SITES** (`MUTATION_TESTING.md` §2 +9 rows): a counter omitted
-(the deferred sums refused at commit), the remittance left open, an already-released value released
-again, the answer dropped, a repudiated line counted as a duplicate, self-approval at the domain
-(the `CHECK` alone answering, 500 not 409), the recognition never reversed, the case file without
-its closure - each caught; the namespace-4 advisories dropped SURVIVED, by the matcher's contract
-that the advisory orders and the locked re-derivation arbitrates - recorded, not claimed - every
-restore byte-identical (sha256-verified). **Multi-instance PASS**: ten approvers give one reversal,
-one counter per allocation, one batch edge, one event (counted); the matcher first makes the
-proposal stale, the repudiation first leaves the matcher nothing, and the true race lands exactly
-one coherent outcome, never a 500. **NEXT**: `P8-TSK-024` `READY` (meters, the dashboard row and
-operator reports). **Verified** by targeted tiers from fresh runs on the final code — settlement hermetic 166 across 27 and database 70 across 11, reconciliation hermetic 165 across 30 and database 140 across 15, app hermetic 587 across 111 suites, the repudiation suite in its own container 13 across 1, the twelve proof-group suites in ONE shared container 62 across 12, the unmatched-confirmation suite 9, the pull suite 11, the payout cash suite 5, the scheme cash suite 4, the payout return suite 14, the readmission suite 10, the administration suite 7, the column-classification guard 5, and the document guards 125 across 22 re-run after the records landed, ALL 0 FAILURES — the full battery and the fleet-wide database and kafka tiers deliberately skipped on the owner's instruction.
+**`P8-TSK-024` — Meters, the dashboard row and operator reports** — `COMPLETE` (2026-10-01).
+**M8.7, Operating it, CLOSES at 4 of 4**: every `PHASE_8_PLAN.md` §15 health signal is a count,
+an age or a verdict on a running instance, and every amount is answered by an audited operator
+report, never a metric (ADR-0072; `INV-SET-02`, `INV-REC-05`, `INV-AUD-02`; protected
+`INV-MON-01`, `INV-AUD-01`). **No persistence, as claimed.** **THE SERIES**: the ten §15 rows no
+earlier task shipped - `finapp.settlement.batch.accepted` and the ingestion latency's `accept`
+stage through settlement's observers; `finapp.reconciliation.item`, `.rematch`, `.run.latency`,
+`.break.raised`, `.break.open`, `.break.age`, `.resolution` (with `stale`, counted at the refusal
+because nothing commits), `.resolution.latency` and `.adjustment` through reconciliation's new
+`ReconciliationTelemetry` port - eager per compiled source, type, severity and kind, counted after
+commit; `break.raised` by a decorator over `BreakRegister`, so a converged raise counts nothing;
+`severity` joined `MetricNames` with its written argument; a fresh instance publishes all 32 rows
+(`PlannedMetersExistTest`'s Phase 8 method). **THE STATIC RANK**: `noExemptClassDependsOnMoney` -
+no floating-point exemption may depend on `Money` or `MoneyColumns` - with its planted violation
+caught in-suite. **THE SPANS**: the seven domain spans through the platform `Spans` port, whose
+`app` implementation drops every attribute that is not one of six identifier keys with a UUID
+value. **THE REPORTS**: `GET /v1/operator/reports/reconciliation/suspense`, `/unmatched`,
+`/summary?date=` and `/provider-costs?month=` under `RECONCILIATION_INVESTIGATE` - one
+`REPEATABLE READ` snapshot each, folded with `Money`, gross per currency and direction, bounded at
+100 worst first with `truncated`, each serving's `reconciliation.ReportRead` in the read's own
+transaction, a period outside 2000 to now the 422 before anything is read; the OpenAPI baseline
++536 lines, zero removed or changed (walked structurally). The per-rail cost meter Phase 7 deferred
+is settled as `PROCESSING_COSTS` plus the provider-costs report (ADR-0060 annotated). **THE ROW AND
+THE ALERTS**: ten panels in `finapp-platform.json`; seventeen alert rules in
+`infra/prometheus/rules/settlement-reconciliation.yml`, loaded by `prometheus.yml` and mounted by
+`compose.yaml`, every queried series resolved against a live scrape (`AlertRulesResolveTest`).
+**THE BUILD'S FINDS, EACH FIXED**: the alert rules matched `severity` in upper case where every
+published value is lower; a `REPROCESS` run's completion counted its items on the match rate after
+counting each as a rematch; the tracer caught `RuntimeException` but not `Error`; an unknown source
+id reloaded the register on every count (now at most once a minute, on the injected clock - an
+ambient `Instant.now()` the architecture tier refused); a fold test minted v4 identifiers; the
+reports suite expected one fee break where the domain's F1 rule (an unreachable original priced at
+zero) raises three, B's closed by its repudiation. **THE GATE'S FINDS, EACH FIXED**: a count
+deferred inside a JDBC savepoint that rolled back still ran at the outer commit - the deferred
+counts are now one transaction-bound list, and the port's `countMark` / `discardCountsAfter`
+drop what the savepoint undid, at Matching's item savepoints and the parking opener's (ten racing
+openers now count one raise); the match rate counted every decision carrying the run's id, a later
+leg's included - now the run's first (`RUN`) decisions only; an unchanged reprocess examination
+counted as a rematch - now only an allocation; a never-accepted source could not alert (`NaN`) -
+`SettlementSourceNeverAccepted`, with `SettlementFileStuck` and `ReconciliationRunStalled` for the
+two ages the plan marks alertable; the docs' "every tag value is lowercase" corrected. **RECORDED,
+NOT FIXED**: the domain spans open before the leg restores its correlation, so a chunk span carries
+the outer correlation and `source.id`, not the run's; the per-source report rows are bounded in key
+order, never truncated while the register stays under the bound. **DOCUMENTS**: ADR-0072 and
+ADR-0060 notes, the plan's §15 note, `MODULE_ARCHITECTURE` §6 (the rule and the exemption list),
+`AUDITABLE_ACTIONS` (the reports' detail), DECISIONS. **THIRTEEN PROBES, THIRTEEN CAUGHT**
+(`MUTATION_TESTING.md` §2 +13 rows): an amount tag, `NaN` read as zero, a report never audited, a
+route's permission swapped, `Spans.admits` admitting anything, the tracer ignoring it, counting
+before commit, a converged raise counted, a reprocess completion on the match rate, the run leg
+never reporting (through the real composition), the overdue alert on a misspelled series, a
+savepoint's mark dropping nothing, the losing opener's raise kept - every restore byte-identical
+(sha256-verified). **Multi-instance PASS**: the meters decide nothing - counters count committed
+facts per instance after commit (a savepoint's undone fact never), gauges read the shared database
+behind a floor and aggregate with `max()`, each report is one snapshot; ten racing openers count
+one raise and ten sweepers one break (counted). **NEXT**: `P8-TST-001` `READY` (the settlement and
+reconciliation storm, opening M8.8). **Verified** by targeted tiers from fresh runs on the final
+code - platform hermetic 181 across 21, settlement hermetic 166 across 27 and database 70 across 11, reconciliation hermetic 165 across 30 and database 142 across 15, app hermetic 640 across 117 suites, the architecture tier 142 across 23, the reports suite 3, the domain-spans suite 1, the dashboard guard 2, the alert-rules guard 5, the twelve proof-group suites in ONE shared container 62 across 12, the repudiation suite 13, the administration suite 7, the E2E suite 9, the pull suite 11, the payout cash suite 5, the scheme cash suite 4, the payout return suite 14, the readmission suite 10, the bank cash suite 5, the column-classification guard 5, and the document guards 127 across 22 re-run after the records landed, ALL 0 FAILURES - the full battery and the fleet-wide database and kafka tiers
+deliberately skipped on the owner's instruction.
 
 ### Previously
 
-The per-task completion records — 186 blocks, from `P8-TSK-022` back to project initiation
+The per-task completion records — 187 blocks, from `P8-TSK-023` back to project initiation
 (`X-TSK-004` cross-cutting, standing between `P7-TSK-001` and the Phase 6 → 7 transition) —
 are archived in [`history/TASK_HISTORY.md`](history/TASK_HISTORY.md).
 *(This pointer read "130 blocks, from `P6-TSK-005`" through four archivals — corrected by
@@ -938,9 +928,9 @@ Resolved during initiation:
 
 ## Next Task
 
-**`P8-TSK-024` — meters, the dashboard row and operator reports** — `READY` (the Current Task),
-marked by `P8-TSK-023`'s completion gate — its dependencies, the cash proof (`-016`), suspense
-complete (`-020`) and the position proof (`-007`), are all `COMPLETE`.
+**`P8-TST-001` — the settlement and reconciliation storm** — `READY` (the Current Task), marked
+by `P8-TSK-024`'s completion gate - its dependencies (`P8-TSK-017`…`-020`, `-022`, the position
+proof `-007`, the counters `-024` and the pulls `-021`) are all `COMPLETE`.
 *(This section read "`P8-TSK-009` — `READY`" from `P8-TSK-008`'s gate until
 `P8-TSK-013`'s record found it — the stale-second-copy class, in the section whose
 whole job is to mirror.)*
