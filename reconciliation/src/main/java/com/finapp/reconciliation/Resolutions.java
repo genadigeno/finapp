@@ -35,6 +35,7 @@ public interface Resolutions {
             long residualVersion,
             Optional<UUID> decisionId,
             Optional<UUID> fillingStatementId,
+            Optional<UUID> completedRunId,
             Optional<UUID> parkId,
             Optional<UUID> offsetItemId,
             Optional<UUID> journalEntryId,
@@ -49,10 +50,16 @@ public interface Resolutions {
             Objects.requireNonNull(explained, "explained must not be null");
             Objects.requireNonNull(decisionId, "decisionId must not be null");
             Objects.requireNonNull(fillingStatementId, "fillingStatementId must not be null");
-            if (decisionId.isPresent() == fillingStatementId.isPresent()) {
+            Objects.requireNonNull(completedRunId, "completedRunId must not be null");
+            // A blocked run's break is explained by the run's own completion (`P8-TSK-022`).
+            int provenance =
+                    (decisionId.isPresent() ? 1 : 0)
+                            + (fillingStatementId.isPresent() ? 1 : 0)
+                            + (completedRunId.isPresent() ? 1 : 0);
+            if (provenance != 1) {
                 throw new IllegalArgumentException(
-                        "an evidence closure names its decision or its filling statement,"
-                                + " exactly one");
+                        "an evidence closure names its decision, its filling statement or"
+                                + " its completed run, exactly one");
             }
             Objects.requireNonNull(parkId, "parkId must not be null");
             Objects.requireNonNull(offsetItemId, "offsetItemId must not be null");
@@ -83,8 +90,8 @@ public interface Resolutions {
                 CorrelationId correlation) {
             this(resolutionId, breakId, explained, residualVersion,
                     Optional.of(Objects.requireNonNull(decisionId, "decisionId must not be null")),
-                    Optional.empty(), parkId, offsetItemId, journalEntryId, ruleSetId, actor, at,
-                    correlation);
+                    Optional.empty(), Optional.empty(), parkId, offsetItemId, journalEntryId,
+                    ruleSetId, actor, at, correlation);
         }
     }
 

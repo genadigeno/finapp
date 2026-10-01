@@ -424,69 +424,108 @@ since M0.1". Moved, not edited.)*
 
 ## Current Task
 
-**`P8-TSK-022` — Rule-set administration, reprocessing, readmission, run requeue and replay** —
-`READY`, M8.7, Operating it, at 1 of 4 (`INV-HIST-04`, `INV-REC-04`, `INV-AUD-04`): the platform
-operated without editing history — matching policy changed only forward and only under four-eyes,
-residual items reprocessed under the new version, a file our own defect rejected readmitted, a
-blocked run requeued, every run's decisions replayed from their snapshots, a stored file's
-normalisation re-verifiable. Its entry and field set are in [`BACKLOG.md`](BACKLOG.md). **Not
+**`P8-TSK-023` — Batch repudiation** — `READY`, M8.7, Operating it, at 2 of 4 (`INV-REV-01`,
+`INV-AUD-04`, `INV-REC-07`, `INV-SET-06`): an accepted batch proven fabricated or mis-normalised
+is repudiated under four-eyes — its recognition reversed, its matches counter-allocated, its parks
+released, the file retained — and the genuine file then accepted, recovered through
+`P8-TSK-022`'s readmission. Its entry and field set are in [`BACKLOG.md`](BACKLOG.md). **Not
 started.**
 
 ### Just completed
 
-**`P8-TSK-021` — Pull acquisition, per-source credentials and source silence** — `COMPLETE`
-(2026-10-01). **M8.7, Operating it, OPENS at 1 of 4**: each source's evidence is fetched on schedule
-over its own confined credential and accepted without a second person, because the channel
-authenticates it (`INV-SET-07`); deduplicated with uploads by content; every silent source visible
-(ADR-0066 §1 and §10; `INV-HIST-02`; protected `INV-SET-04`, `INV-REC-10`, `INV-PAY-02`,
-`INV-RAIL-03`). A deferral candidate, first in the cut order — **not deferred**. **ONE MIGRATION, AS
-CLAIMED**: settlement `V008` (`pull_permit`, PK `(source_id, business_key)`, the business key a
-date or cycle token by `CHECK`, a trigger freezing its identity and refusing an EQUAL
-`last_attempt_at` as a step back and `attempts` that do not grow — for every writer — never deleted,
-`SELECT, INSERT` and `UPDATE (last_attempt_at, attempts)` the only grants; five classification rows).
-**THE SPI AND ITS ADAPTERS**: `settlement`'s `SettlementReportCollector` (`Report`, `NotYet`, or
-`Failed` under a closed vocabulary — unavailable, timeout, transport, refused answer) and one `app`
-HTTP adapter per source — PSP report, scheme cycle report, payout report, bank statement — each
-present only when its URL is configured, each over its own confined credential
-(`FINAPP_SETTLEMENT_PSP_REPORT_KEY`, `_SCHEME_REPORT_KEY`, `_PAYOUT_REPORT_KEY`,
-`_BANK_STATEMENT_KEY`; `ConfinedCredentialVariablesTest` 12 → 16), sent as a bearer token and never
-logged. **THE TRANSPORT**: `ProviderTransportGuard` reads the four source URLs at startup, admitting
-`https` or `sftp` off loopback and plain transport only to loopback — `sftp` for these alone.
-**THE PULL** (`SettlementPull`): the permit in its own transaction — windowed for the schedule, an
-unconditional strictly advancing renewal for an operator — then the fetch holding no connection
-(ADR-0046: an external read, at-least-once), then the ONE door with `received_via = PULL`, screened
-exactly as an upload, audited acting-only `settlement.SettlementFileReceivedByPull` (a duplicate pull
-writes its `DUPLICATE` receipt and nothing else); the accept leg's existing eligibility accepts it
-unattested. **THE SCHEDULE** (`SettlementPullSchedule`, leaderless, off in tests;
-`SettlementPullSweep`): the worklist DERIVED each tick from stored rows (`ExpectedArrivals`) — each
-lookback business date past its cut-off with no accepted batch, and for the scheme each cycle token
-payments' records name past the lag with no accepted batch, read through payments' new
-`SettlementCycleReads` — never a stored schedule; `LEASE_PROTECTED_SCHEDULERS` +1 with its argument,
-the system-actor register +1. **THE ROUTE**: `POST /v1/operator/settlement/sources/{code}/fetch`
-under `SETTLEMENT_INGEST` answers what the pull came to (`RECEIVED`, `DUPLICATE`, `REFUSED`,
-`NOT_YET`, `FAILED`, `NOT_PULLABLE`), natural idempotency by the content address, audited
-`settlement.SettlementFetchRequested`; `settlement.SourceUnknown` and `.SourceRetired`; the OpenAPI
-baseline regenerated (additive). **THE METERS**: `finapp.settlement.source.silence` (seconds since a
-source's last ACCEPTED batch by any channel, eager per declared source, NaN when unreadable or never
-accepted, never zero) and `finapp.settlement.pull.failure` (`source`, `outcome`, eager).
-**THE TESTS AGENT'S FINDS, EACH FIXED**: an `sftp` source URL passed the guard and then made every pull throw through the JDK HTTP client, breaking "every answer is a value" — the HTTP adapter now refuses any non-HTTP scheme at construction, naming the scheme and never the URL, so such a configuration fails startup (no `sftp` collector is built); and the operator's fetch wrote no audit when its pull threw — now recorded `FAILED` naming the exception's class, then rethrown. **THE GATE'S FINDS, EACH FIXED**: the scheme's cycle worklist read ONE fixed page of 200 tokens in token order, so once those cycles were received every later cycle's report would never be pulled — the `P8-TSK-019` keyset lesson met again: payments' `cyclesSince` now takes the last token and the sweep walks every page, proven by a hermetic walk over 450 cycles and against the real schema in the pay-by-bank suite (that SQL had run in no test before); one source's unreadable worklist no longer costs the others their pulls; the four credentials had no credential tests (the `P2-TSK-011` lesson) and the silence gauge none — both added; the guard's source case called `verifySource` directly and could not see startup skip it — a construction case added; the backlog's counted race of pulls against an upload of the same bytes had been sequential — a ten-way race added (five pulls, five uploads: one file, ten receipts, one `NEW`); the cycle records' `token` components, which the secret-name guard read as secrets, renamed `cycle`; `SettlementPullMetrics` exempted from the floating-point rule on the sibling gauges' argument (an age and a count, never an amount); the OpenAPI baseline regenerated (+64 lines, zero removed; the three `BREAKING` labels are `required` flags on the brand-new path and component). **DOCUMENTS**: ADR-0066's implemented note, `INV-SET-07` as built,
-`DISTRIBUTED_EXECUTION` §3 (the schedule's row built), `SECURITY_ARCHITECTURE`'s transport row,
-`AUDITABLE_ACTIONS` +2, `DATA_CLASSIFICATION` +5, `MODULE_ARCHITECTURE`, the plan's migration table. **SIX PROBE RUNS, SIX CAUGHT** (`MUTATION_TESTING.md` §2 +7 rows under `INV-CON-02` ×2, `INV-SET-07` ×2, `INV-SET-02` ×2 and the permit's twin reading): the permit's window condition dropped (ten claimers all took it — and through the real composition none of ten racing pulls was paced and the sweep's second tick fetched every date again), a pulled file held for attestation (caught five ways), the silence gauge reading zero when unreadable, the transport guard not consulted for a source URL at startup, and the cycle worklist's keyset walk dropped — every restore byte-identical (sha256-verified).
-**Multi-instance PASS**: ten claimers of one key take the permit once; ten racing pulls of one report
-reach the provider once and land one file; a pull and an upload of the same bytes land one file and a
-`DUPLICATE` receipt; permits never step back, an equal instant refused by the trigger (counted).
-**NEXT**: `P8-TSK-022` `READY` (rule-set administration, reprocessing, readmission, run requeue and
-replay). **Verified** by targeted tiers from fresh runs on the final code — settlement hermetic 163 across 26 and database 48 across 8, payments hermetic 246 across 35, app hermetic 587 across 111 suites (one failure: the credential-sink guard's named list of request schemas, which reads the committed OpenAPI baseline and so saw `SettlementFetchRequest` only once the baseline was accepted — the entry added, the guard re-run green with the document guards), the pull suite in its own container 11 across 1, the pay-by-bank suite 31 across 1, the twelve proof-group suites in ONE shared container 62 across 12, the column-classification guard 5, and the document guards re-run after the records landed, ALL 0 FAILURES — the full battery and the fleet-wide database and kafka tiers deliberately skipped on the owner's instruction.
+**`P8-TSK-022` — Rule-set administration, reprocessing, readmission, run requeue and replay** —
+`COMPLETE` (2026-10-01). **M8.7, Operating it, at 2 of 4**: the platform is operated without
+editing history (`INV-HIST-04`, `INV-REC-04`, `INV-AUD-04`; protected `INV-REC-07`, `INV-REC-08`,
+`INV-SET-07`, `INV-SET-04`, `INV-IDEM-01`) — matching policy changes only forward and only under
+four-eyes, residual items are re-decided under the new version, a file our own defect rejected is
+readmitted, a blocked run is requeued, every run's decisions replay from their snapshots, and a
+stored file's normalisation is re-verifiable. **TWO MIGRATIONS, AS CLAIMED**: reconciliation `V012`
+and settlement `V009`. **`V012` MADE GOOD FOUR FINDINGS OF THE DESIGN**: (1) the rule set had no
+machine — `ACTIVE` alone, every update frozen — so `PROPOSED → ACTIVE | REJECTED`, `ACTIVE →
+RETIRED` was built by trigger for every writer, the four-eyes `CHECK` (the seed's
+`migration:V002` alone exempt), one proposal per source, `rule_set_event`, members admitted only
+beside their own proposal born in the same transaction (an `xmin` guard, an existing key passing
+through to its unique), `tolerance_once` `NULLS NOT DISTINCT`, and a retirement committed only
+beside its successor (a deferred constraint trigger — exactly one active version per source, the
+build agent's find); (2) the rematch leg pinned the ORIGINAL run's version against ADR-0068 §8 — it
+now reads the source's active version once per batch, grace staying pinned to its run; (3) "a
+decision is a pure function of its stored snapshot" did not hold for the snapshot as stored — six
+columns (`verdict`, `judged_status`, `judged_minor`, `fingerprint_seen_earlier`,
+`group_membership_complete`, `fee_gross_minor`) and `match_parked_original` complete it, every
+writer filling them and an insert trigger requiring them; (4) a blocked run's break could never
+close — a requeued run's completion closes it `EVIDENCED` naming the run, and a diverged replay's
+break admits a person's `ACKNOWLEDGE`. Also `run_replay` (append-only) and
+`break_one_open_per_decision`. **`V009`**: `settlement.file_inherits_authentication`,
+`file_submitters` and `file_authenticates_readmission`, the one rule the trigger refuses by (on
+INSERT and every UPDATE, judging a row by its ORIGINAL's id), the accept leg claims by and the
+attestation's domain rank reads. **THE DOORS**: seven reconciliation routes — rule sets listed,
+proposed (keyed, `201`), approved and rejected under `RECONCILIATION_ADMINISTER`; reprocessing
+(keyed, `202`) and requeue under the same; replay under `RECONCILIATION_INVESTIGATE` — and two
+settlement routes: readmission (keyed per principal, `202`) under `RECONCILIATION_ADMINISTER` and
+the re-parse verification under `RECONCILIATION_INVESTIGATE`; nine reconciliation and three
+settlement error codes; six reconciliation and two settlement audit actions;
+`finapp.reconciliation.replay` (`outcome`, eager). The OpenAPI baseline regenerated: +1,275 lines,
+zero removed or changed (verified structurally; the 37 `BREAKING` labels are required flags on the
+new paths and schemas). **DECIDED AT DESIGN, AS BUILT**: a `DECLINED` file IS readmissible,
+inheriting nothing (ADR-0066 §8's recorded question); a `CONFLICTING_BATCH` original is judged by
+its conflict, not by the word `REPUDIATED` — its bytes re-parsed in memory and admitted only when no
+live batch holds their identity, proven by declining the standing file (repudiation is
+`P8-TSK-023`'s, and its test of readmission after a repudiation is recorded in its entry); a
+readmission's attester differs from EVERY submitter along the chain; the verification's door is an
+audited, reasoned operator request with five verdicts (`MATCHES`, `DIFFERS`, `NOT_PARSED`,
+`FORMAT_VERSION_UNAVAILABLE`, `CORRUPT`), replacing nothing. **THE REPLAY**: one repeatable-read
+read-only snapshot re-running each decision through the pure function its stored verdict names
+under its pinned version (the matching engine, the value-date group, the correction engine, the fee
+check; a manual choice structurally; a contained `ERRORED` decision counted apart), then one
+append — a divergence raising one CRITICAL `PROCESSING_ERROR(REPLAY_DIVERGED)` on the first
+divergent decision. **THE BUILD'S FINDS, EACH FIXED**: every existing rule-set fixture broke under
+the machine (each now proposes, then activates as a second actor); the credential-sink guard names
+top-level request bodies only (three nested schemas removed from its list); the readmission
+refusal's log line named an upload and the content-read javadoc was orphaned (the tests agent's
+finds). **THE GATE'S FINDS, EACH FIXED**: (a) no test proved the replay judges under the PINNED
+version — a replay reading the active one survived every case (probe 9); the suite now activates a
+version 5 with no rule where version 1's decisions fired and requires version 1's run to replay
+`IDENTICAL`; (b) **the reprocess leg's only arbiter was the source's try-lock**, against the
+matcher's own contract that the try-lock only orders: a line examined unchanged has no row update
+for a second instance's item lock to re-check, so ten sweepers with the try-lock bypassed over
+three-line chunks examined 17 lines twice — the `REPROCESS` run's row is now locked after every
+advisory and before any item, its status re-checked, proven by a module race with the lock bypassed
+(`MatchingDatabaseTest`) and by ten racing sweepers over HTTP; (c) the backlog's "reprocess
+allocations counted on `finapp.reconciliation.rematch`" names a meter `P8-TSK-024` owns —
+recorded in that entry. **RECORDED, NOT DEFECTS**: the approval's converged retry answers the
+version's state without the retired predecessor the first answer named; a keyed proposal replays
+its original receipt (`PROPOSED`) whatever the version became — idempotent replay semantics.
+**DOCUMENTS**: ADR-0066 and ADR-0068 implemented notes, `INV-SET-07` and `INV-HIST-04` as built,
+the lifecycle document, `DISTRIBUTED_EXECUTION` §3 (the controller's row and the reprocess leg's
+arbiter), `AUDITABLE_ACTIONS` +8, `ERROR_CONTRACT` +12, `DATA_CLASSIFICATION` +37,
+`MODULE_ARCHITECTURE`, the plan's migration tables. **FOURTEEN PROBE RUNS OVER ELEVEN SITES**
+(`MUTATION_TESTING.md` §2 +12 rows under `INV-HIST-04` ×3, `INV-AUD-04` ×3, `INV-SET-07` ×2,
+`INV-CON-02` ×2, `INV-REC-07`, `INV-REC-04`): the member guard, reprocess over matched items, the
+rematch reverted to the run's version, self-activation at the domain (read twice — the `CHECK`
+standing alone, and over HTTP a 500 where the domain's 409 belongs) and at the `CHECK`, the replay
+perturbation (caught by golden snapshots), `V009`'s trigger, the accept leg's eligibility — each
+caught; the replay's pin caught only after the gate's version-5 step; the try-lock bypassed over
+HTTP SURVIVED, rightly by contract but for the wrong reason (the race never left the first chunk,
+whose `OPEN → IN_PROGRESS` edge serializes it), which led to the run-row lock, whose removal is
+caught (a first run on one large chunk survived; the case now uses three-line chunks) — every
+restore byte-identical (sha256-verified). **Multi-instance PASS**: ten approvers activate once and
+retire once; ten proposers leave one proposal; ten reprocess requests open one run; ten reprocess
+sweepers over HTTP, and ten with the try-lock bypassed, decide each residual once and complete the
+run once; ten requeues have one winner; ten replays append ten verdicts and one break; ten
+readmissions land one file, in the module and over HTTP (counted). **NEXT**: `P8-TSK-023` `READY`
+(batch repudiation). **Verified** by targeted tiers from fresh runs on the final code — settlement hermetic 166 across 27 and database 60 across 9, reconciliation hermetic 165 across 30 and database 129 across 14, app hermetic 587 across 111 suites, the administration suite in its own container 7 across 1, the readmission suite 10 across 1, the twelve proof-group suites in ONE shared container 62 across 12, the unmatched-confirmation suite 9 across 1, the pull suite 11 across 1, the payout cash suite 5 across 1, the scheme cash suite 4 across 1, the payout return suite 14 across 1, the column-classification guard 5, and the document guards re-run after the records landed, ALL 0 FAILURES — the full battery and the fleet-wide database and kafka tiers deliberately skipped on the owner's instruction.
 
 ### Previously
 
-The per-task completion records — 183 blocks, from `P8-TSK-019` back to project initiation
+The per-task completion records — 185 blocks, from `P8-TSK-021` back to project initiation
 (`X-TSK-004` cross-cutting, standing between `P7-TSK-001` and the Phase 6 → 7 transition) —
 are archived in [`history/TASK_HISTORY.md`](history/TASK_HISTORY.md).
 *(This pointer read "130 blocks, from `P6-TSK-005`" through four archivals — corrected by
 `P6-TSK-015`'s gate — and then "145 blocks, `X-TSK-004` newest" through five more, corrected
 by `P7-TSK-007`'s gate: the stale-second-copy class, this time in the pointer whose last
-correction note was sitting right beside the staleness.)*
+correction note was sitting right beside the staleness. It then read "183 blocks, from
+`P8-TSK-019`" through `P8-TSK-020`'s and `P8-TSK-021`'s archivals — corrected by
+`P8-TSK-022`'s gate, the same class a third time.)*
 Each records what the task delivered, the mutations performed, and the findings made on the way.
 
 ---
@@ -913,9 +952,10 @@ Resolved during initiation:
 
 ## Next Task
 
-**`P8-TSK-022` — rule-set administration, reprocessing, readmission, run requeue and replay** —
-`READY` (the Current Task), marked by `P8-TSK-021`'s completion gate — its dependencies, runs,
-rematch and sweeps (`-013`) and the resolution machinery (`-015`), are both `COMPLETE`.
+**`P8-TSK-023` — batch repudiation** — `READY` (the Current Task), marked by `P8-TSK-022`'s
+completion gate — its dependencies, the resolution machinery (`-015`) and the bank statement
+(`-016`), are both `COMPLETE`, and the readmission a genuine file's recovery needs (`-022`) now
+exists.
 *(This section read "`P8-TSK-009` — `READY`" from `P8-TSK-008`'s gate until
 `P8-TSK-013`'s record found it — the stale-second-copy class, in the section whose
 whole job is to mirror.)*

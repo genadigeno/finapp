@@ -882,7 +882,13 @@ public final class ResolutionMachine {
                         actor,
                         now,
                         proposedOn,
-                        correlation));
+                        correlation,
+                        // A person's choice over the parked value (`P8-TSK-022`): replay
+                        // proves the choice was a candidate and the allocation its
+                        // cardinality gives.
+                        MatchingStore.Basis.of(
+                                DecisionVerdict.MANUAL_CHOICE, JudgedStatus.PARKED,
+                                amount.minorUnits())));
         matching.insertCandidates(unitOfWork, decisionId, List.of(hit));
         try {
             matching.insertAllocation(

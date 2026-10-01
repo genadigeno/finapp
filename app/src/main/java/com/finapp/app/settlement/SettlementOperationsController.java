@@ -136,6 +136,39 @@ public class SettlementOperationsController {
     }
 
     /**
+     * Readmits a file our own validation rejected (or a declined one, or a conflicting batch's
+     * whose conflict is gone) - a controller's keyed, reasoned recovery (`P8-TSK-022`,
+     * ADR-0066 §8). It inherits a pulled or attested original's authentication; otherwise it
+     * awaits its own attestation by a person distinct from every earlier submitter.
+     */
+    @PostMapping(
+            path = "/files/{id}/readmission",
+            consumes = MediaType.APPLICATION_JSON_VALUE)
+    @RequiresPermission(PermissionName.RECONCILIATION_ADMINISTER)
+    @RequiresIdempotencyKey
+    @ResponseStatus(HttpStatus.ACCEPTED)
+    public SettlementOperations.ReadmissionAnswer readmitSettlementFile(
+            @RequestHeader(IdempotencyKeyHeader.NAME) String idempotencyKey,
+            @PathVariable("id") String fileId,
+            @Valid @RequestBody SettlementReadmissionRequest body) {
+        return settlement.readmit(idempotencyKey, fileId, body);
+    }
+
+    /**
+     * Re-verifies a stored file's normalisation under its recorded format version (`P8-TSK-022`,
+     * ADR-0066 §9): reasoned and audited per access, it reads the content and replaces nothing.
+     */
+    @PostMapping(
+            path = "/files/{id}/verification",
+            consumes = MediaType.APPLICATION_JSON_VALUE)
+    @RequiresPermission(PermissionName.RECONCILIATION_INVESTIGATE)
+    public SettlementOperations.VerificationAnswer verifySettlementFile(
+            @PathVariable("id") String fileId,
+            @Valid @RequestBody SettlementVerificationRequest body) {
+        return settlement.verify(fileId, body);
+    }
+
+    /**
      * The ONE content path (`INV-REC-10`): reasoned, one audit record per read committed
      * before a byte is served, the checksum verified — a failed verification serves nothing
      * and is on the record as a failed read.

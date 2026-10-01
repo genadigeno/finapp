@@ -7,7 +7,7 @@ import lombok.RequiredArgsConstructor;
  * The settlement module's auditable actions ({@code AUDITABLE_ACTIONS.md}), arriving with the
  * commands whose designs fix their meaning — the {@code PaymentsAuditAction} rule. The door's
  * own actions arrived with the door (`P8-TSK-003`); the pull's arrive with the pull
- * (`P8-TSK-021`).
+ * (`P8-TSK-021`); readmission's and the re-parse verification's with them (`P8-TSK-022`).
  */
 @RequiredArgsConstructor
 public enum SettlementAuditAction implements AuditableAction {
@@ -125,7 +125,34 @@ public enum SettlementAuditAction implements AuditableAction {
             "settlement.SettlementFetchRequested",
             "An operator requested a pull of a source's report; the record names the source,"
                     + " the business key and the outcome.",
-            false);
+            false),
+
+    /**
+     * A person readmitted a rejected settlement file (`P8-TSK-022`, ADR-0066 §8): a new file
+     * row naming its original, its bytes the original's — verified, screened under the
+     * source's current format version, re-encrypted under the readmission's own id. Written
+     * in the readmission's one transaction; requires a reason. The change summary names the
+     * original, the readmission, the channel and the content address — never the content.
+     */
+    SETTLEMENT_FILE_READMITTED(
+            "settlement.SettlementFileReadmitted",
+            "An operator readmitted a rejected settlement file as a new file naming its"
+                    + " original, with the recorded reason; the record names both files and the"
+                    + " content address, never the content.",
+            true),
+
+    /**
+     * A person re-parsed a stored file under its RECORDED format version and compared the
+     * result with its stored lines (`P8-TSK-022`, ADR-0066 §8): the bytes are decrypted, so
+     * the access is audited per verification with a reason, like a content read. It never
+     * writes a line. The change summary names the file, the verdict and the lines compared.
+     */
+    SETTLEMENT_FILE_VERIFIED(
+            "settlement.SettlementFileVerified",
+            "An operator verified a stored settlement file by re-parsing it under its recorded"
+                    + " format version, with the recorded reason; the record names the verdict,"
+                    + " never a value from the file.",
+            true);
 
     private final String code;
     private final String description;

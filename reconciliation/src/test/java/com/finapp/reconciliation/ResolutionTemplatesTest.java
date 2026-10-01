@@ -60,8 +60,13 @@ class ResolutionTemplatesTest {
                 Set<ResolutionKind> admitted = ResolutionTemplates.admittedKinds(type, cause);
                 assertThat(admitted)
                         .doesNotContain(ResolutionKind.EVIDENCED, ResolutionKind.REPUDIATE_BATCH);
+                // A diverged replay's break stands on a DECISION and owns no value
+                // (P8-TSK-022): its one disposal is the acknowledgement asserted below.
+                boolean divergence =
+                        type == BreakType.PROCESSING_ERROR
+                                && cause == BreakCause.REPLAY_DIVERGED;
                 if (type.mayOwnSuspense() && !admitted.isEmpty()
-                        && type != BreakType.MISSING_EXTERNAL) {
+                        && type != BreakType.MISSING_EXTERNAL && !divergence) {
                     assertThat(admitted)
                             .as("every suspense-owning type writes off a DEBIT item: " + type)
                             .contains(ResolutionKind.WRITE_OFF);
@@ -107,6 +112,15 @@ class ResolutionTemplatesTest {
         assertThat(ResolutionTemplates.admittedKinds(
                         BreakType.TIMING_DIFFERENCE, BreakCause.values()[0]))
                 .containsExactly(ResolutionKind.ACKNOWLEDGE);
+        assertThat(ResolutionTemplates.admittedKinds(
+                        BreakType.PROCESSING_ERROR, BreakCause.REPLAY_DIVERGED))
+                .as("a diverged replay is acknowledged once investigated - it holds no value"
+                        + " (P8-TSK-022)")
+                .containsExactly(ResolutionKind.ACKNOWLEDGE);
+        assertThat(ResolutionTemplates.admittedKinds(
+                        BreakType.PROCESSING_ERROR, BreakCause.ITEM_ERRORED))
+                .as("the refinement is the cause's alone")
+                .contains(ResolutionKind.WRITE_OFF);
         assertThat(ResolutionTemplates.admittedKinds(
                         BreakType.FEE_MISMATCH, BreakCause.values()[0]))
                 .containsExactly(ResolutionKind.ACKNOWLEDGE);

@@ -131,13 +131,37 @@ class ExpectationRegisterDatabaseTest {
     @DisplayName("an amount tolerance is unstorable (INV-REC-08 at the database rank), and"
             + " the seed is frozen for the application role AND the migrator")
     void amountTolerancesAreUnstorableAndTheSeedIsFrozen() throws SQLException {
-        assertThat(refusal(
-                        "INSERT INTO reconciliation.tolerance (rule_set_id, comparison,"
-                                + " currency, absolute_minor, days) VALUES (?,"
-                                + " 'PRINCIPAL_AMOUNT', 'EUR', 100, NULL)",
-                        PSP_RULE_SET))
-                .as("the comparison list has no amount member")
-                .contains("tolerance_comparison");
+        // A tolerance is written only with its proposal (V012), so the CHECK is proven on a
+        // fresh PROPOSED version in the proposal's own transaction.
+        try (Connection proposer = DatabaseRoles.application()) {
+            proposer.setAutoCommit(false);
+            UUID proposal = UUID.randomUUID();
+            try (PreparedStatement version =
+                    proposer.prepareStatement(
+                            "INSERT INTO reconciliation.rule_set (id, source_id, version,"
+                                    + " status, funding_lag_days, gain_min_age_days,"
+                                    + " effective_from, proposed_by, reason, created_at,"
+                                    + " correlation_id) VALUES (?, ?, 1, 'PROPOSED', 2, 90,"
+                                    + " current_date, 'test', 'an amount tolerance probe',"
+                                    + " now(), 'p8-tsk-022-test')")) {
+                version.setObject(1, proposal);
+                version.setObject(2, UUID.randomUUID());
+                version.executeUpdate();
+            }
+            try (PreparedStatement amount =
+                    proposer.prepareStatement(
+                            "INSERT INTO reconciliation.tolerance (rule_set_id, comparison,"
+                                    + " currency, absolute_minor, days) VALUES (?,"
+                                    + " 'PRINCIPAL_AMOUNT', 'EUR', 100, NULL)")) {
+                amount.setObject(1, proposal);
+                assertThatThrownBy(amount::executeUpdate)
+                        .as("the comparison list has no amount member")
+                        .isInstanceOf(SQLException.class)
+                        .hasMessageContaining("tolerance_comparison");
+            } finally {
+                proposer.rollback();
+            }
+        }
 
         // The application role: refused at the grant rank (no UPDATE or DELETE exists) -
         // every rule-set member table, so no seeded value is quietly editable.

@@ -232,7 +232,7 @@ class SchemeMatchingDatabaseTest {
                                     + " status, funding_lag_days, gain_min_age_days,"
                                     + " effective_from, proposed_by, decided_by, reason,"
                                     + " created_at, correlation_id) VALUES (?, ?, 1,"
-                                    + " 'ACTIVE', 2, 90, ?, 'test', 'test',"
+                                    + " 'PROPOSED', 2, 90, ?, 'test', NULL,"
                                     + " 'SchemeMatchingDatabaseTest private scheme source',"
                                     + " now(), 'p8-tsk-017-test') ON CONFLICT (id) DO NOTHING",
                             RULE_SET, SOURCE, java.sql.Date.valueOf(LocalDate.parse("2026-09-29")));
@@ -281,6 +281,10 @@ class SchemeMatchingDatabaseTest {
                                     + " (?, 'GBP', 100000), (?, 'USD', 100000)"
                                     + " ON CONFLICT DO NOTHING",
                             RULE_SET, RULE_SET, RULE_SET);
+                    execute(unitOfWork,
+                            "UPDATE reconciliation.rule_set SET status = 'ACTIVE', decided_by = 'test-activator',"
+                                    + " decided_at = now() WHERE id = ? AND status = 'PROPOSED'",
+                            RULE_SET);
                     return null;
                 });
     }

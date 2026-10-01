@@ -736,7 +736,9 @@ class ResolutionMachineDatabaseTest {
                     Optional.of(Cardinality.ONE_TO_ONE), Optional.of(KeyKind.PSP_CAPTURE_REF),
                     DecisionOutcome.PARKED, Optional.empty(), Optional.empty(),
                     Optional.empty(), Optional.empty(), PLATFORM, Instant.now(CLOCK),
-                    LocalDate.now(CLOCK), CorrelationId.generate(IDS)));
+                    LocalDate.now(CLOCK), CorrelationId.generate(IDS),
+                    MatchingStore.Basis.match(
+                            DecisionVerdict.AMBIGUOUS, JudgedStatus.PENDING, 30_00, false)));
             matchingStore.insertCandidates(uow, decision, matchingStore.lockExpectations(uow,
                     List.of(chosen.id(), other.id()),
                     Map.of(chosen.id(), KeyKind.PSP_CAPTURE_REF, other.id(),
@@ -1105,7 +1107,7 @@ class ResolutionMachineDatabaseTest {
                     "INSERT INTO reconciliation.rule_set (id, source_id, version, status,"
                             + " funding_lag_days, gain_min_age_days, effective_from,"
                             + " proposed_by, decided_by, reason, created_at, correlation_id)"
-                            + " VALUES (?, ?, 1, 'ACTIVE', 2, ?, ?, 'test', 'test',"
+                            + " VALUES (?, ?, 1, 'PROPOSED', 2, ?, ?, 'test', NULL,"
                             + " 'ResolutionMachineDatabaseTest private rule set', now(),"
                             + " 'p8-tsk-015-test')",
                     ruleSet, source, gainMinAgeDays, java.sql.Date.valueOf(SETTLED_ON));
@@ -1124,6 +1126,10 @@ class ResolutionMachineDatabaseTest {
             execute(app,
                     "INSERT INTO reconciliation.severity_threshold (rule_set_id, currency,"
                             + " high_value_minor) VALUES (?, 'EUR', 100000)",
+                    ruleSet);
+            execute(app,
+                    "UPDATE reconciliation.rule_set SET status = 'ACTIVE', decided_by = 'test-activator',"
+                            + " decided_at = now() WHERE id = ? AND status = 'PROPOSED'",
                     ruleSet);
             return null;
         });

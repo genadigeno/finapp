@@ -539,6 +539,39 @@ ceiling), ADR-0046 (no connection across a pull), ADR-0008 (the collector SPI).
   `sftp` source URL fails startup rather than every pull (the tests agent's find). The scheme's
   cycle worklist walks every keyset page of payments' cycle reads, never a fixed first page
   (the gate's find).
+- `P8-TSK-022` — **implemented** (2026-10-01): point 8's readmission and re-parse verification.
+  `FileReadmission` locks the original, admits only a `REJECTED` file whose verdict is our
+  validation's (`MALFORMED`, `CONTROL_TOTAL_MISMATCH`, `UNKNOWN_CURRENCY`, `SCALE_MISMATCH`,
+  `UNSUPPORTED_FORMAT`), `DECLINED`, or `CONFLICTING_BATCH` once its conflict no longer stands,
+  and refuses every other file `settlement.FileNotRejected`. **Decided here, point 8's recorded
+  question: a `DECLINED` file IS readmissible**, inheriting nothing - a mistaken decline is
+  otherwise a dead end, since a byte-identical re-issue meets the declined file's content
+  address. **`CONFLICTING_BATCH` is judged by the conflict, not by the word `REPUDIATED`**: the
+  original's bytes are re-parsed in memory and admitted only when no live batch holds the
+  identity they declare (`settlement.ConflictingBatchStands` while one does); repudiation
+  (`P8-TSK-023`) is one way to free it, a decline of the standing file another, and the parse
+  leg's live unique stays the arbiter. The readmission is a NEW row (`received_via =
+  READMISSION`, `readmits_file_id`), its bytes the original's - verified against the stored
+  checksum, screened by the door's screen for the source's CURRENT format, re-encrypted under
+  the new id - born `RECEIVED` with the reason on its birth event, keyed per principal
+  (`settlement.readmission:`), audited `settlement.SettlementFileReadmitted`; a screen finding
+  is a refusal RESULT committing its metadata row and audit (point 4), and a file is readmitted
+  once (`settlement.FileAlreadyReadmitted`, `UNIQUE (readmits_file_id)` beneath the original's
+  row lock). **Two widenings of point 8's text, each stricter.** The attester of a readmission
+  that inherits nothing differs from EVERY submitter along its chain - the readmitter, every
+  earlier readmitter, the original's uploader - not only from the readmitter and the uploader;
+  and settlement `V009`'s trigger fires on INSERT as well as UPDATE, judging a row by its
+  ORIGINAL's id so that no writer can insert a readmission already attested by a submitter. One
+  SQL function, `settlement.file_inherits_authentication`, is what the trigger refuses by, what
+  the accept leg's eligibility claims by and what the attestation's domain rank reads: the
+  three ranks cannot drift apart. The re-parse verification (`FileVerification`, `POST
+  .../files/{id}/verification` under `RECONCILIATION_INVESTIGATE`, reasoned, audited
+  `settlement.SettlementFileVerified` per access - `INV-REC-10`) re-parses the stored bytes
+  under the RECORDED format version and compares each line's fingerprint and fields with the
+  stored lines, replacing nothing: `MATCHES`, `DIFFERS` (naming the first differing line),
+  `NOT_PARSED`, `FORMAT_VERSION_UNAVAILABLE` (this build compiles no such version - the
+  version discipline's honest answer), and `CORRUPT` (the stored bytes failed authenticated
+  decryption or their checksum; audited `FAILED`, nothing compared or served).
 - `P8-TST-001` delivers every file twice, by upload with attestation and by racing pulls, out of
   order and late.
 - `X-TSK-008`: bind associated data in `EvidenceCipher`, `PayoutEvidenceCipher`, `DocumentCipher`

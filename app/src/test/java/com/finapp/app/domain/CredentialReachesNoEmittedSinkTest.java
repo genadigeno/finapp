@@ -389,6 +389,9 @@ class CredentialReachesNoEmittedSinkTest {
                         // audit record's reason columns - INV-AUD-03). No secret; the
                         // SettlementContentReadRequest shape, at the decline.
                         "SettlementFileDeclineRequest",
+                        // P8-TSK-022: a readmission and a verification carry a REASON alone.
+                        "SettlementReadmissionRequest",
+                        "SettlementVerificationRequest",
                         // P8-TSK-021. Carries only a BUSINESS KEY - an ISO date or a scheme
                         // cycle token, shaped by a pattern at the boundary, bound for the permit
                         // row and the fetch's audit summary. No secret: the source's report
@@ -399,6 +402,15 @@ class CredentialReachesNoEmittedSinkTest {
                         // opening-position backfill INV-AUD-03 requires a reason for). No
                         // secret; the SettlementContentReadRequest shape, at the register.
                         "OpeningPositionRequest",
+                        // P8-TSK-022: the controller's doors. No secret in any of them. A
+                        // proposal is policy - lags, rules, tolerances, fee terms (a rate as a
+                        // decimal string), thresholds, nested schemas this list does not name -
+                        // with a REASON bound for the version's history and the audit record;
+                        // the decisions, the reprocess and the requeue carry a REASON alone.
+                        "RuleSetProposalRequest",
+                        "RuleSetDecisionRequest",
+                        "ReprocessingRequest",
+                        "RunRequeueRequest",
                         // P8-TSK-014: the investigator's case file. No secret in any of them.
                         // The assignee is an identity identifier; the classification carries a
                         // type and a REASON (screened like a note for card-number and account

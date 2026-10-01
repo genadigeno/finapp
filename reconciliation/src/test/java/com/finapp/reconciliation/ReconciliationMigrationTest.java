@@ -146,7 +146,12 @@ class ReconciliationMigrationTest {
                         "allocation",
                         // V006 (P8-TSK-012): the resolution record, EVIDENCED first.
                         "resolution",
-                        "resolution_event");
+                        "resolution_event",
+                        // V012 (P8-TSK-022): the rule set's history, the correction snapshot
+                        // and the replay record.
+                        "rule_set_event",
+                        "match_parked_original",
+                        "run_replay");
 
         assertThatExceptionOfType(SQLException.class)
                 .isThrownBy(() -> asApplication(

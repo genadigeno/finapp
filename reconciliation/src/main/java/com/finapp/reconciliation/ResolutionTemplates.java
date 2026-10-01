@@ -92,6 +92,12 @@ public final class ResolutionTemplates {
                     ResolutionKind.OFFSET_SUSPENSE,
                     ResolutionKind.RECOGNISE_GAIN);
         }
+        // A diverged replay (P8-TSK-022, ADR-0068 section 9.1): a decision its stored snapshot no
+        // longer reproduces holds no value - its subject is the decision - so the one disposal
+        // is a person's four-eyes acknowledgement once the defect is investigated.
+        if (type == BreakType.PROCESSING_ERROR && cause == BreakCause.REPLAY_DIVERGED) {
+            return EnumSet.of(ResolutionKind.ACKNOWLEDGE);
+        }
         return switch (type) {
             case MISSING_EXTERNAL ->
                     EnumSet.of(ResolutionKind.WRITE_OFF, ResolutionKind.TRANSFER_TO_ACCOUNT);

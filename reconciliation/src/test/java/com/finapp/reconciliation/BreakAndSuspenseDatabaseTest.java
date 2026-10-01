@@ -739,8 +739,10 @@ class BreakAndSuspenseDatabaseTest {
                         "INSERT INTO reconciliation.match_decision (id,"
                                 + " external_item_id, origin, rule_set_id, outcome,"
                                 + " decided_by, decided_by_type, decided_at, decided_on,"
-                                + " correlation_id) VALUES (?, ?, 'MANUAL', ?, 'PARKED',"
-                                + " 'system', 'SYSTEM', now(), now(), 'corr')")) {
+                                + " correlation_id, verdict, judged_status, judged_minor)"
+                                + " VALUES (?, ?, 'MANUAL', ?, 'PARKED',"
+                                + " 'system', 'SYSTEM', now(), now(), 'corr',"
+                                + " 'MANUAL_CHOICE', 'PARKED', 1)")) {
             insert.setObject(1, decisionId);
             insert.setObject(2, itemId);
             insert.setObject(3, PSP_RULE_SET);

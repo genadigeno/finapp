@@ -227,7 +227,13 @@ rule, rounding policy, risk rule set) used in a decision is pinned and recorded 
 (`POST /v1/operator/reconciliation/runs/{id}/replay`) re-running every stored decision over its
 candidate snapshot under its pinned rule set, `IDENTICAL` or `DIVERGED`, a divergence raising a
 CRITICAL `PROCESSING_ERROR` break. *(Amended at the Phase 7 → 8 transition, ADR-0068
-(`Proposed`), in force when `P8-TSK-022` lands; the line ended at "exactly".)*
+(`Proposed`), in force when `P8-TSK-022` lands; the line ended at "exactly".)* *(As built by
+`P8-TSK-022`, 2026-10-01: the snapshot was completed first - `V012`'s six replay inputs and
+`match_parked_original`, required on every new decision - so the replay re-runs the pure function
+each decision's verdict names under its pinned version; golden snapshots catch the
+perturbation probe, and a replay reading the active version instead of the pinned one is
+caught by a later version that would decide otherwise - the completion gate's find, a probe
+that first survived.)*
 **Phase:** 6 (fees), 7 (routing), 8 (matching), 10 (credit), 13 (risk)
 
 ---
@@ -625,6 +631,16 @@ through the one door with `received_via = PULL` after a fetch over the source's 
 credential, and the accept leg's eligibility admits it unattested; `ProviderTransportGuard` reads
 the four source URLs at startup. Demonstrated: a pulled file held for attestation, and the guard
 not consulted for a source URL, each caught — `MUTATION_TESTING.md` §2.)*
+
+*(As built by `P8-TSK-022`, 2026-10-01: the readmission clause holds at both ranks. Settlement
+`V009`'s functions decide what a readmission inherits - a pulled or attested original's
+authentication, or what a readmitted original itself inherited, and nothing past a `DECLINED`
+file - and who may attest one that inherits nothing: a person distinct from every submitter
+along its chain. Its trigger refuses, on insert and on every update, an attester among the
+submitters and an `ACCEPTED` readmission that inherits nothing unattested; the accept leg's
+eligibility and the attestation's domain check read the same functions. Decided: a `DECLINED`
+file is readmissible and inherits nothing. Demonstrated: the trigger dropped and the domain's
+eligibility widened, each caught — `MUTATION_TESTING.md` §2.)*
 
 ---
 

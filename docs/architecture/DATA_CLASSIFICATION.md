@@ -1180,6 +1180,16 @@ counters and dates of things.
 | `rule_set` | `reason` | `CONFIDENTIAL` | Free prose by a person about a decision (`audit_record.reason`'s reasoning) |
 | `rule_set` | `created_at` | `INTERNAL` | A property of the artefact |
 | `rule_set` | `correlation_id` | `INTERNAL` | The flow's correlation |
+| `rule_set` | `decided_at` | `INTERNAL` | When the version was activated or rejected (`P8-TSK-022`, `V012`); the seed's is its creation |
+| `rule_set_event` | `seq` | `INTERNAL` | The history's server-assigned order |
+| `rule_set_event` | `rule_set_id` | `INTERNAL` | The moved version - an identifier of a thing |
+| `rule_set_event` | `from_status` | `INTERNAL` | The edge's origin, NULL at the proposal |
+| `rule_set_event` | `to_status` | `INTERNAL` | The edge's destination - a closed vocabulary |
+| `rule_set_event` | `actor` | `CONFIDENTIAL` | Who proposed, activated, retired by activation or rejected (`audit_record.actor`'s reasoning) |
+| `rule_set_event` | `actor_type` | `INTERNAL` | The actor's kind - a closed vocabulary |
+| `rule_set_event` | `reason` | `CONFIDENTIAL` | A controller's prose about a policy decision (`audit_record.reason`'s reasoning) |
+| `rule_set_event` | `occurred_at` | `INTERNAL` | When the edge was driven |
+| `rule_set_event` | `correlation_id` | `INTERNAL` | The flow's correlation |
 | `rule_set_lag` | `rule_set_id` | `INTERNAL` | The owning version — an identifier of a thing |
 | `rule_set_lag` | `expectation_kind` | `INTERNAL` | An enumeration member |
 | `rule_set_lag` | `lag_days` | `INTERNAL` | A policy magnitude |
@@ -1426,6 +1436,33 @@ counters and dates of things.
 | `match_decision` | `decided_at` | `INTERNAL` | When it was decided |
 | `match_decision` | `decided_on` | `CONFIDENTIAL` | The deciding day - a park's posting date where one follows |
 | `match_decision` | `correlation_id` | `INTERNAL` | The flow's correlation |
+| `match_decision` | `verdict` | `INTERNAL` | What the decision's pure function concluded (`P8-TSK-022`, `V012`) - a closed vocabulary |
+| `match_decision` | `judged_status` | `INTERNAL` | The item state the decision judged - a closed vocabulary |
+| `match_decision` | `judged_minor` | `RESTRICTED-FINANCIAL` | **The item value the decision judged** - a parked item's remainder, else its amount; the replay's input |
+| `match_decision` | `fingerprint_seen_earlier` | `INTERNAL` | The matching engine's duplicate input - a flag |
+| `match_decision` | `group_membership_complete` | `INTERNAL` | The value-date group's membership input - a flag |
+| `match_decision` | `fee_gross_minor` | `RESTRICTED-FINANCIAL` | **The gross a fee was priced on** - NULL when no original was reached; the replay's input |
+| `match_parked_original` | `decision_id` | `INTERNAL` | The judging correction (`P8-TSK-022`, `V012`) - an identifier of a thing |
+| `match_parked_original` | `ordinal` | `INTERNAL` | The judged order - a counter |
+| `match_parked_original` | `original_item_id` | `INTERNAL` | The original item - an identifier of a thing |
+| `match_parked_original` | `suspense_item_id` | `INTERNAL` | Its parked value's record - an identifier of a thing |
+| `match_parked_original` | `break_id` | `INTERNAL` | The owning break - an identifier of a thing |
+| `match_parked_original` | `side` | `INTERNAL` | DEBIT or CREDIT - a closed vocabulary |
+| `match_parked_original` | `remainder_minor` | `RESTRICTED-FINANCIAL` | **The parked value the correction saw** - frozen because the live row moves on |
+| `match_parked_original` | `currency` | `INTERNAL` | An enumeration; part of the monetary shape |
+| `match_parked_original` | `scale` | `INTERNAL` | The monetary shape's scale (INV-MON-05) |
+| `run_replay` | `id` | `INTERNAL` | A record identifier (`P8-TSK-022`, `V012`). Generated |
+| `run_replay` | `run_id` | `INTERNAL` | The replayed run - an identifier of a thing |
+| `run_replay` | `requested_by` | `CONFIDENTIAL` | Who replayed (`audit_record.actor`'s reasoning) |
+| `run_replay` | `requested_by_type` | `INTERNAL` | The requester's kind - a closed vocabulary |
+| `run_replay` | `verdict` | `INTERNAL` | IDENTICAL or DIVERGED - a closed vocabulary |
+| `run_replay` | `replayed` | `INTERNAL` | Decisions replayed - a count |
+| `run_replay` | `not_replayed` | `INTERNAL` | Decisions with nothing pure to re-run - a count |
+| `run_replay` | `divergences` | `INTERNAL` | Decisions that diverged - a count |
+| `run_replay` | `pending_rematch` | `INTERNAL` | Items whose rematch is merely pending - a count |
+| `run_replay` | `first_divergent_decision` | `INTERNAL` | The first diverged decision - an identifier of a thing |
+| `run_replay` | `at` | `INTERNAL` | When the verdict was appended |
+| `run_replay` | `correlation_id` | `INTERNAL` | The flow's correlation |
 | `match_candidate` | `decision_id` | `INTERNAL` | The seeing decision - an identifier of a thing |
 | `match_candidate` | `expectation_id` | `INTERNAL` | The seen candidate - an identifier of a thing |
 | `match_candidate` | `key_kind` | `INTERNAL` | How it was reached - a closed vocabulary; NULL for a value-date group's candidate (`P8-TSK-016`) |

@@ -452,7 +452,12 @@ table of either schema.
   declined upload is not readmitted** — declining is a person's judgement, not our validation;
   whether readmission extends to it is ADR-0066 §8's recorded question, carried into `P8-TSK-022`,
   and such a readmission would inherit no authentication. *(The Phase 7 → 8 transition's
-  consistency review, A11.)*
+  consistency review, A11.)* *(Decided by `P8-TSK-022`'s design, 2026-10-01: **a `DECLINED` file
+  IS readmissible**, inheriting nothing — a person's mistaken decline is otherwise a dead end,
+  since a byte-identical re-issue meets the declined file's content address as its duplicate — and
+  its readmission is accepted only once attested by a holder of `SETTLEMENT_INGEST` distinct from
+  the readmitter and from every earlier submitter, settlement `V009`'s trigger and the accept
+  leg's eligibility reading one SQL function, `settlement.file_inherits_authentication`.)*
 - **A refused delivery is not a file.** The door screen runs in memory before anything is stored:
   reference fields by their shapes, free text for Luhn-valid 13–19-digit runs and IBAN, account or
   alias shapes — and a field that fails its declared class is screened as free text before the
@@ -563,6 +568,13 @@ OPEN ──first chunk──> IN_PROGRESS ──last chunk──> COMPLETED
 - **Terminal:** `COMPLETED`. A `BLOCKED` run holds its source visibly — later runs of the source
   are ineligible and `finapp.reconciliation.run.blocked` alerts — until it is requeued. There is no
   silent skip.
+- *As built by `P8-TSK-022` (2026-10-01):* a `REPROCESS` run owns no items — the residual items stay
+  their `BATCH` runs' — so it is worked by the matcher's reprocess leg, whose progress is the
+  existence of its own decisions (one per residual item examined, an anti-join), its `cursor` the
+  count examined. Every examined item gets one decision of origin `REPROCESS`: an allocation
+  through the shared path, or what it saw and concluded when nothing changes. A requeue resets
+  `failures`; the requeued run's completion closes its `RUN_BLOCKED` break `EVIDENCED` naming the
+  run (an evidence closure names a decision, a filling statement or a completed run).
 
 ### 5.4 External item — the matching status (`reconciliation.external_item`)
 
@@ -843,6 +855,14 @@ PROPOSED ──activate (a second RECONCILIATION_ADMINISTER holder)──> ACTIV
 - Every run, decision, allocation, break and expectation pins `rule_set_id`. A new version governs
   only new runs, rematches and explicit `REPROCESS` runs; every earlier decision still replays
   `IDENTICAL` under the version it pinned.
+- *As built by `P8-TSK-022` (2026-10-01), reconciliation `V012`:* the version is born `PROPOSED`
+  and undecided for every writer; its members are admitted only with a `PROPOSED` parent born in the
+  same transaction, so an approver approves exactly what was proposed; one proposal per source; the
+  four-eyes `CHECK` exempts only the V002 seed's literal provenance, which no new row can claim; a
+  retirement commits only beside an active successor (a deferred trigger); the history is
+  `rule_set_event`. A proposer may reject — withdraw — their own proposal. `effective_from` is the
+  proposal's date (frozen with the content); `decided_at` is the activation's instant. The rematch
+  leg had pinned the original run's version; it now reads the source's active version per batch.
 - Version 1 of the payout source already declares its `PAYOUT_RETURNED` rule operation-anchored
   (§5.10), so payout returns need no second version and no four-eyes activation *(the Phase 7 → 8
   transition's consistency review, A4)*.

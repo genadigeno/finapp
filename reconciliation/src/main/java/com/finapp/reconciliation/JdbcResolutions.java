@@ -75,7 +75,9 @@ public final class JdbcResolutions implements Resolutions {
         String narrative =
                 evidence.decisionId()
                                 .map(decision -> "decision=" + decision)
-                                .orElseGet(() -> "statement=" + evidence.fillingStatementId().get())
+                                .or(() -> evidence.fillingStatementId()
+                                        .map(statement -> "statement=" + statement))
+                                .orElseGet(() -> "run=" + evidence.completedRunId().get())
                         + evidence.parkId().map(park -> ", park=" + park).orElse("");
         try (PreparedStatement insert =
                 unitOfWork.prepareStatement(

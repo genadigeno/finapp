@@ -731,7 +731,32 @@ adapters). Catalogued with this ADR:
   latest decision, and still holds a remainder, is re-decided — since a keyless expectation is otherwise invisible to a
   worklist that joins keys; proven on real clocks, the control item never rematched.
 - `P8-TSK-022` builds rule-set administration under four-eyes, `REPROCESS` runs, requeue,
-  `run_replay` (reconciliation `V012`) and the replay-perturbation probe. `P8-TSK-023`'s
+  `run_replay` (reconciliation `V012`) and the replay-perturbation probe. **Implemented**
+  (2026-10-01), with four findings of its design made good in the same `V012`: (1) the rule
+  set had no machine - `ACTIVE` alone, every update frozen - so point 8's machine, the
+  four-eyes `CHECK`, one proposal per source, the history and the members admitted only with
+  their proposal in its own transaction were built, and a retirement commits only beside its
+  successor (a deferred trigger: exactly one active version per source, for every writer);
+  (2) the rematch leg pinned the ORIGINAL run's version, against point 8's "a rematch or
+  reprocess decision pins the version active when it ran" - it now reads the source's active
+  version once per batch, while grace, which concludes the run's own decision, stays pinned to
+  the run; (3) point 10's "a decision is a pure function of its stored snapshot" did not hold
+  for the snapshot as stored - the verdict, the fingerprint input, the judged value, a group's
+  membership input, a fee's gross and a correction's parked originals were missing, and a
+  parked rematch, a top-up and an offset stored thin snapshots - so six columns and
+  `match_parked_original` complete it, every writer filling them and an insert trigger holding
+  it; (4) a blocked run's break could never close - a requeued run's completion now closes it
+  `EVIDENCED` naming the run, and a diverged replay's break admits a person's `ACKNOWLEDGE`.
+  Replay re-runs each decision through the pure function its stored verdict names (the
+  matching engine, the value-date group, the correction engine, the fee check; a manual choice
+  structurally; a contained `ERRORED` decision counted apart) from one repeatable-read
+  snapshot, then appends one verdict. The perturbation probe is caught by golden snapshots
+  (`DecisionReplayTest`): a running suite cannot perturb both the deciding and the replaying
+  code. The completion gate found two gaps and closed them: the replay's pin was untested (a
+  later version that would decide otherwise now proves it), and the reprocess leg was
+  arbitrated by the source's try-lock alone - against the matcher's contract that the try-lock
+  only orders - so the `REPROCESS` run's row is now locked after every advisory and before any
+  item. `P8-TSK-023`'s
   repudiation, the only path that adds counter-allocations, follows in reconciliation `V013`.
 - `P8-TST-001` (the storm: replay `IDENTICAL` every round, at most one positive allocation per item
   and expectation, ten matcher instances) and `P8-TST-002` (the break and resolution battery).

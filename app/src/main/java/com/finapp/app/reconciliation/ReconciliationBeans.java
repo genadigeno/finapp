@@ -309,6 +309,84 @@ public class ReconciliationBeans {
         return new com.finapp.reconciliation.JdbcRunReadings();
     }
 
+    /** {@code finapp.reconciliation.replay} (`P8-TSK-022`): the replay's verdict counter. */
+    @Bean
+    com.finapp.app.telemetry.ReconciliationReplayMeters reconciliationReplayMeters(
+            io.micrometer.core.instrument.MeterRegistry meterRegistry) {
+        return new com.finapp.app.telemetry.ReconciliationReplayMeters(meterRegistry);
+    }
+
+    /**
+     * Decision replay (`P8-TSK-022`, ADR-0068 §9.1): one repeatable-read snapshot of the run's
+     * decisions re-run through the pure functions under their pinned versions, then one short
+     * append - the verdict, a divergence's CRITICAL break, the audit record.
+     */
+    @Bean
+    com.finapp.reconciliation.RunReplays runReplays(
+            com.finapp.reconciliation.TransactionRunner reconciliationTransactionRunner,
+            com.finapp.reconciliation.MatchingRules matchingRules,
+            com.finapp.reconciliation.MatchingStore matchingStore,
+            com.finapp.reconciliation.BreakRegister breakRegister,
+            com.finapp.platform.audit.AuditWriter<Connection> auditWriter,
+            IdGenerator idGenerator,
+            Clock clock,
+            com.finapp.app.telemetry.ReconciliationReplayMeters reconciliationReplayMeters) {
+        return new com.finapp.reconciliation.RunReplays(
+                reconciliationTransactionRunner,
+                new com.finapp.reconciliation.JdbcRunReplayStore(matchingRules),
+                matchingStore,
+                breakRegister,
+                auditWriter,
+                idGenerator,
+                clock,
+                reconciliationReplayMeters);
+    }
+
+    /**
+     * Rule set administration (`P8-TSK-022`, ADR-0068 §8): a version proposed frozen, activated
+     * by a second controller retiring its predecessor in the same transaction, or rejected.
+     */
+    @Bean
+    com.finapp.reconciliation.RuleSetAdministration ruleSetAdministration(
+            com.finapp.platform.audit.AuditWriter<Connection> auditWriter,
+            IdGenerator idGenerator) {
+        return new com.finapp.reconciliation.RuleSetAdministration(
+                new com.finapp.reconciliation.JdbcRuleSetStore(), auditWriter, idGenerator);
+    }
+
+    /** A controller's acts on runs (`P8-TSK-022`): reprocessing and requeue. */
+    @Bean
+    com.finapp.reconciliation.RunAdministration runAdministration(
+            com.finapp.reconciliation.MatchingStore matchingStore,
+            com.finapp.reconciliation.ReconciliationRuns reconciliationRuns,
+            com.finapp.platform.audit.AuditWriter<Connection> auditWriter,
+            IdGenerator idGenerator) {
+        return new com.finapp.reconciliation.RunAdministration(
+                matchingStore, reconciliationRuns, auditWriter, idGenerator);
+    }
+
+    /** The controller's run doors (`P8-TSK-022`): one transaction per command. */
+    @Bean
+    ReconciliationAdministrationDesk reconciliationAdministrationDesk(
+            com.finapp.reconciliation.RuleSetAdministration ruleSetAdministration,
+            com.finapp.reconciliation.RunAdministration runAdministration,
+            com.finapp.reconciliation.RunReplays runReplays,
+            SettlementFileStore<Connection> settlementFileStore,
+            com.finapp.platform.idempotency.IdempotentExecutor idempotentExecutor,
+            TransactionTemplate reconciliationTransactions,
+            javax.sql.DataSource dataSource,
+            Clock clock) {
+        return new ReconciliationAdministrationDesk(
+                ruleSetAdministration,
+                runAdministration,
+                runReplays,
+                settlementFileStore,
+                idempotentExecutor,
+                reconciliationTransactions,
+                dataSource,
+                clock);
+    }
+
     /**
      * The resolutions' evidence writer (`P8-TSK-012`, ADR-0071): the platform's
      * {@code EVIDENCED} kind — born {@code APPROVED} in the transaction whose zero-residual

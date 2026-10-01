@@ -199,6 +199,32 @@ public interface SettlementBatchStore<T> {
     List<LineRow> linesOf(T unitOfWork, UUID batchId);
 
     /**
+     * One stored line's two digests (`P8-TSK-022`'s re-parse verification, ADR-0066 §8): which
+     * delivered record produced it, and which economic statement it is — the digests alone,
+     * never an amount or a reference.
+     */
+    record LineDigest(int lineNo, byte[] rawRecordSha256, byte[] canonicalFingerprint) {
+
+        public LineDigest {
+            rawRecordSha256 = rawRecordSha256.clone();
+            canonicalFingerprint = canonicalFingerprint.clone();
+        }
+
+        @Override
+        public byte[] rawRecordSha256() {
+            return rawRecordSha256.clone();
+        }
+
+        @Override
+        public byte[] canonicalFingerprint() {
+            return canonicalFingerprint.clone();
+        }
+    }
+
+    /** Every stored line of the file {@code fileId}, by line number — digests only. */
+    List<LineDigest> lineDigestsOf(T unitOfWork, UUID fileId);
+
+    /**
      * The conditional {@code PARSED → ACCEPTED} with the four acceptance facts in ONE
      * statement — the once-only trigger and the honesty {@code CHECK}s admit no other shape;
      * false when the batch already moved (another instance accepted or a decline won).

@@ -192,7 +192,7 @@ class BankMatchingDatabaseTest {
                                     + " status, funding_lag_days, gain_min_age_days,"
                                     + " effective_from, proposed_by, decided_by, reason,"
                                     + " created_at, correlation_id) VALUES (?, ?, 1,"
-                                    + " 'ACTIVE', 2, 90, ?, 'test', 'test',"
+                                    + " 'PROPOSED', 2, 90, ?, 'test', NULL,"
                                     + " 'BankMatchingDatabaseTest private report source',"
                                     + " now(), 'p8-tsk-016-test') ON CONFLICT (id) DO NOTHING",
                             PSP_RULE_SET, PSP, java.sql.Date.valueOf(LocalDate.parse("2026-09-29")));
@@ -200,6 +200,10 @@ class BankMatchingDatabaseTest {
                             "INSERT INTO reconciliation.severity_threshold (rule_set_id,"
                                     + " currency, high_value_minor) VALUES (?, 'EUR', 100000)"
                                     + " ON CONFLICT DO NOTHING",
+                            PSP_RULE_SET);
+                    execute(unitOfWork,
+                            "UPDATE reconciliation.rule_set SET status = 'ACTIVE', decided_by = 'test-activator',"
+                                    + " decided_at = now() WHERE id = ? AND status = 'PROPOSED'",
                             PSP_RULE_SET);
                     return null;
                 });

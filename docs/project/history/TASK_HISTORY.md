@@ -1,6 +1,6 @@
 # Task History
 
-The per-task completion records that accumulated behind `## Current Task` - 184 "Previously" blocks, newest first, from `P8-TSK-020` back to project initiation. *(`X-TSK-004` is cross-cutting and completed after the Phase 6 → 7 transition, so it stands second, between `P7-TSK-001` and the transition's record - the transition's block moved here by `P7-TSK-001`'s gate, exactly as an earlier form of this note said it would.)*
+The per-task completion records that accumulated behind `## Current Task` - 185 "Previously" blocks, newest first, from `P8-TSK-021` back to project initiation. *(`X-TSK-004` is cross-cutting and completed after the Phase 6 → 7 transition, so it stands second, between `P7-TSK-001` and the transition's record - the transition's block moved here by `P7-TSK-001`'s gate, exactly as an earlier form of this note said it would.)*
 
 **Archive.** These records were moved verbatim out of
 [`CURRENT_STATE.md`](../CURRENT_STATE.md) on 2026-09-20 so that the canonical description of
@@ -14,6 +14,51 @@ Authoritative backlog: [`BACKLOG.md`](../BACKLOG.md)
 ---
 
 ### Previously
+
+**`P8-TSK-021` — Pull acquisition, per-source credentials and source silence** — `COMPLETE`
+(2026-10-01). **M8.7, Operating it, OPENS at 1 of 4**: each source's evidence is fetched on schedule
+over its own confined credential and accepted without a second person, because the channel
+authenticates it (`INV-SET-07`); deduplicated with uploads by content; every silent source visible
+(ADR-0066 §1 and §10; `INV-HIST-02`; protected `INV-SET-04`, `INV-REC-10`, `INV-PAY-02`,
+`INV-RAIL-03`). A deferral candidate, first in the cut order — **not deferred**. **ONE MIGRATION, AS
+CLAIMED**: settlement `V008` (`pull_permit`, PK `(source_id, business_key)`, the business key a
+date or cycle token by `CHECK`, a trigger freezing its identity and refusing an EQUAL
+`last_attempt_at` as a step back and `attempts` that do not grow — for every writer — never deleted,
+`SELECT, INSERT` and `UPDATE (last_attempt_at, attempts)` the only grants; five classification rows).
+**THE SPI AND ITS ADAPTERS**: `settlement`'s `SettlementReportCollector` (`Report`, `NotYet`, or
+`Failed` under a closed vocabulary — unavailable, timeout, transport, refused answer) and one `app`
+HTTP adapter per source — PSP report, scheme cycle report, payout report, bank statement — each
+present only when its URL is configured, each over its own confined credential
+(`FINAPP_SETTLEMENT_PSP_REPORT_KEY`, `_SCHEME_REPORT_KEY`, `_PAYOUT_REPORT_KEY`,
+`_BANK_STATEMENT_KEY`; `ConfinedCredentialVariablesTest` 12 → 16), sent as a bearer token and never
+logged. **THE TRANSPORT**: `ProviderTransportGuard` reads the four source URLs at startup, admitting
+`https` or `sftp` off loopback and plain transport only to loopback — `sftp` for these alone.
+**THE PULL** (`SettlementPull`): the permit in its own transaction — windowed for the schedule, an
+unconditional strictly advancing renewal for an operator — then the fetch holding no connection
+(ADR-0046: an external read, at-least-once), then the ONE door with `received_via = PULL`, screened
+exactly as an upload, audited acting-only `settlement.SettlementFileReceivedByPull` (a duplicate pull
+writes its `DUPLICATE` receipt and nothing else); the accept leg's existing eligibility accepts it
+unattested. **THE SCHEDULE** (`SettlementPullSchedule`, leaderless, off in tests;
+`SettlementPullSweep`): the worklist DERIVED each tick from stored rows (`ExpectedArrivals`) — each
+lookback business date past its cut-off with no accepted batch, and for the scheme each cycle token
+payments' records name past the lag with no accepted batch, read through payments' new
+`SettlementCycleReads` — never a stored schedule; `LEASE_PROTECTED_SCHEDULERS` +1 with its argument,
+the system-actor register +1. **THE ROUTE**: `POST /v1/operator/settlement/sources/{code}/fetch`
+under `SETTLEMENT_INGEST` answers what the pull came to (`RECEIVED`, `DUPLICATE`, `REFUSED`,
+`NOT_YET`, `FAILED`, `NOT_PULLABLE`), natural idempotency by the content address, audited
+`settlement.SettlementFetchRequested`; `settlement.SourceUnknown` and `.SourceRetired`; the OpenAPI
+baseline regenerated (additive). **THE METERS**: `finapp.settlement.source.silence` (seconds since a
+source's last ACCEPTED batch by any channel, eager per declared source, NaN when unreadable or never
+accepted, never zero) and `finapp.settlement.pull.failure` (`source`, `outcome`, eager).
+**THE TESTS AGENT'S FINDS, EACH FIXED**: an `sftp` source URL passed the guard and then made every pull throw through the JDK HTTP client, breaking "every answer is a value" — the HTTP adapter now refuses any non-HTTP scheme at construction, naming the scheme and never the URL, so such a configuration fails startup (no `sftp` collector is built); and the operator's fetch wrote no audit when its pull threw — now recorded `FAILED` naming the exception's class, then rethrown. **THE GATE'S FINDS, EACH FIXED**: the scheme's cycle worklist read ONE fixed page of 200 tokens in token order, so once those cycles were received every later cycle's report would never be pulled — the `P8-TSK-019` keyset lesson met again: payments' `cyclesSince` now takes the last token and the sweep walks every page, proven by a hermetic walk over 450 cycles and against the real schema in the pay-by-bank suite (that SQL had run in no test before); one source's unreadable worklist no longer costs the others their pulls; the four credentials had no credential tests (the `P2-TSK-011` lesson) and the silence gauge none — both added; the guard's source case called `verifySource` directly and could not see startup skip it — a construction case added; the backlog's counted race of pulls against an upload of the same bytes had been sequential — a ten-way race added (five pulls, five uploads: one file, ten receipts, one `NEW`); the cycle records' `token` components, which the secret-name guard read as secrets, renamed `cycle`; `SettlementPullMetrics` exempted from the floating-point rule on the sibling gauges' argument (an age and a count, never an amount); the OpenAPI baseline regenerated (+64 lines, zero removed; the three `BREAKING` labels are `required` flags on the brand-new path and component). **DOCUMENTS**: ADR-0066's implemented note, `INV-SET-07` as built,
+`DISTRIBUTED_EXECUTION` §3 (the schedule's row built), `SECURITY_ARCHITECTURE`'s transport row,
+`AUDITABLE_ACTIONS` +2, `DATA_CLASSIFICATION` +5, `MODULE_ARCHITECTURE`, the plan's migration table. **SIX PROBE RUNS, SIX CAUGHT** (`MUTATION_TESTING.md` §2 +7 rows under `INV-CON-02` ×2, `INV-SET-07` ×2, `INV-SET-02` ×2 and the permit's twin reading): the permit's window condition dropped (ten claimers all took it — and through the real composition none of ten racing pulls was paced and the sweep's second tick fetched every date again), a pulled file held for attestation (caught five ways), the silence gauge reading zero when unreadable, the transport guard not consulted for a source URL at startup, and the cycle worklist's keyset walk dropped — every restore byte-identical (sha256-verified).
+**Multi-instance PASS**: ten claimers of one key take the permit once; ten racing pulls of one report
+reach the provider once and land one file; a pull and an upload of the same bytes land one file and a
+`DUPLICATE` receipt; permits never step back, an equal instant refused by the trigger (counted).
+**NEXT**: `P8-TSK-022` `READY` (rule-set administration, reprocessing, readmission, run requeue and
+replay). **Verified** by targeted tiers from fresh runs on the final code — settlement hermetic 163 across 26 and database 48 across 8, payments hermetic 246 across 35, app hermetic 587 across 111 suites (one failure: the credential-sink guard's named list of request schemas, which reads the committed OpenAPI baseline and so saw `SettlementFetchRequest` only once the baseline was accepted — the entry added, the guard re-run green with the document guards), the pull suite in its own container 11 across 1, the pay-by-bank suite 31 across 1, the twelve proof-group suites in ONE shared container 62 across 12, the column-classification guard 5, and the document guards re-run after the records landed, ALL 0 FAILURES — the full battery and the fleet-wide database and kafka tiers deliberately skipped on the owner's instruction.
+
 
 **`P8-TSK-020` — Unmatched confirmations join suspense management** — `COMPLETE` (2026-10-01).
 **M8.6, Every counterparty, CLOSES at 4 of 4**: every unmatched confirmation now owns its value —

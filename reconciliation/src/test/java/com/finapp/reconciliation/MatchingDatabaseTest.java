@@ -206,7 +206,7 @@ class MatchingDatabaseTest {
                                     + " status, funding_lag_days, gain_min_age_days,"
                                     + " effective_from, proposed_by, decided_by, reason,"
                                     + " created_at, correlation_id) VALUES (?, ?, 1,"
-                                    + " 'ACTIVE', 2, 90, ?, 'test', 'test',"
+                                    + " 'PROPOSED', 2, 90, ?, 'test', NULL,"
                                     + " 'MatchingDatabaseTest private rule set', now(),"
                                     + " 'p8-tsk-011-test') ON CONFLICT (id) DO NOTHING",
                             RULE_SET, SOURCE, java.sql.Date.valueOf(SETTLED_ON));
@@ -236,6 +236,10 @@ class MatchingDatabaseTest {
                                     + " 100000), (?, 'GBP', 100000)"
                                     + " ON CONFLICT DO NOTHING",
                             RULE_SET, RULE_SET);
+                    execute(unitOfWork,
+                            "UPDATE reconciliation.rule_set SET status = 'ACTIVE', decided_by = 'test-activator',"
+                                    + " decided_at = now() WHERE id = ? AND status = 'PROPOSED'",
+                            RULE_SET);
                     return null;
                 });
     }
@@ -789,6 +793,85 @@ class MatchingDatabaseTest {
 
     @Test
     @Order(7)
+    @DisplayName("the lock only ORDERS for a REPROCESS run too: ten sweepers with the"
+            + " try-lock bypassed decide each residual line exactly once and complete the"
+            + " run once - the run row arbitrates (P8-TSK-022)")
+    void tenBypassedReprocessSweepersDecideEachResidualOnce() throws Exception {
+        // Ten lines no expectation answers: the reprocess examines each unchanged, so
+        // nothing updates its row - only the run row's lock keeps a second instance from
+        // examining it again (the completion gate's find).
+        String tag = Integer.toHexString(new SecureRandom().nextInt());
+        List<Line> lines = new ArrayList<>();
+        for (int i = 0; i < 10; i++) {
+            lines.add(line(i + 1, ExternalLineType.CAPTURE, 7_00, EUR,
+                    ItemKeyKind.PSP_CAPTURE_REF, "CAP-RESIDUAL-" + tag + "-" + i,
+                    SETTLED_ON));
+        }
+        UUID batchRun = seedRun(lines.toArray(Line[]::new));
+        for (int tick = 0; tick < 5 && !"COMPLETED".equals(status(batchRun)); tick++) {
+            matching.sweep();
+        }
+        assertThat(status(batchRun)).isEqualTo("COMPLETED");
+        for (int i = 1; i <= 10; i++) {
+            assertThat(itemStatus(batchRun, i)).isEqualTo("UNMATCHED");
+        }
+
+        RunAdministration administration =
+                new RunAdministration(store, runs, new JdbcAuditWriter(), IDS);
+        RunAdministration.Reprocessing opened =
+                runner().inTransaction(unitOfWork -> administration.requestReprocessing(
+                        unitOfWork, SOURCE, new Actor("op-reprocessor", ActorType.EMPLOYEE),
+                        "re-decide the residuals", Instant.now(CLOCK),
+                        CorrelationId.generate(IDS)));
+        assertThat(opened.itemCount()).isGreaterThanOrEqualTo(10);
+
+        // Three-line chunks: the first chunk's OPEN -> IN_PROGRESS edge serializes the herd
+        // on the run row by itself; every later chunk runs IN_PROGRESS, where only the
+        // run-row lock stands between two instances and the same lines.
+        Matching bypassed = matching(new Matching.Config(3, 2), true);
+        ExecutorService racers = Executors.newFixedThreadPool(10);
+        try {
+            CountDownLatch start = new CountDownLatch(1);
+            List<Future<?>> outcomes = new ArrayList<>();
+            for (int racer = 0; racer < 10; racer++) {
+                outcomes.add(racers.submit(() -> {
+                    start.await();
+                    bypassed.sweep();
+                    return null;
+                }));
+            }
+            start.countDown();
+            for (Future<?> outcome : outcomes) {
+                outcome.get();
+            }
+        } finally {
+            racers.shutdownNow();
+        }
+
+        assertThat(status(opened.runId())).isEqualTo("COMPLETED");
+        assertThat(count("SELECT count(*) FROM (SELECT external_item_id FROM"
+                + " reconciliation.match_decision WHERE run_id = ? GROUP BY"
+                + " external_item_id HAVING count(*) > 1) twice", opened.runId()))
+                .as("no residual examined twice, though no try-lock stood").isZero();
+        assertThat(count("SELECT count(*) FROM reconciliation.match_decision WHERE"
+                + " run_id = ?", opened.runId()))
+                .as("one decision per line of the worklist")
+                .isEqualTo(opened.itemCount());
+        assertThat(count("SELECT count(*) FROM reconciliation.match_decision d JOIN"
+                + " reconciliation.external_item i ON i.id = d.external_item_id WHERE"
+                + " i.run_id = ? AND d.run_id = ? AND d.origin = 'REPROCESS'",
+                batchRun, opened.runId())).isEqualTo(10);
+        assertThat(count("SELECT count(*) FROM platform.audit_record WHERE operation ="
+                + " 'reconciliation.RunCompleted' AND target_id = ?",
+                opened.runId().toString())).isEqualTo(1);
+        for (int i = 1; i <= 10; i++) {
+            assertThat(itemStatus(batchRun, i)).as("examined, and left as it was")
+                    .isEqualTo("UNMATCHED");
+        }
+    }
+
+    @Test
+    @Order(8)
     @DisplayName("consecutive chunk failures block the run with its CRITICAL break, and"
             + " the blocked run holds its source visibly - a later run stays untouched")
     void consecutiveFailuresBlockTheRunVisibly() throws Exception {

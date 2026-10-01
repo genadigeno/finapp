@@ -12324,7 +12324,8 @@ break row, as the approval door must.)*
   criterion ("by pull where declared") is read against it. `finapp.settlement.source.silence` is not
   deferred with it: it reads accepted batches, not pulls, and moves to `P8-TSK-024`.
 
-**P8-TSK-022 — Rule-set administration, reprocessing, readmission, run requeue and replay** — `READY` (marked by `P8-TSK-021`'s completion gate)
+**P8-TSK-022 — Rule-set administration, reprocessing, readmission, run requeue and replay** — `COMPLETE` (2026-10-01)
+- **As built** (2026-10-01): as `CURRENT_STATE.md` §Just completed and `history/TASK_HISTORY.md` record. Two migrations as claimed (reconciliation `V012`, settlement `V009`); nine routes (the verification's door decided: an audited operator request). Decided: a `DECLINED` file is readmissible and inherits nothing; a `CONFLICTING_BATCH` original is admitted when no live batch holds its identity - proven by a decline of the standing file, the repudiation path left to `P8-TSK-023`'s tests; the attester differs from every submitter along the chain. Deviations: reprocess allocations are not yet counted on `finapp.reconciliation.rematch`, a meter `P8-TSK-024` owns (recorded there); the approval's converged retry omits the retired predecessor its first answer named. The gate fixed the replay's untested pin and the reprocess leg's try-lock-only arbitration (the `REPROCESS` run's row now locked).
 - **Objective**: the platform can be operated without editing history (`INV-HIST-04`, `INV-REC-04`,
   `INV-AUD-04`): matching policy changes only forward and only under four-eyes; residual items are
   reprocessed under the new version; a file our own defect rejected is readmitted; a blocked run is
@@ -12461,7 +12462,8 @@ break row, as the approval door must.)*
   probe `DIVERGED`; readmission is audited and reasoned; every probe caught.
 - **Definition of done**: `DOD-FIN`, `DOD-API`, `DOD-SEC`, `DOD-TEST`. **Risk**: Medium. **Cx**: L.
 
-**P8-TSK-023 — Batch repudiation** — `PLANNED`
+**P8-TSK-023 — Batch repudiation** — `READY` (marked by `P8-TSK-022`'s completion gate)
+- *Design inputs from `P8-TSK-022` (2026-10-01)*: the settlement migration is `V010` (`V009` is the readmission rule's); readmission judges a `CONFLICTING_BATCH` original by its conflict - admitted when no live batch holds the identity its bytes declare - so this task's test of the genuine file's recovery is: repudiate the fabricated batch, readmit the genuine file (`POST /settlement/files/{id}/readmission`), and see it accepted; a repudiation's reopened items and released parks are residuals the `REPROCESS` leg can re-decide.
 - **Objective**: the repudiation of ADR-0065 and ADR-0071 — an accepted batch proven fabricated or
   mis-normalised is repudiated under four-eyes: its recognition reversed, its matches
   counter-allocated, its parks released, the file retained, and the genuine file then accepted.
@@ -12678,7 +12680,7 @@ break row, as the approval door must.)*
   `finapp.reconciliation.run.pending`, `finapp.reconciliation.run.age`,
   `finapp.reconciliation.run.blocked`, `finapp.reconciliation.run.latency`,
   `finapp.reconciliation.item`, `finapp.reconciliation.item.unmatched`,
-  `finapp.reconciliation.rematch`, `finapp.reconciliation.expectation.open`,
+  `finapp.reconciliation.rematch` (counting `REPROCESS` allocations too - `P8-TSK-022`'s backlog line, deferred here with the meter), `finapp.reconciliation.expectation.open`,
   `finapp.reconciliation.expectation.overdue`, `finapp.reconciliation.expectation.overdue.age`,
   `finapp.reconciliation.break.raised`, `finapp.reconciliation.break.open`,
   `finapp.reconciliation.break.age`, `finapp.reconciliation.resolution`,

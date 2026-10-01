@@ -480,10 +480,12 @@ merchant's payable position.
 
 | `settlement.SettlementFileRejected` | No | The parse leg rejected a file WHOLE (`P8-TSK-008`, ADR-0066 §9, `INV-SET-07`): the platform's own verdict — acting-only, the process rank of `INV-AUD-04` — written in the rejecting transaction beside the `ingestion_error` rows, the file history and the published `settlement.SettlementFileRejected` event. The change summary names the source, the rejection code and the error count, never a value from the file. Our own failure writes NO such record: an adapter exception leaves the file `RECEIVED` with its back-off, recorded by the file's history. |
 | `settlement.SettlementFileDeclined` | **Yes** | A person declined a settlement file (`P8-TSK-008`, moved from `-003` whose schema had no `REJECTED`): a reasoned judgement, never our validation — `RECEIVED \| PARSED → REJECTED(DECLINED)`, a parsed file's batch rejected in the SAME transaction so the live key frees at commit. A declined file is never readmitted (ADR-0066 §8); recovery is the counterparty's re-issue. |
+| `settlement.SettlementFileReadmitted` | **Yes** | A reconciliation controller readmitted a file (`P8-TSK-022`, ADR-0066 §8, `POST .../readmission`): a NEW file naming its original, its bytes the original's - verified against the stored address and re-encrypted under the new id - born `RECEIVED` with the reason on its birth event. Only a file our own validation rejected, a declined file (which inherits nothing), or a conflicting batch's file whose conflict is gone is readmitted, once. The summary names both files and whether the readmission inherits its original's authentication - never a byte. Written in the readmission's one transaction; a door refusal of the re-screened bytes still records its metadata and this action. |
+| `settlement.SettlementFileVerified` | **Yes** | An investigator re-parsed a stored file under its RECORDED format version (`P8-TSK-022`, ADR-0066 §9, `POST .../verification`) and compared it line by line with the stored normalisation - it reads the content, so it is reasoned per access (`INV-REC-10`). The summary carries the verdict (`MATCHES`, `DIFFERS` with the first differing line, `NOT_PARSED`, `FORMAT_VERSION_UNAVAILABLE`, `CORRUPT`) and the count compared - never a value. Nothing is replaced: a divergence is a finding, not a repair. |
 
 | `settlement.SettlementBatchAccepted` | No | The accept leg recognised a batch (`P8-TSK-009`, ADR-0065 §2): the platform's own act, acting-only — a losing racer records nothing — written in the acceptance transaction beside the gapless sequence, the run, the items, the remittance expectation and the recognition posting (or its honest omission at zero fees). The change summary carries identifiers and counts only: source, sequence, items, whether a remittance opened, whether the posting was omitted — never an amount. The person who authenticated an upload is already on the record (the attestation's own row); attributing the recognition to them would record them as acting at a moment they chose nothing. |
 
-The pull's actions arrive with the pull (`P8-TSK-021`); the readmission's with `P8-TSK-022`.
+The pull's actions arrived with the pull (`P8-TSK-021`); the readmission's and the verification's with `P8-TSK-022`.
 
 ### `reconciliation` — `ReconciliationAuditAction`
 
@@ -502,9 +504,16 @@ The pull's actions arrive with the pull (`P8-TSK-021`); the readmission's with `
 | `reconciliation.ResolutionRejected` | **Yes** | Another `RECONCILIATION_RESOLVE` holder rejected a pending resolution (`P8-TSK-015`, ADR-0071 §10) — a reasoned act, screened like a note; the ledger proposal was rejected beside it and the break returned to `INVESTIGATING`. |
 | `reconciliation.ResolutionWithdrawn` | No | A pending resolution was withdrawn (`P8-TSK-015`, ADR-0071 §§1, 9): by its proposer, or by the platform when evidence closed the break first (the summary then says `withdrawnBy=EVIDENCE` and names the evidencing resolution). Nothing is deleted — the row moved to `WITHDRAWN` — and the ledger proposal was rejected. |
 | `reconciliation.ReportRead` | No | Somebody was served a reconciliation report that carries amounts — the positions report first (`P8-TSK-007`, ADR-0072; the `payments.ChargebackRatioRead` precedent). One record per serving, committed in the reading's own transaction; the summary names the report and its shape, never its figures. |
+| `reconciliation.RuleSetProposed` | **Yes** | A reconciliation controller proposed a matching rule set version (`P8-TSK-022`, ADR-0068 §8): its content frozen from the proposal by trigger, awaiting a DIFFERENT controller. The summary names the source and the version; the reason is the proposer's. |
+| `reconciliation.RuleSetActivated` | **Yes** | A second controller activated a proposed version (`P8-TSK-022`, `INV-AUD-04`), its predecessor retired in the same transaction - a source always has exactly one active version. The summary names both versions; a new version governs only new decisions. |
+| `reconciliation.RuleSetRejected` | **Yes** | A controller rejected a proposed version (`P8-TSK-022`) - the proposer withdrawing their own included, since declining a change changes no policy. |
+| `reconciliation.ReprocessingRequested` | **Yes** | A controller opened a `REPROCESS` run (`P8-TSK-022`, ADR-0068 §9.2): the source's residual items re-decided under the active version as NEW decisions. The summary names the run, the version and the worklist's size - a count, never an amount. |
+| `reconciliation.RunRequeued` | **Yes** | A controller requeued a blocked run (`P8-TSK-022`): `BLOCKED -> IN_PROGRESS`, its failures reset; its `RUN_BLOCKED` break stands until the run completes and closes it `EVIDENCED`. |
+| `reconciliation.RunReplayed` | No | An investigator replayed a run's stored decisions (`P8-TSK-022`, ADR-0068 §9.1): the summary carries the verdict and the counts - replayed, not replayed, diverged, pending rematch; a divergence raised its CRITICAL break beside it. A replay explains, it never repairs. |
 
 Matching's, the breaks' and the resolutions' actions arrive with their tasks (`P8-TSK-010`,
-`-015`); the repudiation's with `P8-TSK-023`.
+`-015`); the administration's (rule sets, reprocessing, requeue, replay) with `P8-TSK-022`; the
+repudiation's with `P8-TSK-023`.
 
 ### What is emitted, and what is declared not to be
 

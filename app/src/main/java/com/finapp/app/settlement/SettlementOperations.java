@@ -15,7 +15,9 @@ import com.finapp.settlement.DeliveryChannel;
 import com.finapp.settlement.EvidenceContentReads;
 import com.finapp.settlement.FileAttestation;
 import com.finapp.settlement.FileDecline;
+import com.finapp.settlement.FileReadmission;
 import com.finapp.settlement.FileReception;
+import com.finapp.settlement.FileVerification;
 import com.finapp.settlement.FileStatus;
 import com.finapp.settlement.RejectionCode;
 import com.finapp.settlement.SettlementAuditAction;
@@ -29,6 +31,8 @@ import java.nio.charset.StandardCharsets;
 import java.security.MessageDigest;
 import java.security.NoSuchAlgorithmException;
 import java.sql.Connection;
+import java.time.Clock;
+import java.time.Instant;
 import java.util.Base64;
 import java.util.HexFormat;
 import java.util.List;
@@ -68,6 +72,9 @@ public class SettlementOperations {
 
     private static final String UPLOAD_SCOPE_PREFIX = "settlement.upload:";
 
+    /** The readmission's idempotency scope, per principal (`P8-TSK-022`). */
+    private static final String READMISSION_SCOPE_PREFIX = "settlement.readmission:";
+
     @NonNull private final SettlementSources sources;
     @NonNull private final FileReception<Connection> reception;
     @NonNull private final FileAttestation<Connection> attestation;
@@ -78,6 +85,9 @@ public class SettlementOperations {
     @NonNull private final IdempotentExecutor executor;
     @NonNull private final TransactionTemplate settlementTransactions;
     @NonNull private final DataSource dataSource;
+    @NonNull private final FileReadmission fileReadmission;
+    @NonNull private final FileVerification fileVerification;
+    @NonNull private final Clock clock;
 
     // ----------------------------------------------------------------- the upload
 
@@ -205,7 +215,10 @@ public class SettlementOperations {
                 fields[0], fields[1], fields[2].isEmpty() ? null : fields[2]);
     }
 
-    /** The recorded refusal, replayed as the same refusal — the position, never the value. */
+    /**
+     * The recorded refusal, replayed as the same refusal — the position, never the value. An
+     * upload's and a readmission's alike (`P8-TSK-022`): both pass the same door screen.
+     */
     private static ApiException refusalFrom(byte[] body) {
         String[] fields = new String(body, StandardCharsets.UTF_8).split("\\|", 3);
         if (fields.length != 3) {
@@ -216,12 +229,12 @@ public class SettlementOperations {
             case "FILE_TOO_LARGE", "TOO_MANY_LINES" ->
                     new ApiException(
                             SettlementErrorCode.FILE_TOO_LARGE,
-                            "A settlement upload exceeded the file bounds",
+                            "A settlement delivery exceeded the file bounds",
                             "decoded content is bounded at 8388608 bytes and 50000 records.");
             default ->
                     new ApiException(
                             SettlementErrorCode.DELIVERY_REFUSED,
-                            "A settlement upload was refused by the door screen",
+                            "A settlement delivery was refused by the door screen",
                             "the screen found " + fields[0].toLowerCase(java.util.Locale.ROOT)
                                     + (fields[1].isEmpty() ? "" : " at line " + fields[1])
                                     + (fields[2].isEmpty() ? "" : " in field " + fields[2])
@@ -301,6 +314,159 @@ public class SettlementOperations {
                 declined.file().id().toString(),
                 declined.file().status().name(),
                 RejectionCode.DECLINED.name());
+    }
+
+    // ----------------------------------------------------------------- the readmission
+
+    /**
+     * {@code POST /files/'{id}'/readmission} (`P8-TSK-022`, ADR-0066 §8): a controller's
+     * reasoned recovery - a NEW file naming its original, its bytes the original's verified and
+     * re-encrypted under its own id, parsed and accepted by the normal legs. Keyed per principal:
+     * the same key replays the receipt; a second readmission of one original is refused. A
+     * door refusal is a result, not an exception: its metadata row and audit record commit, and
+     * a retry replays the refusal.
+     */
+    public ReadmissionAnswer readmit(
+            String idempotencyKey, String rawFileId, SettlementReadmissionRequest request) {
+        UUID fileId = parsedIdOrNotFound(rawFileId);
+        Actor actor = SecurityContext.require();
+        Correlation correlation = resolvedCorrelation();
+        IdempotencyKey key =
+                new IdempotencyKey(
+                        READMISSION_SCOPE_PREFIX + actor.type().name() + ":" + actor.id(),
+                        idempotencyKey);
+        RequestFingerprint fingerprint =
+                RequestFingerprint.sha256(
+                        (fileId + "|" + request.reason()).getBytes(StandardCharsets.UTF_8));
+        IdempotentExecutor.ExecutionOutcome outcome;
+        try {
+            outcome =
+                    inOneTransaction(
+                            unitOfWork ->
+                                    executor.execute(
+                                            unitOfWork,
+                                            key,
+                                            fingerprint,
+                                            uow -> readmitted(
+                                                    uow, fileId, request.reason(), actor,
+                                                    correlation)));
+        } catch (FileAttestation.SettlementFileNotFound unknown) {
+            throw fileNotFound();
+        } catch (FileReadmission.FileNotRejected notRejected) {
+            throw new ApiException(
+                    SettlementErrorCode.FILE_NOT_REJECTED,
+                    "A settlement file refused a readmission",
+                    "only a file our validation rejected, a declined file, or a conflicting"
+                            + " batch's file whose conflict is gone is readmitted.");
+        } catch (FileReadmission.ConflictingBatchStands stands) {
+            throw new ApiException(
+                    SettlementErrorCode.CONFLICTING_BATCH_STANDS,
+                    "A settlement readmission met a standing conflict",
+                    "a live batch still holds this file's batch identity.");
+        } catch (FileReadmission.FileAlreadyReadmitted already) {
+            throw new ApiException(
+                    SettlementErrorCode.FILE_ALREADY_READMITTED,
+                    "A settlement file was readmitted already",
+                    "this file has a readmission; recovery continues on it.");
+        } catch (FileReadmission.ReasonRequired reason) {
+            throw new ApiException(
+                    PlatformErrorCode.VALIDATION_FAILED,
+                    "A settlement readmission was refused",
+                    reason.getMessage());
+        } catch (FileReception.SettlementSourceUnknown unknown) {
+            throw new ApiException(
+                    SettlementErrorCode.SOURCE_UNKNOWN,
+                    "A settlement readmission named a source this build does not declare",
+                    "no declared settlement source has this code.");
+        } catch (FileReception.SettlementSourceRetired retired) {
+            throw new ApiException(
+                    SettlementErrorCode.SOURCE_RETIRED,
+                    "A settlement readmission addressed a retired source",
+                    "this settlement source is retired and accepts no deliveries.");
+        }
+        byte[] body =
+                outcome.body()
+                        .orElseThrow(
+                                () ->
+                                        new IllegalStateException(
+                                                "a recorded readmission always carries its"
+                                                        + " body"));
+        if (outcome.state() == IdempotencyState.FAILED) {
+            throw refusalFrom(body);
+        }
+        String[] fields = new String(body, StandardCharsets.UTF_8).split("\\|", -1);
+        return new ReadmissionAnswer(
+                fields[0],
+                fields[1],
+                Boolean.parseBoolean(fields[2]) ? "INHERITED" : "ATTESTATION_REQUIRED");
+    }
+
+    /** The command inside the claim: the readmission's verdict, rendered as the outcome. */
+    private CommandResult readmitted(
+            Connection unitOfWork,
+            UUID fileId,
+            String reason,
+            Actor actor,
+            Correlation correlation) {
+        FileReadmission.Result result =
+                fileReadmission.readmit(
+                        unitOfWork, fileId, actor, reason, Instant.now(clock), correlation);
+        return switch (result) {
+            case FileReadmission.Readmitted readmitted ->
+                    CommandResult.succeeded(
+                            StoredResponse.of(
+                                    (readmitted.fileId() + "|" + readmitted.readmitsFileId()
+                                                    + "|" + readmitted.inheritsAuthentication())
+                                            .getBytes(StandardCharsets.UTF_8),
+                                    "text/plain"));
+            case FileReadmission.Refused refused ->
+                    CommandResult.failed(
+                            StoredResponse.of(
+                                    (refused.reason().name()
+                                                    + "|"
+                                                    + refused.lineNo()
+                                                            .map(String::valueOf)
+                                                            .orElse("")
+                                                    + "|"
+                                                    + refused.fieldName().orElse(""))
+                                            .getBytes(StandardCharsets.UTF_8),
+                                    "text/plain"));
+        };
+    }
+
+    // ----------------------------------------------------------------- the verification
+
+    /**
+     * {@code POST /files/'{id}'/verification} (`P8-TSK-022`, ADR-0066 §9): the stored file
+     * re-parsed under its RECORDED format version and compared line by line with what was
+     * stored - never a line replaced. It reads the content, so it is reasoned and audited per
+     * access ({@code INV-REC-10}); each call is its own record, no key.
+     */
+    public VerificationAnswer verify(String rawFileId, SettlementVerificationRequest request) {
+        UUID fileId = parsedIdOrNotFound(rawFileId);
+        Actor actor = SecurityContext.require();
+        Correlation correlation = resolvedCorrelation();
+        FileVerification.Verified verified;
+        try {
+            verified =
+                    inOneTransaction(
+                            unitOfWork ->
+                                    fileVerification.verify(
+                                            unitOfWork, fileId, actor, request.reason(),
+                                            Instant.now(clock), correlation));
+        } catch (FileAttestation.SettlementFileNotFound unknown) {
+            throw fileNotFound();
+        } catch (FileReadmission.ReasonRequired reason) {
+            throw new ApiException(
+                    PlatformErrorCode.VALIDATION_FAILED,
+                    "A settlement verification was refused",
+                    reason.getMessage());
+        }
+        return new VerificationAnswer(
+                fileId.toString(),
+                verified.verdict(),
+                verified.linesCompared(),
+                verified.firstDifferingLine().orElse(null));
     }
 
     // ----------------------------------------------------------------- the batch read
@@ -484,6 +650,16 @@ public class SettlementOperations {
             String fileId, String contentSha256, int contentLength, String content) {}
 
     public record DeclineView(String fileId, String status, String rejectionCode) {}
+
+    /**
+     * A readmission's receipt: the new file, its original, and whether it inherits the
+     * original's authentication or awaits its own attestation (`P8-TSK-022`).
+     */
+    public record ReadmissionAnswer(String fileId, String readmitsFileId, String authentication) {}
+
+    /** A verification's verdict - never a byte of the file. */
+    public record VerificationAnswer(
+            String fileId, String verdict, int linesCompared, Integer firstDifferingLine) {}
 
     public record BatchView(
             String batchId,

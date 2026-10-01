@@ -570,6 +570,9 @@ proposal is fine and still standing, which is what makes the 409 actionable.
 | `settlement.FileNotAttestable` | 409 | This settlement file cannot be attested. |
 | `settlement.AttestationBySubmitter` | 409 | The uploader cannot attest their own file; a second person must. |
 | `settlement.BatchNotFound` | 404 | No settlement batch has this identifier. |
+| `settlement.FileNotRejected` | 409 | This settlement file is not a rejection that can be readmitted. |
+| `settlement.ConflictingBatchStands` | 409 | A live settlement batch still holds this file's batch identity. |
+| `settlement.FileAlreadyReadmitted` | 409 | This settlement file has already been readmitted. |
 
 The evidence surfaces' refusals (`P8-TSK-003`, ADR-0066). **No title or detail ever carries a
 value from the file** (`INV-PAY-02`, `INV-RAIL-03`): `settlement.DeliveryRefused` (422) names
@@ -594,6 +597,21 @@ and produces neither. `settlement.BatchNotFound` (404, `P8-TSK-008`) is the `Fil
 departure's reasoning at the batch read: unknown and malformed ids one answer, nothing
 recorded.
 
+The readmission door (`P8-TSK-022`, ADR-0066 §8) adds three 409s, each the original's own
+facts refusing the act. `settlement.FileNotRejected`: the file is not `REJECTED`, or its
+verdict is not one a readmission can answer (our validation's codes, `DECLINED`, or
+`CONFLICTING_BATCH`). `settlement.ConflictingBatchStands`: a `CONFLICTING_BATCH` file whose
+conflict is still live - another file's batch holds the identity; decline that file first,
+then readmit. `settlement.FileAlreadyReadmitted`: a file is readmitted once (`UNIQUE
+(readmits_file_id)` beneath the domain's read under the original's lock), and recovery
+continues on the readmission - ten racing readmissions give one file and nine of these. A
+readmission whose re-screened bytes the current format's door refuses is not an error: it
+answers `settlement.DeliveryRefused` (422) like an upload, its metadata row and audit
+record committed, and a keyed retry replays the refusal. A missing or over-long reason is
+`api.ValidationFailed`. The verification door raises no settlement code of its own - an
+unknown file is `settlement.FileNotFound`, and every verdict, divergence included, is a
+200 answer, never an error.
+
 ### `reconciliation` — `ReconciliationErrorCode`
 
 | Code | Status | Meaning |
@@ -615,6 +633,15 @@ recorded.
 | `reconciliation.ReasonCodeNotAllowed` | 422 | This reason code is not admitted for this resolution kind. |
 | `reconciliation.ResolutionTargetRefused` | 422 | The resolution's target, offset item or chosen candidate is refused. |
 | `reconciliation.GainNotYetEligible` | 422 | The suspense item is not yet old enough to be recognised as a gain. |
+| `reconciliation.RuleSetNotFound` | 404 | No matching rule set version has this identifier. |
+| `reconciliation.RuleSetNotPending` | 409 | This rule set version is no longer awaiting a decision. |
+| `reconciliation.RuleSetActivationBySameActor` | 409 | A rule set version is activated by someone other than its proposer. |
+| `reconciliation.RuleSetProposalPending` | 409 | A proposed rule set version already awaits a decision for this source. |
+| `reconciliation.RuleSetInvalid` | 422 | The proposed rule set version is not well formed. |
+| `reconciliation.ToleranceNotPermitted` | 422 | A tolerance may compare a fee against its terms or a date, never an amount. |
+| `reconciliation.SourceNotFound` | 404 | No declared settlement source has this code. |
+| `reconciliation.ReprocessingInProgress` | 409 | A reprocessing run is already open for this source. |
+| `reconciliation.RunNotBlocked` | 409 | Only a blocked reconciliation run can be requeued. |
 
 The matcher's explanation doors (`P8-TSK-011`, ADR-0068 §7). All three follow the
 `settlement.FileNotFound` departure: every route sits behind
@@ -625,6 +652,8 @@ malformed ids are still ONE answer, and a guessed id records nothing.
 The investigator's desk (`P8-TSK-014`, ADR-0069 §7) adds three. `reconciliation.BreakNotFound` and `reconciliation.ExpectationNotFound` are the same departure at the break and expectation doors — and `ExpectationNotFound` also answers a settlement-status query naming a (kind, operation) no expectation tracks, because an operation that settles internally opens none. `reconciliation.BreakTerminal` (409) refuses every case-file write — assignment, note, evidence link, reclassification — to a `RESOLVED` break: the caller holds the permission; the break's own state refuses the act, and the remedy is its successor (`follows_break_id`). The desk's other refusals use the platform's codes: a refused note or link body (a card-number or bank-account shape, an out-of-bounds length, a target that does not exist) is `api.ValidationFailed` with nothing stored and the offending text never echoed; a reclassification onto an occupied (type, subject) seat, or of a break whose resolution is proposed, is `api.Conflict`.
 
 The resolver's doors (`P8-TSK-015`, ADR-0071 §11) add eleven. `reconciliation.ResolutionNotFound` is the `FileNotFound` departure at the resolution doors. The 409s are the machine's own states: `ResolutionAlreadyProposed` (one live proposal per break — and per remainder, across the breaks answering for it), `ResolutionNotPending` (decided already — the same person's retry is not an error, it converges), `SelfApprovalRefused` (the proposer approving or rejecting their own — four-eyes, `INV-REC-03`; nothing written), `NotTheProposer` (a withdrawal is the proposer's; another person rejects), `ResolutionStale` (the remainder or the break's `residual_version` moved since the proposal — ADR-0071 §8; nothing written, the resolution still `PROPOSED`) and `RecordAlreadyMatched` (a manual match colliding with an allocation of the same pair). The 422s are the templates' refusals: a kind the break type's row does not list, a person proposing `EVIDENCED`, or a kind whose lines the subject's side cannot carry (`ResolutionKindNotAllowed`); a reason code outside the kind's subset (`ReasonCodeNotAllowed`); a transfer target that is not an owned `CUSTOMER_WALLET` or `MERCHANT_PAYABLE` in the subject's currency, an offset item that is not the other side's equal, or a candidate the stored snapshot never saw (`ResolutionTargetRefused`); and a gain before the pinned minimum age on the database clock (`GainNotYetEligible`). A malformed narrative or rejection reason (empty, over 1,000 characters, a card-number or bank-account shape) is `api.ValidationFailed`, judged before any claim and never echoed. A transfer target the ledger stopped accepting postings for between proposal and approval fails the approval as `ledger.AccountNotPostable` (409), nothing written; the generic ledger doors refuse a resolution's own proposal as `ledger.AdjustmentOriginMismatch` (409).
+
+The controller's doors (`P8-TSK-022`, ADR-0068 §§8-9) add nine. `RuleSetNotFound` is the `FileNotFound` departure at the rule-set doors. The 409s are the version's and the run's own states: `RuleSetNotPending` (activated, rejected or retired meanwhile - the same person's retry converges, it is not an error), `RuleSetActivationBySameActor` (the proposer activating their own - four-eyes, `INV-AUD-04`, held also by `V012`'s CHECK), `RuleSetProposalPending` (one proposal per source, held by a partial unique - the racer that loses it is answered here), `ReprocessingInProgress` (one open `REPROCESS` run per source, its partial unique beneath) and `RunNotBlocked` (only a `BLOCKED` run is requeued - ten racing requeues give one success and nine of these). The 422s refuse a proposal: `ToleranceNotPermitted` for a tolerance on anything but a fee's pinned terms or a date - an amount tolerance would absorb value without an entry (`INV-REC-08`, unrepresentable at the column too) - judged before every other defect; `RuleSetInvalid` for anything else not well formed, a name outside a vocabulary included, never echoing a value. `SourceNotFound` (404) answers a source code no declaration names.
 
 ## 3a. Rejection at the boundary
 

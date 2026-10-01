@@ -252,7 +252,7 @@ class PayoutMatchingDatabaseTest {
                                     + " status, funding_lag_days, gain_min_age_days,"
                                     + " effective_from, proposed_by, decided_by, reason,"
                                     + " created_at, correlation_id) VALUES (?, ?, 1,"
-                                    + " 'ACTIVE', 2, 90, ?, 'test', 'test',"
+                                    + " 'PROPOSED', 2, 90, ?, 'test', NULL,"
                                     + " 'PayoutMatchingDatabaseTest private payout source',"
                                     + " now(), 'p8-tsk-018-test') ON CONFLICT (id) DO NOTHING",
                             RULE_SET, SOURCE,
@@ -303,6 +303,10 @@ class PayoutMatchingDatabaseTest {
                                     + " (?, 'GBP', 100000), (?, 'USD', 100000)"
                                     + " ON CONFLICT DO NOTHING",
                             RULE_SET, RULE_SET, RULE_SET);
+                    execute(unitOfWork,
+                            "UPDATE reconciliation.rule_set SET status = 'ACTIVE', decided_by = 'test-activator',"
+                                    + " decided_at = now() WHERE id = ? AND status = 'PROPOSED'",
+                            RULE_SET);
                     return null;
                 });
     }
@@ -898,9 +902,12 @@ class PayoutMatchingDatabaseTest {
                 execute(migrator,
                         "INSERT INTO reconciliation.match_decision (id, external_item_id,"
                                 + " run_id, origin, rule_set_id, outcome, decided_by,"
-                                + " decided_by_type, decided_at, decided_on, correlation_id)"
+                                + " decided_by_type, decided_at, decided_on, correlation_id,"
+                                + " verdict, judged_status, judged_minor,"
+                                + " fingerprint_seen_earlier)"
                                 + " VALUES (?, ?, ?, 'RUN', ?, 'UNMATCHED', 'system',"
-                                + " 'SYSTEM', now(), current_date, 'p8-tsk-018-probe')",
+                                + " 'SYSTEM', now(), current_date, 'p8-tsk-018-probe',"
+                                + " 'NO_CANDIDATES', 'PENDING', 1000, false)",
                         decision, item, privateRun, PAYOUT_RULE_SET);
                 assertGuardRefuses(migrator, guard);
             } finally {

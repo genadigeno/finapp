@@ -238,7 +238,7 @@ class GraceAndRematchDatabaseTest {
                                 + " status, funding_lag_days, gain_min_age_days,"
                                 + " effective_from, proposed_by, decided_by, reason,"
                                 + " created_at, correlation_id) VALUES (?, ?, 1,"
-                                + " 'ACTIVE', 2, 90, ?, 'test', 'test',"
+                                + " 'PROPOSED', 2, 90, ?, 'test', NULL,"
                                 + " 'GraceAndRematchDatabaseTest private rule set',"
                                 + " now(), 'p8-tsk-013-test') ON CONFLICT (id) DO NOTHING",
                         pair[0], pair[1], java.sql.Date.valueOf(SETTLED_ON));
@@ -259,6 +259,10 @@ class GraceAndRematchDatabaseTest {
                         "INSERT INTO reconciliation.severity_threshold (rule_set_id,"
                                 + " currency, high_value_minor) VALUES (?, 'EUR', 100000)"
                                 + " ON CONFLICT DO NOTHING",
+                        pair[0]);
+                execute(app,
+                        "UPDATE reconciliation.rule_set SET status = 'ACTIVE', decided_by = 'test-activator',"
+                                + " decided_at = now() WHERE id = ? AND status = 'PROPOSED'",
                         pair[0]);
             }
             app.commit();

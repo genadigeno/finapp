@@ -116,6 +116,10 @@ class RoutePermissionRegisterTest {
                     // the batch read is the parsed totals an attester examines first, and
                     // an investigator's evidence view.
                     entry("POST /v1/operator/settlement/files/{id}/decline", PermissionName.SETTLEMENT_INGEST),
+                    // P8-TSK-022: readmission is a controller's recovery - never the ingesting
+                    // role's; verification reads content, so it is the investigator's.
+                    entry("POST /v1/operator/settlement/files/{id}/readmission", PermissionName.RECONCILIATION_ADMINISTER),
+                    entry("POST /v1/operator/settlement/files/{id}/verification", PermissionName.RECONCILIATION_INVESTIGATE),
                     entry("GET /v1/operator/settlement/batches/{id}", PermissionName.RECONCILIATION_INVESTIGATE),
                     // The reconciliation controller's own door (P8-TSK-007, ADR-0067
                     // section 8): adopting history is the CONTROLLER's act, a population
@@ -123,6 +127,15 @@ class RoutePermissionRegisterTest {
                     // report - amounts on the record, audited per serving (ADR-0072) -
                     // stays the investigator's.
                     entry("POST /v1/operator/reconciliation/opening-position", PermissionName.RECONCILIATION_ADMINISTER),
+                    // P8-TSK-022: the controller's doors - rule sets under four-eyes, reprocessing
+                    // and requeue under ADMINISTER; the replay is the investigator's.
+                    entry("GET /v1/operator/reconciliation/rule-sets", PermissionName.RECONCILIATION_ADMINISTER),
+                    entry("POST /v1/operator/reconciliation/rule-sets", PermissionName.RECONCILIATION_ADMINISTER),
+                    entry("POST /v1/operator/reconciliation/rule-sets/{id}/approval", PermissionName.RECONCILIATION_ADMINISTER),
+                    entry("POST /v1/operator/reconciliation/rule-sets/{id}/rejection", PermissionName.RECONCILIATION_ADMINISTER),
+                    entry("POST /v1/operator/reconciliation/sources/{code}/reprocessing", PermissionName.RECONCILIATION_ADMINISTER),
+                    entry("POST /v1/operator/reconciliation/runs/{id}/requeue", PermissionName.RECONCILIATION_ADMINISTER),
+                    entry("POST /v1/operator/reconciliation/runs/{id}/replay", PermissionName.RECONCILIATION_INVESTIGATE),
                     entry("GET /v1/operator/reports/reconciliation/positions", PermissionName.RECONCILIATION_INVESTIGATE),
                     // The matcher's explanation doors (P8-TSK-011, ADR-0068 section 7):
                     // a decision explains itself from stored rows alone; every door the

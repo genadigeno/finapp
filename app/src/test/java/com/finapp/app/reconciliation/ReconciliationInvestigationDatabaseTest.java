@@ -518,7 +518,7 @@ class ReconciliationInvestigationDatabaseTest {
                     "INSERT INTO reconciliation.rule_set (id, source_id, version, status,"
                             + " funding_lag_days, gain_min_age_days, effective_from,"
                             + " proposed_by, decided_by, reason, created_at, correlation_id)"
-                            + " VALUES (?, ?, 1, 'ACTIVE', 2, 90, ?, 'test', 'test',"
+                            + " VALUES (?, ?, 1, 'PROPOSED', 2, 90, ?, 'test', NULL,"
                             + " 'ReconciliationInvestigationDatabaseTest private rule set',"
                             + " now(), 'p8-tsk-014-app-test') ON CONFLICT (id) DO NOTHING",
                     PRIVATE_RULE_SET, PRIVATE_SOURCE, java.sql.Date.valueOf(SETTLED_ON));
@@ -537,6 +537,10 @@ class ReconciliationInvestigationDatabaseTest {
                     "INSERT INTO reconciliation.severity_threshold (rule_set_id, currency,"
                             + " high_value_minor) VALUES (?, 'EUR', 100000)"
                             + " ON CONFLICT DO NOTHING",
+                    PRIVATE_RULE_SET);
+            execute(app,
+                    "UPDATE reconciliation.rule_set SET status = 'ACTIVE', decided_by = 'test-activator',"
+                            + " decided_at = now() WHERE id = ? AND status = 'PROPOSED'",
                     PRIVATE_RULE_SET);
             app.commit();
         }

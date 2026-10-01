@@ -383,6 +383,30 @@ public final class JdbcSettlementBatchStore implements SettlementBatchStore<Conn
     }
 
     @Override
+    public List<LineDigest> lineDigestsOf(Connection unitOfWork, UUID fileId) {
+        Objects.requireNonNull(fileId, "fileId must not be null");
+        try (PreparedStatement read =
+                unitOfWork.prepareStatement(
+                        "SELECT line_no, raw_record_sha256, canonical_fingerprint"
+                                + " FROM settlement.line WHERE file_id = ? ORDER BY line_no")) {
+            read.setObject(1, fileId);
+            try (ResultSet rows = read.executeQuery()) {
+                List<LineDigest> digests = new ArrayList<>();
+                while (rows.next()) {
+                    digests.add(
+                            new LineDigest(
+                                    rows.getInt("line_no"),
+                                    rows.getBytes("raw_record_sha256"),
+                                    rows.getBytes("canonical_fingerprint")));
+                }
+                return List.copyOf(digests);
+            }
+        } catch (SQLException failure) {
+            throw new SettlementStorageException("could not read a file's line digests", failure);
+        }
+    }
+
+    @Override
     public boolean markAccepted(
             Connection unitOfWork,
             UUID batchId,
