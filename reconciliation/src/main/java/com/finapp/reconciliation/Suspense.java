@@ -36,14 +36,19 @@ import lombok.RequiredArgsConstructor;
  * Park, unpark and the release primitive (`P8-TSK-010`, ADR-0070 §§2–3) — the only movers
  * of value between a counterparty's position and {@code SUSPENSE_UNMATCHED}.
  *
- * <p>One further opener records value that enters suspense from CASH, not from a position
- * (`P8-TSK-016`, ADR-0070 §2's {@code BANK_UNATTRIBUTED} row): a bank statement's line no
+ * <p>Two further openers. The first records value that enters suspense from CASH, not from a
+ * position (`P8-TSK-016`, ADR-0070 §2's {@code BANK_UNATTRIBUTED} row): a bank statement's line no
  * remittance pattern attributes. It posts nothing itself — the statement's recognition already
  * put the line in {@code SUSPENSE_UNMATCHED} against {@code CASH_AT_BANK} — so it only moves the
  * item {@code PENDING → PARKED} beside its freshly raised owner ({@link #bornParked}) and, after
  * the posting, opens the owned item carrying the recognition's entry
  * ({@link #openUnattributed}). No park row exists, and {@link #unpark} refuses the item: it
- * leaves only through a resolution's {@link #release}.
+ * leaves only through a resolution's {@link #release}. The second is a batch repudiation's
+ * (`P8-TSK-023`, ADR-0070 §10, `V013`): a value a resolution already released is answered,
+ * never released twice — by the reversal's own suspense line, or for a {@code RECON_PARK} item
+ * by the park's exact inverse ({@link #repostReleased}) — and {@link #openRepudiation} opens the
+ * {@code REPUDIATION} item that owns that line, beside its new {@code PROCESSING_ERROR} owner.
+ * *(Corrected 2026-10-01, `P8-DOC-001`: this read "one further opener".)*
  *
  * <p><strong>{@code INV-REC-09} by the API's shape:</strong> every parked item names its
  * owning break, the command refuses a break that is missing or {@code RESOLVED}, and the
@@ -65,6 +70,13 @@ import lombok.RequiredArgsConstructor;
  * its business date, the honest available date — the design's D10). An unpark posts the
  * EXACT inverse — the item's frozen side, position and original value date — under a new
  * {@code recon-suspense:<parkId>} key.
+ *
+ * <p><strong>The key converges nothing.</strong> Every {@code <parkId>} is freshly minted by
+ * the id generator, so a retry or a racer would post under a different key: a park's once-ness
+ * rests on the external item's conditional transition, decided on the locked row before any
+ * posting, with {@code UNIQUE (external_item_id)} on the suspense item beneath it; an unpark's
+ * on the suspense item's unreleased remainder, judged on its locked row before the posting, and
+ * the caller's conditional edge out of {@code PARKED}.
  */
 @RequiredArgsConstructor
 public final class Suspense {

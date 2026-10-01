@@ -121,7 +121,8 @@ import org.springframework.test.context.DynamicPropertySource;
  * case file naming the repudiation (case 12); and a payout return applied from the repudiated
  * report left standing as a merchant fact, its expectation reopened to age (case 13 - payouts
  * paid by the simulated provider through the real merchant flow, as
- * {@code PayoutReturnDatabaseTest} pays them).
+ * {@code PayoutReturnDatabaseTest} pays them); and ten operators racing to propose one batch's
+ * repudiation, one proposal landing (case 14, the plan's §7 C14).
  *
  * <p><strong>Run apart.</strong> Like {@code SchemeCycleCashDatabaseTest},
  * {@code PayoutSettlementCashDatabaseTest} and {@code PayoutReturnDatabaseTest}, this suite runs
@@ -1301,6 +1302,17 @@ class BatchRepudiationDatabaseTest {
                 .isZero();
         assertThat(one("SELECT status FROM reconciliation.break WHERE id = ?", owner))
                 .isEqualTo("RESOLVED");
+        assertThat(count("SELECT count(*) FROM reconciliation.repudiation_closure c WHERE"
+                        + " c.resolution_id = ?::uuid AND NOT EXISTS (SELECT 1 FROM"
+                        + " reconciliation.break_event e JOIN reconciliation.resolution r ON"
+                        + " r.id = e.resolution_id WHERE e.break_id = c.break_id AND"
+                        + " e.event_type = 'RESOLVED' AND e.resolution_id = c.resolution_id"
+                        + " AND r.status = 'APPROVED' AND r.kind = 'REPUDIATE_BATCH')",
+                        resolution))
+                .as("V015: every closed break's RESOLVED edge names the APPROVED"
+                        + " REPUDIATE_BATCH resolution by column - a resolution that names no"
+                        + " break of its own, approved after the closures in one transaction")
+                .isZero();
 
         // The parked value: released once by the repudiation - the reversal carried its line.
         assertThat(count("SELECT count(*) FROM reconciliation.suspense_release WHERE item_id = ?"
@@ -1452,6 +1464,93 @@ class BatchRepudiationDatabaseTest {
                         .isTrue());
         assertNothingStandsOnARepudiatedItem();
         assertBooksHold("the payout report repudiated beneath its applied return");
+    }
+
+    // ----------------------------------------------------------------- 14. ten proposers
+
+    @Test
+    @Order(14)
+    @DisplayName("C14: ten operators propose the repudiation of one batch at once, each under"
+            + " its own key: exactly one 201, nine 409 ResolutionAlreadyProposed, one PROPOSED"
+            + " resolution and one proposal record - never a 500")
+    void tenRacingProposers() throws Exception {
+        String marker = letters(10);
+        LocalDate day = LocalDate.parse("2026-09-17");
+        String operationRef = "op-p8t23-" + UUID.randomUUID();
+        String captureRef = "PSP-CAP-" + marker;
+        // 90.00 under the pinned schedule (1.5% + 0.25): fee 1.60, net 88.40 - a distinct amount.
+        seedCapture(operationRef, captureRef, 90_00, day.minusDays(1));
+        UUID file =
+                pulled(PSP_SOURCE,
+                        pspReport("PSPB-RPD-C14-" + marker, day, captureRef, "90.00", "1.60",
+                                "88.40", remittanceRef(), "Sale"));
+        assertThat(parseSettled(file)).isEqualTo("PARSED");
+        assertThat(acceptanceSettled(file)).isEqualTo("ACCEPTED");
+        UUID batch = batchOf(file);
+        matchUntilQuiet();
+        assertThat(itemsOf(batch))
+                .containsExactlyInAnyOrder("CAPTURE:MATCHED", "PROCESSING_FEE:CHECKED");
+        List<Session> proposers = new ArrayList<>();
+        for (int i = 0; i < 10; i++) {
+            proposers.add(sessionWith(RoleName.RECONCILIATION_OPERATOR));
+        }
+
+        List<HttpResponse<String>> outcomes = new ArrayList<>();
+        ExecutorService pool = Executors.newFixedThreadPool(proposers.size());
+        try {
+            CountDownLatch start = new CountDownLatch(1);
+            List<Future<HttpResponse<String>>> racers = new ArrayList<>();
+            for (Session proposer : proposers) {
+                String key = key();
+                racers.add(pool.submit(() -> {
+                    start.await();
+                    return propose(proposer, batch.toString(), key, "fabricated, raced");
+                }));
+            }
+            start.countDown();
+            for (Future<HttpResponse<String>> racer : racers) {
+                outcomes.add(racer.get(3, TimeUnit.MINUTES));
+            }
+        } finally {
+            pool.shutdownNow();
+        }
+
+        List<String> proposed = new ArrayList<>();
+        for (HttpResponse<String> outcome : outcomes) {
+            if (outcome.statusCode() == 201) {
+                proposed.add(field(outcome.body(), "resolutionId"));
+            } else {
+                assertThat(outcome.statusCode())
+                        .as("C14: every losing proposer is answered 409, never a 500: %s",
+                                outcome.body())
+                        .isEqualTo(409);
+                assertThat(outcome.body())
+                        .as("C14: the loser is told a proposal already stands")
+                        .contains("reconciliation.ResolutionAlreadyProposed");
+            }
+        }
+        assertThat(proposed).as("C14: exactly one proposal lands - ten proposers").hasSize(1);
+        String resolution = proposed.get(0);
+        assertThat(resolutionsOf(batch))
+                .as("C14: one resolution row per batch, however many raced")
+                .isEqualTo(1);
+        assertThat(resolutionStatus(resolution)).isEqualTo("PROPOSED");
+        assertThat(count("SELECT count(*) FROM platform.audit_record a JOIN"
+                        + " reconciliation.resolution r ON a.target_id = r.id::text WHERE"
+                        + " r.settlement_batch_id = ? AND a.operation ="
+                        + " 'reconciliation.ResolutionProposed'", batch))
+                .as("C14: one proposal record")
+                .isEqualTo(1);
+        assertThat(batchStatus(batch)).isEqualTo("ACCEPTED");
+        assertThat(reversalsOf(recognitionOf(batch))).isZero();
+
+        // Leave it decided: a reasoned rejection by a person who did not propose.
+        HttpResponse<String> rejected =
+                reject(sessionWith(RoleName.RECONCILIATION_OPERATOR), resolution,
+                        "raced proposal, rejected to close the case");
+        assertThat(rejected.statusCode()).as(rejected.body()).isEqualTo(200);
+        assertThat(batchStatus(batch)).isEqualTo("ACCEPTED");
+        assertBooksHold("ten racing proposers");
     }
 
     /** A merchant with an effective destination and a funded EUR payable. */

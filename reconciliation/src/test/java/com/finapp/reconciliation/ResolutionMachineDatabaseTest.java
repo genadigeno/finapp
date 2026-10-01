@@ -211,6 +211,10 @@ class ResolutionMachineDatabaseTest {
                 .isEqualTo(1);
         assertThat(string("SELECT status FROM reconciliation.break WHERE id = ?", breakId))
                 .isEqualTo("RESOLVED");
+        assertThat(resolvedEventNames(breakId))
+                .as("V015: the primary break's RESOLVED edge names its approving resolution"
+                        + " by column, and the closure committed")
+                .isEqualTo(proposed.resolutionId().toString());
         assertThat(string("SELECT status || '/' || decided_by || '/' || journal_entry_id FROM"
                 + " reconciliation.resolution WHERE id = ?", proposed.resolutionId()))
                 .isEqualTo("APPROVED/" + APPROVER.id() + "/" + entry);
@@ -402,6 +406,11 @@ class ResolutionMachineDatabaseTest {
             assertThat(string("SELECT detail FROM reconciliation.break_event WHERE break_id = ?"
                     + " AND event_type = 'RESOLVED'", side.breakId()))
                     .contains("resolution=" + offset.resolutionId());
+            assertThat(resolvedEventNames(side.breakId()))
+                    .as("V015: the offset's subject break AND its partner break (named by no"
+                            + " resolution.break_id) each record the approving offset by column,"
+                            + " and the closure committed")
+                    .isEqualTo(offset.resolutionId().toString());
             assertThat(string("SELECT status FROM reconciliation.external_item WHERE id = ?",
                     side.itemId())).isEqualTo("RESOLVED");
         }
@@ -834,6 +843,11 @@ class ResolutionMachineDatabaseTest {
             assertThat(string("SELECT detail FROM reconciliation.break_event WHERE"
                     + " break_id = ? AND event_type = 'RESOLVED'", closed))
                     .contains("resolution=" + writeOff.resolutionId());
+            assertThat(resolvedEventNames(closed))
+                    .as("V015: the named break AND its remainder sibling (named by no"
+                            + " resolution.break_id) each record the approving write-off by"
+                            + " column, and the closure committed")
+                    .isEqualTo(writeOff.resolutionId().toString());
             assertThat(count("SELECT count(*) FROM platform.outbox_event WHERE event_type ="
                     + " 'reconciliation.BreakResolved' AND aggregate_id = ?", closed))
                     .isEqualTo(1);
@@ -906,6 +920,61 @@ class ResolutionMachineDatabaseTest {
         assertThat(string("SELECT status || '/' || allocated_minor || '/' || resolved_minor"
                 + " FROM reconciliation.expectation WHERE id = ?", expectation.id()))
                 .isEqualTo("RESOLVED_BY_ADJUSTMENT/2000/4000");
+    }
+
+    @Test
+    @Order(15)
+    @DisplayName("the gain's minimum age is the OWNING break's pinned rule set, never the"
+            + " source's version active at proposal (P8-DOC-001): a successor with a shorter"
+            + " age does not reach value parked under a longer one, and a successor with a"
+            + " longer age does not hold back value already aged under its predecessor")
+    void theGainAgeIsTheOwningBreaksPinnedRuleSet() throws Exception {
+        // Both items were parked ten days ago (parkedOn) under their source's version 1.
+        UUID longSource = IDS.next();
+        UUID longPinned = IDS.next();
+        seedRuleSet(longSource, longPinned, 90);
+        Parked young = parked(longSource, longPinned, ExternalLineType.CAPTURE, 14_00,
+                BreakType.UNKNOWN_EXTERNAL, BreakCause.PARKED_ON_RECEIPT);
+        UUID shortActive = IDS.next();
+        seedSuccessor(longSource, longPinned, shortActive, 5);
+
+        UUID shortSource = IDS.next();
+        UUID shortPinned = IDS.next();
+        seedRuleSet(shortSource, shortPinned, 5);
+        Parked aged = parked(shortSource, shortPinned, ExternalLineType.CAPTURE, 15_00,
+                BreakType.UNKNOWN_EXTERNAL, BreakCause.PARKED_ON_RECEIPT);
+        UUID longActive = IDS.next();
+        seedSuccessor(shortSource, shortPinned, longActive, 90);
+
+        assertThat(string("SELECT rule_set_id FROM reconciliation.break WHERE id = ?",
+                young.breakId()))
+                .as("the young item's owning break pins version 1 (90 days), while the"
+                        + " source's ACTIVE version is the 5-day successor")
+                .isEqualTo(longPinned.toString());
+        assertThat(string("SELECT id FROM reconciliation.rule_set WHERE source_id = ? AND"
+                + " status = 'ACTIVE'", longSource)).isEqualTo(shortActive.toString());
+
+        assertThatThrownBy(() -> propose(PROPOSER, young.breakId(),
+                        ResolutionKind.RECOGNISE_GAIN, ResolutionReasonCode.UNATTRIBUTABLE_AGED,
+                        Optional.empty()),
+                "ten days parked is short of the PINNED 90 days: the active successor's"
+                        + " 5 days never reaches value parked under the old version")
+                .isInstanceOf(ResolutionMachine.GainNotYetEligible.class);
+        assertThat(count("SELECT count(*) FROM reconciliation.resolution WHERE break_id = ?",
+                young.breakId()))
+                .as("the refused gain wrote no resolution")
+                .isZero();
+
+        ResolutionMachine.Proposed gain = propose(PROPOSER, aged.breakId(),
+                ResolutionKind.RECOGNISE_GAIN, ResolutionReasonCode.UNATTRIBUTABLE_AGED,
+                Optional.empty());
+        UUID entry = approve(APPROVER, gain.resolutionId()).journalEntryId().orElseThrow();
+        assertThat(entryLines(entry))
+                .as("ten days parked meets the PINNED 5 days at proposal and at approval: the"
+                        + " active successor's 90 days does not hold the aged value back")
+                .containsExactly(suspenseAccount + ">DEBIT>1500", gains + ">CREDIT>1500");
+        assertThat(string("SELECT status FROM reconciliation.break WHERE id = ?",
+                aged.breakId())).isEqualTo("RESOLVED");
     }
 
     // ----------------------------------------------------------------- seeding
@@ -1136,6 +1205,53 @@ class ResolutionMachineDatabaseTest {
         });
     }
 
+    /**
+     * Version 2 of {@code source}, proposed with its members in one transaction and activated by
+     * a second person in another, retiring {@code predecessor} beside it (V012's machine).
+     */
+    private static void seedSuccessor(
+            UUID source, UUID predecessor, UUID ruleSet, int gainMinAgeDays) {
+        inCommittedTransaction(app -> {
+            execute(app,
+                    "INSERT INTO reconciliation.rule_set (id, source_id, version, status,"
+                            + " funding_lag_days, gain_min_age_days, effective_from,"
+                            + " proposed_by, decided_by, reason, created_at, correlation_id)"
+                            + " VALUES (?, ?, 2, 'PROPOSED', 2, ?, ?, 'test', NULL,"
+                            + " 'ResolutionMachineDatabaseTest successor rule set', now(),"
+                            + " 'p8-doc-001-test')",
+                    ruleSet, source, gainMinAgeDays, java.sql.Date.valueOf(SETTLED_ON));
+            execute(app,
+                    "INSERT INTO reconciliation.rule (rule_set_id, priority, line_type,"
+                            + " key_kind, expectation_kind, cardinality, operation_anchored,"
+                            + " grace_hours) VALUES"
+                            + " (?, 1, 'CAPTURE', 'PSP_CAPTURE_REF', 'CARD_CAPTURE',"
+                            + " 'ONE_TO_ONE', false, 48)",
+                    ruleSet);
+            execute(app,
+                    "INSERT INTO reconciliation.tolerance (rule_set_id, comparison, currency,"
+                            + " absolute_minor, days) VALUES (?, 'SETTLEMENT_DATE_DAYS', NULL,"
+                            + " NULL, 2)",
+                    ruleSet);
+            execute(app,
+                    "INSERT INTO reconciliation.severity_threshold (rule_set_id, currency,"
+                            + " high_value_minor) VALUES (?, 'EUR', 100000)",
+                    ruleSet);
+            return null;
+        });
+        inCommittedTransaction(app -> {
+            execute(app,
+                    "UPDATE reconciliation.rule_set SET status = 'RETIRED' WHERE id = ? AND"
+                            + " status = 'ACTIVE'",
+                    predecessor);
+            execute(app,
+                    "UPDATE reconciliation.rule_set SET status = 'ACTIVE', decided_by ="
+                            + " 'test-activator', decided_at = now() WHERE id = ? AND status ="
+                            + " 'PROPOSED'",
+                    ruleSet);
+            return null;
+        });
+    }
+
     private static Matching matching() {
         return new Matching(
                 matchingStore, new MatchingRules(), register, suspense,
@@ -1259,6 +1375,13 @@ class ResolutionMachineDatabaseTest {
         } catch (SQLException failure) {
             throw new ReconciliationStorageException("statement failed: " + sql, failure);
         }
+    }
+
+    /** The resolution the break's one RESOLVED event names by V015's column, if APPROVED. */
+    private static String resolvedEventNames(UUID breakId) throws SQLException {
+        return string("SELECT e.resolution_id FROM reconciliation.break_event e JOIN"
+                + " reconciliation.resolution r ON r.id = e.resolution_id WHERE e.break_id = ?"
+                + " AND e.event_type = 'RESOLVED' AND r.status = 'APPROVED'", breakId);
     }
 
     private static UUID id(String sql, Object... args) throws SQLException {

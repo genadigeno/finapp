@@ -877,6 +877,9 @@ class ReconciliationAdministrationDatabaseTest {
 
         long replaysBefore = count("SELECT count(*) FROM reconciliation.run_replay WHERE"
                 + " run_id = ?", runFive);
+        long replayAuditsBefore = count("SELECT count(*) FROM platform.audit_record WHERE"
+                + " operation = 'reconciliation.RunReplayed' AND target_id = ? AND outcome ="
+                + " 'SUCCEEDED'", runFive.toString());
         List<Callable<HttpResponse<String>>> racers = new ArrayList<>();
         for (int racer = 0; racer < 10; racer++) {
             racers.add(() -> post(investigator.token(), "/runs/" + runFive + "/replay", null,
@@ -891,6 +894,12 @@ class ReconciliationAdministrationDatabaseTest {
                         json(outcome).path("firstDivergentDecision").stringValue()));
         assertThat(count("SELECT count(*) FROM reconciliation.run_replay WHERE run_id = ?",
                 runFive)).as("ten verdicts appended").isEqualTo(replaysBefore + 10);
+        assertThat(count("SELECT count(*) FROM platform.audit_record WHERE operation ="
+                + " 'reconciliation.RunReplayed' AND target_id = ? AND outcome = 'SUCCEEDED'",
+                runFive.toString()))
+                .as("ten racing replays write ten reconciliation.RunReplayed records, one per"
+                        + " committed verdict")
+                .isEqualTo(replayAuditsBefore + 10);
         assertThat(count("SELECT count(*) FROM reconciliation.run_replay WHERE run_id = ? AND"
                 + " verdict = 'DIVERGED' AND first_divergent_decision = ?", runFive, planted))
                 .isEqualTo(11);

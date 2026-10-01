@@ -438,10 +438,13 @@ public final class SimPspCsvFormat implements SettlementFormat {
             CurrencyCode currency,
             int scale,
             Set<Long> seenSeqs,
-            List<FormatDefect> defects) {
+            List<FormatDefect> fileDefects) {
         String[] f = record.fields();
         int line = record.physicalLine();
-        int before = defects.size();
+        // This record's defects, gathered apart and judged from this list alone: the file's
+        // list is capped at MAX_DEFECTS, so its size cannot say whether THIS record was read
+        // cleanly once a hundred defects stand (P8-DOC-001's correction of the 101st record).
+        List<FormatDefect> defects = new ArrayList<>();
 
         long seq = number(f[1], line, "seq", defects);
         if (seq >= 1 && !seenSeqs.add(seq)) {
@@ -526,7 +529,10 @@ public final class SimPspCsvFormat implements SettlementFormat {
             defect(defects, FormatDefect.at(RejectionCode.MALFORMED, line, "descriptor"));
         }
 
-        if (defects.size() > before) {
+        if (!defects.isEmpty()) {
+            for (FormatDefect found : defects) {
+                defect(fileDefects, found);
+            }
             return null;
         }
         detail.magnitude = magnitude.minorUnits() > 0 ? magnitude : magnitude.negated();

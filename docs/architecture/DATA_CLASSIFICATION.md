@@ -1045,7 +1045,7 @@ columns hold platform actor identifiers (`audit_record.actor`'s reasoning), and 
 | `file_event` | `to_status` | `INTERNAL` | The edge's destination |
 | `file_event` | `actor` | `CONFIDENTIAL` | Who drove the edge (`audit_record.actor`'s reasoning) |
 | `file_event` | `actor_type` | `INTERNAL` | The actor's kind - a closed vocabulary |
-| `file_event` | `reason` | `INTERNAL` | The edge's stated reason - bounded, ours, never content |
+| `file_event` | `reason` | `CONFIDENTIAL` | The edge's stated reason - bounded, never content, but free prose by a person on a decline or a readmission (`batch_event.reason`'s and `audit_record.reason`'s reasoning) |
 | `file_event` | `occurred_at` | `INTERNAL` | When the edge was driven |
 | `file_event` | `correlation_id` | `INTERNAL` | The flow's correlation |
 | `file_receipt` | `id` | `INTERNAL` | A record identifier. Generated |
@@ -1361,6 +1361,7 @@ counters and dates of things.
 | `break_event` | `detail` | `INTERNAL` | Identifiers and enumerated names only (INV-AUD-02) |
 | `break_event` | `occurred_at` | `INTERNAL` | When the edge was driven |
 | `break_event` | `correlation_id` | `INTERNAL` | The flow's correlation |
+| `break_event` | `resolution_id` | `INTERNAL` | The resolution a RESOLVED edge names - an identifier of a thing (V015, P8-DOC-001) |
 | `break_note` | `id` | `INTERNAL` | A record identifier. Generated |
 | `break_note` | `break_id` | `INTERNAL` | The noted break - an identifier of a thing |
 | `break_note` | `body` | `CONFIDENTIAL` | **An investigator's own words** - never logged, evented or audited; screened at the database for PAN and IBAN shapes (INV-PAY-02, INV-RAIL-03) |

@@ -393,15 +393,37 @@ class ReconciliationInvestigationDatabaseTest {
                 + " idempotency_key = ?", panKey))
                 .as("the screen runs before the claim: not even a claim")
                 .isZero();
+        assertThat(count("SELECT count(*) FROM platform.audit_record WHERE operation ="
+                + " 'reconciliation.BreakNoteAdded' AND target_id = ? AND outcome ="
+                + " 'SUCCEEDED'", breakId.toString()))
+                .as("the note is audited exactly once: the replayed key and the refused"
+                        + " PAN-bearing note write no second reconciliation.BreakNoteAdded")
+                .isEqualTo(1);
 
+        String linkKey = "link-" + UUID.randomUUID();
+        String link = "{\"targetKind\":\"SETTLEMENT_FILE\",\"targetRef\":\"" + fileId + "\"}";
         HttpResponse<String> linked = post(operator.token(), "/breaks/" + breakId
-                + "/evidence-links", "link-" + UUID.randomUUID(),
-                "{\"targetKind\":\"SETTLEMENT_FILE\",\"targetRef\":\"" + fileId + "\"}");
+                + "/evidence-links", linkKey, link);
         assertThat(linked.statusCode()).isEqualTo(201);
+        HttpResponse<String> relinked = post(operator.token(), "/breaks/" + breakId
+                + "/evidence-links", linkKey, link);
+        assertThat(relinked.statusCode()).isEqualTo(201);
+        assertThat(relinked.body()).as("a lost response replays the link's receipt")
+                .isEqualTo(linked.body());
         HttpResponse<String> dangling = post(operator.token(), "/breaks/" + breakId
                 + "/evidence-links", "link-" + UUID.randomUUID(),
                 "{\"targetKind\":\"JOURNAL_ENTRY\",\"targetRef\":\"" + UUID.randomUUID() + "\"}");
         assertThat(dangling.statusCode()).isEqualTo(422);
+        assertThat(count("SELECT count(*) FROM platform.audit_record WHERE operation ="
+                + " 'reconciliation.BreakEvidenceLinked' AND target_id = ? AND outcome ="
+                + " 'SUCCEEDED'", breakId.toString()))
+                .as("the link is audited exactly once: the replayed key and the refused"
+                        + " dangling link write no second reconciliation.BreakEvidenceLinked")
+                .isEqualTo(1);
+        assertThat(count("SELECT count(*) FROM reconciliation.break_evidence_link WHERE"
+                + " break_id = ?", breakId))
+                .as("one link stored under the replayed key, none dangling")
+                .isEqualTo(1);
 
         HttpResponse<String> reclassified = post(operator.token(), "/breaks/" + breakId
                 + "/classification", null,

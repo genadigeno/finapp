@@ -182,6 +182,15 @@ class SettlementRoutesDatabaseTest {
                 .as("the second principal's delivery leaves ITS OWN receipt - the"
                         + " per-principal scope's observable")
                 .isEqualTo(2);
+        assertThat(count(
+                        "SELECT count(*) FROM platform.audit_record WHERE operation ="
+                                + " 'settlement.SettlementFileUploaded' AND target_id = ?"
+                                + " AND outcome = 'SUCCEEDED'",
+                        fileId))
+                .as("the file's landing is audited exactly once: the replayed key and the"
+                        + " second principal's converging delivery write no second"
+                        + " settlement.SettlementFileUploaded")
+                .isEqualTo(1);
 
         HttpResponse<String> view =
                 get("/v1/operator/settlement/files/" + fileId, operatorOne);

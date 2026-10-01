@@ -738,6 +738,9 @@ class SettlementReconciliationStormDatabaseTest {
             replayEveryRun(proposer);
             reconcile("at rest, after every replay");
             assertTheCensusEqualsTheOracle(captures, schemeRefs, unknownRef, deliveries);
+            // F2: the balance projection every Phase 8 posting maintained under ten instances,
+            // verified at rest against replay-from-zero - as the Phase 7 storm verifies its own.
+            assertTheProjectionIsCleanAtRest();
 
             // The item and expectation censuses: every external item the storm produced, and
             // every expectation, at its expected final status - a genuine line left waiting,
@@ -1418,6 +1421,51 @@ class SettlementReconciliationStormDatabaseTest {
     }
 
     /** One file, batch, run and recognition entry per delivery set; a receipt per delivery. */
+    /**
+     * F2 at rest: every ledger account any journal line reaches - the clearing positions the
+     * recognitions, parks and unparks move, {@code PROCESSING_COSTS}, the suspense, the cash, and
+     * the losses the resolutions post - has its {@code ledger.account_balance}
+     * projection equal to the replay-from-zero derivation, with nothing in flight. The Phase 8
+     * purposes the storm posts to are required among the verified, so the sweep is never
+     * vacuous.
+     */
+    private static void assertTheProjectionIsCleanAtRest() throws SQLException {
+        com.finapp.ledger.ProjectionVerification verification =
+                new com.finapp.ledger.ProjectionVerification(
+                        new com.finapp.ledger.JdbcBalanceDerivation());
+        List<String> posted =
+                rows("SELECT DISTINCT a.id::text || '|' || a.purpose FROM ledger.ledger_account a"
+                        + " JOIN ledger.journal_line l ON l.ledger_account_id = a.id");
+        java.util.Set<String> purposes = new java.util.TreeSet<>();
+        try (Connection app = DatabaseRoles.application()) {
+            app.setAutoCommit(false);
+            for (String account : posted) {
+                String[] parts = account.split("\\|");
+                purposes.add(parts[1]);
+                assertThat(verification.verdictOf(
+                                app, com.finapp.ledger.LedgerAccountId.of(
+                                        UUID.fromString(parts[0]))))
+                        .as("F2 at rest: %s %s's projection equals replay-from-zero", parts[1],
+                                parts[0])
+                        .isEqualTo(com.finapp.ledger.ProjectionVerification.Verdict.CLEAN);
+            }
+            com.finapp.ledger.ProjectionVerification.Report swept = verification.verify(app);
+            assertThat(swept.drifting())
+                    .as("F2 at rest: no drifting projection anywhere %s", swept.driftingAccounts())
+                    .isZero();
+            assertThat(swept.inFlight()).as("F2 at rest: nothing in flight").isZero();
+            app.rollback();
+        }
+        // RECONCILIATION_GAINS is absent by the storm's own traffic: no resolution it drives
+        // recognises a gain (the T5 write-off is its one loss), so no line reaches that account.
+        assertThat(purposes)
+                .as("F2: the sweep reached every position the storm's Phase 8 postings move"
+                        + " (verified: %s)", purposes)
+                .contains("SETTLEMENT_CLEARING", "INSTANT_CLEARING", "PAYOUT_CLEARING",
+                        "CASH_AT_BANK", "PROCESSING_COSTS", "SUSPENSE_UNMATCHED",
+                        "RECONCILIATION_LOSSES");
+    }
+
     private static void assertOneEffectPerDeliverySet(Deliveries deliveries) throws Exception {
         for (Delivery delivery : deliveries.delivered()) {
             String sha = sha256Hex(delivery.content());

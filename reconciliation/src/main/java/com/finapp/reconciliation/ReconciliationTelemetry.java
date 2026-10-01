@@ -20,7 +20,10 @@ public interface ReconciliationTelemetry {
     default void runCompleted(
             UUID sourceId, Map<DecisionOutcome, Long> outcomes, Optional<Duration> sinceBirth) {}
 
-    /** A late leg decided an item again - a {@code REMATCH} or {@code REPROCESS} decision. */
+    /**
+     * A late leg decided an item again - every {@code REMATCH} decision, and a
+     * {@code REPROCESS} decision only when it allocated.
+     */
     default void rematched(UUID sourceId, DecisionOutcome outcome) {}
 
     /** A resolution ended; {@code sinceRaised} for a break-subject resolution. */
@@ -36,7 +39,6 @@ public interface ReconciliationTelemetry {
      */
     default void staleRefused(ResolutionKind kind) {}
 
-    /** Where reconciliation's legs record their spans. */
     /**
      * How many counts the current transaction has deferred so far - a mark taken beside a JDBC
      * savepoint (`P8-TSK-024`'s gate). Spring never sees a {@code rollback(savepoint)}, so a
@@ -50,6 +52,7 @@ public interface ReconciliationTelemetry {
     /** Drops every count deferred after {@code mark} - called beside {@code rollback(savepoint)}. */
     default void discardCountsAfter(int mark) {}
 
+    /** Where reconciliation's legs record their spans. */
     default Spans spans() {
         return Spans.NONE;
     }

@@ -17,8 +17,9 @@ Detailed architectural decisions. The human-readable index of *what* was decided
   had drifted before accepting any, and ADR-0059…0062 by the Phase 7 review (`P7-DOC-001`) in
   the same way. ADR-0055 is cross-cutting (`X-TSK-001`), and its own text reserves its
   acceptance to the owner. ADR-0064…0073 were written `Proposed` at the Phase 7 → 8 transition
-  and wait for the Phase 8 review; nothing they decide is implemented until Phase 8's tasks
-  build it. *(The Phase 7 review's acceptance was missing from this line until the Phase 7 → 8
+  and accepted by the Phase 8 review (`P8-DOC-001`, 2026-10-01), which read each against the
+  code and corrected every drifted passage - with dated notes where a decision changed -
+  before accepting any. *(The Phase 7 review's acceptance was missing from this line until the Phase 7 → 8
   transition added it with the Phase 8 decisions.)*
 - A decision found in code but absent from this record is architectural debt.
 
@@ -88,16 +89,16 @@ Detailed architectural decisions. The human-readable index of *what* was decided
 | [0060](ADR-0060-rail-routing-pinned-and-explainable.md) | Rail routing is a versioned policy, decided once per payment, pinned, and explainable from stored data | Accepted | 7 | Payments |
 | [0061](ADR-0061-disputes-and-chargeback-accounting.md) | A dispute is its own lifecycle on a card payment; a chargeback never takes more from the counterparty than it was credited, and every stage posts once | Accepted | 7 | Payments · Merchant · Accounts · Ledger |
 | [0062](ADR-0062-account-to-account-and-instant-payments.md) | Account-to-account payments run on a provider-neutral push rail; bank details and aliases never enter; an instant payment is final on acceptance and settled on the scheme's cycle | Accepted | 7 | Payments · Payment Methods · Accounts · Ledger |
-| [0064](ADR-0064-settlement-holds-evidence-reconciliation-holds-expectations.md) | Settlement holds external evidence; reconciliation holds the expectations and the comparison | Proposed | 8 | Settlement · Reconciliation · Payments · Merchant · Ledger |
-| [0065](ADR-0065-clearing-discharged-in-two-evidence-hops.md) | Each counterparty's clearing position is discharged in two evidence hops; cash moves only on the bank's statement | Proposed | 8 | Settlement · Reconciliation · Ledger · Payments · Merchant |
-| [0066](ADR-0066-settlement-file-screening-authentication-and-storage.md) | Raw settlement files are screened at the door, authenticated by pull credential or second-person attestation, and retained encrypted in PostgreSQL behind a port | Proposed | 8 | Settlement · Reconciliation · Security |
-| [0067](ADR-0067-every-settling-completion-opens-its-expectation.md) | Every externally settling completion opens its expectation in its own transaction | Proposed | 8 | Reconciliation · Payments · Merchant · Ledger |
-| [0068](ADR-0068-matching-strategy-rule-versioning-and-tolerance-model.md) | Matching strategy, rule versioning and tolerance model | Proposed | 8 | Reconciliation · Settlement · Ledger |
-| [0069](ADR-0069-break-taxonomy-and-lifecycle.md) | Break taxonomy and lifecycle | Proposed | 8 | Reconciliation · Settlement · Ledger |
-| [0070](ADR-0070-suspense-account-policy-and-ageing.md) | Suspense account policy and ageing | Proposed | 8 | Reconciliation · Settlement · Ledger · Payments · Merchant |
-| [0071](ADR-0071-break-resolution-authority-and-four-eyes-thresholds.md) | Break resolution authority and four-eyes thresholds | Proposed | 8 | Reconciliation · Ledger · Identity · Settlement |
-| [0072](ADR-0072-amounts-never-enter-metrics.md) | Amounts never enter metrics: unmatched value, suspense balance and provider costs are audited operator reports | Proposed | 8 | Reconciliation · Settlement · Ledger · Payments · Observability |
-| [0073](ADR-0073-payout-return-applied-from-settlement-evidence.md) | A payout return is a merchant fact applied from settlement evidence; the payout's push-rail convergence trigger did not fire | Proposed | 8 | Merchant · Reconciliation · Settlement · Ledger |
+| [0064](ADR-0064-settlement-holds-evidence-reconciliation-holds-expectations.md) | Settlement holds external evidence; reconciliation holds the expectations and the comparison | Accepted | 8 | Settlement · Reconciliation · Payments · Merchant · Ledger |
+| [0065](ADR-0065-clearing-discharged-in-two-evidence-hops.md) | Each counterparty's clearing position is discharged in two evidence hops; cash moves only on the bank's statement | Accepted | 8 | Settlement · Reconciliation · Ledger · Payments · Merchant |
+| [0066](ADR-0066-settlement-file-screening-authentication-and-storage.md) | Raw settlement files are screened at the door, authenticated by pull credential or second-person attestation, and retained encrypted in PostgreSQL behind a port | Accepted | 8 | Settlement · Reconciliation · Security |
+| [0067](ADR-0067-every-settling-completion-opens-its-expectation.md) | Every externally settling completion opens its expectation in its own transaction | Accepted | 8 | Reconciliation · Payments · Merchant · Ledger |
+| [0068](ADR-0068-matching-strategy-rule-versioning-and-tolerance-model.md) | Matching strategy, rule versioning and tolerance model | Accepted | 8 | Reconciliation · Settlement · Ledger |
+| [0069](ADR-0069-break-taxonomy-and-lifecycle.md) | Break taxonomy and lifecycle | Accepted | 8 | Reconciliation · Settlement · Ledger |
+| [0070](ADR-0070-suspense-account-policy-and-ageing.md) | Suspense account policy and ageing | Accepted | 8 | Reconciliation · Settlement · Ledger · Payments · Merchant |
+| [0071](ADR-0071-break-resolution-authority-and-four-eyes-thresholds.md) | Break resolution authority and four-eyes thresholds | Accepted | 8 | Reconciliation · Ledger · Identity · Settlement |
+| [0072](ADR-0072-amounts-never-enter-metrics.md) | Amounts never enter metrics: unmatched value, suspense balance and provider costs are audited operator reports | Accepted | 8 | Reconciliation · Settlement · Ledger · Payments · Observability |
+| [0073](ADR-0073-payout-return-applied-from-settlement-evidence.md) | A payout return is a merchant fact applied from settlement evidence; the payout's push-rail convergence trigger did not fire | Accepted | 8 | Merchant · Reconciliation · Settlement · Ledger |
 
 *ADR-0063 has no row, and that is deliberate. The number is reserved by an unmerged branch
 (`X-TSK-005`, `claude/xenodochial-bell-b49823`), so Phase 8's decisions start at ADR-0064 and 0063

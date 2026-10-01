@@ -1,6 +1,6 @@
 # ADR-0073 — A payout return is a merchant fact applied from settlement evidence; the payout's push-rail convergence trigger did not fire
 
-Status: Proposed (2026-09-28, the Phase 7 → 8 transition)
+Status: Accepted (2026-10-01, `P8-DOC-001` — read against the code and corrected first)
 Date: 2026-09-28
 Phase: 8
 Context: Merchant · Reconciliation · Settlement · Ledger
@@ -70,7 +70,8 @@ evaluate it.
    - `journal_entry_id UNIQUE`;
    - `returned_on`: the posting date, which is the stored `accepted_on` of the item's settlement
      batch;
-   - `value_date`: the item's settlement date;
+   - `value_date`: the item's settlement date, or its business date when the line carries none
+     (`COALESCE(settlement_date, business_date)`, `JdbcWaitingPayoutReturns`);
    - `recorded_at`, from the injected clock.
 
    `RECORDED` is the fact's only state, so the row carries no status column and no machine, the
@@ -98,9 +99,10 @@ evaluate it.
    | `merchant-payout-return:<payoutId>` (scope `ledger.post`, entry type `POSTING`, the platform) | DR `PAYOUT_CLEARING` A; CR the merchant's `MERCHANT_PAYABLE` A |
 
    - **Dates come from stored data, never from the clock.** The posting date is the item's batch
-     `accepted_on`; the value date is the item's settlement date. The posting fingerprint binds
-     both dates (`PostingService.java:205-228`), and `MerchantPayoutOutcomes.java:215-217` already
-     warns that a replay on a later day would otherwise conflict. With stored dates, a retry, a
+     `accepted_on`; the value date is the item's settlement date (its business date when it has
+     none). The posting fingerprint binds both dates (`PostingService.canonicalForm`), and
+     `MerchantPayoutOutcomes`'s acting branch already warns that a replay on a later day would
+     otherwise conflict. With stored dates, a retry, a
      crash-and-reclaim or a later-day replay converges on the key. This is ADR-0065 §6's rule for
      every Phase 8 poster.
    - **The position comes from the declaration.** The clearing account is read from
@@ -134,7 +136,13 @@ evaluate it.
      - until the return worker has opened that expectation, the line waits: the item stays
        `UNMATCHED`, and the matcher raises no break for it. The worker resolves the payout row
        through the payout's stored provider reference (point 4), and the grace leg types whatever
-       is still unapplied at grace (point 5).
+       is still unapplied at grace (point 5). The one exception is a return the platform's own
+       record already contradicts: when `InternalReferenceLookup` answers that the payout is
+       terminal — `FAILED`, so no return can ever apply — the run parks the line at once as
+       `REVERSAL_MISMATCH`, cause `TERMINAL_STATE_CONTRADICTED`, with no grace clock (point 5).
+       *(Corrected 2026-10-01, `P8-DOC-001`: this bullet said every unapplied line waits;
+       `Matching.applyUnreached` parks a terminal answer definitively, as for every source,
+       proven by `PayoutMatchingDatabaseTest` case (g).)*
 
      No rule-set v2 activation is needed.
      *(The Phase 7 → 8 transition's consistency review, A4. This bullet had registered the payout's
@@ -170,8 +178,10 @@ evaluate it.
    and `DISTRIBUTED_EXECUTION.md` §3's scheduler register with its argument. Its platform actor
    joins `SystemActorCallSitesAreEnumeratedTest`.
 
-   Each tick reads a bounded page of reconciliation's `UNMATCHED` `PAYOUT_RETURNED` items in
-   claimant order, `(source_sequence, line_no)`, through reconciliation's read API. For each item,
+   Each tick walks every one of reconciliation's `UNMATCHED` `PAYOUT_RETURNED` items in claimant
+   order, `(source_sequence, line_no)`, a bounded page at a time by keyset, through the
+   `WaitingPayoutReturns` port reconciliation declares — a fixed first page of returns not yet
+   applicable would starve every return behind it until grace. For each item,
    in its own transaction:
    1. **The worker re-reads the item under a share lock** and proceeds only while it is still
       `UNMATCHED` (point 7).
@@ -217,10 +227,16 @@ evaluate it.
    - **At grace the break is typed through `InternalReferenceLookup`.** A known payout that the
      return cannot apply to (payable not postable — for a merchant closed since, whose close now
      closes its payable's ledger account, the transition's repairs — amount or currency different,
-     payout not `COMPLETED`) is `REVERSAL_MISMATCH`, cause `RETURN_NOT_APPLICABLE`, HIGH. A reference naming
-     no payout is `UNKNOWN_EXTERNAL`, like any unknown key (ADR-0069's precedence). Either way the
-     item parks: DR `PAYOUT_CLEARING` / CR `SUSPENSE_UNMATCHED`, a CREDIT suspense item owned by
-     its break (`INV-REC-09`, ADR-0070).
+     payout still in flight and never completed inside the grace) is `REVERSAL_MISMATCH`, cause
+     `RETURN_NOT_APPLICABLE`, HIGH. A reference naming no payout is `UNKNOWN_EXTERNAL`, like any
+     unknown key (ADR-0069's precedence). Either way the item parks: DR `PAYOUT_CLEARING` / CR
+     `SUSPENSE_UNMATCHED`, a CREDIT suspense item owned by its break (`INV-REC-09`, ADR-0070).
+   - **A `FAILED` payout's return does not wait for grace.** The lookup's terminal answer is a
+     definitive contradiction, so the run parks the line when it first decides it, as
+     `REVERSAL_MISMATCH`, cause `TERMINAL_STATE_CONTRADICTED`, by the same posting and the same
+     ownership (point 3). The exits below are the same. *(Corrected 2026-10-01, `P8-DOC-001`:
+     this point listed "payout not `COMPLETED`" among the grace-time `RETURN_NOT_APPLICABLE`
+     causes; a `FAILED` payout is typed at run time, and only a payout still in flight waits.)*
    - **The way out is a person's decision.** The usual path is a four-eyes `TRANSFER_TO_ACCOUNT`
      (ADR-0071) to a `MERCHANT_PAYABLE` that is `ACTIVE` in the currency, share-locked before
      posting: DR `SUSPENSE_UNMATCHED` / CR the payable. The merchant is re-credited by decision,
@@ -275,7 +291,7 @@ evaluate it.
    | Contention | PostgreSQL arbiter | Loser |
    |---|---|---|
    | Ten workers on one item | payout row `FOR UPDATE`; `UNIQUE (payout_id)`; the posting key | Finds the return standing and writes nothing |
-   | Ten duplicate `PAYOUT_RETURNED` lines, within one file or across files | the same; then the matcher's claimant order | One return, one entry, one expectation. The earliest claimant is allocated, and the rest park as `DUPLICATE_EXTERNAL` (ADR-0068) |
+   | Ten duplicate `PAYOUT_RETURNED` lines, within one file or across files | the same; then the matcher's claimant order | One return, one entry, one expectation. The earliest claimant is allocated, and the rest park as `DUPLICATE_EXTERNAL` (ADR-0068) — with one recorded exception: a later report's repeat of a returned line, already parked `DUPLICATE` with an empty candidate snapshot, can reach the rematch worklist and take the return before the genuine line. Value is conserved; the attribution is wrong — the genuine line parks at grace and its break is raised. Recorded debt, scheduled to Phase 15 (see below) |
    | The payout lock bypassed (the probe) | `UNIQUE (payout_id)`, `UNIQUE (kind, operation_ref)` and the posting key alone. A duplicate line from another batch carries other stored dates, so its fingerprint conflicts | Rolls back |
    | The worker against the grace leg on one item | the item's row lock, the judgement made on the locked row | Either order converges: allocated, or parked with no return applied |
    | The worker against a merchant close | the payable `FOR SHARE` against the close's lock | Return first: the close finds the payable owed. Close first: the close has closed the payable's ledger account in its own transaction (the transition's repairs), so the return finds it not postable and is not applicable (point 5) |
@@ -294,6 +310,16 @@ evaluate it.
      merchant twice: once by the return, and once from suspense.)*
    - **`external_item_ref` records the item that won the payout row.** Allocation is the
      matcher's, in claimant order, never the worker's.
+   - **The duplicate that takes the return (recorded debt).** The anchored rematch clause, as
+     `P8-TST-001` corrected it, puts on the worklist every item whose decisions have not yet seen
+     the return as a candidate. A repeat of a returned line in a later report, parked
+     `DUPLICATE_EXTERNAL` after the return opened and so with an empty snapshot, qualifies, and
+     claimant order (`line_no` across runs) can let it allocate before the genuine line. The old
+     clause had the same race when both decisions preceded the return; the correction widened its
+     window, and no test covers it. Nothing is created or lost — one return, one allocation — but
+     the wrong line holds it. The fix — a `DUPLICATE` verdict counting as having seen the reach,
+     with a test against claimant order — is scheduled to Phase 15 by the Phase 8 exit review
+     (`P8-DOC-001`, 2026-10-01; `CURRENT_STATE.md` Known Architectural Debt).
    - **Lock order** (`DISTRIBUTED_EXECUTION.md` §3's row): the item row (step 3), then the
      payout row (step 4, the return worker only), then the payable account `FOR SHARE` (step 5),
      then the ledger projection rows sorted by account id (step 6). The posting is the last
@@ -462,19 +488,29 @@ Negative:
   suspense, aged and alerting, owned by its break, until a person transfers it to an account that
   can take it. Returning it to the merchant outside the platform is return-to-sender, which is
   deferred. Merchant closure waits on the chargeback window but not on a payout's return window,
-  because Phase 8 models none. This is recorded here for the Phase 8 review to route.
+  because Phase 8 models none. *(Routed 2026-10-01 by the Phase 8 review, `P8-DOC-001`: owned by
+  Phase 15, with return-to-sender and ADR-0070 §4's residual. Phase 12 is BNPL in the roadmap,
+  not merchant-facing flows in general; Phase 15 makes reconciliation operable — runbooks,
+  ageing SLAs, escalation — and, building no new business capability itself, either writes the
+  operating procedure for this value or schedules return-to-sender by ADR. This read "recorded
+  here for the Phase 8 review to route".)*
 - **A return applied from a batch later repudiated.** It stands as a merchant fact, because
   repudiation reverses the recognition entry and counter-allocates the items, but it does not
   touch `merchant`. The reopened `PAYOUT_RETURN` expectation ages into `MISSING_EXTERNAL`, so
   nothing is silent. But taking the value back from the merchant is not a Phase 8 resolution kind.
-  `P8-TSK-023` must state the outcome (Follow-up).
+  *(Stated by `P8-TSK-023`, 2026-10-01, as built: the `payout_return` fact and its posting stand
+  untouched, the payout stays `COMPLETED`, the return item leaves to `REPUDIATED`, the
+  `PAYOUT_RETURN` expectation is reopened to age by the sweep, and `PAYOUT_CLEARING` stays
+  explained — `BatchRepudiationDatabaseTest` case 13. This read "`P8-TSK-023` must state the
+  outcome".)*
 - The platform gains another leaderless schedule, one of the five Phase 8 adds (the register goes
   from nine to fourteen).
 
 Operational impact: returns waiting inside grace are counted by
 `finapp.reconciliation.item.unmatched`, and applied returns show in `finapp.reconciliation.item`
 and `finapp.reconciliation.rematch` as items matched. A return that cannot apply becomes a HIGH
-`REVERSAL_MISMATCH` break with cause `RETURN_NOT_APPLICABLE`, alerting by age. The schedule
+`REVERSAL_MISMATCH` break with cause `RETURN_NOT_APPLICABLE` (`TERMINAL_STATE_CONTRADICTED` for a
+`FAILED` payout's, at once), alerting by age. The schedule
 publishes its sweeper-enabled gauge. No series carries an amount (ADR-0072).
 Security impact: no route, no permission and no credential. No person can apply a return
 directly; the manual path is four-eyes. The worker acts as the platform and is enumerated. Audit
@@ -536,7 +572,7 @@ payable bounds the next payout).
     remainder — without which the applied return's expectation, holding no key, would never
     be re-decided (the remainder condition keeps a duplicate line's reach to a SPENT return
     out of the worklist, where it would be re-locked on every tick). Proven with REAL
-    clocks in `PayoutMatchingDatabaseTest` and end to end in `PayoutReturnDatabaseTest`. *(Corrected by `P8-TST-001`, 2026-10-01: the storm found that "opened after its latest decision" compared the return's `opened_at` - the worker's instance clock - with the line's `decided_at` - the matcher's - so a return applied within the clock skew never reached the worklist and waited for grace. The clause now asks whether any decision of the item has already seen the return as a candidate, judged on rows alone. The keyed and value-date clauses still compare `opened_at` with the latest decision across instances - recorded debt, grace their backstop.)*
+    clocks in `PayoutMatchingDatabaseTest` and end to end in `PayoutReturnDatabaseTest`. *(Corrected by `P8-TST-001`, 2026-10-01: the storm found that "opened after its latest decision" compared the return's `opened_at` - the worker's instance clock - with the line's `decided_at` - the matcher's - so a return applied within the clock skew never reached the worklist and waited for grace. The clause now asks whether any decision of the item has already seen the return as a candidate, judged on rows alone. The keyed and value-date clauses still compare `opened_at` with the latest decision across instances - recorded debt, grace their backstop. The correction also widened a duplicate line's chance to take the return first - point 7's recorded debt, value conserved and attribution wrong, scheduled to Phase 15 by `P8-DOC-001`.)*
 - `P8-TSK-002` declares `PayoutSettlementDeclaration`. `P8-TSK-004` seeds rule set v1 with the
   payout source's `PAYOUT_RETURNED` rule OPERATION-ANCHORED (point 3). `P8-TSK-005` switches
   `MerchantPayoutOutcomes` to it and opens `MERCHANT_PAYOUT` through the port.
@@ -559,13 +595,20 @@ payable bounds the next payout).
   classifier reads. *(The consistency review, A4, A6 and A12: this list had given `P8-TSK-019`
   the attribution term, the label and return-qualified key kinds, and named the grace-leg race
   only on `P8-TSK-019`'s side.)*
-- `P8-TSK-023`: repudiation must state what happens to a return applied from a repudiated batch
-  (Negative, above).
+- `P8-TSK-023` — **implemented** (2026-10-01): it stated what happens to a return applied from a
+  repudiated batch — the return stands, its expectation reopened (Negative, above).
 - `P8-TST-001` (payout returns in the storm, with every round's proofs) and `P8-TST-002`
-  (`REVERSAL_MISMATCH` crossed with its allowed resolutions, `TRANSFER_TO_ACCOUNT` among them).
+  (`REVERSAL_MISMATCH` crossed with its allowed resolutions, `TRANSFER_TO_ACCOUNT` among them) —
+  both **done** (2026-10-01); the storm's find, the anchored clause's two clocks, is the note
+  under `P8-TSK-019` above.
 - At the transition, with provenance: ADR-0057's follow-up is annotated as paid by this ADR, and
   ADR-0062 §7 as evaluated, with its second trigger not fired.
-- Until `P8-TSK-019` lands, nothing in this ADR is implemented but point 7's grace side
-  (`P8-TSK-013`, above); every other statement is the decided design, corrected by the tasks
-  that build it.
-- The Phase 8 review reads this ADR against the code before accepting it (`P8-DOC-001`).
+- **As built** (2026-10-01, read against the code by `P8-DOC-001`): every point of this ADR is
+  implemented by the tasks above, all `COMPLETE`, and every statement above is true of the code.
+  The review's corrections: point 1's value date, point 2's references, point 3's and point 5's
+  `FAILED`-payout exception (parked at once, `TERMINAL_STATE_CONTRADICTED`), point 4's keyset
+  walk, point 7's duplicate-line debt (Phase 15), and the closed merchant's routing (Phase 15).
+  *(This bullet read "Until `P8-TSK-019` lands, nothing in this ADR is implemented but point 7's
+  grace side" until the review.)*
+- The Phase 8 review (`P8-DOC-001`) read this ADR against the code, corrected it where it had
+  drifted, and accepted it on 2026-10-01.

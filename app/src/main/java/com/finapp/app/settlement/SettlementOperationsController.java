@@ -23,12 +23,16 @@ import org.springframework.web.bind.annotation.RestController;
  * attestation and the investigator's reads — the phase's first routes, opened only now that
  * the door behind them is proven (`P8-TSK-002`).
  *
- * <p><strong>Two permissions, one desk</strong>: introducing and attesting evidence is
- * {@link PermissionName#SETTLEMENT_INGEST}; every read — and the one content path, reasoned
- * and audited per read ({@code INV-REC-10}) — is
- * {@link PermissionName#RECONCILIATION_INVESTIGATE}. The second-person control is inside the
- * ingest permission, by actor distinctness at two ranks ({@code INV-SET-07}), which is why an
- * uploader holding the permission is still refused on their own file.
+ * <p><strong>Three permissions</strong>: introducing, attesting and declining evidence — the
+ * upload, the fetch-now, the attestation and the decline — is
+ * {@link PermissionName#SETTLEMENT_INGEST}; readmitting a file our own validation wrongly
+ * refused (`P8-TSK-022`) is {@link PermissionName#RECONCILIATION_ADMINISTER}; every read, the
+ * re-parse verification (`P8-TSK-022`) and the one content path, reasoned and audited per read
+ * ({@code INV-REC-10}), are {@link PermissionName#RECONCILIATION_INVESTIGATE}. The
+ * second-person control is inside the ingest permission, by actor distinctness at two ranks
+ * ({@code INV-SET-07}), which is why an uploader holding the permission is still refused on
+ * their own file. *(Corrected 2026-10-01, `P8-DOC-001`: this read "two permissions, one desk",
+ * from before the fetch, the decline, the readmission and the verification joined.)*
  *
  * <p>Handler names are deliberately distinctive (the springdoc {@code operationId} rule,
  * {@code OpenApiContractTest}).

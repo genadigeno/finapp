@@ -7,18 +7,23 @@ import java.util.stream.Collectors;
 
 /**
  * The reconciliation run's machine (`P8-TSK-009`,
- * `SETTLEMENT_AND_RECONCILIATION_LIFECYCLES.md` §5.3) — of which only birth is produced yet.
+ * `SETTLEMENT_AND_RECONCILIATION_LIFECYCLES.md` §5.3) — every edge of which now has its
+ * producer.
  *
  * <p>`P8-TSK-009` births {@code OPEN} rows (kind {@code BATCH}) in the acceptance
- * transaction and nothing else; the run leg drives the working edges (`P8-TSK-011`), the
- * sweep's run-block detection and the requeue arrive with `-013`/`-014`. The whole machine
- * is stated NOW — the expectation register's `V002` precedent: the generated {@code CHECK}
- * and transition trigger are this enum's mirror, reconciled by the migration test, and the
- * narrowed {@code UPDATE} plus the absent producers keep the unproduced edges inert.
+ * transaction; the run leg drives the working edges and blocks a run failing
+ * {@code blockAfterFailures} chunks in a row (`P8-TSK-011`), the sweep's lost-block detection
+ * blocks a run whose blocking transaction died (`P8-TSK-013`), and a controller's requeue
+ * ({@code BLOCKED → IN_PROGRESS}) and keyed {@code REPROCESS} run — walked by the reprocess
+ * leg, which blocks it the same way — are `P8-TSK-022`'s. The whole machine was stated by
+ * `V003` — the expectation register's `V002` precedent: the generated {@code CHECK} and
+ * transition trigger are this enum's mirror, reconciled by the migration test, and an edge
+ * outside it is refused for every writer. *(Corrected 2026-10-01, `P8-DOC-001`: this read "of
+ * which only birth is produced yet", and gave the requeue to `-013`/`-014`.)*
  */
 public enum RunStatus {
 
-    /** Born so by the acceptance (kind {@code BATCH}) or a keyed reprocess (`P8-TSK-014`). */
+    /** Born so by the acceptance (kind {@code BATCH}) or a keyed reprocess (`P8-TSK-022`). */
     OPEN,
 
     /** A chunk is walking the items (`P8-TSK-011`); the cursor advances per chunk. */

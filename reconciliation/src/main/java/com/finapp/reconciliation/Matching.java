@@ -34,7 +34,12 @@ import java.util.UUID;
 import lombok.extern.slf4j.Slf4j;
 
 /**
- * The run leg (`P8-TSK-011`, ADR-0068 §§3–6): per source, under
+ * The matcher's four legs, each per source under the same namespace-4 try-lock: the RUN leg
+ * (`P8-TSK-011`), time's GRACE and REMATCH legs (`P8-TSK-013`, {@link #sweep}) and a person's
+ * REPROCESS leg (`P8-TSK-022`), each documented on its own batch method. *(Corrected 2026-10-01,
+ * `P8-DOC-001`: this javadoc described the run leg alone.)*
+ *
+ * <p>The run leg (`P8-TSK-011`, ADR-0068 §§3–6): per source, under
  * {@code pg_try_advisory_xact_lock(4, hashtext(source_id::text))} per chunk — an instance
  * refused the lock moves to the next source (the {@code OutboxRelay} argument) — the
  * lowest-sequence eligible run is walked chunk by chunk in {@code line_no} order, each

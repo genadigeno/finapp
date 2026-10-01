@@ -1,6 +1,6 @@
 # ADR-0068 — Matching strategy, rule versioning and tolerance model
 
-Status: Proposed (2026-09-28, the Phase 7 → 8 transition)
+Status: Accepted (2026-10-01, `P8-DOC-001` — read against the code and corrected first)
 Date: 2026-09-28
 Phase: 8
 Context: Reconciliation · Settlement · Ledger
@@ -80,8 +80,11 @@ provenance, `V013`).
    filled by one item or by several. Allocation moves no money, because a report's transaction
    lines describe value already sitting in the counterparty's clearing position (ADR-0065). The
    only postings matching causes are the parks, unparks and offsets of unexplained value — one
-   aggregated `recon-suspense:<parkId>` entry per transaction and position (ADR-0070), always the
-   last statement of its transaction.
+   aggregated `recon-suspense:<parkId>` entry per transaction, position and value date, of at
+   most four lines (ADR-0070), always the last contended write of its transaction (the park and
+   suspense-item rows that carry the entry id are inserted after it, as the transaction's own
+   rows). *(Corrected 2026-10-01, `P8-DOC-001`: this read "per transaction and position … the
+   last statement".)*
 
    Keys, never heuristics:
    - Internal keys live in `reconciliation.expectation_key (source_id, key_kind, key_value,
@@ -115,7 +118,8 @@ provenance, `V013`).
    - Rules speak the canonical vocabulary only: sources, line types, reference kinds and
      expectation kinds. They never name a provider code (`SettlementVocabularyIsConfinedTest`), a
      rail (`RailVocabularyIsConfinedTest`) or a clearing purpose
-     (`clearingPositionsAreNamedOnlyByTheirDeclarations`, widened to `reconciliation`).
+     (`theSettlementModulesNameNoClearingPosition`, the sibling rule that widened the confinement
+     to `settlement` and `reconciliation`).
 
 2. **Rule set version 1, per source.** Keys are tried in priority order, and the first rule that
    yields any candidate is the rule that fires.
@@ -129,9 +133,10 @@ provenance, `V013`).
    | | `COUNTERPARTY_ADJUSTMENT` | `ORIGINAL_REF` | the original's expectation remainder, or the original item's parked excess | `CORRECTION` |
    | `simulated-scheme.cycle-report` | `CREDIT_IN` | `SCHEME_REF`, then `END_TO_END_REF` | `PUSH_PAY_IN` or `UNMATCHED_CONFIRMATION` (both reachable → `AMBIGUOUS_MATCH`) | `ONE_TO_ONE` |
    | | `DEBIT_OUT` | `SCHEME_REF`, then `END_TO_END_REF`, then `OUR_REF` | `PUSH_WITHDRAWAL` or `PUSH_RETURN` | `ONE_TO_ONE` |
-   | | `SCHEME_FEE` | — | — | `CHECK` |
+   | | `SCHEME_FEE` | `ORIGINAL_REF` → the execution, by its `SCHEME_REF` (`P8-TSK-017`) | — | `CHECK` |
    | `simulated-payout.settlement` | `PAYOUT_EXECUTED` | `PAYOUT_PROVIDER_REF`, then `OUR_REF` (`pyo-…`) | `MERCHANT_PAYOUT` | `ONE_TO_ONE` |
    | | `PAYOUT_RETURNED` | **Operation-anchored:** `PAYOUT_PROVIDER_REF`, then `OUR_REF`, each reaching the payout's operation as an anchor, never its `MERCHANT_PAYOUT` expectation as a candidate | `PAYOUT_RETURN` of that operation, by `UNIQUE (kind, operation_ref)` (opened by the return worker, ADR-0073) | `ONE_TO_ONE` |
+   | | `PAYOUT_FEE` *(appended to v1 by reconciliation `V010`, `P8-TSK-018`)* | `ORIGINAL_REF` → the payout, by its `PAYOUT_PROVIDER_REF` | — | `CHECK` against the flat schedule (0.25, no rate; no fee tolerance seeded, so it reads zero) |
    | `simulated-bank.statement` | `BANK_CREDIT`, `BANK_DEBIT` (attributed) | `REMITTANCE_REF`, then the value-date group | `REMITTANCE` of the attributed position | `ONE_TO_ONE`, then `GROUP_BY_VALUE_DATE` |
    | | `BANK_FEE` | — | — | `CHECK` (the fee is posted at recognition) |
 
@@ -141,7 +146,11 @@ provenance, `V013`).
    exists for a counterparty that settles one operation in parts.
 
    **The `PAYOUT_RETURNED` rule is operation-anchored in rule set v1.** `P8-TSK-004` seeds v1 and
-   it is frozen, so no later version is needed for returns.
+   it is frozen, so no later version is needed for returns. *(One recorded exception to the
+   freeze: `P8-TSK-018`'s reconciliation `V010` appended the payout source's `PAYOUT_FEE`
+   `CHECK` rule and its flat schedule to v1, behind a guard that refuses once any run or
+   decision has named that rule set, because superseding v1 would have updated its frozen
+   status before the rule-set machine existed. No stored decision is explained differently.)*
    - A return quotes its payout's references, and those keys belong to the OUTBOUND
      `MERCHANT_PAYOUT` expectation. The return expectation opens no key of its own (ADR-0067 §5).
    - Under the anchored rule the INBOUND line is never key-matched against the payout, so it
@@ -225,7 +234,9 @@ provenance, `V013`).
      **in the same transaction**; the next chunk may run on any instance. A crash rolls back to the
      last cursor, and the run resumes elsewhere in the same order.
    - **Namespace 4 orders allocation; it does not arbitrate it.** It is registered in
-     `DISTRIBUTED_EXECUTION.md` §3, pinned by `ReconciliationMigrationTest`, and transaction-scoped:
+     `DISTRIBUTED_EXECUTION.md` §3, pinned at the code rank by `AdvisoryNamespaceIsPinnedTest`
+     (no migration statement carries the number; this read `ReconciliationMigrationTest` until
+     `P8-DOC-001`), and transaction-scoped:
      it is released on commit, rollback or connection death, so nothing leaks and no lease clock is
      needed. The arbiters are PostgreSQL's, and each is proven with the try-lock bypassed:
 
@@ -238,7 +249,8 @@ provenance, `V013`).
      | The return worker against the grace leg on one `PAYOUT_RETURNED` item | the item row: the worker re-reads it under a share lock and proceeds only while it is `UNMATCHED`; the grace leg judges it on the locked row (ADR-0073 §7) | Either order converges: allocated after the return, or parked with no return applied. The race is `P8-TSK-013`'s and `P8-TSK-019`'s counted test |
      | Rule-set activation race | partial `UNIQUE (source_id) WHERE status = 'ACTIVE'`; retirement inside the activation; `CHECK` activator ≠ proposer | 409 |
      | Concurrent reprocess requests | partial `UNIQUE (source_id) WHERE kind = 'REPROCESS' AND status <> 'COMPLETED'`; the idempotency key | 409 |
-     | Window expiry judged by instances with skewed clocks | judged in SQL, on the database clock, against stored dates | — |
+     | Window expiry judged by instances with skewed clocks | judged in SQL, on the database clock, against stored dates (`grace_until` stamped from `statement_timestamp()`, expiry read against `now()`) | — |
+     | *(Recorded debt, `P8-DOC-001`; owner Phase 15)* The rematch worklist's keyed and value-date clauses | compare an expectation's `opened_at` (the opener's instance clock) with the item's latest `decided_at` (the matcher's instance clock), so a candidate opened within the skew of a decision is not seen by the rematch leg | No value is created or lost. An `UNMATCHED` item waits for its grace, where the grace leg re-decides it on the locked row and allocates the candidate. A `PARKED` item stays parked with its break while the missed expectation ages into `MISSING_EXTERNAL`: two breaks for a person, and no automatic match. Only the anchored clause was moved off the clocks (`P8-TST-001`) |
 
    - There are **no per-item advisory locks**, so the lock-table exhaustion a per-item design
      invites cannot arise. The lock order, recorded as a `DISTRIBUTED_EXECUTION.md` §3 row, is:
@@ -306,7 +318,9 @@ provenance, `V013`).
      item stays `UNMATCHED` until its `grace_until`, stamped from the firing rule's
      `grace_hours` and judged in SQL on the database clock. If the internal record
      lands meanwhile, the rematch leg allocates the item. Otherwise the grace leg parks it and
-     raises the break.
+     raises the break. *(The rematch leg's keyed and value-date clauses still compare two
+     instances' clocks: point 4's table records the debt. The grace window itself is judged on
+     the database clock.)*
    - When several classes apply, precedence is: the definitive specific types, then
      `MISSING_INTERNAL`, then `UNKNOWN_EXTERNAL` (ADR-0069).
    - **Timing** is judged on every match. A settlement date later than `expected_by +
@@ -320,8 +334,10 @@ provenance, `V013`).
 
 7. **The tolerance model: no tolerance on value already in a position.** A tolerance is a
    versioned row of the rule set: `reconciliation.tolerance (rule_set_id, comparison, currency
-   NULL, scale NULL)`, with `comparison ∈ {PROCESSING_FEE_PER_LINE, PROCESSING_FEE_PER_BATCH,
-   SETTLEMENT_DATE_DAYS}` and `absolute_minor ≥ 0` or `days ≥ 0`. **There is no amount member.** A
+   NULL)`, with `comparison ∈ {PROCESSING_FEE_PER_LINE, PROCESSING_FEE_PER_BATCH,
+   SETTLEMENT_DATE_DAYS}` and `absolute_minor ≥ 0` or `days ≥ 0` (`tolerance_shape`: a date
+   window is days with no currency, a fee bound is minor units in a named currency). *(As built
+   there is no `scale` column; this read "`currency NULL, scale NULL`" until `P8-DOC-001`.)* **There is no amount member.** A
    tolerance on a principal amount is not refused by a check someone must remember; it cannot be
    represented (`INV-REC-08` at database rank), and the domain refuses a request for one with `422
    reconciliation.ToleranceNotPermitted`.
@@ -358,12 +374,18 @@ provenance, `V013`).
      `SETTLEMENT_DATE_DAYS` 2; `gain_min_age_days` 90; `high_value_minor` 1,000.00 per currency.
    - **Machine.** `PROPOSED → ACTIVE` only by a different person holding
      `RECONCILIATION_ADMINISTER` (`CHECK (decided_by <> proposed_by)` when `ACTIVE`; `409
-     reconciliation.RuleSetActivationBySameActor`). The prior version moves `ACTIVE → RETIRED`
+     reconciliation.RuleSetActivationBySameActor`). *(As built, reconciliation `V012`'s
+     `rule_set_activation_is_four_eyes` holds for `ACTIVE` and `RETIRED` alike, and exempts only
+     the seeded version 1, whose proposer is `migration:V002`. A rejection may be the
+     proposer's own: withdrawing a proposal changes no policy.)* The prior version moves `ACTIVE → RETIRED`
      **in the activating transaction**, so every source always has exactly one active version.
      `PROPOSED → REJECTED` is also allowed. Content is frozen from `PROPOSED` by trigger. `RETIRED`
      and `REJECTED` are terminal. `UNIQUE (source_id, version)`.
    - **Doors.** `GET` and `POST /v1/operator/reconciliation/rule-sets`, `POST
-     .../rule-sets/{id}/approval` and `.../rule-sets/{id}/rejection`, keyed per principal, audited
+     .../rule-sets/{id}/approval` and `.../rule-sets/{id}/rejection`, the proposal keyed per
+     principal (approval and rejection carry no key: the version's one-way machine is their
+     idempotency, the same person's retry converging and anyone else's answered
+     `RuleSetNotPending`), audited
      `reconciliation.RuleSetProposed`, `reconciliation.RuleSetActivated` and
      `reconciliation.RuleSetRejected`, each with a reason. Acting on a version that is no longer
      proposed is `409 reconciliation.RuleSetNotPending`.
@@ -389,7 +411,16 @@ provenance, `V013`).
       pinned rule set, and compares outcome and allocations. It appends one `run_replay` row —
       verdict `IDENTICAL` or `DIVERGED`, the divergence count, the first divergent decision, and the
       items whose rematch is merely pending, reported as `PENDING_REMATCH` rather than as
-      divergence — and writes nothing else. `DIVERGED` raises a CRITICAL `PROCESSING_ERROR` break.
+      divergence — and writes nothing else. `DIVERGED` raises a CRITICAL `PROCESSING_ERROR` break
+      (cause `REPLAY_DIVERGED`) on the first divergent decision, in the replay's transaction;
+      ten replays converge on one open break per decision (`break_one_open_per_decision`,
+      reconciliation `V012`). Its subject is the decision, so it holds no value, and **its only
+      disposal is a four-eyes `ACKNOWLEDGE`** once a person has investigated the defect: one
+      person proposes, a different person approves. Reconciliation `V014` holds this for every
+      writer, keyed on the break's cause so that reclassifying the break onto
+      `TIMING_DIFFERENCE` does not open the one-person path (ADR-0071 §3). *(Added 2026-10-01,
+      `P8-DOC-001`: until `P8-TST-002` found it, a diverged replay's zero-value acknowledgement
+      closed on one person's word.)*
       A `MANUAL` decision replays as its recorded choice applied to its snapshot: replay proves the
       chosen expectation was a candidate and the allocation is the one its cardinality gives.
    2. **Reprocess.** `POST /v1/operator/reconciliation/sources/{code}/reprocessing {reason}`
@@ -414,7 +445,10 @@ provenance, `V013`).
     not for the world. A decision is a pure function of its stored candidate snapshot and its
     pinned rule set, so replay is exact. Which candidates a decision saw depends on what had been
     recorded when it ran — an expectation's `opened_at`, first-writer-wins keys, grace expiry on
-    the database clock — and that is exactly why the snapshot is stored. The statement is amended
+    the database clock — and that is exactly why the snapshot is stored. *(One worklist reading
+    is not yet on the database clock: the rematch leg's keyed and value-date clauses compare two
+    instances' clocks, point 4's recorded debt. It decides only when a residual is re-examined,
+    never what a decision allocates, so replay stays exact.)* The statement is amended
     to "the same stored inputs always produce the same matches". Enforce gains claimant order under
     namespace 4 and decision snapshots. Verify gains the shuffled-order property test and snapshot
     replay. `INV-HIST-04`'s Verify names decision replay.
@@ -495,7 +529,9 @@ Cons: an absorbing tolerance is an unrecorded write-off (`INV-BAL-03`). The nois
 does not exist here: money is integer minor units (ADR-0003), a fee net derived by subtraction
 leaves no rounding residual (`INV-MER-04`), and conversion is Phase 9's, with its own rounding
 policy. A difference worth ignoring is ignored by a person, on the record: `ACKNOWLEDGE` or
-`WRITE_OFF`, four-eyes whenever value is at issue (ADR-0071).
+`WRITE_OFF`, four-eyes whenever value is at issue (ADR-0071). The one exception is a zero-value
+`ACKNOWLEDGE` of a `TIMING_DIFFERENCE` raised by a timing detector; every other acknowledgement,
+a diverged replay's included, is four-eyes (reconciliation `V014`).
 
 ### Fuzzy, subset-sum or learned matching
 Pros: it finds explanations for lines without usable references, and for bank credits that
@@ -599,7 +635,8 @@ adapters). Catalogued with this ADR:
 - `P8-TSK-004` seeds rule set v1 and its tables (reconciliation `V002`: `rule_set`, `rule`,
   `tolerance`, `provider_fee_schedule`, `severity_threshold`, `expectation_key`,
   `reference_alias`). Every rule of point 2's table is seeded there, the payout source's
-  operation-anchored `PAYOUT_RETURNED` rule among them, because a seeded rule set is frozen.
+  operation-anchored `PAYOUT_RETURNED` rule among them, because a seeded rule set is frozen
+  (all but `PAYOUT_FEE`, which `P8-TSK-018`'s `V010` appended, point 2's note).
   **Implemented** (2026-09-29): v1 `ACTIVE` per source with the migration as its provenance;
   the values fixed at that task's design — grace 48 hours per rule with the payout return at
   72, `SETTLEMENT_DATE_DAYS` 2, `PROCESSING_FEE_PER_LINE` 2 minor and `_PER_BATCH` 50 minor
@@ -730,6 +767,17 @@ adapters). Catalogued with this ADR:
   anchor whose operation's anchored kind opened under the anchor's source after the item's
   latest decision, and still holds a remainder, is re-decided — since a keyless expectation is otherwise invisible to a
   worklist that joins keys; proven on real clocks, the control item never rematched.
+  *(Corrected by `P8-TST-001`, 2026-10-01: "opened after the item's latest decision" compared the
+  return's `opened_at`, stamped on the worker's instance clock, with the decision's `decided_at`,
+  stamped on the matcher's, so a return applied within the skew waited 72 hours for grace. The
+  clause now re-decides the item when the anchored kind's expectation holds a remainder and **no
+  decision of the item has yet recorded it as a candidate**, judged on rows alone
+  (`PayoutMatchingDatabaseTest` cases (n) and (o)). Recorded debt from the same storm: the
+  readings differ for a decision that records no candidates, a `DUPLICATE` verdict's empty
+  snapshot, so a later report's repeat of a returned line, parked as a duplicate after the
+  return opened, now reaches the worklist, and claimant order (`line_no` across runs) may let it
+  take the return before the genuine line: value conserved, attribution wrong. The keyed and
+  value-date clauses still compare two instances' clocks (point 4's table).)*
 - `P8-TSK-022` builds rule-set administration under four-eyes, `REPROCESS` runs, requeue,
   `run_replay` (reconciliation `V012`) and the replay-perturbation probe. **Implemented**
   (2026-10-01), with four findings of its design made good in the same `V012`: (1) the rule
@@ -746,7 +794,9 @@ adapters). Catalogued with this ADR:
   parked rematch, a top-up and an offset stored thin snapshots - so six columns and
   `match_parked_original` complete it, every writer filling them and an insert trigger holding
   it; (4) a blocked run's break could never close - a requeued run's completion now closes it
-  `EVIDENCED` naming the run, and a diverged replay's break admits a person's `ACKNOWLEDGE`.
+  `EVIDENCED` naming the run, and a diverged replay's break admits a person's `ACKNOWLEDGE`
+  (four-eyes, as point 9.1 decides; held for every writer only since `P8-TST-002`'s
+  reconciliation `V014`).
   Replay re-runs each decision through the pure function its stored verdict names (the
   matching engine, the value-date group, the correction engine, the fee check; a manual choice
   structurally; a contained `ERRORED` decision counted apart) from one repeatable-read
@@ -763,8 +813,23 @@ adapters). Catalogued with this ADR:
 - Deferred and recorded as not implemented in Phase 8: fuzzy or subset-sum matching, business-day
   calendars, multi-part or superseding files, re-allocating committed matches outside
   repudiation, and partitioning by (source, currency).
-- Until the remaining tasks land, the statements they own are decided design, corrected by the
-  tasks that build them; the seeded rule content (`P8-TSK-004`), the intake hand-off (`-009`),
-  the records the matcher raises (`-010`) and the matcher itself (`-011`) are implemented, each
-  with its note above.
-- The Phase 8 review (`P8-DOC-001`) reads this ADR against the code before accepting it.
+- **As built (read at `P8-DOC-001`):** the whole decision is implemented, each task with its
+  note above: the seeded rule content (`P8-TSK-004`, reconciliation `V002`), the intake hand-off
+  (`-009`, `V003`), the records the matcher raises (`-010`, `V004`), the matcher (`-011`,
+  `V005`), fees and corrections (`-012`, `V006`), grace and rematch (`-013`), manual match
+  (`-015`, `V007`), the bank, scheme and payout rows (`-016`, `-017`, `-018`; `V008`–`V010`), the
+  anchored rematch clause (`-019`), rule-set administration, reprocessing, requeue and replay
+  (`-022`, `V012`), repudiation's counter-allocations (`-023`, `V013`), the storm (`P8-TST-001`)
+  and the four-eyes acknowledgement of a diverged replay (`P8-TST-002`, `V014`). *(This read
+  "Until the remaining tasks land, the statements they own are decided design" until
+  `P8-DOC-001`.)*
+- **Recorded debt:** the rematch worklist's keyed and value-date clauses compare two instances'
+  clocks (point 4's table; owner Phase 15); and a duplicate line's widened chance at a return,
+  recorded by `P8-TST-001` (the `P8-TSK-019` note above; owner Phase 15); and claimant order
+  differing by leg - the run and reprocess legs in `(source_sequence, line_no)`, the rematch leg in
+  `(line_no, id)`, the grace leg in `(grace_until, id)` (owner Phase 15; `CURRENT_STATE.md`).
+- The Phase 8 review (`P8-DOC-001`) read this ADR against the code before accepting it. It
+  corrected the park entry's grain (point 1), the `PAYOUT_FEE` row and v1's one appended rule
+  (point 2), the namespace pin's test (point 4), the tolerance's columns (point 7), the
+  activation `CHECK` and the keyed doors (point 8), the diverged replay's four-eyes disposal
+  (point 9.1), the anchored clause, and the stale records, and recorded the clock debt.

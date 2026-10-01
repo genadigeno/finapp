@@ -30,10 +30,13 @@ import lombok.RequiredArgsConstructor;
  *
  * <p>The owner's subject IS the item (ADR-0069 §2), and the item names its owner, so neither row
  * can be inserted first under immediate keys. Reconciliation `V011` made
- * {@code break_suspense_item_fk} {@code DEFERRABLE INITIALLY IMMEDIATE}; this opener alone defers
- * it, inserts the break, then the item, then sets it {@code IMMEDIATE} again — which checks the
- * pending key at once, so a defect surfaces here, never at a distant commit. Every other writer
- * keeps immediate checking.
+ * {@code break_suspense_item_fk} {@code DEFERRABLE INITIALLY IMMEDIATE}; this opener defers it,
+ * inserts the break, then the item, then sets it {@code IMMEDIATE} again — which checks the
+ * pending key at once, so a defect surfaces here, never at a distant commit. One other writer
+ * defers the same key the same way: a batch repudiation's approval, for each {@code REPUDIATION}
+ * item and its owning break ({@code BatchRepudiations}, `P8-TSK-023`). Every other writer keeps
+ * immediate checking. *(Corrected 2026-10-01, `P8-DOC-001`: this read "this opener alone
+ * defers it".)*
  *
  * <h2>One owner per parking, under any race</h2>
  *

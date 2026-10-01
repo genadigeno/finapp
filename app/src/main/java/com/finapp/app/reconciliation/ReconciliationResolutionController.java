@@ -21,7 +21,10 @@ import org.springframework.web.bind.annotation.RestController;
 
 /**
  * The resolver's doors (`P8-TSK-015`, ADR-0071 §11): propose, approve, reject and withdraw a
- * break resolution — every one under {@link PermissionName#RECONCILIATION_RESOLVE} (the
+ * break resolution, and propose a settlement batch's repudiation ({@code REPUDIATE_BATCH},
+ * `P8-TSK-023`) — whose approval, rejection and withdrawal take the same three doors, routed by
+ * the resolution's subject to {@code BatchRepudiations} — every one under
+ * {@link PermissionName#RECONCILIATION_RESOLVE} (the
  * {@code RECONCILIATION_OPERATOR} role; the controller's role alone is refused: whoever can
  * loosen a tolerance cannot resolve the breaks it would hide). The request carries no amount
  * and no account but a transfer's target — the lines are the template's. Handler names are

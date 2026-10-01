@@ -856,20 +856,26 @@ the machines in
 [`SETTLEMENT_AND_RECONCILIATION_LIFECYCLES.md`](../domain/SETTLEMENT_AND_RECONCILIATION_LIFECYCLES.md).
 The eighteen sections above are kept as written and made current here where they had fallen behind
 the decisions; where they disagree with this addendum or the plan, the addendum and the plan are
-right. §18 stands, and `PHASE_8_PLAN.md` §17 extends it. Until Phase 8's first task lands, nothing
-in this addendum is implemented; every statement is the decided design, corrected by the tasks that
-build it.)*
+right. §18 stands, and `PHASE_8_PLAN.md` §17 extends it. Every item of the addendum is built —
+`P8-TSK-001`…`-024`, `P8-TST-001` and `P8-TST-002` are complete, none deferred — and the Phase 8
+exit review (`P8-DOC-001`, 2026-10-01) corrected each statement below to the code as built; it
+read "Until Phase 8's first task lands, nothing in this addendum is implemented".)*
 
 - *§3 and §5 — **two modules, and the expectation is reconciliation's** (ADR-0064). Settlement
   (context 13) and Reconciliation (context 14) are two modules, `settlement` and `reconciliation`,
   with **no build edge between them**: each depends on `ledger`, `platform` and `sharedkernel`
   alone, and `app` composes them with `payments` and `merchant` through ports that are required
   constructor parameters — `SettlementExpectations` (declared in `payments`),
-  `PayoutSettlementExpectations` and `PayoutReturns` (`merchant`), `AcceptedBatchIntake`
-  (`settlement`), and `InternalReferenceLookup` and the repudiation seam (`reconciliation`), the
-  last letting `settlement` write a batch repudiation's reversal and `ACCEPTED → REPUDIATED` on the
-  approval's connection (ADR-0064 §3; the fourth cross-module transaction, named by the
-  transition's consistency review, B5). `settlement` holds the external side: the source
+  `PayoutSettlementExpectations` and `PayoutReturns` (`merchant`), `AcceptedBatchIntake` and
+  `SettlementReportCollector` (`settlement`), `SettlementCycleReads` (`payments`), and
+  `InternalReferenceLookup`, `WaitingPayoutReturns`, `EvidenceTargets`, `TraceEvidence` and the
+  repudiation seam `SettlementBatchRepudiations` (`reconciliation`), the last letting `settlement`
+  write a batch repudiation's `ACCEPTED → REPUDIATED`, its event and its audit record on the
+  approval's connection while `reconciliation` posts the recognition's reversal through
+  `ReversalService` itself (ADR-0064 §3; the fourth cross-module transaction, named by the
+  transition's consistency review, B5) *(corrected 2026-10-01, `P8-DOC-001`: the ports the tasks
+  added, and the reversal's poster as built — this read "letting `settlement` write a batch
+  repudiation's reversal")*. `settlement` holds the external side: the source
   register, the Settlement File, the Refused Delivery, the Settlement Batch, the Settlement Line
   and the recognition posting of each accepted batch. `reconciliation` holds the
   internal side, the comparison and the outcome — and with them the **Settlement Expectation**,
@@ -905,7 +911,9 @@ build it.)*
   (`PostingService.lockBalancesInOrder`, the rule the gate wrote for dispute postings); the pull's
   `settlement.pull_permit` advances strictly on every renewal, the send permits' repaired shape; and
   every pull source's URL joins `ProviderTransportGuard`, startup refused unless it is `https` or
-  `sftp` off loopback.*
+  `sftp` off loopback — and, as built, the pulls speak HTTPS only: the one adapter refuses any other
+  scheme, `sftp` included, at construction, so such a source fails at startup *(`P8-DOC-001`,
+  2026-10-01)*.*
 - *§6 — **raw files encrypted in PostgreSQL, not object storage, and the terms as built**
   (ADR-0066). "Settlement File (raw retained in object storage with checksum)" now reads: raw
   retained **encrypted in PostgreSQL** behind the `SettlementFileStore` port — ordered chunks of at
@@ -950,7 +958,11 @@ build it.)*
   no correctness rests on them (`INV-EVT-04`).*
 - *§9 — **authority as decided** (ADR-0066, ADR-0071). "Value thresholds" resolve to four-eyes
   **whenever value is at issue or the resolution posts**: a zero-value, zero-posting `ACKNOWLEDGE`
-  is single-person, `EVIDENCED` is the platform's alone, and value-banded approver escalation
+  is single-person only on a `TIMING_DIFFERENCE` raised by a timing detector (`LATE_MATCH`,
+  `CYCLE_MISMATCH`), every other acknowledgement four-eyes (reconciliation `V014`, `P8-TST-002`)
+  *(corrected 2026-10-01, `P8-DOC-001`: this read "a zero-value, zero-posting `ACKNOWLEDGE` is
+  single-person", which let one person close a diverged replay)*, `EVIDENCED` is the platform's
+  alone, and value-banded approver escalation
   (six-eyes) is deferred. The per-currency high-value threshold — 1,000.00 EUR, GBP and USD in rule
   set v1 (O7) — escalates a break's severity, never its approver count. Four permissions and two
   pairwise-disjoint roles (O1): `RECONCILIATION_OPERATOR` {`SETTLEMENT_INGEST`,
@@ -958,8 +970,12 @@ build it.)*
   {`RECONCILIATION_ADMINISTER`} — whoever can loosen a tolerance cannot resolve the breaks it would
   hide. An uploaded file is inert until a second person attests it, a pulled one arrives over its
   source's own confined credential, and a readmitted file inherits its original's authentication
-  only when the original was pulled or attested — otherwise the readmission is itself attested
-  (`INV-SET-07`); every read of a file's content is reasoned and audited (`INV-REC-10`).*
+  only when the original was pulled or attested (or is a readmission that inherited) — a
+  `DECLINED` original passes nothing on — otherwise the readmission is itself attested, by a
+  person distinct from every submitter along its chain (`INV-SET-07`; settlement `V009`); a
+  `CONFLICTING_BATCH` original is readmissible once no live batch holds its identity
+  (`ConflictingBatchStands` while one does) *(corrected 2026-10-01, `P8-DOC-001`: as `P8-TSK-022`
+  built it)*; every read of a file's content is reasoned and audited (`INV-REC-10`).*
 - *§10 — **no value in any metric; the value figures are audited operator reports** (ADR-0072).
   ADR-0018 keeps every amount out of metrics, so §10's value items become operator reports under
   `/v1/operator/` and `RECONCILIATION_INVESTIGATE`, each read writing `reconciliation.ReportRead`
@@ -1018,13 +1034,16 @@ build it.)*
 
   *If the phase must shrink, `P8-TSK-021` is cut first (upload with attestation suffices), then
   `-019` (the four-eyes `TRANSFER_TO_ACCOUNT` fallback), then `-023` (the attestation and pull
-  controls remain), each recorded with an owner (O6).*
+  controls remain), each recorded with an owner (O6). Not exercised: the phase did not shrink, and
+  all three were built (`P8-DOC-001`, 2026-10-01).*
 - *O1–O7 — **the transition's decisions, each the owner's to revisit** (recorded in
   `PHASE_8_PLAN.md` §2): O1, two pairwise-disjoint roles; O2, payout returns applied
   automatically, with a four-eyes `TRANSFER_TO_ACCOUNT` as the fallback; O3, PII-bearing files
   refused at the door; O4, the simulated bank opening at zero, an equity account waiting for
-  Phase 14; O5, a gain recognised only after 90 days, four-eyes; O6, the cut order `P8-TSK-021`,
-  `-019`, `-023`; O7, a high-value severity threshold of 1,000.00 per currency.*
+  Phase 14; O5, a gain recognised only after 90 days — the minimum age of the rule set the
+  suspense item's owning break pins (`P8-DOC-001`'s correction) — four-eyes; O6, the cut order
+  `P8-TSK-021`, `-019`, `-023`, never exercised; O7, a high-value severity threshold of 1,000.00
+  per currency.*
 
 ---
 

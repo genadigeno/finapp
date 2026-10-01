@@ -176,7 +176,7 @@ public interface ResolutionStore {
      * Whether the item is at least {@code gain_min_age_days} old under the pinned rule set —
      * judged in SQL on the DATABASE clock against the stored {@code opened_on} (ADR-0070 §4).
      */
-    boolean gainEligible(Connection unitOfWork, UUID suspenseItemId, UUID ruleSetId);
+    boolean gainEligible(Connection unitOfWork, UUID suspenseItemId);
 
     /**
      * The expectation's whole remainder taken into {@code resolved_minor}:

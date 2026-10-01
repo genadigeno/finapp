@@ -10,9 +10,13 @@ import java.util.Optional;
 import java.util.UUID;
 
 /**
- * The reconciliation runs (`P8-TSK-009`, §5.3) — `P8-TSK-009` produces birth alone: one
- * {@code OPEN} run of kind {@code BATCH} per accepted batch, born in the acceptance
- * transaction through {@code AcceptedBatchIntake}. The run leg (`P8-TSK-011`) drives it.
+ * The reconciliation runs (`P8-TSK-009`, §5.3): one {@code OPEN} run of kind {@code BATCH}
+ * per accepted batch, born in the acceptance transaction through {@code AcceptedBatchIntake},
+ * and — since `P8-TSK-022` — a controller's keyed {@code REPROCESS} run, born by
+ * {@code RunAdministration} pinned to the source's active rule set. The run leg
+ * (`P8-TSK-011`) drives a {@code BATCH} run, the reprocess leg (`P8-TSK-022`) a
+ * {@code REPROCESS} run. *(Corrected 2026-10-01, `P8-DOC-001`: this read "`P8-TSK-009`
+ * produces birth alone" and named no {@code REPROCESS} run.)*
  */
 public interface ReconciliationRuns {
 

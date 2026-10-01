@@ -7,16 +7,22 @@ import java.util.stream.Collectors;
 
 /**
  * The external item's matching status (`P8-TSK-009`,
- * `SETTLEMENT_AND_RECONCILIATION_LIFECYCLES.md` §5.4) — of which only birth is produced yet.
+ * `SETTLEMENT_AND_RECONCILIATION_LIFECYCLES.md` §5.4) — every edge of which now has its
+ * producer.
  *
- * <p>`P8-TSK-009` births {@code PENDING} rows, one per accepted settlement line, and drives
- * no edge; the run, rematch and grace legs arrive with `-011`/`-013`, the resolutions with
- * `-015`, the repudiation's edges with `-023`. The whole machine is stated NOW (the `V002`
- * expectation precedent): the generated {@code CHECK} and transition trigger mirror this
- * enum, reconciled by the migration test, and the narrowed {@code UPDATE} plus the absent
- * producers keep the unproduced edges inert. The one deliberate reopening —
- * {@code MATCHED → UNMATCHED}, a bank item whose allocation named a repudiated batch's
- * remittance — is stated in the machine so `-023` relaxes nothing.
+ * <p>`P8-TSK-009` births {@code PENDING} rows, one per accepted settlement line; the run,
+ * rematch and grace legs drive the matching edges (`-011`/`-013`), the reprocess leg its
+ * {@code UNMATCHED} and {@code PARKED} edges (`-022`), the resolutions {@code PARKED →
+ * RESOLVED} (`-015`), and an approved repudiation every edge to {@code REPUDIATED} and the two
+ * reopenings (`-023`). The generated {@code CHECK} and transition trigger mirror this enum,
+ * reconciled by the migration test; an edge outside it is refused for every writer. `V003`
+ * stated the machine whole but for two edges `V013` (`P8-TSK-023`) added —
+ * {@code PARKED → UNMATCHED} (an over-paying bank item of another batch reopened whole, its
+ * excess unparked) and {@code RESOLVED → REPUDIATED} (a resolved item of a repudiated batch) —
+ * beside the reopening {@code MATCHED → UNMATCHED} (a bank item whose allocation named a
+ * repudiated batch's remittance) it had stated from the start. *(Corrected 2026-10-01,
+ * `P8-DOC-001`: this read "of which only birth is produced yet", and that `-023` would relax
+ * nothing.)*
  */
 public enum ItemStatus {
 

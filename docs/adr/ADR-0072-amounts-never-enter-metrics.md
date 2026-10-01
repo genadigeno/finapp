@@ -1,6 +1,6 @@
 # ADR-0072 — Amounts never enter metrics: unmatched value, suspense balance and provider costs are audited operator reports
 
-Status: Proposed (2026-09-28, the Phase 7 → 8 transition)
+Status: Accepted (2026-10-01, `P8-DOC-001` — read against the code and corrected first)
 Date: 2026-09-28
 Phase: 8
 Context: Reconciliation · Settlement · Ledger · Payments · Observability
@@ -37,7 +37,8 @@ The repository already refuses amounts in telemetry, in more than one place:
 - **`DATA_CLASSIFICATION.md` §2.** `RESTRICTED-FINANCIAL` data (amounts, balances, postings,
   settlement positions) is "never in logs, traces, metrics or event payloads".
 - **`NoFloatingPointMoneyRulesTest.EXEMPT_CLASSES`.** The only production classes allowed a
-  `double` are gauge and counter classes, 28 entries today. Each is admitted because it
+  `double` are gauge and counter classes, 28 entries when this ADR was written (36 at Phase 8's
+  close, each class and its cache counted apart). Each is admitted because it
   "publishes a count, an age in seconds or a verdict — never an amount" (`MODULE_ARCHITECTURE.md`,
   the no-floating-point rule).
 - **The precedents.**
@@ -90,15 +91,19 @@ on a scrape.
    and every later one, and it is enforced at four ranks:
    - **Tags:** the existing guard. `MetricNames.ALLOWED_TAG_KEYS` is closed, and the fragment rule
      refuses `amount` and `account` in any key.
-   - **Values, by exemption:** every Phase 8 gauge and counter class joins
-     `NoFloatingPointMoneyRulesTest.EXEMPT_CLASSES` with a written argument naming what it counts.
-     Its readings come from store methods that return a `long` from `count(*)`, an age in whole
-     seconds, or a verdict enum. This is the `IdentityMetrics` precedent: a `long` all the way to
-     the registry boundary.
-   - **Values, statically:** `P8-TSK-024` adds a rule that no class in `EXEMPT_CLASSES` depends on
-     the `Money` type or on `MoneyColumns`, and proves the rule by catching a planted violation.
-     All 28 entries satisfy it today. A `CurrencyCode` stays permitted, because a currency is a tag
-     value and a `Money` is not.
+   - **Values, by exemption:** every Phase 8 gauge and counter class that holds a `double` joins
+     `NoFloatingPointMoneyRulesTest.EXEMPT_CLASSES` with a written argument naming what it counts
+     — `SettlementFileMetrics`, `ReconciliationMetrics`, `BreakMetrics` (each with its cache),
+     `SettlementPullMetrics` and `ReconciliationOutcomeMeters`. A class that holds none needs no
+     exemption and has none: `SettlementMeters` and `ReconciliationReplayMeters` only increment
+     counters and record durations. Each exempt class's readings come from store methods that return a `long` from
+     `count(*)`, an age in whole seconds, or a verdict enum. This is the `IdentityMetrics`
+     precedent: a `long` all the way to the registry boundary. *(Corrected 2026-10-01,
+     `P8-DOC-001`: this read "every Phase 8 gauge and counter class joins".)*
+   - **Values, statically:** `P8-TSK-024` added the rule `noExemptClassDependsOnMoney`: no class
+     in `EXEMPT_CLASSES` depends on the `Money` type or on `MoneyColumns`, proven by catching a
+     planted violation in-suite. All 36 entries satisfy it. A `CurrencyCode` stays permitted,
+     because a currency is a tag value and a `Money` is not.
    - **Review and gate:** the rule has a known edge, stated here rather than hidden (the
      no-floating-point rule's own discipline). A store method that returned a monetary `long` would
      pass the static rule. That is why each exemption's argument names its store method, and why
@@ -113,8 +118,9 @@ on a scrape.
      (ADR-0064). It takes no row lock, so it never contends with matching, parking or posting.
    - **Audited in the same transaction.** The report and its audit record commit together, or
      neither does (the `payments.ChargebackRatioRead` precedent), so a read that cannot be audited
-     returns nothing. One action, `reconciliation.ReportRead`, names only the report and the
-     period. It never names an amount, a source's figure or a counterparty, and it requires no
+     returns nothing. One action, `reconciliation.ReportRead`, names only the report, its period
+     where it has one, and the number of rows served (`report=…, period=…, rows=N`). It never
+     names an amount, a source's figure or a counterparty, and it requires no
      reason: a person judging something, such as a raw file's content read, gives a reason, but a
      desk reading its own reports does not.
    - **Folded with `Money`, never summed in SQL.** Every figure is derived when the report is
@@ -143,7 +149,12 @@ on a scrape.
 
    | Report | Question it answers | Carries | Built by |
    |---|---|---|---|
-   | `positions` | Is each reconciled position explained, and what is in it? | Per clearing position and currency: the ledger balance; open expectation remainders, split into not yet reported and reported-but-awaiting-cash (the `REMITTANCE` expectations); unallocated, unparked items; and the proof's verdict. For `CASH_AT_BANK`: the ledger balance against the closing balance of the latest statement in an unbroken chain, and that verdict | `P8-TSK-007` (the clearings); `P8-TSK-016` adds cash |
+   | `positions` | Is each reconciled position explained, and what is in it? | Per clearing position and currency: the ledger balance; the open expectation remainders as one figure with their count, the `REMITTANCE` expectations included; the unallocated, unparked items with their count; and the proof's verdict. For `CASH_AT_BANK`: the ledger balance against the closing balance of the latest statement in an unbroken chain, and that verdict | `P8-TSK-007` (the clearings); `P8-TSK-016` adds cash |
+
+   *(Corrected 2026-10-01, `P8-DOC-001`: the `positions` row promised the open remainders "split
+   into not yet reported and reported-but-awaiting-cash". No task built the split —
+   `PositionProof.PositionVerdict` carries one `openRemainders` figure — and the review records it
+   rather than claims it; the identity is proven either way.)*
    | `suspense` | What sits in `SUSPENSE_UNMATCHED`, how old is it, and who owns it? | Per currency: the ledger balance; the items remaining, CREDIT and DEBIT gross; each item's age from `opened_on` and its owning break's type and severity; the suspense proof's verdict | `P8-TSK-024` |
    | `unmatched` | How much value is unexplained on each side? | Per source, currency and direction: external items with unallocated value (`UNMATCHED` inside grace, `PARKED` with a break) and open expectations (inside their window, and overdue), each with count, value and oldest age; and the open breaks' value at issue, by type and severity | `P8-TSK-024` |
    | `summary?date=` | What did reconciliation do on one business date? | Per source: batches accepted; items by disposition, as count and value; the match rate as a ratio of counts to four places, rounded half up, never a `double` (the ratio precedent); breaks raised and resolved by type and severity, with their value at issue; resolutions approved by kind, with the value they posted; open breaks by ageing band (0–2, 3–7, 8–30, >30 days) | `P8-TSK-024` |
@@ -179,9 +190,12 @@ on a scrape.
      is escalated one level when its value at issue reaches the rule set's per-currency
      `high_value_minor` (the `severity_threshold` row), and one more level for each ageing band it
      crosses (ADR-0069).
-   - `finapp.reconciliation.break.open` and `finapp.reconciliation.break.age` alert per severity:
+   - `finapp.reconciliation.break.age` alerts per severity (`BreakAgeCritical` … `BreakAgeLow`):
      CRITICAL above 0 hours, HIGH above 1 day, MEDIUM above 5 days, LOW above 15 days.
-     `finapp.reconciliation.suspense.age` alerts on its own.
+     `finapp.reconciliation.suspense.age` alerts on its own (`SuspenseItemAged`, above 30 days).
+     `finapp.reconciliation.break.open` is a panel, not an alert: an open break is already paged
+     by its age at its severity. *(Corrected 2026-10-01, `P8-DOC-001`: this read "`break.open`
+     and `break.age` alert per severity"; the rules `P8-TSK-024` shipped alert on the age alone.)*
 
    A large parked amount and an old one therefore both raise an alert, and whoever answers it reads
    the amount from the audited `suspense` report. The threshold is rule-set content: it is pinned
@@ -220,7 +234,8 @@ on a scrape.
         whose posting date falls in the month, less the lines of any repudiation reversal posted
         in that month (ADR-0065 point 10). This is the ledger's own figure.
      2. **What the evidence says:** the month's fee totals by line type (`PROCESSING_FEE`,
-        `SCHEME_FEE`, `BANK_FEE`) from the accepted batches' immutable `batch_total` rows, and a
+        `SCHEME_FEE`, `PAYOUT_FEE`, `BANK_FEE`) from the accepted batches' immutable
+        `batch_total` rows, a repudiated batch's subtracted in its reversal's month, and a
         verdict on whether they agree with item 1. If they disagree, the defect is ours, not the
         counterparty's.
      3. **What we expected:** the sum of the expected fees that the `CHECK` decisions recorded under
@@ -243,7 +258,8 @@ on a scrape.
      amount (`merchant.FeeAssessed`, `merchant.FeeReturned`). No Phase 8 event is such a fact, so a
      consumer that needs an amount reads it from the amount's owner.
    - **Audit records:** change summaries carry identifiers only (the `UnmatchedConfirmations`
-     precedent), and `reconciliation.ReportRead` names only the report and the period.
+     precedent), and `reconciliation.ReportRead` names only the report, its period and its row
+     count.
 
 8. **What the metrics carry, and how.** Phase 8's series are listed in `PHASE_8_PLAN.md` §15, which
    `PlannedMetersExistTest` reads once the phase is COMPLETE. They are counts, ages, durations and
@@ -279,9 +295,11 @@ on a scrape.
      `P7-TSK-015`'s second-tally design.
    - **The dashboard** is the "Settlement and reconciliation" row of ten panels. It is a file in git
      that queries only published series (ADR-0018 §6, `DashboardQueriesResolveTest`). No panel reads
-     the database and no panel shows an amount. Alerts cover every gauge that must read 0, source
-     silence, overdue expectations, suspense age, break age per severity, refused deliveries and
-     blocked runs.
+     the database and no panel shows an amount. Seventeen alert rules
+     (`infra/prometheus/rules/settlement-reconciliation.yml`) cover every gauge that must read 0
+     and its unreadable `NaN`, source silence and a source never accepted, a stuck file, overdue
+     expectations, suspense age, break age per severity, refused deliveries, and blocked or
+     stalled runs.
    - **Phase 7's suspense gauges are corrected in meaning** (ADR-0070, `P8-TSK-020`).
      `finapp.payments.unmatched.active` and `finapp.payments.unmatched.age` count every row ever
      parked. Their descriptions become "parked, ever", and the alertable signal becomes
@@ -428,7 +446,8 @@ Security impact:
 - The scrape endpoint stays free of financial data. This ADR does not rely on `P0-EPIC-10` to
   protect amounts; it keeps them off the endpoint.
 - The reports are authorised by `RECONCILIATION_INVESTIGATE`, with a negative test per route.
-  Every read is audited as `reconciliation.ReportRead`, naming only the report and the period.
+  Every read is audited as `reconciliation.ReportRead`, naming only the report, its period and
+  its row count.
 - Report rows carry identifiers and amounts, never a counterparty reference, a note, a narrative
   or a file byte.
 
@@ -458,10 +477,16 @@ Financial impact:
 
 ## Follow-up
 
-- **Implemented so far** *(every other statement is the decided design, corrected by the tasks
-  that build it)*: `P8-TSK-002` (2026-09-29) brought the `source` key and the first series;
-  `P8-TSK-007` (2026-09-29) the `positions` report with the clearing rows — one open-remainders
-  figure per row until `P8-TSK-009`'s `REMITTANCE` expectations give the split —
+- **As built** (2026-10-01, read against the code by `P8-DOC-001`): every point of this ADR is
+  implemented by the tasks below, all `COMPLETE`, and every statement above is true of the code.
+  The review's corrections: the exemption set's size and membership (point 1), the audit
+  record's row count (points 2 and 7), the `positions` report's unbuilt split (point 3), the
+  alerts on break age alone (point 5), `PAYOUT_FEE` among the evidence's fee types (point 6) and
+  the seventeen rules (point 8). *(This bullet read "Implemented so far … every other statement
+  is the decided design" until the review.)* In order: `P8-TSK-002` (2026-09-29) brought the
+  `source` key and the first series; `P8-TSK-007` (2026-09-29) the `positions` report with the
+  clearing rows — one open-remainders figure per row, which it stayed: `P8-TSK-009`'s
+  `REMITTANCE` expectations joined the figure and the split was never built (point 3's note) —
   `reconciliation.ReportRead`, both verdict gauges and `finapp.reconciliation.expectation.open`.
   `P8-TSK-016` (2026-09-30) the `positions` report's cash rows — a trailing `cash` list, additive
   under v1: per currency the `CASH_AT_BANK` balance, the head closing of the statement chain,
@@ -479,10 +504,12 @@ Financial impact:
     under the `source` key. The report needs `RECONCILIATION_INVESTIGATE`, which `P8-TSK-003`
     introduces, so `P8-TSK-007`'s Deps line names `P8-TSK-003` *(recorded here as a request, and
     applied to the backlog by the transition's consistency review, B2)*.
-  - `P8-TSK-009` adds `PROCESSING_COSTS` (ledger `V016`) and fee recognition. `P8-TSK-012` adds the
-    fee check whose decisions the provider-costs report reads.
-  - `P8-TSK-010` publishes the suspense gauges, `P8-TSK-011` the run gauges, and `P8-TSK-013` the
-    overdue-expectation and unmatched-item gauges, each exemption argued. The break series
+  - `P8-TSK-009` — **implemented** — adds `PROCESSING_COSTS` (ledger `V016`) and fee
+    recognition. `P8-TSK-012` — **implemented** — adds the fee check whose decisions the
+    provider-costs report reads.
+  - `P8-TSK-010`, `P8-TSK-011` and `P8-TSK-013` — **implemented** — publish the suspense gauges,
+    the run gauges, and the overdue-expectation and unmatched-item gauges, each exemption argued.
+    The break series
     (`finapp.reconciliation.break.raised`, `.open` and `.age`) and the `severity` key's argument
     are `P8-TSK-024`'s. *(This line gave the break gauges to `P8-TSK-010` and `P8-TSK-013` until
     the transition's consistency review, B6.)*
@@ -490,8 +517,10 @@ Financial impact:
     `finapp.reconciliation.cash.proof`.
   - `P8-TSK-020` — **implemented** (2026-09-30) — corrects the descriptions of Phase 7's
     suspense gauges ("parked, ever"), names unchanged, the Phase 7 plan's rows annotated.
-  - `P8-TSK-021` adds `finapp.settlement.source.silence` and `finapp.settlement.pull.failure`. If
-    it is cut, silence moves to `P8-TSK-024` (point 10, O6).
+  - `P8-TSK-021` — **implemented** (2026-10-01), a deferral candidate not deferred — adds
+    `finapp.settlement.source.silence` (`NaN` when unreadable or never accepted, never zero) and
+    `finapp.settlement.pull.failure`; point 10's contingency, silence moving to `P8-TSK-024` if
+    the task were cut, did not arise.
   - `P8-TSK-024` — **implemented** (2026-10-01) — adds every remaining series, completes the tag
     arguments, and builds the `suspense`, `unmatched`, `summary` and `provider-costs` reports,
     the dashboard row and its alerts, and the static rule with its planted violation. As built:
@@ -524,8 +553,9 @@ Financial impact:
     domain spans open before the leg restores its correlation, so a chunk span carries
     `source.id` and the outer correlation, not the run's; the per-source report rows are bounded
     in key order, never truncated while the compiled register stays under the bound.
-  - `P8-TST-001` asserts the meters' tally against the tables in every round. `P8-DOC-001` reads
-    every new exemption against its query (point 1) and rules on the "Observability" criterion.
+  - `P8-TST-001` — **done** (2026-10-01) — asserts the meters' second tally against the tables (the
+    storm's "second tally equal"). `P8-DOC-001` read every new exemption against its
+    query (point 1) and rules on the "Observability" criterion.
 - **At the transition, with provenance:** the `DELIVERY_PLAN.md` Phase 8 addendum (§10);
   `INV-REC-05`'s Verify line; ADR-0060 §6's annotation and `DECISIONS.md`'s Deliberately Deferred
   row; `PHASE_GATES.md`'s "Suspense and adjustment" and "Observability" criteria.
@@ -535,5 +565,5 @@ Financial impact:
     one instrument);
   - passing costs on to merchants (with dispute-fee pass-through, in Phase 13's neighbourhood);
   - authentication on the scrape endpoint (still `P0-EPIC-10`'s).
-- **Acceptance.** The Phase 8 review (`P8-DOC-001`) reads this ADR against the code before
-  accepting it, following the `P7-DOC-001` precedent.
+- **Acceptance.** The Phase 8 review (`P8-DOC-001`) read this ADR against the code, corrected it
+  where it had drifted, and accepted it on 2026-10-01, following the `P7-DOC-001` precedent.

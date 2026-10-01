@@ -321,8 +321,10 @@ public final class ResolutionMachine {
     // ------------------------------------------------------------------ propose
 
     /**
-     * Proposes — or, for a zero-value {@code ACKNOWLEDGE} of a {@code TIMING_DIFFERENCE},
-     * performs — a resolution. The break
+     * Proposes — or, for a zero-value {@code ACKNOWLEDGE} of a {@code TIMING_DIFFERENCE}
+     * raised by a timing detector (its cause {@code LATE_MATCH} or {@code CYCLE_MISMATCH},
+     * {@link ResolutionTemplates#timingCause}; reconciliation `V014`), performs — a resolution.
+     * The break
      * moves {@code OPEN | INVESTIGATING → RESOLUTION_PROPOSED} (or {@code → RESOLVED} for the
      * one-person act); a posting kind's ledger proposal is recorded through
      * {@code proposeOwned} with the template's lines, both dates the proposal's business date.
@@ -492,7 +494,7 @@ public final class ResolutionMachine {
             case RECOGNISE_GAIN -> {
                 ResolutionTemplates.Holding.Parked parked =
                         (ResolutionTemplates.Holding.Parked) holding;
-                if (!store.gainEligible(unitOfWork, parked.suspenseItemId(), ruleSetId)) {
+                if (!store.gainEligible(unitOfWork, parked.suspenseItemId())) {
                     throw new GainNotYetEligible();
                 }
             }
@@ -703,7 +705,7 @@ public final class ResolutionMachine {
             case RECOGNISE_GAIN -> {
                 ResolutionTemplates.Holding.Parked parked =
                         (ResolutionTemplates.Holding.Parked) holding;
-                if (!store.gainEligible(unitOfWork, parked.suspenseItemId(), row.ruleSetId())) {
+                if (!store.gainEligible(unitOfWork, parked.suspenseItemId())) {
                     throw new GainNotYetEligible();
                 }
             }

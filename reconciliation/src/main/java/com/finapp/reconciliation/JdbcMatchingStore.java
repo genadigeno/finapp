@@ -379,8 +379,10 @@ public final class JdbcMatchingStore implements MatchingStore {
      * expectation opened after its latest decision — directly, or through an operation-anchored
      * rule's anchor to its operation's expectation of the rule's kind that no decision of the
      * item has yet seen (judged on rows, never across two instances' clocks); or an attributed
-     * waiting item for which an untouched candidate of its run's value-date group rule opened
-     * after its latest decision. A PARKED
+     * waiting item for which an untouched candidate of a value-date group rule opened after its
+     * latest decision. Both rules are read from the source's ACTIVE rule set, never the item's
+     * run's pinned version — the version the rematch leg decides under (`P8-TSK-022`). *(Corrected
+     * 2026-10-01, `P8-DOC-001`: this read "its run's value-date group rule".)* A PARKED
      * item leaves here only by the park's exact inverse, so an item owning a suspense item of
      * another origin (an unattributed bank line's {@code BANK_UNATTRIBUTED}) is never read.
      */

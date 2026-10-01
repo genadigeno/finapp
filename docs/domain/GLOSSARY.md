@@ -17,12 +17,14 @@ automatically aggregates or tables". Nothing here declares a class, a table or a
 
 **Written before anything was implemented.** At `P0-DOC-011` no production class existed for any
 term below — Phase 0 delivered the financial and platform kernel and *zero* business capability.
-That is no longer so: Phases 1 to 6 built classes for many of them, Phase 6's merchant, checkout,
-fee and payout terms included. Entries still name no class, except where a class's name collides
-with a term (`MerchantSettlement`, §2 and §5). The owning module column names where each concept lives,
-or **will** live, per [`MODULE_ARCHITECTURE.md`](../architecture/MODULE_ARCHITECTURE.md) §4, which
-records the phase each module arrives in. *(Corrected at the Phase 6 review, `P6-DOC-001`: this
-said "Nothing here is implemented".)*
+That is no longer so: Phases 1 to 8 built classes for many of them, Phase 6's merchant, checkout,
+fee and payout terms and Phase 8's settlement and reconciliation terms included. Entries still name
+no class, except where a class's name collides with a term (`MerchantSettlement`, §2 and §5). The
+owning module column names where each concept lives, or — for a later phase's term — **will**
+live, per [`MODULE_ARCHITECTURE.md`](../architecture/MODULE_ARCHITECTURE.md) §4, which records the
+phase each module arrives in. *(Corrected at the Phase 6 review, `P6-DOC-001`: this said "Nothing
+here is implemented". "Phases 1 to 6" corrected to 1 to 8 at the Phase 8 exit review,
+`P8-DOC-001`, 2026-10-01.)*
 
 ---
 
@@ -32,7 +34,7 @@ said "Nothing here is implemented".)*
 ### Term
 **Is:** what it is.
 **Not:** the concept it is most often confused with, and why the difference matters.
-**Owned by:** the module that will own this state, or `external` for a party we do not model.
+**Owned by:** the module that owns (or will own) this state, or `external` for a party we do not model.
 ```
 
 `external` is an answer, not a blank: a PSP is a company we contract with, and modelling one as
@@ -305,7 +307,8 @@ settlement clearing.
 ### Settlement Account
 **Is:** the platform's own account at its settlement bank, where counterparties' remittances
 arrive and payouts leave — mirrored per currency in the ledger by the operational account
-`CASH_AT_BANK`, which only the bank's own statement posts, and known externally only by the
+`CASH_AT_BANK`, which only the bank's own statement posts — or the reversal of that statement's
+recognition when its batch is repudiated *(`P8-DOC-001`, 2026-10-01)* — and known externally only by the
 bank's opaque account reference (`INV-SET-06`, `INV-RAIL-03`, ADR-0065).
 **Not:** a Wallet (customers' stored value), a customer's Bank Account, or a clearing position — a
 clearing position is what a counterparty owes, the settlement account is cash the platform holds
@@ -750,9 +753,12 @@ entering only in the transaction that records that break (`INV-REC-09`, ADR-0070
 **Not:** a permanent home. `INV-REC-05` requires suspense to be aged, reported and alerted on —
 ageing suspense is an unrecognised loss or liability. Value leaves it only by evidence (an unpark
 or an offset), by an approved four-eyes resolution of a kind its break's type admits — a
-recognised gain only after the pinned minimum age, and never for value owed to a merchant or a
-customer, nor for a currency break (ADR-0069's per-type table) — or by repudiating the batch that
-parked it. Nor is it a tolerance: a difference too small to chase is still a break, never absorbed
+recognised gain only after the minimum age of the rule set its owning break pins, and never for
+value owed to a merchant or a customer, nor for a currency break (ADR-0069's per-type table) — or
+by repudiating the batch that parked it, or the batch whose remittance a parked bank item
+over-paid (the over-payer reopened whole, its excess unparked). *(Corrected 2026-10-01,
+`P8-DOC-001`: the gain's age read from the owning break's pinned rule set, and the over-payer's
+release by repudiation, as built.)* Nor is it a tolerance: a difference too small to chase is still a break, never absorbed
 (`INV-REC-08`). *(Extended by the Phase 7 → 8 transition, ADR-0070; which resolutions may leave
 it was settled by its consistency review, A1: ADR-0069's per-type table is the one authority.)*
 **Owned by:** `ledger` (the account and its lines); `reconciliation` (the suspense items)
@@ -760,8 +766,9 @@ it was settled by its consistency review, A1: ADR-0069's per-type table is the o
 ### Reconciliation Batch
 **Is:** one run of the matcher over one accepted settlement batch — created in that batch's
 acceptance transaction, pinning its rule set, business date and acceptance sequence, and completed
-only when every item it holds is disposed of — or a `REPROCESS` run over residual items under a
-newer rule set (ADR-0068).
+only when every item it holds is disposed of — or a `REPROCESS` run over residual items under the
+rule set active for its source when the run opens, which need not be newer (ADR-0068).
+*(Corrected 2026-10-01, `P8-DOC-001`: this read "under a newer rule set".)*
 **Not:** a Settlement Batch (which is the counterparty's unit of evidence the run compares against
 our settlement expectations), and not Settlement itself. A blocked run is never skipped: it holds
 its source, visibly, until a person requeues it. *(Made concrete by the Phase 7 → 8 transition,
@@ -777,10 +784,18 @@ recurrence after resolution is a new break.
 **Not:** an error to be cleared. A break has a lifecycle and is never deleted, its evidence is
 preserved on both sides (`INV-REC-01`), and it closes only by a new record — never by editing
 either side (`INV-REC-03`): by evidence, when a later allocation or offset leaves nothing at issue
-(`EVIDENCED`, the only resolution no person decides, `INV-REC-02`), or by a person's
-template-bound, reason-coded resolution of a kind its type admits — four-eyes whenever value is at
-issue or it posts — whose compensating entry goes through the ledger's adjustment machinery
-(ADR-0071). *(Extended by the Phase 7 → 8 transition, ADR-0069 and ADR-0071.)*
+(`EVIDENCED`, the only resolution no person decides, `INV-REC-02`), by a person's
+template-bound, reason-coded resolution of a kind its type admits — four-eyes for every kind but a
+zero-value `ACKNOWLEDGE` of a `TIMING_DIFFERENCE` raised by a timing detector — whose compensating
+entry goes through the ledger's adjustment machinery (ADR-0071), or by an approved
+`REPUDIATE_BATCH` that empties its subject, recorded in a `repudiation_closure` row. For every
+writer it becomes `RESOLVED` only if, at commit, a `RESOLVED` event of the break names a
+resolution that is `APPROVED`; that the named resolution is the break's own is held by the
+domain alone (recorded debt, Phase 15).
+*(Extended by the Phase 7 → 8 transition, ADR-0069 and ADR-0071. Corrected 2026-10-01,
+`P8-DOC-001`: this read "four-eyes whenever value is at issue or it posts", which reconciliation
+`V014` narrowed, and omitted closure by repudiation; the every-writer binding is reconciliation
+`V015`.)*
 **Owned by:** `reconciliation`
 
 ### Settlement Batch
@@ -831,6 +846,105 @@ rows, never from today's state (`INV-HIST-04`). And not a Resolution: a `MANUAL_
 may cause one, but the decision only allocates, and it is never edited — a batch repudiation adds
 counter-allocations beside it.
 **Owned by:** `reconciliation`
+
+*(The nine entries below — Settlement File, External Item, Suspense Item, Resolution, Matching Rule
+Set, Run Replay, Repudiation, Attestation and Readmission — were added at the Phase 8 exit review,
+`P8-DOC-001`, 2026-10-01, with their lines in `DOMAIN_MODEL.md`: Phase 8 built each as a distinct
+concept, and none was defined anywhere a reader would look.)*
+
+### Settlement File
+**Is:** the raw bytes one counterparty delivered — uploaded by a person or pulled over the
+source's own credential — screened at the door, stored encrypted in ordered chunks with their
+checksum verified on every read, and identified among non-readmissions by its source and content
+address, so ten deliveries of the same bytes are one file (`INV-HIST-02`, `INV-REC-10`). It moves
+`RECEIVED → PARSED → ACCEPTED`, or to `REJECTED` whole, and carries exactly one Settlement Batch.
+**Not:** the Settlement Batch, which is the counterparty's unit of evidence the file declares, nor
+a refused delivery, of which only metadata is kept. And not trusted on arrival: an upload takes
+effect only once attested (`INV-SET-07`); our own parse failure leaves it `RECEIVED`, never
+rejected.
+**Owned by:** `settlement`
+
+### External Item
+**Is:** reconciliation's working copy of one immutable settlement line, carrying the contended
+disposition the matcher decides — `PENDING`, then `MATCHED`, `CHECKED`, `OFFSET`, `UNMATCHED` or
+`PARKED`, later `RESOLVED` or `REPUDIATED` — with its typed keys and the run that holds it.
+**Not:** the Settlement Line, which stays settlement's immutable evidence; copying it is what lets
+reconciliation change a disposition without mutating another module's rows (ADR-0064). Nor an
+expectation: an item is what a counterparty said, an expectation what the platform recorded.
+**Owned by:** `reconciliation`
+
+### Suspense Item
+**Is:** one tracked unit of value in `SUSPENSE_UNMATCHED` — CREDIT or DEBIT, with its origin (a
+park, an unattributed bank line, an adopted unmatched confirmation, or a repudiation's answer) and
+its opening date — owned by exactly one break, entering only in the transaction that records that
+break and released by an unpark, an offset, an approved resolution or a repudiation
+(`INV-REC-09`, `INV-REC-05`). It moves `OPEN → PARTIALLY_RELEASED → RELEASED`.
+**Not:** the Suspense Account, which is the ledger account whose lines the items explain, nor a
+balance: the item records why value is parked and who owns it; the ledger holds the amount.
+**Owned by:** `reconciliation`
+
+### Resolution
+**Is:** the record that closes a break — or, for a batch repudiation, decides a settlement batch —
+naming its kind, a closed reason code, a narrative and the frozen proposal its approver approves:
+`PROPOSED → APPROVED | REJECTED | WITHDRAWN`, an `EVIDENCED` resolution born `APPROVED` by the
+platform alone, and a zero-value acknowledgement of a timing-detected `TIMING_DIFFERENCE` born
+`APPROVED` by one person; every other kind four-eyes, a stale approval refused (`INV-REC-02`,
+`INV-REC-03`, `INV-AUD-04`).
+**Not:** the adjustment itself. A posting kind creates a `RECONCILIATION`-origin ledger proposal,
+one to one, and the ledger's entry is the money; the resolution is the reasoned decision. Nor a
+Match Decision: a `MANUAL_MATCH` resolution causes one, but only the decision allocates.
+**Owned by:** `reconciliation`
+
+### Matching Rule Set
+**Is:** the versioned, per-source set of rules the matcher applies — its match rules, tolerances,
+provider fee schedule and severity thresholds — proposed by one person and activated by another
+(`PROPOSED → ACTIVE | REJECTED`, the prior `ACTIVE → RETIRED` in the same transaction), content
+frozen from `PROPOSED`, one `ACTIVE` per source, and pinned by every run, decision, break and
+expectation (`INV-REC-04`, `INV-HIST-04`).
+**Not:** `lending`'s or `risk`'s rule sets, which the name keeps apart, and not a tolerance on
+value: no member can absorb an amount already in a position (`INV-REC-08`). A new version governs
+only forward decisions; it never alters a committed allocation, park or break.
+**Owned by:** `reconciliation`
+
+### Run Replay
+**Is:** one re-run of a reconciliation run's stored decisions — each re-evaluated by the pure
+matcher over its own candidate snapshot under the rule set it pinned, in one repeatable-read
+snapshot — appended as a verdict, `IDENTICAL` or `DIVERGED`, items awaiting rematch reported
+apart; a divergence raises one CRITICAL `PROCESSING_ERROR` break (`INV-HIST-04`, `INV-REC-04`).
+**Not:** a `REPROCESS` run, which re-resolves residual items now and writes new decisions. A replay
+writes nothing but its verdict (and a divergence's break), and never re-derives a decision from
+today's state.
+**Owned by:** `reconciliation`
+
+### Repudiation
+**Is:** the four-eyes withdrawal of an accepted settlement batch proven fabricated or
+mis-normalised — an approved `REPUDIATE_BATCH` resolution whose one transaction reverses the
+batch's recognition through the ledger's reversal machinery, counter-allocates every allocation of
+its items append-only, releases its parks, closes the breaks it emptied, and moves its items and
+the batch to `REPUDIATED`, the file retained byte-identical (`INV-REV-01`, `INV-AUD-04`,
+`INV-REC-07`). The genuine file can then be accepted.
+**Not:** a rejection, which refuses evidence before it takes effect, nor a deletion or an edit:
+every effect is a new record, and the batch keeps its acceptance facts. Nor a payment Reversal.
+**Owned by:** `reconciliation` (the decision); `settlement` holds the batch's `REPUDIATED` status
+
+### Attestation
+**Is:** a second person's confirmation, recorded once on the file, that an uploaded settlement
+file is genuine — never the uploader, and for a readmission that inherits no authentication never
+any submitter along its chain — without which an upload never takes effect (`INV-SET-07`).
+**Not:** a check of the content's correctness, which the parse and the matcher make, nor needed for
+a pulled file, which the source's own credential authenticates. Declining is the opposite
+judgement: a declined file is rejected, and passes no authentication to a readmission.
+**Owned by:** `settlement`
+
+### Readmission
+**Is:** a new file record re-presenting a rejected file's own stored bytes for parsing under the
+source's current format version — admissible for a file our validation rejected, a declined
+upload, or a `CONFLICTING_BATCH` original once no live batch holds its identity — inheriting its
+original's authentication when the original was pulled or attested, and otherwise attested itself
+(`INV-SET-07`).
+**Not:** an edit of the original, which stays `REJECTED` with its verdict frozen, nor a re-upload:
+a byte-identical upload meets the original's content address and is a duplicate.
+**Owned by:** `settlement`
 
 ---
 
@@ -884,10 +998,11 @@ majority spelling.
    module's `Owns:` line, the glossary must agree — it is the authority on ownership (ADR-0012).
    Added during review, which found `Risk Score` attributed to `risk` while the register says
    `credit`.
-7. **Every `INV-*` the glossary cites exists.** Thirty-eight distinct invariants, cited
-   fifty-four times (recounted at the Phase 7 → 8 transition; this said twenty-five and
-   twenty-nine, counted at the Phase 6 review, `P6-DOC-001`, and Phase 7's entries had already
-   made it stale), none of which any other check would notice going stale.
+7. **Every `INV-*` the glossary cites exists.** Forty-two distinct invariants, cited
+   seventy-two times (recounted at the Phase 8 exit review, `P8-DOC-001`, after its nine new
+   entries; the Phase 7 → 8 transition had counted thirty-eight and fifty-four, and the Phase 6
+   review, `P6-DOC-001`, twenty-five and twenty-nine), none of which any other check would notice
+   going stale.
 8. Every distinction group has a §2 heading repeating the group exactly, so a group added to
    `CLAUDE.md` fails the build until it is contrasted.
 9. All of the above are actually parsed, so a reformatted document fails loudly rather than

@@ -68,8 +68,8 @@ public final class JdbcResolutions implements Resolutions {
                 unitOfWork.prepareStatement(
                         "INSERT INTO reconciliation.break_event (break_id, event_type,"
                                 + " actor, actor_type, reason, detail, occurred_at,"
-                                + " correlation_id) VALUES (?, 'RESOLVED', ?, ?, NULL, ?,"
-                                + " ?, ?)")) {
+                                + " correlation_id, resolution_id) VALUES (?, 'RESOLVED', ?,"
+                                + " ?, NULL, ?, ?, ?, ?)")) {
             history.setObject(1, evidence.breakId());
             history.setString(2, evidence.actor().id());
             history.setString(3, evidence.actor().type().name());
@@ -77,6 +77,8 @@ public final class JdbcResolutions implements Resolutions {
                     + ", kind=EVIDENCED");
             history.setTimestamp(5, Timestamp.from(evidence.at()));
             history.setString(6, evidence.correlation().value());
+            // The EVIDENCED row below, written in this same transaction (V015's deferred key).
+            history.setObject(7, evidence.resolutionId());
             history.executeUpdate();
         } catch (SQLException failure) {
             throw new ReconciliationStorageException(

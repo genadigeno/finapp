@@ -12849,7 +12849,8 @@ break row, as the approval door must.)*
   caught.
 - **Definition of done**: `DOD-TEST`, `DOD-FIN`. **Risk**: Medium. **Cx**: L.
 
-**P8-DOC-001 — The Phase 8 exit review** — `READY` (marked by the completion gates of `P8-TST-001` and `P8-TST-002`)
+**P8-DOC-001 — The Phase 8 exit review** — `COMPLETE` (2026-10-01; marked `READY` by the completion gates of `P8-TST-001` and `P8-TST-002`)
+- **As built** (2026-10-01): as [`reviews/PHASE_8_REVIEW.md`](reviews/PHASE_8_REVIEW.md) and `CURRENT_STATE.md` §Just completed record. Phase 8 `COMPLETE`. **Corrections, each probed**: reconciliation `V015` ("Persistence: corrections only" - one migration, the critical find), the gain's pinned rule set, the PSP format's defect cap, four audit assertions, a column reclassified. **Deviations**: the fleet-wide `test databaseTest kafkaTest` battery - the hermetic tier ran fleet-wide before and after the flip, the database tier over every suite the corrections reach, the database and kafka tiers never fleet-wide, on the owner's standing instruction (ruled `PASS` with the deviation, as `P7-DOC-001`'s was); two gate claims answered by construction rather than tested (`RecordAlreadyMatched`, a real `AMBIGUOUS_MATCH`); `V015`'s stated limit recorded as Phase 15 debt.
 - **Objective**: rule Phase 8 against `PHASE_GATES.md` §3's twelve universal criteria, the financial
   supplement F1–F8 and §5's Phase 8 criteria — the seven original bullets and the twenty-one the
   transition added — from fresh runs, read from the gate, never from this entry.

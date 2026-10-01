@@ -241,14 +241,18 @@ public final class JdbcResolutionStore implements ResolutionStore {
         try (PreparedStatement history =
                 unitOfWork.prepareStatement(
                         "INSERT INTO reconciliation.break_event (break_id, event_type, actor,"
-                                + " actor_type, reason, detail, occurred_at, correlation_id)"
-                                + " VALUES (?, 'RESOLVED', ?, ?, NULL, ?, ?, ?)")) {
+                                + " actor_type, reason, detail, occurred_at, correlation_id,"
+                                + " resolution_id)"
+                                + " VALUES (?, 'RESOLVED', ?, ?, NULL, ?, ?, ?, ?)")) {
             history.setObject(1, breakId);
             history.setString(2, actor.id());
             history.setString(3, actor.type().name());
             history.setString(4, "resolution=" + resolutionId + ", kind=" + kind.name());
             history.setTimestamp(5, Timestamp.from(at));
             history.setString(6, correlation.value());
+            // The structured link V015 requires: the primary break, a remainder sibling, an
+            // offset partner and a repudiation's closures all name the approving resolution.
+            history.setObject(7, resolutionId);
             history.executeUpdate();
         } catch (SQLException failure) {
             throw new ReconciliationStorageException(
@@ -358,14 +362,18 @@ public final class JdbcResolutionStore implements ResolutionStore {
     }
 
     @Override
-    public boolean gainEligible(Connection unitOfWork, UUID suspenseItemId, UUID ruleSetId) {
+    public boolean gainEligible(Connection unitOfWork, UUID suspenseItemId) {
+        // The minimum age of the rule set the item's OWNING break pins (ADR-0070), never the
+        // source's version active at proposal: a newly activated rule set with a shorter age
+        // must not reach value already parked under the old one (P8-DOC-001's correction).
         try (PreparedStatement read =
                 unitOfWork.prepareStatement(
                         "SELECT (current_date - s.opened_on) >= r.gain_min_age_days"
-                                + " FROM reconciliation.suspense_item s,"
-                                + " reconciliation.rule_set r WHERE s.id = ? AND r.id = ?")) {
+                                + " FROM reconciliation.suspense_item s"
+                                + " JOIN reconciliation.break b ON b.id = s.break_id"
+                                + " JOIN reconciliation.rule_set r ON r.id = b.rule_set_id"
+                                + " WHERE s.id = ?")) {
             read.setObject(1, suspenseItemId);
-            read.setObject(2, ruleSetId);
             try (ResultSet row = read.executeQuery()) {
                 return row.next() && row.getBoolean(1);
             }

@@ -32,8 +32,11 @@ import org.springframework.transaction.support.TransactionTemplate;
 
 /**
  * The resolver's desk (`P8-TSK-015`, ADR-0071): propose, approve, reject and withdraw — each ONE
- * transaction in reconciliation's {@link ResolutionMachine}, all under
- * {@code RECONCILIATION_RESOLVE} at the door.
+ * transaction, all under {@code RECONCILIATION_RESOLVE} at the door. A break-subject resolution
+ * runs in reconciliation's {@link ResolutionMachine}; a settlement batch's repudiation
+ * ({@code REPUDIATE_BATCH}, `P8-TSK-023`) is proposed through its own door and decided through
+ * the same three, routed by the resolution's subject to {@link BatchRepudiations}. *(Corrected
+ * 2026-10-01, `P8-DOC-001`: this named the resolution machine alone.)*
  *
  * <p>A proposal is keyed per principal from birth ({@code reconciliation.resolve:<actorType>:
  * <actorId>}, the `X-TSK-003` disposition): the shape screen runs BEFORE the claim (a refused

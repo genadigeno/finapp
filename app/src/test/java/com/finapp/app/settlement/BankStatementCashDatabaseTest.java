@@ -166,6 +166,18 @@ class BankStatementCashDatabaseTest {
                 .isEqualTo("SETTLED");
         assertThat(one("SELECT status FROM reconciliation.expectation WHERE id = ?", remittance))
                 .isEqualTo("OPEN");
+        Session operator = sessionWith(RoleName.RECONCILIATION_OPERATOR);
+        HttpResponse<String> reported =
+                get(operator.token(), "/v1/operator/reconciliation/settlement-status?kind="
+                        + "CARD_CAPTURE&operationRef=" + operationRef);
+        assertThat(reported.statusCode()).isEqualTo(200);
+        assertThat(reported.body())
+                .as("INV-SET-01: the report alone settles the capture but confirms no cash -"
+                        + " with its remittance still OPEN the operation reads REPORTED, never"
+                        + " CASH_CONFIRMED")
+                .contains("\"status\":\"REPORTED\"")
+                .doesNotContain("CASH_CONFIRMED")
+                .contains(remittance.toString());
 
         // Hop 2: the bank credits 98.25 by the remittance reference and charges its 0.50.
         UUID statement =
@@ -212,7 +224,6 @@ class BankStatementCashDatabaseTest {
                 .as("the bank's fee is checked against its pinned 0.50, never allocated")
                 .isEqualTo("CHECKED");
 
-        Session operator = sessionWith(RoleName.RECONCILIATION_OPERATOR);
         HttpResponse<String> status =
                 get(operator.token(), "/v1/operator/reconciliation/settlement-status?kind="
                         + "CARD_CAPTURE&operationRef=" + operationRef);

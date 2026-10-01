@@ -23,9 +23,11 @@ import lombok.RequiredArgsConstructor;
 
 /**
  * The one door settlement evidence enters through (`P8-TSK-002`, ADR-0066 §1) — reached by
- * upload (`P8-TSK-003`), pull (`P8-TSK-021`) and readmission (`P8-TSK-022`), none of which is
- * open yet: this task delivers the door itself, proven from tests, so the channels only add
- * routes.
+ * upload (`P8-TSK-003`) and pull (`P8-TSK-021`), both live. A readmission (`P8-TSK-022`) does
+ * not pass through it: {@link FileReadmission} re-reads the original's retained bytes and
+ * applies the door's own screen for the source's current format version itself. *(Corrected
+ * 2026-10-01, `P8-DOC-001`: this read that readmission reaches the door and that no channel was
+ * open yet.)*
  *
  * <h2>The fixed order, and what each step may write</h2>
  *
