@@ -12704,7 +12704,8 @@ break row, as the approval door must.)*
   and audited; no amount in any series (static check); every probe caught.
 - **Definition of done**: `DOD-OBS`, `DOD-TEST`, `DOD-DOC`. **Risk**: Low. **Cx**: M.
 
-**P8-TST-001 — The settlement and reconciliation storm** — `READY` (marked by `P8-TSK-024`'s completion gate)
+**P8-TST-001 — The settlement and reconciliation storm** — `COMPLETE` (2026-10-01; marked `READY` by `P8-TSK-024`'s completion gate, run in parallel with `P8-TST-002` at the owner's request)
+- **As built** (2026-10-01): as `CURRENT_STATE.md` §Just completed and `history/TASK_HISTORY.md` record. **Correction (the P7-TST-001 precedent)**: "Domain changes: none" did not hold - the storm found the operation-anchored rematch clause comparing two instances' clocks and fixed it in `JdbcMatchingStore`. Deviations: the Phase 7 movers mirrored in `StormTraffic`, not extracted; "wrong currency" is a whole report in GBP (the line-level switch rejects at parse); "duplicate line" a repeated record (`REPEATED_FINGERPRINT`); three injected crashes and two sweep boundaries; the `file_chunk` needle criterion met as "no refused delivery's content address stored" plus the never-stored check, since chunks are encrypted. Recorded debt: the keyed and value-date clauses' clocks, a duplicate line's widened chance at a return, the own-container run.
 - **Objective**: every source, every fault that produces a break and every recovery path at once
   under ten matcher instances, reconciled to the minor unit in every round and at rest — the proofs,
   the trial balance, the break census and the replay counted, not argued.
@@ -12774,7 +12775,8 @@ break row, as the approval door must.)*
   run; the tally equal; every probe caught.
 - **Definition of done**: `DOD-TEST`, `DOD-FIN`. **Risk**: Medium. **Cx**: L.
 
-**P8-TST-002 — The break and resolution battery** — `PLANNED`
+**P8-TST-002 — The break and resolution battery** — `COMPLETE` (2026-10-01; started `READY` beside `P8-TST-001` at the owner's request - a deviation from one `READY` task)
+- **As built** (2026-10-01): as `CURRENT_STATE.md` §Just completed and `history/TASK_HISTORY.md` record. **Correction**: "Persistence: none" did not hold - reconciliation `V014` makes a diverged replay's zero-value acknowledgement four-eyes, keyed on the break's cause (a defect against ADR-0068 §9.1, fixed here as the entry allows). The matrix's counts: 40 allowed pairs; 44 table cells over six kinds plus 14 `REPUDIATE_BATCH` shape refusals; 52 base and 5 refined scenario cells. Deviations: `RECOGNISE_GAIN` and `MANUAL_MATCH` crossed in the module suite only (ingestion cannot age a parking 90 days, the engine never produces the ambiguous decision); the position proofs shown after the HTTP suite's crossings, the losses-and-gains scan in both; self-attestation, self-activation and `RoleNameTest`'s disjointness rest on their own suites (`SettlementRoutesDatabaseTest`, `RuleSetAdministrationDatabaseTest`, `RoleNameTest`). Recorded debt: the owner's TRUNCATE, stranding reclassifications.
 - **Objective**: every break type crossed with every resolution kind it allows, raced and
   duplicated; four-eyes, stale approval and immutability demonstrated at every rank.
 - **Bounded context**: Reconciliation (14), with Ledger (7) beneath every posting resolution and
@@ -12847,7 +12849,7 @@ break row, as the approval door must.)*
   caught.
 - **Definition of done**: `DOD-TEST`, `DOD-FIN`. **Risk**: Medium. **Cx**: L.
 
-**P8-DOC-001 — The Phase 8 exit review** — `PLANNED`
+**P8-DOC-001 — The Phase 8 exit review** — `READY` (marked by the completion gates of `P8-TST-001` and `P8-TST-002`)
 - **Objective**: rule Phase 8 against `PHASE_GATES.md` §3's twelve universal criteria, the financial
   supplement F1–F8 and §5's Phase 8 criteria — the seven original bullets and the twenty-one the
   transition added — from fresh runs, read from the gate, never from this entry.

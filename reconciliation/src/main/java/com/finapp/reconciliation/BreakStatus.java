@@ -12,8 +12,8 @@ import java.util.stream.Collectors;
  * <p>`P8-TSK-010` raises {@code OPEN} rows and nothing else; assignment drives
  * {@code INVESTIGATING} (`P8-TSK-014`), proposals and their outcomes drive
  * {@code RESOLUTION_PROPOSED} and back (`P8-TSK-015`), and {@code RESOLVED} is reached by an
- * approval, by the platform's {@code EVIDENCED} (`P8-TSK-012`) or by a zero-value
- * {@code ACKNOWLEDGE}. The whole machine is stated NOW — the `V002` expectation precedent:
+ * approval, by the platform's {@code EVIDENCED} (`P8-TSK-012`) or by a timing difference's
+ * zero-value {@code ACKNOWLEDGE} (one person's, `P8-TST-002`). The whole machine is stated NOW — the `V002` expectation precedent:
  * the generated {@code CHECK} and every-writer transition trigger are this enum's mirror,
  * reconciled by the migration test, and the unproduced edges stay inert behind the narrowed
  * {@code UPDATE} grant and the absent producers.
@@ -30,8 +30,8 @@ public enum BreakStatus {
     RESOLUTION_PROPOSED,
 
     /**
-     * Terminal: an approved resolution, the platform's {@code EVIDENCED}, or a zero-value
-     * {@code ACKNOWLEDGE}. A recurrence is a NEW break naming its predecessor
+     * Terminal: an approved resolution, the platform's {@code EVIDENCED}, or a timing
+     * difference's one-person zero-value {@code ACKNOWLEDGE}. A recurrence is a NEW break naming its predecessor
      * ({@code follows_break_id}) — never a reopening.
      */
     RESOLVED;
@@ -39,7 +39,8 @@ public enum BreakStatus {
     /** The states reachable from this one — `V004`'s trigger edges are generated from it. */
     public Set<BreakStatus> permittedTransitions() {
         return switch (this) {
-            // OPEN -> RESOLVED is EVIDENCED's and the zero-value ACKNOWLEDGE's own edge.
+            // OPEN -> RESOLVED is EVIDENCED's and the timing difference's one-person zero-value
+            // ACKNOWLEDGE's own edge.
             case OPEN -> EnumSet.of(INVESTIGATING, RESOLUTION_PROPOSED, RESOLVED);
             case INVESTIGATING -> EnumSet.of(RESOLUTION_PROPOSED, RESOLVED);
             // Back to INVESTIGATING on a rejection or a withdrawal.

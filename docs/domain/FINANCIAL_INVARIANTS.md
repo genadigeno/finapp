@@ -694,8 +694,9 @@ authorisation — never by editing either record.
 resolution, its ledger adjustment proposal and its journal entry are one-to-one (`UNIQUE
 adjustment_proposal_id` and `UNIQUE journal_entry_id` on `reconciliation.resolution`, ledger
 `V010`'s deferred rule that an `ADJUSTMENT` entry needs an `APPROVED` proposal); four-eyes
-whenever value is at issue or the resolution posts — a zero-value `ACKNOWLEDGE` alone is
-single-person, and `EVIDENCED` is the platform's alone — refused at three ranks (the domain, the
+whenever value is at issue or the resolution posts — a zero-value `ACKNOWLEDGE` of a
+`TIMING_DIFFERENCE` raised by a timing detector alone is single-person *(corrected 2026-10-01, `P8-TST-002`: a diverged
+replay's zero-value acknowledgement is four-eyes, derived from the break by reconciliation `V014`)*, and `EVIDENCED` is the platform's alone — refused at three ranks (the domain, the
 `resolution` four-eyes `CHECK`, `V010`'s approver ≠ initiator `CHECK`); closed reason codes at
 both ranks (`ResolutionReasonCode` with an allowed subset per kind, ledger `V015`'s
 `reason_code`); a kind admitted only where ADR-0069's per-type table lists it for the break's type
@@ -1036,7 +1037,7 @@ attests it, `CHECK (attested_by IS NULL OR attested_by <> received_by)`; the rea
 original never attested is attested the same way, by a person distinct from the readmitter and
 from the original's uploader (`P8-TSK-022`, ADR-0066 §8). **Break resolutions** (`P8-TSK-015`):
 the statement's "above threshold" is defined as any value at issue or any posting — a zero-value
-`ACKNOWLEDGE` alone is single-person, and `EVIDENCED` is the platform's alone — refused at three
+`ACKNOWLEDGE` of a `TIMING_DIFFERENCE` raised by a timing detector alone is single-person (corrected 2026-10-01, `P8-TST-002`), and `EVIDENCED` is the platform's alone — refused at three
 ranks: the domain, the `reconciliation.resolution` four-eyes `CHECK` and ledger `V010`'s. **Batch
 repudiation** (`P8-TSK-023`, ADR-0065 §10): a `REPUDIATE_BATCH` resolution under the same rule.
 **Rule-set activation** (`P8-TSK-022`): one of the statement's policy activations, refused when

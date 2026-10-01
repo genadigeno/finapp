@@ -23,7 +23,10 @@ public enum BreakEventType {
     /** The sweep raised the grade for an ageing band or the value threshold — forward only. */
     SEVERITY_ESCALATED,
 
-    /** Terminal: an approved resolution, {@code EVIDENCED}, or a zero-value acknowledge. */
+    /**
+     * Terminal: an approved resolution, {@code EVIDENCED}, or a timing difference's one-person
+     * zero-value acknowledge.
+     */
     RESOLVED;
 
     /** The `V004` {@code CHECK}'s value list — reconciled by the migration test. */

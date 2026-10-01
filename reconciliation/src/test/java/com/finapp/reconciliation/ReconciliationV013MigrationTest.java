@@ -531,8 +531,10 @@ class ReconciliationV013MigrationTest {
                         digest(32), "REPUDIATE_BATCH", "APPROVED", "EVIDENCE_REPUDIATED", true,
                         "op-approver"));
                 UUID acknowledgement = UUID.randomUUID();
+                // Four-eyes: a zero-value acknowledgement is one person's only on a
+                // TIMING_DIFFERENCE, and this owner is a PROCESSING_ERROR (V014, P8-TST-002).
                 admitted(app, RESOLUTION, resolution(acknowledgement, acknowledged, null, null,
-                        "ACKNOWLEDGE", "PROPOSED", "TIMING_CONFIRMED", false, null));
+                        "ACKNOWLEDGE", "PROPOSED", "TIMING_CONFIRMED", true, null));
                 assertThat((Throwable) refused(app, CLOSURE, acknowledged, repudiation))
                         .as("a closure records a break the repudiation RESOLVED, never an open one")
                         .hasMessageContaining("records a break it RESOLVED");

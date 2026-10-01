@@ -1,6 +1,6 @@
 # Task History
 
-The per-task completion records that accumulated behind `## Current Task` - 187 "Previously" blocks, newest first, from `P8-TSK-023` back to project initiation. *(`X-TSK-004` is cross-cutting and completed after the Phase 6 → 7 transition, so it stands second, between `P7-TSK-001` and the transition's record - the transition's block moved here by `P7-TSK-001`'s gate, exactly as an earlier form of this note said it would.)*
+The per-task completion records that accumulated behind `## Current Task` - 188 "Previously" blocks, newest first, from `P8-TSK-024` back to project initiation. *(`X-TSK-004` is cross-cutting and completed after the Phase 6 → 7 transition, so it stands second, between `P7-TSK-001` and the transition's record - the transition's block moved here by `P7-TSK-001`'s gate, exactly as an earlier form of this note said it would.)*
 
 **Archive.** These records were moved verbatim out of
 [`CURRENT_STATE.md`](../CURRENT_STATE.md) on 2026-09-20 so that the canonical description of
@@ -12,6 +12,67 @@ Current state: [`CURRENT_STATE.md`](../CURRENT_STATE.md) ·
 Authoritative backlog: [`BACKLOG.md`](../BACKLOG.md)
 
 ---
+
+### Previously
+
+**`P8-TSK-024` — Meters, the dashboard row and operator reports** — `COMPLETE` (2026-10-01).
+**M8.7, Operating it, CLOSES at 4 of 4**: every `PHASE_8_PLAN.md` §15 health signal is a count,
+an age or a verdict on a running instance, and every amount is answered by an audited operator
+report, never a metric (ADR-0072; `INV-SET-02`, `INV-REC-05`, `INV-AUD-02`; protected
+`INV-MON-01`, `INV-AUD-01`). **No persistence, as claimed.** **THE SERIES**: the ten §15 rows no
+earlier task shipped - `finapp.settlement.batch.accepted` and the ingestion latency's `accept`
+stage through settlement's observers; `finapp.reconciliation.item`, `.rematch`, `.run.latency`,
+`.break.raised`, `.break.open`, `.break.age`, `.resolution` (with `stale`, counted at the refusal
+because nothing commits), `.resolution.latency` and `.adjustment` through reconciliation's new
+`ReconciliationTelemetry` port - eager per compiled source, type, severity and kind, counted after
+commit; `break.raised` by a decorator over `BreakRegister`, so a converged raise counts nothing;
+`severity` joined `MetricNames` with its written argument; a fresh instance publishes all 32 rows
+(`PlannedMetersExistTest`'s Phase 8 method). **THE STATIC RANK**: `noExemptClassDependsOnMoney` -
+no floating-point exemption may depend on `Money` or `MoneyColumns` - with its planted violation
+caught in-suite. **THE SPANS**: the seven domain spans through the platform `Spans` port, whose
+`app` implementation drops every attribute that is not one of six identifier keys with a UUID
+value. **THE REPORTS**: `GET /v1/operator/reports/reconciliation/suspense`, `/unmatched`,
+`/summary?date=` and `/provider-costs?month=` under `RECONCILIATION_INVESTIGATE` - one
+`REPEATABLE READ` snapshot each, folded with `Money`, gross per currency and direction, bounded at
+100 worst first with `truncated`, each serving's `reconciliation.ReportRead` in the read's own
+transaction, a period outside 2000 to now the 422 before anything is read; the OpenAPI baseline
++536 lines, zero removed or changed (walked structurally). The per-rail cost meter Phase 7 deferred
+is settled as `PROCESSING_COSTS` plus the provider-costs report (ADR-0060 annotated). **THE ROW AND
+THE ALERTS**: ten panels in `finapp-platform.json`; seventeen alert rules in
+`infra/prometheus/rules/settlement-reconciliation.yml`, loaded by `prometheus.yml` and mounted by
+`compose.yaml`, every queried series resolved against a live scrape (`AlertRulesResolveTest`).
+**THE BUILD'S FINDS, EACH FIXED**: the alert rules matched `severity` in upper case where every
+published value is lower; a `REPROCESS` run's completion counted its items on the match rate after
+counting each as a rematch; the tracer caught `RuntimeException` but not `Error`; an unknown source
+id reloaded the register on every count (now at most once a minute, on the injected clock - an
+ambient `Instant.now()` the architecture tier refused); a fold test minted v4 identifiers; the
+reports suite expected one fee break where the domain's F1 rule (an unreachable original priced at
+zero) raises three, B's closed by its repudiation. **THE GATE'S FINDS, EACH FIXED**: a count
+deferred inside a JDBC savepoint that rolled back still ran at the outer commit - the deferred
+counts are now one transaction-bound list, and the port's `countMark` / `discardCountsAfter`
+drop what the savepoint undid, at Matching's item savepoints and the parking opener's (ten racing
+openers now count one raise); the match rate counted every decision carrying the run's id, a later
+leg's included - now the run's first (`RUN`) decisions only; an unchanged reprocess examination
+counted as a rematch - now only an allocation; a never-accepted source could not alert (`NaN`) -
+`SettlementSourceNeverAccepted`, with `SettlementFileStuck` and `ReconciliationRunStalled` for the
+two ages the plan marks alertable; the docs' "every tag value is lowercase" corrected. **RECORDED,
+NOT FIXED**: the domain spans open before the leg restores its correlation, so a chunk span carries
+the outer correlation and `source.id`, not the run's; the per-source report rows are bounded in key
+order, never truncated while the register stays under the bound. **DOCUMENTS**: ADR-0072 and
+ADR-0060 notes, the plan's §15 note, `MODULE_ARCHITECTURE` §6 (the rule and the exemption list),
+`AUDITABLE_ACTIONS` (the reports' detail), DECISIONS. **THIRTEEN PROBES, THIRTEEN CAUGHT**
+(`MUTATION_TESTING.md` §2 +13 rows): an amount tag, `NaN` read as zero, a report never audited, a
+route's permission swapped, `Spans.admits` admitting anything, the tracer ignoring it, counting
+before commit, a converged raise counted, a reprocess completion on the match rate, the run leg
+never reporting (through the real composition), the overdue alert on a misspelled series, a
+savepoint's mark dropping nothing, the losing opener's raise kept - every restore byte-identical
+(sha256-verified). **Multi-instance PASS**: the meters decide nothing - counters count committed
+facts per instance after commit (a savepoint's undone fact never), gauges read the shared database
+behind a floor and aggregate with `max()`, each report is one snapshot; ten racing openers count
+one raise and ten sweepers one break (counted). **NEXT**: `P8-TST-001` `READY` (the settlement and
+reconciliation storm, opening M8.8). **Verified** by targeted tiers from fresh runs on the final
+code - platform hermetic 181 across 21, settlement hermetic 166 across 27 and database 70 across 11, reconciliation hermetic 165 across 30 and database 142 across 15, app hermetic 640 across 117 suites, the architecture tier 142 across 23, the reports suite 3, the domain-spans suite 1, the dashboard guard 2, the alert-rules guard 5, the twelve proof-group suites in ONE shared container 62 across 12, the repudiation suite 13, the administration suite 7, the E2E suite 9, the pull suite 11, the payout cash suite 5, the scheme cash suite 4, the payout return suite 14, the readmission suite 10, the bank cash suite 5, the column-classification guard 5, and the document guards 127 across 22 re-run after the records landed, ALL 0 FAILURES - the full battery and the fleet-wide database and kafka tiers
+deliberately skipped on the owner's instruction.
 
 ### Previously
 

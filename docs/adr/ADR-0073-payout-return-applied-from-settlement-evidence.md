@@ -536,7 +536,7 @@ payable bounds the next payout).
     remainder — without which the applied return's expectation, holding no key, would never
     be re-decided (the remainder condition keeps a duplicate line's reach to a SPENT return
     out of the worklist, where it would be re-locked on every tick). Proven with REAL
-    clocks in `PayoutMatchingDatabaseTest` and end to end in `PayoutReturnDatabaseTest`.
+    clocks in `PayoutMatchingDatabaseTest` and end to end in `PayoutReturnDatabaseTest`. *(Corrected by `P8-TST-001`, 2026-10-01: the storm found that "opened after its latest decision" compared the return's `opened_at` - the worker's instance clock - with the line's `decided_at` - the matcher's - so a return applied within the clock skew never reached the worklist and waited for grace. The clause now asks whether any decision of the item has already seen the return as a candidate, judged on rows alone. The keyed and value-date clauses still compare `opened_at` with the latest decision across instances - recorded debt, grace their backstop.)*
 - `P8-TSK-002` declares `PayoutSettlementDeclaration`. `P8-TSK-004` seeds rule set v1 with the
   payout source's `PAYOUT_RETURNED` rule OPERATION-ANCHORED (point 3). `P8-TSK-005` switches
   `MerchantPayoutOutcomes` to it and opens `MERCHANT_PAYOUT` through the port.

@@ -424,75 +424,102 @@ since M0.1". Moved, not edited.)*
 
 ## Current Task
 
-**`P8-TST-001` — The settlement and reconciliation storm** — `READY`, M8.8, Proof, at 0 of 3:
-every source, every fault that produces a break and every recovery path at once under ten matcher
-instances, reconciled to the minor unit in every round and at rest. Its entry and field set are in
-[`BACKLOG.md`](BACKLOG.md). **Not started.**
+**`P8-DOC-001` — The Phase 8 exit review** — `READY`, M8.8, Proof, at 2 of 3: Phase 8 ruled
+against `PHASE_GATES.md` §3's universal criteria, the financial supplement and §5's Phase 8
+criteria. Its entry and field set are in [`BACKLOG.md`](BACKLOG.md). **Not started.**
 
 ### Just completed
 
-**`P8-TSK-024` — Meters, the dashboard row and operator reports** — `COMPLETE` (2026-10-01).
-**M8.7, Operating it, CLOSES at 4 of 4**: every `PHASE_8_PLAN.md` §15 health signal is a count,
-an age or a verdict on a running instance, and every amount is answered by an audited operator
-report, never a metric (ADR-0072; `INV-SET-02`, `INV-REC-05`, `INV-AUD-02`; protected
-`INV-MON-01`, `INV-AUD-01`). **No persistence, as claimed.** **THE SERIES**: the ten §15 rows no
-earlier task shipped - `finapp.settlement.batch.accepted` and the ingestion latency's `accept`
-stage through settlement's observers; `finapp.reconciliation.item`, `.rematch`, `.run.latency`,
-`.break.raised`, `.break.open`, `.break.age`, `.resolution` (with `stale`, counted at the refusal
-because nothing commits), `.resolution.latency` and `.adjustment` through reconciliation's new
-`ReconciliationTelemetry` port - eager per compiled source, type, severity and kind, counted after
-commit; `break.raised` by a decorator over `BreakRegister`, so a converged raise counts nothing;
-`severity` joined `MetricNames` with its written argument; a fresh instance publishes all 32 rows
-(`PlannedMetersExistTest`'s Phase 8 method). **THE STATIC RANK**: `noExemptClassDependsOnMoney` -
-no floating-point exemption may depend on `Money` or `MoneyColumns` - with its planted violation
-caught in-suite. **THE SPANS**: the seven domain spans through the platform `Spans` port, whose
-`app` implementation drops every attribute that is not one of six identifier keys with a UUID
-value. **THE REPORTS**: `GET /v1/operator/reports/reconciliation/suspense`, `/unmatched`,
-`/summary?date=` and `/provider-costs?month=` under `RECONCILIATION_INVESTIGATE` - one
-`REPEATABLE READ` snapshot each, folded with `Money`, gross per currency and direction, bounded at
-100 worst first with `truncated`, each serving's `reconciliation.ReportRead` in the read's own
-transaction, a period outside 2000 to now the 422 before anything is read; the OpenAPI baseline
-+536 lines, zero removed or changed (walked structurally). The per-rail cost meter Phase 7 deferred
-is settled as `PROCESSING_COSTS` plus the provider-costs report (ADR-0060 annotated). **THE ROW AND
-THE ALERTS**: ten panels in `finapp-platform.json`; seventeen alert rules in
-`infra/prometheus/rules/settlement-reconciliation.yml`, loaded by `prometheus.yml` and mounted by
-`compose.yaml`, every queried series resolved against a live scrape (`AlertRulesResolveTest`).
-**THE BUILD'S FINDS, EACH FIXED**: the alert rules matched `severity` in upper case where every
-published value is lower; a `REPROCESS` run's completion counted its items on the match rate after
-counting each as a rematch; the tracer caught `RuntimeException` but not `Error`; an unknown source
-id reloaded the register on every count (now at most once a minute, on the injected clock - an
-ambient `Instant.now()` the architecture tier refused); a fold test minted v4 identifiers; the
-reports suite expected one fee break where the domain's F1 rule (an unreachable original priced at
-zero) raises three, B's closed by its repudiation. **THE GATE'S FINDS, EACH FIXED**: a count
-deferred inside a JDBC savepoint that rolled back still ran at the outer commit - the deferred
-counts are now one transaction-bound list, and the port's `countMark` / `discardCountsAfter`
-drop what the savepoint undid, at Matching's item savepoints and the parking opener's (ten racing
-openers now count one raise); the match rate counted every decision carrying the run's id, a later
-leg's included - now the run's first (`RUN`) decisions only; an unchanged reprocess examination
-counted as a rematch - now only an allocation; a never-accepted source could not alert (`NaN`) -
-`SettlementSourceNeverAccepted`, with `SettlementFileStuck` and `ReconciliationRunStalled` for the
-two ages the plan marks alertable; the docs' "every tag value is lowercase" corrected. **RECORDED,
-NOT FIXED**: the domain spans open before the leg restores its correlation, so a chunk span carries
-the outer correlation and `source.id`, not the run's; the per-source report rows are bounded in key
-order, never truncated while the register stays under the bound. **DOCUMENTS**: ADR-0072 and
-ADR-0060 notes, the plan's §15 note, `MODULE_ARCHITECTURE` §6 (the rule and the exemption list),
-`AUDITABLE_ACTIONS` (the reports' detail), DECISIONS. **THIRTEEN PROBES, THIRTEEN CAUGHT**
-(`MUTATION_TESTING.md` §2 +13 rows): an amount tag, `NaN` read as zero, a report never audited, a
-route's permission swapped, `Spans.admits` admitting anything, the tracer ignoring it, counting
-before commit, a converged raise counted, a reprocess completion on the match rate, the run leg
-never reporting (through the real composition), the overdue alert on a misspelled series, a
-savepoint's mark dropping nothing, the losing opener's raise kept - every restore byte-identical
-(sha256-verified). **Multi-instance PASS**: the meters decide nothing - counters count committed
-facts per instance after commit (a savepoint's undone fact never), gauges read the shared database
-behind a floor and aggregate with `max()`, each report is one snapshot; ten racing openers count
-one raise and ten sweepers one break (counted). **NEXT**: `P8-TST-001` `READY` (the settlement and
-reconciliation storm, opening M8.8). **Verified** by targeted tiers from fresh runs on the final
-code - platform hermetic 181 across 21, settlement hermetic 166 across 27 and database 70 across 11, reconciliation hermetic 165 across 30 and database 142 across 15, app hermetic 640 across 117 suites, the architecture tier 142 across 23, the reports suite 3, the domain-spans suite 1, the dashboard guard 2, the alert-rules guard 5, the twelve proof-group suites in ONE shared container 62 across 12, the repudiation suite 13, the administration suite 7, the E2E suite 9, the pull suite 11, the payout cash suite 5, the scheme cash suite 4, the payout return suite 14, the readmission suite 10, the bank cash suite 5, the column-classification guard 5, and the document guards 127 across 22 re-run after the records landed, ALL 0 FAILURES - the full battery and the fleet-wide database and kafka tiers
-deliberately skipped on the owner's instruction.
+**`P8-TST-001` — The settlement and reconciliation storm** — `COMPLETE` (2026-10-01). **M8.8,
+Proof, at 2 of 3** (beside `P8-TST-002`): every source, every provider-shaped fault and every
+recovery path at once under ten matcher instances, reconciled to the minor unit every round and at
+rest (`INV-REC-06`, `-07`, `-02`, `-04`, `-09`, `INV-SET-04`, `-05`, `-06`, `-07`, `INV-BAL-03`,
+`INV-ACC-01`, `INV-CON-01`, `INV-HIST-02`). **THE STORM**: `SettlementReconciliationStormDatabaseTest`,
+its own container, about 25 s; internal records from `StormTraffic` (card sales and refunds, signed
+pay-ins delivered three times, withdrawals, merchant payouts - the Phase 7 doors mirrored, the
+Phase 7 storm untouched, a recorded deviation); all four sources rendered (PSP, scheme, payout and
+the new `SimulatedBankStatements`), every scope fault seeded - duplicate line, dropped line, amount
+and fee deltas, late date, unknown line, a whole report in the wrong currency, malformed field, bad
+trailer, PAN and IBAN in free text, cycle shift, statement gap (filled later, closed `EVIDENCED`),
+non-zero opening (its currency's cash verdict the expected failure), payout return, counterparty
+correction; each file delivered twice (upload with attestation, and ten latch-raced pulls), out of
+order and late; ten concurrent matchers, each on its own clock; three injected crashes (after 10 of
+24 parsed lines, after the posting inside acceptance, a backend killed mid-chunk) and two sweep
+boundaries, each resumed elsewhere with nothing partial; resolutions by two operators. **EVERY
+ROUND, ONE REPEATABLE READ SNAPSHOT**: the position, suspense, unowned, cash and completeness proofs,
+the trial balance, the break census against the oracle; **AT REST** exact item, expectation and
+break censuses, every run (12) replayed `IDENTICAL`, the second tally (meter deltas equal the
+tables' facts source by source and outcome by outcome), platform acts counted, the needles absent;
+`ProviderFailureCoverageTest`'s "reconciliation detects a break" owned (8 of 14 break types from
+provider-shaped faults; the matrix is `P8-TST-002`'s). **THE STORM'S FIND, A PRODUCTION
+CORRECTION**: the operation-anchored rematch clause compared the return's `opened_at` (the worker's
+clock) with the line's `decided_at` (the matcher's), so a return applied within the clock skew
+waited 72 hours for grace - now "no decision of the item has seen it as a candidate", judged on
+rows (`JdbcMatchingStore.REMATCH_PREDICATE`; `PayoutMatchingDatabaseTest` (n) the skew, (o) the
+guard alone). **MEASURED**: with the per-source try-lock bypassed, no value was over-allocated but
+the break census moved - the census is the lock's, the money the schema's (`DISTRIBUTED_EXECUTION`
+register 4). **THE GATE'S FINDS, EACH FIXED**: no check that genuine lines matched at rest (exact
+item and expectation censuses added); the item tally compared two clocks (now by `judged_status`);
+the log guard missed five contained-failure messages; case (o) added; the tally widened; the replay
+count exact; the trial balance inside the snapshot; the round cap by work, not time; dates from the
+database once. **RECORDED, NOT FIXED**: the keyed and value-date rematch clauses still compare two
+instances' clocks (grace their backstop); the fix widens a duplicate line's chance to take a return
+before the genuine line (value conserved, attribution wrong); the storm, like the cash suites,
+runs in its own container. **EIGHT DEMONSTRATIONS, EIGHT CAUGHT** (`MUTATION_TESTING.md` §2 +8
+rows): an expectation removed, a resolution entry unknown, an unpark one unit short, the try-lock
+and the Σ triggers together, a recognition on another purpose's clearing, a replay constant
+perturbed, an uncounted rematch - each run on the final suite - and the correction reversed
+(re-performed by the gate), every restore byte-identical (sha256-verified). **Multi-instance
+PASS**: ten matchers, raced deliveries and pulls, crashes resumed on other instances - every round's
+readings hold, three fresh runs.
+
+**`P8-TST-002` — The break and resolution battery** — `COMPLETE` (2026-10-01). **M8.8, Proof,
+at 2 of 3** (run beside `P8-TST-001` at the owner's request, both `READY` at once - a recorded
+deviation from one `READY` task): every break type crossed with every resolution kind ADR-0069's
+table admits, raced and duplicated, the complement refused with nothing written, four-eyes,
+staleness and immutability shown at every rank (`INV-REC-01`, `-02`, `-03`, `-05`, `-07`, `-08`,
+`-09`, `INV-AUD-04`, `INV-REV-04`, `INV-REV-01`, `INV-SET-03`, `INV-SET-06`, `INV-MER-02`). **THE
+MATRIX, COUNTED FROM THE CODE AND PINNED BY HAND**: 40 allowed (type, kind) pairs; the complement
+44 table cells over the six template kinds plus 14 `REPUDIATE_BATCH` shape refusals; 52 base
+scenario cells split by side and subject, 5 refined (the explained duplicate, the diverged
+replay); every posting kind's lines exact against the ledger; every refusal writing nothing
+(resolution, events, ledger proposals and entries, audit, outbox, releases, the break). Two
+suites: `ResolutionMatrixDatabaseTest` (module, 17 cases) and `ResolutionBatteryDatabaseTest`
+(HTTP, 7, its own container). **ONE PRODUCTION CORRECTION, ONE MIGRATION (a recorded deviation
+from "no persistence")**: a diverged replay's zero-value `ACKNOWLEDGE` - decided four-eyes by
+ADR-0068 §9.1 - closed on one person's word, because the domain and `V007` derived four-eyes
+from value alone. Now a zero-value `ACKNOWLEDGE` is one person's only on a `TIMING_DIFFERENCE`
+raised by a timing detector (`LATE_MATCH`, `CYCLE_MISMATCH`): the domain's
+`fourEyes(kind, amount, type, cause)` and reconciliation `V014` (the relaxed derived CHECK,
+`resolution_unapproved_is_four_eyes`, an every-writer AFTER INSERT trigger reading the break's type
+and cause `FOR SHARE`, and `break_type_frozen_under_a_one_person_resolution`). **THE GATE'S FINDS,
+EACH FIXED**: CRITICAL - one operator could reclassify a diverged replay onto `TIMING_DIFFERENCE`
+and close it alone (and an explained duplicate onto `UNKNOWN_EXTERNAL` to transfer it again): the
+refinements and the one-person path are now keyed on the CAUSE, proven over every type x cause and
+through the real case file; `V014`'s every-writer claim rested on an unenforced rule - the two
+rules above added; the reprocess-or-requeue path was missing - added; losses and gains posted only
+by approvals now scanned in the module (the gains half non-vacuous); the deletable scan read only
+granted tables - now `pg_class` as the owner, 31 asserted; a pre-decided race made genuine; stale
+"zero-value ACKNOWLEDGE (one person)" statements qualified across code, ADRs and domain documents.
+The second pass added the trigger's `FOR SHARE` and the table copies' replay row. **RECORDED**: the
+owner's `TRUNCATE` is unguarded (the application holds no such privilege); a reclassification can
+strand a break on a type with no exit (older than this task). **THIRTEEN PROBES, THIRTEEN CAUGHT**
+(`MUTATION_TESTING.md` §2 +13 rows): a kind's lines one unit off; the self-approval refusal at the
+domain, the resolution CHECK and ledger `V010` each removed alone, each caught by its own rank; the
+stale check; the origin refusal; a `DELETE` grant; `V014`'s trigger inert, its cause condition
+dropped, its CHECK vacuous, its frozen-type trigger inert; the domain's cause condition and the
+type-gated refinement - every restore byte-identical (sha256-verified); one first attempt broke the
+migration's SQL, recorded as no verdict and re-aimed. **Multi-instance PASS**: ten proposers leave
+one proposal, ten approvers one entry, approve against reject and against withdraw one outcome,
+evidence against approval on parked value one release, a suspense item released once (counted).
+
+**NEXT**: `P8-DOC-001` `READY` (the Phase 8 exit review, closing M8.8). **Verified** by targeted
+tiers from fresh runs on the final code - platform hermetic 181 across 21 and settlement hermetic 166 across 27 and database 70 across 11 (unchanged code, from P8-TSK-024's fresh runs), reconciliation hermetic 166 across 30 and database 165 across 17, app hermetic 643 across 117 suites, the architecture tier 143 across 23, the storm in its own container three consecutive fresh runs 1 across 1 each (about 25 s), the HTTP battery 7, the resolution suite 4, the investigation suite 5, the administration suite 7, the repudiation suite 13, the payout return suite 14, the twelve proof-group suites in ONE shared container 62 across 12, the E2E suite 9, the pull suite 11, the payout cash suite 5, the scheme cash suite 4, the readmission suite 10, the bank cash suite 5, the column-classification guard 5, and the document guards re-run after the records landed, ALL 0 FAILURES - the full battery and the fleet-wide database
+and kafka tiers deliberately skipped on the owner's instruction.
 
 ### Previously
 
-The per-task completion records — 187 blocks, from `P8-TSK-023` back to project initiation
+The per-task completion records — 188 blocks, from `P8-TSK-024` back to project initiation
 (`X-TSK-004` cross-cutting, standing between `P7-TSK-001` and the Phase 6 → 7 transition) —
 are archived in [`history/TASK_HISTORY.md`](history/TASK_HISTORY.md).
 *(This pointer read "130 blocks, from `P6-TSK-005`" through four archivals — corrected by
@@ -849,6 +876,11 @@ carries, what triggers paying it down, and the owning phase.
 | **Posting once-ness rests on the idempotency record beyond the parking's claim.** `journal_entry.idempotency_scope` is not `UNIQUE`; a planned retention sweep of the claims would remove the second rank (#61) | No retention sweep exists yet; every Phase 7 posting runs in an acting branch behind its own arbiter, and the parking now behind the scheme-execution claim | None while the records stand | The first idempotency-record retention sweep | Phase 15 |
 | **Refused and failed Phase 7 acts leave no audit outcome, and merchant dispute acts are audited without the API key** (#63, #64) | Every Phase 7 audit record is `SUCCEEDED`; refusals are logged and metered | An auditor cannot reconstruct attempted-and-refused acts from the audit trail alone | The audit completeness review of Phase 15 | Phase 15 |
 | **The dashboard carries no pay-in or suspense row, and no alert rules exist** (#71) | The gauges exist and are scraped; the alert rules are deployment configuration | `INV-REC-05`'s "alerted" rests on a log line and a gauge nobody pages on | Phase 8's suspense ageing (ADR-0070), which owns the suspense alerts | Phase 8 |
+| **The keyed and value-date rematch clauses compare two instances' clocks** — `JdbcMatchingStore.REMATCH_PREDICATE`'s key and value-date group clauses still select on `e.opened_at > LATEST_DECISION`, the expectation stamped by one instance's clock and the decision by another's (`P8-TST-001`'s storm found and fixed the same defect in the operation-anchored clause) | A clock-free form for a keyed reach needs a design: "not yet seen as a candidate" re-selects lines whose expectation is reachable only by a lower-priority key | An expectation opened within the instances' skew after a line's decision is not rematched; the line waits for its 72-hour grace and may raise a false break - value never wrong | A design for a clock-free keyed reach, or a measured skew that matters | Phase 8 exit review (`P8-DOC-001`) to schedule |
+| **A duplicate line can take a payout return before the genuine line** — the anchored clause's "not yet seen" reading (`P8-TST-001`) puts a later report's repeat of a returned line, parked DUPLICATE after the return opened, on the rematch worklist, and claimant order (`line_no` across runs) may let it allocate first | The old clause had the same race when both decisions came before the return; the fix widens its window; no test covers it | Attribution wrong (the genuine line parks at grace and a break is raised), value conserved | Have a DUPLICATE verdict count as having seen the reach, with a test | Phase 8 exit review (`P8-DOC-001`) to schedule |
+| **The reconciliation tables' owner can TRUNCATE** — every table refuses DELETE to every writer by trigger and to `finapp_app` by privilege, but row triggers do not fire on TRUNCATE (`P8-TST-002`'s schema-wide scan) | Statement-level TRUNCATE triggers on 31 tables were beyond a test task | A migrator or owner session could empty history | A statement-level `BEFORE TRUNCATE` refusal per table, by migration | Phase 15 (operational hardening) |
+| **A reclassification can strand a break** — a `TIMING_DIFFERENCE` reclassified onto `PROCESSING_ERROR` stands on a decision subject no kind or evidence can close; a `STATEMENT_GAP` reclassified likewise is no longer found by `StatementChain`'s filling (`P8-TST-002`'s second gate pass; older than the task) | Out of the battery's scope | A break that can never close, visible but unresolvable | Refuse reclassifications to a type with no exit for the subject | Phase 8 exit review (`P8-DOC-001`) to schedule |
+| **The settlement and reconciliation storm runs in its own container** — like the cash suites (`PayoutReturnDatabaseTest`, `BatchRepudiationDatabaseTest`, the E2E, pull and readmission suites), `SettlementReconciliationStormDatabaseTest` reads the whole database in its exact censuses and counts, so a fleet-wide `databaseTest` co-locating it fails it with no code wrong | Global proofs and censuses are the point of a storm | A fleet-wide run reports false failures | `databaseTest` running such suites in their own JVM or container | Phase 15 |
 | **Small Phase 7 residues**: the card door's refund attribution is not scoped to its rail (#34/#75); a VOIDED payment renders `FAILED` with no reason and the redirect's void dispatch writes no dispatch audit (#35); a withdrawal's replay is gated by the resolver (#37); a book refund to a payer wallet closed since is refused with no remedy (#40); provider vocabulary outside the adapters (#46); one event version shared by every payments event (#49); the merchant drill-down's label for adjustments (#50); the routing counter counting inside Tx1 (#69); `MANUAL` capture latent in two readings (#62/#70); the storm's reach (#79/#80) | Each MINOR and none a financial-correctness defect: defence in depth, rendering, reporting or latent until a producer exists | Named per item in the transition record | Each item's own trigger in the transition record §11 | Phases 8, 13 and 15 |
 
 None of these is financial-correctness debt.
@@ -928,9 +960,8 @@ Resolved during initiation:
 
 ## Next Task
 
-**`P8-TST-001` — the settlement and reconciliation storm** — `READY` (the Current Task), marked
-by `P8-TSK-024`'s completion gate - its dependencies (`P8-TSK-017`…`-020`, `-022`, the position
-proof `-007`, the counters `-024` and the pulls `-021`) are all `COMPLETE`.
+**`P8-DOC-001` — the Phase 8 exit review** — `READY` (the Current Task), marked by the completion
+gates of `P8-TST-001` and `P8-TST-002`, which ran in parallel at the owner's request.
 *(This section read "`P8-TSK-009` — `READY`" from `P8-TSK-008`'s gate until
 `P8-TSK-013`'s record found it — the stale-second-copy class, in the section whose
 whole job is to mirror.)*

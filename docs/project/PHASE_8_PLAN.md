@@ -263,10 +263,10 @@ Stated in full in `SETTLEMENT_AND_RECONCILIATION_LIFECYCLES.md`:
   sweep, not a state;
 - the break: `OPEN → INVESTIGATING → RESOLUTION_PROPOSED → RESOLVED`, back to `INVESTIGATING` on a
   rejection or withdrawal; `EVIDENCED` by the platform only, from any open state; a zero-value
-  `ACKNOWLEDGE` by one person; reclassification only in `OPEN` and `INVESTIGATING`; severity only
+  `ACKNOWLEDGE` of a `TIMING_DIFFERENCE` raised by a timing detector (`LATE_MATCH`, `CYCLE_MISMATCH`) by one person; reclassification only in `OPEN` and `INVESTIGATING`; severity only
   escalates; never deleted;
 - the resolution: `PROPOSED → APPROVED | REJECTED | WITHDRAWN`; born `APPROVED` for `EVIDENCED` and
-  a single-person zero-value `ACKNOWLEDGE`; a stale approval refused with the resolution left
+  a single-person zero-value `ACKNOWLEDGE` of a `TIMING_DIFFERENCE` raised by a timing detector (`LATE_MATCH`, `CYCLE_MISMATCH`); a stale approval refused with the resolution left
   `PROPOSED`;
 - the suspense item: `OPEN → PARTIALLY_RELEASED → RELEASED`, or `OPEN → RELEASED` by a release
   of the whole, always owned by a break;
@@ -473,6 +473,7 @@ held at the database, as `V002` holds the upload's.)*
 | `V011` (`-020`) | `break_suspense_item_fk` made `DEFERRABLE INITIALLY IMMEDIATE` — a parking's owner stands on its own suspense item, born in one transaction; the cause `EXECUTION_ALREADY_EXPLAINED` (`DUPLICATE_EXTERNAL`) for a parking payments `V023`'s backfill left unclaimed | Only the parking's opener defers the key, and sets it `IMMEDIATE` again at once; the cause `CHECK` and the raise pairing regenerated whole |
 | `V012` (`-022`) | `run_replay`; the rule set's machine (`decided_at`, `rule_set_event`, the four-eyes `CHECK`, one proposal per source, members only with their proposal, a retirement only beside its successor, `tolerance_once` NULLS NOT DISTINCT); the decision snapshot's replay inputs (six columns, `match_parked_original`); `break_one_open_per_decision` | Append-only; the version moves only by its machine *(widened by the task's design: the rule set had no machine and the snapshot could not replay exactly)* |
 | `V013` (`-023`) | The `REPUDIATE_BATCH` kind and the batch subject on `resolution`; the item's `REPUDIATED` and its `MATCHED → UNMATCHED` reopening; the expectation's reopening edges; the suspense item's `REPUDIATION` origin | The generated `CHECK`s and transition triggers regenerated; one `PROPOSED` repudiation per batch |
+| `V014` (`P8-TST-002`, the correction) | None new — `resolution`'s four-eyes derivation corrected | `resolution_four_eyes_derived` relaxed; an `AFTER INSERT` trigger deriving a zero-value `ACKNOWLEDGE`'s flag from its break's type and cause (one person only on a `TIMING_DIFFERENCE` raised by `LATE_MATCH` or `CYCLE_MISMATCH`); `CHECK (four_eyes OR status = 'APPROVED')`; a break's type frozen under a one-person resolution |
 
 *(`V007`…`V009` numbered by the Phase 7 → 8 transition's consistency review, A8: `P8-TSK-023`
 needs its own migration, because each state and edge arrives with its producer. A deferral of
@@ -490,7 +491,10 @@ set had no fee terms to check by — so `-022` and `-023` moved to `V011` and `V
 had recorded "Persistence: none new" a fourth time, but a parking's owner is a break standing on its
 own suspense item, which neither immediate key let be born, and a parking payments `V023`'s backfill
 left unclaimed needed a cause that admits no second attribution — so `-022` and `-023` moved to
-`V012` and `V013`.)*
+`V012` and `V013`.)* *(`P8-TST-002`, the correction, took `V014`: a zero-value `ACKNOWLEDGE` is
+one person's only on a `TIMING_DIFFERENCE` raised by a timing detector — `resolution`'s four-eyes
+`CHECK` relaxed to what the row can state, a break-reading trigger deriving the rest, a one-person
+resolution born `APPROVED`, and a break's type frozen under a one-person resolution.)*
 
 **Other schemas.**
 - **ledger:** `V015` (`P8-TSK-006`) — `adjustment_proposal.reason_code` and `origin`, the
@@ -912,7 +916,7 @@ why the snapshot is stored.
 | `REVERSAL_MISMATCH` | A contradicted direction; a capture on a voided or failed attempt; a reversal without `WON`; a return that cannot apply (cause `RETURN_NOT_APPLICABLE`) | Yes | HIGH | `EVIDENCED`, `TRANSFER_TO_ACCOUNT`, `OFFSET_SUSPENSE`, `WRITE_OFF` (DEBIT); **no `RECOGNISE_GAIN`** — the value is a merchant's or a customer's |
 | `REFUND_MISMATCH` | A `REFUND` line against a refund that failed internally, or none | Yes | CRITICAL | `EVIDENCED`, `TRANSFER_TO_ACCOUNT`, `WRITE_OFF` (DEBIT); **no `RECOGNISE_GAIN`** — the value is a customer's or a merchant's |
 | `SETTLEMENT_MISMATCH` | `REMITTANCE_DIFFERS`; `STATEMENT_GAP`; `OPENING_BALANCE` | Per side | HIGH; CRITICAL for statement causes | `EVIDENCED`; for `REMITTANCE_DIFFERS` only, `WRITE_OFF` (an INBOUND remainder, or a DEBIT item), `TRANSFER_TO_ACCOUNT` and `RECOGNISE_GAIN` (CREDIT, after the minimum age). The statement causes close only `EVIDENCED` (`INV-SET-06`) |
-| `PROCESSING_ERROR` | An errored item; a blocked run; a diverged replay | Items, yes | CRITICAL | Reprocess or requeue, then `EVIDENCED`; otherwise, for a parked item, `TRANSFER_TO_ACCOUNT`, `OFFSET_SUSPENSE`, `WRITE_OFF` (DEBIT), `RECOGNISE_GAIN` (CREDIT, after the minimum age) |
+| `PROCESSING_ERROR` | An errored item; a blocked run; a diverged replay | Items, yes | CRITICAL | Reprocess or requeue, then `EVIDENCED`; a diverged replay (`REPLAY_DIVERGED`): `ACKNOWLEDGE` alone, four-eyes, whatever its type after reclassification (`P8-TST-002`); otherwise, for a parked item, `TRANSFER_TO_ACCOUNT`, `OFFSET_SUSPENSE`, `WRITE_OFF` (DEBIT), `RECOGNISE_GAIN` (CREDIT, after the minimum age) |
 
 *(The Phase 7 → 8 transition's consistency review, A1–A3. ADR-0069's per-type table is the one
 authority for which kinds a break type admits, and this table carries it identically, as do
@@ -942,7 +946,7 @@ typed**.
 | Kind | Applies to | Lines (entry `ADJUSTMENT`, scope `ledger.adjust.approve:<proposalId>`) | Approvers |
 |---|---|---|---|
 | `EVIDENCED` | Any break explained by a zero-residual allocation or offset | None of its own — the allocation's unpark or offset is the posting; the resolution names the decision and the park | The platform only |
-| `ACKNOWLEDGE` | `TIMING_DIFFERENCE`, `FEE_MISMATCH`, `DUPLICATE_INTERNAL` | None | One when the value is zero; otherwise two |
+| `ACKNOWLEDGE` | `TIMING_DIFFERENCE`, `FEE_MISMATCH`, `DUPLICATE_INTERNAL`; a diverged replay's `PROCESSING_ERROR` (`REPLAY_DIVERGED`) | None | One for a zero-value `ACKNOWLEDGE` of a `TIMING_DIFFERENCE` raised by a timing detector (`LATE_MATCH`, `CYCLE_MISMATCH`); otherwise two *(corrected 2026-10-01, `P8-TST-002`: this read "one when the value is zero")* |
 | `WRITE_OFF` | An INBOUND remainder in P; a DEBIT suspense item, at any age | DR `RECONCILIATION_LOSSES` / CR P (or CR `SUSPENSE_UNMATCHED`) | Two |
 | `TRANSFER_TO_ACCOUNT` | A CREDIT suspense item; an OUTBOUND remainder in P | DR `SUSPENSE_UNMATCHED` (or DR P) / CR a named `CUSTOMER_WALLET` or `MERCHANT_PAYABLE`, active and in the same currency, share-locked before posting | Two |
 | `OFFSET_SUSPENSE` | A CREDIT and a DEBIT suspense item of equal amount and currency | None — the account already nets; both released | Two |
@@ -955,7 +959,7 @@ ADR-0070 §10 and ADR-0073 recorded for `P8-TSK-023`: the Phase 7 → 8 transiti
 review, A9, A10 and B5. `WRITE_OFF`'s any age and `RECOGNISE_GAIN`'s per-type admission, A1.)*
 
 - **The threshold, defined** (`INV-REC-03`): every resolution with value at issue or a posting is
-  four-eyes; a zero-value, zero-posting `ACKNOWLEDGE` is one person's; `EVIDENCED` is the
+  four-eyes; a zero-value, zero-posting `ACKNOWLEDGE` of a `TIMING_DIFFERENCE` raised by a timing detector (`LATE_MATCH`, `CYCLE_MISMATCH`) is one person's (`P8-TST-002`); `EVIDENCED` is the
   platform's. This keeps `AdjustmentService`'s unconditional rule, the proposal row the seam for a
   future pinned de-minimis policy; a value-banded second approver is deferred.
 - **Distinctness at three ranks:** the reconciliation domain; `CHECK (status <> 'APPROVED' OR NOT

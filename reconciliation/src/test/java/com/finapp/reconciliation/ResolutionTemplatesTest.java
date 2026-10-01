@@ -11,8 +11,10 @@ import com.finapp.sharedkernel.money.CurrencyCode;
 import com.finapp.sharedkernel.money.Money;
 import java.security.SecureRandom;
 import java.time.Clock;
+import java.util.EnumMap;
 import java.util.EnumSet;
 import java.util.List;
+import java.util.Map;
 import java.util.Optional;
 import java.util.Set;
 import java.util.UUID;
@@ -23,7 +25,10 @@ import org.junit.jupiter.api.Test;
  * The templates' pure seat (`P8-TSK-015`, ADR-0071 §2; ADR-0069 §2's per-type table): which
  * kinds each type admits, where each kind applies, the whole-residual amount, the derived
  * four-eyes flag and the exact lines — and the request's shape screen, judged before any
- * claim.
+ * claim. `P8-TST-002` pins the admission table EXACTLY against a hand transcription of
+ * ADR-0069 §2 (so neither the code nor the table can change silently), and the four-eyes
+ * derivation's correction: a zero-value acknowledgement is one person's only on a
+ * {@code TIMING_DIFFERENCE}.
  */
 @DisplayName("resolution templates (P8-TSK-015)")
 class ResolutionTemplatesTest {
@@ -62,9 +67,8 @@ class ResolutionTemplatesTest {
                         .doesNotContain(ResolutionKind.EVIDENCED, ResolutionKind.REPUDIATE_BATCH);
                 // A diverged replay's break stands on a DECISION and owns no value
                 // (P8-TSK-022): its one disposal is the acknowledgement asserted below.
-                boolean divergence =
-                        type == BreakType.PROCESSING_ERROR
-                                && cause == BreakCause.REPLAY_DIVERGED;
+                // Keyed on the cause, whatever the type it was reclassified onto (P8-TST-002).
+                boolean divergence = cause == BreakCause.REPLAY_DIVERGED;
                 if (type.mayOwnSuspense() && !admitted.isEmpty()
                         && type != BreakType.MISSING_EXTERNAL && !divergence) {
                     assertThat(admitted)
@@ -86,7 +90,8 @@ class ResolutionTemplatesTest {
                         ResolutionKind.WRITE_OFF, ResolutionKind.TRANSFER_TO_ACCOUNT,
                         ResolutionKind.RECOGNISE_GAIN);
         for (BreakCause cause : BreakCause.values()) {
-            if (cause != BreakCause.REMITTANCE_DIFFERS) {
+            // REPLAY_DIVERGED's refinement is its cause's whatever the type (P8-TST-002).
+            if (cause != BreakCause.REMITTANCE_DIFFERS && cause != BreakCause.REPLAY_DIVERGED) {
                 assertThat(ResolutionTemplates.admittedKinds(BreakType.SETTLEMENT_MISMATCH,
                                 cause))
                         .as("a statement cause closes only EVIDENCED: " + cause)
@@ -196,15 +201,145 @@ class ResolutionTemplatesTest {
                 .as("an acknowledgement disposes of nothing: its amount is the value at"
                         + " issue")
                 .isEqualTo(eur(3_00));
-        assertThat(ResolutionTemplates.fourEyes(ResolutionKind.ACKNOWLEDGE, eur(0))).isFalse();
-        assertThat(ResolutionTemplates.fourEyes(ResolutionKind.ACKNOWLEDGE, eur(1))).isTrue();
-        assertThat(ResolutionTemplates.fourEyes(ResolutionKind.EVIDENCED, eur(9))).isFalse();
-        for (ResolutionKind kind :
-                EnumSet.complementOf(EnumSet.of(ResolutionKind.ACKNOWLEDGE,
-                        ResolutionKind.EVIDENCED))) {
-            assertThat(ResolutionTemplates.fourEyes(kind, eur(0)))
-                    .as(kind + " is always two people").isTrue();
+        assertThat(EnumSet.copyOf(java.util.Arrays.stream(BreakCause.values())
+                        .filter(ResolutionTemplates::timingCause).toList()))
+                .as("the timing detectors: exactly the causes raising TIMING_DIFFERENCE")
+                .containsExactlyInAnyOrder(BreakCause.LATE_MATCH, BreakCause.CYCLE_MISMATCH);
+        assertThat(ResolutionTemplates.fourEyes(ResolutionKind.ACKNOWLEDGE, eur(1),
+                        BreakType.TIMING_DIFFERENCE, BreakCause.LATE_MATCH))
+                .as("one unit at issue is two people's").isTrue();
+        // Every (type, cause) combination - a superset of what a reclassification can reach,
+        // because the cause is frozen at raise and the type moves (P8-TST-002's gate find).
+        for (BreakType type : BreakType.values()) {
+            for (BreakCause cause : BreakCause.values()) {
+                assertThat(ResolutionTemplates.fourEyes(ResolutionKind.EVIDENCED, eur(9), type,
+                                cause))
+                        .as("EVIDENCED is the platform's: %s/%s", type, cause).isFalse();
+                boolean onePerson = type == BreakType.TIMING_DIFFERENCE
+                        && (cause == BreakCause.LATE_MATCH
+                                || cause == BreakCause.CYCLE_MISMATCH);
+                assertThat(ResolutionTemplates.fourEyes(ResolutionKind.ACKNOWLEDGE, eur(0), type,
+                                cause))
+                        .as("a zero-value ACKNOWLEDGE of a %s raised by %s is %s", type, cause,
+                                onePerson ? "one person's" : "four-eyes (the correction)")
+                        .isEqualTo(!onePerson);
+                for (ResolutionKind kind :
+                        EnumSet.complementOf(EnumSet.of(ResolutionKind.ACKNOWLEDGE,
+                                ResolutionKind.EVIDENCED))) {
+                    assertThat(ResolutionTemplates.fourEyes(kind, eur(0), type, cause))
+                            .as("%s is always two people (%s/%s)", kind, type, cause).isTrue();
+                }
+            }
         }
+    }
+
+    // ----------------------------------------------------------------- the exact table
+
+    /**
+     * ADR-0069 §2's per-type table, transcribed by hand - the kinds each type admits for its
+     * ordinary causes. Kept apart from the code it pins: a change to either fails here.
+     */
+    private static final Map<BreakType, Set<ResolutionKind>> TABLE = table();
+
+    /** The cause refinements the table's prose and P8-TSK-020/-022 add, exactly. */
+    private static final Map<BreakCause, Set<ResolutionKind>> REFINED = Map.of(
+            BreakCause.EXECUTION_ALREADY_EXPLAINED,
+            EnumSet.of(ResolutionKind.WRITE_OFF, ResolutionKind.OFFSET_SUSPENSE,
+                    ResolutionKind.RECOGNISE_GAIN),
+            BreakCause.STATEMENT_GAP, EnumSet.noneOf(ResolutionKind.class),
+            BreakCause.OPENING_BALANCE, EnumSet.noneOf(ResolutionKind.class),
+            BreakCause.REPLAY_DIVERGED, EnumSet.of(ResolutionKind.ACKNOWLEDGE));
+
+    private static Map<BreakType, Set<ResolutionKind>> table() {
+        ResolutionKind ack = ResolutionKind.ACKNOWLEDGE;
+        ResolutionKind writeOff = ResolutionKind.WRITE_OFF;
+        ResolutionKind transfer = ResolutionKind.TRANSFER_TO_ACCOUNT;
+        ResolutionKind offset = ResolutionKind.OFFSET_SUSPENSE;
+        ResolutionKind gain = ResolutionKind.RECOGNISE_GAIN;
+        Map<BreakType, Set<ResolutionKind>> table = new EnumMap<>(BreakType.class);
+        table.put(BreakType.MISSING_EXTERNAL, EnumSet.of(writeOff, transfer));
+        table.put(BreakType.MISSING_INTERNAL, EnumSet.of(transfer, writeOff, offset, gain));
+        table.put(BreakType.UNKNOWN_EXTERNAL, EnumSet.of(transfer, writeOff, offset, gain));
+        table.put(BreakType.AMOUNT_MISMATCH, EnumSet.of(writeOff, transfer, gain));
+        table.put(BreakType.CURRENCY_MISMATCH, EnumSet.of(transfer, writeOff, offset));
+        table.put(BreakType.FEE_MISMATCH, EnumSet.of(ack));
+        table.put(BreakType.DUPLICATE_EXTERNAL, EnumSet.of(offset, transfer, writeOff, gain));
+        table.put(BreakType.DUPLICATE_INTERNAL, EnumSet.of(ack, writeOff));
+        table.put(BreakType.AMBIGUOUS_MATCH,
+                EnumSet.of(ResolutionKind.MANUAL_MATCH, transfer, writeOff, gain));
+        table.put(BreakType.TIMING_DIFFERENCE, EnumSet.of(ack));
+        table.put(BreakType.REVERSAL_MISMATCH, EnumSet.of(transfer, offset, writeOff));
+        table.put(BreakType.REFUND_MISMATCH, EnumSet.of(writeOff, transfer));
+        // REMITTANCE_DIFFERS, its one ordinary cause; the statement causes are REFINED.
+        table.put(BreakType.SETTLEMENT_MISMATCH, EnumSet.of(writeOff, transfer, gain));
+        table.put(BreakType.PROCESSING_ERROR, EnumSet.of(transfer, offset, writeOff, gain));
+        return table;
+    }
+
+    @Test
+    @DisplayName("ADR-0069 section 2's table, EXACTLY: every (type, cause) a detector raises admits"
+            + " precisely its row's kinds - 40 (type, kind) pairs over the 14 rows, 44 table cells"
+            + " refused over the six template kinds - and the four cause refinements, keyed on the"
+            + " CAUSE over every type a reclassification can move the break onto")
+    void theAdmissionTableIsExactlyTheAdrs() {
+        assertThat(TABLE).as("all fourteen rows transcribed").hasSize(BreakType.values().length);
+        int pairs = TABLE.values().stream().mapToInt(Set::size).sum();
+        assertThat(pairs).as("the hand count of the table's (type, kind) pairs").isEqualTo(40);
+        Set<ResolutionKind> templateKinds = EnumSet.complementOf(
+                EnumSet.of(ResolutionKind.EVIDENCED, ResolutionKind.REPUDIATE_BATCH));
+        assertThat(templateKinds).hasSize(6);
+        assertThat(templateKinds.size() * BreakType.values().length - pairs)
+                .as("the table cells the battery refuses (REPUDIATE_BATCH's 14 are shape"
+                        + " refusals, never a type's)").isEqualTo(44);
+
+        int raisedPairs = 0;
+        for (BreakCause cause : BreakCause.values()) {
+            for (BreakType type : cause.raisesAs()) {
+                raisedPairs++;
+                Set<ResolutionKind> expected = REFINED.getOrDefault(cause, TABLE.get(type));
+                assertThat(ResolutionTemplates.admittedKinds(type, cause))
+                        .as("%s raised by %s admits exactly its row", type, cause)
+                        .isEqualTo(expected);
+            }
+        }
+        assertThat(raisedPairs).as("every detector's (cause, type) pair checked").isEqualTo(26);
+        for (BreakCause refined : REFINED.keySet()) {
+            assertThat(refined.raisesAs()).as(refined + " refines one type").hasSize(1);
+        }
+
+        // Every (type, cause) combination - a superset of the reclassifications BreakCaseFile
+        // admits: the cause is frozen at raise and only the type moves, so a refinement is the
+        // CAUSE's whatever the current type (P8-TST-002's gate find).
+        for (BreakType type : BreakType.values()) {
+            for (BreakCause cause : BreakCause.values()) {
+                Set<ResolutionKind> row =
+                        type == BreakType.SETTLEMENT_MISMATCH
+                                        && cause != BreakCause.REMITTANCE_DIFFERS
+                                ? EnumSet.noneOf(ResolutionKind.class)
+                                : EnumSet.copyOf(TABLE.get(type));
+                Set<ResolutionKind> expected = switch (cause) {
+                    case REPLAY_DIVERGED -> EnumSet.of(ResolutionKind.ACKNOWLEDGE);
+                    case STATEMENT_GAP, OPENING_BALANCE -> EnumSet.noneOf(ResolutionKind.class);
+                    case EXECUTION_ALREADY_EXPLAINED -> {
+                        row.remove(ResolutionKind.TRANSFER_TO_ACCOUNT);
+                        yield row;
+                    }
+                    default -> row;
+                };
+                assertThat(ResolutionTemplates.admittedKinds(type, cause))
+                        .as("a %s break raised by %s (however it was reclassified)", type, cause)
+                        .isEqualTo(expected);
+            }
+        }
+        assertThat(ResolutionTemplates.admittedKinds(
+                        BreakType.TIMING_DIFFERENCE, BreakCause.REPLAY_DIVERGED))
+                .as("a diverged replay reclassified onto the timing type keeps its refinement")
+                .containsExactly(ResolutionKind.ACKNOWLEDGE);
+        assertThat(ResolutionTemplates.admittedKinds(
+                        BreakType.UNKNOWN_EXTERNAL, BreakCause.EXECUTION_ALREADY_EXPLAINED))
+                .as("an explained duplicate reclassified onto UNKNOWN_EXTERNAL is never"
+                        + " transferred")
+                .doesNotContain(ResolutionKind.TRANSFER_TO_ACCOUNT);
     }
 
     @Test

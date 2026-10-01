@@ -179,8 +179,9 @@ public enum ReconciliationAuditAction implements AuditableAction {
     /**
      * A second person approved a resolution (`P8-TSK-015`, ADR-0071 §§4, 6): the entry posted
      * (for a posting kind), the subject's value disposed of and the break {@code RESOLVED}, in
-     * one transaction. Also the one record of a zero-value {@code ACKNOWLEDGE}, one person's
-     * act, carrying its reason. Identifiers and enumerated names only.
+     * one transaction. Also the one record of a timing difference's zero-value
+     * {@code ACKNOWLEDGE}, one person's act, carrying its reason (every other acknowledgement is
+     * four-eyes, `P8-TST-002`). Identifiers and enumerated names only.
      */
     RESOLUTION_APPROVED(
             "reconciliation.ResolutionApproved",

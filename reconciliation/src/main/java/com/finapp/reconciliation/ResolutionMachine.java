@@ -54,8 +54,10 @@ import lombok.RequiredArgsConstructor;
  * <p><strong>Two people wherever value is at issue</strong> ({@code INV-REC-03},
  * {@code INV-AUD-04}): refused here first ({@link SelfApprovalRefused}, nothing written),
  * by `V006`'s distinctness {@code CHECK} for any writer, and — for the three posting kinds —
- * by the ledger's `V010` beneath. A zero-value {@code ACKNOWLEDGE} is one person's act, born
- * {@code APPROVED}.
+ * by the ledger's `V010` beneath. A zero-value {@code ACKNOWLEDGE} of a
+ * {@code TIMING_DIFFERENCE} raised by a timing detector is one person's act, born
+ * {@code APPROVED}; every other
+ * acknowledgement is four-eyes (`P8-TST-002`'s correction, `V014`).
  *
  * <p>Approval, rejection and withdrawal carry no key: the resolution's one-way machine is the
  * idempotency ({@code INV-IDEM-01} through state) — the same person's retry converges on what
@@ -319,7 +321,8 @@ public final class ResolutionMachine {
     // ------------------------------------------------------------------ propose
 
     /**
-     * Proposes — or, for a zero-value {@code ACKNOWLEDGE}, performs — a resolution. The break
+     * Proposes — or, for a zero-value {@code ACKNOWLEDGE} of a {@code TIMING_DIFFERENCE},
+     * performs — a resolution. The break
      * moves {@code OPEN | INVESTIGATING → RESOLUTION_PROPOSED} (or {@code → RESOLVED} for the
      * one-person act); a posting kind's ledger proposal is recorded through
      * {@code proposeOwned} with the template's lines, both dates the proposal's business date.
@@ -379,7 +382,7 @@ public final class ResolutionMachine {
         Instant now = Instant.now(clock);
         LocalDate proposedOn = LocalDate.ofInstant(now, ZoneOffset.UTC);
         UUID resolutionId = ids.next();
-        boolean fourEyes = ResolutionTemplates.fourEyes(kind, amount);
+        boolean fourEyes = ResolutionTemplates.fourEyes(kind, amount, row.type(), row.cause());
         ResolutionStatus status = fourEyes ? ResolutionStatus.PROPOSED : ResolutionStatus.APPROVED;
         Optional<UUID> proposalId = Optional.empty();
         if (kind.postsAdjustment()) {
@@ -429,7 +432,8 @@ public final class ResolutionMachine {
                         + ", fourEyes=" + fourEyes
                         + proposalId.map(id -> ", adjustmentProposal=" + id).orElse("");
         if (status == ResolutionStatus.APPROVED) {
-            // The one-person act: a zero-value acknowledgement is one act and one reasoned
+            // The one-person act: a timing difference's zero-value acknowledgement is one act
+            // and one reasoned
             // record (ADR-0071 section 11), the break's OPEN | INVESTIGATING -> RESOLVED edge.
             resolveBreakOrLoud(unitOfWork, breakId, resolutionId, kind, actor, now, correlation);
             telemetry.resolved(kind, ResolutionOutcome.APPROVED, sinceRaised(row, now));

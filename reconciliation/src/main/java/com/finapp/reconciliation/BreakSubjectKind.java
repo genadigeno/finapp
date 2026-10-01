@@ -20,6 +20,9 @@ public enum BreakSubjectKind {
     /** A run: a statement-level or processing break carried by the batch's one run. */
     RUN,
 
-    /** A decision: the zero-value observation it names ({@code TIMING_DIFFERENCE}). */
+    /**
+     * A decision: the zero-value observation it names ({@code TIMING_DIFFERENCE}), or the decision
+     * a replay could not reproduce ({@code PROCESSING_ERROR}, {@code REPLAY_DIVERGED}).
+     */
     DECISION
 }

@@ -310,7 +310,7 @@ writes an `ADJUSTMENT` entry through a `ledger.adjustment_proposal` with origin
 | Kind | Applies to | Lines | Approvers |
 |---|---|---|---|
 | `EVIDENCED` | Any break explained by a zero-residual allocation or offset | None of its own — the allocation's unpark or the offset is the posting; the stored resolution names the decision and the park | The platform only |
-| `ACKNOWLEDGE` | `TIMING_DIFFERENCE`, `FEE_MISMATCH`, `DUPLICATE_INTERNAL` | None | One when the value is 0; otherwise two |
+| `ACKNOWLEDGE` | `TIMING_DIFFERENCE`, `FEE_MISMATCH`, `DUPLICATE_INTERNAL`; a diverged replay's `PROCESSING_ERROR` (`REPLAY_DIVERGED`) | None | One for a zero-value `TIMING_DIFFERENCE` raised by a timing detector (`LATE_MATCH`, `CYCLE_MISMATCH`); otherwise two *(corrected 2026-10-01, `P8-TST-002`: this read "one when the value is 0")* |
 | `WRITE_OFF` | An INBOUND remainder in P; a DEBIT suspense item | DR `RECONCILIATION_LOSSES` / CR P (or CR `SUSPENSE_UNMATCHED`) | Two |
 | `TRANSFER_TO_ACCOUNT` | A CREDIT suspense item; an OUTBOUND remainder in P | DR `SUSPENSE_UNMATCHED` (or DR P) / CR a named `CUSTOMER_WALLET` or `MERCHANT_PAYABLE`, `ACTIVE` and in the same currency, share-locked before posting (the chargeback precedent) | Two |
 | `OFFSET_SUSPENSE` | A CREDIT and a DEBIT suspense item of equal amount and currency | None — the account already nets; both items released | Two |
@@ -713,7 +713,7 @@ OPEN ──assign──> INVESTIGATING ──propose──> RESOLUTION_PROPOSED 
   │                    └───reject / withdraw──────┘   │                          │
   └──────────────────────────propose──────────────────┘                          │
 OPEN, INVESTIGATING or RESOLUTION_PROPOSED ──EVIDENCED (the platform only)───────┤
-OPEN or INVESTIGATING ──a zero-value ACKNOWLEDGE (one person)────────────────────┘
+OPEN or INVESTIGATING ──a timing difference's zero-value ACKNOWLEDGE (one person)┘
 ```
 
 | Edge | Driver | Condition |
@@ -724,7 +724,7 @@ OPEN or INVESTIGATING ──a zero-value ACKNOWLEDGE (one person)─────
 | `RESOLUTION_PROPOSED → INVESTIGATING` | A rejection (another `RECONCILIATION_RESOLVE` holder, reasoned); a withdrawal by the proposer — the proposer's path after a stale refusal | — |
 | `RESOLUTION_PROPOSED → RESOLVED` | The approval (§5.7) | Four-eyes where required; the residual version and the subject's remainder unchanged since the proposal |
 | `OPEN`, `INVESTIGATING` or `RESOLUTION_PROPOSED` → `RESOLVED` | `EVIDENCED`, by the platform only | A zero-residual allocation or offset explains the break. A pending proposal is withdrawn in the same transaction — its resolution `WITHDRAWN` by the platform, its ledger proposal rejected through `AdjustmentService.rejectOwned` |
-| `OPEN` or `INVESTIGATING` → `RESOLVED` | A single-person `ACKNOWLEDGE` of zero value | The type admits `ACKNOWLEDGE` and the value at issue is 0 |
+| `OPEN` or `INVESTIGATING` → `RESOLVED` | A single-person `ACKNOWLEDGE` of zero value | The break is a `TIMING_DIFFERENCE` raised by a timing detector (`LATE_MATCH`, `CYCLE_MISMATCH`) and the value at issue is 0 *(corrected 2026-10-01, `P8-TST-002`: this read "the type admits `ACKNOWLEDGE`", which let a diverged replay's zero-value break close on one person's word)* |
 
 - **Appended events, not states:** a reclassification — type and hence severity — in `OPEN` or
   `INVESTIGATING` only, with a reason; severity escalations from ageing, forward only;
@@ -751,20 +751,21 @@ PROPOSED ──approve (a second person when four-eyes)──> APPROVED
     ├────reject (another RESOLVE holder, reasoned)───> REJECTED
     └────withdraw (the proposer; the platform on evidence)──> WITHDRAWN
 
-born APPROVED: EVIDENCED (the platform) · a zero-value ACKNOWLEDGE (one person)
+born APPROVED: EVIDENCED (the platform) · a timing difference's zero-value ACKNOWLEDGE (one person)
 ```
 
 | Edge | Driver | Condition |
 |---|---|---|
 | (birth) → `PROPOSED` | A person with `RECONCILIATION_RESOLVE`, keyed under `reconciliation.resolve:<actorType>:<actorId>` | At most one `PROPOSED` per subject (partial unique; per batch for repudiation). Freezes `proposed_amount`, the break's `residual_version` and the ledger proposal's lines (`AdjustmentService.proposeOwned`, origin `RECONCILIATION`, a reason code, dated `proposed_on`); the break moves to `RESOLUTION_PROPOSED` in the same transaction |
-| (birth) → `APPROVED` | The platform (`EVIDENCED`); one person (a zero-value `ACKNOWLEDGE`) | `CHECK (kind = 'EVIDENCED' ⇒ proposed_by = system AND status = 'APPROVED')` |
+| (birth) → `APPROVED` | The platform (`EVIDENCED`); one person (a zero-value `ACKNOWLEDGE` of a `TIMING_DIFFERENCE` raised by a timing detector — *qualified 2026-10-01, `P8-TST-002`*) | `CHECK (kind = 'EVIDENCED' ⇒ proposed_by = system AND status = 'APPROVED')`; `CHECK (four_eyes OR status = 'APPROVED')` and the break-reading trigger of reconciliation `V014` |
 | `PROPOSED → APPROVED` | Another `RECONCILIATION_RESOLVE` holder where four-eyes | Locks in DISTRIBUTED_EXECUTION §3's Phase 8 order: the source's advisory namespace `4` when the approval allocates, parks or unparks (`MANUAL_MATCH`, `REPUDIATE_BATCH`); the break, then the resolution; the subject rows — expectations, then external items, then suspense items, each sorted by id; the transfer target's ACCOUNT row `FOR SHARE`, before any projection row; inside `approveOwned`, the ledger proposal row, then the projection rows in the projection's own order — and an approval posting several entries over shared rows pre-locks the union of the platform's rows it will touch in the projection's own order before its first posting (`PostingService.lockBalancesInOrder`, DISTRIBUTED_EXECUTION §3's multi-entry lock-order rule), never resting on seed order *(the transition's consistency review, B9)*; re-derives the lines; the residual version and the remainder unchanged (`409 reconciliation.ResolutionStale` otherwise, and the resolution stays `PROPOSED`); `approveOwned` posts the `ADJUSTMENT`, or `ReversalService` reverses for `REPUDIATE_BATCH`; releases, the expectation or item terminal, the break `RESOLVED`, `reconciliation.BreakResolved` — one transaction |
 | `PROPOSED → REJECTED` | Another `RECONCILIATION_RESOLVE` holder, reasoned | `rejectOwned`; the break returns to `INVESTIGATING` |
 | `PROPOSED → WITHDRAWN` | The proposer; the platform when `EVIDENCED` arrives | `rejectOwned`; the break returns to `INVESTIGATING`, or resolves `EVIDENCED` |
 
 - **The four-eyes threshold, defined** (`INV-REC-03`, `INV-AUD-04`): every resolution **with a
-  value at issue or a posting** is four-eyes; a zero-value, zero-posting `ACKNOWLEDGE` is
-  single-person; `EVIDENCED` is the platform's. `AdjustmentService`'s unconditional four-eyes rule
+  value at issue or a posting** is four-eyes; a zero-value, zero-posting `ACKNOWLEDGE` of a
+  `TIMING_DIFFERENCE` raised by a timing detector is single-person, every other acknowledgement four-eyes *(corrected
+  2026-10-01, `P8-TST-002`; reconciliation `V014` derives it from the break for every writer)*; `EVIDENCED` is the platform's. `AdjustmentService`'s unconditional four-eyes rule
   is kept, and a value-banded second approver is deferred.
 - **Person-distinctness at three ranks:** the reconciliation domain
   (`reconciliation.SelfApprovalRefused`); `CHECK (status <> 'APPROVED' OR NOT four_eyes OR
@@ -1013,7 +1014,7 @@ lines find their side (§3.6).
 | `REVERSAL_MISMATCH` | A direction contradicting the record; a capture on a `VOIDED` or `FAILED` attempt; a reversal without `WON`; a `PAYOUT_RETURNED` that cannot apply (`RETURN_NOT_APPLICABLE`) | item | Yes | HIGH | `EVIDENCED` (a counterparty correction offsets it), `TRANSFER_TO_ACCOUNT` (for example, re-crediting the payable), `OFFSET_SUSPENSE`, `WRITE_OFF` (DEBIT item, any age); **no `RECOGNISE_GAIN`** — the value belongs to a counterparty (a merchant or a customer) and is resolved by `TRANSFER_TO_ACCOUNT` or `EVIDENCED`, never taken as the platform's gain |
 | `REFUND_MISMATCH` | A `REFUND` line against a refund that failed internally, or a capture with no such refund | item | Yes | CRITICAL | `EVIDENCED` (a late completion), `TRANSFER_TO_ACCOUNT`, `WRITE_OFF` (DEBIT item, any age); **no `RECOGNISE_GAIN`**, for `REVERSAL_MISMATCH`'s reason |
 | `SETTLEMENT_MISMATCH` | `REMITTANCE_DIFFERS` (bank ≠ remittance: a remittance remainder, or an item's excess); `STATEMENT_GAP` (a sequence gap, or an opening unequal to the previous closing); `OPENING_BALANCE` (the first statement opens ≠ 0) | expectation or item; the statement batch, through its run, for the statement causes | Per side | HIGH; CRITICAL for the statement causes | `EVIDENCED` (the gap fills, the funds arrive); for `REMITTANCE_DIFFERS` only, `WRITE_OFF`, `TRANSFER_TO_ACCOUNT` and, for a CREDIT excess item after the minimum age, `RECOGNISE_GAIN`; the statement causes close only `EVIDENCED` |
-| `PROCESSING_ERROR` | An errored item; a blocked run (`RUN_BLOCKED`); a diverged replay | item, run or decision | Items: yes | CRITICAL | Reprocess or requeue, then `EVIDENCED`; otherwise, for a parked item, `TRANSFER_TO_ACCOUNT`, `OFFSET_SUSPENSE`, `WRITE_OFF` (DEBIT item, any age), `RECOGNISE_GAIN` (CREDIT item, after the minimum age) |
+| `PROCESSING_ERROR` | An errored item; a blocked run (`RUN_BLOCKED`); a diverged replay | item, run or decision | Items: yes | CRITICAL | Reprocess or requeue, then `EVIDENCED`; a diverged replay (`REPLAY_DIVERGED`): `ACKNOWLEDGE` alone, four-eyes, whatever its type after reclassification (`P8-TST-002`); otherwise, for a parked item, `TRANSFER_TO_ACCOUNT`, `OFFSET_SUSPENSE`, `WRITE_OFF` (DEBIT item, any age), `RECOGNISE_GAIN` (CREDIT item, after the minimum age) |
 
 *(The Phase 7 → 8 transition's consistency review, A1, A2 and A3: the table now carries ADR-0069's
 per-type rule — `WRITE_OFF` and `RECOGNISE_GAIN` on every type owning a suspense item, the three

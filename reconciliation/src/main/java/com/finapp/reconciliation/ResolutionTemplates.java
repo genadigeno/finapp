@@ -76,28 +76,47 @@ public final class ResolutionTemplates {
         record Nothing() implements Holding {}
     }
 
-    /** ADR-0069 §2's row: the person's kinds {@code type} admits ({@code cause}-refined). */
+    /**
+     * ADR-0069 §2's row: the person's kinds {@code type} admits, refined by {@code cause}.
+     *
+     * <p>The refinements are keyed on the CAUSE alone, whatever the break's current type
+     * (`P8-TST-002`'s gate find): the cause is frozen at raise and a reclassification moves only
+     * the type, so a diverged replay reclassified onto a {@code TIMING_DIFFERENCE} - both stand
+     * on a decision - or an explained duplicate reclassified onto {@code UNKNOWN_EXTERNAL} keeps
+     * the refinement its detector earned.
+     */
     public static Set<ResolutionKind> admittedKinds(BreakType type, BreakCause cause) {
         Objects.requireNonNull(type, "type must not be null");
         Objects.requireNonNull(cause, "cause must not be null");
-        // A parking whose scheme execution a credit already explains: its value was attributed
-        // once, so no transfer may attribute it again - the gain after its minimum age, beside a
-        // write-off of the doubled clearing remainder, or an offset against the scheme's own
-        // correction (P8-TSK-020, ADR-0070 point 8). WRITE_OFF stays, as on every
-        // suspense-owning type: the side rule refuses it a CREDIT item.
-        if (type == BreakType.DUPLICATE_EXTERNAL
-                && cause == BreakCause.EXECUTION_ALREADY_EXPLAINED) {
-            return EnumSet.of(
-                    ResolutionKind.WRITE_OFF,
-                    ResolutionKind.OFFSET_SUSPENSE,
-                    ResolutionKind.RECOGNISE_GAIN);
+        switch (cause) {
+            // A diverged replay (P8-TSK-022, ADR-0068 section 9.1): a decision its stored
+            // snapshot no longer reproduces holds no value - its subject is the decision - so the
+            // one disposal is a person's four-eyes acknowledgement once the defect is
+            // investigated.
+            case REPLAY_DIVERGED -> {
+                return EnumSet.of(ResolutionKind.ACKNOWLEDGE);
+            }
+            // The statement causes close only EVIDENCED (ADR-0069 section 9).
+            case STATEMENT_GAP, OPENING_BALANCE -> {
+                return EnumSet.noneOf(ResolutionKind.class);
+            }
+            // A parking whose scheme execution a credit already explains: its value was
+            // attributed once, so no transfer may attribute it again - the gain after its minimum
+            // age, beside a write-off of the doubled clearing remainder, or an offset against the
+            // scheme's own correction (P8-TSK-020, ADR-0070 point 8). WRITE_OFF stays, as on
+            // every suspense-owning type: the side rule refuses it a CREDIT item.
+            case EXECUTION_ALREADY_EXPLAINED -> {
+                Set<ResolutionKind> admitted = byType(type, cause);
+                admitted.remove(ResolutionKind.TRANSFER_TO_ACCOUNT);
+                return admitted;
+            }
+            default -> {
+                return byType(type, cause);
+            }
         }
-        // A diverged replay (P8-TSK-022, ADR-0068 section 9.1): a decision its stored snapshot no
-        // longer reproduces holds no value - its subject is the decision - so the one disposal
-        // is a person's four-eyes acknowledgement once the defect is investigated.
-        if (type == BreakType.PROCESSING_ERROR && cause == BreakCause.REPLAY_DIVERGED) {
-            return EnumSet.of(ResolutionKind.ACKNOWLEDGE);
-        }
+    }
+
+    private static Set<ResolutionKind> byType(BreakType type, BreakCause cause) {
         return switch (type) {
             case MISSING_EXTERNAL ->
                     EnumSet.of(ResolutionKind.WRITE_OFF, ResolutionKind.TRANSFER_TO_ACCOUNT);
@@ -135,7 +154,7 @@ public final class ResolutionTemplates {
                             ResolutionKind.WRITE_OFF);
             case REFUND_MISMATCH ->
                     EnumSet.of(ResolutionKind.WRITE_OFF, ResolutionKind.TRANSFER_TO_ACCOUNT);
-            // The statement causes close only EVIDENCED (ADR-0069 section 9).
+            // The posting kinds for REMITTANCE_DIFFERS alone (ADR-0069 section 9).
             case SETTLEMENT_MISMATCH ->
                     cause == BreakCause.REMITTANCE_DIFFERS
                             ? EnumSet.of(
@@ -204,10 +223,35 @@ public final class ResolutionTemplates {
         return kind == ResolutionKind.ACKNOWLEDGE ? valueAtIssue : amountOf(holding);
     }
 
-    /** The derived flag (`V007`'s CHECK): value at issue or a posting needs two people. */
-    public static boolean fourEyes(ResolutionKind kind, Money amount) {
+    /**
+     * The derived flag (`V007`'s CHECK, `V014`'s trigger): value at issue or a posting needs two
+     * people, and so does every acknowledgement but a zero-value {@code TIMING_DIFFERENCE}'s.
+     *
+     * <p>ADR-0071 §3 named the single-person path "in practice exactly" the timing difference's
+     * acknowledgement, but derived it from value alone - so a diverged replay's zero-value
+     * {@code PROCESSING_ERROR} (P8-TSK-022, ADR-0068 §9.1: "the matcher's decisions cannot be
+     * reproduced", CRITICAL) closed on one person's word. `P8-TST-002`'s correction derives it
+     * from the break's type AND cause: a zero-value {@code ACKNOWLEDGE} is one person's ONLY on
+     * a {@code TIMING_DIFFERENCE} raised by a timing detector ({@link #timingCause}) - the
+     * cause is frozen at raise, so a break reclassified onto the timing type keeps two people;
+     * every other acknowledgement is four-eyes.
+     */
+    public static boolean fourEyes(
+            ResolutionKind kind, Money amount, BreakType type, BreakCause cause) {
+        Objects.requireNonNull(kind, "kind must not be null");
+        Objects.requireNonNull(amount, "amount must not be null");
+        Objects.requireNonNull(type, "type must not be null");
+        Objects.requireNonNull(cause, "cause must not be null");
         return kind != ResolutionKind.EVIDENCED
-                && !(kind == ResolutionKind.ACKNOWLEDGE && amount.minorUnits() == 0);
+                && !(kind == ResolutionKind.ACKNOWLEDGE
+                        && amount.minorUnits() == 0
+                        && type == BreakType.TIMING_DIFFERENCE
+                        && timingCause(cause));
+    }
+
+    /** A cause whose detector raises {@code TIMING_DIFFERENCE}: {@code LATE_MATCH}, {@code CYCLE_MISMATCH}. */
+    public static boolean timingCause(BreakCause cause) {
+        return cause.raisesAs().contains(BreakType.TIMING_DIFFERENCE);
     }
 
     /**

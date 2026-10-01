@@ -116,7 +116,7 @@ The three designs weighed at the transition differed on exactly the undefined pa
    PROPOSED ──approve (decided_by ≠ proposed_by when four-eyes)──▶ APPROVED (terminal)
    PROPOSED ──reject (another RESOLVE holder, reasoned)──────────▶ REJECTED (terminal)
    PROPOSED ──withdraw (the proposer; the platform on evidence)───▶ WITHDRAWN (terminal)
-   born APPROVED: EVIDENCED (the platform) and a zero-value ACKNOWLEDGE (one person)
+   born APPROVED: EVIDENCED (the platform) and a zero-value ACKNOWLEDGE of a timing difference (one person)
    ```
 
    - **One live proposal per subject:** partial `UNIQUE (break_id) WHERE status = 'PROPOSED'`,
@@ -125,7 +125,9 @@ The three designs weighed at the transition differed on exactly the undefined pa
      proposal moves the break from `OPEN` or `INVESTIGATING` to `RESOLUTION_PROPOSED`; a rejection
      or a withdrawal returns it to `INVESTIGATING`; an approval moves it to `RESOLVED`, which is
      terminal. `EVIDENCED` reaches `RESOLVED` from `OPEN`, `INVESTIGATING` or
-     `RESOLUTION_PROPOSED`. A zero-value `ACKNOWLEDGE` reaches it from `OPEN` or `INVESTIGATING`.
+     `RESOLUTION_PROPOSED`. A zero-value `ACKNOWLEDGE` of a `TIMING_DIFFERENCE` raised by a timing
+     detector reaches it from `OPEN` or `INVESTIGATING` *(qualified 2026-10-01, `P8-TST-002`,
+     §3's note)*.
      Proposing against a resolved break is `reconciliation.BreakTerminal`.
    - **`EVIDENCED` is the platform's only.** `CHECK (kind <> 'EVIDENCED' OR (proposed_by = system
      AND status = 'APPROVED'))`. The domain refuses the kind at the door
@@ -142,7 +144,7 @@ The three designs weighed at the transition differed on exactly the undefined pa
    | Kind | Applies to | Lines (entry `ADJUSTMENT`, scope `ledger.adjust.approve:<proposalId>`, unless stated) | Approvers |
    |---|---|---|---|
    | `EVIDENCED` | Any break a zero-residual allocation or offset explains | None of its own: the allocation's unpark or the offset is the posting (`recon-suspense:<parkId>`, a system `POSTING`); the stored resolution names the decision and the park | The platform only |
-   | `ACKNOWLEDGE` | `TIMING_DIFFERENCE`, `FEE_MISMATCH`, `DUPLICATE_INTERNAL` | None | 1 when the value at issue is 0; otherwise 2 |
+   | `ACKNOWLEDGE` | `TIMING_DIFFERENCE`, `FEE_MISMATCH`, `DUPLICATE_INTERNAL`; a diverged replay's `PROCESSING_ERROR` (`REPLAY_DIVERGED`) *(added 2026-10-01, `P8-TST-002`, §3's note)* | None | 1 for a `TIMING_DIFFERENCE` raised by a timing detector whose value at issue is 0; otherwise 2 *(corrected 2026-10-01: this read "1 when the value at issue is 0")* |
    | `WRITE_OFF` | An INBOUND remainder in P; a DEBIT suspense item | DR `RECONCILIATION_LOSSES` / CR P (or CR `SUSPENSE_UNMATCHED`) | 2 |
    | `TRANSFER_TO_ACCOUNT` | A CREDIT suspense item; an OUTBOUND remainder in P | DR `SUSPENSE_UNMATCHED` (or DR P) / CR a named `CUSTOMER_WALLET` or `MERCHANT_PAYABLE` | 2 |
    | `OFFSET_SUSPENSE` | A CREDIT and a DEBIT suspense item of equal amount and currency | None: `SUSPENSE_UNMATCHED` already nets them; both items released | 2 |
@@ -221,6 +223,32 @@ The three designs weighed at the transition differed on exactly the undefined pa
    - **`four_eyes` is derived, never chosen.** A CHECK binds it: `four_eyes = (kind <> 'EVIDENCED'
      AND NOT (kind = 'ACKNOWLEDGE' AND proposed_amount_minor = 0))`. A raw writer therefore cannot
      turn off the second person by clearing a flag.
+   - ***Correction, 2026-10-01 (`P8-TST-002`).*** "In practice exactly the acknowledgement of a
+     `TIMING_DIFFERENCE`" stopped being true when `P8-TSK-022` gave a diverged replay's
+     `PROCESSING_ERROR` (`REPLAY_DIVERGED`, a decision subject, value 0) its one disposal, an
+     `ACKNOWLEDGE` that ADR-0068 §9.1 decided four-eyes: derived from value alone, it was one
+     person's act as built, so a CRITICAL break saying the matcher's decisions cannot be
+     reproduced closed on one person's word. The battery found it. The single-person path is now
+     defined, not merely observed: **a zero-value `ACKNOWLEDGE` is one person's only on a
+     `TIMING_DIFFERENCE` raised by a timing detector (`LATE_MATCH`, `CYCLE_MISMATCH`); every
+     other person's resolution - with value at issue, a posting, or on any other break - is
+     four-eyes; `EVIDENCED` is the platform's, never four-eyes.** The
+     completion gate added the cause: a reclassification moves the type (a diverged replay and a
+     timing difference both stand on a decision) but never the cause, so the rule and the cause
+     refinements of ADR-0069 §2 (`REPLAY_DIVERGED` → `ACKNOWLEDGE` alone;
+     `EXECUTION_ALREADY_EXPLAINED` → never `TRANSFER_TO_ACCOUNT`; the statement causes → nothing)
+     are keyed on the frozen cause, whatever the current type. The domain derives the flag
+     (`ResolutionTemplates.fourEyes(kind, amount, type, cause)`). Reconciliation `V014` enforces,
+     for every writer: (1) `resolution_four_eyes_derived`, relaxed to what the row can state —
+     `EVIDENCED` never four-eyes, everything but a zero-value `ACKNOWLEDGE` always; (2) an
+     `AFTER INSERT` trigger deriving a zero-value acknowledgement's flag from its break —
+     `four_eyes = NOT (break.type = 'TIMING_DIFFERENCE' AND break.cause IN ('LATE_MATCH',
+     'CYCLE_MISMATCH'))` — refusing either disagreement; (3) `resolution_unapproved_is_four_eyes`,
+     `CHECK (four_eyes OR status = 'APPROVED')`: a one-person resolution is born `APPROVED`,
+     never left `PROPOSED`; (4) a trigger refusing any change of a break's type while a one-person
+     (`NOT four_eyes`) resolution names it, so the type the flag was derived from cannot move
+     afterwards. The flag itself is frozen with the proposal by the machine trigger. Rows written
+     before `V014` are not rewritten; every one satisfies (1) and (3).
 
 4. **Two different people, at every rank the act reaches.**
    1. **The reconciliation domain** refuses an approval by the proposer
@@ -420,7 +448,8 @@ The three designs weighed at the transition differed on exactly the undefined pa
       resolution's one-way machine is the idempotency (`INV-IDEM-01` through state), and the same
       approver's retry converges on the recorded entry.
     - The platform's closure is audited acting-only as `reconciliation.BreakResolvedByEvidence`;
-      a loser records nothing. A zero-value `ACKNOWLEDGE` is one act and one reasoned record.
+      a loser records nothing. A timing difference's zero-value `ACKNOWLEDGE` is one act and one
+      reasoned record.
     - **Event:** `reconciliation.BreakResolved` (breakId, resolutionId, kind, reasonCode,
       journalEntryId?); for a repudiation, `settlement.SettlementBatchRepudiated`. The planned
       `AdjustmentPosted` event is dropped: it collides with the audit action

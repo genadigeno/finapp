@@ -377,9 +377,10 @@ public final class JdbcMatchingStore implements MatchingStore {
      * The rematch predicate (`P8-TSK-013`, widened by `P8-TSK-016` and `P8-TSK-019`): a residual
      * whose keys, judged in its KEY SCOPE (its attributed source, else its own), reach an
      * expectation opened after its latest decision — directly, or through an operation-anchored
-     * rule's anchor to its operation's expectation of the rule's kind; or an attributed waiting
-     * item for which an untouched
-     * candidate of its run's value-date group rule opened after its latest decision. A PARKED
+     * rule's anchor to its operation's expectation of the rule's kind that no decision of the
+     * item has yet seen (judged on rows, never across two instances' clocks); or an attributed
+     * waiting item for which an untouched candidate of its run's value-date group rule opened
+     * after its latest decision. A PARKED
      * item leaves here only by the park's exact inverse, so an item owning a suspense item of
      * another origin (an unattributed bank line's {@code BANK_UNATTRIBUTED}) is never read.
      */
@@ -397,9 +398,23 @@ public final class JdbcMatchingStore implements MatchingStore {
                     // design input): a PAYOUT_RETURN opens no key of its own, so the keys above
                     // never see it - the item's key reaches the ANCHOR (the payout's
                     // MERCHANT_PAYOUT), and the anchored rule's kind for the same operation,
-                    // under the anchor's source, opened after the item's latest decision and
-                    // still holding a remainder - a spent return (a duplicate's reach) leaves
-                    // the worklist instead of being re-locked on every tick.
+                    // under the anchor's source, that NO decision of the item has seen as a
+                    // candidate and still holding a remainder - a spent return (a duplicate's
+                    // reach) leaves the worklist instead of being re-locked on every tick.
+                    // "Not yet seen", never "opened after the latest decision": the return is
+                    // opened on the worker's instance clock and the decision stamped on the
+                    // matcher's, and comparing two instances' clocks left a return opened
+                    // within their skew of the decision waiting for its 72-hour grace
+                    // (P8-TST-001's correction). The anchored rule's reach is one expectation
+                    // per operation, and a decision that judges the line against it records it
+                    // as a candidate. The two readings differ for a decision that records no
+                    // candidates - a DUPLICATE verdict's empty snapshot - so a later report's
+                    // repeat of a returned line, parked as a duplicate after the return opened,
+                    // is on this worklist where the old reading left it off, and claimant order
+                    // (line_no across runs) may let it take the return before the genuine line:
+                    // value conserved, attribution wrong - recorded debt (P8-TST-001's second
+                    // gate pass). A rematch that reaches the return and allocates nothing writes
+                    // no decision, which leaves the line on the worklist under either reading.
                     + " OR EXISTS (SELECT 1 FROM reconciliation.external_item_key ak"
                     + " JOIN reconciliation.expectation_key aek"
                     + " ON aek.source_id = COALESCE(i.attributed_source_id, i.source_id)"
@@ -414,7 +429,10 @@ public final class JdbcMatchingStore implements MatchingStore {
                     + " AND reached.kind = arule.expectation_kind"
                     + " AND reached.source_id = anchor.source_id AND reached.id <> anchor.id"
                     + " AND reached.status IN ('OPEN', 'PARTIALLY_SETTLED')"
-                    + " WHERE ak.item_id = i.id AND reached.opened_at > " + LATEST_DECISION + ")"
+                    + " WHERE ak.item_id = i.id AND NOT EXISTS (SELECT 1 FROM"
+                    + " reconciliation.match_candidate seen JOIN reconciliation.match_decision sd"
+                    + " ON sd.id = seen.decision_id WHERE sd.external_item_id = i.id"
+                    + " AND seen.expectation_id = reached.id))"
                     + " OR (i.status = 'UNMATCHED' AND i.attributed_source_id IS NOT NULL"
                     + " AND EXISTS (SELECT 1 FROM reconciliation.rule g"
                     + " JOIN reconciliation.rule_set gr"

@@ -103,7 +103,7 @@ Three existing texts pull against each other, and this ADR settles them:
    | `REVERSAL_MISMATCH` | Direction contradicts the record; a capture on a voided or failed attempt; a reversal without `WON`; a `PAYOUT_RETURNED` line that cannot be applied (payable not postable, amount ≠ payout) | item | amount | Yes | HIGH | `EVIDENCED` (a counterparty correction offsets it), `TRANSFER_TO_ACCOUNT` (for example, re-credit the payable), `OFFSET_SUSPENSE`, `WRITE_OFF` (DEBIT) — never `RECOGNISE_GAIN` |
    | `REFUND_MISMATCH` | A `REFUND` line against a refund that failed internally, or against a capture with no such refund | item | amount | Yes | CRITICAL | `EVIDENCED` (a late completion), `WRITE_OFF` (DEBIT), `TRANSFER_TO_ACCOUNT` — never `RECOGNISE_GAIN` |
    | `SETTLEMENT_MISMATCH` | Causes `REMITTANCE_DIFFERS` (bank ≠ remittance, surfacing as a remittance remainder or an item excess), `STATEMENT_GAP` (a sequence gap, or opening ≠ previous closing), `OPENING_BALANCE` (the first statement opens ≠ 0) | expectation, item, or the statement's run | difference | per side | HIGH; CRITICAL for statement causes | `EVIDENCED` (the gap fills, or funds arrive), `WRITE_OFF` (an INBOUND remainder; a DEBIT excess), `TRANSFER_TO_ACCOUNT`, `RECOGNISE_GAIN` (a CREDIT excess, after the minimum age) — the last three for `REMITTANCE_DIFFERS` only; the statement causes close only `EVIDENCED` (point 9) |
-   | `PROCESSING_ERROR` | An errored item; a blocked run; a diverged replay | item, run or decision | amount or 0 | items: yes | CRITICAL | reprocess or requeue, then `EVIDENCED`; for a parked item, `TRANSFER_TO_ACCOUNT`, `OFFSET_SUSPENSE`, `WRITE_OFF` (DEBIT), `RECOGNISE_GAIN` (CREDIT, after the minimum age) |
+   | `PROCESSING_ERROR` | An errored item; a blocked run; a diverged replay | item, run or decision | amount or 0 | items: yes | CRITICAL | reprocess or requeue, then `EVIDENCED`; for a parked item, `TRANSFER_TO_ACCOUNT`, `OFFSET_SUSPENSE`, `WRITE_OFF` (DEBIT), `RECOGNISE_GAIN` (CREDIT, after the minimum age); for a diverged replay (`REPLAY_DIVERGED`, a decision subject, value 0), `ACKNOWLEDGE` alone, **four-eyes** *(correction, 2026-10-01, below)* |
 
    *(`DUPLICATE_EXTERNAL`'s `RECOGNISE_GAIN` goes beyond the break table the transition drafted,
    derived from its own late-settlement rule: a line arriving after its expectation was written
@@ -113,6 +113,26 @@ Three existing texts pull against each other, and this ADR settles them:
    a DEBIT item and `RECOGNISE_GAIN` on a CREDIT item joined every suspense-owning row except the
    three exclusions below, and `EVIDENCED` joined `CURRENCY_MISMATCH` and `REVERSAL_MISMATCH`,
    whose parked line a counterparty's correlated correction offsets like any other (point 8).)*
+
+   *(**Correction, 2026-10-01 (`P8-TST-002`).** The table had no line for a diverged replay's
+   break, which `P8-TSK-022` built as `PROCESSING_ERROR` with cause `REPLAY_DIVERGED`, standing
+   on the first divergent decision, value 0, admitting `ACKNOWLEDGE` alone once the defect is
+   investigated (ADR-0068 §9.1; `ResolutionTemplates.admittedKinds`). ADR-0068 §9.1 decided that
+   acknowledgement four-eyes, but ADR-0071 §3's derivation read value alone, so as built it was
+   one person's act: a CRITICAL break saying the matcher's decisions cannot be reproduced, closed
+   on one person's word. The battery found it. The row above now carries the line, and ADR-0071
+   §3's derivation reads the break's type and cause: a zero-value `ACKNOWLEDGE` is one person's
+   only on a `TIMING_DIFFERENCE` raised by a timing detector (`ResolutionTemplates.fourEyes`;
+   reconciliation `V014`, for every writer). The four cause refinements are keyed on the CAUSE
+   whatever the break's current type, because point 7's reclassification moves the type and never
+   the cause (the completion gate's find: a diverged replay reclassified onto
+   `TIMING_DIFFERENCE`, or an explained duplicate onto `UNKNOWN_EXTERNAL`, keeps its refinement):
+   `EXECUTION_ALREADY_EXPLAINED` drops `TRANSFER_TO_ACCOUNT`; `STATEMENT_GAP` and
+   `OPENING_BALANCE` admit no person kind; `REPLAY_DIVERGED` admits `ACKNOWLEDGE` alone.
+   `ResolutionTemplatesTest` pins this table exactly against the code: 40 (type, kind) pairs for
+   the rows' ordinary causes; 44 table cells refused over the six template kinds
+   (`REPUDIATE_BATCH`, a batch's kind, is refused on every type by the request's shape screen,
+   not by this table); and the refinements over every (type, cause) combination.)*
 
    - **This table is the one authority on which kinds a type admits.** ADR-0070 §4 and ADR-0071 §2
      point at it, and `PHASE_8_PLAN.md` §12.6, `SETTLEMENT_AND_RECONCILIATION_LIFECYCLES.md` §6 and
@@ -198,7 +218,7 @@ Three existing texts pull against each other, and this ADR settles them:
    | Statement acceptance, through `AcceptedBatchIntake` | `UNKNOWN_EXTERNAL` (`BANK_LINE_UNATTRIBUTED`), one per unattributed line with its suspense item; `SETTLEMENT_MISMATCH` (`STATEMENT_GAP`, `OPENING_BALANCE`) | Acceptance | `P8-TSK-016` |
    | A bank item matched to its remittance | `SETTLEMENT_MISMATCH` (`REMITTANCE_DIFFERS`) | The deciding chunk | `P8-TSK-016` |
    | `UnmatchedConfirmations`, through the `SettlementExpectations` port | `UNKNOWN_EXTERNAL` (`PARKED_ON_RECEIPT`) with its suspense item; existing rows adopted by an idempotent backfill | The confirmation's | `P8-TSK-020` |
-   | Decision replay | `PROCESSING_ERROR` on `DIVERGED` (subject: the replayed run) | The replay's | `P8-TSK-022` |
+   | Decision replay | `PROCESSING_ERROR` on `DIVERGED` (subject: the first divergent decision — *this read "the replayed run"; corrected 2026-10-01, `P8-TST-002`, point 4's note*) | The replay's | `P8-TSK-022` |
 
    - **No person raises a break**, and there is no route for it. Every break points at a stored
      fact. An investigator who finds a break mis-typed reclassifies it (point 7). A batch proven
@@ -238,6 +258,12 @@ Three existing texts pull against each other, and this ADR settles them:
      transaction, and a decision is written once. A diverged replay's `PROCESSING_ERROR` stands on
      the replayed run, with the first divergent decision named beside it, so a repeated replay —
      or a replay of a run already blocked — converges on the run's open break.
+     *(**Correction, 2026-10-01 (`P8-TST-002`).** As built (`P8-TSK-022`), a diverged replay's
+     `PROCESSING_ERROR` stands on the first divergent DECISION, not on the run, and converges on
+     reconciliation `V012`'s fifth partial unique, `break_one_open_per_decision`
+     (`(type, decision_id) WHERE status <> 'RESOLVED'`): ten replays raise one break per divergent
+     decision, and a blocked run's `RUN_BLOCKED` break on the run is a different subject. So
+     `TIMING_DIFFERENCE` is no longer the only break whose sole subject is a decision.)*
    - Different types may stand on one subject at once: an expectation with a `DUPLICATE_INTERNAL`
      break can still age into `MISSING_EXTERNAL`. Two breaks of one type on one subject never
      stand open together.
@@ -293,7 +319,7 @@ Three existing texts pull against each other, and this ADR settles them:
                                                        ▼
                                                  INVESTIGATING
    OPEN | INVESTIGATING | RESOLUTION_PROPOSED ──EVIDENCED (platform only)──▶ RESOLVED
-   OPEN | INVESTIGATING ──single-person zero-value ACKNOWLEDGE──▶ RESOLVED
+   OPEN | INVESTIGATING ──single-person zero-value ACKNOWLEDGE (a timing detector's TIMING_DIFFERENCE only)──▶ RESOLVED
    ```
 
    | Edge | Driver | Condition |
@@ -304,7 +330,7 @@ Three existing texts pull against each other, and this ADR settles them:
    | `RESOLUTION_PROPOSED → INVESTIGATING` | Rejection (another `RECONCILIATION_RESOLVE` holder, reasoned) or withdrawal (the proposer) | — |
    | `RESOLUTION_PROPOSED → RESOLVED` | Approval (a second person where ADR-0071 requires it) | The residual and `residual_version` re-read under lock equal the frozen ones; the posting commits in the same transaction |
    | `OPEN \| INVESTIGATING \| RESOLUTION_PROPOSED → RESOLVED` | The platform, `EVIDENCED` (point 8) | A stored fact leaves nothing at issue; a pending proposal is withdrawn in the same transaction |
-   | `OPEN \| INVESTIGATING → RESOLVED` | One person, a zero-value `ACKNOWLEDGE` (born `APPROVED`) | Value at issue 0 and no posting |
+   | `OPEN \| INVESTIGATING → RESOLVED` | One person, a zero-value `ACKNOWLEDGE` (born `APPROVED`) | Value at issue 0, no posting, and the break a `TIMING_DIFFERENCE` raised by a timing detector *(the type and cause condition added by the 2026-10-01 correction, `P8-TST-002`; point 9)* |
 
    - **A stale approval moves nothing.** It is refused `409 reconciliation.ResolutionStale` and
      the resolution stays `PROPOSED`. The way back is the proposer's withdrawal, then a new
@@ -410,6 +436,15 @@ Three existing texts pull against each other, and this ADR settles them:
      - `DUPLICATE_INTERNAL`, where the expectation keeps its remainder and keeps ageing under its
        own keys. A real duplicate is written off instead.
      It is one person when the value at issue is zero, and four-eyes otherwise (ADR-0071).
+     *(**Correction, 2026-10-01 (`P8-TST-002`).** "Only on three types" missed the fourth that
+     `P8-TSK-022` added: `PROCESSING_ERROR` with cause `REPLAY_DIVERGED`, whose subject is a
+     decision and holds no value. And "one person when the value at issue is zero" now reads: one
+     person only for a `TIMING_DIFFERENCE` raised by a timing detector (`LATE_MATCH`,
+     `CYCLE_MISMATCH`), whose value is zero by construction; every other `ACKNOWLEDGE` — a
+     diverged replay's, reclassified onto the timing type or not, a zero-valued duplicate
+     internal's — is four-eyes, derived from the break's type and frozen cause at the domain and
+     by reconciliation `V014`'s every-writer trigger, because the resolution's own `CHECK` cannot
+     see the break.)*
    - **`EVIDENCED` of a break on a run** (point 8's last two rows), where no subject row holds
      value.
 
