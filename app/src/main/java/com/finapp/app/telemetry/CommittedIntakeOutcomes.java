@@ -1,5 +1,6 @@
 package com.finapp.app.telemetry;
 
+import com.finapp.platform.telemetry.Spans;
 import com.finapp.settlement.IntakeOutcomeObserver;
 import com.finapp.settlement.RejectionCode;
 import java.time.Duration;
@@ -18,9 +19,25 @@ import org.springframework.transaction.support.TransactionSynchronizationManager
 public final class CommittedIntakeOutcomes implements IntakeOutcomeObserver {
 
     private final SettlementMeters meters;
+    private final Spans spans;
 
     public CommittedIntakeOutcomes(SettlementMeters meters) {
+        this(meters, Spans.NONE);
+    }
+
+    public CommittedIntakeOutcomes(SettlementMeters meters, Spans spans) {
         this.meters = Objects.requireNonNull(meters, "meters must not be null");
+        this.spans = Objects.requireNonNull(spans, "spans must not be null");
+    }
+
+    @Override
+    public void accepted(String sourceCode, Duration sinceReceipt) {
+        afterCommit(() -> meters.countAccepted(sourceCode, sinceReceipt));
+    }
+
+    @Override
+    public Spans spans() {
+        return spans;
     }
 
     @Override

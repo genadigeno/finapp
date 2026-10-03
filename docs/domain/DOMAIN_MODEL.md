@@ -82,16 +82,29 @@ Settlement Batch
 Remittance
 Settlement Expectation
 Match Decision
+Settlement File
+External Item
+Suspense Item
+Resolution
+Matching Rule Set
+Run Replay
+Repudiation
+Attestation
+Readmission
 
 Important: these names are not automatically aggregates or tables. Determine domain ownership and lifecycle before implementation.
 
 Every term above is defined in [`GLOSSARY.md`](GLOSSARY.md), with an explicit statement of what it
-is **not** and the module that will own it. The glossary also defines the seven terms
-`CLAUDE.md` §Domain Distinctions forbids collapsing but this list never named, and contrasts all
-eight of its groups. `DomainGlossaryTest` fails the build when this list and the glossary stop
-agreeing, in either direction (`P0-DOC-011`). *(Settlement Account, Settlement Batch, Remittance,
-Settlement Expectation and Match Decision were added by the Phase 7 → 8 transition — ADR-0064,
-ADR-0065, ADR-0067 and ADR-0068 — each keeping a distinction Phase 8 could collapse.)*
+is **not** and the module that owns it — or, for a term a later phase builds, will own it. The
+glossary also defines the seven terms `CLAUDE.md` §Domain Distinctions forbids collapsing but this
+list never named, and contrasts all eight of its groups. `DomainGlossaryTest` fails the build when
+this list and the glossary stop agreeing, in either direction (`P0-DOC-011`). *(Settlement
+Account, Settlement Batch, Remittance, Settlement Expectation and Match Decision were added by the
+Phase 7 → 8 transition — ADR-0064, ADR-0065, ADR-0067 and ADR-0068 — each keeping a distinction
+Phase 8 could collapse. Settlement File, External Item, Suspense Item, Resolution, Matching Rule
+Set, Run Replay, Repudiation, Attestation and Readmission were added by the Phase 8 exit review,
+`P8-DOC-001`, 2026-10-01: Phase 8 built each as a distinct concept, and neither list named one.
+"Will own" corrected to "owns" there too.)*
 
 ---
 
@@ -126,6 +139,17 @@ mechanically (`MODULE_ARCHITECTURE.md` §6, *Time boundary*). Posting date and v
 calling the clock has silently decided that execution time and accounting date are the same
 thing. No rule can catch that substitution — it is a design review question, and it is why the
 three are named here rather than left implicit.
+
+**One decided exception, and the rule that keeps it safe** (ADR-0065 §6; `P8-TSK-009`). A
+settlement batch's recognition takes its posting date from the clock **once**: `BatchAcceptance`
+derives the UTC business date at acceptance, stamps it on the batch row as `accepted_on` in the
+acceptance transaction, and every later read — a replay, a later-day re-acceptance, a payout
+return dated by the batch — takes `posting_date = accepted_on` from the stored row, never from the
+clock again; the value date is the evidence's own. Because a posting's fingerprint binds its
+dates, a date read from the clock at each attempt would make a later-day replay conflict; a date
+read once and stored makes it converge (`INV-SET-04`). The Phase 5–7 flows that read their posting
+dates from the clock at completion are reconciled with this section by `X-TSK-011`. *(Added at
+the Phase 8 exit review, `P8-DOC-001`, 2026-10-01.)*
 
 Posting date and value date become concrete types when the ledger exists (Phase 3). Phase 0
 names the distinction and enforces the part that is mechanically enforceable.

@@ -509,11 +509,35 @@ class OpenApiContractTest {
                         // P8-TSK-008: the decline (SETTLEMENT_INGEST, reasoned) and the batch
                         // read - the parsed totals an attester examines before attesting.
                         ApiVersion.CURRENT_PREFIX + "/operator/settlement/files/{id}/decline",
+                        // P8-TSK-022: readmission and the re-parse verification.
+                        ApiVersion.CURRENT_PREFIX + "/operator/settlement/files/{id}/readmission",
+                        ApiVersion.CURRENT_PREFIX
+                                + "/operator/settlement/files/{id}/verification",
                         ApiVersion.CURRENT_PREFIX + "/operator/settlement/batches/{id}",
+                        // P8-TSK-021: an operator's pull (SETTLEMENT_INGEST) - the ingest
+                        // permission's other channel, idempotent by the content address.
+                        ApiVersion.CURRENT_PREFIX + "/operator/settlement/sources/{code}/fetch",
                         // P8-TSK-007: the opening-position backfill (RECONCILIATION_ADMINISTER)
                         // and the positions report (RECONCILIATION_INVESTIGATE, audited).
                         ApiVersion.CURRENT_PREFIX + "/operator/reconciliation/opening-position",
+                        // P8-TSK-022: rule sets, reprocessing, requeue and replay.
+                        ApiVersion.CURRENT_PREFIX + "/operator/reconciliation/rule-sets",
+                        ApiVersion.CURRENT_PREFIX
+                                + "/operator/reconciliation/rule-sets/{id}/approval",
+                        ApiVersion.CURRENT_PREFIX
+                                + "/operator/reconciliation/rule-sets/{id}/rejection",
+                        ApiVersion.CURRENT_PREFIX
+                                + "/operator/reconciliation/sources/{code}/reprocessing",
+                        ApiVersion.CURRENT_PREFIX + "/operator/reconciliation/runs/{id}/requeue",
+                        ApiVersion.CURRENT_PREFIX + "/operator/reconciliation/runs/{id}/replay",
                         ApiVersion.CURRENT_PREFIX + "/operator/reports/reconciliation/positions",
+                        // P8-TSK-024: the four remaining reports (RECONCILIATION_INVESTIGATE,
+                        // audited per serving; ADR-0072 section 3).
+                        ApiVersion.CURRENT_PREFIX + "/operator/reports/reconciliation/suspense",
+                        ApiVersion.CURRENT_PREFIX + "/operator/reports/reconciliation/unmatched",
+                        ApiVersion.CURRENT_PREFIX + "/operator/reports/reconciliation/summary",
+                        ApiVersion.CURRENT_PREFIX
+                                + "/operator/reports/reconciliation/provider-costs",
                         // P8-TSK-011: the matcher's explanation doors - a decision
                         // explains itself from stored rows alone (RECONCILIATION_INVESTIGATE).
                         ApiVersion.CURRENT_PREFIX + "/operator/reconciliation/runs",
@@ -540,6 +564,10 @@ class OpenApiContractTest {
                         // withdraw a template-bound break resolution (RECONCILIATION_RESOLVE).
                         ApiVersion.CURRENT_PREFIX
                                 + "/operator/reconciliation/breaks/{id}/resolutions",
+                        // P8-TSK-023: a settlement batch's repudiation.
+                        ApiVersion.CURRENT_PREFIX
+                                + "/operator/reconciliation/batches/{settlementBatchId}"
+                                + "/repudiation",
                         ApiVersion.CURRENT_PREFIX
                                 + "/operator/reconciliation/resolutions/{id}/approval",
                         ApiVersion.CURRENT_PREFIX

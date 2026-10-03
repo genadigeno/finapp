@@ -158,6 +158,39 @@ class MatchingDatabaseTest {
                 new JdbcAuditWriter(), IDS, CLOCK, config, runner());
     }
 
+    /** The run leg reporting into {@code telemetry} (`P8-TSK-024`). */
+    private static Matching matching(Matching.Config config, ReconciliationTelemetry telemetry) {
+        return new Matching(
+                store, new MatchingRules(),
+                new JdbcBreakRegister(new JdbcOutboxWriter(), new JdbcAuditWriter(), IDS),
+                new Suspense(postingService(), new JdbcLedgerAccountStore(), IDS),
+                ResolutionFixtures.resolutions(IDS, CLOCK),
+                LOOKUP,
+                new JdbcLedgerAccountStore(), new JdbcOutboxWriter(),
+                new JdbcAuditWriter(), IDS, CLOCK, config, runner(), telemetry);
+    }
+
+    /** What the run leg reported - the port's two run-leg calls, recorded. */
+    private static final class RecordedTelemetry implements ReconciliationTelemetry {
+        record Completion(UUID sourceId, Map<DecisionOutcome, Long> outcomes,
+                Optional<Duration> sinceBirth) {}
+
+        final List<Completion> completions =
+                java.util.Collections.synchronizedList(new ArrayList<>());
+        final AtomicLong rematches = new AtomicLong();
+
+        @Override
+        public void runCompleted(UUID sourceId, Map<DecisionOutcome, Long> outcomes,
+                Optional<Duration> sinceBirth) {
+            completions.add(new Completion(sourceId, Map.copyOf(outcomes), sinceBirth));
+        }
+
+        @Override
+        public void rematched(UUID sourceId, DecisionOutcome outcome) {
+            rematches.incrementAndGet();
+        }
+    }
+
     private static PostingService postingService() {
         return new PostingService(
                 new IdempotentExecutor(
@@ -206,7 +239,7 @@ class MatchingDatabaseTest {
                                     + " status, funding_lag_days, gain_min_age_days,"
                                     + " effective_from, proposed_by, decided_by, reason,"
                                     + " created_at, correlation_id) VALUES (?, ?, 1,"
-                                    + " 'ACTIVE', 2, 90, ?, 'test', 'test',"
+                                    + " 'PROPOSED', 2, 90, ?, 'test', NULL,"
                                     + " 'MatchingDatabaseTest private rule set', now(),"
                                     + " 'p8-tsk-011-test') ON CONFLICT (id) DO NOTHING",
                             RULE_SET, SOURCE, java.sql.Date.valueOf(SETTLED_ON));
@@ -236,6 +269,10 @@ class MatchingDatabaseTest {
                                     + " 100000), (?, 'GBP', 100000)"
                                     + " ON CONFLICT DO NOTHING",
                             RULE_SET, RULE_SET);
+                    execute(unitOfWork,
+                            "UPDATE reconciliation.rule_set SET status = 'ACTIVE', decided_by = 'test-activator',"
+                                    + " decided_at = now() WHERE id = ? AND status = 'PROPOSED'",
+                            RULE_SET);
                     return null;
                 });
     }
@@ -789,6 +826,146 @@ class MatchingDatabaseTest {
 
     @Test
     @Order(7)
+    @DisplayName("the lock only ORDERS for a REPROCESS run too: ten sweepers with the"
+            + " try-lock bypassed decide each residual line exactly once and complete the"
+            + " run once - the run row arbitrates (P8-TSK-022)")
+    void tenBypassedReprocessSweepersDecideEachResidualOnce() throws Exception {
+        // Ten lines no expectation answers: the reprocess examines each unchanged, so
+        // nothing updates its row - only the run row's lock keeps a second instance from
+        // examining it again (the completion gate's find).
+        String tag = Integer.toHexString(new SecureRandom().nextInt());
+        List<Line> lines = new ArrayList<>();
+        for (int i = 0; i < 10; i++) {
+            lines.add(line(i + 1, ExternalLineType.CAPTURE, 7_00, EUR,
+                    ItemKeyKind.PSP_CAPTURE_REF, "CAP-RESIDUAL-" + tag + "-" + i,
+                    SETTLED_ON));
+        }
+        UUID batchRun = seedRun(lines.toArray(Line[]::new));
+        for (int tick = 0; tick < 5 && !"COMPLETED".equals(status(batchRun)); tick++) {
+            matching.sweep();
+        }
+        assertThat(status(batchRun)).isEqualTo("COMPLETED");
+        for (int i = 1; i <= 10; i++) {
+            assertThat(itemStatus(batchRun, i)).isEqualTo("UNMATCHED");
+        }
+
+        RunAdministration administration =
+                new RunAdministration(store, runs, new JdbcAuditWriter(), IDS);
+        RunAdministration.Reprocessing opened =
+                runner().inTransaction(unitOfWork -> administration.requestReprocessing(
+                        unitOfWork, SOURCE, new Actor("op-reprocessor", ActorType.EMPLOYEE),
+                        "re-decide the residuals", Instant.now(CLOCK),
+                        CorrelationId.generate(IDS)));
+        assertThat(opened.itemCount()).isGreaterThanOrEqualTo(10);
+
+        // Three-line chunks: the first chunk's OPEN -> IN_PROGRESS edge serializes the herd
+        // on the run row by itself; every later chunk runs IN_PROGRESS, where only the
+        // run-row lock stands between two instances and the same lines.
+        Matching bypassed = matching(new Matching.Config(3, 2), true);
+        ExecutorService racers = Executors.newFixedThreadPool(10);
+        try {
+            CountDownLatch start = new CountDownLatch(1);
+            List<Future<?>> outcomes = new ArrayList<>();
+            for (int racer = 0; racer < 10; racer++) {
+                outcomes.add(racers.submit(() -> {
+                    start.await();
+                    bypassed.sweep();
+                    return null;
+                }));
+            }
+            start.countDown();
+            for (Future<?> outcome : outcomes) {
+                outcome.get();
+            }
+        } finally {
+            racers.shutdownNow();
+        }
+
+        assertThat(status(opened.runId())).isEqualTo("COMPLETED");
+        assertThat(count("SELECT count(*) FROM (SELECT external_item_id FROM"
+                + " reconciliation.match_decision WHERE run_id = ? GROUP BY"
+                + " external_item_id HAVING count(*) > 1) twice", opened.runId()))
+                .as("no residual examined twice, though no try-lock stood").isZero();
+        assertThat(count("SELECT count(*) FROM reconciliation.match_decision WHERE"
+                + " run_id = ?", opened.runId()))
+                .as("one decision per line of the worklist")
+                .isEqualTo(opened.itemCount());
+        assertThat(count("SELECT count(*) FROM reconciliation.match_decision d JOIN"
+                + " reconciliation.external_item i ON i.id = d.external_item_id WHERE"
+                + " i.run_id = ? AND d.run_id = ? AND d.origin = 'REPROCESS'",
+                batchRun, opened.runId())).isEqualTo(10);
+        assertThat(count("SELECT count(*) FROM platform.audit_record WHERE operation ="
+                + " 'reconciliation.RunCompleted' AND target_id = ?",
+                opened.runId().toString())).isEqualTo(1);
+        for (int i = 1; i <= 10; i++) {
+            assertThat(itemStatus(batchRun, i)).as("examined, and left as it was")
+                    .isEqualTo("UNMATCHED");
+        }
+    }
+
+    @Test
+    @Order(8)
+    @DisplayName("the run leg reports what it decided (P8-TSK-024): a BATCH run's completion"
+            + " carries its FIRST decisions' outcome counts and its age, once; a late"
+            + " allocation reports as one rematch, an unchanged reprocess examination as"
+            + " none, and a REPROCESS run's completion never reaches the match rate")
+    void theRunLegReportsItsDecisions() throws Exception {
+        RecordedTelemetry telemetry = new RecordedTelemetry();
+        Matching reporting = matching(new Matching.Config(200, 2), telemetry);
+        String tag = Integer.toHexString(new SecureRandom().nextInt());
+        UUID batchRun =
+                seedRun(
+                        line(1, ExternalLineType.CAPTURE, 3_00, EUR,
+                                ItemKeyKind.PSP_CAPTURE_REF, "CAP-TELE-" + tag + "-1", SETTLED_ON),
+                        line(2, ExternalLineType.CAPTURE, 4_00, EUR,
+                                ItemKeyKind.PSP_CAPTURE_REF, "CAP-TELE-" + tag + "-2", SETTLED_ON));
+        for (int tick = 0; tick < 5 && !"COMPLETED".equals(status(batchRun)); tick++) {
+            reporting.sweep();
+        }
+        assertThat(status(batchRun)).isEqualTo("COMPLETED");
+        assertThat(telemetry.completions)
+                .as("the BATCH run's completion: its two items by outcome, and its age")
+                .anySatisfy(completion -> {
+                    assertThat(completion.sourceId()).isEqualTo(SOURCE);
+                    assertThat(completion.outcomes())
+                            .containsEntry(DecisionOutcome.UNMATCHED, 2L);
+                    assertThat(completion.outcomes().values().stream()
+                            .mapToLong(Long::longValue).sum()).isEqualTo(2L);
+                    assertThat(completion.sinceBirth()).hasValueSatisfying(age ->
+                            assertThat(age.isNegative()).isFalse());
+                });
+        int completionsBefore = telemetry.completions.size();
+        long rematchesBefore = telemetry.rematches.get();
+
+        // A late record: line 1's expectation opens now, so one leg - the rematch or the
+        // reprocess, whichever reaches it first - allocates it; every other residual the
+        // reprocess examines is left as it was.
+        openExpectation("CAP-TELE-" + tag + "-1", 3_00, EUR, ExpectationDirection.INBOUND);
+        RunAdministration administration =
+                new RunAdministration(store, runs, new JdbcAuditWriter(), IDS);
+        RunAdministration.Reprocessing opened =
+                runner().inTransaction(unitOfWork -> administration.requestReprocessing(
+                        unitOfWork, SOURCE, new Actor("op-telemetry", ActorType.EMPLOYEE),
+                        "re-decide the residuals", Instant.now(CLOCK),
+                        CorrelationId.generate(IDS)));
+        for (int tick = 0; tick < 10 && !"COMPLETED".equals(status(opened.runId())); tick++) {
+            reporting.sweep();
+        }
+        assertThat(status(opened.runId())).isEqualTo("COMPLETED");
+        assertThat(itemStatus(batchRun, 1)).isEqualTo("MATCHED");
+        assertThat(itemStatus(batchRun, 2)).isEqualTo("UNMATCHED");
+        assertThat(opened.itemCount()).as("the reprocess examined residuals")
+                .isGreaterThanOrEqualTo(1);
+        assertThat(telemetry.rematches.get() - rematchesBefore)
+                .as("the one late allocation, and no unchanged examination")
+                .isEqualTo(1L);
+        assertThat(telemetry.completions)
+                .as("a REPROCESS run's completion is never a run completion on the match rate")
+                .hasSize(completionsBefore);
+    }
+
+    @Test
+    @Order(9)
     @DisplayName("consecutive chunk failures block the run with its CRITICAL break, and"
             + " the blocked run holds its source visibly - a later run stays untouched")
     void consecutiveFailuresBlockTheRunVisibly() throws Exception {

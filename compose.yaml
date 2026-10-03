@@ -180,6 +180,8 @@ services:
       - --web.enable-lifecycle
     volumes:
       - ./infra/prometheus/prometheus.yml:/etc/prometheus/prometheus.yml:ro
+      # The invariant alerts (P8-TSK-024): rule_files resolves next to the config.
+      - ./infra/prometheus/rules:/etc/prometheus/rules:ro
       - prometheus-data:/prometheus
     ports:
       - "127.0.0.1:9090:9090"

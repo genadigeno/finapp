@@ -227,7 +227,13 @@ rule, rounding policy, risk rule set) used in a decision is pinned and recorded 
 (`POST /v1/operator/reconciliation/runs/{id}/replay`) re-running every stored decision over its
 candidate snapshot under its pinned rule set, `IDENTICAL` or `DIVERGED`, a divergence raising a
 CRITICAL `PROCESSING_ERROR` break. *(Amended at the Phase 7 → 8 transition, ADR-0068
-(`Proposed`), in force when `P8-TSK-022` lands; the line ended at "exactly".)*
+(`Proposed`), in force when `P8-TSK-022` lands; the line ended at "exactly".)* *(As built by
+`P8-TSK-022`, 2026-10-01: the snapshot was completed first - `V012`'s six replay inputs and
+`match_parked_original`, required on every new decision - so the replay re-runs the pure function
+each decision's verdict names under its pinned version; golden snapshots catch the
+perturbation probe, and a replay reading the active version instead of the pinned one is
+caught by a later version that would decide otherwise - the completion gate's find, a probe
+that first survived.)*
 **Phase:** 6 (fees), 7 (routing), 8 (matching), 10 (credit), 13 (risk)
 
 ---
@@ -358,6 +364,11 @@ correction.
 original).
 **Verify:** Test asserting the original is byte-identical after reversal.
 **Phase:** 3
+
+*(Extended by `P8-TSK-023`, 2026-10-01, to accepted settlement evidence and its matches: a
+batch's repudiation reverses its recognition through `ReversalService` and undoes each
+allocation by an append-only counter-allocation bound to its original - once, its exact mirror -
+for every writer (reconciliation `V013`); the batch, its file and its lines stay as they were.)*
 
 ### INV-REV-02 — A reversal is bounded by the original
 **Statement:** The reversed amount never exceeds the original effect, accounting for
@@ -620,6 +631,22 @@ channel. The readmission clause is ADR-0066 §8 as the transition's consistency 
 whose conflicting batch is now `REPUDIATED` is readmissible; whether a declined upload is, is
 `P8-TSK-022`'s to decide, and such a readmission would inherit nothing and be attested.)*
 
+*(As built by `P8-TSK-021`, 2026-10-01: the pulled channel exists — `SettlementPull` receives
+through the one door with `received_via = PULL` after a fetch over the source's own confined
+credential, and the accept leg's eligibility admits it unattested; `ProviderTransportGuard` reads
+the four source URLs at startup. Demonstrated: a pulled file held for attestation, and the guard
+not consulted for a source URL, each caught — `MUTATION_TESTING.md` §2.)*
+
+*(As built by `P8-TSK-022`, 2026-10-01: the readmission clause holds at both ranks. Settlement
+`V009`'s functions decide what a readmission inherits - a pulled or attested original's
+authentication, or what a readmitted original itself inherited, and nothing past a `DECLINED`
+file - and who may attest one that inherits nothing: a person distinct from every submitter
+along its chain. Its trigger refuses, on insert and on every update, an attester among the
+submitters and an `ACCEPTED` readmission that inherits nothing unattested; the accept leg's
+eligibility and the attestation's domain check read the same functions. Decided: a `DECLINED`
+file is readmissible and inherits nothing. Demonstrated: the trigger dropped and the domain's
+eligibility widened, each caught — `MUTATION_TESTING.md` §2.)*
+
 ---
 
 # Reconciliation — `INV-REC`
@@ -667,8 +694,9 @@ authorisation — never by editing either record.
 resolution, its ledger adjustment proposal and its journal entry are one-to-one (`UNIQUE
 adjustment_proposal_id` and `UNIQUE journal_entry_id` on `reconciliation.resolution`, ledger
 `V010`'s deferred rule that an `ADJUSTMENT` entry needs an `APPROVED` proposal); four-eyes
-whenever value is at issue or the resolution posts — a zero-value `ACKNOWLEDGE` alone is
-single-person, and `EVIDENCED` is the platform's alone — refused at three ranks (the domain, the
+whenever value is at issue or the resolution posts — a zero-value `ACKNOWLEDGE` of a
+`TIMING_DIFFERENCE` raised by a timing detector alone is single-person *(corrected 2026-10-01, `P8-TST-002`: a diverged
+replay's zero-value acknowledgement is four-eyes, derived from the break by reconciliation `V014`)*, and `EVIDENCED` is the platform's alone — refused at three ranks (the domain, the
 `resolution` four-eyes `CHECK`, `V010`'s approver ≠ initiator `CHECK`); closed reason codes at
 both ranks (`ResolutionReasonCode` with an allowed subset per kind, ledger `V015`'s
 `reason_code`); a kind admitted only where ADR-0069's per-type table lists it for the break's type
@@ -844,11 +872,13 @@ parked confirmations — each keyed on the parking's stored `cause`, `named_refe
 when attributed, `attempt_id` (payments `V023`); a probe bypassing the port caught.
 **Phase:** 8
 
+*(Built by `P8-TSK-020` for the parkings: the owner of a parking's value is born beside it: `UnmatchedConfirmations.park` calls the port's `parked` after its expectation, the claim winner only, and `app`'s recorder opens, through reconciliation's `ParkedConfirmations`, the CREDIT suspense item (its value, side and `opened_on` read off the parking entry's `SUSPENSE_UNMATCHED` line) and the `UNKNOWN_EXTERNAL` break (`PARKED_ON_RECEIPT`) standing on that item — in one transaction, the owner's suspense-item subject made deferrable by reconciliation `V011` for this opener alone. Verified by `ParkedConfirmationsDatabaseTest` (born together, ten racers owning one parking once) and `UnmatchedConfirmationSuspenseDatabaseTest` over the real door and the backfill.)*
+
 *(The backfill keys on what the Phase 7 → 8 transition's gate repair made each parking record:
 an attributed parking, `ATTEMPT_CONCLUDED` or `AMOUNT_MISMATCH`, names the attempt its value
 belongs to, and its owning break is resolved by a four-eyes `TRANSFER_TO_ACCOUNT` crediting that
 attempt's counterparty, never by a guess. The repudiation is the fourth opener, origin
-`REPUDIATION`, admitted by reconciliation `V012` (`P8-TSK-023`), its `origin_ref` the released
+`REPUDIATION`, admitted by reconciliation `V013` (`P8-TSK-023`), its `origin_ref` the released
 item's id — the transition's re-check, R3.)*
 
 ### INV-REC-10 — Settlement evidence is screened, encrypted, and every content access audited
@@ -1007,7 +1037,7 @@ attests it, `CHECK (attested_by IS NULL OR attested_by <> received_by)`; the rea
 original never attested is attested the same way, by a person distinct from the readmitter and
 from the original's uploader (`P8-TSK-022`, ADR-0066 §8). **Break resolutions** (`P8-TSK-015`):
 the statement's "above threshold" is defined as any value at issue or any posting — a zero-value
-`ACKNOWLEDGE` alone is single-person, and `EVIDENCED` is the platform's alone — refused at three
+`ACKNOWLEDGE` of a `TIMING_DIFFERENCE` raised by a timing detector alone is single-person (corrected 2026-10-01, `P8-TST-002`), and `EVIDENCED` is the platform's alone — refused at three
 ranks: the domain, the `reconciliation.resolution` four-eyes `CHECK` and ledger `V010`'s. **Batch
 repudiation** (`P8-TSK-023`, ADR-0065 §10): a `REPUDIATE_BATCH` resolution under the same rule.
 **Rule-set activation** (`P8-TSK-022`): one of the statement's policy activations, refused when

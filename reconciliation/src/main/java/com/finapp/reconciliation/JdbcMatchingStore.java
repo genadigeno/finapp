@@ -296,18 +296,29 @@ public final class JdbcMatchingStore implements MatchingStore {
             UUID sourceId,
             Collection<UUID> heldAttributions,
             int limit) {
+        return lockedResiduals(unitOfWork, sql, List.of(sourceId, heldAttributions, limit));
+    }
+
+    /** The parameters in order; a collection binds as the {@code uuid[]} it names. */
+    private List<ResidualItem> lockedResiduals(
+            Connection unitOfWork, String sql, List<Object> parameters) {
         record RunFacts(
                 UUID runId, UUID sourceId, UUID ruleSetId, String correlationId,
                 Optional<String> cycle) {}
         Map<UUID, ChunkItemBuilder> builders = new LinkedHashMap<>();
         Map<UUID, RunFacts> facts = new HashMap<>();
         try (PreparedStatement read = unitOfWork.prepareStatement(sql)) {
-            read.setObject(1, sourceId);
-            read.setArray(
-                    2,
-                    unitOfWork.createArrayOf(
-                            "uuid", new TreeSet<>(heldAttributions).toArray()));
-            read.setInt(3, limit);
+            int index = 1;
+            for (Object parameter : parameters) {
+                if (parameter instanceof Collection<?> held) {
+                    read.setArray(
+                            index++,
+                            unitOfWork.createArrayOf(
+                                    "uuid", new TreeSet<Object>(held).toArray()));
+                } else {
+                    read.setObject(index++, parameter);
+                }
+            }
             try (ResultSet rows = read.executeQuery()) {
                 while (rows.next()) {
                     ChunkItemBuilder builder = itemFacts(rows);
@@ -366,9 +377,12 @@ public final class JdbcMatchingStore implements MatchingStore {
      * The rematch predicate (`P8-TSK-013`, widened by `P8-TSK-016` and `P8-TSK-019`): a residual
      * whose keys, judged in its KEY SCOPE (its attributed source, else its own), reach an
      * expectation opened after its latest decision — directly, or through an operation-anchored
-     * rule's anchor to its operation's expectation of the rule's kind; or an attributed waiting
-     * item for which an untouched
-     * candidate of its run's value-date group rule opened after its latest decision. A PARKED
+     * rule's anchor to its operation's expectation of the rule's kind that no decision of the
+     * item has yet seen (judged on rows, never across two instances' clocks); or an attributed
+     * waiting item for which an untouched candidate of a value-date group rule opened after its
+     * latest decision. Both rules are read from the source's ACTIVE rule set, never the item's
+     * run's pinned version — the version the rematch leg decides under (`P8-TSK-022`). *(Corrected
+     * 2026-10-01, `P8-DOC-001`: this read "its run's value-date group rule".)* A PARKED
      * item leaves here only by the park's exact inverse, so an item owning a suspense item of
      * another origin (an unattributed bank line's {@code BANK_UNATTRIBUTED}) is never read.
      */
@@ -386,31 +400,49 @@ public final class JdbcMatchingStore implements MatchingStore {
                     // design input): a PAYOUT_RETURN opens no key of its own, so the keys above
                     // never see it - the item's key reaches the ANCHOR (the payout's
                     // MERCHANT_PAYOUT), and the anchored rule's kind for the same operation,
-                    // under the anchor's source, opened after the item's latest decision and
-                    // still holding a remainder - a spent return (a duplicate's reach) leaves
-                    // the worklist instead of being re-locked on every tick.
+                    // under the anchor's source, that NO decision of the item has seen as a
+                    // candidate and still holding a remainder - a spent return (a duplicate's
+                    // reach) leaves the worklist instead of being re-locked on every tick.
+                    // "Not yet seen", never "opened after the latest decision": the return is
+                    // opened on the worker's instance clock and the decision stamped on the
+                    // matcher's, and comparing two instances' clocks left a return opened
+                    // within their skew of the decision waiting for its 72-hour grace
+                    // (P8-TST-001's correction). The anchored rule's reach is one expectation
+                    // per operation, and a decision that judges the line against it records it
+                    // as a candidate. The two readings differ for a decision that records no
+                    // candidates - a DUPLICATE verdict's empty snapshot - so a later report's
+                    // repeat of a returned line, parked as a duplicate after the return opened,
+                    // is on this worklist where the old reading left it off, and claimant order
+                    // (line_no across runs) may let it take the return before the genuine line:
+                    // value conserved, attribution wrong - recorded debt (P8-TST-001's second
+                    // gate pass). A rematch that reaches the return and allocates nothing writes
+                    // no decision, which leaves the line on the worklist under either reading.
                     + " OR EXISTS (SELECT 1 FROM reconciliation.external_item_key ak"
                     + " JOIN reconciliation.expectation_key aek"
                     + " ON aek.source_id = COALESCE(i.attributed_source_id, i.source_id)"
                     + " AND aek.key_value = ak.key_value"
                     + " JOIN reconciliation.expectation anchor ON anchor.id = aek.expectation_id"
-                    + " JOIN reconciliation.reconciliation_batch ar ON ar.id = i.run_id"
-                    + " JOIN reconciliation.rule arule ON arule.rule_set_id = ar.rule_set_id"
+                    + " JOIN reconciliation.rule_set ar ON ar.source_id = i.source_id"
+                    + " AND ar.status = 'ACTIVE'"
+                    + " JOIN reconciliation.rule arule ON arule.rule_set_id = ar.id"
                     + " AND arule.line_type = i.line_type AND arule.operation_anchored"
                     + " JOIN reconciliation.expectation reached"
                     + " ON reached.operation_ref = anchor.operation_ref"
                     + " AND reached.kind = arule.expectation_kind"
                     + " AND reached.source_id = anchor.source_id AND reached.id <> anchor.id"
                     + " AND reached.status IN ('OPEN', 'PARTIALLY_SETTLED')"
-                    + " WHERE ak.item_id = i.id AND reached.opened_at > " + LATEST_DECISION + ")"
+                    + " WHERE ak.item_id = i.id AND NOT EXISTS (SELECT 1 FROM"
+                    + " reconciliation.match_candidate seen JOIN reconciliation.match_decision sd"
+                    + " ON sd.id = seen.decision_id WHERE sd.external_item_id = i.id"
+                    + " AND seen.expectation_id = reached.id))"
                     + " OR (i.status = 'UNMATCHED' AND i.attributed_source_id IS NOT NULL"
                     + " AND EXISTS (SELECT 1 FROM reconciliation.rule g"
-                    + " JOIN reconciliation.reconciliation_batch gr"
-                    + " ON gr.rule_set_id = g.rule_set_id"
+                    + " JOIN reconciliation.rule_set gr"
+                    + " ON gr.id = g.rule_set_id AND gr.status = 'ACTIVE'"
                     + " JOIN reconciliation.expectation e"
                     + " ON e.source_id = i.attributed_source_id"
                     + " AND e.kind = g.expectation_kind"
-                    + " WHERE gr.id = i.run_id AND g.line_type = i.line_type"
+                    + " WHERE gr.source_id = i.source_id AND g.line_type = i.line_type"
                     + " AND g.cardinality = 'GROUP_BY_VALUE_DATE'"
                     + " AND e.status = 'OPEN' AND e.allocated_minor = 0"
                     + " AND e.resolved_minor = 0 AND e.direction = i.direction"
@@ -807,6 +839,9 @@ public final class JdbcMatchingStore implements MatchingStore {
                                 + " JOIN reconciliation.reconciliation_batch r"
                                 + " ON r.id = i.run_id"
                                 + " WHERE i.source_id = ? AND i.canonical_fingerprint = ?"
+                                // A repudiated line is no longer evidence: the genuine
+                                // line that replaces it is never its duplicate (P8-TSK-023).
+                                + " AND i.status <> 'REPUDIATED'"
                                 + " AND (r.source_sequence < ? OR (r.source_sequence = ?"
                                 + " AND i.line_no < ?)) LIMIT 1")) {
             read.setObject(1, sourceId);
@@ -994,9 +1029,11 @@ public final class JdbcMatchingStore implements MatchingStore {
                                 + " timing_tolerance_days, fee_expected_minor,"
                                 + " fee_reported_minor, fee_tolerance_minor, decided_by,"
                                 + " decided_by_type, decided_at, decided_on,"
-                                + " correlation_id)"
+                                + " correlation_id, verdict, judged_status, judged_minor,"
+                                + " fingerprint_seen_earlier, group_membership_complete,"
+                                + " fee_gross_minor)"
                                 + " VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?,"
-                                + " ?, ?, ?, ?, ?, ?)")) {
+                                + " ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)")) {
             insert.setObject(1, decision.id());
             insert.setObject(2, decision.externalItemId());
             insert.setObject(3, decision.runId());
@@ -1018,10 +1055,51 @@ public final class JdbcMatchingStore implements MatchingStore {
             insert.setTimestamp(19, Timestamp.from(decision.decidedAt()));
             insert.setObject(20, decision.decidedOn());
             insert.setString(21, decision.correlation().value());
+            MatchingStore.Basis basis = decision.basis();
+            insert.setString(22, basis.verdict().name());
+            insert.setString(23, basis.judgedStatus().name());
+            insert.setLong(24, basis.judgedMinor());
+            insert.setObject(25, basis.fingerprintSeenEarlier().orElse(null));
+            insert.setObject(26, basis.groupMembershipComplete().orElse(null));
+            insert.setObject(27, basis.feeGrossMinor().orElse(null));
             insert.executeUpdate();
         } catch (SQLException failure) {
             throw new ReconciliationStorageException(
                     "could not store the decision", failure);
+        }
+    }
+
+    @Override
+    public void insertParkedOriginals(
+            Connection unitOfWork,
+            UUID decisionId,
+            List<CorrectionEngine.ParkedOriginal> parkedOriginals) {
+        if (parkedOriginals.isEmpty()) {
+            return;
+        }
+        try (PreparedStatement insert =
+                unitOfWork.prepareStatement(
+                        "INSERT INTO reconciliation.match_parked_original (decision_id,"
+                                + " ordinal, original_item_id, suspense_item_id, break_id,"
+                                + " side, remainder_minor, currency, scale)"
+                                + " VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)")) {
+            int ordinal = 0;
+            for (CorrectionEngine.ParkedOriginal original : parkedOriginals) {
+                insert.setObject(1, decisionId);
+                insert.setInt(2, ordinal++);
+                insert.setObject(3, original.originalItemId());
+                insert.setObject(4, original.suspenseItemId());
+                insert.setObject(5, original.breakId());
+                insert.setString(6, original.side().name());
+                insert.setLong(7, original.remainderMinor());
+                insert.setString(8, original.currency().code());
+                insert.setInt(9, original.scale());
+                insert.addBatch();
+            }
+            insert.executeBatch();
+        } catch (SQLException failure) {
+            throw new ReconciliationStorageException(
+                    "could not store the correction's parked originals", failure);
         }
     }
 
@@ -1743,6 +1821,266 @@ public final class JdbcMatchingStore implements MatchingStore {
         }
     }
 
+    // ------------------------------------------------------------------ P8-TSK-022
+
+    /**
+     * The reprocess worklist (`P8-TSK-022`, ADR-0068 §9.2): residual items only - the rematch
+     * predicate's first two clauses without its "something new opened" condition - that hold no
+     * decision of THIS run ({@code ?}), so the run's progress is the existence of its decisions:
+     * a crash resumes exactly where the last commit left off, on any instance.
+     */
+    private static final String REPROCESS_PREDICATE =
+            " i.status IN ('UNMATCHED', 'PARKED')"
+                    + " AND NOT EXISTS (SELECT 1 FROM reconciliation.suspense_item s"
+                    + " WHERE s.external_item_id = i.id AND s.origin <> 'RECON_PARK')"
+                    + " AND NOT EXISTS (SELECT 1 FROM reconciliation.match_decision d"
+                    + " WHERE d.external_item_id = i.id AND d.run_id = ?)";
+
+    @Override
+    public UUID activeRuleSetId(Connection unitOfWork, UUID sourceId) {
+        try (PreparedStatement read =
+                unitOfWork.prepareStatement(
+                        "SELECT id FROM reconciliation.rule_set"
+                                + " WHERE source_id = ? AND status = 'ACTIVE'")) {
+            read.setObject(1, sourceId);
+            try (ResultSet row = read.executeQuery()) {
+                if (!row.next()) {
+                    throw new ReconciliationStorageException(
+                            "a source always has exactly one active rule set: " + sourceId);
+                }
+                return row.getObject("id", UUID.class);
+            }
+        } catch (SQLException failure) {
+            throw new ReconciliationStorageException(
+                    "could not read the active rule set", failure);
+        }
+    }
+
+    @Override
+    public List<UUID> sourcesWithOpenReprocess(Connection unitOfWork) {
+        try (PreparedStatement read =
+                unitOfWork.prepareStatement(
+                        "SELECT DISTINCT source_id FROM reconciliation.reconciliation_batch"
+                                + " WHERE kind = 'REPROCESS' AND status IN ('OPEN',"
+                                + " 'IN_PROGRESS') ORDER BY source_id")) {
+            try (ResultSet rows = read.executeQuery()) {
+                List<UUID> sources = new ArrayList<>();
+                while (rows.next()) {
+                    sources.add(rows.getObject("source_id", UUID.class));
+                }
+                return List.copyOf(sources);
+            }
+        } catch (SQLException failure) {
+            throw new ReconciliationStorageException(
+                    "could not list the reprocess worklist", failure);
+        }
+    }
+
+    @Override
+    public Optional<RunRow> openReprocessRun(Connection unitOfWork, UUID sourceId) {
+        try (PreparedStatement read =
+                unitOfWork.prepareStatement(
+                        "SELECT " + RUN_COLUMNS
+                                + " FROM reconciliation.reconciliation_batch"
+                                + " WHERE source_id = ? AND kind = 'REPROCESS'"
+                                + " AND status IN ('OPEN', 'IN_PROGRESS')")) {
+            read.setObject(1, sourceId);
+            try (ResultSet row = read.executeQuery()) {
+                return row.next() ? Optional.of(runRow(row)) : Optional.empty();
+            }
+        } catch (SQLException failure) {
+            throw new ReconciliationStorageException(
+                    "could not read the open reprocess run", failure);
+        }
+    }
+
+    @Override
+    public int reprocessWorklistSize(Connection unitOfWork, UUID sourceId, UUID runId) {
+        try (PreparedStatement read =
+                unitOfWork.prepareStatement(
+                        "SELECT count(*) FROM reconciliation.external_item i"
+                                + " WHERE i.source_id = ? AND" + REPROCESS_PREDICATE)) {
+            read.setObject(1, sourceId);
+            read.setObject(2, runId);
+            try (ResultSet row = read.executeQuery()) {
+                row.next();
+                return row.getInt(1);
+            }
+        } catch (SQLException failure) {
+            throw new ReconciliationStorageException(
+                    "could not count the reprocess worklist", failure);
+        }
+    }
+
+    @Override
+    public List<UUID> attributedSourcesWithReprocessWork(
+            Connection unitOfWork, UUID sourceId, UUID runId) {
+        try (PreparedStatement read =
+                unitOfWork.prepareStatement(
+                        "SELECT DISTINCT i.attributed_source_id"
+                                + " FROM reconciliation.external_item i"
+                                + " WHERE i.source_id = ? AND i.attributed_source_id IS NOT NULL"
+                                + " AND" + REPROCESS_PREDICATE)) {
+            read.setObject(1, sourceId);
+            read.setObject(2, runId);
+            try (ResultSet rows = read.executeQuery()) {
+                List<UUID> attributions = new ArrayList<>();
+                while (rows.next()) {
+                    attributions.add(rows.getObject("attributed_source_id", UUID.class));
+                }
+                return List.copyOf(attributions);
+            }
+        } catch (SQLException failure) {
+            throw new ReconciliationStorageException(
+                    "could not read the reprocess worklist's attributed sources", failure);
+        }
+    }
+
+    @Override
+    public List<ResidualItem> lockReprocessCandidates(
+            Connection unitOfWork,
+            UUID sourceId,
+            UUID runId,
+            Collection<UUID> heldAttributions,
+            int limit) {
+        // Claimant order across the source's runs (ADR-0068 section 4); FOR UPDATE OF i so the
+        // judgement is made on the locked row.
+        return lockedResiduals(
+                unitOfWork,
+                RESIDUAL_COLUMNS
+                        + " WHERE i.source_id = ? AND" + REPROCESS_PREDICATE + HELD_ATTRIBUTION
+                        + " ORDER BY r.source_sequence, i.line_no, i.id LIMIT ? FOR UPDATE OF i",
+                List.of(sourceId, runId, heldAttributions, limit));
+    }
+
+    @Override
+    public long itemParkedMinor(Connection unitOfWork, UUID itemId) {
+        try (PreparedStatement read =
+                unitOfWork.prepareStatement(
+                        "SELECT parked_minor FROM reconciliation.external_item WHERE id = ?")) {
+            read.setObject(1, itemId);
+            try (ResultSet row = read.executeQuery()) {
+                if (!row.next()) {
+                    throw new ReconciliationStorageException("no such item: " + itemId);
+                }
+                return row.getLong(1);
+            }
+        } catch (SQLException failure) {
+            throw new ReconciliationStorageException(
+                    "could not read the item's parked value", failure);
+        }
+    }
+
+    @Override
+    public Optional<UUID> lockOpenBreakOnRun(Connection unitOfWork, UUID runId, BreakType type) {
+        try (PreparedStatement read =
+                unitOfWork.prepareStatement(
+                        "SELECT id FROM reconciliation.break WHERE run_id = ?"
+                                + " AND type = ? AND status <> 'RESOLVED' FOR UPDATE")) {
+            read.setObject(1, runId);
+            read.setString(2, type.name());
+            try (ResultSet row = read.executeQuery()) {
+                return row.next()
+                        ? Optional.of(row.getObject("id", UUID.class))
+                        : Optional.empty();
+            }
+        } catch (SQLException failure) {
+            throw new ReconciliationStorageException(
+                    "could not lock the run's open break", failure);
+        }
+    }
+
+    @Override
+    public int pendingRematchOf(Connection unitOfWork, UUID runId) {
+        try (PreparedStatement read =
+                unitOfWork.prepareStatement(
+                        "SELECT count(*) FROM reconciliation.external_item i"
+                                + " WHERE i.run_id = ? AND" + REMATCH_PREDICATE)) {
+            read.setObject(1, runId);
+            try (ResultSet row = read.executeQuery()) {
+                row.next();
+                return row.getInt(1);
+            }
+        } catch (SQLException failure) {
+            throw new ReconciliationStorageException(
+                    "could not count the run's pending rematches", failure);
+        }
+    }
+
+    @Override
+    public Optional<Instant> runBornAt(Connection unitOfWork, UUID runId) {
+        try (PreparedStatement read =
+                unitOfWork.prepareStatement(
+                        "SELECT created_at FROM reconciliation.reconciliation_batch WHERE id = ?")) {
+            read.setObject(1, runId);
+            try (ResultSet row = read.executeQuery()) {
+                return row.next()
+                        ? Optional.of(row.getObject("created_at", java.time.OffsetDateTime.class)
+                                .toInstant())
+                        : Optional.empty();
+            }
+        } catch (SQLException failure) {
+            throw new ReconciliationStorageException("could not read the run's birth", failure);
+        }
+    }
+
+    @Override
+    public Optional<RunRow> lockRun(Connection unitOfWork, UUID runId) {
+        try (PreparedStatement read =
+                unitOfWork.prepareStatement(
+                        "SELECT " + RUN_COLUMNS
+                                + " FROM reconciliation.reconciliation_batch"
+                                + " WHERE id = ? FOR UPDATE")) {
+            read.setObject(1, runId);
+            try (ResultSet row = read.executeQuery()) {
+                return row.next() ? Optional.of(runRow(row)) : Optional.empty();
+            }
+        } catch (SQLException failure) {
+            throw new ReconciliationStorageException("could not lock the run", failure);
+        }
+    }
+
+    @Override
+    public boolean requeueRun(
+            Connection unitOfWork,
+            UUID runId,
+            Actor actor,
+            String reason,
+            Instant at,
+            CorrelationId correlation) {
+        try (PreparedStatement update =
+                unitOfWork.prepareStatement(
+                        "UPDATE reconciliation.reconciliation_batch SET status = 'IN_PROGRESS',"
+                                + " failures = 0, status_changed_at = ?"
+                                + " WHERE id = ? AND status = 'BLOCKED'")) {
+            update.setTimestamp(1, Timestamp.from(at));
+            update.setObject(2, runId);
+            if (update.executeUpdate() != 1) {
+                return false;
+            }
+        } catch (SQLException failure) {
+            throw new ReconciliationStorageException("could not requeue the run", failure);
+        }
+        try (PreparedStatement event =
+                unitOfWork.prepareStatement(
+                        "INSERT INTO reconciliation.reconciliation_batch_event (run_id,"
+                                + " from_status, to_status, actor, actor_type, reason,"
+                                + " occurred_at, correlation_id)"
+                                + " VALUES (?, 'BLOCKED', 'IN_PROGRESS', ?, ?, ?, ?, ?)")) {
+            event.setObject(1, runId);
+            event.setString(2, actor.id());
+            event.setString(3, actor.type().name());
+            event.setString(4, reason);
+            event.setTimestamp(5, Timestamp.from(at));
+            event.setString(6, correlation.value());
+            event.executeUpdate();
+        } catch (SQLException failure) {
+            throw new ReconciliationStorageException(
+                    "could not append the requeue's history", failure);
+        }
+        return true;
+    }
+
     @Override
     public List<RunRow> runs(Connection unitOfWork, int limit) {
         try (PreparedStatement read =
@@ -1769,6 +2107,28 @@ public final class JdbcMatchingStore implements MatchingStore {
                 unitOfWork.prepareStatement(
                         "SELECT outcome, count(*) AS n FROM reconciliation.match_decision"
                                 + " WHERE run_id = ? GROUP BY outcome")) {
+            read.setObject(1, runId);
+            try (ResultSet rows = read.executeQuery()) {
+                Map<DecisionOutcome, Long> counts = new HashMap<>();
+                while (rows.next()) {
+                    counts.put(
+                            DecisionOutcome.valueOf(rows.getString("outcome")),
+                            rows.getLong("n"));
+                }
+                return Map.copyOf(counts);
+            }
+        } catch (SQLException failure) {
+            throw new ReconciliationStorageException(
+                    "could not count the run's outcomes", failure);
+        }
+    }
+
+    @Override
+    public Map<DecisionOutcome, Long> firstDecisionCounts(Connection unitOfWork, UUID runId) {
+        try (PreparedStatement read =
+                unitOfWork.prepareStatement(
+                        "SELECT outcome, count(*) AS n FROM reconciliation.match_decision"
+                                + " WHERE run_id = ? AND origin = 'RUN' GROUP BY outcome")) {
             read.setObject(1, runId);
             try (ResultSet rows = read.executeQuery()) {
                 Map<DecisionOutcome, Long> counts = new HashMap<>();

@@ -291,6 +291,68 @@ class PlannedMetersExistTest {
         assertThat(registeredMeters()).containsAll(planned);
     }
 
+    /**
+     * `P8-TSK-024`'s acceptance, performed ahead of the flip — the same shape a seventh time:
+     * every meter Phase 8's plan §15 names is registered in this context, which boots with
+     * nothing configured, no database and NO SOURCE ENDPOINT, so it is exactly the "freshly
+     * started instance" the acceptance names. What this proves that no per-class test can: the
+     * outcome counters and timers ({@code ReconciliationOutcomeMeters}), the break gauges
+     * ({@code BreakMetrics}), the accept leg's series and the pull series exist before any file
+     * arrives or any source is configured - the wired beans' eager registrations, not a test's.
+     *
+     * <p>Read from §15 alone and counted EXACTLY: thirty-two rows. A row added to the plan
+     * without a meter, or one silently dropped from it, both fail here (the Phase 6 lesson:
+     * this parser reads a row's first name only, so each series has its own row).
+     */
+    @Test
+    @DisplayName("Phase 8's planned meters are already published, ahead of the phase flip")
+    void phase8PlannedMetersAreAlreadyPublished() {
+        Set<String> planned = new TreeSet<>();
+        int rows = 0;
+        boolean inObservability = false;
+        for (String line : read(repositoryFile("docs/project/PHASE_8_PLAN.md"))) {
+            if (line.startsWith("## ")) {
+                inObservability = line.startsWith("## 15.");
+                continue;
+            }
+            if (!inObservability) {
+                continue;
+            }
+            Matcher row = PLANNED_METER.matcher(line);
+            if (row.find()) {
+                rows++;
+                planned.add(row.group(1));
+            }
+        }
+        assertThat(rows)
+                .as("the Phase 8 plan's §15 table has exactly 32 meter rows")
+                .isEqualTo(32);
+        assertThat(planned)
+                .as("one series per row - no row names a meter twice")
+                .hasSize(32)
+                .contains(
+                        "finapp.settlement.batch.accepted",
+                        "finapp.reconciliation.item",
+                        "finapp.reconciliation.break.open",
+                        "finapp.reconciliation.break.age",
+                        "finapp.reconciliation.resolution.latency",
+                        "finapp.reconciliation.adjustment");
+
+        assertThat(registeredMeters()).containsAll(planned);
+
+        // The one row that names two series of one meter: both stages are published.
+        assertThat(registry.find("finapp.settlement.ingestion.latency")
+                        .tag("stage", "parse")
+                        .timers())
+                .as("ingestion.latency's parse stage is published")
+                .isNotEmpty();
+        assertThat(registry.find("finapp.settlement.ingestion.latency")
+                        .tag("stage", "accept")
+                        .timers())
+                .as("ingestion.latency's accept stage is published (P8-TSK-024)")
+                .isNotEmpty();
+    }
+
     @Test
     @DisplayName("the guard is not vacuous: it reads a real plan and a real registry")
     void theGuardHasTeeth() {

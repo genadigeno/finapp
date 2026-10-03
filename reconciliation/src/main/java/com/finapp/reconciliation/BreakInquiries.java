@@ -125,6 +125,13 @@ public interface BreakInquiries {
 
     Optional<SuspenseLink> suspenseItem(Connection unitOfWork, UUID suspenseItemId);
 
+    /**
+     * The {@code UNMATCHED_CONFIRMATION} expectation copying {@code entryId}'s clearing line —
+     * how a parking's suspense item reaches the operation, and through it the parking's raw
+     * statement (`P8-TSK-020`): the item and the expectation carry the same entry.
+     */
+    Optional<UUID> parkingExpectationOf(Connection unitOfWork, UUID entryId);
+
     /** The parks (unparks) that released a suspense item, each with its entry. */
     record ParkLink(UUID parkId, UUID entryId) {}
 

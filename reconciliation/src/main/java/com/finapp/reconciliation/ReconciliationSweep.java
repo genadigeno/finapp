@@ -59,7 +59,9 @@ public class ReconciliationSweep {
     private final Clock clock;
     private final Config config;
     private final TransactionRunner transactions;
+    private final ReconciliationTelemetry telemetry;
 
+    /** The sweep without telemetry - its suite's shape (`P8-TSK-024`). */
     public ReconciliationSweep(
             MatchingStore store,
             BreakRegister breaks,
@@ -69,6 +71,20 @@ public class ReconciliationSweep {
             Clock clock,
             Config config,
             TransactionRunner transactions) {
+        this(store, breaks, collisions, outbox, ids, clock, config, transactions,
+                ReconciliationTelemetry.NONE);
+    }
+
+    public ReconciliationSweep(
+            MatchingStore store,
+            BreakRegister breaks,
+            KeyCollisionBreaks collisions,
+            OutboxWriter<Connection> outbox,
+            IdGenerator ids,
+            Clock clock,
+            Config config,
+            TransactionRunner transactions,
+            ReconciliationTelemetry telemetry) {
         this.store = Objects.requireNonNull(store, "store must not be null");
         this.breaks = Objects.requireNonNull(breaks, "breaks must not be null");
         this.collisions = Objects.requireNonNull(collisions, "collisions must not be null");
@@ -78,6 +94,7 @@ public class ReconciliationSweep {
         this.config = Objects.requireNonNull(config, "config must not be null");
         this.transactions =
                 Objects.requireNonNull(transactions, "transactions must not be null");
+        this.telemetry = Objects.requireNonNull(telemetry, "telemetry must not be null");
     }
 
     /** How many ageing bands lie behind {@code days} — pure, the escalation's arithmetic. */
@@ -98,7 +115,10 @@ public class ReconciliationSweep {
         int blocked = 0;
         int raisedCollisions = 0;
         try (SecurityContext.Scope platform = SecurityContext.enterSystem()) {
-            aged = contained("ageing", this::age);
+            aged = contained(
+                    "ageing",
+                    () -> telemetry.spans().within(
+                            "reconciliation.age", java.util.Map.of(), this::age));
             escalated = contained("escalation", this::escalate);
             blocked = contained("run-block detection", this::detectLostBlocks);
             raisedCollisions = contained("key collisions", this::raiseCollisions);

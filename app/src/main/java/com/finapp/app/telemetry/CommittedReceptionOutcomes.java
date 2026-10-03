@@ -22,9 +22,21 @@ import org.springframework.transaction.support.TransactionSynchronizationManager
 public final class CommittedReceptionOutcomes implements ReceptionOutcomeObserver {
 
     private final SettlementMeters meters;
+    private final com.finapp.platform.telemetry.Spans spans;
 
     public CommittedReceptionOutcomes(SettlementMeters meters) {
+        this(meters, com.finapp.platform.telemetry.Spans.NONE);
+    }
+
+    public CommittedReceptionOutcomes(
+            SettlementMeters meters, com.finapp.platform.telemetry.Spans spans) {
         this.meters = Objects.requireNonNull(meters, "meters must not be null");
+        this.spans = Objects.requireNonNull(spans, "spans must not be null");
+    }
+
+    @Override
+    public com.finapp.platform.telemetry.Spans spans() {
+        return spans;
     }
 
     @Override

@@ -31,12 +31,17 @@ public enum RejectionCode {
 
     /**
      * A live batch already stands for this (source, batch reference, currency) — the second
-     * declaration is refused and RETAINED, recoverable by readmission once the standing batch
-     * is repudiated (`P8-TSK-022`, `P8-TSK-023`).
+     * declaration is refused and RETAINED, recoverable by readmission once no live batch holds
+     * the identity: the standing one declined or repudiated (`P8-TSK-022`, `P8-TSK-023`).
      */
     CONFLICTING_BATCH(false),
 
-    /** A person's reasoned judgement, not our validation — never readmitted (ADR-0066 §8). */
+    /**
+     * A person's reasoned judgement, not our validation. Readmissible (`P8-TSK-022`'s design
+     * decided ADR-0066 §8's recorded question — a mistaken decline is otherwise a dead end, its
+     * byte-identical re-issue meeting this file's content address), but such a readmission
+     * inherits NO authentication: it waits for a second person of its own.
+     */
     DECLINED(false),
 
     /**

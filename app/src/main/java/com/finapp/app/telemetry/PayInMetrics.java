@@ -23,9 +23,13 @@ import lombok.extern.slf4j.Slf4j;
  *       "never concluded by our clock" ({@code INV-LIFE-03}) is only honest when an
  *       operator can see what is quietly getting old;
  *   <li><strong>the suspense parkings</strong> ({@code finapp.payments.unmatched.active} /
- *       {@code .age}): {@code INV-REC-05}'s standing alert — value parked in
- *       {@code SUSPENSE_UNMATCHED} is tracked and aged, never a permanent resting place,
- *       and ANY non-zero count is an integration break awaiting an operator.
+ *       {@code .age}): every confirmation EVER parked, and the oldest one's age — payments'
+ *       own table, measured truthfully: a parking has no resolved state, because the
+ *       disposition belongs to its suspense item. Corrected by `P8-TSK-020` (ADR-0070 point
+ *       8): these read as a standing alert, which a parking resolved by a person would never
+ *       clear; the alertable signal is reconciliation's {@code finapp.reconciliation.suspense.*},
+ *       which counts the parkings' items since that task. The names stay, so the Phase 7
+ *       plan's rows still parse.
  * </ul>
  *
  * <p>NaN when unreadable, never zero; fleet-wide readings aggregated with {@code max()},
@@ -41,10 +45,10 @@ final class PayInMetrics {
     /** {@code finapp.payments.payin.awaiting.age} — the oldest wait, seconds from birth. */
     static final String AWAITING_AGE = "finapp.payments.payin.awaiting.age";
 
-    /** {@code finapp.payments.unmatched.active} — confirmations parked in suspense. */
+    /** {@code finapp.payments.unmatched.active} — confirmations parked in suspense, ever. */
     static final String UNMATCHED_ACTIVE = "finapp.payments.unmatched.active";
 
-    /** {@code finapp.payments.unmatched.age} — the oldest parking's age, seconds. */
+    /** {@code finapp.payments.unmatched.age} — the oldest parking's age, ever, seconds. */
     static final String UNMATCHED_AGE = "finapp.payments.unmatched.age";
 
     static final Duration MIN_REFRESH = Duration.ofSeconds(5);
@@ -103,21 +107,23 @@ final class PayInMetrics {
                 .register(registry);
         Gauge.builder(UNMATCHED_ACTIVE, this, self -> self.reading().parkedOrNaN())
                 .description(
-                        "Confirmations carrying money the platform could not attribute,"
-                                + " resting in SUSPENSE_UNMATCHED (INV-REC-05) - ANY non-zero"
-                                + " value is an integration break awaiting an operator, and"
-                                + " suspense is never a permanent resting place. NaN when"
-                                + " unreadable, never zero. Fleet-wide: aggregate with"
+                        "Confirmations EVER parked in SUSPENSE_UNMATCHED with money the"
+                                + " platform could not attribute (INV-REC-05) - payments'"
+                                + " own table, which a resolution never shrinks. The"
+                                + " alertable signal is finapp.reconciliation.suspense.*,"
+                                + " which owns each parking's value since P8-TSK-020. NaN"
+                                + " when unreadable, never zero. Fleet-wide: aggregate with"
                                 + " max(), never sum()")
                 .strongReference(true)
                 .register(registry);
         Gauge.builder(UNMATCHED_AGE, this, self -> self.reading().parkedAgeOrNaN())
                 .description(
-                        "Seconds the OLDEST unmatched confirmation has rested in suspense -"
-                                + " the ageing INV-REC-05 demands: a climbing value is a"
-                                + " break nobody is investigating. NaN when unreadable,"
-                                + " never zero. Fleet-wide: aggregate with max(), never"
-                                + " sum()")
+                        "Seconds since the OLDEST confirmation EVER parked - payments' own"
+                                + " table, which a resolution never clears. Whether parked"
+                                + " value is still waiting is"
+                                + " finapp.reconciliation.suspense.age (P8-TSK-020). NaN when"
+                                + " unreadable, never zero. Fleet-wide: aggregate with"
+                                + " max(), never sum()")
                 .strongReference(true)
                 .register(registry);
     }

@@ -72,6 +72,90 @@ class SimulatedSettlementReportsTest {
     }
 
     @Test
+    @DisplayName("the matching-level lines keep their word (P8-TST-001): a correction parses as"
+            + " a COUNTERPARTY_ADJUSTMENT naming its original, a late line carries its own"
+            + " settlement date, a repeated record without its fee is ONE line of the same"
+            + " fingerprint, and the trailer nets them all")
+    void theMatchingLevelLinesKeepTheirWord() {
+        LocalDate late = LocalDate.parse("2026-10-09");
+        SimulatedSettlementReports.Line sale =
+                SimulatedSettlementReports.Line.capture("PSP-CAP-9101", "", "", "20.00", "0.55");
+        byte[] report =
+                new SimulatedSettlementReports(
+                                "PSPB-FIX-02", "EUR", LocalDate.parse("2026-09-29"),
+                                "PSP-REM-777002")
+                        .with(sale)
+                        .with(SimulatedSettlementReports.Line.capture(
+                                        "PSP-CAP-9102", "", "", "30.00", "0.70")
+                                .settledOn(late))
+                        .with(sale.withoutFee())
+                        .with(SimulatedSettlementReports.Line.adjustment("PSP-CAP-9101", "-0.50"))
+                        .render();
+        assertThat(SimPspCsvFormat.INSTANCE.screen(report).finding()).isEmpty();
+        SettlementFormat.Result result = SimPspCsvFormat.INSTANCE.parse(report);
+        assertThat(result)
+                .as("the trailer's net is the lines' own fold: 20.00 + 30.00 + 20.00 - 0.50 - fees")
+                .isInstanceOf(SettlementFormat.Result.Parsed.class);
+        java.util.List<com.finapp.settlement.format.ParsedLine> lines =
+                ((SettlementFormat.Result.Parsed) result).batch().lines();
+        assertThat(lines).extracting(com.finapp.settlement.format.ParsedLine::type)
+                .as("two fee splits, the repeated record without one, the correction")
+                .containsExactly(
+                        com.finapp.settlement.SettlementLineType.CAPTURE,
+                        com.finapp.settlement.SettlementLineType.PROCESSING_FEE,
+                        com.finapp.settlement.SettlementLineType.CAPTURE,
+                        com.finapp.settlement.SettlementLineType.PROCESSING_FEE,
+                        com.finapp.settlement.SettlementLineType.CAPTURE,
+                        com.finapp.settlement.SettlementLineType.COUNTERPARTY_ADJUSTMENT);
+        assertThat(lines.get(2).settlementDate()).as("the late line settles on its own date")
+                .contains(late);
+        assertThat(lines.get(0).settlementDate()).as("an undated line settles on the report's")
+                .isEmpty();
+        assertThat(lines.get(4).canonicalFingerprint())
+                .as("the repeated record is the same economic statement as the first")
+                .isEqualTo(lines.get(0).canonicalFingerprint());
+        com.finapp.settlement.format.ParsedLine correction = lines.get(5);
+        assertThat(correction.direction())
+                .as("a claw-back is money back to the counterparty")
+                .isEqualTo(com.finapp.settlement.LineDirection.OUTBOUND);
+        assertThat(correction.references())
+                .containsEntry(com.finapp.settlement.LineReferenceKind.ORIGINAL_REF,
+                        "PSP-CAP-9101");
+    }
+
+    @Test
+    @DisplayName("the simulated bank's statement adds up and parses whole: credits and debits by"
+            + " remittance reference, the bank's fee, a signed closing (P8-TST-001)")
+    void theBankStatementAddsUpAndParses() {
+        LocalDate day = LocalDate.parse("2026-09-29");
+        SimulatedBankStatements statement =
+                new SimulatedBankStatements("SB-EUR-FIX-1", "EUR", 4, day, 10_00)
+                        .credit(day, 98_25, java.util.Optional.of("PSP-REM-777001"))
+                        .narrative("Remittance for the day")
+                        .debit(day, 120_00, java.util.Optional.of("PAY-REM-777003"))
+                        .fee(day, 50);
+        assertThat(statement.closingMinor())
+                .as("10.00 + 98.25 - 120.00 - 0.50: a debit closing")
+                .isEqualTo(-12_25);
+        byte[] rendered = statement.render(day);
+        com.finapp.settlement.format.simstatement.SimStatementTaggedFormat format =
+                new com.finapp.settlement.format.simstatement.SimStatementTaggedFormat(
+                        java.util.Map.of(com.finapp.sharedkernel.money.CurrencyCode.of("EUR"),
+                                "SIMBANK-EUR-01"));
+        assertThat(format.screen(rendered).finding()).isEmpty();
+        SettlementFormat.Result result = format.parse(rendered);
+        assertThat(result).isInstanceOf(SettlementFormat.Result.Parsed.class);
+        com.finapp.settlement.format.ParsedBatch batch =
+                ((SettlementFormat.Result.Parsed) result).batch();
+        assertThat(batch.lines()).hasSize(3);
+        assertThat(batch.statement()).hasValueSatisfying(facts -> {
+            assertThat(facts.sequence()).isEqualTo(4);
+            assertThat(facts.opening().minorUnits()).isEqualTo(10_00);
+            assertThat(facts.closing().minorUnits()).isEqualTo(-12_25);
+        });
+    }
+
+    @Test
     @DisplayName("instrument data in free text is the DOOR's to refuse: the screen finds the"
             + " PAN and the account identifier, so such a report is never stored")
     void theFreeTextFaultsAreRefusedAtTheScreen() {

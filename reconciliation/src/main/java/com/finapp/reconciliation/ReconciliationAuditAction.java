@@ -13,6 +13,61 @@ import lombok.RequiredArgsConstructor;
 public enum ReconciliationAuditAction implements AuditableAction {
 
     /**
+     * A controller proposed a rule set version (`P8-TSK-022`, ADR-0068 §8): content frozen
+     * from the proposal, awaiting a different controller's activation. The summary names
+     * the source and the version; the reason is the proposer's.
+     */
+    RULE_SET_PROPOSED(
+            "reconciliation.RuleSetProposed",
+            "A reconciliation controller proposed a new matching rule set version, with"
+                    + " the recorded reason; it awaits a different controller.",
+            true),
+
+    /**
+     * A second controller activated a proposed version (`P8-TSK-022`, INV-AUD-04), its
+     * predecessor retired in the same transaction. The summary names both versions.
+     */
+    RULE_SET_ACTIVATED(
+            "reconciliation.RuleSetActivated",
+            "A second reconciliation controller activated a proposed rule set version and"
+                    + " retired its predecessor, with the recorded reason.",
+            true),
+
+    /** A controller rejected a proposed version (`P8-TSK-022`), reasoned. */
+    RULE_SET_REJECTED(
+            "reconciliation.RuleSetRejected",
+            "A reconciliation controller rejected a proposed rule set version, with the"
+                    + " recorded reason.",
+            true),
+
+    /**
+     * A controller opened a {@code REPROCESS} run (`P8-TSK-022`, ADR-0068 §9.2): the
+     * source's residual items re-decided under the active version. The summary names the
+     * run, the version and the worklist's size - a count, never an amount.
+     */
+    REPROCESSING_REQUESTED(
+            "reconciliation.ReprocessingRequested",
+            "A reconciliation controller opened a reprocessing run over a source's residual"
+                    + " items, with the recorded reason.",
+            true),
+
+    /** A controller requeued a blocked run (`P8-TSK-022`), reasoned. */
+    RUN_REQUEUED(
+            "reconciliation.RunRequeued",
+            "A reconciliation controller requeued a blocked run, with the recorded reason.",
+            true),
+
+    /**
+     * An investigator replayed a run's decisions (`P8-TSK-022`, ADR-0068 §9.1): the summary
+     * carries the verdict and the counts; a divergence raised its break beside it.
+     */
+    RUN_REPLAYED(
+            "reconciliation.RunReplayed",
+            "An investigator replayed a run's stored decisions; the record names the"
+                    + " verdict and the counts.",
+            false),
+
+    /**
      * A controller adopted the opening position (`P8-TSK-007`, ADR-0067 §8): the keyed,
      * reasoned backfill that walks Phases 5–7's completed clearing operations through the
      * live opener's own path. One record per recorded run; the change summary carries the
@@ -124,8 +179,9 @@ public enum ReconciliationAuditAction implements AuditableAction {
     /**
      * A second person approved a resolution (`P8-TSK-015`, ADR-0071 §§4, 6): the entry posted
      * (for a posting kind), the subject's value disposed of and the break {@code RESOLVED}, in
-     * one transaction. Also the one record of a zero-value {@code ACKNOWLEDGE}, one person's
-     * act, carrying its reason. Identifiers and enumerated names only.
+     * one transaction. Also the one record of a timing difference's zero-value
+     * {@code ACKNOWLEDGE}, one person's act, carrying its reason (every other acknowledgement is
+     * four-eyes, `P8-TST-002`). Identifiers and enumerated names only.
      */
     RESOLUTION_APPROVED(
             "reconciliation.ResolutionApproved",

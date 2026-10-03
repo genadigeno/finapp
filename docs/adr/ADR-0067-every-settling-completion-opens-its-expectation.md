@@ -1,6 +1,6 @@
 # ADR-0067 — Every externally settling completion opens its expectation in its own transaction
 
-Status: Proposed (2026-09-28, the Phase 7 → 8 transition)
+Status: Accepted (2026-10-01, `P8-DOC-001` — read against the code and corrected first)
 Date: 2026-09-28
 Phase: 8
 Context: Reconciliation · Payments · Merchant · Ledger
@@ -110,7 +110,12 @@ payout return as a merchant fact is ADR-0073's.
    transfer is `FINAL_ON_POSTING`, and `SettlementModel.NONE` is `INV-SET-01`'s documented per-rail
    guarantee (ADR-0059 §4). The unmatched confirmation's call also opens its CREDIT suspense item
    and its `UNKNOWN_EXTERNAL` break (cause `PARKED_ON_RECEIPT`) in the same transaction, once
-   `P8-TSK-020` lands (`INV-REC-09`, ADR-0070).
+   `P8-TSK-020` lands (`INV-REC-09`, ADR-0070). *(As built by `P8-TSK-020`: through a second
+   method of the same port, `SettlementExpectations.parked(ParkedValue)`, called by the claim's
+   winner right after `open` on the parking's connection, delegating to
+   `reconciliation.ParkedConfirmations`. A parking whose scheme execution a credit, withdrawal
+   or return already explains is owned instead by a `DUPLICATE_EXTERNAL` break, cause
+   `EXECUTION_ALREADY_EXPLAINED` (reconciliation `V011`).)*
 
    The completions are the tree as the Phase 7 → 8 transition's repairs left it:
    - **An unmatched confirmation is posted for each cause its parking records** (payments
@@ -139,13 +144,16 @@ payout return as a merchant fact is ADR-0073's.
      to which `MerchantPayoutOutcomes` also switches for its posting.
    - The port carries no source. The recorder resolves it from the position purpose through the
      source register `app` composes from the same declarations (ADR-0064). That register holds
-     exactly one source per settling position (`INV-SET-05`, proven total at build time by
-     `EverySettlingPositionHasASource`), so the lookup cannot miss at runtime.
+     exactly one source per settling position (`INV-SET-05`, refused at composition by
+     `SettlementBeans.composedSettlementSources` and proven both ways at build time by
+     `EverySettlingPositionHasASourceTest`), so the lookup cannot miss at runtime.
    - **The direction is derived from the clearing line, never chosen:** a DEBIT line on the position
      is `INBOUND`, a CREDIT line `OUTBOUND`. The position proof's sign is therefore the ledger's own.
    - Nothing in the recorder, `settlement` or `reconciliation` names a rail or a `*_CLEARING`
      purpose. `RailVocabularyIsConfinedTest` gains `SettlementBeans.java` as a configuration file,
-     and `clearingPositionsAreNamedOnlyByTheirDeclarations` widens to both new modules.
+     and a sibling rule, `theSettlementModulesNameNoClearingPosition`, refuses any
+     `AccountPurpose.*_CLEARING` in both new modules (`clearingPositionsAreNamedOnlyByTheirDeclarations`
+     still scans `payments`).
 
 4. **What an expectation records: copies of immutable facts, taken at completion.**
    `reconciliation.expectation` (V002, `P8-TSK-004`):
@@ -171,9 +179,10 @@ payout return as a merchant fact is ADR-0073's.
    - **No cross-schema foreign key.** The row holds copies that reconciliation owns, the practice of
      `unmatched_confirmation.entry_ref`, so matching never reads another module's tables to
      allocate (ADR-0064).
-   - Opening writes no event and no audit record of its own. It is part of a completion its
-     applier already audits and announces, and an event per expectation would fan out one record
-     per payment to no consumer.
+   - Opening writes no outbox event and no audit record of its own. It is part of a completion
+     its applier already audits and announces, and an event per expectation would fan out one
+     record per payment to no consumer. It does append the expectation's own `OPENED` history row
+     (`expectation_event`) beside the row, in the completing transaction.
 
 5. **Keys are scoped per source; the ARN arrives as an alias, in either order.**
    - **Scoped keys.** Each opener registers the typed references the counterparty will quote, in
@@ -232,7 +241,11 @@ payout return as a merchant fact is ADR-0073's.
      confirmation announced, a withdrawal stored, or an unmatched confirmation's parking stored
      (`payments.unmatched_confirmation.settlement_cycle`, `V023`) is recorded on the expectation
      row. It is compared at matching as a tie-breaker and a report dimension, and a different
-     cycle is a `TIMING_DIFFERENCE` (ADR-0068). A return has none: its cycle is learned from the
+     cycle is a `TIMING_DIFFERENCE` (ADR-0068). *(As built by `P8-TSK-017`, recorded at
+     `P8-DOC-001`: the cycle is never a tie-breaker between candidates. It is compared only once
+     a match is decided, against the run's cycle: a shift allocates normally and raises
+     `TIMING_DIFFERENCE` (`CYCLE_MISMATCH`, value 0). Since payments `V023` a scheme reference
+     reaches one claimant, and two reachable candidates stay `AMBIGUOUS_MATCH`.)* A return has none: its cycle is learned from the
      scheme's report onto the item (`learned_cycle`). This ADR is the authority for that rule, and
      every Phase 8 document that called the cycle "key `SETTLEMENT_CYCLE`" was aligned to it by
      the Phase 7 → 8 transition's consistency review (A5).
@@ -316,6 +329,11 @@ payout return as a merchant fact is ADR-0073's.
      - completed payouts;
      - existing clearing records, for their ARN aliases. A second presentment has no clearing
        record of its own, so it has no alias either.
+     - *(Added by the tasks that built it, recorded at `P8-DOC-001`:)* every `ACCEPTED`
+       settlement batch, re-deriving its `REMITTANCE` from the row's stored facts through the live
+       intake's opener (`P8-TSK-009`); every recorded `payout_return`, re-opening its keyless
+       `PAYOUT_RETURN` copy from the return's own posting (`P8-TSK-019`); and, for each parking,
+       its suspense item and owning break, converging on the item's `origin_ref` (`P8-TSK-020`).
    - It is leaderless and paged by id, one bounded page per transaction. It finds each entry by its
      posting key through the ledger's read API and derives every fact exactly as the live opener
      does, `ON CONFLICT DO NOTHING`.
@@ -340,15 +358,22 @@ payout return as a merchant fact is ADR-0073's.
      A new posting key fails the build until it is classified.
    - **The completeness verifier** runs beside the position proof (`INV-REC-06`, `P8-TSK-007`) in
      `app`, in the `TrialBalance` shape: lock-free, "the scrape is the schedule", reported and
-     never repaired. It walks every journal line on the three clearing positions and
-     `SUSPENSE_UNMATCHED`. A line is known when one of these accounts for it:
-     - an expectation names its `(journal_entry_id, ledger_account_id)`;
-     - a suspense item owns it (`INV-REC-09`);
-     - its entry is a batch's, a park's, a resolution's, a repudiation's or a payout return's.
+     never repaired. It walks every journal line on ~~the three clearing positions and
+     `SUSPENSE_UNMATCHED`~~ every one of the eight `AccountPurpose.reconciledPositions()`: the
+     three clearings, `SUSPENSE_UNMATCHED`, `CASH_AT_BANK`, `PROCESSING_COSTS`,
+     `RECONCILIATION_LOSSES` and `RECONCILIATION_GAINS`. A line is known when one of these
+     accounts for it:
+     - an expectation names its `(journal_entry_id, ledger_account_id)` (a payout return's line
+       is known this way, through its `PAYOUT_RETURN` expectation);
+     - a suspense item owns it (`INV-REC-09`): its entry is a `suspense_item.entry_id`;
+     - its entry is an accepted batch's recognition (`ACCEPTED` or `REPUDIATED`), a park's
+       (`park.journal_entry_id`), or a resolution's (`resolution.journal_entry_id`, which carries
+       both a posting resolution's `ADJUSTMENT` entry and a repudiation's reversal).
      *(Resolved at the transition: the design's list omitted the suspense item, so an unmatched
      confirmation's suspense line, which no expectation names, would have read as unknown forever.
      Until `P8-TSK-020` adopts the Phase 7 rows as suspense items, `SUSPENSE_UNMATCHED` truthfully
-     reads above zero.)*
+     reads above zero. `P8-TSK-020` adopted them. The walk and the known classes were corrected
+     to the build at `P8-DOC-001`, 2026-10-01.)*
    - `finapp.reconciliation.line.unattributed` (tagged `purpose`) counts the lines that are not
      known and must read 0. The verifier computes it in one `REPEATABLE READ` transaction on one
      connection, composing the ledger's line reads with `reconciliation`'s and `settlement`'s read
@@ -518,9 +543,11 @@ transaction).
   The register and verifier of point 9 as decided but for one recorded narrowing: the
   completeness verifier is `PositionProof` in `app` (one `REPEATABLE READ` snapshot beside
   the position proof, the `TrialBalance` shape, report and never repair), its known-entry
-  list today exactly "an expectation names the line" — the suspense item and the Phase 8
+  list at that date exactly "an expectation names the line" — the suspense item and the Phase 8
   records join it with their tasks, and `SUSPENSE_UNMATCHED` truthfully reads above zero
-  until `P8-TSK-020`. `finapp.reconciliation.position.proof`, `.line.unattributed` and
+  until `P8-TSK-020`. *(Since joined: recognition entries by `P8-TSK-009`, parks and suspense
+  items by `P8-TSK-010`, resolution entries by `P8-TSK-015` and `-023`; the Phase 7 parkings
+  adopted by `P8-TSK-020`.)* `finapp.reconciliation.position.proof`, `.line.unattributed` and
   `.expectation.open` published as §9 says (counts never amounts, NaN never zero); the
   incremental-watermark scale path stays recorded, not built. Demonstrated: the storm's
   register emptied as the platform's own root and rebuilt from the books alone, every kind's
@@ -571,7 +598,18 @@ transaction).
   holds); `Adopted` gains a trailing `returns` count, an older record replaying with an honest
   zero.
 - `P8-TSK-020`: the unmatched confirmation's suspense item and break through the same call.
+  **Implemented** (2026-09-30), through the same PORT rather than the same call: a second
+  method, `parked(ParkedValue)`, called right after `open` on the parking's connection, because
+  the item's facts are not the expectation's — its origin is the parking row, its line the
+  suspense one. Point 8's backfill adopts every Phase 7 parking the same way, converging on the
+  item's `origin_ref`.
 - `P8-TST-001`: completeness and the position proof read in every storm round and at rest.
-- Until `P8-TSK-004` lands, nothing in this ADR is implemented: every statement is the decided
-  design, to be corrected by the tasks that build it.
-- The Phase 8 review reads this ADR against the code before accepting it (`P8-DOC-001`).
+- **As built (read at `P8-DOC-001`):** the whole decision is implemented by the tasks above
+  (`P8-TSK-004`, `-005`, `-007`, `-009`, `-010`, `-017`, `-018`, `-019`, `-020`), with
+  reconciliation `V002` (the register), `V004` (collisions raised as breaks), `V009` (the
+  cycle), `V011` (parkings as suspense) and merchant `V008` (the return). *(This read "Until
+  `P8-TSK-004` lands, nothing in this ADR is implemented" until `P8-DOC-001`.)*
+- The Phase 8 review (`P8-DOC-001`) read this ADR against the code before accepting it. It
+  corrected the verifier's walk and known classes (point 9), the backfill's walk (point 8), the
+  cycle's role (point 5), the parking's second port method (point 2), the opening's history
+  row (point 4), the guards' names (point 3), and this record.

@@ -73,6 +73,11 @@ final class UntouchedChargebacks {
                     public void alias(Connection unitOfWork, AliasRegistration registration) {
                         throw new AssertionError("no dispute alias in this suite");
                     }
+
+                    @Override
+                    public void parked(Connection unitOfWork, ParkedValue parked) {
+                        throw new AssertionError("no parking in this suite");
+                    }
                 });
     }
 }

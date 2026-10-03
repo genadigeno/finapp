@@ -54,8 +54,10 @@ import lombok.RequiredArgsConstructor;
  * <p><strong>Two people wherever value is at issue</strong> ({@code INV-REC-03},
  * {@code INV-AUD-04}): refused here first ({@link SelfApprovalRefused}, nothing written),
  * by `V006`'s distinctness {@code CHECK} for any writer, and — for the three posting kinds —
- * by the ledger's `V010` beneath. A zero-value {@code ACKNOWLEDGE} is one person's act, born
- * {@code APPROVED}.
+ * by the ledger's `V010` beneath. A zero-value {@code ACKNOWLEDGE} of a
+ * {@code TIMING_DIFFERENCE} raised by a timing detector is one person's act, born
+ * {@code APPROVED}; every other
+ * acknowledgement is four-eyes (`P8-TST-002`'s correction, `V014`).
  *
  * <p>Approval, rejection and withdrawal carry no key: the resolution's one-way machine is the
  * idempotency ({@code INV-IDEM-01} through state) — the same person's retry converges on what
@@ -86,6 +88,7 @@ public final class ResolutionMachine {
     @NonNull private final AuditWriter<Connection> audit;
     @NonNull private final IdGenerator ids;
     @NonNull private final Clock clock;
+    @NonNull private final ReconciliationTelemetry telemetry;
 
     // ------------------------------------------------------------------ inputs and outcomes
 
@@ -268,7 +271,15 @@ public final class ResolutionMachine {
                 kind == ResolutionKind.OFFSET_SUSPENSE, kind);
         operand("chosenExpectationId", request.chosenExpectationId(),
                 kind == ResolutionKind.MANUAL_MATCH, kind);
-        String narrative = request.narrative();
+        refuseNarrative(request.narrative());
+    }
+
+    /**
+     * A proposal's narrative, judged before any lock — the break door's and the batch's
+     * repudiation door's one rule (`P8-TSK-023`): 1..1000 characters, no instrument shape.
+     */
+    public static void refuseNarrative(String narrative) {
+        Objects.requireNonNull(narrative, "narrative must not be null");
         if (narrative.isBlank() || narrative.length() > MAX_NARRATIVE_LENGTH) {
             throw new ResolutionRefused(
                     "narrative is required: 1.." + MAX_NARRATIVE_LENGTH + " characters");
@@ -310,7 +321,10 @@ public final class ResolutionMachine {
     // ------------------------------------------------------------------ propose
 
     /**
-     * Proposes — or, for a zero-value {@code ACKNOWLEDGE}, performs — a resolution. The break
+     * Proposes — or, for a zero-value {@code ACKNOWLEDGE} of a {@code TIMING_DIFFERENCE}
+     * raised by a timing detector (its cause {@code LATE_MATCH} or {@code CYCLE_MISMATCH},
+     * {@link ResolutionTemplates#timingCause}; reconciliation `V014`), performs — a resolution.
+     * The break
      * moves {@code OPEN | INVESTIGATING → RESOLUTION_PROPOSED} (or {@code → RESOLVED} for the
      * one-person act); a posting kind's ledger proposal is recorded through
      * {@code proposeOwned} with the template's lines, both dates the proposal's business date.
@@ -370,7 +384,7 @@ public final class ResolutionMachine {
         Instant now = Instant.now(clock);
         LocalDate proposedOn = LocalDate.ofInstant(now, ZoneOffset.UTC);
         UUID resolutionId = ids.next();
-        boolean fourEyes = ResolutionTemplates.fourEyes(kind, amount);
+        boolean fourEyes = ResolutionTemplates.fourEyes(kind, amount, row.type(), row.cause());
         ResolutionStatus status = fourEyes ? ResolutionStatus.PROPOSED : ResolutionStatus.APPROVED;
         Optional<UUID> proposalId = Optional.empty();
         if (kind.postsAdjustment()) {
@@ -420,9 +434,11 @@ public final class ResolutionMachine {
                         + ", fourEyes=" + fourEyes
                         + proposalId.map(id -> ", adjustmentProposal=" + id).orElse("");
         if (status == ResolutionStatus.APPROVED) {
-            // The one-person act: a zero-value acknowledgement is one act and one reasoned
+            // The one-person act: a timing difference's zero-value acknowledgement is one act
+            // and one reasoned
             // record (ADR-0071 section 11), the break's OPEN | INVESTIGATING -> RESOLVED edge.
             resolveBreakOrLoud(unitOfWork, breakId, resolutionId, kind, actor, now, correlation);
+            telemetry.resolved(kind, ResolutionOutcome.APPROVED, sinceRaised(row, now));
             audit(unitOfWork, actor, now, ReconciliationAuditAction.RESOLUTION_APPROVED,
                     resolutionId, Optional.of(auditReason(kind, request.reasonCode())),
                     summary + ", status=APPROVED", correlation);
@@ -478,7 +494,7 @@ public final class ResolutionMachine {
             case RECOGNISE_GAIN -> {
                 ResolutionTemplates.Holding.Parked parked =
                         (ResolutionTemplates.Holding.Parked) holding;
-                if (!store.gainEligible(unitOfWork, parked.suspenseItemId(), ruleSetId)) {
+                if (!store.gainEligible(unitOfWork, parked.suspenseItemId())) {
                     throw new GainNotYetEligible();
                 }
             }
@@ -588,7 +604,7 @@ public final class ResolutionMachine {
         }
         if (hit.remainderMinor() < parked.amount().minorUnits()) {
             if (atApproval) {
-                throw new ResolutionStale("the chosen candidate's remainder moved");
+                throw stale(ResolutionKind.MANUAL_MATCH, "the chosen candidate's remainder moved");
             }
             throw new ResolutionTargetRefused(
                     "the chosen candidate's remainder cannot absorb the whole parked value; a"
@@ -637,12 +653,12 @@ public final class ResolutionMachine {
                         : ResolutionTemplates.amount(kind, holding, breakRow.valueAtIssue())
                                 .minorUnits();
         if (breakRow.residualVersion() != row.residualVersion()) {
-            throw new ResolutionStale(
+            throw stale(kind, 
                     "residual_version " + row.residualVersion() + " -> "
                             + breakRow.residualVersion());
         }
         if (derived != row.proposedAmountMinor()) {
-            throw new ResolutionStale("the remainder the lines were derived from moved");
+            throw stale(kind, "the remainder the lines were derived from moved");
         }
 
         List<ResolutionStore.RemainderSibling> siblings =
@@ -683,13 +699,13 @@ public final class ResolutionMachine {
                             offsetPartner(unitOfWork, breakRow, holding, offsetItemId,
                                     offsetBreak));
                 } catch (ResolutionTargetRefused moved) {
-                    throw new ResolutionStale("the offset item or its break moved");
+                    throw stale(kind, "the offset item or its break moved");
                 }
             }
             case RECOGNISE_GAIN -> {
                 ResolutionTemplates.Holding.Parked parked =
                         (ResolutionTemplates.Holding.Parked) holding;
-                if (!store.gainEligible(unitOfWork, parked.suspenseItemId(), row.ruleSetId())) {
+                if (!store.gainEligible(unitOfWork, parked.suspenseItemId())) {
                     throw new GainNotYetEligible();
                 }
             }
@@ -716,7 +732,7 @@ public final class ResolutionMachine {
                                     "a resolution's ledger proposal exists (V007)"))
                             .lines();
             if (!stored.equals(lines(unitOfWork, kind, holding, row.targetAccountId()))) {
-                throw new ResolutionStale("the template's lines no longer match the stored"
+                throw stale(kind, "the template's lines no longer match the stored"
                         + " ledger proposal");
             }
             PostingResult posted = adjustments.approveOwned(unitOfWork, proposal);
@@ -770,6 +786,10 @@ public final class ResolutionMachine {
                 unitOfWork, row.id(), Optional.of(ResolutionStatus.PROPOSED),
                 ResolutionStatus.APPROVED, actor, Optional.empty(), now, correlation);
         resolveBreakOrLoud(unitOfWork, row.breakId(), row.id(), kind, actor, now, correlation);
+        telemetry.resolved(kind, ResolutionOutcome.APPROVED, sinceRaised(breakRow, now));
+        if (kind.postsAdjustment()) {
+            telemetry.adjusted(kind);
+        }
         ReconciliationEvents.breakResolved(
                 outbox, unitOfWork, ids, row.breakId(), row.id(), kind, row.reasonCode(),
                 entryId, now, correlation);
@@ -882,7 +902,13 @@ public final class ResolutionMachine {
                         actor,
                         now,
                         proposedOn,
-                        correlation));
+                        correlation,
+                        // A person's choice over the parked value (`P8-TSK-022`): replay
+                        // proves the choice was a candidate and the allocation its
+                        // cardinality gives.
+                        MatchingStore.Basis.of(
+                                DecisionVerdict.MANUAL_CHOICE, JudgedStatus.PARKED,
+                                amount.minorUnits())));
         matching.insertCandidates(unitOfWork, decisionId, List.of(hit));
         try {
             matching.insertAllocation(
@@ -969,6 +995,7 @@ public final class ResolutionMachine {
         if (row.proposedBy().equals(actor.id())) {
             throw new SelfApprovalRefused();
         }
+        telemetry.resolved(row.kind(), ResolutionOutcome.REJECTED, Optional.empty());
         close(unitOfWork, row, ResolutionStatus.REJECTED, Optional.of(reason), actor,
                 correlation);
         return new Decided(row.id(), row.breakId(), ResolutionStatus.REJECTED, Optional.empty(),
@@ -993,6 +1020,7 @@ public final class ResolutionMachine {
         if (!row.proposedBy().equals(actor.id())) {
             throw new NotTheProposer();
         }
+        telemetry.resolved(row.kind(), ResolutionOutcome.WITHDRAWN, Optional.empty());
         close(unitOfWork, row, ResolutionStatus.WITHDRAWN, Optional.empty(), actor, correlation);
         return new Decided(row.id(), row.breakId(), ResolutionStatus.WITHDRAWN, Optional.empty(),
                 false);
@@ -1050,6 +1078,12 @@ public final class ResolutionMachine {
             Connection unitOfWork, UUID resolutionId) {
         ResolutionStore.ResolutionRow unlocked =
                 store.byId(unitOfWork, resolutionId).orElseThrow(ResolutionNotFound::new);
+        if (unlocked.breakId() == null) {
+            // A batch's repudiation has no break: BatchRepudiations decides it (P8-TSK-023).
+            throw new IllegalArgumentException(
+                    "resolution " + resolutionId + " is a batch's repudiation, decided through"
+                            + " BatchRepudiations");
+        }
         Optional<UUID> offsetBreak =
                 unlocked.offsetItemId().flatMap(item -> store.breakOfSuspenseItem(unitOfWork,
                         item));
@@ -1197,6 +1231,19 @@ public final class ResolutionMachine {
                     "the locked break was resolved by another writer: the lock order was"
                             + " bypassed");
         }
+    }
+
+    /** A stale approval, counted at once - the refusal commits nothing (`P8-TSK-024`). */
+    private ResolutionStale stale(ResolutionKind kind, String detail) {
+        telemetry.staleRefused(kind);
+        return new ResolutionStale(detail);
+    }
+
+    /** Raised to resolved, for {@code finapp.reconciliation.resolution.latency}. */
+    private static Optional<java.time.Duration> sinceRaised(
+            BreakCaseStore.BreakRow breakRow, Instant now) {
+        java.time.Duration age = java.time.Duration.between(breakRow.raisedAt(), now);
+        return age.isNegative() ? Optional.empty() : Optional.of(age);
     }
 
     /** The ledger proposal's required reason: identifiers and codes, never the narrative. */

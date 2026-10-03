@@ -73,6 +73,19 @@ public interface BreakRegister {
                     Optional.empty());
         }
 
+        /**
+         * A suspense item's owner standing on the item itself - a parking's (`P8-TSK-020`),
+         * whose value entered suspense with no external item behind it.
+         */
+        public static Subject suspenseItem(UUID id) {
+            return new Subject(
+                    Optional.empty(),
+                    Optional.empty(),
+                    Optional.of(id),
+                    Optional.empty(),
+                    Optional.empty());
+        }
+
         public static Subject run(UUID id) {
             return new Subject(
                     Optional.empty(),
@@ -82,7 +95,10 @@ public interface BreakRegister {
                     Optional.empty());
         }
 
-        /** The one decision-subject type: {@code TIMING_DIFFERENCE} (`P8-TSK-011`). */
+        /**
+         * A decision's subject: {@code TIMING_DIFFERENCE} (`P8-TSK-011`) and a diverged replay's
+         * {@code PROCESSING_ERROR} (`P8-TSK-022`, converging on {@code break_one_open_per_decision}).
+         */
         public static Subject decision(UUID id) {
             return new Subject(
                     Optional.empty(),

@@ -1,6 +1,6 @@
 # ADR-0071 — Break resolution authority and four-eyes thresholds
 
-Status: Proposed (2026-09-28, the Phase 7 → 8 transition)
+Status: Accepted (2026-10-01, `P8-DOC-001` — read against the code and corrected first)
 Date: 2026-09-28
 Phase: 8
 Context: Reconciliation · Ledger · Identity · Settlement
@@ -87,19 +87,31 @@ The three designs weighed at the transition differed on exactly the undefined pa
    batch), never an edit. A reversal is used only by repudiation, through `ReversalService`
    (`INV-REV-01`). An adjustment on a reconciled position happens only through a resolution
    (point 7). No resolution originates an external movement: return-to-sender of unattributed
-   funds is a new payment capability, deferred.
+   funds is a new payment capability, deferred, and owned by Phase 15 (ADR-0070 §4).
 
    **The Resolution** is an aggregate of `reconciliation`: `reconciliation.resolution` plus
    `resolution_event` (reconciliation `V006`, `P8-TSK-012` for the platform's kind,
    `P8-TSK-015` for the person's kinds; the `REPUDIATE_BATCH` kind and its batch subject arrive
-   with reconciliation `V012`, `P8-TSK-023`, beside the external item's `REPUDIATED`, its
-   `MATCHED → UNMATCHED` reopening (a bank item of another batch whose allocation named the
-   repudiated batch's remittance expectation), the expectation's reopening edges and the
-   suspense item's `REPUDIATION` origin — each state with its producer). Its subject is
-   **exactly one** of `break_id` or `settlement_batch_id` (the latter for `REPUDIATE_BATCH` only,
-   from `V009`).
-   *(The migration numbers are the transition's consistency review's, A8: `V008` is
-   `P8-TSK-022`'s `run_replay`.)* It carries `kind`,
+   with reconciliation `V013`, `P8-TSK-023`, beside the external item's two repudiation-only
+   edges — `PARKED → UNMATCHED` (an over-paying bank item of a standing statement reopened whole,
+   its excess unparked) and `RESOLVED → REPUDIATED` — the expectation's `REOPENED` history event
+   and the suspense item's `REPUDIATION` origin, each state with its producer). The item's other
+   edges to `REPUDIATED`, its `MATCHED → UNMATCHED` reopening and the expectation's reopening
+   edges were already admitted before `V013`. Its subject is **exactly one** of `break_id` or
+   `settlement_batch_id` (the latter for `REPUDIATE_BATCH` only, from `V013`).
+   *(Corrected 2026-10-01, `P8-DOC-001`: this read "from `V009`", and credited `V013` with the
+   item's `REPUDIATED`, its `MATCHED → UNMATCHED` reopening and the expectation's reopening
+   edges; `V013`'s own header records that the machines already carried them.)*
+   *(Built by `P8-TSK-023`, 2026-10-01, in reconciliation `V013`: the batch subject
+   `settlement_batch_id` with `resolution_one_subject`, the repudiation's `subject_digest` - a batch
+   has no `residual_version` of its own, so the plan's SHA-256 is what the approver must find
+   unchanged - one live proposal and one approval per batch, and `repudiation_closure`, the record
+   of each break whose subject the repudiation emptied, since a batch-subject resolution names no
+   break of its own.)*
+   *(The migration numbers were the transition's consistency review's, A8, which gave `V008` to
+   `P8-TSK-022`'s `run_replay`; renumbered since: `V008` is `P8-TSK-016`'s bank items and
+   `run_replay` arrived with `P8-TSK-022`'s `V012` — corrected 2026-10-01, `P8-DOC-001`.)* It
+   carries `kind`,
    `reason_code`, `narrative`, `status`, `four_eyes`, `proposed_amount_*`, `residual_version`,
    `target_account_id`, `offset_item_id`, `chosen_expectation_id`, `proposed_by/at`,
    `decided_by/at`, `adjustment_proposal_id UNIQUE`, `journal_entry_id UNIQUE` and `rule_set_id`
@@ -110,19 +122,24 @@ The three designs weighed at the transition differed on exactly the undefined pa
    PROPOSED ──approve (decided_by ≠ proposed_by when four-eyes)──▶ APPROVED (terminal)
    PROPOSED ──reject (another RESOLVE holder, reasoned)──────────▶ REJECTED (terminal)
    PROPOSED ──withdraw (the proposer; the platform on evidence)───▶ WITHDRAWN (terminal)
-   born APPROVED: EVIDENCED (the platform) and a zero-value ACKNOWLEDGE (one person)
+   born APPROVED: EVIDENCED (the platform) and a zero-value ACKNOWLEDGE of a timing
+                  detector's TIMING_DIFFERENCE (one person; point 3)
    ```
 
    - **One live proposal per subject:** partial `UNIQUE (break_id) WHERE status = 'PROPOSED'`,
-     and the same per settlement batch (from `V009`).
+     and the same per settlement batch (`resolution_one_proposed_per_batch`, from `V013`), beside
+     `resolution_batch_repudiated_once` — one approval per batch.
    - **The break's machine follows** (ADR-0069; `SETTLEMENT_AND_RECONCILIATION_LIFECYCLES.md`): a
      proposal moves the break from `OPEN` or `INVESTIGATING` to `RESOLUTION_PROPOSED`; a rejection
      or a withdrawal returns it to `INVESTIGATING`; an approval moves it to `RESOLVED`, which is
      terminal. `EVIDENCED` reaches `RESOLVED` from `OPEN`, `INVESTIGATING` or
-     `RESOLUTION_PROPOSED`. A zero-value `ACKNOWLEDGE` reaches it from `OPEN` or `INVESTIGATING`.
+     `RESOLUTION_PROPOSED`. A zero-value `ACKNOWLEDGE` of a `TIMING_DIFFERENCE` raised by a timing
+     detector reaches it from `OPEN` or `INVESTIGATING` *(qualified 2026-10-01, `P8-TST-002`,
+     §3's note)*.
      Proposing against a resolved break is `reconciliation.BreakTerminal`.
-   - **`EVIDENCED` is the platform's only.** `CHECK (kind <> 'EVIDENCED' OR (proposed_by = system
-     AND status = 'APPROVED'))`. The domain refuses the kind at the door
+   - **`EVIDENCED` is the platform's only.** `resolution_evidenced_is_platform`:
+     `CHECK (kind <> 'EVIDENCED' OR (proposed_by_type = 'SYSTEM' AND status = 'APPROVED' AND NOT
+     four_eyes))` (reconciliation `V006`). The domain refuses the kind at the door
      (`reconciliation.ResolutionKindNotAllowed`) and the platform proposes no other kind.
    - **A person never resolves a break whose residual is not zero after the resolution's effect**,
      except by `ACKNOWLEDGE`, whose types carry no residual in a position (a timing difference, a
@@ -136,13 +153,13 @@ The three designs weighed at the transition differed on exactly the undefined pa
    | Kind | Applies to | Lines (entry `ADJUSTMENT`, scope `ledger.adjust.approve:<proposalId>`, unless stated) | Approvers |
    |---|---|---|---|
    | `EVIDENCED` | Any break a zero-residual allocation or offset explains | None of its own: the allocation's unpark or the offset is the posting (`recon-suspense:<parkId>`, a system `POSTING`); the stored resolution names the decision and the park | The platform only |
-   | `ACKNOWLEDGE` | `TIMING_DIFFERENCE`, `FEE_MISMATCH`, `DUPLICATE_INTERNAL` | None | 1 when the value at issue is 0; otherwise 2 |
+   | `ACKNOWLEDGE` | `TIMING_DIFFERENCE`, `FEE_MISMATCH`, `DUPLICATE_INTERNAL`; a diverged replay's `PROCESSING_ERROR` (`REPLAY_DIVERGED`) *(added 2026-10-01, `P8-TST-002`, §3's note)* | None | 1 for a `TIMING_DIFFERENCE` raised by a timing detector whose value at issue is 0; otherwise 2 *(corrected 2026-10-01: this read "1 when the value at issue is 0")* |
    | `WRITE_OFF` | An INBOUND remainder in P; a DEBIT suspense item | DR `RECONCILIATION_LOSSES` / CR P (or CR `SUSPENSE_UNMATCHED`) | 2 |
    | `TRANSFER_TO_ACCOUNT` | A CREDIT suspense item; an OUTBOUND remainder in P | DR `SUSPENSE_UNMATCHED` (or DR P) / CR a named `CUSTOMER_WALLET` or `MERCHANT_PAYABLE` | 2 |
    | `OFFSET_SUSPENSE` | A CREDIT and a DEBIT suspense item of equal amount and currency | None: `SUSPENSE_UNMATCHED` already nets them; both items released | 2 |
    | `RECOGNISE_GAIN` | A CREDIT suspense item older than the pinned `gain_min_age_days` | DR `SUSPENSE_UNMATCHED` / CR `RECONCILIATION_GAINS` | 2 |
    | `MANUAL_MATCH` | `AMBIGUOUS_MATCH` | A `MANUAL`-origin decision allocates the item to one of its stored candidates; the unpark posts as any late allocation's does (a system `POSTING`) | 2 — it stands in for the engine |
-   | `REPUDIATE_BATCH` | An accepted settlement batch proven fabricated or mis-normalised | `ReversalService` on the recognition entry (scope `ledger.reverse`, key `settlement-batch:<batchId>`); append-only counter-allocations; unparks (ADR-0065 §10) | 2 |
+   | `REPUDIATE_BATCH` | An accepted settlement batch proven fabricated or mis-normalised | `ReversalService` on the recognition entry (scope `ledger.reverse`, key `settlement-batch:<batchId>`); append-only counter-allocations; unparks of value still parked; for a parked value a resolution or an offset already released, the park's exact inverse (a system `POSTING`, `recon-suspense:<parkId>`) — that line, or the reversal's own suspense line for an unattributed bank item, opening a `REPUDIATION` suspense item owned by a new `PROCESSING_ERROR` break (ADR-0065 §10, ADR-0070 §10) | 2 |
 
    - **A kind's lines decide where it applies.** ADR-0069's per-type table is the one authority on
      which kinds a break type admits: every type that owns suspense lists `WRITE_OFF` (a DEBIT item)
@@ -176,13 +193,17 @@ The three designs weighed at the transition differed on exactly the undefined pa
    - **`OFFSET_SUSPENSE`** is the uncorrelated offset. A counterparty correction that names its
      original is offset automatically and resolves `EVIDENCED` (ADR-0068); an offset nothing
      correlates stays with two people. Both items are released and **both owning breaks close in
-     the approval**: the offset item's break is locked with the subject's (break rows sorted by
-     id, ahead of the resolution row, then both items sorted by id), its `break_event` names this
+     the approval**: the offset item's break is locked with the subject's (both sources'
+     advisories sorted, then break rows sorted by id, ahead of the resolution row, then the
+     subject's item, then the offset item — *corrected 2026-10-01, `P8-DOC-001`: this read "then
+     both items sorted by id"*), its `break_event` names this
      resolution, and the offset is refused (`reconciliation.ResolutionTargetRefused`) while that
      break carries a live proposal of its own (ADR-0070 §3).
    - **`RECOGNISE_GAIN`** is judged at proposal and again at approval, in SQL on the database
-     clock, against the item's stored `opened_on` and the pinned version's `gain_min_age_days`
-     (seeded 90). Before then: `reconciliation.GainNotYetEligible`.
+     clock, against the item's stored `opened_on` and the `gain_min_age_days` (seeded 90) of the
+     version the item's owning break pins. Before then: `reconciliation.GainNotYetEligible`.
+     *(Corrected 2026-10-01, `P8-DOC-001`: the code read the version active for the source at
+     proposal until the review corrected it to the break's pin — ADR-0070 §4's note.)*
    - **`MANUAL_MATCH`** names `chosen_expectation_id`, which must be a candidate in the item's
      stored `AMBIGUOUS_MATCH` decision snapshot. At approval the allocation goes through
      `allocate(E)` like every other leg, under the source's namespace-4 lock, and its decision
@@ -193,13 +214,22 @@ The three designs weighed at the transition differed on exactly the undefined pa
      `RESOLVED_BY_ADJUSTMENT`. The position proof (`INV-REC-06`) holds across both: a `WRITE_OFF`
      credits P and raises `resolved` by the same amount.
 
-3. **The threshold, defined: every resolution with value at issue or a posting is four-eyes.** A
-   zero-value, zero-posting `ACKNOWLEDGE` is one person's. `EVIDENCED` is the platform's. There is
-   no de-minimis band and no value-banded second approver.
-   - In the Phase 8 taxonomy the single-person path is, in practice, exactly the acknowledgement of
-     a `TIMING_DIFFERENCE`, whose value at issue is 0. A `FEE_MISMATCH` exceeds a non-negative
-     tolerance, and a `DUPLICATE_INTERNAL` carries the colliding expectation's amount, so both need
-     two people.
+3. **The threshold, defined: every person's resolution is four-eyes, except a zero-value
+   `ACKNOWLEDGE` of a `TIMING_DIFFERENCE` raised by a timing detector (cause `LATE_MATCH` or
+   `CYCLE_MISMATCH`), which is one person's.** `EVIDENCED` is the platform's, never four-eyes.
+   There is no de-minimis band and no value-banded second approver.
+   *(Corrected 2026-10-01, `P8-DOC-001`, to the rule `P8-TST-002` built in reconciliation
+   `V014`: this headline read "every resolution with value at issue or a posting is four-eyes. A
+   zero-value, zero-posting `ACKNOWLEDGE` is one person's" — a rule derived from value alone,
+   under which a diverged replay's zero-value acknowledgement closed on one person's word. The
+   correction bullet below records the find.)*
+   - The single-person path is therefore exactly the acknowledgement of a timing detector's
+     `TIMING_DIFFERENCE`, whose value at issue is 0, judged on the break's type and on its frozen
+     cause together, so a break reclassified into a timing difference keeps its second person. A
+     `FEE_MISMATCH` exceeds a non-negative tolerance, and a
+     `DUPLICATE_INTERNAL` carries the colliding expectation's amount, so both need two people; a
+     diverged replay's `PROCESSING_ERROR` (`REPLAY_DIVERGED`) carries no value and still needs two
+     (ADR-0068 §9.1).
    - **It keeps the ledger's rule rather than carving an exception into it.** `V010` already
      refuses a one-person `ADJUSTMENT` entry, and a lower reconciliation threshold would need a
      carve-out beneath it. It defines `INV-REC-03`'s threshold without introducing a new policy
@@ -212,9 +242,44 @@ The three designs weighed at the transition differed on exactly the undefined pa
    - **The severity threshold is not an approval threshold.** The rule set's per-currency
      `high_value_minor` (1,000.00 in EUR, GBP and USD in v1, owner decision O7, ADR-0069) escalates
      a break's severity, and so its alert, by one level. It changes nobody's authority.
-   - **`four_eyes` is derived, never chosen.** A CHECK binds it: `four_eyes = (kind <> 'EVIDENCED'
-     AND NOT (kind = 'ACKNOWLEDGE' AND proposed_amount_minor = 0))`. A raw writer therefore cannot
-     turn off the second person by clearing a flag.
+   - **`four_eyes` is derived, never chosen.** The domain derives it
+     (`ResolutionTemplates.fourEyes(kind, amount, type, cause)`), and reconciliation `V014` binds
+     it for every writer: the relaxed `CHECK resolution_four_eyes_derived` (`EVIDENCED` never
+     four-eyes, every row but a zero-value `ACKNOWLEDGE` always); the `AFTER INSERT` trigger
+     `resolution_acknowledgement_four_eyes_by_break`, which reads the break `FOR SHARE` and
+     refuses a zero-value acknowledgement whose flag is not `NOT (type = 'TIMING_DIFFERENCE' AND
+     cause IN ('LATE_MATCH', 'CYCLE_MISMATCH'))`; `CHECK resolution_unapproved_is_four_eyes`
+     (`four_eyes OR status = 'APPROVED'`), so a one-person resolution is born `APPROVED`; and
+     `break_type_frozen_under_a_one_person_resolution`. A raw writer therefore cannot turn off the
+     second person by clearing a flag. *(Corrected 2026-10-01, `P8-DOC-001`: this bullet stated
+     `V007`'s `CHECK`, `four_eyes = (kind <> 'EVIDENCED' AND NOT (kind = 'ACKNOWLEDGE' AND
+     proposed_amount_minor = 0))`, which `V014` replaced.)*
+   - ***Correction, 2026-10-01 (`P8-TST-002`).*** "In practice exactly the acknowledgement of a
+     `TIMING_DIFFERENCE`" stopped being true when `P8-TSK-022` gave a diverged replay's
+     `PROCESSING_ERROR` (`REPLAY_DIVERGED`, a decision subject, value 0) its one disposal, an
+     `ACKNOWLEDGE` that ADR-0068 §9.1 decided four-eyes: derived from value alone, it was one
+     person's act as built, so a CRITICAL break saying the matcher's decisions cannot be
+     reproduced closed on one person's word. The battery found it. The single-person path is now
+     defined, not merely observed: **a zero-value `ACKNOWLEDGE` is one person's only on a
+     `TIMING_DIFFERENCE` raised by a timing detector (`LATE_MATCH`, `CYCLE_MISMATCH`); every
+     other person's resolution - with value at issue, a posting, or on any other break - is
+     four-eyes; `EVIDENCED` is the platform's, never four-eyes.** The
+     completion gate added the cause: a reclassification moves the type (a diverged replay and a
+     timing difference both stand on a decision) but never the cause, so the rule and the cause
+     refinements of ADR-0069 §2 (`REPLAY_DIVERGED` → `ACKNOWLEDGE` alone;
+     `EXECUTION_ALREADY_EXPLAINED` → never `TRANSFER_TO_ACCOUNT`; the statement causes → nothing)
+     are keyed on the frozen cause, whatever the current type. The domain derives the flag
+     (`ResolutionTemplates.fourEyes(kind, amount, type, cause)`). Reconciliation `V014` enforces,
+     for every writer: (1) `resolution_four_eyes_derived`, relaxed to what the row can state —
+     `EVIDENCED` never four-eyes, everything but a zero-value `ACKNOWLEDGE` always; (2) an
+     `AFTER INSERT` trigger deriving a zero-value acknowledgement's flag from its break —
+     `four_eyes = NOT (break.type = 'TIMING_DIFFERENCE' AND break.cause IN ('LATE_MATCH',
+     'CYCLE_MISMATCH'))` — refusing either disagreement; (3) `resolution_unapproved_is_four_eyes`,
+     `CHECK (four_eyes OR status = 'APPROVED')`: a one-person resolution is born `APPROVED`,
+     never left `PROPOSED`; (4) a trigger refusing any change of a break's type while a one-person
+     (`NOT four_eyes`) resolution names it, so the type the flag was derived from cannot move
+     afterwards. The flag itself is frozen with the proposal by the machine trigger. Rows written
+     before `V014` are not rewritten; every one satisfies (1) and (3).
 
 4. **Two different people, at every rank the act reaches.**
    1. **The reconciliation domain** refuses an approval by the proposer
@@ -227,8 +292,9 @@ The three designs weighed at the transition differed on exactly the undefined pa
       so `adjustment_proposal_approver_is_not_initiator` and `adjustment_entry_is_approved` judge
       the same two people.
 
-   The value-bearing kinds that post no adjustment (a non-zero `ACKNOWLEDGE`, `OFFSET_SUSPENSE`,
-   `MANUAL_MATCH`, `REPUDIATE_BATCH`) hold at the first two ranks. Distinctness is by actor id. The
+   The four-eyes kinds that post no adjustment (every four-eyes `ACKNOWLEDGE`, a zero-value one on
+   a diverged replay included, `OFFSET_SUSPENSE`, `MANUAL_MATCH`, `REPUDIATE_BATCH`) hold at the
+   first two ranks. Distinctness is by actor id. The
    `CUSTOMER` actor-type debt does not weaken it, because the resolution row holds both ids; it is
    flagged for the gate.
 
@@ -329,8 +395,8 @@ The three designs weighed at the transition differed on exactly the undefined pa
      fingerprint and converges (ADR-0065 §6's discipline).
    - **`residual_version`** bumps on every allocation, park, release or reclassification that
      touches the break's subject.
-   - **At approval** the transaction locks the break, then the resolution, then the subject rows,
-     sorted. It re-derives the lines from the current remainder and re-reads the version. If either
+   - **At approval** the transaction takes the source's namespace-4 advisory, locks the break,
+     then the resolution, then the subject rows (point 9's order). It re-derives the lines from the current remainder and re-reads the version. If either
      differs from the frozen values: `409 reconciliation.ResolutionStale`, nothing written, the
      resolution still `PROPOSED`. The proposer withdraws and re-proposes, which is two acts again.
      This carries `V010`'s "the approver approves what they read" one level up: the ledger freezes
@@ -348,9 +414,13 @@ The three designs weighed at the transition differed on exactly the undefined pa
    | A manual match against the engine | `UNIQUE (external_item_id, expectation_id) WHERE reverses_allocation_id IS NULL`; the deferred Σ triggers | `409 reconciliation.RecordAlreadyMatched` |
 
    - **Lock order** (DISTRIBUTED_EXECUTION §3's Phase 8 row): (1) advisory namespace 4 for the
-     source, when the act allocates, parks or unparks (`MANUAL_MATCH`, `REPUDIATE_BATCH`); (2) break
+     source, in every resolution command whatever its kind — both sources, sorted, for an offset
+     spanning two; every affected source, sorted, for a repudiation *(corrected 2026-10-01,
+     `P8-DOC-001`: this read "when the act allocates, parks or unparks (`MANUAL_MATCH`,
+     `REPUDIATE_BATCH`)"; `P8-TSK-015` made it uniform, its recorded deviation (a))*; (2) break
      rows, then the resolution row; (3) expectation, external item and suspense item rows, each
-     sorted by id; (4) the merchant payout row, taken by the return worker only and by no
+     sorted by id — an offset's two items excepted, the subject's first (point 2); (4) the
+     merchant payout row, taken by the return worker only and by no
      resolution; (5) the transfer target's ledger account `FOR SHARE`; (6) inside `approveOwned`,
      the ledger proposal row, then the projection rows sorted by account id. **The posting is
      last.** A transaction posting several entries over shared rows — a repudiation's approval,
@@ -414,9 +484,13 @@ The three designs weighed at the transition differed on exactly the undefined pa
       resolution's one-way machine is the idempotency (`INV-IDEM-01` through state), and the same
       approver's retry converges on the recorded entry.
     - The platform's closure is audited acting-only as `reconciliation.BreakResolvedByEvidence`;
-      a loser records nothing. A zero-value `ACKNOWLEDGE` is one act and one reasoned record.
+      a loser records nothing. A timing difference's zero-value `ACKNOWLEDGE` is one act and one
+      reasoned record.
     - **Event:** `reconciliation.BreakResolved` (breakId, resolutionId, kind, reasonCode,
-      journalEntryId?); for a repudiation, `settlement.SettlementBatchRepudiated`. The planned
+      journalEntryId?), one per break the approval closes — an offset's two, a remainder's
+      siblings; for a repudiation, one per break it emptied (`REPUDIATE_BATCH`,
+      `EVIDENCE_REPUDIATED`, no entry id) and `settlement.SettlementBatchRepudiated` for the batch.
+      The planned
       `AdjustmentPosted` event is dropped: it collides with the audit action
       `ledger.AdjustmentPosted`, and `BreakResolved.journalEntryId` with
       `ledger.JournalEntryPosted` already carries it.
@@ -425,10 +499,14 @@ The three designs weighed at the transition differed on exactly the undefined pa
       {`type`}, and `finapp.reconciliation.adjustment` {`type`}. Counters count committed facts,
       after commit.
     - **Errors** (`ERROR_CONTRACT`): `reconciliation.BreakNotFound`, `BreakTerminal`,
-      `ResolutionAlreadyProposed`, `ResolutionNotPending`, `SelfApprovalRefused`,
-      `ResolutionKindNotAllowed`, `ReasonCodeNotAllowed`, `ResolutionTargetRefused`,
-      `ResolutionStale`, `RecordAlreadyMatched`, `GainNotYetEligible`; `ledger.AdjustmentOriginMismatch`
-      and `ledger.AdjustmentOnReconciledPosition`.
+      `ResolutionNotFound`, `ResolutionAlreadyProposed`, `ResolutionNotPending`,
+      `SelfApprovalRefused`, `NotTheProposer`, `ResolutionKindNotAllowed`, `ReasonCodeNotAllowed`,
+      `ResolutionTargetRefused`, `ResolutionStale`, `RecordAlreadyMatched`, `GainNotYetEligible`;
+      for a repudiation `BatchNotFound`, `BatchNotRepudiable`, `BatchNotDisposed` and
+      `RepudiationNotSupported`; `ledger.AdjustmentOriginMismatch` and
+      `ledger.AdjustmentOnReconciledPosition`. *(`ResolutionNotFound` and `NotTheProposer` arrived
+      with `P8-TSK-015`, the four batch codes with `P8-TSK-023`; listed 2026-10-01 by
+      `P8-DOC-001`.)*
     - **Classification:** narratives and notes `CONFIDENTIAL`; amounts `RESTRICTED-FINANCIAL`,
       never in logs, traces, metrics or events. `resolution`'s columns are classified in
       DATA_CLASSIFICATION §4 in the same change (`ColumnClassificationTest`).
@@ -549,7 +627,7 @@ Positive:
 
 Negative:
 - Every value-bearing resolution needs two people, down to a one-cent fee difference; only a
-  zero-value timing difference is single-person. A desk with one `RECONCILIATION_RESOLVE` holder
+  timing detector's zero-value timing difference is single-person. A desk with one `RECONCILIATION_RESOLVE` holder
   cannot close any value-bearing break. The ageing alerts are the signal, and staffing at least two
   is an operational requirement.
 - A resolution disposes of the whole residual. A partly explained remainder waits for evidence.
@@ -622,7 +700,7 @@ stored resolution, ADR-0069's amendment), `INV-REC-06`, `INV-REC-09`, `INV-SET-0
   `RECONCILIATION_LOSSES` (EXPENSE) and `RECONCILIATION_GAINS` (REVENUE) per currency, both
   reconciled positions (the binding function's list re-stated), so only an approved resolution
   posts there. Reconciliation `V007` regenerates the kind, status and reason `CHECK`s from the
-  enums (every kind but `REPUDIATE_BATCH`, every code but `EVIDENCE_REPUDIATED` — `V012`'s, as renumbered by `P8-TSK-016`, `P8-TSK-017` and `P8-TSK-018`),
+  enums (every kind but `REPUDIATE_BATCH`, every code but `EVIDENCE_REPUDIATED` — `V013`'s, as renumbered by `P8-TSK-016`, `P8-TSK-017`, `P8-TSK-018` and `P8-TSK-020`),
   adds the generated (kind, reason) pairing, §3's derived `four_eyes`, the one-to-one ledger
   binding (a posting kind names its proposal, an approved one its entry) and each kind's operand,
   and replaces `V006`'s blanket freeze with the machine's every-writer trigger (payload frozen,
@@ -656,15 +734,23 @@ stored resolution, ADR-0069's amendment), `INV-REC-06`, `INV-REC-09`, `INV-SET-0
   (f) a break owning more than one open suspense item is refused (`ResolutionKindNotAllowed`: a
   template disposes of one); (g) the expectation's history gains `RESOLVED` (`V007` regenerates
   the event list); (h) no bespoke `reconciliation.resolve` span (the `P8-TSK-008` precedent: the
-  request span and the audit trail carry the act) and the meters are `P8-TSK-024`'s. The two
+  request span and the audit trail carry the act) and the meters are `P8-TSK-024`'s *(superseded
+  by `P8-TSK-024`, 2026-10-01: the span exists — one `reconciliation.resolve` per decision door,
+  `BreakResolutionDesk`, identifier attributes only — beside the three meters)*. The two
   recorded questions below are **decided**: no step-up (the ledger's adjustment approval takes
   none; the step-up debt row is unchanged), and a refused self-approval writes nothing (the
   `AdjustmentService` precedent — a `DENIED` record would be the destination approval's shape, not
   this machine's).
 
 
-- Until Phase 8's first task lands, nothing in this ADR is implemented; every statement is the
-  decided design, corrected by the tasks that build it.
+- **As built** (2026-10-01, read against the code by `P8-DOC-001`): every point of this ADR is
+  implemented by the tasks below, all `COMPLETE`, and every statement above is true of the code.
+  The decision that changed after this ADR was written is point 3's threshold, narrowed by
+  `P8-TST-002` in reconciliation `V014` and now stated in the body; the review also corrected
+  point 1's migration attributions (`V013`, not `V009`; `run_replay` in `V012`) and `EVIDENCED`'s
+  `CHECK`, point 2's repudiation lines and offset lock order, point 9's advisory in every command,
+  and point 11's events and error codes. *(This bullet read "Until Phase 8's first task lands,
+  nothing in this ADR is implemented" until the review.)*
 - `P8-TSK-006` (ledger `V015`: `reason_code`, `origin`, the uncoded-insert trigger, the binding
   over `reconciledPositions()`, the re-stated freeze; `AdjustmentReasonCode`; `proposeOwned`,
   `approveOwned`, `rejectOwned`; the generic door's `MANUAL_CORRECTION` and origin refusal; the
@@ -676,10 +762,10 @@ stored resolution, ADR-0069's amendment), `INV-REC-06`, `INV-REC-09`, `INV-SET-0
   `reconciliation.BreakResolved` extended to the person's kinds, and `reconciliationAttributed`
   with the customer statement's `RECONCILIATION_ATTRIBUTION` label, point 2). `P8-TSK-019` (the
   payout return's fallback). `P8-TSK-020` (unmatched confirmations released only by resolution).
-  `P8-TSK-023` (`REPUDIATE_BATCH`; reconciliation `V012` admitting the kind, the batch subject and
-  its one-live unique, the external item's `REPUDIATED` and its `MATCHED → UNMATCHED` reopening
-  (a bank item of another batch), the expectation's reopening edges, and the suspense item's
-  `REPUDIATION` origin).
+  `P8-TSK-023` (`REPUDIATE_BATCH`; reconciliation `V013` admitting the kind, the batch subject
+  with its digest, its one-live and once-approved uniques, `repudiation_closure`, the external
+  item's `PARKED → UNMATCHED` and `RESOLVED → REPUDIATED` edges, the expectation's `REOPENED`
+  event, the counter-allocation's binding, and the suspense item's `REPUDIATION` origin).
   `P8-TST-002` (every break type crossed with every admissible
   kind; concurrent approvals; evidence against approval both ways; offsets and claw-backs; write-off
   then recovery; four-eyes negatives at every rank; the threshold's edge — a zero-value
@@ -720,9 +806,11 @@ stored resolution, ADR-0069's amendment), `INV-REC-06`, `INV-REC-09`, `INV-SET-0
   no amendment.
 - Recorded, not scheduled: a pinned de-minimis or value-banded approval policy (seam: the proposal
   row and `resolution.four_eyes`); automatic reversal of a write-off on late evidence;
-  return-to-sender of unattributed funds; Phase 15's role-exclusion and resolver-is-not-actor rules;
-  Phase 14's treatment of a proposal whose period closed before approval.
+  return-to-sender of unattributed funds (owned by Phase 15, ADR-0070 §4, named by
+  `P8-DOC-001`); Phase 15's role-exclusion and resolver-is-not-actor rules; Phase 14's treatment
+  of a proposal whose period closed before approval.
 - Annotations at the transition: `LEDGER_MODEL.md` §6 (the adjustment gains an origin and a reason
   code; the threshold statement stands); DELIVERY_PLAN's Phase 8 addendum (the `AdjustmentPosted`
   event dropped).
-- The Phase 8 review reads this ADR against the code before accepting it.
+- The Phase 8 review (`P8-DOC-001`) read this ADR against the code, corrected it where it had
+  drifted, and accepted it on 2026-10-01.

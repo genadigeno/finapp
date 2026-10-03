@@ -589,6 +589,9 @@ class PaymentAmbiguityDemonstrationDatabaseTest {
                     @Override
                     public void alias(
                             java.sql.Connection uow, AliasRegistration registration) {}
+
+                    @Override
+                    public void parked(java.sql.Connection uow, ParkedValue parked) {}
                 });
     }
 
@@ -633,6 +636,9 @@ class PaymentAmbiguityDemonstrationDatabaseTest {
                                     @Override
                                     public void alias(
                                             java.sql.Connection uow, AliasRegistration registration) {}
+
+                                    @Override
+                                    public void parked(java.sql.Connection uow, ParkedValue parked) {}
                                 }),
                         new InboxConsumer<>(new JdbcInboxRecordStore(), CLOCK, Duration.ofDays(14)),
                         new tools.jackson.databind.ObjectMapper(),

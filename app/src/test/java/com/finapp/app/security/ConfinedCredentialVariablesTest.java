@@ -68,7 +68,21 @@ class ConfinedCredentialVariablesTest {
                     // The twelfth (P8-TSK-002): the settlement-file key, one key per concern.
                     Map.entry(
                             com.finapp.app.settlement.SettlementFileKey.class,
-                            "finapp.settlement.file.key"));
+                            "finapp.settlement.file.key"),
+                    // The thirteenth to sixteenth (P8-TSK-021): one pull credential per
+                    // source - report access is not the money-moving API.
+                    Map.entry(
+                            com.finapp.app.settlement.PspReportKey.class,
+                            "finapp.settlement.psp.report.key"),
+                    Map.entry(
+                            com.finapp.app.settlement.SchemeReportKey.class,
+                            "finapp.settlement.scheme.report.key"),
+                    Map.entry(
+                            com.finapp.app.settlement.PayoutReportKey.class,
+                            "finapp.settlement.payout.report.key"),
+                    Map.entry(
+                            com.finapp.app.settlement.BankStatementKey.class,
+                            "finapp.settlement.bank.statement.key"));
 
     @Test
     @DisplayName("the variable a refusal names is the relaxed-binding form of the property read")

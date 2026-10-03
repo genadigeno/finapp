@@ -5,9 +5,9 @@ import java.util.stream.Collectors;
 
 /**
  * How a suspense item's value reached {@code SUSPENSE_UNMATCHED} (`P8-TSK-010`, ADR-0070
- * §2's openers) — three now; {@code REPUDIATION} joins by reconciliation `V012`
+ * §2's openers) — four, {@code REPUDIATION} joining by reconciliation `V013`
  * (`P8-TSK-023`), the origin whose {@code origin_ref} is the already-released item it
- * reverses. {@code origin_ref} is the origin's own row — the external item, the Phase 7
+ * answers. {@code origin_ref} is the origin's own row — the external item, the Phase 7
  * parking, the settlement line — one uniform {@code UNIQUE}, the backfill's and every
  * opener's converging arbiter.
  */
@@ -20,11 +20,26 @@ public enum SuspenseOrigin {
     BANK_UNATTRIBUTED,
 
     /** A pay-in confirmation the platform could not credit, through the port (`-020`). */
-    UNMATCHED_CONFIRMATION;
+    UNMATCHED_CONFIRMATION,
 
-    /** The `V004` {@code CHECK}'s value list — reconciled by the migration test. */
+    /**
+     * A repudiation answering a value a resolution already released (`P8-TSK-023`,
+     * ADR-0070 §10): the line the reversal or the inverse posting carries, on the
+     * opposite side, owned by a {@code PROCESSING_ERROR} break.
+     */
+    REPUDIATION;
+
+    /** `V013`'s {@code CHECK} value list — reconciled by the migration test. */
     public static String sqlValueList() {
         return Arrays.stream(values())
+                .map(value -> "'" + value.name() + "'")
+                .collect(Collectors.joining(", "));
+    }
+
+    /** `V004`'s value list: the three openers before the repudiation's. */
+    public static String sqlValueListBeforeV013() {
+        return Arrays.stream(values())
+                .filter(value -> value != REPUDIATION)
                 .map(value -> "'" + value.name() + "'")
                 .collect(Collectors.joining(", "));
     }

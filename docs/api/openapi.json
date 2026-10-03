@@ -3027,6 +3027,111 @@
           }
         }
       },
+      "reconciliation.BatchNotDisposed": {
+        "content": {
+          "application/problem+json": {
+            "schema": {
+              "allOf": [
+                {
+                  "$ref": "#/components/schemas/ProblemDetail"
+                },
+                {
+                  "properties": {
+                    "code": {
+                      "const": "reconciliation.BatchNotDisposed"
+                    },
+                    "status": {
+                      "const": 409
+                    },
+                    "type": {
+                      "const": "https://finapp.example/problems/reconciliation.BatchNotDisposed"
+                    }
+                  }
+                }
+              ]
+            }
+          }
+        },
+        "description": "[409] The batch's run has not yet disposed of every item.",
+        "headers": {
+          "X-Client-Correlation-Id": {
+            "$ref": "#/components/headers/X-Client-Correlation-Id"
+          },
+          "X-Correlation-Id": {
+            "$ref": "#/components/headers/X-Correlation-Id"
+          }
+        }
+      },
+      "reconciliation.BatchNotFound": {
+        "content": {
+          "application/problem+json": {
+            "schema": {
+              "allOf": [
+                {
+                  "$ref": "#/components/schemas/ProblemDetail"
+                },
+                {
+                  "properties": {
+                    "code": {
+                      "const": "reconciliation.BatchNotFound"
+                    },
+                    "status": {
+                      "const": 404
+                    },
+                    "type": {
+                      "const": "https://finapp.example/problems/reconciliation.BatchNotFound"
+                    }
+                  }
+                }
+              ]
+            }
+          }
+        },
+        "description": "[404] No settlement batch has this identifier.",
+        "headers": {
+          "X-Client-Correlation-Id": {
+            "$ref": "#/components/headers/X-Client-Correlation-Id"
+          },
+          "X-Correlation-Id": {
+            "$ref": "#/components/headers/X-Correlation-Id"
+          }
+        }
+      },
+      "reconciliation.BatchNotRepudiable": {
+        "content": {
+          "application/problem+json": {
+            "schema": {
+              "allOf": [
+                {
+                  "$ref": "#/components/schemas/ProblemDetail"
+                },
+                {
+                  "properties": {
+                    "code": {
+                      "const": "reconciliation.BatchNotRepudiable"
+                    },
+                    "status": {
+                      "const": 409
+                    },
+                    "type": {
+                      "const": "https://finapp.example/problems/reconciliation.BatchNotRepudiable"
+                    }
+                  }
+                }
+              ]
+            }
+          }
+        },
+        "description": "[409] Only an accepted settlement batch can be repudiated.",
+        "headers": {
+          "X-Client-Correlation-Id": {
+            "$ref": "#/components/headers/X-Client-Correlation-Id"
+          },
+          "X-Correlation-Id": {
+            "$ref": "#/components/headers/X-Correlation-Id"
+          }
+        }
+      },
       "reconciliation.BreakNotFound": {
         "content": {
           "application/problem+json": {
@@ -3307,6 +3412,76 @@
           }
         }
       },
+      "reconciliation.ReprocessingInProgress": {
+        "content": {
+          "application/problem+json": {
+            "schema": {
+              "allOf": [
+                {
+                  "$ref": "#/components/schemas/ProblemDetail"
+                },
+                {
+                  "properties": {
+                    "code": {
+                      "const": "reconciliation.ReprocessingInProgress"
+                    },
+                    "status": {
+                      "const": 409
+                    },
+                    "type": {
+                      "const": "https://finapp.example/problems/reconciliation.ReprocessingInProgress"
+                    }
+                  }
+                }
+              ]
+            }
+          }
+        },
+        "description": "[409] A reprocessing run is already open for this source.",
+        "headers": {
+          "X-Client-Correlation-Id": {
+            "$ref": "#/components/headers/X-Client-Correlation-Id"
+          },
+          "X-Correlation-Id": {
+            "$ref": "#/components/headers/X-Correlation-Id"
+          }
+        }
+      },
+      "reconciliation.RepudiationNotSupported": {
+        "content": {
+          "application/problem+json": {
+            "schema": {
+              "allOf": [
+                {
+                  "$ref": "#/components/schemas/ProblemDetail"
+                },
+                {
+                  "properties": {
+                    "code": {
+                      "const": "reconciliation.RepudiationNotSupported"
+                    },
+                    "status": {
+                      "const": 409
+                    },
+                    "type": {
+                      "const": "https://finapp.example/problems/reconciliation.RepudiationNotSupported"
+                    }
+                  }
+                }
+              ]
+            }
+          }
+        },
+        "description": "[409] This batch's repudiation needs a compensation this phase does not provide.",
+        "headers": {
+          "X-Client-Correlation-Id": {
+            "$ref": "#/components/headers/X-Client-Correlation-Id"
+          },
+          "X-Correlation-Id": {
+            "$ref": "#/components/headers/X-Correlation-Id"
+          }
+        }
+      },
       "reconciliation.ResolutionAlreadyProposed": {
         "content": {
           "application/problem+json": {
@@ -3517,6 +3692,216 @@
           }
         }
       },
+      "reconciliation.RuleSetActivationBySameActor": {
+        "content": {
+          "application/problem+json": {
+            "schema": {
+              "allOf": [
+                {
+                  "$ref": "#/components/schemas/ProblemDetail"
+                },
+                {
+                  "properties": {
+                    "code": {
+                      "const": "reconciliation.RuleSetActivationBySameActor"
+                    },
+                    "status": {
+                      "const": 409
+                    },
+                    "type": {
+                      "const": "https://finapp.example/problems/reconciliation.RuleSetActivationBySameActor"
+                    }
+                  }
+                }
+              ]
+            }
+          }
+        },
+        "description": "[409] A rule set version is activated by someone other than its proposer.",
+        "headers": {
+          "X-Client-Correlation-Id": {
+            "$ref": "#/components/headers/X-Client-Correlation-Id"
+          },
+          "X-Correlation-Id": {
+            "$ref": "#/components/headers/X-Correlation-Id"
+          }
+        }
+      },
+      "reconciliation.RuleSetInvalid": {
+        "content": {
+          "application/problem+json": {
+            "schema": {
+              "allOf": [
+                {
+                  "$ref": "#/components/schemas/ProblemDetail"
+                },
+                {
+                  "properties": {
+                    "code": {
+                      "const": "reconciliation.RuleSetInvalid"
+                    },
+                    "status": {
+                      "const": 422
+                    },
+                    "type": {
+                      "const": "https://finapp.example/problems/reconciliation.RuleSetInvalid"
+                    }
+                  }
+                }
+              ]
+            }
+          }
+        },
+        "description": "[422] The proposed rule set version is not well formed.",
+        "headers": {
+          "X-Client-Correlation-Id": {
+            "$ref": "#/components/headers/X-Client-Correlation-Id"
+          },
+          "X-Correlation-Id": {
+            "$ref": "#/components/headers/X-Correlation-Id"
+          }
+        }
+      },
+      "reconciliation.RuleSetNotFound": {
+        "content": {
+          "application/problem+json": {
+            "schema": {
+              "allOf": [
+                {
+                  "$ref": "#/components/schemas/ProblemDetail"
+                },
+                {
+                  "properties": {
+                    "code": {
+                      "const": "reconciliation.RuleSetNotFound"
+                    },
+                    "status": {
+                      "const": 404
+                    },
+                    "type": {
+                      "const": "https://finapp.example/problems/reconciliation.RuleSetNotFound"
+                    }
+                  }
+                }
+              ]
+            }
+          }
+        },
+        "description": "[404] No matching rule set version has this identifier.",
+        "headers": {
+          "X-Client-Correlation-Id": {
+            "$ref": "#/components/headers/X-Client-Correlation-Id"
+          },
+          "X-Correlation-Id": {
+            "$ref": "#/components/headers/X-Correlation-Id"
+          }
+        }
+      },
+      "reconciliation.RuleSetNotPending": {
+        "content": {
+          "application/problem+json": {
+            "schema": {
+              "allOf": [
+                {
+                  "$ref": "#/components/schemas/ProblemDetail"
+                },
+                {
+                  "properties": {
+                    "code": {
+                      "const": "reconciliation.RuleSetNotPending"
+                    },
+                    "status": {
+                      "const": 409
+                    },
+                    "type": {
+                      "const": "https://finapp.example/problems/reconciliation.RuleSetNotPending"
+                    }
+                  }
+                }
+              ]
+            }
+          }
+        },
+        "description": "[409] This rule set version is no longer awaiting a decision.",
+        "headers": {
+          "X-Client-Correlation-Id": {
+            "$ref": "#/components/headers/X-Client-Correlation-Id"
+          },
+          "X-Correlation-Id": {
+            "$ref": "#/components/headers/X-Correlation-Id"
+          }
+        }
+      },
+      "reconciliation.RuleSetProposalPending": {
+        "content": {
+          "application/problem+json": {
+            "schema": {
+              "allOf": [
+                {
+                  "$ref": "#/components/schemas/ProblemDetail"
+                },
+                {
+                  "properties": {
+                    "code": {
+                      "const": "reconciliation.RuleSetProposalPending"
+                    },
+                    "status": {
+                      "const": 409
+                    },
+                    "type": {
+                      "const": "https://finapp.example/problems/reconciliation.RuleSetProposalPending"
+                    }
+                  }
+                }
+              ]
+            }
+          }
+        },
+        "description": "[409] A proposed rule set version already awaits a decision for this source.",
+        "headers": {
+          "X-Client-Correlation-Id": {
+            "$ref": "#/components/headers/X-Client-Correlation-Id"
+          },
+          "X-Correlation-Id": {
+            "$ref": "#/components/headers/X-Correlation-Id"
+          }
+        }
+      },
+      "reconciliation.RunNotBlocked": {
+        "content": {
+          "application/problem+json": {
+            "schema": {
+              "allOf": [
+                {
+                  "$ref": "#/components/schemas/ProblemDetail"
+                },
+                {
+                  "properties": {
+                    "code": {
+                      "const": "reconciliation.RunNotBlocked"
+                    },
+                    "status": {
+                      "const": 409
+                    },
+                    "type": {
+                      "const": "https://finapp.example/problems/reconciliation.RunNotBlocked"
+                    }
+                  }
+                }
+              ]
+            }
+          }
+        },
+        "description": "[409] Only a blocked reconciliation run can be requeued.",
+        "headers": {
+          "X-Client-Correlation-Id": {
+            "$ref": "#/components/headers/X-Client-Correlation-Id"
+          },
+          "X-Correlation-Id": {
+            "$ref": "#/components/headers/X-Correlation-Id"
+          }
+        }
+      },
       "reconciliation.RunNotFound": {
         "content": {
           "application/problem+json": {
@@ -3578,6 +3963,76 @@
           }
         },
         "description": "[409] A resolution's proposer cannot decide it; a second person must.",
+        "headers": {
+          "X-Client-Correlation-Id": {
+            "$ref": "#/components/headers/X-Client-Correlation-Id"
+          },
+          "X-Correlation-Id": {
+            "$ref": "#/components/headers/X-Correlation-Id"
+          }
+        }
+      },
+      "reconciliation.SourceNotFound": {
+        "content": {
+          "application/problem+json": {
+            "schema": {
+              "allOf": [
+                {
+                  "$ref": "#/components/schemas/ProblemDetail"
+                },
+                {
+                  "properties": {
+                    "code": {
+                      "const": "reconciliation.SourceNotFound"
+                    },
+                    "status": {
+                      "const": 404
+                    },
+                    "type": {
+                      "const": "https://finapp.example/problems/reconciliation.SourceNotFound"
+                    }
+                  }
+                }
+              ]
+            }
+          }
+        },
+        "description": "[404] No declared settlement source has this code.",
+        "headers": {
+          "X-Client-Correlation-Id": {
+            "$ref": "#/components/headers/X-Client-Correlation-Id"
+          },
+          "X-Correlation-Id": {
+            "$ref": "#/components/headers/X-Correlation-Id"
+          }
+        }
+      },
+      "reconciliation.ToleranceNotPermitted": {
+        "content": {
+          "application/problem+json": {
+            "schema": {
+              "allOf": [
+                {
+                  "$ref": "#/components/schemas/ProblemDetail"
+                },
+                {
+                  "properties": {
+                    "code": {
+                      "const": "reconciliation.ToleranceNotPermitted"
+                    },
+                    "status": {
+                      "const": 422
+                    },
+                    "type": {
+                      "const": "https://finapp.example/problems/reconciliation.ToleranceNotPermitted"
+                    }
+                  }
+                }
+              ]
+            }
+          }
+        },
+        "description": "[422] A tolerance may compare a fee against its terms or a date, never an amount.",
         "headers": {
           "X-Client-Correlation-Id": {
             "$ref": "#/components/headers/X-Client-Correlation-Id"
@@ -3657,6 +4112,41 @@
           }
         }
       },
+      "settlement.ConflictingBatchStands": {
+        "content": {
+          "application/problem+json": {
+            "schema": {
+              "allOf": [
+                {
+                  "$ref": "#/components/schemas/ProblemDetail"
+                },
+                {
+                  "properties": {
+                    "code": {
+                      "const": "settlement.ConflictingBatchStands"
+                    },
+                    "status": {
+                      "const": 409
+                    },
+                    "type": {
+                      "const": "https://finapp.example/problems/settlement.ConflictingBatchStands"
+                    }
+                  }
+                }
+              ]
+            }
+          }
+        },
+        "description": "[409] A live settlement batch still holds this file's batch identity.",
+        "headers": {
+          "X-Client-Correlation-Id": {
+            "$ref": "#/components/headers/X-Client-Correlation-Id"
+          },
+          "X-Correlation-Id": {
+            "$ref": "#/components/headers/X-Correlation-Id"
+          }
+        }
+      },
       "settlement.DeliveryRefused": {
         "content": {
           "application/problem+json": {
@@ -3683,6 +4173,41 @@
           }
         },
         "description": "[422] The delivery was refused by the door screen; only metadata was recorded.",
+        "headers": {
+          "X-Client-Correlation-Id": {
+            "$ref": "#/components/headers/X-Client-Correlation-Id"
+          },
+          "X-Correlation-Id": {
+            "$ref": "#/components/headers/X-Correlation-Id"
+          }
+        }
+      },
+      "settlement.FileAlreadyReadmitted": {
+        "content": {
+          "application/problem+json": {
+            "schema": {
+              "allOf": [
+                {
+                  "$ref": "#/components/schemas/ProblemDetail"
+                },
+                {
+                  "properties": {
+                    "code": {
+                      "const": "settlement.FileAlreadyReadmitted"
+                    },
+                    "status": {
+                      "const": 409
+                    },
+                    "type": {
+                      "const": "https://finapp.example/problems/settlement.FileAlreadyReadmitted"
+                    }
+                  }
+                }
+              ]
+            }
+          }
+        },
+        "description": "[409] This settlement file has already been readmitted.",
         "headers": {
           "X-Client-Correlation-Id": {
             "$ref": "#/components/headers/X-Client-Correlation-Id"
@@ -3753,6 +4278,41 @@
           }
         },
         "description": "[404] No settlement file has this identifier.",
+        "headers": {
+          "X-Client-Correlation-Id": {
+            "$ref": "#/components/headers/X-Client-Correlation-Id"
+          },
+          "X-Correlation-Id": {
+            "$ref": "#/components/headers/X-Correlation-Id"
+          }
+        }
+      },
+      "settlement.FileNotRejected": {
+        "content": {
+          "application/problem+json": {
+            "schema": {
+              "allOf": [
+                {
+                  "$ref": "#/components/schemas/ProblemDetail"
+                },
+                {
+                  "properties": {
+                    "code": {
+                      "const": "settlement.FileNotRejected"
+                    },
+                    "status": {
+                      "const": 409
+                    },
+                    "type": {
+                      "const": "https://finapp.example/problems/settlement.FileNotRejected"
+                    }
+                  }
+                }
+              ]
+            }
+          }
+        },
+        "description": "[409] This settlement file is not a rejection that can be readmitted.",
         "headers": {
           "X-Client-Correlation-Id": {
             "$ref": "#/components/headers/X-Client-Correlation-Id"
@@ -4271,6 +4831,21 @@
             "type": "string"
           }
         },
+        "type": "object"
+      },
+      "BatchRepudiationRequest": {
+        "properties": {
+          "narrative": {
+            "type": "string"
+          },
+          "reasonCode": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "narrative",
+          "reasonCode"
+        ],
         "type": "object"
       },
       "BatchTotalView": {
@@ -4912,6 +5487,76 @@
         },
         "type": "object"
       },
+      "DailySummaryReport": {
+        "properties": {
+          "date": {
+            "type": "string"
+          },
+          "sources": {
+            "items": {
+              "$ref": "#/components/schemas/DailySummarySource"
+            },
+            "type": "array"
+          },
+          "truncated": {
+            "type": "boolean"
+          }
+        },
+        "type": "object"
+      },
+      "DailySummarySource": {
+        "properties": {
+          "batchesAccepted": {
+            "format": "int64",
+            "type": "integer"
+          },
+          "breaksRaised": {
+            "items": {
+              "$ref": "#/components/schemas/SummaryBreaks"
+            },
+            "type": "array"
+          },
+          "breaksResolved": {
+            "items": {
+              "$ref": "#/components/schemas/SummaryBreaks"
+            },
+            "type": "array"
+          },
+          "items": {
+            "items": {
+              "$ref": "#/components/schemas/SummaryDisposition"
+            },
+            "type": "array"
+          },
+          "itemsCounted": {
+            "format": "int64",
+            "type": "integer"
+          },
+          "itemsMatched": {
+            "format": "int64",
+            "type": "integer"
+          },
+          "matchRate": {
+            "type": "string"
+          },
+          "openBreaksByAge": {
+            "items": {
+              "$ref": "#/components/schemas/SummaryAgeingBand"
+            },
+            "type": "array"
+          },
+          "resolutionsApproved": {
+            "items": {
+              "$ref": "#/components/schemas/SummaryResolutions"
+            },
+            "type": "array"
+          },
+          "source": {
+            "type": "string"
+          }
+        },
+        "type": "object"
+      },
       "DecisionRequest": {
         "properties": {
           "outcome": {
@@ -5447,6 +6092,62 @@
             "type": "string"
           },
           "name": {
+            "type": "string"
+          }
+        },
+        "type": "object"
+      },
+      "FeeTermsRequest": {
+        "properties": {
+          "currency": {
+            "maxLength": 3,
+            "minLength": 3,
+            "type": "string"
+          },
+          "fixedMinor": {
+            "format": "int64",
+            "minimum": 0,
+            "type": "integer"
+          },
+          "lineType": {
+            "maxLength": 64,
+            "minLength": 0,
+            "type": "string"
+          },
+          "rate": {
+            "minLength": 1,
+            "pattern": "[0-9](\\.[0-9]{1,6})?",
+            "type": "string"
+          },
+          "roundingPolicy": {
+            "maxLength": 16,
+            "minLength": 0,
+            "type": "string"
+          },
+          "scale": {
+            "format": "int32",
+            "maximum": 9,
+            "minimum": 0,
+            "type": "integer"
+          }
+        },
+        "required": [
+          "currency",
+          "lineType",
+          "rate",
+          "roundingPolicy"
+        ],
+        "type": "object"
+      },
+      "FetchAnswer": {
+        "properties": {
+          "fileId": {
+            "type": "string"
+          },
+          "outcome": {
+            "type": "string"
+          },
+          "reason": {
             "type": "string"
           }
         },
@@ -6668,6 +7369,88 @@
         ],
         "type": "object"
       },
+      "ProviderCostRow": {
+        "properties": {
+          "batches": {
+            "format": "int64",
+            "type": "integer"
+          },
+          "charged": {
+            "type": "string"
+          },
+          "currency": {
+            "type": "string"
+          },
+          "evidence": {
+            "items": {
+              "$ref": "#/components/schemas/ProviderFeeEvidence"
+            },
+            "type": "array"
+          },
+          "evidenceAgrees": {
+            "type": "boolean"
+          },
+          "evidenceTotal": {
+            "type": "string"
+          },
+          "expected": {
+            "type": "string"
+          },
+          "feeMismatchBreaks": {
+            "format": "int64",
+            "type": "integer"
+          },
+          "feeMismatchOpen": {
+            "format": "int64",
+            "type": "integer"
+          },
+          "feeMismatchValueAtIssue": {
+            "type": "string"
+          },
+          "repudiations": {
+            "format": "int64",
+            "type": "integer"
+          },
+          "source": {
+            "type": "string"
+          }
+        },
+        "type": "object"
+      },
+      "ProviderCostsReport": {
+        "properties": {
+          "costs": {
+            "items": {
+              "$ref": "#/components/schemas/ProviderCostRow"
+            },
+            "type": "array"
+          },
+          "from": {
+            "type": "string"
+          },
+          "month": {
+            "type": "string"
+          },
+          "truncated": {
+            "type": "boolean"
+          },
+          "until": {
+            "type": "string"
+          }
+        },
+        "type": "object"
+      },
+      "ProviderFeeEvidence": {
+        "properties": {
+          "lineType": {
+            "type": "string"
+          },
+          "value": {
+            "type": "string"
+          }
+        },
+        "type": "object"
+      },
       "PurposeBasisResponse": {
         "properties": {
           "currentText": {
@@ -6681,6 +7464,20 @@
             "type": "boolean"
           },
           "purpose": {
+            "type": "string"
+          }
+        },
+        "type": "object"
+      },
+      "ReadmissionAnswer": {
+        "properties": {
+          "authentication": {
+            "type": "string"
+          },
+          "fileId": {
+            "type": "string"
+          },
+          "readmitsFileId": {
             "type": "string"
           }
         },
@@ -6867,6 +7664,84 @@
         ],
         "type": "object"
       },
+      "ReprocessingReceipt": {
+        "properties": {
+          "itemCount": {
+            "format": "int32",
+            "type": "integer"
+          },
+          "ruleSetId": {
+            "type": "string"
+          },
+          "runId": {
+            "type": "string"
+          },
+          "sourceCode": {
+            "type": "string"
+          }
+        },
+        "type": "object"
+      },
+      "ReprocessingRequest": {
+        "properties": {
+          "reason": {
+            "maxLength": 1000,
+            "minLength": 1,
+            "type": "string"
+          }
+        },
+        "required": [
+          "reason"
+        ],
+        "type": "object"
+      },
+      "RepudiationReceipt": {
+        "properties": {
+          "answered": {
+            "format": "int32",
+            "type": "integer"
+          },
+          "breaksClosed": {
+            "format": "int32",
+            "type": "integer"
+          },
+          "counterAllocations": {
+            "format": "int32",
+            "type": "integer"
+          },
+          "items": {
+            "format": "int32",
+            "type": "integer"
+          },
+          "proposedAt": {
+            "type": "string"
+          },
+          "remittanceClosed": {
+            "type": "boolean"
+          },
+          "reopenedItems": {
+            "format": "int32",
+            "type": "integer"
+          },
+          "resolutionId": {
+            "type": "string"
+          },
+          "reversesRecognition": {
+            "type": "boolean"
+          },
+          "settlementBatchId": {
+            "type": "string"
+          },
+          "status": {
+            "type": "string"
+          },
+          "unparks": {
+            "format": "int32",
+            "type": "integer"
+          }
+        },
+        "type": "object"
+      },
       "ResolutionDecision": {
         "properties": {
           "breakId": {
@@ -6876,6 +7751,9 @@
             "type": "string"
           },
           "resolutionId": {
+            "type": "string"
+          },
+          "settlementBatchId": {
             "type": "string"
           },
           "status": {
@@ -7119,6 +7997,316 @@
         ],
         "type": "object"
       },
+      "RuleRequest": {
+        "properties": {
+          "cardinality": {
+            "maxLength": 64,
+            "minLength": 0,
+            "type": "string"
+          },
+          "expectationKind": {
+            "maxLength": 64,
+            "minLength": 0,
+            "type": "string"
+          },
+          "graceHours": {
+            "format": "int32",
+            "maximum": 8760,
+            "minimum": 0,
+            "type": "integer"
+          },
+          "keyKind": {
+            "maxLength": 64,
+            "minLength": 0,
+            "type": "string"
+          },
+          "lineType": {
+            "maxLength": 64,
+            "minLength": 0,
+            "type": "string"
+          },
+          "operationAnchored": {
+            "type": "boolean"
+          },
+          "priority": {
+            "format": "int32",
+            "maximum": 1000,
+            "minimum": 1,
+            "type": "integer"
+          }
+        },
+        "required": [
+          "cardinality",
+          "lineType"
+        ],
+        "type": "object"
+      },
+      "RuleSetDecisionRequest": {
+        "properties": {
+          "reason": {
+            "maxLength": 1000,
+            "minLength": 1,
+            "type": "string"
+          }
+        },
+        "required": [
+          "reason"
+        ],
+        "type": "object"
+      },
+      "RuleSetFeeTerms": {
+        "properties": {
+          "currency": {
+            "type": "string"
+          },
+          "fixedMinor": {
+            "format": "int64",
+            "type": "integer"
+          },
+          "lineType": {
+            "type": "string"
+          },
+          "rate": {
+            "type": "string"
+          },
+          "roundingPolicy": {
+            "type": "string"
+          },
+          "scale": {
+            "format": "int32",
+            "type": "integer"
+          }
+        },
+        "type": "object"
+      },
+      "RuleSetList": {
+        "properties": {
+          "truncated": {
+            "type": "boolean"
+          },
+          "versions": {
+            "items": {
+              "$ref": "#/components/schemas/RuleSetVersion"
+            },
+            "type": "array"
+          }
+        },
+        "type": "object"
+      },
+      "RuleSetProposalRequest": {
+        "properties": {
+          "feeSchedules": {
+            "items": {
+              "$ref": "#/components/schemas/FeeTermsRequest"
+            },
+            "maxItems": 64,
+            "minItems": 0,
+            "type": "array"
+          },
+          "fundingLagDays": {
+            "format": "int32",
+            "maximum": 365,
+            "minimum": 0,
+            "type": "integer"
+          },
+          "gainMinAgeDays": {
+            "format": "int32",
+            "maximum": 3650,
+            "minimum": 0,
+            "type": "integer"
+          },
+          "lagDays": {
+            "additionalProperties": {
+              "format": "int32",
+              "type": "integer"
+            },
+            "type": "object"
+          },
+          "reason": {
+            "maxLength": 1000,
+            "minLength": 1,
+            "type": "string"
+          },
+          "rules": {
+            "items": {
+              "$ref": "#/components/schemas/RuleRequest"
+            },
+            "maxItems": 64,
+            "minItems": 1,
+            "type": "array"
+          },
+          "severityThresholds": {
+            "additionalProperties": {
+              "format": "int64",
+              "type": "integer"
+            },
+            "type": "object"
+          },
+          "sourceCode": {
+            "maxLength": 100,
+            "minLength": 0,
+            "type": "string"
+          },
+          "tolerances": {
+            "items": {
+              "$ref": "#/components/schemas/ToleranceRequest"
+            },
+            "maxItems": 64,
+            "minItems": 0,
+            "type": "array"
+          }
+        },
+        "required": [
+          "feeSchedules",
+          "lagDays",
+          "reason",
+          "rules",
+          "severityThresholds",
+          "sourceCode",
+          "tolerances"
+        ],
+        "type": "object"
+      },
+      "RuleSetReceipt": {
+        "properties": {
+          "retiredRuleSetId": {
+            "type": "string"
+          },
+          "ruleSetId": {
+            "type": "string"
+          },
+          "status": {
+            "type": "string"
+          },
+          "version": {
+            "format": "int32",
+            "type": "integer"
+          }
+        },
+        "type": "object"
+      },
+      "RuleSetRule": {
+        "properties": {
+          "cardinality": {
+            "type": "string"
+          },
+          "expectationKind": {
+            "type": "string"
+          },
+          "graceHours": {
+            "format": "int32",
+            "type": "integer"
+          },
+          "keyKind": {
+            "type": "string"
+          },
+          "lineType": {
+            "type": "string"
+          },
+          "operationAnchored": {
+            "type": "boolean"
+          },
+          "priority": {
+            "format": "int32",
+            "type": "integer"
+          }
+        },
+        "type": "object"
+      },
+      "RuleSetTolerance": {
+        "properties": {
+          "absoluteMinor": {
+            "format": "int64",
+            "type": "integer"
+          },
+          "comparison": {
+            "type": "string"
+          },
+          "currency": {
+            "type": "string"
+          },
+          "days": {
+            "format": "int32",
+            "type": "integer"
+          }
+        },
+        "type": "object"
+      },
+      "RuleSetVersion": {
+        "properties": {
+          "createdAt": {
+            "format": "date-time",
+            "type": "string"
+          },
+          "decidedAt": {
+            "format": "date-time",
+            "type": "string"
+          },
+          "decidedBy": {
+            "type": "string"
+          },
+          "effectiveFrom": {
+            "type": "string"
+          },
+          "feeSchedules": {
+            "items": {
+              "$ref": "#/components/schemas/RuleSetFeeTerms"
+            },
+            "type": "array"
+          },
+          "fundingLagDays": {
+            "format": "int32",
+            "type": "integer"
+          },
+          "gainMinAgeDays": {
+            "format": "int32",
+            "type": "integer"
+          },
+          "lagDays": {
+            "additionalProperties": {
+              "format": "int32",
+              "type": "integer"
+            },
+            "type": "object"
+          },
+          "proposedBy": {
+            "type": "string"
+          },
+          "reason": {
+            "type": "string"
+          },
+          "ruleSetId": {
+            "type": "string"
+          },
+          "rules": {
+            "items": {
+              "$ref": "#/components/schemas/RuleSetRule"
+            },
+            "type": "array"
+          },
+          "severityThresholds": {
+            "additionalProperties": {
+              "format": "int64",
+              "type": "integer"
+            },
+            "type": "object"
+          },
+          "status": {
+            "type": "string"
+          },
+          "tolerances": {
+            "items": {
+              "$ref": "#/components/schemas/RuleSetTolerance"
+            },
+            "type": "array"
+          },
+          "version": {
+            "format": "int32",
+            "type": "integer"
+          }
+        },
+        "type": "object"
+      },
       "RuleView": {
         "properties": {
           "ceilingAmountMinor": {
@@ -7157,6 +8345,63 @@
           },
           "truncated": {
             "type": "boolean"
+          }
+        },
+        "type": "object"
+      },
+      "RunReplayVerdict": {
+        "properties": {
+          "divergences": {
+            "format": "int32",
+            "type": "integer"
+          },
+          "firstDivergentDecision": {
+            "type": "string"
+          },
+          "notReplayed": {
+            "format": "int32",
+            "type": "integer"
+          },
+          "pendingRematch": {
+            "format": "int32",
+            "type": "integer"
+          },
+          "replayId": {
+            "type": "string"
+          },
+          "replayed": {
+            "format": "int32",
+            "type": "integer"
+          },
+          "runId": {
+            "type": "string"
+          },
+          "verdict": {
+            "type": "string"
+          }
+        },
+        "type": "object"
+      },
+      "RunRequeueRequest": {
+        "properties": {
+          "reason": {
+            "maxLength": 1000,
+            "minLength": 1,
+            "type": "string"
+          }
+        },
+        "required": [
+          "reason"
+        ],
+        "type": "object"
+      },
+      "RunRequeuedReceipt": {
+        "properties": {
+          "runId": {
+            "type": "string"
+          },
+          "status": {
+            "type": "string"
           }
         },
         "type": "object"
@@ -7338,6 +8583,19 @@
         ],
         "type": "object"
       },
+      "SettlementFetchRequest": {
+        "properties": {
+          "businessKey": {
+            "minLength": 1,
+            "pattern": "[A-Za-z0-9][A-Za-z0-9._:-]{0,63}",
+            "type": "string"
+          }
+        },
+        "required": [
+          "businessKey"
+        ],
+        "type": "object"
+      },
       "SettlementFileDeclineRequest": {
         "properties": {
           "reason": {
@@ -7372,6 +8630,19 @@
           "businessDate",
           "content",
           "sourceCode"
+        ],
+        "type": "object"
+      },
+      "SettlementReadmissionRequest": {
+        "properties": {
+          "reason": {
+            "maxLength": 1000,
+            "minLength": 1,
+            "type": "string"
+          }
+        },
+        "required": [
+          "reason"
         ],
         "type": "object"
       },
@@ -7423,6 +8694,19 @@
             "type": "boolean"
           }
         },
+        "type": "object"
+      },
+      "SettlementVerificationRequest": {
+        "properties": {
+          "reason": {
+            "maxLength": 1000,
+            "minLength": 1,
+            "type": "string"
+          }
+        },
+        "required": [
+          "reason"
+        ],
         "type": "object"
       },
       "SourceList": {
@@ -7574,6 +8858,162 @@
         },
         "type": "object"
       },
+      "SummaryAgeingBand": {
+        "properties": {
+          "band": {
+            "type": "string"
+          },
+          "openBreaks": {
+            "format": "int64",
+            "type": "integer"
+          }
+        },
+        "type": "object"
+      },
+      "SummaryBreaks": {
+        "properties": {
+          "count": {
+            "format": "int64",
+            "type": "integer"
+          },
+          "currency": {
+            "type": "string"
+          },
+          "severity": {
+            "type": "string"
+          },
+          "type": {
+            "type": "string"
+          },
+          "valueAtIssue": {
+            "type": "string"
+          }
+        },
+        "type": "object"
+      },
+      "SummaryDisposition": {
+        "properties": {
+          "currency": {
+            "type": "string"
+          },
+          "items": {
+            "format": "int64",
+            "type": "integer"
+          },
+          "status": {
+            "type": "string"
+          },
+          "value": {
+            "type": "string"
+          }
+        },
+        "type": "object"
+      },
+      "SummaryResolutions": {
+        "properties": {
+          "approved": {
+            "format": "int64",
+            "type": "integer"
+          },
+          "currency": {
+            "type": "string"
+          },
+          "kind": {
+            "type": "string"
+          },
+          "posted": {
+            "type": "string"
+          }
+        },
+        "type": "object"
+      },
+      "SuspenseReport": {
+        "properties": {
+          "currencies": {
+            "items": {
+              "$ref": "#/components/schemas/SuspenseReportCurrency"
+            },
+            "type": "array"
+          },
+          "items": {
+            "items": {
+              "$ref": "#/components/schemas/SuspenseReportItem"
+            },
+            "type": "array"
+          },
+          "truncated": {
+            "type": "boolean"
+          }
+        },
+        "type": "object"
+      },
+      "SuspenseReportCurrency": {
+        "properties": {
+          "creditItems": {
+            "format": "int64",
+            "type": "integer"
+          },
+          "creditUnreleased": {
+            "type": "string"
+          },
+          "currency": {
+            "type": "string"
+          },
+          "debitItems": {
+            "format": "int64",
+            "type": "integer"
+          },
+          "debitUnreleased": {
+            "type": "string"
+          },
+          "explained": {
+            "type": "boolean"
+          },
+          "ledgerBalance": {
+            "type": "string"
+          },
+          "unadoptedParkings": {
+            "type": "string"
+          }
+        },
+        "type": "object"
+      },
+      "SuspenseReportItem": {
+        "properties": {
+          "ageDays": {
+            "format": "int64",
+            "type": "integer"
+          },
+          "breakId": {
+            "type": "string"
+          },
+          "breakSeverity": {
+            "type": "string"
+          },
+          "breakType": {
+            "type": "string"
+          },
+          "currency": {
+            "type": "string"
+          },
+          "id": {
+            "type": "string"
+          },
+          "openedOn": {
+            "type": "string"
+          },
+          "origin": {
+            "type": "string"
+          },
+          "side": {
+            "type": "string"
+          },
+          "unreleased": {
+            "type": "string"
+          }
+        },
+        "type": "object"
+      },
       "SuspensionRequest": {
         "properties": {
           "reason": {
@@ -7617,6 +9057,35 @@
             "type": "string"
           }
         },
+        "type": "object"
+      },
+      "ToleranceRequest": {
+        "properties": {
+          "absoluteMinor": {
+            "format": "int64",
+            "minimum": 0,
+            "type": "integer"
+          },
+          "comparison": {
+            "maxLength": 64,
+            "minLength": 0,
+            "type": "string"
+          },
+          "currency": {
+            "maxLength": 3,
+            "minLength": 0,
+            "type": "string"
+          },
+          "days": {
+            "format": "int32",
+            "maximum": 365,
+            "minimum": 0,
+            "type": "integer"
+          }
+        },
+        "required": [
+          "comparison"
+        ],
         "type": "object"
       },
       "TraceStepView": {
@@ -7756,6 +9225,146 @@
         },
         "type": "object"
       },
+      "UnmatchedFigure": {
+        "properties": {
+          "count": {
+            "format": "int64",
+            "type": "integer"
+          },
+          "oldestAgeDays": {
+            "format": "int64",
+            "type": "integer"
+          },
+          "value": {
+            "type": "string"
+          }
+        },
+        "type": "object"
+      },
+      "UnmatchedReport": {
+        "properties": {
+          "groups": {
+            "items": {
+              "$ref": "#/components/schemas/UnmatchedReportGroup"
+            },
+            "type": "array"
+          },
+          "groupsTruncated": {
+            "type": "boolean"
+          },
+          "items": {
+            "items": {
+              "$ref": "#/components/schemas/UnmatchedReportItem"
+            },
+            "type": "array"
+          },
+          "openBreaks": {
+            "items": {
+              "$ref": "#/components/schemas/UnmatchedReportBreaks"
+            },
+            "type": "array"
+          },
+          "openBreaksTruncated": {
+            "type": "boolean"
+          },
+          "truncated": {
+            "type": "boolean"
+          }
+        },
+        "type": "object"
+      },
+      "UnmatchedReportBreaks": {
+        "properties": {
+          "count": {
+            "format": "int64",
+            "type": "integer"
+          },
+          "currency": {
+            "type": "string"
+          },
+          "severity": {
+            "type": "string"
+          },
+          "type": {
+            "type": "string"
+          },
+          "valueAtIssue": {
+            "type": "string"
+          }
+        },
+        "type": "object"
+      },
+      "UnmatchedReportGroup": {
+        "properties": {
+          "currency": {
+            "type": "string"
+          },
+          "direction": {
+            "type": "string"
+          },
+          "expectationsInWindow": {
+            "$ref": "#/components/schemas/UnmatchedFigure"
+          },
+          "expectationsOverdue": {
+            "$ref": "#/components/schemas/UnmatchedFigure"
+          },
+          "parkedItems": {
+            "$ref": "#/components/schemas/UnmatchedFigure"
+          },
+          "source": {
+            "type": "string"
+          },
+          "unmatchedItems": {
+            "$ref": "#/components/schemas/UnmatchedFigure"
+          }
+        },
+        "type": "object"
+      },
+      "UnmatchedReportItem": {
+        "properties": {
+          "ageDays": {
+            "format": "int64",
+            "type": "integer"
+          },
+          "breakId": {
+            "type": "string"
+          },
+          "breakSeverity": {
+            "type": "string"
+          },
+          "breakType": {
+            "type": "string"
+          },
+          "businessDate": {
+            "type": "string"
+          },
+          "currency": {
+            "type": "string"
+          },
+          "direction": {
+            "type": "string"
+          },
+          "graceUntil": {
+            "type": "string"
+          },
+          "id": {
+            "type": "string"
+          },
+          "lineType": {
+            "type": "string"
+          },
+          "source": {
+            "type": "string"
+          },
+          "status": {
+            "type": "string"
+          },
+          "value": {
+            "type": "string"
+          }
+        },
+        "type": "object"
+      },
       "UploadAnswer": {
         "properties": {
           "duplicateOf": {
@@ -7765,6 +9374,25 @@
             "type": "string"
           },
           "status": {
+            "type": "string"
+          }
+        },
+        "type": "object"
+      },
+      "VerificationAnswer": {
+        "properties": {
+          "fileId": {
+            "type": "string"
+          },
+          "firstDifferingLine": {
+            "format": "int32",
+            "type": "integer"
+          },
+          "linesCompared": {
+            "format": "int32",
+            "type": "integer"
+          },
+          "verdict": {
             "type": "string"
           }
         },
@@ -10373,6 +12001,51 @@
         }
       }
     },
+    "/v1/operator/reconciliation/batches/{settlementBatchId}/repudiation": {
+      "post": {
+        "operationId": "proposeReconciliationBatchRepudiation",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "settlementBatchId",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "in": "header",
+            "name": "Idempotency-Key",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/BatchRepudiationRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "201": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/RepudiationReceipt"
+                }
+              }
+            },
+            "description": "Created"
+          }
+        }
+      }
+    },
     "/v1/operator/reconciliation/breaks": {
       "get": {
         "operationId": "listReconciliationBreaks",
@@ -10929,6 +12602,142 @@
         }
       }
     },
+    "/v1/operator/reconciliation/rule-sets": {
+      "get": {
+        "operationId": "listReconciliationRuleSets",
+        "parameters": [
+          {
+            "in": "query",
+            "name": "source",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/RuleSetList"
+                }
+              }
+            },
+            "description": "OK"
+          }
+        }
+      },
+      "post": {
+        "operationId": "proposeReconciliationRuleSet",
+        "parameters": [
+          {
+            "in": "header",
+            "name": "Idempotency-Key",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/RuleSetProposalRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "201": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/RuleSetReceipt"
+                }
+              }
+            },
+            "description": "Created"
+          }
+        }
+      }
+    },
+    "/v1/operator/reconciliation/rule-sets/{id}/approval": {
+      "post": {
+        "operationId": "approveReconciliationRuleSet",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "id",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/RuleSetDecisionRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/RuleSetReceipt"
+                }
+              }
+            },
+            "description": "OK"
+          }
+        }
+      }
+    },
+    "/v1/operator/reconciliation/rule-sets/{id}/rejection": {
+      "post": {
+        "operationId": "rejectReconciliationRuleSet",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "id",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/RuleSetDecisionRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/RuleSetReceipt"
+                }
+              }
+            },
+            "description": "OK"
+          }
+        }
+      }
+    },
     "/v1/operator/reconciliation/runs": {
       "get": {
         "operationId": "listReconciliationRuns",
@@ -10973,6 +12782,70 @@
         }
       }
     },
+    "/v1/operator/reconciliation/runs/{id}/replay": {
+      "post": {
+        "operationId": "replayReconciliationRun",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "id",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/RunReplayVerdict"
+                }
+              }
+            },
+            "description": "OK"
+          }
+        }
+      }
+    },
+    "/v1/operator/reconciliation/runs/{id}/requeue": {
+      "post": {
+        "operationId": "requeueReconciliationRun",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "id",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/RunRequeueRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/RunRequeuedReceipt"
+                }
+              }
+            },
+            "description": "OK"
+          }
+        }
+      }
+    },
     "/v1/operator/reconciliation/settlement-status": {
       "get": {
         "operationId": "viewOperationSettlementStatus",
@@ -11004,6 +12877,51 @@
               }
             },
             "description": "OK"
+          }
+        }
+      }
+    },
+    "/v1/operator/reconciliation/sources/{code}/reprocessing": {
+      "post": {
+        "operationId": "requestReconciliationReprocessing",
+        "parameters": [
+          {
+            "in": "header",
+            "name": "Idempotency-Key",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "in": "path",
+            "name": "code",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ReprocessingRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "202": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ReprocessingReceipt"
+                }
+              }
+            },
+            "description": "Accepted"
           }
         }
       }
@@ -11044,6 +12962,94 @@
               "application/json": {
                 "schema": {
                   "$ref": "#/components/schemas/PositionsReport"
+                }
+              }
+            },
+            "description": "OK"
+          }
+        }
+      }
+    },
+    "/v1/operator/reports/reconciliation/provider-costs": {
+      "get": {
+        "operationId": "readReconciliationProviderCostsReport",
+        "parameters": [
+          {
+            "in": "query",
+            "name": "month",
+            "required": false,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProviderCostsReport"
+                }
+              }
+            },
+            "description": "OK"
+          }
+        }
+      }
+    },
+    "/v1/operator/reports/reconciliation/summary": {
+      "get": {
+        "operationId": "readReconciliationDailySummaryReport",
+        "parameters": [
+          {
+            "in": "query",
+            "name": "date",
+            "required": false,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/DailySummaryReport"
+                }
+              }
+            },
+            "description": "OK"
+          }
+        }
+      }
+    },
+    "/v1/operator/reports/reconciliation/suspense": {
+      "get": {
+        "operationId": "readReconciliationSuspenseReport",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/SuspenseReport"
+                }
+              }
+            },
+            "description": "OK"
+          }
+        }
+      }
+    },
+    "/v1/operator/reports/reconciliation/unmatched": {
+      "get": {
+        "operationId": "readReconciliationUnmatchedReport",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/UnmatchedReport"
                 }
               }
             },
@@ -11296,6 +13302,88 @@
         }
       }
     },
+    "/v1/operator/settlement/files/{id}/readmission": {
+      "post": {
+        "operationId": "readmitSettlementFile",
+        "parameters": [
+          {
+            "in": "header",
+            "name": "Idempotency-Key",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "in": "path",
+            "name": "id",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/SettlementReadmissionRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "202": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ReadmissionAnswer"
+                }
+              }
+            },
+            "description": "Accepted"
+          }
+        }
+      }
+    },
+    "/v1/operator/settlement/files/{id}/verification": {
+      "post": {
+        "operationId": "verifySettlementFile",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "id",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/SettlementVerificationRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/VerificationAnswer"
+                }
+              }
+            },
+            "description": "OK"
+          }
+        }
+      }
+    },
     "/v1/operator/settlement/refused-deliveries": {
       "get": {
         "operationId": "listRefusedSettlementDeliveries",
@@ -11322,6 +13410,43 @@
               "application/json": {
                 "schema": {
                   "$ref": "#/components/schemas/SourceList"
+                }
+              }
+            },
+            "description": "OK"
+          }
+        }
+      }
+    },
+    "/v1/operator/settlement/sources/{code}/fetch": {
+      "post": {
+        "operationId": "fetchSettlementReport",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "code",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/SettlementFetchRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/FetchAnswer"
                 }
               }
             },

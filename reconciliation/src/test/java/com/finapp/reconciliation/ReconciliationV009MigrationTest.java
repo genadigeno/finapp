@@ -177,7 +177,7 @@ class ReconciliationV009MigrationTest {
                 .containsExactlyInAnyOrderElementsOf(frozenColumns(v008Item))
                 .doesNotContain("learned_cycle", "status");
         assertThat(v009Item)
-                .contains(ItemStatus.sqlTransitionRule())
+                .contains(ItemStatus.sqlTransitionRuleBeforeV013())
                 .contains(normalized(
                         "IF NEW.learned_cycle IS DISTINCT FROM OLD.learned_cycle THEN"
                                 + " IF OLD.learned_cycle IS NOT NULL THEN RAISE EXCEPTION"))

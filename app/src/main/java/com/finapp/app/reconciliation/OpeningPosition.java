@@ -103,6 +103,14 @@ import org.springframework.transaction.support.TransactionTemplate;
  * re-opens its copy from the return's own posting, keyless as live: without this leg a
  * rebuilt register would restore the payout's expectation and leave its return's clearing
  * line unattributed.
+ *
+ * <h2>Parkings own their value</h2>
+ *
+ * <p>Since `P8-TSK-020` a parking's leg also gives its value its owner — the CREDIT suspense
+ * item and its break, dated from the parking's own entry, converging on the item's
+ * {@code origin_ref} — and a parking payments `V023`'s backfill left unclaimed (its scheme
+ * execution a credit, a withdrawal or a return already explains) is owned as the duplicate it
+ * is, never as value a person may attribute again (ADR-0070 point 8).
  */
 @Slf4j
 @RequiredArgsConstructor
@@ -135,6 +143,7 @@ public class OpeningPosition {
     @NonNull private final com.finapp.settlement.SettlementBatchStore<Connection> batches;
     @NonNull private final com.finapp.app.settlement.ReconciliationIntake batchIntake;
     @NonNull private final com.finapp.merchant.PayoutReturnStore<Connection> payoutReturns;
+    @NonNull private final com.finapp.payments.SchemeExecutionClaimStore<Connection> claims;
 
     /**
      * What one recorded run adopted — counts only, never an amount ({@code INV-AUD-02}).
@@ -542,7 +551,39 @@ public class OpeningPosition {
                                         SettlementExpectations.ReferenceKind.SCHEME_REF,
                                         parking.schemeReference().value())),
                         resolvedCorrelation()));
+        // Its owner (P8-TSK-020): the item and its break, exactly as the live parking opens
+        // them, but for a parking V023's backfill left unclaimed - that one is a duplicate.
+        recorder.parked(
+                uow,
+                new SettlementExpectations.ParkedValue(
+                        parking.id(),
+                        purpose.get(),
+                        clearingAccount(
+                                uow, AccountPurpose.SUSPENSE_UNMATCHED,
+                                parking.amount().currency()),
+                        entry.get(),
+                        parking.attribution().cause(),
+                        parking.attribution().attempt(),
+                        explainedBy(uow, parking),
+                        resolvedCorrelation()));
         counters.parkings++;
+    }
+
+    /**
+     * The claim's standing subject when it is not this parking's own — one scheme execution a
+     * credit, a withdrawal or a return already explains, which payments `V023`'s backfill gave
+     * to them and not to the parking. Empty for a parking holding its own claim, and for one no
+     * claim names (none can exist since `V023`: its backfill claimed every execution).
+     */
+    private Optional<String> explainedBy(Connection uow, UnmatchedConfirmation parking) {
+        return claims.findByExecution(uow, parking.rail(), parking.schemeReference())
+                .filter(
+                        claim ->
+                                !claim.heldBy(
+                                        com.finapp.payments.SchemeExecutionClaim.Subject
+                                                .UNMATCHED,
+                                        parking.id()))
+                .map(claim -> claim.subject().name() + ":" + claim.subjectId());
     }
 
     private void adoptPayout(Connection uow, MerchantPayout payout, Counters counters) {

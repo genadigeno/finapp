@@ -117,7 +117,7 @@ class ReconciliationV008MigrationTest {
         assertThat(sql)
                 .contains("OR NEW.attributed_source_id IS DISTINCT FROM OLD.attributed_source_id")
                 .contains("OR NEW.position_purpose IS DISTINCT FROM OLD.position_purpose")
-                .contains(ItemStatus.sqlTransitionRule())
+                .contains(ItemStatus.sqlTransitionRuleBeforeV013())
                 .contains(normalized(
                         "ALTER TABLE reconciliation.match_candidate"
                                 + " ALTER COLUMN key_kind DROP NOT NULL"));

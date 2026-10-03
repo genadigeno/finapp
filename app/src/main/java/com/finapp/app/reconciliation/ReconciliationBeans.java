@@ -119,9 +119,53 @@ public class ReconciliationBeans {
     com.finapp.reconciliation.BreakRegister breakRegister(
             com.finapp.platform.outbox.OutboxWriter<Connection> outboxWriter,
             com.finapp.platform.audit.AuditWriter<Connection> auditWriter,
-            IdGenerator idGenerator) {
-        return new com.finapp.reconciliation.JdbcBreakRegister(
-                outboxWriter, auditWriter, idGenerator);
+            IdGenerator idGenerator,
+            com.finapp.app.telemetry.ReconciliationOutcomeMeters reconciliationOutcomeMeters) {
+        // finapp.reconciliation.break.raised at the one door (P8-TSK-024).
+        return new com.finapp.app.telemetry.MeteredBreakRegister(
+                new com.finapp.reconciliation.JdbcBreakRegister(
+                        outboxWriter, auditWriter, idGenerator),
+                reconciliationOutcomeMeters);
+    }
+
+    /**
+     * The domain spans (`P8-TSK-024`, `PHASE_8_PLAN.md` §15): the legs' units of work, identifier
+     * attributes only, over the platform's tracer when one exists.
+     */
+    @Bean
+    com.finapp.platform.telemetry.Spans domainSpans(
+            org.springframework.beans.factory.ObjectProvider<io.micrometer.tracing.Tracer> tracers) {
+        return new com.finapp.app.telemetry.TracerSpans(tracers);
+    }
+
+    /** Reconciliation's counters and timers, counted after commit (`P8-TSK-024`). */
+    @Bean
+    com.finapp.app.telemetry.ReconciliationOutcomeMeters reconciliationOutcomeMeters(
+            io.micrometer.core.instrument.MeterRegistry meterRegistry,
+            SettlementSources settlementSources,
+            SettlementFileStore<Connection> settlementFileStore,
+            javax.sql.DataSource dataSource,
+            Clock clock,
+            com.finapp.platform.telemetry.Spans domainSpans) {
+        return new com.finapp.app.telemetry.ReconciliationOutcomeMeters(
+                meterRegistry,
+                settlementSources,
+                new com.finapp.app.telemetry.SeededSourceCodes(
+                        settlementFileStore, dataSource, clock),
+                domainSpans);
+    }
+
+    /** The open breaks' gauges (`P8-TSK-024`): per type and severity, and the oldest age. */
+    @Bean
+    com.finapp.app.telemetry.BreakMetrics breakMetrics(
+            javax.sql.DataSource dataSource,
+            Clock clock,
+            io.micrometer.core.instrument.MeterRegistry meterRegistry) {
+        return new com.finapp.app.telemetry.BreakMetrics(
+                new com.finapp.reconciliation.JdbcBreakReadings(),
+                dataSource::getConnection,
+                clock,
+                meterRegistry);
     }
 
     /**
@@ -240,7 +284,8 @@ public class ReconciliationBeans {
             SettlementSources settlementSources,
             com.finapp.settlement.SettlementBatchStore<Connection> settlementBatchStore,
             com.finapp.app.settlement.ReconciliationIntake acceptedBatchIntake,
-            com.finapp.merchant.PayoutReturnStore<Connection> payoutReturnStore) {
+            com.finapp.merchant.PayoutReturnStore<Connection> payoutReturnStore,
+            com.finapp.payments.SchemeExecutionClaimStore<Connection> schemeExecutionClaimStore) {
         return new OpeningPosition(
                 paymentAttemptStore,
                 paymentIntentStore,
@@ -263,7 +308,8 @@ public class ReconciliationBeans {
                 settlementSources,
                 settlementBatchStore,
                 acceptedBatchIntake,
-                payoutReturnStore);
+                payoutReturnStore,
+                schemeExecutionClaimStore);
     }
 
     /**
@@ -307,6 +353,84 @@ public class ReconciliationBeans {
         return new com.finapp.reconciliation.JdbcRunReadings();
     }
 
+    /** {@code finapp.reconciliation.replay} (`P8-TSK-022`): the replay's verdict counter. */
+    @Bean
+    com.finapp.app.telemetry.ReconciliationReplayMeters reconciliationReplayMeters(
+            io.micrometer.core.instrument.MeterRegistry meterRegistry) {
+        return new com.finapp.app.telemetry.ReconciliationReplayMeters(meterRegistry);
+    }
+
+    /**
+     * Decision replay (`P8-TSK-022`, ADR-0068 §9.1): one repeatable-read snapshot of the run's
+     * decisions re-run through the pure functions under their pinned versions, then one short
+     * append - the verdict, a divergence's CRITICAL break, the audit record.
+     */
+    @Bean
+    com.finapp.reconciliation.RunReplays runReplays(
+            com.finapp.reconciliation.TransactionRunner reconciliationTransactionRunner,
+            com.finapp.reconciliation.MatchingRules matchingRules,
+            com.finapp.reconciliation.MatchingStore matchingStore,
+            com.finapp.reconciliation.BreakRegister breakRegister,
+            com.finapp.platform.audit.AuditWriter<Connection> auditWriter,
+            IdGenerator idGenerator,
+            Clock clock,
+            com.finapp.app.telemetry.ReconciliationReplayMeters reconciliationReplayMeters) {
+        return new com.finapp.reconciliation.RunReplays(
+                reconciliationTransactionRunner,
+                new com.finapp.reconciliation.JdbcRunReplayStore(matchingRules),
+                matchingStore,
+                breakRegister,
+                auditWriter,
+                idGenerator,
+                clock,
+                reconciliationReplayMeters);
+    }
+
+    /**
+     * Rule set administration (`P8-TSK-022`, ADR-0068 §8): a version proposed frozen, activated
+     * by a second controller retiring its predecessor in the same transaction, or rejected.
+     */
+    @Bean
+    com.finapp.reconciliation.RuleSetAdministration ruleSetAdministration(
+            com.finapp.platform.audit.AuditWriter<Connection> auditWriter,
+            IdGenerator idGenerator) {
+        return new com.finapp.reconciliation.RuleSetAdministration(
+                new com.finapp.reconciliation.JdbcRuleSetStore(), auditWriter, idGenerator);
+    }
+
+    /** A controller's acts on runs (`P8-TSK-022`): reprocessing and requeue. */
+    @Bean
+    com.finapp.reconciliation.RunAdministration runAdministration(
+            com.finapp.reconciliation.MatchingStore matchingStore,
+            com.finapp.reconciliation.ReconciliationRuns reconciliationRuns,
+            com.finapp.platform.audit.AuditWriter<Connection> auditWriter,
+            IdGenerator idGenerator) {
+        return new com.finapp.reconciliation.RunAdministration(
+                matchingStore, reconciliationRuns, auditWriter, idGenerator);
+    }
+
+    /** The controller's run doors (`P8-TSK-022`): one transaction per command. */
+    @Bean
+    ReconciliationAdministrationDesk reconciliationAdministrationDesk(
+            com.finapp.reconciliation.RuleSetAdministration ruleSetAdministration,
+            com.finapp.reconciliation.RunAdministration runAdministration,
+            com.finapp.reconciliation.RunReplays runReplays,
+            SettlementFileStore<Connection> settlementFileStore,
+            com.finapp.platform.idempotency.IdempotentExecutor idempotentExecutor,
+            TransactionTemplate reconciliationTransactions,
+            javax.sql.DataSource dataSource,
+            Clock clock) {
+        return new ReconciliationAdministrationDesk(
+                ruleSetAdministration,
+                runAdministration,
+                runReplays,
+                settlementFileStore,
+                idempotentExecutor,
+                reconciliationTransactions,
+                dataSource,
+                clock);
+    }
+
     /**
      * The resolutions' evidence writer (`P8-TSK-012`, ADR-0071): the platform's
      * {@code EVIDENCED} kind — born {@code APPROVED} in the transaction whose zero-residual
@@ -319,13 +443,15 @@ public class ReconciliationBeans {
             com.finapp.platform.outbox.OutboxWriter<Connection> outboxWriter,
             com.finapp.platform.audit.AuditWriter<Connection> auditWriter,
             IdGenerator idGenerator,
-            com.finapp.ledger.AdjustmentService adjustmentService) {
+            com.finapp.ledger.AdjustmentService adjustmentService,
+            com.finapp.app.telemetry.ReconciliationOutcomeMeters reconciliationOutcomeMeters) {
         return new com.finapp.reconciliation.JdbcResolutions(
                 outboxWriter,
                 auditWriter,
                 idGenerator,
                 new com.finapp.reconciliation.JdbcResolutionStore(),
-                adjustmentService);
+                adjustmentService,
+                reconciliationOutcomeMeters);
     }
 
     /**
@@ -344,7 +470,8 @@ public class ReconciliationBeans {
             com.finapp.platform.outbox.OutboxWriter<Connection> outboxWriter,
             com.finapp.platform.audit.AuditWriter<Connection> auditWriter,
             IdGenerator idGenerator,
-            Clock clock) {
+            Clock clock,
+            com.finapp.app.telemetry.ReconciliationOutcomeMeters reconciliationOutcomeMeters) {
         return new com.finapp.reconciliation.ResolutionMachine(
                 new com.finapp.reconciliation.JdbcResolutionStore(),
                 new com.finapp.reconciliation.JdbcBreakCaseStore(),
@@ -357,7 +484,8 @@ public class ReconciliationBeans {
                 outboxWriter,
                 auditWriter,
                 idGenerator,
-                clock);
+                clock,
+                reconciliationOutcomeMeters);
     }
 
     /** The resolver's desk (`P8-TSK-015`): the four doors' one-transaction commands. */
@@ -366,9 +494,49 @@ public class ReconciliationBeans {
             com.finapp.reconciliation.ResolutionMachine resolutionMachine,
             com.finapp.platform.idempotency.IdempotentExecutor idempotentExecutor,
             TransactionTemplate reconciliationTransactions,
-            javax.sql.DataSource dataSource) {
+            javax.sql.DataSource dataSource,
+            com.finapp.reconciliation.BatchRepudiations batchRepudiations,
+            com.finapp.platform.telemetry.Spans domainSpans) {
         return new BreakResolutionDesk(
-                resolutionMachine, idempotentExecutor, reconciliationTransactions, dataSource);
+                resolutionMachine, idempotentExecutor, reconciliationTransactions, dataSource,
+                batchRepudiations, domainSpans);
+    }
+
+    /**
+     * A settlement batch's repudiation (`P8-TSK-023`, ADR-0065 §10): the batch-subject
+     * resolution under four-eyes, settlement reached through the composed seam, the
+     * recognition reversed through the ledger's {@code ReversalService} - one transaction.
+     */
+    @Bean
+    com.finapp.reconciliation.BatchRepudiations batchRepudiations(
+            com.finapp.reconciliation.BreakRegister breakRegister,
+            com.finapp.reconciliation.Suspense suspense,
+            com.finapp.settlement.BatchRepudiation batchRepudiation,
+            com.finapp.ledger.ReversalService reversalService,
+            com.finapp.ledger.JournalEntryStore<Connection> journalEntryStore,
+            com.finapp.ledger.AdjustmentService adjustmentService,
+            com.finapp.ledger.LedgerAccountStore<Connection> ledgerAccountStore,
+            com.finapp.platform.outbox.OutboxWriter<Connection> outboxWriter,
+            com.finapp.platform.audit.AuditWriter<Connection> auditWriter,
+            IdGenerator idGenerator,
+            Clock clock,
+            com.finapp.app.telemetry.ReconciliationOutcomeMeters reconciliationOutcomeMeters) {
+        return new com.finapp.reconciliation.BatchRepudiations(
+                new com.finapp.reconciliation.JdbcRepudiationStore(),
+                new com.finapp.reconciliation.JdbcResolutionStore(),
+                new com.finapp.reconciliation.JdbcBreakCaseStore(),
+                breakRegister,
+                suspense,
+                new ComposedBatchRepudiations(batchRepudiation),
+                reversalService,
+                journalEntryStore,
+                adjustmentService,
+                ledgerAccountStore,
+                outboxWriter,
+                auditWriter,
+                idGenerator,
+                clock,
+                reconciliationOutcomeMeters);
     }
 
     /** One transaction per chunk — the run leg's containment (the parse leg's shape). */
@@ -418,7 +586,8 @@ public class ReconciliationBeans {
             @org.springframework.beans.factory.annotation.Value(
                             "${finapp.reconciliation.matching.block-after:3}")
                     int blockAfterFailures,
-            com.finapp.reconciliation.TransactionRunner reconciliationTransactionRunner) {
+            com.finapp.reconciliation.TransactionRunner reconciliationTransactionRunner,
+            com.finapp.app.telemetry.ReconciliationOutcomeMeters reconciliationOutcomeMeters) {
         return new com.finapp.reconciliation.Matching(
                 matchingStore,
                 matchingRules,
@@ -432,7 +601,8 @@ public class ReconciliationBeans {
                 idGenerator,
                 clock,
                 new com.finapp.reconciliation.Matching.Config(chunkSize, blockAfterFailures),
-                reconciliationTransactionRunner);
+                reconciliationTransactionRunner,
+                reconciliationOutcomeMeters);
     }
 
     /**
@@ -471,7 +641,8 @@ public class ReconciliationBeans {
             @org.springframework.beans.factory.annotation.Value(
                             "${finapp.reconciliation.matching.block-after:3}")
                     int blockAfterFailures,
-            com.finapp.reconciliation.TransactionRunner reconciliationTransactionRunner) {
+            com.finapp.reconciliation.TransactionRunner reconciliationTransactionRunner,
+            com.finapp.app.telemetry.ReconciliationOutcomeMeters reconciliationOutcomeMeters) {
         return new com.finapp.reconciliation.ReconciliationSweep(
                 matchingStore,
                 breakRegister,
@@ -481,7 +652,8 @@ public class ReconciliationBeans {
                 clock,
                 new com.finapp.reconciliation.ReconciliationSweep.Config(
                         batch, blockAfterFailures),
-                reconciliationTransactionRunner);
+                reconciliationTransactionRunner,
+                reconciliationOutcomeMeters);
     }
 
     /**
@@ -541,14 +713,19 @@ public class ReconciliationBeans {
             JournalEntryStore<Connection> journalEntryStore,
             RuleSets ruleSets,
             ExpectationRegister expectationRegister,
-            Clock clock) {
+            Clock clock,
+            com.finapp.reconciliation.BreakRegister breakRegister,
+            IdGenerator idGenerator,
+            com.finapp.app.telemetry.ReconciliationOutcomeMeters reconciliationOutcomeMeters) {
         return new ReconciliationExpectationRecorder(
                 settlementSources,
                 settlementFileStore,
                 journalEntryStore,
                 ruleSets,
                 expectationRegister,
-                clock);
+                clock,
+                new com.finapp.reconciliation.ParkedConfirmations(
+                        breakRegister, idGenerator, reconciliationOutcomeMeters));
     }
 
     // ------------------------------------------------------------------ the desk (P8-TSK-014)

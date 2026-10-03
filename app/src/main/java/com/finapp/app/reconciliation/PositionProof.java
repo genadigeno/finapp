@@ -38,27 +38,38 @@ import lombok.RequiredArgsConstructor;
  * cause has to be found; a verifier that opened what it found missing would hide a broken
  * opener.
  *
- * <h2>The two verdicts</h2>
+ * <h2>The four verdicts</h2>
  *
  * <ul>
- *   <li><strong>The proof</strong>: per clearing position and currency, DR−CR of the ledger
- *       account equals the signed sum of open expectation remainders — {@code INBOUND}
- *       positive, {@code OUTBOUND} negative, the ledger's own sign (ADR-0067 §3). DR−CR
- *       whatever the account's normal balance: {@code PAYOUT_CLEARING} is CREDIT-normal, so
- *       its derived balance is negated before it is compared ({@code readFrom}). Folded
- *       through {@code Money}, never a SQL {@code SUM} (`P3-TSK-008`).
- *   <li><strong>Completeness</strong>: every {@code (entry, account)} line on a reconciled
- *       position is one the register knows — an expectation names it; the suspense item
- *       (`P8-TSK-010`/`-020`) and the Phase 8 records join the known list with their tasks.
- *       Until `-020` adopts Phase 7's parkings, {@code SUSPENSE_UNMATCHED} truthfully reads
- *       above zero (the transition's A7).
+ *   <li><strong>The proof</strong>: per clearing position ({@link #PROVEN}) and currency,
+ *       DR−CR of the ledger account equals the signed sum of open expectation remainders minus
+ *       the signed sum of open item remainders (the items term, `P8-TSK-009`) —
+ *       {@code INBOUND} positive, {@code OUTBOUND} negative, the ledger's own sign (ADR-0067
+ *       §3). DR−CR whatever the account's normal balance: {@code PAYOUT_CLEARING} is
+ *       CREDIT-normal, so its derived balance is negated before it is compared
+ *       ({@code readFrom}). Folded through {@code Money}, never a SQL {@code SUM} (`P3-TSK-008`).
+ *   <li><strong>Completeness</strong>: every {@code (entry, account)} line on every
+ *       {@code AccountPurpose.reconciledPositions()} account — the three clearings,
+ *       {@code CASH_AT_BANK}, {@code SUSPENSE_UNMATCHED}, {@code PROCESSING_COSTS},
+ *       {@code RECONCILIATION_LOSSES} and {@code RECONCILIATION_GAINS} — is one the register
+ *       knows: an expectation names it, or its entry is in a known-entry class — an accepted
+ *       or repudiated batch's recognition, a park's entry, an entry a suspense item carries, or
+ *       an approved resolution's journal entry.
+ *   <li><strong>The suspense proof</strong> (`P8-TSK-010`, ADR-0070 §7): per currency, CR−DR of
+ *       {@code SUSPENSE_UNMATCHED} equals the CREDIT remainders less the DEBIT remainders plus
+ *       the named term for Phase 7 parkings no item adopts — zero at rest since `P8-TSK-020`'s
+ *       backfill adopted them.
  *   <li><strong>The cash proof</strong> (`P8-TSK-016`, {@code INV-SET-06}): per currency, DR−CR
- *       of {@code CASH_AT_BANK} equals the closing balance at the head of an UNBROKEN chain of
- *       accepted bank statements — sequence 1 opening at zero, every later opening its
- *       predecessor's closing, no sequence missing. A gap or a mis-stitched opening fails the
- *       verdict loudly: the platform does not know its cash, and nothing is ever posted to make
- *       the chain fit.
+ *       of {@code CASH_AT_BANK} equals the summed head closing of every bank account's chain of
+ *       accepted statements in that currency, and holds only while every such chain is
+ *       unbroken — sequence 1 opening at zero, every later opening its predecessor's closing,
+ *       no sequence missing. A gap or a mis-stitched opening fails the verdict loudly: the
+ *       platform does not know its cash, and nothing is ever posted to make the chain fit.
  * </ul>
+ *
+ * <p><em>(Corrected 2026-10-01, `P8-DOC-001`: this read "the two verdicts", listed three, named
+ * no suspense proof, stated the proof without its items term, gave the cash proof one chain's
+ * head, and spoke of delivered work in the future tense.)</em>
  *
  * <p>The caller runs the sweep in <strong>one {@code REPEATABLE READ} transaction on one
  * connection</strong>, so the ledger's lines and reconciliation's rows are one snapshot; a
@@ -67,8 +78,11 @@ import lombok.RequiredArgsConstructor;
 @RequiredArgsConstructor
 public final class PositionProof {
 
-    /** The positions the proof's identity covers today — the external-item and remittance
-     * terms join with `P8-TSK-009`. */
+    /**
+     * The positions the proof's identity covers — the three clearings, with the items term
+     * since `P8-TSK-009`. {@code CASH_AT_BANK} and {@code SUSPENSE_UNMATCHED} have verdicts of
+     * their own, and completeness walks every reconciled position.
+     */
     public static final Set<AccountPurpose> PROVEN =
             Set.of(
                     AccountPurpose.SETTLEMENT_CLEARING,
@@ -88,7 +102,10 @@ public final class PositionProof {
     /** The suspense terms (`P8-TSK-010`, ADR-0070 §7) — appended after `-009`'s. */
     @NonNull private final com.finapp.reconciliation.SuspenseReadings suspense;
 
-    /** Phase 7's parkings, for the unadopted term — until `-020` adopts them. */
+    /**
+     * Phase 7's parkings, for the unadopted term — zero at rest since `P8-TSK-020`'s backfill
+     * adopted them, kept so a parking no item adopts is named, never hidden.
+     */
     @NonNull
     private final com.finapp.payments.UnmatchedConfirmationStore<Connection> parkings;
 
@@ -327,7 +344,7 @@ public final class PositionProof {
                 new HashSet<>(batches.acceptedRecognitionEntries(unitOfWork));
         // The third and fourth known-entry classes (P8-TSK-010, ADR-0070 §7): a park's
         // entry, and every entry a suspense item owns - the rule by which Phase 7's
-        // parking lines become known once `-020` adopts them.
+        // parking lines become known once the backfill adopts them (`-020`).
         recognitionEntries.addAll(suspense.knownEntries(unitOfWork));
         Map<AccountPurpose, Long> unattributed = new EnumMap<>(AccountPurpose.class);
         for (AccountPurpose purpose : AccountPurpose.reconciledPositions()) {
@@ -431,7 +448,7 @@ public final class PositionProof {
      * CR−DR = Σ CREDIT remainders − Σ DEBIT remainders + Σ Phase 7 parkings not yet
      * adopted. The last is the parkings whose id no {@code UNMATCHED_CONFIRMATION} item's
      * {@code origin_ref} names — without it the proof would fail on any database holding a
-     * Phase 7 parking until `-020` adopts them. Folded through {@code Money}, gross,
+     * Phase 7 parking until the backfill adopts them (`-020`). Folded through {@code Money}, gross,
      * CREDIT and DEBIT never netted inside a term.
      */
     private List<SuspenseVerdict> suspenseVerdicts(

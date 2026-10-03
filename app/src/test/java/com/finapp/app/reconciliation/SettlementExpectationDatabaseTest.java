@@ -358,6 +358,9 @@ class SettlementExpectationDatabaseTest {
 
                             @Override
                             public void alias(Connection uow, AliasRegistration registration) {}
+
+                            @Override
+                            public void parked(java.sql.Connection uow, ParkedValue parked) {}
                         });
 
         assertThatThrownBy(() -> applyCapture(failing, holder, attemptId, pspRef))
@@ -776,7 +779,14 @@ class SettlementExpectationDatabaseTest {
                 new JdbcJournalEntryStore(IDS),
                 new JdbcRuleSets(),
                 register,
-                CLOCK);
+                CLOCK,
+                // No parking crosses this suite's recorder: its door is the card door.
+                new com.finapp.reconciliation.ParkedConfirmations(
+                        new com.finapp.reconciliation.JdbcBreakRegister(
+                                new com.finapp.platform.outbox.JdbcOutboxWriter(),
+                                new com.finapp.platform.audit.JdbcAuditWriter(),
+                                IDS),
+                        IDS));
     }
 
     private PaymentOutcomes outcomes(SettlementExpectations expectations) {

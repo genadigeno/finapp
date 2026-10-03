@@ -101,7 +101,16 @@ class ProviderFailureCoverageTest {
                                     + " idempotency kernel",
                     "reconciliation detects a break",
                             "an outcome of comparing records, not a behaviour a provider exhibits —"
-                                    + " Phase 8 owns it");
+                                    + " P8-TST-001's SettlementReconciliationStormDatabaseTest"
+                                    + " produces eight of the fourteen break types from"
+                                    + " provider-shaped faults in reports, statements and"
+                                    + " deliveries; the break x resolution matrix is"
+                                    + " P8-TST-002's");
+
+    /** The suite the "reconciliation detects a break" row names as its owner (`P8-TST-001`). */
+    private static final String RECONCILIATION_BREAK_OWNER =
+            "app/src/test/java/com/finapp/app/reconciliation/"
+                    + "SettlementReconciliationStormDatabaseTest.java";
 
     /** The six modes ADR-0008 requires every adapter to be contract-tested against. */
     private static final Map<String, String> ADR_REQUIRED_MODES =
@@ -150,6 +159,22 @@ class ProviderFailureCoverageTest {
                         "a provider returns an unknown state",
                         "a webhook is duplicated")
                 .doesNotContain("auditability", "observability");
+    }
+
+    @Test
+    @DisplayName("the owner named for \"reconciliation detects a break\" exists on disk and"
+            + " claims the row (P8-TST-001)")
+    void theReconciliationBreakOwnerExists() {
+        // A row naming an owner that does not exist is the "covered on paper" shape this test
+        // was written against; the storm is the suite that produces breaks from provider-shaped
+        // faults (eight types of fourteen), so the row names it and the suite names the task.
+        assertThat(NOT_A_PROVIDER_CONCERN.get("reconciliation detects a break"))
+                .contains("P8-TST-001")
+                .contains("SettlementReconciliationStormDatabaseTest");
+        assertThat(readRepositoryFile(RECONCILIATION_BREAK_OWNER))
+                .as("the named owner must be on disk, and be the storm it claims to be")
+                .contains("class SettlementReconciliationStormDatabaseTest")
+                .contains("P8-TST-001");
     }
 
     @Test

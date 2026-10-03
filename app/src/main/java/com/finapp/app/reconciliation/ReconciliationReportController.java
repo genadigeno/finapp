@@ -23,11 +23,14 @@ import org.springframework.jdbc.datasource.DataSourceUtils;
 import org.springframework.transaction.support.TransactionTemplate;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.RequestMapping;
+import org.springframework.web.bind.annotation.RequestParam;
 import org.springframework.web.bind.annotation.RestController;
 
 /**
  * The reconciliation reports (`P8-TSK-007`, ADR-0072): the positions report — per clearing
- * position and currency, the identity's two sides and their difference. It carries amounts,
+ * position and currency, the identity's two sides and their difference — and, since
+ * `P8-TSK-024`, the suspense, unmatched, summary and provider-costs reports, composed and
+ * audited by {@link ReconciliationReports}. It carries amounts,
  * which is exactly why it is a REPORT and never a metric, and why every serving is on the
  * record ({@code reconciliation.ReportRead}, the {@code payments.ChargebackRatioRead}
  * precedent). Under {@link PermissionName#RECONCILIATION_INVESTIGATE}; read-only but for
@@ -50,6 +53,9 @@ public class ReconciliationReportController {
     @NonNull private final Clock clock;
     @NonNull private final TransactionTemplate reconciliationTransactions;
     @NonNull private final DataSource dataSource;
+
+    /** The four remaining reports (`P8-TSK-024`), composed and audited in their own service. */
+    @NonNull private final ReconciliationReports reconciliationReports;
 
     /**
      * One position-and-currency row: the identity's terms and the difference. Since
@@ -121,6 +127,55 @@ public class ReconciliationReportController {
                                                     + report.verdicts().size())));
                     return render(report);
                 });
+    }
+
+    /**
+     * The suspense report (`P8-TSK-024`, ADR-0072 §3): per currency the
+     * {@code SUSPENSE_UNMATCHED} balance, the items CREDIT and DEBIT gross and the suspense
+     * proof's verdict; every open item, oldest first, with its age and owning break, bounded
+     * with {@code truncated}. Audited per serving, in the reading's own transaction.
+     */
+    @GetMapping("/suspense")
+    @RequiresPermission(PermissionName.RECONCILIATION_INVESTIGATE)
+    public ReconciliationReports.SuspenseReport readReconciliationSuspenseReport() {
+        return reconciliationReports.suspense();
+    }
+
+    /**
+     * The unmatched report (`P8-TSK-024`, ADR-0072 §3): per source, currency and direction the
+     * unexplained items (inside grace, parked) and open expectations (in window, overdue) with
+     * count, value and oldest age; the open breaks' value at issue by type and severity; the
+     * oldest items, bounded with {@code truncated}. Audited.
+     */
+    @GetMapping("/unmatched")
+    @RequiresPermission(PermissionName.RECONCILIATION_INVESTIGATE)
+    public ReconciliationReports.UnmatchedReport readReconciliationUnmatchedReport() {
+        return reconciliationReports.unmatched();
+    }
+
+    /**
+     * One UTC business date's summary per source (`P8-TSK-024`): {@code date} is
+     * {@code YYYY-MM-DD} from 2000-01-01 to today, today when absent; any other value is the
+     * 422, refused before anything is read. Audited.
+     */
+    @GetMapping("/summary")
+    @RequiresPermission(PermissionName.RECONCILIATION_INVESTIGATE)
+    public ReconciliationReports.DailySummaryReport readReconciliationDailySummaryReport(
+            @RequestParam(value = "date", required = false) String date) {
+        return reconciliationReports.summary(date);
+    }
+
+    /**
+     * One month's provider costs per source and currency (`P8-TSK-024`, ADR-0072 §6): charged,
+     * evidenced (with the agreement verdict), expected, and the month's fee mismatches.
+     * {@code month} is {@code YYYY-MM} from 2000-01 to the current UTC month, the current one
+     * when absent; any other value is the 422, refused before anything is read. Audited.
+     */
+    @GetMapping("/provider-costs")
+    @RequiresPermission(PermissionName.RECONCILIATION_INVESTIGATE)
+    public ReconciliationReports.ProviderCostsReport readReconciliationProviderCostsReport(
+            @RequestParam(value = "month", required = false) String month) {
+        return reconciliationReports.providerCosts(month);
     }
 
     // Package-private: the bound's ceiling in production is ~12 rows (four purposes times

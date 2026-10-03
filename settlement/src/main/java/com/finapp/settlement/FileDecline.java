@@ -24,10 +24,11 @@ import lombok.RequiredArgsConstructor;
  * a parsed file's batch moves {@code PARSED → REJECTED} in the SAME transaction — the live
  * key frees at commit, so the counterparty's genuine re-issue is admitted.
  *
- * <p>Declining is a judgement, not our validation: a declined file is never readmitted
- * (ADR-0066 §8), and recovery is the counterparty's re-issue — whose byte-identical copy
- * would meet this file's content address as its duplicate, which is answered with
- * {@code duplicateOf} and is the honest answer.
+ * <p>Declining is a judgement, not our validation. Recovery is the counterparty's re-issue —
+ * but a byte-identical copy meets this file's content address as its duplicate, answered with
+ * {@code duplicateOf} — or, for a mistaken decline, a readmission (`P8-TSK-022`, deciding
+ * ADR-0066 §8's recorded question), which inherits NO authentication from the declined file
+ * however it was authenticated: it waits for a second person of its own.
  *
  * <h2>Idempotency, by state</h2>
  *

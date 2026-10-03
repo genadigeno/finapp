@@ -603,9 +603,11 @@ dominated by its margin. The clamp removes the refusal that was a skewed instanc
 so clock offset needs its own signal. Implemented by `X-TSK-006` once accepted. →
 [ADR-0063](../adr/ADR-0063-business-stamps-never-contradict-the-order-of-facts.md), ADR-0014
 
-### Settlement and reconciliation (Phase 8, `Proposed` at the Phase 7 → 8 transition)
-Nothing below is implemented until Phase 8's tasks build it. ADR-0063 is `X-TSK-005`'s
-(above), so the phase's numbering starts at ADR-0064.
+### Settlement and reconciliation (Phase 8, `Proposed` at the Phase 7 → 8 transition; `Accepted` at the Phase 8 review, `P8-DOC-001`, each read against the code with its corrected passages marked in place)
+Built by `P8-TSK-001`…`P8-TSK-024`, `P8-TST-001` and `P8-TST-002`, and corrected by the review's
+own `V015` (a break becomes `RESOLVED` only beside the approved resolution its closing event names)
+and its reading of a gain's minimum age from the owning break's pinned rule set. ADR-0063 is
+`X-TSK-005`'s (above), so the phase's numbering starts at ADR-0064.
 
 **Settlement holds the external evidence; reconciliation holds the expectations, the comparison
 and its outcome.** Contexts 13 and 14 are two modules, each depending only on `ledger`, `platform`
@@ -702,7 +704,8 @@ audited operator reports.** No series carries an amount as a tag or as its value
 widened from the tag to the sample. Five reports, each one audited `REPEATABLE READ` snapshot,
 folded with `Money`, per currency and bounded. Value reaches alerting only as a break's severity
 under the pinned rule set. The per-rail cost meter Phase 7 deferred is settled as the
-`PROCESSING_COSTS` ledger fact plus the provider-costs report, never a meter. →
+`PROCESSING_COSTS` ledger fact plus the provider-costs report, never a meter (built by
+`P8-TSK-024`, 2026-10-01). →
 [ADR-0072](../adr/ADR-0072-amounts-never-enter-metrics.md)
 
 **A payout return is a merchant fact applied from settlement evidence, and the payout stays
@@ -793,7 +796,10 @@ Recorded so these are not mistaken for oversights.
 | Instant-payment recall requests; batch credit-transfer rails with return windows | A later payments phase, when a rail that needs them is added | A recall is a request the payee's PSP may refuse, days later - a new operation with its own lifecycle, never a reversal (ADR-0059's rejected alternative); a batch rail's return window is a second finality model. Neither exists in any Phase 7 rail (ADR-0062's follow-up; recorded here by the Phase 7 review) |
 | Moving the merchant payout onto the push rail | A second outbound rail | Two outbound disciplines coexist by design: the payout keeps its own port (ADR-0057) and the push rail can implement it in `app` without a `merchant` change (ADR-0062 §7). *(The row's second trigger, "Phase 8 needing one evidence shape for every outbound credit transfer", was evaluated at the Phase 7 → 8 transition and did not fire: the canonical settlement line already gives every outbound credit transfer one evidence shape, and converging would re-declare the payout's position and source (ADR-0073 §8, `Proposed`). The row stays open on its first trigger.)* |
 | Automatic rail availability from observed failure rates | Phase 15 | Availability is an operator's recorded, audited fact read inside each decision; automation must write the same fact, never an instance's opinion (ADR-0060 §4 - "Phase 15 or 16" until the Phase 7 review settled one owner) |
-| A per-rail cost meter | Phase 8 (`P8-TSK-009`, `P8-TSK-024`) | No Phase 7 rail reports a cost; the processor's fees arrive with its settlement evidence (ADR-0060 §6, annotated at the review). *(Decided at the Phase 7 → 8 transition, `Proposed`: not a meter. Each counterparty's cost is recognised from its accepted evidence as the `PROCESSING_COSTS` ledger fact and read through the audited provider-costs report, never a metric (ADR-0065, ADR-0072 §6). "Not charged" stands.)* |
+| ~~A per-rail cost meter~~ | ~~Phase 8~~ — **settled 2026-10-01** by `P8-TSK-024` | Not a meter: the processor's fees post as `PROCESSING_COSTS` at the batch's recognition and are read per source and month in the audited provider-costs report (ADR-0060 §6, ADR-0072). Struck by the Phase 8 review |
+| An equity account for a non-zero first bank opening | Phase 14 | A non-zero first opening raises `SETTLEMENT_MISMATCH(OPENING_BALANCE)` and posts nothing (O4, ADR-0065); recognising history the platform never posted is general-ledger close work, not reconciliation's (recorded by the Phase 8 review) |
+| Return-to-sender, and a payout return to a closed merchant | Phase 15 | Residual value with no attributable owner stays in owned suspense, aged and alerted; returning it, or settling a returned payout against a closed merchant, is a new operation with its own consent - Phase 15 writes its operating procedure or schedules it by its own ADR (ADR-0070 §4, ADR-0073; owner named by the Phase 8 review) |
+| Recovering a DEBIT suspense item from a customer or merchant | Phase 13 | A DEBIT item leaves today by late allocation, a correction offset, `OFFSET_SUSPENSE` or `WRITE_OFF`; collecting it from a counterparty is debt collection, beside chargeback debt's reserve and collection (owner named by the Phase 8 review) |
 | Dispute-fee pass-through to merchants | A merchant-risk phase (Phase 13's neighbourhood) | The PSP's dispute fee posts to `DISPUTE_COSTS`; charging it on is a commercial term with its own consent and statement consequences (ADR-0061's follow-up; recorded here by the review, with reserves the Known Architectural Debt row in `CURRENT_STATE.md`). *(The Phase 7 → 8 transition adds the counterparties' processing costs to the same deferral: they post to `PROCESSING_COSTS`, and no price varies with the rail (ADR-0072 §6, `Proposed`).)* |
 | A secrets manager (Vault, cloud KMS) | Phase 15 | No deployment, no key material and one local database password. A manager chosen with no real requirement to shape it is the wrong manager; the seam - configuration read from the environment - is established now (ADR-0020) |
 | Changing the verified contact channel | Phase 15, with the notifier | A safe change needs a step-up, a notice to the channel being replaced and a cooling-off - `INV-IDN-06`'s own enforcement - and the notice needs the channel notifier Phase 15 brings. Until then a second verification is refused (`X-TSK-004`, §Recovery channels). Nothing delivers a challenge before that notifier either, so the refusal cannot yet strand a customer. **The flow must spend every pending challenge of the kind**: a refused verification writes nothing, so its challenge stays live until it expires, and a flow that freed the kind without spending them would let a parked challenge verify the moment the verified channel is gone |

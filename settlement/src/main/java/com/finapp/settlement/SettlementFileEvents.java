@@ -23,6 +23,7 @@ public final class SettlementFileEvents {
     static final String TARGET_TYPE = "settlement_file";
     static final String REJECTED_EVENT_TYPE = "settlement.SettlementFileRejected";
     static final String ACCEPTED_EVENT_TYPE = "settlement.SettlementBatchAccepted";
+    static final String REPUDIATED_EVENT_TYPE = "settlement.SettlementBatchRepudiated";
 
     private SettlementFileEvents() {}
 
@@ -57,6 +58,56 @@ public final class SettlementFileEvents {
                 new EventEnvelope(
                         EventId.next(ids),
                         ACCEPTED_EVENT_TYPE,
+                        EVENT_VERSION,
+                        EventEnvelope.CURRENT_SCHEMA_VERSION,
+                        SettlementFileId.of(fileId),
+                        TARGET_TYPE,
+                        occurredAt,
+                        PRODUCER,
+                        correlation.correlationId(),
+                        correlation
+                                .cause()
+                                .orElseGet(
+                                        () ->
+                                                CausationId.of(
+                                                        correlation
+                                                                .correlationId()
+                                                                .value()))),
+                payload.toBytes(),
+                EventPayload.MEDIA_TYPE);
+    }
+
+    /**
+     * Announced on the one {@code ACCEPTED → REPUDIATED} edge (`P8-TSK-023`, ADR-0065 §10),
+     * in the approval's transaction after its postings: identifiers only — the batch, its
+     * file, its source as its UUID (the rejected event's recorded deviation), the approved
+     * resolution, and the reversal entry exactly when the recognition was reversed (a batch
+     * whose posting was honestly omitted has nothing to reverse, and the field is absent).
+     * The aggregate is the file, as for the accepted event: one stream per evidence file.
+     */
+    static void repudiated(
+            OutboxWriter<Connection> outbox,
+            Connection unitOfWork,
+            IdGenerator ids,
+            UUID batchId,
+            UUID fileId,
+            UUID sourceId,
+            UUID resolutionId,
+            java.util.Optional<UUID> reversalEntryId,
+            Instant occurredAt,
+            Correlation correlation) {
+        EventPayload payload =
+                EventPayload.of()
+                        .with("batchId", batchId.toString())
+                        .with("fileId", fileId.toString())
+                        .with("sourceId", sourceId.toString())
+                        .with("resolutionId", resolutionId.toString());
+        reversalEntryId.ifPresent(entry -> payload.with("reversalEntryId", entry.toString()));
+        outbox.write(
+                unitOfWork,
+                new EventEnvelope(
+                        EventId.next(ids),
+                        REPUDIATED_EVENT_TYPE,
                         EVENT_VERSION,
                         EventEnvelope.CURRENT_SCHEMA_VERSION,
                         SettlementFileId.of(fileId),

@@ -22,12 +22,18 @@ import lombok.RequiredArgsConstructor;
  * no {@code file_event} — recorded once, by somebody other than the uploader, and audited
  * ({@code settlement.SettlementFileAttested}).
  *
- * <h2>Why only an upload is attestable</h2>
+ * <h2>What is attestable</h2>
  *
  * <p>Attestation is an upload's <em>authentication</em>. A pull is authenticated by its
- * source's own confined credential and waits for nobody; a readmission's attestation has its
- * own rules and arrives with `P8-TSK-022`. Attesting either would record an act that means
- * nothing, so it is refused rather than stored.
+ * source's own confined credential and waits for nobody, so attesting it would record an act
+ * that means nothing — it is refused rather than stored. A readmission (`P8-TSK-022`,
+ * ADR-0066 §8) inherits its original's authentication when the original was pulled or
+ * attested — and then, too, there is nothing to attest; but one whose original passes nothing
+ * on (a never-attested upload, or a {@code DECLINED} file) waits for a second person exactly as
+ * an upload does — one distinct from EVERY submitter along its chain: the readmitter, each
+ * earlier readmitter and the original's uploader. Otherwise an uploader could readmit their own
+ * rejected file and attest the readmission. `V009`'s functions answer both questions, so this
+ * rank, the accept leg's claim and the trigger beneath read one rule.
  *
  * <h2>Ten instances</h2>
  *
@@ -65,11 +71,16 @@ public final class FileAttestation<T> {
         SettlementFileStore.FileRow file =
                 store.lockFileById(unitOfWork, fileId)
                         .orElseThrow(() -> new SettlementFileNotFound(fileId));
-        if (file.receivedVia() != DeliveryChannel.UPLOAD) {
+        if (file.receivedVia() == DeliveryChannel.PULL) {
             throw new SettlementFileNotAttestable(
-                    "only an upload waits for a second person; a "
-                            + file.receivedVia()
-                            + " delivery is authenticated by its own channel (ADR-0066 §2)");
+                    "a PULL delivery is authenticated by its source's own credential and waits"
+                            + " for nobody (ADR-0066 §2)");
+        }
+        boolean readmission = file.receivedVia() == DeliveryChannel.READMISSION;
+        if (readmission && store.inheritsAuthentication(unitOfWork, fileId)) {
+            throw new SettlementFileNotAttestable(
+                    "this readmission inherits its original's authentication: there is nothing"
+                            + " to attest (ADR-0066 §8)");
         }
         // The explicit relaxation P8-TSK-003 designed for, taken by P8-TSK-008 with the
         // machine's arrival: attestation is settable while RECEIVED or PARSED - the attester
@@ -82,9 +93,12 @@ public final class FileAttestation<T> {
         if (file.attestation().isPresent()) {
             return convergedOrRefused(file, attester);
         }
-        if (file.receivedBy().equals(Optional.of(attester.id()))) {
-            // The domain rank of the distinctness rule; V002's CHECK is the second, binding
-            // every writer this class is not.
+        if (readmission
+                ? store.submitters(unitOfWork, fileId).contains(attester.id())
+                : file.receivedBy().equals(Optional.of(attester.id()))) {
+            // The domain rank of the distinctness rule; V002's CHECK (an upload) and V009's
+            // trigger (a readmission, across its chain) are the second, binding every writer
+            // this class is not.
             throw new AttestationBySubmitter(fileId);
         }
         Instant now = clock.instant();
@@ -155,14 +169,18 @@ public final class FileAttestation<T> {
         }
     }
 
-    /** The uploader tried to attest their own file (`INV-SET-07`, `INV-AUD-04`). */
+    /**
+     * A submitter tried to attest the file (`INV-SET-07`, `INV-AUD-04`): the uploader of an
+     * upload, or — for a readmission — the readmitter, an earlier readmitter or the original's
+     * uploader.
+     */
     public static final class AttestationBySubmitter extends RuntimeException {
 
         @java.io.Serial private static final long serialVersionUID = 1L;
 
         AttestationBySubmitter(UUID fileId) {
             super(
-                    "the uploader cannot attest settlement file " + fileId
+                    "a submitter of its bytes cannot attest settlement file " + fileId
                             + " (settlement.AttestationBySubmitter, INV-SET-07)");
         }
     }

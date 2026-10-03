@@ -194,6 +194,7 @@ public final class StatementChain {
                         Optional.empty(),
                         Optional.empty(),
                         Optional.empty(),
+                        Optional.empty(),
                         gap.get().ruleSetId(),
                         statement.actor(),
                         statement.at(),

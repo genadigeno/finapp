@@ -65,6 +65,12 @@ public final class ChargebackAccountingFixture {
                         throw new AssertionError(
                                 "no dispute stage runs in a suite built on this fixture");
                     }
+
+                    @Override
+                    public void parked(java.sql.Connection unitOfWork, ParkedValue parked) {
+                        throw new AssertionError(
+                                "no dispute stage runs in a suite built on this fixture");
+                    }
                 });
     }
 }

@@ -138,7 +138,15 @@ public final class MetricNames {
                     // source went silent" unanswerable in one query. The first series using
                     // the key brings it (the transition's consistency review, B6): `severity`
                     // joins with the break meters (P8-TSK-024), not here.
-                    "source");
+                    "source",
+                    // A break's severity (P8-TSK-024), brought by the first severity-tagged
+                    // series - the break meters. A CLOSED ENUM of four (LOW, MEDIUM, HIGH,
+                    // CRITICAL; reconciliation's Severity), computed by the platform at raise
+                    // and never supplied by anyone: bounded by the code, not by deployment.
+                    // The plan's section 15 alerts break age PER SEVERITY (CRITICAL > 0 h,
+                    // HIGH > 1 d, MEDIUM > 5 d, LOW > 15 d), which a name-split per severity
+                    // would make four series and "the open breaks by severity" four queries.
+                    "severity");
 
     /**
      * Allowed keys the fragment rule below would otherwise refuse <strong>on a spelling

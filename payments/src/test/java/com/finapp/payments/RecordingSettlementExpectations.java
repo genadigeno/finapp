@@ -14,6 +14,7 @@ final class RecordingSettlementExpectations implements SettlementExpectations {
 
     final List<Opening> openings = new ArrayList<>();
     final List<AliasRegistration> aliases = new ArrayList<>();
+    final List<ParkedValue> parkings = new ArrayList<>();
 
     @Override
     public void open(Connection unitOfWork, Opening opening) {
@@ -23,5 +24,10 @@ final class RecordingSettlementExpectations implements SettlementExpectations {
     @Override
     public void alias(Connection unitOfWork, AliasRegistration registration) {
         aliases.add(registration);
+    }
+
+    @Override
+    public void parked(Connection unitOfWork, ParkedValue parked) {
+        parkings.add(parked);
     }
 }

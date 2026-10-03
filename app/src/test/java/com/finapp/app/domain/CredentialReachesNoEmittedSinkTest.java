@@ -389,11 +389,28 @@ class CredentialReachesNoEmittedSinkTest {
                         // audit record's reason columns - INV-AUD-03). No secret; the
                         // SettlementContentReadRequest shape, at the decline.
                         "SettlementFileDeclineRequest",
+                        // P8-TSK-022: a readmission and a verification carry a REASON alone.
+                        "SettlementReadmissionRequest",
+                        "SettlementVerificationRequest",
+                        // P8-TSK-021. Carries only a BUSINESS KEY - an ISO date or a scheme
+                        // cycle token, shaped by a pattern at the boundary, bound for the permit
+                        // row and the fetch's audit summary. No secret: the source's report
+                        // credential is configuration, never a request field.
+                        "SettlementFetchRequest",
                         // P8-TSK-007. Carries only a REASON (free prose by the reconciliation
                         // controller, bound for the audit record's reason column - the
                         // opening-position backfill INV-AUD-03 requires a reason for). No
                         // secret; the SettlementContentReadRequest shape, at the register.
                         "OpeningPositionRequest",
+                        // P8-TSK-022: the controller's doors. No secret in any of them. A
+                        // proposal is policy - lags, rules, tolerances, fee terms (a rate as a
+                        // decimal string), thresholds, nested schemas this list does not name -
+                        // with a REASON bound for the version's history and the audit record;
+                        // the decisions, the reprocess and the requeue carry a REASON alone.
+                        "RuleSetProposalRequest",
+                        "RuleSetDecisionRequest",
+                        "ReprocessingRequest",
+                        "RunRequeueRequest",
                         // P8-TSK-014: the investigator's case file. No secret in any of them.
                         // The assignee is an identity identifier; the classification carries a
                         // type and a REASON (screened like a note for card-number and account
@@ -415,6 +432,9 @@ class CredentialReachesNoEmittedSinkTest {
                         // idempotency receipt; the rejection carries a REASON screened the same
                         // way, bound for the resolution history's and audit record's reason.
                         "ResolutionProposalRequest",
+                        // P8-TSK-023: a repudiation carries a reason code and a screened
+                        // CONFIDENTIAL narrative - no secret.
+                        "BatchRepudiationRequest",
                         "ResolutionRejectionRequest",
                         // P3-TSK-017. Carries dates, a reference, a REASON (free prose by a
                         // person, bound for the reason columns - RESTRICTED-FINANCIAL, never

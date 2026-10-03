@@ -32,6 +32,7 @@ public final class JdbcResolutions implements Resolutions {
      */
     @NonNull private final ResolutionStore resolutions;
     @NonNull private final AdjustmentService adjustments;
+    @NonNull private final ReconciliationTelemetry telemetry;
 
     @Override
     public boolean evidence(Connection unitOfWork, Evidence evidence) {
@@ -41,12 +42,23 @@ public final class JdbcResolutions implements Resolutions {
                 unitOfWork.prepareStatement(
                         "UPDATE reconciliation.break SET status = 'RESOLVED',"
                                 + " resolved_at = ?, status_changed_at = ?"
-                                + " WHERE id = ? AND status <> 'RESOLVED'")) {
+                                + " WHERE id = ? AND status <> 'RESOLVED' RETURNING raised_at")) {
             resolve.setTimestamp(1, Timestamp.from(evidence.at()));
             resolve.setTimestamp(2, Timestamp.from(evidence.at()));
             resolve.setObject(3, evidence.breakId());
-            if (resolve.executeUpdate() != 1) {
-                return false;
+            try (java.sql.ResultSet resolved = resolve.executeQuery()) {
+                if (!resolved.next()) {
+                    return false;
+                }
+                java.time.Duration age =
+                        java.time.Duration.between(
+                                resolved.getObject("raised_at", java.time.OffsetDateTime.class)
+                                        .toInstant(),
+                                evidence.at());
+                telemetry.resolved(
+                        ResolutionKind.EVIDENCED,
+                        ResolutionOutcome.EVIDENCED,
+                        age.isNegative() ? Optional.empty() : Optional.of(age));
             }
         } catch (SQLException failure) {
             throw new ReconciliationStorageException(
@@ -56,8 +68,8 @@ public final class JdbcResolutions implements Resolutions {
                 unitOfWork.prepareStatement(
                         "INSERT INTO reconciliation.break_event (break_id, event_type,"
                                 + " actor, actor_type, reason, detail, occurred_at,"
-                                + " correlation_id) VALUES (?, 'RESOLVED', ?, ?, NULL, ?,"
-                                + " ?, ?)")) {
+                                + " correlation_id, resolution_id) VALUES (?, 'RESOLVED', ?,"
+                                + " ?, NULL, ?, ?, ?, ?)")) {
             history.setObject(1, evidence.breakId());
             history.setString(2, evidence.actor().id());
             history.setString(3, evidence.actor().type().name());
@@ -65,6 +77,8 @@ public final class JdbcResolutions implements Resolutions {
                     + ", kind=EVIDENCED");
             history.setTimestamp(5, Timestamp.from(evidence.at()));
             history.setString(6, evidence.correlation().value());
+            // The EVIDENCED row below, written in this same transaction (V015's deferred key).
+            history.setObject(7, evidence.resolutionId());
             history.executeUpdate();
         } catch (SQLException failure) {
             throw new ReconciliationStorageException(
@@ -75,7 +89,9 @@ public final class JdbcResolutions implements Resolutions {
         String narrative =
                 evidence.decisionId()
                                 .map(decision -> "decision=" + decision)
-                                .orElseGet(() -> "statement=" + evidence.fillingStatementId().get())
+                                .or(() -> evidence.fillingStatementId()
+                                        .map(statement -> "statement=" + statement))
+                                .orElseGet(() -> "run=" + evidence.completedRunId().get())
                         + evidence.parkId().map(park -> ", park=" + park).orElse("");
         try (PreparedStatement insert =
                 unitOfWork.prepareStatement(
@@ -190,6 +206,8 @@ public final class JdbcResolutions implements Resolutions {
                                 throw new IllegalStateException(
                                         "the locked proposal was decided by another writer");
                             }
+                            telemetry.resolved(
+                                    pending.kind(), ResolutionOutcome.WITHDRAWN, Optional.empty());
                             String detail = "evidence=" + evidence.resolutionId();
                             resolutions.appendEvent(
                                     unitOfWork, pending.id(),

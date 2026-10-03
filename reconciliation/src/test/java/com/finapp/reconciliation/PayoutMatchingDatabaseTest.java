@@ -252,7 +252,7 @@ class PayoutMatchingDatabaseTest {
                                     + " status, funding_lag_days, gain_min_age_days,"
                                     + " effective_from, proposed_by, decided_by, reason,"
                                     + " created_at, correlation_id) VALUES (?, ?, 1,"
-                                    + " 'ACTIVE', 2, 90, ?, 'test', 'test',"
+                                    + " 'PROPOSED', 2, 90, ?, 'test', NULL,"
                                     + " 'PayoutMatchingDatabaseTest private payout source',"
                                     + " now(), 'p8-tsk-018-test') ON CONFLICT (id) DO NOTHING",
                             RULE_SET, SOURCE,
@@ -303,6 +303,10 @@ class PayoutMatchingDatabaseTest {
                                     + " (?, 'GBP', 100000), (?, 'USD', 100000)"
                                     + " ON CONFLICT DO NOTHING",
                             RULE_SET, RULE_SET, RULE_SET);
+                    execute(unitOfWork,
+                            "UPDATE reconciliation.rule_set SET status = 'ACTIVE', decided_by = 'test-activator',"
+                                    + " decided_at = now() WHERE id = ? AND status = 'PROPOSED'",
+                            RULE_SET);
                     return null;
                 });
     }
@@ -898,9 +902,12 @@ class PayoutMatchingDatabaseTest {
                 execute(migrator,
                         "INSERT INTO reconciliation.match_decision (id, external_item_id,"
                                 + " run_id, origin, rule_set_id, outcome, decided_by,"
-                                + " decided_by_type, decided_at, decided_on, correlation_id)"
+                                + " decided_by_type, decided_at, decided_on, correlation_id,"
+                                + " verdict, judged_status, judged_minor,"
+                                + " fingerprint_seen_earlier)"
                                 + " VALUES (?, ?, ?, 'RUN', ?, 'UNMATCHED', 'system',"
-                                + " 'SYSTEM', now(), current_date, 'p8-tsk-018-probe')",
+                                + " 'SYSTEM', now(), current_date, 'p8-tsk-018-probe',"
+                                + " 'NO_CANDIDATES', 'PENDING', 1000, false)",
                         decision, item, privateRun, PAYOUT_RULE_SET);
                 assertGuardRefuses(migrator, guard);
             } finally {
@@ -1035,6 +1042,141 @@ class PayoutMatchingDatabaseTest {
                 .doesNotContain(secondItem, neverItem);
     }
 
+    @Test
+    @Order(13)
+    @DisplayName("(n) the anchored clause compares no two instances' clocks (P8-TST-001's"
+            + " correction): a return OPENED on a clock behind the one that DECIDED its line - the"
+            + " worker's instance a minute slower than the matcher's - is still reached and"
+            + " allocated by the rematch leg, once, with no churn on the next tick; a spent"
+            + " return's second line and a never-returned line stay off the worklist")
+    void theAnchoredClauseComparesNoTwoClocks() throws SQLException {
+        // The deciding instance runs a minute FAST - ordinary VM drift between two instances -
+        // so the return the worker opens just after (on the real clock) carries an opened_at
+        // EARLIER than the line's latest decided_at. The storm found the line waiting for its
+        // 72-hour grace exactly so, with instance clocks only milliseconds apart.
+        Matching fast = matching(false, Clock.offset(Clock.systemUTC(), Duration.ofMinutes(1)));
+        Matching realTime = matching(false, Clock.systemUTC());
+        LocalDate day = day(14);
+        Payout late = newPayout(COMPLETED_PAYOUT);
+        Payout never = newPayout(COMPLETED_PAYOUT);
+        openPayout(late, 31_00, day);
+        openPayout(never, 21_00, day);
+        UUID runId =
+                seedRun(
+                        returned(1, 31_00, day, refs(late)),
+                        returned(2, 21_00, day, refs(never)),
+                        returned(3, 31_00, day, refs(late)));
+        fast.sweep();
+        assertThat(itemStatus(runId, 1)).as("no return applied yet: it waits").isEqualTo("UNMATCHED");
+
+        UUID lateReturn = openReturn(late, 31_00, day);
+        UUID lateItem = itemId(runId, 1);
+        assertThat(one("SELECT e.opened_at < (SELECT max(d.decided_at) FROM"
+                        + " reconciliation.match_decision d WHERE d.external_item_id = ?) FROM"
+                        + " reconciliation.expectation e WHERE e.id = ?", lateItem, lateReturn))
+                .as("precondition: the skew is real - the return reads opened BEFORE the decision")
+                .isEqualTo(true);
+        UUID itemSource =
+                (UUID) one("SELECT source_id FROM reconciliation.external_item WHERE id = ?",
+                        lateItem);
+        assertThat(rematchWorklist(itemSource))
+                .as("no decision of either line has seen the return: both are on the worklist")
+                .contains(lateItem, itemId(runId, 3));
+        realTime.sweep();
+
+        assertThat(itemStatus(runId, 1)).as("the late return reached across the skew")
+                .isEqualTo("MATCHED");
+        assertThat(row("SELECT a.expectation_id, d.origin FROM reconciliation.allocation a JOIN"
+                + " reconciliation.match_decision d ON d.id = a.decision_id WHERE"
+                + " a.external_item_id = ?", lateItem))
+                .containsExactly(lateReturn, "REMATCH");
+        assertThat(itemStatus(runId, 2)).isEqualTo("UNMATCHED");
+        assertThat(itemStatus(runId, 3)).as("the second line meets a spent return: it waits")
+                .isEqualTo("UNMATCHED");
+        assertThat(rematchWorklist(itemSource))
+                .as("the spent return's second line and the never-returned line stay off")
+                .doesNotContain(itemId(runId, 2), itemId(runId, 3));
+        long decisions =
+                count("SELECT count(*) FROM reconciliation.match_decision d JOIN"
+                        + " reconciliation.external_item i ON i.id = d.external_item_id WHERE"
+                        + " i.run_id = ?", runId);
+        realTime.sweep();
+        assertThat(count("SELECT count(*) FROM reconciliation.match_decision d JOIN"
+                        + " reconciliation.external_item i ON i.id = d.external_item_id WHERE"
+                        + " i.run_id = ?", runId))
+                .as("nothing re-decided on the next tick: no churn")
+                .isEqualTo(decisions);
+    }
+
+    @Test
+    @Order(14)
+    @DisplayName("(o) the 'not yet seen' guard alone: a return the line's direction contradicts"
+            + " is SEEN by the grace decision that refuses it and parks the line - the line left"
+            + " unallocated, the return still OPEN with its whole remainder, every other term of"
+            + " the anchored clause still true - and the line is off the rematch worklist and no"
+            + " tick re-decides it")
+    void aSeenReturnLeavesTheWorklist() throws SQLException {
+        Matching realTime = matching(false, Clock.systemUTC());
+        LocalDate day = day(15);
+        Payout payout = newPayout(COMPLETED_PAYOUT);
+        openPayout(payout, 32_00, day);
+        UUID runId = seedRun(returned(1, 32_00, day, refs(payout)));
+        realTime.sweep();
+        assertThat(itemStatus(runId, 1)).as("no return yet: it waits").isEqualTo("UNMATCHED");
+        UUID item = itemId(runId, 1);
+        UUID itemSource =
+                (UUID) one("SELECT source_id FROM reconciliation.external_item WHERE id = ?",
+                        item);
+
+        // A return of the operation's kind, OUTBOUND: reached through the anchor, contradicted.
+        // Its grace moved (never the clock), so the grace leg - first in the sweep - judges the
+        // line against it before the rematch leg reads its worklist.
+        UUID contradicting =
+                open(ExpectationKind.PAYOUT_RETURN, payout.id(),
+                        "merchant-payout-return:" + payout.id(), ExpectationDirection.OUTBOUND,
+                        32_00, day);
+        assertThat(rematchWorklist(itemSource))
+                .as("not yet seen by any decision of the line: on the worklist")
+                .contains(item);
+        try (Connection app = DatabaseRoles.application();
+                PreparedStatement expire =
+                        app.prepareStatement("UPDATE reconciliation.external_item SET"
+                                + " grace_until = now() - interval '1 hour' WHERE id = ?")) {
+            expire.setObject(1, item);
+            expire.executeUpdate();
+        }
+        realTime.sweep();
+
+        assertThat(count("SELECT count(*) FROM reconciliation.match_decision d JOIN"
+                        + " reconciliation.match_candidate c ON c.decision_id = d.id WHERE"
+                        + " d.external_item_id = ? AND c.expectation_id = ?", item,
+                        contradicting))
+                .as("a decision of the line saw the return as its candidate")
+                .isEqualTo(1);
+        assertThat(count("SELECT count(*) FROM reconciliation.allocation WHERE"
+                        + " external_item_id = ?", item))
+                .as("and refused it: nothing allocated")
+                .isZero();
+        assertThat(itemStatus(runId, 1)).as("the line stays unallocated")
+                .isIn("UNMATCHED", "PARKED");
+        assertThat(one("SELECT status || ':' || allocated_minor::text FROM"
+                        + " reconciliation.expectation WHERE id = ?", contradicting))
+                .as("the return stays OPEN, its whole remainder standing - every other term of"
+                        + " the anchored clause still holds")
+                .isEqualTo("OPEN:0");
+        assertThat(rematchWorklist(itemSource))
+                .as("seen: the line is OFF the worklist - the guard alone keeps it off")
+                .doesNotContain(item);
+        long decisions =
+                count("SELECT count(*) FROM reconciliation.match_decision WHERE"
+                        + " external_item_id = ?", item);
+        realTime.sweep();
+        assertThat(count("SELECT count(*) FROM reconciliation.match_decision WHERE"
+                        + " external_item_id = ?", item))
+                .as("no tick re-decides a line whose reach it has already seen")
+                .isEqualTo(decisions);
+    }
+
     /** The rematch leg's worklist for one source, read as the leg reads it, rolled back. */
     private static List<UUID> rematchWorklist(UUID source) throws SQLException {
         List<UUID> worklist = new ArrayList<>();
@@ -1051,7 +1193,7 @@ class PayoutMatchingDatabaseTest {
     // ----------------------------------------------------------------- the lock only orders
 
     @Test
-    @Order(13)
+    @Order(15)
     @DisplayName("(k) the lock only ORDERS: bypassed, ten sweepers over a fresh five-line payout"
             + " run still allocate each (item, expectation) at most once, never above an"
             + " expectation's amount, park nothing, and complete the run once")

@@ -10606,7 +10606,7 @@ posting-date documentation reconciled with the Phase 5–7 practice, with no ret
     by trigger; `value_at_issue_*` ≥ 0; the note body's bounds and shape `CHECK`s (1..4000; no
     Luhn-valid 13–19-digit run, no IBAN shape), ready for their producer in `P8-TSK-014`;
     `suspense_item.break_id NOT NULL`, `external_item_id UNIQUE NULL`,
-    `origin (RECON_PARK|BANK_UNATTRIBUTED|UNMATCHED_CONFIRMATION)` (`REPUDIATION` added by `V012`,
+    `origin (RECON_PARK|BANK_UNATTRIBUTED|UNMATCHED_CONFIRMATION)` (`REPUDIATION` added by `V013`,
     `P8-TSK-023`) *(the Phase 7 → 8 transition's re-check, R3)*, `origin_ref UNIQUE`,
     `CHECK released_minor ≤ amount_minor`; `park.journal_entry_id UNIQUE`; no `DELETE` grant and a
     refusing trigger on every table.
@@ -10648,7 +10648,7 @@ posting-date documentation reconciled with the Phase 5–7 practice, with no ret
 - **Out of scope**: the matcher and every leg that decides to park (`P8-TSK-011`, `-013`);
   resolutions (`-012`, `-015`); the case file's routes (`-014`); the producers of the
   `BANK_UNATTRIBUTED` (`-016`) and `UNMATCHED_CONFIRMATION` (`-020`) origins, which `V004` admits,
-  and of the fourth, `REPUDIATION` (`-023`), which `V012` admits; the break meters (`-024`).
+  and of the fourth, `REPUDIATION` (`-023`), which `V013` admits; the break meters (`-024`).
 - **Domain changes**: `ReconciliationBreak` (type, cause, severity, status, subject, value at issue,
   residual version), `BreakType`, `BreakCause`, `Severity`, the pure severity policy,
   `BreakRegister`; `SuspenseItem`, `SuspenseRelease`, `Park`, `Suspense`; `InternalReferenceLookup`
@@ -12107,7 +12107,7 @@ break row, as the approval door must.)*
   `other` whatever becomes of it *(the status moved to the title line alone and this note here by
   the Phase 7 → 8 transition's consistency review, C4; the terms' owner settled by A12)*.
 
-**P8-TSK-020 — Unmatched confirmations join suspense management** — `READY` (marked by `P8-TSK-019`'s completion gate)
+**P8-TSK-020 — Unmatched confirmations join suspense management** — `COMPLETE` (2026-10-01)
 - **Objective**: Phase 7's unmatched confirmations become owned suspense (`INV-REC-05`,
   `INV-REC-09`): every parking opens, in its own transaction, a CREDIT suspense item with an
   `UNKNOWN_EXTERNAL` break (cause `PARKED_ON_RECEIPT`); existing rows are adopted once; the value
@@ -12150,12 +12150,21 @@ break row, as the approval door must.)*
   evidence, not a guess); a resolved state on
   `payments.unmatched_confirmation` (the suspense item carries the disposition; no payments
   migration); renaming the payments gauges.
-- **Domain changes**: `UnmatchedConfirmations` gains the suspense half of the port call;
+- **Domain changes**: `UnmatchedConfirmations` gains the suspense half of the port call *(as built:
+  the port's second method, `parked(ParkedValue)`, beside `open` — the item's facts are the
+  parking's, not the expectation's; reconciliation's opener is `ParkedConfirmations`)*;
   reconciliation's suspense opening path for the `UNMATCHED_CONFIRMATION` origin; the break raised
   with cause `PARKED_ON_RECEIPT`.
 - **Persistence**: none new — `suspense_item`'s `UNMATCHED_CONFIRMATION` origin and the break exist
   (reconciliation `V004`, `P8-TSK-010`); **no payments migration** — the parking's `V023` columns
-  and the evidence's fifth subject already exist.
+  and the evidence's fifth subject already exist. *(Corrected by the task's design, a fourth time
+  in five tasks: a parking's owner is a break standing on its own suspense item, and neither
+  immediate key let that pair be born — the item names its owner, the owner's frozen subject names
+  the item. Reconciliation `V011` makes `break_suspense_item_fk` `DEFERRABLE INITIALLY
+  IMMEDIATE`, deferred by the one opener alone, and appends the cause `EXECUTION_ALREADY_EXPLAINED`
+  (`DUPLICATE_EXTERNAL`) for a parking payments `V023`'s backfill left unclaimed — ADR-0070's
+  recorded design input, decided here: it admits no transfer. `P8-TSK-022` and `-023` moved to
+  `V012` and `V013`. No payments migration, as claimed; no columns, so no classification rows.)*
 - **APIs**: none new; `POST /reconciliation/opening-position` gains the adoption leg with its
   request and OpenAPI entry unchanged.
 - **Events**: `reconciliation.ReconciliationBreakRaised` per new or adopted parking.
@@ -12210,7 +12219,7 @@ break row, as the approval door must.)*
 - **Definition of done**: `DOD-FIN`, `DOD-OBS`, `DOD-TEST`. **Risk**: Medium (a Phase 7 call site on
   the pay-in callback path). **Cx**: S.
 
-**P8-TSK-021 — Pull acquisition, per-source credentials and source silence** — `PLANNED`
+**P8-TSK-021 — Pull acquisition, per-source credentials and source silence** — `COMPLETE` (2026-10-01)
 - **Objective**: each source's evidence fetched on schedule over its own confined credential and
   accepted without a second person, because the channel authenticates it (`INV-SET-07`);
   deduplicated with uploads by content; every silent source visible.
@@ -12249,8 +12258,13 @@ break row, as the approval door must.)*
   multi-part or superseding files; object storage (ADR-0036's trigger, re-assessed by ADR-0066);
   retention deletion.
 - **Domain changes**: `SettlementReportCollector`, `PullPermit`, the expected-arrival derivation.
+  *(As built: `PullPermit` is a store, `PullPermitStore` — the permit is a pacing row with no
+  behaviour of its own to protect; the derivation is `ExpectedArrivals`, pure; the scheme's cycle
+  tokens come through payments' new public read store `SettlementCycleReads`, read in `app`.)*
 - **Persistence**: settlement `V00x` (`pull_permit`, conditional `UPDATE` only), its
-  `DATA_CLASSIFICATION.md` §4 rows in the same change.
+  `DATA_CLASSIFICATION.md` §4 rows in the same change. *(As built: settlement `V008`, the claim a
+  conditional upsert — the first attempt inserts — and every renewal strictly advancing under a
+  trigger for every writer; five classification rows. The claim held: one migration.)*
 - **APIs**: `POST /settlement/sources/{code}/fetch` under `SETTLEMENT_INGEST`, natural idempotency
   (the content address), `settlement.SourceUnknown` and `settlement.SourceRetired`, a
   `RoutePermissionRegisterTest` row, the OpenAPI baseline regenerated (additive under v1, ADR-0015).
@@ -12310,7 +12324,8 @@ break row, as the approval door must.)*
   criterion ("by pull where declared") is read against it. `finapp.settlement.source.silence` is not
   deferred with it: it reads accepted batches, not pulls, and moves to `P8-TSK-024`.
 
-**P8-TSK-022 — Rule-set administration, reprocessing, readmission, run requeue and replay** — `PLANNED`
+**P8-TSK-022 — Rule-set administration, reprocessing, readmission, run requeue and replay** — `COMPLETE` (2026-10-01)
+- **As built** (2026-10-01): as `CURRENT_STATE.md` §Just completed and `history/TASK_HISTORY.md` record. Two migrations as claimed (reconciliation `V012`, settlement `V009`); nine routes (the verification's door decided: an audited operator request). Decided: a `DECLINED` file is readmissible and inherits nothing; a `CONFLICTING_BATCH` original is admitted when no live batch holds its identity - proven by a decline of the standing file, the repudiation path left to `P8-TSK-023`'s tests; the attester differs from every submitter along the chain. Deviations: reprocess allocations are not yet counted on `finapp.reconciliation.rematch`, a meter `P8-TSK-024` owns (recorded there); the approval's converged retry omits the retired predecessor its first answer named. The gate fixed the replay's untested pin and the reprocess leg's try-lock-only arbitration (the `REPROCESS` run's row now locked).
 - **Objective**: the platform can be operated without editing history (`INV-HIST-04`, `INV-REC-04`,
   `INV-AUD-04`): matching policy changes only forward and only under four-eyes; residual items are
   reprocessed under the new version; a file our own defect rejected is readmitted; a blocked run is
@@ -12374,8 +12389,8 @@ break row, as the approval door must.)*
   business-day calendars; value-banded approver escalation; automatic readmission.
 - **Domain changes**: `RuleSet`'s administration commands; `ReprocessRun`; `Readmission`;
   `RunReplay`; the re-parse verification.
-- **Persistence**: reconciliation `V011` `run_replay` (renumbered: `P8-TSK-016` took `V008` for its bank items, `P8-TSK-017` `V009` for its scheme items and `P8-TSK-018` `V010` for its payout items; in task
-  order; `P8-TSK-023`'s is `V012` — the Phase 7 → 8 transition's consistency review, A8 and C9,
+- **Persistence**: reconciliation `V012` `run_replay` (renumbered: `P8-TSK-016` took `V008` for its bank items, `P8-TSK-017` `V009` for its scheme items, `P8-TSK-018` `V010` for its payout items and `P8-TSK-020` `V011` for its owner subject and cause; in task
+  order; `P8-TSK-023`'s is `V013` — the Phase 7 → 8 transition's consistency review, A8 and C9,
   where this read `V00x`) (`run_id`, `requested_by`, `verdict`,
   `divergences`, `pending_rematch`, `first_divergent_decision`, `at`; append-only), its
   `DATA_CLASSIFICATION.md` §4 rows in the same change; beside it a settlement migration of its own,
@@ -12447,7 +12462,9 @@ break row, as the approval door must.)*
   probe `DIVERGED`; readmission is audited and reasoned; every probe caught.
 - **Definition of done**: `DOD-FIN`, `DOD-API`, `DOD-SEC`, `DOD-TEST`. **Risk**: Medium. **Cx**: L.
 
-**P8-TSK-023 — Batch repudiation** — `PLANNED`
+**P8-TSK-023 — Batch repudiation** — `COMPLETE` (2026-10-01)
+- **As built** (2026-10-01): as `CURRENT_STATE.md` §Just completed and `history/TASK_HISTORY.md` record. Two migrations as claimed (settlement `V010`, reconciliation `V013`); the backlog's "`allocation.reverses_allocation_id UNIQUE` and `resolution.settlement_batch_id` exist" did not hold - both built in `V013`. Deviations: an unknown batch is the named `reconciliation.BatchNotFound` (every reconciliation operator door names its 404), not `api.NotFound`; three shapes are refused (`RepudiationNotSupported`, recorded debt); the `REPUDIATE_BATCH` series of `finapp.reconciliation.resolution` and the span are `P8-TSK-024`'s (recorded there); the reopened `PAYOUT_RETURN`'s ageing is the sweep's, not driven by the suite.
+- *Design inputs from `P8-TSK-022` (2026-10-01)*: the settlement migration is `V010` (`V009` is the readmission rule's); readmission judges a `CONFLICTING_BATCH` original by its conflict - admitted when no live batch holds the identity its bytes declare - so this task's test of the genuine file's recovery is: repudiate the fabricated batch, readmit the genuine file (`POST /settlement/files/{id}/readmission`), and see it accepted; a repudiation's reopened items and released parks are residuals the `REPROCESS` leg can re-decide.
 - **Objective**: the repudiation of ADR-0065 and ADR-0071 — an accepted batch proven fabricated or
   mis-normalised is repudiated under four-eyes: its recognition reversed, its matches
   counter-allocated, its parks released, the file retained, and the genuine file then accepted.
@@ -12514,15 +12531,15 @@ break row, as the approval door must.)*
   - the approval re-derives the counter-allocations and unparks from the rows under lock, and a
     change since the proposal is `409 reconciliation.ResolutionStale`;
   - settlement `V00x`, the next free settlement number (`batch` `ACCEPTED → REPUDIATED`; the live
-    uniques already exclude it); reconciliation `V012` (below).
+    uniques already exclude it); reconciliation `V013` (below).
 - **Out of scope**: repudiating single lines (the batch is the unit); automatic repudiation;
   deleting or editing the file or its lines (retained); re-allocating committed matches outside
   repudiation; reversing a write-off automatically on late evidence (deferred).
 - **Domain changes**: the `REPUDIATE_BATCH` kind on a batch subject; counter-allocations; the
   batch's single designed exit from `ACCEPTED`.
 - **Persistence**: settlement `V00x` (the batch state and its transition trigger regenerated) with
-  its `DATA_CLASSIFICATION.md` rows if any column changes; **reconciliation `V012`**, after
-  `P8-TSK-022`'s `V011` — the resolution's `REPUDIATE_BATCH` kind and its batch subject admitted,
+  its `DATA_CLASSIFICATION.md` rows if any column changes; **reconciliation `V013`**, after
+  `P8-TSK-022`'s `V012` — the resolution's `REPUDIATE_BATCH` kind and its batch subject admitted,
   the item's `REPUDIATED` state and its repudiation-only reopening edge, the expectation's
   reopening edges (`SETTLED | PARTIALLY_SETTLED → OPEN | PARTIALLY_SETTLED`), and the suspense
   item's fourth origin, `REPUDIATION` (`V004` created the three others), each generated `CHECK`
@@ -12595,7 +12612,9 @@ break row, as the approval door must.)*
   is recorded with an owning phase against F4 and the gate's *Replay and reprocessing* criterion
   ("repudiation, if not deferred").
 
-**P8-TSK-024 — Meters, the dashboard row and operator reports** — `PLANNED`
+**P8-TSK-024 — Meters, the dashboard row and operator reports** — `COMPLETE` (2026-10-01; marked `READY` by `P8-TSK-023`'s completion gate)
+- **As built** (2026-10-01): as `CURRENT_STATE.md` §Just completed and `history/TASK_HISTORY.md` record. No persistence, as claimed. Every scope item built: the ten missing series (the rest adopted, never duplicated), `severity` with its argument, four report routes (+536 OpenAPI lines, zero removed), ten panels, seventeen alert rules (three beyond the scope's list: a never-accepted source, a stuck file and a stalled run - the ages §15 marks alertable), seven spans. Deviations: `finapp.reconciliation.rematch` counts `REMATCH` decisions by outcome and `REPROCESS` decisions only when they allocate; the match rate counts a `BATCH` run's first (`RUN`) decisions only; the domain spans open before the leg restores its correlation (recorded); per-source report rows are bounded in key order (the register is far under the bound). The gate fixed counts that a JDBC savepoint's rollback had undone - the port's `countMark` / `discardCountsAfter`.
+- *Design inputs from `P8-TSK-023` (2026-10-01)*: `finapp.reconciliation.resolution` counts the `REPUDIATE_BATCH` kind too (its type label), and the span `reconciliation.resolve` covers a repudiation's approval - both deferred here with their series.
 - **Objective**: `PHASE_8_PLAN.md` §15 whole — every settlement and reconciliation health signal
   visible on a running instance as counts, ages and verdicts, and every amount answered by an
   audited operator report, never a metric (ADR-0072).
@@ -12664,7 +12683,7 @@ break row, as the approval door must.)*
   `finapp.reconciliation.run.pending`, `finapp.reconciliation.run.age`,
   `finapp.reconciliation.run.blocked`, `finapp.reconciliation.run.latency`,
   `finapp.reconciliation.item`, `finapp.reconciliation.item.unmatched`,
-  `finapp.reconciliation.rematch`, `finapp.reconciliation.expectation.open`,
+  `finapp.reconciliation.rematch` (counting `REPROCESS` allocations too - `P8-TSK-022`'s backlog line, deferred here with the meter), `finapp.reconciliation.expectation.open`,
   `finapp.reconciliation.expectation.overdue`, `finapp.reconciliation.expectation.overdue.age`,
   `finapp.reconciliation.break.raised`, `finapp.reconciliation.break.open`,
   `finapp.reconciliation.break.age`, `finapp.reconciliation.resolution`,
@@ -12685,7 +12704,8 @@ break row, as the approval door must.)*
   and audited; no amount in any series (static check); every probe caught.
 - **Definition of done**: `DOD-OBS`, `DOD-TEST`, `DOD-DOC`. **Risk**: Low. **Cx**: M.
 
-**P8-TST-001 — The settlement and reconciliation storm** — `PLANNED`
+**P8-TST-001 — The settlement and reconciliation storm** — `COMPLETE` (2026-10-01; marked `READY` by `P8-TSK-024`'s completion gate, run in parallel with `P8-TST-002` at the owner's request)
+- **As built** (2026-10-01): as `CURRENT_STATE.md` §Just completed and `history/TASK_HISTORY.md` record. **Correction (the P7-TST-001 precedent)**: "Domain changes: none" did not hold - the storm found the operation-anchored rematch clause comparing two instances' clocks and fixed it in `JdbcMatchingStore`. Deviations: the Phase 7 movers mirrored in `StormTraffic`, not extracted; "wrong currency" is a whole report in GBP (the line-level switch rejects at parse); "duplicate line" a repeated record (`REPEATED_FINGERPRINT`); three injected crashes and two sweep boundaries; the `file_chunk` needle criterion met as "no refused delivery's content address stored" plus the never-stored check, since chunks are encrypted. Recorded debt: the keyed and value-date clauses' clocks, a duplicate line's widened chance at a return, the own-container run.
 - **Objective**: every source, every fault that produces a break and every recovery path at once
   under ten matcher instances, reconciled to the minor unit in every round and at rest — the proofs,
   the trial balance, the break census and the replay counted, not argued.
@@ -12755,7 +12775,8 @@ break row, as the approval door must.)*
   run; the tally equal; every probe caught.
 - **Definition of done**: `DOD-TEST`, `DOD-FIN`. **Risk**: Medium. **Cx**: L.
 
-**P8-TST-002 — The break and resolution battery** — `PLANNED`
+**P8-TST-002 — The break and resolution battery** — `COMPLETE` (2026-10-01; started `READY` beside `P8-TST-001` at the owner's request - a deviation from one `READY` task)
+- **As built** (2026-10-01): as `CURRENT_STATE.md` §Just completed and `history/TASK_HISTORY.md` record. **Correction**: "Persistence: none" did not hold - reconciliation `V014` makes a diverged replay's zero-value acknowledgement four-eyes, keyed on the break's cause (a defect against ADR-0068 §9.1, fixed here as the entry allows). The matrix's counts: 40 allowed pairs; 44 table cells over six kinds plus 14 `REPUDIATE_BATCH` shape refusals; 52 base and 5 refined scenario cells. Deviations: `RECOGNISE_GAIN` and `MANUAL_MATCH` crossed in the module suite only (ingestion cannot age a parking 90 days, the engine never produces the ambiguous decision); the position proofs shown after the HTTP suite's crossings, the losses-and-gains scan in both; self-attestation, self-activation and `RoleNameTest`'s disjointness rest on their own suites (`SettlementRoutesDatabaseTest`, `RuleSetAdministrationDatabaseTest`, `RoleNameTest`). Recorded debt: the owner's TRUNCATE, stranding reclassifications.
 - **Objective**: every break type crossed with every resolution kind it allows, raced and
   duplicated; four-eyes, stale approval and immutability demonstrated at every rank.
 - **Bounded context**: Reconciliation (14), with Ledger (7) beneath every posting resolution and
@@ -12828,7 +12849,8 @@ break row, as the approval door must.)*
   caught.
 - **Definition of done**: `DOD-TEST`, `DOD-FIN`. **Risk**: Medium. **Cx**: L.
 
-**P8-DOC-001 — The Phase 8 exit review** — `PLANNED`
+**P8-DOC-001 — The Phase 8 exit review** — `COMPLETE` (2026-10-01; marked `READY` by the completion gates of `P8-TST-001` and `P8-TST-002`)
+- **As built** (2026-10-01): as [`reviews/PHASE_8_REVIEW.md`](reviews/PHASE_8_REVIEW.md) and `CURRENT_STATE.md` §Just completed record. Phase 8 `COMPLETE`. **Corrections, each probed**: reconciliation `V015` ("Persistence: corrections only" - one migration, the critical find), the gain's pinned rule set, the PSP format's defect cap, four audit assertions, a column reclassified. **Deviations**: the fleet-wide `test databaseTest kafkaTest` battery - the hermetic tier ran fleet-wide before and after the flip, the database tier over every suite the corrections reach, the database and kafka tiers never fleet-wide, on the owner's standing instruction (ruled `PASS` with the deviation, as `P7-DOC-001`'s was); two gate claims answered by construction rather than tested (`RecordAlreadyMatched`, a real `AMBIGUOUS_MATCH`); `V015`'s stated limit recorded as Phase 15 debt.
 - **Objective**: rule Phase 8 against `PHASE_GATES.md` §3's twelve universal criteria, the financial
   supplement F1–F8 and §5's Phase 8 criteria — the seven original bullets and the twenty-one the
   transition added — from fresh runs, read from the gate, never from this entry.

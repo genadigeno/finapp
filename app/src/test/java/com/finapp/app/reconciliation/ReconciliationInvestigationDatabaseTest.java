@@ -353,7 +353,10 @@ class ReconciliationInvestigationDatabaseTest {
                 + " 'reconciliation.BreakInvestigationStarted' AND aggregate_id = ?", breakId))
                 .isEqualTo(1);
 
-        String needle = "needle" + UUID.randomUUID().toString().replace("-", "");
+        // Letters only: a UUID's hex can hold a Luhn-valid digit run the note screen rightly
+        // refuses as a card number - the flaky-fixture class (found by P8-TSK-020's gate).
+        String needle = "needle" + UUID.randomUUID().toString().replace("-", "")
+                .replaceAll("[0-9]", "q");
         String key = "note-" + UUID.randomUUID();
         HttpResponse<String> noted = post(operator.token(), "/breaks/" + breakId + "/notes",
                 key, "{\"body\":\"the PSP confirms the capture " + needle + "\"}");
@@ -390,15 +393,37 @@ class ReconciliationInvestigationDatabaseTest {
                 + " idempotency_key = ?", panKey))
                 .as("the screen runs before the claim: not even a claim")
                 .isZero();
+        assertThat(count("SELECT count(*) FROM platform.audit_record WHERE operation ="
+                + " 'reconciliation.BreakNoteAdded' AND target_id = ? AND outcome ="
+                + " 'SUCCEEDED'", breakId.toString()))
+                .as("the note is audited exactly once: the replayed key and the refused"
+                        + " PAN-bearing note write no second reconciliation.BreakNoteAdded")
+                .isEqualTo(1);
 
+        String linkKey = "link-" + UUID.randomUUID();
+        String link = "{\"targetKind\":\"SETTLEMENT_FILE\",\"targetRef\":\"" + fileId + "\"}";
         HttpResponse<String> linked = post(operator.token(), "/breaks/" + breakId
-                + "/evidence-links", "link-" + UUID.randomUUID(),
-                "{\"targetKind\":\"SETTLEMENT_FILE\",\"targetRef\":\"" + fileId + "\"}");
+                + "/evidence-links", linkKey, link);
         assertThat(linked.statusCode()).isEqualTo(201);
+        HttpResponse<String> relinked = post(operator.token(), "/breaks/" + breakId
+                + "/evidence-links", linkKey, link);
+        assertThat(relinked.statusCode()).isEqualTo(201);
+        assertThat(relinked.body()).as("a lost response replays the link's receipt")
+                .isEqualTo(linked.body());
         HttpResponse<String> dangling = post(operator.token(), "/breaks/" + breakId
                 + "/evidence-links", "link-" + UUID.randomUUID(),
                 "{\"targetKind\":\"JOURNAL_ENTRY\",\"targetRef\":\"" + UUID.randomUUID() + "\"}");
         assertThat(dangling.statusCode()).isEqualTo(422);
+        assertThat(count("SELECT count(*) FROM platform.audit_record WHERE operation ="
+                + " 'reconciliation.BreakEvidenceLinked' AND target_id = ? AND outcome ="
+                + " 'SUCCEEDED'", breakId.toString()))
+                .as("the link is audited exactly once: the replayed key and the refused"
+                        + " dangling link write no second reconciliation.BreakEvidenceLinked")
+                .isEqualTo(1);
+        assertThat(count("SELECT count(*) FROM reconciliation.break_evidence_link WHERE"
+                + " break_id = ?", breakId))
+                .as("one link stored under the replayed key, none dangling")
+                .isEqualTo(1);
 
         HttpResponse<String> reclassified = post(operator.token(), "/breaks/" + breakId
                 + "/classification", null,
@@ -515,7 +540,7 @@ class ReconciliationInvestigationDatabaseTest {
                     "INSERT INTO reconciliation.rule_set (id, source_id, version, status,"
                             + " funding_lag_days, gain_min_age_days, effective_from,"
                             + " proposed_by, decided_by, reason, created_at, correlation_id)"
-                            + " VALUES (?, ?, 1, 'ACTIVE', 2, 90, ?, 'test', 'test',"
+                            + " VALUES (?, ?, 1, 'PROPOSED', 2, 90, ?, 'test', NULL,"
                             + " 'ReconciliationInvestigationDatabaseTest private rule set',"
                             + " now(), 'p8-tsk-014-app-test') ON CONFLICT (id) DO NOTHING",
                     PRIVATE_RULE_SET, PRIVATE_SOURCE, java.sql.Date.valueOf(SETTLED_ON));
@@ -534,6 +559,10 @@ class ReconciliationInvestigationDatabaseTest {
                     "INSERT INTO reconciliation.severity_threshold (rule_set_id, currency,"
                             + " high_value_minor) VALUES (?, 'EUR', 100000)"
                             + " ON CONFLICT DO NOTHING",
+                    PRIVATE_RULE_SET);
+            execute(app,
+                    "UPDATE reconciliation.rule_set SET status = 'ACTIVE', decided_by = 'test-activator',"
+                            + " decided_at = now() WHERE id = ? AND status = 'PROPOSED'",
                     PRIVATE_RULE_SET);
             app.commit();
         }

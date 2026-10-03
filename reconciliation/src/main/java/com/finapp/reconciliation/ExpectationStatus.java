@@ -7,16 +7,18 @@ import java.util.stream.Collectors;
 
 /**
  * The settlement expectation's machine (`P8-TSK-004`,
- * `SETTLEMENT_AND_RECONCILIATION_LIFECYCLES.md` §5.5) — of which only birth is produced yet.
+ * `SETTLEMENT_AND_RECONCILIATION_LIFECYCLES.md` §5.5) — every edge of which now has its
+ * producer.
  *
- * <p>`P8-TSK-004` writes {@code OPEN} rows and nothing else; allocation drives the settling
- * edges (`P8-TSK-011`), an approved closing resolution drives {@code RESOLVED_BY_ADJUSTMENT}
- * (`P8-TSK-015`), and a repudiation's counter-allocations reopen (`P8-TSK-023`). The whole
- * machine is stated NOW — unlike the settlement file's, whose edges arrive constraint by
- * constraint — because `V002`'s generated {@code CHECK} and transition trigger are this
- * enum's mirror, reconciled by the migration test, and the narrowed {@code UPDATE} grant
- * plus the frozen birth columns mean a premature writer can move a status and nothing else:
- * an edge with no producer is inert, an edge outside the machine is refused for every writer.
+ * <p>`P8-TSK-004` writes {@code OPEN} rows; allocation drives the settling edges
+ * (`P8-TSK-011`), an approved closing resolution drives {@code RESOLVED_BY_ADJUSTMENT}
+ * (`P8-TSK-015`), and an approved repudiation's counter-allocations reopen (`P8-TSK-023`). The
+ * whole machine was stated by `V002` — unlike the settlement file's, whose edges arrived
+ * constraint by constraint — because its generated {@code CHECK} and transition trigger are
+ * this enum's mirror, reconciled by the migration test, and the narrowed {@code UPDATE} grant
+ * plus the frozen birth columns mean a writer can move a status and nothing else: an edge
+ * outside the machine is refused for every writer. *(Corrected 2026-10-01, `P8-DOC-001`: this
+ * read "of which only birth is produced yet".)*
  *
  * <p>{@code overdue_since} is deliberately NOT a state: a one-way {@code NULL → value} fact
  * (`P8-TSK-013`), because an overdue expectation still settles (`INV-SET-03`).
@@ -37,7 +39,9 @@ public enum ExpectationStatus {
 
     /**
      * An approved closing resolution took the remainder into {@code resolved_minor}
-     * (`WRITE_OFF`, `TRANSFER_TO_ACCOUNT`; ADR-0071). Terminal: no edge leaves it.
+     * (`WRITE_OFF`, `TRANSFER_TO_ACCOUNT`; ADR-0071) — or an approved {@code REPUDIATE_BATCH}
+     * closed the repudiated batch's own {@code REMITTANCE} after countering its bank
+     * allocations (`P8-TSK-023`). Terminal: no edge leaves it.
      */
     RESOLVED_BY_ADJUSTMENT;
 

@@ -144,10 +144,16 @@ public final class JdbcBreakRegister implements BreakRegister {
             sql.append(" AND run_id = ?");
             subjectId = newBreak.subject().runId().get();
         } else {
-            // The decision-only subject has no partial unique: a decision is written once
-            // (ADR-0069 section 4), so its raise never loses.
-            throw new ReconciliationStorageException(
-                    "a decision-subject raise cannot converge: decisions are written once");
+            // The decision subject converges on break_one_open_per_decision (`V012`, P8-TSK-022):
+            // ten replays finding one decision divergent raise ONE break.
+            sql.append(" AND decision_id = ?");
+            subjectId =
+                    newBreak.subject()
+                            .decisionId()
+                            .orElseThrow(
+                                    () ->
+                                            new ReconciliationStorageException(
+                                                    "a break names exactly one subject"));
         }
         try (PreparedStatement read = unitOfWork.prepareStatement(sql.toString())) {
             read.setString(1, newBreak.type().name());

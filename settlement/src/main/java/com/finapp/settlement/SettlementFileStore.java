@@ -8,6 +8,7 @@ import java.time.LocalDate;
 import java.util.List;
 import java.util.Objects;
 import java.util.Optional;
+import java.util.Set;
 import java.util.UUID;
 
 /**
@@ -33,7 +34,13 @@ public interface SettlementFileStore<T> {
     /** Every seeded source, by code — the operator's register view (`P8-TSK-003`). */
     List<SourceRow> sources(T unitOfWork);
 
-    /** A file row as the investigator sees it: metadata only, never a byte of content. */
+    /**
+     * A file row as the investigator sees it: metadata only, never a byte of content.
+     *
+     * @param rejectionCode the verdict a {@code REJECTED} file carries — what readmission's
+     *     admissibility reads (`P8-TSK-022`, ADR-0066 §8)
+     * @param readmitsFileId the original a {@code READMISSION} re-presents — the chain's link
+     */
     record FileRow(
             UUID id,
             String sourceCode,
@@ -49,9 +56,13 @@ public interface SettlementFileStore<T> {
             Optional<String> receivedBy,
             Optional<Attestation> attestation,
             Instant receivedAt,
-            CorrelationId correlation) {
+            CorrelationId correlation,
+            Optional<RejectionCode> rejectionCode,
+            Optional<UUID> readmitsFileId) {
 
         public FileRow {
+            Objects.requireNonNull(rejectionCode, "rejectionCode must not be null");
+            Objects.requireNonNull(readmitsFileId, "readmitsFileId must not be null");
             contentSha256 = contentSha256.clone();
         }
 
@@ -130,6 +141,8 @@ public interface SettlementFileStore<T> {
      * Stores {@code file} with its encrypted chunks — or converges on the file already holding
      * this content address, writing nothing ({@code UNIQUE (source_id, content_sha256) WHERE
      * readmits_file_id IS NULL} is the arbiter; a concurrent winner is read after its commit).
+     * A readmission never converges on its original's address: it is stored by
+     * {@link #insertReadmission}, and refused here.
      */
     Stored insert(T unitOfWork, SettlementFile file, byte[] content);
 
@@ -240,18 +253,19 @@ public interface SettlementFileStore<T> {
 
     /**
      * Candidate files for the accept leg: {@code PARSED} and eligible by channel — a pull
-     * always; an upload only once a second person attested it; a readmission when its
-     * original was pulled or attested, or once the readmission itself is (`P8-TSK-022`
-     * widens the database's cross-row rule). Oldest first, ids only, NO lock — the claim
-     * that matters is {@link #lockEligibleById} inside each file's own transaction.
+     * always; an upload only once a second person attested it; a readmission when it inherits
+     * its original's authentication, or once a person distinct from every submitter along its
+     * chain attested it — read through `V009`'s functions, the same ones its trigger refuses
+     * by (`P8-TSK-022`). Oldest first, ids only, NO lock — the claim that matters is
+     * {@link #lockEligibleById} inside each file's own transaction.
      */
     List<UUID> dueForAccept(T unitOfWork, int limit);
 
     /**
      * The per-file claim: the row, {@code FOR UPDATE SKIP LOCKED}, only while still
-     * {@code PARSED} and eligible — the upload-authentication predicate re-checked under
-     * the lock (its other two ranks: the domain's read of this row, and `V002`'s
-     * {@code CHECK}s).
+     * {@code PARSED} and eligible — the channel-authentication predicate re-checked under
+     * the lock (its other ranks: the domain's read of this row, `V002`'s {@code CHECK}s for an
+     * upload and `V009`'s trigger for a readmission).
      */
     Optional<FileRow> lockEligibleById(T unitOfWork, UUID fileId);
 
@@ -268,4 +282,60 @@ public interface SettlementFileStore<T> {
      * {@code UNIQUE (source_id, source_sequence)} arbitrates any writer the lock misses.
      */
     long claimNextSequence(T unitOfWork, UUID sourceId);
+
+    // ------------------------------------------------------------- readmission (P8-TSK-022)
+
+    /**
+     * The file readmitting {@code originalFileId}, if one stands — the domain's read under the
+     * original's row lock; {@code UNIQUE (readmits_file_id)} is the arbiter beneath it.
+     */
+    Optional<UUID> readmissionOf(T unitOfWork, UUID originalFileId);
+
+    /**
+     * Stores a readmission with its chunks re-encrypted under ITS OWN id (the associated data
+     * binds every file's chunks to that file; the original is not touched). Never the content
+     * address's path: the readmission deliberately re-presents its original's bytes.
+     *
+     * @throws ReadmissionConflict when {@code UNIQUE (readmits_file_id)} refuses it — another
+     *     readmission of the same original stands; the transaction is dead
+     */
+    void insertReadmission(T unitOfWork, SettlementFile readmission, byte[] content);
+
+    /**
+     * Whether the readmission inherits its original's authentication — `V009`'s
+     * {@code settlement.file_inherits_authentication}, the one source of truth the accept
+     * leg's claim and the trigger also read.
+     */
+    boolean inheritsAuthentication(T unitOfWork, UUID readmissionId);
+
+    /**
+     * Every person who submitted the file's bytes, along its readmission chain — `V009`'s
+     * {@code settlement.file_submitters}: a readmission's attester is none of them.
+     */
+    Set<String> submitters(T unitOfWork, UUID fileId);
+
+    /**
+     * Appends the birth event ({@code → RECEIVED}) with its reason — a readmission is born
+     * reasoned (`INV-AUD-03`).
+     */
+    void appendBirthEvent(
+            T unitOfWork,
+            UUID fileId,
+            Actor actor,
+            Optional<String> reason,
+            Instant occurredAt,
+            CorrelationId correlation);
+
+    /** {@code UNIQUE (readmits_file_id)} refused an insert: the original is already readmitted. */
+    final class ReadmissionConflict extends RuntimeException {
+
+        @java.io.Serial private static final long serialVersionUID = 1L;
+
+        public ReadmissionConflict(UUID originalFileId) {
+            super(
+                    "settlement file " + originalFileId
+                            + " is already readmitted: a file is readmitted once"
+                            + " (file_readmits_once)");
+        }
+    }
 }

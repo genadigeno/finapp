@@ -114,7 +114,10 @@ Two failure shapes make this more than bookkeeping:
    `Proposed`: per-rail cost is never a metric, because an amount never enters one. It is
    recognised as `PROCESSING_COSTS` from each counterparty's own evidence (`P8-TSK-009`,
    `P8-TSK-012`) and read per counterparty and month in the audited provider-costs report
-   (`P8-TSK-024`).)*
+   (`P8-TSK-024`).)* *(Built by `P8-TSK-024`, 2026-10-01: `GET
+   /v1/operator/reports/reconciliation/provider-costs?month=` per source and currency - what we
+   were charged, what the evidence says, what the pinned schedules expected, and the month's
+   `FEE_MISMATCH` breaks. Per rail through the compiled source register, never a rail literal.)*
 
 ## Alternatives Considered
 

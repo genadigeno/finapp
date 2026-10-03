@@ -1,6 +1,6 @@
 # ADR-0070 — Suspense account policy and ageing
 
-Status: Proposed (2026-09-28, the Phase 7 → 8 transition)
+Status: Accepted (2026-10-01, `P8-DOC-001` — read against the code and corrected first)
 Date: 2026-09-28
 Phase: 8
 Context: Reconciliation · Settlement · Ledger · Payments · Merchant
@@ -57,8 +57,9 @@ Phase 8 adds four more ways value reaches suspense:
    (ADR-0065);
 3. the over-part of an amount mismatch and a bank credit's excess over its remittance park with
    their breaks;
-4. the repudiation of a statement batch reverses a suspense line whose value a resolution had
-   already released, and that line reaches suspense again on the opposite side (point 10).
+4. the repudiation of a statement batch answers every value of its items that a resolution or
+   an offset had already released out of suspense, and the answering line reaches suspense again
+   on the opposite side (point 10).
 
 `INV-REC-05` states the outcome — tracked, aged, reported, alerted, "never a permanent resting
 place" — but not the policy that produces it. It does not say who answers for a unit of suspense
@@ -84,7 +85,7 @@ Netting them inside one balance hides two open problems behind one number.
      suspense account and no new owner kind (Alternatives).
    - Every unit of value in it belongs to a `reconciliation.suspense_item` (reconciliation `V004`,
      `P8-TSK-010`): `break_id NOT NULL`, `external_item_id UNIQUE NULL`, `origin` (`RECON_PARK` |
-     `BANK_UNATTRIBUTED` | `UNMATCHED_CONFIRMATION`; `REPUDIATION` added by reconciliation `V012`,
+     `BANK_UNATTRIBUTED` | `UNMATCHED_CONFIRMATION`; `REPUDIATION` added by reconciliation `V013`,
      `P8-TSK-023`), `origin_ref UNIQUE`, `side` (CREDIT | DEBIT), the ADR-0003 money triple,
      `released_minor`, `status`, `opened_on`, `entry_id`.
    - Its machine is `OPEN → PARTIALLY_RELEASED → RELEASED` (terminal), with
@@ -105,15 +106,22 @@ Netting them inside one balance hides two open problems behind one number.
    | `RECON_PARK` | the run leg's chunk (a definitive class, an errored item), the grace leg (after `grace_until`), the rematch leg | INBOUND remainder u: DR P u / CR `SUSPENSE_UNMATCHED` u, a CREDIT item. OUTBOUND: DR `SUSPENSE_UNMATCHED` u / CR P u, a DEBIT item. P is the item's clearing position. One entry per transaction and position, at most four lines, key `recon-suspense:<parkId>`, the `reconciliation.park` row minted in that transaction | the classified type (ADR-0069), raised in the same transaction | the park row's `decided_on` |
    | `BANK_UNATTRIBUTED` | bank statement acceptance, through `AcceptedBatchIntake` | inside the batch's recognition entry `settlement-batch:<batchId>`: CR `SUSPENSE_UNMATCHED` Σ unattributed credits, DR Σ unattributed debits; one item per line | `UNKNOWN_EXTERNAL`, cause `BANK_LINE_UNATTRIBUTED` | the batch's `accepted_on` |
    | `UNMATCHED_CONFIRMATION` | payments' `UnmatchedConfirmations`, through the `SettlementExpectations` port (`P8-TSK-020`), whatever the parking's stored cause (payments `V023`) | its existing entry `unmatched-confirmation:<rail>:<ref>`: DR the rail's clearing / CR `SUSPENSE_UNMATCHED` | `UNKNOWN_EXTERNAL`, cause `PARKED_ON_RECEIPT` | the posting date of that entry |
-   | `REPUDIATION` | the `REPUDIATE_BATCH` approval (`P8-TSK-023`), for each `BANK_UNATTRIBUTED` item of the batch a posting resolution had already released (point 10) | the suspense line the recognition's reversal (`ReversalService`, scope `ledger.reverse`, key `settlement-batch:<batchId>`) carries for that already-released item, so the new item is of the opposite side; `origin_ref` the already-released item's id — an item is repudiated once, so `origin_ref UNIQUE` holds | a new `PROCESSING_ERROR`, raised in the same transaction | the reversal entry's posting date |
+   | `REPUDIATION` | the `REPUDIATE_BATCH` approval (`P8-TSK-023`), for each suspense item of the batch's items whose value a resolution (release cause `RESOLUTION`) or an offset (`OFFSET_SUSPENSE`) had already released, for exactly that released part (point 10) | the suspense line of the entry that answers the released value, so the new item is of the opposite side: for a `BANK_UNATTRIBUTED` item, the line the recognition's reversal (`ReversalService`, scope `ledger.reverse`, key `settlement-batch:<batchId>`) carries; for a `RECON_PARK` item, the park's exact inverse posted for the released part under a new `recon-suspense:<parkId>` (`Suspense.repostReleased`). `origin_ref` the already-released item's id — an item is repudiated once, so `origin_ref UNIQUE` holds | a new `PROCESSING_ERROR` (cause `EVIDENCE_REPUDIATED`) standing on the new item, raised in the same transaction | the posting date of that answering entry, the approval's day |
 
    *(The fourth opener was named by the Phase 7 → 8 transition's re-check, R3: point 10 already
    opened this item, while the list said "three openers, and no fourth". Its enum value arrives
-   with reconciliation `V012`, not `V004`, which creates the three others.)*
+   with reconciliation `V013`, not `V004`, which creates the three others.)*
+   *(Corrected 2026-10-01, `P8-DOC-001`: this row named the `BANK_UNATTRIBUTED` case and a
+   posting resolution's release only. As built by `P8-TSK-023`, a `RECON_PARK` item a resolution
+   released is answered too, by the park's exact inverse, and a value an `OFFSET_SUSPENSE`
+   released is answered like a posting resolution's — `JdbcRepudiationStore.suspenseOfItems`
+   counts both causes as "released elsewhere". A value an unpark or a correction offset released
+   went back to its position already and needs no answer.)*
 
    - **`opened_on` comes from stored data and never restarts.** It is the date the value entered
      suspense: the park row's `decided_on` (stamped once), the batch's `accepted_on`, the
-     confirmation entry's posting date, or the repudiation's reversal entry's posting date. The
+     confirmation entry's posting date, or the posting date of the repudiation's entry that
+     carries the answering line (the reversal, or the park's inverse). The
      confirmation's date is a Phase 7 clock read, stored with its entry; `X-TSK-011` reconciles the
      documentation and nothing is retrofitted. An adopted Phase 7 row keeps the date it was parked
      (point 8). A park's own entry is dated the same way: posting date the park row's
@@ -130,7 +138,8 @@ Netting them inside one balance hides two open problems behind one number.
      a `BEFORE INSERT` trigger (`422 ledger.AdjustmentOnReconciledPosition`). A raw-SQL poster or
      a missed opener is counted by the completeness verifier (point 7).
    - **Waiting is not suspense.** An item whose remainder late internal evidence could still
-     explain (`UNKNOWN_EXTERNAL`, `MISSING_INTERNAL`, a `PAYOUT_RETURNED` with no return yet)
+     explain (`UNKNOWN_EXTERNAL`, `MISSING_INTERNAL`, a `PAYOUT_RETURNED` with no return yet —
+     unless its payout is already `FAILED`, which parks at once, ADR-0073 §5)
      waits in `UNMATCHED` until its `grace_until`, judged in SQL on the database clock. It is
      counted by `finapp.reconciliation.item.unmatched` and explained meanwhile by the position
      proof (`INV-REC-06`). An internal record that was never reported is not parked at all: its
@@ -172,8 +181,11 @@ Netting them inside one balance hides two open problems behind one number.
      the item is `RELEASED` and its owning break resolves in the same transaction. No break
      outlives its value, and no value outlives its break.
    - **An offset closes two breaks with one resolution.** `OFFSET_SUSPENSE` is proposed on one
-     item's break and names the other item (`offset_item_id`). Approval locks both breaks, sorted
-     by id, then the resolution, then both items, sorted by id. It releases both items and resolves
+     item's break and names the other item (`offset_item_id`). Approval takes both breaks'
+     sources' namespace-4 advisories, sorted, then locks both breaks, sorted by id, then the
+     resolution, then the subject break's own item, then the offset item *(corrected 2026-10-01,
+     `P8-DOC-001`: this read "then both items, sorted by id"; `ResolutionMachine` locks the
+     subject's holding first and the partner in `offsetPartner`)*. It releases both items and resolves
      both breaks by the one approved resolution, each break's history naming it. The offset is
      refused (`reconciliation.ResolutionTargetRefused`) while the other break has a live proposal
      of its own. An equal amount is not evidence that two items are the same money, so an
@@ -197,8 +209,8 @@ Netting them inside one balance hides two open problems behind one number.
      - `ATTEMPT_CONCLUDED` or `AMOUNT_MISMATCH`: the parking is attributed. It names the attempt
        (`attempt_id`), which the item reaches through its stored origin, so its natural exit is a
        four-eyes `TRANSFER_TO_ACCOUNT` crediting that attempt's counterparty. A return to the payer
-       is return-to-sender, deferred (`PHASE_8_PLAN.md` §17). A gain taken instead records in its
-       narrative why the named owner was not credited (point 4).
+       is return-to-sender, deferred (`PHASE_8_PLAN.md` §17; owned by Phase 15, point 4). A gain
+       taken instead records in its narrative why the named owner was not credited (point 4).
 
 4. **Every item has an exit: its counterparty's, or one that needs no counterparty.**
    - **ADR-0069's per-type table is the one authority on which kinds a type admits**, and this
@@ -216,7 +228,15 @@ Netting them inside one balance hides two open problems behind one number.
      that can take the posting — a merchant closed since, whose close closed its payable's ledger
      account (ADR-0073), or an owner with no account in the item's currency — rests owned, aged
      and alerting until one can. Returning it outside the platform is return-to-sender, deferred
-     (`PHASE_8_PLAN.md` §17).
+     (`PHASE_8_PLAN.md` §17) and owned by Phase 15. *(Owner named 2026-10-01, `P8-DOC-001`:
+     the residual and return-to-sender had no owning phase. Phase 12 was considered and not
+     named: `ROADMAP.md` and `DELIVERY_PLAN.md` make Phase 12 BNPL, not merchant-facing flows in
+     general, and nothing in it touches a closed merchant or unattributed funds. Phase 15
+     owns making reconciliation operable — runbooks, break-ageing SLAs and escalation paths
+     (`DELIVERY_PLAN.md` Phase 15 §13) — and its systematic failure-mode review; since it builds
+     no new business capability, it either writes the operating procedure for the residual or
+     schedules return-to-sender as a payment capability by its own ADR. Until then the value
+     rests owned, aged and alerting.)*
 
      *(Resolved at the transition, and narrowed by its consistency review, A1. The per-type lists
      had left a CREDIT item under `CURRENCY_MISMATCH` or a `REMITTANCE_DIFFERS` excess, and a DEBIT
@@ -232,7 +252,15 @@ Netting them inside one balance hides two open problems behind one number.
      is judged in SQL on the database clock against the item's stored `opened_on`, at proposal and
      again at approval under the lock. Before it, the proposal is refused
      (`reconciliation.GainNotYetEligible`). The gain's reason code comes from `RECOGNISE_GAIN`'s
-     allowed subset (ADR-0071), `UNATTRIBUTABLE_AGED` among them.
+     allowed subset (ADR-0071), `UNATTRIBUTABLE_AGED` among them. As built,
+     `JdbcResolutionStore.gainEligible` joins the suspense item to its owning break and the break
+     to the rule set it pins (`break.rule_set_id`), at proposal and at approval alike.
+     *(Corrected 2026-10-01, `P8-DOC-001`: the decision stood, the code had drifted. Until the
+     review the check read the minimum age from the source's version active at proposal (the
+     resolution's own `rule_set_id`), and at approval from that same frozen id, so a newly
+     activated version with a shorter `gain_min_age_days` reached value already parked under the
+     old one — exactly what this bullet refuses. The review corrected the code to the break's
+     pinned version; the decision is unchanged.)*
    - **Why the asymmetry.** Recognising a loss early is prudent; recognising a gain early is not.
      A credit recognised too soon can hide a liability to an owner who has not yet appeared, and
      it is the resolution an operator cleaning a dashboard reaches for first (the delivery plan's
@@ -252,7 +280,7 @@ Netting them inside one balance hides two open problems behind one number.
    - **A gain is a recognition, not a release of the obligation.** The platform stops carrying the
      value as owed to an unknown party; it does not decide that no one is owed. A claimant who
      appears afterwards is a new operation. Returning unattributed funds to their sender is a
-     payment capability Phase 8 does not build (`PHASE_8_PLAN.md` §17).
+     payment capability Phase 8 does not build (`PHASE_8_PLAN.md` §17; owned by Phase 15, point 4).
 
 5. **Age is measured from `opened_on`, on the database clock, and it is visible twice.**
    - Three gauges carry suspense: `finapp.reconciliation.suspense.open` counts items with a
@@ -262,25 +290,36 @@ Netting them inside one balance hides two open problems behind one number.
      unreadable and never zero, behind a refresh floor, and aggregated with `max()` across
      instances. Each gauge class joins `NoFloatingPointMoneyRulesTest.EXEMPT_CLASSES`.
    - **The owning break carries the escalation.** Its severity is stored at raise and escalated
-     one level for each ageing band crossed (0–2, 3–7, 8–30, over 30 days), and one level when its
+     one level for each ageing band crossed (0–2, 3–7, 8–30, over 30 days), the bands counted
+     from the break's own `raised_at`, not the item's `opened_on` (`ReconciliationSweep`; an
+     adopted Phase 7 parking's `opened_on` predates its break, so its item ages from the parking
+     while its severity ages from the adoption), and one level when its
      value reaches the rule set's per-currency `high_value_minor` (seeded at 1,000.00 in EUR, GBP
      and USD, O7). Each escalation is an appended `break_event`.
      `finapp.reconciliation.break.age` (tag `severity`) alerts at CRITICAL > 0 h, HIGH > 1 d,
      MEDIUM > 5 d and LOW > 15 d.
-   - `suspense.age` is alertable in its own right, its rule set with the dashboard row
-     (`P8-TSK-024`), and `suspense.unowned` alerts on anything above 0. Suspense that ages is
-     therefore paged twice: by its own age and by its break's severity.
+   - `suspense.age` is alertable in its own right — `SuspenseItemAged`, above 30 days, in
+     `infra/prometheus/rules/settlement-reconciliation.yml` with the dashboard row
+     (`P8-TSK-024`) — and `suspense.unowned` alerts on anything above 0 (`SuspenseItemUnowned`).
+     Suspense that ages is therefore paged twice: by its own age and by its break's severity.
 
 6. **The amounts are an audited operator report, never a metric** (ADR-0072; ADR-0018 §2;
    amounts are `RESTRICTED-FINANCIAL`).
    - `GET /v1/operator/reports/reconciliation/suspense`, under `RECONCILIATION_INVESTIGATE`, is
      bounded at 100 rows with a `truncated` flag and audited as `reconciliation.ReportRead`, naming
-     the report and period only (the `payments.ChargebackRatioRead` precedent).
-   - Per currency it shows three things:
+     the report, its period (`none` for this one) and its row count — never a figure (the
+     `payments.ChargebackRatioRead` precedent).
+   - Per currency it shows:
      - the ledger balance of `SUSPENSE_UNMATCHED`, derived through `BalanceDerivation` and folded
        with `Money`, never a SQL `SUM`;
-     - the CREDIT items and the DEBIT items remaining, gross, never netted;
-     - the owning breaks, by type, severity and age.
+     - the CREDIT items and the DEBIT items remaining, gross, never netted, each with its count;
+     - the Phase 7 parkings no item owns yet, and the suspense proof's verdict (point 7).
+
+     Then every open item, oldest first: its origin, side, remainder, `opened_on` and age in
+     days, and its owning break's id, type and severity. *(Corrected 2026-10-01, `P8-DOC-001`:
+     this read "the owning breaks, by type, severity and age" and the audit "the report and
+     period only". As built by `P8-TSK-024` the owners are shown per item, the report also
+     carries the proof's verdict, and the audit adds the row count.)*
    - It is gross because a net hides two open problems behind one small number. That is
      `INV-ACC-05`'s "never netted away or omitted", applied before Phase 14's close needs it, and
      Phase 14 discloses from these rows.
@@ -356,26 +395,41 @@ Netting them inside one balance hides two open problems behind one number.
      `P8-TSK-019` with only an input recorded for `P8-TSK-015`.)*
 
 10. **Repudiation reaches suspense without releasing anything twice** (`REPUDIATE_BATCH`,
-    `P8-TSK-023`, a deferral candidate; ADR-0065 §10).
+    `P8-TSK-023`, a deferral candidate kept, not cut; ADR-0065 §10).
     - A `RECON_PARK` item of the batch that still holds value is released by an unpark under
-      `recon-suspense:<parkId>`.
+      `recon-suspense:<parkId>` (release cause `REPUDIATION`).
     - A `BANK_UNATTRIBUTED` item is released by the reversal of the recognition entry itself
       (`ReversalService`, scope `ledger.reverse`, key `settlement-batch:<batchId>`), which already
       carries its suspense line. No unpark is posted as well, which would release the value twice.
-    - **An item a posting resolution already released cannot be released again.** Its value went
-      to a wallet, a payable or the gains account on evidence now repudiated. For a
-      `BANK_UNATTRIBUTED` item the recognition's reversal still carries the suspense line, because
-      `ReversalService` reverses the entry whole. That line opens a new item of the opposite side,
-      origin `REPUDIATION` (point 2's fourth opener: its `origin_ref` the released item's id, its
-      `opened_on` the reversal entry's posting date), owned by a new `PROCESSING_ERROR` break
-      raised in the approval transaction — the type accepted evidence proven fabricated or
-      mis-normalised already takes — and a person decides where the loss falls. A `RECON_PARK`
-      item already released posts no unpark; what its position then owes is `P8-TSK-023`'s
-      question, with the position proof as its test, and if that task posts a line into suspense
-      for it, the same rule binds the line. `INV-REC-09` binds repudiation like every other
-      poster. *(Resolved at the transition: the design's
-      repudiation steps assumed every parked item was still parked. The new item was named point
-      2's fourth opener by the transition's re-check, R3.)*
+    - **A value a resolution or an offset already released cannot be released again.** It went to
+      a wallet, a payable or the gains account, or was netted against a DEBIT item, on evidence
+      now repudiated. The repudiation answers exactly that released part, never the part an
+      unpark or a correction offset released, which went back to its position already:
+      - for a `BANK_UNATTRIBUTED` item, the recognition's reversal still carries the suspense
+        line, because `ReversalService` reverses the entry whole;
+      - for a `RECON_PARK` item, the park's exact inverse is posted for the released part under a
+        new `recon-suspense:<parkId>` (`Suspense.repostReleased`) — the position restored as if
+        the value were still parked — with no release, the item having nothing left to release.
+
+      Either line opens a new item of the opposite side, origin `REPUDIATION` (point 2's fourth
+      opener: its `origin_ref` the released item's id, its `opened_on` the answering entry's
+      posting date), owned by a new `PROCESSING_ERROR` break (cause `EVIDENCE_REPUDIATED`)
+      standing on that item, raised in the approval transaction — the type accepted evidence
+      proven fabricated or mis-normalised already takes — and a person decides where the loss
+      falls. `INV-REC-09` binds repudiation like every other poster, and the position and
+      suspense proofs are its test.
+
+      *(Until `P8-TSK-023` this point answered only the `BANK_UNATTRIBUTED` case and left open
+      what a released `RECON_PARK` item's position owes: "posts no unpark; what its position then
+      owes is `P8-TSK-023`'s question". `P8-TSK-023`, 2026-10-01, decided it: the park's exact
+      inverse is posted for the released part - the position restored as if the value were still
+      parked - and its suspense line opens a `REPUDIATION` item on the opposite side, owned by a
+      new `PROCESSING_ERROR` break; a value released by a late allocation's unpark or a
+      correction's offset went back to the position already and needs no answer. The body was
+      rewritten to that as-built rule, with the offset's release named beside the resolution's, by
+      `P8-DOC-001`, 2026-10-01.)* *(Resolved at the transition: the design's repudiation steps
+      assumed every parked item was still parked. The new item was named point 2's fourth opener
+      by the transition's re-check, R3.)*
 
 11. **Ten instances.** Every suspense contention names its PostgreSQL arbiter
     (`DISTRIBUTED_EXECUTION.md` §3):
@@ -389,8 +443,11 @@ Netting them inside one balance hides two open problems behind one number.
     | Gain eligibility judged by instances with skewed clocks | judged in SQL, on the database clock, against the stored `opened_on`; a window of days makes VM drift noise | — |
 
     - **The lock order** is the §3 row: (1) advisory namespace 4 for the source, when the
-      transaction allocates, parks or unparks; (2) break rows, then the resolution row;
-      (3) expectation rows, then external item rows, then suspense item rows, each sorted by id;
+      transaction allocates, parks or unparks, and in every resolution command whatever its kind
+      (both sources, sorted, for an offset spanning two; `P8-TSK-015`'s recorded deviation, which
+      made the register's fact uniform); (2) break rows, then the resolution row;
+      (3) expectation rows, then external item rows, then suspense item rows, each sorted by id —
+      an offset's two items excepted, taken subject first (point 3);
       (4) the merchant payout row, taken by the return worker only; (5) the attribution target
       `FOR SHARE`; (6) inside `approveOwned`, the ledger proposal row, then ledger projection rows
       sorted by account id. **Postings are last.** A transaction posting several entries over
@@ -575,8 +632,15 @@ Constraints this decision must preserve:
 
 ## Follow-up
 
-- Until Phase 8's first task lands, nothing in this ADR is implemented; every statement is the
-  decided design, corrected by the tasks that build it.
+- **As built** (2026-10-01, read against the code by `P8-DOC-001`): every point of this ADR is
+  implemented by the tasks below, all `COMPLETE`, and every statement above is true of the code
+  as corrected. The review's corrections: point 2's `REPUDIATION` opener and point 10 widened to
+  the as-built rule (a released `RECON_PARK` item answered by the park's inverse, an offset's
+  release answered like a resolution's); point 3's offset lock order; point 4's minimum age, where
+  the code had drifted and was corrected to the break's pinned rule set, and the owner of the
+  residual and of return-to-sender (Phase 15); point 5's ageing basis; point 6's report shape and
+  audit; point 11's advisory in every resolution command. *(This bullet read "Until Phase 8's
+  first task lands, nothing in this ADR is implemented" until the review.)*
 - `P8-TSK-016` — **implemented** (2026-09-30): §2's `BANK_UNATTRIBUTED` opener. The statement's
   acceptance raises each unattributed line's `UNKNOWN_EXTERNAL(BANK_LINE_UNATTRIBUTED)` break on
   its item (CRITICAL for a debit by the severity seat's direction rule), moves the item
@@ -601,30 +665,37 @@ Constraints this decision must preserve:
   first `TRANSFER_TO_ACCOUNT`), `P8-TSK-016` (bank recognition's unattributed lines), `P8-TSK-019`
   (the payout return's fallback through suspense), `P8-TSK-020` (the unmatched confirmation
   adopted; the payments gauges' descriptions), `P8-TSK-023` (repudiation's reach into suspense and
-  its `REPUDIATION` origin, under reconciliation `V012`), `P8-TSK-024` (the suspense
+  its `REPUDIATION` origin, under reconciliation `V013`), `P8-TSK-024` (the suspense
   report, the dashboard row and its alerts), `P8-TST-001` (the suspense proof and ownership in every
   round of the storm), `P8-TST-002` (every exit crossed with every owning type; the gains and losses
   accounts posted only by approvals), `P8-DOC-001`.
 - **Recorded for task designs, not decided here:**
   - *(point 9's attribution labels, recorded here for `P8-TSK-015`, were decided by the transition's
     consistency review, A12: they are `P8-TSK-015`'s, above;)*
-  - for `P8-TSK-020`: a parking payments `V023`'s backfill left unclaimed (point 8) — one scheme
+  - *(decided by `P8-TSK-020`, below: the unclaimed parking is owned as a `DUPLICATE_EXTERNAL`
+    under `EXECUTION_ALREADY_EXPLAINED`, which admits no transfer;)* for `P8-TSK-020`: a parking
+    payments `V023`'s backfill left unclaimed (point 8) — one scheme
     execution a credit or completion already explains — must be adopted so that its value is not
     attributed a second time. Its entry still put a real line into suspense and a second debit on
     the clearing, so it is resolved by the kinds the table admits, never deleted. The candidates
     are a four-eyes `WRITE_OFF` of the doubled clearing remainder beside a `RECOGNISE_GAIN` of the
     item after its minimum age, or evidence if the scheme corrects, with the position and suspense
     proofs as the test;
-  - for `P8-TSK-016`: attributing a parked bank line to a counterparty's remittance (a remittance
+  - *(decided by `P8-TSK-016`, below: the loss-and-gain pair, no amendment;)* for `P8-TSK-016`:
+    attributing a parked bank line to a counterparty's remittance (a remittance
     paid without its reference). The candidates are a `MANUAL_MATCH` widened to unattributed bank
     items, carried by ADR-0071, or accepting the loss-and-gain pair as the honest record;
-  - for `P8-TSK-023`: point 10's new item for a value a resolution had already released, with the
-    suspense and position proofs as its test;
-  - for `P8-TSK-010` and `P8-TSK-016`: the entry-id ordering in the constraints above.
+  - *(decided by `P8-TSK-023`: point 10 as now written;)* for `P8-TSK-023`: point 10's new item
+    for a value a resolution had already released, with the suspense and position proofs as its
+    test;
+  - *(answered by `P8-TSK-010` and `P8-TSK-016`, below: written after the posting;)* for
+    `P8-TSK-010` and `P8-TSK-016`: the entry-id ordering in the constraints above.
 - Deferred, each recorded in `PHASE_8_PLAN.md` §17: returning unattributed funds to their sender
-  (a new payment capability); automatic reversal of a write-off on late evidence; value-banded
+  (a new payment capability; owned by Phase 15 with point 4's residual, named by `P8-DOC-001`
+  — point 4 says why not Phase 12); automatic reversal of a write-off on late evidence; value-banded
   approver escalation (six-eyes); a de-minimis policy, with the proposal row as its seam
   (`AdjustmentService`); collection from customers and merchants (Phase 13); disclosure at close
   (Phase 14, `INV-ACC-05`).
 - `P8-TSK-010` — **implemented** (2026-09-29): points 1, 2 (the `RECON_PARK` opener), 5 and 7 as decided, and the entry-id ordering question above ANSWERED — the posting stays the last CONTENDED write, and the `park` and `suspense_item` rows are inserted AFTER it carrying `journal_entry_id`/`entry_id` whole (`NOT NULL`), because the arbiters (the item's conditional transition, the break locks) were taken before the posting and the late inserts are the transaction's own rows (the `P8-TSK-009` D3 shape; the `merchant.payout_return` precedent). A `RECON_PARK` item also carries `park_id` and `position_account_id` (`NOT NULL` exactly for that origin, by `CHECK`): the park names its items through them, and the unpark's exact inverse — side, position and the original park's value date — reads frozen facts instead of re-deriving. `origin_ref` is uniformly the origin's own row id. Ownership holds at three ranks: `break_id NOT NULL`, the owner-type trigger (a never-parking or RESOLVED owner refused for every writer, `V004`), and the domain's pre-park verification; the suspense proof, the ownership reading and the three gauges are `PositionProof`'s/`ReconciliationMetrics`' with the named Phase 7 term paged through payments' own read — proven over the composed wiring with the planted defect observed in its own uncommitted transaction (`ReconciliationSuspenseDatabaseTest`). The park entries and every item's entry join the completeness verifier's known classes (point 7). The unpark alone restores the position and releases the item; the item's return to the fold is its caller's allocation in the same transaction (`P8-TSK-013`'s rematch), which the suites simulate — recorded.
-- The Phase 8 review reads this ADR against the code before accepting it.
+- `P8-TSK-020` — **implemented** (2026-09-30): point 2's `UNMATCHED_CONFIRMATION` row and point 8. the owner of a parking's value is born beside it: `UnmatchedConfirmations.park` calls the port's `parked` after its expectation, the claim winner only, and `app`'s recorder opens, through reconciliation's `ParkedConfirmations`, the CREDIT suspense item (its value, side and `opened_on` read off the parking entry's `SUSPENSE_UNMATCHED` line) and the `UNKNOWN_EXTERNAL` break (`PARKED_ON_RECEIPT`) standing on that item — in the delivery's transaction, owned from birth (`INV-REC-09`). The owner's subject is the item it owns, which neither immediate key let be born, so reconciliation `V011` made `break_suspense_item_fk` deferrable, initially immediate, and only this opener defers it; a concurrent opener that loses `UNIQUE (origin_ref)` rolls back to a savepoint, discarding its break. The opening-position backfill adopts every Phase 7 parking the same way, dated from its own entry; the recorded design input is decided — a parking whose execution a credit already explains is owned as a `DUPLICATE_EXTERNAL` under `EXECUTION_ALREADY_EXPLAINED`, which admits the gain, the offset and a DEBIT write-off but never a transfer. A `CREDIT_IN` allocation of the parking's expectation leaves the item `OPEN` (`INV-REC-05`); the payments gauges read "parked, ever", with provenance. Two finds before the suite first ran, both fixed: the item's side had been read through the clearing mapping (a CREDIT on a position is OUTBOUND), which made every parking a DEBIT item; and an `AMOUNT_MISMATCH` parking — and a stale-read `ATTEMPT_CONCLUDED` one — filed its raw statement on the attempt, never the parking, contrary to payments `V023`'s own comment: the applier now reports the parking it made (`PaymentOutcomes.Applied.parking`) and both producers, the instant door and the inquiry sweep, address the bytes to it, so every parking's owner traces to its statement.
+- The Phase 8 review (`P8-DOC-001`) read this ADR against the code, corrected it where it had drifted (and the code where the code had), and accepted it on 2026-10-01.

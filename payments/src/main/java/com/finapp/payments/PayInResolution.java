@@ -222,16 +222,29 @@ public final class PayInResolution {
                                                 answer.executed(),
                                                 correlation);
                             }
+                            // An answer whose value parked rests addressed to its parking
+                            // (V023's fifth subject, P8-TSK-020), else to the attempt.
+                            Optional<java.util.UUID> parkedIn = inner.parking();
                             answer.evidence()
                                     .ifPresent(
-                                            bytes ->
+                                            bytes -> {
+                                                if (parkedIn.isPresent()) {
+                                                    evidence.appendForUnmatched(
+                                                            uow,
+                                                            parkedIn.get(),
+                                                            EvidenceKind.QUERY_RESULT,
+                                                            bytes,
+                                                            Instant.now(clock));
+                                                } else {
                                                     evidence.append(
                                                             uow,
                                                             Optional.of(candidate.id()),
                                                             Optional.empty(),
                                                             EvidenceKind.QUERY_RESULT,
                                                             bytes,
-                                                            Instant.now(clock)));
+                                                            Instant.now(clock));
+                                                }
+                                            });
                             return inner;
                         });
         return applied.acting();

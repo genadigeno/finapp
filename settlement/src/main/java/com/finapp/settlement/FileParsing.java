@@ -140,7 +140,10 @@ public final class FileParsing {
 
     private Outcome parseOne(UUID fileId) {
         try {
-            return transactions.inTransaction(uow -> handleClaimed(uow, fileId));
+            return observer.spans().within(
+                    "settlement.parse",
+                    Map.of("file.id", fileId.toString()),
+                    () -> transactions.inTransaction(uow -> handleClaimed(uow, fileId)));
         } catch (SettlementBatchStore.LiveBatchConflict conflict) {
             // The unique spoke where the pre-check could not see: the loser's transaction is
             // dead, and a fresh one finds the standing winner and answers honestly.

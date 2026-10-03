@@ -331,6 +331,34 @@ class SimPspCsvFormatTest {
         }
 
         @Test
+        @DisplayName("a file of 120 defective records - past the 100-defect cap - is rejected"
+                + " whole as MALFORMED with exactly 100 bounded defects, never a crash on the"
+                + " 101st record (P8-DOC-001)")
+        void moreDefectsThanTheCapRejectCleanly() {
+            StringBuilder text =
+                    new StringBuilder("H,SIM_PSP_CSV,1,PSPB-2026-09-25-01,EUR,2026-09-25\n");
+            int records = 120;
+            for (int seq = 1; seq <= records; seq++) {
+                text.append("D,").append(seq).append(",SALE,12O.00,,EUR,2026-09-25,,,PSP-CAP-")
+                        .append(seq).append(",,,,Bad amount\n");
+            }
+            text.append("T,").append(records).append(",0.00,PSP-REM-20260925\n");
+
+            SettlementFormat.Result.Rejected verdict = rejected(text.toString());
+            assertThat(verdict.code())
+                    .as("every record's amount is malformed, so the verdict is MALFORMED")
+                    .isEqualTo(RejectionCode.MALFORMED);
+            assertThat(verdict.defects())
+                    .as("the defects stay bounded at the cap: 100 of the 120 records named,"
+                            + " each by its line and its amount field")
+                    .hasSize(100)
+                    .allSatisfy(defect -> assertThat(defect.field()).contains("amount"));
+            assertThat(verdict.defects().get(0).lineNo())
+                    .as("the first defect names the first detail record's physical line")
+                    .contains(2);
+        }
+
+        @Test
         @DisplayName("no defect ever carries a value: fields are NAMES, positions are"
                 + " numbers")
         void defectsCarryNoValue() {

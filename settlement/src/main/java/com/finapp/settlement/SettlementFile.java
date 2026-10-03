@@ -23,6 +23,8 @@ import java.util.UUID;
  * @param businessDate the date the uploader declared the statement covers — the counterparty's
  *     claim, recorded verbatim; the parse leg reads the file's own dates
  * @param lineCount by the screen's walk — recorded so the parse bound needs no second count
+ * @param readmitsFileId the original a {@code READMISSION} re-presents (`P8-TSK-022`) — present
+ *     exactly for that channel, the `V002` {@code CHECK}'s mirror
  */
 public record SettlementFile(
         UUID id,
@@ -36,7 +38,8 @@ public record SettlementFile(
         int lineCount,
         Optional<Actor> receivedBy,
         Instant receivedAt,
-        CorrelationId correlation) {
+        CorrelationId correlation,
+        Optional<UUID> readmitsFileId) {
 
     public static final int MAX_CONTENT_LENGTH = 8 * 1024 * 1024;
 
@@ -52,6 +55,7 @@ public record SettlementFile(
         Objects.requireNonNull(receivedBy, "receivedBy must not be null");
         Objects.requireNonNull(receivedAt, "receivedAt must not be null");
         Objects.requireNonNull(correlation, "correlation must not be null");
+        Objects.requireNonNull(readmitsFileId, "readmitsFileId must not be null");
         if (contentSha256.length != 32) {
             throw new IllegalArgumentException("a content address is SHA-256: 32 bytes");
         }
@@ -72,7 +76,30 @@ public record SettlementFile(
                     "receivedBy is the delivering person for UPLOAD and READMISSION, and empty"
                             + " exactly for PULL, where the source's credential authenticates");
         }
+        if (readmitsFileId.isPresent() != (receivedVia == DeliveryChannel.READMISSION)) {
+            throw new IllegalArgumentException(
+                    "a READMISSION names the original it re-presents, and only a READMISSION"
+                            + " does (file_readmission_names_original)");
+        }
         contentSha256 = contentSha256.clone();
+    }
+
+    /** A file the door received by upload or pull — it re-presents no original. */
+    public SettlementFile(
+            UUID id,
+            UUID sourceId,
+            DeliveryChannel receivedVia,
+            Optional<LocalDate> businessDate,
+            SettlementFormatId formatId,
+            int formatVersion,
+            byte[] contentSha256,
+            int contentLength,
+            int lineCount,
+            Optional<Actor> receivedBy,
+            Instant receivedAt,
+            CorrelationId correlation) {
+        this(id, sourceId, receivedVia, businessDate, formatId, formatVersion, contentSha256,
+                contentLength, lineCount, receivedBy, receivedAt, correlation, Optional.empty());
     }
 
     @Override

@@ -316,8 +316,8 @@ fresh), 9 as `ANSWERED_AFTER`, 10 as `CLOSED_WALLET` - beside their single-flow 
 | `finapp.ledger.negative.positions` | Counterparties below zero after a chargeback (merchant debt, customer receivable) |
 | `finapp.payments.payin.awaiting` | Pay-in initiations awaiting the payer (`P7-TSK-009`) |
 | `finapp.payments.payin.awaiting.age` | The oldest wait, seconds from birth |
-| `finapp.payments.unmatched.active` | Confirmations parked in suspense, never matched |
-| `finapp.payments.unmatched.age` | The oldest parking's age |
+| `finapp.payments.unmatched.active` | Confirmations parked in suspense, ever *(read "never matched" until `P8-TSK-020`: the gauge counts every row ever parked, which a resolution never shrinks; the alertable signal is `finapp.reconciliation.suspense.*`, ADR-0070 point 8)* |
+| `finapp.payments.unmatched.age` | The oldest parking's age, ever *(corrected by `P8-TSK-020`, as above)* |
 | `finapp.payments.unmatched.parked` | Money parked in suspense, counted |
 
 The chargeback ratio per merchant is an operator report, never a metric tag (ADR-0018).

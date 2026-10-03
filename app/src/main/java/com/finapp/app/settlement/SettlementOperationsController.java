@@ -23,12 +23,16 @@ import org.springframework.web.bind.annotation.RestController;
  * attestation and the investigator's reads — the phase's first routes, opened only now that
  * the door behind them is proven (`P8-TSK-002`).
  *
- * <p><strong>Two permissions, one desk</strong>: introducing and attesting evidence is
- * {@link PermissionName#SETTLEMENT_INGEST}; every read — and the one content path, reasoned
- * and audited per read ({@code INV-REC-10}) — is
- * {@link PermissionName#RECONCILIATION_INVESTIGATE}. The second-person control is inside the
- * ingest permission, by actor distinctness at two ranks ({@code INV-SET-07}), which is why an
- * uploader holding the permission is still refused on their own file.
+ * <p><strong>Three permissions</strong>: introducing, attesting and declining evidence — the
+ * upload, the fetch-now, the attestation and the decline — is
+ * {@link PermissionName#SETTLEMENT_INGEST}; readmitting a file our own validation wrongly
+ * refused (`P8-TSK-022`) is {@link PermissionName#RECONCILIATION_ADMINISTER}; every read, the
+ * re-parse verification (`P8-TSK-022`) and the one content path, reasoned and audited per read
+ * ({@code INV-REC-10}), are {@link PermissionName#RECONCILIATION_INVESTIGATE}. The
+ * second-person control is inside the ingest permission, by actor distinctness at two ranks
+ * ({@code INV-SET-07}), which is why an uploader holding the permission is still refused on
+ * their own file. *(Corrected 2026-10-01, `P8-DOC-001`: this read "two permissions, one desk",
+ * from before the fetch, the decline, the readmission and the verification joined.)*
  *
  * <p>Handler names are deliberately distinctive (the springdoc {@code operationId} rule,
  * {@code OpenApiContractTest}).
@@ -39,6 +43,7 @@ import org.springframework.web.bind.annotation.RestController;
 public class SettlementOperationsController {
 
     @NonNull private final SettlementOperations settlement;
+    @NonNull private final SettlementFetch fetch;
 
     /**
      * Introduces evidence. A {@code 202}, deliberately: reception is synchronous but the
@@ -54,6 +59,20 @@ public class SettlementOperationsController {
             @Valid @RequestBody SettlementFileUploadRequest body,
             @RequestHeader(IdempotencyKeyHeader.NAME) String idempotencyKey) {
         return settlement.upload(idempotencyKey, body);
+    }
+
+    /**
+     * Pulls a source's report now (`P8-TSK-021`, ADR-0066 §1): the schedule's own pull over the
+     * source's confined credential, its permit renewed rather than windowed. A {@code 200} with
+     * what it came to — received, a duplicate of a standing file, refused at the door, not yet
+     * published, failed, or not pullable — because the request was served either way. No
+     * idempotency key: the content address makes a repeated fetch one file.
+     */
+    @PostMapping(path = "/sources/{code}/fetch", consumes = MediaType.APPLICATION_JSON_VALUE)
+    @RequiresPermission(PermissionName.SETTLEMENT_INGEST)
+    public SettlementFetch.FetchAnswer fetchSettlementReport(
+            @PathVariable String code, @Valid @RequestBody SettlementFetchRequest body) {
+        return fetch.fetch(code, body);
     }
 
     /**
@@ -118,6 +137,39 @@ public class SettlementOperationsController {
     @RequiresPermission(PermissionName.RECONCILIATION_INVESTIGATE)
     public SettlementOperations.RefusalList listRefusedSettlementDeliveries() {
         return settlement.listRefusedDeliveries();
+    }
+
+    /**
+     * Readmits a file our own validation rejected (or a declined one, or a conflicting batch's
+     * whose conflict is gone) - a controller's keyed, reasoned recovery (`P8-TSK-022`,
+     * ADR-0066 §8). It inherits a pulled or attested original's authentication; otherwise it
+     * awaits its own attestation by a person distinct from every earlier submitter.
+     */
+    @PostMapping(
+            path = "/files/{id}/readmission",
+            consumes = MediaType.APPLICATION_JSON_VALUE)
+    @RequiresPermission(PermissionName.RECONCILIATION_ADMINISTER)
+    @RequiresIdempotencyKey
+    @ResponseStatus(HttpStatus.ACCEPTED)
+    public SettlementOperations.ReadmissionAnswer readmitSettlementFile(
+            @RequestHeader(IdempotencyKeyHeader.NAME) String idempotencyKey,
+            @PathVariable("id") String fileId,
+            @Valid @RequestBody SettlementReadmissionRequest body) {
+        return settlement.readmit(idempotencyKey, fileId, body);
+    }
+
+    /**
+     * Re-verifies a stored file's normalisation under its recorded format version (`P8-TSK-022`,
+     * ADR-0066 §9): reasoned and audited per access, it reads the content and replaces nothing.
+     */
+    @PostMapping(
+            path = "/files/{id}/verification",
+            consumes = MediaType.APPLICATION_JSON_VALUE)
+    @RequiresPermission(PermissionName.RECONCILIATION_INVESTIGATE)
+    public SettlementOperations.VerificationAnswer verifySettlementFile(
+            @PathVariable("id") String fileId,
+            @Valid @RequestBody SettlementVerificationRequest body) {
+        return settlement.verify(fileId, body);
     }
 
     /**

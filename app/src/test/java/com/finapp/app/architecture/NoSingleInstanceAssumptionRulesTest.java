@@ -231,7 +231,16 @@ class NoSingleInstanceAssumptionRulesTest {
                     // return produce one return, one entry and one expectation between them,
                     // counted. Register row: DISTRIBUTED_EXECUTION.md section 3; the ten-way
                     // race is PayoutReturnDatabaseTest's.
-                    "com.finapp.app.merchant.PayoutReturnSchedule");
+                    "com.finapp.app.merchant.PayoutReturnSchedule",
+                    // P8-TSK-021: the settlement pull - an EXTERNAL READ, at-least-once, no
+                    // connection held across it. The worklist is derived from stored rows on
+                    // every instance; settlement.pull_permit's conditional, strictly advancing
+                    // upsert paces the herd to one attempt per window (pacing only), and the
+                    // file's content unique arbitrates what lands - N pullers of one report,
+                    // or a pull racing an upload of the same bytes, land one file with a
+                    // DUPLICATE receipt each, counted. Register row: DISTRIBUTED_EXECUTION.md
+                    // section 3; the herd is SettlementPullDatabaseTest's.
+                    "com.finapp.app.settlement.SettlementPullSchedule");
 
     /** Types that schedule work with no lease, so every instance runs it. */
     private static final Set<String> AMBIENT_SCHEDULERS =

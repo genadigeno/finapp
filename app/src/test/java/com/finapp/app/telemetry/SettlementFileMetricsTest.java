@@ -230,6 +230,38 @@ class SettlementFileMetricsTest {
         public long claimNextSequence(Connection unitOfWork, UUID sourceId) {
             throw new UnsupportedOperationException("the gauges read pendingBySource alone");
         }
+
+        @Override
+        public Optional<UUID> readmissionOf(Connection unitOfWork, UUID originalFileId) {
+            throw new UnsupportedOperationException("the gauges read pendingBySource alone");
+        }
+
+        @Override
+        public void insertReadmission(
+                Connection unitOfWork, SettlementFile readmission, byte[] content) {
+            throw new UnsupportedOperationException("the gauges read pendingBySource alone");
+        }
+
+        @Override
+        public boolean inheritsAuthentication(Connection unitOfWork, UUID readmissionId) {
+            throw new UnsupportedOperationException("the gauges read pendingBySource alone");
+        }
+
+        @Override
+        public Set<String> submitters(Connection unitOfWork, UUID fileId) {
+            throw new UnsupportedOperationException("the gauges read pendingBySource alone");
+        }
+
+        @Override
+        public void appendBirthEvent(
+                Connection unitOfWork,
+                UUID fileId,
+                Actor actor,
+                Optional<String> reason,
+                Instant occurredAt,
+                CorrelationId correlation) {
+            throw new UnsupportedOperationException("the gauges read pendingBySource alone");
+        }
     }
 
     /** A connection the fake never touches — the gauges only open and close it. */

@@ -180,8 +180,9 @@ public class SettlementBeans {
     }
 
     @Bean
-    ReceptionOutcomeObserver receptionOutcomeObserver(SettlementMeters settlementMeters) {
-        return new CommittedReceptionOutcomes(settlementMeters);
+    ReceptionOutcomeObserver receptionOutcomeObserver(
+            SettlementMeters settlementMeters, com.finapp.platform.telemetry.Spans domainSpans) {
+        return new CommittedReceptionOutcomes(settlementMeters, domainSpans);
     }
 
     /**
@@ -314,8 +315,9 @@ public class SettlementBeans {
     }
 
     @Bean
-    IntakeOutcomeObserver intakeOutcomeObserver(SettlementMeters settlementMeters) {
-        return new CommittedIntakeOutcomes(settlementMeters);
+    IntakeOutcomeObserver intakeOutcomeObserver(
+            SettlementMeters settlementMeters, com.finapp.platform.telemetry.Spans domainSpans) {
+        return new CommittedIntakeOutcomes(settlementMeters, domainSpans);
     }
 
     @Bean
@@ -469,7 +471,10 @@ public class SettlementBeans {
             SettlementBatchStore<Connection> settlementBatchStore,
             IdempotentExecutor idempotentExecutor,
             TransactionTemplate settlementTransactions,
-            DataSource dataSource) {
+            DataSource dataSource,
+            com.finapp.settlement.FileReadmission fileReadmission,
+            com.finapp.settlement.FileVerification fileVerification,
+            Clock clock) {
         return new SettlementOperations(
                 settlementSources,
                 fileReception,
@@ -480,7 +485,68 @@ public class SettlementBeans {
                 settlementBatchStore,
                 idempotentExecutor,
                 settlementTransactions,
-                dataSource);
+                dataSource,
+                fileReadmission,
+                fileVerification,
+                clock);
+    }
+
+    /**
+     * Readmission (`P8-TSK-022`, ADR-0066 §8): the original's verified bytes screened under the
+     * current format, re-stored under a NEW file naming it; one SQL function decides whether it
+     * inherits authentication, for the trigger and the accept leg alike.
+     */
+    @Bean
+    com.finapp.settlement.FileReadmission fileReadmission(
+            SettlementSources settlementSources,
+            SettlementFileStore<Connection> settlementFileStore,
+            SettlementBatchStore<Connection> settlementBatchStore,
+            Map<SettlementFormatId, SettlementFormat> settlementFormats,
+            ReceptionOutcomeObserver receptionOutcomeObserver,
+            AuditWriter<Connection> auditWriter,
+            IdGenerator idGenerator) {
+        Map<SettlementFormatId, DeliveryScreen> screens =
+                settlementFormats.entrySet().stream()
+                        .collect(
+                                java.util.stream.Collectors.toMap(
+                                        Map.Entry::getKey,
+                                        entry -> entry.getValue()::screen));
+        return new com.finapp.settlement.FileReadmission(
+                settlementSources,
+                settlementFileStore,
+                settlementBatchStore,
+                settlementFormats,
+                screens,
+                receptionOutcomeObserver,
+                auditWriter,
+                idGenerator);
+    }
+
+    /**
+     * The batch's repudiation edge (`P8-TSK-023`, ADR-0065 §10): settlement's half of the
+     * seam reconciliation's {@code REPUDIATE_BATCH} approval drives on its own connection.
+     */
+    @Bean
+    com.finapp.settlement.BatchRepudiation batchRepudiation(
+            SettlementBatchStore<Connection> settlementBatchStore,
+            OutboxWriter<Connection> outboxWriter,
+            AuditWriter<Connection> auditWriter,
+            IdGenerator idGenerator) {
+        return new com.finapp.settlement.BatchRepudiation(
+                settlementBatchStore, outboxWriter, auditWriter, idGenerator);
+    }
+
+    /** The re-parse verification (`P8-TSK-022`, ADR-0066 §9): reasoned, audited, read-only. */
+    @Bean
+    com.finapp.settlement.FileVerification fileVerification(
+            SettlementFileStore<Connection> settlementFileStore,
+            SettlementBatchStore<Connection> settlementBatchStore,
+            Map<SettlementFormatId, SettlementFormat> settlementFormats,
+            AuditWriter<Connection> auditWriter,
+            IdGenerator idGenerator) {
+        return new com.finapp.settlement.FileVerification(
+                settlementFileStore, settlementBatchStore, settlementFormats, auditWriter,
+                idGenerator);
     }
 
     /**

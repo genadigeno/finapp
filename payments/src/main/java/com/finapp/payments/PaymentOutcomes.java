@@ -172,10 +172,32 @@ public final class PaymentOutcomes {
             PaymentIntentStatus intent,
             PaymentAttemptStatus attempt,
             boolean acting,
-            boolean voidPending) {
+            boolean voidPending,
+            Optional<java.util.UUID> parking) {
+
+        public Applied {
+            java.util.Objects.requireNonNull(parking, "parking must not be null");
+        }
+
+        public Applied(
+                PaymentIntentStatus intent,
+                PaymentAttemptStatus attempt,
+                boolean acting,
+                boolean voidPending) {
+            this(intent, attempt, acting, voidPending, Optional.empty());
+        }
 
         Applied(PaymentIntentStatus intent, PaymentAttemptStatus attempt, boolean acting) {
             this(intent, attempt, acting, false);
+        }
+
+        /**
+         * The parking this statement's value rests in, when it parked or restated a parked
+         * execution (`P8-TSK-020`): the producer addresses the statement's raw bytes to it
+         * (payments `V023`'s fifth evidence subject), so the parking's owner traces to them.
+         */
+        Applied withParking(Optional<java.util.UUID> parked) {
+            return new Applied(intent, attempt, acting, voidPending, parked);
         }
 
         /**
@@ -186,7 +208,7 @@ public final class PaymentOutcomes {
          * idempotently by the stored reference.
          */
         Applied withVoidPending() {
-            return new Applied(intent, attempt, acting, true);
+            return new Applied(intent, attempt, acting, true, parking);
         }
     }
 
@@ -716,12 +738,14 @@ public final class PaymentOutcomes {
                     // still received value by this statement: it parks, never dropped (the
                     // Phase 7 -> 8 transition - the gate found such a race acknowledged and the
                     // provider's answer lost). A row still waiting converges on its truth.
-                    if (!pushResolvable(locked.status())) {
-                        concludedExecution(uow, locked, scheme, settlementCycle, executed,
-                                correlation);
-                    }
+                    Optional<java.util.UUID> parkedIn =
+                            pushResolvable(locked.status())
+                                    ? Optional.empty()
+                                    : concludedExecution(uow, locked, scheme,
+                                            settlementCycle, executed, correlation);
                     return answered(uow, intentId, attemptId, verdict.name(), from,
-                            committedIntent, false, platform, correlation, now);
+                                    committedIntent, false, platform, correlation, now)
+                            .withParking(parkedIn);
                 }
                 RailId rail = locked.rail();
 
@@ -892,7 +916,9 @@ public final class PaymentOutcomes {
                 failBoth(uow, intentId, attemptId, from, PaymentFailureReason.DECLINED,
                         correlation, platform, now);
         return answered(uow, intentId, attemptId, verdict.name(), failed.status(),
-                PaymentIntentStatus.FAILED, failed.acting(), platform, correlation, now);
+                        PaymentIntentStatus.FAILED, failed.acting(), platform, correlation,
+                        now)
+                .withParking(parked.parking());
     }
 
     /**
@@ -902,7 +928,7 @@ public final class PaymentOutcomes {
      * arrived that the attempt's story does not explain, and it parks
      * ({@code ATTEMPT_CONCLUDED}, attributed). Without a usable amount nothing can park: loud.
      */
-    private void concludedExecution(
+    private Optional<java.util.UUID> concludedExecution(
             Connection uow,
             PaymentAttempt locked,
             ProviderReference scheme,
@@ -911,7 +937,7 @@ public final class PaymentOutcomes {
             Correlation correlation) {
         if (locked.status() == PaymentAttemptStatus.EXECUTED
                 && locked.schemeReference().equals(Optional.of(scheme))) {
-            return;
+            return Optional.empty();
         }
         if (executed.isEmpty()) {
             log.warn(
@@ -919,9 +945,9 @@ public final class PaymentOutcomes {
                             + " nothing can park and the statement rests as evidence",
                     locked.id(),
                     locked.status());
-            return;
+            return Optional.empty();
         }
-        parking().park(
+        return parking().park(
                 uow,
                 new UnmatchedConfirmations.Parking(
                         locked.rail(),
@@ -932,7 +958,8 @@ public final class PaymentOutcomes {
                                 locked.id(),
                                 locked.endToEndReference(),
                                 settlementCycle),
-                        correlation));
+                        correlation))
+                .parking();
     }
 
     /** The push model's resolvable sources — waiting, or an outbound unknown. */

@@ -48,10 +48,12 @@ import lombok.extern.slf4j.Slf4j;
  *
  * <p>The conditional {@code PARSED → ACCEPTED}, {@code UNIQUE run(batch_id)},
  * {@code UNIQUE external_item(settlement_line_id)} and the posting key
- * {@code settlement-batch:<batchId>} — whose fingerprint binds only STORED dates
- * ({@code posting_date = accepted_on}, {@code value_date} = the batch's business date), so a
- * replay on a later clock day CONVERGES instead of conflicting ({@code INV-SET-04},
- * {@code INV-IDEM-02}).
+ * {@code settlement-batch:<batchId>} — whose fingerprint binds only dates stored by this
+ * transaction ({@code posting_date} = the {@code accepted_on} it stamps on the batch,
+ * {@code value_date} = the batch's stored business date), never a clock read the row does not
+ * keep, so a replay on a later clock day CONVERGES instead of conflicting ({@code INV-SET-04},
+ * {@code INV-IDEM-02}). *(Corrected 2026-10-01, `P8-DOC-001`: this read "binds only STORED
+ * dates", though {@code accepted_on} is stored by this transaction, not read from a row.)*
  *
  * <h2>The posting's seat (the design's D3, recorded)</h2>
  *
@@ -74,9 +76,14 @@ import lombok.extern.slf4j.Slf4j;
  * <h2>Eligibility is authentication</h2>
  *
  * <p>A pull is authenticated by its channel; an upload moves money only past its second
- * person — the predicate in the claim query, this class's re-read, and `V002`'s
- * {@code CHECK}s (`INV-SET-07`). A source retired since receipt rejects the file
- * {@code SOURCE_RETIRED}, RETAINED, under the same source lock the sequence uses.
+ * person; a readmission (`P8-TSK-022`) only when it inherits its original's authentication or
+ * is attested by someone outside every submitter along its chain. One predicate states all
+ * three, in the claim query and in {@code lockEligibleById}'s locking re-claim — the only check
+ * this class makes — beneath which `V002`'s {@code CHECK}s and `V009`'s readmission trigger
+ * refuse an unauthenticated acceptance for every writer (`INV-SET-07`). A source retired since
+ * receipt rejects the file {@code SOURCE_RETIRED}, RETAINED, under the same source lock the
+ * sequence uses. *(Corrected 2026-10-01, `P8-DOC-001`: this named no readmission and claimed a
+ * re-read in this class that does not exist.)*
  */
 @Slf4j
 @RequiredArgsConstructor
@@ -144,7 +151,10 @@ public final class BatchAcceptance {
 
     private Outcome acceptOne(UUID fileId) {
         try {
-            return transactions.inTransaction(uow -> handleClaimed(uow, fileId));
+            return observer.spans().within(
+                    "settlement.accept",
+                    java.util.Map.of("file.id", fileId.toString()),
+                    () -> transactions.inTransaction(uow -> handleClaimed(uow, fileId)));
         } catch (RuntimeException ourDefect) {
             // Contained per file: the transaction rolled back whole, the file stays PARSED
             // and visibly ages (ADR-0066 §9's stance at the accept leg). The class only.
@@ -254,6 +264,8 @@ public final class BatchAcceptance {
             throw new SettlementStorageException(
                     "batch " + batch.id() + " moved under a held claim");
         }
+        // Counted only once this transaction commits (the composition's afterCommit).
+        observer.accepted(file.sourceCode(), java.time.Duration.between(file.receivedAt(), now));
         batches.appendBatchEvent(
                 uow,
                 batch.id(),

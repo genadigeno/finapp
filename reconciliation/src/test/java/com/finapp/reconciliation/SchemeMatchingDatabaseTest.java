@@ -232,7 +232,7 @@ class SchemeMatchingDatabaseTest {
                                     + " status, funding_lag_days, gain_min_age_days,"
                                     + " effective_from, proposed_by, decided_by, reason,"
                                     + " created_at, correlation_id) VALUES (?, ?, 1,"
-                                    + " 'ACTIVE', 2, 90, ?, 'test', 'test',"
+                                    + " 'PROPOSED', 2, 90, ?, 'test', NULL,"
                                     + " 'SchemeMatchingDatabaseTest private scheme source',"
                                     + " now(), 'p8-tsk-017-test') ON CONFLICT (id) DO NOTHING",
                             RULE_SET, SOURCE, java.sql.Date.valueOf(LocalDate.parse("2026-09-29")));
@@ -281,6 +281,10 @@ class SchemeMatchingDatabaseTest {
                                     + " (?, 'GBP', 100000), (?, 'USD', 100000)"
                                     + " ON CONFLICT DO NOTHING",
                             RULE_SET, RULE_SET, RULE_SET);
+                    execute(unitOfWork,
+                            "UPDATE reconciliation.rule_set SET status = 'ACTIVE', decided_by = 'test-activator',"
+                                    + " decided_at = now() WHERE id = ? AND status = 'PROPOSED'",
+                            RULE_SET);
                     return null;
                 });
     }
@@ -366,7 +370,9 @@ class SchemeMatchingDatabaseTest {
     @Test
     @Order(3)
     @DisplayName("(c) a CREDIT_IN quoting a Phase 7 parking's SCHEME_REF settles its"
-            + " UNMATCHED_CONFIRMATION expectation")
+            + " UNMATCHED_CONFIRMATION expectation - and leaves the parking's suspense item OPEN"
+            + " under its open owner: evidence explains the clearing side, only a person the"
+            + " value (P8-TSK-020, INV-REC-05)")
     void aCreditSettlesAParking() throws SQLException {
         LocalDate day = day(2);
         String cycle = cycle("C");
@@ -374,6 +380,17 @@ class SchemeMatchingDatabaseTest {
         UUID parking =
                 open(ExpectationKind.UNMATCHED_CONFIRMATION, 42_00, day, Optional.of(cycle),
                         schemeRef(scheme));
+        // The parking's owner, as the parking's own transaction opens it (P8-TSK-020).
+        UUID entry = (UUID) one("SELECT journal_entry_id FROM reconciliation.expectation WHERE"
+                + " id = ?", parking);
+        ParkedConfirmations.Opened owner =
+                runner().inTransaction(unitOfWork -> new ParkedConfirmations(breakRegister, IDS)
+                        .open(unitOfWork, new ParkedConfirmations.Opening(
+                                IDS.next(), SOURCE, RULE_SET, SuspenseSide.CREDIT,
+                                Money.ofPersisted(42_00, EUR, 2), day, entry,
+                                BreakCause.PARKED_ON_RECEIPT, InternalClassification.UNKNOWN,
+                                Optional.empty(), "UNATTRIBUTED", PLATFORM, Instant.now(),
+                                CorrelationId.of("p8t20-c"))));
         UUID runId = seedRun(cycle, credit(1, 42_00, day, Map.of(ItemKeyKind.SCHEME_REF, scheme)));
 
         matching.sweep();
@@ -381,6 +398,12 @@ class SchemeMatchingDatabaseTest {
         assertThat(runStatus(runId)).isEqualTo("COMPLETED");
         assertThat(itemStatus(runId, 1)).isEqualTo("MATCHED");
         assertThat(expectationStatus(parking)).isEqualTo("SETTLED");
+        assertThat(one("SELECT status || '|' || released_minor FROM reconciliation.suspense_item"
+                + " WHERE id = ?", owner.suspenseItemId()))
+                .as("the scheme's evidence never releases the parking's value")
+                .isEqualTo("OPEN|0");
+        assertThat(one("SELECT status FROM reconciliation.break WHERE id = ?", owner.breakId()))
+                .isEqualTo("OPEN");
         UUID decision = decisionOf(runId, 1);
         assertThat(row("SELECT strategy, matched_key_kind, rule_priority, outcome FROM"
                 + " reconciliation.match_decision WHERE id = ?", decision))

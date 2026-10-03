@@ -22,6 +22,9 @@ public interface MatchingStore {
 
     // ------------------------------------------------------------------ runs
 
+    /** When the run was born - the start of {@code finapp.reconciliation.run.latency}. */
+    Optional<java.time.Instant> runBornAt(Connection unitOfWork, UUID runId);
+
     record RunRow(
             UUID id,
             UUID sourceId,
@@ -188,6 +191,81 @@ public interface MatchingStore {
 
     // ------------------------------------------------------------------ writes
 
+    /**
+     * What a decision judged and concluded, stored so its replay re-runs it exactly
+     * (`P8-TSK-022`, ADR-0068 §9, `V012`): the engine's verdict, the item state and value it
+     * judged, and the inputs the snapshot rows cannot carry — the fingerprint a matching-engine
+     * decision read, a value-date group's membership, a fee's gross. Held by `V012`'s insert
+     * trigger for every writer.
+     */
+    record Basis(
+            DecisionVerdict verdict,
+            JudgedStatus judgedStatus,
+            long judgedMinor,
+            Optional<Boolean> fingerprintSeenEarlier,
+            Optional<Boolean> groupMembershipComplete,
+            Optional<Long> feeGrossMinor) {
+
+        public Basis {
+            java.util.Objects.requireNonNull(verdict, "verdict must not be null");
+            java.util.Objects.requireNonNull(judgedStatus, "judgedStatus must not be null");
+            java.util.Objects.requireNonNull(
+                    fingerprintSeenEarlier, "fingerprintSeenEarlier must not be null");
+            java.util.Objects.requireNonNull(
+                    groupMembershipComplete, "groupMembershipComplete must not be null");
+            java.util.Objects.requireNonNull(feeGrossMinor, "feeGrossMinor must not be null");
+            if (judgedMinor < 0) {
+                throw new IllegalArgumentException("a judged value is never negative");
+            }
+            if (verdict.engine() == DecisionVerdict.Engine.MATCH
+                    && fingerprintSeenEarlier.isEmpty()) {
+                throw new IllegalArgumentException(
+                        "a matching-engine decision stores its fingerprint input");
+            }
+            if (verdict.engine() == DecisionVerdict.Engine.GROUP
+                    && groupMembershipComplete.isEmpty()) {
+                throw new IllegalArgumentException(
+                        "a value-date group decision stores its membership input");
+            }
+        }
+
+        /** A matching-engine conclusion and the fingerprint it read. */
+        public static Basis match(
+                DecisionVerdict verdict,
+                JudgedStatus judged,
+                long judgedMinor,
+                boolean fingerprintSeenEarlier) {
+            return new Basis(
+                    verdict, judged, judgedMinor, Optional.of(fingerprintSeenEarlier),
+                    Optional.empty(), Optional.empty());
+        }
+
+        /** A value-date group's conclusion and its membership input. */
+        public static Basis group(
+                DecisionVerdict verdict,
+                JudgedStatus judged,
+                long judgedMinor,
+                boolean membershipComplete) {
+            return new Basis(
+                    verdict, judged, judgedMinor, Optional.empty(),
+                    Optional.of(membershipComplete), Optional.empty());
+        }
+
+        /** A fee check: within or beyond its tolerance, against its gross (if reached). */
+        public static Basis fee(boolean beyond, long judgedMinor, Optional<Long> grossMinor) {
+            return new Basis(
+                    DecisionVerdict.fee(beyond), JudgedStatus.PENDING, judgedMinor,
+                    Optional.empty(), Optional.empty(), grossMinor);
+        }
+
+        /** A correction's, a person's or a contained conclusion: no further input. */
+        public static Basis of(DecisionVerdict verdict, JudgedStatus judged, long judgedMinor) {
+            return new Basis(
+                    verdict, judged, judgedMinor, Optional.empty(), Optional.empty(),
+                    Optional.empty());
+        }
+    }
+
     record NewDecision(
             UUID id,
             UUID externalItemId,
@@ -208,7 +286,12 @@ public interface MatchingStore {
             Actor decidedBy,
             Instant decidedAt,
             LocalDate decidedOn,
-            CorrelationId correlation) {
+            CorrelationId correlation,
+            Basis basis) {
+
+        public NewDecision {
+            java.util.Objects.requireNonNull(basis, "basis must not be null");
+        }
 
         /** The pre-`P8-TSK-012` shape: no fee comparison on the row. */
         public NewDecision(
@@ -228,16 +311,26 @@ public interface MatchingStore {
                 Actor decidedBy,
                 Instant decidedAt,
                 LocalDate decidedOn,
-                CorrelationId correlation) {
+                CorrelationId correlation,
+                Basis basis) {
             this(id, externalItemId, runId, origin, ruleSetId, rulePriority, strategy,
                     matchedKeyKind, outcome, claimantRank, claimantCount,
                     dateDeviationDays, timingToleranceDays, Optional.empty(),
                     Optional.empty(), Optional.empty(), decidedBy, decidedAt, decidedOn,
-                    correlation);
+                    correlation, basis);
         }
     }
 
     void insertDecision(Connection unitOfWork, NewDecision decision);
+
+    /**
+     * A correction's second input, snapshotted in its order (`P8-TSK-022`, `V012`): the
+     * original items' open parked values the correction engine judged.
+     */
+    void insertParkedOriginals(
+            Connection unitOfWork,
+            UUID decisionId,
+            List<CorrectionEngine.ParkedOriginal> parkedOriginals);
 
     void insertCandidates(
             Connection unitOfWork, UUID decisionId, List<MatchEngine.HitFacts> candidates);
@@ -551,8 +644,65 @@ public interface MatchingStore {
 
     Optional<RunRow> run(Connection unitOfWork, UUID runId);
 
+    // ------------------------------------------------------------------ P8-TSK-022
+
+    /** The source's ACTIVE rule set (exactly one, `rule_set_one_active`), read lock-free. */
+    UUID activeRuleSetId(Connection unitOfWork, UUID sourceId);
+
+    /** Sources with an {@code OPEN} or {@code IN_PROGRESS} {@code REPROCESS} run. */
+    List<UUID> sourcesWithOpenReprocess(Connection unitOfWork);
+
+    /** The source's one open {@code REPROCESS} run (`reconciliation_batch_one_open_reprocess`). */
+    Optional<RunRow> openReprocessRun(Connection unitOfWork, UUID sourceId);
+
+    /**
+     * The residual items a {@code REPROCESS} run still owes a decision: {@code UNMATCHED} or
+     * {@code PARKED}, owning no suspense of another origin, and holding no decision of this run.
+     */
+    int reprocessWorklistSize(Connection unitOfWork, UUID sourceId, UUID runId);
+
+    List<UUID> attributedSourcesWithReprocessWork(Connection unitOfWork, UUID sourceId, UUID runId);
+
+    /** Locks the next chunk of the reprocess worklist in claimant order. */
+    List<ResidualItem> lockReprocessCandidates(
+            Connection unitOfWork,
+            UUID sourceId,
+            UUID runId,
+            Collection<UUID> heldAttributions,
+            int limit);
+
+    /** The item's parked value - what a parked item's decision judges. */
+    long itemParkedMinor(Connection unitOfWork, UUID itemId);
+
+    /** Locks the run's open break of {@code type}, if one stands. */
+    Optional<UUID> lockOpenBreakOnRun(Connection unitOfWork, UUID runId, BreakType type);
+
+    /** The run's items whose rematch is merely pending - replay's {@code PENDING_REMATCH}. */
+    int pendingRematchOf(Connection unitOfWork, UUID runId);
+
+    /** Locks the run row, for a person's act on it. */
+    Optional<RunRow> lockRun(Connection unitOfWork, UUID runId);
+
+    /**
+     * {@code BLOCKED -> IN_PROGRESS}, its failures reset, with the reasoned history row; false
+     * when the run was not {@code BLOCKED} (the conditional edge, for any racing writer).
+     */
+    boolean requeueRun(
+            Connection unitOfWork,
+            UUID runId,
+            Actor actor,
+            String reason,
+            Instant at,
+            CorrelationId correlation);
+
     List<RunRow> runs(Connection unitOfWork, int limit);
 
     /** The run's decisions per outcome — the completion event's counts. */
     Map<DecisionOutcome, Long> outcomeCounts(Connection unitOfWork, UUID runId);
+
+    /**
+     * The run's FIRST decisions per outcome - origin {@code RUN} alone, never a later leg's
+     * decision that carries the run's id (`P8-TSK-024`, the match rate's numerator).
+     */
+    Map<DecisionOutcome, Long> firstDecisionCounts(Connection unitOfWork, UUID runId);
 }

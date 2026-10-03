@@ -15,9 +15,11 @@ import java.time.Instant;
 import java.time.LocalDate;
 import java.util.ArrayList;
 import java.util.Arrays;
+import java.util.HashSet;
 import java.util.List;
 import java.util.Objects;
 import java.util.Optional;
+import java.util.Set;
 import java.util.UUID;
 
 /**
@@ -33,6 +35,9 @@ public final class JdbcSettlementFileStore implements SettlementFileStore<Connec
 
     /** The 1 MiB provider-evidence bound, per chunk (ADR-0066 §6). */
     public static final int CHUNK_BYTES = 1_048_576;
+
+    /** PostgreSQL's unique-violation SQLSTATE — {@code file_readmits_once}'s voice. */
+    private static final String UNIQUE_VIOLATION = "23505";
 
     private final SettlementFileCipher cipher;
 
@@ -90,7 +95,8 @@ public final class JdbcSettlementFileStore implements SettlementFileStore<Connec
             "SELECT f.id, s.code AS source_code, f.source_id, f.received_via, f.status,"
                     + " f.business_date, f.format_id, f.format_version, f.content_sha256,"
                     + " f.content_length, f.line_count, f.received_by, f.attested_by,"
-                    + " f.attested_at, f.received_at, f.correlation_id"
+                    + " f.attested_at, f.received_at, f.correlation_id, f.rejection_code,"
+                    + " f.readmits_file_id"
                     + " FROM settlement.file f"
                     + " JOIN settlement.source s ON s.id = f.source_id";
 
@@ -124,6 +130,7 @@ public final class JdbcSettlementFileStore implements SettlementFileStore<Connec
     private static FileRow fileRow(ResultSet row) throws SQLException {
         Timestamp attestedAt = row.getTimestamp("attested_at");
         String attestedBy = row.getString("attested_by");
+        String rejectionCode = row.getString("rejection_code");
         return new FileRow(
                 row.getObject("id", UUID.class),
                 row.getString("source_code"),
@@ -141,7 +148,9 @@ public final class JdbcSettlementFileStore implements SettlementFileStore<Connec
                         ? Optional.empty()
                         : Optional.of(new Attestation(attestedBy, attestedAt.toInstant())),
                 row.getTimestamp("received_at").toInstant(),
-                CorrelationId.of(row.getString("correlation_id")));
+                CorrelationId.of(row.getString("correlation_id")),
+                Optional.ofNullable(rejectionCode).map(RejectionCode::valueOf),
+                Optional.ofNullable(row.getObject("readmits_file_id", UUID.class)));
     }
 
     @Override
@@ -257,6 +266,12 @@ public final class JdbcSettlementFileStore implements SettlementFileStore<Connec
     public Stored insert(Connection unitOfWork, SettlementFile file, byte[] content) {
         Objects.requireNonNull(file, "file must not be null");
         Objects.requireNonNull(content, "content must not be null");
+        if (file.readmitsFileId().isPresent()) {
+            // Converging a readmission on its original's address would answer "duplicate" for
+            // the very bytes it exists to re-present (P8-TSK-022).
+            throw new IllegalArgumentException(
+                    "a readmission is stored by insertReadmission, never by the content address");
+        }
         try {
             try (PreparedStatement insert =
                     unitOfWork.prepareStatement(
@@ -378,16 +393,28 @@ public final class JdbcSettlementFileStore implements SettlementFileStore<Connec
             Actor actor,
             Instant occurredAt,
             CorrelationId correlation) {
+        appendBirthEvent(unitOfWork, fileId, actor, Optional.empty(), occurredAt, correlation);
+    }
+
+    @Override
+    public void appendBirthEvent(
+            Connection unitOfWork,
+            UUID fileId,
+            Actor actor,
+            Optional<String> reason,
+            Instant occurredAt,
+            CorrelationId correlation) {
         try (PreparedStatement insert =
                 unitOfWork.prepareStatement(
                         "INSERT INTO settlement.file_event (file_id, from_status, to_status,"
-                                + " actor, actor_type, occurred_at, correlation_id)"
-                                + " VALUES (?, NULL, 'RECEIVED', ?, ?, ?, ?)")) {
+                                + " actor, actor_type, reason, occurred_at, correlation_id)"
+                                + " VALUES (?, NULL, 'RECEIVED', ?, ?, ?, ?, ?)")) {
             insert.setObject(1, fileId);
             insert.setString(2, actor.id());
             insert.setString(3, actor.type().name());
-            insert.setTimestamp(4, Timestamp.from(occurredAt));
-            insert.setString(5, correlation.value());
+            insert.setString(4, reason.orElse(null));
+            insert.setTimestamp(5, Timestamp.from(occurredAt));
+            insert.setString(6, correlation.value());
             insert.executeUpdate();
         } catch (SQLException failure) {
             throw new SettlementStorageException("could not append a file event", failure);
@@ -657,17 +684,22 @@ public final class JdbcSettlementFileStore implements SettlementFileStore<Connec
 
     // ----------------------------------------------------------- the accept leg (P8-TSK-009)
 
-    /** The channel-eligibility predicate (ADR-0066 §2, §9), one text for both claim reads. */
+    /**
+     * The channel-eligibility predicate (ADR-0066 §2, §8, §9), one text for both claim reads.
+     * A readmission's rank reads `V009`'s functions — the ONE source of truth its trigger also
+     * refuses by (`P8-TSK-022`): it inherits its original's authentication, or a person
+     * distinct from every submitter along its chain attested it.
+     */
     private static final String ELIGIBLE =
             "(f.received_via = 'PULL'"
                     + " OR (f.received_via = 'UPLOAD' AND f.attested_by IS NOT NULL"
                     + "     AND f.attested_by <> f.received_by)"
-                    + " OR (f.received_via = 'READMISSION' AND ("
-                    + "     EXISTS (SELECT 1 FROM settlement.file original"
-                    + "             WHERE original.id = f.readmits_file_id"
-                    + "             AND (original.received_via = 'PULL'"
-                    + "                  OR original.attested_by IS NOT NULL))"
-                    + "     OR f.attested_by IS NOT NULL)))";
+                    + " OR (f.received_via = 'READMISSION'"
+                    + "     AND (settlement.file_inherits_authentication(f.id)"
+                    + "          OR (f.attested_by IS NOT NULL"
+                    + "              AND f.attested_by"
+                    + "                  <> ALL (ARRAY(SELECT settlement.file_submitters(f.id)))"
+                    + "))))";
 
     @Override
     public List<UUID> dueForAccept(Connection unitOfWork, int limit) {
@@ -800,6 +832,114 @@ public final class JdbcSettlementFileStore implements SettlementFileStore<Connec
             insert.executeBatch();
         } catch (SQLException failure) {
             throw new SettlementStorageException("could not record ingestion errors", failure);
+        }
+    }
+
+    // ------------------------------------------------------------- readmission (P8-TSK-022)
+
+    @Override
+    public Optional<UUID> readmissionOf(Connection unitOfWork, UUID originalFileId) {
+        Objects.requireNonNull(originalFileId, "originalFileId must not be null");
+        try (PreparedStatement read =
+                unitOfWork.prepareStatement(
+                        "SELECT id FROM settlement.file WHERE readmits_file_id = ?")) {
+            read.setObject(1, originalFileId);
+            try (ResultSet row = read.executeQuery()) {
+                return row.next()
+                        ? Optional.of(row.getObject("id", UUID.class))
+                        : Optional.empty();
+            }
+        } catch (SQLException failure) {
+            throw new SettlementStorageException("could not read a file's readmission", failure);
+        }
+    }
+
+    @Override
+    public void insertReadmission(
+            Connection unitOfWork, SettlementFile readmission, byte[] content) {
+        Objects.requireNonNull(readmission, "readmission must not be null");
+        Objects.requireNonNull(content, "content must not be null");
+        UUID originalFileId =
+                readmission.readmitsFileId()
+                        .orElseThrow(
+                                () ->
+                                        new IllegalArgumentException(
+                                                "a readmission names the original it"
+                                                        + " re-presents"));
+        try {
+            try (PreparedStatement insert =
+                    unitOfWork.prepareStatement(
+                            // No ON CONFLICT: the content unique stands outside a readmission
+                            // (WHERE readmits_file_id IS NULL), and file_readmits_once's refusal
+                            // is an answer, never a convergence.
+                            "INSERT INTO settlement.file (id, source_id, received_via, status,"
+                                    + " business_date, format_id, format_version,"
+                                    + " content_sha256, content_length, line_count,"
+                                    + " key_version, received_by, readmits_file_id,"
+                                    + " received_at, status_changed_at, correlation_id)"
+                                    + " VALUES (?, ?, ?, 'RECEIVED', ?, ?, ?, ?, ?, ?, ?, ?, ?,"
+                                    + " ?, ?, ?)")) {
+                insert.setObject(1, readmission.id());
+                insert.setObject(2, readmission.sourceId());
+                insert.setString(3, readmission.receivedVia().name());
+                insert.setObject(4, readmission.businessDate().orElse(null));
+                insert.setString(5, readmission.formatId().name());
+                insert.setInt(6, readmission.formatVersion());
+                insert.setBytes(7, readmission.contentSha256());
+                insert.setInt(8, readmission.contentLength());
+                insert.setInt(9, readmission.lineCount());
+                insert.setInt(10, cipher.version());
+                insert.setString(11, readmission.receivedBy().map(Actor::id).orElse(null));
+                insert.setObject(12, originalFileId);
+                insert.setTimestamp(13, Timestamp.from(readmission.receivedAt()));
+                insert.setTimestamp(14, Timestamp.from(readmission.receivedAt()));
+                insert.setString(15, readmission.correlation().value());
+                insert.executeUpdate();
+            }
+            // Re-encrypted under the readmission's OWN id: writeChunks binds file.id().
+            writeChunks(unitOfWork, readmission, content);
+        } catch (SQLException failure) {
+            if (UNIQUE_VIOLATION.equals(failure.getSQLState())
+                    && String.valueOf(failure.getMessage()).contains("file_readmits_once")) {
+                throw new ReadmissionConflict(originalFileId);
+            }
+            throw new SettlementStorageException("could not store a readmission", failure);
+        }
+    }
+
+    @Override
+    public boolean inheritsAuthentication(Connection unitOfWork, UUID readmissionId) {
+        Objects.requireNonNull(readmissionId, "readmissionId must not be null");
+        try (PreparedStatement read =
+                unitOfWork.prepareStatement(
+                        "SELECT settlement.file_inherits_authentication(?)")) {
+            read.setObject(1, readmissionId);
+            try (ResultSet row = read.executeQuery()) {
+                row.next();
+                return row.getBoolean(1);
+            }
+        } catch (SQLException failure) {
+            throw new SettlementStorageException(
+                    "could not read a readmission's inherited authentication", failure);
+        }
+    }
+
+    @Override
+    public Set<String> submitters(Connection unitOfWork, UUID fileId) {
+        Objects.requireNonNull(fileId, "fileId must not be null");
+        try (PreparedStatement read =
+                unitOfWork.prepareStatement(
+                        "SELECT s.submitter FROM settlement.file_submitters(?) AS s(submitter)")) {
+            read.setObject(1, fileId);
+            try (ResultSet rows = read.executeQuery()) {
+                Set<String> submitters = new HashSet<>();
+                while (rows.next()) {
+                    submitters.add(rows.getString("submitter"));
+                }
+                return Set.copyOf(submitters);
+            }
+        } catch (SQLException failure) {
+            throw new SettlementStorageException("could not read a file's submitters", failure);
         }
     }
 }

@@ -85,7 +85,15 @@ public enum BreakCause {
     REPLAY_DIVERGED(BreakType.PROCESSING_ERROR),
 
     /** A repudiation reversed evidence a resolution had already acted on (`P8-TSK-023`). */
-    EVIDENCE_REPUDIATED(BreakType.PROCESSING_ERROR);
+    EVIDENCE_REPUDIATED(BreakType.PROCESSING_ERROR),
+
+    /**
+     * A Phase 7 parking whose scheme execution a credit, a withdrawal or a return already
+     * explains — one payments `V023`'s backfill left unclaimed — adopted as the duplicate it is
+     * (`P8-TSK-020`, ADR-0070's recorded design input): its value must never be attributed a
+     * second time, so the break admits no transfer. Appended by reconciliation `V011`.
+     */
+    EXECUTION_ALREADY_EXPLAINED(BreakType.DUPLICATE_EXTERNAL);
 
     private final Set<BreakType> raisesAs;
 
@@ -98,16 +106,33 @@ public enum BreakCause {
         return EnumSet.copyOf(raisesAs);
     }
 
-    /** The `V004` {@code CHECK}'s value list — reconciled by the migration test. */
+    /** The causes `V004` admitted; {@link #EXECUTION_ALREADY_EXPLAINED} arrived with `V011`. */
+    public static Set<BreakCause> v004Vocabulary() {
+        return EnumSet.range(EXPECTATION_OVERDUE, EVIDENCE_REPUDIATED);
+    }
+
+    /** The whole {@code CHECK} value list (`V011`) — reconciled by the migration test. */
     public static String sqlValueList() {
+        return sqlValueList(EnumSet.allOf(BreakCause.class));
+    }
+
+    /** The value list of {@code members}, in declaration order. */
+    public static String sqlValueList(Set<BreakCause> members) {
         return Arrays.stream(values())
+                .filter(members::contains)
                 .map(value -> "'" + value.name() + "'")
                 .collect(Collectors.joining(", "));
     }
 
-    /** The `V004` raise-pairing trigger's rule — reconciled by the migration test. */
+    /** The whole raise-pairing trigger rule (`V011`) — reconciled by the migration test. */
     public static String sqlRaisePairingRule() {
+        return sqlRaisePairingRule(EnumSet.allOf(BreakCause.class));
+    }
+
+    /** The raise-pairing rule over {@code members}, in declaration order. */
+    public static String sqlRaisePairingRule(Set<BreakCause> members) {
         return Arrays.stream(values())
+                .filter(members::contains)
                 .map(
                         cause ->
                                 "(NEW.cause = '" + cause.name() + "' AND NEW.type IN ("

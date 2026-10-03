@@ -92,7 +92,39 @@ public enum SettlementErrorCode implements ErrorCode {
     BATCH_NOT_FOUND(
             "settlement.BatchNotFound",
             404,
-            "No settlement batch has this identifier.");
+            "No settlement batch has this identifier."),
+
+    /**
+     * The file is not a readmissible rejection (`P8-TSK-022`, ADR-0066 §8): readmission
+     * recovers a file OUR validation rejected, a {@code DECLINED} one, or a
+     * {@code CONFLICTING_BATCH} one — never a file still in its machine, never one rejected
+     * {@code SOURCE_RETIRED}. A {@code 409}: the file's own facts refuse the act.
+     */
+    FILE_NOT_REJECTED(
+            "settlement.FileNotRejected",
+            409,
+            "This settlement file is not a rejection that can be readmitted."),
+
+    /**
+     * The original was rejected {@code CONFLICTING_BATCH}, and a live batch still holds the
+     * identity its bytes declare (`P8-TSK-022`): readmitting it now would only be rejected
+     * again. A {@code 409}; it becomes readmissible once the standing batch is declined or
+     * repudiated.
+     */
+    CONFLICTING_BATCH_STANDS(
+            "settlement.ConflictingBatchStands",
+            409,
+            "A live settlement batch still holds this file's batch identity."),
+
+    /**
+     * The original is already readmitted (`P8-TSK-022`): a file is readmitted once —
+     * {@code UNIQUE (readmits_file_id)} for every writer. A {@code 409}; a later rejection of
+     * the readmission is itself readmissible.
+     */
+    FILE_ALREADY_READMITTED(
+            "settlement.FileAlreadyReadmitted",
+            409,
+            "This settlement file has already been readmitted.");
 
     private final String code;
     private final int status;

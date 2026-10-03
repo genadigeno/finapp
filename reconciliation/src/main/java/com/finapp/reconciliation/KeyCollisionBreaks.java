@@ -27,8 +27,13 @@ import lombok.RequiredArgsConstructor;
  * <p>An alias collision is recorded with no owning expectation (the first writer stands)
  * and raises nothing here — a break needs a subject that holds value. A collision recorded
  * after the expectation's earlier break was RESOLVED is suppressed by the any-status guard
- * below, not re-raised: the recurrence-after-resolution refinement is the sweep's
- * (`P8-TSK-013`), recorded at design.
+ * below, not re-raised. The recurrence-after-resolution refinement, given to the sweep
+ * (`P8-TSK-013`) at design, was not built: the sweep calls this leg unchanged, so a second
+ * collision on an expectation whose {@code DUPLICATE_INTERNAL} break is resolved raises
+ * nothing. *(Corrected 2026-10-01, `P8-DOC-001`: this read as though `P8-TSK-013` owned it.)*
+ *
+ * <p>The sweep runs the leg as ONE transaction under one correlation per batch of up to
+ * {@code limit} candidates, not a transaction per row.
  */
 @RequiredArgsConstructor
 public final class KeyCollisionBreaks {

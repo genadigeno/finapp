@@ -199,6 +199,32 @@ public interface SettlementBatchStore<T> {
     List<LineRow> linesOf(T unitOfWork, UUID batchId);
 
     /**
+     * One stored line's two digests (`P8-TSK-022`'s re-parse verification, ADR-0066 §8): which
+     * delivered record produced it, and which economic statement it is — the digests alone,
+     * never an amount or a reference.
+     */
+    record LineDigest(int lineNo, byte[] rawRecordSha256, byte[] canonicalFingerprint) {
+
+        public LineDigest {
+            rawRecordSha256 = rawRecordSha256.clone();
+            canonicalFingerprint = canonicalFingerprint.clone();
+        }
+
+        @Override
+        public byte[] rawRecordSha256() {
+            return rawRecordSha256.clone();
+        }
+
+        @Override
+        public byte[] canonicalFingerprint() {
+            return canonicalFingerprint.clone();
+        }
+    }
+
+    /** Every stored line of the file {@code fileId}, by line number — digests only. */
+    List<LineDigest> lineDigestsOf(T unitOfWork, UUID fileId);
+
+    /**
      * The conditional {@code PARSED → ACCEPTED} with the four acceptance facts in ONE
      * statement — the once-only trigger and the honesty {@code CHECK}s admit no other shape;
      * false when the batch already moved (another instance accepted or a decline won).
@@ -223,9 +249,10 @@ public interface SettlementBatchStore<T> {
             CorrelationId correlation);
 
     /**
-     * Every ACCEPTED batch's recognition entry id (`P8-TSK-009`) — the completeness
-     * verifier's second known-entry class: a recognition entry's every line is explained by
-     * the acceptance that posted it (ADR-0067 §9).
+     * Every ACCEPTED or REPUDIATED batch's recognition entry id (`P8-TSK-009`) — the
+     * completeness verifier's second known-entry class: a recognition entry's every line is
+     * explained by the acceptance that posted it (ADR-0067 §9). A repudiated batch's entry
+     * still stands, reversed (`P8-TSK-023`): its lines are explained by the same acceptance.
      */
     List<UUID> acceptedRecognitionEntries(T unitOfWork);
 
@@ -294,6 +321,98 @@ public interface SettlementBatchStore<T> {
      * the posting key; empty when the batch is not accepted. Lock-free: the fact is frozen.
      */
     Optional<java.time.LocalDate> acceptedOnOf(T unitOfWork, UUID batchId);
+
+    /**
+     * The business dates in {@code [from, to]} for which {@code sourceId} holds an ACCEPTED
+     * batch (`P8-TSK-021`): the daily pull worklist's other half — a date with one is received,
+     * never expected again. Lock-free.
+     */
+    java.util.Set<LocalDate> acceptedBusinessDates(
+            T unitOfWork, UUID sourceId, LocalDate from, LocalDate to);
+
+    /**
+     * The batch references among {@code refs} for which {@code sourceId} holds an ACCEPTED
+     * batch (`P8-TSK-021`) — a scheme cycle's report received, its cycle the batch's
+     * {@code external_batch_ref}. Lock-free.
+     */
+    java.util.Set<String> acceptedBatchRefs(
+            T unitOfWork, UUID sourceId, java.util.Collection<String> refs);
+
+    /**
+     * Each source's latest acceptance, the ACCEPTED edge's instant (`P8-TSK-021`,
+     * {@code finapp.settlement.source.silence}): a source missing here has never had a batch
+     * accepted. Lock-free.
+     */
+    java.util.Map<UUID, Instant> lastAcceptedAt(T unitOfWork);
+
+    /**
+     * One recognised batch as the provider-costs report reads it (`P8-TSK-024`, ADR-0072 §6):
+     * its identity, its source's code, its currency, its verdict ({@code ACCEPTED}, or
+     * {@code REPUDIATED} since), its stored {@code accepted_on} — the recognition's posting
+     * date — and the recognition entry its acceptance posted, empty when the posting was
+     * honestly omitted. Never an amount: the costs are the ledger's lines, read from the ledger.
+     */
+    record RecognisedBatch(
+            UUID batchId,
+            UUID sourceId,
+            String sourceCode,
+            CurrencyCode currency,
+            BatchStatus status,
+            LocalDate acceptedOn,
+            Optional<UUID> journalEntryId) {
+
+        public RecognisedBatch {
+            Objects.requireNonNull(batchId, "batchId must not be null");
+            Objects.requireNonNull(sourceId, "sourceId must not be null");
+            Objects.requireNonNull(sourceCode, "sourceCode must not be null");
+            Objects.requireNonNull(currency, "currency must not be null");
+            Objects.requireNonNull(status, "status must not be null");
+            Objects.requireNonNull(acceptedOn, "acceptedOn must not be null");
+            Objects.requireNonNull(journalEntryId, "journalEntryId must not be null");
+        }
+    }
+
+    /**
+     * Every batch ever accepted — {@code ACCEPTED} or {@code REPUDIATED} since, reports and bank
+     * statements alike — whose stored {@code accepted_on} falls in {@code [from, until)}, by
+     * acceptance date then id. A repudiated batch is here because its recognition still stands
+     * on its posting date; its reversal is a separate posting on the approval's date. Lock-free;
+     * bounded by the period.
+     */
+    List<RecognisedBatch> recognisedBetween(T unitOfWork, LocalDate from, LocalDate until);
+
+    // ----------------------------------------------------------- the repudiation (P8-TSK-023)
+
+    /**
+     * One batch as a repudiation reads it (`P8-TSK-023`, ADR-0065 §10): identity, verdict, the
+     * stored recognition entry WHATEVER the status — a repudiated batch's entry stands, now
+     * reversed — and the identity a reversal needs. Never an amount.
+     */
+    record RepudiableRow(
+            UUID id,
+            UUID fileId,
+            UUID sourceId,
+            BatchStatus status,
+            Optional<UUID> journalEntryId,
+            CurrencyCode currency,
+            LocalDate businessDate) {}
+
+    /** The batch as a repudiation reads it, or empty. Lock-free. */
+    Optional<RepudiableRow> repudiable(T unitOfWork, UUID batchId);
+
+    /**
+     * The conditional {@code ACCEPTED → REPUDIATED} — the row locked by the {@code UPDATE}
+     * itself — with its history row; false when the batch was not {@code ACCEPTED}, and then
+     * nothing is written. The acceptance facts are not in the statement: `V010`'s trigger keeps
+     * them frozen across the edge.
+     */
+    boolean markRepudiated(
+            T unitOfWork,
+            UUID batchId,
+            Actor actor,
+            Optional<String> reason,
+            Instant at,
+            CorrelationId correlation);
 
     /** The live unique refused an insert: another batch claimed the identity first. */
     final class LiveBatchConflict extends RuntimeException {

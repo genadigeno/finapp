@@ -3,6 +3,7 @@ package com.finapp.app.architecture;
 import static com.tngtech.archunit.lang.syntax.ArchRuleDefinition.classes;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatCode;
+import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.assertj.core.api.Assertions.catchThrowable;
 
 import com.tngtech.archunit.core.domain.JavaClass;
@@ -249,6 +250,24 @@ class NoFloatingPointMoneyRulesTest {
                     // Money arithmetic lives in PositionProof and folds through the kernel.
                     "com.finapp.app.telemetry.ReconciliationMetrics",
                     "com.finapp.app.telemetry.ReconciliationMetrics$Cached",
+                    // P8-TSK-021. The SAME case again, the SettlementFileMetrics shape: the
+                    // SILENCE of each source in whole SECONDS since its last accepted batch -
+                    // an Instant difference to the registry boundary, published through the
+                    // ToDoubleFunction Micrometer's Gauge imposes, NaN the sentinel for
+                    // unreadable or never accepted; the failure counter increments by one.
+                    // An age and a count, never an amount.
+                    "com.finapp.app.telemetry.SettlementPullMetrics",
+                    // P8-TSK-024. The SAME case again: the open breaks per type and severity
+                    // (counts) and the oldest open break's age in whole SECONDS per severity,
+                    // published through the ToDoubleFunction a Gauge imposes, NaN the sentinel
+                    // for unreadable. Counts and ages, never a value at issue (ADR-0072).
+                    "com.finapp.app.telemetry.BreakMetrics",
+                    "com.finapp.app.telemetry.BreakMetrics$Cached",
+                    // P8-TSK-024. The OutboxRelaySchedule case: a run's outcome counts (longs)
+                    // published through Counter.increment(double), the only instrument
+                    // Micrometer offers; durations through Timer.record(Duration). Counts and
+                    // durations, never an amount.
+                    "com.finapp.app.telemetry.ReconciliationOutcomeMeters",
                     // P2-TSK-001. The SAME case again, not a new one: counts of published,
                     // failed and dead-lettered events - ints out of RelayPollResult - published
                     // through Counter.increment(double), the only instrument Micrometer offers.
@@ -330,6 +349,65 @@ class NoFloatingPointMoneyRulesTest {
                             "reading or writing a floating-point field is the first step of a "
                                 + "floating-point computation, and is the one surface neither a "
                                 + "declaration nor a call would show");
+
+    /**
+     * ADR-0072 point 1's static rank (`P8-TSK-024`): an exempt class publishes counts, ages and
+     * verdicts, so it never depends on {@code Money} or {@code MoneyColumns} - the two types an
+     * amount travels in. A {@code CurrencyCode} stays permitted: a currency is a tag value, a
+     * {@code Money} is not. The known edge, stated in the ADR rather than hidden: a store method
+     * returning a monetary {@code long} passes this rule, which is why each exemption's argument
+     * names what it counts and the review reads it against its query.
+     */
+    @ArchTest
+    static final ArchRule noExemptClassDependsOnMoney = exemptClassesStayOffMoney(EXEMPT_CLASSES);
+
+    private static ArchRule exemptClassesStayOffMoney(Set<String> exempt) {
+        return classes()
+                .that(new com.tngtech.archunit.base.DescribedPredicate<JavaClass>("are exempted") {
+                    @Override
+                    public boolean test(JavaClass javaClass) {
+                        return exempt.contains(javaClass.getFullName());
+                    }
+                })
+                .should(new ArchCondition<JavaClass>("depend on no Money and no MoneyColumns") {
+                    @Override
+                    public void check(JavaClass javaClass, ConditionEvents events) {
+                        javaClass.getDirectDependenciesFromSelf().stream()
+                                .map(dependency -> dependency.getTargetClass().getFullName())
+                                .filter(MONEY_TYPES::contains)
+                                .distinct()
+                                .forEach(target -> events.add(SimpleConditionEvent.violated(
+                                        javaClass,
+                                        javaClass.getSimpleName() + " is exempted from the"
+                                                + " floating-point rule yet depends on " + target
+                                                + " - an exempt class publishes counts, never"
+                                                + " an amount (ADR-0072)")));
+                    }
+                })
+                .because("a metric answers how many and how old - an amount is an audited"
+                        + " report's, never a series' (ADR-0072, INV-AUD-02)");
+    }
+
+    /** The types an amount travels in. */
+    private static final Set<String> MONEY_TYPES =
+            Set.of("com.finapp.sharedkernel.money.Money",
+                    "com.finapp.platform.money.MoneyColumns");
+
+    @Test
+    @DisplayName("ADR-0072's static rank rejects an exempt class that reaches Money, and passes"
+            + " one that counts")
+    void theStaticRankHasTeeth() {
+        JavaClasses violating =
+                new ClassFileImporter().importClasses(ExemptGaugeOverMoney.class);
+        assertThatThrownBy(() -> exemptClassesStayOffMoney(
+                        Set.of(ExemptGaugeOverMoney.class.getName())).check(violating))
+                .isInstanceOf(AssertionError.class)
+                .hasMessageContaining("ExemptGaugeOverMoney");
+        JavaClasses clean = new ClassFileImporter().importClasses(ExemptGaugeOverCounts.class);
+        assertThatCode(() -> exemptClassesStayOffMoney(
+                        Set.of(ExemptGaugeOverCounts.class.getName())).check(clean))
+                .doesNotThrowAnyException();
+    }
 
     // ---------------------------------------------------------------------
     // Teeth.
@@ -692,6 +770,22 @@ class NoFloatingPointMoneyRulesTest {
     static final class AccessesAFloatingPointField {
         long apply(long amount) {
             return (long) (amount * MutableRateHolder.rate);
+        }
+    }
+
+    /** A planted violation of ADR-0072's static rank: a "gauge" reading an amount. */
+    @SuppressWarnings("unused")
+    static final class ExemptGaugeOverMoney {
+        long read(com.finapp.sharedkernel.money.Money balance) {
+            return balance.minorUnits();
+        }
+    }
+
+    /** What an exempt class may read: a count and a currency. */
+    @SuppressWarnings("unused")
+    static final class ExemptGaugeOverCounts {
+        long read(long openItems, com.finapp.sharedkernel.money.CurrencyCode currency) {
+            return currency == null ? 0 : openItems;
         }
     }
 

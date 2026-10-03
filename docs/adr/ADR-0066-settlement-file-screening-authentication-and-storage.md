@@ -1,6 +1,6 @@
 # ADR-0066 — Raw settlement files are screened at the door, authenticated by pull credential or second-person attestation, and retained encrypted in PostgreSQL behind a port
 
-Status: Proposed (2026-09-28, the Phase 7 → 8 transition)
+Status: Accepted (2026-10-01, `P8-DOC-001` — read against the code and corrected first)
 Date: 2026-09-28
 Phase: 8
 Context: Settlement · Reconciliation · Security
@@ -56,8 +56,11 @@ Finally, none of the platform's existing ciphers (`EvidenceCipher`, `PayoutEvide
 decrypts cleanly wherever it is placed; only the whole-payload checksum notices a substitution.
 A settlement file is stored in chunks, so a chunk's position is part of what must be proven.
 
-Until Phase 8's first task lands, nothing in this ADR is implemented; every statement is the
-decided design, corrected by the tasks that build it.
+The whole decision is built (`P8-TSK-002`, `-003`, `-008`, `-009`, `-016`, `-017`, `-018`, `-021`
+and `-022`; settlement `V002`–`V009`), as the Follow-up records task by task. Where a task decided
+a question this ADR left open, or built it differently, the point says so in a dated note.
+*(This read "Until Phase 8's first task lands, nothing in this ADR is implemented" until
+`P8-DOC-001`, 2026-10-01.)*
 
 ## Decision
 
@@ -68,7 +71,7 @@ decided design, corrected by the tasks that build it.
    |---|---|---|---|
    | `PULL` | The platform: `SettlementPullSchedule`, or an operator's `POST /v1/operator/settlement/sources/{code}/fetch` under `SETTLEMENT_INGEST` (audited `settlement.SettlementFetchRequested`) | The source's own confined credential | Accepted once parsed |
    | `UPLOAD` | A person holding `SETTLEMENT_INGEST`: `POST /v1/operator/settlement/files` (source code, declared business date, base64 content) → `202 {fileId, status, duplicateOf?}` | A **second** person holding `SETTLEMENT_INGEST`, distinct from the uploader, attests it (point 2) | Inert until attested |
-   | `READMISSION` | A person holding `RECONCILIATION_ADMINISTER`, reasoned: `POST /v1/operator/settlement/files/{id}/readmission` | Inherited from the original, whose checksum it shares, when the original was pulled or attested; otherwise a second person's attestation of the readmission itself (point 8) | Accepted when the original was pulled or attested, or once the readmission is attested |
+   | `READMISSION` | A person holding `RECONCILIATION_ADMINISTER`, reasoned: `POST /v1/operator/settlement/files/{id}/readmission` | Inherited from the original, whose checksum it shares, when the original was pulled or attested and was not `DECLINED` (a declined original passes nothing on); otherwise a second person's attestation of the readmission itself, distinct from every submitter along its chain (point 8) | Accepted when it inherits, or once the readmission is attested |
 
    The door works in a fixed order: the source is known and `ACTIVE` (`settlement.SourceUnknown`,
    `settlement.SourceRetired`); the size bounds hold (point 4); the screen passes (point 3); the
@@ -85,7 +88,9 @@ decided design, corrected by the tasks that build it.
    pull reads bytes that move money over a confined credential, so the guard is extended to it
    (`P8-TSK-021`). A pull source whose URL is neither `https` nor `sftp` off loopback refuses
    startup the same way. The simulated sources stay on loopback, as every simulated provider
-   does.
+   does. *(As built by `P8-TSK-021`: only HTTP collectors exist, so the HTTP adapter refuses any
+   non-HTTP scheme at construction. An `sftp` source URL passes the guard and then fails startup
+   at the adapter, so pulls are `https`-only off loopback until an `sftp` collector is built.)*
 
    Push delivery (a counterparty-signed callback, the webhook door's shape) is deferred.
 
@@ -139,7 +144,10 @@ decided design, corrected by the tasks that build it.
      is stored and then rejected by the parse leg, because it is the evidence of a corrupt
      delivery. A dirty one is refused.
    - Until P8-TSK-008 ships the first format, P8-TSK-002's door runs the conservative byte-level
-     screen alone.
+     screen alone. *(Historical: every declared source's format now has its field-class screen,
+     `SIM_PSP_CSV` (`P8-TSK-008`), `SIM_STATEMENT_TAGGED` (`-016`), `SIM_SCHEME_JSON` (`-017`) and
+     `SIM_PAYOUT_CSV` (`-018`); the byte-level screen remains the fallback for bytes that do not
+     parse.)*
    - What the canonical records keep is bounded as well. `settlement.line` holds types,
      directions, amounts, dates and fingerprints. `settlement.line_reference` holds typed
      references (all `CONFIDENTIAL`), each shape-checked, with bank-identifier and alias shapes
@@ -184,7 +192,7 @@ decided design, corrected by the tasks that build it.
    |---|---|---|
    | The same bytes from the same source, by any channel, ten times | `UNIQUE (source_id, content_sha256) WHERE readmits_file_id IS NULL` | Each loser appends a `DUPLICATE` `file_receipt` against the existing row and is answered with it (`duplicateOf`). Nothing else is written |
    | The same upload retried | The idempotency record under `settlement.upload:<actorType>:<actorId>`, per principal from birth, committed with the receive | Replayed; the same key with a different body is a 409 (`INV-IDEM-03`) |
-   | Different bytes declaring a live batch, or a statement sequence already accepted | The live-batch uniques on `settlement.batch` (ADR-0065) | `REJECTED` (`CONFLICTING_BATCH`): retained, alerted, never applied; readmissible once the conflicting batch is `REPUDIATED` (point 8) |
+   | Different bytes declaring a live batch, or a statement sequence already accepted | The live-batch uniques on `settlement.batch` (ADR-0065) | `REJECTED` (`CONFLICTING_BATCH`): retained, alerted, never applied; readmissible once no live batch holds the identity it declares (the conflicting batch `REPUDIATED`, or the standing file declined), refused `settlement.ConflictingBatchStands` while one does (point 8) |
    | The same line twice, in one file or across files | `canonical_fingerprint`, indexed and deliberately not unique | Both kept; the second becomes `DUPLICATE_EXTERNAL` at matching (ADR-0068, ADR-0069) |
 
    A rejected or declined file keeps its content address. Re-delivering its bytes is a duplicate
@@ -251,7 +259,12 @@ decided design, corrected by the tasks that build it.
    - **The existing sweep and needle are widened.** `PaymentEndpointDatabaseTest`'s column sweep
      and `PayByBankDatabaseTest`'s needle extend over both new schemas and a settlement flow. The
      needle rides a bank statement whose free text carries an international account identifier
-     shape, and the delivery is refused.
+     shape, and the delivery is refused. *(As built, `P8-TSK-016`: the needle is its own test,
+     `BankStatementCashDatabaseTest#theIbanNeedleReachesNoSink`. The statement is refused at the
+     door with metadata only, and the needle is asserted absent from the log output, the audit
+     records, the outbox, `refused_delivery`, `line_reference` and every metric tag. The two
+     payments tests were not widened, and no every-column sweep of the `settlement` and
+     `reconciliation` schemas exists; `P8-DOC-001` found the gap.)*
 
 8. **The format version is recorded on every file, and a wrongly rejected file is readmitted.**
    - Every file and batch records `format_id` and `format_version`. Each version is frozen by
@@ -261,7 +274,12 @@ decided design, corrected by the tasks that build it.
      defect. It is also for a `CONFLICTING_BATCH` original whose conflicting batch has since been
      `REPUDIATED` (`P8-TSK-023`). That rejection was right when it was made, and the repudiation
      removed its ground. This is how a genuine file refused beside a fabricated batch is
-     recovered. Any other file is refused with `settlement.FileNotRejected`. A readmission is a new
+     recovered. Any other file is refused with `settlement.FileNotRejected`. *(As built by
+     `P8-TSK-022`: a `CONFLICTING_BATCH` original is judged by its conflict, not by the word
+     `REPUDIATED`. Its bytes are re-parsed in memory and it is admitted once no live batch holds
+     the identity they declare, whether the standing batch was repudiated or its file declined;
+     while one stands it is refused `settlement.ConflictingBatchStands`, and the parse leg's live
+     unique stays the arbiter.)* A readmission is a new
      row naming the original (`readmits_file_id UNIQUE`). It is keyed, reasoned and audited
      (`settlement.SettlementFileReadmitted`), and parsed under the current format version.
    - Its bytes are the original's plaintext: decrypted, verified against the checksum, screened
@@ -270,20 +288,33 @@ decided design, corrected by the tasks that build it.
      screen refuses the bytes, the readmission is refused like any other delivery, and the
      original stands.
    - The readmission inherits authentication because its checksum equals the original's, when
-     the original was pulled or attested. Then it is accepted like its original.
+     the original was pulled or attested (or is itself a readmission that inherited) and was not
+     `DECLINED`. Then it is accepted like its original. A `DECLINED` original passes nothing on,
+     however it was authenticated: declining is a person's judgement against the file
+     (settlement `V009`, `settlement.file_authenticates_readmission`).
    - **An unattested original passes no authentication on.** An upload the parse leg rejected
      before anyone attested it would otherwise never be accepted after readmission. Its
      readmission is inert until a second person holding `SETTLEMENT_INGEST` attests the
      readmission itself, exactly as for an upload (point 2). The attester must be distinct from
-     the readmitter and from the original's uploader, so readmission is never a way round the
-     second person. `P8-TSK-022` holds this at the domain and at the database, as point 2 does
-     for uploads.
-   - **A declined upload is not readmitted.** Declining is a person's judgement, not our
+     every submitter along the readmission's chain (the readmitter, every earlier readmitter
+     and the original's uploader), so readmission is never a way round the second person.
+     `P8-TSK-022` holds this at the domain and at the database, as point 2 does for uploads:
+     settlement `V009`'s trigger fires on insert and update, judging a row by its original's id,
+     and `settlement.file_inherits_authentication` is the one function the trigger, the accept
+     leg's eligibility and the attestation's domain rank all read. *(This read "distinct from the
+     readmitter and from the original's uploader" until `P8-DOC-001`, 2026-10-01; `P8-TSK-022`
+     widened it to the whole chain.)*
+   - ~~**A declined upload is not readmitted.**~~ Declining is a person's judgement, not our
      validation. A wrongly declined file is recovered by the counterparty's re-issue. A
      byte-identical re-issue, though, meets the declined file's content address and is answered
      as its duplicate. Whether readmission extends to declined uploads is recorded for P8-TSK-022
      to decide, not decided here. If it does, such a readmission inherits no authentication and
      must itself be attested, under the rule for an unattested original above.
+     *(Decided by `P8-TSK-022`, 2026-10-01, and recorded at `P8-DOC-001`: **a `DECLINED` file is
+     readmissible.** It inherits nothing and must itself be attested by a person distinct from
+     every submitter along its chain. Otherwise a mistaken decline is a dead end, because a
+     byte-identical re-issue meets the declined file's content address. The heading's "is not
+     readmitted" is superseded.)*
    - The **re-parse verification** (P8-TSK-022) recomputes a stored file's fingerprints under its
      recorded version and compares them with the stored lines. It never replaces lines.
 
@@ -298,8 +329,9 @@ decided design, corrected by the tasks that build it.
      (folded with `Money`, never SQL `SUM`), or up to 100 `ingestion_error` rows plus `REJECTED`
      with one of `MALFORMED`, `CONTROL_TOTAL_MISMATCH`, `UNKNOWN_CURRENCY`, `SCALE_MISMATCH`,
      `UNSUPPORTED_FORMAT` or `CONFLICTING_BATCH`. A rejection publishes
-     `settlement.SettlementFileRejected` (fileId, sourceCode, rejectionCode), audited
-     acting-only. Acceptance is one transaction too (ADR-0065), and the matcher reads only
+     `settlement.SettlementFileRejected` (fileId, sourceId, rejectionCode; `sourceId` rather than
+     the drafted `sourceCode`, because an event payload carries identifiers and enumerated names
+     only), audited acting-only. Acceptance is one transaction too (ADR-0065), and the matcher reads only
      `ACCEPTED` batches. A partially corrupt file cannot drive half a settlement.
    - A parser exception is our defect, not the counterparty's. It leaves the file `RECEIVED`,
      with `parse_failures + 1` and `next_parse_at` backed off, visible as a stuck file on
@@ -318,7 +350,7 @@ decided design, corrected by the tasks that build it.
     | The same file received ten times, or by upload and pull at once | The content unique; the per-principal idempotency record | Converges, and writes a `DUPLICATE` receipt |
     | Concurrent parse of one file | `FOR UPDATE SKIP LOCKED` on `RECEIVED` files whose `next_parse_at` has passed; conditional `RECEIVED → PARSED`; `UNIQUE (file_id, line_no)` | Skips |
     | Two attesters, or attest against decline | The file row `FOR UPDATE`; the conditional `NULL → value`; the distinctness `CHECK` | 409, or converges |
-    | Ten instances pulling one report | An idempotent GET; the conditional renewal of `pull_permit`, strictly advancing on every renewal (the send-permit shape), paces the herd; the content unique dedupes | No duplicate file |
+    | Ten instances pulling one report | An idempotent GET; the `pull_permit` upsert paces the herd: the schedule's claim is windowed (admitted only past the window since the last attempt), an operator's fetch renews unconditionally, and every renewal advances the instant strictly (the send-permit shape; settlement `V008`'s trigger refuses a step back for every writer); the content unique dedupes | No duplicate file |
 
     No correctness here depends on process memory, a leader, a lease clock or Kafka.
 
@@ -339,7 +371,8 @@ decided design, corrected by the tasks that build it.
     **Owner decision O3** (refuse at the door rather than retain PII-bearing files verbatim) is
     settled on this ADR's recommendation at the transition, recorded as a transition decision the
     owner may revisit. So is **O6**: if scope must shrink, pull acquisition (P8-TSK-021) is the
-    first cut, and upload with attestation alone satisfies `INV-SET-07`.
+    first cut, and upload with attestation alone satisfies `INV-SET-07`. *(Never exercised:
+    `P8-TSK-021` was kept and built.)*
 
 ## Alternatives Considered
 
@@ -422,8 +455,8 @@ Negative:
 - A shape the screen misses rests encrypted and cannot be removed in Phase 8. Nothing is deleted
   (`INV-HIST-01`), and the PII-deletion tension is ADR-0036's, owned by Phase 15. The field
   classes, the golden files and the needle are the mitigation.
-- A byte-identical re-issue of a wrongly declined upload meets the content address (point 8;
-  recorded for P8-TSK-022).
+- A byte-identical re-issue of a wrongly declined upload meets the content address (point 8).
+  *(Answered by `P8-TSK-022`: a declined file is readmissible, under a fresh attestation.)*
 - The bytes grow the database and its backups. The triggers must be watched, and
   `PHASE_8_PLAN.md`'s risk register carries them.
 
@@ -518,9 +551,61 @@ ceiling), ADR-0046 (no connection across a pull), ADR-0008 (the collector SPI).
   though merchant admits 128; no quoting, so a comma in the beneficiary rejects the file whole.
 - M8.7: `P8-TSK-021` (pull acquisition, the four credentials, `pull_permit`, source silence, and
   `ProviderTransportGuard` extended to every pull source's URL (point 1); the first deferral
-  candidate) and `P8-TSK-022` (readmission, including the attested readmission of an unattested
-  original and the readmission of a `CONFLICTING_BATCH` original whose conflicting batch is
-  `REPUDIATED`; the re-parse verification; and the declined-upload question of point 8).
+  candidate, kept and built) and `P8-TSK-022` (readmission, including the attested readmission
+  of an unattested original and the readmission of a `CONFLICTING_BATCH` original once its
+  conflict no longer stands; the re-parse verification; and the declined-upload question of
+  point 8, decided). Both are implemented, below.
+- `P8-TSK-021` — **implemented** (2026-10-01): point 1's `PULL` channel. The
+  `SettlementReportCollector` SPI in `settlement` and one `app` HTTP adapter per pulled source,
+  each over its own confined credential (`FINAPP_SETTLEMENT_PSP_REPORT_KEY`,
+  `_SCHEME_REPORT_KEY`, `_PAYOUT_REPORT_KEY`, `_BANK_STATEMENT_KEY`), present only when its URL is
+  configured; `ProviderTransportGuard` gained the source-URL list, admitting `https` or `sftp`
+  off loopback and plain transport only to loopback; `SettlementPull` takes the permit in its
+  own transaction, fetches holding no connection, and receives through the one door with
+  `received_via = PULL`, audited `settlement.SettlementFileReceivedByPull`; the accept leg's
+  existing eligibility accepts it without attestation (`INV-SET-07`). `pull_permit` (settlement
+  `V008`) paces the herd — point 10's row — and `SettlementPullSchedule` derives its worklist
+  from stored rows. `POST /v1/operator/settlement/sources/{code}/fetch` answers what the pull
+  came to, audited `settlement.SettlementFetchRequested` — a pull that throws recorded `FAILED`
+  before it propagates. `finapp.settlement.source.silence` and `finapp.settlement.pull.failure`
+  are published. **Only HTTP is built**: the guard admits `sftp` as this ADR allows, but no
+  `sftp` collector exists, so the HTTP adapter refuses any other scheme at construction — an
+  `sftp` source URL fails startup rather than every pull (the tests agent's find). The scheme's
+  cycle worklist walks every keyset page of payments' cycle reads, never a fixed first page
+  (the gate's find).
+- `P8-TSK-022` — **implemented** (2026-10-01): point 8's readmission and re-parse verification.
+  `FileReadmission` locks the original, admits only a `REJECTED` file whose verdict is our
+  validation's (`MALFORMED`, `CONTROL_TOTAL_MISMATCH`, `UNKNOWN_CURRENCY`, `SCALE_MISMATCH`,
+  `UNSUPPORTED_FORMAT`), `DECLINED`, or `CONFLICTING_BATCH` once its conflict no longer stands,
+  and refuses every other file `settlement.FileNotRejected`. **Decided here, point 8's recorded
+  question: a `DECLINED` file IS readmissible**, inheriting nothing - a mistaken decline is
+  otherwise a dead end, since a byte-identical re-issue meets the declined file's content
+  address. **`CONFLICTING_BATCH` is judged by the conflict, not by the word `REPUDIATED`**: the
+  original's bytes are re-parsed in memory and admitted only when no live batch holds the
+  identity they declare (`settlement.ConflictingBatchStands` while one does); repudiation
+  (`P8-TSK-023`) is one way to free it, a decline of the standing file another, and the parse
+  leg's live unique stays the arbiter. The readmission is a NEW row (`received_via =
+  READMISSION`, `readmits_file_id`), its bytes the original's - verified against the stored
+  checksum, screened by the door's screen for the source's CURRENT format, re-encrypted under
+  the new id - born `RECEIVED` with the reason on its birth event, keyed per principal
+  (`settlement.readmission:`), audited `settlement.SettlementFileReadmitted`; a screen finding
+  is a refusal RESULT committing its metadata row and audit (point 4), and a file is readmitted
+  once (`settlement.FileAlreadyReadmitted`, `UNIQUE (readmits_file_id)` beneath the original's
+  row lock). **Two widenings of point 8's text, each stricter.** The attester of a readmission
+  that inherits nothing differs from EVERY submitter along its chain - the readmitter, every
+  earlier readmitter, the original's uploader - not only from the readmitter and the uploader;
+  and settlement `V009`'s trigger fires on INSERT as well as UPDATE, judging a row by its
+  ORIGINAL's id so that no writer can insert a readmission already attested by a submitter. One
+  SQL function, `settlement.file_inherits_authentication`, is what the trigger refuses by, what
+  the accept leg's eligibility claims by and what the attestation's domain rank reads: the
+  three ranks cannot drift apart. The re-parse verification (`FileVerification`, `POST
+  .../files/{id}/verification` under `RECONCILIATION_INVESTIGATE`, reasoned, audited
+  `settlement.SettlementFileVerified` per access - `INV-REC-10`) re-parses the stored bytes
+  under the RECORDED format version and compares each line's fingerprint and fields with the
+  stored lines, replacing nothing: `MATCHES`, `DIFFERS` (naming the first differing line),
+  `NOT_PARSED`, `FORMAT_VERSION_UNAVAILABLE` (this build compiles no such version - the
+  version discipline's honest answer), and `CORRUPT` (the stored bytes failed authenticated
+  decryption or their checksum; audited `FAILED`, nothing compared or served).
 - `P8-TST-001` delivers every file twice, by upload with attestation and by racing pulls, out of
   order and late.
 - `X-TSK-010`: bind associated data in `EvidenceCipher`, `PayoutEvidenceCipher`, `DocumentCipher`
@@ -545,8 +630,8 @@ ceiling), ADR-0046 (no connection across a pull), ADR-0008 (the collector SPI).
   (`POST .../files/{id}/content-reads {reason}` under `RECONCILIATION_INVESTIGATE`, one
   `settlement.SettlementFileContentRead` record per read, a verification failure audited
   `FAILED` and serving nothing) with the metadata reads beside it, plus the
-  `finapp.settlement.file.pending`/`.age` gauges of point 2's "visibly". Pull is
-  `P8-TSK-021`'s, readmission `P8-TSK-022`'s. `P8-TSK-008` (2026-09-29) delivered the format
+  `finapp.settlement.file.pending`/`.age` gauges of point 2's "visibly". Pull was
+  `P8-TSK-021`'s and readmission `P8-TSK-022`'s, each recorded above. `P8-TSK-008` (2026-09-29) delivered the format
   and parse halves: the `SettlementFormat` SPI with `SIM_PSP_CSV` v1 frozen by its golden
   file (point 8's version discipline), point 3's field-class screen filling the door's seam —
   reference fields by shape, a Luhn-valid network transaction id never tested as free text, a
@@ -561,6 +646,9 @@ ceiling), ADR-0046 (no connection across a pull), ADR-0008 (the collector SPI).
   the live key freed). The event's payload carries `sourceId` rather than the drafted
   `sourceCode`: `EventPayload`'s vocabulary is identifiers and enumerated names
   (`INV-AUD-02`), and a dotted source code is neither. `P8-TSK-009` (2026-09-29) delivered point 9's acceptance half and point 2's eligibility: an upload moves money only past its second person (the claim query's predicate, the domain's re-read, `V002`'s `CHECK`s), a pull by its channel; the gapless `source_sequence` under the source row's lock with `UNIQUE (source_id, source_sequence)` behind it; `SOURCE_RETIRED` rejecting RETAINED under that same lock; and settlement `V004` completing the file machine.
-  Everything else here is the decided design, corrected by the tasks that build it.
-- The Phase 8 review reads this ADR against the code before accepting it (`P8-DOC-001`, the
-  `P7-DOC-001` precedent).
+  With `P8-TSK-016`, `-017`, `-018`, `-021` and `-022` above, the whole decision is built.
+  *(This closed "Everything else here is the decided design" until `P8-DOC-001`.)*
+- The Phase 8 review (`P8-DOC-001`, the `P7-DOC-001` precedent) read this ADR against the code
+  before accepting it. It corrected the readmission rules of points 1, 5 and 8 to `P8-TSK-022`'s
+  decisions, the pull transport and permit as built, the needle's home, the rejection event's
+  payload, and the stale implementation records.

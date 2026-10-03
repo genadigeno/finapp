@@ -6,6 +6,7 @@ import java.util.ArrayList;
 import java.util.EnumSet;
 import java.util.List;
 import java.util.Objects;
+import java.util.Optional;
 import java.util.Set;
 
 /**
@@ -17,9 +18,14 @@ import java.util.Set;
  *
  * <p><strong>The parse-level faults</strong> are switches, one per defect family the parse
  * leg rejects, so a later suite (`P8-TSK-009`…) can drive each rejection over HTTP from an
- * otherwise-genuine report. The matching-level faults (amount, fee and date deltas) land
- * with their consumers, by the backlog's own scope. {@code SimulatedSettlementReportsTest}
- * pins that each fault produces exactly the defect it claims.
+ * otherwise-genuine report. The matching-level faults are stated as the lines themselves
+ * (`P8-TST-001`): an amount or fee delta is a line whose amount or fee differs from the record,
+ * a late date is a line {@linkplain Line#settledOn settled} past its window, a duplicate is the
+ * same line twice, a counterparty correction is an {@linkplain Line#adjustment adjustment} line
+ * naming its original, and a wrong currency is a whole report constructed in another currency
+ * (the header's currency is every line's - the line-level {@link Fault#WRONG_CURRENCY} is a
+ * parse defect, kept as one). {@code SimulatedSettlementReportsTest} pins that each fault
+ * produces exactly the defect it claims.
  */
 public final class SimulatedSettlementReports {
 
@@ -35,7 +41,11 @@ public final class SimulatedSettlementReports {
         IBAN_IN_FREE_TEXT
     }
 
-    /** One reported transaction, as the payments tables state it. */
+    /**
+     * One reported transaction, as the payments tables state it. An empty
+     * {@code settlementDate} renders its column empty, so the line settles on the report's own
+     * business date.
+     */
     public record Line(
             String providerType,
             String amount,
@@ -43,7 +53,47 @@ public final class SimulatedSettlementReports {
             String primaryRef,
             String acquirerRef,
             String ourRef,
-            String descriptor) {
+            String descriptor,
+            Optional<LocalDate> settlementDate) {
+
+        public Line {
+            Objects.requireNonNull(settlementDate, "settlementDate must not be null");
+        }
+
+        /** A line settling on the report's own business date. */
+        public Line(
+                String providerType,
+                String amount,
+                String fee,
+                String primaryRef,
+                String acquirerRef,
+                String ourRef,
+                String descriptor) {
+            this(providerType, amount, fee, primaryRef, acquirerRef, ourRef, descriptor,
+                    Optional.empty());
+        }
+
+        /** The same line settled on {@code date} - the late-date fault, past its window. */
+        public Line settledOn(LocalDate date) {
+            return new Line(providerType, amount, fee, primaryRef, acquirerRef, ourRef,
+                    descriptor, Optional.of(date));
+        }
+
+        /** The same record with no fee of its own - a repeated line, its fee not repeated. */
+        public Line withoutFee() {
+            return new Line(providerType, amount, "", primaryRef, acquirerRef, ourRef,
+                    descriptor, settlementDate);
+        }
+
+        /**
+         * A counterparty correction ({@code COUNTERPARTY_ADJUSTMENT}) naming its original
+         * line's PSP reference, signed from the platform's view: the claw-back of an
+         * over-payment is negative.
+         */
+        public static Line adjustment(String originalRef, String signedAmount) {
+            return new Line("ADJUSTMENT", signedAmount, "", originalRef, "", "",
+                    "Counterparty correction");
+        }
 
         public static Line capture(
                 String pspCaptureRef, String acquirerRef, String ourRef, String amount,
@@ -121,7 +171,9 @@ public final class SimulatedSettlementReports {
             report.append("D,").append(recordSeq).append(',').append(line.providerType())
                     .append(',').append(amount).append(',').append(line.fee())
                     .append(',').append(lineCurrency).append(',').append(businessDate)
-                    .append(",,,").append(line.primaryRef()).append(',')
+                    .append(',')
+                    .append(line.settlementDate().map(LocalDate::toString).orElse(""))
+                    .append(",,").append(line.primaryRef()).append(',')
                     .append(line.acquirerRef()).append(",,").append(line.ourRef())
                     .append(',').append(descriptor).append('\n');
             netMinor += minorOf(line.amount()) - (line.fee().isEmpty() ? 0

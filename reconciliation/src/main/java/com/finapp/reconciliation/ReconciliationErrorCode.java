@@ -124,7 +124,94 @@ public enum ReconciliationErrorCode implements ErrorCode {
     GAIN_NOT_YET_ELIGIBLE(
             "reconciliation.GainNotYetEligible",
             422,
-            "The suspense item is not yet old enough to be recognised as a gain.");
+            "The suspense item is not yet old enough to be recognised as a gain."),
+
+    /** No rule set version has this id — unknown and malformed alike (`P8-TSK-022`). */
+    RULE_SET_NOT_FOUND(
+            "reconciliation.RuleSetNotFound",
+            404,
+            "No matching rule set version has this identifier."),
+
+    /**
+     * An approval or rejection of a version no longer {@code PROPOSED} (`P8-TSK-022`,
+     * ADR-0068 §8): it was activated, rejected or retired meanwhile.
+     */
+    RULE_SET_NOT_PENDING(
+            "reconciliation.RuleSetNotPending",
+            409,
+            "This rule set version is no longer awaiting a decision."),
+
+    /** The proposer activating their own version (`P8-TSK-022`, INV-AUD-04). */
+    RULE_SET_ACTIVATION_BY_SAME_ACTOR(
+            "reconciliation.RuleSetActivationBySameActor",
+            409,
+            "A rule set version is activated by someone other than its proposer."),
+
+    /** A second proposal while one stands for the source (`P8-TSK-022`). */
+    RULE_SET_PROPOSAL_PENDING(
+            "reconciliation.RuleSetProposalPending",
+            409,
+            "A proposed rule set version already awaits a decision for this source."),
+
+    /** A proposal whose content is not a well-formed version (`P8-TSK-022`). */
+    RULE_SET_INVALID(
+            "reconciliation.RuleSetInvalid",
+            422,
+            "The proposed rule set version is not well formed."),
+
+    /**
+     * A tolerance on anything but a fee's pinned terms or a date (`P8-TSK-022`, INV-REC-08):
+     * an amount tolerance would absorb value without an entry.
+     */
+    TOLERANCE_NOT_PERMITTED(
+            "reconciliation.ToleranceNotPermitted",
+            422,
+            "A tolerance may compare a fee against its terms or a date, never an amount."),
+
+    /** No declared settlement source has this code (`P8-TSK-022`'s reprocess door). */
+    SOURCE_NOT_FOUND(
+            "reconciliation.SourceNotFound",
+            404,
+            "No declared settlement source has this code."),
+
+    /** A reprocess request while the source's one open REPROCESS run stands. */
+    REPROCESSING_IN_PROGRESS(
+            "reconciliation.ReprocessingInProgress",
+            409,
+            "A reprocessing run is already open for this source."),
+
+    /** A requeue of a run that is not {@code BLOCKED} (`P8-TSK-022`). */
+    RUN_NOT_BLOCKED(
+            "reconciliation.RunNotBlocked",
+            409,
+            "Only a blocked reconciliation run can be requeued."),
+
+    /**
+     * No settlement batch has this id (`P8-TSK-023`): the repudiation door's named 404, as every
+     * reconciliation operator door names its own — unknown and malformed ids one answer.
+     */
+    BATCH_NOT_FOUND(
+            "reconciliation.BatchNotFound",
+            404,
+            "No settlement batch has this identifier."),
+
+    /** The batch is not ACCEPTED: only accepted evidence is repudiated (`P8-TSK-023`). */
+    BATCH_NOT_REPUDIABLE(
+            "reconciliation.BatchNotRepudiable",
+            409,
+            "Only an accepted settlement batch can be repudiated."),
+
+    /** An item of the batch is still PENDING: its run disposes of every item first. */
+    BATCH_NOT_DISPOSED(
+            "reconciliation.BatchNotDisposed",
+            409,
+            "The batch's run has not yet disposed of every item."),
+
+    /** A shape this phase does not compensate, refused before anything is written. */
+    REPUDIATION_NOT_SUPPORTED(
+            "reconciliation.RepudiationNotSupported",
+            409,
+            "This batch's repudiation needs a compensation this phase does not provide.");
 
     private final String code;
     private final int status;

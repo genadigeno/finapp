@@ -16,4 +16,9 @@ public interface ReceptionOutcomeObserver {
 
     /** A delivery was refused at the door — alertable from the first file (ADR-0066 §4). */
     void refused(String sourceCode, RefusalReason reason);
+
+    /** Where the door records its {@code settlement.receive} span (`P8-TSK-024`). */
+    default com.finapp.platform.telemetry.Spans spans() {
+        return com.finapp.platform.telemetry.Spans.NONE;
+    }
 }

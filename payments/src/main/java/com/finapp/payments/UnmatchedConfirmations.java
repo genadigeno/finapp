@@ -90,8 +90,8 @@ public final class UnmatchedConfirmations {
      * The expectation-opening seam (`P8-TSK-005`, ADR-0067 §2): the parking's clearing line
      * opens its {@code UNMATCHED_CONFIRMATION} expectation in the parking's transaction, the
      * claim winner only - the scheme's report reaches the value as an expectation, the first
-     * step in adopting Phase 7's suspense (the CREDIT suspense item and its break are
-     * `P8-TSK-020`'s, through this same call). Appended last.
+     * step in adopting Phase 7's suspense; since `P8-TSK-020` the same seam opens the CREDIT
+     * suspense item and its owning break ({@link SettlementExpectations#parked}). Appended last.
      */
     @NonNull private final SettlementExpectations expectations;
 
@@ -233,6 +233,20 @@ public final class UnmatchedConfirmations {
                     "a won scheme-execution claim met a standing parking on " + rail.value()
                             + ": every parking claims before it inserts (V023)");
         }
+        // THE OWNER (P8-TSK-020, ADR-0070 section 2, INV-REC-09): the value this entry put into
+        // SUSPENSE_UNMATCHED gets its suspense item and owning break in THIS transaction -
+        // past the acting exit, so a converging delivery never opens a second item.
+        expectations.parked(
+                uow,
+                new SettlementExpectations.ParkedValue(
+                        id,
+                        clearingPurpose,
+                        suspense.id(),
+                        posted.entryId(),
+                        attribution.cause(),
+                        attribution.attempt(),
+                        Optional.empty(),
+                        parking.correlation()));
 
         audit.append(
                 uow,

@@ -383,6 +383,30 @@ public final class JdbcSettlementBatchStore implements SettlementBatchStore<Conn
     }
 
     @Override
+    public List<LineDigest> lineDigestsOf(Connection unitOfWork, UUID fileId) {
+        Objects.requireNonNull(fileId, "fileId must not be null");
+        try (PreparedStatement read =
+                unitOfWork.prepareStatement(
+                        "SELECT line_no, raw_record_sha256, canonical_fingerprint"
+                                + " FROM settlement.line WHERE file_id = ? ORDER BY line_no")) {
+            read.setObject(1, fileId);
+            try (ResultSet rows = read.executeQuery()) {
+                List<LineDigest> digests = new ArrayList<>();
+                while (rows.next()) {
+                    digests.add(
+                            new LineDigest(
+                                    rows.getInt("line_no"),
+                                    rows.getBytes("raw_record_sha256"),
+                                    rows.getBytes("canonical_fingerprint")));
+                }
+                return List.copyOf(digests);
+            }
+        } catch (SQLException failure) {
+            throw new SettlementStorageException("could not read a file's line digests", failure);
+        }
+    }
+
+    @Override
     public boolean markAccepted(
             Connection unitOfWork,
             UUID batchId,
@@ -416,7 +440,8 @@ public final class JdbcSettlementBatchStore implements SettlementBatchStore<Conn
         try (PreparedStatement read =
                 unitOfWork.prepareStatement(
                         "SELECT journal_entry_id FROM settlement.batch"
-                                + " WHERE status = 'ACCEPTED'"
+                                // A repudiated batch's recognition stands, reversed (P8-TSK-023).
+                                + " WHERE status IN ('ACCEPTED', 'REPUDIATED')"
                                 + " AND journal_entry_id IS NOT NULL")) {
             try (ResultSet rows = read.executeQuery()) {
                 List<UUID> entries = new ArrayList<>();
@@ -526,8 +551,10 @@ public final class JdbcSettlementBatchStore implements SettlementBatchStore<Conn
     public Optional<UUID> recognitionEntryOf(Connection unitOfWork, UUID batchId) {
         return singleUuid(
                 unitOfWork,
+                // A repudiated batch keeps its link to the entry it recognised by - the trace
+                // walks to it, now reversed (P8-TSK-023).
                 "SELECT journal_entry_id FROM settlement.batch"
-                        + " WHERE id = ? AND status = 'ACCEPTED'",
+                        + " WHERE id = ? AND status IN ('ACCEPTED', 'REPUDIATED')",
                 batchId,
                 "could not read the batch's recognition entry");
     }
@@ -557,6 +584,187 @@ public final class JdbcSettlementBatchStore implements SettlementBatchStore<Conn
             throw new SettlementStorageException(
                     "could not read the batch's acceptance date", failure);
         }
+    }
+
+    @Override
+    public java.util.Set<LocalDate> acceptedBusinessDates(
+            Connection unitOfWork, UUID sourceId, LocalDate from, LocalDate to) {
+        Objects.requireNonNull(sourceId, "sourceId must not be null");
+        Objects.requireNonNull(from, "from must not be null");
+        Objects.requireNonNull(to, "to must not be null");
+        try (PreparedStatement read =
+                unitOfWork.prepareStatement(
+                        "SELECT DISTINCT business_date FROM settlement.batch"
+                                + " WHERE source_id = ? AND status = 'ACCEPTED'"
+                                + " AND business_date BETWEEN ? AND ?")) {
+            read.setObject(1, sourceId);
+            read.setObject(2, from);
+            read.setObject(3, to);
+            java.util.Set<LocalDate> dates = new java.util.TreeSet<>();
+            try (ResultSet row = read.executeQuery()) {
+                while (row.next()) {
+                    dates.add(row.getDate(1).toLocalDate());
+                }
+            }
+            return dates;
+        } catch (SQLException failure) {
+            throw new SettlementStorageException(
+                    "could not read the source's accepted business dates", failure);
+        }
+    }
+
+    @Override
+    public java.util.Set<String> acceptedBatchRefs(
+            Connection unitOfWork, UUID sourceId, java.util.Collection<String> refs) {
+        Objects.requireNonNull(sourceId, "sourceId must not be null");
+        Objects.requireNonNull(refs, "refs must not be null");
+        if (refs.isEmpty()) {
+            return java.util.Set.of();
+        }
+        try (PreparedStatement read =
+                unitOfWork.prepareStatement(
+                        "SELECT DISTINCT external_batch_ref FROM settlement.batch"
+                                + " WHERE source_id = ? AND status = 'ACCEPTED'"
+                                + " AND external_batch_ref = ANY (?)")) {
+            read.setObject(1, sourceId);
+            read.setArray(2, unitOfWork.createArrayOf("text", refs.toArray()));
+            java.util.Set<String> accepted = new java.util.TreeSet<>();
+            try (ResultSet row = read.executeQuery()) {
+                while (row.next()) {
+                    accepted.add(row.getString(1));
+                }
+            }
+            return accepted;
+        } catch (SQLException failure) {
+            throw new SettlementStorageException(
+                    "could not read the source's accepted batch references", failure);
+        }
+    }
+
+    @Override
+    public Map<UUID, Instant> lastAcceptedAt(Connection unitOfWork) {
+        try (PreparedStatement read =
+                unitOfWork.prepareStatement(
+                        "SELECT source_id, max(status_changed_at) FROM settlement.batch"
+                                + " WHERE status = 'ACCEPTED' GROUP BY source_id")) {
+            Map<UUID, Instant> latest = new java.util.HashMap<>();
+            try (ResultSet row = read.executeQuery()) {
+                while (row.next()) {
+                    latest.put(
+                            row.getObject(1, UUID.class), row.getTimestamp(2).toInstant());
+                }
+            }
+            return latest;
+        } catch (SQLException failure) {
+            throw new SettlementStorageException(
+                    "could not read the sources' latest acceptances", failure);
+        }
+    }
+
+    @Override
+    public List<RecognisedBatch> recognisedBetween(
+            Connection unitOfWork, LocalDate from, LocalDate until) {
+        Objects.requireNonNull(from, "from must not be null");
+        Objects.requireNonNull(until, "until must not be null");
+        try (PreparedStatement read =
+                unitOfWork.prepareStatement(
+                        "SELECT b.id, b.source_id, s.code, b.currency, b.status, b.accepted_on,"
+                                + " b.journal_entry_id"
+                                + " FROM settlement.batch b"
+                                + " JOIN settlement.source s ON s.id = b.source_id"
+                                // A repudiated batch's recognition stands on its own posting
+                                // date, reversed by a later posting (P8-TSK-023).
+                                + " WHERE b.status IN ('ACCEPTED', 'REPUDIATED')"
+                                + " AND b.accepted_on >= ? AND b.accepted_on < ?"
+                                + " ORDER BY b.accepted_on, b.id")) {
+            read.setObject(1, from);
+            read.setObject(2, until);
+            try (ResultSet rows = read.executeQuery()) {
+                List<RecognisedBatch> batches = new ArrayList<>();
+                while (rows.next()) {
+                    batches.add(
+                            new RecognisedBatch(
+                                    rows.getObject("id", UUID.class),
+                                    rows.getObject("source_id", UUID.class),
+                                    rows.getString("code"),
+                                    CurrencyCode.of(rows.getString("currency").trim()),
+                                    BatchStatus.valueOf(rows.getString("status")),
+                                    rows.getObject("accepted_on", LocalDate.class),
+                                    Optional.ofNullable(
+                                            rows.getObject("journal_entry_id", UUID.class))));
+                }
+                return List.copyOf(batches);
+            }
+        } catch (SQLException failure) {
+            throw new SettlementStorageException(
+                    "could not read the period's accepted batches", failure);
+        }
+    }
+
+    // ----------------------------------------------------------- the repudiation (P8-TSK-023)
+
+    @Override
+    public Optional<RepudiableRow> repudiable(Connection unitOfWork, UUID batchId) {
+        Objects.requireNonNull(batchId, "batchId must not be null");
+        try (PreparedStatement read =
+                unitOfWork.prepareStatement(
+                        "SELECT id, file_id, source_id, status, journal_entry_id, currency,"
+                                + " business_date FROM settlement.batch WHERE id = ?")) {
+            read.setObject(1, batchId);
+            try (ResultSet row = read.executeQuery()) {
+                return row.next()
+                        ? Optional.of(
+                                new RepudiableRow(
+                                        row.getObject("id", UUID.class),
+                                        row.getObject("file_id", UUID.class),
+                                        row.getObject("source_id", UUID.class),
+                                        BatchStatus.valueOf(row.getString("status")),
+                                        Optional.ofNullable(
+                                                row.getObject("journal_entry_id", UUID.class)),
+                                        CurrencyCode.of(row.getString("currency")),
+                                        row.getObject("business_date", LocalDate.class)))
+                        : Optional.empty();
+            }
+        } catch (SQLException failure) {
+            throw new SettlementStorageException(
+                    "could not read a batch for repudiation", failure);
+        }
+    }
+
+    @Override
+    public boolean markRepudiated(
+            Connection unitOfWork,
+            UUID batchId,
+            Actor actor,
+            Optional<String> reason,
+            Instant at,
+            CorrelationId correlation) {
+        try (PreparedStatement write =
+                unitOfWork.prepareStatement(
+                        // The edge alone: the acceptance facts stay as acceptance wrote them,
+                        // and V010's trigger refuses any statement that would move them.
+                        "UPDATE settlement.batch SET status = 'REPUDIATED',"
+                                + " status_changed_at = ?"
+                                + " WHERE id = ? AND status = 'ACCEPTED'")) {
+            write.setTimestamp(1, Timestamp.from(at));
+            write.setObject(2, batchId);
+            if (write.executeUpdate() != 1) {
+                return false;
+            }
+        } catch (SQLException failure) {
+            throw new SettlementStorageException(
+                    "could not repudiate a settlement batch", failure);
+        }
+        appendBatchEvent(
+                unitOfWork,
+                batchId,
+                Optional.of(BatchStatus.ACCEPTED),
+                BatchStatus.REPUDIATED,
+                actor,
+                reason,
+                at,
+                correlation);
+        return true;
     }
 
     private static Optional<UUID> singleUuid(
