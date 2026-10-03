@@ -141,9 +141,12 @@ public class SettlementOperationsController {
 
     /**
      * Readmits a file our own validation rejected (or a declined one, or a conflicting batch's
-     * whose conflict is gone) - a controller's keyed, reasoned recovery (`P8-TSK-022`,
-     * ADR-0066 §8). It inherits a pulled or attested original's authentication; otherwise it
-     * awaits its own attestation by a person distinct from every earlier submitter.
+     * whose conflict is gone, or - since the Phase 8 -> 9 transition, MI-2 - an accepted file
+     * whose batch was repudiated) - a controller's keyed, reasoned recovery (`P8-TSK-022`,
+     * ADR-0066 §8, ADR-0065 §10). It inherits a pulled or attested original's authentication;
+     * a `DECLINED` original — or a repudiated batch's file (the Phase 8 -> 9 transition's
+     * re-gate, NEW-SEC-1) — passes nothing on, and the readmission then awaits its own
+     * attestation by a person distinct from every earlier submitter.
      */
     @PostMapping(
             path = "/files/{id}/readmission",

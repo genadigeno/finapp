@@ -65,18 +65,42 @@ import lombok.RequiredArgsConstructor;
  * the approval re-derives it under the locks and refuses a moved subject
  * ({@code ResolutionStale}).
  *
+ * <h2>What the approval leaves owned (the Phase 8 -> 9 transition)</h2>
+ *
+ * <p>Nothing it reopens is left without a record a person can act on: a reopened expectation
+ * already past due (its one-way {@code overdue_since} set, so ageing never takes it again) gets a
+ * fresh {@code MISSING_EXTERNAL} at once, following the break the repudiated evidence closed
+ * (REC-4); the closed remittance's keys are released (`V017`), so the genuine re-presented
+ * batch's remittance takes the same reference and the reopened cash can match it (REC-8); and a
+ * repudiated STATEMENT's accepted successor gets the {@code STATEMENT_GAP} its missing
+ * predecessor opens (SET-2) - read under settlement's source row lock, taken first.
+ *
  * <h2>Refused, before anything is written</h2>
  *
- * <p>An unknown batch; a batch not {@code ACCEPTED}; an item still {@code PENDING} (no edge
- * leaves it to {@code REPUDIATED} — let the run dispose of it first); and three shapes this
+ * <p>An unknown batch; a batch not {@code ACCEPTED}; a batch whose run has not disposed of
+ * every item and rested - an item still {@code PENDING} (no edge leaves it to
+ * {@code REPUDIATED}), or a run {@code IN_PROGRESS} or {@code BLOCKED}, whose completion (the
+ * per-batch fee comparison, a blocked run's break, {@code RunCompleted}) is still owed over
+ * items this would repudiate: a run {@code BLOCKED} there would be requeued and complete over
+ * {@code REPUDIATED} items, and holds its source meanwhile (MI-8) - judged at the proposal and
+ * again at the approval. An {@code OPEN} run with nothing {@code PENDING} (a statement's,
+ * every item disposed in the acceptance) admits: its later walk finds nothing to decide and
+ * completes trivially - only {@code PROCESSING_FEE} decisions feed the completion's fold, and
+ * a statement carries none. And four
+ * shapes this
  * phase does not compensate, refused rather than half-done (recorded debt): a correction
  * {@code OFFSET} item, an allocation whose expectation a person already closed
- * {@code RESOLVED_BY_ADJUSTMENT}, and a bank item matched to the remittance that a person
- * already {@code RESOLVED}.
+ * {@code RESOLVED_BY_ADJUSTMENT}, a bank item matched to the remittance that a person
+ * already {@code RESOLVED}, and a parked value of the batch that a LATER batch's
+ * counterparty correction offset ({@code CORRECTION_OFFSET}): reversing the original would leave
+ * the correction's value in the position with no record or break to explain it (the Phase 8 ->
+ * 9 transition, REC-7).
  *
  * <h2>Ten instances</h2>
  *
- * <p>The approval's lock order (`DISTRIBUTED_EXECUTION.md` §3's Phase 8 row): namespace-4
+ * <p>The approval's lock order (`DISTRIBUTED_EXECUTION.md` §3's Phase 8 row): for a statement,
+ * settlement's source row first (the acceptance's own first lock, so an acceptance and an
+ * approval of one account take their locks in one order); namespace-4
  * advisories for every affected source, BLOCKING, sorted — derived from an unlocked read, and a
  * set that differs under the locks is stale, never a late advisory; the breaks it closes, sorted;
  * the resolution row and its conditional {@code PROPOSED → APPROVED}; the items, the
@@ -155,13 +179,20 @@ public final class BatchRepudiations {
         }
     }
 
-    /** An item of the batch is still {@code PENDING}: its run has not disposed of it. */
+    /**
+     * The batch's run has not disposed of every item and rested: an item is still
+     * {@code PENDING}, or the run is {@code IN_PROGRESS} or {@code BLOCKED} - started, its
+     * completion still owed. *(Corrected 2026-10-02 by the Phase 8 -> 9 transition, MI-8: only
+     * a {@code PENDING} item refused, so a batch whose run blocked at its completion was
+     * repudiated and the requeued run then completed over its {@code REPUDIATED} items.)*
+     */
     public static final class BatchNotDisposed extends RuntimeException {
 
         @java.io.Serial private static final long serialVersionUID = 1L;
 
         BatchNotDisposed() {
-            super("an item of the batch is still PENDING: its run disposes of every item first");
+            super("the batch's run has not disposed of every item and completed: let it finish"
+                    + " (requeue a blocked run) first");
         }
     }
 
@@ -214,6 +245,15 @@ public final class BatchRepudiations {
             UUID batchId,
             RepudiationStore.RunFacts run,
             boolean lock) {
+        // A run that STARTED and has not COMPLETED still owes its completion - the fee fold,
+        // its RUN_BLOCKED break's closure, RunCompleted - over items this would repudiate, and
+        // a BLOCKED run holds its source meanwhile (MI-8). COMPLETED is terminal (V003's
+        // trigger), so a run read COMPLETED stays so under every later lock; an OPEN run never
+        // walked admits - with nothing PENDING (below) its later walk completes trivially, as a
+        // statement's does, every item disposed in the acceptance.
+        if (run.status() == RunStatus.IN_PROGRESS || run.status() == RunStatus.BLOCKED) {
+            throw new BatchNotDisposed();
+        }
         List<RepudiationStore.ItemRow> items = store.itemsOfRun(unitOfWork, run.runId(), lock);
         if (items.stream().anyMatch(item -> item.status() == ItemStatus.PENDING)) {
             throw new BatchNotDisposed();
@@ -271,6 +311,14 @@ public final class BatchRepudiations {
                 .forEach(item -> suspenseHolders.add(item.id()));
         List<RepudiationStore.SuspenseRow> suspenseRows =
                 store.suspenseOfItems(unitOfWork, suspenseHolders, lock);
+        if (suspenseRows.stream().anyMatch(row -> row.correctedMinor() > 0)) {
+            // The correction stands in ANOTHER batch (one in this batch is an OFFSET item,
+            // refused above): reversing the original would leave the correction's value in the
+            // position with no open item or break to explain it (INV-REC-06).
+            throw new RepudiationNotSupported(
+                    "a parked value of the batch was offset by a counterparty's correction in"
+                            + " another batch: its compensation is not built in this phase");
+        }
         List<UUID> decisions =
                 store.decisionsOfItems(
                         unitOfWork, items.stream().map(RepudiationStore.ItemRow::id).toList());
@@ -471,6 +519,12 @@ public final class BatchRepudiations {
             throw refused;
         }
 
+        // (0) A statement's chain: settlement's source row FIRST - an acceptance of the account
+        // takes it before its advisory, and so does this approval - and the accepted successor
+        // read under it (SET-2). Empty, and no lock, for a report.
+        Optional<StatementChain.Link> successor =
+                batches.lockChainAndReadSuccessor(unitOfWork, batchId);
+
         // (1) The advisories, blocking and sorted; (2) the breaks to close, sorted.
         for (UUID source : seen.sources()) {
             breaks.lockSource(unitOfWork, source);
@@ -488,8 +542,13 @@ public final class BatchRepudiations {
             }
             throw new ResolutionMachine.ResolutionNotPending(row.status());
         }
-        // (4) The rows, locked and re-derived: the approver approves what was proposed.
-        Plan plan = derive(unitOfWork, batchId, run, true);
+        // (4) The rows, locked and re-derived: the approver approves what was proposed. The
+        // run's state is re-read under the advisories (MI-8): the matcher's legs hold the
+        // source's advisory, so a run that started or blocked after the unlocked read above
+        // cannot move again while this approval holds it - the stale OPEN would otherwise
+        // admit a run BLOCKED in that window.
+        RepudiationStore.RunFacts lockedRun = acceptedRun(unitOfWork, batchId);
+        Plan plan = derive(unitOfWork, batchId, lockedRun, true);
         if (!plan.sources().equals(seen.sources())
                 || !Arrays.equals(plan.digest(), seen.digest())) {
             throw stale(
@@ -520,6 +579,7 @@ public final class BatchRepudiations {
                     unitOfWork, reopened.getKey(), reopened.getValue(), causeRef, actor, now,
                     correlation);
         }
+        int releasedKeys = 0;
         if (plan.remittance().isPresent()) {
             RepudiationStore.ExpectationRow remittance = plan.remittance().get();
             long remainder =
@@ -531,6 +591,52 @@ public final class BatchRepudiations {
                             correlation)) {
                 throw new IllegalStateException(
                         "the locked remittance's remainder moved under its lock");
+            }
+            // Its reference freed (REC-8, `V017`): the genuine re-presented batch - the same
+            // payout, so the same remittance reference - registers it, and the cash reopened
+            // below can reach the genuine remittance instead of this closed one.
+            releasedKeys = store.releaseKeys(unitOfWork, remittance.id(), resolutionId);
+        }
+        // A reopened expectation already past due is owned again HERE (REC-4): ageing takes
+        // only an expectation never overdue (overdue_since is one-way), and the break that
+        // repudiated evidence closed EVIDENCED stays RESOLVED - so a fresh MISSING_EXTERNAL,
+        // following it, under the expectation's row lock (taken by the plan) and the one-open
+        // unique (a standing one converges).
+        List<UUID> overdueBreaks = new ArrayList<>();
+        for (RepudiationStore.ExpectationRow expectation : plan.expectations()) {
+            long countered = counteredByExpectation.getOrDefault(expectation.id(), 0L);
+            boolean ownRemittance =
+                    plan.remittance().filter(own -> own.id().equals(expectation.id())).isPresent();
+            if (countered == 0 || ownRemittance || !expectation.overdue()) {
+                continue;
+            }
+            BreakRegister.Raised raised =
+                    register.raise(
+                            unitOfWork,
+                            new BreakRegister.NewBreak(
+                                    ids.next(),
+                                    BreakType.MISSING_EXTERNAL,
+                                    BreakCause.EXPECTATION_OVERDUE,
+                                    BreakRegister.Subject.expectation(expectation.id()),
+                                    expectation.sourceId(),
+                                    expectation.ruleSetId(),
+                                    Money.ofPersisted(
+                                            expectation.remainderMinor() + countered,
+                                            CurrencyCode.of(expectation.currency()),
+                                            expectation.scale()),
+                                    Optional.of(expectation.direction()),
+                                    Optional.of(ExpectationKind.valueOf(expectation.kind())),
+                                    Optional.empty(),
+                                    Optional.empty(),
+                                    Optional.empty(),
+                                    store.lastResolvedBreakOn(
+                                            unitOfWork, expectation.id(),
+                                            BreakType.MISSING_EXTERNAL),
+                                    actor,
+                                    now,
+                                    correlation));
+            if (raised.created()) {
+                overdueBreaks.add(raised.breakId());
             }
         }
         // The parked value returned to each item's position: what an unpark releases, and
@@ -568,6 +674,23 @@ public final class BatchRepudiations {
         // ---- settlement's edge ----
         if (!batches.markRepudiated(unitOfWork, batchId, resolutionId, actor, now, correlation)) {
             throw new BatchNotRepudiable();
+        }
+
+        // ---- the chain: the hole before the accepted successor, owned (SET-2) ----
+        Optional<UUID> successorGap = Optional.empty();
+        if (successor.isPresent()) {
+            RepudiationStore.RunFacts successorRun =
+                    store.runOf(unitOfWork, successor.get().batchId())
+                            .orElseThrow(() -> new IllegalStateException(
+                                    "an accepted statement has its run"));
+            BreakRegister.Raised gap =
+                    register.raise(
+                            unitOfWork,
+                            StatementChain.predecessorRepudiated(
+                                    ids.next(), successorRun.runId(), successorRun.sourceId(),
+                                    successorRun.ruleSetId(), successor.get(), actor, now,
+                                    correlation));
+            successorGap = Optional.of(gap.breakId());
         }
 
         // ---- the postings, last: their union pre-locked in the projection's order ----
@@ -692,7 +815,10 @@ public final class BatchRepudiations {
                 "batch=" + batchId + ", kind=REPUDIATE_BATCH, reasonCode=EVIDENCE_REPUDIATED"
                         + ", proposedBy=" + row.proposedBy() + ", " + summary(counts)
                         + reversalEntry.map(id -> ", journalEntry=" + id).orElse("")
-                        + (answerBreaks.isEmpty() ? "" : ", answerBreaks=" + answerBreaks),
+                        + (answerBreaks.isEmpty() ? "" : ", answerBreaks=" + answerBreaks)
+                        + (overdueBreaks.isEmpty() ? "" : ", overdueBreaks=" + overdueBreaks)
+                        + successorGap.map(id -> ", successorGap=" + id).orElse("")
+                        + (releasedKeys == 0 ? "" : ", releasedKeys=" + releasedKeys),
                 correlation);
         return new Decided(resolutionId, batchId, ResolutionStatus.APPROVED, reversalEntry,
                 false);

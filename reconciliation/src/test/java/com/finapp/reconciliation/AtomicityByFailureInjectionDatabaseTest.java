@@ -14,7 +14,17 @@ import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
 import com.finapp.ledger.AccountPurpose;
+import com.finapp.ledger.JdbcBalanceProjection;
+import com.finapp.ledger.JdbcJournalEntryStore;
+import com.finapp.ledger.JdbcLedgerAccountStore;
+import com.finapp.ledger.JournalEntry;
+import com.finapp.ledger.JournalEntryStore;
 import com.finapp.ledger.PostingObserver;
+import com.finapp.ledger.PostingService;
+import com.finapp.platform.audit.JdbcAuditWriter;
+import com.finapp.platform.idempotency.IdempotentExecutor;
+import com.finapp.platform.idempotency.JdbcIdempotencyRecordStore;
+import com.finapp.platform.outbox.JdbcOutboxWriter;
 import com.finapp.sharedkernel.correlation.CorrelationId;
 import com.finapp.sharedkernel.money.Money;
 import java.sql.Connection;
@@ -63,6 +73,8 @@ class AtomicityByFailureInjectionDatabaseTest {
     private static final UUID PROPOSAL_RULE_SET = IDS.next();
     private static final UUID REDRIVE_SOURCE = IDS.next();
     private static final UUID REDRIVE_RULE_SET = IDS.next();
+    private static final UUID CONTAIN_SOURCE = IDS.next();
+    private static final UUID CONTAIN_RULE_SET = IDS.next();
 
     @BeforeAll
     static void seed() {
@@ -71,6 +83,7 @@ class AtomicityByFailureInjectionDatabaseTest {
         GateFixtures.seedRuleSet(AGEING_SOURCE, AGEING_RULE_SET);
         GateFixtures.seedRuleSet(PROPOSAL_SOURCE, PROPOSAL_RULE_SET);
         GateFixtures.seedRuleSet(REDRIVE_SOURCE, REDRIVE_RULE_SET);
+        GateFixtures.seedRuleSet(CONTAIN_SOURCE, CONTAIN_RULE_SET);
     }
 
     // ----------------------------------------------------------------- the rematch leg
@@ -166,8 +179,10 @@ class AtomicityByFailureInjectionDatabaseTest {
     @Test
     @Order(2)
     @DisplayName("the grace leg crashed AFTER the park's posting - its break and decision written"
-            + " before it - leaves nothing: no break, no suspense item, no park, no decision,"
-            + " the item still UNMATCHED and expired - and the next tick parks once")
+            + " before it - rolls the post phase back to its own savepoint, the posting, the park"
+            + " row and the suspense item together, and re-posts the park ONCE in the same tick"
+            + " (the Phase 8 -> 9 transition's per-item containment, REC-3): one park, one entry,"
+            + " one suspense item, one grace decision, one break - and the next tick adds nothing")
     void theGraceLegIsAtomic() {
         String key = "GRK-ATOM-" + UUID.randomUUID();
         UUID run = GateFixtures.seedRun(GRACE_SOURCE, GRACE_RULE_SET, capture(1, 30_00, key));
@@ -206,30 +221,115 @@ class AtomicityByFailureInjectionDatabaseTest {
 
         assertThat(fired).as("the fault fired after the park's posting").isTrue();
         assertThat(string("SELECT status FROM reconciliation.external_item WHERE id = ?", item))
-                .as("the park edge rolled back: still waiting").isEqualTo("UNMATCHED");
-        assertThat(count("SELECT count(*) FROM reconciliation.external_item WHERE id = ? AND"
-                + " grace_until <= now()", item))
-                .as("still expired, so the next tick retries it").isEqualTo(1);
-        assertThat(count("SELECT count(*) FROM reconciliation.break WHERE external_item_id = ?",
-                item)).as("the break written before the posting rolled back too").isZero();
-        assertThat(count("SELECT count(*) FROM reconciliation.suspense_item WHERE"
-                + " external_item_id = ?", item)).as("no suspense item survived").isZero();
+                .as("re-posted alone in the same tick: parked").isEqualTo("PARKED");
         assertThat(count("SELECT count(*) FROM reconciliation.park WHERE source_id = ?",
-                GRACE_SOURCE)).as("no park row - and so no park entry - survived").isZero();
+                GRACE_SOURCE))
+                .as("the crashed posting's park row rolled back with it: one park, one entry")
+                .isEqualTo(1);
+        assertThat(count("SELECT count(*) FROM reconciliation.suspense_item s JOIN"
+                + " reconciliation.park p ON p.id = s.park_id WHERE s.external_item_id = ? AND"
+                + " s.status = 'OPEN' AND s.entry_id = p.journal_entry_id", item))
+                .as("one suspense item, carrying the surviving park's entry whole").isEqualTo(1);
+        assertThat(count("SELECT count(*) FROM ledger.journal_entry e WHERE"
+                + " e.idempotency_scope LIKE '%recon-suspense:%' AND NOT EXISTS (SELECT 1 FROM"
+                + " reconciliation.park p WHERE p.journal_entry_id = e.id)"))
+                .as("the crashed posting left no entry behind: every park entry has its park")
+                .isZero();
         assertThat(count("SELECT count(*) FROM reconciliation.match_decision WHERE"
                 + " external_item_id = ?", item))
-                .as("only the run's waiting decision: the grace decision rolled back")
-                .isEqualTo(1);
+                .as("the run's waiting decision and ONE grace decision, written before the"
+                        + " post phase's savepoint")
+                .isEqualTo(2);
+        assertThat(string("SELECT b.type || '/' || b.cause FROM reconciliation.break b WHERE"
+                + " b.external_item_id = ?", item)).isEqualTo("UNKNOWN_EXTERNAL/GRACE_EXPIRED");
 
         GateFixtures.matching().sweep();
         assertThat(count("SELECT count(*) FROM reconciliation.match_decision WHERE"
                 + " external_item_id = ?", item))
-                .as("the next tick converges: one grace decision beside the run's")
+                .as("the next tick adds nothing: the parked item is in no time leg's worklist")
                 .isEqualTo(2);
-        assertThat(string("SELECT b.type || '/' || b.cause FROM reconciliation.break b WHERE"
-                + " b.external_item_id = ?", item)).isEqualTo("UNKNOWN_EXTERNAL/GRACE_EXPIRED");
+        assertThat(count("SELECT count(*) FROM reconciliation.park WHERE source_id = ?",
+                GRACE_SOURCE)).isEqualTo(1);
+    }
+
+    @Test
+    @Order(6)
+    @DisplayName("the Phase 8 -> 9 transition (REC-3): a park that fails EVERY time is contained to"
+            + " its item - the source's next expired item is graced and parked in the same tick,"
+            + " the poisoned item left UNMATCHED, owned by its grace break, its clock stopped,"
+            + " with no suspense item and no park - and the next tick takes nothing again")
+    @SuppressWarnings({"unchecked", "rawtypes"})
+    void aParkThatAlwaysFailsIsContainedToItsItem() {
+        long poisonedMinor = 41_17;
+        long healthyMinor = 52_29;
+        UUID run = GateFixtures.seedRun(CONTAIN_SOURCE, CONTAIN_RULE_SET,
+                capture(1, poisonedMinor, "CNT-P-" + UUID.randomUUID()),
+                capture(2, healthyMinor, "CNT-H-" + UUID.randomUUID()));
+        GateFixtures.matching().sweep();
+        UUID poisoned = itemOf(run, 1);
+        UUID healthy = itemOf(run, 2);
+        assertThat(GateFixtures.column("SELECT status FROM reconciliation.external_item WHERE"
+                + " run_id = ?", run)).containsOnly("UNMATCHED");
+        GateFixtures.expireGrace(run);
+
+        // Every entry carrying the poisoned item's value - alone, or summed with the healthy
+        // one's in the leg's aggregated park - fails to post.
+        JournalEntryStore journal = GateFixtures.intercept(
+                JournalEntryStore.class, new JdbcJournalEntryStore(IDS), "append",
+                (args, proceed) -> {
+                    JournalEntry entry = (JournalEntry) args[1];
+                    if (entry.lines().stream().anyMatch(line ->
+                            line.amount().minorUnits() == poisonedMinor
+                                    || line.amount().minorUnits()
+                                            == poisonedMinor + healthyMinor)) {
+                        throw new GateFixtures.InjectedFault("a park that cannot post");
+                    }
+                    return proceed.call();
+                });
+        GateFixtures.MatchingParts parts = new GateFixtures.MatchingParts();
+        parts.suspense =
+                new Suspense(
+                        new PostingService(
+                                new IdempotentExecutor(
+                                        new JdbcIdempotencyRecordStore(), CLOCK,
+                                        Duration.ofDays(1), Duration.ofMinutes(5)),
+                                (JournalEntryStore<Connection>) journal,
+                                new JdbcAuditWriter(),
+                                new JdbcOutboxWriter(),
+                                new JdbcBalanceProjection(),
+                                IDS,
+                                CLOCK,
+                                PostingObserver.NONE),
+                        new JdbcLedgerAccountStore(),
+                        IDS);
+        Matching poisonedLeg = parts.build();
+        poisonedLeg.sweep();
+
+        assertThat(string("SELECT status FROM reconciliation.external_item WHERE id = ?", healthy))
+                .as("REC-3: the source's next expired item is graced in the same tick")
+                .isEqualTo("PARKED");
         assertThat(count("SELECT count(*) FROM reconciliation.suspense_item WHERE"
-                + " external_item_id = ? AND status = 'OPEN'", item)).isEqualTo(1);
+                + " external_item_id = ? AND status = 'OPEN'", healthy)).isEqualTo(1);
+        assertThat(string("SELECT status FROM reconciliation.external_item WHERE id = ?",
+                poisoned))
+                .as("the poisoned item waits, its park undone").isEqualTo("UNMATCHED");
+        assertThat(count("SELECT count(*) FROM reconciliation.external_item WHERE id = ? AND"
+                + " grace_until IS NULL", poisoned))
+                .as("its grace clock stopped: no time leg takes it again").isEqualTo(1);
+        assertThat(count("SELECT count(*) FROM reconciliation.suspense_item WHERE"
+                + " external_item_id = ?", poisoned)).as("no suspense item of its own").isZero();
+        assertThat(string("SELECT b.type || '/' || (b.status <> 'RESOLVED')::text FROM"
+                + " reconciliation.break b WHERE b.external_item_id = ?", poisoned))
+                .as("owned by the open break its grace decision raised")
+                .isEqualTo("UNKNOWN_EXTERNAL/true");
+        long decisions = count("SELECT count(*) FROM reconciliation.match_decision WHERE"
+                + " external_item_id = ?", poisoned);
+
+        poisonedLeg.sweep();
+        assertThat(count("SELECT count(*) FROM reconciliation.match_decision WHERE"
+                + " external_item_id = ?", poisoned))
+                .as("the next tick takes the contained item nowhere")
+                .isEqualTo(decisions);
     }
 
     // ----------------------------------------------------------------- the ageing sweep

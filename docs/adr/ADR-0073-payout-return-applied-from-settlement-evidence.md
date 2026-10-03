@@ -239,7 +239,14 @@ evaluate it.
      causes; a `FAILED` payout is typed at run time, and only a payout still in flight waits.)*
    - **The way out is a person's decision.** The usual path is a four-eyes `TRANSFER_TO_ACCOUNT`
      (ADR-0071) to a `MERCHANT_PAYABLE` that is `ACTIVE` in the currency, share-locked before
-     posting: DR `SUSPENSE_UNMATCHED` / CR the payable. The merchant is re-credited by decision,
+     posting: DR `SUSPENSE_UNMATCHED` / CR the payable - **once the payout is `COMPLETED`**. A
+     payout still in flight has not debited the payable, so its fallback waits
+     (`409 reconciliation.OperationNotTerminal`), and a payout that `FAILED` released its hold to
+     the merchant, so its return is no party's credit (`422 reconciliation.ResolutionTargetRefused`;
+     an `OFFSET_SUSPENSE` against the provider's execution, or a write-off). *(Corrected
+     2026-10-02 by the Phase 8 -> 9 transition, IDEM-1's residual: this listed the in-flight
+     payout among the transfer's cases, and a transfer approved while the payout was in flight,
+     the payout then failing, credited the merchant twice - `PayoutReturnDatabaseTest`.)* The merchant is re-credited by decision,
      reason-coded (for example `FUNDS_ATTRIBUTED`) and audited. When the provider's own claw-back
      arrives, it closes the break as evidence if it names the returned line (a correction offset,
      `EVIDENCED`), and by a four-eyes `OFFSET_SUSPENSE` if nothing correlates it. ADR-0069's
@@ -250,6 +257,18 @@ evaluate it.
    - **The fallback leaves no merchant fact.** The payout then has no `payout_return` row. The
      merchant is re-credited as a reconciliation attribution (point 6), and the break and its
      resolution name the payout.
+   - **The fallback is bound to the payout: one return, one credit.** The person's transfer and
+     the worker serialise on the payout row `FOR UPDATE`. The transfer's proposal and approval
+     take it (after their own break, resolution and suspense rows, before the target) and are
+     refused (`409 reconciliation.ReturnAlreadyAttributed`) once a `payout_return` stands or
+     another break's transfer for the payout stands. The worker's application asks, under the
+     same row, whether such a transfer stands `PROPOSED` or `APPROVED` (reconciliation's
+     `PayoutReturnFallbacks`) and, if so, writes nothing (`RETURNED_BY_PERSON`): the person's
+     transfer IS the payout's return, and a later report repeating the line waits into a break
+     of its own. *(Corrected 2026-10-02 by the Phase 8 -> 9 transition, IDEM-1: the fallback left
+     nothing the worker checked, and a repeat of the return in a later day's report carries
+     another fingerprint, so a payout completed after the transfer was credited twice -
+     `PayoutReturnDatabaseTest`, both orders on the row and the race counted.)*
    - **This is also the whole path if `P8-TSK-019` is cut** (owner decision O6, below).
 
 6. **The payable names the return, and `INV-MER-02` gains its terms.**
@@ -291,7 +310,7 @@ evaluate it.
    | Contention | PostgreSQL arbiter | Loser |
    |---|---|---|
    | Ten workers on one item | payout row `FOR UPDATE`; `UNIQUE (payout_id)`; the posting key | Finds the return standing and writes nothing |
-   | Ten duplicate `PAYOUT_RETURNED` lines, within one file or across files | the same; then the matcher's claimant order | One return, one entry, one expectation. The earliest claimant is allocated, and the rest park as `DUPLICATE_EXTERNAL` (ADR-0068) — with one recorded exception: a later report's repeat of a returned line, already parked `DUPLICATE` with an empty candidate snapshot, can reach the rematch worklist and take the return before the genuine line. Value is conserved; the attribution is wrong — the genuine line parks at grace and its break is raised. Recorded debt, scheduled to Phase 15 (see below) |
+   | Ten duplicate `PAYOUT_RETURNED` lines, within one file or across files | the same; then the matcher's claimant order | One return, one entry, one expectation. The earliest claimant is allocated, and the rest park as `DUPLICATE_EXTERNAL` (ADR-0068) — with one recorded exception: a later report's repeat of a returned line, already parked `DUPLICATE` with an empty candidate snapshot, can reach the rematch worklist and take the return before the genuine line. Value is conserved; the attribution is wrong — the genuine line parks at grace and its break is raised. Recorded debt, scheduled to Phase 15 (see below). A repeat arriving after a person's fallback transfer finds no `PAYOUT_RETURN` and waits; the worker, on the payout row, finds the transfer and writes nothing, and the repeat's own transfer is refused — one return, one credit *(added 2026-10-02 by the Phase 8 -> 9 transition, IDEM-1; point 5)* |
    | The payout lock bypassed (the probe) | `UNIQUE (payout_id)`, `UNIQUE (kind, operation_ref)` and the posting key alone. A duplicate line from another batch carries other stored dates, so its fingerprint conflicts | Rolls back |
    | The worker against the grace leg on one item | the item's row lock, the judgement made on the locked row | Either order converges: allocated, or parked with no return applied |
    | The worker against a merchant close | the payable `FOR SHARE` against the close's lock | Return first: the close finds the payable owed. Close first: the close has closed the payable's ledger account in its own transaction (the transition's repairs), so the return finds it not postable and is not applicable (point 5) |
@@ -497,7 +516,10 @@ Negative:
 - **A return applied from a batch later repudiated.** It stands as a merchant fact, because
   repudiation reverses the recognition entry and counter-allocates the items, but it does not
   touch `merchant`. The reopened `PAYOUT_RETURN` expectation ages into `MISSING_EXTERNAL`, so
-  nothing is silent. But taking the value back from the merchant is not a Phase 8 resolution kind.
+  nothing is silent. *(Corrected 2026-10-02 by the Phase 8 -> 9 transition, REC-4: ageing takes
+  only an expectation never overdue, so a return already overdue at its match - whose
+  `MISSING_EXTERNAL` the repudiated line closed - would have stayed silent; the repudiation's
+  approval now raises its fresh `MISSING_EXTERNAL` itself, following the closed break.)* But taking the value back from the merchant is not a Phase 8 resolution kind.
   *(Stated by `P8-TSK-023`, 2026-10-01, as built: the `payout_return` fact and its posting stand
   untouched, the payout stays `COMPLETED`, the return item leaves to `REPUDIATED`, the
   `PAYOUT_RETURN` expectation is reopened to age by the sweep, and `PAYOUT_CLEARING` stays
@@ -612,3 +634,8 @@ payable bounds the next payout).
   grace side" until the review.)*
 - The Phase 8 review (`P8-DOC-001`) read this ADR against the code, corrected it where it had
   drifted, and accepted it on 2026-10-01.
+- *The Phase 8 → 9 transition* (ADR-0079, `Proposed`): the precedent reused — a corridor
+  return is a born-once fact applied by a worker, with a person's four-eyes resolution as
+  the way out for anything but the exact instructed credit; `WaitingPayoutReturns` is
+  scoped by source, so the merchant worker and the corridor worker never see each other's
+  items.

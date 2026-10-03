@@ -22,12 +22,14 @@ import com.finapp.sharedkernel.id.IdGenerator;
 import com.finapp.sharedkernel.money.Money;
 import java.sql.Connection;
 import java.time.Clock;
+import java.time.Duration;
 import java.time.Instant;
 import java.time.LocalDate;
 import java.time.ZoneOffset;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.Objects;
 import java.util.Optional;
 import java.util.UUID;
 import lombok.NonNull;
@@ -84,6 +86,15 @@ import lombok.extern.slf4j.Slf4j;
  * receipt rejects the file {@code SOURCE_RETIRED}, RETAINED, under the same source lock the
  * sequence uses. *(Corrected 2026-10-01, `P8-DOC-001`: this named no readmission and claimed a
  * re-read in this class that does not exist.)*
+ *
+ * <h2>Our failure backs off (the Phase 8 → 9 transition, MI-7)</h2>
+ *
+ * <p>A file whose acceptance throws stays {@code PARSED} — nothing partial — and, as at the
+ * parse leg, {@code accept_failures + 1}, a backed-off {@code next_accept_at} and a
+ * {@code PARSED → PARSED} history row commit in a second, small transaction, written only while
+ * the file is still {@code PARSED}, under its row lock. The candidate read skips a file not yet
+ * due, so files that fail every attempt — a currency whose position the chart never seeded —
+ * leave the window instead of starving every other source's acceptances on every instance.
  */
 @Slf4j
 @RequiredArgsConstructor
@@ -93,11 +104,24 @@ public final class BatchAcceptance {
     public static final String POSTING_KEY_PREFIX = "settlement-batch:";
 
     /** The leg's pacing, refused mis-configured at construction. */
-    public record Config(int filesPerSweep) {
+    public record Config(int filesPerSweep, Duration backoffBase, Duration backoffCap) {
         public Config {
+            Objects.requireNonNull(backoffBase, "backoffBase must not be null");
+            Objects.requireNonNull(backoffCap, "backoffCap must not be null");
             if (filesPerSweep < 1) {
                 throw new IllegalArgumentException("filesPerSweep must be at least 1");
             }
+            if (backoffBase.isZero() || backoffBase.isNegative()) {
+                throw new IllegalArgumentException("backoffBase must be positive");
+            }
+            if (backoffCap.compareTo(backoffBase) < 0) {
+                throw new IllegalArgumentException("backoffCap must be at least backoffBase");
+            }
+        }
+
+        /** The composition's defaults for the back-off — the parse leg's: a minute to an hour. */
+        public Config(int filesPerSweep) {
+            this(filesPerSweep, Duration.ofMinutes(1), Duration.ofHours(1));
         }
     }
 
@@ -120,9 +144,10 @@ public final class BatchAcceptance {
 
     @SuppressWarnings("try") // The Scopes are used for their close side effects (the idiom).
     public SweepResult sweep() {
+        Instant now = clock.instant();
         List<UUID> candidates =
                 transactions.inTransaction(
-                        uow -> files.dueForAccept(uow, config.filesPerSweep()));
+                        uow -> files.dueForAccept(uow, now, config.filesPerSweep()));
         int accepted = 0;
         int rejected = 0;
         int failed = 0;
@@ -162,8 +187,40 @@ public final class BatchAcceptance {
                     "accept leg could not process settlement file {}: {}",
                     fileId,
                     ourDefect.getClass().getSimpleName());
-            return Outcome.FAILED;
+            return transactions.inTransaction(uow -> recordOurFailure(uow, fileId, ourDefect));
         }
+    }
+
+    /**
+     * The failure's own record (MI-7) — a second, small transaction after the rollback, the
+     * parse leg's twin. Written only while the file is still {@code PARSED}: our rollback
+     * released the claim, so another instance may have accepted it, or a person declined it,
+     * since — the row is locked WAITING, never skipping, and a file that moved records nothing.
+     * The history row carries the file's own stored correlation (D8's chain).
+     */
+    private Outcome recordOurFailure(Connection uow, UUID fileId, RuntimeException ourDefect) {
+        Optional<SettlementFileStore.FileRow> current = files.lockFileById(uow, fileId);
+        if (current.isEmpty() || current.get().status() != FileStatus.PARSED) {
+            return Outcome.SKIPPED;
+        }
+        int failures = files.bumpAcceptFailures(uow, fileId);
+        long factor = 1L << Math.min(failures - 1, 20);
+        Duration backoff = config.backoffBase().multipliedBy(factor);
+        if (backoff.compareTo(config.backoffCap()) > 0) {
+            backoff = config.backoffCap();
+        }
+        Instant now = clock.instant();
+        files.scheduleNextAccept(uow, fileId, now.plus(backoff));
+        files.appendFileEvent(
+                uow,
+                fileId,
+                FileStatus.PARSED,
+                FileStatus.PARSED,
+                SecurityContext.require(),
+                Optional.of("accept failed: " + ourDefect.getClass().getSimpleName()),
+                now,
+                current.get().correlation());
+        return Outcome.FAILED;
     }
 
     @SuppressWarnings("try")

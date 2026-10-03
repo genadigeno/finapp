@@ -278,16 +278,53 @@ public final class BreakTraces {
                                 NodeKind.SUSPENSE_ITEM, suspenseItemId, Relation.EXPECTED_AS,
                                 NodeKind.EXPECTATION, expectation));
             }
-            for (BreakInquiries.ParkLink release : inquiries.releasesOf(unitOfWork, suspenseItemId)) {
-                step(NodeKind.SUSPENSE_ITEM, suspenseItemId, Relation.RELEASED_BY,
-                        NodeKind.PARK, release.parkId());
-                step(NodeKind.PARK, release.parkId(), Relation.POSTED_AS,
-                        NodeKind.JOURNAL_ENTRY, release.entryId());
+            for (BreakInquiries.ReleaseLink release :
+                    inquiries.releasesOf(unitOfWork, suspenseItemId)) {
+                if (release.parkId().isPresent()) {
+                    UUID park = release.parkId().get();
+                    step(NodeKind.SUSPENSE_ITEM, suspenseItemId, Relation.RELEASED_BY,
+                            NodeKind.PARK, park);
+                    release.entryId().ifPresent(entry -> step(NodeKind.PARK, park,
+                            Relation.POSTED_AS, NodeKind.JOURNAL_ENTRY, entry));
+                } else {
+                    // A release that posts no inverse: the resolution (or decision) its
+                    // cause_ref names (REC-9, the Phase 8 -> 9 transition).
+                    releasedBy(release.causeRef()).ifPresent(by -> step(
+                            NodeKind.SUSPENSE_ITEM, suspenseItemId, Relation.RELEASED_BY,
+                            by.kind(), by.id()));
+                }
             }
             if (!suspense.breakId().equals(traced.id())) {
                 step(NodeKind.SUSPENSE_ITEM, suspenseItemId, Relation.OWNED_BY, NodeKind.BREAK,
                         suspense.breakId());
             }
+        }
+    }
+
+    /**
+     * The stored reference a park-less release's {@code cause_ref} carries - {@code
+     * resolution=<id>} or {@code decision=<id>}, as its writers spell it; anything else is no
+     * reference to follow.
+     */
+    private static Optional<Node> releasedBy(String causeRef) {
+        int equals = causeRef.indexOf('=');
+        if (equals < 0) {
+            return Optional.empty();
+        }
+        NodeKind kind =
+                switch (causeRef.substring(0, equals)) {
+                    case "resolution" -> NodeKind.RESOLUTION;
+                    case "decision" -> NodeKind.DECISION;
+                    default -> null;
+                };
+        if (kind == null) {
+            return Optional.empty();
+        }
+        try {
+            return Optional.of(
+                    new Node(kind, UUID.fromString(causeRef.substring(equals + 1)).toString()));
+        } catch (IllegalArgumentException notAnIdentifier) {
+            return Optional.empty();
         }
     }
 

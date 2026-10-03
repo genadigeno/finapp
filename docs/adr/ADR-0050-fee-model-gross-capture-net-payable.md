@@ -74,6 +74,11 @@ non-negotiable.
    exists to strand (`INV-MER-04`). Fee currency is the capture currency; cross-currency
    fees are Phase 9's.
 
+   *(Annotated at the Phase 8 → 9 transition: Phase 9 did not take them. The corridor is a
+   customer rail; the merchant payout stays single-currency on its own provider, and
+   cross-currency merchant fees are deferred with merchant multi-currency settlement —
+   ADR-0079 §9, `Proposed`; recorded in `DECISIONS.md` §Deliberately Deferred.)*
+
 5. **The schedule version is pinned per assessment** (`INV-MER-03`, `INV-HIST-04`). Every
    assessment records the fee schedule version that produced it; recomputing under that
    version reproduces the amount to the minor unit; changing a schedule creates a **new

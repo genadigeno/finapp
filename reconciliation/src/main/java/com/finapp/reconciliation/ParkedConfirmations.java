@@ -40,7 +40,9 @@ import lombok.RequiredArgsConstructor;
  *
  * <h2>One owner per parking, under any race</h2>
  *
- * <p>{@code UNIQUE (origin_ref)} — the parking's id — is the arbiter. A standing item converges
+ * <p>{@code UNIQUE (origin_ref)} — the parking's id — is the arbiter (`V017` made it partial,
+ * {@code WHERE origin <> 'RECON_PARK'}: every origin but a park's keeps it whole, and the insert
+ * names that predicate as its conflict target). A standing item converges
  * before anything is written; otherwise the break and the item are written inside a savepoint,
  * and an inserter that loses the unique to a concurrent one rolls back to it, discarding its
  * break, the break's event, audit record and announcement with it, and converges on the winner's.
@@ -202,7 +204,8 @@ public final class ParkedConfirmations {
                                 + " correlation_id)"
                                 + " VALUES (?, ?, NULL, 'UNMATCHED_CONFIRMATION', ?, ?, ?, ?, ?,"
                                 + " 0, 'OPEN', ?, ?, NULL, NULL, ?, ?)"
-                                + " ON CONFLICT ON CONSTRAINT suspense_item_origin_once"
+                                // V017's partial suspense_item_origin_once, inferred.
+                                + " ON CONFLICT (origin_ref) WHERE origin <> 'RECON_PARK'"
                                 + " DO NOTHING")) {
             insert.setObject(1, itemId);
             insert.setObject(2, breakId);

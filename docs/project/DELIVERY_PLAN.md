@@ -1125,6 +1125,165 @@ See `PHASE_GATES.md` §Phase 9.
 ### 18. What must NOT be implemented yet
 Hedging, treasury management, real market data connectivity, FX P&L reporting (Phase 14).
 
+*(**Elaborated by [`PHASE_9_PLAN.md`](PHASE_9_PLAN.md)** and ADR-0074…0083 at the Phase 8 → 9
+transition, 2026-10-02: thirty items across nine milestones in `BACKLOG.md`, with `X-TSK-010`
+scheduled inside the phase, and the machines in
+[`FX_AND_CROSS_BORDER_LIFECYCLES.md`](../domain/FX_AND_CROSS_BORDER_LIFECYCLES.md). The eighteen
+sections above are kept as written and made current here where they had fallen behind the
+decisions; where they disagree with this addendum or the plan, the addendum and the plan are
+right. §18 stands, and `PHASE_9_PLAN.md` §17 extends it. Until Phase 9's first task lands,
+nothing in this addendum is implemented.)*
+
+- *§3 and §5 — **two new modules, and every seam is a port** (ADR-0074…0080). FX (context 15)
+  and Cross-Border Payments (context 16) are two modules, `fx` and `crossborder`, with **no build
+  edge between them and none to `payments`, `kyc` or `accounts`**: each depends on `ledger`,
+  `platform` and `sharedkernel` alone (`FxModuleIsolationTest`, `CrossborderModuleIsolationTest`,
+  each with planted probes), and `app` composes them through ports that are required constructor
+  parameters — `FxProvider`, `RateSource`, `ConversionParticipants` and
+  `FxSettlementExpectations` (`fx`); `CrossBorderFx`, `CrossBorderExecution`, `CorridorDirectory`,
+  `CounterpartyScreening`, `CrossBorderParticipants` and the Phase 13 seams (`crossborder`);
+  `CorridorRail` and `OutboundCreditComposition` (`payments`); `CounterpartyScreeningProvider`
+  and `ScreeningOutcomeListener` (`kyc`); the scoped `WaitingPayoutReturns` and
+  `ResolvedCorridorReturns` (`reconciliation`). §5's bullets are sharpened by the ADRs: the quote
+  is a **frozen posting plan** with stored rate provenance — reference → provider firm quote (the
+  lock) → internal → customer → executed → cover-executed — and the trade posts exactly the
+  plan (ADR-0074, ADR-0075); conversion posts through `FX_POSITION` per currency, kept
+  ASSET/DEBIT with its sign defined, and there is no revaluation before a reporting currency
+  exists (ADR-0076, Phase 14); rounding policy and rate scale are per pair in the versioned,
+  four-eyes pricing policy, every derivation under a named rounding (ADR-0074, `INV-HIST-04`);
+  spread and markup are one explicit `FX_SPREAD_REVENUE` line with stored attribution, never
+  concealed in the rate (`INV-FX-03`); and each accepted quote is covered with the FX provider
+  exactly once, however the provider answers (ADR-0077).*
+- *§4 — **the dependencies, and §18's contradiction resolved.** Phase 9 enters on Phase 3's
+  multi-currency ledger seam, Phase 5's payment lifecycle and Phase 8's settlement and
+  reconciliation machinery, as written. Phase 8's §18 deferred "FX-related reconciliation" with
+  a "(Phase 14)" reading while `PHASE_8_PLAN.md` §17 said Phase 9; resolved here, as the
+  transition's disposition of Phase 8's hand-overs records: **FX trade and corridor
+  reconciliation are Phase 9's** — two new counterparty positions discharged in ADR-0065's two
+  evidence hops, reconciliation never converting — and **FX P&L reporting and revaluation are
+  Phase 14's**. The transition also repaired, before the boundary, Phase 8's latent `FeeCheck`
+  defect (a cross-currency fee line threw instead of raising a typed `CURRENCY_MISMATCH`) and
+  entered the inherited debts in the register, the Phase 6 0/3-minor fee-batch deferral
+  (`P9-TSK-003` pays it) and the instance-stamped Phase 5–7 send permits (`X-TSK-010`, M9.9)
+  among them.*
+- *§6 — **the data model as decided.** "FX Quote (rate, spread, base/quote, validity, version)"
+  now reads: the FX Quote, single-use, owner-bound, both fixed sides (O3), valid to `expires_at`
+  on the database clock, frozen as a posting plan with its provenance and residual — the quote
+  **is** the rate lock, backed by the provider's firm quote, which outlives it by the cover
+  margin (ADR-0075). Beside it: the Exchange Rate snapshot (independent reference, observation
+  and receipt times, plausibility band, fail-closed staleness); the FX Trade (born once per
+  quote, `UNIQUE (quote_id)`); the **FX Cover** with its attempts, execution fact and realised
+  result — the platform's back-to-back deal, not hedging, netting or treasury (ADR-0077); the
+  versioned pricing and corridor policies with their availability and enable proposals; the
+  Cross-Border Beneficiary (known by provider reference, screened by kyc before pricing); the
+  Payment Offer (immutable facts on the quote, not a second machine); the Cross-Border Payment
+  (five states) and `payments`' **Outbound Credit**, which owns the provider's ambiguity; the
+  born-once cancellation request; `ledger.counterparty` with `OwnerKind.COUNTERPARTY` and the
+  counterparty-keyed `FX_PROVIDER_CLEARING` and `CORRIDOR_CLEARING` (ADR-0078); and "Currency
+  configuration" dissolved — minor units are the JDK's, pinned by a test and a startup guard
+  (ADR-0074). `FX_POSITION` is the ledger's account, explained by `fx`'s proof, never a module's
+  table. Corridor stays `crossborder`'s policy object: (source currency, destination currency,
+  destination country) with ordered candidate rails, fees, limits and screening validity.*
+- *§7 — **the API work as decided.** The customer doors: quote request (both fixed sides,
+  keyed, the claim before the provider call), quote read and cancellation, pairs discovery,
+  conversion by quote id (synchronous and final), add-a-currency, per-currency balances;
+  beneficiary registration, read and revocation; cross-border quote (the offer), authorization
+  (`202`, completion by hinted inquiry or sweep), status and cancellation by recall. The
+  operator doors: pricing and corridor policies and availability (four-eyes), the counterparty
+  screening decision, the FX trade reversal (`P9-TSK-025`), the first-rule-set door, and the
+  audited FX and corridor reports, provenance and trace. **No request schema carries a rate**
+  (`RatesAreNeverClientSuppliedTest` and the OpenAPI request-schema guard, each with a planted
+  violation); multi-currency balance queries answer one balance per currency, never summed; the
+  OpenAPI baseline grows by addition only.*
+- *§8 — **the events as decided.** `FxQuoteIssued`, `FxQuoteExpired` and `FxTradeExecuted` are
+  built as named; **`CurrencyConverted` is folded into `FxTradeExecuted`** (purpose
+  `CONVERSION`; one fact, one event); `CrossBorderPaymentInitiated` is built; and
+  **`CrossBorderPaymentSettled` is not built** — settlement is reconciliation's fact, carried by
+  the existing `reconciliation.SettlementExpectationSettled` (kinds `FX_SELL_LEG`, `FX_BUY_LEG`,
+  `CROSSBORDER_PAYOUT`, `CROSSBORDER_RETURN`). New beside them: `FxQuoteAccepted`,
+  `FxQuoteCancelled`/`FxQuoteAbandoned`, `FxTradeReversed`, the cover outcomes, the policy and
+  availability facts, the payment's `InTransit`/`Delivered`/`Failed`/`Returned`, the beneficiary
+  lifecycle, `CrossBorderCancellationRequested`, `accounts.WalletCurrencyAdded` and
+  `kyc.CounterpartyScreeningDecided`. Payloads carry identifiers, enums and minor-unit strings
+  with currency and scale — **no rate, no name, no provider reference value** — and Phase 9 has
+  no Kafka consumer: no correctness rests on an event (`INV-EVT-04`).*
+- *§9 — **security as decided** (ADR-0075, ADR-0080, ADR-0081, ADR-0083). Rate-source
+  integrity: the reference is independent, plausibility-banded and fail-closed on staleness, and
+  an implausible or incoherent provider rate is never priced. Quote tampering: the quote is
+  server-authoritative, a client rate refused `422`. Sanctions screening on counterparties is
+  **kyc's transaction-time `CounterpartyScreening`**, on the beneficiary before pricing (O4): an
+  unverified payee is always decided by a person, unavailability means unpayable, and the
+  reviewer's permission is `COUNTERPARTY_SCREENING_REVIEW` under `KYC_REVIEWER`. Corridor-level
+  policy is versioned and four-eyes under `CROSSBORDER_ADMINISTER`. Five permissions and the
+  `FX_CONTROLLER` role (four permissions if `P9-TSK-025` is cut), separated so whoever sets
+  prices can neither reverse trades nor clear screenings; new confined credentials per concern;
+  and **provider callbacks are hints** (ADR-0083): a signed-but-forged callback moves nothing,
+  because outcomes are adopted only from an authenticated inquiry.*
+- *§10 — **no value in any metric** (ADR-0072, unchanged). §10's value items become audited
+  operator reports: FX position by currency with its open legs (`/reports/fx/position`),
+  realised vs expected spread, residual accumulation and realised P&L (`/reports/fx/revenue`),
+  and the corridor report. The counts and ages stay metrics: quote-to-trade and expiry rates by
+  ratio from `finapp.fx.quote.closed`, rate staleness `finapp.fx.rate.age`, residual
+  **frequency** (never an amount) `finapp.fx.residual`, the cover series, the proof gauges
+  `finapp.fx.proof` and `finapp.fx.plan.verdict`, the outbound and in-transit ages, the review
+  backlog and `finapp.reconciliation.rule_set.missing`. The full series list is
+  `PHASE_9_PLAN.md` §15.*
+- *§13 — **no new break types; reconciliation never converts** (ADR-0082). "Rate difference,
+  spread difference, conversion timing difference" resolve into the existing fourteen-type
+  taxonomy: FX legs reconcile as **single-currency expectations** (`FX_SELL_LEG`, `FX_BUY_LEG`,
+  keyed by `COVER_REF`), so a rate or spread discrepancy surfaces as `AMOUNT_MISMATCH` on the
+  mis-stated leg's own currency under the new cause `FX_LEG_DIFFERS`, timing as
+  `TIMING_DIFFERENCE` under `VALUE_DATE_DIFFERS`, and a mismatched amount is **never converted
+  to compare**. The trial balance holds per currency (all five), and `FX_POSITION` is explained
+  by open legs — the FX books proof, flipped by a planted raw line.*
+- *§14 — **the ADRs written**: ADR-0074…0083, each Proposed (2026-10-02, the Phase 8 → 9
+  transition). The three §14 asks for are ADR-0075 (the FX quote and rate-lock model),
+  ADR-0076 (multi-currency accounting through `FX_POSITION`; revaluation explicitly deferred to
+  Phase 14) and ADR-0074 (conversion arithmetic and rounding policy). Seven more were needed:
+  ADR-0077 (the decoupled cover), ADR-0078 (counterparty-keyed clearing positions), ADR-0079
+  (cross-border payments and the Outbound Credit), ADR-0080 (corridors, beneficiaries and
+  selection), ADR-0081 (counterparty screening is kyc's), ADR-0082 (FX and corridor settlement
+  and reconciliation) and ADR-0083 (callbacks are hints). ADR-0050 and ADR-0073 are annotated.
+  `FX_AND_CROSS_BORDER_LIFECYCLES.md` states every machine before the first task.*
+- *§2 and §15 — **the milestone map.** The capabilities and the deliverables land across nine
+  milestones:*
+  - *M9.1 Foundations — `P9-TSK-001`…`-004`: the two modules and schema floors, `ExchangeRate`
+    and the conversion plan, JPY and BHD postable everywhere, multi-currency wallets.*
+  - *M9.2 Rates and quotes — `-005`…`-008`: reference rates, the FX provider port and
+    simulator, the pricing policy and FX administration, the quote lifecycle — **a price**.*
+  - *M9.3 A conversion, booked and covered — `-009`…`-012`: wallet conversion in one entry with
+    margin and residual explicit, counterparty-keyed positions, the FX source, the cover
+    executed exactly once.*
+  - *M9.4 FX explained and settled to cash — `-013`, `P9-TST-002`: the FX books proof and plan
+    verification, FX breaks typed, the value battery over ≥ 10,000 conversions.*
+  - *M9.5 Corridors, beneficiaries, screening — `-014`…`-017`: the corridor rail and its
+    source, corridor policy, counterparty screening in kyc, beneficiaries registered, screened,
+    reviewed and revocable.*
+  - *M9.6 A cross-border payment end to end — `-018`…`-022`: offers, authorization and
+    dispatch, outbound resolution and completion, unwinds, corridor settlement to cash — **a
+    payment abroad**.*
+  - *M9.7 Return, cancellation, correction — `-023`…`-025`: returns exact, cancellation by
+    recall, the operator FX trade reversal.*
+  - *M9.8 A second provider of each kind — `-026`: quote-time failover and corridor selection,
+    nothing netted across counterparties (cut first).*
+  - *M9.9 Operating it, and proof — `-027`, `X-TSK-010`, `P9-TST-001`, `P9-DOC-001`: meters,
+    reports and the trace, database-stamped send permits, the storm, the exit review against
+    `PHASE_GATES.md` §Phase 9.*
+
+  *If the phase must shrink (O8), `P9-TSK-026` is cut first, then `P9-TSK-025`, each recorded
+  with Phase 15 as owner; unwinds, returns, cancellation, the proofs and the ten scenarios are
+  never cut.*
+- *O1–O10 — **the transition's decisions, each the owner's to revisit** (recorded in
+  `PHASE_9_PLAN.md` §2): O1, principal — book at acceptance, one back-to-back cover per accepted
+  quote; O2, a return applied automatically only when exactly the instructed credit comes back,
+  the fee refunded, every other return parked for a person; O3, both fixed sides; O4, compliance
+  review on the beneficiary, before pricing, decided by kyc; O5, provider callbacks are hints;
+  O6, JPY and BHD, with the four existing sources' v2 rule-set successors carrying their
+  per-currency rows; O7, the pricing and corridor policy v1 defaults, activated four-eyes with
+  no seed; O8, the cut order `P9-TSK-026` then `-025`; O9, `OUR` only — the beneficiary receives
+  the quoted destination amount; O10, no conversion fee in Phase 9 — margin only, fees are
+  `crossborder`'s.*
+
 ---
 
 # Phase 10 — Credit Decisioning

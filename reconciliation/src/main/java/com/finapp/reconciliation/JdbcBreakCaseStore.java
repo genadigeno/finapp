@@ -2,6 +2,8 @@ package com.finapp.reconciliation;
 
 import com.finapp.platform.security.Actor;
 import com.finapp.sharedkernel.correlation.CorrelationId;
+import com.finapp.sharedkernel.money.CurrencyCode;
+import com.finapp.sharedkernel.money.Money;
 import java.sql.Connection;
 import java.sql.PreparedStatement;
 import java.sql.ResultSet;
@@ -261,6 +263,63 @@ public final class JdbcBreakCaseStore implements BreakCaseStore {
                         + " AND status IN ('OPEN', 'PARTIALLY_RELEASED')"
                         + " AND released_minor < amount_minor)",
                 breakId);
+    }
+
+    @Override
+    public ResolutionTemplates.Holding holding(Connection unitOfWork, BreakRow row) {
+        try (PreparedStatement parked =
+                unitOfWork.prepareStatement(
+                        "SELECT id, external_item_id, side, amount_minor - released_minor AS"
+                                + " unreleased, currency, scale, position_account_id"
+                                + " FROM reconciliation.suspense_item WHERE break_id = ?"
+                                + " AND status IN ('OPEN', 'PARTIALLY_RELEASED')"
+                                + " AND released_minor < amount_minor ORDER BY id LIMIT 1")) {
+            parked.setObject(1, row.id());
+            try (ResultSet item = parked.executeQuery()) {
+                if (item.next()) {
+                    return new ResolutionTemplates.Holding.Parked(
+                            item.getObject("id", UUID.class),
+                            Optional.ofNullable(item.getObject("external_item_id", UUID.class)),
+                            SuspenseSide.valueOf(item.getString("side")),
+                            Money.ofPersisted(
+                                    item.getLong("unreleased"),
+                                    CurrencyCode.of(item.getString("currency").trim()),
+                                    item.getInt("scale")),
+                            item.getObject("position_account_id", UUID.class));
+                }
+            }
+        } catch (SQLException failure) {
+            throw new ReconciliationStorageException(
+                    "could not read the break's parked value", failure);
+        }
+        if (row.expectationId().isEmpty()) {
+            return new ResolutionTemplates.Holding.Nothing();
+        }
+        try (PreparedStatement remainder =
+                unitOfWork.prepareStatement(
+                        "SELECT id, direction, amount_minor - allocated_minor - resolved_minor"
+                                + " AS remainder, currency, scale, ledger_account_id"
+                                + " FROM reconciliation.expectation WHERE id = ?"
+                                + " AND status IN ('OPEN', 'PARTIALLY_SETTLED')"
+                                + " AND amount_minor - allocated_minor - resolved_minor > 0")) {
+            remainder.setObject(1, row.expectationId().get());
+            try (ResultSet open = remainder.executeQuery()) {
+                if (open.next()) {
+                    return new ResolutionTemplates.Holding.Remainder(
+                            open.getObject("id", UUID.class),
+                            ExpectationDirection.valueOf(open.getString("direction")),
+                            Money.ofPersisted(
+                                    open.getLong("remainder"),
+                                    CurrencyCode.of(open.getString("currency").trim()),
+                                    open.getInt("scale")),
+                            open.getObject("ledger_account_id", UUID.class));
+                }
+            }
+        } catch (SQLException failure) {
+            throw new ReconciliationStorageException(
+                    "could not read the break's open remainder", failure);
+        }
+        return new ResolutionTemplates.Holding.Nothing();
     }
 
     @Override

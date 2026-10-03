@@ -409,6 +409,89 @@ class SimPspCsvFormatTest {
                             });
         }
 
+        /**
+         * SEC-02 (the Phase 8 → 9 transition): the screen read the PSP's references with the
+         * parse's class, which a dash or a letter satisfies, so these passed the door and rested
+         * in {@code batch.external_batch_ref} and {@code line_reference}.
+         */
+        @Test
+        @DisplayName("SEC-02: a card number written with dashes or behind letters is refused in"
+                + " every PSP reference class - batchRef, type, pspRef, disputeRef, ourRef")
+        void aCardNumberInEveryPspReferenceClassIsRefused() {
+            String detail =
+                    "D,1,SALE,100.00,1.75,EUR,2026-09-25,2026-09-26,2026-09-27,PSP-CAP-001,"
+                            + "44400012345678901,,ORD-1001,Desk sale";
+            for (String pan : List.of("4111-1111-1111-1111", "PAN4111111111111111",
+                    "CAP-4111-1111-1111-1111",
+                    // NEW-SEC-2: the machine separators, alone and mixed with the printed ones.
+                    "4111:1111:1111:1111", "4111_1111_1111_1111",
+                    "CAP_4111:1111-1111_1111")) {
+                assertScreenRefuses(goldenWith("PSPB-2026-09-25-01", pan), 1, "batchRef",
+                        RefusalReason.PRIMARY_ACCOUNT_NUMBER);
+                assertScreenRefuses(goldenWith(detail, detail.replace(",SALE,", "," + pan + ",")),
+                        2, "type", RefusalReason.PRIMARY_ACCOUNT_NUMBER);
+                assertScreenRefuses(goldenWith(detail, detail.replace("PSP-CAP-001", pan)), 2,
+                        "pspRef", RefusalReason.PRIMARY_ACCOUNT_NUMBER);
+                assertScreenRefuses(goldenWith(detail, detail.replace("901,,ORD", "901," + pan
+                                + ",ORD")), 2, "disputeRef",
+                        RefusalReason.PRIMARY_ACCOUNT_NUMBER);
+                assertScreenRefuses(goldenWith(detail, detail.replace("ORD-1001", pan)), 2,
+                        "ourRef", RefusalReason.PRIMARY_ACCOUNT_NUMBER);
+            }
+        }
+
+        @Test
+        @DisplayName("SEC-02: a card-length Luhn-valid acquirer reference is refused; the ARN,"
+                + " the 15-digit network transaction id and a card-length value that fails"
+                + " Luhn are not")
+        void aCardNumberInTheAcquirerColumnIsRefused() {
+            for (String pan : List.of("4111111111111111", "4222222222222",
+                    "4000000000000002",
+                    // NEW-SEC-2: a card number grouped by the machine separators fails the
+                    // digits-only class and the translated free-text walk refuses it.
+                    "4111:1111:1111:1111", "4111_1111_1111_1111")) {
+                assertScreenRefuses(goldenWith("44400012345678901", pan), 2, "acquirerRef",
+                        RefusalReason.PRIMARY_ACCOUNT_NUMBER);
+            }
+            for (String reference : List.of("12345678901234567890123", "340000000000009",
+                    "4111111111111112")) {
+                String content = goldenWith("44400012345678901", reference);
+                assertThat(FORMAT.screen(content.getBytes(StandardCharsets.UTF_8)).finding())
+                        .as("%s is the class's own shape or clean free text", reference)
+                        .isEmpty();
+                assertThat(FORMAT.parse(content.getBytes(StandardCharsets.UTF_8)))
+                        .as("and the parse's class is unchanged: it reads as before")
+                        .isInstanceOf(SettlementFormat.Result.Parsed.class);
+            }
+        }
+
+        @Test
+        @DisplayName("SEC-02: an account identifier in a reference class is refused, contiguous"
+                + " or in its dashed printed form")
+        void anAccountIdentifierInAReferenceIsRefused() {
+            assertScreenRefuses(goldenWith("PSPB-2026-09-25-01", "DE89370400440532013000"), 1,
+                    "batchRef", RefusalReason.ACCOUNT_IDENTIFIER);
+            assertScreenRefuses(goldenWith("PSP-CAP-001", "GB82-WEST-1234-5698-7654-32"), 2,
+                    "pspRef", RefusalReason.ACCOUNT_IDENTIFIER);
+            assertScreenRefuses(goldenWith("Desk sale", "pay to GB82 WEST 1234 5698 7654 32"),
+                    2, "descriptor", RefusalReason.ACCOUNT_IDENTIFIER);
+        }
+
+        private void assertScreenRefuses(
+                String content, int line, String field, RefusalReason reason) {
+            DeliveryScreen.Screening screening =
+                    FORMAT.screen(content.getBytes(StandardCharsets.UTF_8));
+            assertThat(screening.finding())
+                    .as("refused at the door, naming %s on line %d and never its value", field,
+                            line)
+                    .hasValueSatisfying(
+                            finding -> {
+                                assertThat(finding.reason()).isEqualTo(reason);
+                                assertThat(finding.lineNo()).isEqualTo(line);
+                                assertThat(finding.fieldName()).contains(field);
+                            });
+        }
+
         @Test
         @DisplayName("an account identifier in the descriptor is refused as such")
         void accountIdentifierRefused() {

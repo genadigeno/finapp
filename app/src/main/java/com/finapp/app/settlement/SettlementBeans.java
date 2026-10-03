@@ -379,7 +379,10 @@ public class SettlementBeans {
                 statementChain);
     }
 
-    /** The accept leg (`P8-TSK-009`): hop 1, once per batch, one transaction per file. */
+    /**
+     * The accept leg (`P8-TSK-009`): hop 1, once per batch, one transaction per file. Its
+     * failures back off on the intake's one schedule (the Phase 8 → 9 transition, MI-7).
+     */
     @Bean
     com.finapp.settlement.BatchAcceptance batchAcceptance(
             SettlementFileStore<Connection> settlementFileStore,
@@ -389,6 +392,8 @@ public class SettlementBeans {
             com.finapp.ledger.PostingService postingService,
             com.finapp.ledger.LedgerAccountStore<Connection> ledgerAccountStore,
             @Value("${finapp.settlement.accept.batch:10}") int filesPerSweep,
+            @Value("${finapp.settlement.intake.backoff-base:PT1M}") Duration backoffBase,
+            @Value("${finapp.settlement.intake.backoff-cap:PT1H}") Duration backoffCap,
             IntakeOutcomeObserver intakeOutcomeObserver,
             OutboxWriter<Connection> outboxWriter,
             AuditWriter<Connection> auditWriter,
@@ -402,7 +407,8 @@ public class SettlementBeans {
                 acceptedBatchIntake,
                 postingService,
                 ledgerAccountStore,
-                new com.finapp.settlement.BatchAcceptance.Config(filesPerSweep),
+                new com.finapp.settlement.BatchAcceptance.Config(
+                        filesPerSweep, backoffBase, backoffCap),
                 intakeOutcomeObserver,
                 outboxWriter,
                 auditWriter,
@@ -529,11 +535,13 @@ public class SettlementBeans {
     @Bean
     com.finapp.settlement.BatchRepudiation batchRepudiation(
             SettlementBatchStore<Connection> settlementBatchStore,
+            SettlementFileStore<Connection> settlementFileStore,
             OutboxWriter<Connection> outboxWriter,
             AuditWriter<Connection> auditWriter,
             IdGenerator idGenerator) {
         return new com.finapp.settlement.BatchRepudiation(
-                settlementBatchStore, outboxWriter, auditWriter, idGenerator);
+                settlementBatchStore, settlementFileStore, outboxWriter, auditWriter,
+                idGenerator);
     }
 
     /** The re-parse verification (`P8-TSK-022`, ADR-0066 §9): reasoned, audited, read-only. */

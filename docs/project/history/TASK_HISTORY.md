@@ -1,6 +1,6 @@
 # Task History
 
-The per-task completion records that accumulated behind `## Current Task` - 190 "Previously" blocks, newest first, from `P8-TST-002` back to project initiation. *(`X-TSK-004` is cross-cutting and completed after the Phase 6 → 7 transition, so it stands second, between `P7-TSK-001` and the transition's record - the transition's block moved here by `P7-TSK-001`'s gate, exactly as an earlier form of this note said it would.)*
+The per-task completion records that accumulated behind `## Current Task` - 191 "Previously" blocks, newest first, from `P8-DOC-001` back to project initiation. *(`X-TSK-004` is cross-cutting and completed after the Phase 6 → 7 transition, so it stands second, between `P7-TSK-001` and the transition's record - the transition's block moved here by `P7-TSK-001`'s gate, exactly as an earlier form of this note said it would.)*
 
 **Archive.** These records were moved verbatim out of
 [`CURRENT_STATE.md`](../CURRENT_STATE.md) on 2026-09-20 so that the canonical description of
@@ -12,6 +12,49 @@ Current state: [`CURRENT_STATE.md`](../CURRENT_STATE.md) ·
 Authoritative backlog: [`BACKLOG.md`](../BACKLOG.md)
 
 ---
+
+### Previously
+
+**`P8-DOC-001` — The Phase 8 exit review** — `COMPLETE` (2026-10-01). **Phase 8 `COMPLETE`; M8.8,
+Proof, CLOSES at 3 of 3.** The review ([`reviews/PHASE_8_REVIEW.md`](reviews/PHASE_8_REVIEW.md))
+ruled 8 review areas, 12 universal criteria, F1–F8 and 28 phase-specific criteria `PASS` - criterion
+7 and the Testing bullet with their recorded deviation (no fleet-wide database or kafka count, on
+the owner's standing instruction). **Sixteen read-only readers** audited ADR-0064…0073 against the
+code, the 136 gate claims against their tests, 44 routes, nine documents and the javadoc, the
+register and every debt row, and the money end to end on three rails. **TWO CRITICAL FINDS,
+CORRECTED**: ADR-0069's "a `RESOLVED` break has its approved resolution, for every writer, by a
+deferred trigger" was held by nothing - reconciliation `V015` now requires every closure's
+`RESOLVED` event to name an `APPROVED` resolution, at commit, for every writer (the closing event's
+own link, because a remainder sibling and an offset partner close under one approval; stated limit,
+debt: it proves an approved resolution stands behind the closure, not that it is that break's own);
+and a gain was judged against the source's ACTIVE rule set - `gainEligible` now reads the owning
+break's pinned version. **IMPORTANT, CORRECTED**: `INV-IDEM-02` had no register row (the flip would
+have failed), and the §4 rows for both `P8-TST` items were missing; four audited acts were never
+asserted; 29 gate claims were partial - 27 closed by new tests (atomicity by failure injection for
+seven transactions, six contentions raced for the first time, claimant order, a replay over the
+battery, a chargeback ahead of its webhook, typing through the real lookup, the 100-defect bound,
+projection verification at rest), two answered by construction (`RecordAlreadyMatched` and a real
+`AMBIGUOUS_MATCH` are unreachable); `INV-SET-01`'s Phase 8 subject demonstrated; eleven
+Phase-8-owned debt rows ruled (one paid here - the PSP format's crash past its defect cap - one
+struck, nine re-owned with reasons, one merged), three stale rows fixed, five new rows recorded;
+one column reclassified. **DOCUMENTS**: all ten ADRs corrected and `Accepted`; the domain model and
+lifecycles, the plan, the delivery addendum, the glossary (nine terms added), the domain model, the
+module and distributed-execution registers and 22 javadoc sites made true; DECISIONS gains three
+named owners. **THE FLIP** surfaced one defect, the review's own (a row naming a nested class the
+parser cannot read) - corrected; proven non-vacuous: with `INV-REC-10`'s rows removed the guard
+failed naming exactly it, restored byte-identical. **THIRTY-EIGHT DEMONSTRATIONS** (`MUTATION_TESTING.md`
+§2 +16 rows, §4 +2): thirty-six caught at the first run, two first aimed at the wrong site -
+recorded as no verdict, re-aimed, caught - every restore byte-identical (sha256-verified).
+**Multi-instance PASS**: every §7 contention with its arbiter and counted test. **NEXT**: the
+Phase 8 → 9 transition `READY`. **Verified** by fresh runs - the hermetic tier fleet-wide before
+the flip 2194 tests across 16 modules and after the flip and the records 2198 tests across 16 modules (0 failures); settlement hermetic 170 across 28 and database 77 across 12; reconciliation
+hermetic 166 across 30 and database 189 across 21; app hermetic 643 across 117; the architecture
+tier 143 across 23; the battery 7, resolution 4, investigation 5, administration 7, repudiation 14,
+settlement routes 8, late evidence 3, bank cash 5, the storm 1, payout return 14, pull 11,
+readmission 10, E2E 9, payout cash 5, scheme cash 4, the twelve proof-group suites in ONE shared
+container 62 across 12, the column-classification guard 5, and the document guards 128 across 22 after
+the records landed, ALL 0 FAILURES - the fleet-wide database and kafka tiers deliberately skipped on
+the owner's instruction.
 
 ### Previously
 

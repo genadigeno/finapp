@@ -80,7 +80,6 @@ public final class ResolutionMachine {
     @NonNull private final BreakCaseStore breaks;
     @NonNull private final Suspense suspense;
     @NonNull private final MatchingStore matching;
-    @NonNull private final Resolutions evidence;
     @NonNull private final RuleSets ruleSets;
     @NonNull private final AdjustmentService adjustments;
     @NonNull private final LedgerAccountStore<Connection> accounts;
@@ -89,6 +88,19 @@ public final class ResolutionMachine {
     @NonNull private final IdGenerator ids;
     @NonNull private final Clock clock;
     @NonNull private final ReconciliationTelemetry telemetry;
+
+    /**
+     * The platform's own records, re-asked under the locks before value is attributed (the
+     * Phase 8 -> 9 transition, IDEM-2): a transfer or a gain never pre-empts an operation the
+     * platform still knows as in flight or completed.
+     */
+    @NonNull private final InternalReferenceLookup lookup;
+
+    /**
+     * A parked payout return's payout, locked, and its applied return (the Phase 8 -> 9
+     * transition, IDEM-1): the person's fallback transfer bound to the payout.
+     */
+    @NonNull private final ReturnedPayouts returnedPayouts;
 
     // ------------------------------------------------------------------ inputs and outcomes
 
@@ -128,6 +140,75 @@ public final class ResolutionMachine {
             ResolutionStatus status,
             Optional<UUID> journalEntryId,
             boolean replayed) {}
+
+    /**
+     * The operands the approver read and approves (the Phase 8 -> 9 transition, SEC-01) - each
+     * optional; an echoed operand that is not the stored one is refused
+     * ({@link ResolutionStale}) with nothing written, so an approval can never be of a target,
+     * a partner item or a candidate other than the one its approver saw.
+     */
+    public record ApprovalEcho(
+            Optional<UUID> targetAccountId,
+            Optional<UUID> offsetItemId,
+            Optional<UUID> chosenExpectationId) {
+
+        /** An approval that echoes nothing - the door's body is optional. */
+        public static final ApprovalEcho NONE =
+                new ApprovalEcho(Optional.empty(), Optional.empty(), Optional.empty());
+
+        public ApprovalEcho {
+            Objects.requireNonNull(targetAccountId, "targetAccountId must not be null");
+            Objects.requireNonNull(offsetItemId, "offsetItemId must not be null");
+            Objects.requireNonNull(chosenExpectationId, "chosenExpectationId must not be null");
+        }
+    }
+
+    /** A ledger account as an approver reads it: what it is and whose. */
+    public record AccountOperand(
+            UUID accountId,
+            AccountPurpose purpose,
+            Optional<UUID> ownerRef,
+            CurrencyCode currency,
+            LedgerAccountStatus status) {}
+
+    /** One frozen proposal line: the account, the direction and the amount. */
+    public record ProposalLine(AccountOperand account, com.finapp.ledger.Direction direction,
+            Money amount) {}
+
+    /** An offset's partner suspense item as stored. */
+    public record OffsetOperand(
+            UUID suspenseItemId,
+            UUID breakId,
+            Optional<UUID> externalItemId,
+            SuspenseSide side,
+            SuspenseItemStatus status,
+            Money unreleased) {}
+
+    /**
+     * What an approver reads before approving (the Phase 8 -> 9 transition, SEC-01: ADR-0071's
+     * "the approver approves what they read" held in substance): every operand rendered - a
+     * transfer's target with its purpose and owner, an offset's partner item, a manual match's
+     * chosen candidate - and the frozen proposal lines, account by account.
+     */
+    public record ProposalView(
+            UUID resolutionId,
+            Optional<UUID> breakId,
+            ResolutionKind kind,
+            ResolutionStatus status,
+            ResolutionReasonCode reasonCode,
+            String narrative,
+            boolean fourEyes,
+            Money amount,
+            long residualVersion,
+            Optional<AccountOperand> target,
+            Optional<OffsetOperand> offsetItem,
+            Optional<ResolutionStore.ExpectationOperand> chosenExpectation,
+            List<ProposalLine> lines,
+            Optional<UUID> adjustmentProposalId,
+            Optional<UUID> journalEntryId,
+            String proposedBy,
+            Instant proposedAt,
+            Optional<String> decidedBy) {}
 
     // ------------------------------------------------------------------ refusals
 
@@ -229,6 +310,33 @@ public final class ResolutionMachine {
 
         GainNotYetEligible() {
             super("the suspense item is younger than the pinned gain_min_age_days");
+        }
+    }
+
+    /**
+     * A transfer or a gain while the break's internal operation is still known and not terminal
+     * (the Phase 8 -> 9 transition, IDEM-2): its own completion would credit the value again.
+     */
+    public static final class OperationNotTerminal extends RuntimeException {
+        @java.io.Serial private static final long serialVersionUID = 1L;
+
+        OperationNotTerminal(ResolutionKind kind, InternalClassification live) {
+            super(kind.name() + " waits: the break's operation is " + live.name()
+                    + " - its own evidence settles the parked value, and a person's attribution"
+                    + " now would credit it twice; admitted once the operation is terminal");
+        }
+    }
+
+    /**
+     * A transfer out of a {@code RETURN_NOT_APPLICABLE} break for a payout whose return is already
+     * attributed (the Phase 8 -> 9 transition, IDEM-1).
+     */
+    public static final class ReturnAlreadyAttributed extends RuntimeException {
+        @java.io.Serial private static final long serialVersionUID = 1L;
+
+        ReturnAlreadyAttributed(String how) {
+            super("the payout's return is already attributed (" + how + "): one return, one"
+                    + " credit (ADR-0073 section 5)");
         }
     }
 
@@ -378,6 +486,11 @@ public final class ResolutionMachine {
         }
         UUID ruleSetId = ruleSets.activeFor(unitOfWork, row.sourceId()).id();
         Money amount = ResolutionTemplates.amount(kind, holding, row.valueAtIssue());
+        // The two binds the Phase 8 -> 9 transition added, after the subject rows and before
+        // any target: the value is never attributed while its own operation can still credit
+        // it (IDEM-2), and a payout's return is credited once (IDEM-1).
+        refuseOperationNotTerminal(unitOfWork, kind, row, holding);
+        refuseReturnAlreadyAttributed(unitOfWork, kind, row, holding);
         judgeOperands(unitOfWork, kind, request, row, holding, offsetBreak.map(locked::get),
                 ruleSetId);
 
@@ -507,6 +620,102 @@ public final class ResolutionMachine {
         }
     }
 
+    /**
+     * IDEM-2 (the Phase 8 -> 9 transition): a transfer or a gain of parked value on a break the
+     * grace leg typed by its operation - {@code MISSING_INTERNAL}, {@code UNKNOWN_EXTERNAL}, or
+     * any type a {@code GRACE_EXPIRED} break was reclassified onto - re-asks the platform's own
+     * records over the item's frozen keys, under the locks. While the operation is known and not
+     * terminal ({@code IN_FLIGHT}, or {@code COMPLETED}: its own posting already attributed the
+     * value) the value waits for that operation's own evidence - the rematch that unparks it -
+     * because its completion credits the party unconditionally and can never reach an item a
+     * person resolved. A {@code TERMINAL} operation will never post; nothing named is
+     * {@code UNKNOWN}: both admit.
+     */
+    private void refuseOperationNotTerminal(
+            Connection unitOfWork,
+            ResolutionKind kind,
+            BreakCaseStore.BreakRow row,
+            ResolutionTemplates.Holding holding) {
+        if (kind != ResolutionKind.TRANSFER_TO_ACCOUNT && kind != ResolutionKind.RECOGNISE_GAIN) {
+            return;
+        }
+        if (row.type() != BreakType.MISSING_INTERNAL
+                && row.type() != BreakType.UNKNOWN_EXTERNAL
+                && row.cause() != BreakCause.GRACE_EXPIRED) {
+            return;
+        }
+        if (!(holding instanceof ResolutionTemplates.Holding.Parked parked)
+                || parked.externalItemId().isEmpty()) {
+            return;
+        }
+        Optional<InternalReferenceLookup.LookupSubject> subject =
+                store.lookupSubjectOf(unitOfWork, parked.externalItemId().get());
+        if (subject.isEmpty()) {
+            return;
+        }
+        InternalClassification live = lookup.classify(unitOfWork, subject.get()).classification();
+        if (live == InternalClassification.IN_FLIGHT || live == InternalClassification.COMPLETED) {
+            throw new OperationNotTerminal(kind, live);
+        }
+    }
+
+    /**
+     * IDEM-1 (the Phase 8 -> 9 transition): a transfer out of a {@code RETURN_NOT_APPLICABLE}
+     * break is the payout return's fallback (ADR-0073 §5), so it is bound to the payout. The
+     * payout row is locked {@code FOR UPDATE} - the row the return worker's application takes
+     * first - and the transfer is refused when the payout's return was already applied from
+     * settlement evidence, or another break's transfer for the same payout stands. The worker,
+     * on the same row, writes nothing while such a transfer stands.
+     *
+     * <p>And only a {@code COMPLETED} payout's return is the merchant's to receive (IDEM-1's
+     * residual): a payout debits its merchant's payable when it completes, so a transfer while it
+     * is still in flight waits ({@link OperationNotTerminal}) - should it then fail, its released
+     * hold has already given the merchant the value back, and the transfer would have credited it
+     * twice - and a transfer for a payout that {@code FAILED} is refused outright: the returned
+     * cash answers the provider's own execution, an {@code OFFSET_SUSPENSE} against that line's
+     * park or a write-off, never a party's credit.
+     */
+    private void refuseReturnAlreadyAttributed(
+            Connection unitOfWork,
+            ResolutionKind kind,
+            BreakCaseStore.BreakRow row,
+            ResolutionTemplates.Holding holding) {
+        if (kind != ResolutionKind.TRANSFER_TO_ACCOUNT
+                || row.cause() != BreakCause.RETURN_NOT_APPLICABLE) {
+            return;
+        }
+        if (!(holding instanceof ResolutionTemplates.Holding.Parked parked)
+                || parked.externalItemId().isEmpty()) {
+            return;
+        }
+        ResolutionStore.PayoutReferences references =
+                store.payoutReferencesOf(unitOfWork, parked.externalItemId().get());
+        Optional<ReturnedPayouts.LockedPayout> payout =
+                returnedPayouts.lock(
+                        unitOfWork, references.providerReference(), references.ourReference());
+        if (payout.isEmpty()) {
+            return;
+        }
+        if (payout.get().returnApplied()) {
+            throw new ReturnAlreadyAttributed(
+                    "applied from settlement evidence by the return worker");
+        }
+        if (store.payoutTransferStands(
+                unitOfWork, payout.get().payoutOperationRef(), Optional.of(row.id()))) {
+            throw new ReturnAlreadyAttributed("another break's transfer stands for the payout");
+        }
+        switch (payout.get().payoutState()) {
+            case COMPLETED -> {
+                // The payable was debited: the transfer re-credits it once.
+            }
+            case TERMINAL -> throw new ResolutionTargetRefused(
+                    "the payout FAILED: its released hold already returned the value to the"
+                            + " merchant, so its return credits no party - an OFFSET_SUSPENSE"
+                            + " against the provider's execution, or a write-off");
+            default -> throw new OperationNotTerminal(kind, InternalClassification.IN_FLIGHT);
+        }
+    }
+
     private static void refuseTarget(LedgerAccount target, CurrencyCode currency) {
         if (!TRANSFER_TARGETS.contains(target.purpose())) {
             throw new ResolutionTargetRefused(
@@ -626,7 +835,23 @@ public final class ResolutionMachine {
      */
     public Decided approve(
             Connection unitOfWork, UUID resolutionId, Actor actor, CorrelationId correlation) {
+        return approve(unitOfWork, resolutionId, ApprovalEcho.NONE, actor, correlation);
+    }
+
+    /**
+     * Approves, refusing first - before any other judgement, with nothing written - an echoed
+     * operand that is not the stored one (the Phase 8 -> 9 transition, SEC-01): the approver
+     * approves exactly the target, partner item or candidate they read.
+     */
+    public Decided approve(
+            Connection unitOfWork,
+            UUID resolutionId,
+            ApprovalEcho echo,
+            Actor actor,
+            CorrelationId correlation) {
+        Objects.requireNonNull(echo, "echo must not be null");
         ResolutionStore.ResolutionRow row = lockedResolution(unitOfWork, resolutionId);
+        refuseEcho(row, echo);
         if (row.status() == ResolutionStatus.APPROVED
                 && row.decidedBy().filter(actor.id()::equals).isPresent()) {
             return new Decided(row.id(), row.breakId(), row.status(), row.journalEntryId(), true);
@@ -662,9 +887,10 @@ public final class ResolutionMachine {
         }
 
         List<ResolutionStore.RemainderSibling> siblings =
-                disposesOfRemainder(kind, holding)
-                        ? remainderSiblings(unitOfWork, holding, row.breakId())
-                        : List.of();
+                new java.util.ArrayList<>(
+                        disposesOfRemainder(kind, holding)
+                                ? remainderSiblings(unitOfWork, holding, row.breakId())
+                                : List.of());
         if (siblings.stream()
                 .anyMatch(sibling -> sibling.status() == BreakStatus.RESOLUTION_PROPOSED)) {
             throw new IllegalStateException(
@@ -678,6 +904,10 @@ public final class ResolutionMachine {
         Optional<MatchEngine.HitFacts> candidate = Optional.empty();
         switch (kind) {
             case TRANSFER_TO_ACCOUNT -> {
+                // The transition's two binds, re-judged under the locks (IDEM-2, IDEM-1): the
+                // payout row FOR UPDATE before the target, the return worker's own order.
+                refuseOperationNotTerminal(unitOfWork, kind, breakRow, holding);
+                refuseReturnAlreadyAttributed(unitOfWork, kind, breakRow, holding);
                 // The target FOR SHARE before any projection row (ADR-0071 section 9, step 5):
                 // a close waits for this approval or commits first and the posting refuses.
                 LedgerAccount target =
@@ -703,16 +933,37 @@ public final class ResolutionMachine {
                 }
             }
             case RECOGNISE_GAIN -> {
+                refuseOperationNotTerminal(unitOfWork, kind, breakRow, holding);
                 ResolutionTemplates.Holding.Parked parked =
                         (ResolutionTemplates.Holding.Parked) holding;
                 if (!store.gainEligible(unitOfWork, parked.suspenseItemId())) {
                     throw new GainNotYetEligible();
                 }
             }
-            case MANUAL_MATCH ->
-                    candidate = Optional.of(
-                            manualCandidate(unitOfWork, holding,
-                                    row.chosenExpectationId().orElseThrow(), true));
+            case MANUAL_MATCH -> {
+                MatchEngine.HitFacts hit =
+                        manualCandidate(unitOfWork, holding,
+                                row.chosenExpectationId().orElseThrow(), true);
+                candidate = Optional.of(hit);
+                // A settling match empties the chosen expectation's remainder, so every break
+                // answering for it closes with this approval (REC-5, the Phase 8 -> 9
+                // transition) - locked after the expectation row, as a disposal's siblings are.
+                // One live decision per remainder: a sibling's own pending proposal is decided
+                // first, never overtaken.
+                if (hit.remainderMinor()
+                        == ((ResolutionTemplates.Holding.Parked) holding).amount().minorUnits()) {
+                    List<ResolutionStore.RemainderSibling> emptied =
+                            store.lockRemainderSiblings(
+                                    unitOfWork, hit.expectationId(), row.breakId());
+                    if (emptied.stream().anyMatch(
+                            sibling -> sibling.status() == BreakStatus.RESOLUTION_PROPOSED)) {
+                        throw stale(kind, "a break answering for the chosen expectation's"
+                                + " remainder carries a live proposal of its own: decide it"
+                                + " first");
+                    }
+                    siblings.addAll(emptied);
+                }
+            }
             default -> {
                 // ACKNOWLEDGE and WRITE_OFF: nothing more to lock.
             }
@@ -828,6 +1079,24 @@ public final class ResolutionMachine {
         return new Decided(row.id(), row.breakId(), ResolutionStatus.APPROVED, entryId, false);
     }
 
+    /** SEC-01: every echoed operand must be the stored one, or nothing is decided. */
+    private void refuseEcho(ResolutionStore.ResolutionRow row, ApprovalEcho echo) {
+        refuseEchoed(row.kind(), "targetAccountId", echo.targetAccountId(), row.targetAccountId());
+        refuseEchoed(row.kind(), "offsetItemId", echo.offsetItemId(), row.offsetItemId());
+        refuseEchoed(row.kind(), "chosenExpectationId", echo.chosenExpectationId(),
+                row.chosenExpectationId());
+    }
+
+    private void refuseEchoed(
+            ResolutionKind kind, String operand, Optional<UUID> echoed, Optional<UUID> stored) {
+        if (echoed.isPresent() && !echoed.equals(stored)) {
+            throw stale(kind, "the approval names " + operand + " " + echoed.get()
+                    + ", and the proposal "
+                    + stored.map(id -> "names " + id).orElse("names none")
+                    + " - an approver approves exactly what they read");
+        }
+    }
+
     private void releaseWhole(
             Connection unitOfWork,
             UUID suspenseItemId,
@@ -858,8 +1127,16 @@ public final class ResolutionMachine {
      * decision over the stored candidate, its allocation (the pair unique arbitrating against
      * the engine for any writer), the expectation's machine, the item's
      * {@code PARKED → MATCHED}, and the unpark — the park's exact inverse. A settling match
-     * also closes the candidate's open {@code MISSING_EXTERNAL} break by evidence, the late
-     * settlement's rule (`P8-TSK-013`, L1).
+     * empties the candidate's remainder, so the approval closes EVERY open break answering for
+     * it - its {@code MISSING_EXTERNAL} and its shortfall ({@code AMOUNT_MISMATCH}, or a
+     * remittance's {@code SETTLEMENT_MISMATCH}) - under this same approved resolution, the
+     * remainder disposal's and the offset's precedent (`V015`: each closing event names the
+     * approving resolution). *(Corrected 2026-10-02 by the Phase 8 -> 9 transition, REC-5: only
+     * the {@code MISSING_EXTERNAL} closed, leaving the shortfall open over a SETTLED expectation
+     * with nothing any kind could dispose of - and that one closure was recorded as an
+     * {@code EVIDENCED} resolution proposed by the approving person, which `V006`'s
+     * {@code resolution_evidenced_is_platform} refuses, so a settling manual match over an
+     * overdue expectation could never be approved at all.)*
      */
     private ManualMatch applyManualMatch(
             Connection unitOfWork,
@@ -876,12 +1153,6 @@ public final class ResolutionMachine {
                         .orElseThrow(() -> new IllegalStateException(
                                 "an external item names its run (V003)"));
         Money amount = parked.amount();
-        boolean settles = hit.remainderMinor() == amount.minorUnits();
-        Optional<UUID> overdueBreak =
-                settles
-                        ? matching.lockOpenBreakOn(
-                                unitOfWork, hit.expectationId(), BreakType.MISSING_EXTERNAL)
-                        : Optional.empty();
         UUID decisionId = ids.next();
         matching.insertDecision(
                 unitOfWork,
@@ -929,7 +1200,7 @@ public final class ResolutionMachine {
         matching.bumpResidualOnSubjects(unitOfWork, hit.expectationId(), itemId);
         if (status == ExpectationStatus.SETTLED) {
             ReconciliationEvents.expectationSettled(
-                    outbox, unitOfWork, ids, hit.expectationId(), hit.kind(), hit.operationRef(),
+                    outbox, unitOfWork, ids, hit.expectationId(), hit.kind(),
                     breaks.sourceOf(unitOfWork, row.breakId()).orElseThrow(), now, correlation);
         }
         if (!matching.markItemMatchedFrom(
@@ -941,23 +1212,6 @@ public final class ResolutionMachine {
                 suspense.unpark(
                         unitOfWork, parked.suspenseItemId(), amount, ReleaseCause.UNPARK,
                         "resolution=" + row.id(), proposedOn, actor, now, correlation);
-        overdueBreak.ifPresent(
-                breakId ->
-                        evidence.evidence(
-                                unitOfWork,
-                                new Resolutions.Evidence(
-                                        ids.next(),
-                                        breakId,
-                                        amount,
-                                        matching.breakResidualVersion(unitOfWork, breakId),
-                                        decisionId,
-                                        Optional.empty(),
-                                        Optional.empty(),
-                                        Optional.empty(),
-                                        row.ruleSetId(),
-                                        actor,
-                                        now,
-                                        correlation)));
         return new ManualMatch(decisionId, unparked.parkId(), unparked.entryId());
     }
 
@@ -1065,6 +1319,91 @@ public final class ResolutionMachine {
                         + row.adjustmentProposalId()
                                 .map(id -> ", adjustmentProposal=" + id).orElse(""),
                 correlation);
+    }
+
+    // ------------------------------------------------------------------ the approver's read
+
+    /**
+     * What an approver reads before approving (the Phase 8 -> 9 transition, SEC-01) - lock-free,
+     * one snapshot when the caller runs it in one {@code REPEATABLE READ} transaction: the stored
+     * operands rendered (a transfer's target with its purpose and owner, an offset's partner
+     * item, a manual match's chosen candidate) and the frozen ledger proposal's lines, each
+     * account with its purpose and owner. The same rows {@link #approve} posts from.
+     */
+    public Optional<ProposalView> read(Connection unitOfWork, UUID resolutionId) {
+        Optional<ResolutionStore.ResolutionRow> found = store.byId(unitOfWork, resolutionId);
+        if (found.isEmpty()) {
+            return Optional.empty();
+        }
+        ResolutionStore.ResolutionRow row = found.get();
+        List<JournalLine> frozen =
+                row.adjustmentProposalId()
+                        .flatMap(id -> adjustments.find(unitOfWork, AdjustmentProposalId.of(id)))
+                        .map(com.finapp.ledger.AdjustmentProposal::lines)
+                        .orElse(List.of());
+        java.util.LinkedHashSet<LedgerAccountId> named = new java.util.LinkedHashSet<>();
+        frozen.forEach(line -> named.add(line.account()));
+        row.targetAccountId().map(LedgerAccountId::of).ifPresent(named::add);
+        Map<UUID, LedgerAccount> byId = new java.util.HashMap<>();
+        if (!named.isEmpty()) {
+            for (LedgerAccount account : accounts.findAllById(unitOfWork, List.copyOf(named))) {
+                byId.put(account.id().value(), account);
+            }
+        }
+        List<ProposalLine> lines =
+                frozen.stream()
+                        .map(line -> new ProposalLine(
+                                operandOf(byId, line.account().value()).orElseThrow(
+                                        () -> new IllegalStateException(
+                                                "a proposal line names a ledger account (ledger"
+                                                        + " V010's foreign key)")),
+                                line.direction(),
+                                line.amount()))
+                        .toList();
+        return Optional.of(
+                new ProposalView(
+                        row.id(),
+                        Optional.ofNullable(row.breakId()),
+                        row.kind(),
+                        row.status(),
+                        row.reasonCode(),
+                        store.proposalText(unitOfWork, resolutionId)
+                                .map(ResolutionStore.ProposalText::narrative)
+                                .orElse(""),
+                        row.fourEyes(),
+                        row.proposedAmount(),
+                        row.residualVersion(),
+                        row.targetAccountId().flatMap(id -> operandOf(byId, id)),
+                        row.offsetItemId()
+                                .flatMap(id -> store.suspenseItem(unitOfWork, id))
+                                .map(item -> new OffsetOperand(
+                                        item.suspenseItemId(),
+                                        item.breakId(),
+                                        item.externalItemId(),
+                                        item.side(),
+                                        item.status(),
+                                        Money.ofPersisted(
+                                                item.unreleasedMinor(),
+                                                CurrencyCode.of(item.currency()),
+                                                item.scale()))),
+                        row.chosenExpectationId()
+                                .flatMap(id -> store.expectationOperand(unitOfWork, id)),
+                        lines,
+                        row.adjustmentProposalId(),
+                        row.journalEntryId(),
+                        row.proposedBy(),
+                        row.proposedAt(),
+                        row.decidedBy()));
+    }
+
+    private static Optional<AccountOperand> operandOf(Map<UUID, LedgerAccount> byId, UUID id) {
+        return Optional.ofNullable(byId.get(id))
+                .map(account -> new AccountOperand(
+                        account.id().value(),
+                        account.purpose(),
+                        account.ownerRef(),
+                        account.currency(),
+                        account.status()));
     }
 
     // ------------------------------------------------------------------ plumbing

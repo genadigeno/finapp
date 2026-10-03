@@ -189,7 +189,11 @@ Three designs were weighed at the transition:
    - **Continuity.** DR−CR of `CASH_AT_BANK` per currency equals the closing balance of the
      highest-sequence accepted statement of an unbroken chain. A sequence gap, or an opening
      balance different from the previous closing, raises `SETTLEMENT_MISMATCH` (`STATEMENT_GAP`),
-     and the cash proof fails loudly until evidence fills the gap.
+     and the cash proof fails loudly until evidence fills the gap. *(Corrected 2026-10-02 by the
+     Phase 8 -> 9 transition: a statement repudiated in the middle of its chain opens such a gap
+     too, and it is owned - the approval raises `STATEMENT_GAP` on the accepted successor's run
+     under settlement's source row lock, a fresh break even where the repudiated statement had
+     filled an earlier one (SET-2; point 10).)*
    - **The simulated bank opens at zero** (owner decision O4, below). A non-zero first opening
      raises `SETTLEMENT_MISMATCH` (cause `OPENING_BALANCE`) and posts nothing. The only honest
      counter-account for an opening balance is equity, which is Phase 14's.
@@ -227,6 +231,12 @@ Three designs were weighed at the transition:
    dimension at matching, and a different cycle is a `TIMING_DIFFERENCE` (ADR-0067 §5,
    ADR-0068 §6). As built by `P8-TSK-017` it is never a tie-breaker: it is compared only once a
    match is decided (ADR-0067 §5's note).)*
+
+   *(Annotated at the Phase 8 → 9 transition: ADR-0078 and ADR-0082, both `Proposed`, add
+   the Phase 9 rows on counterparty-keyed positions — the FX cover's two single-currency
+   legs (`FX_SELL_LEG`, `FX_BUY_LEG`, keyed `COVER_REF`) and the corridor's
+   `CROSSBORDER_PAYOUT` and `CROSSBORDER_RETURN` — discharged by the same two evidence
+   hops.)*
 
    The unmatched confirmation's parking has carried its `cause` and `attempt_id` since the
    Phase 7 → 8 transition's repair, and its suspense item keys on them (`P8-TSK-020`, ADR-0070).
@@ -469,6 +479,13 @@ Three designs were weighed at the transition:
 
     A payout return already applied from an item of the repudiated batch stands as a merchant
     fact, and its reopened `PAYOUT_RETURN` expectation ages into `MISSING_EXTERNAL` (ADR-0073).
+    *(Corrected 2026-10-02 by the Phase 8 -> 9 transition: ageing takes only an expectation never
+    marked overdue - `overdue_since` is one-way - so a reopened expectation that was ALREADY
+    overdue, whose `MISSING_EXTERNAL` the repudiated evidence had closed `EVIDENCED`, would never
+    have aged again. The approval now raises a fresh `MISSING_EXTERNAL` (cause
+    `EXPECTATION_OVERDUE`, following the closed break) for every reopened expectation already
+    overdue - a capture, a payout return, or a remittance a repudiated statement had settled - in
+    its own transaction, under the expectation's row lock and the one-open unique (REC-4).)*
     `P8-TSK-023` states what follows for it. The item's `REPUDIATED` and its
     `MATCHED → UNMATCHED` reopening (a bank item of another batch, step 2), the expectations'
     reopening edges, the suspense item's `REPUDIATION` origin (ADR-0070 point 2), the
@@ -499,6 +516,35 @@ Three designs were weighed at the transition:
     batch's original entry known (`acceptedRecognitionEntries` reads `ACCEPTED | REPUDIATED`) and
     the reversal through `resolution.journal_entry_id`.)*
 
+    *(Corrected 2026-10-02 by the Phase 8 -> 9 transition. Four more effects belong to the
+    approval, each so that nothing it reopens is left without an owner or a way back:
+    (a) a reopened expectation already overdue gets a fresh `MISSING_EXTERNAL` (above; REC-4);
+    (b) the closed remittance's `REMITTANCE_REF` is released - reconciliation `V017`'s one edge
+    on the append-only key, `NULL → the repudiation`, refused for every writer unless the keyed
+    remittance is closed `RESOLVED_BY_ADJUSTMENT` by that batch's `REPUDIATE_BATCH`, which must be
+    `APPROVED` at commit - so the genuine re-presented batch, which carries the same reference,
+    registers it and the reopened bank cash matches it; a released key reaches nothing (REC-8);
+    (c) a repudiated STATEMENT's accepted successor (same source and currency, sequence + 1)
+    gets the `STATEMENT_GAP` its missing predecessor opens, valued at its opening, read under
+    settlement's source row lock - taken FIRST, the acceptance's own first lock - and closed
+    `EVIDENCED` by the genuine statement's fill (SET-2, `INV-SET-06`); (d) a fourth shape is
+    refused before anything is written: an original whose parked excess a LATER batch's
+    counterparty correction offset (`CORRECTION_OFFSET`), whose reversal would leave the
+    correction's value unexplained in the position (REC-7). And a bank item a repudiation reopens
+    parks again at its next grace, owned by a new break: `V017` keeps one LIVE suspense item per
+    external item and one `RECON_PARK` item per park, where `V004`'s once-ever uniques jammed the
+    source's grace leg (REC-3).)*
+
+    *(Corrected 2026-10-02 by the Phase 8 -> 9 transition, MI-8: "a `PENDING` item refuses" was
+    the whole precondition, so a batch whose run was `BLOCKED` at its completion - every item
+    decided, the completion itself refused - could be repudiated, and the requeued run then
+    completed over `REPUDIATED` items while the blocked run held its source. The repudiation now
+    also refuses a run `IN_PROGRESS` or `BLOCKED` - started, its completion still owed - judged
+    at the proposal and re-judged at the approval; `COMPLETED` is terminal (reconciliation
+    `V003`), so the fact survives every later lock, and an `OPEN` run with nothing `PENDING` - a
+    statement's, every item disposed in the acceptance - still admits, its later walk
+    completing trivially.)*
+
     The file and its content are retained, and the genuine file is then re-presented and accepted
     normally. If the genuine file was already rejected `CONFLICTING_BATCH` beside the fabricated
     batch, it is readmitted instead (ADR-0066 §8). Repudiating a statement is the only poster of
@@ -506,6 +552,20 @@ Three designs were weighed at the transition:
     and pull controls exist to
     prevent (`INV-SET-07`, ADR-0066), a fabricated report and statement discharging clearing into
     fictitious cash, and for our own adapter's mis-normalisation.
+    *(Corrected 2026-10-02 by the Phase 8 -> 9 transition: for a mis-normalisation the genuine
+    file IS the accepted file's bytes, and they could never be parsed again - a re-delivery meets
+    the accepted file's content address, and readmission admitted only a rejected original. An
+    `ACCEPTED` file whose batch is `REPUDIATED` is now readmissible (`FileReadmission`, settlement
+    `V011` for every writer), inheriting its original's authentication, judged like a
+    `CONFLICTING_BATCH` original - only while no live batch holds the identity its bytes declare
+    under the current format - and re-parsed under the corrected format version (MI-2).)*
+    *(Corrected 2026-10-03 by the Phase 8 -> 9 transition's re-gate, NEW-SEC-1: such a
+    readmission inherits NOTHING - "inheriting its original's authentication" above let one
+    controller re-post a four-eyes-repudiated recognition alone, with nothing distinguishing
+    the mis-normalisation case from the fabrication case. A repudiated batch's file passes
+    nothing on, exactly as a `DECLINED` one (settlement `V014` for every writer), and its
+    readmission is accepted only once a person distinct from every submitter along its chain
+    attests it: the recovery stands, four-eyes again - the readmitter and the attester.)*
 
 **Owner decisions settled at the transition.** Each is recorded as a transition decision that the
 owner may revisit.

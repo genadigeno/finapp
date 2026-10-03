@@ -159,6 +159,12 @@ absorbed or discarded.
 **Verify:** Allocation property tests; system-wide trial balance.
 **Phase:** 0 (allocation), 3 (posting)
 
+*(Amended at the Phase 8 → 9 transition (2026-10-02), ADR-0074 (`Proposed`), in force when
+`P9-TSK-002` and `-009` land: the designated account gains its first production poster — a
+conversion's residual, computed from stored amounts and bounded, posts to `ROUNDING_RESIDUAL`
+in the computed leg's own currency (`INV-FX-07`), never absorbed into margin, the customer
+amount or the position.)*
+
 ### INV-BAL-04 — Available balance accounts for holds
 **Statement:** Available balance equals ledger balance minus active holds. A hold cannot be
 placed that would make available balance negative unless the account explicitly permits it.
@@ -235,6 +241,13 @@ perturbation probe, and a replay reading the active version instead of the pinne
 caught by a later version that would decide otherwise - the completion gate's find, a probe
 that first survived.)*
 **Phase:** 6 (fees), 7 (routing), 8 (matching), 10 (credit), 13 (risk)
+
+*(Amended at the Phase 8 → 9 transition (2026-10-02), ADR-0075 and ADR-0080 (`Proposed`), in
+force when `P9-TSK-007` and `-015` land: the pricing policy version, the corridor policy
+version and the rounding-policy names join the pinned subjects — pinned at the claim
+(`fx.quote_request`, `crossborder.offer_request`) before any provider call, refused
+`409 PolicyStale` past a successor, and replayed by `FxPlanVerification` under the pinned
+version, the ADR-0068 §9 replay discipline applied to FX.)*
 
 ---
 
@@ -558,6 +571,14 @@ on `settlement.line.attributed_source_id` at parse and copied to the item; the p
 first of two matches is recorded in `MUTATION_TESTING.md` §2.
 **Phase:** 8
 
+*(Amended at the Phase 8 → 9 transition (2026-10-02), ADR-0078 (`Proposed`), in force when
+`P9-TSK-010`, `-011` and `-014` land: "every externally settling position" is read per
+(purpose, counterparty) for the counterparty-owned purposes — `FX_PROVIDER_CLEARING(fx-sim-a)`
+and `CORRIDOR_CLEARING(corridor-sim-a)` each have exactly one declared source, read from the
+declaration when `app` composes the register — and a second provider of either kind is a
+declaration, a seed migration and its own source, never a second writer of an existing
+position.)*
+
 ### INV-SET-06 — Cash moves only on the bank's own statement
 **Statement:** `CASH_AT_BANK` is posted only by the recognition of an accepted bank statement, or
 by the repudiation of one. Whenever the chain of accepted statements for a currency is unbroken —
@@ -586,6 +607,12 @@ gap filled `EVIDENCED`, non-zero first opening and ten racing acceptors); the ca
 and shown as the positions report's cash rows; the `MANUAL` refusal on `CASH_AT_BANK` at both ranks
 is `AdjustmentEndpointDatabaseTest#cashAtBankIsClosedToFreeAdjustments` (ledger `V018` re-stating
 the binding). The repudiation poster arrives with `P8-TSK-023`; until then the rule permits one.
+*(Corrected 2026-10-02 by the Phase 8 -> 9 transition, SET-2: "a gap raises a break" now holds on
+the repudiation path too. Repudiating a statement in the middle of its chain opens a gap before its
+accepted successor; the approval raises `STATEMENT_GAP` on the successor's run, read under the same
+settlement source row lock every acceptance holds - a fresh break even where the repudiated
+statement had filled an earlier gap - and the genuine statement's acceptance closes it `EVIDENCED`
+(`BatchRepudiationDatabaseTest` case 18).)*
 **Phase:** 8
 
 *(The first statement opening at zero is owner decision O4, settled at the Phase 7 → 8 transition
@@ -630,6 +657,17 @@ channel. The readmission clause is ADR-0066 §8 as the transition's consistency 
 (A11): an original never attested passes no authentication on, and a `CONFLICTING_BATCH` original
 whose conflicting batch is now `REPUDIATED` is readmissible; whether a declined upload is, is
 `P8-TSK-022`'s to decide, and such a readmission would inherit nothing and be attested.)*
+*(Corrected 2026-10-02 by the Phase 8 -> 9 transition, MI-2: an `ACCEPTED` file whose batch is
+`REPUDIATED` is readmissible too, inheriting its original's authentication - the recovery of our
+own adapter's mis-normalisation, whose genuine evidence is the accepted file's own bytes; settlement
+`V011` refuses any other original for every writer.)*
+*(Corrected 2026-10-03 by the Phase 8 -> 9 transition's re-gate, NEW-SEC-1: "inheriting its
+original's authentication" was itself the finding - it made the four-eyes repudiation verdict
+reversible by one readmitter, who alone re-posted the repudiated recognition. A repudiated
+batch's file passes nothing on, exactly as a `DECLINED` one - settlement `V014` re-states
+`V009`'s walk, the one function the trigger, the accept leg's eligibility and the attestation's
+rank all read - and such a readmission is inert until a holder of `SETTLEMENT_INGEST` distinct
+from every submitter along its chain attests it.)*
 
 *(As built by `P8-TSK-021`, 2026-10-01: the pulled channel exists — `SettlementPull` receives
 through the one door with `received_via = PULL` after a fetch over the source's own confined
@@ -726,7 +764,13 @@ explainable.
 allocation to an expectation made through `allocate(E)` in `(source_sequence, line_no)` order, the
 sequence assigned gaplessly at acceptance and the run leg held under advisory namespace `4` per
 source; and decision snapshots, every evaluation writing a `match_decision` that carries its
-`rule_set_id` and one `match_candidate` row per candidate it considered.
+`rule_set_id` and one `match_candidate` row per candidate it considered. *(Corrected 2026-10-02 by
+the Phase 8 -> 9 transition: claimant order is each LEG's worklist order - the run and reprocess
+legs, and now the rematch leg across a source's runs and the grace leg within its expired set,
+which had read `(line_no, id)` and `(grace_until, id)`; across legs the sweep's order decides, so a
+later run's line judged by the run leg can claim an expectation that opened after an earlier
+residual's last decision before the rematch leg reaches that residual - value conserved, ADR-0068
+point 4. Every late leg also judges with the item's true fingerprint, stored on its decision.)*
 **Verify:** Replay test producing identical matches: decision replay re-running every stored
 decision over its candidate snapshot under its pinned rule set (`IDENTICAL`, and the perturbation
 probe `DIVERGED`); the shuffled-order property test over the pure layer.
@@ -917,6 +961,11 @@ currency's books.
 **Verify:** Per-currency trial balance after high-volume conversion tests.
 **Phase:** 9
 
+*(Amended at the Phase 8 → 9 transition (2026-10-02), ADR-0076 (`Proposed`), in force when
+`P9-TSK-009` and `-013` land: Enforce gains `STATIC` — `FxBooksHaveOnePosterTest`, only `fx`'s
+line composers name `FX_POSITION` and the FX revenue, result and residual purposes — and
+Verify gains the FX books proof, every storm round and at rest (`INV-FX-06`).)*
+
 ### INV-FX-02 — Rates are server-authoritative and time-bounded
 **Statement:** Conversion rates originate from the platform, carry an explicit validity
 window, and expired or stale rates are rejected. Client-supplied rates are never trusted.
@@ -925,6 +974,14 @@ window, and expired or stale rates are rejected. Client-supplied rates are never
 **Verify:** Expired-quote and stale-rate rejection tests.
 **Phase:** 9
 
+*(Amended at the Phase 8 → 9 transition (2026-10-02), ADR-0075 (`Proposed`), in force when
+`P9-TSK-005` and `-008` land: "server-authoritative" is a plausibility band against an
+independent, fresh reference source, failing closed when the reference is stale; the validity
+window is computed from durations on the database clock —
+`expires_at = least(requested_at + provider_valid_for − cover_margin, issued_at + window)` —
+so neither provider skew nor network time can lengthen it; and a client-supplied rate or
+amount at acceptance is *refused* (`422 VALIDATION_FAILED`), never ignored.)*
+
 ### INV-FX-03 — Spread is recognised explicitly
 **Statement:** Any margin between the sourced rate and the customer rate is posted as
 revenue explicitly, not concealed inside the applied rate.
@@ -932,6 +989,158 @@ revenue explicitly, not concealed inside the applied rate.
 **Enforce:** `DOMAIN`.
 **Verify:** Posting-composition tests.
 **Phase:** 9
+
+*(Amended at the Phase 8 → 9 transition (2026-10-02), ADR-0074 (`Proposed`), in force when
+`P9-TSK-002` and `-009` land: spread and markup post as **one** `FX_SPREAD_REVENUE` line,
+attributed to the two by `Money.allocateByWeights`, and the attribution is stored on the
+trade — a fact, not a second line, so fewer rounding terms tighten the residual bound.)*
+
+### INV-FX-04 — An FX quote is a frozen posting plan, executed at most once
+**Statement:** An FX quote is a frozen posting plan, balanced per currency. It is executed at
+most once, only while valid on the database clock, only by its owner, and the trade posts
+exactly the quote's stored amounts.
+**Why:** A plan re-priced at execution can create or destroy value between what the customer
+accepted and what posts; a plan executed twice converts once-accepted funds twice.
+**Enforce:** `DB-CONSTRAINT` (the per-currency plan-identity `CHECK`, the freeze and edge
+triggers, `UNIQUE (fx.trade.quote_id)`) + `DOMAIN`.
+**Verify:** A plan refusal by a raw-SQL writer; ten-way and two-context races; the expiry race
+in both orders.
+**Phase:** 9
+
+### INV-FX-05 — Every executed conversion carries its complete, frozen rate provenance
+**Statement:** Every executed conversion carries its complete, frozen rate provenance —
+provider, provider quote, obtained-at, reference, policy version, rates, margins, amounts and
+rounding names — and replaying it reproduces its posted entry exactly; its internal rate and
+disclosed margin are each derived with a named rounding, never left to a column.
+**Why:** A conversion whose price cannot be reproduced from its own stored facts cannot be
+defended to a customer, an auditor or a regulator — `INV-HIST-04` pointed at pricing.
+**Enforce:** `DB-CONSTRAINT` (`NOT NULL` + the freeze trigger) + `DOMAIN`.
+**Verify:** Golden replay; `FxPlanVerification` (report-only, a divergence CRITICAL); a
+perturbation demonstration; the 10-decimal property test on every pair.
+**Phase:** 9
+
+### INV-FX-06 — The FX books are explainable and have one poster
+**Statement:** Per currency, `FX_POSITION` equals the sum of its open legs and is zero at rest
+once covers execute. Spread, residual and realised results equal their trades' and executions'
+stored parts. These books have one poster and accept no free adjustment.
+**Why:** An FX position that cannot be decomposed into named open legs is an unexplained
+currency exposure; a book any module may post to stops being evidence (`INV-BAL-01`'s
+discipline for the platform's own currency risk).
+**Enforce:** `STATIC` (one poster, `FxBooksHaveOnePosterTest`) + `DB-CONSTRAINT` (the
+`closedToFreeAdjustments()` binding trigger) + `DOMAIN`.
+**Verify:** The FX books proof every storm round and at rest; a planted raw line flips it.
+**Phase:** 9
+
+### INV-FX-07 — The rounding residual is bounded and posted
+**Statement:** A conversion's residual is computed from stored amounts, bounded — |r| ≤ 2
+minor units by `CHECK`, ≤ 1 under half policies by the domain — and posted to
+`ROUNDING_RESIDUAL` in its own currency, never folded into margin, the customer amount or the
+position.
+**Why:** `INV-BAL-03` at conversion scale: an absorbed residual is value creation or
+destruction hidden inside rounding, and an unbounded one is a mispricing detector switched
+off.
+**Enforce:** `DB-CONSTRAINT` + `DOMAIN`.
+**Verify:** Property tests; the value battery's residual identity.
+**Phase:** 9
+
+### INV-FX-08 — A provider FX execution is idempotent at the provider and closes exactly its plan
+**Statement:** A provider FX execution carries a reference stored before sending; it is
+re-sent only under that reference; a new reference is minted only after a definitive
+rejection; and a cover always closes exactly its plan's position legs, the difference posted
+as realised FX result.
+**Why:** `INV-PAY-04` pointed at the FX provider: without it, the recovery path for an unknown
+outcome — retry or requote — is itself a double-trade mechanism, and a cover that closes
+anything but the plan leaves `FX_POSITION` unexplainable.
+**Enforce:** `DB-CONSTRAINT` (`UNIQUE client_reference` per attempt, the conditional attempt
+edge, the `fx.cover_execution` PK) + `DOMAIN`.
+**Verify:** Response-lost, unrecognised and lock-expiry tests; simulator execution counts.
+**Phase:** 9
+
+### INV-FX-09 — A booked conversion never waits on a provider
+**Statement:** A customer's booked conversion never waits on, and is never changed by, a
+provider outcome.
+**Why:** The platform is principal (ADR-0076): a provider's `UNKNOWN`, failure or re-pricing
+reaching a customer balance would make the customer's money depend on a counterparty's
+behaviour.
+**Enforce:** `STATIC` (no provider port reachable from the conversion transaction) + `DOMAIN`.
+**Verify:** Cover-failure tests leaving customer lines byte-identical.
+**Phase:** 9
+
+*`INV-FX-04`…`INV-FX-09` catalogued by the Phase 8 → 9 transition (2026-10-02), the `INV-SET`
+and `INV-REC` precedent: Phase 9's gate properties given stable IDs before any FX code
+exists, so the register can demand their demonstrations by identifier rather than by prose.
+Decisions in ADR-0074…0077 and ADR-0082. `INV-FX-01`…`-03`, catalogued at initiation and
+subjectless until now, are Phase 9's too, and are amended at the same transition, each with
+its provenance. Until Phase 9's first task lands, nothing these entries name is implemented;
+every statement is the decided design, corrected by the tasks that build it.*
+
+---
+
+# Cross-Border Payments — `INV-XB`
+
+### INV-XB-01 — A cross-border payment debits once, at acceptance, or not at all
+**Statement:** A cross-border payment is priced by one accepted quote, holds the customer's
+funds until the corridor provider accepts, then posts its debit, conversion, fee and clearing
+credit in one entry, once. A payment that fails debits the customer nothing.
+**Why:** Debit-then-reverse turns every provider failure into customer-visible financial
+history; a double posting pays the beneficiary once and charges the customer twice.
+**Enforce:** `DB-CONSTRAINT` (`UNIQUE (crossborder.payment.quote_id)`, the claim PK, the
+posting key) + `DOMAIN`.
+**Verify:** Response-lost, retry, callback, ten-applier and failure tests.
+**Phase:** 9
+
+### INV-XB-02 — Funds move only toward a screened, payable beneficiary
+**Statement:** Funds are instructed, and offers priced, only for a beneficiary that is
+`ACTIVE` with a current `CLEAR` or person-`RELEASED` screening, on an available corridor. An
+automatic `CLEAR` exists only where the provider's payee check matched; a hit, an
+indeterminate result or an unverified payee is never auto-cleared and never auto-rejected.
+Every non-payable state is refused with the same response.
+**Why:** Instructing funds toward an unscreened or blocked counterparty is a sanctions breach
+executed by software; and a refusal that varies by reason tips off the holder of a blocked
+destination (`INV-KYC-04` extended, ADR-0081).
+**Enforce:** `DOMAIN` (judged in-lock at the quote's Tx1 and the authorization's Tx1) +
+`DB-CONSTRAINT` (the screening's decision-basis `CHECK`s: a person with a reason for
+`REVIEWER`; no `AUTOMATIC` `CLEAR` without a payee `MATCH`).
+**Verify:** Each non-payable state at both doors; a lapsed clearance re-screened, or refused
+`409 ScreeningRequired`; a counted ten-way race of Tx1 against a concurrent screening hit; an
+unverified payee with a clear name; byte-identical refusals across screening, review, block
+and revocation (`P9-TSK-017`, `-018`, `-019`).
+**Phase:** 9
+
+### INV-XB-03 — What was shown is what is held, posted and instructed
+**Statement:** What the customer was shown — destination amount, fee, total debit — is
+exactly what is held, posted and instructed.
+**Why:** Any drift between disclosure and execution is a silent re-pricing of a customer who
+already accepted a price.
+**Enforce:** `DB-CONSTRAINT` (the offer's amounts copied onto the payment and the outbound
+credit, frozen by trigger) + `DOMAIN`.
+**Verify:** The disclosure-to-posting test: offer = hold (`P9-TSK-019`) = completion posting =
+instruction (`P9-TSK-020`).
+**Phase:** 9
+
+### INV-XB-04 — A return is applied once, automatically only when it is exact
+**Statement:** A return is applied once. It is applied automatically only when it is exactly
+the instructed credit coming back — the instructed currency and amount — credited in that
+currency and never re-converted at the original rate, with the fee refunded. Any other return
+is never posted automatically: it parks with its break, and a person's resolution is the only
+way it reaches the customer, recording the return on the payment in the same transaction.
+**Why:** A partial return credited automatically could never raise a break — the provider's
+line and our posting would agree — so the customer would silently bear an intermediary's
+deduction under a promise of `OUR`; a re-converted return meets a rate the customer never
+accepted; a return applied twice credits twice.
+**Enforce:** `DB-CONSTRAINT` (`UNIQUE (outbound_credit_return.outbound_credit_id)`, the claim,
+the applier-amount trigger, the `applied_by`/`resolution_id` `CHECK`) + `DOMAIN`.
+**Verify:** Return tests in every ordering, before the completion is known included; ten
+redeliveries; partial and other-currency returns parked; the resolution racing an
+inquiry-applied return.
+**Phase:** 9
+
+*`INV-XB-01`…`INV-XB-04` catalogued by the Phase 8 → 9 transition (2026-10-02), on the same
+precedent — a new group, because a cross-border payment's properties are not
+foreign-exchange properties: they bind the hold, the beneficiary, the corridor and the
+return, not the rate. Decisions in ADR-0079…0081. Until Phase 9's first task lands, nothing
+these entries name is implemented; every statement is the decided design, corrected by the
+tasks that build it.*
 
 ---
 
@@ -945,6 +1154,12 @@ signal.
 **Enforce:** `DOMAIN` (per entry) aggregated system-wide.
 **Verify:** Continuous job with alerting; gate criterion F1.
 **Phase:** 3, 9 (per currency), 14 (reported)
+
+*(Amended at the Phase 8 → 9 transition (2026-10-02), ADR-0074 (`Proposed`), in force when
+`P9-TSK-003` lands: "every currency" becomes five at three scales — EUR, GBP and USD at 2
+minor units, JPY at 0, BHD at 3 — the minor units pinned by a test and a startup guard, and
+the per-currency trial balance and `finapp.ledger.trial.balance{currency}` eager for all
+five.)*
 
 ### INV-ACC-02 — Every reported figure drills down to postings
 **Statement:** Any figure in any financial report traces to the individual journal lines
@@ -1225,6 +1440,12 @@ onto a case status directly) + `DB-PRIVILEGE` (evidence tables are append-only).
 own decisioning ran; evidence bytes asserted identical to the bytes received.
 **Phase:** 2
 
+*(Amended at the Phase 8 → 9 transition (2026-10-02), ADR-0081 (`Proposed`), in force when
+`P9-TSK-016` lands: extended to counterparty screening — every outcome of
+`kyc.counterparty_screening`, `CLEAR` included, is a recorded platform decision carrying its
+`decision_basis` (`AUTOMATIC` | `REVIEWER`), the kyc policy version and decided-at, with the
+provider's verdict retained as evidence only.)*
+
 ### INV-KYC-02 — A decision is immutable, attributable and reproducible
 **Statement:** A recorded KYC/KYB decision is never updated or deleted; it names its actor
 (a reviewer, or the platform under a stated automatic policy), its reason, the policy version
@@ -1260,6 +1481,13 @@ is a person refused service by string similarity. Both are invisible without the
 **Verify:** Negative authorization tests; a test asserting a hit case cannot reach a terminal
 state without a recorded review decision.
 **Phase:** 2
+
+*(Amended at the Phase 8 → 9 transition (2026-10-02), ADR-0081 (`Proposed`), in force when
+`P9-TSK-016` lands: extended to counterparty screening, where an **unverified payee is
+handled as a hit** — a `CLEAR` on a name whose payee check answered `NO_MATCH` or
+`UNAVAILABLE` goes to a person (reason `PAYEE_UNVERIFIED`), an `AUTOMATIC` `CLEAR` exists
+only with a payee `MATCH` (a kyc `CHECK` on the stored payee verdict), and release or block
+takes `COUNTERPARTY_SCREENING_REVIEW` with a recorded reason (`INV-XB-02`).)*
 
 ### INV-KYC-05 — The verification outcome has one authority
 **Statement:** The KYC context owns the verification decision. Any copy elsewhere — including
@@ -1383,6 +1611,23 @@ at the door, storing nothing but metadata, while a Luhn-valid 15-digit network t
 a reference field is not refused.)*
 **Phase:** 5
 
+*(Corrected 2026-10-02 by the Phase 8 → 9 transition, the audit's `SEC-02`, `SEC-03` and `SEC-04`:
+three Phase 8 paths stored a card number this statement forbids. The PSP format's screen admitted
+a dash-grouped or letter-prefixed card number in its reference columns and a bare one in its
+acquirer column — its screen classes now exclude instrument shapes as the later formats' do
+(ADR-0066 §3), and a stored batch reference that is not a reference shape is withheld from the
+read. The case file's screen scanned contiguous digit runs alone, so `4111 1111 1111 1111` passed
+notes, narratives and reasons. And six person-written reason doors — the settlement decline,
+readmission, verification and content read, the reconciliation reprocess and requeue, and the
+opening position — screened nothing. Every person-written reason, note and narrative now passes
+the platform's one screen, `com.finapp.sharedkernel.security.InstrumentShapes`: a Luhn-valid
+12–19-digit run however a person groups it with single spaces or dashes (ISO/IEC 7812's band;
+the settlement door keeps 13–19 for whole files), the platform's own UUIDs masked — at the domain
+before any claim, and by its PL/pgSQL twin on every column that stores such prose (settlement
+`V012`, reconciliation `V019`), so a raw writer is refused too. `platform.audit_record.reason` has
+no CHECK twin; every Phase 8 door screens before writing it, and the reason doors of earlier
+modules stay with the cross-cutting owner.)*
+
 ### INV-PAY-03 — Provider vocabulary is confined behind the adapter
 **Statement:** No provider-specific state, error code, field name or enum value appears in
 the domain model, a persisted domain column, an event payload or a public API contract. A
@@ -1410,6 +1655,13 @@ the port's contract requires it) + `DB-CONSTRAINT` (`NOT NULL`, unique per opera
 **Verify:** Contract tests asserting a re-dispatched operation presents the same reference;
 schema tests on the uniqueness.
 **Phase:** 5
+
+*(Amended at the Phase 8 → 9 transition (2026-10-02), ADR-0077 and ADR-0079 (`Proposed`), in
+force when `P9-TSK-012`, `-019` and `-024` land: the rule extends to the FX cover — the
+client reference `T`, one per attempt, re-sent only under the same reference until the
+provider knows of it, a new reference only after a definitive rejection (`INV-FX-08`) — to
+the outbound credit's end-to-end reference `E`, minted and stored before any send, and to
+the recall, itself idempotent at the provider and never followed by a re-send.)*
 
 ### INV-PAY-05 — Capture is bounded by authorization; refund is bounded by capture
 **Statement:** The captured amount never exceeds the authorized amount, and the sum of
@@ -1616,6 +1868,13 @@ corrected); an availability change after the decision reroutes nothing in flight
 commits with its attempt - `PaymentAuthorizationDatabaseTest#aCrashMidCallStrandsTheDispatchVisibly`.)*
 **Phase:** 7
 
+*(Amended at the Phase 8 → 9 transition (2026-10-02), ADR-0080 (`Proposed`), in force when
+`P9-TSK-017` and `-019` land: the corridor provider that tokenises a beneficiary is selected
+once, at registration, recomputable from `corridor_selection`'s stored steps; every outbound
+credit is then routed through the one routing door as routing's third subject, storing
+`destination_country` and per-candidate reachability — and only the beneficiary's issuing
+rail is reachable, so a re-route is impossible by construction.)*
+
 ### INV-RAIL-03 — Bank account identifiers and payment aliases never enter the platform
 **Statement:** An external account is known to the platform only by an opaque reference
 issued by its rail's provider, a four-character display suffix and the confirmation-of-payee
@@ -1647,6 +1906,22 @@ an IBAN put where a reference belongs meets the same screen; and the platform's 
 account is configured only by the bank's opaque reference.)*
 **Phase:** 7
 
+*(Corrected 2026-10-02 by the Phase 8 → 9 transition, the audit's `SEC-03` and `SEC-04`: "refused
+at the surface" held for the contiguous international shape alone, and six person-written reason
+doors screened nothing. An account identifier in its ISO 13616 printed form — groups of four
+separated by single spaces or dashes, `GB82 WEST 1234 5698 7654 32` — is now refused wherever
+the platform screens prose: by the settlement door's free-text screen and, through the platform's
+one `InstrumentShapes` rule, by every person-written reason, note and narrative at the domain and
+by `CHECK` (settlement `V012`, reconciliation `V019`). The printed form is checksum-gated (mod 97)
+because groups of four collide with ordinary words; the contiguous shape stays shape-alone.)*
+
+*(Amended at the Phase 8 → 9 transition (2026-10-02), ADR-0080 and ADR-0081 (`Proposed`), in
+force when `P9-TSK-016` and `-017` land: a cross-border beneficiary is held to the same
+rule — the corridor provider's opaque `destination_reference`, a four-character display
+suffix and the payee-check verdict, with the provider-attested destination country, currency
+and entity type admitted as attributes. The beneficiary's name is held only by `kyc`,
+encrypted with AAD bound to its screening, and never by `crossborder` or `payments`.)*
+
 ### INV-RAIL-04 — Every external rail's value in flight has its own clearing position
 **Statement:** A completion on an external rail posts to that rail's own clearing account —
 the card PSP's `SETTLEMENT_CLEARING`, the instant scheme's `INSTANT_CLEARING` — and never to
@@ -1664,6 +1939,13 @@ clearing position against its own rail's records.
 its remittance's cash — reaches only `INSTANT_CLEARING`, the position read from the source's
 declaration; `SETTLEMENT_CLEARING` stands unmoved beside it (`SchemeCycleCashDatabaseTest`, the
 position probe recorded in `MUTATION_TESTING.md` §2).)*
+
+*(Amended at the Phase 8 → 9 transition (2026-10-02), ADR-0078 (`Proposed`), in force when
+`P9-TSK-010` lands: "its own clearing position" is read per (purpose, counterparty) for the
+counterparty-owned purposes — `FX_PROVIDER_CLEARING` and `CORRIDOR_CLEARING` are
+`OwnerKind.COUNTERPARTY`, one account per declared counterparty and currency, seeded by the
+migration that admits the counterparty, never minted at runtime — and still never nets two
+counterparties. The existing operational clearings are untouched.)*
 
 ---
 
@@ -1764,7 +2046,8 @@ documents after resolution refused with nothing written or sent.*
 | `INV-EVT` | 01–04 | Events and publication |
 | `INV-SET` | 01–07 | Settlement |
 | `INV-REC` | 01–10 | Reconciliation |
-| `INV-FX` | 01–03 | Foreign exchange |
+| `INV-FX` | 01–09 | Foreign exchange |
+| `INV-XB` | 01–04 | Cross-border payments |
 | `INV-ACC` | 01–05 | Accounting and reporting |
 | `INV-AUD` | 01–04 | Security and audit |
 | `INV-CRD` | 01–04 | Credit decisioning |
@@ -1776,5 +2059,7 @@ documents after resolution refused with nothing written or sent.*
 | `INV-RAIL` | 01–04 | Payment rails and routing |
 | `INV-DSP` | 01–03 | Disputes and chargebacks |
 
-**110 invariants.** Every one must be enforced and verified before the phase that owns it can
-pass its exit gate.
+**120 invariants.** Every one must be enforced and verified before the phase that owns it can
+pass its exit gate. *(The count moved from 110 to 120 at the Phase 8 → 9 transition,
+2026-10-02: `INV-FX-04`…`INV-FX-09` and `INV-XB-01`…`INV-XB-04` catalogued, and thirteen
+entries restated, each with its dated provenance.)*

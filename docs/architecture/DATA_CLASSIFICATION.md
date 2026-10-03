@@ -112,7 +112,7 @@ no business data.
 | `audit_record` | `operation` | `INTERNAL` | A registered action code (`AUDITABLE_ACTIONS.md`) |
 | `audit_record` | `target_type` | `INTERNAL` | |
 | `audit_record` | `target_id` | `RESTRICTED-FINANCIAL` | Identifies the thing acted on. From Phase 3 that is an account or a posting |
-| `audit_record` | `reason` | `RESTRICTED-PII` | **Free text written by a person.** Its content is not constrained by any type, so it must be handled at the ceiling |
+| `audit_record` | `reason` | `RESTRICTED-PII` | **Free text written by a person.** Its content is not constrained by any type, so it must be handled at the ceiling. *(Corrected 2026-10-02 by the Phase 8 → 9 transition, SEC-04: every Phase 8 door that writes a person's reason here — the settlement decline, readmission, verification and content read, the reconciliation reprocess and requeue and the opening position, beside the case file's already-screened reasons — refuses a card-number or account-identifier shape before it writes (`InstrumentShapes`); this column has no CHECK twin of its own, and the reason doors of earlier modules stay with the cross-cutting owner.)* |
 | `audit_record` | `outcome` | `INTERNAL` | |
 | `audit_record` | `correlation_id` | `INTERNAL` | **Caller-supplied** - see §5 |
 | `audit_record` | `change_summary` | `RESTRICTED-FINANCIAL` | Free text. `V009` already forbids a payload dump here (`INV-AUD-02`); the ceiling is what handling must assume |
@@ -1031,6 +1031,8 @@ columns hold platform actor identifiers (`audit_record.actor`'s reasoning), and 
 | `file` | `rejection_detail` | `INTERNAL` | At most 500 characters of OUR diagnostic - never content, the schema's own bound |
 | `file` | `parse_failures` | `INTERNAL` | How often our parser failed - our defect's counter |
 | `file` | `next_parse_at` | `INTERNAL` | The backoff's next attempt |
+| `file` | `accept_failures` | `INTERNAL` | How often our accept leg failed - our defect's counter, `parse_failures`' twin (settlement `V013`, added 2026-10-02 by the Phase 8 → 9 transition, MI-7) |
+| `file` | `next_accept_at` | `INTERNAL` | The accept leg's backoff: no acceptance candidate before it (settlement `V013`, MI-7) |
 | `file` | `received_at` | `INTERNAL` | When the door committed it |
 | `file` | `status_changed_at` | `INTERNAL` | When the machine last moved |
 | `file` | `correlation_id` | `INTERNAL` | The flow's correlation - `audit_record.correlation_id`'s reasoning |
@@ -1045,7 +1047,7 @@ columns hold platform actor identifiers (`audit_record.actor`'s reasoning), and 
 | `file_event` | `to_status` | `INTERNAL` | The edge's destination |
 | `file_event` | `actor` | `CONFIDENTIAL` | Who drove the edge (`audit_record.actor`'s reasoning) |
 | `file_event` | `actor_type` | `INTERNAL` | The actor's kind - a closed vocabulary |
-| `file_event` | `reason` | `CONFIDENTIAL` | The edge's stated reason - bounded, never content, but free prose by a person on a decline or a readmission (`batch_event.reason`'s and `audit_record.reason`'s reasoning) |
+| `file_event` | `reason` | `CONFIDENTIAL` | The edge's stated reason - bounded, never content, but free prose by a person on a decline or a readmission (`batch_event.reason`'s and `audit_record.reason`'s reasoning). Screened for card-number and account-identifier shapes at the domain and by settlement `V012`'s `file_event_reason_no_instrument_shape` (corrected 2026-10-02 by the Phase 8 → 9 transition, SEC-03/SEC-04; the shared `InstrumentShapes` rule) |
 | `file_event` | `occurred_at` | `INTERNAL` | When the edge was driven |
 | `file_event` | `correlation_id` | `INTERNAL` | The flow's correlation |
 | `file_receipt` | `id` | `INTERNAL` | A record identifier. Generated |
@@ -1115,7 +1117,7 @@ reasoning); free text stays inside the encrypted file and has no column here.
 | `batch_event` | `to_status` | `INTERNAL` | The edge's destination |
 | `batch_event` | `actor` | `CONFIDENTIAL` | Who drove the edge (`audit_record.actor`'s reasoning) |
 | `batch_event` | `actor_type` | `INTERNAL` | The actor's kind - a closed vocabulary |
-| `batch_event` | `reason` | `CONFIDENTIAL` | The decline's stated reason - free prose by a person (`audit_record.reason`'s reasoning) |
+| `batch_event` | `reason` | `CONFIDENTIAL` | The decline's stated reason - free prose by a person (`audit_record.reason`'s reasoning). Screened for card-number and account-identifier shapes at the domain and by settlement `V012`'s `batch_event_reason_no_instrument_shape` (corrected 2026-10-02 by the Phase 8 → 9 transition, SEC-03/SEC-04; the shared `InstrumentShapes` rule) |
 | `batch_event` | `occurred_at` | `INTERNAL` | When the edge was driven |
 | `batch_event` | `correlation_id` | `INTERNAL` | The flow's correlation |
 | `batch_total` | `batch_id` | `INTERNAL` | The batch - an identifier of a thing |
@@ -1177,7 +1179,7 @@ counters and dates of things.
 | `rule_set` | `effective_from` | `INTERNAL` | A property of the artefact |
 | `rule_set` | `proposed_by` | `CONFIDENTIAL` | Who proposed the version (`audit_record.actor`'s reasoning; v1's is the migration) |
 | `rule_set` | `decided_by` | `CONFIDENTIAL` | Who activated it — the four-eyes fact once `P8-TSK-022` produces it |
-| `rule_set` | `reason` | `CONFIDENTIAL` | Free prose by a person about a decision (`audit_record.reason`'s reasoning) |
+| `rule_set` | `reason` | `CONFIDENTIAL` | Free prose by a person about a decision (`audit_record.reason`'s reasoning). Screened for card-number and account-identifier shapes at the domain and by reconciliation `V019`'s `rule_set_reason_no_instrument_shape` (corrected 2026-10-02 by the Phase 8 → 9 transition, SEC-03/SEC-04; the shared `InstrumentShapes` rule) |
 | `rule_set` | `created_at` | `INTERNAL` | A property of the artefact |
 | `rule_set` | `correlation_id` | `INTERNAL` | The flow's correlation |
 | `rule_set` | `decided_at` | `INTERNAL` | When the version was activated or rejected (`P8-TSK-022`, `V012`); the seed's is its creation |
@@ -1187,7 +1189,7 @@ counters and dates of things.
 | `rule_set_event` | `to_status` | `INTERNAL` | The edge's destination - a closed vocabulary |
 | `rule_set_event` | `actor` | `CONFIDENTIAL` | Who proposed, activated, retired by activation or rejected (`audit_record.actor`'s reasoning) |
 | `rule_set_event` | `actor_type` | `INTERNAL` | The actor's kind - a closed vocabulary |
-| `rule_set_event` | `reason` | `CONFIDENTIAL` | A controller's prose about a policy decision (`audit_record.reason`'s reasoning) |
+| `rule_set_event` | `reason` | `CONFIDENTIAL` | A controller's prose about a policy decision (`audit_record.reason`'s reasoning). Screened for card-number and account-identifier shapes at the domain and by reconciliation `V019`'s `rule_set_event_reason_no_instrument_shape` (corrected 2026-10-02 by the Phase 8 → 9 transition, SEC-03/SEC-04; the shared `InstrumentShapes` rule) |
 | `rule_set_event` | `occurred_at` | `INTERNAL` | When the edge was driven |
 | `rule_set_event` | `correlation_id` | `INTERNAL` | The flow's correlation |
 | `rule_set_lag` | `rule_set_id` | `INTERNAL` | The owning version — an identifier of a thing |
@@ -1251,6 +1253,7 @@ counters and dates of things.
 | `expectation_key` | `key_kind` | `INTERNAL` | An enumeration member |
 | `expectation_key` | `key_value` | `CONFIDENTIAL` | **A typed reference a counterparty will quote** — Phase 8's match key, shape-checked vocabulary and never free text |
 | `expectation_key` | `expectation_id` | `INTERNAL` | The owning row |
+| `expectation_key` | `released_by_resolution_id` | `INTERNAL` | The repudiation that released a closed remittance's reference (the Phase 8 -> 9 transition, `V017`) - an identifier of a thing |
 | `reference_alias` | `source_id` | `INTERNAL` | The scope of the unique |
 | `reference_alias` | `key_kind` | `INTERNAL` | An enumeration member |
 | `reference_alias` | `key_value` | `CONFIDENTIAL` | The foreign reference (the ARN) — the match key's level |
@@ -1275,7 +1278,7 @@ counters and dates of things.
 | `reconciliation_batch` | `cursor` | `INTERNAL` | The chunked walk's resume point - forward-only |
 | `reconciliation_batch` | `failures` | `INTERNAL` | Consecutive chunk failures - the BLOCKED gate's counter |
 | `reconciliation_batch` | `requested_by` | `CONFIDENTIAL` | Who asked for a reprocess (`audit_record.actor`'s reasoning) |
-| `reconciliation_batch` | `reason` | `CONFIDENTIAL` | A reprocess's stated reason - free prose by a person |
+| `reconciliation_batch` | `reason` | `CONFIDENTIAL` | A reprocess's stated reason - free prose by a person. Screened for card-number and account-identifier shapes at the domain and by reconciliation `V019`'s `reconciliation_batch_reason_no_instrument_shape` (corrected 2026-10-02 by the Phase 8 → 9 transition, SEC-03/SEC-04; the shared `InstrumentShapes` rule) |
 | `reconciliation_batch` | `created_at` | `INTERNAL` | When the acceptance birthed it |
 | `reconciliation_batch` | `status_changed_at` | `INTERNAL` | When the machine last moved |
 | `reconciliation_batch` | `correlation_id` | `INTERNAL` | The flow's correlation |
@@ -1286,7 +1289,7 @@ counters and dates of things.
 | `reconciliation_batch_event` | `to_status` | `INTERNAL` | The edge's destination |
 | `reconciliation_batch_event` | `actor` | `CONFIDENTIAL` | Who drove the edge (`audit_record.actor`'s reasoning) |
 | `reconciliation_batch_event` | `actor_type` | `INTERNAL` | The actor's kind - a closed vocabulary |
-| `reconciliation_batch_event` | `reason` | `CONFIDENTIAL` | The edge's stated reason - a requeue's is a person's prose |
+| `reconciliation_batch_event` | `reason` | `CONFIDENTIAL` | The edge's stated reason - a requeue's is a person's prose. Screened for card-number and account-identifier shapes at the domain and by reconciliation `V019`'s `reconciliation_batch_event_reason_no_instrument_shape` (corrected 2026-10-02 by the Phase 8 → 9 transition, SEC-03/SEC-04; the shared `InstrumentShapes` rule) |
 | `reconciliation_batch_event` | `occurred_at` | `INTERNAL` | When the edge was driven |
 | `reconciliation_batch_event` | `correlation_id` | `INTERNAL` | The flow's correlation |
 | `external_item` | `id` | `INTERNAL` | A record identifier. Generated |
@@ -1320,7 +1323,7 @@ counters and dates of things.
 | `external_item_event` | `to_status` | `INTERNAL` | The edge's destination |
 | `external_item_event` | `actor` | `CONFIDENTIAL` | Who drove the edge (`audit_record.actor`'s reasoning) |
 | `external_item_event` | `actor_type` | `INTERNAL` | The actor's kind - a closed vocabulary |
-| `external_item_event` | `reason` | `CONFIDENTIAL` | The edge's stated reason, where one is |
+| `external_item_event` | `reason` | `CONFIDENTIAL` | The edge's stated reason, where one is. Screened for card-number and account-identifier shapes at the domain and by reconciliation `V019`'s `external_item_event_reason_no_instrument_shape` (corrected 2026-10-02 by the Phase 8 → 9 transition, SEC-03/SEC-04; the shared `InstrumentShapes` rule) |
 | `external_item_event` | `occurred_at` | `INTERNAL` | When the edge was driven |
 | `external_item_event` | `correlation_id` | `INTERNAL` | The flow's correlation |
 | `external_item_key` | `item_id` | `INTERNAL` | The keyed item - an identifier of a thing |
@@ -1357,14 +1360,14 @@ counters and dates of things.
 | `break_event` | `event_type` | `INTERNAL` | RAISED and its siblings - a closed vocabulary |
 | `break_event` | `actor` | `CONFIDENTIAL` | Who drove the edge (`audit_record.actor`'s reasoning) |
 | `break_event` | `actor_type` | `INTERNAL` | The actor's kind - a closed vocabulary |
-| `break_event` | `reason` | `CONFIDENTIAL` | The edge's stated reason - a person's prose where one is |
+| `break_event` | `reason` | `CONFIDENTIAL` | The edge's stated reason - a person's prose where one is. Screened for card-number and account-identifier shapes at the domain and by reconciliation `V019`'s `break_event_reason_no_instrument_shape` (corrected 2026-10-02 by the Phase 8 → 9 transition, SEC-03/SEC-04; the shared `InstrumentShapes` rule) |
 | `break_event` | `detail` | `INTERNAL` | Identifiers and enumerated names only (INV-AUD-02) |
 | `break_event` | `occurred_at` | `INTERNAL` | When the edge was driven |
 | `break_event` | `correlation_id` | `INTERNAL` | The flow's correlation |
 | `break_event` | `resolution_id` | `INTERNAL` | The resolution a RESOLVED edge names - an identifier of a thing (V015, P8-DOC-001) |
 | `break_note` | `id` | `INTERNAL` | A record identifier. Generated |
 | `break_note` | `break_id` | `INTERNAL` | The noted break - an identifier of a thing |
-| `break_note` | `body` | `CONFIDENTIAL` | **An investigator's own words** - never logged, evented or audited; screened at the database for PAN and IBAN shapes (INV-PAY-02, INV-RAIL-03) |
+| `break_note` | `body` | `CONFIDENTIAL` | **An investigator's own words** - never logged, evented or audited; screened at the database for PAN and IBAN shapes (INV-PAY-02, INV-RAIL-03). Screened for card-number and account-identifier shapes at the domain and by reconciliation `V019`'s re-added `break_note_no_card_number` and `break_note_no_account_shape` over the twin (corrected 2026-10-02 by the Phase 8 → 9 transition, SEC-03/SEC-04; the shared `InstrumentShapes` rule) |
 | `break_note` | `author` | `CONFIDENTIAL` | Who wrote it (`audit_record.actor`'s reasoning) |
 | `break_note` | `author_type` | `INTERNAL` | The author's kind - a closed vocabulary |
 | `break_note` | `added_at` | `INTERNAL` | When it was appended |
@@ -1452,6 +1455,8 @@ counters and dates of things.
 | `match_parked_original` | `remainder_minor` | `RESTRICTED-FINANCIAL` | **The parked value the correction saw** - frozen because the live row moves on |
 | `match_parked_original` | `currency` | `INTERNAL` | An enumeration; part of the monetary shape |
 | `match_parked_original` | `scale` | `INTERNAL` | The monetary shape's scale (INV-MON-05) |
+| `match_reach` | `decision_id` | `INTERNAL` | The late leg's examination that judged the reach (the Phase 8 -> 9 transition, `V016`) - an identifier of a thing |
+| `match_reach` | `expectation_id` | `INTERNAL` | An expectation that examination reached and consumed - an identifier of a thing |
 | `run_replay` | `id` | `INTERNAL` | A record identifier (`P8-TSK-022`, `V012`). Generated |
 | `run_replay` | `run_id` | `INTERNAL` | The replayed run - an identifier of a thing |
 | `run_replay` | `requested_by` | `CONFIDENTIAL` | Who replayed (`audit_record.actor`'s reasoning) |
@@ -1523,7 +1528,7 @@ counters and dates of things.
 | `resolution_event` | `to_status` | `INTERNAL` | The edge's target - a closed vocabulary |
 | `resolution_event` | `actor` | `CONFIDENTIAL` | Who drove the edge (`audit_record.actor`'s reasoning) |
 | `resolution_event` | `actor_type` | `INTERNAL` | The actor's kind - a closed vocabulary |
-| `resolution_event` | `reason` | `CONFIDENTIAL` | The edge's stated reason - a person's prose where one is |
+| `resolution_event` | `reason` | `CONFIDENTIAL` | The edge's stated reason - a person's prose where one is. Screened for card-number and account-identifier shapes at the domain and by reconciliation `V019`'s `resolution_event_reason_no_instrument_shape` (corrected 2026-10-02 by the Phase 8 → 9 transition, SEC-03/SEC-04; the shared `InstrumentShapes` rule) |
 | `resolution_event` | `occurred_at` | `INTERNAL` | When the edge was driven |
 | `resolution_event` | `correlation_id` | `INTERNAL` | The flow's correlation |
 

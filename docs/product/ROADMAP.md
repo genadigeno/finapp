@@ -34,7 +34,28 @@ Gate definitions and the phase status model live in
 | 15 | Production Hardening | Security hardening, SLOs, runbooks, operational readiness |
 | 16 | Scale, Resilience and Disaster Recovery | Load characterisation, degradation modes, backup/restore, DR |
 
-**Current position (2026-09-28).** **Phases 0 through 7 are `COMPLETE`.** Phase 7 closed on its
+**Current position (2026-10-02).** **Phases 0 through 8 are `COMPLETE`.** Phase 8 closed on its
+exit review (`P8-DOC-001`, 2026-10-01 — 8 areas, 12 universal criteria, F1–F8 re-assessed and 28
+phase-specific criteria met, ADR-0064…0073 read against the code and accepted, with the
+fleet-wide database and kafka tiers' skip recorded as a deviation on the owner's standing
+instruction). The review found two critical gaps — a `RESOLVED` break whose approved resolution
+was held by nothing, and a gain judged against the source's active rule set instead of the
+owning break's pinned one — and corrected and probed both. **Internal truth is proven against
+external reality on every rail**: four settlement sources ingested authenticated, screened and
+retained encrypted, every externally settling completion expected, every difference a
+classified, aged break, suspense owned, resolution four-eyes through the ledger, and cash
+confirmed only by the bank's own statements. **The Phase 8 → 9 transition** (2026-10-02)
+confirmed Phase 8 only after repairing what the review had missed — among them `FeeCheck`
+throwing on a cross-currency fee line instead of raising a typed `CURRENCY_MISMATCH` — and
+entered the inherited debts in the register. **Phase 9 — FX and Cross-Border Payments — is
+`READY`** behind its entry gate: planned in `PHASE_9_PLAN.md` on ADR-0074…0083 — a conversion
+at a server-authoritative, single-use quote that is a frozen posting plan, covered with the FX
+provider exactly once however it answers; payments abroad through declared corridor rails, the
+beneficiary screened before pricing; and every position, fee, spread and residual reconciled
+per currency, never by conversion. Thirty items across nine milestones, with `X-TSK-010`
+scheduled inside the phase; first task `P9-TSK-001`.
+
+**Phase 7** closed on its
 exit review (`P7-DOC-001` — 8 areas, 12 universal criteria, F1–F8 re-assessed and met, 21
 phase-specific criteria, the ten-instances question over every contended decision, ADR-0059…0062
 read against the code, corrected where they had drifted, and `Accepted`). The review found a
@@ -50,12 +71,13 @@ repairing what the review had missed — a withdrawal's own confirmation parked 
 inquiry sweep crediting an amount the scheme never executed, and twelve important defects besides,
 among them one scheme execution credited and parked at once, authorizations left standing, a
 merchant closed with a winnable chargeback and a dispute deadlock — broke every repair on purpose,
-and ran the fleet-wide battery before and after. **Phase 8 — Settlement and Reconciliation — is
-`READY`** behind its entry gate: planned in `PHASE_8_PLAN.md` on ADR-0064…0073 — settlement holds
+and ran the fleet-wide battery before and after. **Phase 8 — Settlement and Reconciliation**
+opened `READY` behind its entry gate: planned in `PHASE_8_PLAN.md` on ADR-0064…0073 — settlement holds
 the external evidence and reconciliation the expectations, each clearing position discharged in
 two evidence hops, every disagreement a classified, aged break resolved by evidence or a four-eyes
 adjustment through the ledger. Twenty-seven items across eight milestones; first task
-`P8-TSK-001`.
+`P8-TSK-001`; all twenty-seven — the storm and the battery among them — `COMPLETE`
+by 2026-10-01 (`P8-DOC-001`).
 
 **Phase 6** closed on
 its exit review (`P6-DOC-001` — 8 areas, 12 universal criteria, F1–F8 re-assessed and met, 16
@@ -170,7 +192,10 @@ Hard dependencies (a phase cannot enter its gate without these):
 - 4 requires 3 (ledger) and 1 (actor identity for audit)
 - 5 requires 4 (internal money movement proven end to end)
 - 8 requires 5 (external evidence exists to reconcile against)
-- 9 requires 3 (multi-currency ledger) and 5 (payment lifecycle)
+- 9 requires 3 (multi-currency ledger), 5 (payment lifecycle) and 8 (settlement and
+  reconciliation: the FX provider and the corridor rail settle through Phase 8's machinery)
+  *(the Phase 8 dependency added by the Phase 8 → 9 transition, 2026-10-02 —
+  `DELIVERY_PLAN.md` §Phase 9 has named it since Phase 0, and this list omitted it)*
 - 11 requires 3 (ledger), 10 (decisioning)
 - 12 requires 6 (merchant) and 11 (lending mechanics)
 - 14 requires 3, 4, 5, 8 (there must be real postings to report on)

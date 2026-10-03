@@ -38,6 +38,18 @@ public interface SettlementBatchRepudiations {
     Optional<Batch> read(Connection unitOfWork, UUID batchId);
 
     /**
+     * For a bank STATEMENT batch: takes settlement's source row lock - the lock that serialises
+     * every acceptance of the account (`INV-SET-06`) - and reads, under it, the ACCEPTED statement
+     * of the same source and currency at the next sequence; empty, and no lock taken, for a
+     * report batch (the Phase 8 -> 9 transition, SET-2). The repudiation's approval calls it
+     * FIRST, before any advisory: an acceptance takes the source row before the namespace-4
+     * advisory, and so does the approval - one order, no cycle. Holding the lock to commit, a
+     * successor accepted concurrently is either seen here or sees this batch REPUDIATED (and
+     * raises its own gap): never neither.
+     */
+    Optional<StatementChain.Link> lockChainAndReadSuccessor(Connection unitOfWork, UUID batchId);
+
+    /**
      * The conditional {@code ACCEPTED → REPUDIATED} with its history row — settlement's
      * trigger beneath it for every writer. False when the batch was not {@code ACCEPTED}:
      * nothing written, and the caller's transaction must not commit its own rows.

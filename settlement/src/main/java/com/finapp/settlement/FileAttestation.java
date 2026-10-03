@@ -29,7 +29,8 @@ import lombok.RequiredArgsConstructor;
  * that means nothing — it is refused rather than stored. A readmission (`P8-TSK-022`,
  * ADR-0066 §8) inherits its original's authentication when the original was pulled or
  * attested — and then, too, there is nothing to attest; but one whose original passes nothing
- * on (a never-attested upload, or a {@code DECLINED} file) waits for a second person exactly as
+ * on (a never-attested upload, a {@code DECLINED} file or — since the Phase 8 -> 9
+ * transition's re-gate, NEW-SEC-1 — a repudiated batch's file) waits for a second person exactly as
  * an upload does — one distinct from EVERY submitter along its chain: the readmitter, each
  * earlier readmitter and the original's uploader. Otherwise an uploader could readmit their own
  * rejected file and attest the readmission. `V009`'s functions answer both questions, so this

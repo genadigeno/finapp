@@ -19,6 +19,7 @@ import com.finapp.reconciliation.ResolutionReasonCode;
 import com.finapp.sharedkernel.correlation.Correlation;
 import java.nio.charset.StandardCharsets;
 import java.sql.Connection;
+import java.util.List;
 import java.util.Map;
 import java.util.Optional;
 import java.util.UUID;
@@ -57,6 +58,63 @@ public class BreakResolutionDesk {
     @NonNull private final DataSource dataSource;
     @NonNull private final BatchRepudiations repudiations;
     @NonNull private final com.finapp.platform.telemetry.Spans spans;
+
+    /** The approver's read, one {@code REPEATABLE READ} snapshot (the Phase 8 -> 9 transition). */
+    @NonNull private final TransactionTemplate reconciliationSnapshotReads;
+
+    /** A ledger account as the approver reads it: what it is and whose. */
+    public record ProposalAccountView(
+            String accountId, String purpose, String ownerRef, String currency, String status) {}
+
+    /** One frozen proposal line, as it will post. */
+    public record ProposalLineView(
+            ProposalAccountView account, String direction, String amount, String currency) {}
+
+    /** An offset's partner suspense item, as stored. */
+    public record OffsetItemView(
+            String suspenseItemId,
+            String breakId,
+            String externalItemId,
+            String side,
+            String status,
+            String unreleased,
+            String currency) {}
+
+    /** A manual match's chosen candidate, as stored. */
+    public record ChosenExpectationView(
+            String expectationId,
+            String kind,
+            String operationRef,
+            String direction,
+            String status,
+            String remainder,
+            String currency) {}
+
+    /**
+     * What an approver reads before approving (the Phase 8 -> 9 transition, SEC-01): every
+     * operand rendered and the frozen ledger lines, account by account - the same rows the
+     * approval posts from. The narrative is CONFIDENTIAL, served only to a RESOLVE holder.
+     */
+    public record ResolutionDetail(
+            String resolutionId,
+            String breakId,
+            String kind,
+            String status,
+            String reasonCode,
+            String narrative,
+            boolean fourEyes,
+            String amount,
+            String currency,
+            long residualVersion,
+            ProposalAccountView targetAccount,
+            OffsetItemView offsetItem,
+            ChosenExpectationView chosenExpectation,
+            List<ProposalLineView> lines,
+            String adjustmentProposalId,
+            String journalEntryId,
+            String proposedBy,
+            String proposedAt,
+            String decidedBy) {}
 
     /** A proposal's receipt — identifiers, the kind and state, never the narrative or amount. */
     public record ResolutionReceipt(
@@ -216,15 +274,116 @@ public class BreakResolutionDesk {
     }
 
     public ResolutionDecision approve(String rawResolutionId) {
+        return approve(rawResolutionId, null, null, null);
+    }
+
+    /**
+     * Approves, the body optionally echoing the operand the approver read (the Phase 8 -> 9
+     * transition, SEC-01): an echo that is not the stored operand is a {@code 409
+     * ResolutionStale} with nothing written. A batch's repudiation takes no operand, so any
+     * echo refuses it the same way.
+     */
+    public ResolutionDecision approve(
+            String rawResolutionId,
+            String targetAccountId,
+            String offsetItemId,
+            String chosenExpectationId) {
         UUID resolutionId = parsed(rawResolutionId, ReconciliationErrorCode.RESOLUTION_NOT_FOUND);
+        ResolutionMachine.ApprovalEcho echo =
+                new ResolutionMachine.ApprovalEcho(
+                        uuidParam("targetAccountId", targetAccountId),
+                        uuidParam("offsetItemId", offsetItemId),
+                        uuidParam("chosenExpectationId", chosenExpectationId));
         Actor actor = SecurityContext.require();
         Correlation correlation = resolvedCorrelation();
         return resolving(Map.of("resolution.id", resolutionId.toString()),
-                () -> guarded(() -> command(uow -> repudiations.isRepudiation(uow, resolutionId)
-                ? view(repudiations.approve(
-                        uow, resolutionId, actor, correlation.correlationId()))
-                : view(machine.approve(
-                        uow, resolutionId, actor, correlation.correlationId())))));
+                () -> guarded(() -> command(uow -> {
+                    if (repudiations.isRepudiation(uow, resolutionId)) {
+                        if (!echo.equals(ResolutionMachine.ApprovalEcho.NONE)) {
+                            throw refused(ReconciliationErrorCode.RESOLUTION_STALE,
+                                    new IllegalArgumentException(
+                                            "a batch's repudiation takes no operand: the"
+                                                    + " approval names one it does not hold"));
+                        }
+                        return view(repudiations.approve(
+                                uow, resolutionId, actor, correlation.correlationId()));
+                    }
+                    return view(machine.approve(
+                            uow, resolutionId, echo, actor, correlation.correlationId()));
+                })));
+    }
+
+    /**
+     * The approver's read (the Phase 8 -> 9 transition, SEC-01): the resolution with every
+     * operand rendered and its frozen lines - one {@code REPEATABLE READ} snapshot, recording
+     * nothing. Unknown and malformed ids are one named {@code 404}.
+     */
+    public ResolutionDetail view(String rawResolutionId) {
+        UUID resolutionId = parsed(rawResolutionId, ReconciliationErrorCode.RESOLUTION_NOT_FOUND);
+        ResolutionMachine.ProposalView read =
+                reconciliationSnapshotReads.execute(
+                                status -> onConnection(uow -> machine.read(uow, resolutionId)))
+                        .orElseThrow(() -> notFound(ReconciliationErrorCode.RESOLUTION_NOT_FOUND));
+        return new ResolutionDetail(
+                read.resolutionId().toString(),
+                read.breakId().map(UUID::toString).orElse(null),
+                read.kind().name(),
+                read.status().name(),
+                read.reasonCode().name(),
+                read.narrative(),
+                read.fourEyes(),
+                plain(read.amount()),
+                read.amount().currency().code(),
+                read.residualVersion(),
+                read.target().map(BreakResolutionDesk::accountView).orElse(null),
+                read.offsetItem()
+                        .map(item -> new OffsetItemView(
+                                item.suspenseItemId().toString(),
+                                item.breakId().toString(),
+                                item.externalItemId().map(UUID::toString).orElse(null),
+                                item.side().name(),
+                                item.status().name(),
+                                plain(item.unreleased()),
+                                item.unreleased().currency().code()))
+                        .orElse(null),
+                read.chosenExpectation()
+                        .map(candidate -> new ChosenExpectationView(
+                                candidate.expectationId().toString(),
+                                candidate.kind().name(),
+                                candidate.operationRef(),
+                                candidate.direction().name(),
+                                candidate.status().name(),
+                                java.math.BigDecimal.valueOf(
+                                                candidate.remainderMinor(), candidate.scale())
+                                        .toPlainString(),
+                                candidate.currency()))
+                        .orElse(null),
+                read.lines().stream()
+                        .map(line -> new ProposalLineView(
+                                accountView(line.account()),
+                                line.direction().name(),
+                                plain(line.amount()),
+                                line.amount().currency().code()))
+                        .toList(),
+                read.adjustmentProposalId().map(UUID::toString).orElse(null),
+                read.journalEntryId().map(UUID::toString).orElse(null),
+                read.proposedBy(),
+                read.proposedAt().toString(),
+                read.decidedBy().orElse(null));
+    }
+
+    private static ProposalAccountView accountView(ResolutionMachine.AccountOperand account) {
+        return new ProposalAccountView(
+                account.accountId().toString(),
+                account.purpose().name(),
+                account.ownerRef().map(UUID::toString).orElse(null),
+                account.currency().code(),
+                account.status().name());
+    }
+
+    /** Minor units at the amount's own scale - exact decimal text, never a float. */
+    private static String plain(com.finapp.sharedkernel.money.Money amount) {
+        return java.math.BigDecimal.valueOf(amount.minorUnits(), amount.scale()).toPlainString();
     }
 
     public ResolutionDecision reject(String rawResolutionId, String reason) {
@@ -343,6 +502,10 @@ public class BreakResolutionDesk {
             throw refused(ReconciliationErrorCode.RESOLUTION_TARGET_REFUSED, target);
         } catch (ResolutionMachine.GainNotYetEligible young) {
             throw refused(ReconciliationErrorCode.GAIN_NOT_YET_ELIGIBLE, young);
+        } catch (ResolutionMachine.OperationNotTerminal waiting) {
+            throw refused(ReconciliationErrorCode.OPERATION_NOT_TERMINAL, waiting);
+        } catch (ResolutionMachine.ReturnAlreadyAttributed attributed) {
+            throw refused(ReconciliationErrorCode.RETURN_ALREADY_ATTRIBUTED, attributed);
         } catch (ResolutionMachine.ResolutionRefused shape) {
             throw invalid(shape.getMessage());
         } catch (BatchRepudiations.BatchNotFound unknown) {

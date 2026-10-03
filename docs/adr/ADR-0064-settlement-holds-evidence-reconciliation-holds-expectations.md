@@ -228,6 +228,9 @@ Three facts about the repository shape the seams:
 
 5. **The source register is composed from each counterparty's own declaration.** It uses no rail
    name and makes no second copy of any declaration.
+   *(Annotated at the Phase 8 → 9 transition: ADR-0078, `Proposed` — the descriptor becomes
+   counterparty-keyed, one source per (purpose, counterparty) with its settled currencies,
+   still composed from the declarations and never named in core.)*
    - **`app`'s `SettlementBeans` composes the register.** It declares the four source
      descriptors by hand (code, kind, format, version, channels, remittance pattern), but never
      a position: each position is read from its counterparty's declaration.

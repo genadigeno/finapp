@@ -117,6 +117,20 @@ Netting them inside one balance hides two open problems behind one number.
    released is answered like a posting resolution's — `JdbcRepudiationStore.suspenseOfItems`
    counts both causes as "released elsewhere". A value an unpark or a correction offset released
    went back to its position already and needs no answer.)*
+   *(Corrected 2026-10-02 by the Phase 8 -> 9 transition, REC-7: a correction offset's release
+   needs no answer only while the correction stands beside a standing original. Repudiating the
+   ORIGINAL whose parked excess a LATER batch's correction offset would leave that correction's
+   value in the position with no record or break to explain it (`INV-REC-06`), so that shape is
+   refused before anything is written (`RepudiationNotSupported`, point 10). And a released value
+   an earlier repudiation already answered is not answered again: "released elsewhere" counts
+   only a release no `REPUDIATION` item names.)*
+   *(Corrected 2026-10-02 by the Phase 8 -> 9 transition, REC-3: a `RECON_PARK` item is once per
+   PARK, not per external item. A repudiation reopens a bank item of another batch to
+   `UNMATCHED`, its earlier `RECON_PARK` item left `RELEASED`, and `V004`'s once-ever
+   `UNIQUE (external_item_id)` and `UNIQUE (origin_ref)` failed its next park and rolled the whole
+   grace batch back on every tick. Reconciliation `V017` keeps one LIVE item per external item
+   (`suspense_item_external_item_live`, partial on `status <> 'RELEASED'`), one `RECON_PARK` item
+   per (external item, park), and `UNIQUE (origin_ref)` whole for every other origin.)*
 
    - **`opened_on` comes from stored data and never restarts.** It is the date the value entered
      suspense: the park row's `decided_on` (stamped once), the batch's `accepted_on`, the
@@ -418,6 +432,14 @@ Netting them inside one balance hides two open problems behind one number.
       proven fabricated or mis-normalised already takes — and a person decides where the loss
       falls. `INV-REC-09` binds repudiation like every other poster, and the position and
       suspense proofs are its test.
+    - *(Corrected 2026-10-02 by the Phase 8 -> 9 transition, REC-7.)* **A value a LATER batch's
+      correction offset is refused.** An original item of the batch whose parked excess a
+      counterparty correction in another batch offset (release cause `CORRECTION_OFFSET`) stands
+      `RESOLVED`, the correction `OFFSET`: reversing the original alone would leave the
+      correction's value in the position with no open item or break to explain it, and no Phase 8
+      posting may adjust a reconciled position freely. The proposal and the approval refuse it
+      (`RepudiationNotSupported`) before anything is written, beside the three shapes `P8-TSK-023`
+      refused - recorded debt for the compensation.
 
       *(Until `P8-TSK-023` this point answered only the `BANK_UNATTRIBUTED` case and left open
       what a released `RECON_PARK` item's position owes: "posts no unpark; what its position then
@@ -436,9 +458,9 @@ Netting them inside one balance hides two open problems behind one number.
 
     | Contention | PostgreSQL arbiter | Loser |
     |---|---|---|
-    | Ten parks of one item (retry, takeover, rematch vs run) | the external item's conditional transition; `UNIQUE (external_item_id)` on `suspense_item`; the park row's key | No second entry and no second item |
+    | Ten parks of one item (retry, takeover, rematch vs run) | the external item's conditional transition; `UNIQUE (external_item_id)` on `suspense_item` *(since `V017`: on its LIVE items, `status <> 'RELEASED'` - a reopened item parks again)*; the park row's key | No second entry and no second item |
     | A release taken twice (two approvers; evidence vs approval) | the break row first, then the item `FOR UPDATE`; `CHECK (released_minor <= amount_minor)`; the resolution's conditional `PROPOSED → APPROVED` | `409`, or it sees `RESOLVED` or `ResolutionStale` |
-    | The backfill racing live parkings | `UNIQUE (origin_ref)` | Converges |
+    | The backfill racing live parkings | `UNIQUE (origin_ref)` *(since `V017`: for every origin but `RECON_PARK`, the parkings' among them)* | Converges |
     | An offset racing either item's own exit | both breaks locked, sorted by id, before the resolution | The later one sees a released item and is stale |
     | Gain eligibility judged by instances with skewed clocks | judged in SQL, on the database clock, against the stored `opened_on`; a window of days makes VM drift noise | — |
 

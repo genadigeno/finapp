@@ -118,6 +118,19 @@ public enum SettlementAuditAction implements AuditableAction {
             false),
 
     /**
+     * An operator's fetch took its permit (the Phase 8 -> 9 transition, SEC-08): written in the
+     * permit's own transaction - the fetch's first effect - so a fetch that dies past it, before
+     * {@link #SETTLEMENT_FETCH_REQUESTED} records what it came to, still leaves who asked for
+     * which report. Names the source and the business key, never a byte of the report. A
+     * source unknown, retired or not pulled takes no permit and writes none.
+     */
+    SETTLEMENT_FETCH_STARTED(
+            "settlement.SettlementFetchStarted",
+            "An operator's requested pull of a source's report took its permit; the record"
+                    + " names the source and the business key.",
+            false),
+
+    /**
      * An operator asked for a source's report to be pulled now (`P8-TSK-021`,
      * {@code POST /v1/operator/settlement/sources/{code}/fetch}): the request and what it came
      * to - the source, the business key and the outcome, never a byte of the report.

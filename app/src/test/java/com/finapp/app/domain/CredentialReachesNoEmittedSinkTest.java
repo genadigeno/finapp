@@ -436,6 +436,9 @@ class CredentialReachesNoEmittedSinkTest {
                         // CONFIDENTIAL narrative - no secret.
                         "BatchRepudiationRequest",
                         "ResolutionRejectionRequest",
+                        // The Phase 8 -> 9 transition (SEC-01): the approval's optional echo of
+                        // the operand its approver read - three identifiers, no secret.
+                        "ResolutionApprovalRequest",
                         // P3-TSK-017. Carries dates, a reference, a REASON (free prose by a
                         // person, bound for the reason columns - RESTRICTED-FINANCIAL, never
                         // rendered by any toString) and lines of account/direction/amount/

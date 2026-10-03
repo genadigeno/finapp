@@ -364,6 +364,9 @@ public class ReconciliationAdministrationDesk {
 
     public ReprocessingReceipt requestReprocessing(
             String idempotencyKey, String sourceCode, String reason) {
+        // The reason's screen runs before the claim: a refused reason leaves not even a claim
+        // (INV-PAY-02, INV-RAIL-03 - the Phase 8 -> 9 transition's SEC-04 correction).
+        guarded(() -> RunAdministration.refuseReason(reason));
         Actor actor = SecurityContext.require();
         Correlation correlation = resolvedCorrelation();
         IdempotencyKey key =

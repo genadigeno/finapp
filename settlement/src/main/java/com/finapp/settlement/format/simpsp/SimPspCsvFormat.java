@@ -4,6 +4,7 @@ import com.finapp.settlement.ConservativeScreen;
 import com.finapp.settlement.DeliveryScreen;
 import com.finapp.settlement.LineDirection;
 import com.finapp.settlement.LineReferenceKind;
+import com.finapp.settlement.ReferenceShape;
 import com.finapp.settlement.RejectionCode;
 import com.finapp.settlement.SettlementFormatId;
 import com.finapp.settlement.SettlementLineType;
@@ -23,6 +24,7 @@ import java.util.List;
 import java.util.Optional;
 import java.util.Set;
 import java.util.TreeMap;
+import java.util.function.Predicate;
 import java.util.regex.Pattern;
 
 /**
@@ -52,13 +54,36 @@ import java.util.regex.Pattern;
  * <h2>The field-class screen (ADR-0066 §3, C6)</h2>
  *
  * <p>Reference fields are checked by their shape classes — the PSP's own references carry a
- * letter, so a bare card number fails the class; the acquirer reference is 8–23 digits and is
- * <em>never</em> tested as free text, which is exactly how a Luhn-valid 15-digit network
- * transaction id survives. Amounts and dates are checked by type. Only the descriptor is
- * declared free text. <strong>A field that fails its declared class is screened as free
- * text</strong> before the file can be stored as malformed — a PAN in a reference column is
- * refused, never retained. Bytes that do not parse structurally are screened as one
- * conservative stream.
+ * letter, colon, underscore or dash AND are a {@link ReferenceShape} (no digit run of card
+ * length, single dashes collapsed; no account identifier, contiguous or printed), so a card
+ * number fails the class however it is written; the acquirer reference is the 23-digit ARN, a
+ * short id of 8–12 digits or the 15-digit network transaction id, and is <em>never</em> tested
+ * as free text, which is exactly how a Luhn-valid 15-digit network transaction id survives.
+ * Amounts and dates are checked by type. Only the descriptor is declared free text. <strong>A
+ * field that fails its declared class is screened as free text</strong> before the file can be
+ * stored as malformed — a PAN in a reference column is refused, never retained. Bytes that do
+ * not parse structurally are screened as one conservative stream.
+ *
+ * <p><em>(Corrected 2026-10-02 by the Phase 8 → 9 transition, the audit's {@code SEC-02}: the
+ * screen's reference classes were the parse's — {@code (?=.*[A-Za-z:_-])[A-Za-z0-9:_-]{2,100}}
+ * admitted {@code 4111-1111-1111-1111} on its dashes and {@code PAN4111111111111111} on its
+ * letters, and {@code [0-9]{8,23}} admitted a bare 16-digit card number in the acquirer column —
+ * so a card number passed the door unscreened into {@code batch.external_batch_ref} and
+ * {@code line_reference}, and back out of {@code GET /batches/{id}}. Refusing what v1 always
+ * claimed to refuse corrects v1 rather than making a v2: the SCREEN's classes now exclude
+ * instrument shapes as the three later formats' do, the golden file is unchanged and passes, and
+ * the parse's classes — what a stored line is — are untouched.)</em>
+ *
+ * <p><em>(Corrected 2026-10-03 by the Phase 8 → 9 transition's re-gate, NEW-SEC-2:
+ * {@code 4111:1111:1111:1111} and {@code 4111_1111_1111_1111} are the parse's reference class
+ * AND were a {@link ReferenceShape} — the shape's run collapse read single dashes alone — so
+ * both still passed the door into {@code batch.external_batch_ref} / {@code line_reference}
+ * and out of {@code GET /batches/{id}}. {@link ReferenceShape} now collapses ':' and '_'
+ * beside '-', and a reference-class value that fails its class is screened as free text
+ * twice: as written, and with ':' and '_' read as the dashes they group like — the
+ * conservative walk alone collapses only the printed separators. Refusing what the screen
+ * always claimed to refuse corrects v1 again; the parse's classes and the golden file are
+ * untouched.)</em>
  */
 public final class SimPspCsvFormat implements SettlementFormat {
 
@@ -75,13 +100,24 @@ public final class SimPspCsvFormat implements SettlementFormat {
     private static final String P_DISPUTE_FEE = "DISPUTE_FEE";
     private static final String P_ADJUSTMENT = "ADJUSTMENT";
 
-    /** A PSP-side reference: at least one letter, colon, underscore or dash — never a bare
-     * digit run, so a card number fails this class and meets the free-text screen (C6). */
+    /** A PSP-side reference, as the parse reads it: at least one letter, colon, underscore or
+     * dash — never a bare digit run. A dash or a letter alone does not keep a card number out
+     * ({@code 4111-1111-1111-1111}, {@code PAN4111111111111111}), so the SCREEN reads it with
+     * {@link #screenedPspReference} (SEC-02, corrected 2026-10-02). */
     private static final Pattern PSP_REFERENCE =
             Pattern.compile("(?=.*[A-Za-z:_-])[A-Za-z0-9:_-]{2,100}");
 
     /** The acquirer reference: 8–23 digits, by design never tested as free text. */
     private static final Pattern ACQUIRER_REFERENCE = Pattern.compile("[0-9]{8,23}");
+
+    /**
+     * The acquirer reference as the SCREEN reads it: the 23-digit ARN, a short id of 8–12 digits
+     * (below the door's 13–19 card band), or the 15-digit network transaction id that may be
+     * Luhn-valid (ADR-0066 §3, {@code INV-PAY-02}'s one written exemption). Any other length is
+     * of card length and is screened as free text, so a Luhn-valid one is refused (SEC-02).
+     */
+    private static final Pattern ACQUIRER_REFERENCE_SCREENED =
+            Pattern.compile("[0-9]{8,12}|[0-9]{15}|[0-9]{20,23}");
 
     private static final Pattern CURRENCY_SHAPE = Pattern.compile("[A-Z]{3}");
     private static final Pattern AMOUNT_SHAPE = Pattern.compile("-?[0-9]{1,13}(\\.[0-9]{1,4})?");
@@ -162,24 +198,30 @@ public final class SimPspCsvFormat implements SettlementFormat {
             case "H" ->
                     firstFinding(
                             record,
-                            classed(record, 3, HEADER_FIELDS.get(3), PSP_REFERENCE),
+                            referenceClassed(record, 3, HEADER_FIELDS.get(3),
+                                    SimPspCsvFormat::screenedPspReference),
                             classed(record, 4, HEADER_FIELDS.get(4), CURRENCY_SHAPE),
                             classed(record, 5, HEADER_FIELDS.get(5), DATE_SHAPE));
             case "D" ->
                     firstFinding(
                             record,
                             classed(record, 1, DETAIL_FIELDS.get(1), SEQ_SHAPE),
-                            classed(record, 2, DETAIL_FIELDS.get(2), PSP_REFERENCE),
+                            referenceClassed(record, 2, DETAIL_FIELDS.get(2),
+                                    SimPspCsvFormat::screenedPspReference),
                             classed(record, 3, DETAIL_FIELDS.get(3), AMOUNT_SHAPE),
                             optionalClassed(record, 4, DETAIL_FIELDS.get(4), FEE_SHAPE),
                             classed(record, 5, DETAIL_FIELDS.get(5), CURRENCY_SHAPE),
                             classed(record, 6, DETAIL_FIELDS.get(6), DATE_SHAPE),
                             optionalClassed(record, 7, DETAIL_FIELDS.get(7), DATE_SHAPE),
                             optionalClassed(record, 8, DETAIL_FIELDS.get(8), DATE_SHAPE),
-                            classed(record, 9, DETAIL_FIELDS.get(9), PSP_REFERENCE),
-                            optionalClassed(record, 10, DETAIL_FIELDS.get(10), ACQUIRER_REFERENCE),
-                            optionalClassed(record, 11, DETAIL_FIELDS.get(11), PSP_REFERENCE),
-                            optionalClassed(record, 12, DETAIL_FIELDS.get(12), PSP_REFERENCE),
+                            referenceClassed(record, 9, DETAIL_FIELDS.get(9),
+                                    SimPspCsvFormat::screenedPspReference),
+                            optionalReferenceClassed(record, 10, DETAIL_FIELDS.get(10),
+                                    ACQUIRER_REFERENCE_SCREENED.asMatchPredicate()),
+                            optionalReferenceClassed(record, 11, DETAIL_FIELDS.get(11),
+                                    SimPspCsvFormat::screenedPspReference),
+                            optionalReferenceClassed(record, 12, DETAIL_FIELDS.get(12),
+                                    SimPspCsvFormat::screenedPspReference),
                             // The one declared free-text field: always screened (ADR-0066 §3).
                             freeText(record, 13, DETAIL_FIELDS.get(13)));
             case "T" ->
@@ -209,8 +251,7 @@ public final class SimPspCsvFormat implements SettlementFormat {
      */
     private static Optional<DeliveryScreen.Finding> classed(
             Record record, int index, String field, Pattern shape) {
-        String value = record.fields()[index];
-        if (shape.matcher(value).matches()) {
+        if (shape.matcher(record.fields()[index]).matches()) {
             return Optional.empty();
         }
         return freeText(record, index, field);
@@ -224,10 +265,51 @@ public final class SimPspCsvFormat implements SettlementFormat {
         return classed(record, index, field, shape);
     }
 
+    /**
+     * A REFERENCE class's field (SEC-02; NEW-SEC-2, corrected 2026-10-03): matches its shape —
+     * or fails it and is screened as free text twice, as written and with the machine
+     * separators ':' and '_' read as the dashes they group like. The conservative walk
+     * collapses single spaces and dashes alone, so without the second walk a card number
+     * written {@code 4111:1111:1111:1111} or {@code 4111_1111_1111_1111} — both the parse's
+     * class — would pass the door into {@code batch.external_batch_ref} and
+     * {@code line_reference}.
+     */
+    private static Optional<DeliveryScreen.Finding> referenceClassed(
+            Record record, int index, String field, Predicate<String> shape) {
+        String value = record.fields()[index];
+        if (shape.test(value)) {
+            return Optional.empty();
+        }
+        return freeText(record, index, field)
+                .or(() -> screened(record, field, value.replace(':', '-').replace('_', '-')));
+    }
+
+    private static Optional<DeliveryScreen.Finding> optionalReferenceClassed(
+            Record record, int index, String field, Predicate<String> shape) {
+        if (record.fields()[index].isEmpty()) {
+            return Optional.empty();
+        }
+        return referenceClassed(record, index, field, shape);
+    }
+
+    /**
+     * A PSP-side reference as the SCREEN reads it: the parse's class AND a
+     * {@link ReferenceShape} — a value of the class that carries a card number or an account
+     * identifier however written fails it and meets the free-text screen (SEC-02).
+     */
+    private static boolean screenedPspReference(String value) {
+        return PSP_REFERENCE.matcher(value).matches() && ReferenceShape.isReference(value);
+    }
+
     /** One field's text as its own one-line stream through the conservative walker. */
     private static Optional<DeliveryScreen.Finding> freeText(
             Record record, int index, String field) {
-        String value = record.fields()[index];
+        return screened(record, field, record.fields()[index]);
+    }
+
+    /** One value — the field's own text, or its translation — through the walker. */
+    private static Optional<DeliveryScreen.Finding> screened(
+            Record record, String field, String value) {
         if (value.isEmpty()) {
             return Optional.empty();
         }

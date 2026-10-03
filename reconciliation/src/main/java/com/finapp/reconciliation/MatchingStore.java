@@ -186,8 +186,14 @@ public interface MatchingStore {
     List<MatchEngine.HitFacts> lockExpectations(
             Connection unitOfWork, Collection<UUID> expectationIds, Map<UUID, KeyKind> reachedBy);
 
-    /** Locks the chunk's item rows, sorted by id (`DISTRIBUTED_EXECUTION.md` §3). */
-    void lockItems(Connection unitOfWork, Collection<UUID> itemIds);
+    /**
+     * Locks the chunk's item rows, sorted by id (`DISTRIBUTED_EXECUTION.md` §3), and returns
+     * the ids still {@code PENDING} under their locks: a waiter re-reads each row's status
+     * after the holder commits, so an item another writer decided between the lock-free chunk
+     * read and these locks is handed back to no caller and never decided twice (the
+     * Phase 8 -> 9 transition's REC-10).
+     */
+    java.util.Set<UUID> lockItems(Connection unitOfWork, Collection<UUID> itemIds);
 
     // ------------------------------------------------------------------ writes
 
@@ -253,8 +259,17 @@ public interface MatchingStore {
 
         /** A fee check: within or beyond its tolerance, against its gross (if reached). */
         public static Basis fee(boolean beyond, long judgedMinor, Optional<Long> grossMinor) {
+            return fee(beyond, JudgedStatus.PENDING, judgedMinor, grossMinor);
+        }
+
+        /**
+         * A fee check of an item in {@code judged} - {@code PENDING} at the run, {@code UNMATCHED}
+         * when a {@code REPROCESS} run re-checks a contained fee line (REC-6).
+         */
+        public static Basis fee(
+                boolean beyond, JudgedStatus judged, long judgedMinor, Optional<Long> grossMinor) {
             return new Basis(
-                    DecisionVerdict.fee(beyond), JudgedStatus.PENDING, judgedMinor,
+                    DecisionVerdict.fee(beyond), judged, judgedMinor,
                     Optional.empty(), Optional.empty(), grossMinor);
         }
 
@@ -372,8 +387,19 @@ public interface MatchingStore {
     void recordItemAllocation(Connection unitOfWork, UUID itemId, long allocatedMinor);
 
     /** The item's conditional {@code PENDING → CHECKED} — a fee judged (`P8-TSK-012`). */
-    boolean markItemChecked(
+    default boolean markItemChecked(
             Connection unitOfWork, UUID itemId, Actor actor, Instant at,
+            CorrelationId correlation) {
+        return markItemCheckedFrom(unitOfWork, itemId, "PENDING", actor, at, correlation);
+    }
+
+    /**
+     * The item's conditional exit to {@code CHECKED} from {@code fromStatus}: {@code PENDING} at
+     * the run, or {@code UNMATCHED} when a {@code REPROCESS} run re-checks a fee line whose check
+     * was contained ({@code V016}'s edge - the Phase 8 -> 9 transition's REC-6).
+     */
+    boolean markItemCheckedFrom(
+            Connection unitOfWork, UUID itemId, String fromStatus, Actor actor, Instant at,
             CorrelationId correlation);
 
     /**
@@ -439,6 +465,13 @@ public interface MatchingStore {
     Optional<UUID> lockOpenBreakOn(
             Connection unitOfWork, UUID expectationId, BreakType type);
 
+    /**
+     * The one open break of this type on the external item, LOCKED - a re-checked fee line's
+     * contained {@code PROCESSING_ERROR} (the Phase 8 -> 9 transition's REC-6), taken before the
+     * decision that explains it.
+     */
+    Optional<UUID> lockOpenBreakOnItem(Connection unitOfWork, UUID itemId, BreakType type);
+
     // ------------------------------------------------------------------ time's legs
 
     /** One residual item with its run's pinned facts (`P8-TSK-013`). */
@@ -468,19 +501,21 @@ public interface MatchingStore {
     List<UUID> attributedSourcesWithExpiredGrace(Connection unitOfWork, UUID sourceId);
 
     /**
-     * The source's expired {@code UNMATCHED} items, LOCKED, oldest {@code grace_until}
-     * first — each judged on its locked row (ADR-0073 §7: a candidate committed by a
-     * holder of the item's share lock is found and allocated, never parked beside). Only
-     * unattributed items and items attributed to one of {@code heldAttributions} are read: an
-     * item attributed to a source whose advisory the leg does not hold waits for the next
-     * batch.
+     * The source's expired {@code UNMATCHED} items, LOCKED, in claimant order
+     * {@code (source_sequence, line_no)} within the expired set — each judged on its locked row
+     * (ADR-0073 §7: a candidate committed by a holder of the item's share lock is found and
+     * allocated, never parked beside). Only unattributed items and items attributed to one of
+     * {@code heldAttributions} are read: an item attributed to a source whose advisory the leg
+     * does not hold waits for the next batch. *(Corrected 2026-10-02 by the Phase 8 -> 9
+     * transition: this read "oldest {@code grace_until} first", against INV-REC-04's claimant
+     * order.)*
      */
     List<ResidualItem> lockExpiredItems(
             Connection unitOfWork, UUID sourceId, Collection<UUID> heldAttributions, int limit);
 
     /**
-     * Sources holding a residual item whose keys reach an expectation opened later, or an
-     * attributed {@code UNMATCHED} item for which a value-date group candidate opened later.
+     * Sources holding a residual item whose reach holds an expectation with a remainder that no
+     * decision of the item has yet judged ({@link #lockRematchCandidates}' predicate).
      */
     List<UUID> sourcesWithRematchWork(Connection unitOfWork);
 
@@ -488,17 +523,40 @@ public interface MatchingStore {
     List<UUID> attributedSourcesWithRematchWork(Connection unitOfWork, UUID sourceId);
 
     /**
-     * The source's {@code UNMATCHED} or {@code PARKED} items whose keys now reach an
-     * expectation opened AFTER their latest decision — in their KEY SCOPE (`P8-TSK-016`: an
-     * attributed item's keys are judged under its attributed source) — and the attributed
-     * {@code UNMATCHED} items for which an untouched value-date group candidate opened after
-     * their latest decision, LOCKED, oldest first. An item owning a suspense item of another
-     * origin than {@code RECON_PARK} — an unattributed bank line's — is never read: it has no
-     * park to invert and leaves by a person's resolution. {@code heldAttributions} as for
-     * {@link #lockExpiredItems}.
+     * The source's {@code UNMATCHED} or {@code PARKED} items whose REACH - their keys in their KEY
+     * SCOPE (`P8-TSK-016`), an operation-anchored rule's anchor to its operation's expectation,
+     * or, for an attributed {@code UNMATCHED} item, an untouched value-date group candidate -
+     * holds an expectation still {@code OPEN}/{@code PARTIALLY_SETTLED} with a remainder that no
+     * decision of the item has yet judged: recorded as a candidate, or as reached by a late
+     * leg's examination ({@link #insertReach}). Judged on rows, never on two clocks, so a reach
+     * is examined exactly once and a residual that can never allocate leaves the worklist. A
+     * definitive duplicate - an item with a {@code DUPLICATE} decision, or owning an open
+     * {@code REPEATED_FINGERPRINT} break - is never read: it leaves only by a person's
+     * resolution. An item owning a suspense item of another origin than {@code RECON_PARK} — an
+     * unattributed bank line's — is never read either: it has no park to invert. LOCKED in
+     * claimant order {@code (source_sequence, line_no)} (INV-REC-04). {@code heldAttributions} as
+     * for {@link #lockExpiredItems}. *(Corrected 2026-10-02 by the Phase 8 -> 9 transition: the
+     * keyed and value-date clauses compared {@code opened_at} with the latest decision's
+     * {@code decided_at} - two instants stamped before two commits, often on two instances'
+     * clocks - and carried no remainder condition, and the order was {@code line_no} across
+     * runs.)*
      */
     List<ResidualItem> lockRematchCandidates(
             Connection unitOfWork, UUID sourceId, Collection<UUID> heldAttributions, int limit);
+
+    /**
+     * The expectations {@link #lockRematchCandidates}' predicate reaches for this item right
+     * now - read BEFORE the item is judged, so the examination that records them as reached can
+     * never consume an expectation committed after its own reads.
+     */
+    List<UUID> rematchReach(Connection unitOfWork, UUID itemId);
+
+    /**
+     * Records the expectations a late leg's examination reached and judged
+     * ({@code reconciliation.match_reach}, `V016`): consumed once, so the rematch predicate
+     * never re-locks a reach a decision has already judged.
+     */
+    void insertReach(Connection unitOfWork, UUID decisionId, Collection<UUID> expectationIds);
 
     /** The item's conditional exit to {@code MATCHED} from the named non-terminal state. */
     boolean markItemMatchedFrom(
@@ -522,13 +580,19 @@ public interface MatchingStore {
             LocalDate expectedBy,
             String correlationId) {}
 
+    /** The ageing leg's keyset position: past this {@code (expected_by, id)}. */
+    record OverdueCursor(LocalDate expectedBy, UUID expectationId) {}
+
     /**
      * Expectations still {@code OPEN}/{@code PARTIALLY_SETTLED} past
      * {@code expected_by + SETTLEMENT_DATE_DAYS} on the database clock with
-     * {@code overdue_since} unset — read lock-free; each is re-judged under its own row
-     * lock by {@link #lockAndMarkOverdue}.
+     * {@code overdue_since} unset — read lock-free in {@code (expected_by, id)} order, past
+     * {@code after} when present; each is re-judged under its own row lock by
+     * {@link #lockAndMarkOverdue}. The cursor carries one sweep past a row that failed, so a
+     * page of failing rows can never hold the leg (the Phase 8 -> 9 transition's ARCH-P8-01).
      */
-    List<OverdueCandidate> overdueCandidates(Connection unitOfWork, int limit);
+    List<OverdueCandidate> overdueCandidates(
+            Connection unitOfWork, Optional<OverdueCursor> after, int limit);
 
     /**
      * The one-way fact: locks the expectation row and sets {@code overdue_since} iff
@@ -540,10 +604,23 @@ public interface MatchingStore {
     /** One unresolved break with its ageing facts (`P8-TSK-013`). */
     record EscalationRow(
             UUID breakId, UUID sourceId, Severity severity, long daysSinceRaised,
-            long escalations) {}
+            long escalations, Instant raisedAt) {}
 
-    /** Unresolved breaks with days-since-raise (database clock) and escalations counted. */
-    List<EscalationRow> unresolvedBreaks(Connection unitOfWork, int limit);
+    /** The escalation leg's keyset position: past this {@code (raised_at, id)}. */
+    record EscalationCursor(Instant raisedAt, UUID breakId) {}
+
+    /**
+     * Unresolved non-{@code CRITICAL} breaks whose next escalation is DUE - more ageing bands
+     * ({@code bandUpperBounds}, days since {@code raised_at} on the database clock) crossed than
+     * {@code SEVERITY_ESCALATED} events recorded - oldest first, past {@code after} when present.
+     * Selecting the due rows in SQL is what keeps a backlog of older breaks not yet due from
+     * holding the page (the Phase 8 -> 9 transition's MI-1).
+     */
+    List<EscalationRow> dueEscalations(
+            Connection unitOfWork,
+            List<Long> bandUpperBounds,
+            Optional<EscalationCursor> after,
+            int limit);
 
     /**
      * One escalation step: the expected-value predicate converges racers, the
@@ -581,6 +658,14 @@ public interface MatchingStore {
             long feeReportedMinor) {}
 
     List<FeeDecisionRow> feeDecisionsOf(Connection unitOfWork, UUID runId);
+
+    /**
+     * A contained park's item (the Phase 8 -> 9 transition, REC-3): an {@code UNMATCHED} item
+     * whose park failed keeps waiting, owned by the break its decision raised, with its grace
+     * clock STOPPED - the expiry predicate drops it, so one item can never hold a leg's
+     * worklist. False when the item is no longer {@code UNMATCHED}.
+     */
+    boolean stopGrace(Connection unitOfWork, UUID itemId);
 
     /**
      * The item's conditional {@code PENDING → UNMATCHED}; {@code graceHours} empty leaves
@@ -657,7 +742,9 @@ public interface MatchingStore {
 
     /**
      * The residual items a {@code REPROCESS} run still owes a decision: {@code UNMATCHED} or
-     * {@code PARKED}, owning no suspense of another origin, and holding no decision of this run.
+     * {@code PARKED}, owning no suspense of another origin, owning no open
+     * {@code REPEATED_FINGERPRINT} break (a definitive duplicate's park leaves only by a person's
+     * resolution - the Phase 8 -> 9 transition's REC-1), and holding no decision of this run.
      */
     int reprocessWorklistSize(Connection unitOfWork, UUID sourceId, UUID runId);
 

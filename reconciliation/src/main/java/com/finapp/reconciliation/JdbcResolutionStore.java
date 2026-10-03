@@ -476,4 +476,145 @@ public final class JdbcResolutionStore implements ResolutionStore {
                 externalItemId,
                 row -> row.getObject("run_id", UUID.class));
     }
+
+    // ------------------------------------------------------------------ the transition's binds
+
+    @Override
+    public Optional<InternalReferenceLookup.LookupSubject> lookupSubjectOf(
+            Connection unitOfWork, UUID externalItemId) {
+        Optional<UUID> scope =
+                JdbcBreakInquiries.one(
+                        unitOfWork,
+                        "SELECT COALESCE(attributed_source_id, source_id) AS scope"
+                                + " FROM reconciliation.external_item WHERE id = ?",
+                        externalItemId,
+                        row -> row.getObject("scope", UUID.class));
+        if (scope.isEmpty()) {
+            return Optional.empty();
+        }
+        Map<KeyKind, String> references = new java.util.EnumMap<>(KeyKind.class);
+        for (Map.Entry<ItemKeyKind, String> key :
+                JdbcBreakInquiries.list(
+                        unitOfWork,
+                        "SELECT key_kind, key_value FROM reconciliation.external_item_key"
+                                + " WHERE item_id = ? ORDER BY key_kind",
+                        externalItemId,
+                        row -> Map.entry(
+                                ItemKeyKind.valueOf(row.getString("key_kind")),
+                                row.getString("key_value")))) {
+            references.put(lookupKind(key.getKey()), key.getValue());
+        }
+        return Optional.of(
+                new InternalReferenceLookup.LookupSubject(
+                        Optional.empty(), references, scope));
+    }
+
+    /**
+     * The item-side key vocabulary onto the lookup's - the matcher's own mapping
+     * ({@code Matching.mapToLookup}, the design's D8 inverted), held equal to it by
+     * {@code ResolutionLookupSubjectTest}.
+     */
+    static KeyKind lookupKind(ItemKeyKind kind) {
+        return switch (kind) {
+            case DISPUTE_REF -> KeyKind.DISPUTE_CB_REF;
+            case ORIGINAL_REF -> KeyKind.PSP_CAPTURE_REF;
+            default -> KeyKind.valueOf(kind.name());
+        };
+    }
+
+    @Override
+    public PayoutReferences payoutReferencesOf(Connection unitOfWork, UUID externalItemId) {
+        try (PreparedStatement read =
+                unitOfWork.prepareStatement(
+                        "SELECT (SELECT k.key_value FROM reconciliation.external_item_key k"
+                                + " WHERE k.item_id = ? AND k.key_kind = 'PAYOUT_PROVIDER_REF')"
+                                + " AS provider_ref,"
+                                + " (SELECT k.key_value FROM reconciliation.external_item_key k"
+                                + " WHERE k.item_id = ? AND k.key_kind = 'OUR_REF') AS our_ref")) {
+            read.setObject(1, externalItemId);
+            read.setObject(2, externalItemId);
+            try (ResultSet row = read.executeQuery()) {
+                row.next();
+                return new PayoutReferences(
+                        Optional.ofNullable(row.getString("provider_ref")),
+                        Optional.ofNullable(row.getString("our_ref")));
+            }
+        } catch (SQLException failure) {
+            throw new ReconciliationStorageException(
+                    "could not read the item's payout references", failure);
+        }
+    }
+
+    @Override
+    public boolean payoutTransferStands(
+            Connection unitOfWork, String payoutOperationRef, Optional<UUID> exceptBreakId) {
+        return transferStands(unitOfWork, payoutOperationRef, exceptBreakId);
+    }
+
+    /**
+     * The one statement both readers share - the approval's here, the return worker's through
+     * {@link JdbcPayoutReturnFallbacks}: from the transfer resolutions (few) to their breaks by
+     * primary key, the break's frozen cause and operation naming the payout.
+     */
+    static boolean transferStands(
+            Connection unitOfWork, String payoutOperationRef, Optional<UUID> exceptBreakId) {
+        try (PreparedStatement read =
+                unitOfWork.prepareStatement(
+                        "SELECT EXISTS (SELECT 1 FROM reconciliation.resolution r"
+                                + " JOIN reconciliation.break b ON b.id = r.break_id"
+                                + " WHERE r.kind = 'TRANSFER_TO_ACCOUNT'"
+                                + " AND r.status IN ('PROPOSED', 'APPROVED')"
+                                + " AND b.cause = 'RETURN_NOT_APPLICABLE'"
+                                + " AND b.internal_operation_ref = ?"
+                                + " AND (?::uuid IS NULL OR b.id <> ?::uuid))")) {
+            read.setString(1, payoutOperationRef);
+            read.setObject(2, exceptBreakId.orElse(null));
+            read.setObject(3, exceptBreakId.orElse(null));
+            try (ResultSet row = read.executeQuery()) {
+                return row.next() && row.getBoolean(1);
+            }
+        } catch (SQLException failure) {
+            throw new ReconciliationStorageException(
+                    "could not read the payout's person-attributed return", failure);
+        }
+    }
+
+    @Override
+    public Optional<ProposalText> proposalText(Connection unitOfWork, UUID resolutionId) {
+        return JdbcBreakInquiries.one(
+                unitOfWork,
+                "SELECT id, narrative FROM reconciliation.resolution WHERE id = ?",
+                resolutionId,
+                row -> new ProposalText(
+                        row.getObject("id", UUID.class), row.getString("narrative")));
+    }
+
+    @Override
+    public Optional<SuspenseHolding> suspenseItem(Connection unitOfWork, UUID suspenseItemId) {
+        return JdbcBreakInquiries.one(
+                unitOfWork,
+                SUSPENSE_COLUMNS + " WHERE id = ?",
+                suspenseItemId,
+                JdbcResolutionStore::suspense);
+    }
+
+    @Override
+    public Optional<ExpectationOperand> expectationOperand(
+            Connection unitOfWork, UUID expectationId) {
+        return JdbcBreakInquiries.one(
+                unitOfWork,
+                "SELECT id, kind, operation_ref, direction, status,"
+                        + " amount_minor - allocated_minor - resolved_minor AS remainder,"
+                        + " currency, scale FROM reconciliation.expectation WHERE id = ?",
+                expectationId,
+                row -> new ExpectationOperand(
+                        row.getObject("id", UUID.class),
+                        ExpectationKind.valueOf(row.getString("kind")),
+                        row.getString("operation_ref"),
+                        ExpectationDirection.valueOf(row.getString("direction")),
+                        ExpectationStatus.valueOf(row.getString("status")),
+                        row.getLong("remainder"),
+                        row.getString("currency").trim(),
+                        row.getInt("scale")));
+    }
 }

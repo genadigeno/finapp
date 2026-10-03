@@ -91,6 +91,12 @@ a question this ADR left open, or built it differently, the point says so in a d
    does. *(As built by `P8-TSK-021`: only HTTP collectors exist, so the HTTP adapter refuses any
    non-HTTP scheme at construction. An `sftp` source URL passes the guard and then fails startup
    at the adapter, so pulls are `https`-only off loopback until an `sftp` collector is built.)*
+   *(Corrected 2026-10-02 by the Phase 8 → 9 transition, SEC-07: the HTTP adapter buffers a
+   provider's body only up to the door's 8 MiB bound plus one byte — a declared
+   `Content-Length` past it never subscribes to the body, an undeclared one is cut off at the
+   first byte past the bound — and answers `REFUSED_ANSWER`; a body just over the bound still
+   reaches the door, whose own check refuses it, audited. Before this, an endpoint answering
+   gigabytes was buffered whole by every instance's leaderless pull sweep, every tick.)*
 
    Push delivery (a counterparty-signed callback, the webhook door's shape) is deferred.
 
@@ -108,6 +114,21 @@ a question this ADR left open, or built it differently, the point says so in a d
      read (point 7), the bytes themselves. The attester or the uploader may instead decline:
      `POST .../decline {reason}` takes the file to `REJECTED` (`DECLINED`), reasoned and audited
      (`settlement.SettlementFileDeclined`).
+
+     *(Corrected 2026-10-02 by the Phase 8 → 9 transition, the audit's `SEC-04`: every
+     person-written settlement reason — the decline's, the readmission's (point 8), the
+     verification's (point 9) and the content read's (point 7) — was blank- and length-checked
+     only, so a card number or an account identifier pasted into one rested in plaintext in
+     `file_event.reason`, `batch_event.reason` and `platform.audit_record.reason`, none of which
+     can be cleaned. All four now share one rule, `FileReadmission.requireReason`, judged before
+     any lock or read: present, within 1,000 characters, and holding no instrument shape under
+     the platform's one screen (`InstrumentShapes` — a Luhn-valid 12–19-digit run however a
+     person groups it with spaces or dashes, the contiguous or printed account identifier, the
+     platform's own UUIDs masked); a refusal is `422 api.ValidationFailed` naming the rule, never
+     the value. Settlement `V012` is its twin for every other writer:
+     `file_event_reason_no_instrument_shape` and `batch_event_reason_no_instrument_shape`.
+     Proven by `PersonWrittenReasonsDatabaseTest`, `SettlementV012MigrationTest` and
+     `PersonWrittenReasonsAreScreenedDatabaseTest`.)*
    - Racing attesters, or an attestation racing a decline, serialise on the file row
      (`FOR UPDATE`) and a conditional `NULL → value` write: exactly one attestation, and each loser
      gets a 409 or converges.
@@ -140,6 +161,45 @@ a question this ADR left open, or built it differently, the point says so in a d
      - **a field that fails its declared class is screened as free text** before the file can be
        stored as malformed. A card number sitting in a reference column is therefore refused, not
        retained inside a file the parse leg will later reject.
+
+       *(Corrected 2026-10-02 by the Phase 8 → 9 transition: the claim above did not hold for
+       `SIM_PSP_CSV` v1 (the audit's `SEC-02`). Its screen read the PSP's references with the
+       parse's class — at least one letter, colon, underscore or dash — which `4111-1111-1111-1111`
+       satisfies on its dashes and `PAN4111111111111111` on its letters, and the acquirer class
+       `[0-9]{8,23}` admitted a bare 16-digit card number; so a card number passed the door
+       unscreened into `batch.external_batch_ref` and `line_reference` and back out of
+       `GET /batches/{id}`. The screen's classes now exclude instrument shapes as the three later
+       formats' always did: a PSP reference must also be a `ReferenceShape` (no digit run of card
+       length with single dashes collapsed, no account identifier), and the acquirer reference
+       is the 23-digit ARN, a short id of 8–12 digits or the 15-digit network transaction id —
+       any other length is of card length and is screened as free text, so a Luhn-valid one is
+       refused. The parse's classes are unchanged and the golden file still passes, so this
+       corrects v1 rather than making a v2. A stored batch reference that is not a reference
+       shape — one written before the correction — is withheld from the batch read rather than
+       served verbatim. The door's account-identifier rule, shared with every person-written
+       reason's screen (`com.finapp.sharedkernel.security.InstrumentShapes`), now also refuses
+       the ISO 13616 printed form — groups of four separated by single spaces or dashes, whose
+       mod-97 check holds — so `GB82 WEST 1234 5698 7654 32` in a statement's free text is
+       refused like its contiguous form. Proven by `SimPspCsvFormatTest` (a card number in every
+       reference class), `ConservativeScreenTest` and
+       `PersonWrittenReasonsAreScreenedDatabaseTest` (the withheld reference).)*
+
+       *(Corrected 2026-10-03 by the Phase 8 → 9 transition's re-gate, NEW-SEC-2: the dash was
+       not the only separator a card number hides behind. `4111:1111:1111:1111` and
+       `4111_1111_1111_1111` are the PSP reference class AND were a `ReferenceShape`, because
+       the shape's run detection collapsed single dashes alone — so both still passed the door
+       into `batch.external_batch_ref` / `line_reference` and back out of `GET /batches/{id}`.
+       `ReferenceShape` now collapses ':', '_' and '-' alike (and such a stored reference is
+       withheld from the read); the PSP screen's reference fallback walks the failed value a
+       second time with ':' and '_' read as the dashes they group like; and the
+       person-written-prose screen's card scan (`InstrumentShapes.find`) collapses the machine
+       separators too. The database twins keep the printed forms — settlement `V014+` and
+       reconciliation `V020+` are reserved for Phase 9 — so the Java rank is strictly wider and
+       the twin is the second rank: every writer runs the domain screen first, and the
+       corpus-parity tests still hold statement for statement against `holdsCardNumber`, the
+       twin's verdict. Proven by `SimPspCsvFormatTest`, `ReferenceShapeTest`,
+       `InstrumentShapesTest`, `CaseFileRulesTest` and
+       `PersonWrittenReasonsAreScreenedDatabaseTest`.)*
    - **Bytes that do not parse** are screened as one conservative stream. A clean malformed file
      is stored and then rejected by the parse leg, because it is the evidence of a corrupt
      delivery. A dirty one is refused.
@@ -196,7 +256,9 @@ a question this ADR left open, or built it differently, the point says so in a d
    | The same line twice, in one file or across files | `canonical_fingerprint`, indexed and deliberately not unique | Both kept; the second becomes `DUPLICATE_EXTERNAL` at matching (ADR-0068, ADR-0069) |
 
    A rejected or declined file keeps its content address. Re-delivering its bytes is a duplicate
-   and changes nothing. Readmission (point 8) is the only way the same bytes are parsed again.
+   and changes nothing. Readmission (point 8) is the only way the same bytes are parsed again
+   - since the Phase 8 -> 9 transition (MI-2, 2026-10-02) for a repudiated batch's accepted file
+   too.
 
 6. **Admitted files are retained encrypted in PostgreSQL, behind the `SettlementFileStore`
    port.** This is ADR-0036 re-assessed.
@@ -279,7 +341,25 @@ a question this ADR left open, or built it differently, the point says so in a d
      `REPUDIATED`. Its bytes are re-parsed in memory and it is admitted once no live batch holds
      the identity they declare, whether the standing batch was repudiated or its file declined;
      while one stands it is refused `settlement.ConflictingBatchStands`, and the parse leg's live
-     unique stays the arbiter.)* A readmission is a new
+     unique stays the arbiter.)* *(Corrected 2026-10-02 by the Phase 8 -> 9 transition, MI-2:
+     readmission is also for an `ACCEPTED` file whose batch was `REPUDIATED`. For our own
+     adapter's mis-normalisation the genuine evidence IS those bytes, and a re-delivery meets the
+     accepted file's content address, so without this the recovery ADR-0065 §10 names did not
+     exist. It is judged like a `CONFLICTING_BATCH` original - by the identity its bytes declare
+     under the current format - inherits its original's authentication (an accepted file was
+     pulled or attested; `V009`'s walk is unchanged), and settlement `V011`'s trigger refuses any
+     other original for every writer: a readmission names a `REJECTED` original (never
+     `SOURCE_RETIRED`) or an `ACCEPTED` one whose batch is `REPUDIATED`.)* *(Corrected
+     2026-10-03 by the Phase 8 -> 9 transition's re-gate, NEW-SEC-1: it inherits NOTHING.
+     MI-2's "inherits its original's authentication" let ONE holder of
+     `RECONCILIATION_ADMINISTER` undo a four-eyes verdict alone - readmit the repudiated
+     batch's file and the accept leg re-accepts it with no second person, re-posting the
+     repudiated recognition, with nothing distinguishing the mis-normalisation case (bytes
+     genuine) from the fabrication case. A repudiated batch's file now passes nothing on -
+     exactly the `DECLINED` rule - by settlement `V014`'s re-statement of `V009`'s walk, the
+     one function the trigger, the accept leg's eligibility and the attestation's rank all
+     read, so reinstating a repudiated batch takes two people again: the readmitter and an
+     attester distinct from every submitter along the chain.)* A readmission is a new
      row naming the original (`readmits_file_id UNIQUE`). It is keyed, reasoned and audited
      (`settlement.SettlementFileReadmitted`), and parsed under the current format version.
    - Its bytes are the original's plaintext: decrypted, verified against the checksum, screened
@@ -291,7 +371,9 @@ a question this ADR left open, or built it differently, the point says so in a d
      the original was pulled or attested (or is itself a readmission that inherited) and was not
      `DECLINED`. Then it is accepted like its original. A `DECLINED` original passes nothing on,
      however it was authenticated: declining is a person's judgement against the file
-     (settlement `V009`, `settlement.file_authenticates_readmission`).
+     (settlement `V009`, `settlement.file_authenticates_readmission`; since the Phase 8 -> 9
+     transition's re-gate, NEW-SEC-1, a file whose batch is `REPUDIATED` passes nothing on
+     either - a repudiation is the same judgement, four-eyes - settlement `V014`).
    - **An unattested original passes no authentication on.** An upload the parse leg rejected
      before anyone attested it would otherwise never be accepted after readmission. Its
      readmission is inert until a second person holding `SETTLEMENT_INGEST` attests the
@@ -337,6 +419,17 @@ a question this ADR left open, or built it differently, the point says so in a d
      with `parse_failures + 1` and `next_parse_at` backed off, visible as a stuck file on
      `finapp.settlement.file.age`. A rejected file's expectations age into `MISSING_EXTERNAL`
      breaks on schedule. They are never assumed settled.
+     *(Corrected 2026-10-02 by the Phase 8 → 9 transition, MI-5 and MI-7: the failure's own
+     record — the second, small transaction that survives the parse's rollback — locks the
+     file row and writes only while it is still `RECEIVED`: the rollback released our claim,
+     and another instance's `PARSED` or `REJECTED` edge may already stand, after which nothing
+     follows it in the file's history. And the accept leg's own exception now backs off the
+     same way — `accept_failures + 1`, `next_accept_at` (settlement `V013`), a
+     `PARSED → PARSED` history row, written only while the file is still `PARSED` under its
+     row lock — and `dueForAccept` takes only due files, so as many always-failing `PARSED`
+     files as the sweep's batch no longer hold the oldest-first window against every later
+     file of every source. Pacing only, never correctness: the conditional edges and uniques
+     remain the arbiters.)*
    - The file's machine (`RECEIVED → PARSED → ACCEPTED`, `RECEIVED | PARSED → REJECTED`, with
      no other edges) is specified in `SETTLEMENT_AND_RECONCILIATION_LIFECYCLES.md` under the
      three-layer discipline: the aggregate, a generated `CHECK` with an every-writer transition
@@ -567,7 +660,10 @@ ceiling), ADR-0046 (no connection across a pull), ADR-0008 (the collector SPI).
   `V008`) paces the herd — point 10's row — and `SettlementPullSchedule` derives its worklist
   from stored rows. `POST /v1/operator/settlement/sources/{code}/fetch` answers what the pull
   came to, audited `settlement.SettlementFetchRequested` — a pull that throws recorded `FAILED`
-  before it propagates. `finapp.settlement.source.silence` and `finapp.settlement.pull.failure`
+  before it propagates. *(Corrected 2026-10-02 by the Phase 8 -> 9 transition, SEC-08: that
+  record is written after the pull, so a process dying past the permit left no trace of the
+  ask; the fetch's start, `settlement.SettlementFetchStarted`, now commits in the permit's own
+  transaction.)* `finapp.settlement.source.silence` and `finapp.settlement.pull.failure`
   are published. **Only HTTP is built**: the guard admits `sftp` as this ADR allows, but no
   `sftp` collector exists, so the HTTP adapter refuses any other scheme at construction — an
   `sftp` source URL fails startup rather than every pull (the tests agent's find). The scheme's

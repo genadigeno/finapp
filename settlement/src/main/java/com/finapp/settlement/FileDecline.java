@@ -64,9 +64,10 @@ public final class FileDecline {
         Objects.requireNonNull(reason, "reason must not be null");
         Objects.requireNonNull(decliner, "decliner must not be null");
         Objects.requireNonNull(correlation, "correlation must not be null");
-        if (reason.isBlank()) {
-            throw new IllegalArgumentException("a decline is reasoned (INV-AUD-03)");
-        }
+        // A decline is reasoned (INV-AUD-03), and its reason reaches the file's and the batch's
+        // history and the audit record: the person-written reason rule, before any lock
+        // (corrected 2026-10-02 by the Phase 8 -> 9 transition, SEC-04: blank was the rule).
+        FileReadmission.requireReason(reason, "a decline");
 
         SettlementFileStore.FileRow file =
                 files.lockFileById(unitOfWork, fileId)

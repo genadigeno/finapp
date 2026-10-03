@@ -42,18 +42,29 @@ import lombok.RequiredArgsConstructor;
  *       original's bytes, re-parsed in memory under the source's current format, declare an
  *       identity no live batch holds (the standing batch declined or repudiated). While one
  *       does, {@link ConflictingBatchStands}. The parse leg's live unique stays the arbiter.
- *   <li>Never {@code SOURCE_RETIRED}, never a file still in its machine:
- *       {@link FileNotRejected}.
+ *   <li><strong>An {@code ACCEPTED} file whose batch is {@code REPUDIATED}</strong> (the Phase
+ *       8 -> 9 transition, MI-2; ADR-0065 §10): the evidence's verdict withdrawn by an approved
+ *       four-eyes repudiation - for our own adapter's mis-normalisation, the genuine evidence IS
+ *       these bytes, and readmission is the only way the same bytes are parsed again. Judged like
+ *       a {@code CONFLICTING_BATCH} original: only while no live batch holds the identity the
+ *       bytes declare under the current format ({@link ConflictingBatchStands} otherwise). It
+ *       inherits NOTHING - exactly the {@code DECLINED} rule: the repudiation's four-eyes
+ *       verdict stands against these bytes' effect, so reinstating them waits for its own
+ *       second person (the Phase 8 -> 9 transition's re-gate, NEW-SEC-1; `V014`).
+ *   <li>Never {@code SOURCE_RETIRED}, never a file still in its machine, never an accepted file
+ *       whose batch stands: {@link FileNotRejected}. `V011` holds the same rule for every
+ *       writer.
  * </ul>
  *
  * <h2>What authenticates the readmission</h2>
  *
  * <p>It inherits its original's authentication — through the identical checksum — when the
  * original was pulled or attested (or is itself a readmission that inherited), and a
- * {@code DECLINED} original passes nothing on. Otherwise it waits for a second person distinct
- * from every submitter along its chain ({@link FileAttestation}). `V009`'s functions are the one
- * source of truth for the attestation's domain rank, the accept leg's claim and the trigger
- * beneath every writer.
+ * {@code DECLINED} original — or one whose batch is {@code REPUDIATED} (the Phase 8 -> 9
+ * transition's re-gate, NEW-SEC-1) — passes nothing on. Otherwise it waits for a second person
+ * distinct from every submitter along its chain ({@link FileAttestation}). `V009`'s functions
+ * (the walk as `V014` re-states it) are the one source of truth for the attestation's domain
+ * rank, the accept leg's claim and the trigger beneath every writer.
  *
  * <h2>The door's steps, in the door's order</h2>
  *
@@ -75,6 +86,9 @@ public final class FileReadmission {
 
     /** The bound `platform.audit_record.reason` and `settlement.file_event.reason` share. */
     public static final int MAX_REASON_LENGTH = 1000;
+
+    /** The audit's verdict for an accepted original whose batch was repudiated (MI-2). */
+    static final String REPUDIATED_BATCH = "REPUDIATED_BATCH";
 
     /** Our validation's verdicts — the parse leg was the defect (ADR-0066 §8). */
     private static final Set<RejectionCode> OUR_VALIDATION =
@@ -154,7 +168,7 @@ public final class FileReadmission {
                 files.lockFileById(unitOfWork, originalFileId)
                         .orElseThrow(
                                 () -> new FileAttestation.SettlementFileNotFound(originalFileId));
-        RejectionCode code = admissibleCode(original);
+        String verdict = admissibleVerdict(unitOfWork, original);
         if (files.readmissionOf(unitOfWork, originalFileId).isPresent()) {
             throw new FileAlreadyReadmitted(originalFileId);
         }
@@ -183,8 +197,10 @@ public final class FileReadmission {
         byte[] content = files.readContent(unitOfWork, originalFileId);
         byte[] contentSha256 = original.contentSha256();
 
-        // 4. A CONFLICTING_BATCH original only once its conflict no longer stands.
-        if (code == RejectionCode.CONFLICTING_BATCH
+        // 4. A CONFLICTING_BATCH original - or a repudiated batch's file - only once no live
+        // batch holds the identity its bytes declare.
+        if ((RejectionCode.CONFLICTING_BATCH.name().equals(verdict)
+                        || REPUDIATED_BATCH.equals(verdict))
                 && conflictStands(unitOfWork, original, declared, content)) {
             throw new ConflictingBatchStands(originalFileId);
         }
@@ -295,7 +311,7 @@ public final class FileReadmission {
                                 "source=" + original.sourceCode()
                                         + ", original=" + originalFileId
                                         + ", readmission=" + fileId
-                                        + ", originalVerdict=" + code
+                                        + ", originalVerdict=" + verdict
                                         + ", channel=" + DeliveryChannel.READMISSION
                                         + ", sha256=" + HexFormat.of().formatHex(contentSha256))));
         observer.received(original.sourceCode(), SettlementFileStore.ReceiptOutcome.NEW);
@@ -303,8 +319,25 @@ public final class FileReadmission {
                 fileId, originalFileId, files.inheritsAuthentication(unitOfWork, fileId));
     }
 
-    /** The original's verdict, if readmissible — otherwise the refusal, writing nothing. */
-    private static RejectionCode admissibleCode(SettlementFileStore.FileRow original) {
+    /**
+     * The original's verdict, if readmissible - its rejection code, or {@link #REPUDIATED_BATCH}
+     * for an accepted file whose batch was repudiated - otherwise the refusal, writing nothing.
+     */
+    private String admissibleVerdict(
+            Connection unitOfWork, SettlementFileStore.FileRow original) {
+        if (original.status() == FileStatus.ACCEPTED) {
+            // A REPUDIATED batch is terminal (V010), so this unlocked read cannot go stale;
+            // V011's trigger re-judges it at the insert for every writer.
+            boolean repudiated =
+                    batches.batchByFileId(unitOfWork, original.id())
+                            .filter(batch -> batch.status() == BatchStatus.REPUDIATED)
+                            .isPresent();
+            if (repudiated) {
+                return REPUDIATED_BATCH;
+            }
+            throw new FileNotRejected(
+                    original.id(), "it is ACCEPTED and its batch stands, not a rejection");
+        }
         if (original.status() != FileStatus.REJECTED || original.rejectionCode().isEmpty()) {
             throw new FileNotRejected(
                     original.id(), "it is " + original.status() + ", not a rejection");
@@ -313,7 +346,7 @@ public final class FileReadmission {
         if (OUR_VALIDATION.contains(code)
                 || code == RejectionCode.DECLINED
                 || code == RejectionCode.CONFLICTING_BATCH) {
-            return code;
+            return code.name();
         }
         // SOURCE_RETIRED: the source closed its door; a re-opened source is a NEW source.
         throw new FileNotRejected(original.id(), "a " + code + " rejection is never readmitted");
@@ -374,7 +407,18 @@ public final class FileReadmission {
                         Optional.of(summary)));
     }
 
-    /** The reason rule both P8-TSK-022 acts share: present, non-blank, within the bound. */
+    /**
+     * The reason rule every person-written settlement reason shares — the readmission, the
+     * verification, the decline and the content read: present, non-blank, within the bound, and
+     * never a card-number or account-identifier shape ({@code INV-PAY-02}, {@code INV-RAIL-03}):
+     * the reason reaches the file's history and the audit record, neither of which can be
+     * cleaned. The {@code file_event} and {@code batch_event} {@code CHECK}s are its twin for
+     * every other writer (`V012`).
+     *
+     * <p><em>(Corrected 2026-10-02 by the Phase 8 → 9 transition: blank and length were the
+     * whole rule, and the decline and the content read did not share it (the audit's
+     * {@code SEC-04}).)</em>
+     */
     static void requireReason(String reason, String act) {
         if (reason == null || reason.isBlank()) {
             throw new ReasonRequired(act + " requires a reason (INV-AUD-03)");
@@ -383,10 +427,16 @@ public final class FileReadmission {
             throw new ReasonRequired(
                     act + "'s reason is at most " + MAX_REASON_LENGTH + " characters");
         }
+        if (com.finapp.sharedkernel.security.InstrumentShapes.holdsAny(reason)) {
+            throw new ReasonRequired(
+                    act + "'s reason must not hold a card-number or bank-account shape"
+                            + " (INV-PAY-02, INV-RAIL-03)");
+        }
     }
 
     /**
-     * The act was unreasoned, or its reason over the bound — nothing was read or written. An
+     * The act was unreasoned, its reason over the bound or holding an instrument shape — nothing
+     * was read or written, and the message names the rule, never the value. An
      * {@link IllegalArgumentException}: the caller's request, not the file, is at fault.
      */
     public static final class ReasonRequired extends IllegalArgumentException {

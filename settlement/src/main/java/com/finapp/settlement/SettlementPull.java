@@ -77,6 +77,20 @@ public final class SettlementPull {
         }
     }
 
+    /**
+     * Work committed in the permit's own transaction, only when the permit is taken — an
+     * operator's fetch records its start there, atomic with the fetch's first effect (the Phase
+     * 8 -> 9 transition, SEC-08). A throw rolls the permit back with it.
+     */
+    @FunctionalInterface
+    public interface AlongsideThePermit {
+
+        /** Nothing alongside: the schedule's pull. */
+        AlongsideThePermit NOTHING = unitOfWork -> {};
+
+        void record(java.sql.Connection unitOfWork);
+    }
+
     /** Whether {@code sourceCode} can be pulled at all: declared for PULL, a collector wired. */
     public boolean pullable(String sourceCode) {
         return sources.byCode(sourceCode)
@@ -99,6 +113,22 @@ public final class SettlementPull {
             Optional<Duration> window,
             Actor actor,
             Correlation correlation) {
+        return pull(sourceCode, businessKey, window, actor, correlation,
+                AlongsideThePermit.NOTHING);
+    }
+
+    /**
+     * {@link #pull(String, String, Optional, Actor, Correlation)}, with {@code alongside}
+     * committed in the permit's transaction when the permit is taken.
+     */
+    public Outcome pull(
+            String sourceCode,
+            String businessKey,
+            Optional<Duration> window,
+            Actor actor,
+            Correlation correlation,
+            AlongsideThePermit alongside) {
+        Objects.requireNonNull(alongside, "alongside must not be null");
         Objects.requireNonNull(sourceCode, "sourceCode must not be null");
         Objects.requireNonNull(businessKey, "businessKey must not be null");
         Objects.requireNonNull(window, "window must not be null");
@@ -133,10 +163,17 @@ public final class SettlementPull {
                                 throw new FileReception.SettlementSourceRetired(sourceCode);
                             }
                             if (window.isPresent()) {
-                                return permits.claim(
-                                        unitOfWork, source.id(), businessKey, now, window.get());
+                                boolean claimed =
+                                        permits.claim(
+                                                unitOfWork, source.id(), businessKey, now,
+                                                window.get());
+                                if (claimed) {
+                                    alongside.record(unitOfWork);
+                                }
+                                return claimed;
                             }
                             permits.renew(unitOfWork, source.id(), businessKey, now);
+                            alongside.record(unitOfWork);
                             return true;
                         });
         if (!mine) {

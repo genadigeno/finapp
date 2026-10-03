@@ -58,7 +58,9 @@ import lombok.RequiredArgsConstructor;
  * <p><strong>The one lock order</strong> (`DISTRIBUTED_EXECUTION.md` §3's Phase 8 row):
  * the source's advisory namespace 4, break rows sorted by id, external item rows sorted by
  * id (the conditional {@code PENDING | UNMATCHED → PARKED} is the ten-way arbiter, with
- * {@code UNIQUE (external_item_id)} on the item beneath it), then — when one call posts
+ * {@code UNIQUE (external_item_id)} on the LIVE suspense item beneath it - `V017`: a
+ * {@code RECON_PARK} item is once per park, so an item a repudiation reopened parks again, its
+ * earlier item {@code RELEASED}), then — when one call posts
  * several entries — {@link PostingService#lockBalancesInOrder} over the union of the
  * accounts it will touch, then the postings. The {@code park} and {@code suspense_item}
  * rows are inserted AFTER the posting, carrying their entry id whole (the design's D1: the
@@ -74,7 +76,7 @@ import lombok.RequiredArgsConstructor;
  * <p><strong>The key converges nothing.</strong> Every {@code <parkId>} is freshly minted by
  * the id generator, so a retry or a racer would post under a different key: a park's once-ness
  * rests on the external item's conditional transition, decided on the locked row before any
- * posting, with {@code UNIQUE (external_item_id)} on the suspense item beneath it; an unpark's
+ * posting, with `V017`'s one LIVE suspense item per external item beneath it; an unpark's
  * on the suspense item's unreleased remainder, judged on its locked row before the posting, and
  * the caller's conditional edge out of {@code PARKED}.
  */

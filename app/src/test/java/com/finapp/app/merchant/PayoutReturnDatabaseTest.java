@@ -58,6 +58,10 @@ import com.finapp.platform.testing.provider.SimulatedProvider;
 import com.finapp.reconciliation.ExpectationDirection;
 import com.finapp.reconciliation.ExpectationKind;
 import com.finapp.reconciliation.Matching;
+import com.finapp.reconciliation.PayoutReturnFallbacks;
+import com.finapp.reconciliation.ResolutionKind;
+import com.finapp.reconciliation.ResolutionMachine;
+import com.finapp.reconciliation.ResolutionReasonCode;
 import com.finapp.reconciliation.WaitingPayoutReturns;
 import com.finapp.settlement.BatchAcceptance;
 import com.finapp.settlement.DeliveryChannel;
@@ -184,6 +188,10 @@ class PayoutReturnDatabaseTest {
     private static final String RETURNED_EVENT = "merchant.MerchantPayoutReturned";
     private static final String RETURN_AUDIT = "merchant.PayoutReturnApplied";
 
+    /** The direct applier's own cases: no person's transfer stands for their payouts. */
+    private static final PayoutReturns.PersonAttribution NO_PERSON =
+            (unitOfWork, payout) -> false;
+
     /**
      * The provider mints its own reference per payout — letters only, so no digit run of card
      * length can ever meet the format's reference class by chance.
@@ -215,6 +223,8 @@ class PayoutReturnDatabaseTest {
     @Autowired private PayoutReturns payoutReturns;
     @Autowired private PayoutReturnSweep payoutReturnSweep;
     @Autowired private WaitingPayoutReturns waitingPayoutReturns;
+    @Autowired private PayoutReturnFallbacks payoutReturnFallbacks;
+    @Autowired private ResolutionMachine resolutionMachine;
     @Autowired private SettlementBatchStore<Connection> settlementBatchStore;
     @Autowired private FileReception<Connection> reception;
     @Autowired private FileParsing parsing;
@@ -405,7 +415,7 @@ class PayoutReturnDatabaseTest {
 
         for (PayoutReturns.ReturnEvidence retry :
                 List.of(evidenceOf(waiting, 0), evidenceOf(waiting, 1))) {
-            PayoutReturns.Applied again = asPlatform(uow -> payoutReturns.apply(uow, retry));
+            PayoutReturns.Applied again = asPlatform(uow -> payoutReturns.apply(uow, retry, NO_PERSON));
             assertThat(again.outcome()).isEqualTo(PayoutReturns.Outcome.ALREADY_RETURNED);
             assertThat(again.payout().map(MerchantPayoutId::value)).contains(payout);
             assertThat(again.entry()).as("nothing posted").isEmpty();
@@ -582,7 +592,7 @@ class PayoutReturnDatabaseTest {
 
         PayoutReturns.ReturnEvidence twenty =
                 looseEvidence(Optional.of(theirs), Optional.empty(), money("20.00", EUR));
-        PayoutReturns.Applied fewer = asPlatform(uow -> payoutReturns.apply(uow, twenty));
+        PayoutReturns.Applied fewer = asPlatform(uow -> payoutReturns.apply(uow, twenty, NO_PERSON));
         assertThat(fewer.outcome()).isEqualTo(PayoutReturns.Outcome.AMOUNT_DIFFERS);
         assertThat(fewer.payout().map(MerchantPayoutId::value)).contains(payout);
         assertThat(fewer.entry()).isEmpty();
@@ -590,7 +600,7 @@ class PayoutReturnDatabaseTest {
         PayoutReturns.ReturnEvidence pounds =
                 looseEvidence(Optional.of(theirs), Optional.empty(), money("25.00", GBP));
         PayoutReturns.Applied otherCurrency =
-                asPlatform(uow -> payoutReturns.apply(uow, pounds));
+                asPlatform(uow -> payoutReturns.apply(uow, pounds, NO_PERSON));
         assertThat(otherCurrency.outcome())
                 .as("the same digits in another currency are another amount")
                 .isEqualTo(PayoutReturns.Outcome.AMOUNT_DIFFERS);
@@ -599,7 +609,7 @@ class PayoutReturnDatabaseTest {
         PayoutReturns.ReturnEvidence unknown =
                 looseEvidence(Optional.of("po_nobody" + letters()),
                         Optional.of("pyo-" + IDS.next()), money("25.00", EUR));
-        PayoutReturns.Applied nobody = asPlatform(uow -> payoutReturns.apply(uow, unknown));
+        PayoutReturns.Applied nobody = asPlatform(uow -> payoutReturns.apply(uow, unknown, NO_PERSON));
         assertThat(nobody.outcome()).isEqualTo(PayoutReturns.Outcome.NO_PAYOUT);
         assertThat(nobody.payout()).isEmpty();
         assertThat(nobody.entry()).isEmpty();
@@ -712,7 +722,7 @@ class PayoutReturnDatabaseTest {
                         CLOCK);
         PayoutReturns.ReturnEvidence returned = evidenceOf(waiting, 0);
 
-        assertThatThrownBy(() -> asPlatform(uow -> failing.apply(uow, returned)))
+        assertThatThrownBy(() -> asPlatform(uow -> failing.apply(uow, returned, NO_PERSON)))
                 .isInstanceOf(IllegalStateException.class)
                 .hasMessage("the expectation port failed after the posting");
         assertThat(standingInside.get())
@@ -759,7 +769,9 @@ class PayoutReturnDatabaseTest {
                     matching.sweep();
                     return null;
                 });
-                awaitWaiting("ORDER BY i.grace_until, i.id");
+                // The grace leg's locking read: its expiry predicate (since the Phase 8 -> 9
+                // transition it locks in claimant order, no longer by grace_until).
+                awaitWaiting("i.grace_until <= now()");
                 assertThat(grace.isDone())
                         .as("the grace leg waits on the worker's share lock")
                         .isFalse();
@@ -958,6 +970,7 @@ class PayoutReturnDatabaseTest {
                         waitingPayoutReturns,
                         settlementBatchStore,
                         payoutReturns,
+                        payoutReturnFallbacks,
                         1);
         assertThat(narrow.sweep())
                 .as("the keyset walk passes the head it cannot apply")
@@ -1118,6 +1131,410 @@ class PayoutReturnDatabaseTest {
                         + " FROM merchant.payout_return WHERE id = ?", standing))
                 .as("the admitted fact stands exactly as born - neither refused edit landed")
                 .isEqualTo("1100:true");
+    }
+
+    // ----------------------------------------------------------------- the fallback, bound (IDEM-1)
+
+    @Test
+    @Order(15)
+    @DisplayName("IDEM-1 (the Phase 8 -> 9 transition): a person's fallback transfer IS the payout's"
+            + " return - the payout UNKNOWN at grace, its line parked, a transfer refused while the"
+            + " payout is in flight, the payout completed and the line transferred four-eyes, the"
+            + " next day's report repeating the return under another fingerprint: the worker"
+            + " writes nothing, the repeat ends in its own break, and its transfer is refused -"
+            + " one return, one credit")
+    void aPersonsFallbackTransferIsThePayoutsReturn() throws Exception {
+        Funded merchant = funded(EUR, "90.00");
+        UUID payout = answered(merchant, "33.00", PENDING, MerchantPayoutStatus.UNKNOWN);
+        String ours = (String) one("SELECT provider_idempotency_reference FROM"
+                + " merchant.merchant_payout WHERE id = ?", payout);
+
+        // Day one: the return is reported while the payout is still UNKNOWN.
+        UUID firstBatch = accepted(reportOn(EUR, LocalDate.now(CLOCK).minusDays(1)).with(
+                SimulatedPayoutReports.Entry.returned("33.00", "po_pending" + letters(), ours)));
+        matchUntilQuiet();
+        UUID first = onlyReturnedItem(firstBatch);
+        assertThat(payoutReturnSweep.sweep())
+                .as("PAYOUT_NOT_COMPLETED: nothing written while the payout is in flight")
+                .isEqualTo(new PayoutReturnSweep.SweepResult(1, 0, 1, 0, 0));
+        expireGrace(first);
+        matchUntilQuiet();
+        assertThat(itemStatus(first)).isEqualTo("PARKED");
+        UUID firstBreak = returnNotApplicableBreakOn(first);
+
+        // The documented fallback waits for its payout (IDEM-1's residual): in flight, the
+        // payable has not been debited, and a payout failing later would release it again.
+        HttpResponse<String> early = proposeTransfer(
+                sessionWith(RoleName.RECONCILIATION_OPERATOR), firstBreak, merchant.payable());
+        assertThat(early.statusCode())
+                .as("a transfer while the payout is UNKNOWN waits: " + early.body())
+                .isEqualTo(409);
+        assertThat(early.body()).contains("reconciliation.OperationNotTerminal");
+
+        // The payout completes; four eyes transfer the parked value to the payable; and the
+        // provider's next report repeats the return - the same references and amount, another
+        // date, so another fingerprint: no duplicate.
+        String theirs = "po_q" + letters();
+        provider.succeedsWith(PATH + "/" + ours, 200,
+                "{\"status\":\"paid\",\"reference\":\"" + theirs + "\"}");
+        assertThat(resolution().sweep().resolved()).isGreaterThanOrEqualTo(1);
+        assertThat(payoutStatus(payout)).isEqualTo(MerchantPayoutStatus.COMPLETED.name());
+        fourEyesTransfer(firstBreak, merchant.payable());
+        UUID repeatBatch = accepted(report(EUR).with(
+                SimulatedPayoutReports.Entry.returned("33.00", theirs, ours)));
+        matchUntilQuiet();
+        UUID repeat = onlyReturnedItem(repeatBatch);
+        assertThat(itemStatus(repeat))
+                .as("no PAYOUT_RETURN stands for the payout: the repeat waits for the worker")
+                .isEqualTo("UNMATCHED");
+
+        assertThat(payoutReturnSweep.sweep())
+                .as("the person's transfer IS the payout's return: RETURNED_BY_PERSON, skipped")
+                .isEqualTo(new PayoutReturnSweep.SweepResult(1, 0, 0, 1, 0));
+        assertNothingWritten(payout);
+
+        expireGrace(repeat);
+        matchUntilQuiet();
+        assertThat(itemStatus(repeat)).as("the repeat ends in its own break").isEqualTo("PARKED");
+        UUID repeatBreak = returnNotApplicableBreakOn(repeat);
+        HttpResponse<String> second = proposeTransfer(
+                sessionWith(RoleName.RECONCILIATION_OPERATOR), repeatBreak, merchant.payable());
+        assertThat(second.statusCode())
+                .as("a second person's transfer for the same payout is refused: " + second.body())
+                .isEqualTo(409);
+        assertThat(second.body()).contains("reconciliation.ReturnAlreadyAttributed");
+        assertThat(count("SELECT count(*) FROM reconciliation.resolution WHERE break_id = ?",
+                repeatBreak)).as("the refusal wrote no resolution").isZero();
+
+        MerchantPayable.Payable payable = payableOf(merchant);
+        assertThat(payable.reconciliationAttributed().minorUnits()
+                        + payable.payoutsReturned().minorUnits())
+                .as("one return of 33.00, credited exactly once (INV-IDEM-01)")
+                .isEqualTo(33_00);
+        assertThat(payable.payoutsReturned().isZero())
+                .as("the worker never applied it beside the person's transfer").isTrue();
+        assertTrialBalance();
+    }
+
+    @Test
+    @Order(16)
+    @DisplayName("IDEM-1, both orders on the payout row: the worker first - its uncommitted"
+            + " application holds the payout, the proposal waits and is then refused; the"
+            + " proposal first - its uncommitted proposal holds the payout, the worker waits and"
+            + " then writes nothing - and a pending proposal alone keeps the worker off")
+    void theFallbackAndTheWorkerSerialiseOnThePayoutRow() throws Exception {
+        ExecutorService pool = Executors.newFixedThreadPool(1);
+        ParkedReturn workerFirst = parkedReturnWithRepeat(EUR, "41.00");
+        ParkedReturn proposalFirst = parkedReturnWithRepeat(EUR, "42.00");
+        try {
+            // The worker first.
+            try (Connection worker = DatabaseRoles.application()) {
+                worker.setAutoCommit(false);
+                assertThat(applyHeld(worker, workerFirst.repeat()))
+                        .contains(PayoutReturns.Outcome.APPLIED);
+                Future<RuntimeException> proposal = pool.submit(() -> {
+                    try {
+                        proposeDirect(workerFirst.breakId(), workerFirst.merchant().payable());
+                        return null;
+                    } catch (RuntimeException refused) {
+                        return refused;
+                    }
+                });
+                awaitWaiting("merchant_payout WHERE provider");
+                worker.commit();
+                assertThat(proposal.get(1, TimeUnit.MINUTES))
+                        .as("the proposal waited on the payout row and saw the applied return")
+                        .isInstanceOf(ResolutionMachine.ReturnAlreadyAttributed.class);
+            }
+            assertThat(returnRecords(workerFirst.payout())).isEqualTo(records(1));
+            assertThat(count("SELECT count(*) FROM reconciliation.resolution WHERE break_id = ?",
+                    workerFirst.breakId())).as("the refused proposal wrote nothing").isZero();
+
+            // The proposal first.
+            ResolutionMachine.Proposed held;
+            try (Connection proposing = DatabaseRoles.application()) {
+                proposing.setAutoCommit(false);
+                held = proposeOn(proposing, proposalFirst.breakId(),
+                        proposalFirst.merchant().payable());
+                Future<Optional<PayoutReturns.Outcome>> worker = pool.submit(() -> {
+                    try (Connection applying = DatabaseRoles.application()) {
+                        applying.setAutoCommit(false);
+                        Optional<PayoutReturns.Outcome> outcome =
+                                applyHeld(applying, proposalFirst.repeat());
+                        applying.commit();
+                        return outcome;
+                    }
+                });
+                awaitWaiting("merchant_payout WHERE provider");
+                proposing.commit();
+                assertThat(worker.get(1, TimeUnit.MINUTES))
+                        .as("the worker waited on the payout row and found the person's"
+                                + " pending transfer")
+                        .contains(PayoutReturns.Outcome.RETURNED_BY_PERSON);
+            }
+            assertNothingWritten(proposalFirst.payout());
+            assertThat(payoutReturnSweep.sweep().applied())
+                    .as("a pending transfer alone keeps every later tick off the payout")
+                    .isZero();
+            assertNothingWritten(proposalFirst.payout());
+            HttpResponse<String> approved =
+                    post(sessionWith(RoleName.RECONCILIATION_OPERATOR).token(),
+                            "/resolutions/" + held.resolutionId() + "/approval", null, null);
+            assertThat(approved.statusCode()).as(approved.body()).isEqualTo(200);
+            MerchantPayable.Payable payable = payableOf(proposalFirst.merchant());
+            assertThat(payable.reconciliationAttributed().minorUnits()
+                            + payable.payoutsReturned().minorUnits())
+                    .as("the proposal won: one credit, the person's").isEqualTo(42_00);
+        } finally {
+            pool.shutdownNow();
+        }
+        settleLeftovers(workerFirst, proposalFirst);
+        assertTrialBalance();
+    }
+
+    @Test
+    @Order(17)
+    @DisplayName("IDEM-1, the approval's own check and the race: a return applied beside a pending"
+            + " transfer - the worker's own guard bypassed - refuses the approval with nothing"
+            + " posted; the worker and a proposal released together leave exactly one credit")
+    void theApprovalRefusesAnAppliedReturnAndTheRaceCreditsOnce() throws Exception {
+        ParkedReturn bypassed = parkedReturnWithRepeat(EUR, "43.00");
+        HttpResponse<String> proposed = proposeTransfer(
+                sessionWith(RoleName.RECONCILIATION_OPERATOR), bypassed.breakId(),
+                bypassed.merchant().payable());
+        assertThat(proposed.statusCode()).as(proposed.body()).isEqualTo(201);
+        String resolution = field(proposed.body(), "resolutionId");
+        // A worker that never asked (the guard bypassed): the return is applied beside the
+        // pending transfer, so only the approval's own check stands between them.
+        PayoutReturns.ReturnEvidence repeated = evidenceOf(new Waiting(bypassed.merchant(),
+                bypassed.payout(), bypassed.repeatBatch(), bypassed.repeat()), 0);
+        PayoutReturns.Applied beside =
+                asPlatform(uow -> payoutReturns.apply(uow, repeated, NO_PERSON));
+        assertThat(beside.outcome()).isEqualTo(PayoutReturns.Outcome.APPLIED);
+        HttpResponse<String> approval =
+                post(sessionWith(RoleName.RECONCILIATION_OPERATOR).token(),
+                        "/resolutions/" + resolution + "/approval", null, null);
+        assertThat(approval.statusCode())
+                .as("the approval re-checks the payout under its row lock: " + approval.body())
+                .isEqualTo(409);
+        assertThat(approval.body()).contains("reconciliation.ReturnAlreadyAttributed");
+        assertThat(one("SELECT status FROM reconciliation.resolution WHERE id = ?::uuid",
+                resolution)).isEqualTo("PROPOSED");
+        assertThat(count("SELECT count(*) FROM ledger.journal_entry WHERE reference = ?",
+                resolution)).as("the refused approval posted nothing").isZero();
+        MerchantPayable.Payable once = payableOf(bypassed.merchant());
+        assertThat(once.reconciliationAttributed().minorUnits()
+                        + once.payoutsReturned().minorUnits())
+                .as("the return's own posting alone").isEqualTo(43_00);
+
+        // The race: the worker's tick and a person's proposal released together.
+        ParkedReturn raced = parkedReturnWithRepeat(EUR, "44.00");
+        CountDownLatch start = new CountDownLatch(1);
+        ExecutorService pool = Executors.newFixedThreadPool(2);
+        try {
+            Future<Optional<PayoutReturns.Outcome>> worker = pool.submit(() -> {
+                start.await();
+                try (Connection applying = DatabaseRoles.application()) {
+                    applying.setAutoCommit(false);
+                    Optional<PayoutReturns.Outcome> outcome = applyHeld(applying, raced.repeat());
+                    applying.commit();
+                    return outcome;
+                }
+            });
+            Future<Optional<ResolutionMachine.Proposed>> person = pool.submit(() -> {
+                start.await();
+                try {
+                    return Optional.of(proposeDirect(raced.breakId(), raced.merchant().payable()));
+                } catch (ResolutionMachine.ReturnAlreadyAttributed refused) {
+                    return Optional.empty();
+                }
+            });
+            start.countDown();
+            boolean applied = worker.get(2, TimeUnit.MINUTES)
+                    .filter(outcome -> outcome == PayoutReturns.Outcome.APPLIED).isPresent();
+            Optional<ResolutionMachine.Proposed> proposal = person.get(2, TimeUnit.MINUTES);
+            assertThat(applied ^ proposal.isPresent())
+                    .as("exactly one path wins the payout row: applied=" + applied
+                            + ", proposed=" + proposal.isPresent())
+                    .isTrue();
+            if (proposal.isPresent()) {
+                HttpResponse<String> won =
+                        post(sessionWith(RoleName.RECONCILIATION_OPERATOR).token(),
+                                "/resolutions/" + proposal.get().resolutionId() + "/approval",
+                                null, null);
+                assertThat(won.statusCode()).as(won.body()).isEqualTo(200);
+            }
+        } finally {
+            pool.shutdownNow();
+        }
+        MerchantPayable.Payable raceOnce = payableOf(raced.merchant());
+        assertThat(raceOnce.reconciliationAttributed().minorUnits()
+                        + raceOnce.payoutsReturned().minorUnits())
+                .as("whichever won, one return of 44.00 is credited once")
+                .isEqualTo(44_00);
+        settleLeftovers(bypassed, raced);
+        assertTrialBalance();
+    }
+
+    @Test
+    @Order(18)
+    @DisplayName("IDEM-1's residual (the Phase 8 -> 9 transition): a fallback transfer waits for its"
+            + " payout - proposed while the payout is UNKNOWN it is 409 OperationNotTerminal with"
+            + " nothing written; once the payout FAILED, its hold released back to the merchant,"
+            + " the transfer is 422 ResolutionTargetRefused - the returned cash credits no party")
+    void aFallbackTransferWaitsForItsPayoutToComplete() throws Exception {
+        Funded merchant = funded(EUR, "90.00");
+        UUID payout = answered(merchant, "31.00", PENDING, MerchantPayoutStatus.UNKNOWN);
+        String ours = (String) one("SELECT provider_idempotency_reference FROM"
+                + " merchant.merchant_payout WHERE id = ?", payout);
+        UUID batch = accepted(reportOn(EUR, LocalDate.now(CLOCK).minusDays(1)).with(
+                SimulatedPayoutReports.Entry.returned("31.00", "po_pending" + letters(), ours)));
+        matchUntilQuiet();
+        UUID item = onlyReturnedItem(batch);
+        assertThat(payoutReturnSweep.sweep())
+                .as("PAYOUT_NOT_COMPLETED: nothing written while the payout is in flight")
+                .isEqualTo(new PayoutReturnSweep.SweepResult(1, 0, 1, 0, 0));
+        expireGrace(item);
+        matchUntilQuiet();
+        assertThat(itemStatus(item)).isEqualTo("PARKED");
+        UUID breakId = returnNotApplicableBreakOn(item);
+
+        HttpResponse<String> waiting = proposeTransfer(
+                sessionWith(RoleName.RECONCILIATION_OPERATOR), breakId, merchant.payable());
+        assertThat(waiting.statusCode())
+                .as("in flight, the payable was never debited: the transfer waits - "
+                        + waiting.body())
+                .isEqualTo(409);
+        assertThat(waiting.body()).contains("reconciliation.OperationNotTerminal");
+        assertThat(count("SELECT count(*) FROM reconciliation.resolution WHERE break_id = ?",
+                breakId)).as("the waiting proposal wrote nothing").isZero();
+
+        provider.succeedsWith(PATH + "/" + ours, 200, "{\"status\":\"declined\"}");
+        assertThat(resolution().sweep().resolved()).isGreaterThanOrEqualTo(1);
+        assertThat(payoutStatus(payout)).isEqualTo(MerchantPayoutStatus.FAILED.name());
+
+        HttpResponse<String> refused = proposeTransfer(
+                sessionWith(RoleName.RECONCILIATION_OPERATOR), breakId, merchant.payable());
+        assertThat(refused.statusCode())
+                .as("FAILED, its hold already gave the merchant the value back: " + refused.body())
+                .isEqualTo(422);
+        assertThat(refused.body()).contains("reconciliation.ResolutionTargetRefused");
+        assertThat(count("SELECT count(*) FROM reconciliation.resolution WHERE break_id = ?",
+                breakId)).as("the refusal wrote nothing").isZero();
+        MerchantPayable.Payable payable = payableOf(merchant);
+        assertThat(payable.reconciliationAttributed().isZero())
+                .as("no person's credit beside the released hold").isTrue();
+        assertThat(payable.payoutsReturned().isZero()).as("no return applied").isTrue();
+        assertThat(itemStatus(item)).as("the value stays parked, owned by its break")
+                .isEqualTo("PARKED");
+        assertTrialBalance();
+    }
+
+    /**
+     * The suite's discipline (the class comment): every case leaves each of its RETURNED lines
+     * MATCHED, PARKED or RESOLVED, so a later tick's tallies are its own case's.
+     */
+    private void settleLeftovers(ParkedReturn... cases) throws SQLException {
+        matchUntilQuiet();
+        for (ParkedReturn left : cases) {
+            for (UUID item : List.of(left.parked(), left.repeat())) {
+                if ("UNMATCHED".equals(itemStatus(item))) {
+                    expireGrace(item);
+                }
+            }
+        }
+        matchUntilQuiet();
+        for (ParkedReturn left : cases) {
+            for (UUID item : List.of(left.parked(), left.repeat())) {
+                assertThat(itemStatus(item))
+                        .as("no RETURNED line of this case is left waiting")
+                        .isIn("MATCHED", "PARKED", "RESOLVED");
+            }
+        }
+    }
+
+    /** A COMPLETED payout's return parked at grace, and the next report's repeat waiting. */
+    private record ParkedReturn(
+            Funded merchant, UUID payout, UUID parked, UUID breakId, UUID repeatBatch,
+            UUID repeat) {}
+
+    /**
+     * The payout paid and settled; its return reported on day one and - the worker idle, a
+     * whole grace long - parked as RETURN_NOT_APPLICABLE; the next day's report repeating the
+     * return, waiting UNMATCHED for the worker.
+     */
+    private ParkedReturn parkedReturnWithRepeat(CurrencyCode currency, String amount)
+            throws Exception {
+        Funded merchant = funded(currency, "95.00");
+        UUID payout = paid(merchant, amount);
+        settled(currency, payout);
+        UUID firstBatch = accepted(
+                reportOn(currency, LocalDate.now(CLOCK).minusDays(1)).with(returnedLine(payout)));
+        matchUntilQuiet();
+        UUID parked = onlyReturnedItem(firstBatch);
+        expireGrace(parked);
+        matchUntilQuiet();
+        assertThat(itemStatus(parked)).isEqualTo("PARKED");
+        UUID breakId = returnNotApplicableBreakOn(parked);
+        UUID repeatBatch = accepted(report(currency).with(returnedLine(payout)));
+        matchUntilQuiet();
+        UUID repeat = onlyReturnedItem(repeatBatch);
+        assertThat(itemStatus(repeat)).isEqualTo("UNMATCHED");
+        assertNothingWritten(payout);
+        return new ParkedReturn(merchant, payout, parked, breakId, repeatBatch, repeat);
+    }
+
+    private static UUID returnNotApplicableBreakOn(UUID item) throws SQLException {
+        UUID breakId = (UUID) one("SELECT id FROM reconciliation.break WHERE external_item_id = ?"
+                + " AND cause = 'RETURN_NOT_APPLICABLE' AND status <> 'RESOLVED'", item);
+        assertThat(breakId).as("the parked return's RETURN_NOT_APPLICABLE break").isNotNull();
+        return breakId;
+    }
+
+    private HttpResponse<String> proposeTransfer(
+            Session proposer, UUID breakId, LedgerAccountId target) throws Exception {
+        return post(proposer.token(), "/breaks/" + breakId + "/resolutions",
+                "pay-" + UUID.randomUUID(),
+                "{\"kind\":\"TRANSFER_TO_ACCOUNT\",\"reasonCode\":\"FUNDS_ATTRIBUTED\","
+                        + "\"narrative\":\"the returned payout goes back to its merchant\","
+                        + "\"targetAccountId\":\"" + target.value() + "\"}");
+    }
+
+    /** A transfer proposed through the machine itself, committed, as an operator. */
+    private ResolutionMachine.Proposed proposeDirect(UUID breakId, LedgerAccountId target)
+            throws SQLException {
+        try (Connection proposing = DatabaseRoles.application()) {
+            proposing.setAutoCommit(false);
+            try {
+                ResolutionMachine.Proposed proposed = proposeOn(proposing, breakId, target);
+                proposing.commit();
+                return proposed;
+            } catch (RuntimeException refused) {
+                proposing.rollback();
+                throw refused;
+            }
+        }
+    }
+
+    /** A transfer proposed on the caller's OPEN connection, as an operator. */
+    private ResolutionMachine.Proposed proposeOn(
+            Connection proposing, UUID breakId, LedgerAccountId target) {
+        Actor operator = new Actor(UUID.randomUUID().toString(), ActorType.CUSTOMER);
+        try (CorrelationContext.Scope scope = CorrelationContext.enter(flow());
+                SecurityContext.Scope acting = SecurityContext.enter(operator)) {
+            return resolutionMachine.propose(proposing, breakId,
+                    new ResolutionMachine.ProposalRequest(
+                            ResolutionKind.TRANSFER_TO_ACCOUNT,
+                            ResolutionReasonCode.FUNDS_ATTRIBUTED,
+                            "the returned payout goes back to its merchant",
+                            Optional.of(target.value()), Optional.empty(), Optional.empty()),
+                    operator, CorrelationContext.current().orElseThrow().correlationId());
+        }
+    }
+
+    private static SimulatedPayoutReports reportOn(CurrencyCode currency, LocalDate businessDate) {
+        return new SimulatedPayoutReports("PAYDAY-" + marker(), currency.code(),
+                businessDate.toString(), "PAY-REM-19" + digits());
     }
 
     // ----------------------------------------------------------------- merchants and payouts

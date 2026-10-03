@@ -143,8 +143,12 @@ import org.springframework.test.context.DynamicPropertySource;
  *       bound, the batch within its own), whose {@code ACKNOWLEDGE} a second operator REJECTS;
  *   <li>a late date — {@code TIMING_DIFFERENCE / LATE_MATCH}; a cycle shift (a pay-in announced in
  *       one cycle, reported in another) — {@code TIMING_DIFFERENCE / CYCLE_MISMATCH};
- *   <li>an unknown line — {@code UNKNOWN_EXTERNAL / GRACE_EXPIRED} once its stored grace window is
- *       moved (never the clock: expiry stays a database-clock fact);
+ *   <li>an unknown line — {@code UNKNOWN_EXTERNAL / GRACE_EXPIRED}, owned AT RUN TIME: an
+ *       {@code OTHER_IN} no rule set can name has a grace of zero, so the production path parks it
+ *       with its break in the run's own chunk. *(Corrected 2026-10-02 by the Phase 8 -> 9
+ *       transition, REC-2: the storm reached this break only by writing the line's
+ *       {@code grace_until} by hand - the production path had left it waiting with no clock and no
+ *       break, for ever.)*
  *   <li>a wrong currency (a whole report in GBP naming a EUR capture) — {@code CURRENCY_MISMATCH /
  *       CURRENCY_DIFFERS}, never allocated nor converted;
  *   <li>a malformed field and a bad trailer — files {@code REJECTED} whole ({@code MALFORMED},
@@ -717,8 +721,7 @@ class SettlementReconciliationStormDatabaseTest {
 
             // ===================================================== the operators, and time
             resolveBy(proposer, approver, captures);
-            expireTheUnknownLine(d1File, unknownRef);
-            instances.drain("the unknown line's grace expired");
+            assertTheUnknownLineWasOwnedAtRunTime(d1File, unknownRef);
             ageTheDroppedCapture(captures.get("T3"), today);
             instances.drain("the dropped capture aged");
 
@@ -1088,20 +1091,27 @@ class SettlementReconciliationStormDatabaseTest {
         reconcile("after the operators' resolutions");
     }
 
-    /** The stored window moved, never the clock: expiry stays a database-clock fact. */
-    private static void expireTheUnknownLine(UUID file, String unknownRef) throws SQLException {
+    /**
+     * The unknown line was owned by the production path itself, in its run's chunk: PARKED with
+     * its UNKNOWN_EXTERNAL break and its suspense item, and it never waited on a grace window -
+     * nothing here moves a stored window (the Phase 8 -> 9 transition's REC-2).
+     */
+    private static void assertTheUnknownLineWasOwnedAtRunTime(UUID file, String unknownRef)
+            throws SQLException {
         UUID item =
                 (UUID) one("SELECT i.id FROM reconciliation.external_item i JOIN"
                         + " settlement.line_reference r ON r.line_id = i.settlement_line_id"
                         + " JOIN settlement.line l ON l.id = i.settlement_line_id WHERE"
                         + " l.file_id = ? AND r.value = ?", file, unknownRef);
         assertThat(one("SELECT status FROM reconciliation.external_item WHERE id = ?", item))
-                .as("the unknown line waits, no break yet")
-                .isEqualTo("UNMATCHED");
-        try (Connection app = DatabaseRoles.application()) {
-            execute(app, "UPDATE reconciliation.external_item SET grace_until = now() -"
-                    + " interval '1 hour' WHERE id = ?", item);
-        }
+                .as("the unknown line owned at run time, never left waiting")
+                .isEqualTo("PARKED");
+        assertThat(one("SELECT grace_until FROM reconciliation.external_item WHERE id = ?", item))
+                .as("no grace window: no rule set can ever allocate an OTHER_IN")
+                .isNull();
+        assertThat(one("SELECT b.type || '/' || b.cause FROM reconciliation.break b WHERE"
+                + " b.external_item_id = ?", item))
+                .isEqualTo("UNKNOWN_EXTERNAL/GRACE_EXPIRED");
     }
 
     /**

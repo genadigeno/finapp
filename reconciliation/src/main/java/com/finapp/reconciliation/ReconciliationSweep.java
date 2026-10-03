@@ -138,27 +138,54 @@ public class ReconciliationSweep {
 
     // ----------------------------------------------------------------- ageing
 
+    /**
+     * Pages the overdue candidates by keyset, each row its own transaction: a row that fails
+     * rolls back alone, is logged by class and counted, and the cursor carries the sweep past it
+     * - so no number of failing rows can hold the leg for every other expectation, and the next
+     * sweep tries the failed rows once again. *(Corrected 2026-10-02 by the Phase 8 -> 9
+     * transition, ARCH-P8-01: one page of the oldest {@code batch} rows was read per sweep, so
+     * {@code batch} rows failing on every attempt stopped ageing platform-wide.)*
+     */
     @SuppressWarnings("try")
     private int age() {
-        List<MatchingStore.OverdueCandidate> candidates =
-                transactions.inTransaction(
-                        unitOfWork -> store.overdueCandidates(unitOfWork, config.batch()));
         int aged = 0;
-        for (MatchingStore.OverdueCandidate candidate : candidates) {
-            CorrelationId correlation = CorrelationId.of(candidate.correlationId());
-            try (CorrelationContext.Scope scope =
-                    CorrelationContext.enter(Correlation.startingWith(correlation))) {
-                boolean marked =
-                        transactions.inTransaction(
-                                unitOfWork -> ageOne(unitOfWork, candidate, correlation));
-                if (marked) {
-                    aged++;
+        int failed = 0;
+        Optional<MatchingStore.OverdueCursor> after = Optional.empty();
+        while (true) {
+            Optional<MatchingStore.OverdueCursor> from = after;
+            List<MatchingStore.OverdueCandidate> candidates =
+                    transactions.inTransaction(
+                            unitOfWork ->
+                                    store.overdueCandidates(unitOfWork, from, config.batch()));
+            for (MatchingStore.OverdueCandidate candidate : candidates) {
+                CorrelationId correlation = CorrelationId.of(candidate.correlationId());
+                try (CorrelationContext.Scope scope =
+                        CorrelationContext.enter(Correlation.startingWith(correlation))) {
+                    boolean marked =
+                            transactions.inTransaction(
+                                    unitOfWork -> ageOne(unitOfWork, candidate, correlation));
+                    if (marked) {
+                        aged++;
+                    }
+                } catch (RuntimeException failure) {
+                    failed++;
+                    log.warn(
+                            "An ageing row failed and rolled back: {}",
+                            failure.getClass().getSimpleName());
                 }
-            } catch (RuntimeException failure) {
-                log.warn(
-                        "An ageing row failed and rolled back: {}",
-                        failure.getClass().getSimpleName());
             }
+            if (candidates.size() < config.batch()) {
+                break; // The last page: every candidate was tried once this sweep.
+            }
+            MatchingStore.OverdueCandidate last = candidates.get(candidates.size() - 1);
+            after =
+                    Optional.of(
+                            new MatchingStore.OverdueCursor(
+                                    last.expectedBy(), last.expectationId()));
+        }
+        if (failed > 0) {
+            // Never silent: the count beside the per-row class (a JDBC message can name hosts).
+            log.warn("{} ageing row(s) failed this sweep and were passed", failed);
         }
         return aged;
     }
@@ -200,7 +227,6 @@ public class ReconciliationSweep {
                 ids,
                 candidate.expectationId(),
                 candidate.kind(),
-                candidate.operationRef(),
                 candidate.expectedBy(),
                 raised.breakId(),
                 now,
@@ -210,28 +236,45 @@ public class ReconciliationSweep {
 
     // ----------------------------------------------------------------- escalation
 
+    /**
+     * Pages the DUE breaks by keyset - only rows owed a step are read, so a backlog of older
+     * breaks not yet due can never fill the page and starve a newer due one, and a row that fails
+     * is passed by the cursor and tried again next sweep. *(Corrected 2026-10-02 by the Phase 8
+     * -> 9 transition, MI-1: the oldest {@code batch} unresolved breaks were read whether due or
+     * not, and the due ones behind them were never reached.)*
+     */
     @SuppressWarnings("try")
     private int escalate() {
-        List<MatchingStore.EscalationRow> rows =
-                transactions.inTransaction(
-                        unitOfWork -> store.unresolvedBreaks(unitOfWork, config.batch()));
         int escalated = 0;
-        for (MatchingStore.EscalationRow row : rows) {
-            long due = bandsCrossed(row.daysSinceRaised()) - row.escalations();
-            if (due <= 0) {
-                continue;
+        Optional<MatchingStore.EscalationCursor> after = Optional.empty();
+        while (true) {
+            Optional<MatchingStore.EscalationCursor> from = after;
+            List<MatchingStore.EscalationRow> rows =
+                    transactions.inTransaction(
+                            unitOfWork ->
+                                    store.dueEscalations(
+                                            unitOfWork, BAND_UPPER_BOUNDS, from, config.batch()));
+            for (MatchingStore.EscalationRow row : rows) {
+                long due = bandsCrossed(row.daysSinceRaised()) - row.escalations();
+                if (due <= 0) {
+                    continue; // The SQL's judgement, re-checked by the pure arithmetic.
+                }
+                try {
+                    escalated +=
+                            transactions.inTransaction(
+                                    unitOfWork -> escalateOne(unitOfWork, row, due));
+                } catch (RuntimeException failure) {
+                    log.warn(
+                            "An escalation row failed and rolled back: {}",
+                            failure.getClass().getSimpleName());
+                }
             }
-            try {
-                escalated +=
-                        transactions.inTransaction(
-                                unitOfWork -> escalateOne(unitOfWork, row, due));
-            } catch (RuntimeException failure) {
-                log.warn(
-                        "An escalation row failed and rolled back: {}",
-                        failure.getClass().getSimpleName());
+            if (rows.size() < config.batch()) {
+                return escalated;
             }
+            MatchingStore.EscalationRow last = rows.get(rows.size() - 1);
+            after = Optional.of(new MatchingStore.EscalationCursor(last.raisedAt(), last.breakId()));
         }
-        return escalated;
     }
 
     @SuppressWarnings("try")

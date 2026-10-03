@@ -126,6 +126,27 @@ public enum ReconciliationErrorCode implements ErrorCode {
             422,
             "The suspense item is not yet old enough to be recognised as a gain."),
 
+    /**
+     * A transfer or a gain of parked value whose internal operation is still known and not
+     * terminal (the Phase 8 -> 9 transition, IDEM-2): the value waits for the operation's own
+     * evidence, which would otherwise credit it a second time.
+     */
+    OPERATION_NOT_TERMINAL(
+            "reconciliation.OperationNotTerminal",
+            409,
+            "The break's operation is still in flight or completed; its own evidence settles the"
+                    + " value."),
+
+    /**
+     * A transfer out of a {@code RETURN_NOT_APPLICABLE} break for a payout whose return is already
+     * attributed - applied from settlement evidence, or transferred by another person's
+     * resolution (the Phase 8 -> 9 transition, IDEM-1): one return, one credit.
+     */
+    RETURN_ALREADY_ATTRIBUTED(
+            "reconciliation.ReturnAlreadyAttributed",
+            409,
+            "The payout's return is already attributed; a second credit is refused."),
+
     /** No rule set version has this id — unknown and malformed alike (`P8-TSK-022`). */
     RULE_SET_NOT_FOUND(
             "reconciliation.RuleSetNotFound",

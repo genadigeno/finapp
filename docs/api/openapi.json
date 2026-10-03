@@ -3342,6 +3342,41 @@
           }
         }
       },
+      "reconciliation.OperationNotTerminal": {
+        "content": {
+          "application/problem+json": {
+            "schema": {
+              "allOf": [
+                {
+                  "$ref": "#/components/schemas/ProblemDetail"
+                },
+                {
+                  "properties": {
+                    "code": {
+                      "const": "reconciliation.OperationNotTerminal"
+                    },
+                    "status": {
+                      "const": 409
+                    },
+                    "type": {
+                      "const": "https://finapp.example/problems/reconciliation.OperationNotTerminal"
+                    }
+                  }
+                }
+              ]
+            }
+          }
+        },
+        "description": "[409] The break's operation is still in flight or completed; its own evidence settles the value.",
+        "headers": {
+          "X-Client-Correlation-Id": {
+            "$ref": "#/components/headers/X-Client-Correlation-Id"
+          },
+          "X-Correlation-Id": {
+            "$ref": "#/components/headers/X-Correlation-Id"
+          }
+        }
+      },
       "reconciliation.ReasonCodeNotAllowed": {
         "content": {
           "application/problem+json": {
@@ -3683,6 +3718,41 @@
           }
         },
         "description": "[422] The resolution's target, offset item or chosen candidate is refused.",
+        "headers": {
+          "X-Client-Correlation-Id": {
+            "$ref": "#/components/headers/X-Client-Correlation-Id"
+          },
+          "X-Correlation-Id": {
+            "$ref": "#/components/headers/X-Correlation-Id"
+          }
+        }
+      },
+      "reconciliation.ReturnAlreadyAttributed": {
+        "content": {
+          "application/problem+json": {
+            "schema": {
+              "allOf": [
+                {
+                  "$ref": "#/components/schemas/ProblemDetail"
+                },
+                {
+                  "properties": {
+                    "code": {
+                      "const": "reconciliation.ReturnAlreadyAttributed"
+                    },
+                    "status": {
+                      "const": 409
+                    },
+                    "type": {
+                      "const": "https://finapp.example/problems/reconciliation.ReturnAlreadyAttributed"
+                    }
+                  }
+                }
+              ]
+            }
+          }
+        },
+        "description": "[409] The payout's return is already attributed; a second credit is refused.",
         "headers": {
           "X-Client-Correlation-Id": {
             "$ref": "#/components/headers/X-Client-Correlation-Id"
@@ -5279,6 +5349,32 @@
         },
         "type": "object"
       },
+      "ChosenExpectationView": {
+        "properties": {
+          "currency": {
+            "type": "string"
+          },
+          "direction": {
+            "type": "string"
+          },
+          "expectationId": {
+            "type": "string"
+          },
+          "kind": {
+            "type": "string"
+          },
+          "operationRef": {
+            "type": "string"
+          },
+          "remainder": {
+            "type": "string"
+          },
+          "status": {
+            "type": "string"
+          }
+        },
+        "type": "object"
+      },
       "ConfirmSessionRequest": {
         "properties": {
           "instrument": {
@@ -6656,6 +6752,32 @@
         },
         "type": "object"
       },
+      "OffsetItemView": {
+        "properties": {
+          "breakId": {
+            "type": "string"
+          },
+          "currency": {
+            "type": "string"
+          },
+          "externalItemId": {
+            "type": "string"
+          },
+          "side": {
+            "type": "string"
+          },
+          "status": {
+            "type": "string"
+          },
+          "suspenseItemId": {
+            "type": "string"
+          },
+          "unreleased": {
+            "type": "string"
+          }
+        },
+        "type": "object"
+      },
       "OnboardMerchantRequest": {
         "properties": {
           "displayName": {
@@ -7291,6 +7413,26 @@
         ],
         "type": "object"
       },
+      "ProposalAccountView": {
+        "properties": {
+          "accountId": {
+            "type": "string"
+          },
+          "currency": {
+            "type": "string"
+          },
+          "ownerRef": {
+            "type": "string"
+          },
+          "purpose": {
+            "type": "string"
+          },
+          "status": {
+            "type": "string"
+          }
+        },
+        "type": "object"
+      },
       "ProposalDetailView": {
         "properties": {
           "decidedAt": {
@@ -7336,6 +7478,23 @@
             "type": "string"
           },
           "valueDate": {
+            "type": "string"
+          }
+        },
+        "type": "object"
+      },
+      "ProposalLineView": {
+        "properties": {
+          "account": {
+            "$ref": "#/components/schemas/ProposalAccountView"
+          },
+          "amount": {
+            "type": "string"
+          },
+          "currency": {
+            "type": "string"
+          },
+          "direction": {
             "type": "string"
           }
         },
@@ -7742,6 +7901,20 @@
         },
         "type": "object"
       },
+      "ResolutionApprovalRequest": {
+        "properties": {
+          "chosenExpectationId": {
+            "type": "string"
+          },
+          "offsetItemId": {
+            "type": "string"
+          },
+          "targetAccountId": {
+            "type": "string"
+          }
+        },
+        "type": "object"
+      },
       "ResolutionDecision": {
         "properties": {
           "breakId": {
@@ -7758,6 +7931,72 @@
           },
           "status": {
             "type": "string"
+          }
+        },
+        "type": "object"
+      },
+      "ResolutionDetail": {
+        "properties": {
+          "adjustmentProposalId": {
+            "type": "string"
+          },
+          "amount": {
+            "type": "string"
+          },
+          "breakId": {
+            "type": "string"
+          },
+          "chosenExpectation": {
+            "$ref": "#/components/schemas/ChosenExpectationView"
+          },
+          "currency": {
+            "type": "string"
+          },
+          "decidedBy": {
+            "type": "string"
+          },
+          "fourEyes": {
+            "type": "boolean"
+          },
+          "journalEntryId": {
+            "type": "string"
+          },
+          "kind": {
+            "type": "string"
+          },
+          "lines": {
+            "items": {
+              "$ref": "#/components/schemas/ProposalLineView"
+            },
+            "type": "array"
+          },
+          "narrative": {
+            "type": "string"
+          },
+          "offsetItem": {
+            "$ref": "#/components/schemas/OffsetItemView"
+          },
+          "proposedAt": {
+            "type": "string"
+          },
+          "proposedBy": {
+            "type": "string"
+          },
+          "reasonCode": {
+            "type": "string"
+          },
+          "residualVersion": {
+            "format": "int64",
+            "type": "integer"
+          },
+          "resolutionId": {
+            "type": "string"
+          },
+          "status": {
+            "type": "string"
+          },
+          "targetAccount": {
+            "$ref": "#/components/schemas/ProposalAccountView"
           }
         },
         "type": "object"
@@ -12536,6 +12775,31 @@
             "description": "OK"
           }
         }
+      },
+      "get": {
+        "operationId": "viewReconciliationResolution",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "id",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ResolutionDetail"
+                }
+              }
+            },
+            "description": "OK"
+          }
+        }
       }
     },
     "/v1/operator/reconciliation/resolutions/{id}/approval": {
@@ -12551,6 +12815,15 @@
             }
           }
         ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ResolutionApprovalRequest"
+              }
+            }
+          }
+        },
         "responses": {
           "200": {
             "content": {

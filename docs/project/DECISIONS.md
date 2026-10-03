@@ -708,6 +708,142 @@ never a gain. ADR-0062 §7's second convergence trigger did not fire: the canoni
 already gives every outbound credit transfer one evidence shape. →
 [ADR-0073](../adr/ADR-0073-payout-return-applied-from-settlement-evidence.md)
 
+### FX and cross-border payments (Phase 9, `Proposed` at the Phase 8 → 9 transition)
+Planned by the Phase 8 → 9 transition (2026-10-02) from the Phase 9 design's thirty-two
+decisions (D1–D32), to be built by `P9-TSK-001`…`P9-TSK-027`, `P9-TST-001` and `P9-TST-002`,
+and read against the code and accepted by the Phase 9 review (`P9-DOC-001`). The phase's ADRs
+are ADR-0074…ADR-0083 (ADR-0063 stays reserved by its unmerged branch).
+
+**Conversion arithmetic is exact, directional and bounded.** `ExchangeRate` lives in the shared
+kernel as `NUMERIC(20,10)`, directional (units of destination per one unit of source), with no
+inversion and no cross rates in arithmetic; an adapter refuses a provider rate past ten decimals
+and never rounds one (D2). Both fixed sides exist — `FIXED_SOURCE` and `FIXED_DESTINATION`
+— and the fixed-destination arithmetic is one exactly-rounded division (D3). Position legs
+are the provider's stated amounts, accepted only if coherent, judged by cross-multiplication
+(D4). Spread and markup post as one `FX_SPREAD_REVENUE` line whose attribution is stored (D5),
+and the rounding residual is its own bounded line — |r| ≤ 1 under half policies, ≤ 2
+under any named policy, `CHECK`-bounded — posted to `ROUNDING_RESIDUAL` in its own currency
+(D6). JPY (0 minor units) and BHD (3) become postable, pinned by a test and a startup guard, and
+the Phase 6 0/3-minor fee-batch deferral is paid in the same task (D27). →
+[ADR-0074](../adr/ADR-0074-conversion-arithmetic.md)
+
+**The rate chain is reference → provider → internal → customer →
+executed → cover-executed, with every link stored.** The reference comes from an
+independent source, is used for plausibility and disclosure only, is never executable, and fails
+closed when stale (D8). Quote validity is computed from durations on the database clock, never
+from a provider's absolute expiry (D9). Quote creation is keyed and two-transaction —
+claim, then the provider call with no transaction open, then the insert — with the pricing
+version pinned at the claim, failover recorded per candidate, and a live-quote cap arbitrated by
+an every-writer trigger (D10). The quote machine has six states, no state without a producer,
+and expiry is one event written by whichever conditional fires (D11). Pricing policy is
+versioned and four-eyes with no seeded version (D26), and there is no conversion fee in Phase 9
+— margin only (O10). → [ADR-0075](../adr/ADR-0075-the-rate-chain-and-the-quote.md)
+
+**A quote is a frozen posting plan, and the platform is principal.** Every amount the trade will
+post is computed once, at quote time, and frozen on the quote; execution posts the plan and
+never re-prices (D7). The customer's conversion is booked when the quote is accepted, in one
+local transaction with no provider call in it — acceptance, trade and posting commit
+together (D1, D12). `FX_POSITION` stays ASSET/DEBIT with its sign defined, explained by open
+legs and zero at rest; the FX books have one poster and accept no free adjustment, proven by the
+FX books proof and plan verification. A wallet product holds one `CUSTOMER_WALLET` per currency,
+every resolver keyed by currency, with open-if-absent inside the caller's transaction (D28). No
+revaluation, no functional currency, no unrealised P&L — Phase 14 owns them (D30). →
+[ADR-0076](../adr/ADR-0076-multi-currency-accounting-through-fx-position.md)
+
+**The cover is decoupled, and never concluded "never received".** One back-to-back cover per
+accepted quote, booked at acceptance and dispatched separately behind a database-stamped permit;
+it is re-sent under the same reference until the provider knows of it, and only a definitive
+rejection mints a new reference — and then only after a fresh firm quote has passed the
+band (D13). The cover closes exactly the plan's position legs, with the difference posted as
+realised FX result. No netting, no timing discretion, no limits: treasury stays out (D1).
+→ [ADR-0077](../adr/ADR-0077-the-decoupled-cover.md)
+
+**The new clearing positions are keyed by counterparty from birth.** `OwnerKind.COUNTERPARTY` is
+added, `owner_ref` names a row of the seeded `ledger.counterparty` registry, and every
+counterparty clearing account is seeded by migration below the UUIDv7 ceiling, never minted at
+runtime; `INV-SET-05` and `INV-RAIL-04` are restated per counterparty, and the existing
+operational clearings are untouched — the split trigger ADR-0062 recorded fires on
+accounts that have no history (D18). A second provider of each kind arrives in M9.8, the first
+cut if scope must shrink (D19). →
+[ADR-0078](../adr/ADR-0078-counterparty-keyed-clearing-positions.md)
+
+**A cross-border payment holds the customer's funds until the corridor provider accepts, posts
+once, and fails debiting nothing.** `crossborder` decides, `fx` prices and books, `payments`
+executes, `kyc` screens, with no build edge between them and every seam a port `app` implements
+(D15). Money waits under a hold, and one entry — debit, conversion, fee, clearing credit
+— posts at acceptance (D14). The Outbound Credit is a new `payments` aggregate carrying
+the provider's ambiguity: ADR-0057's four states plus `RECEIVED` (D16); the payment machine
+keeps `UNKNOWN` off the customer's object and admits a return even after delivery, because the
+external fact comes first (D21). Cancellation is a recall request, honoured only on the
+provider's definitive answer, and an instruction with a recall requested is never re-sent (D22).
+A return is applied automatically only when it is exactly the instructed credit coming back,
+credited in that currency and never re-converted, with the fee refunded and the spread standing;
+every other return parks for a person whose four-eyes resolution also records the return on the
+payment (D23, O2). The charge bearer is `OUR` only (O9). ADR-0062 §7's convergence trigger
+is fired by the corridor rail and convergence is declined with reasons, the trigger re-recorded.
+The registered name is Cross-Border Payment, never Transfer (D31). →
+[ADR-0079](../adr/ADR-0079-cross-border-payments.md)
+
+**The corridor rail declares only what is true, and the provider is selected twice because two
+questions are asked.** `RefundMode.NONE` is the one new capability value — the rail
+carries no pay-in, so a `PAY_IN` routing to it is refused — and the corridor's own facts
+live in its `CorridorDeclaration`, with existing declarations unchanged (D17). A beneficiary is
+held by provider reference with provider-attested country, currency and entity type; no account
+identifier, and no name outside kyc's ciphertext (`INV-RAIL-03` restated). The tokenising
+provider is chosen at beneficiary registration, recorded and recomputable; carriage is routed
+per payment as ADR-0060's third subject with `destination_country` and stored per-candidate
+reachability; routing policy v5 goes through ADR-0060's existing single-person door, by that
+ADR's own decision — whether corridor-bearing routing activation should instead be
+four-eyes is recorded here as an open owner question, and raising it would be a superseding
+ADR of ADR-0060; and fees are per corridor, never per rail, so the price never varies with
+the rail (D20, D26). →
+[ADR-0080](../adr/ADR-0080-corridors-beneficiaries-and-selection.md)
+
+**Counterparty screening is kyc's.** One screening authority, on the existing adapter and
+credential; every outcome — `CLEAR` included — is a recorded decision carrying its
+basis, policy version and time, never the provider's verdict alone; the compliance hold sits on
+the beneficiary, before pricing, so a review lasting hours never sits behind a locked rate; a
+hit, an indeterminate result or an unverified payee always meets a person, never auto-cleared or
+auto-rejected; screening unavailable means the beneficiary is unpayable and nothing is held;
+revocation works from every state with one identical response; and no new consent purpose is
+minted — legal obligation and contract, recorded (D24, O4). →
+[ADR-0081](../adr/ADR-0081-counterparty-screening-is-kycs.md)
+
+**FX legs reconcile as single-currency expectations, and reconciliation still never converts.**
+`FX_PROVIDER_REPORT` arrives; the corridor reuses the payout provider's source kind; the source
+descriptor names its counterparty and its settled currencies, and a batch in a currency its
+counterparty does not settle is rejected at the door, retained and never posted. Two new causes
+under existing break types — `FX_LEG_DIFFERS` under `AMOUNT_MISMATCH` and
+`VALUE_DATE_DIFFERS` under `TIMING_DIFFERENCE` — and no fifteenth type; a missing FX leg
+whose paired leg settled escalates to CRITICAL (D29). No migration seeds a rule set: each new
+source's version 1 goes through a four-eyes door, and a source without one refuses loudly with
+a typed `RuleSetMissing` (D26). `FX_FEE` is a priced fee line, and every source carries a fee
+schedule in every currency it can settle, the four existing sources through v2 successors (O6,
+O7). No amount ever enters a metric: position, spread, residual and P&L are audited operator
+reports (D32, ADR-0072 reaffirmed). →
+[ADR-0082](../adr/ADR-0082-fx-and-corridor-settlement-and-reconciliation.md)
+
+**Callbacks are hints.** ADR-0047's pipeline, amended for outbound money flows: authenticate,
+retain evidence, dedupe through the inbox — then adopt the outcome only from an
+authenticated inquiry over the outbound credential. It is the doctrine going forward, and
+`X-TSK-012` (owner Phase 15, with an earlier trigger on a suspected key compromise) aligns the
+Phase 5 and Phase 7 providers. It costs one provider call per callback, and buys immunity to a
+stolen webhook key (D25, O5). →
+[ADR-0083](../adr/ADR-0083-callbacks-are-hints.md)
+
+**Owner decisions (O1–O10), settled at the transition and the owner's to revisit:**
+principal, booked at acceptance, one back-to-back cover per accepted quote (O1); a return
+applied automatically only as exactly the instructed credit, in its currency, fee refunded,
+spread standing, anything else decided by a person (O2); `FIXED_SOURCE` and `FIXED_DESTINATION`
+for both conversions and cross-border payments (O3); compliance review on the beneficiary,
+before pricing, decided by kyc, unavailable meaning unpayable (O4); provider callbacks are
+hints (O5); JPY and BHD as the new currencies, the four existing sources carrying their
+per-currency rows through v2 successors (O6); the pricing and corridor policy v1 defaults
+— spreads, bands, windows, notional bounds, corridors, fees and first rule sets, activated
+four-eyes (O7); the cut order — M9.8's second providers first, then the operator FX trade
+reversal, each recorded with Phase 15 as owner (O8); charge bearer `OUR` only (O9); no
+conversion fee, margin only (O10).
+
 ### Integration
 External financial providers are accessed through adapters and treated as unreliable.
 Provider vocabulary never enters the domain or a public API contract; unknown provider state
@@ -759,12 +895,13 @@ where later capability is structurally needed earlier, the earlier phase defines
 → [ADR-0007](../adr/ADR-0007-phase-gated-delivery.md), [`EXECUTION_PROTOCOL.md`](EXECUTION_PROTOCOL.md)
 
 ### Invariant governance
-One hundred and ten financial, security and operational invariants are catalogued with stable
+One hundred and twenty financial, security and operational invariants are catalogued with stable
 IDs, enforcement mechanisms and verification methods. (This line said "seventy-one" until the
 Phase 1 → 2 transition — stale since `INV-IDN-08` — and "eighty-seven" from the Phase 4 → 5
 transition until the Phase 6 → 7 one, through two groups it never counted, and "one hundred and
-one" until the Phase 7 → 8 transition catalogued nine more; it takes its number from the
-catalogue's own index.) Phases declare the invariants they protect
+one" until the Phase 7 → 8 transition catalogued nine more, and "one hundred and ten" until the
+Phase 8 → 9 transition catalogued the ten FX and cross-border invariants; it takes its number
+from the catalogue's own index.) Phases declare the invariants they protect
 at the entry gate and prove them by test at the exit gate. →
 [`FINANCIAL_INVARIANTS.md`](../domain/FINANCIAL_INVARIANTS.md)
 
@@ -782,8 +919,8 @@ Recorded so these are not mistaken for oversights.
 | Jurisdiction-specific compliance | Per phase | Jurisdiction-neutral core; specifics behind policy/configuration/adapters |
 | Machine-learning risk models | Beyond scope | Versioned rules first; models add reproducibility burden without domain insight |
 | Handling raw card data | Never | Tokenised at the boundary; PCI scope deliberately minimised |
-| Instant-payment recall requests; batch credit-transfer rails with return windows | A later payments phase, when a rail that needs them is added | A recall is a request the payee's PSP may refuse, days later - a new operation with its own lifecycle, never a reversal (ADR-0059's rejected alternative); a batch rail's return window is a second finality model. Neither exists in any Phase 7 rail (ADR-0062's follow-up; recorded here by the Phase 7 review) |
-| Moving the merchant payout onto the push rail | A second outbound rail | Two outbound disciplines coexist by design: the payout keeps its own port (ADR-0057) and the push rail can implement it in `app` without a `merchant` change (ADR-0062 §7). *(The row's second trigger, "Phase 8 needing one evidence shape for every outbound credit transfer", was evaluated at the Phase 7 → 8 transition and did not fire: the canonical settlement line already gives every outbound credit transfer one evidence shape, and converging would re-declare the payout's position and source (ADR-0073 §8, `Proposed`). The row stays open on its first trigger.)* |
+| Instant-payment recall requests; batch credit-transfer rails with return windows | A later payments phase, when a rail that needs them is added | A recall is a request the payee's PSP may refuse, days later - a new operation with its own lifecycle, never a reversal (ADR-0059's rejected alternative); a batch rail's return window is a second finality model. Neither exists in any Phase 7 rail (ADR-0062's follow-up; recorded here by the Phase 7 review). *(The recall half fired at the Phase 8 → 9 transition: the corridor rail is a rail that needs them — a customer cancellation after authorization is a recall request, honoured only on the provider's definitive answer — scheduled as `P9-TSK-024` (D22, ADR-0079 `Proposed`). The batch-rail return-window half stays open.)* |
+| Moving the merchant payout onto the push rail | A second outbound rail | Two outbound disciplines coexist by design: the payout keeps its own port (ADR-0057) and the push rail can implement it in `app` without a `merchant` change (ADR-0062 §7). *(The row's second trigger, "Phase 8 needing one evidence shape for every outbound credit transfer", was evaluated at the Phase 7 → 8 transition and did not fire: the canonical settlement line already gives every outbound credit transfer one evidence shape, and converging would re-declare the payout's position and source (ADR-0073 §8, `Proposed`). The row stays open on its first trigger.)* *(The first trigger fired at the Phase 8 → 9 transition, when the corridor rail arrived, and convergence was declined with reasons: the canonical settlement line already gives every outbound credit transfer one evidence shape, and the payout's port carries a single-currency merchant flow Phase 9 does not touch (ADR-0079 §9, `Proposed`). The trigger is re-recorded as: a merchant payout in a currency other than the settlement currency, or on a rail other than `PayoutProvider`.)* |
 | Automatic rail availability from observed failure rates | Phase 15 | Availability is an operator's recorded, audited fact read inside each decision; automation must write the same fact, never an instance's opinion (ADR-0060 §4 - "Phase 15 or 16" until the Phase 7 review settled one owner) |
 | ~~A per-rail cost meter~~ | ~~Phase 8~~ — **settled 2026-10-01** by `P8-TSK-024` | Not a meter: the processor's fees post as `PROCESSING_COSTS` at the batch's recognition and are read per source and month in the audited provider-costs report (ADR-0060 §6, ADR-0072). Struck by the Phase 8 review |
 | An equity account for a non-zero first bank opening | Phase 14 | A non-zero first opening raises `SETTLEMENT_MISMATCH(OPENING_BALANCE)` and posts nothing (O4, ADR-0065); recognising history the platform never posted is general-ledger close work, not reconciliation's (recorded by the Phase 8 review) |
@@ -792,3 +929,9 @@ Recorded so these are not mistaken for oversights.
 | Dispute-fee pass-through to merchants | A merchant-risk phase (Phase 13's neighbourhood) | The PSP's dispute fee posts to `DISPUTE_COSTS`; charging it on is a commercial term with its own consent and statement consequences (ADR-0061's follow-up; recorded here by the review, with reserves the Known Architectural Debt row in `CURRENT_STATE.md`). *(The Phase 7 → 8 transition adds the counterparties' processing costs to the same deferral: they post to `PROCESSING_COSTS`, and no price varies with the rail (ADR-0072 §6, `Proposed`).)* |
 | A secrets manager (Vault, cloud KMS) | Phase 15 | No deployment, no key material and one local database password. A manager chosen with no real requirement to shape it is the wrong manager; the seam - configuration read from the environment - is established now (ADR-0020) |
 | Changing the verified contact channel | Phase 15, with the notifier | A safe change needs a step-up, a notice to the channel being replaced and a cooling-off - `INV-IDN-06`'s own enforcement - and the notice needs the channel notifier Phase 15 brings. Until then a second verification is refused (`X-TSK-004`, §Recovery channels). Nothing delivers a challenge before that notifier either, so the refusal cannot yet strand a customer. **The flow must spend every pending challenge of the kind**: a refused verification writes nothing, so its challenge stays live until it expires, and a flow that freed the kind without spending them would let a parked challenge verify the moment the verified channel is gone |
+| Revaluation, a functional or reporting currency, unrealised P&L and FX P&L reporting | Phase 14 | Covered positions are zero at rest, and realised results come only from slipped covers and unwinds; revaluing `FX_POSITION` before a reporting currency exists would be a plug, not a fact (D30, ADR-0076 `Proposed`; recorded by the Phase 8 → 9 transition) |
+| Hedging, netting of covers, position limits, treasury, liquidity and prefunding | A treasury capability of its own; none scheduled (DELIVERY_PLAN §18) | The platform is principal with one back-to-back cover per accepted quote; netting would make the position unexplainable trade by trade (D1, ADR-0077 `Proposed`) |
+| `SHA`/`BEN` charge bearers and correspondent-chain deductions | A corridor whose provider cannot guarantee the delivered amount | `OUR` only: the beneficiary receives the quoted destination amount, so a deduction from principal is an `AMOUNT_MISMATCH` break, never a silent short delivery (O9, ADR-0079 `Proposed`) |
+| Merchant multi-currency settlement and cross-currency merchant fees | A merchant multi-currency phase of its own | `merchant.FeeCurrencyMismatch` and `PayoutCurrencyMismatch` stay; the corridor is a customer rail, and the merchant payout stays single-currency on its own provider (ADR-0050 annotated at the Phase 8 → 9 transition; ADR-0079 §9) |
+| Funds owed to a closed customer by a parked corridor return | Phase 15 | There is no `ACTIVE` wallet to credit; the value stays parked with its HIGH break, aged and escalated, beside ADR-0070 §4's residual and the closed merchant's return (ADR-0079 `Proposed`) |
+| Cross-border KYC tiers, residence attributes, velocity limits, transaction monitoring and risk scoring | Phase 13 | The `CrossBorderLimitCheck` and `CrossBorderRiskDecision` seams are required parameters from birth with reserved refusal codes; screening validity and static corridor limits are Phase 9's only compliance controls (ADR-0081 `Proposed`) |

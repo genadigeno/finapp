@@ -106,18 +106,22 @@ class ReconciliationV013MigrationTest {
     }
 
     @Test
-    @DisplayName("the item trigger is ItemStatus.sqlTransitionRule(), and V013 adds to V009's"
-            + " machine exactly PARKED -> UNMATCHED and RESOLVED -> REPUDIATED, removing none")
+    @DisplayName("the item trigger is ItemStatus.sqlTransitionRuleBeforeV016(), and V013 adds to"
+            + " V009's machine exactly PARKED -> UNMATCHED and RESOLVED -> REPUDIATED, removing"
+            + " none")
     void theItemMachineGainsExactlyTwoEdges() {
+        // V016 (the Phase 8 -> 9 transition) re-states the trigger once more with UNMATCHED ->
+        // CHECKED: V013's own restatement is the rule before that edge.
         String v013 = normalized(migration(V013));
         assertThat(v013)
-                .contains(normalized("AND NOT (" + ItemStatus.sqlTransitionRule() + ") THEN"))
+                .contains(normalized(
+                        "AND NOT (" + ItemStatus.sqlTransitionRuleBeforeV016() + ") THEN"))
                 .doesNotContain(normalized(
                         "AND NOT (" + ItemStatus.sqlTransitionRuleBeforeV013() + ") THEN"));
-        assertThat(ItemStatus.sqlTransitionRule())
+        assertThat(ItemStatus.sqlTransitionRuleBeforeV016())
                 .isNotEqualTo(ItemStatus.sqlTransitionRuleBeforeV013());
 
-        Set<String> after = itemEdges(ItemStatus.sqlTransitionRule());
+        Set<String> after = itemEdges(ItemStatus.sqlTransitionRuleBeforeV016());
         Set<String> before = itemEdges(ItemStatus.sqlTransitionRuleBeforeV013());
         assertThat(itemEdges(v013)).as("the migration's own trigger").isEqualTo(after);
         assertThat(itemEdges(migration(V009)))

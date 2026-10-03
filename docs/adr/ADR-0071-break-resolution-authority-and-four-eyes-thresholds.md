@@ -207,7 +207,54 @@ The three designs weighed at the transition differed on exactly the undefined pa
    - **`MANUAL_MATCH`** names `chosen_expectation_id`, which must be a candidate in the item's
      stored `AMBIGUOUS_MATCH` decision snapshot. At approval the allocation goes through
      `allocate(E)` like every other leg, under the source's namespace-4 lock, and its decision
-     replays as its recorded choice applied to its snapshot (ADR-0068 §9).
+     replays as its recorded choice applied to its snapshot (ADR-0068 §9). A match that SETTLES
+     the chosen expectation empties its remainder, so the approval closes every open break
+     answering for it - its `MISSING_EXTERNAL` and its shortfall (`AMOUNT_MISMATCH`, or a
+     remittance's `SETTLEMENT_MISMATCH`) - under the same approved resolution, a remainder
+     disposal's and an offset's precedent; while such a break carries a live proposal of its own,
+     the approval is `ResolutionStale`, nothing written. *(Corrected 2026-10-02 by the Phase 8 ->
+     9 transition, REC-5: only the `MISSING_EXTERNAL` was closed, as an `EVIDENCED` resolution
+     proposed by the approving person - which `V006`'s `resolution_evidenced_is_platform`
+     refuses, so such a match could never be approved - and the shortfall stood open over a
+     `SETTLED` expectation with nothing any kind could dispose of.)*
+   - **A transfer or a gain never pre-empts an operation the platform still knows.** On a break
+     the grace leg typed by its operation - `MISSING_INTERNAL`, `UNKNOWN_EXTERNAL`, or any type a
+     `GRACE_EXPIRED` break was reclassified onto - `TRANSFER_TO_ACCOUNT` and `RECOGNISE_GAIN` of
+     the parked value re-ask `InternalReferenceLookup` over the item's frozen keys, at proposal
+     and again at approval under the locks, and are refused
+     (`409 reconciliation.OperationNotTerminal`) while the answer is `IN_FLIGHT` or `COMPLETED`:
+     the operation's own completion credits the party unconditionally and can never reach an
+     item a person resolved, so the value waits for that evidence (the rematch that unparks it).
+     A `TERMINAL` operation will never post, and nothing named is `UNKNOWN`: both admit.
+     *(Added 2026-10-02 by the Phase 8 -> 9 transition, IDEM-2. Its card case, first recorded here
+     as a limit, was closed by the same transition: a capture whose answer was lost holds no
+     provider reference, so its PSP line's `PSP_CAPTURE_REF` names nothing - but the lookup now
+     resolves `OUR_REF` to a card attempt's own minted authorization or capture reference too
+     (`JdbcInternalReferenceLookup`), so the line is `MISSING_INTERNAL` with an `IN_FLIGHT` answer
+     and its transfer waits - `LateEvidenceAndBreakTypingDatabaseTest`. What remains `UNKNOWN` is
+     a line naming no reference the platform minted or stored. One such line CAN still be the
+     platform's: an instant-rail line carrying only the scheme's own reference, its optional
+     end-to-end reference omitted, resolves through `scheme_execution_claim` - written at
+     completion - so an in-flight execution answers `UNKNOWN` and its transfer is admitted; the
+     late completion's own posting then surfaces as an expectation that can never settle, overdue,
+     `MISSING_EXTERNAL`, for a person's claw-back. Closing it needs the completion side to detect
+     a person-resolved item; recorded as debt (the re-gate's NEW-IDEM-1, 2026-10-03).)*
+   - **A payout return's fallback is bound to the payout.** A `TRANSFER_TO_ACCOUNT` out of a
+     `RETURN_NOT_APPLICABLE` break locks the payout row `FOR UPDATE` - the row
+     `PayoutReturns.apply` takes first - at proposal and at approval, and is refused
+     (`409 reconciliation.ReturnAlreadyAttributed`) when the return was already applied from
+     settlement evidence or another break's transfer for the same payout stands; the return
+     worker, on the same row, writes nothing while such a transfer stands (ADR-0073 §5). *(Added
+     2026-10-02 by the Phase 8 -> 9 transition, IDEM-1: the fallback left nothing the worker
+     checked, so a later report's repeat of the line, under another fingerprint, credited the
+     payable a second time.)* The transfer is also admitted only for a `COMPLETED` payout, read
+     under the same row lock: a payout debits its merchant's payable when it completes, so a
+     transfer while it is in flight waits (`409 reconciliation.OperationNotTerminal`) - a payout
+     failing after it would have released its hold to the merchant beside the person's credit -
+     and a transfer for a payout that `FAILED` is refused
+     (`422 reconciliation.ResolutionTargetRefused`): the returned cash answers the provider's own
+     execution, an `OFFSET_SUSPENSE` or a write-off, never a party's credit. *(Added 2026-10-02
+     by the same transition - IDEM-1's residual, found by its repair.)*
    - **Closing.** An approved resolution that removes an item's parked value moves the item to
      `RESOLVED` and releases its suspense item (a `suspense_release` naming the resolution). One
      that removes an expectation's remainder raises its `resolved_minor` and moves it to
@@ -401,6 +448,16 @@ The three designs weighed at the transition differed on exactly the undefined pa
      resolution still `PROPOSED`. The proposer withdraws and re-proposes, which is two acts again.
      This carries `V010`'s "the approver approves what they read" one level up: the ledger freezes
      the lines, and reconciliation freezes the residual they were derived from.
+   - **The approver reads what they approve.** `GET /v1/operator/reconciliation/resolutions/{id}`
+     (`RECONCILIATION_RESOLVE`, one `REPEATABLE READ` snapshot, recording nothing) renders every
+     operand - a transfer's target with its purpose and owner reference, an offset's partner
+     item, a manual match's chosen candidate - and the frozen ledger proposal's lines, each
+     account with its purpose and owner, direction and amount. The approval's optional body
+     echoes `targetAccountId`, `offsetItemId` or `chosenExpectationId`; an echoed operand that is
+     not the stored one is `409 reconciliation.ResolutionStale` with nothing written. *(Added
+     2026-10-02 by the Phase 8 -> 9 transition, SEC-01: no read an approver could reach carried
+     the operand, so the destination of a transfer out of suspense was one person's choice
+     approved blind - four-eyes in form, one person in substance.)*
 
 9. **Evidence wins, and every race has a PostgreSQL arbiter.**
 
@@ -419,9 +476,14 @@ The three designs weighed at the transition differed on exactly the undefined pa
      `P8-DOC-001`: this read "when the act allocates, parks or unparks (`MANUAL_MATCH`,
      `REPUDIATE_BATCH`)"; `P8-TSK-015` made it uniform, its recorded deviation (a))*; (2) break
      rows, then the resolution row; (3) expectation, external item and suspense item rows, each
-     sorted by id — an offset's two items excepted, the subject's first (point 2); (4) the
-     merchant payout row, taken by the return worker only and by no
-     resolution; (5) the transfer target's ledger account `FOR SHARE`; (6) inside `approveOwned`,
+     sorted by id — an offset's two items excepted, the subject's first (point 2), then a
+     settling manual match's chosen expectation and its remainder's other breaks; (4) the
+     merchant payout row `FOR UPDATE`, taken by the return worker and by the proposal and
+     approval of a transfer out of a `RETURN_NOT_APPLICABLE` break *(corrected 2026-10-02 by the
+     Phase 8 -> 9 transition, IDEM-1: this read "taken by the return worker only and by no
+     resolution"; the worker takes it after its item's share lock, the resolution after its
+     subject rows, and neither holds what the other then waits for)*; (5) the transfer target's
+     ledger account `FOR SHARE`; (6) inside `approveOwned`,
      the ledger proposal row, then the projection rows sorted by account id. **The posting is
      last.** A transaction posting several entries over shared rows — a repudiation's approval,
      which posts the recognition's reversal and its unparks — pre-locks the union of the
@@ -474,7 +536,8 @@ The three designs weighed at the transition differed on exactly the undefined pa
     |---|---|---|---|
     | Propose | `POST /v1/operator/reconciliation/breaks/{id}/resolutions {kind, reasonCode, narrative, targetAccountId?, offsetItemId?, chosenExpectationId?}` | Key; one live per break | `reconciliation.ResolutionProposed` (reason); `ledger.AdjustmentProposed` for a posting kind |
     | Propose a repudiation | `POST /v1/operator/reconciliation/batches/{settlementBatchId}/repudiation {reasonCode, narrative}` | Key; one live per batch | `reconciliation.ResolutionProposed` |
-    | Approve | `POST /v1/operator/reconciliation/resolutions/{id}/approval` | State | `reconciliation.ResolutionApproved` (+ `ledger.AdjustmentPosted`) |
+    | Read before approving | `GET /v1/operator/reconciliation/resolutions/{id}` — every operand and the frozen lines *(added 2026-10-02, the Phase 8 -> 9 transition, SEC-01)* | Read | — |
+    | Approve | `POST /v1/operator/reconciliation/resolutions/{id}/approval {targetAccountId?, offsetItemId?, chosenExpectationId?}` — the optional echo of the operand read; a different one is `ResolutionStale` | State | `reconciliation.ResolutionApproved` (+ `ledger.AdjustmentPosted`) |
     | Reject | `POST /v1/operator/reconciliation/resolutions/{id}/rejection {reason}` | State | `reconciliation.ResolutionRejected` (reason) |
     | Withdraw | `DELETE /v1/operator/reconciliation/resolutions/{id}` — the row moves to `WITHDRAWN`; nothing is deleted | State | `reconciliation.ResolutionWithdrawn` |
 
@@ -501,7 +564,9 @@ The three designs weighed at the transition differed on exactly the undefined pa
     - **Errors** (`ERROR_CONTRACT`): `reconciliation.BreakNotFound`, `BreakTerminal`,
       `ResolutionNotFound`, `ResolutionAlreadyProposed`, `ResolutionNotPending`,
       `SelfApprovalRefused`, `NotTheProposer`, `ResolutionKindNotAllowed`, `ReasonCodeNotAllowed`,
-      `ResolutionTargetRefused`, `ResolutionStale`, `RecordAlreadyMatched`, `GainNotYetEligible`;
+      `ResolutionTargetRefused`, `ResolutionStale`, `RecordAlreadyMatched`, `GainNotYetEligible`,
+      and - since the Phase 8 -> 9 transition - `OperationNotTerminal` and
+      `ReturnAlreadyAttributed`;
       for a repudiation `BatchNotFound`, `BatchNotRepudiable`, `BatchNotDisposed` and
       `RepudiationNotSupported`; `ledger.AdjustmentOriginMismatch` and
       `ledger.AdjustmentOnReconciledPosition`. *(`ResolutionNotFound` and `NotTheProposer` arrived
@@ -814,3 +879,6 @@ stored resolution, ADR-0069's amendment), `INV-REC-06`, `INV-REC-09`, `INV-SET-0
   event dropped).
 - The Phase 8 review (`P8-DOC-001`) read this ADR against the code, corrected it where it had
   drifted, and accepted it on 2026-10-01.
+- *The Phase 8 → 9 transition* (ADR-0082, `Proposed`): §3's `V014` one-person zero-value
+  `ACKNOWLEDGE` list gains `VALUE_DATE_DIFFERS` — a timing cause raised by a timing
+  detector — restated when the Phase 9 reconciliation tasks land.

@@ -14,7 +14,12 @@ import static com.finapp.reconciliation.GateFixtures.itemOf;
 import static com.finapp.reconciliation.GateFixtures.string;
 import static org.assertj.core.api.Assertions.assertThat;
 
+import com.finapp.platform.audit.JdbcAuditWriter;
+import com.finapp.platform.security.Actor;
+import com.finapp.platform.security.ActorType;
+import com.finapp.sharedkernel.correlation.CorrelationId;
 import java.sql.SQLException;
+import java.time.Instant;
 import java.time.LocalDate;
 import java.util.ArrayList;
 import java.util.List;
@@ -57,7 +62,13 @@ class MatcherRacesDatabaseTest {
             UUID source, GateFixtures.Seeded chosen, GateFixtures.Parked parked,
             UUID resolutionId) {}
 
-    /** A planted AMBIGUOUS_MATCH with a pending MANUAL_MATCH proposal naming {@code chosen}. */
+    /**
+     * A planted AMBIGUOUS_MATCH with a pending MANUAL_MATCH proposal naming {@code chosen}, and a
+     * person's REPROCESS run open over its source: the matcher's writer of the pair. Since the
+     * Phase 8 -> 9 transition the rematch leg judges only a reach no decision of the item has seen
+     * - and the planted decision saw both candidates - so the reprocess leg, which re-decides
+     * every residual through the same parked-rematch path, is the matcher racing the approval.
+     */
     private static Ambiguity proposedManualMatch() {
         UUID source = IDS.next();
         UUID ruleSet = IDS.next();
@@ -73,6 +84,11 @@ class MatcherRacesDatabaseTest {
                 ResolutionReasonCode.AMBIGUITY_RESOLVED_BY_EVIDENCE, Optional.empty(),
                 Optional.of(chosen.id()));
         assertThat(proposed.status()).isEqualTo(ResolutionStatus.PROPOSED);
+        Actor controller = new Actor("op-gate-controller", ActorType.EMPLOYEE);
+        GateFixtures.as(controller, uow -> new RunAdministration(new JdbcMatchingStore(),
+                        new JdbcReconciliationRuns(), new JdbcAuditWriter(), IDS)
+                .requestReprocessing(uow, source, controller, "C11's matcher-side writer",
+                        Instant.now(GateFixtures.CLOCK), CorrelationId.generate(IDS)));
         return new Ambiguity(source, chosen, parked, proposed.resolutionId());
     }
 
@@ -161,7 +177,7 @@ class MatcherRacesDatabaseTest {
             GateFixtures.matching().sweep();
 
             assertThat(decided.status()).isEqualTo(ResolutionStatus.APPROVED);
-            assertThat(rematchDecisions(ambiguity))
+            assertThat(matcherDecisions(ambiguity))
                     .as("C11: the try-lock refused the matcher while the approval held the"
                             + " source, and afterwards the MATCHED item is off the worklist")
                     .isZero();
@@ -176,7 +192,7 @@ class MatcherRacesDatabaseTest {
     @Order(2)
     @DisplayName("C11, production lock, the matcher first: the approval waits on the source's"
             + " advisory, then finds its proposal WITHDRAWN by the evidence - ResolutionNotPending,"
-            + " one REMATCH allocation")
+            + " one REPROCESS allocation")
     void c11MatcherFirstUnderTheLock() throws Exception {
         c11MatcherFirst(false);
     }
@@ -209,7 +225,7 @@ class MatcherRacesDatabaseTest {
 
             assertThat(decided.status()).isEqualTo(ResolutionStatus.APPROVED);
             assertThat(swept).isNotNull();
-            assertThat(rematchDecisions(ambiguity))
+            assertThat(matcherDecisions(ambiguity))
                     .as("C11: the matcher's locking re-read saw the item MATCHED and acted on"
                             + " nothing")
                     .isZero();
@@ -224,7 +240,7 @@ class MatcherRacesDatabaseTest {
     @Order(4)
     @DisplayName("C11, try-lock bypassed, the matcher first: the approval blocks behind the"
             + " matcher's locks, then finds its proposal WITHDRAWN - ResolutionNotPending, one"
-            + " REMATCH allocation")
+            + " REPROCESS allocation")
     void c11MatcherFirstBypassed() throws Exception {
         c11MatcherFirst(true);
     }
@@ -249,7 +265,7 @@ class MatcherRacesDatabaseTest {
             Throwable loser = failureOf(approval);
 
             assertThat(swept).isNotNull();
-            assertThat(rematchDecisions(ambiguity))
+            assertThat(matcherDecisions(ambiguity))
                     .as("C11: the matcher allocated the pair, once").isEqualTo(1);
             assertThat(loser)
                     .as("C11: the losing approval is told its proposal is no longer pending -"
@@ -260,7 +276,7 @@ class MatcherRacesDatabaseTest {
             assertThat(string("SELECT kind FROM reconciliation.resolution WHERE break_id = ? AND"
                     + " status = 'APPROVED'", ambiguity.parked().breakId()))
                     .isEqualTo("EVIDENCED");
-            assertOneAllocation(ambiguity, "REMATCH");
+            assertOneAllocation(ambiguity, "REPROCESS");
         } finally {
             release.countDown();
             pool.shutdownNow();
@@ -431,12 +447,17 @@ class MatcherRacesDatabaseTest {
     @Order(8)
     @DisplayName("parking with the try-lock bypassed: ten sweepers over lines that MISMATCH park"
             + " each at most once - one suspense item, one park row and one entry per park, the"
-            + " allocations once - the money arbitrated by the schema, three rounds")
+            + " allocations once, one RUN decision and at most one break per line, every break"
+            + " owning its value - in one chunk, in chunks of three and in chunks of two")
     void tenBypassedSweepersParkMismatchesOnce() throws Exception {
         UUID source = IDS.next();
         UUID ruleSet = IDS.next();
         GateFixtures.seedRuleSet(source, ruleSet);
-        for (int round = 0; round < 3; round++) {
+        // One chunk, then chunks of three and of two (the Phase 8 -> 9 transition's T-6: the
+        // BATCH leg's bypassed race had only ever run as one chunk), so racers holding stale
+        // cursors meet each other across chunk boundaries.
+        int[] chunkSizes = {200, 3, 2};
+        for (int round = 0; round < chunkSizes.length; round++) {
             String tag = "R" + round + "-" + UUID.randomUUID().toString().substring(0, 8);
             GateFixtures.Seeded over = GateFixtures.openExpectation(source, ruleSet,
                     "OVER-" + tag, 60_00, ExpectationDirection.INBOUND, FAR_FUTURE);
@@ -461,7 +482,7 @@ class MatcherRacesDatabaseTest {
 
             GateFixtures.MatchingParts parts = new GateFixtures.MatchingParts();
             parts.bypassTheTryLock = true;
-            parts.config = new Matching.Config(200, 100);
+            parts.config = new Matching.Config(chunkSizes[round], 100);
             Matching bypassed = parts.build();
             ExecutorService racers = Executors.newFixedThreadPool(10);
             try {
@@ -507,7 +528,28 @@ class MatcherRacesDatabaseTest {
                         .as("round %d line %d: the item's parked figure agrees", round,
                                 expected.getKey())
                         .isEqualTo(expected.getValue());
+                // REC-10, MI-4, IDEM-3: a loser that waited on the winner's rows skips the
+                // decided line - never a second decision, never a break with no value to own.
+                assertThat(count("SELECT count(*) FROM reconciliation.match_decision WHERE"
+                        + " external_item_id = ? AND origin = 'RUN'", item))
+                        .as("round %d line %d: one RUN decision", round, expected.getKey())
+                        .isEqualTo(1);
+                assertThat(count("SELECT count(*) FROM reconciliation.break WHERE"
+                        + " external_item_id = ?", item))
+                        .as("round %d line %d: a break exactly where value parks", round,
+                                expected.getKey())
+                        .isEqualTo(expected.getValue() > 0 ? 1L : 0L);
+                assertThat(count("SELECT count(*) FROM reconciliation.break b WHERE"
+                        + " b.external_item_id = ? AND NOT EXISTS (SELECT 1 FROM"
+                        + " reconciliation.suspense_item s WHERE s.break_id = b.id)", item))
+                        .as("round %d line %d: no break without the value it owns", round,
+                                expected.getKey())
+                        .isZero();
             }
+            assertThat(string("SELECT status || '/' || failures FROM"
+                    + " reconciliation.reconciliation_batch WHERE id = ?", run))
+                    .as("round %d: the run completed, no chunk failing on the way", round)
+                    .isEqualTo("COMPLETED/0");
             assertThat(count("SELECT count(*) FROM reconciliation.park p WHERE p.source_id = ?"
                     + " AND p.kind = 'PARK' AND NOT EXISTS (SELECT 1 FROM"
                     + " reconciliation.suspense_item s WHERE s.park_id = p.id)", source))
@@ -647,9 +689,11 @@ class MatcherRacesDatabaseTest {
 
     // ----------------------------------------------------------------- plumbing
 
-    private static long rematchDecisions(Ambiguity ambiguity) {
+    /** The matcher's late decisions on the planted item: a rematch's or the reprocess run's. */
+    private static long matcherDecisions(Ambiguity ambiguity) {
         return count("SELECT count(*) FROM reconciliation.match_decision WHERE"
-                + " external_item_id = ? AND origin = 'REMATCH'", ambiguity.parked().itemId());
+                + " external_item_id = ? AND origin IN ('REMATCH', 'REPROCESS')",
+                ambiguity.parked().itemId());
     }
 
     private static void awaitOrFail(CountDownLatch latch, String what) {

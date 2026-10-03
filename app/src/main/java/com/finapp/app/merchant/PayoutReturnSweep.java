@@ -4,6 +4,7 @@ import com.finapp.merchant.MerchantTransactionRunner;
 import com.finapp.merchant.PayoutReturns;
 import com.finapp.platform.correlation.CorrelationContext;
 import com.finapp.platform.security.SecurityContext;
+import com.finapp.reconciliation.PayoutReturnFallbacks;
 import com.finapp.reconciliation.WaitingPayoutReturns;
 import com.finapp.settlement.SettlementBatchStore;
 import com.finapp.sharedkernel.correlation.CausationId;
@@ -39,6 +40,18 @@ import lombok.extern.slf4j.Slf4j;
  * the operation-anchored rule — and takes no advisory namespace 4: it sits outside every matching
  * chunk, so no matcher ever waits on a merchant row. A failing row is contained, logged by class,
  * and retried next tick while the item waits out its grace.
+ *
+ * <h2>The person's fallback, bound to the payout</h2>
+ *
+ * <p>Under the payout's row lock the application asks reconciliation's
+ * {@link PayoutReturnFallbacks} whether a person's {@code TRANSFER_TO_ACCOUNT} out of a
+ * {@code RETURN_NOT_APPLICABLE} break naming the payout stands, approved or proposed - and, when
+ * one does, writes nothing ({@link PayoutReturns.Outcome#RETURNED_BY_PERSON}): that transfer IS
+ * the payout's return, so a later report's repeat of the line, under another fingerprint, waits
+ * into a break of its own instead of crediting the payable twice. The transfer's proposal and
+ * approval lock the same payout row first and refuse once a return is applied, so the two paths
+ * serialise on one row and exactly one credits. *(Added 2026-10-02 by the Phase 8 -> 9
+ * transition, IDEM-1.)*
  */
 @Slf4j
 public final class PayoutReturnSweep {
@@ -47,6 +60,7 @@ public final class PayoutReturnSweep {
     private final WaitingPayoutReturns waiting;
     private final SettlementBatchStore<Connection> batches;
     private final PayoutReturns returns;
+    private final PayoutReturnFallbacks fallbacks;
     private final int batchSize;
 
     public PayoutReturnSweep(
@@ -54,11 +68,13 @@ public final class PayoutReturnSweep {
             WaitingPayoutReturns waiting,
             SettlementBatchStore<Connection> batches,
             PayoutReturns returns,
+            PayoutReturnFallbacks fallbacks,
             int batchSize) {
         this.transactions = Objects.requireNonNull(transactions, "transactions must not be null");
         this.waiting = Objects.requireNonNull(waiting, "waiting must not be null");
         this.batches = Objects.requireNonNull(batches, "batches must not be null");
         this.returns = Objects.requireNonNull(returns, "returns must not be null");
+        this.fallbacks = Objects.requireNonNull(fallbacks, "fallbacks must not be null");
         if (batchSize <= 0) {
             throw new IllegalArgumentException("batchSize must be positive: " + batchSize);
         }
@@ -116,7 +132,8 @@ public final class PayoutReturnSweep {
             if (outcome.isPresent() && outcome.get() == PayoutReturns.Outcome.APPLIED) {
                 tally.applied++;
             } else if (outcome.isEmpty()
-                    || outcome.get() == PayoutReturns.Outcome.ALREADY_RETURNED) {
+                    || outcome.get() == PayoutReturns.Outcome.ALREADY_RETURNED
+                    || outcome.get() == PayoutReturns.Outcome.RETURNED_BY_PERSON) {
                 tally.skipped++;
             } else {
                 tally.notApplicable++;
@@ -171,7 +188,12 @@ public final class PayoutReturnSweep {
                                         item.amount(),
                                         acceptedOn,
                                         item.settlementDate(),
-                                        CorrelationContext.current().orElseThrow()))
+                                        CorrelationContext.current().orElseThrow()),
+                                // Asked under the payout's row lock (IDEM-1): a person's
+                                // standing transfer of the return is the return.
+                                (underPayoutLock, payout) ->
+                                        fallbacks.transferStands(
+                                                underPayoutLock, payout.value().toString()))
                         .outcome());
     }
 }

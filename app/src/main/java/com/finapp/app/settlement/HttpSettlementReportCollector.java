@@ -1,5 +1,6 @@
 package com.finapp.app.settlement;
 
+import com.finapp.settlement.SettlementFile;
 import com.finapp.settlement.SettlementReportCollector;
 import java.io.IOException;
 import java.net.ConnectException;
@@ -9,10 +10,17 @@ import java.net.http.HttpClient;
 import java.net.http.HttpRequest;
 import java.net.http.HttpResponse;
 import java.net.http.HttpTimeoutException;
+import java.nio.ByteBuffer;
 import java.nio.charset.StandardCharsets;
 import java.time.Duration;
+import java.util.ArrayList;
 import java.util.Base64;
+import java.util.List;
 import java.util.Objects;
+import java.util.Optional;
+import java.util.concurrent.CompletableFuture;
+import java.util.concurrent.CompletionStage;
+import java.util.concurrent.Flow;
 
 /**
  * The pull adapter for one settlement source (`P8-TSK-021`, ADR-0066 §1, ADR-0008's SPI shape):
@@ -28,12 +36,23 @@ import java.util.Objects;
  * logged. This adapter speaks HTTP alone: a source URL of any other scheme — {@code sftp},
  * which the guard admits for a source — refuses its construction, so such a configuration
  * fails at startup instead of throwing on every pull (the tests agent's find; an {@code sftp}
- * collector is not built).
+ * collector is not built). A body is buffered only up to {@link #BODY_BOUND_BYTES}; past it the
+ * transfer is aborted and answered {@code REFUSED_ANSWER} (the Phase 8 → 9 transition, SEC-07).
  */
 public final class HttpSettlementReportCollector implements SettlementReportCollector {
 
     /** The report path, below the source's base URL: one path per source and business key. */
     public static final String REPORTS_PATH = "/settlement/reports/";
+
+    /**
+     * The most of a provider's body this adapter will ever hold (the Phase 8 → 9 transition,
+     * SEC-07): the door's 8 MiB bound plus one byte, so a body just over the bound still
+     * reaches the door and is refused by ITS check, audited — while a runaway body is aborted
+     * mid-stream, buffering nothing past this, and answered {@code REFUSED_ANSWER}. Without
+     * it, a misbehaving or compromised endpoint answering gigabytes would take every
+     * instance's pull sweep down with it before the door ever saw a byte.
+     */
+    public static final int BODY_BOUND_BYTES = SettlementFile.MAX_CONTENT_LENGTH + 1;
 
     private final String sourceCode;
     private final URI baseUrl;
@@ -87,9 +106,16 @@ public final class HttpSettlementReportCollector implements SettlementReportColl
                         .GET()
                         .build();
         try {
-            HttpResponse<byte[]> answer = http.send(get, HttpResponse.BodyHandlers.ofByteArray());
+            HttpResponse<Optional<byte[]>> answer =
+                    http.send(get, HttpSettlementReportCollector::boundedBody);
             return switch (answer.statusCode()) {
-                case 200 -> new Collected.Report(answer.body());
+                case 200 ->
+                        answer.body()
+                                .<Collected>map(Collected.Report::new)
+                                .orElseGet(
+                                        () ->
+                                                new Collected.Failed(
+                                                        FailureOutcome.REFUSED_ANSWER));
                 case 404 -> new Collected.NotYet();
                 default -> new Collected.Failed(FailureOutcome.REFUSED_ANSWER);
             };
@@ -111,5 +137,86 @@ public final class HttpSettlementReportCollector implements SettlementReportColl
     @Override
     public String toString() {
         return "HttpSettlementReportCollector[" + sourceCode + "]";
+    }
+
+    /**
+     * One response's bounded body (SEC-07): empty means over the bound. A declared
+     * {@code Content-Length} past the bound never subscribes to the body at all; an
+     * undeclared or lying one is cut off at the first byte past {@link #BODY_BOUND_BYTES},
+     * the subscription cancelled and the buffers dropped.
+     */
+    private static HttpResponse.BodySubscriber<Optional<byte[]>> boundedBody(
+            HttpResponse.ResponseInfo responseInfo) {
+        boolean declaredOverBound =
+                responseInfo.headers().firstValueAsLong("content-length").orElse(-1L)
+                        > BODY_BOUND_BYTES;
+        return new BoundedBody(declaredOverBound);
+    }
+
+    /** The limiting subscriber behind {@link #boundedBody}. */
+    private static final class BoundedBody
+            implements HttpResponse.BodySubscriber<Optional<byte[]>> {
+
+        private final CompletableFuture<Optional<byte[]>> body = new CompletableFuture<>();
+        private final List<ByteBuffer> buffered = new ArrayList<>();
+        private final boolean declaredOverBound;
+        private long received;
+        private Flow.Subscription subscription;
+
+        private BoundedBody(boolean declaredOverBound) {
+            this.declaredOverBound = declaredOverBound;
+        }
+
+        @Override
+        public CompletionStage<Optional<byte[]>> getBody() {
+            return body;
+        }
+
+        @Override
+        public void onSubscribe(Flow.Subscription subscription) {
+            this.subscription = subscription;
+            if (declaredOverBound) {
+                subscription.cancel();
+                body.complete(Optional.empty());
+                return;
+            }
+            subscription.request(Long.MAX_VALUE);
+        }
+
+        @Override
+        public void onNext(List<ByteBuffer> buffers) {
+            if (body.isDone()) {
+                return;
+            }
+            for (ByteBuffer buffer : buffers) {
+                received += buffer.remaining();
+                buffered.add(buffer);
+            }
+            if (received > BODY_BOUND_BYTES) {
+                buffered.clear();
+                subscription.cancel();
+                body.complete(Optional.empty());
+            }
+        }
+
+        @Override
+        public void onError(Throwable failure) {
+            body.completeExceptionally(failure);
+        }
+
+        @Override
+        public void onComplete() {
+            if (body.isDone()) {
+                return;
+            }
+            byte[] whole = new byte[(int) received];
+            int at = 0;
+            for (ByteBuffer buffer : buffered) {
+                int length = buffer.remaining();
+                buffer.get(whole, at, length);
+                at += length;
+            }
+            body.complete(Optional.of(whole));
+        }
     }
 }

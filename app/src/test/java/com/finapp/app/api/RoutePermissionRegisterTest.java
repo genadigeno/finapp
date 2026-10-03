@@ -170,6 +170,10 @@ class RoutePermissionRegisterTest {
                     entry("POST /v1/operator/reconciliation/breaks/{id}/resolutions", PermissionName.RECONCILIATION_RESOLVE),
                     // P8-TSK-023: a batch's repudiation is a resolution - the resolver's, four-eyes.
                     entry("POST /v1/operator/reconciliation/batches/{settlementBatchId}/repudiation", PermissionName.RECONCILIATION_RESOLVE),
+                    // The Phase 8 -> 9 transition (SEC-01): what an approver reads before
+                    // approving - every operand and the frozen lines - under the approver's own
+                    // permission.
+                    entry("GET /v1/operator/reconciliation/resolutions/{id}", PermissionName.RECONCILIATION_RESOLVE),
                     entry("POST /v1/operator/reconciliation/resolutions/{id}/approval", PermissionName.RECONCILIATION_RESOLVE),
                     entry("POST /v1/operator/reconciliation/resolutions/{id}/rejection", PermissionName.RECONCILIATION_RESOLVE),
                     entry("DELETE /v1/operator/reconciliation/resolutions/{id}", PermissionName.RECONCILIATION_RESOLVE)));

@@ -12911,6 +12911,1342 @@ break row, as the approval door must.)*
 
 ---
 
+# Phase 9 — FX and Cross-Border Payments
+
+Status: `READY` — entry gate passed 2026-10-02 by the Phase 8 → 9 transition
+([`reviews/PHASE_8_TO_9_TRANSITION.md`](reviews/PHASE_8_TO_9_TRANSITION.md)), elaborated to task
+granularity by the same transition: thirty items (`P9-TSK-001`…`-027`, `P9-TST-001`, `P9-TST-002`,
+`P9-DOC-001`) across nine milestones, with `P9-TSK-001` marked `READY`. The engineering plan is
+[`PHASE_9_PLAN.md`](PHASE_9_PLAN.md); decisions are ADR-0074…ADR-0083 (`Proposed` at the
+transition — ADR-0063 remains held by the unmerged `X-TSK-005` branch, so Phase 9's numbering
+continues from Phase 8's); the domain statement is
+[`FX_AND_CROSS_BORDER_LIFECYCLES.md`](../domain/FX_AND_CROSS_BORDER_LIFECYCLES.md), written before
+the first task (the `SETTLEMENT_AND_RECONCILIATION_LIFECYCLES.md` precedent). The in-scope
+invariants are whatever the catalogue marks `Phase: 9` — **fourteen at planning**: the four the
+catalogue already carried (`INV-FX-01`…`-03`, `INV-ACC-01`'s per-currency element) and the
+transition's ten (`INV-FX-04`…`-09`, `INV-XB-01`…`-04`) — **read from the catalogue at the gate,
+never from this file**. The financial supplement F1–F8 binds; every task that can affect money
+carries `DOD-FIN`. Until Phase 9's first task lands, nothing in this section is implemented; every
+statement is the decided design, corrected by the tasks that build it.
+
+**Every task below states the gate's twenty-three fields**: objective, bounded context,
+dependencies, scope, out of scope, domain changes, persistence, APIs, events, financial impact,
+invariants, distributed-system concerns (the ten-instance question answered), idempotency,
+consistency, atomicity, failure handling, security, audit, observability, reconciliation
+implications, tests, acceptance criteria and definition of done, plus the standing risk and
+complexity at the end of the definition of done — Phase 8's labels, kept unchanged. A task's
+design (`task-design`) may correct its entry, and says so in the entry — the `P6-TSK-001`
+precedent. The ten-instance answer is `PASS` only on the counted tests the entry names; it is
+never claimed by construction. A task without them answers `UNKNOWN` and is not complete. Every
+keyed scope is per principal from birth. Migration numbers name the expected order;
+`PHASE_9_PLAN.md`'s migration table is the one table of them.
+
+**Milestones**: M9.1 Foundations (`P9-TSK-001`…`-004`) · M9.2 Rates and quotes
+(`P9-TSK-005`…`-008`) · M9.3 A conversion, booked and covered (`P9-TSK-009`…`-012`) · M9.4 FX
+explained and settled to cash (`P9-TSK-013`, `P9-TST-002`) · M9.5 Corridors, beneficiaries,
+screening (`P9-TSK-014`…`-017`) · M9.6 A cross-border payment end to end (`P9-TSK-018`…`-022`) ·
+M9.7 Return, cancellation, correction (`P9-TSK-023`…`-025`) · M9.8 A second provider of each kind
+(`P9-TSK-026`) · M9.9 Operating it, and proof (`P9-TSK-027`, `X-TSK-010`, `P9-TST-001`,
+`P9-DOC-001`). Acceptance per milestone in `PHASE_9_PLAN.md` §16.
+
+**If the phase must shrink** (O8), cut in this order, each cut recorded with Phase 15 as owner:
+`P9-TSK-026` (M9.8, the second providers), then `P9-TSK-025` (the operator FX trade reversal —
+cutting it leaves scenario 8 met by `UnwindRetryDatabaseTest`, and exit criteria 9, 16 and 20
+carry a conditional clause for it, as criterion 13 does for M9.8). Never cut: unwinds, returns,
+cancellation, the proofs, the ten scenarios.
+
+**Owner decisions settled at the transition** — O1–O10, each taken on its recommendation and
+recorded as a transition decision the owner may revisit: **O1** principal, not agent — booked at
+acceptance, one back-to-back cover per accepted quote (ADR-0076, ADR-0077); **O2** a return is
+applied automatically only when exactly the instructed credit comes back (its currency and
+amount), credited in that currency with the transfer fee refunded and the spread standing — any
+other return parks and a person decides, the resolution recording the return on the payment
+(`-023`); **O3** quote modes `FIXED_SOURCE` and `FIXED_DESTINATION`, for conversions and
+cross-border alike (`-008`, `-018`); **O4** compliance review lives on the beneficiary, before
+pricing, decided by kyc — unavailable means unpayable (`-016`, `-017`); **O5** provider callbacks
+are hints (ADR-0083); **O6** JPY and BHD join, with v2 successors of the four existing sources'
+rule sets carrying every per-currency row for them — severity thresholds JPY `150000` / BHD
+`400000`, the `provider_fee_schedule` rows and the PSP's fee tolerances, at values of about the
+same worth — activated through the existing four-eyes door before JPY/BHD traffic (`-003`); **O7**
+pricing and corridor defaults, policy v1 activated four-eyes: spread 0.003500 and markup 0.001500
+on every one of the 20 pairs, rate scale 10 for the four JPY-source pairs and 6 for the other
+sixteen, rate rounding `TOWARDS_ZERO`, amount and margin rounding `HALF_EVEN`, window 30 s
+(conversion) / 60 s (cross-border), cover margin 10 s, band 150 bps (EUR/GBP/USD crosses) / 300
+bps (any JPY or BHD pair), reference max age 120 s, open-quote cap 5, notional bounds on the fixed
+leg per currency, corridors EUR→USD/US, EUR→JPY/JP, USD→BHD/BH and GBP→USD/US, transfer fee EUR
+2.50 / GBP 2.00 / USD 3.00 + 0 bps, corridor maxima USD 10,000.00 / JPY 1,500,000 / BHD 4,000.000,
+screening validity 7 days, the FX source's `FX_FEE` schedule 0 + 0 in all five currencies and the
+corridor source's `PAYOUT_FEE` schedule 0 + USD 1.20 / JPY 180 / BHD 0.450 (`-007`, `-011`,
+`-014`, `-015`); **O8** the cut order above; **O9** charge bearer `OUR` only — the beneficiary
+receives the quoted destination amount; `SHA`/`BEN` deferred, triggered by a corridor whose
+provider cannot guarantee the delivered amount (`-019`); **O10** no conversion fee in Phase 9 —
+margin only; fees are `crossborder`'s (`-008`, `-015`).
+
+Three cross-cutting tasks recorded by the same transition sit under *Cross-cutting work*:
+`X-TSK-010` (database-stamped send permits for the Phase 5–7 outbound flows — scheduled inside
+this phase, in M9.9, as a dependency of `P9-TST-001`), and `X-TSK-011` (explicit scale on
+pre-Phase-9 amount events) and `X-TSK-012` (callbacks as hints for the Phase 5 and Phase 7
+providers), each owned by Phase 15 and gating nothing here.
+
+**P9-TSK-001 — The `fx` and `crossborder` modules and schemas** — `READY` (2026-10-02; marked by the Phase 8 → 9 transition)
+- **Objective**: make both modules build-graph facts with privilege floors, before any domain code
+  (the `P5-/P6-/P8-TSK-001` precedent).
+- **Bounded context**: FX; Cross-Border Payments (scaffolding).
+- **Dependencies**: none.
+- **Scope**: `settings.gradle.kts` includes and build files from the sibling templates (per-schema
+  Flyway); `fx` `V001` and `crossborder` `V001` (schema; owner `finapp_migrator`; `REVOKE ALL FROM
+  PUBLIC`; `USAGE` to `finapp_app`; no tables); `FxModuleIsolationTest` and
+  `CrossborderModuleIsolationTest` requiring exactly `{ledger, platform, sharedkernel}` and refusing
+  every sibling (each other, `payments`, `kyc`, `accounts`, `settlement`, `reconciliation`) with
+  planted probes; every sibling isolation test gains both; `ProductionModules` from the classpath;
+  `NoFloatingPointMoneyRulesTest`'s module guard covers both.
+- **Out of scope**: every table, type, port, bean, route, permission and event.
+- **Domain changes**: none.
+- **Persistence**: `fx V001`, `crossborder V001` (floors only).
+- **APIs**: none.
+- **Events**: none.
+- **Financial impact**: none.
+- **Invariants**: protects `INV-LED-04` and ADR-0006 isolation.
+- **Distributed-system concerns**: no shared state. Migrations run under Flyway's lock. Ten
+  instances: `PASS` (no state).
+- **Idempotency**: forward-only migrations with checksums.
+- **Consistency**: n/a.
+- **Atomicity**: each migration is one transaction.
+- **Failure handling**: a wrong ACL or a missing guard fails the build.
+- **Security**: ACL exactly `{finapp_migrator=UC, finapp_app=U}`, no `PUBLIC`.
+- **Audit**: none.
+- **Observability**: none.
+- **Reconciliation implications**: none.
+- **Tests**: `FxMigrationTest`, `CrossborderMigrationTest` (ACL); the isolation tests with planted
+  probes; the floating-point module guard.
+- **Acceptance criteria**: the build is green; the ACL is exact; the isolation asymmetries are
+  demonstrated and every planted probe is caught.
+- **Definition of done**: `DOD-BUILD`, `DOD-ARCH`, `DOD-SEC`. **Risk**: Low. **Cx**: S.
+
+**P9-TSK-002 — `ExchangeRate`, `Margin` and the conversion plan** — `PLANNED`
+- **Objective**: exact conversion arithmetic for both fixed sides, with a proven, bounded residual,
+  as pure code.
+- **Bounded context**: `sharedkernel` (`ExchangeRate`, `CountryCode`), `platform` (`RateColumns`),
+  `fx` (`Margin`, `ConversionPlan`).
+- **Dependencies**: `-001`.
+- **Scope**: `PHASE_9_PLAN.md` §12.1–12.2: `ExchangeRate` (exact product, one exactly-rounded division, no inversion or
+  cross); `CountryCode`; `RateColumns.ddl()` with its test; `Margin`; `ConversionPlan.compute` with
+  its refusals, coherence by cross-multiplication and attribution through `allocateByWeights`
+  (refusing `spread + markup = 0`); the per-pair rate scale (≤ `MAX_SCALE`); the two derived figures
+  with their named roundings (the internal rate at scale 10 under the pair's rate rounding; the
+  disclosed margin at scale 6, `HALF_EVEN`, by one division or one product, never an inversion);
+  `SupportedCurrencyMinorUnitsArePinnedTest` and the startup `SupportedCurrencyMinorUnitsGuard`; the
+  stale `money/package-info.java` corrected; ADR-0006's argument recorded in ADR-0074.
+- **Out of scope**: persistence, providers, quotes, postings.
+- **Domain changes**: new value types; the pure pricing function.
+- **Persistence**: none (a DDL fragment only).
+- **APIs**: none.
+- **Events**: none.
+- **Financial impact**: defines every future conversion amount, margin, residual and attribution,
+  which every later posting copies; no money moves yet, so `DOD-FIN` applies to the arithmetic
+  itself.
+- **Invariants**: `INV-MON-01`…`-06`, `INV-FX-03` (margin from rates), `INV-FX-07` (bound at the
+  function).
+- **Distributed-system concerns**: pure and deterministic. `PASS` (no state).
+- **Idempotency**: the same inputs always give the same plan (the basis of replay).
+- **Consistency**: n/a.
+- **Atomicity**: n/a.
+- **Failure handling**: typed refusals: incoherent provider, negative margin, an unattributable
+  zero-margin pair, residual beyond the bound, non-positive leg; a rate or derived figure beyond its
+  scale is refused, never rounded by a column.
+- **Security**: no `double` on any path (`NoFloatingPointMoneyRulesTest`).
+- **Audit**: none.
+- **Observability**: none.
+- **Reconciliation implications**: none.
+- **Tests**: every `PHASE_9_PLAN.md` §12.2 figure reproduced exactly, with §12.4's internal rate (1.0812264160) and
+  disclosed margin (0.005162); property tests over 10⁶ cases per policy family (bound 1 for half, 2
+  for directed); provider rates at the full 10 decimals on every one of the 20 pairs, at each pair's
+  own rate scale, with `rc`, the internal rate and the disclosed margin always within their scales;
+  plan identity; attribution sums; a zero-margin pair refused; over-precision refused; a planted JDK
+  drift fails both the test and the guard.
+- **Acceptance criteria**: the `PHASE_9_PLAN.md` §12.2 table is reproduced to the minor unit, and the property tests
+  are green.
+- **Definition of done**: `DOD-KERNEL`, `DOD-DOMAIN`, `DOD-FIN` (F1–F8 over the arithmetic),
+  `DOD-TEST`. **Risk**: Medium. **Cx**: M.
+
+**P9-TSK-003 — JPY and BHD become postable** — `PLANNED`
+- **Objective**: make 0- and 3-minor-unit currencies postable on every flow, and pay Phase 6's
+  deferral.
+- **Bounded context**: `ledger`, `accounts`, `merchant`, `payments` (ceilings), `settlement` (bank
+  references), `reconciliation` (thresholds), `app` (iterators).
+- **Dependencies**: `-001`, `-002` (D27: the minor-unit pin test and the startup guard must exist
+  before 0/3-minor currencies become postable).
+- **Scope**: `SupportedCurrencies` += JPY, BHD; ledger `V019` seeds the **thirteen** operational
+  purposes × 2 (26 rows, UUIDv7 below the ceiling), with `OperationalChartMigrationTest` extended;
+  `AccountOpening` and `MerchantOnboarding` accept them; `LedgerMetrics`, `ReconciliationMetrics`
+  and `PositionProof` iterate five; routing and rail ceilings priced at scale 0/3;
+  `SIM_STATEMENT_TAGGED` account references for JPY/BHD; **v2 successors of the four existing
+  sources' rule sets through the existing four-eyes door, carrying for JPY and BHD every
+  per-currency row their v1 holds: the severity thresholds, the `provider_fee_schedule` rows
+  (`PROCESSING_FEE`, `SCHEME_FEE`, `PAYOUT_FEE`, `BANK_FEE`) and the PSP's fee tolerances, at O6's
+  values** (two actors in fixtures; a runbook entry); the Phase 6 0/3-minor ledger fee batch built
+  and its debt row closed.
+- **Out of scope**: FX, new purposes, conversions.
+- **Domain changes**: the supported set only.
+- **Persistence**: ledger `V019`; no reconciliation migration (D26).
+- **APIs**: existing routes now accept JPY/BHD.
+- **Events**: unchanged.
+- **Financial impact**: JPY and BHD money posts in card pay-ins, fees, settlement and payouts.
+- **Invariants**: `INV-ACC-01`, `INV-MON-03`, `INV-MON-05`, `INV-LED-01`.
+- **Distributed-system concerns**: no new contended state. The existing flows' counted races are
+  re-run in JPY and BHD. `PASS` on those.
+- **Idempotency**: existing keys; fingerprints already bind currency and scale.
+- **Consistency**: per-currency balancing (`V004`).
+- **Atomicity**: unchanged.
+- **Failure handling**: before a v2 is active, a JPY/BHD break grades at base severity and a JPY/BHD
+  fee line meets an absent schedule (priced at zero, so a genuine fee raises `FEE_MISMATCH`):
+  existing behaviour, recorded in the runbook, and the reason the v2s are activated before JPY/BHD
+  traffic.
+- **Security**: none new.
+- **Audit**: rule-set activations (existing actions).
+- **Observability**: `finapp.ledger.trial.balance{currency}` eager for five.
+- **Reconciliation implications**: JPY/BHD statements accepted; thresholds, fee schedules and fee
+  tolerances by the v2 successors, so a JPY or BHD fee line is judged against its own schedule,
+  never against the zero an absent schedule prices.
+- **Tests**: scale-0/3 round trips; a JPY card pay-in through capture, fee, settlement and
+  reconciliation, its `PROCESSING_FEE` line judged within tolerance against the JPY schedule; a BHD
+  scheme fee and a BHD bank fee each judged against their BHD rows; a BHD merchant fee at 3 minor
+  units; the 0/3 fee batch; earlier decisions replay `IDENTICAL` under their pinned v1; the Phase 8
+  storm and proof-group suites re-run.
+- **Acceptance criteria**: every flow posts JPY and BHD correctly; the trial balance is zero per
+  currency across the suites; no regression.
+- **Definition of done**: `DOD-FIN` (+F1–F8), `DOD-TEST`. **Risk**: Medium. **Cx**: M.
+
+**P9-TSK-004 — Multi-currency wallets** — `PLANNED`
+- **Objective**: one wallet product holding n currencies, with every resolver deterministic.
+- **Bounded context**: `accounts`; resolvers in `transfers`, `payments`, `checkout`; `app`.
+- **Dependencies**: `-003`.
+- **Scope**: the add-currency act (`AccountOpening` widened; `WalletAccounts.openIfAbsent(uow,
+  owner, currency)` in the caller's transaction, by `INSERT … ON CONFLICT (owner_ref, purpose,
+  currency) DO NOTHING RETURNING id` and then a re-read, so a racing loser waits for the winner and
+  never aborts (D28), and the act whose insert returned the row writes
+  `accounts.WalletCurrencyAdded`, once, on every open path); `POST /v1/me/accounts/{id}/currencies`;
+  `GET …/{id}/balances` (the existing `/balance` keeps its shape and answers the first-opened
+  currency); `TransferParticipants.walletOf(customer, currency)`,
+  `PaymentParticipants.walletOwnedBy(…, currency)` and checkout's resolution;
+  `WalletsAreResolvedByCurrencyTest`; transfers' `CURRENCY_MISMATCH` narrowed to "recipient has no
+  wallet in this currency".
+- **Out of scope**: conversion; cross-currency transfers (still refused).
+- **Domain changes**: a product holds n `CUSTOMER_WALLET` accounts.
+- **Persistence**: none (owned ledger accounts at runtime).
+- **APIs**: the two routes above.
+- **Events**: `accounts.WalletCurrencyAdded` (product id, ledger account id, currency), written once
+  by the inserting act, whichever path opened the wallet (`PHASE_9_PLAN.md` §10).
+- **Financial impact**: no money moves; every flow's wallet resolution becomes correct.
+- **Invariants**: `INV-BAL-04`, `INV-MON-04` (no implicit conversion), `INV-KYC-05` (the `ACTIVE`
+  gate unchanged).
+- **Distributed-system concerns**: ten concurrent openers of one currency (add-currency calls, and
+  the open-if-absent the conversion and return paths reuse) → one account, none aborted, one event:
+  `WalletOpenIfAbsentRaceDatabaseTest` (counted). `PASS` on that test.
+- **Idempotency**: keyed per principal; converges on the unique.
+- **Consistency**: strong.
+- **Atomicity**: one transaction.
+- **Failure handling**: an unsupported currency is `422 accounts.UnsupportedCurrency`.
+- **Security**: ownership in the domain.
+- **Audit**: the add-currency act, as the opening act is audited.
+- **Observability**: none new.
+- **Reconciliation implications**: none.
+- **Tests**: `WalletOpenIfAbsentRaceDatabaseTest` (ten racers, one account, no aborted transaction,
+  one `WalletCurrencyAdded`); a two-currency customer's every flow (transfer, pay-in, withdrawal,
+  wallet payment, checkout) resolves deterministically; the static rule with a planted violation;
+  the Phase 7 storm and dispute battery re-run.
+- **Acceptance criteria**: no `findFirst()` on wallets remains; ten openers make one account.
+- **Definition of done**: `DOD-FIN`, `DOD-API`, `DOD-EVENT`, `DOD-ARCH`. **Risk**: Medium. **Cx**:
+  M.
+
+**P9-TSK-005 — Reference rates** — `PLANNED`
+- **Objective**: independent, fresh, server-side reference rates that fail closed.
+- **Bounded context**: `fx`.
+- **Dependencies**: `-002`.
+- **Scope**: the `RateSource` port and `ReferenceSourceDeclaration`; the `simulated-reference`
+  adapter (transport guard, `FINAPP_FX_REFERENCE_KEY`); `fx V002` (`rate_snapshot` `NUMERIC(20,10)`,
+  `rate_fetch_permit`); `FxRateFetchSchedule` (leaderless, permit, newer-than-latest); staleness
+  judged in SQL; its `DISTRIBUTED_EXECUTION` row rewritten.
+- **Out of scope**: quotes and the provider.
+- **Domain changes**: `RateSnapshot`.
+- **Persistence**: `fx V002`.
+- **APIs**: none.
+- **Events**: none.
+- **Financial impact**: none (a reference is never executable).
+- **Invariants**: `INV-FX-02`.
+- **Distributed-system concerns**: ten pollers → one row per observation (counted); the permit paces
+  them; the database clock judges. `PASS` on that test.
+- **Idempotency**: `ON CONFLICT DO NOTHING`.
+- **Consistency**: the latest snapshot is read inside the deciding transaction.
+- **Atomicity**: fetch, then insert per pair.
+- **Failure handling**: a source that is down makes references stale and the age gauge alerts; a
+  replayed old observation is refused.
+- **Security**: confined key; `https` guard.
+- **Audit**: none (a platform act, not privileged).
+- **Observability**: `finapp.fx.rate.age{pair}`, `finapp.fx.rate.sweeper.enabled`.
+- **Reconciliation implications**: none.
+- **Tests**: staleness on the database clock with a skewed instance; a replayed observation; ten
+  pollers.
+- **Acceptance criteria**: a stale or replayed reference is never read as fresh.
+- **Definition of done**: `DOD-OBS`, `DOD-SEC`, `DOD-TEST`. **Risk**: Low. **Cx**: M.
+
+**P9-TSK-006 — The FX provider port and simulator** — `PLANNED`
+- **Objective**: a provider-neutral FX boundary with an honest, fault-injectable simulator.
+- **Bounded context**: `fx`; `app` (the adapter).
+- **Dependencies**: `-002`.
+- **Scope**: the `FxProvider` port (`PHASE_9_PLAN.md` §3's ports table), `FxProviderDeclaration` and the `FxProviders` directory;
+  `SimulatedFxEngine` and the `fx-sim-a` adapter (firm quotes with `validFor` and stated counters,
+  execution **deduped on `T` before judging validity**, inquiry, signed callbacks, fault injection,
+  an execution counter); total answer mappings; `fx V003` `provider_evidence`, encrypted under
+  `FINAPP_FX_EVIDENCE_KEY`; transport guard and `FINAPP_FX_PROVIDER_KEY`.
+- **Out of scope**: quotes, covers, positions, the webhook door.
+- **Domain changes**: provider verdict types.
+- **Persistence**: `fx V003`.
+- **APIs**: none.
+- **Events**: none.
+- **Financial impact**: none.
+- **Invariants**: `INV-PAY-03`, `INV-PAY-04` (the reference contract), `INV-HIST-02`.
+- **Distributed-system concerns**: a stateless adapter; evidence inserts only. `PASS` (no contended
+  state).
+- **Idempotency**: the provider-side dedupe on `T` is contract-tested.
+- **Consistency**: n/a.
+- **Atomicity**: n/a.
+- **Failure handling**: every mapping defaults to indeterminate; an over-precise rate is refused,
+  never rounded.
+- **Security**: confined keys; redacting `toString`; `https` guard.
+- **Audit**: none.
+- **Observability**: `finapp.fx.provider.quote.latency{provider, outcome}`.
+- **Reconciliation implications**: the provider's trade reference becomes the alias line reference
+  later.
+- **Tests**: the contract battery: refuse before send, execute then drop, duplicate, late,
+  deviation, lock expiry, dedupe before validity.
+- **Acceptance criteria**: every contract case passes; no mapping default yields success.
+- **Definition of done**: `DOD-SEC`, `DOD-TEST`. **Risk**: Medium. **Cx**: M.
+
+**P9-TSK-007 — The pricing policy and FX administration** — `PLANNED`
+- **Objective**: prices as four-eyes, versioned, pinned data, owned by a dedicated operator role.
+- **Bounded context**: `fx`, `identity`.
+- **Dependencies**: `-002`, `-003`, `-006`.
+- **Scope**: identity `V018` admits `FX_CONTROLLER`, with `FX_ADMINISTER`; `fx V004`:
+  `pricing_policy_version`, `pricing_pair` (pair, purpose, ordered providers, spread, markup with
+  `CHECK (spread + markup > 0)`, the per-pair rate scale (`BETWEEN 0 AND 10`; v1: 10 for JPY-source
+  pairs, 6 otherwise), the three rounding names as `CHECK` lists generated from the enum, window,
+  cover margin, band, reference maximum age, the notional bounds of the fixed leg per currency, the
+  open-quote cap), `pricing_policy_event`, `pair_availability`, `provider_availability`, and
+  `availability_enable_request` (the lifecycle document §3.10: `PROPOSED → APPROVED | REJECTED`, four-eyes `CHECK`,
+  every-writer trigger, one live proposal per subject); the policy machine (no seed exemption; one
+  proposal at a time; retirement only beside the successor); operator routes; `FxAuditAction`; v1
+  per O7, activated by two controllers in fixtures and the runbook.
+- **Out of scope**: quotes.
+- **Domain changes**: `PricingPolicyVersion`, `PricingPair`, availability facts.
+- **Persistence**: identity `V018`, `fx V004`.
+- **APIs**: pricing-policy and availability routes (`PHASE_9_PLAN.md` §9).
+- **Events**: `fx.PricingPolicyActivated`; `fx.FxAvailabilityChanged` (a disable, or an enable
+  proposal's approval).
+- **Financial impact**: sets every margin a quote will freeze and post (spread, markup, rate scale
+  and roundings); `DOD-FIN` applies to what the version admits: a zero-margin pair, an out-of-range
+  scale or an unnamed rounding is unstorable.
+- **Invariants**: `INV-AUD-04`, `INV-HIST-04`, `INV-MON-03`.
+- **Distributed-system concerns**: ten approvers → one activation; ten proposers → one proposal; ten
+  approvers of one enable proposal → one enabling fact (counted). `PASS` on those tests.
+- **Idempotency**: proposals keyed per principal; conditional approval.
+- **Consistency**: one `ACTIVE` version (partial unique).
+- **Atomicity**: activation, retirement, event and audit commit together.
+- **Failure handling**: self-approval is refused at the domain and by the `CHECK`, each proven
+  alone; an undeclared provider code is `422`.
+- **Security**: `RoleNameTest`, `RoutePermissionRegisterTest`, a negative test per route; disabling
+  takes one person, enabling a proposal and a second person, each rank (domain, `CHECK`) proven
+  alone.
+- **Audit**: proposed, approved, rejected and availability changes, each with a reason.
+- **Observability**: none beyond audit.
+- **Reconciliation implications**: none.
+- **Tests**: each four-eyes rank alone, for the policy and for the enable proposal; ten approvers;
+  the rounding-name `CHECK`s; `spread + markup = 0` and a rate scale above 10 refused by raw SQL;
+  v1's content, the per-pair scales included; every invalid edge of both machines refused by the
+  domain and by raw SQL.
+- **Acceptance criteria**: no version is `ACTIVE` without two named persons.
+- **Definition of done**: `DOD-FIN`, `DOD-SEC`, `DOD-API`, `DOD-EVENT`, `DOD-DOMAIN`. **Risk**: Low.
+  **Cx**: M.
+
+**P9-TSK-008 — The quote lifecycle** — `PLANNED`
+- **Objective**: a server-authoritative, single-use, frozen-plan quote whose expiry is an event.
+- **Bounded context**: `fx`.
+- **Dependencies**: `-005`, `-006`, `-007`.
+- **Scope**: `PHASE_9_PLAN.md` §12.3 entire: `fx V005` (`quote` with the plan-identity and residual `CHECK`s, the
+  internal rate and disclosed margin stored as `PHASE_9_PLAN.md` §12.2 derives them, the freeze and edge triggers, and
+  the cap trigger under namespace 5 counting `status='ISSUED' AND expires_at >
+  statement_timestamp()`; `quote_event`; `quote_request` with the pinned
+  `pricing_policy_version_id`; `quote_sourcing_step`); creation (`begin`/`complete`; the fixed-leg
+  bounds and the advisory cap pre-check in Tx1, before any provider call; failover under the pinned
+  version; band; coherence; `409 fx.PolicyStale` when the pinned version was superseded before Tx2;
+  database-clock validity from durations); read; cancel; `FxQuoteExpirySchedule` and lazy expiry;
+  strict deserialisation; **`RatesAreNeverClientSuppliedTest`** (every request record of `fx` and
+  `crossborder`, refusing a rate-typed or rate-named field) and **the OpenAPI request-schema
+  guard**, each with a planted violation refused; `GET /v1/me/fx/pairs`; `ConversionParticipants`
+  implemented in `app`; namespace 5 registered.
+- **Out of scope**: acceptance (`-009`); the cross-border purpose (`-018`, through the port).
+- **Domain changes**: the `FxQuote` aggregate.
+- **Persistence**: `fx V005`.
+- **APIs**: quote POST/GET/cancellation; pairs.
+- **Events**: `FxQuoteIssued`, `FxQuoteExpired`, `FxQuoteCancelled`.
+- **Financial impact**: no hold, no posting; the plan is the future entry.
+- **Invariants**: `INV-FX-02`, `INV-FX-04` (plan and expiry), `INV-FX-05` (provenance at issue),
+  `INV-FX-07`.
+- **Distributed-system concerns**: ten same-key requests → one provider call; ten racers at 4 live
+  quotes → one issued; an owner at the cap → no provider call; ten sweepers → one event (each
+  counted). `PASS` on those tests.
+- **Idempotency**: keyed per principal, claimed before the call.
+- **Consistency**: every window is judged on the database clock.
+- **Atomicity**: Tx2 inserts the quote, steps, event and outbox together (failure injection).
+- **Failure handling**: provider timeout → failover → `503`; stale → `503`; a policy activated
+  between the transactions → `409 fx.PolicyStale`, nothing issued; a crash between the transactions
+  → a takeover converging on `QR` and its pinned version.
+- **Security**: closed bodies with no rate field; owner `404`; provider rate never in a customer
+  response.
+- **Audit**: quote cancellation (a customer act).
+- **Observability**: `finapp.fx.quote`, `.quote.closed`, `.quote.open`,
+  `finapp.fx.quote.expiry.sweeper.enabled`.
+- **Reconciliation implications**: none.
+- **Tests**: a raw-SQL bad plan refused by the `CHECK`; the residual `CHECK`; every edge
+  exhaustively; the cap, same-key and expiry races; the cap counting only live quotes (a lapsed,
+  unswept quote does not count); the cap pre-check making no provider call (the simulator's RFQ
+  count); a policy activated between Tx1 and Tx2 (`PolicyStale`) and after issue (the pinned version
+  prices); the fixed-leg bounds at min, max and one minor unit beyond on both sides of every pair; a
+  skewed instance; sourcing steps recomputed; `RatesAreNeverClientSuppliedTest` and the OpenAPI
+  guard with their planted violations.
+- **Acceptance criteria**: any of the 20 pairs quotes both sides; a client cannot influence the
+  price; expiry happens exactly once.
+- **Definition of done**: `DOD-FIN`, `DOD-API`, `DOD-EVENT`, `DOD-SEC`. **Risk**: High. **Cx**: L.
+
+**P9-TSK-009 — Wallet conversion** — `PLANNED`
+- **Objective**: accept a quote and book the conversion atomically through `FX_POSITION`.
+- **Bounded context**: `fx`, `ledger`, `accounts` (via the port).
+- **Dependencies**: `-004`, `-008`.
+- **Scope**: `POST/GET /v1/me/fx/conversions` (transaction T-a, `PHASE_9_PLAN.md` §12.3); `fx V006` (`trade` with
+  copies, the residual `CHECK`, the `executed_rate = customer_rate` equality and the freeze; `cover`
+  and `cover_attempt` with the full machine, born `DISPATCHED` with `T₁` and the permit); ledger
+  `V020` (`FX_SPREAD_REVENUE`; `closedToFreeAdjustments()` binding restated); the first posters of
+  `FX_POSITION` and `ROUNDING_RESIDUAL`; `theSeamsStaySeams` retired; destination wallet opened if
+  absent in T-a's own transaction (`ConversionParticipants.openIfAbsent`, D28);
+  `RatesAreNeverClientSuppliedTest` and the OpenAPI guard extended to the conversion request;
+  `FxBooksHaveOnePosterTest`; `NoProviderPortInConversionTest`; a post-commit nudge to the cover
+  dispatcher.
+- **Out of scope**: sending the cover (`-012`); cross-border.
+- **Domain changes**: `FxTrade`, `ConversionLines`.
+- **Persistence**: `fx V006`, ledger `V020`.
+- **APIs**: conversions POST/GET.
+- **Events**: `FxQuoteAccepted`, `FxTradeExecuted`.
+- **Financial impact**: customer balances change at commit; `FX_POSITION` opens; margin and residual
+  are recognised.
+- **Invariants**: `INV-FX-01`, `-03`, `-04`, `-05`, `-07`, `-09`, `INV-BAL-04`, `INV-LED-01`,
+  `INV-ACC-01`.
+- **Distributed-system concerns**: ten acceptors with the same and different keys → one trade, entry
+  and cover row; the lock-bypass probe on `UNIQUE (trade.quote_id)`; the expiry race over 200 quotes
+  × (10 + 10); ten conversions into a new currency → one wallet, no aborted transaction
+  (`WalletOpenIfAbsentRaceDatabaseTest`'s conversion case). `PASS` on those tests.
+- **Idempotency**: `fx.convert` per principal; posting key `fx-trade:<id>`.
+- **Consistency**: strong (one transaction).
+- **Atomicity**: failure injection at every step leaves nothing.
+- **Failure handling**: insufficient funds → `422` with the quote reusable; pair suspended → `409`.
+- **Security**: closed body; ownership.
+- **Audit**: `FX_CONVERSION_EXECUTED`.
+- **Observability**: `finapp.fx.trade`, `finapp.fx.residual`.
+- **Reconciliation implications**: none external; the FX books are closed to free adjustment.
+- **Tests**: `PHASE_9_PLAN.md` §12.4(a)(d)(e) posted exactly; scenarios 1 and 2; a `MANUAL` line on each of the five
+  purposes refused at the domain and the trigger; the static rules.
+- **Acceptance criteria**: entries are exact per currency; the destination wallet is opened once;
+  scenarios 1 and 2 are counted.
+- **Definition of done**: `DOD-FIN` (+F1–F8), `DOD-API`, `DOD-EVENT`. **Risk**: High. **Cx**: L.
+
+**P9-TSK-010 — Counterparty-keyed clearing positions** — `PLANNED`
+- **Objective**: give each external counterparty its own clearing position, without touching any
+  existing clearing.
+- **Bounded context**: `ledger`, `settlement`, `reconciliation`, `app`.
+- **Dependencies**: `-003`.
+- **Scope**: ADR-0078: ledger `V021` (`OwnerKind.COUNTERPARTY`; `ledger.counterparty`; the four
+  constraints restated; the `owner_ref` trigger); `ChartOfAccounts.resolve(purpose, counterparty,
+  currency)`; `CounterpartyChartGuard`; the counterparty part of `OperationalChartMigrationTest`;
+  `SettlementSourceDescriptor.settledCounterparty` and `SettlementSources.of` keyed; settlement
+  recognitions resolved by counterparty; `PositionProof` `PROVEN` derived from the register and
+  keyed; completeness over every account of a reconciled purpose;
+  `EverySettlingPositionHasASourceTest` per counterparty; the `CLEARING_POSITIONS` rule amended;
+  `CounterpartyClearingIsNamedByDeclarationsTest`.
+- **Out of scope**: the first counterparty purposes (`-011`, `-014`).
+- **Domain changes**: `Counterparty`; `OwnerKind.COUNTERPARTY`.
+- **Persistence**: ledger `V021`.
+- **APIs**: none.
+- **Events**: none.
+- **Financial impact**: none moves; positions can never net counterparties.
+- **Invariants**: `INV-RAIL-04` and `INV-SET-05` (restated), `INV-LED-04`, `INV-LED-06`.
+- **Distributed-system concerns**: accounts are seeded by migration only, so there is no runtime
+  race; seeded ids sort first (asserted). `PASS` on the ordering and guard tests.
+- **Idempotency**: migrations.
+- **Consistency**: the startup guard.
+- **Atomicity**: migration.
+- **Failure handling**: a missing registry row or account refuses startup.
+- **Security**: SELECT/INSERT grants only.
+- **Audit**: none.
+- **Observability**: none.
+- **Reconciliation implications**: proofs are keyed per (purpose, counterparty, currency); existing
+  positions are unchanged.
+- **Tests**: the Phase 8 storm, proof-group and settlement suites re-run green; a planted second
+  source on one counterparty refuses startup; the trigger refuses an unknown counterparty by raw
+  SQL; seed ordering.
+- **Acceptance criteria**: existing proofs are byte-unchanged in verdict; every planted violation is
+  refused.
+- **Definition of done**: `DOD-FIN`, `DOD-ARCH`. **Risk**: High. **Cx**: M.
+
+**P9-TSK-011 — The FX provider's position, source and vocabulary** — `PLANNED`
+- **Objective**: give `fx-sim-a` its settling position, settlement source, format and reconciliation
+  vocabulary, before anything posts to it.
+- **Bounded context**: `ledger`, `settlement`, `reconciliation`, `fx`, `app`.
+- **Dependencies**: `-006`, `-009`, `-010`.
+- **Scope**: ledger `V022` (`FX_PROVIDER_CLEARING` COUNTERPARTY ASSET/DEBIT; the `fx-sim-a` registry
+  row and five accounts below the ceiling; it joins `reconciledPositions()`; the binding restated);
+  settlement `V015` (`FX_PROVIDER_REPORT`; `SIM_FX_CSV`, pure screen/parse, one currency per file;
+  line types `FX_SOLD`/`FX_BOUGHT`/`FX_FEE`; reference kinds `COVER_REF`/`FX_TRADE_REF`; the
+  appended `RejectionCode.CURRENCY_NOT_SETTLED` and the descriptor's settled currencies, so a file
+  in a currency the counterparty does not settle is rejected and retained; source row
+  `fx-sim-a.trade-report`); reconciliation `V020` (`FX_SELL_LEG`/`FX_BUY_LEG`, key `COVER_REF`;
+  `FX_SOLD`, `FX_BOUGHT` and `FX_FEE` in `external_item_line_type`, `rule_line_type` and
+  `RuleSetProposal.RULE_LINE_TYPES`; **`FX_FEE` a priced fee line, in
+  `RuleSetProposal.FEE_LINE_TYPES` and the `provider_fee_line_type` `CHECK`**; causes
+  `FX_LEG_DIFFERS`/`VALUE_DATE_DIFFERS`, the pairing trigger and the `V014` list restated; mirrors);
+  the `FxSettlementExpectations` port; **the first-version path in `RuleSetAdministration`,
+  `RuleSetMissing`, and `finapp.reconciliation.rule_set.missing`**; the FX source's v1 (`PHASE_9_PLAN.md` §12.9.2: legs,
+  the `FX_FEE` rule and its 0 + 0 schedule in all five currencies, O7) activated by two controllers;
+  the `SettlementBeans` descriptor (`settledCounterparty` `fx-sim-a`) and pull beans; the `FXA-`
+  remittance attribution; `FINAPP_FX_REPORT_KEY`; `JdbcInternalReferenceLookup` over cover attempts;
+  **`ReconciliationNeverConvertsTest`** (no `ExchangeRate`, and no class that can reach one, in
+  `settlement` or `reconciliation`), with a planted use refused.
+- **Out of scope**: cover postings (`-012`); matching to cash (`-013`).
+- **Domain changes**: the FX source; the first-version rule-set path.
+- **Persistence**: ledger `V022`, settlement `V015`, reconciliation `V020`.
+- **APIs**: the existing rule-set route admits version 1.
+- **Events**: none new.
+- **Financial impact**: the position exists; nothing posts.
+- **Invariants**: `INV-SET-05`, `INV-SET-07`, `INV-RAIL-04`, `INV-AUD-04`, `INV-REC-06`…`-08`.
+- **Distributed-system concerns**: ten first-version proposers → one; ten approvers → one
+  activation; a file with no active rule set → `RuleSetMissing` with backoff, never an infinite
+  retry (counted). `PASS` on those tests.
+- **Idempotency**: existing ingestion; keyed rule-set acts.
+- **Consistency**: startup refuses without the source.
+- **Atomicity**: existing.
+- **Failure handling**: a missing rule set raises a typed refusal and the gauge alerts.
+- **Security**: a confined report key; upload with attestation and pull (existing).
+- **Audit**: rule-set acts (existing actions).
+- **Observability**: `rule_set.missing`; the existing source meters for the new source.
+- **Reconciliation implications**: the new source is composed, with zero lines matched.
+- **Tests**: a golden file and a fault test per field; a file in an unsettled currency rejected
+  `CURRENCY_NOT_SETTLED`, nothing posted; startup refused without the source; four-eyes at each rank
+  for version 1; the `FX_FEE` schedule admitted by the proposal and a reported FX fee judged against
+  it (`FEE_MISMATCH` above zero); the `RuleSetMissing` path; the mirror guard;
+  `ReconciliationNeverConvertsTest` with its planted violation.
+- **Acceptance criteria**: startup composes the source; files are accepted with nothing posted; the
+  first rule set is activated by two persons.
+- **Definition of done**: `DOD-FIN`, `DOD-SEC`, `DOD-API`. **Risk**: Medium. **Cx**: L.
+
+**P9-TSK-012 — The FX cover** — `PLANNED`
+- **Objective**: cover each accepted quote with the provider exactly once, however the provider
+  answers.
+- **Bounded context**: `fx`, `ledger`, `app`.
+- **Dependencies**: `-009`, `-011`.
+- **Scope**: `PHASE_9_PLAN.md` §12.5 entire: `FxCoverSchedule`; `FxCoverOutcomes` (answer, inquiry and hinted inquiry
+  through one class); the database-stamped permit trigger; re-sending the same `T`; the fresh firm
+  quote and requote after a definitive rejection; `fx V007` `cover_execution` and the realised
+  result; the cover entry closing the plan's legs ± `FX_REALISED_*` (ledger `V023`); the leg
+  expectations opened through `FxSettlementExpectations`; the FX webhook door (HMAC, freshness,
+  evidence first, inbox, hint → inquiry) with `FINAPP_FX_WEBHOOK_KEY`.
+- **Out of scope**: unwinds (`-021`); abandonment (`-020`).
+- **Domain changes**: the cover's behaviour; `CoverLines`.
+- **Persistence**: `fx V007`, ledger `V023`.
+- **APIs**: `POST /v1/providers/fx/webhooks`.
+- **Events**: `FxCoverExecuted`, `FxCoverRejected`, `FxCoverRequoted` (causation `FxQuoteAccepted`
+  for a cover; the abandonment or reversal for an unwind, `PHASE_9_PLAN.md` §10).
+- **Financial impact**: `FX_POSITION` closes; the provider receivable/payable is recognised;
+  realised P&L on slippage.
+- **Invariants**: `INV-FX-06` (closing), `INV-FX-08`, `INV-FX-09`, `INV-PAY-04`, `INV-LIFE-03`.
+- **Distributed-system concerns**: ten dispatchers plus a lost response plus ten inquirers → one
+  provider execution and one entry; ten appliers of one rejection → one successor; the lock-bypass
+  probe on `cover_execution` (counted). `PASS` on those tests.
+- **Idempotency**: `T` per attempt; provider dedupe; the posting key; the execution PK.
+- **Consistency**: the platform's leg is eventual, and explained by the books proof.
+- **Atomicity**: the outcome transaction under failure injection.
+- **Failure handling**: `UNKNOWN` → inquiry; `REJECTED` → requote; an implausible requote is held
+  and alerted; an off-plan execution is flagged.
+- **Security**: callbacks are hints; a forged but signed callback moves nothing (a planted test).
+- **Audit**: cover executed or requoted, acting-only.
+- **Observability**: `finapp.fx.cover`, `.cover.unknown.*`, `.cover.open.age`, `.cover.latency`,
+  `finapp.fx.cover.sweeper.enabled`.
+- **Reconciliation implications**: leg expectations keyed `COVER_REF` on
+  `FX_PROVIDER_CLEARING(fx-sim-a)`.
+- **Tests**: scenarios 3, 4 and 6 (FX); `PHASE_9_PLAN.md` §12.4(b)(f) posted exactly; every edge exhaustively.
+- **Acceptance criteria**: the simulator's execution count equals the execution facts and the trades
+  under every fault; a new reference appears only after a definitive rejection.
+- **Definition of done**: `DOD-FIN`, `DOD-SEC`, `DOD-API` (the FX webhook route), `DOD-EVENT`.
+  **Risk**: High. **Cx**: L.
+
+**P9-TSK-013 — FX explained and settled to cash** — `PLANNED`
+- **Objective**: prove the FX books, and carry the FX legs to cash with every discrepancy typed.
+- **Bounded context**: `fx`, `reconciliation`, `app`.
+- **Dependencies**: `-012`.
+- **Scope**: `FxBooksProof` and `FxPlanVerification` (report-only, `REPEATABLE READ`, verdict
+  gauges, a CRITICAL log on divergence; the internal rate and disclosed margin replayed too);
+  `FX_INVESTIGATE` (granted to `RECONCILIATION_OPERATOR`) and the audited trade-provenance read; end
+  to end: provider EUR and USD files → items allocated to `FX_SELL_LEG`/`FX_BUY_LEG` → REMITTANCE →
+  bank cash; **the cause selection** in `Matching` (`differenceCause` names `FX_LEG_DIFFERS` for the
+  FX leg kinds; the timing verdict names `VALUE_DATE_DIFFERS` for them, after the
+  open-`MISSING_EXTERNAL` rule and before `CYCLE_MISMATCH`/`LATE_MATCH`, `PHASE_9_PLAN.md` §12.9.3); **the paired-leg
+  escalation** in `ReconciliationSweep` (an overdue FX leg whose paired leg is allocated raised to
+  CRITICAL under namespace 4 by the expected-value step, with a `SEVERITY_ESCALATED` event detailed
+  `PAIRED_LEG_ALLOCATED`); the mismatch battery.
+- **Out of scope**: corridor settlement.
+- **Domain changes**: the proofs.
+- **Persistence**: none: `V004`'s `break_event` already admits `SEVERITY_ESCALATED` with a free
+  reason and detail, and the causes arrived with reconciliation `V020` (`-011`).
+- **APIs**: `GET /v1/operator/fx/trades/{id}/provenance`.
+- **Events**: none new.
+- **Financial impact**: `FX_PROVIDER_CLEARING` is discharged in two hops.
+- **Invariants**: `INV-FX-05`, `INV-FX-06`, `INV-SET-02`, `INV-REC-06`…`-09`, `INV-MON-04`.
+- **Distributed-system concerns**: the proofs are report-only; matching runs under the existing
+  namespace 4. One new contended write, the escalation: ten sweepers over one overdue FX leg whose
+  pair is allocated → one severity change and one `SEVERITY_ESCALATED` event (counted, the existing
+  escalation's arbiters: namespace 4 first, the expected-value step, the severity-only-rises
+  trigger). `PASS` on that test and the existing counted tests.
+- **Idempotency**: existing.
+- **Consistency**: snapshot proofs.
+- **Atomicity**: existing.
+- **Failure handling**: a divergence is CRITICAL and sets the gauge.
+- **Security**: audited `FX_INVESTIGATE` reads.
+- **Audit**: the provenance read.
+- **Observability**: `finapp.fx.proof`, `finapp.fx.plan.verdict`.
+- **Reconciliation implications**: scenario 10 (FX).
+- **Tests**: a planted raw line flips the proof; a perturbed rate flips the plan verdict; scenario
+  10 (FX), with each cause chosen by its rule and precedence (an FX leg off by one minor unit is
+  `FX_LEG_DIFFERS`, not `AMOUNT_DIFFERS`; a value date beyond tolerance is `VALUE_DATE_DIFFERS`, and
+  nothing when an open `MISSING_EXTERNAL` states it); the ten-sweeper escalation race; at rest
+  `FX_POSITION` and `FX_PROVIDER_CLEARING` are 0.
+- **Acceptance criteria**: the proofs are clean, and flipped by each plant; every FX discrepancy is
+  typed as `PHASE_9_PLAN.md` §12.9.3 says.
+- **Definition of done**: `DOD-FIN`, `DOD-API` (the provenance route), `DOD-OBS`. **Risk**: Medium.
+  **Cx**: M.
+
+**P9-TST-002 — The value-preservation and rounding battery** — `PLANNED`
+- **Objective**: prove at volume that conversion creates and destroys no value, across 0/2/3 minor
+  units.
+- **Bounded context**: `fx`, `ledger`, `reconciliation`.
+- **Dependencies**: `-013` (runnable from M9.4).
+- **Scope**: ≥ 10,000 conversions over all 20 directional pairs and both fixed sides, amounts from
+  minimum to maximum, some covers rejected and requoted; then, in one snapshot, every identity of
+  `PHASE_9_PLAN.md` §13; golden replay of every quote.
+- **Out of scope**: cross-border (covered by the storm).
+- **Domain changes**: none.
+- **Persistence**: none.
+- **APIs**: existing.
+- **Events**: existing.
+- **Financial impact**: proof only.
+- **Invariants**: `INV-ACC-01`, `INV-FX-01`, `-03`…`-07`, `INV-BAL-03`.
+- **Distributed-system concerns**: run with ten concurrent converters. `PASS` on the counts.
+- **Idempotency**: replay `IDENTICAL`.
+- **Consistency**: one snapshot.
+- **Atomicity**: n/a.
+- **Failure handling**: requotes injected.
+- **Security**: n/a.
+- **Audit**: n/a.
+- **Observability**: the proof gauges read 0 throughout.
+- **Reconciliation implications**: FX legs matched to cash.
+- **Tests**: the battery itself, with MUTATION_TESTING §4 rows.
+- **Acceptance criteria**: trial balance zero in all five currencies; every |r| ≤ 1 with both signs
+  present; the residual, margin and position identities exact; plan verification clean.
+- **Definition of done**: `DOD-TEST`, `DOD-FIN`. **Risk**: Medium. **Cx**: L.
+
+**P9-TSK-014 — The corridor rail, its position and its source** — `PLANNED`
+- **Objective**: declare the corridor rail truthfully, with its counterparty position, settlement
+  source and per-rail operations, before anything is sent.
+- **Bounded context**: `payments`, `ledger`, `settlement`, `reconciliation`, `app`.
+- **Dependencies**: `-010`, `-011`.
+- **Scope**: the `CorridorRail` port (`PHASE_9_PLAN.md` §3's ports table); `RefundMode.NONE` with its coherence rule and
+  `RoutingRejection.DIRECTION_UNSUPPORTED` (payments `V024` regenerating the enum `CHECK`s);
+  `CorridorDeclaration`; `SimulatedCorridorEngine` and the `corridor-sim-a` adapter (exchange
+  returning attested attributes and a total payee-check mapping; send deduped on `E` answering
+  `Received`/`Accepted`; inquiry with delivery and return facts; recall; signed callbacks; faults; a
+  counter); ledger `V024` (`CORRIDOR_CLEARING` COUNTERPARTY LIABILITY/CREDIT; the `corridor-sim-a`
+  registry row and accounts per declared currency; it joins `reconciledPositions()`; the binding
+  restated); the **`RailOperations` directory** (`Withdrawals` and `PaymentConfirmation` become
+  lookups); `RailMoneySemanticsArePinnedTest` and `RailVocabularyIsConfinedTest` rows; settlement
+  `V016` (`SIM_CORRIDOR_CSV` under `PAYOUT_PROVIDER_REPORT`, one currency per file, a currency
+  outside `{USD, JPY, BHD}` rejected `CURRENCY_NOT_SETTLED`; source row
+  `corridor-sim-a.settlement`); **the corridor source's composition**: the `SettlementBeans`
+  descriptor (`settledCounterparty` `corridor-sim-a`, its settled currencies), the pull beans, the
+  `XBA-` remittance attribution, a golden file and a fault test per field; reconciliation `V021`
+  (`CROSSBORDER_PAYOUT`, `CROSSBORDER_RETURN` and their mirrors); the corridor source's v1 through
+  the first-version door (`PHASE_9_PLAN.md` §12.9.2: payout keys, the operation-anchored return rule, the `PAYOUT_FEE`
+  rule and its schedule 0 + USD 120 / JPY 180 / BHD 450, O7); **`WaitingPayoutReturns` scoped by
+  source** (the lifecycle document §4: the merchant `PayoutReturnSweep` re-composed with the `PAYOUT_CLEARING` sources;
+  the corridor scope ready for `-023`) and **`JdbcInternalReferenceLookup` scoped by source** for
+  `END_TO_END_REF` and `PAYOUT_PROVIDER_REF`; `FINAPP_CORRIDOR_PROVIDER_KEY` and
+  `FINAPP_CORRIDOR_REPORT_KEY`; the contract battery.
+- **Out of scope**: beneficiaries; outbound credits (`-019`).
+- **Domain changes**: the rail declaration; `RefundMode.NONE`; the directory.
+- **Persistence**: payments `V024`, ledger `V024`, settlement `V016`, reconciliation `V021`.
+- **APIs**: none.
+- **Events**: none.
+- **Financial impact**: the position exists; nothing posts.
+- **Invariants**: `INV-RAIL-01`, `INV-RAIL-04`, `INV-PAY-03`, `INV-SET-05`, `INV-REV-03`.
+- **Distributed-system concerns**: a stateless adapter and the startup guard; the scoped reader and
+  lookup add no shared state (a filter on rows already read lock-free, then re-read under the item's
+  share lock). `PASS` (no new contended state; the merchant sweep's existing counted tests re-run
+  under its scope).
+- **Idempotency**: provider dedupe on `E`, contract-tested.
+- **Consistency**: startup composes the rail, the position and the source together.
+- **Atomicity**: n/a.
+- **Failure handling**: total mappings; startup refused without the source or the accounts.
+- **Security**: confined keys; transport guard; redaction.
+- **Audit**: none.
+- **Observability**: none yet (`-020`).
+- **Reconciliation implications**: the source is composed, with zero lines matched; a merchant
+  return and a corridor return can never be mistaken for each other, whatever their references.
+- **Tests**: coherence (`NONE` only on `PUSH`); a `PAY_IN` rule naming the rail refused; a
+  withdrawal routed to the corridor rail refused with nothing sent; the corridor format's golden
+  file and a fault test per field; a EUR corridor file rejected `CURRENCY_NOT_SETTLED`; startup
+  refused without the source; **identical provider references in the merchant payout source and the
+  corridor source**: the merchant sweep's page holds only its own line and the lookup types each
+  line in its own family; the contract battery; the Phase 7 storm and the merchant payout-return
+  suite re-run.
+- **Acceptance criteria**: startup composes the rail and its source; nothing posts; every planted
+  misroute is refused; no reader or lookup crosses from one source family to the other.
+- **Definition of done**: `DOD-SEC`, `DOD-ARCH`, `DOD-FIN`. **Risk**: Medium. **Cx**: L.
+
+**P9-TSK-015 — The corridor policy and availability** — `PLANNED`
+- **Objective**: corridors as four-eyes, versioned data, discoverable by customers.
+- **Bounded context**: `crossborder`, `identity`.
+- **Dependencies**: `-007` (the role), `-014`.
+- **Scope**: `crossborder V002` (`corridor_policy_version`; `corridor` with S, D, country, ordered
+  candidate rails, fee as fixed `Money` + `Margin` + rounding name, maximum per payment in D,
+  screening validity, required data and delivery estimate; `corridor_policy_event`;
+  `corridor_availability`; `corridor_enable_request`, the lifecycle document §3.10); the machine (no seed);
+  `CROSSBORDER_ADMINISTER`; operator routes; `GET /v1/me/cross-border/corridors`; the
+  `CorridorDirectory` port in `app`; `CrossborderAuditAction`; v1 per O7, activated by two
+  controllers.
+- **Out of scope**: beneficiaries and payments.
+- **Domain changes**: `CorridorPolicyVersion`, `Corridor`, availability.
+- **Persistence**: `crossborder V002`.
+- **APIs**: corridor-policy and availability routes; discovery.
+- **Events**: `crossborder.CorridorPolicyActivated`; `crossborder.CorridorAvailabilityChanged`.
+- **Financial impact**: sets the transfer fees and limits that offers freeze and completions post;
+  `DOD-FIN` applies to what a version admits (fees as `Money` + `Margin` with a named rounding,
+  limits priced in `D`).
+- **Invariants**: `INV-HIST-04`, `INV-AUD-04`.
+- **Distributed-system concerns**: ten approvers → one activation; ten approvers of one enable
+  proposal → one enabling fact (counted). `PASS`.
+- **Idempotency**: keyed.
+- **Consistency**: one `ACTIVE` version.
+- **Atomicity**: the activation transaction.
+- **Failure handling**: a rail undeclared or not covering D, or required data unsatisfiable, is
+  refused at proposal and at approval.
+- **Security**: `RoleNameTest`; negative tests; the availability asymmetry.
+- **Audit**: proposals, approvals, rejections and availability changes, each with a reason.
+- **Observability**: none.
+- **Reconciliation implications**: none.
+- **Tests**: each four-eyes rank alone, for the policy and for the enable proposal; every invalid
+  edge of both machines by the domain and raw SQL; v1's fee and limit content; discovery filtered by
+  the build's declared rails.
+- **Acceptance criteria**: no corridor is offered without two named persons.
+- **Definition of done**: `DOD-FIN`, `DOD-SEC`, `DOD-API`, `DOD-EVENT`. **Risk**: Low. **Cx**: M.
+
+**P9-TSK-016 — Counterparty screening in kyc, and the Phase 13 seams** — `PLANNED`
+- **Objective**: kyc screens counterparties at transaction time; a hit waits for a person; the risk
+  and limit seams are reserved.
+- **Bounded context**: `kyc`, `identity`, `crossborder`, `app`.
+- **Dependencies**: `-001`.
+- **Scope**: `kyc V009` `counterparty_screening` (the subject encrypted with AAD bound to the
+  screening id; evidence; review; attempts; the beneficiary's payee verdict as handed in; on every
+  outcome `decision_basis` (`AUTOMATIC` | `REVIEWER`), `policy_version` and `decided_at`, with
+  `CHECK ((decision_basis = 'REVIEWER') = (decided_by IS NOT NULL))`, a reason required with
+  `REVIEWER`, and no `AUTOMATIC` `CLEAR` without a payee `MATCH`); `CounterpartyScreeningProvider`
+  on `ScreeningAdapter` (a counterparty subject); the `CounterpartyScreenings` service (screen,
+  rescreen, read clearance; a provider `CLEAR` with an unverified payee recorded as evidence and
+  decided `IN_REVIEW`, reason `PAYEE_UNVERIFIED`); the review door under
+  `COUNTERPARTY_SCREENING_REVIEW` (→ `KYC_REVIEWER`); the `ScreeningOutcomeListener` port (refusing
+  default until `-017`); `CounterpartyScreeningRetrySchedule`; `crossborder`'s
+  `CrossBorderLimitCheck`, `CrossBorderRiskDecision`, `CrossBorderVerdict` and
+  `PermitAllUntilPhase13`; `INV-KYC-01` and `INV-KYC-04` extended.
+- **Out of scope**: beneficiaries (`-017`); ongoing rescreening (Phase 13).
+- **Domain changes**: the `CounterpartyScreening` aggregate; the seams.
+- **Persistence**: `kyc V009`.
+- **APIs**: `POST /v1/operator/kyc/counterparty-screenings/{id}/decision`.
+- **Events**: `kyc.CounterpartyScreeningDecided`.
+- **Financial impact**: none.
+- **Invariants**: `INV-KYC-01`, `INV-KYC-04`, `INV-KYC-05`, `INV-AUD-01`.
+- **Distributed-system concerns**: screening answers vs reviews meet on row conditionals; ten
+  reviewers → one decision (counted). `PASS`.
+- **Idempotency**: the review is keyed; screening requests carry an id.
+- **Consistency**: decision and listener commit in one transaction (T-e).
+- **Atomicity**: T-e.
+- **Failure handling**: a provider that is down gives `UNAVAILABLE`, retried; nothing is cleared.
+- **Security**: the name is encrypted RESTRICTED-PII; the reviewer permission; tipping-off.
+- **Audit**: `COUNTERPARTY_SCREENING_DECIDED`, with a reason.
+- **Observability**: `finapp.kyc.counterparty.screening`, `.review.pending`, `.review.age`,
+  `finapp.kyc.counterparty.sweeper.enabled`.
+- **Reconciliation implications**: none.
+- **Tests**: a hit never auto-clears or auto-rejects; a provider `CLEAR` with a `NO_MATCH` or
+  `UNAVAILABLE` payee goes `IN_REVIEW`, never `CLEAR`; the decision-basis `CHECK`s by raw SQL (a
+  `REVIEWER` outcome without a person, an `AUTOMATIC` `CLEAR` without a payee `MATCH`); every
+  outcome carries its basis, policy version and time; a decision needs a reason; the unavailable
+  path; a seam `REFUSE` writes nothing; the needle (kyc part).
+- **Acceptance criteria**: no clearance exists without `CLEAR` or a person's `RELEASE`; the seams
+  are required parameters with reserved codes.
+- **Definition of done**: `DOD-SEC`, `DOD-API`, `DOD-EVENT`, `DOD-DOMAIN`. **Risk**: Medium. **Cx**:
+  M.
+
+**P9-TSK-017 — Cross-border beneficiaries** — `PLANNED`
+- **Objective**: register a beneficiary abroad by provider reference, select its corridor provider,
+  and screen it before it can be paid.
+- **Bounded context**: `crossborder`; `payments` and `kyc` through ports.
+- **Dependencies**: `-015`, `-016`.
+- **Scope**: `crossborder V003` (`beneficiary`; `corridor_selection` and its steps); the
+  registration door (the grant exchanged through `CorridorDirectory` with no connection held, 3 s;
+  attested attributes; the payee check, the customer's acknowledgement whenever it is not `MATCH`,
+  and the verdict handed to kyc so a non-`MATCH` payee is always reviewed; the nickname shape
+  screen); selection pinned and recomputable; synchronous screening through `CounterpartyScreening`,
+  3 s; `ScreeningOutcomeListener` implemented in `app` (a no-op on a `REVOKED` beneficiary); the
+  machine and shaped statuses, with **revocation from `PENDING_SCREENING`, `IN_REVIEW`, `BLOCKED`
+  and `ACTIVE`, answering one identical response from every state**; step-up; `INV-RAIL-03`
+  restated, with its guard extended; the needle (registration part).
+- **Out of scope**: offers and payments.
+- **Domain changes**: the `CrossBorderBeneficiary` aggregate; `CorridorSelection`.
+- **Persistence**: `crossborder V003`.
+- **APIs**: beneficiaries POST/GET/revocation.
+- **Events**: `BeneficiaryRegistered`, `Activated`, `Blocked`, `Revoked` (from any non-terminal
+  state).
+- **Financial impact**: none.
+- **Invariants**: `INV-XB-02`, `INV-RAIL-02`, `INV-RAIL-03`, `INV-KYC-05`.
+- **Distributed-system concerns**: ten registrations with one key → one beneficiary (the grant is
+  single-use, plus the claim); revocation vs a screening or review decision, both orders and raced,
+  meeting on the beneficiary row and conditionals: a revoked beneficiary never becomes `ACTIVE`
+  (counted). `PASS`.
+- **Idempotency**: keyed per principal.
+- **Consistency**: status follows screening in T-e.
+- **Atomicity**: the registration transaction after the exchange.
+- **Failure handling**: provider down → `503`; screening unavailable → `PENDING_VERIFICATION`,
+  unpayable.
+- **Security**: no identifier and no name stored outside kyc (the needle); tipping-off responses
+  byte-identical at the read and at the revocation door, across screening, review and block; a
+  non-`MATCH` payee never auto-cleared; step-up.
+- **Audit**: registered, revoked.
+- **Observability**: none new.
+- **Reconciliation implications**: none.
+- **Tests**: selection recomputed from its row; the needle; the tipping-off comparison at the read
+  and the revocation door; revocation from each of the four states with one byte-identical response,
+  and the review's later outcome leaving the beneficiary `REVOKED`; a `NO_MATCH` payee with a clear
+  name screen ⇒ `IN_REVIEW` (`PENDING_VERIFICATION`), never `ACTIVE` without a person; every edge
+  exhaustively.
+- **Acceptance criteria**: a hit or an unverified payee leads to `IN_REVIEW` with a shaped status;
+  revocation works from every non-terminal state and reveals nothing; the selection recomputes
+  exactly.
+- **Definition of done**: `DOD-SEC`, `DOD-API`, `DOD-EVENT`, `DOD-DOMAIN`. **Risk**: Medium. **Cx**:
+  L.
+
+**P9-TSK-018 — Cross-border offers** — `PLANNED`
+- **Objective**: an offer disclosing the rate, fee, total and guaranteed destination amount, frozen.
+- **Bounded context**: `crossborder`; `fx` through the port.
+- **Dependencies**: `-008`, `-017`.
+- **Scope**: the `CrossBorderFx` port (`beginQuote` in crossborder's Tx1, the firm-quote step on the
+  wire, the insert in Tx2; the `app` implementation runs fx's steps under crossborder's claim, on
+  its connection); `crossborder V004` `offer_request` (`QR`, beneficiary, the pinned
+  `corridor_policy_version_id`) and `payment_offer` (frozen: quote id `UNIQUE`, beneficiary,
+  corridor version, fee, total debit, guaranteed destination, estimate); **the sequence of `PHASE_9_PLAN.md` §12.3**:
+  Tx1 claim (owner, beneficiary payable `FOR SHARE`, corridor available, both versions pinned,
+  fixed-leg bounds, cap pre-check, and the re-screen's screening row when `clear_until` has lapsed),
+  the wire re-screen (3 s), a T-e transaction on `HIT`, `INDETERMINATE` or an unverified payee that
+  moves the beneficiary `IN_REVIEW` and completes the claim `FAILED 422 BeneficiaryNotPayable` (or
+  `503 ScreeningUnavailable` on `UNAVAILABLE`), the wire firm quote (2 s per candidate, 5 s total),
+  then Tx2 inserting quote and offer together (`409 fx.PolicyStale` / `409 crossborder.PolicyStale`
+  when a pinned version was superseded); the fee (fixed + `Margin` × customer source, a named
+  rounding, computed on `Sc` when the destination is fixed); the corridor's static limit; `POST
+  /v1/me/cross-border/quotes` and **`GET /v1/me/cross-border/quotes/{id}`** (owner, uniform `404`,
+  the quote read through `CrossBorderFx`); `RatesAreNeverClientSuppliedTest` and the OpenAPI guard
+  extended to the quote request; the needle (quote leg).
+- **Out of scope**: authorization.
+- **Domain changes**: `PaymentOffer`.
+- **Persistence**: `crossborder V004`.
+- **APIs**: `POST /v1/me/cross-border/quotes`, `GET /v1/me/cross-border/quotes/{id}`.
+- **Events**: `fx.FxQuoteIssued` (purpose `CROSS_BORDER`).
+- **Financial impact**: none (no hold).
+- **Invariants**: `INV-FX-02`, `INV-FX-04`, `INV-XB-02` (payability judged in-lock at the quote's
+  Tx1, and a re-screen's hit refusing the quote in T-e), `INV-XB-03`, `INV-HIST-04`.
+- **Distributed-system concerns**: ten same-key requests → one quote, one offer, one provider call;
+  the cap is shared with conversions; a re-screen's T-e racing a review decision on the same
+  screening meets on the screening row (counted). `PASS`.
+- **Idempotency**: `crossborder.quote` per principal, claimed before the call.
+- **Consistency**: offer and quote commit in one transaction.
+- **Atomicity**: Tx2 under failure injection.
+- **Failure handling**: screening unavailable → `503`; not payable, or a re-screen hit → `422
+  BeneficiaryNotPayable`, nothing priced; limit → `422`; a version superseded between the
+  transactions → `409 PolicyStale`; a crash between any two steps → a takeover by the same key
+  converging on `QR`.
+- **Security**: confidentiality; closed body.
+- **Audit**: none (an offer is not privileged).
+- **Observability**: the quote counters (`pair` covers both purposes).
+- **Reconciliation implications**: none.
+- **Tests**: the fee frozen; both sides; the limit; a stale-clearance re-screen (clear → priced; hit
+  → refused with the beneficiary `IN_REVIEW`, no provider quote requested); a corridor or pricing
+  version activated between the transactions; `BeneficiaryNotPayable` byte-identical across
+  `PENDING_SCREENING`, `IN_REVIEW`, `BLOCKED` and `REVOKED` at the quote door; the offer read back
+  by its owner and `404` to another; the needle (quote leg); the extended client-rate guards.
+- **Acceptance criteria**: the offer's figures equal the later posting (asserted in `-020`); the fee
+  is computed once.
+- **Definition of done**: `DOD-API`, `DOD-FIN`, `DOD-EVENT`, `DOD-SEC`. **Risk**: Medium. **Cx**: M.
+
+**P9-TSK-019 — Cross-border authorization and dispatch** — `PLANNED`
+- **Objective**: turn an offer into a held, dispatched, covered payment in one transaction.
+- **Bounded context**: `crossborder`, `payments`, `fx`, `ledger`.
+- **Dependencies**: `-012`, `-018`.
+- **Scope**:
+  - payments `V025`: `outbound_credit` (frozen amounts, permit trigger, `dispatch_key`, subject,
+    recall columns), routing's third subject (`routing_decision.outbound_credit_id`, XOR of three;
+    `destination_country`; per-step reachability), `RoutingInputs` per-candidate reachability; **the
+    routing-rule matcher** `routing_rule.requires_destination_country` (default `false`, so every
+    existing version recomputes unchanged), `RoutingRule` and `RoutingPolicyVersion.decide` taught
+    it, and the operator door's request body given the optional `requiresDestinationCountry`
+    (additive OpenAPI); **`provider_evidence.outbound_credit_id`**, the sixth subject, with
+    `provider_evidence_has_at_most_one_subject` restated over six (the `V023` pattern);
+  - routing policy v5 through ADR-0060's existing single-person door `POST
+    /v1/operator/routing-policy/versions` (`PAYMENT_ROUTING_ADMINISTER`, a reason, audited; D26),
+    never a migration;
+  - `CrossBorderExecution` in `app` (`route`, then `dispatchWithin`, with the hold under the wallet
+    lock);
+  - `crossborder V005` `payment` and `payment_event`;
+  - Tx1 per `PHASE_9_PLAN.md` §12.8, with the seams and step-up and `acceptWithin` taking no claim of its own;
+    **`INV-XB-02` judged in-lock** (the beneficiary `FOR SHARE`: `ACTIVE` and clear, else one
+    byte-identical `BeneficiaryNotPayable`; a lapsed clearance `409 ScreeningRequired`); the cover
+    row born;
+  - the post-commit sends, **cover first** (2 s) then corridor (3 s), `PHASE_9_PLAN.md` §12.8; takeover through
+    `dispatch_key`; `UNKNOWN` recorded from a lost answer;
+  - `RatesAreNeverClientSuppliedTest` and the OpenAPI guard extended to the authorization request;
+    the needle (payment leg).
+- **Out of scope**: the outcome appliers (`-020`).
+- **Domain changes**: `CrossBorderPayment`, `OutboundCredit` (birth).
+- **Persistence**: payments `V025`, `crossborder V005`.
+- **APIs**: cross-border payments POST/GET.
+- **Events**: `CrossBorderPaymentInitiated`, `FxQuoteAccepted`.
+- **Financial impact**: a hold only.
+- **Invariants**: `INV-XB-01` (dispatch), `INV-XB-02` (in-lock at Tx1), `INV-XB-03` (offer = hold),
+  `INV-BAL-04`, `INV-PAY-04`, `INV-RAIL-02`, `INV-FX-04`.
+- **Distributed-system concerns**: ten authorizations → one payment, hold, credit and cover; **the
+  lock-bypass probe on `UNIQUE (crossborder.payment.quote_id)`** (the quote conditional removed, the
+  unique alone holding); a counted ten-way race of Tx1 against a T-e hit on the same beneficiary
+  (coherent outcomes, never a Tx1 committed against an `IN_REVIEW` beneficiary); takeover vs sweep;
+  the database clock decides (counted). `PASS`.
+- **Idempotency**: `crossborder.payment` (two-transaction); `dispatch_key`; `E`.
+- **Consistency**: Tx1 is one commit (T-b).
+- **Atomicity**: failure injection inside Tx1.
+- **Failure handling**: a routing, seam or funds refusal commits only the claim's outcome; a crash
+  after Tx1 leads to a takeover or sweep re-sending the same `E`.
+- **Security**: step-up; ownership; payability re-judged in-lock.
+- **Audit**: `CROSSBORDER_PAYMENT_AUTHORIZED`.
+- **Observability**: `finapp.crossborder.payment{submitted}`.
+- **Reconciliation implications**: none yet (the expectation opens at completion).
+- **Tests**: the ten-way race; the `payment.quote_id` lock-bypass probe; each non-payable
+  beneficiary state (`PENDING_SCREENING`, `IN_REVIEW`, `BLOCKED`, `REVOKED`) refused with one
+  byte-identical `BeneficiaryNotPayable`; a clearance lapsed between quote and authorization → `409
+  ScreeningRequired`; the Tx1-versus-hit race; offer = hold (`INV-XB-03`); the cover sent before the
+  corridor, and a corridor send exhausting its budget leaving the cover inside its margin; failure
+  injection; routing recomputed with reachability and with the new matcher, old versions unchanged;
+  the planted rule refused; evidence stored under the new subject; the needle (payment leg); the
+  extended client-rate guards.
+- **Acceptance criteria**: one of everything under ten authorizers; a refusal holds nothing; the
+  routing decision recomputes.
+- **Definition of done**: `DOD-FIN`, `DOD-API`, `DOD-EVENT`, `DOD-SEC`. **Risk**: High. **Cx**: L.
+
+**P9-TSK-020 — Outbound resolution and completion** — `PLANNED`
+- **Objective**: resolve every provider answer into exactly one outcome, with exactly one entry at
+  acceptance.
+- **Bounded context**: `payments`, `crossborder`, `fx`, `ledger`, `reconciliation` (inserts).
+- **Dependencies**: `-019`.
+- **Scope**: `OutboundCreditOutcomes` (the five-state applier); `OutboundCreditResolutionSchedule`;
+  the corridor webhook door (hint → inquiry) with `FINAPP_CORRIDOR_WEBHOOK_KEY`; the
+  `NEVER_RECEIVED` rule; `RECEIVED`; `scheme_execution_claim` widened (payments `V026`:
+  `OUTBOUND_CREDIT`); `OutboundCreditComposition` and `app`'s `CrossBorderCompletion`
+  (`completionLines`, `completed`, `failed`, `delivered`); the completion entry `PHASE_9_PLAN.md` §12.4(g); `fx.trade`
+  booked at completion; the `CROSSBORDER_PAYOUT` expectation; `IN_TRANSIT`; delivery follow-up →
+  `DELIVERED`; **an inquiry answering `Accepted` with `deliveredAt` on a credit still `DISPATCHED`,
+  `UNKNOWN` or `RECEIVED` applies the completion, then the delivery, in one transaction, and a
+  `Returned` answer on such a credit applies the completion (its return is `-023`'s step in the same
+  transaction, the lifecycle document §3.6)**; `FAILED` → quote `ABANDONED` and the hold released; the lock-bypass probe on
+  the claim; the **disclosure-to-posting check** (`INV-XB-03`).
+- **Out of scope**: unwind creation (`-021`); returns (`-023`); recall (`-024`).
+- **Domain changes**: the outbound credit's machine; the composition.
+- **Persistence**: payments `V026`.
+- **APIs**: `POST /v1/providers/payments/corridor/webhooks`.
+- **Events**: `CrossBorderPaymentInTransit`, `Delivered`, `Failed`; `FxTradeExecuted`;
+  `FxQuoteAbandoned`.
+- **Financial impact**: the debit, conversion, fee and clearing credit in one entry; a failure
+  debits nothing.
+- **Invariants**: `INV-XB-01`, `INV-XB-03` (offer = hold = completion posting = instruction),
+  `INV-LIFE-03`, `INV-IDEM-04`, `INV-PAY-01`, `INV-SET-02`, `INV-FX-04`.
+- **Distributed-system concerns**: answer vs inquiry vs hinted inquiry vs ten appliers → one
+  transition, one entry, one fee line, one expectation; the probe on the claim (counted). `PASS`.
+- **Idempotency**: the claim PK, the posting key, the acting conditional.
+- **Consistency**: T-c.
+- **Atomicity**: failure injection.
+- **Failure handling**: `UNKNOWN`; `RECEIVED` (never concluded "never received"); `NOTHING_SENT` on
+  a first send vs a re-send; `NEVER_RECEIVED`; `DECLINED`.
+- **Security**: callbacks are hints; a forged but signed callback moves nothing.
+- **Audit**: acting-only platform acts.
+- **Observability**: `finapp.payments.outbound.unknown.*`, `.received.age`,
+  `finapp.payments.outbound.sweeper.enabled`; `finapp.crossborder.payment`, `.latency`,
+  `.in.transit.age`.
+- **Reconciliation implications**: `CROSSBORDER_PAYOUT` opened in the completion's transaction.
+- **Tests**: scenarios 4, 5, 6 and 9; `PHASE_9_PLAN.md` §12.4(g) exact; ten appliers; **`INV-XB-03`**: the offer's
+  destination amount, fee and total debit equal the hold, the completion entry's lines and the
+  instructed `Money`, byte for byte; an `Accepted`-with-delivery answer on an `UNKNOWN` credit ⇒
+  `IN_TRANSIT` then `DELIVERED` in one transaction, one entry.
+- **Acceptance criteria**: each forbidden outcome of `PHASE_9_PLAN.md` §12.8 is shown impossible by a counted test.
+- **Definition of done**: `DOD-FIN`, `DOD-SEC`, `DOD-API` (the corridor webhook route), `DOD-EVENT`.
+  **Risk**: High. **Cx**: L.
+
+**P9-TSK-021 — Unwinding covers** — `PLANNED`
+- **Objective**: when a covered quote is abandoned or its trade reversed, unwind the cover exactly
+  once.
+- **Bounded context**: `fx`, `ledger`.
+- **Dependencies**: `-012`, `-020`.
+- **Scope**: the wanted-position rule under the lock order quote → trade → cover; `UNWIND` creation
+  (`UNIQUE (quote_id, kind)`); a fresh firm quote for the reverse direction; the unwind entry
+  `PHASE_9_PLAN.md` §12.4(h) and its P&L; `VOIDED`; both race orders (abandon first, cover first); waiting on an
+  `UNKNOWN` cover.
+- **Out of scope**: the operator reversal door (`-025`).
+- **Domain changes**: the wanted-position rule.
+- **Persistence**: none new.
+- **APIs**: none.
+- **Events**: `FxCoverExecuted` (kind `UNWIND`).
+- **Financial impact**: `FX_POSITION` returns to zero with one realised line; the customer is
+  untouched.
+- **Invariants**: `INV-FX-06`, `INV-FX-08`, `INV-XB-01` (failure half).
+- **Distributed-system concerns**: abandonment writer vs cover applier in both orders; ten
+  abandoners → one unwind; the probe on `UNIQUE (quote_id, kind)` (counted). `PASS`.
+- **Idempotency**: the unique; `T` per attempt.
+- **Consistency**: the interim state is explained by the books proof.
+- **Atomicity**: the unwind is created in the writer's transaction.
+- **Failure handling**: an implausible unwind requote is held and alerted.
+- **Security**: none new.
+- **Audit**: unwound (acting-only).
+- **Observability**: `finapp.fx.cover{kind="UNWIND"}`.
+- **Reconciliation implications**: the unwind's leg expectations open like any cover's.
+- **Tests**: scenario 8 (unwind half); `PHASE_9_PLAN.md` §12.4(h) exact; the race orders.
+- **Acceptance criteria**: at rest, every abandoned covered quote has exactly one executed unwind;
+  the customer's wallet delta is 0.
+- **Definition of done**: `DOD-FIN`, `DOD-EVENT`. **Risk**: Medium. **Cx**: M.
+
+**P9-TSK-022 — Corridor settlement to cash** — `PLANNED`
+- **Objective**: discharge `CORRIDOR_CLEARING` from the provider's report and the bank, with its
+  fees checked.
+- **Bounded context**: `settlement`, `reconciliation`, `app`.
+- **Dependencies**: `-014`, `-020`.
+- **Scope**: end to end: `PAYOUT_EXECUTED` lines → `CROSSBORDER_PAYOUT`; `PAYOUT_FEE` at hop 1 with
+  `FeeCheck` against the pinned schedule; the remittance; hop 2; `JdbcInternalReferenceLookup` over
+  outbound claims; `CORRIDOR_CLEARING` proven per counterparty; a principal deduction →
+  `AMOUNT_MISMATCH`; a line in a settled currency naming a payout in another → `CURRENCY_MISMATCH`;
+  a file in a currency the corridor does not settle → `CURRENCY_NOT_SETTLED` at parse, nothing
+  posted; `PAYOUT_FEE` lines judged against the v1 schedule in each of USD, JPY and BHD.
+- **Out of scope**: returns (`-023`).
+- **Domain changes**: none.
+- **Persistence**: none.
+- **APIs**: existing.
+- **Events**: existing `SettlementExpectationSettled`.
+- **Financial impact**: the corridor clearing reaches cash.
+- **Invariants**: `INV-SET-02`, `-05`, `-06`, `INV-REC-06`…`-09`, `INV-MON-04`.
+- **Distributed-system concerns**: the existing matcher arbiters. `PASS` on existing counted tests
+  plus scenario 10.
+- **Idempotency**: existing.
+- **Consistency**: snapshot proofs.
+- **Atomicity**: existing.
+- **Failure handling**: typed breaks.
+- **Security**: existing.
+- **Audit**: existing.
+- **Observability**: existing source meters.
+- **Reconciliation implications**: scenario 10 (corridor).
+- **Tests**: `PHASE_9_PLAN.md` §12.4(g)'s USD cash identity (4.22) reproduced, its 1.20 fee exactly at the schedule; a
+  JPY and a BHD payout fee each judged against its own row; the corridor mismatch battery, both
+  currency cases included.
+- **Acceptance criteria**: the cash identity is exact; every corridor discrepancy is typed.
+- **Definition of done**: `DOD-FIN`. **Risk**: Medium. **Cx**: M.
+
+**P9-TSK-023 — Cross-border returns** — `PLANNED`
+- **Objective**: apply a return once: automatically when exactly the instructed credit comes back,
+  credited in its currency with the fee refunded; otherwise parked for a person, whose resolution
+  returns it and moves the payment to `RETURNED`.
+- **Bounded context**: `payments`, `crossborder`, `accounts` (via the port), `ledger`,
+  `reconciliation` (the scoped reader, the resolved-return port), `app` (the worker, the port's
+  implementation).
+- **Dependencies**: `-020`, `-022`.
+- **Scope**: payments `V027` (`outbound_credit_return` born once, with `applied_by` (`APPLIER` |
+  `RESOLUTION`), `resolution_id`, their `CHECK`, and the every-writer trigger requiring an `APPLIER`
+  return to equal the instructed `Money`; `scheme_execution_claim` subject `CROSSBORDER_RETURN`);
+  two channels converging on one fact (the lifecycle document §4): the hinted or swept inquiry, and
+  **`OutboundReturnWorker` in `app`** (the `PayoutReturnSweep` precedent), reading the corridor
+  sources' `PAYOUT_RETURNED` items through `WaitingPayoutReturns` scoped to them (`-014`),
+  operation-anchored, the item re-read `FOR SHARE`; **the applicability rule** (applied only when
+  the credit is `COMPLETED`, the return is in the instructed currency for exactly the instructed
+  amount, and the customer is `ACTIVE`; the worker **defers, writing nothing**, while the credit is
+  `DISPATCHED`, `UNKNOWN` or `RECEIVED`; otherwise not applicable, nothing written, and the grace
+  leg parks it `REVERSAL_MISMATCH(RETURN_NOT_APPLICABLE)`, or at once `TERMINAL_STATE_CONTRADICTED`
+  for a `FAILED` credit); **a `Returned` inquiry answer on a credit not yet `COMPLETED` applies the
+  completion (`-020`) and then the return in one transaction**;
+  `OutboundCreditComposition.returnLines/returned` (the D credit, the wallet opened if absent in the
+  caller's transaction, the fee refund in S); the entry `crossborder-return:<id>`; the
+  `CROSSBORDER_RETURN` expectation; the payment `RETURNED` from `IN_TRANSIT` or `DELIVERED`;
+  **`ResolvedCorridorReturns`** (declared by reconciliation, implemented in `app` over `payments`
+  and `crossborder`) called inside the four-eyes `TRANSFER_TO_ACCOUNT` approval of a parked corridor
+  return (T-g): the return fact with `applied_by = RESOLUTION`, the fee refund
+  `crossborder-return-fee:<id>`, the payment `RETURNED`, all in the approval's transaction, and the
+  approval rolled back `409 ResolutionStale` if the fact already exists; the needle (return leg).
+- **Out of scope**: re-conversion (never).
+- **Domain changes**: the return fact and its applicability rule; the resolved-return port.
+- **Persistence**: payments `V027`. No reconciliation migration: the parked item, its break and the
+  `TRANSFER_TO_ACCOUNT` resolution are Phase 8's.
+- **APIs**: none (evidence-driven).
+- **Events**: `CrossBorderPaymentReturned` (basis `APPLIED` or `RESOLVED`);
+  `accounts.WalletCurrencyAdded` when the return opened the wallet.
+- **Financial impact**: an exact return credits the customer in D and refunds the fee in S; a parked
+  return reaches the customer only by a person's transfer, with the fee refunded in the same
+  transaction; the spread stands either way; nothing is ever credited twice.
+- **Invariants**: `INV-XB-04`, `INV-REC-09`, `INV-IDEM-04`, `INV-AUD-04` (the resolution's four
+  eyes).
+- **Distributed-system concerns**: hinted inquiry vs line worker vs ten redeliveries → one return;
+  the probe on `UNIQUE (outbound_credit_id)`; a parked return's resolution racing an inquiry-applied
+  return → one wins, never two credits; the worker deferring on an in-flight credit while ten
+  inquirers complete it (each counted). `PASS`.
+- **Idempotency**: the unique, the claim, the posting key.
+- **Consistency**: T-f; T-g for a resolved return.
+- **Atomicity**: failure injection in T-f (each channel) and in T-g (the port's insert, the fee
+  refund, the payment edge), each leaving nothing or everything.
+- **Failure handling**: a return reported before the completion is known waits (the worker defers;
+  the inquiry completes the credit first); a closed customer, a partial return or a return in
+  another declared currency is never posted automatically and parks at grace, a person deciding; a
+  currency the counterparty does not settle never arrives (`CURRENCY_NOT_SETTLED` at parse); a
+  closed customer's value stays parked, recorded as debt with Phase 15 as owner.
+- **Security**: hints only.
+- **Audit**: return applied (acting-only); the resolution's existing proposal and approval acts,
+  with the payment's return recorded beside them.
+- **Observability**: `finapp.crossborder.return{outcome}` (`applied`, `deferred`, `not_applicable`,
+  `resolved`); `finapp.payments.outbound.return.sweeper.enabled`.
+- **Reconciliation implications**: `CROSSBORDER_RETURN` matched to `PAYOUT_RETURNED`; a parked
+  return closed by a person's transfer (or `EVIDENCED` by the rematch leg when an inquiry applied it
+  first); the merchant worker never sees a corridor return.
+- **Tests**: scenario 7 in every ordering, **a return reported before the completion is known**
+  included (the credit `UNKNOWN`: the worker defers and writes nothing; the inquiry applies
+  completion then return in one transaction, counted); `PHASE_9_PLAN.md` §12.4(i) exact; a partial return, a return in
+  another declared currency and a closed customer each parked, nothing posted automatically; the
+  resolution of a parked return (the payment `RETURNED`, the fee refunded once, the transfer the
+  only D credit); the resolution racing an inquiry-applied return; identical provider references in
+  a merchant and a corridor source, each worker applying only its own; the needle (return leg).
+- **Acceptance criteria**: one return, one credit, one fee refund under every duplication and on
+  both paths; no return that differs from the instructed credit is ever posted without a person; no
+  return is lost while its credit is in flight.
+- **Definition of done**: `DOD-FIN`, `DOD-EVENT`. **Risk**: Medium. **Cx**: L.
+
+**P9-TSK-024 — Cancellation by recall** — `PLANNED`
+- **Objective**: a customer can cancel a submitted payment, honoured only on the provider's
+  definitive word.
+- **Bounded context**: `crossborder`, `payments`, `fx`.
+- **Dependencies**: `-020`, `-021`.
+- **Scope**: `POST /v1/me/cross-border/payments/{id}/cancellation` (keyed, step-up);
+  `recall_requested_at` set once (conditional on `DISPATCHED`/`UNKNOWN`/`RECEIVED`); `crossborder
+  V006` `cancellation_request` (a born-once fact, `UNIQUE (payment_id)`, append-only; the lifecycle document §3.11); recalls
+  sent by the resolution schedule under their own permit; `CorridorRail.recall`; no re-send of the
+  instruction after a request; `RECALLED` → `FAILED(RECALLED)` → abandonment → unwind (`-021`);
+  `TOO_LATE` → normal completion; the customer-facing `CANCELLED`; `RatesAreNeverClientSuppliedTest`
+  and the OpenAPI guard extended to the cancellation request; the needle (recall leg).
+- **Out of scope**: recall after acceptance (a return is the receiving side's act).
+- **Domain changes**: the recall facts; `FAILED(RECALLED)`.
+- **Persistence**: `crossborder V006` (the payments recall columns already exist from `V025`).
+- **APIs**: cancellation.
+- **Events**: `CrossBorderCancellationRequested`; `CrossBorderPaymentFailed(RECALLED)`.
+- **Financial impact**: the hold is released; the platform bears the unwind result.
+- **Invariants**: `INV-XB-01`, `INV-LIFE-03`, `INV-PAY-04`.
+- **Distributed-system concerns**: recall vs acceptance vs ten cancellation requests → one coherent
+  outcome, never both (counted). `PASS`.
+- **Idempotency**: `crossborder.cancel` per principal; the recall is idempotent at the provider by
+  `E`.
+- **Consistency**: the provider decides; one local conditional transition wins.
+- **Atomicity**: the request and the conclusion are separate transactions, each under injection.
+- **Failure handling**: a lost recall answer → re-sent; `UNRECOGNISED` → the `NEVER_RECEIVED` rule,
+  with no re-send.
+- **Security**: step-up; ownership.
+- **Audit**: cancellation requested.
+- **Observability**: `finapp.crossborder.cancellation{outcome}`.
+- **Reconciliation implications**: a recalled payment opens no expectation.
+- **Tests**: scenarios 29–31 of `PHASE_9_PLAN.md` §14; ten cancellation requests → one `cancellation_request` row;
+  the needle (recall leg); the extended client-rate guards.
+- **Acceptance criteria**: no cancelled payment ever debits; no `TOO_LATE` payment is ever shown as
+  cancelled.
+- **Definition of done**: `DOD-FIN`, `DOD-API`, `DOD-EVENT`. **Risk**: Medium. **Cx**: M.
+
+**P9-TSK-025 — Operator FX trade reversal** — `PLANNED`
+- **Objective**: an operator corrects an erroneous wallet conversion by compensation alone,
+  four-eyes.
+- **Bounded context**: `fx`, `identity`, `ledger`.
+- **Dependencies**: `-021`.
+- **Scope**: `fx V008` `trade_reversal` (the lifecycle document §3.3's machine: `PROPOSED → APPROVED | REJECTED`, an
+  every-writer edge trigger, a partial unique per trade while `PROPOSED`, the four-eyes `CHECK`, a
+  reason on each act); `FX_TRADE_REVERSE` granted to `LEDGER_OPERATOR`; routes; approval through
+  `ReversalService` on `fx-trade:<id>` (ledger `V009`'s bound), with the destination wallet's
+  availability judged under lock; trade `REVERSED`; the wanted-position rule → unwind; `CONVERSION`
+  trades only. Second in the cut order (O8).
+- **Out of scope**: cross-border (never reversed); customer reversal (never).
+- **Domain changes**: `TradeReversal`.
+- **Persistence**: `fx V008`.
+- **APIs**: `PHASE_9_PLAN.md` §9's reversal routes.
+- **Events**: `FxTradeReversed`.
+- **Financial impact**: the mirror entry; one unwind.
+- **Invariants**: `INV-REV-01`, `INV-REV-02`, `INV-AUD-04`.
+- **Distributed-system concerns**: ten approvers → one reversal entry and one unwind (counted).
+  `PASS`.
+- **Idempotency**: keyed; the `V009` bound.
+- **Consistency**: one transaction.
+- **Atomicity**: failure injection.
+- **Failure handling**: insufficient destination funds → `409 fx.TradeNotReversible`.
+- **Security**: four-eyes at the domain and the `CHECK`.
+- **Audit**: proposed, approved, rejected, each with a reason.
+- **Observability**: `finapp.fx.trade{outcome="reversed"}`.
+- **Reconciliation implications**: the unwind's legs.
+- **Tests**: scenario 8 (reversal half); every invalid edge of the reversal machine by the domain
+  and raw SQL; each four-eyes rank alone.
+- **Acceptance criteria**: one reversal under ten approvers; the books proof is 0 afterwards.
+- **Definition of done**: `DOD-FIN`, `DOD-SEC`, `DOD-API`, `DOD-EVENT`. **Risk**: Medium. **Cx**: M.
+
+**P9-TSK-026 — A second FX provider and a second corridor rail** — `PLANNED`
+- **Objective**: make multiple providers real: failover, selection and settlement per counterparty.
+  First in the cut order (O8).
+- **Bounded context**: `fx`, `payments`, `ledger`, `settlement`, `reconciliation`, `crossborder`,
+  `app`.
+- **Dependencies**: `-013`, `-017`, `-022`.
+- **Scope**: `fx-sim-b` and `corridor-sim-b` over the existing engines, with declarations, keys and
+  transport rows; ledger `V025` (registry rows and accounts below the ceiling); settlement `V017`
+  (their source rows); their rule sets v1 through the door; pricing and corridor policy successors
+  listing both (EUR→USD/US on both rails, `a` first); quote-time failover and its sourcing steps;
+  registration selection with `a` disabled.
+- **Out of scope**: best-execution pricing across providers.
+- **Domain changes**: none (declarations and data).
+- **Persistence**: ledger `V025`, settlement `V017`.
+- **APIs**: none new.
+- **Events**: none new.
+- **Financial impact**: each provider settles on its own position; nothing nets.
+- **Invariants**: `INV-RAIL-04`, `INV-SET-05`, `INV-RAIL-02`.
+- **Distributed-system concerns**: failover under ten racing quotes; the selection recomputes
+  (counted). `PASS`.
+- **Idempotency**: existing.
+- **Consistency**: startup guards per counterparty.
+- **Atomicity**: existing.
+- **Failure handling**: `a` down → `b`; both down → `503`.
+- **Security**: confined keys per provider.
+- **Audit**: policy acts.
+- **Observability**: the `provider` tag gains values.
+- **Reconciliation implications**: two FX and two corridor sources, never netted.
+- **Tests**: failover, selection and settlement per counterparty; a planted cross-counterparty
+  allocation refused.
+- **Acceptance criteria**: a quote fails over and covers on `b`; a beneficiary tokenised on `b` is
+  paid on `b` and settles on `b`'s position.
+- **Definition of done**: `DOD-FIN`, `DOD-SEC`. **Risk**: Medium. **Cx**: L.
+
+**P9-TSK-027 — Meters, spans, reports, the trace and the dashboard row** — `PLANNED`
+- **Objective**: operate Phase 9 by counts, ages, verdicts and audited reports, and never by
+  amounts.
+- **Bounded context**: `fx`, `crossborder`, `payments`, `kyc`, `app`.
+- **Dependencies**: `-013`, `-023`, `-024`.
+- **Scope**: every `PHASE_9_PLAN.md` §15 row not shipped by an earlier task; `pair`, `corridor` and `provider` joining
+  `MetricNames`; exempt gauge classes free of `Money` (`noExemptClassDependsOnMoney`); the three
+  audited reports; the trace endpoint; spans; the dashboard row and alert rules resolved against a
+  live scrape.
+- **Out of scope**: FX P&L reporting (Phase 14).
+- **Domain changes**: none.
+- **Persistence**: none.
+- **APIs**: reports; trace.
+- **Events**: none.
+- **Financial impact**: none.
+- **Invariants**: ADR-0072, `INV-AUD-02`.
+- **Distributed-system concerns**: gauges are fleet-`max()`; counters count after commit. `PASS`
+  (report-only).
+- **Idempotency**: n/a.
+- **Consistency**: reports read one snapshot.
+- **Atomicity**: the `ReportRead` audit in the read's transaction.
+- **Failure handling**: an unreadable gauge reads NaN, never zero.
+- **Security**: `FX_INVESTIGATE`; a bad period is `422` before any read.
+- **Audit**: every report read.
+- **Observability**: this task.
+- **Reconciliation implications**: none.
+- **Tests**: `PlannedMetersExistTest` (armed by the flip); the report suites; the alert suites.
+- **Acceptance criteria**: a fresh instance publishes every row; no amount appears in any series.
+- **Definition of done**: `DOD-OBS`, `DOD-API` (the reports and the trace route). **Risk**: Low.
+  **Cx**: M.
+
+**P9-TST-001 — The FX and cross-border storm** — `PLANNED`
+- **Objective**: prove financial correctness under every provider fault, crash, duplication and
+  race, at once.
+- **Bounded context**: every Phase 9 context.
+- **Dependencies**: every `P9-TSK` (`-026` unless cut) and `X-TSK-010` (the Phase 6/7 permits
+  database-stamped, so the skewed-clock race meets no instance-stamped permit).
+- **Scope**: **two application contexts with clocks skewed by ±5 s**, plus ten movers; every fault
+  seeded (response lost, duplicate and forged callbacks, lock expiry, off-plan executions, decline,
+  `RECEIVED` then reject, never received, recall wins or loses, returns before and after delivery
+  and before the completion is known, a partial return parked and resolved, settlement mismatches,
+  an unexpected currency); crashes after Tx1, mid-cover and mid-completion. Every round, in one
+  `REPEATABLE READ` snapshot: the per-currency trial balance, the FX books proof, reconciliation's
+  proofs and the holds check; simulator execution counts = cover execution facts = trades; provider
+  instruction count = outbound credits. At rest: exact censuses, `FX_POSITION` 0, replay
+  `IDENTICAL`; the hot-row p99 recorded; **the needle walked end to end** in one run (registration,
+  screening, quote, payment, recall and return) and absent everywhere but kyc's ciphertext.
+- **Out of scope**: the fleet-wide battery (the owner's instruction is recorded as a deviation).
+- **Domain changes**: none.
+- **Persistence**: none.
+- **APIs**: existing.
+- **Events**: existing.
+- **Financial impact**: proof only.
+- **Invariants**: every `Phase: 9` invariant.
+- **Distributed-system concerns**: this item *is* the ten-instance answer's capstone. `PASS` only on
+  its counts.
+- **Idempotency**: replay `IDENTICAL`.
+- **Consistency**: snapshot every round.
+- **Atomicity**: crash points.
+- **Failure handling**: every catalogue entry it can seed.
+- **Security**: forged callbacks.
+- **Audit**: platform acts counted.
+- **Observability**: the gauges read 0 throughout.
+- **Reconciliation implications**: every leg matched to cash.
+- **Tests**: three consecutive fresh runs; MUTATION_TESTING §4 rows.
+- **Acceptance criteria**: every count exact; every proof 0 every round.
+- **Definition of done**: `DOD-TEST`, `DOD-FIN`. **Risk**: High. **Cx**: L.
+
+**P9-DOC-001 — The Phase 9 exit review** — `PLANNED`
+- **Objective**: close Phase 9 against its gate, with the documents made true.
+- **Bounded context**: all.
+- **Dependencies**: `P9-TST-001`, `P9-TST-002`.
+- **Scope**: eight review areas; the twelve universal criteria, F1–F8, the five originals and the
+  `PHASE_GATES.md` Phase 9 additions; ADR-0074…0083 read against the code and accepted or amended; the documents made
+  true; the mutation register for every `Phase: 9` invariant; the flip, proven non-vacuous.
+- **Out of scope**: Phase 10.
+- **Domain changes**: corrections only.
+- **Persistence**: corrections only.
+- **APIs**: n/a.
+- **Events**: n/a.
+- **Financial impact**: none.
+- **Invariants**: all `Phase: 9` invariants.
+- **Distributed-system concerns**: every task's answer re-checked against its counted tests.
+- **Idempotency**: n/a.
+- **Consistency**: n/a.
+- **Atomicity**: n/a.
+- **Failure handling**: CRITICAL and IMPORTANT finds are corrected and probed before the flip.
+- **Security**: re-audited.
+- **Audit**: re-audited.
+- **Observability**: re-audited.
+- **Reconciliation implications**: re-audited.
+- **Tests**: fresh targeted tiers; the document guards.
+- **Acceptance criteria**: the gate holds, counted.
+- **Definition of done**: `DOD-DOC`, `DOD-TEST`. **Risk**: Medium. **Cx**: L.
+
+---
+
 # Cross-cutting work
 
 Status: items here belong to no phase. They change no roadmap commitment, displace no phase task,
@@ -13131,9 +14467,66 @@ applied and verified 2026-09-23; criterion 5 met by the Phase 6 → 7 transition
   later-day replay would conflict rather than converge recorded as its own item with an owner.
   **Risk**: Low. **Cx**: S. **DoD**: `DOD-DOC`
 
+**X-TSK-010 — Database-stamped send permits for the Phase 5–7 outbound flows** — `PLANNED`
+- **Context**: `JdbcPaymentAttemptStore`, `JdbcWithdrawalStore` and `JdbcMerchantPayoutStore` set
+  `last_dispatched_at = ?` from the instance clock; `JdbcRefundStore` and `JdbcDisputeResponseStore`
+  renew with `GREATEST(…, CAST(? AS timestamptz))`, also the instance clock. Recorded by the Phase 8
+  → 9 transition (ADR-0057 §4; `PHASE_9_PLAN.md` §12.5, §7).
+- **Description**: ADR-0057 §4 concludes `NEVER_RECEIVED` only past the rail's outcome deadline plus
+  a margin since the latest permit. With an instance-stamped permit judged against another clock,
+  that conclusion is correct **only while each rail's deadline margin exceeds the maximum clock skew
+  between instances**: an instance running behind can stamp a permit that looks older than it is,
+  and a sweeper can then conclude "never received" while a re-send is still in flight. This item
+  stamps every one of the five permits with `statement_timestamp()` inside the conditional, strictly
+  forward renewal, held by a trigger (the cover's and the outbound credit's discipline, `-012` and
+  `-019`), removing the skew premise.
+- **Why in Phase 9**: CLAUDE.md requires remediation, not preservation, of a single-instance premise
+  in live money flows. Phase 9 builds the database-stamped permit and races two contexts with clocks
+  skewed by ±5 s, so the alignment lands in the same phase. It is scheduled in M9.9, after `-020`
+  (whose permit trigger it reuses) and before `P9-TST-001` (a dependency). The debt row states the
+  bound that holds until it lands: every rail's outcome-deadline margin exceeds the maximum instance
+  skew.
+- **Deps**: `P9-TSK-020`.
+- **Accept**: no permit anywhere is written from an instance clock (a static rule over the stores,
+  with a planted violation); each of the five flows' takeover-vs-sweep race re-run with two clocks
+  skewed by ±5 s, provider instruction counts 1; the existing counted tests green. **Risk**: Medium.
+  **Cx**: M. **DoD**: `DOD-FIN`, `DOD-TEST`
+
+**X-TSK-011 — Explicit scale on pre-Phase-9 amount events** — `PLANNED`
+- **Context**: every amount-bearing event before Phase 9 (`EventPayload` minor-unit strings with a
+  currency, no scale). Recorded by the Phase 8 → 9 transition (`PHASE_9_PLAN.md` §12.2's wire formats).
+- **Description**: Phase 9's events carry `<x>Scale` beside `<x>Minor` and `<x>Currency`; earlier
+  events leave the scale implicit in the currency. After `P9-TSK-003`, those events can carry JPY
+  and BHD amounts. This item adds the scale field, in a new schema version, to every earlier
+  amount-bearing event.
+- **Why not in Phase 9**: no consumer exists (Phase 9 has no Kafka consumer and no correctness rests
+  on an event, `INV-EVT-04`), and the minor units are pinned by a test and a startup guard (D27), so
+  the implicit scale is exact. Adding a field to every event is an additive schema-version step best
+  done once, platform-wide.
+- **Owner**: Phase 15 (production hardening: event schema evolution). **Trigger**: the first
+  consumer that reads an amount, or the first currency whose minor units the JDK could change.
+- **Deps**: none.
+- **Accept**: every amount-bearing event carries its scale; the schema versions bumped and the
+  compatibility tests green. **Risk**: Low. **Cx**: M. **DoD**: `DOD-EVENT`
+
+**X-TSK-012 — Callbacks as hints for the Phase 5 and Phase 7 providers** — `PLANNED`
+- **Context**: the PSP and instant-rail webhook pipelines (ADR-0047). Recorded by the Phase 8 → 9
+  transition (ADR-0083, D25).
+- **Description**: ADR-0083 makes a verified callback a hint, whose outcome is adopted only from an
+  authenticated inquiry. The Phase 5 and Phase 7 providers still adopt the callback's own outcome.
+  This item aligns them, so one doctrine holds and a stolen webhook key moves no money anywhere.
+- **Why not in Phase 9**: it changes live Phase 5/7 money paths (one inquiry per callback), with its
+  own negative tests and provider contract changes. Phase 9's flows are built on the new doctrine
+  from birth.
+- **Owner**: Phase 15 (production hardening: security). **Trigger**: earlier if a webhook key
+  compromise is suspected, or a provider offers no inquiry.
+- **Deps**: none.
+- **Accept**: every provider callback is a hint; a forged-but-signed callback moves nothing on any
+  rail (a planted test per provider). **Risk**: Medium. **Cx**: M. **DoD**: `DOD-SEC`, `DOD-FIN`
+
 ---
 
-# Phases 9–16 — Epics
+# Phases 10–16 — Epics
 
 Status: `PLANNED` — capabilities elaborated at each phase's entry gate.
 *(The Phase 6 row was elaborated to the section above by the Phase 5 → 6 transition,
@@ -13145,11 +14538,14 @@ items above. The Phase 8 row went the same way at the Phase 7 → 8 transition, 
 settlement expectation tracking, settlement file ingestion, evidence retention, matching engine,
 tolerance and rule versioning, break classification, break lifecycle and investigation,
 four-eyes resolution, suspense management and reconciliation reporting are Phase 8's
-twenty-seven items above.)*
+twenty-seven items above. The Phase 9 row went the same way at the Phase 8 → 9 transition,
+2026-10-02: rate sourcing and staleness, quote lifecycle and rate lock, spread and margin
+recognition, conversion execution, multi-currency accounting and FX position, rounding residual
+handling, corridor policy, cross-border payment workflow, and FX reconciliation are Phase 9's
+thirty items above.)*
 
 | Phase | Epics |
 |-------|-------|
-| 9 FX and Cross-Border | Rate sourcing and staleness; quote lifecycle and rate lock; spread and margin recognition; conversion execution; multi-currency accounting and FX position; rounding residual handling; corridor policy; cross-border payment workflow; FX reconciliation |
 | 10 Credit Decisioning | Credit profile; bureau adapter and evidence; affordability assessment; risk scoring; versioned policy engine; decision recording and immutability; reason codes and adverse action; decision reproducibility; exposure tracking |
 | 11 Lending | Loan application; offer and expiry; underwriting integration; disbursement; repayment schedule and amortisation; interest accrual; repayment allocation; early settlement; delinquency; restructuring; loan accounting |
 | 12 BNPL | Eligibility at checkout; instalment plan; agreement lifecycle; merchant financing; merchant settlement; customer obligation; refund and return adjustment; late fees; BNPL accounting and reconciliation |

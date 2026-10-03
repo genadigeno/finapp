@@ -153,7 +153,9 @@ class ReconciliationMigrationTest {
                         "match_parked_original",
                         "run_replay",
                         // V013 (P8-TSK-023): the breaks a repudiation closed.
-                        "repudiation_closure");
+                        "repudiation_closure",
+                        // V016 (the Phase 8 -> 9 transition): a late leg's judged reach.
+                        "match_reach");
 
         assertThatExceptionOfType(SQLException.class)
                 .isThrownBy(() -> asApplication(

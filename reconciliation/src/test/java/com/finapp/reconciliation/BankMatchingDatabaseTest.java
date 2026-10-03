@@ -68,8 +68,10 @@ import org.junit.jupiter.api.TestMethodOrder;
  * judges EVERY untouched remittance of its source and date, so no other suite's rows may stand
  * there, and each case owns its own dates. The Matching clock is pinned months behind the
  * database clock (the `GraceAndRematchDatabaseTest` discipline) and the remittances open on the
- * real clock, so "opened after the item's latest decision" is true exactly for a remittance
- * opened after a sweep.
+ * real clock. *(Corrected 2026-10-02 by the Phase 8 -> 9 transition: this added that "opened
+ * after the item's latest decision" is true exactly for a remittance opened after a sweep - the
+ * rematch now judges a reach no decision of the item has seen, on rows; and equal same-day
+ * tranches sharing one canonical fingerprint are cases (l) and (m).)*
  */
 @Tag("database")
 @TestMethodOrder(MethodOrderer.OrderAnnotation.class)
@@ -754,6 +756,79 @@ class BankMatchingDatabaseTest {
         }
     }
 
+    // ----------------------------------------------------------------- equal tranches (T-3)
+
+    @Test
+    @Order(12)
+    @DisplayName("(l) two EQUAL same-day tranches of one remittance in ONE statement - one"
+            + " canonical fingerprint - settle it: both MATCHED, no DUPLICATE_EXTERNAL, nothing"
+            + " left standing over the SETTLED remittance (the Phase 8 -> 9 transition's T-3)")
+    void twoEqualTranchesInOneStatementSettleTheRemittance() throws SQLException {
+        LocalDate day = day(12);
+        String reference = reference("L");
+        UUID remittance = openRemittance(reference, 100_00, day);
+        byte[] same = new byte[32];
+        new SecureRandom().nextBytes(same);
+        UUID run = seedRun(tranche(1, 50_00, reference, day, same),
+                tranche(2, 50_00, reference, day, same));
+        matching.sweep();
+
+        assertThat(itemStatus(run, 1)).isEqualTo("MATCHED");
+        assertThat(itemStatus(run, 2)).as("the second tranche is cash, never a duplicate")
+                .isEqualTo("MATCHED");
+        assertThat(expectationStatus(remittance)).isEqualTo("SETTLED");
+        assertThat(count("SELECT count(*) FROM reconciliation.break b JOIN"
+                + " reconciliation.external_item i ON i.id = b.external_item_id WHERE"
+                + " i.run_id = ?", run)).as("no DUPLICATE_EXTERNAL, nothing parked").isZero();
+        assertThat(count("SELECT count(*) FROM reconciliation.break WHERE expectation_id = ?"
+                + " AND status <> 'RESOLVED'", remittance))
+                .as("the first tranche's shortfall closed by the second").isZero();
+        assertThat(count("SELECT count(*) FROM reconciliation.match_decision d JOIN"
+                + " reconciliation.external_item i ON i.id = d.external_item_id WHERE"
+                + " i.run_id = ? AND d.fingerprint_seen_earlier", run))
+                .as("a bank line's fingerprint is never judged definitive").isZero();
+    }
+
+    @Test
+    @Order(13)
+    @DisplayName("(m) two EQUAL same-day tranches of one remittance in CONSECUTIVE statements"
+            + " settle it, the second closing the first's REMITTANCE_DIFFERS shortfall EVIDENCED;"
+            + " a THIRD equal tranche finds the remittance exhausted - EXPECTATION_EXHAUSTED,"
+            + " never REPEATED_FINGERPRINT")
+    void equalTranchesInConsecutiveStatementsSettleTheRemittance() throws SQLException {
+        LocalDate day = day(13);
+        String reference = reference("M");
+        UUID remittance = openRemittance(reference, 100_00, day);
+        byte[] same = new byte[32];
+        new SecureRandom().nextBytes(same);
+        UUID first = seedRun(tranche(1, 50_00, reference, day, same));
+        matching.sweep();
+        UUID shortfall =
+                (UUID) row("SELECT id FROM reconciliation.break WHERE expectation_id = ? AND"
+                        + " cause = 'REMITTANCE_DIFFERS'", remittance)[0];
+        UUID second = seedRun(tranche(1, 50_00, reference, day, same));
+        matching.sweep();
+
+        assertThat(itemStatus(first, 1)).isEqualTo("MATCHED");
+        assertThat(itemStatus(second, 1)).as("the next statement's equal tranche is cash")
+                .isEqualTo("MATCHED");
+        assertThat(expectationStatus(remittance)).isEqualTo("SETTLED");
+        assertThat(row("SELECT status FROM reconciliation.break WHERE id = ?", shortfall))
+                .containsExactly("RESOLVED");
+        assertThat(count("SELECT count(*) FROM reconciliation.break b JOIN"
+                + " reconciliation.external_item i ON i.id = b.external_item_id WHERE"
+                + " i.run_id = ?", second)).isZero();
+
+        UUID third = seedRun(tranche(1, 50_00, reference, day, same));
+        matching.sweep();
+        assertThat(itemStatus(third, 1)).isEqualTo("PARKED");
+        assertThat(row("SELECT b.type, b.cause FROM reconciliation.break b JOIN"
+                + " reconciliation.external_item i ON i.id = b.external_item_id WHERE"
+                + " i.run_id = ?", third))
+                .as("judged by the exhausted remittance, not by the fingerprint")
+                .containsExactly("DUPLICATE_EXTERNAL", "EXPECTATION_EXHAUSTED");
+    }
+
     // ----------------------------------------------------------------- seeding
 
     private enum Shape { ATTRIBUTED, UNATTRIBUTED_PARKED, FEE }
@@ -765,25 +840,38 @@ class BankMatchingDatabaseTest {
             long minor,
             Optional<String> reference,
             LocalDate valueDate,
-            Shape shape) {}
+            Shape shape,
+            Optional<byte[]> fingerprint) {}
 
     /** An attributed bank credit quoting a remittance reference. */
     private static Line credit(int lineNo, long minor, String reference, LocalDate valueDate) {
         return new Line(lineNo, ExternalLineType.BANK_CREDIT, ExpectationDirection.INBOUND,
-                minor, Optional.of(reference), valueDate, Shape.ATTRIBUTED);
+                minor, Optional.of(reference), valueDate, Shape.ATTRIBUTED, Optional.empty());
+    }
+
+    /**
+     * A tranche: an attributed credit carrying {@code fingerprint} - the canonical fingerprint
+     * the statement adapter gives every equal same-day credit quoting one remittance (amount,
+     * dates and the reference; no line number, no per-entry bank reference in format v1).
+     */
+    private static Line tranche(
+            int lineNo, long minor, String reference, LocalDate valueDate, byte[] fingerprint) {
+        return new Line(lineNo, ExternalLineType.BANK_CREDIT, ExpectationDirection.INBOUND,
+                minor, Optional.of(reference), valueDate, Shape.ATTRIBUTED,
+                Optional.of(fingerprint.clone()));
     }
 
     /** A bank credit no remittance pattern claimed - born PARKED, as the intake leaves it. */
     private static Line unattributed(int lineNo, long minor, LocalDate valueDate) {
         return new Line(lineNo, ExternalLineType.BANK_CREDIT, ExpectationDirection.INBOUND,
                 minor, Optional.of("BANK-REF-" + UUID.randomUUID()), valueDate,
-                Shape.UNATTRIBUTED_PARKED);
+                Shape.UNATTRIBUTED_PARKED, Optional.empty());
     }
 
     /** A bank fee: no position, no attribution, no key. */
     private static Line fee(int lineNo, long minor, LocalDate valueDate) {
         return new Line(lineNo, ExternalLineType.BANK_FEE, ExpectationDirection.OUTBOUND,
-                minor, Optional.empty(), valueDate, Shape.FEE);
+                minor, Optional.empty(), valueDate, Shape.FEE, Optional.empty());
     }
 
     private static LocalDate day(int caseNo) {
@@ -823,8 +911,14 @@ class BankMatchingDatabaseTest {
             List<ExternalItems.NewItem> newItems = new ArrayList<>();
             Map<UUID, Line> unattributed = new HashMap<>();
             for (Line line : lines) {
-                byte[] fingerprint = new byte[32];
-                new SecureRandom().nextBytes(fingerprint);
+                byte[] fingerprint =
+                        line.fingerprint()
+                                .map(byte[]::clone)
+                                .orElseGet(() -> {
+                                    byte[] random = new byte[32];
+                                    new SecureRandom().nextBytes(random);
+                                    return random;
+                                });
                 boolean attributed = line.shape() == Shape.ATTRIBUTED;
                 Map<ItemKeyKind, String> keys = new EnumMap<>(ItemKeyKind.class);
                 line.reference().ifPresent(value -> keys.put(ItemKeyKind.REMITTANCE_REF, value));

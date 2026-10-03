@@ -72,6 +72,10 @@ The second is attempting a reversal on an irrevocable rail. Phase 5's attempt ma
    branch on a name. The confirmation's push branch initiates on the wired rail for the same
    reason - the directory declares exactly one push rail, so routing cannot choose another -
    and `Withdrawals`' guard is the pattern the phase adding a second scheme carries there.)*
+   *(Paid at the Phase 8 → 9 transition by ADR-0080, `Proposed`: the corridor rail arrives
+   as a second push-model rail with per-rail operation lookup in the composition root
+   (`RailOperations`), its own `CORRIDOR_CLEARING` position per counterparty (ADR-0078),
+   and still no core branch on a rail name.)*
 
 2. **The attempt's machine follows the interaction model — three machines, one aggregate root.**
    `TWO_STEP` keeps Phase 5's seven states verbatim, plus the void *(the card-reversal task,

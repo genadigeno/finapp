@@ -1,33 +1,28 @@
 package com.finapp.reconciliation;
 
+import com.finapp.sharedkernel.security.InstrumentShapes;
 import java.util.Objects;
-import java.util.regex.Matcher;
-import java.util.regex.Pattern;
 
 /**
  * The domain rank of the case file's free-text screen (`P8-TSK-014`, ADR-0069 §7;
- * {@code INV-PAY-02}, {@code INV-RAIL-03}): a note body or an evidence reference holding a
- * Luhn-valid 13–19-digit run, or an IBAN shape, is refused with NOTHING stored. The
- * database rank is `V004`'s {@code break_note} and {@code break_evidence_link} {@code CHECK}s
- * — {@code holds_luhn_valid_digit_run} and the unanchored account shape — and this seat
- * mirrors them exactly, so the door refuses what the table would, before any claim is
- * taken. The conservative over-refusal is the table's too (identifier-dense prose may trip
- * the account shape; identifiers belong in evidence links, whose references are screened
- * the same way).
+ * {@code INV-PAY-02}, {@code INV-RAIL-03}): a note body, an evidence reference or any reason a
+ * person writes holding a card-number shape or an account-identifier shape is refused with
+ * NOTHING stored. The rule is the platform's one {@link InstrumentShapes} screen; the database
+ * rank is its PL/pgSQL twin ({@code reconciliation.holds_card_number_shape} and
+ * {@code holds_account_identifier_shape}, `V019`) on every column that stores such prose, so the
+ * door refuses what the table would, before any claim is taken. The conservative over-refusal
+ * is the table's too (identifier-dense prose may trip a shape; identifiers belong in evidence
+ * links, whose references are screened the same way).
+ *
+ * <p><em>(Corrected 2026-10-02 by the Phase 8 → 9 transition: this seat scanned contiguous
+ * digit runs and the contiguous account shape alone, so a card number written
+ * {@code 4111 1111 1111 1111} or {@code 4111-1111-1111-1111} and an account identifier in its
+ * printed groups of four passed both ranks (the audit's {@code SEC-03}). It now delegates to
+ * the shared screen — grouped runs, the 12..19 band, the printed form under its mod-97 check,
+ * the platform's own UUIDs masked — and `V019` replaced `V004`'s and `V006`'s scans with the
+ * twin.)</em>
  */
 public final class NoteScreen {
-
-    /** A digit run long enough to hold a card number — the function's own scan. */
-    private static final Pattern DIGIT_RUN = Pattern.compile("[0-9]{13,}");
-
-    /**
-     * `V004`'s account shape: {@code \m[A-Za-z]{2}[0-9]{2}[A-Za-z0-9]{11,30}\M}. PostgreSQL's
-     * {@code \m}/{@code \M} are word-start and word-end; with ASCII word characters, Java's
-     * lookarounds say the same.
-     */
-    private static final Pattern ACCOUNT_SHAPE =
-            Pattern.compile(
-                    "(?<![A-Za-z0-9_])[A-Za-z]{2}[0-9]{2}[A-Za-z0-9]{11,30}(?![A-Za-z0-9_])");
 
     public static final int MAX_NOTE_LENGTH = 4000;
 
@@ -53,49 +48,19 @@ public final class NoteScreen {
         return screenShapes(body);
     }
 
-    /** The card-number and account shapes alone — the evidence reference's screen. */
+    /** The card-number and account shapes alone — every person-written reason's screen. */
     public static java.util.Optional<Refusal> screenShapes(String text) {
         Objects.requireNonNull(text, "text must not be null");
-        if (holdsLuhnValidDigitRun(text)) {
-            return java.util.Optional.of(Refusal.CARD_NUMBER_SHAPE);
-        }
-        if (ACCOUNT_SHAPE.matcher(text).find()) {
-            return java.util.Optional.of(Refusal.ACCOUNT_SHAPE);
-        }
-        return java.util.Optional.empty();
+        return InstrumentShapes.find(text)
+                .map(
+                        shape ->
+                                shape == InstrumentShapes.Shape.CARD_NUMBER
+                                        ? Refusal.CARD_NUMBER_SHAPE
+                                        : Refusal.ACCOUNT_SHAPE);
     }
 
-    /**
-     * `V004`'s {@code holds_luhn_valid_digit_run}, window for window: every 13..19-digit
-     * window of every run of 13 or more digits, Luhn-checked.
-     */
+    /** The card-number half — the twin's {@code holds_card_number_shape}. */
     static boolean holdsLuhnValidDigitRun(String text) {
-        Matcher runs = DIGIT_RUN.matcher(text);
-        while (runs.find()) {
-            String run = runs.group();
-            for (int width = 13; width <= 19 && width <= run.length(); width++) {
-                for (int start = 0; start + width <= run.length(); start++) {
-                    if (luhnValid(run, start, width)) {
-                        return true;
-                    }
-                }
-            }
-        }
-        return false;
-    }
-
-    private static boolean luhnValid(String run, int start, int width) {
-        int total = 0;
-        for (int i = 1; i <= width; i++) {
-            int digit = run.charAt(start + width - i) - '0';
-            if (i % 2 == 0) {
-                digit *= 2;
-                if (digit > 9) {
-                    digit -= 9;
-                }
-            }
-            total += digit;
-        }
-        return total % 10 == 0;
+        return InstrumentShapes.holdsCardNumber(text);
     }
 }

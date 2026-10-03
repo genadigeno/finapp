@@ -68,6 +68,22 @@ public enum ReconciliationAuditAction implements AuditableAction {
             false),
 
     /**
+     * A controller began the opening position's walk (the Phase 8 -> 9 transition, SEC-08):
+     * written in its own transaction BEFORE the walk's first page, so every expectation,
+     * parking owner or remittance the walk adopts follows a committed record of who started it
+     * and why. The walk is many transactions and its counts exist only at its end
+     * ({@link #OPENING_POSITION_RECORDED}, same correlation); a start with no recorded run
+     * beside it is a walk that crashed or was refused at its claim. One per invocation - a
+     * same-key replay re-walks too, converging on the uniques.
+     */
+    OPENING_POSITION_STARTED(
+            "reconciliation.OpeningPositionStarted",
+            "A reconciliation controller began the opening position's walk, with the"
+                    + " controller's recorded reason; its counts follow on"
+                    + " OpeningPositionRecorded under the same correlation.",
+            true),
+
+    /**
      * A controller adopted the opening position (`P8-TSK-007`, ADR-0067 §8): the keyed,
      * reasoned backfill that walks Phases 5–7's completed clearing operations through the
      * live opener's own path. One record per recorded run; the change summary carries the

@@ -151,6 +151,7 @@ class SettlementPullDatabaseTest {
     private static final String FILES = "/v1/operator/settlement/files";
     private static final String RECEIVED_BY_PULL = "settlement.SettlementFileReceivedByPull";
     private static final String FETCH_REQUESTED = "settlement.SettlementFetchRequested";
+    private static final String FETCH_STARTED = "settlement.SettlementFetchStarted";
     private static final LocalDate REPORT_DATE = LocalDate.parse("2026-09-29");
     private static final Duration WINDOW = Duration.ofMinutes(15);
     private static final int LOOKBACK_DAYS = 7;
@@ -742,6 +743,14 @@ class SettlementPullDatabaseTest {
         }
         assertThat(permit(SOURCE, key))
                 .hasValueSatisfying(permit -> assertThat(permit.attempts()).isEqualTo(2));
+        assertThat(text("SELECT string_agg(actor_type || ':' || actor_id, ',')"
+                        + " FROM platform.audit_record WHERE operation = ?"
+                        + " AND target_type = 'settlement_source' AND target_id = ?"
+                        + " AND change_summary = ?",
+                        FETCH_STARTED, SOURCE, "businessKey=" + key))
+                .as("each call's start, committed with its permit (SEC-08)")
+                .isEqualTo("CUSTOMER:" + operator.identity() + ",CUSTOMER:"
+                        + operator.identity());
 
         // Refused before any pull: nothing fetched, nothing permitted, nothing recorded. The
         // path is stubbed so a leak past the guard WOULD reach the provider and be counted.
@@ -771,6 +780,10 @@ class SettlementPullDatabaseTest {
                         + " AND target_id = ?", FETCH_REQUESTED, UNKNOWN_SOURCE))
                 .as("an unknown source writes nothing")
                 .isZero();
+        assertThat(count("SELECT count(*) FROM platform.audit_record WHERE operation = ?"
+                        + " AND change_summary = ?", FETCH_STARTED, "businessKey=" + untouched))
+                .as("no permit was taken for a refused or unknown fetch, so nothing started")
+                .isZero();
 
         // A traversal-shaped key fails the key's own shape at the boundary: the platform's
         // validation contract renders it 422 (ERROR_CONTRACT: the data is wrong).
@@ -788,6 +801,10 @@ class SettlementPullDatabaseTest {
         assertThat(notPullable.statusCode()).isEqualTo(200);
         assertThat(field(notPullable.body(), "outcome")).isEqualTo("NOT_PULLABLE");
         assertThat(permit(BANK_SOURCE, unpulled)).isEmpty();
+        assertThat(count("SELECT count(*) FROM platform.audit_record WHERE operation = ?"
+                        + " AND change_summary = ?", FETCH_STARTED, "businessKey=" + unpulled))
+                .as("a source not pulled takes no permit and starts nothing")
+                .isZero();
     }
 
     // ----------------------------------------------------------------- the credential
@@ -887,6 +904,72 @@ class SettlementPullDatabaseTest {
                         "%" + REPORT_KEY + "%"))
                 .as("nor any audit record")
                 .isZero();
+    }
+
+    @Test
+    @Order(12)
+    @DisplayName("an operator's fetch whose process dies past its permit - before the record of"
+            + " what it came to - still leaves who asked for which report: the start commits"
+            + " with the permit (SEC-08)")
+    void aFetchThatDiesPastItsPermitLeavesItsStart() throws Exception {
+        String key = businessKey(9, 6);
+        SettlementPull dying =
+                new SettlementPull(
+                        settlementSources,
+                        settlementFileStore,
+                        pullPermitStore,
+                        reception,
+                        settlementTransactionRunner,
+                        settlementPullMetrics,
+                        clock,
+                        Map.<String, SettlementReportCollector>of(
+                                SOURCE,
+                                new SettlementReportCollector() {
+                                    @Override
+                                    public String sourceCode() {
+                                        return SOURCE;
+                                    }
+
+                                    @Override
+                                    public Collected collect(String businessKey) {
+                                        throw new SimulatedCrash();
+                                    }
+                                }));
+        SettlementFetch fetch =
+                new SettlementFetch(
+                        dying, auditWriter, settlementTransactionRunner, idGenerator, clock);
+        Correlation correlation = Correlation.startingWith(CorrelationId.generate(IDS));
+        String actor;
+        try (SecurityContext.Scope platform = SecurityContext.enterSystem();
+                CorrelationContext.Scope flow = CorrelationContext.enter(correlation)) {
+            actor = SecurityContext.require().type().name() + ":"
+                    + SecurityContext.require().id();
+            assertThatThrownBy(() -> fetch.fetch(SOURCE, new SettlementFetchRequest(key)))
+                    .isInstanceOf(SimulatedCrash.class);
+        }
+        assertThat(permit(SOURCE, key))
+                .as("the fetch's first effect committed: its permit was renewed")
+                .hasValueSatisfying(permit -> assertThat(permit.attempts()).isEqualTo(1));
+        assertThat(text("SELECT actor_type || ':' || actor_id || '|' || target_id || '|'"
+                        + " || outcome || '|' || change_summary FROM platform.audit_record"
+                        + " WHERE operation = ? AND correlation_id = ?",
+                        FETCH_STARTED, correlation.correlationId().value()))
+                .as("who asked for which report is on the record, beside the permit")
+                .isEqualTo(actor + "|" + SOURCE + "|SUCCEEDED|businessKey=" + key);
+        assertThat(count("SELECT count(*) FROM platform.audit_record WHERE operation = ?"
+                        + " AND correlation_id = ?",
+                        FETCH_REQUESTED, correlation.correlationId().value()))
+                .as("the process died before the record of what it came to")
+                .isZero();
+    }
+
+    /** The injected crash: an {@code Error}, which the fetch never catches or records. */
+    private static final class SimulatedCrash extends Error {
+        private static final long serialVersionUID = 1L;
+
+        SimulatedCrash() {
+            super("simulated crash past the permit");
+        }
     }
 
     // ----------------------------------------------------------------- pulls and reports

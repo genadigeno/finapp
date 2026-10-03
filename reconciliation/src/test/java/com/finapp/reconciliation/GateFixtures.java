@@ -53,8 +53,9 @@ import java.util.concurrent.atomic.AtomicLong;
  *
  * <p>The matcher's clock is deliberately months behind the database clock (the
  * {@code GraceAndRematchDatabaseTest} discipline): every window is judged in SQL on the database
- * clock, and an expectation opened at the real instant is "opened after" every decision these
- * suites stamp, which is the rematch predicate's reading.
+ * clock. *(Corrected 2026-10-02 by the Phase 8 -> 9 transition: this added that an expectation
+ * opened at the real instant reads "opened after" every decision, "the rematch predicate's
+ * reading" - the rematch now judges a reach on rows, never on clocks.)*
  */
 final class GateFixtures {
 
@@ -173,7 +174,6 @@ final class GateFixtures {
                 new JdbcBreakCaseStore(),
                 suspense(),
                 matchingStore,
-                ResolutionFixtures.resolutions(IDS, CLOCK),
                 new JdbcRuleSets(),
                 ResolutionFixtures.adjustments(IDS, CLOCK),
                 new JdbcLedgerAccountStore(),
@@ -181,7 +181,10 @@ final class GateFixtures {
                 new JdbcAuditWriter(),
                 IDS,
                 CLOCK,
-                ReconciliationTelemetry.NONE);
+                ReconciliationTelemetry.NONE,
+                (unitOfWork, subject) ->
+                        InternalReferenceLookup.InternalReference.unknown(),
+                ReturnedPayouts.NONE);
     }
 
     static ResolutionMachine machine() {
@@ -459,8 +462,10 @@ final class GateFixtures {
      * The planted AMBIGUOUS_MATCH (the engine never produces one: one expectation per key -
      * `V002`'s {@code expectation_key_once}): an item whose stored decision saw
      * {@code chosen} and {@code other}, parked under its AMBIGUOUS_MATCH break. The item quotes
-     * {@code chosen}'s key, so the matcher's rematch leg reaches the same pair a manual match
-     * would allocate - the C11 race's two writers.
+     * {@code chosen}'s key, so a REPROCESS run's re-decision reaches the same pair a manual match
+     * would allocate - the C11 race's two writers. (Since the Phase 8 -> 9 transition the rematch
+     * leg does not: the planted decision has seen both candidates, and the rematch judges only a
+     * reach no decision of the item has seen.)
      */
     static Parked plantAmbiguous(UUID source, UUID ruleSet, Seeded chosen, Seeded other,
             long minor) {

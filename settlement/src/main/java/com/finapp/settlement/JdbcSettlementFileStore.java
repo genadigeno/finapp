@@ -686,9 +686,10 @@ public final class JdbcSettlementFileStore implements SettlementFileStore<Connec
 
     /**
      * The channel-eligibility predicate (ADR-0066 §2, §8, §9), one text for both claim reads.
-     * A readmission's rank reads `V009`'s functions — the ONE source of truth its trigger also
-     * refuses by (`P8-TSK-022`): it inherits its original's authentication, or a person
-     * distinct from every submitter along its chain attested it.
+     * A readmission's rank reads `V009`'s functions (the walk as `V014` re-states it: a
+     * `DECLINED` original, or one whose batch is `REPUDIATED`, passes nothing on) — the ONE
+     * source of truth its trigger also refuses by (`P8-TSK-022`): it inherits its original's
+     * authentication, or a person distinct from every submitter along its chain attested it.
      */
     private static final String ELIGIBLE =
             "(f.received_via = 'PULL'"
@@ -702,13 +703,17 @@ public final class JdbcSettlementFileStore implements SettlementFileStore<Connec
                     + "))))";
 
     @Override
-    public List<UUID> dueForAccept(Connection unitOfWork, int limit) {
+    public List<UUID> dueForAccept(Connection unitOfWork, Instant now, int limit) {
         try (PreparedStatement read =
                 unitOfWork.prepareStatement(
+                        // A backed-off file is no candidate (MI-7): our failures leave the
+                        // window instead of holding it against every later file.
                         "SELECT f.id FROM settlement.file f"
                                 + " WHERE f.status = 'PARSED' AND " + ELIGIBLE
+                                + " AND (f.next_accept_at IS NULL OR f.next_accept_at <= ?)"
                                 + " ORDER BY f.received_at, f.id LIMIT ?")) {
-            read.setInt(1, limit);
+            read.setTimestamp(1, Timestamp.from(now));
+            read.setInt(2, limit);
             try (ResultSet rows = read.executeQuery()) {
                 List<UUID> due = new ArrayList<>();
                 while (rows.next()) {
@@ -755,6 +760,38 @@ public final class JdbcSettlementFileStore implements SettlementFileStore<Connec
             return write.executeUpdate() == 1;
         } catch (SQLException failure) {
             throw new SettlementStorageException("could not accept a file", failure);
+        }
+    }
+
+    @Override
+    public int bumpAcceptFailures(Connection unitOfWork, UUID fileId) {
+        try (PreparedStatement write =
+                unitOfWork.prepareStatement(
+                        "UPDATE settlement.file SET accept_failures = accept_failures + 1"
+                                + " WHERE id = ? RETURNING accept_failures")) {
+            write.setObject(1, fileId);
+            try (ResultSet row = write.executeQuery()) {
+                if (!row.next()) {
+                    throw new SettlementStorageException(
+                            "no settlement file " + fileId + " exists");
+                }
+                return row.getInt("accept_failures");
+            }
+        } catch (SQLException failure) {
+            throw new SettlementStorageException("could not count an accept failure", failure);
+        }
+    }
+
+    @Override
+    public void scheduleNextAccept(Connection unitOfWork, UUID fileId, Instant nextAcceptAt) {
+        try (PreparedStatement write =
+                unitOfWork.prepareStatement(
+                        "UPDATE settlement.file SET next_accept_at = ? WHERE id = ?")) {
+            write.setTimestamp(1, Timestamp.from(nextAcceptAt));
+            write.setObject(2, fileId);
+            write.executeUpdate();
+        } catch (SQLException failure) {
+            throw new SettlementStorageException("could not schedule the next acceptance", failure);
         }
     }
 

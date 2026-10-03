@@ -230,8 +230,9 @@ public interface SettlementFileStore<T> {
 
     /**
      * Appends one machine-history row. A {@code from == to} row records the platform's
-     * processing of a file that did not move — the parse leg's failure note — which is the
-     * file history's own kind of audit (`P8-TSK-008`'s ruling).
+     * processing of a file that did not move — the parse leg's failure note, and since the
+     * Phase 8 → 9 transition (MI-7) the accept leg's — which is the file history's own kind
+     * of audit (`P8-TSK-008`'s ruling).
      */
     void appendFileEvent(
             T unitOfWork,
@@ -256,10 +257,12 @@ public interface SettlementFileStore<T> {
      * always; an upload only once a second person attested it; a readmission when it inherits
      * its original's authentication, or once a person distinct from every submitter along its
      * chain attested it — read through `V009`'s functions, the same ones its trigger refuses
-     * by (`P8-TSK-022`). Oldest first, ids only, NO lock — the claim that matters is
-     * {@link #lockEligibleById} inside each file's own transaction.
+     * by (`P8-TSK-022`). Due only — {@code next_accept_at} unset or passed, so a file our
+     * failures backed off leaves the window (the Phase 8 → 9 transition, MI-7). Oldest first,
+     * ids only, NO lock — the claim that matters is {@link #lockEligibleById} inside each
+     * file's own transaction.
      */
-    List<UUID> dueForAccept(T unitOfWork, int limit);
+    List<UUID> dueForAccept(T unitOfWork, Instant now, int limit);
 
     /**
      * The per-file claim: the row, {@code FOR UPDATE SKIP LOCKED}, only while still
@@ -271,6 +274,16 @@ public interface SettlementFileStore<T> {
 
     /** The conditional {@code PARSED → ACCEPTED}; false when the row already moved. */
     boolean markFileAccepted(T unitOfWork, UUID fileId, Instant at);
+
+    /**
+     * The accept leg's own failure tally, {@link #bumpParseFailures}'s twin (MI-7):
+     * {@code accept_failures + 1}, returning the new count so the caller can back off — never
+     * a status move, never a rejection.
+     */
+    int bumpAcceptFailures(T unitOfWork, UUID fileId);
+
+    /** Schedules the next acceptance attempt after a failure — {@link #dueForAccept}'s pacing. */
+    void scheduleNextAccept(T unitOfWork, UUID fileId, Instant nextAcceptAt);
 
     /** The source's operational state, locked — retirement is judged under the same lock. */
     Optional<SourceRow> sourceByIdForUpdate(T unitOfWork, UUID sourceId);

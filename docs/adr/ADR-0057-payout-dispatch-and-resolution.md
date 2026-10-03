@@ -176,3 +176,8 @@ owning tasks' rows stand: `INV-LED-01` (`PostingService`, and `V004`'s deferred 
   a takeover's renewal could have made stale: a first send's refused connection failed a payout
   a later permit had already re-sent
   (`MerchantPayoutDatabaseTest#aFirstSendsRefusedConnectionAfterARenewalMovesNothing`).
+- *The Phase 8 → 9 transition*: the dispatch discipline — permits, `UNKNOWN`,
+  knowledge-only conclusions, resolution by query, evidence — is reused by ADR-0077 (the
+  FX cover) and ADR-0079 (the Outbound Credit: §4's states plus `RECEIVED`), both
+  `Proposed`, each born under a **database-stamped** send permit; `X-TSK-010`, scheduled
+  inside Phase 9, aligns this ADR's and the refund's permits to the same rule.

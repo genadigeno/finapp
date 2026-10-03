@@ -202,7 +202,12 @@ provenance, `V013`).
      excess of the opposite direction and the same amount, it offsets that excess instead: the item
      goes `OFFSET`, the suspense item is released with cause `CORRECTION_OFFSET` by an unpark
      posting, and the original's `AMOUNT_MISMATCH` resolves `EVIDENCED` (ADR-0069). An offset with
-     no correlating reference stays a four-eyes `OFFSET_SUSPENSE` (ADR-0071).
+     no correlating reference stays a four-eyes `OFFSET_SUSPENSE` (ADR-0071). *(Corrected
+     2026-10-02 by the Phase 8 -> 9 transition, ATOM-04: a park the correction's own chunk queued
+     offsets exactly as a committed one - the park still posts, then the offset's unpark,
+     parked-original snapshot and `EVIDENCED` closure complete in the same posting phase, the
+     queued park claimed once per chunk - so one run's two exactly opposite lines no longer leave
+     two suspense items for a person's `OFFSET_SUSPENSE`.)*
    - **`CHECK`**: a fee line allocates nothing. Its expected value is `round(rate × gross +
      fixed)` under the pinned `provider_fee_schedule` row for its line type and currency, where the
      gross is that of the capture its `ORIGINAL_REF` reaches, as snapshotted (`numeric(7,6)`, the
@@ -212,12 +217,25 @@ provenance, `V013`).
      outcome `ERRORED`, the remainder parked, a `PROCESSING_ERROR` break, and the chunk carries on,
      because the rows behind a poisoned one are other people's money. A run that fails N times in a
      row (the bound fixed by `P8-TSK-011`) moves to `BLOCKED` and raises a CRITICAL
-     `PROCESSING_ERROR` (cause `RUN_BLOCKED`) in the same transaction.
+     `PROCESSING_ERROR` (cause `RUN_BLOCKED`) in the same transaction. A poisoned FEE line parks
+     nothing (its value was expensed at acceptance): it waits `UNMATCHED` with no clock, and a
+     `REPROCESS` run (point 9.2) re-checks it - `CHECKED` - and closes its `PROCESSING_ERROR`
+     `EVIDENCED` naming that check. *(Corrected 2026-10-02 by the Phase 8 -> 9 transition: the
+     reprocess leg examined such a line as `NO_RULE` and its break could never close, although
+     ADR-0069 promised "reprocess, then EVIDENCED" - the gate's REC-6; the item edge `UNMATCHED ->
+     CHECKED` is reconciliation `V016`'s.)*
 
 4. **Claimant order: the earlier record always wins, on every instance.**
    - Every allocation to an expectation goes through one function, `allocate(E)`, shared by the
      run, rematch, reprocess and manual legs. It serves the items whose keys reach E in
-     `(source_sequence, line_no)` order, residual items of earlier batches included.
+     `(source_sequence, line_no)` order, residual items of earlier batches included. Every leg
+     reads its worklist in that order: the run and reprocess legs, and since the Phase 8 -> 9
+     transition the rematch leg and the grace leg within its expired set. Across legs the order is
+     the sweep's: a later run's line judged by the run leg claims an expectation that opened after
+     an earlier residual's last decision before the rematch leg reaches that residual, which then
+     meets an exhausted candidate - value conserved, the attribution the sweep's timing. *(Corrected
+     2026-10-02 by the Phase 8 -> 9 transition: the rematch leg read `(line_no, id)` across runs
+     and the grace leg `(grace_until, id)` - the gate's claimant-order-by-leg.)*
    - `source_sequence` is assigned gaplessly when a batch is accepted, under the
      `settlement.source` row lock, behind `UNIQUE (source_id, source_sequence)`. It is arrival
      order, not business date: a late, earlier-dated file takes the next sequence and is processed
@@ -243,14 +261,14 @@ provenance, `V013`).
      | Contention | PostgreSQL arbiter | Loser |
      |---|---|---|
      | Ten instances on one batch or source | namespace 4 per chunk; the cursor advanced in the chunk's own transaction | Moves on |
-     | Duplicate matching (retry, takeover, rematch vs run, manual vs engine) | `UNIQUE (external_item_id, expectation_id) WHERE reverses_allocation_id IS NULL`; deferred Σ triggers (the allocations equal `allocated_minor`; allocated + resolved ≤ amount on both sides); `CHECK (allocated_minor + parked_minor + offset_minor <= amount_minor)` on the item and `CHECK (allocated_minor + resolved_minor <= amount_minor)` on the expectation; conditional item and expectation transitions; append-only grants | Rolls back; a person gets `409 reconciliation.RecordAlreadyMatched` |
+     | Duplicate matching (retry, takeover, rematch vs run, manual vs engine) | `UNIQUE (external_item_id, expectation_id) WHERE reverses_allocation_id IS NULL`; deferred Σ triggers (the allocations equal `allocated_minor`; allocated + resolved ≤ amount on both sides); `CHECK (allocated_minor + parked_minor + offset_minor <= amount_minor)` on the item and `CHECK (allocated_minor + resolved_minor <= amount_minor)` on the expectation; conditional item and expectation transitions; append-only grants *(made real for the run leg 2026-10-02 by the Phase 8 -> 9 transition, REC-10/MI-4/IDEM-3: `lockItems` re-reads status under each item's lock and the chunk skips what left `PENDING`, and a conditional exit that updates no row throws, rolling the item back - before that the run leg discarded the exits' results, and a bypassed loser wrote a second `RUN` decision and, on an item the winner matched, a break owning no suspense that no resolution kind could close)* | Rolls back; a person gets `409 reconciliation.RecordAlreadyMatched` |
      | Allocation vs ageing on one expectation | the expectation row `FOR UPDATE`, plus conditionals | Either order converges: no break, or `EVIDENCED` |
      | Duplicate park, unpark or offset | the item's conditional transition; `UNIQUE suspense_item (external_item_id)`; the park row's key | No second entry |
      | The return worker against the grace leg on one `PAYOUT_RETURNED` item | the item row: the worker re-reads it under a share lock and proceeds only while it is `UNMATCHED`; the grace leg judges it on the locked row (ADR-0073 §7) | Either order converges: allocated after the return, or parked with no return applied. The race is `P8-TSK-013`'s and `P8-TSK-019`'s counted test |
      | Rule-set activation race | partial `UNIQUE (source_id) WHERE status = 'ACTIVE'`; retirement inside the activation; `CHECK` activator ≠ proposer | 409 |
      | Concurrent reprocess requests | partial `UNIQUE (source_id) WHERE kind = 'REPROCESS' AND status <> 'COMPLETED'`; the idempotency key | 409 |
      | Window expiry judged by instances with skewed clocks | judged in SQL, on the database clock, against stored dates (`grace_until` stamped from `statement_timestamp()`, expiry read against `now()`) | — |
-     | *(Recorded debt, `P8-DOC-001`; owner Phase 15)* The rematch worklist's keyed and value-date clauses | compare an expectation's `opened_at` (the opener's instance clock) with the item's latest `decided_at` (the matcher's instance clock), so a candidate opened within the skew of a decision is not seen by the rematch leg | No value is created or lost. An `UNMATCHED` item waits for its grace, where the grace leg re-decides it on the locked row and allocates the candidate. A `PARKED` item stays parked with its break while the missed expectation ages into `MISSING_EXTERNAL`: two breaks for a person, and no automatic match. Only the anchored clause was moved off the clocks (`P8-TST-001`) |
+     | The rematch worklist's reach, against instances' clocks and commit latency | judged on rows: an expectation with a remainder that no decision of the item has recorded as a candidate, or a late leg's examination as reached (`match_reach`, reconciliation `V016`) - never `opened_at` against `decided_at`. A rematch that cannot act records its examination and the reach it read BEFORE judging, so each reach is examined once and a residual that can never allocate leaves the worklist | — *(Corrected 2026-10-02 by the Phase 8 -> 9 transition: this row recorded as Phase 15 debt that the keyed and value-date clauses compared an expectation's `opened_at` with the item's latest `decided_at`. Both are Java instants stamped before their commits, so the window was commit latency on one instance as well as skew between two, and a `PARKED` line - which has no grace - stayed in suspense beside its settled-late expectation; with no remainder condition, residents that could never allocate re-locked the worklist's head every tick. The gate's rematch-keyed-valuedate-clocks and rematch-key-clause-reselection.)* |
 
    - There are **no per-item advisory locks**, so the lock-table exhaustion a per-item design
      invites cannot arise. The lock order, recorded as a `DISTRIBUTED_EXECUTION.md` §3 row, is:
@@ -280,7 +298,18 @@ provenance, `V013`).
    - Duplicate lines fall to the same order. A line's `canonical_fingerprint` is indexed and
      deliberately not unique, so both copies are kept. The later claimant — because the same
      fingerprint appeared earlier, or because its expectation is already filled — parks as
-     `DUPLICATE_EXTERNAL`.
+     `DUPLICATE_EXTERNAL`. An earlier identical fingerprint is definitive in EVERY leg: each late
+     leg judges the item with its true fingerprint verdict, stored on its decision, and a park
+     owned by a `REPEATED_FINGERPRINT` break is on no late leg's worklist - it leaves only by a
+     person's resolution. **A bank statement's line is never a fingerprint duplicate**: a
+     statement is unique by its chain's sequence, so a re-delivered statement never reaches the
+     matcher, while two equal same-day tranches of one remittance share one canonical fingerprint
+     and are both cash; a tranche that finds its remittance filled parks `DUPLICATE_EXTERNAL`
+     (`EXPECTATION_EXHAUSTED`). *(Corrected 2026-10-02 by the Phase 8 -> 9 transition: the late legs
+     judged every residual with no fingerprint, so a reprocess or a rematch could allocate a
+     repeated line, unpark it and close its own duplicate break `EVIDENCED` - the gate's REC-1 and
+     duplicate-takes-payout-return; and a bank's equal tranches were parked as fingerprint
+     duplicates - its T-3.)*
 
 5. **Every decision stores what it saw.** Each evaluation writes one `match_decision`: the item,
    its origin (`RUN`, `REMATCH`, `REPROCESS`, `MANUAL`), `rule_set_id NOT NULL`, `rule_priority`,
@@ -307,7 +336,13 @@ provenance, `V013`).
      `DUPLICATE_EXTERNAL`, `CURRENCY_MISMATCH`, the `AMOUNT_MISMATCH` excess, `AMBIGUOUS_MATCH`,
      `REFUND_MISMATCH` against a terminal failed refund, and `REVERSAL_MISMATCH` against a
      terminal state (a capture on a `VOIDED` or `FAILED` attempt; a reversal on a dispute that is
-     `LOST` or `ACCEPTED`). No later internal record can change these.
+     `LOST` or `ACCEPTED`). No later internal record can change these. So is an allocating line no
+     rule of its pinned version can allocate (`NO_RULE`: an `OTHER_IN` or `OTHER_OUT` no rule set
+     can even name, or a line type its version does not serve): its grace is zero, so it parks in
+     its run's own chunk as `UNKNOWN_EXTERNAL` (`GRACE_EXPIRED`), its value owned at once; a later
+     version's `REPROCESS` run may still re-decide it. *(Corrected 2026-10-02 by the Phase 8 -> 9
+     transition: such a line waited `UNMATCHED` with no grace clock and no break, for ever - the
+     gate's REC-2, `INV-REC-02`.)*
    - **Waiting — late internal evidence could still explain it:** `UNKNOWN_EXTERNAL` (the key is
      unknown); `MISSING_INTERNAL` (the operation is known but not completed: a capture `UNKNOWN`,
      a refund `DISPATCHED`, a dispute stage not yet applied); a `PAYOUT_RETURNED` line with no
@@ -317,10 +352,11 @@ provenance, `V013`).
      other references name an operation still in flight, and `UNKNOWN_EXTERNAL` otherwise. The
      item stays `UNMATCHED` until its `grace_until`, stamped from the firing rule's
      `grace_hours` and judged in SQL on the database clock. If the internal record
-     lands meanwhile, the rematch leg allocates the item. Otherwise the grace leg parks it and
-     raises the break. *(The rematch leg's keyed and value-date clauses still compare two
-     instances' clocks: point 4's table records the debt. The grace window itself is judged on
-     the database clock.)*
+     lands meanwhile, the rematch leg allocates the item - and allocates a PARKED item too, once
+     the internal record lands after grace. Otherwise the grace leg parks it and raises the break.
+     The grace window is judged on the database clock, and the rematch's reach on rows (point 4's
+     table). *(Corrected 2026-10-02 by the Phase 8 -> 9 transition: this recorded the rematch
+     clauses' two-clock comparison as debt.)*
    - When several classes apply, precedence is: the definitive specific types, then
      `MISSING_INTERNAL`, then `UNKNOWN_EXTERNAL` (ADR-0069).
    - **Timing** is judged on every match. A settlement date later than `expected_by +
@@ -429,7 +465,26 @@ provenance, `V013`).
       opens a `REPROCESS` run over **residual items only** (`UNMATCHED` or `PARKED`) and
       re-resolves their candidates now, under the active version. Its decisions are new rows, so
       drift in candidate resolution appears as new decisions, never as edits. A parked item it
-      allocates is unparked.
+      allocates is unparked. A park owned by a `REPEATED_FINGERPRINT` break is not on its worklist
+      (point 4), every item it judges is judged with its true fingerprint, and a fee line left
+      waiting - its check contained, or no `CHECK` in its own version - is `CHECKED` under the
+      run's version, its contained `PROCESSING_ERROR` closed `EVIDENCED` naming that check (point
+      3). While the run is open, time's rematch leg yields its source to it: the run re-decides
+      every residual, and a rule-set activation alone can give a residual a reach the rematch
+      (judged on rows, point 4) would otherwise take first - an ordering, never an arbiter.
+      *(Corrected 2026-10-02 by the Phase 8 -> 9 transition, the gate's REC-1 and REC-6.)*
+
+      *(Corrected 2026-10-02 by the Phase 8 → 9 transition, the audit's `SEC-04`: the reprocess
+      and requeue reasons were blank- and length-checked only, so a card number or an account
+      identifier pasted into one rested in plaintext in `reconciliation_batch(_event).reason` and
+      `platform.audit_record.reason`. `RunAdministration.refuseReason` now also refuses any
+      instrument shape under the platform's one screen (`InstrumentShapes`), and the reprocess
+      door judges it before its idempotency claim: `422 api.ValidationFailed`, nothing written,
+      the value never echoed. Reconciliation `V019` is its twin for every other writer
+      (`reconciliation_batch_reason_no_instrument_shape`,
+      `reconciliation_batch_event_reason_no_instrument_shape`). The opening position's reason
+      (ADR-0067 §8) is screened the same way before its walk. Proven by `CaseFileRulesTest`,
+      `ReconciliationV019MigrationTest` and `PersonWrittenReasonsAreScreenedDatabaseTest`.)*
    3. **Order-independence.** A property test over the pure layer: shuffled processing orders
       yield identical allocations, because every allocation goes through `allocate(E)` in claimant
       order.
@@ -445,10 +500,10 @@ provenance, `V013`).
     not for the world. A decision is a pure function of its stored candidate snapshot and its
     pinned rule set, so replay is exact. Which candidates a decision saw depends on what had been
     recorded when it ran — an expectation's `opened_at`, first-writer-wins keys, grace expiry on
-    the database clock — and that is exactly why the snapshot is stored. *(One worklist reading
-    is not yet on the database clock: the rematch leg's keyed and value-date clauses compare two
-    instances' clocks, point 4's recorded debt. It decides only when a residual is re-examined,
-    never what a decision allocates, so replay stays exact.)* The statement is amended
+    the database clock — and that is exactly why the snapshot is stored. *(Corrected 2026-10-02
+    by the Phase 8 -> 9 transition: this recorded that the rematch leg's keyed and value-date
+    clauses still compared two instances' clocks; every worklist reading is now on rows or on the
+    database clock.)* The statement is amended
     to "the same stored inputs always produce the same matches". Enforce gains claimant order under
     namespace 4 and decision snapshots. Verify gains the shuffled-order property test and snapshot
     replay. `INV-HIST-04`'s Verify names decision replay.
@@ -682,7 +737,11 @@ adapters). Catalogued with this ADR:
   no migration statement carries the number — the run leg's TRY form and the park
   path's blocking form are proven to share it. Ten sweepers converge WITH the lock and
   with it BYPASSED (`MatchingDatabaseTest`); a bypassed loser may record its losing
-  evaluation — an honest `ERRORED` decision — while money moves once.
+  evaluation — an honest `ERRORED` decision — while money moves once. *(Corrected 2026-10-02
+  by the Phase 8 -> 9 transition, REC-10/MI-4/IDEM-3: a bypassed loser now re-reads each
+  item's status under its row lock and SKIPS what left `PENDING`, recording nothing — one
+  `RUN` decision per item and no loser's break, counted in one chunk and across chunks of
+  three and two.)*
   `P8-TSK-012` adds `CHECK` and `CORRECTION`, and `P8-TSK-013` the grace and rematch legs on the
   database clock.
   **`P8-TSK-012` implemented** (2026-09-30), with the design decisions recorded: the fee check is one pure seat (`FeeCheck`: round(rate × gross + fixed) under the pinned NAMED rounding, the comparison STRICT — at the tolerance nothing, one minor unit beyond a breach); a fee whose `ORIGINAL_REF` reaches no capture expectation is judged AT ONCE against an expected fee of ZERO (F1 — waiting would hand the grace leg a fee item, and the grace leg parks expirees, double-counting expensed value), and an absent schedule or tolerance row reads zero (F2, the conservative default); the per-batch comparison folds signed reported − expected per currency once, under the completing edge's one winner, and names the run's FIRST fee item in claimant order (D — the taxonomy names the item), converging on the one-open unique — a first item already carrying its own per-line break absorbs the batch verdict there. `CORRECTION` is its own pure seat (`CorrectionEngine`): a same-direction top-up allocates min(item, remainder) with any excess parked (C1 — a correction is evidence like any line), the opposite-direction offset requires EXACT equality — never partial — and the top-up wins when both could apply; a repeated correction fingerprint is the duplicate it always was, while a repeated fee line is still checked — each expensed line judged. A poisoned FEE item is contained WITHOUT a park — `UNMATCHED` with no clock, its `ERRORED` decision and unparked `PROCESSING_ERROR` break the record — because nothing of an expensed fee sits in the position. `NO_RULE`'s remaining producers are the rule-less line types (`OTHER_IN`/`OTHER_OUT`). The grace leg judges a `PAYOUT_RETURNED` item on its locked row, and its race
@@ -823,13 +882,19 @@ adapters). Catalogued with this ADR:
   and the four-eyes acknowledgement of a diverged replay (`P8-TST-002`, `V014`). *(This read
   "Until the remaining tasks land, the statements they own are decided design" until
   `P8-DOC-001`.)*
-- **Recorded debt:** the rematch worklist's keyed and value-date clauses compare two instances'
-  clocks (point 4's table; owner Phase 15); and a duplicate line's widened chance at a return,
-  recorded by `P8-TST-001` (the `P8-TSK-019` note above; owner Phase 15); and claimant order
-  differing by leg - the run and reprocess legs in `(source_sequence, line_no)`, the rematch leg in
-  `(line_no, id)`, the grace leg in `(grace_until, id)` (owner Phase 15; `CURRENT_STATE.md`).
+- **Recorded debt:** none of this decision's own. *(Corrected 2026-10-02 by the Phase 8 -> 9
+  transition: this listed three Phase 15 rows - the rematch clauses' two clocks, a duplicate
+  line's widened chance at a return, and claimant order differing by leg. The transition's
+  completion gate ruled each a defect to fix, not debt: the reach is judged on rows and consumed
+  once (point 4's table), a definitive duplicate is on no late leg's worklist (point 4), and
+  every leg reads its worklist in claimant order (point 4).)*
 - The Phase 8 review (`P8-DOC-001`) read this ADR against the code before accepting it. It
   corrected the park entry's grain (point 1), the `PAYOUT_FEE` row and v1's one appended rule
   (point 2), the namespace pin's test (point 4), the tolerance's columns (point 7), the
   activation `CHECK` and the keyed doors (point 8), the diverged replay's four-eyes disposal
   (point 9.1), the anchored clause, and the stale records, and recorded the clock debt.
+- *The Phase 8 → 9 transition* (ADR-0082, `Proposed`): no NEW source's rule set is ever
+  migration-seeded again — a version 1 arrives through the existing door, four-eyes as any
+  other proposal, and a source without an `ACTIVE` version refuses loudly with a typed
+  `RuleSetMissing`; `V002`'s seeded version 1 stands as history, its exemption never
+  widened.

@@ -1,6 +1,7 @@
 package com.finapp.app.reconciliation;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
 import com.finapp.accounts.AccountOpening;
 import com.finapp.accounts.JdbcCustomerAccountStore;
@@ -113,6 +114,43 @@ class ReconciliationOpeningDatabaseTest {
     @LocalServerPort private int port;
     @Autowired private Authorization authorization;
     @Autowired private PositionProof positionProof;
+
+    // The opening position's own collaborators, named as its bean method names them, for the
+    // crash-injected instance (SEC-08); the bean itself retries what the crash interrupted.
+    @Autowired private OpeningPosition openingPosition;
+    @Autowired private com.finapp.payments.PaymentAttemptStore<Connection> paymentAttemptStore;
+    @Autowired private com.finapp.payments.PaymentIntentStore<Connection> paymentIntentStore;
+    @Autowired private com.finapp.payments.RefundStore<Connection> refundStore;
+    @Autowired private com.finapp.payments.WithdrawalStore<Connection> withdrawalStore;
+    @Autowired private com.finapp.payments.DisputeStore<Connection> disputeStore;
+
+    @Autowired
+    private com.finapp.payments.UnmatchedConfirmationStore<Connection> unmatchedConfirmationStore;
+
+    @Autowired private com.finapp.merchant.MerchantPayoutStore<Connection> merchantPayoutStore;
+    @Autowired private PaymentRails paymentRails;
+    @Autowired private com.finapp.ledger.LedgerAccountStore<Connection> ledgerAccountStore;
+    @Autowired private com.finapp.ledger.JournalEntryStore<Connection> journalEntryStore;
+    @Autowired private ReconciliationExpectationRecorder settlementExpectations;
+    @Autowired private IdempotentExecutor idempotentExecutor;
+    @Autowired private com.finapp.platform.audit.AuditWriter<Connection> auditWriter;
+    @Autowired private IdGenerator idGenerator;
+    @Autowired private Clock clock;
+
+    @Autowired
+    private org.springframework.transaction.support.TransactionTemplate reconciliationTransactions;
+
+    @Autowired private javax.sql.DataSource dataSource;
+    @Autowired private com.finapp.settlement.SettlementSources settlementSources;
+
+    @Autowired
+    private com.finapp.settlement.SettlementBatchStore<Connection> settlementBatchStore;
+
+    @Autowired private com.finapp.app.settlement.ReconciliationIntake acceptedBatchIntake;
+    @Autowired private com.finapp.merchant.PayoutReturnStore<Connection> payoutReturnStore;
+
+    @Autowired
+    private com.finapp.payments.SchemeExecutionClaimStore<Connection> schemeExecutionClaimStore;
 
     private final HttpClient http = HttpClient.newHttpClient();
     private final SessionStore<Connection> sessions = new JdbcSessionStore();
@@ -308,6 +346,140 @@ class ReconciliationOpeningDatabaseTest {
                     .as("one expectation for %s under ten backfills and a live burst",
                             attempt)
                     .isEqualTo(1);
+        }
+    }
+
+    @Test
+    @DisplayName("a walk that crashes between its transactions leaves its adopted prefix AND the"
+            + " record of who began it and why - the start commits before the first page"
+            + " (SEC-08); the same-key retry re-walks, converges and records its counts")
+    void aCrashMidWalkStillLeavesItsStartOnTheRecord() throws Exception {
+        // History the walk adopts BEFORE it crashes, so the prefix it leaves is real.
+        Holder holder = holder();
+        PaymentAttemptId attemptId = captureDispatched(holder);
+        applyCapture(holder, attemptId, "psp-crash-" + UUID.randomUUID());
+
+        // THE CRASH: the alias leg's page dies after every capture was adopted - the process
+        // lost between the walk's transactions, never reaching the counts' record.
+        com.finapp.payments.ClearingRecordStore<Connection> real =
+                new com.finapp.payments.JdbcClearingRecordStore();
+        com.finapp.payments.ClearingRecordStore<Connection> crashing =
+                new com.finapp.payments.ClearingRecordStore<>() {
+                    @Override
+                    public boolean insert(
+                            Connection unitOfWork, com.finapp.payments.ClearingRecord fresh) {
+                        return real.insert(unitOfWork, fresh);
+                    }
+
+                    @Override
+                    public Optional<com.finapp.payments.ClearingRecord> findForAttempt(
+                            Connection unitOfWork, PaymentAttemptId attempt) {
+                        return real.findForAttempt(unitOfWork, attempt);
+                    }
+
+                    @Override
+                    public List<com.finapp.payments.ClearingRecord> page(
+                            Connection unitOfWork, UUID after, int limit) {
+                        throw new SimulatedCrash();
+                    }
+                };
+        OpeningPosition crashingWalk =
+                new OpeningPosition(
+                        paymentAttemptStore,
+                        paymentIntentStore,
+                        refundStore,
+                        withdrawalStore,
+                        disputeStore,
+                        unmatchedConfirmationStore,
+                        crashing,
+                        merchantPayoutStore,
+                        paymentRails,
+                        new ChartOfAccounts<>(ledgerAccountStore),
+                        journalEntryStore,
+                        settlementExpectations,
+                        idempotentExecutor,
+                        auditWriter,
+                        idGenerator,
+                        clock,
+                        reconciliationTransactions,
+                        dataSource,
+                        settlementSources,
+                        settlementBatchStore,
+                        acceptedBatchIntake,
+                        payoutReturnStore,
+                        schemeExecutionClaimStore);
+
+        Actor controller = new Actor(IDS.next().toString(), ActorType.CUSTOMER);
+        String key = "crash-" + IDS.next();
+        String reason = "adopting history, interrupted";
+        Correlation crashed = flow();
+        try (SecurityContext.Scope actor = SecurityContext.enter(controller);
+                CorrelationContext.Scope flow = CorrelationContext.enter(crashed)) {
+            assertThatThrownBy(() -> crashingWalk.record(key, reason))
+                    .isInstanceOf(SimulatedCrash.class);
+        }
+
+        assertThat(ClearingLineCopies.expectationsOf(
+                        ExpectationKind.CARD_CAPTURE, attemptId.value().toString()))
+                .as("the walk's prefix committed before the crash")
+                .isEqualTo(1);
+        try (Connection app = DatabaseRoles.application()) {
+            assertThat(count(app,
+                            "SELECT count(*) FROM platform.audit_record WHERE operation ="
+                                    + " 'reconciliation.OpeningPositionStarted' AND"
+                                    + " correlation_id = ? AND actor_id = ? AND reason = ? AND"
+                                    + " outcome = 'SUCCEEDED'",
+                            crashed.correlationId().value(), controller.id(), reason))
+                    .as("who began the walk, and why, is on the record though it never ended")
+                    .isEqualTo(1);
+            assertThat(count(app,
+                            "SELECT count(*) FROM platform.audit_record WHERE operation ="
+                                    + " 'reconciliation.OpeningPositionRecorded' AND"
+                                    + " correlation_id = ?",
+                            crashed.correlationId().value()))
+                    .as("no counts: the run was never recorded")
+                    .isZero();
+            assertThat(count(app,
+                            "SELECT count(*) FROM platform.idempotency_record WHERE"
+                                    + " idempotency_key = ?",
+                            key))
+                    .as("nor claimed")
+                    .isZero();
+        }
+
+        // THE RETRY, same principal and key: it re-walks, converges on the uniques, records.
+        Correlation retried = flow();
+        try (SecurityContext.Scope actor = SecurityContext.enter(controller);
+                CorrelationContext.Scope flow = CorrelationContext.enter(retried)) {
+            openingPosition.record(key, reason);
+        }
+        assertThat(ClearingLineCopies.expectationsOf(
+                        ExpectationKind.CARD_CAPTURE, attemptId.value().toString()))
+                .as("the retry adds nothing twice")
+                .isEqualTo(1);
+        try (Connection app = DatabaseRoles.application()) {
+            assertThat(count(app,
+                            "SELECT count(*) FROM platform.audit_record WHERE operation ="
+                                    + " 'reconciliation.OpeningPositionRecorded' AND"
+                                    + " correlation_id = ? AND actor_id = ?",
+                            retried.correlationId().value(), controller.id()))
+                    .isEqualTo(1);
+            assertThat(count(app,
+                            "SELECT count(*) FROM platform.audit_record WHERE operation ="
+                                    + " 'reconciliation.OpeningPositionStarted' AND"
+                                    + " actor_id = ?",
+                            controller.id()))
+                    .as("one start per walk: the crashed one and the retry")
+                    .isEqualTo(2);
+        }
+    }
+
+    /** The injected crash: nothing the walk could catch or answer. */
+    private static final class SimulatedCrash extends RuntimeException {
+        private static final long serialVersionUID = 1L;
+
+        SimulatedCrash() {
+            super("simulated crash between the walk's transactions");
         }
     }
 

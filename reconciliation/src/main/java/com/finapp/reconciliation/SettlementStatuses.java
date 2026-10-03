@@ -2,6 +2,7 @@ package com.finapp.reconciliation;
 
 import java.sql.Connection;
 import java.util.ArrayList;
+import java.util.HashSet;
 import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Objects;
@@ -17,6 +18,14 @@ import lombok.RequiredArgsConstructor;
  * reference in reconciliation's own schema (a remittance's {@code operation_ref} is its batch
  * id, `P8-TSK-009`), the status derived by {@link SettlementStatus#derive} and never stored.
  * Run inside one {@code REPEATABLE READ} snapshot so the status and its trail agree.
+ *
+ * <p><strong>Standing allocations only</strong> (the Phase 8 -> 9 transition, SET-3): a
+ * counter-allocation and the original it reverses (a batch repudiation's, `P8-TSK-023`) net to
+ * nothing, so neither is settlement evidence - both are dropped from every hop, the operation's
+ * own and each remittance's bank allocations alike. An operation re-settled by the genuine batch
+ * after a repudiation derives from that batch alone, and reaches {@code CASH_CONFIRMED} when its
+ * remittance is settled; the trail never names the repudiated batch, its remittance or a bank
+ * item whose allocation was countered.
  */
 @RequiredArgsConstructor
 public final class SettlementStatuses {
@@ -72,7 +81,8 @@ public final class SettlementStatuses {
         boolean truncated = allocations.size() > BOUND;
         List<UUID> allocationIds = new ArrayList<>();
         Set<UUID> itemIds = new LinkedHashSet<>();
-        for (ExpectationInquiries.AllocationRow allocation : allocations.stream().limit(BOUND).toList()) {
+        for (ExpectationInquiries.AllocationRow allocation :
+                standing(allocations.stream().limit(BOUND).toList())) {
             allocationIds.add(allocation.id());
             itemIds.add(allocation.externalItemId());
         }
@@ -93,7 +103,8 @@ public final class SettlementStatuses {
                 remittanceIds.add(row.id());
                 List<ExpectationInquiries.AllocationRow> bank =
                         inquiries.allocations(unitOfWork, row.id(), BOUND + 1);
-                bank.stream().limit(BOUND).forEach(line -> bankItemIds.add(line.externalItemId()));
+                standing(bank.stream().limit(BOUND).toList())
+                        .forEach(line -> bankItemIds.add(line.externalItemId()));
             });
         }
         return Optional.of(
@@ -111,5 +122,19 @@ public final class SettlementStatuses {
                         remittanceIds,
                         List.copyOf(bankItemIds),
                         truncated));
+    }
+
+    /**
+     * The allocations that stand: neither a counter-allocation nor an original a counter in the
+     * same read reverses - the pair nets to nothing (`INV-REC-07`'s mirror).
+     */
+    static List<ExpectationInquiries.AllocationRow> standing(
+            List<ExpectationInquiries.AllocationRow> allocations) {
+        Set<UUID> countered = new HashSet<>();
+        allocations.forEach(row -> row.reversesAllocationId().ifPresent(countered::add));
+        return allocations.stream()
+                .filter(row -> row.reversesAllocationId().isEmpty())
+                .filter(row -> !countered.contains(row.id()))
+                .toList();
     }
 }

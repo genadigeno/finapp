@@ -340,15 +340,45 @@ class ReconciliationInvestigationDatabaseTest {
 
     @Test
     @Order(4)
-    @DisplayName("the case file over HTTP: assignment opens the investigation once, a keyed"
-            + " note replays, its body reaches no log, event, audit or idempotency record, a"
-            + " PAN-bearing note is refused with nothing stored, links are verified")
+    @DisplayName("the case file over HTTP: an assignee that is no active investigator - a card"
+            + " number, a free-text or unknown id, a role-less person, the controller - refused"
+            + " 422 with nothing written or published (SEC-06); assignment opens the"
+            + " investigation once, a keyed note replays, its body reaches no log, event, audit"
+            + " or idempotency record, a PAN-bearing note is refused with nothing stored, links"
+            + " are verified")
     void theCaseFileOverHttp(CapturedOutput output) throws Exception {
         Session operator = sessionWith(RoleName.RECONCILIATION_OPERATOR);
+        Session colleague = sessionWith(RoleName.RECONCILIATION_OPERATOR);
+        Session controller = sessionWith(RoleName.RECONCILIATION_CONTROLLER);
+        Session roleless = rolelessSession();
+        String pan = "4111111111111111";
+        for (String refusedAssignee : List.of(pan, "op-desk-1", UUID.randomUUID().toString(),
+                roleless.identity().value().toString(),
+                controller.identity().value().toString())) {
+            HttpResponse<String> refusedAssignment = post(operator.token(), "/breaks/" + breakId
+                    + "/assignment", null, "{\"assigneeId\":\"" + refusedAssignee + "\"}");
+            assertThat(refusedAssignment.statusCode())
+                    .as("%s: %s", refusedAssignee, refusedAssignment.body())
+                    .isEqualTo(422);
+            assertThat(refusedAssignment.body())
+                    .contains("api.ValidationFailed")
+                    .doesNotContain(refusedAssignee);
+        }
+        assertThat(one("SELECT assignee FROM reconciliation.break WHERE id = ?", breakId))
+                .as("SEC-06: the refused assignees wrote nothing")
+                .isNull();
+        assertThat(count("SELECT count(*) FROM platform.outbox_event WHERE event_type ="
+                + " 'reconciliation.BreakInvestigationStarted' AND aggregate_id = ?", breakId))
+                .as("SEC-06: and published nothing")
+                .isZero();
+        assertThat(count("SELECT count(*) FROM platform.outbox_event WHERE"
+                + " convert_from(payload, 'UTF8') LIKE ?", "%" + pan + "%")).isZero();
         HttpResponse<String> assigned = post(operator.token(), "/breaks/" + breakId
-                + "/assignment", null, "{\"assigneeId\":\"op-desk-1\"}");
-        assertThat(assigned.statusCode()).isEqualTo(200);
-        assertThat(assigned.body()).contains("\"status\":\"INVESTIGATING\"");
+                + "/assignment", null, "{\"assigneeId\":\"" + colleague.identity().value()
+                        + "\"}");
+        assertThat(assigned.statusCode()).as(assigned.body()).isEqualTo(200);
+        assertThat(assigned.body()).contains("\"status\":\"INVESTIGATING\"")
+                .contains("\"assignee\":\"" + colleague.identity().value() + "\"");
         assertThat(count("SELECT count(*) FROM platform.outbox_event WHERE event_type ="
                 + " 'reconciliation.BreakInvestigationStarted' AND aggregate_id = ?", breakId))
                 .isEqualTo(1);
@@ -490,7 +520,8 @@ class ReconciliationInvestigationDatabaseTest {
                 new Absent("GET", "/breaks/" + some + "/trace", null,
                         "reconciliation.BreakNotFound"),
                 new Absent("POST", "/breaks/" + some + "/assignment",
-                        "{\"assigneeId\":\"op-x\"}", "reconciliation.BreakNotFound"),
+                        "{\"assigneeId\":\"" + operator.identity().value() + "\"}",
+                        "reconciliation.BreakNotFound"),
                 new Absent("POST", "/breaks/not-a-uuid/notes", "{\"body\":\"n\"}",
                         "reconciliation.BreakNotFound"),
                 new Absent("POST", "/breaks/" + some + "/classification",

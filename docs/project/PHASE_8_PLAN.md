@@ -624,7 +624,13 @@ Terminal facts publish (ADR-0044's doctrine), written through the outbox on the 
 `schema_version` 1. Payloads carry **identifiers, enums and counts only** — never an amount, a
 reference value, a note or a file byte. Correlation is the ingesting request's id, stored on the
 file and the run and restored per chunk; causation is the file, run, decision, break or resolution
-id.
+id. *(Corrected 2026-10-02 by the Phase 8 -> 9 transition, ARCH-P8-04: read as built, the
+run's, the expectations' and the investigation's events named their own aggregate as the
+cause, a self-loop against `EVENT_ARCHITECTURE.md` §Causation at the root of a flow. A cause is
+a distinct record: `ReconciliationRunCompleted`, `SettlementExpectationSettled`,
+`SettlementExpectationOverdue` and `BreakInvestigationStarted` now name the flow's correlation
+identifier, as `ReconciliationBreakRaised` always did - no reconciliation flow is caused by a
+message; `BreakResolved` keeps the resolution, and `SettlementBatchAccepted` the file.)*
 
 | Event | Producer / aggregate | Meaning | Payload | Task |
 |---|---|---|---|---|
@@ -632,8 +638,8 @@ id.
 | `settlement.SettlementBatchAccepted` (replaces the planned `SettlementBatchIngested`) | settlement / batch | Recognised once | batchId, fileId, sourceId, sourceSequence, lineCount, journalEntryId? | `-009` |
 | `settlement.SettlementBatchRepudiated` | settlement / batch | Recognition reversed by four-eyes | batchId, fileId, sourceId, resolutionId, reversalEntryId? (absent when the batch's acceptance posted nothing) | `-023` |
 | `reconciliation.ReconciliationRunCompleted` (replaces the planned per-record `SettlementMatched`) | reconciliation / run | Every item disposed | runId, batchId? (absent for a `REPROCESS` run, which has no batch), sourceId, counts per outcome | `-011` |
-| `reconciliation.SettlementExpectationSettled` | reconciliation / expectation | Fully allocated | expectationId, kind, operationRef, sourceCode | `-011` |
-| `reconciliation.SettlementExpectationOverdue` (replaces the planned `settlement.SettlementExpectationUnmet`) | reconciliation / expectation | Aged past its bound | expectationId, kind, operationRef, expectedBy, breakId | `-013` |
+| `reconciliation.SettlementExpectationSettled` | reconciliation / expectation | Fully allocated | expectationId, kind, sourceId (event version 2: no operationRef) | `-011` |
+| `reconciliation.SettlementExpectationOverdue` (replaces the planned `settlement.SettlementExpectationUnmet`) | reconciliation / expectation | Aged past its bound | expectationId, kind, expectedBy, breakId (event version 2: no operationRef) | `-013` |
 | `reconciliation.ReconciliationBreakRaised` | reconciliation / break | A discrepancy recorded | breakId, type, cause, severity, sourceCode, subject ids | `-010` |
 | `reconciliation.BreakInvestigationStarted` | reconciliation / break | First assignment | breakId, assigneeId | `-014` |
 | `reconciliation.BreakResolved` | reconciliation / break | Terminal | breakId, resolutionId, kind, reasonCode, journalEntryId? | `-012` (first, for `EVIDENCED`), extended to the person kinds in `-015` |
@@ -642,7 +648,12 @@ id.
 *(`BreakResolved`'s first producer corrected to `P8-TSK-012` by the Phase 7 → 8 transition's
 consistency review, B3.)* *(Corrected 2026-10-01, `P8-DOC-001`: the payloads as built carry the
 source's id, never its code; the repudiation's payload also names the file, its reversal entry
-optional; a `REPROCESS` run's completion carries no batch.)*
+optional; a `REPROCESS` run's completion carries no batch.)* *(Corrected 2026-10-02 by the Phase 8
+-> 9 transition: the two expectation events no longer publish the expectation's `operationRef`,
+and carry event version 2 - an unmatched confirmation's reference is `rail:schemeReference`, a
+CONFIDENTIAL scheme reference and a `:` the outbox payload refuses, so the settling and ageing
+transactions of such an expectation threw and could never commit (the gate's ARCH-P8-01);
+`expectationId` and `kind` already name the expectation.)*
 
 DELIVERY_PLAN's `AdjustmentPosted` event is **dropped**: it collides with the audit action
 `ledger.AdjustmentPosted`, and `BreakResolved.journalEntryId` with `ledger.JournalEntryPosted`
@@ -721,6 +732,10 @@ requeue, a reprocess, a rule set, the backfill). Settlement's: `SettlementFileUp
 `SettlementDeliveryRefused`, `SettlementFileAttested`, `SettlementFileDeclined`,
 `SettlementFetchRequested`, `SettlementFileContentRead` (per access), `SettlementFileReadmitted`,
 `SettlementFileVerified` (per access) and `SettlementBatchRepudiated`.
+*(Corrected 2026-10-02 by the Phase 8 -> 9 transition, SEC-08: plus `SettlementFetchStarted`
+and reconciliation's `OpeningPositionStarted`, each the start of a multi-transaction act
+committed with its first effect, so a crash before the closing record leaves the actor on the
+trail.)*
 Reconciliation's: `RunRequeued`, `RunReplayed`, `ReprocessingRequested`, `OpeningPositionRecorded`,
 `BreakAssigned`, `BreakNoteAdded` (never the body), `BreakEvidenceLinked`, `BreakReclassified`,
 `ResolutionProposed`, `ResolutionApproved`, `ResolutionRejected`, `ResolutionWithdrawn`,
