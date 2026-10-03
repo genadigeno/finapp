@@ -1,6 +1,6 @@
 # Task History
 
-The per-task completion records that accumulated behind `## Current Task` - 191 "Previously" blocks, newest first, from `P8-DOC-001` back to project initiation. *(`X-TSK-004` is cross-cutting and completed after the Phase 6 → 7 transition, so it stands second, between `P7-TSK-001` and the transition's record - the transition's block moved here by `P7-TSK-001`'s gate, exactly as an earlier form of this note said it would.)*
+The per-task completion records that accumulated behind `## Current Task` - 192 "Previously" blocks, newest first, from the Phase 8 → 9 transition back to project initiation. *(`X-TSK-004` is cross-cutting and completed after the Phase 6 → 7 transition, so it stands second, between `P7-TSK-001` and the transition's record - the transition's block moved here by `P7-TSK-001`'s gate, exactly as an earlier form of this note said it would.)*
 
 **Archive.** These records were moved verbatim out of
 [`CURRENT_STATE.md`](../CURRENT_STATE.md) on 2026-09-20 so that the canonical description of
@@ -12,6 +12,48 @@ Current state: [`CURRENT_STATE.md`](../CURRENT_STATE.md) ·
 Authoritative backlog: [`BACKLOG.md`](../BACKLOG.md)
 
 ---
+
+### Previously
+
+**The Phase 8 → 9 transition** — `COMPLETE` (2026-10-03). **Phase 8 `COMPLETE`,
+confirmed after repair; Phase 9 `READY`**
+([`reviews/PHASE_8_TO_9_TRANSITION.md`](reviews/PHASE_8_TO_9_TRANSITION.md)). **The second,
+independent pass the gate model requires again found the reviewed phase incorrect**: nine
+read-only audits with adversarial verification of all seventy findings left **eleven CRITICAL
+and eighteen IMPORTANT** real defects, every one repaired before the boundary - a payout
+return credited twice (the fallback and the worker now serialise on the payout row, the
+transfer admitted only for a `COMPLETED` payout), a transfer unbound from its in-flight
+operation (re-asked at proposal and approval; our own card references now resolvable), a
+fingerprint duplicate allocating by the late legs, a rule-less line owned by nothing, a
+reopened bank item that could never re-park (`V017`'s live-item uniques and the contained
+park), a repudiation leaving reopened overdue value unowned, a mid-chain hole uncut, a
+stranded remittance key, later-corrected value unexplained (the fourth refused shape), the
+run leg's discarded conditional exits (`lockItems` re-reads under the locks; `exitOrThrow`),
+the reach judged on rows (`match_reach`, `V016`), per-leg claimant order, the drain rule, the
+reclassification exit guard, one shared instrument screen at every reason door with its
+database twins (`V012`, `V019`), the approver's operand read with the echo, the escalation
+worklist's due band, intake failure backoff (`V013`) behind another instance's edge, the
+bounded pull, start-of-act audits, and the `FeeCheck` currency pre-filter. **The re-gate**:
+all nine dimensions `PASS`, every repair re-judged on code with its own hunt for regressions;
+its five new MINOR finds - two repaired at once (machine-grouped card numbers through every
+format and screen rank; a four-eyes repudiation reversible by one controller, closed by
+settlement `V014`: a repudiated batch's file passes nothing on) and three recorded with
+owners. **SEVENTY-TWO probe applications**, every restore byte-identical (sha256-verified);
+`MUTATION_TESTING.md` §2 +30 rows. **Multi-instance PASS**, re-answered over every repaired
+arbiter. **Verified fleet-wide**: the hermetic tier at 2255 tests across 357 suites and 16
+modules, 0 failures, beside every module tier, the architecture tier, every own-container
+suite, the proof group and the document guards - the database and kafka tiers module-wide and
+per-suite, never fleet-wide, on the owner's standing instruction. **Phase 9 initialised**:
+[`PHASE_9_PLAN.md`](PHASE_9_PLAN.md), ADR-0074…0083 `Proposed`,
+[`FX_AND_CROSS_BORDER_LIFECYCLES.md`](../domain/FX_AND_CROSS_BORDER_LIFECYCLES.md), ten new
+invariants and thirteen restated (**120**), the gate extension, the delivery-plan addendum
+(the §18 FX-deferral wording resolved: trade and corridor reconciliation are Phase 9's, FX
+P&L Phase 14's), the module, context, distributed-execution, glossary and domain-model
+registers, and thirty backlog items across M9.1–M9.9 plus `X-TSK-010`…`-012`, with
+`P9-TSK-001` `READY` - a judge panel of three designs, synthesised, resolved against a
+twenty-nine-gap completeness critic, drafted by six writers, re-checked by a consistency
+critic and integrated against the document guards before landing. **NEXT**: `P9-TSK-001`
+`READY`.
 
 ### Previously
 

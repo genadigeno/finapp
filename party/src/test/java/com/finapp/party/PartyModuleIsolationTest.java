@@ -51,6 +51,8 @@ class PartyModuleIsolationTest {
                         "merchant",
                         "settlement",
                         "reconciliation",
+                        "fx",
+                        "crossborder",
                         "app")) {
             assertThat(classpathEntries())
                     .as("party must not depend on %s", forbidden)

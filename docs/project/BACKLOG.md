@@ -12913,7 +12913,7 @@ break row, as the approval door must.)*
 
 # Phase 9 — FX and Cross-Border Payments
 
-Status: `READY` — entry gate passed 2026-10-02 by the Phase 8 → 9 transition
+Status: `IN_PROGRESS` — started 2026-10-03 with `P9-TSK-001` (1 of 30 items complete, M9.1 at 1 of 4); entry gate passed 2026-10-02 by the Phase 8 → 9 transition
 ([`reviews/PHASE_8_TO_9_TRANSITION.md`](reviews/PHASE_8_TO_9_TRANSITION.md)), elaborated to task
 granularity by the same transition: thirty items (`P9-TSK-001`…`-027`, `P9-TST-001`, `P9-TST-002`,
 `P9-DOC-001`) across nine milestones, with `P9-TSK-001` marked `READY`. The engineering plan is
@@ -12988,7 +12988,8 @@ this phase, in M9.9, as a dependency of `P9-TST-001`), and `X-TSK-011` (explicit
 pre-Phase-9 amount events) and `X-TSK-012` (callbacks as hints for the Phase 5 and Phase 7
 providers), each owned by Phase 15 and gating nothing here.
 
-**P9-TSK-001 — The `fx` and `crossborder` modules and schemas** — `READY` (2026-10-02; marked by the Phase 8 → 9 transition)
+**P9-TSK-001 — The `fx` and `crossborder` modules and schemas** — `COMPLETE` (2026-10-03; marked `READY` by the Phase 8 → 9 transition)
+- **As built** (2026-10-03): as `CURRENT_STATE.md` §Just completed records. Every scope item shipped; the in-suite planted probes are the matcher's own (a sibling's jar and class directory caught, a lookalike and a source directory not); `NoFloatingPointMoneyRulesTest`'s module guard covers both modules through `ProductionModules` from `app`'s classpath, effective with each module's first production class (`P9-TSK-002`). Five recorded probes, five caught. No deviation.
 - **Objective**: make both modules build-graph facts with privilege floors, before any domain code
   (the `P5-/P6-/P8-TSK-001` precedent).
 - **Bounded context**: FX; Cross-Border Payments (scaffolding).
@@ -13023,7 +13024,7 @@ providers), each owned by Phase 15 and gating nothing here.
   demonstrated and every planted probe is caught.
 - **Definition of done**: `DOD-BUILD`, `DOD-ARCH`, `DOD-SEC`. **Risk**: Low. **Cx**: S.
 
-**P9-TSK-002 — `ExchangeRate`, `Margin` and the conversion plan** — `PLANNED`
+**P9-TSK-002 — `ExchangeRate`, `Margin` and the conversion plan** — `READY` (marked by `P9-TSK-001`'s completion gate, 2026-10-03)
 - **Objective**: exact conversion arithmetic for both fixed sides, with a proven, bounded residual,
   as pure code.
 - **Bounded context**: `sharedkernel` (`ExchangeRate`, `CountryCode`), `platform` (`RateColumns`),

@@ -80,6 +80,12 @@ dependencies {
     implementation(project(":settlement"))
     implementation(project(":reconciliation"))
 
+    // The Phase 9 FX and cross-border modules (P9-TSK-001), on the classpath for the same reason:
+    // a module not on app's classpath is a module ProductionModules sweeps no rule over. They never
+    // touch each other directly - CrossBorderFx is composed here.
+    implementation(project(":fx"))
+    implementation(project(":crossborder"))
+
     implementation(libs.spring.boot.starter)
     implementation(libs.spring.boot.starter.web)
     implementation(libs.spring.boot.starter.validation)

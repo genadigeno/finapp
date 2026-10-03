@@ -422,7 +422,7 @@ in the count beside the sentence that gate did update.)* *(This paragraph read "
 record reached.)*
 
 **Phase 9 — FX and Cross-Border Payments**
-Status: 🟡 **`READY`** (2026-10-03) — entry gate: all twelve criteria hold, by the Phase 8 → 9
+Status: 🔵 **`IN_PROGRESS`** (2026-10-03, `P9-TSK-001`) — entry gate: all twelve criteria hold, by the Phase 8 → 9
 transition ([`reviews/PHASE_8_TO_9_TRANSITION.md`](reviews/PHASE_8_TO_9_TRANSITION.md) §13).
 Planned in [`PHASE_9_PLAN.md`](PHASE_9_PLAN.md); decided in ADR-0074…0083 (`Proposed`); the
 machines in [`FX_AND_CROSS_BORDER_LIFECYCLES.md`](../domain/FX_AND_CROSS_BORDER_LIFECYCLES.md):
@@ -432,7 +432,9 @@ cross-border payments are holds and corridor acceptances, beneficiary screening 
 returns credited in the currency received; clearings are keyed by counterparty; callbacks are
 hints; reconciliation never converts currency and gains causes, never types. Ten new invariants
 and thirteen restated take the platform to **120**. Thirty backlog items across nine milestones
-(M9.1–M9.9) plus `X-TSK-010`…`-012`; `P9-TSK-001` `READY`. **No Phase 9 code exists.**
+(M9.1–M9.9) plus `X-TSK-010`…`-012`. **1 of 30 items complete** (M9.1 at 1 of 4): the modules and floors
+(`P9-TSK-001`); next **`P9-TSK-002` — `ExchangeRate`, `Margin` and the conversion plan** — `READY`
+([§Current Task](#current-task) is kept current).
 
 ## Current Milestone
 
@@ -447,51 +449,34 @@ since M0.1". Moved, not edited.)*
 
 ## Current Task
 
-**`P9-TSK-001` — The `fx` and `crossborder` modules and schemas** — `READY`: marked by the
-Phase 8 → 9 transition (2026-10-03), which confirmed Phase 8 `COMPLETE` after repair and
-initialised Phase 9. **Not started.**
+**`P9-TSK-002` — `ExchangeRate`, `Margin` and the conversion plan** — `READY`: marked by
+`P9-TSK-001`'s completion gate (2026-10-03). **Not started.**
 
 ### Just completed
 
-**The Phase 8 → 9 transition** — `COMPLETE` (2026-10-03). **Phase 8 `COMPLETE`,
-confirmed after repair; Phase 9 `READY`**
-([`reviews/PHASE_8_TO_9_TRANSITION.md`](reviews/PHASE_8_TO_9_TRANSITION.md)). **The second,
-independent pass the gate model requires again found the reviewed phase incorrect**: nine
-read-only audits with adversarial verification of all seventy findings left **eleven CRITICAL
-and eighteen IMPORTANT** real defects, every one repaired before the boundary - a payout
-return credited twice (the fallback and the worker now serialise on the payout row, the
-transfer admitted only for a `COMPLETED` payout), a transfer unbound from its in-flight
-operation (re-asked at proposal and approval; our own card references now resolvable), a
-fingerprint duplicate allocating by the late legs, a rule-less line owned by nothing, a
-reopened bank item that could never re-park (`V017`'s live-item uniques and the contained
-park), a repudiation leaving reopened overdue value unowned, a mid-chain hole uncut, a
-stranded remittance key, later-corrected value unexplained (the fourth refused shape), the
-run leg's discarded conditional exits (`lockItems` re-reads under the locks; `exitOrThrow`),
-the reach judged on rows (`match_reach`, `V016`), per-leg claimant order, the drain rule, the
-reclassification exit guard, one shared instrument screen at every reason door with its
-database twins (`V012`, `V019`), the approver's operand read with the echo, the escalation
-worklist's due band, intake failure backoff (`V013`) behind another instance's edge, the
-bounded pull, start-of-act audits, and the `FeeCheck` currency pre-filter. **The re-gate**:
-all nine dimensions `PASS`, every repair re-judged on code with its own hunt for regressions;
-its five new MINOR finds - two repaired at once (machine-grouped card numbers through every
-format and screen rank; a four-eyes repudiation reversible by one controller, closed by
-settlement `V014`: a repudiated batch's file passes nothing on) and three recorded with
-owners. **SEVENTY-TWO probe applications**, every restore byte-identical (sha256-verified);
-`MUTATION_TESTING.md` §2 +30 rows. **Multi-instance PASS**, re-answered over every repaired
-arbiter. **Verified fleet-wide**: the hermetic tier at 2255 tests across 357 suites and 16
-modules, 0 failures, beside every module tier, the architecture tier, every own-container
-suite, the proof group and the document guards - the database and kafka tiers module-wide and
-per-suite, never fleet-wide, on the owner's standing instruction. **Phase 9 initialised**:
-[`PHASE_9_PLAN.md`](PHASE_9_PLAN.md), ADR-0074…0083 `Proposed`,
-[`FX_AND_CROSS_BORDER_LIFECYCLES.md`](../domain/FX_AND_CROSS_BORDER_LIFECYCLES.md), ten new
-invariants and thirteen restated (**120**), the gate extension, the delivery-plan addendum
-(the §18 FX-deferral wording resolved: trade and corridor reconciliation are Phase 9's, FX
-P&L Phase 14's), the module, context, distributed-execution, glossary and domain-model
-registers, and thirty backlog items across M9.1–M9.9 plus `X-TSK-010`…`-012`, with
-`P9-TSK-001` `READY` - a judge panel of three designs, synthesised, resolved against a
-twenty-nine-gap completeness critic, drafted by six writers, re-checked by a consistency
-critic and integrated against the document guards before landing. **NEXT**: `P9-TSK-001`
-`READY`.
+**`P9-TSK-001` — The `fx` and `crossborder` modules and schemas** — `COMPLETE` (2026-10-03).
+**Phase 9 is `IN_PROGRESS`; M9.1 opens at 1 of 4** — the module shape's eleventh and twelfth
+performances. Both modules are build-graph facts before they hold a line of domain code: per-schema
+Flyway in each build file (the duplication deliberate, ADR-0011), `fx` `V001` and `crossborder`
+`V001` laying the migrator-owned floor (`REVOKE ALL FROM PUBLIC`, `USAGE` alone to `finapp_app`, no
+tables, no default privileges), and the edges pinned both ways: each module requires exactly
+`{ledger, platform, sharedkernel}` and refuses every sibling — **each other included, the refusal
+with no Gradle cycle behind it** (ADR-0079: crossborder decides, fx prices and books, payments
+executes) — while all thirteen existing isolation tests refuse both new modules. **The planted
+probes run in-suite**: each new isolation test proves its matcher catches a sibling's jar and class
+directory and no lookalike (a module whose name contains another's, a source directory), so the
+guard is shown able to fail before it is trusted to pass. `app` depends on both, so
+`ProductionModules` sweeps them the moment `P9-TSK-002`'s first class lands (a module holding only
+`package-info` contributes nothing to import — the precedent's stance, kept); the lockfiles are
+generated and equal reconciliation's, no other lockfile moved. **FIVE PROBES, FIVE CAUGHT**, every
+restore byte-identical (sha256-verified; `MUTATION_TESTING.md` §2 +1 row): fx gaining a payments
+edge; crossborder gaining the fx edge; fx losing its ledger edge (the non-vacuity half); the fx
+floor widened to `CREATE` (two cases); payments gaining a crossborder edge. **Multi-instance PASS**
+— no state; concurrent migrators serialise on Flyway's lock. **NEXT**: `P9-TSK-002` `READY`.
+**Verified** by fresh runs — fx hermetic 3 and database 5, crossborder hermetic 3 and database 5,
+the thirteen sibling isolation suites 26, the fleet-wide hermetic tier at 2274 tests across 360 suites and 18 modules, and the
+architecture tier 143 across 23, ALL 0 FAILURES — the fleet-wide database and kafka tiers
+deliberately skipped on the owner's instruction.
 
 ### Previously
 
@@ -951,8 +936,8 @@ Resolved during initiation:
 
 ## Next Task
 
-**`P9-TSK-002` — `ExchangeRate`, `Margin` and the conversion plan** — `PLANNED`, after
-`P9-TSK-001` (it depends on nothing else).
+**`P9-TSK-002` — `ExchangeRate`, `Margin` and the conversion plan** — `READY` (the Current
+Task), marked by `P9-TSK-001`'s completion gate.
 *(This section read "`P8-TSK-009` — `READY`" from `P8-TSK-008`'s gate until
 `P8-TSK-013`'s record found it — the stale-second-copy class, in the section whose
 whole job is to mirror.)*

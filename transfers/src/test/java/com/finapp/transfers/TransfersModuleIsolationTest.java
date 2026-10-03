@@ -53,6 +53,8 @@ class TransfersModuleIsolationTest {
                         "merchant",
                         "settlement",
                         "reconciliation",
+                        "fx",
+                        "crossborder",
                         "app")) {
             assertThat(classpathEntries())
                     .as("transfers must not depend on %s", forbidden)

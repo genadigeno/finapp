@@ -57,6 +57,8 @@ class SettlementModuleIsolationTest {
                         "checkout",
                         "merchant",
                         "reconciliation",
+                        "fx",
+                        "crossborder",
                         "app")) {
             assertThat(classpathEntries())
                     .as("settlement must not depend on %s", forbidden)
