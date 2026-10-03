@@ -68,9 +68,33 @@ Exposure
 Delinquency
 BNPL Agreement
 
+Money
+Currency
+Minor unit
+Scale
+Rounding policy
+
 FX Quote
 Exchange Rate
 FX Trade
+Reference Rate
+Provider Rate
+Customer Quote
+Spread
+Markup
+Rate Lock
+FX Cover
+FX Position
+Realised FX Result
+
+Counterparty
+Corridor
+Corridor Rail
+Cross-Border Payment
+Outbound Credit
+Payment Offer
+Cross-Border Beneficiary
+Counterparty Screening
 
 Journal Entry
 Journal Line
@@ -104,7 +128,16 @@ Phase 7 → 8 transition — ADR-0064, ADR-0065, ADR-0067 and ADR-0068 — each 
 Phase 8 could collapse. Settlement File, External Item, Suspense Item, Resolution, Matching Rule
 Set, Run Replay, Repudiation, Attestation and Readmission were added by the Phase 8 exit review,
 `P8-DOC-001`, 2026-10-01: Phase 8 built each as a distinct concept, and neither list named one.
-"Will own" corrected to "owns" there too.)*
+"Will own" corrected to "owns" there too.)* *(The Phase 8 → 9 transition, 2026-10-02 —
+ADR-0074…0083 (`Proposed`) — added the twenty-two Phase 9 terms: the kernel's money
+vocabulary (Money, Currency, Minor unit, Scale, Rounding policy), made canonical because
+five currencies at three scales now post; the rate chain and the FX books (Reference Rate,
+Provider Rate, Customer Quote, Spread, Markup, Rate Lock, FX Cover, FX Position, Realised
+FX Result); and the cross-border model (Counterparty, Corridor, Corridor Rail, Cross-Border
+Payment, Outbound Credit, Payment Offer, Cross-Border Beneficiary, Counterparty Screening) —
+each keeping a distinction Phase 9 could collapse, defined in the glossary with the same
+guard. The machines they name are in
+[`FX_AND_CROSS_BORDER_LIFECYCLES.md`](FX_AND_CROSS_BORDER_LIFECYCLES.md).)*
 
 ---
 

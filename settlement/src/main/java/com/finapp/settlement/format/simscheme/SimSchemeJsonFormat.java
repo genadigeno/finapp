@@ -160,9 +160,12 @@ public final class SimSchemeJsonFormat implements SettlementFormat {
      * digit run of card length (single dashes between digits collapsed, as the screen's walk
      * collapses them). A value that carries one fails its class and is screened as free text (C6).
      */
+    // ':' and '_' collapse like '-' since the re-gate's NEW-SEC-2 (2026-10-03): a
+    // machine-grouped card run is no reference either - ReferenceShape and the shared
+    // InstrumentShapes screen carry the same rule, so storage and serving agree.
     private static final String NO_INSTRUMENT_SHAPE =
             "(?!.*(?<![A-Za-z0-9])[A-Za-z]{2}[0-9]{2}[A-Za-z0-9]{11,30}(?![A-Za-z0-9]))"
-                    + "(?!.*[0-9](?:-?[0-9]){12})";
+                    + "(?!.*[0-9](?:[:_-]?[0-9]){12})";
 
     /** The characters of the scheme's opaque tokens: the push rail's own reference alphabet. */
     private static final String REFERENCE_ALPHABET = "[A-Za-z0-9._:-]";

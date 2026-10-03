@@ -255,6 +255,106 @@ public final class ResolutionTemplates {
     }
 
     /**
+     * Why a reclassification onto {@code to} would strand the break, or empty when its frozen
+     * cause keeps an exit there (ADR-0069 §7). *(Corrected 2026-10-02 by the Phase 8 -> 9
+     * transition: the case file checked only the subject, the parking parity and the seat, so
+     * one investigator could move a break onto a type no kind and no evidence would ever close -
+     * a {@code STATEMENT_GAP} onto {@code PROCESSING_ERROR}, a {@code RUN_BLOCKED} onto
+     * {@code SETTLEMENT_MISMATCH}, an {@code EXPECTATION_OVERDUE} onto
+     * {@code SETTLEMENT_MISMATCH}.)*
+     *
+     * <p>An exit is any one of three, each one that cannot pass the break by:
+     *
+     * <ul>
+     *   <li><strong>A person's kind on {@code to}</strong> that the subject takes - an
+     *       {@code ACKNOWLEDGE} (it needs no value), or any kind over PARKED value (parked value
+     *       leaves only by a release or an unpark, both of which close its owning break). A kind
+     *       over an expectation's remainder is not counted: an allocation can take the remainder
+     *       while the closers look for other types, and the break would be left over nothing.
+     *   <li><strong>The cause's own evidence still finds {@code to}</strong>
+     *       ({@link #evidenceFinds}): the statement chain's gap closer, the requeued run's
+     *       completion, the settling allocation's two remainder closers.
+     *   <li><strong>The cause's raise type admits {@code ACKNOWLEDGE}</strong>: a reclassification
+     *       back onto it always recovers the break (a timing difference moved onto
+     *       {@code PROCESSING_ERROR}, a key collision moved anywhere).
+     * </ul>
+     */
+    public static Optional<String> reclassificationStrands(
+            BreakType to,
+            BreakCause cause,
+            BreakSubjectKind subject,
+            Holding holding,
+            Optional<ExpectationKind> expectationKind) {
+        Objects.requireNonNull(to, "to must not be null");
+        Objects.requireNonNull(cause, "cause must not be null");
+        Objects.requireNonNull(subject, "subject must not be null");
+        Objects.requireNonNull(holding, "holding must not be null");
+        Objects.requireNonNull(expectationKind, "expectationKind must not be null");
+        boolean personExit =
+                admittedKinds(to, cause).stream()
+                        .anyMatch(kind -> sideRefusal(kind, holding).isEmpty()
+                                && (kind == ResolutionKind.ACKNOWLEDGE
+                                        || holding instanceof Holding.Parked));
+        if (personExit) {
+            return Optional.empty();
+        }
+        Set<BreakType> evidence = evidenceFinds(cause, subject, expectationKind);
+        if (evidence.contains(to)) {
+            return Optional.empty();
+        }
+        boolean recoverable =
+                cause.raisesAs().stream()
+                        .filter(type -> type.admits(subject))
+                        .anyMatch(type -> admittedKinds(type, cause)
+                                .contains(ResolutionKind.ACKNOWLEDGE));
+        if (recoverable) {
+            return Optional.empty();
+        }
+        return Optional.of(
+                to.name() + " leaves a " + cause.name() + " break no exit: no kind it admits"
+                        + " can dispose of " + describe(holding) + ", and the evidence that"
+                        + " closes the cause looks for "
+                        + (evidence.isEmpty() ? "no type" : evidence.toString())
+                        + "; reclassify onto a type that keeps one");
+    }
+
+    /**
+     * The types the evidence closing {@code cause} looks for on {@code subject} - the closers'
+     * own filters, read from where they stand: the statement chain's gap closer selects
+     * {@code SETTLEMENT_MISMATCH} (cause {@code STATEMENT_GAP}) on the successor's run; a
+     * requeued run's completion selects the run's {@code PROCESSING_ERROR}; an allocation that
+     * settles an expectation selects its {@code MISSING_EXTERNAL} and its shortfall type
+     * ({@code SETTLEMENT_MISMATCH} for a {@code REMITTANCE}, {@code AMOUNT_MISMATCH} for any
+     * other kind). Every other cause is closed by a person or by the unpark of its own parked
+     * value, never by a type-filtered closer.
+     */
+    static Set<BreakType> evidenceFinds(
+            BreakCause cause, BreakSubjectKind subject, Optional<ExpectationKind> expectationKind) {
+        return switch (cause) {
+            case STATEMENT_GAP ->
+                    subject == BreakSubjectKind.RUN
+                            ? EnumSet.of(BreakType.SETTLEMENT_MISMATCH)
+                            : EnumSet.noneOf(BreakType.class);
+            case RUN_BLOCKED ->
+                    subject == BreakSubjectKind.RUN
+                            ? EnumSet.of(BreakType.PROCESSING_ERROR)
+                            : EnumSet.noneOf(BreakType.class);
+            case EXPECTATION_OVERDUE, AMOUNT_DIFFERS, REMITTANCE_DIFFERS -> {
+                if (subject != BreakSubjectKind.EXPECTATION) {
+                    yield EnumSet.noneOf(BreakType.class);
+                }
+                Set<BreakType> closers = EnumSet.of(BreakType.MISSING_EXTERNAL);
+                expectationKind.ifPresent(kind -> closers.add(
+                        kind == ExpectationKind.REMITTANCE
+                                ? BreakType.SETTLEMENT_MISMATCH
+                                : BreakType.AMOUNT_MISMATCH));
+                yield closers;
+            }
+            default -> EnumSet.noneOf(BreakType.class);
+        };
+    }
+
+    /**
      * A posting kind's lines, exactly the remainder: {@code WRITE_OFF} DR losses / CR the
      * position (or CR suspense for a DEBIT item); {@code TRANSFER_TO_ACCOUNT} DR suspense (or
      * DR the position for an OUTBOUND remainder) / CR the target; {@code RECOGNISE_GAIN} DR

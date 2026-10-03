@@ -131,6 +131,7 @@ class ResolutionMatrixDatabaseTest {
     private static final Actor APPROVER = new Actor("op-matrix-b", ActorType.EMPLOYEE);
     private static final Actor THIRD = new Actor("op-matrix-c", ActorType.EMPLOYEE);
     private static final CurrencyCode EUR = CurrencyCode.of("EUR");
+    private static final CurrencyCode GBP = CurrencyCode.of("GBP");
     private static final LocalDate SETTLED_ON = LocalDate.parse("2026-09-25");
     private static final LocalDate FAR = LocalDate.parse("2027-12-31");
     private static final AtomicLong SEQUENCES = new AtomicLong(System.nanoTime() % 70_000 + 100_000);
@@ -194,7 +195,6 @@ class ResolutionMatrixDatabaseTest {
                         new JdbcBreakCaseStore(),
                         suspense,
                         matchingStore,
-                        ResolutionFixtures.resolutions(IDS, CLOCK),
                         new JdbcRuleSets(),
                         ResolutionFixtures.adjustments(IDS, CLOCK),
                         new JdbcLedgerAccountStore(),
@@ -202,7 +202,10 @@ class ResolutionMatrixDatabaseTest {
                         new JdbcAuditWriter(),
                         IDS,
                         CLOCK,
-                        ReconciliationTelemetry.NONE);
+                        ReconciliationTelemetry.NONE,
+                        (unitOfWork, subject) ->
+                                InternalReferenceLookup.InternalReference.unknown(),
+                        ReturnedPayouts.NONE);
         today = (LocalDate) one("SELECT current_date");
         gainMinAgeDays = ((Number) one("SELECT gain_min_age_days FROM reconciliation.rule_set"
                 + " WHERE id = ?", SEEDED_RULE_SET)).intValue();
@@ -1223,8 +1226,8 @@ class ResolutionMatrixDatabaseTest {
             + " onto UNKNOWN_EXTERNAL still refuses TRANSFER_TO_ACCOUNT - the cause is frozen")
     void reclassificationCannotEscapeARefinement() throws Exception {
         BreakCaseFile caseFile = new BreakCaseFile(new JdbcBreakCaseStore(),
-                (unitOfWork, kind, id) -> true, new JdbcOutboxWriter(), new JdbcAuditWriter(),
-                IDS, CLOCK);
+                (unitOfWork, kind, id) -> true, (unitOfWork, principal) -> true,
+                new JdbcOutboxWriter(), new JdbcAuditWriter(), IDS, CLOCK);
         // One operator holding INVESTIGATE and RESOLVE: the reclassifier and the proposer.
         Subject diverged =
                 decisionSubject(BreakType.PROCESSING_ERROR, BreakCause.REPLAY_DIVERGED, 0);
@@ -1365,10 +1368,12 @@ class ResolutionMatrixDatabaseTest {
         assertThat(erroredBreak).as("the errored item parked with its ITEM_ERRORED owner")
                 .isNotNull();
 
-        // The fix lands and the refund it names is known: a controller reprocesses. The
-        // expectation opens at the errored decision's own instant (the suite's fixed clock), so
-        // the rematch predicate (opened AFTER the latest decision) never reaches it - only the
-        // reprocess leg can.
+        // The fix lands and the refund it names is known: a controller reprocesses. The open
+        // REPROCESS run owns the source's residuals, so time's rematch waits for it - only the
+        // reprocess leg re-decides the item here. *(Corrected 2026-10-02 by the Phase 8 -> 9
+        // transition: this read that the rematch predicate, "opened AFTER the latest decision",
+        // never reaches an expectation opened at the decision's own instant; the rematch now
+        // judges a reach on rows, and yields to an open reprocess run.)*
         poisoned.set(false);
         openExpectationIn(OPERATED_SOURCE, OPERATED_RULE_SET, poisonKey, 9_00,
                 ExpectationDirection.OUTBOUND, FAR);
@@ -1433,11 +1438,113 @@ class ResolutionMatrixDatabaseTest {
                 .as("one gains entry per approved gain of this suite").isEqualTo(gains);
     }
 
+    // ================================================================= the offset's partner
+
+    @Test
+    @Order(17)
+    @DisplayName("T-1 (the Phase 8 -> 9 transition): CURRENCY_MISMATCH x OFFSET_SUSPENSE refuses"
+            + " a partner of EQUAL minor units in another currency - SUSPENSE_UNMATCHED is one"
+            + " account per currency, so only a same-currency pair nets - and a partner released"
+            + " by ANOTHER resolution between proposal and approval is ResolutionStale, nothing"
+            + " written either time")
+    void anOffsetRefusesAForeignOrReleasedPartner() throws Exception {
+        long minor = nextAmount();
+        Subject subject = parked(BreakType.CURRENCY_MISMATCH, BreakCause.CURRENCY_DIFFERS,
+                Shape.CREDIT_ITEM, minor, agedOn);
+        // The guard's scale clause has no reachable counterexample: within one currency the
+        // park's own posting refuses another scale (ledger INV-MON-03, one scale per account
+        // projection) - defence in depth, untestable through any real writer.
+        UUID foreign = parkedMoney(minor, GBP);
+        refusedWithNothingWritten(subject.breakId(),
+                ResolutionMachine.ResolutionTargetRefused.class,
+                "CURRENCY_MISMATCH x OFFSET_SUSPENSE: equal minor units in another currency"
+                        + " are no pair (INV-MON-04, INV-REC-09)",
+                () -> propose(PROPOSER, subject.breakId(), offsetRequest(foreign)));
+        assertThat(string("SELECT status FROM reconciliation.suspense_item WHERE id = ?",
+                foreign)).isEqualTo("OPEN");
+
+        // The deterministic approval-time case: the partner is released by ANOTHER resolution
+        // between proposal and approval, so the approval's re-derivation under the locks
+        // answers ResolutionStale (aSuspenseItemIsReleasedOnce only races this branch).
+        Subject partner = parked(BreakType.REFUND_MISMATCH, BreakCause.REFUND_CONTRADICTED,
+                Shape.DEBIT_ITEM, minor, agedOn);
+        UUID partnerItem = partner.suspenseItemId().orElseThrow();
+        ResolutionMachine.Proposed offset =
+                propose(PROPOSER, subject.breakId(), offsetRequest(partnerItem));
+        ResolutionMachine.Proposed writeOff = propose(THIRD, partner.breakId(),
+                requestFor(ResolutionKind.WRITE_OFF,
+                        ResolutionReasonCode.COUNTERPARTY_ERROR_CONFIRMED));
+        approve(APPROVER, writeOff.resolutionId());
+        assertThat(string("SELECT status FROM reconciliation.suspense_item WHERE id = ?",
+                partnerItem)).isEqualTo("RELEASED");
+        refusedWithNothingWritten(subject.breakId(), ResolutionMachine.ResolutionStale.class,
+                "the approval finds the partner released by the write-off",
+                () -> approve(APPROVER, offset.resolutionId()));
+        assertThat(string("SELECT status FROM reconciliation.suspense_item WHERE id = ?",
+                subject.suspenseItemId().orElseThrow()))
+                .as("the subject's item moved nothing").isEqualTo("OPEN");
+        assertThat(count("SELECT count(*) FROM reconciliation.suspense_release WHERE"
+                + " item_id = ?", subject.suspenseItemId().orElseThrow())).isZero();
+        withdraw(PROPOSER, offset.resolutionId());
+    }
+
+    @Test
+    @Order(18)
+    @DisplayName("T-7 (the Phase 8 -> 9 transition): the offset and the rematch, each winning"
+            + " DETERMINISTICALLY - the rematch first leaves the late approval ResolutionStale"
+            + " with nothing written; the offset first leaves the late rematch nothing parked -"
+            + " one release either way")
+    void offsetAndUnparkEachWinDeterministically() throws Exception {
+        // The rematch first: the refund opens and the sweep unparks the partner before the
+        // approval runs.
+        long minor = nextAmount();
+        Subject credit = parked(BreakType.UNKNOWN_EXTERNAL, BreakCause.PARKED_ON_RECEIPT,
+                Shape.CREDIT_ITEM, minor, agedOn);
+        Subject debit = parked(BreakType.UNKNOWN_EXTERNAL, BreakCause.PARKED_ON_RECEIPT,
+                Shape.DEBIT_ITEM, minor, agedOn);
+        UUID debitItem = debit.suspenseItemId().orElseThrow();
+        ResolutionMachine.Proposed offset =
+                propose(PROPOSER, credit.breakId(), offsetRequest(debitItem));
+        openExpectation(debit.key().orElseThrow(), minor, ExpectationDirection.OUTBOUND, FAR);
+        matching().sweep();
+        assertThat(rows("SELECT cause FROM reconciliation.suspense_release WHERE item_id = ?",
+                debitItem)).as("the rematch unparked the partner").containsExactly("UNPARK");
+        assertThat(string("SELECT kind FROM reconciliation.resolution WHERE break_id = ? AND"
+                + " status = 'APPROVED'", debit.breakId())).isEqualTo("EVIDENCED");
+        refusedWithNothingWritten(credit.breakId(), ResolutionMachine.ResolutionStale.class,
+                "the approval after the rematch unparked the partner",
+                () -> approve(APPROVER, offset.resolutionId()));
+        assertThat(string("SELECT status FROM reconciliation.suspense_item WHERE id = ?",
+                credit.suspenseItemId().orElseThrow())).isEqualTo("OPEN");
+        withdraw(PROPOSER, offset.resolutionId());
+
+        // The offset first: approved before the refund opens, the late sweep finds nothing
+        // parked and the released item is never released again.
+        long second = nextAmount();
+        Subject credit2 = parked(BreakType.UNKNOWN_EXTERNAL, BreakCause.PARKED_ON_RECEIPT,
+                Shape.CREDIT_ITEM, second, agedOn);
+        Subject debit2 = parked(BreakType.UNKNOWN_EXTERNAL, BreakCause.PARKED_ON_RECEIPT,
+                Shape.DEBIT_ITEM, second, agedOn);
+        UUID debitItem2 = debit2.suspenseItemId().orElseThrow();
+        ResolutionMachine.Proposed offset2 =
+                propose(PROPOSER, credit2.breakId(), offsetRequest(debitItem2));
+        approve(APPROVER, offset2.resolutionId());
+        Seeded refund = openExpectation(debit2.key().orElseThrow(), second,
+                ExpectationDirection.OUTBOUND, FAR);
+        matching().sweep();
+        assertThat(rows("SELECT cause FROM reconciliation.suspense_release WHERE item_id = ?",
+                debitItem2))
+                .as("released ONCE, by the offset; the late rematch found nothing parked")
+                .containsExactly("OFFSET_SUSPENSE");
+        assertThat(string("SELECT status FROM reconciliation.expectation WHERE id = ?",
+                refund.id())).isEqualTo("OPEN");
+    }
+
     // ================================================================= nothing deletable
 
     @Test
     @Order(20)
-    @DisplayName("nothing deletable, schema-wide: every one of the reconciliation schema's 31"
+    @DisplayName("nothing deletable, schema-wide: every one of the reconciliation schema's 32"
             + " tables refuses DELETE and TRUNCATE to the application by privilege and carries an"
             + " enabled BEFORE DELETE row trigger, a live owner DELETE refused on every table"
             + " holding a row; the seven column-narrowed tables refuse a frozen column to the"
@@ -1455,7 +1562,8 @@ class ResolutionMatrixDatabaseTest {
                     + " pg_namespace n ON n.oid = c.relnamespace WHERE n.nspname ="
                     + " 'reconciliation' AND c.relkind IN ('r', 'p') AND c.relname <>"
                     + " 'flyway_schema_history' ORDER BY c.relname");
-            assertThat(tables).as("a new table cannot slip past this scan").hasSize(31);
+            // 32 since V016 (the Phase 8 -> 9 transition's match_reach).
+            assertThat(tables).as("a new table cannot slip past this scan").hasSize(32);
             for (String table : tables) {
                 String name = "reconciliation." + table;
                 for (String privilege : List.of("DELETE", "TRUNCATE")) {
@@ -1498,8 +1606,10 @@ class ResolutionMatrixDatabaseTest {
                     + " information_schema.column_privileges WHERE table_schema ="
                     + " 'reconciliation' AND grantee = 'finapp_app' AND privilege_type = 'UPDATE'"
                     + " ORDER BY table_name");
-            assertThat(narrowed).as("the seven column-narrowed UPDATE grants")
-                    .containsExactly("break", "expectation", "external_item",
+            assertThat(narrowed)
+                    .as("the eight column-narrowed UPDATE grants - expectation_key's one release"
+                            + " edge since V017 (the Phase 8 -> 9 transition)")
+                    .containsExactly("break", "expectation", "expectation_key", "external_item",
                             "reconciliation_batch", "resolution", "rule_set", "suspense_item");
             assertThat(rowsOn(owner, "SELECT table_name FROM information_schema.table_privileges WHERE"
                     + " table_schema = 'reconciliation' AND grantee = 'finapp_app' AND"
@@ -1507,15 +1617,22 @@ class ResolutionMatrixDatabaseTest {
                     .as("no table-wide UPDATE, DELETE or TRUNCATE anywhere").isEmpty();
             for (String table : narrowed) {
                 String name = "reconciliation." + table;
+                // The key index carries no correlation and no id of its own: its frozen fact is
+                // the reference it binds (V017's one edge releases it, never rewrites it).
+                boolean keyIndex = "expectation_key".equals(table);
+                String frozen = keyIndex ? "key_value" : "correlation_id";
+                String oneRow =
+                        keyIndex
+                                ? "ctid = (SELECT ctid FROM " + name + " LIMIT 1)"
+                                : "id = (SELECT id FROM " + name + " LIMIT 1)";
                 assertThat(sqlState(app, "UPDATE " + name
-                        + " SET correlation_id = correlation_id WHERE false"))
-                        .as("PRIVILEGE RANK: the frozen correlation_id of %s", name)
+                        + " SET " + frozen + " = " + frozen + " WHERE false"))
+                        .as("PRIVILEGE RANK: the frozen %s of %s", frozen, name)
                         .isEqualTo("42501");
-                assertThat(sqlState(owner, "UPDATE " + name + " SET correlation_id ="
-                        + " correlation_id || '-tampered' WHERE id = (SELECT id FROM " + name
-                        + " LIMIT 1)"))
-                        .as("TRIGGER RANK: the owner's write of %s's frozen correlation_id is"
-                                + " refused by its trigger (raise_exception)", name)
+                assertThat(sqlState(owner, "UPDATE " + name + " SET " + frozen + " ="
+                        + " " + frozen + " || '-tampered' WHERE " + oneRow))
+                        .as("TRIGGER RANK: the owner's write of %s's frozen %s is"
+                                + " refused by its trigger (raise_exception)", name, frozen)
                         .isEqualTo("P0001");
             }
             owner.rollback();
@@ -1616,6 +1733,61 @@ class ResolutionMatrixDatabaseTest {
                 .isEqualTo((credit ? "CREDIT" : "DEBIT") + "/" + parkedOn);
         return new Subject(breakId, shape, minor, Optional.empty(), Optional.of(item),
                 Optional.of(suspenseItem), Optional.of(key));
+    }
+
+    /**
+     * A parked DEBIT item in another currency (T-1, the Phase 8 -> 9 transition): equal minor
+     * units that are no offset pair.
+     */
+    private static UUID parkedMoney(long minor, CurrencyCode currency) throws SQLException {
+        Money money = Money.ofPersisted(minor, currency, 2);
+        String key = "MX-FX-" + UUID.randomUUID();
+        UUID run = IDS.next();
+        try (Connection app = DatabaseRoles.application()) {
+            app.setAutoCommit(false);
+            runs.birth(
+                    app,
+                    new ReconciliationRuns.NewRun(
+                            run, SOURCE, Optional.of(IDS.next()), RunKind.BATCH, RULE_SET,
+                            SETTLED_ON, Optional.of(SEQUENCES.incrementAndGet()), 1,
+                            Optional.empty(), Optional.empty(), PLATFORM, Instant.now(CLOCK),
+                            CorrelationId.generate(IDS)));
+            byte[] fingerprint = new byte[32];
+            new SecureRandom().nextBytes(fingerprint);
+            items.birthAll(app, PLATFORM, List.of(new ExternalItems.NewItem(
+                    IDS.next(), run, SOURCE, IDS.next(), 1, ExternalLineType.REFUND,
+                    ExpectationDirection.OUTBOUND, money, AccountPurpose.SETTLEMENT_CLEARING,
+                    SETTLED_ON, Optional.of(SETTLED_ON), Optional.of(SETTLED_ON), fingerprint,
+                    Map.of(ItemKeyKind.PSP_REFUND_REF, key), Instant.now(CLOCK),
+                    CorrelationId.generate(IDS))));
+            app.commit();
+        }
+        UUID item = itemOf(run, 1);
+        UUID breakId = IDS.next();
+        try (Connection app = DatabaseRoles.application()) {
+            app.setAutoCommit(false);
+            register.raise(
+                    app,
+                    new BreakRegister.NewBreak(
+                            breakId, BreakType.REFUND_MISMATCH, BreakCause.REFUND_CONTRADICTED,
+                            BreakRegister.Subject.externalItem(item), SOURCE, RULE_SET, money,
+                            Optional.empty(), Optional.empty(), Optional.empty(),
+                            Optional.empty(), Optional.empty(), Optional.empty(), PLATFORM,
+                            Instant.now(CLOCK), CorrelationId.generate(IDS)));
+            app.commit();
+        }
+        UUID position = inCommittedTransaction(uow -> new JdbcLedgerAccountStore()
+                .findOperational(uow, AccountPurpose.SETTLEMENT_CLEARING, currency)
+                .orElseThrow()
+                .id()
+                .value());
+        as(PLATFORM, uow -> suspense.park(uow, new Suspense.ParkCommand(
+                SOURCE, agedOn,
+                List.of(new Suspense.ParkedItem(item, breakId, money, position)),
+                PLATFORM, Instant.now(CLOCK), CorrelationId.generate(IDS))));
+        completeRun(run);
+        return id("SELECT id FROM reconciliation.suspense_item WHERE external_item_id = ?",
+                item);
     }
 
     /** A fee line beyond tolerance: value at issue, nothing parked (already expensed). */
@@ -1939,6 +2111,13 @@ class ResolutionMatrixDatabaseTest {
                 kind == ResolutionKind.MANUAL_MATCH
                         ? Optional.of(subject.chosen().orElse(IDS.next()))
                         : Optional.empty());
+    }
+
+    /** An offset's request naming its partner item (T-1, T-7). */
+    private static ResolutionMachine.ProposalRequest offsetRequest(UUID partnerItem) {
+        return new ResolutionMachine.ProposalRequest(ResolutionKind.OFFSET_SUSPENSE,
+                ResolutionReasonCode.DUPLICATE_BY_COUNTERPARTY, "the two net",
+                Optional.empty(), Optional.of(partnerItem), Optional.empty());
     }
 
     private static ResolutionMachine.Proposed propose(

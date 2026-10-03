@@ -31,6 +31,7 @@ import java.sql.PreparedStatement;
 import java.sql.ResultSet;
 import java.sql.SQLException;
 import java.sql.Statement;
+import java.sql.Timestamp;
 import java.time.Clock;
 import java.time.Duration;
 import java.time.Instant;
@@ -44,6 +45,7 @@ import java.util.Set;
 import java.util.UUID;
 import java.util.concurrent.ConcurrentLinkedQueue;
 import java.util.concurrent.CountDownLatch;
+import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.function.Function;
 import org.junit.jupiter.api.AfterAll;
@@ -78,6 +80,8 @@ class BatchAcceptanceDatabaseTest {
     private static final String RETIRING_SOURCE = "retiring-psp.settlement";
     private static final UUID RETIRING_SOURCE_ID =
             UUID.fromString("01a0e2bc-8200-7009-8000-000000000009");
+    /** The accept leg's first back-off step (MI-7), doubling per failure. */
+    private static final Duration BACKOFF_BASE = Duration.ofMinutes(1);
 
     private static final TransactionRunner RUNNER =
             new TransactionRunner() {
@@ -188,6 +192,14 @@ class BatchAcceptanceDatabaseTest {
             AcceptedBatchIntake intakePort,
             SettlementBatchStore<Connection> batchStore,
             Clock clock) {
+        return acceptanceWith(intakePort, batchStore, clock, RUNNER);
+    }
+
+    private static BatchAcceptance acceptanceWith(
+            AcceptedBatchIntake intakePort,
+            SettlementBatchStore<Connection> batchStore,
+            Clock clock,
+            TransactionRunner runner) {
         return new BatchAcceptance(
                 store,
                 batchStore,
@@ -195,13 +207,13 @@ class BatchAcceptanceDatabaseTest {
                 intakePort,
                 postingService(clock),
                 new JdbcLedgerAccountStore(),
-                new BatchAcceptance.Config(10),
+                new BatchAcceptance.Config(10, BACKOFF_BASE, Duration.ofHours(1)),
                 IntakeOutcomeObserver.NONE,
                 new JdbcOutboxWriter(),
                 new JdbcAuditWriter(),
                 IDS,
                 clock,
-                RUNNER);
+                runner);
     }
 
     @BeforeAll
@@ -541,8 +553,23 @@ class BatchAcceptanceDatabaseTest {
         assertThat(count("SELECT next_sequence FROM settlement.source WHERE code = ?", SOURCE))
                 .as("a rolled-back acceptance releases its number - the gapless guarantee")
                 .isEqualTo(sequenceBefore);
+        // Our failure, recorded beside the rollback and backed off (MI-7) - never a verdict.
+        assertThat(fileColumn(fileId, "accept_failures")).isEqualTo("1");
+        assertThat(count(
+                        "SELECT count(*) FROM settlement.file WHERE id = ? AND next_accept_at = ?",
+                        fileId,
+                        Timestamp.from(CLOCK.instant().plus(BACKOFF_BASE))))
+                .isEqualTo(1);
+        assertThat(count(
+                        "SELECT count(*) FROM settlement.file_event WHERE file_id = ?"
+                                + " AND from_status = 'PARSED' AND to_status = 'PARSED'"
+                                + " AND reason = 'accept failed: IllegalStateException'",
+                        fileId))
+                .isEqualTo(1);
 
-        BatchAcceptance.SweepResult retried = acceptance.sweep();
+        // The retry waits out the first back-off step, then converges.
+        BatchAcceptance.SweepResult retried =
+                acceptanceWith(intake, batches, Clock.offset(CLOCK, BACKOFF_BASE)).sweep();
         assertThat(retried.accepted()).isGreaterThanOrEqualTo(1);
         assertThat(fileColumn(fileId, "status")).isEqualTo("ACCEPTED");
         assertThat(Long.parseLong(columnOfBatch(batchOf(fileId).id(), "source_sequence")))
@@ -669,7 +696,293 @@ class BatchAcceptanceDatabaseTest {
                 .isEqualTo(9);
     }
 
+    @Test
+    @DisplayName("ten files whose acceptance always fails no longer hold the window: each is"
+            + " counted, backed off and noted on its history while it stays PARSED, the next"
+            + " sweep accepts the good file behind them, and they return only once due, the"
+            + " step doubled (the Phase 8 -> 9 transition, MI-7)")
+    void filesThatAlwaysFailBackOffAndLeaveTheWindow() throws SQLException {
+        drainDueLeftovers();
+        List<UUID> poisoned = new ArrayList<>();
+        for (int i = 0; i < 10; i++) {
+            poisoned.add(pulled(SOURCE, report(SOURCE, "PSPB-POISON-" + i, "PZ" + i)));
+        }
+        UUID good = pulled(SOURCE, report(SOURCE, "PSPB-BEHIND-01", "BH1"));
+        List<UUID> mine = new ArrayList<>(poisoned);
+        mine.add(good);
+        for (int sweep = 0; sweep < 5 && !allIn(mine, "PARSED"); sweep++) {
+            parsing.sweep();
+        }
+        assertThat(allIn(mine, "PARSED")).isTrue();
+
+        // Our defect on every attempt at the ten - the shape of a currency whose position the
+        // chart never seeded - and the recording intake for anything else.
+        Set<UUID> failing = Set.copyOf(poisoned);
+        AcceptedBatchIntake poisonedIntake =
+                new AcceptedBatchIntake() {
+                    @Override
+                    public Intaken intake(Connection unitOfWork, AcceptedBatch batch) {
+                        if (failing.contains(batch.fileId())) {
+                            throw new SettlementStorageException(
+                                    "injected: no position for this currency");
+                        }
+                        return intake.intake(unitOfWork, batch);
+                    }
+
+                    @Override
+                    public void recognised(
+                            Connection unitOfWork,
+                            AcceptedBatch batch,
+                            Intaken intaken,
+                            Optional<UUID> entryId) {}
+                };
+
+        BatchAcceptance.SweepResult first =
+                acceptanceWith(poisonedIntake, batches, CLOCK).sweep();
+        assertThat(first.candidates()).as("the ten, oldest first, fill the window").isEqualTo(10);
+        assertThat(first.failed()).isEqualTo(10);
+        assertThat(fileColumn(good, "status")).isEqualTo("PARSED");
+        for (UUID fileId : poisoned) {
+            assertThat(fileColumn(fileId, "status"))
+                    .as("our failure never rejects evidence")
+                    .isEqualTo("PARSED");
+            assertThat(fileColumn(fileId, "accept_failures")).isEqualTo("1");
+            assertThat(nextAcceptAtIs(fileId, CLOCK.instant().plus(BACKOFF_BASE))).isTrue();
+            assertThat(count(
+                            "SELECT count(*) FROM settlement.file_event WHERE file_id = ?"
+                                    + " AND from_status = 'PARSED' AND to_status = 'PARSED'"
+                                    + " AND reason = 'accept failed: SettlementStorageException'",
+                            fileId))
+                    .isEqualTo(1);
+        }
+
+        BatchAcceptance.SweepResult second =
+                acceptanceWith(poisonedIntake, batches, CLOCK).sweep();
+        assertThat(fileColumn(good, "status"))
+                .as("the file behind the ten is accepted on the next tick - never starved")
+                .isEqualTo("ACCEPTED");
+        assertThat(second.failed()).as("no backed-off file is tried before it is due").isZero();
+
+        // Due again past the first step: tried again, and the step doubles.
+        Clock pastTheStep = Clock.offset(CLOCK, BACKOFF_BASE);
+        for (int sweep = 0; sweep < 5 && !allFailedTwice(poisoned); sweep++) {
+            acceptanceWith(poisonedIntake, batches, pastTheStep).sweep();
+        }
+        for (UUID fileId : poisoned) {
+            assertThat(fileColumn(fileId, "status")).isEqualTo("PARSED");
+            assertThat(fileColumn(fileId, "accept_failures")).isEqualTo("2");
+            assertThat(nextAcceptAtIs(
+                            fileId, pastTheStep.instant().plus(BACKOFF_BASE.multipliedBy(2))))
+                    .isTrue();
+        }
+
+        // Leave nothing eligible behind: the ten, healed, are accepted once due.
+        Clock healed = Clock.offset(CLOCK, Duration.ofHours(2));
+        for (int sweep = 0; sweep < 5 && !allIn(poisoned, "ACCEPTED"); sweep++) {
+            acceptanceWith(intake, batches, healed).sweep();
+        }
+        assertThat(allIn(poisoned, "ACCEPTED")).isTrue();
+    }
+
+    @Test
+    @DisplayName("an accept failure is recorded only while the file is still PARSED: another"
+            + " instance accepts it the moment our rollback lets go, its edge committing while"
+            + " our failure transaction waits on the row - nothing follows the ACCEPTED edge"
+            + " (MI-7, the MI-5 rule at the accept leg)")
+    void anAcceptFailureNeverFollowsAnotherInstancesEdge() throws Exception {
+        drainDueLeftovers();
+        UUID fileId = pulled(SOURCE, report(SOURCE, "PSPB-MI7-RACE", "MR1"));
+        for (int sweep = 0; sweep < 5 && !allIn(List.of(fileId), "PARSED"); sweep++) {
+            parsing.sweep();
+        }
+        assertThat(fileColumn(fileId, "status")).isEqualTo("PARSED");
+
+        CountDownLatch bHoldsTheClaim = new CountDownLatch(1);
+        CountDownLatch releaseB = new CountDownLatch(1);
+        AtomicBoolean ourAcceptFailed = new AtomicBoolean();
+        ConcurrentLinkedQueue<Throwable> unexpected = new ConcurrentLinkedQueue<>();
+        List<Thread> others = new ArrayList<>();
+
+        // Instance B: the recording intake, holding its claim on THIS file until A's failure
+        // transaction is observed waiting on the row.
+        BatchAcceptance instanceB =
+                acceptanceWith(
+                        new AcceptedBatchIntake() {
+                            @Override
+                            public Intaken intake(Connection unitOfWork, AcceptedBatch batch) {
+                                if (batch.fileId().equals(fileId)) {
+                                    bHoldsTheClaim.countDown();
+                                    awaitOrFail(releaseB, "B is released");
+                                }
+                                return intake.intake(unitOfWork, batch);
+                            }
+
+                            @Override
+                            public void recognised(
+                                    Connection unitOfWork,
+                                    AcceptedBatch batch,
+                                    Intaken intaken,
+                                    Optional<UUID> entryId) {}
+                        },
+                        batches,
+                        CLOCK);
+        // Instance A: its acceptance of THIS file fails - our defect. Its runner opens the
+        // failure transaction only once B holds the claim A's rollback released, and lets B
+        // commit only once that transaction is observed waiting on the row.
+        TransactionRunner instanceARunner =
+                new TransactionRunner() {
+                    @Override
+                    public <R> R inTransaction(Function<Connection, R> work) {
+                        if (ourAcceptFailed.getAndSet(false)) {
+                            others.add(
+                                    Thread.ofPlatform()
+                                            .start(
+                                                    () -> {
+                                                        try {
+                                                            instanceB.sweep();
+                                                        } catch (Throwable failure) {
+                                                            unexpected.add(failure);
+                                                        }
+                                                    }));
+                            awaitOrFail(bHoldsTheClaim, "B claims what A's rollback released");
+                            others.add(
+                                    Thread.ofPlatform()
+                                            .start(
+                                                    () -> {
+                                                        try {
+                                                            awaitAFileWriterBlocked();
+                                                        } catch (Throwable failure) {
+                                                            unexpected.add(failure);
+                                                        } finally {
+                                                            releaseB.countDown();
+                                                        }
+                                                    }));
+                        }
+                        return RUNNER.inTransaction(work);
+                    }
+                };
+        BatchAcceptance instanceA =
+                acceptanceWith(
+                        new AcceptedBatchIntake() {
+                            @Override
+                            public Intaken intake(Connection unitOfWork, AcceptedBatch batch) {
+                                if (batch.fileId().equals(fileId)) {
+                                    ourAcceptFailed.set(true);
+                                    throw new SettlementStorageException("injected: our defect");
+                                }
+                                return intake.intake(unitOfWork, batch);
+                            }
+
+                            @Override
+                            public void recognised(
+                                    Connection unitOfWork,
+                                    AcceptedBatch batch,
+                                    Intaken intaken,
+                                    Optional<UUID> entryId) {}
+                        },
+                        batches,
+                        CLOCK,
+                        instanceARunner);
+
+        instanceA.sweep();
+        for (Thread other : others) {
+            other.join();
+        }
+        assertThat(unexpected).isEmpty();
+        assertThat(others).as("the interleaving ran: A failed, B claimed").hasSize(2);
+
+        assertThat(fileColumn(fileId, "status")).as("B's acceptance stands").isEqualTo("ACCEPTED");
+        assertThat(fileColumn(fileId, "accept_failures"))
+                .as("no failure is counted against a file that moved")
+                .isEqualTo("0");
+        assertThat(fileColumn(fileId, "next_accept_at")).isNull();
+        assertThat(count(
+                        "SELECT count(*) FROM settlement.file_event WHERE file_id = ? AND seq >"
+                                + " (SELECT seq FROM settlement.file_event WHERE file_id = ?"
+                                + " AND to_status = 'ACCEPTED')",
+                        fileId,
+                        fileId))
+                .as("nothing follows the ACCEPTED edge in the file's history")
+                .isZero();
+        assertThat(count(
+                        "SELECT count(*) FROM settlement.file_event WHERE file_id = ?"
+                                + " AND from_status = 'PARSED' AND to_status = 'PARSED'",
+                        fileId))
+                .isZero();
+    }
+
     // -----------------------------------------------------------------
+
+    /** Sweeps until nothing is due: each leftover accepted, or - our failure - backed off. */
+    private static void drainDueLeftovers() {
+        for (int sweep = 0; sweep < 20; sweep++) {
+            if (acceptance.sweep().candidates() == 0) {
+                return;
+            }
+        }
+    }
+
+    private static boolean allIn(List<UUID> fileIds, String status) throws SQLException {
+        for (UUID fileId : fileIds) {
+            if (!status.equals(fileColumn(fileId, "status"))) {
+                return false;
+            }
+        }
+        return true;
+    }
+
+    private static boolean allFailedTwice(List<UUID> fileIds) throws SQLException {
+        for (UUID fileId : fileIds) {
+            if (!"2".equals(fileColumn(fileId, "accept_failures"))) {
+                return false;
+            }
+        }
+        return true;
+    }
+
+    private static boolean nextAcceptAtIs(UUID fileId, Instant expected) throws SQLException {
+        return count(
+                        "SELECT count(*) FROM settlement.file WHERE id = ? AND next_accept_at = ?",
+                        fileId,
+                        Timestamp.from(expected))
+                == 1;
+    }
+
+    private static void awaitOrFail(CountDownLatch latch, String what) {
+        try {
+            if (!latch.await(30, TimeUnit.SECONDS)) {
+                throw new AssertionError("never happened: " + what);
+            }
+        } catch (InterruptedException interrupted) {
+            Thread.currentThread().interrupt();
+            throw new AssertionError("interrupted awaiting: " + what, interrupted);
+        }
+    }
+
+    /** The {@code P0-TST-004} idiom: the waiting side observed Lock-waiting, never assumed. */
+    private static void awaitAFileWriterBlocked() throws SQLException, InterruptedException {
+        long deadline = System.nanoTime() + TimeUnit.SECONDS.toNanos(30);
+        try (Connection observer = DatabaseRoles.application();
+                PreparedStatement select =
+                        observer.prepareStatement(
+                                "SELECT count(*) FROM pg_stat_activity"
+                                        + " WHERE datname = current_database()"
+                                        + " AND wait_event_type = 'Lock'"
+                                        + " AND query LIKE '%settlement.file%'")) {
+            while (System.nanoTime() < deadline) {
+                try (ResultSet row = select.executeQuery()) {
+                    row.next();
+                    if (row.getLong(1) > 0) {
+                        return;
+                    }
+                }
+                Thread.sleep(25);
+            }
+        }
+        throw new AssertionError(
+                "A's failure transaction never waited on the file row B holds - without the"
+                        + " lock its write is judged against a stale read");
+    }
 
     private static String columnOfBatch(UUID batchId, String column) throws SQLException {
         try (PreparedStatement read =

@@ -291,7 +291,11 @@ allocation is explainable from rows alone.
 | Bank | `BANK_CREDIT`, `BANK_DEBIT` (attributed) | `REMITTANCE_REF`, then the value date | `REMITTANCE` of the attributed position | `ONE_TO_ONE`, then `GROUP_BY_VALUE_DATE` |
 | | `BANK_FEE` | — | — | `CHECK` (the fee is posted at recognition) |
 
-`OTHER_IN` and `OTHER_OUT` match no rule. Internal state that could *explain* an unmatched item is
+`OTHER_IN` and `OTHER_OUT` match no rule, so their grace is zero: the run leg parks such a line
+at once as `UNKNOWN_EXTERNAL` (`GRACE_EXPIRED`), its value owned in suspense with its break.
+*(Corrected 2026-10-02 by the Phase 8 -> 9 transition, REC-2: such a line waited `UNMATCHED`
+with no grace clock and no break, for ever - the "eventually a break" above was false.)*
+Internal state that could *explain* an unmatched item is
 read through `InternalReferenceLookup` — **for typing a break only, never for allocation**.
 
 **The payout return's rule is operation-anchored in rule set v1**, seeded by `P8-TSK-004` and

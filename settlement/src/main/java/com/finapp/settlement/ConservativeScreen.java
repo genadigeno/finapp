@@ -1,9 +1,8 @@
 package com.finapp.settlement;
 
+import com.finapp.sharedkernel.security.InstrumentShapes;
 import java.nio.charset.StandardCharsets;
 import java.util.Optional;
-import java.util.regex.Matcher;
-import java.util.regex.Pattern;
 
 /**
  * The whole-stream screen (`P8-TSK-002`, ADR-0066 §3): every byte treated as text, no field
@@ -25,8 +24,15 @@ import java.util.regex.Pattern;
  *   <li><strong>Account identifiers:</strong> the international shape — two letters, two
  *       digits, 11–30 more alphanumerics, bounded by non-alphanumerics — the
  *       {@code INTERNATIONAL_ACCOUNT_SHAPE} rule the payments boundary enforces
- *       ({@code INV-RAIL-03}), applied at this door.
+ *       ({@code INV-RAIL-03}), applied at this door; and the same identifier in its ISO 13616
+ *       printed form, groups of four separated by single spaces or dashes, whose mod-97 check
+ *       holds — the platform's one {@link InstrumentShapes} rule for it.
  * </ul>
+ *
+ * <p><em>(Corrected 2026-10-02 by the Phase 8 → 9 transition: the account shape was the
+ * contiguous one alone, so {@code GB82 WEST 1234 5698 7654 32} in a statement's free text passed
+ * the door and rested in the stored bytes (the audit's {@code SEC-03}, its related gap). The
+ * card-number walk is unchanged: whole runs of 13–19, the door's documented band.)</em>
  *
  * <p>Lines are counted by this walk ({@code \n}, the count 1-based for the last unterminated
  * record), and the count is the 50,000-record bound's input — the screen walks the bytes
@@ -40,17 +46,6 @@ public final class ConservativeScreen implements DeliveryScreen {
     private static final int MIN_PAN_DIGITS = 13;
 
     private static final int MAX_PAN_DIGITS = 19;
-
-    /**
-     * The international account identifier shape: two letters, two digits, 11–30 more
-     * alphanumerics, bounded by non-alphanumerics — the {@code INTERNATIONAL_ACCOUNT_SHAPE}
-     * rule the payments boundary enforces ({@code INV-RAIL-03}), applied at this door. A
-     * second pass over the text, independent of the digit walk, because an identifier's
-     * letters sit outside any digit run.
-     */
-    private static final Pattern ACCOUNT_SHAPE =
-            Pattern.compile(
-                    "(?<![A-Za-z0-9])[A-Za-z]{2}[0-9]{2}[A-Za-z0-9]{11,30}(?![A-Za-z0-9])");
 
     private ConservativeScreen() {}
 
@@ -152,14 +147,18 @@ public final class ConservativeScreen implements DeliveryScreen {
         }
     }
 
-    /** The first account-identifier shape in the text, with the 1-based line it sits on. */
+    /**
+     * The first account-identifier shape in the text, with the 1-based line it sits on — a
+     * second pass, independent of the digit walk, because an identifier's letters sit outside
+     * any digit run.
+     */
     private static Optional<Finding> accountShape(String text) {
-        Matcher matcher = ACCOUNT_SHAPE.matcher(text);
-        if (!matcher.find()) {
+        int start = InstrumentShapes.firstAccountIdentifier(text);
+        if (start < 0) {
             return Optional.empty();
         }
         int line = 1;
-        for (int i = 0; i < matcher.start(); i++) {
+        for (int i = 0; i < start; i++) {
             if (text.charAt(i) == '\n') {
                 line++;
             }

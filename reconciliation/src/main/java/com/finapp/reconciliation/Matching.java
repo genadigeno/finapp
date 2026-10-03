@@ -46,8 +46,12 @@ import lombok.extern.slf4j.Slf4j;
  * chunk one transaction that re-reads the cursor and advances it, so a crash resumes on
  * any instance exactly where the last commit left off.
  *
- * <p><strong>The lock only orders; the arbiters are PostgreSQL's</strong>: the item's
- * conditional exit from {@code PENDING}, `V005`'s allocation unique and deferred Σ
+ * <p><strong>The lock only orders; the arbiters are PostgreSQL's</strong>: each item's
+ * status re-read under its own row lock — a writer that waited skips what left
+ * {@code PENDING} meanwhile, never deciding it twice or raising a break beside the
+ * winner's — the item's conditional exit from {@code PENDING}, which THROWS when it
+ * updates no row so the attempt rolls back with its decision (the Phase 8 -> 9
+ * transition's REC-10 and IDEM-3), `V005`'s allocation unique and deferred Σ
  * triggers, and the append-only grants — proven with the try-lock bypassed (the
  * {@code claimSource} seam scenario 3's variant overrides). A poisoned item is contained
  * under a savepoint: an {@code ERRORED} decision, the remainder parked with its
@@ -203,11 +207,30 @@ public class Matching {
             for (UUID source : transactions.inTransaction(store::sourcesWithExpiredGrace)) {
                 graced += legContained("grace", source, this::graceBatch);
             }
+            List<UUID> reprocessing = transactions.inTransaction(store::sourcesWithOpenReprocess);
             for (UUID source : transactions.inTransaction(store::sourcesWithRematchWork)) {
-                rematched += legContained("rematch", source, this::rematchBatch);
+                if (reprocessing.contains(source)) {
+                    // A person's open REPROCESS run re-decides every residual of the source under
+                    // the version it pinned; time's rematch waits for it to complete. Ordering
+                    // only - both legs hold the same try-lock and lock the same item rows, so
+                    // either order would converge (the Phase 8 -> 9 transition: the rematch's
+                    // reach is judged on rows now, and an activation alone can give a residual
+                    // a reach no decision judged).
+                    continue;
+                }
+                // The rematch drains while its batches PROGRESS - each residual acted on or its
+                // reach consumed - and reports what it ACTED on (the Phase 8 -> 9 transition's
+                // rematch-key-clause-reselection: a full batch of residents that can never
+                // allocate is consumed, never the end of the source's turn).
+                int[] acted = {0};
+                legContained(
+                        "rematch", source,
+                        (unitOfWork, rematchSource) ->
+                                rematchBatch(unitOfWork, rematchSource, acted));
+                rematched += acted[0];
             }
             // A person's REPROCESS runs (`P8-TSK-022`), after time's legs.
-            for (UUID source : transactions.inTransaction(store::sourcesWithOpenReprocess)) {
+            for (UUID source : reprocessing) {
                 reprocessed += reprocessContained(source);
             }
         }
@@ -278,16 +301,18 @@ public class Matching {
         }
         Instant now = Instant.now(clock);
         List<Suspense.ParkedItem> parks = new ArrayList<>();
+        List<OffsetIntent> noReleases = new ArrayList<>(); // The grace leg releases nothing.
         Map<UUID, Integer> claimantRanks = new HashMap<>();
         for (MatchingStore.ResidualItem residual : residuals) {
             CorrelationId correlation = CorrelationId.of(residual.correlationId());
             try (CorrelationContext.Scope scope =
                     CorrelationContext.enter(Correlation.startingWith(correlation))) {
-                ItemSavepoint savepoint = savepoint(unitOfWork, residual.item());
+                ItemSavepoint savepoint =
+                        savepoint(unitOfWork, residual.item(), parks, noReleases, claimantRanks);
                 try {
                     graceOne(unitOfWork, residual, claimantRanks, parks, now, correlation);
                 } catch (RuntimeException poisoned) {
-                    rollbackTo(unitOfWork, savepoint);
+                    rollbackTo(unitOfWork, savepoint, parks, noReleases, claimantRanks);
                     containPoisoned(
                             unitOfWork, syntheticRun(residual), residual.item(),
                             JudgedStatus.UNMATCHED, parks, now, correlation, poisoned);
@@ -299,8 +324,8 @@ public class Matching {
         CorrelationId batchCorrelation = CorrelationId.generate(ids);
         try (CorrelationContext.Scope scope =
                 CorrelationContext.enter(Correlation.startingWith(batchCorrelation))) {
-            postPhase(unitOfWork, source, residuals.get(0).ruleSetId(), parks, List.of(),
-                    now, batchCorrelation);
+            postPhaseContained(unitOfWork, source, residuals.get(0).ruleSetId(), parks,
+                    List.of(), now, batchCorrelation);
         }
         return residuals.size();
     }
@@ -319,21 +344,24 @@ public class Matching {
         Map<UUID, MatchEngine.HitFacts> lockedHits =
                 lockResolutionHits(unitOfWork, resolution);
         int tolerance = rules.settlementDateToleranceDays(unitOfWork, residual.ruleSetId());
-        // The fingerprint was judged at run time; a grace re-judgement never re-parks
-        // a waiting item as a duplicate of itself.
+        // Every late leg judges the item with its TRUE fingerprint, stored in the basis so the
+        // replay re-runs what was judged (the Phase 8 -> 9 transition's REC-1: the late legs had
+        // judged every residual as never seen before). Strictly EARLIER in claimant order, so a
+        // waiting item is never its own duplicate.
+        boolean fingerprintSeen = fingerprintSeen(unitOfWork, residual.sourceId(), item);
         Optional<MatchEngine.FiredRule> fired = firedRule(resolution, lockedHits);
         MatchEngine.Verdict verdict =
                 MatchEngine.decide(
-                        facts(run, item), fired, resolution.anyLandedRule(), tolerance);
+                        facts(run, item, fingerprintSeen), fired, resolution.anyLandedRule(),
+                        tolerance);
         UUID decisionId = ids.next();
         LocalDate decidedOn = LocalDate.ofInstant(now, ZoneOffset.UTC);
-        // What this decision saw and concluded, stored whole (`P8-TSK-022`): a grace
-        // re-judgement reads no fingerprint.
+        // What this decision saw and concluded, stored whole (`P8-TSK-022`).
         Snapshot seen = Snapshot.of(fired);
         MatchingStore.Basis judged =
                 MatchingStore.Basis.match(
                         DecisionVerdict.of(verdict.kind()), JudgedStatus.UNMATCHED,
-                        item.amount().minorUnits(), false);
+                        item.amount().minorUnits(), fingerprintSeen);
         switch (verdict.kind()) {
             case ALLOCATE ->
                     applyAllocation(
@@ -358,7 +386,10 @@ public class Matching {
             case DUPLICATE ->
                     applyDefinitive(
                             unitOfWork, run, item, seen, judged, decisionId, decidedOn,
-                            BreakType.DUPLICATE_EXTERNAL, BreakCause.EXPECTATION_EXHAUSTED,
+                            BreakType.DUPLICATE_EXTERNAL,
+                            fingerprintSeen
+                                    ? BreakCause.REPEATED_FINGERPRINT
+                                    : BreakCause.EXPECTATION_EXHAUSTED,
                             Optional.empty(), parks, now, correlation);
             case NO_CANDIDATES, NO_RULE -> {
                 Snapshot typedSeen = seen;
@@ -436,16 +467,18 @@ public class Matching {
     }
 
     /**
-     * The rematch leg (`P8-TSK-013`): residual items whose keys now reach an expectation
-     * opened after their latest decision, re-decided under origin {@code REMATCH}
-     * through the shared allocation path — {@code UNMATCHED → MATCHED}; {@code PARKED →
-     * MATCHED} with the unpark and the owning break resolved {@code EVIDENCED}. Only the
-     * {@code ALLOCATE} verdict acts; committed decisions, parks and breaks are never
-     * edited ({@code INV-HIST-04}). Returns the number ACTED on — zero stops the drain,
-     * and a skipped candidate simply waits for later evidence.
+     * The rematch leg (`P8-TSK-013`): residual items whose reach holds an expectation with a
+     * remainder that no decision of theirs has yet judged, in claimant order, re-decided under
+     * origin {@code REMATCH} through the shared allocation path — {@code UNMATCHED → MATCHED};
+     * {@code PARKED → MATCHED} with the unpark and the owning break resolved {@code EVIDENCED}.
+     * Only an allocating verdict acts; anything else records the examination - what it saw and
+     * concluded, and the reach it judged - so the reach is consumed once and never re-locks the
+     * worklist (the Phase 8 -> 9 transition). Committed decisions, parks and breaks are never
+     * edited ({@code INV-HIST-04}). Returns the number that PROGRESSED - acted on or consumed -
+     * and adds the number ACTED on to {@code acted}; zero progress ends the drain.
      */
     @SuppressWarnings("try") // Scopes are used for their close side effect.
-    private int rematchBatch(Connection unitOfWork, UUID source) {
+    private int rematchBatch(Connection unitOfWork, UUID source, int[] acted) {
         if (!claimSource(unitOfWork, source)) {
             return -1;
         }
@@ -468,22 +501,34 @@ public class Matching {
         List<Suspense.ParkedItem> parks = new ArrayList<>();
         List<OffsetIntent> unparks = new ArrayList<>();
         Map<UUID, Integer> claimantRanks = new HashMap<>();
-        int acted = 0;
+        int allocated = 0;
+        int progressed = 0;
         for (MatchingStore.ResidualItem residual : residuals) {
             CorrelationId correlation = CorrelationId.of(residual.correlationId());
             try (CorrelationContext.Scope scope =
                     CorrelationContext.enter(Correlation.startingWith(correlation))) {
-                ItemSavepoint savepoint = savepoint(unitOfWork, residual.item());
+                ItemSavepoint savepoint =
+                        savepoint(unitOfWork, residual.item(), parks, unparks, claimantRanks);
                 try {
-                    if (rematchOne(
-                            unitOfWork, residual, syntheticRun(residual, ruleSetId),
-                            claimantRanks, parks, unparks, now, correlation)) {
-                        acted++;
+                    // The reach read BEFORE the judgement: an examination consumes only what
+                    // its own reads could see, never an expectation committed after them.
+                    List<UUID> reach = store.rematchReach(unitOfWork, residual.item().id());
+                    Rematched rematched =
+                            rematchOne(
+                                    unitOfWork, residual, syntheticRun(residual, ruleSetId),
+                                    reach, claimantRanks, parks, unparks, now, correlation);
+                    if (rematched == Rematched.ACTED) {
+                        allocated++;
+                    }
+                    if (rematched != Rematched.UNJUDGED) {
+                        progressed++;
                     }
                 } catch (RuntimeException poisoned) {
-                    // A rematch is opportunistic: the residual keeps its committed
-                    // record and waits for the next tick or later evidence.
-                    rollbackTo(unitOfWork, savepoint);
+                    // A rematch is opportunistic: the residual keeps its committed record and
+                    // waits for the next tick or later evidence - and everything this attempt
+                    // queued or counted in the batch's Java state rolls back with its rows
+                    // (the Phase 8 -> 9 transition's ATOM-02).
+                    rollbackTo(unitOfWork, savepoint, parks, unparks, claimantRanks);
                     log.warn(
                             "A rematch candidate was skipped: {}",
                             poisoned.getClass().getSimpleName());
@@ -495,67 +540,113 @@ public class Matching {
         CorrelationId batchCorrelation = CorrelationId.generate(ids);
         try (CorrelationContext.Scope scope =
                 CorrelationContext.enter(Correlation.startingWith(batchCorrelation))) {
-            postPhase(unitOfWork, source, ruleSetId, parks, unparks, now, batchCorrelation);
+            postPhaseContained(unitOfWork, source, ruleSetId, parks, unparks, now,
+                    batchCorrelation);
         }
-        return acted;
+        acted[0] += allocated;
+        return progressed;
     }
 
-    private boolean rematchOne(
+    /** What one rematch did: allocated, recorded its examination, or left the item unjudged. */
+    private enum Rematched {
+        ACTED,
+        EXAMINED,
+        UNJUDGED
+    }
+
+    private Rematched rematchOne(
             Connection unitOfWork,
             MatchingStore.ResidualItem residual,
             MatchingStore.RunRow run,
+            List<UUID> reach,
             Map<UUID, Integer> claimantRanks,
             List<Suspense.ParkedItem> parks,
             List<OffsetIntent> unparks,
             Instant now,
             CorrelationId correlation) {
         MatchingStore.ChunkItem item = residual.item();
+        String status = store.itemStatus(unitOfWork, item.id());
+        if (!"UNMATCHED".equals(status) && !"PARKED".equals(status)) {
+            return Rematched.UNJUDGED; // Disposed meanwhile: converge.
+        }
+        JudgedStatus judged = JudgedStatus.ofItemStatus(status);
+        long judgedMinor = judgedMinor(unitOfWork, item, judged);
         Resolution resolution =
                 resolve(unitOfWork, run.ruleSetId(), residual.sourceId(), item);
         Map<UUID, MatchEngine.HitFacts> lockedHits =
                 lockResolutionHits(unitOfWork, resolution);
         int tolerance = rules.settlementDateToleranceDays(unitOfWork, run.ruleSetId());
+        boolean fingerprintSeen = fingerprintSeen(unitOfWork, residual.sourceId(), item);
         Optional<MatchEngine.FiredRule> fired = firedRule(resolution, lockedHits);
         MatchEngine.Verdict verdict =
                 MatchEngine.decide(
-                        facts(run, item), fired, resolution.anyLandedRule(), tolerance);
+                        facts(run, item, fingerprintSeen), fired, resolution.anyLandedRule(),
+                        tolerance);
+        Snapshot seen = Snapshot.of(fired);
+        MatchingStore.Basis basis =
+                MatchingStore.Basis.match(
+                        DecisionVerdict.of(verdict.kind()), judged, judgedMinor,
+                        fingerprintSeen);
         if (verdict.kind() == MatchEngine.VerdictKind.NO_CANDIDATES
-                && resolution.groupRule().isPresent()) {
-            // A waiting item's value-date group, re-judged now a candidate opened after its
-            // decision (P8-TSK-016); a PARKED item re-matches by its reference alone.
-            if (!"UNMATCHED".equals(store.itemStatus(unitOfWork, item.id()))) {
-                return false;
-            }
+                && resolution.groupRule().isPresent()
+                && judged == JudgedStatus.UNMATCHED) {
+            // A waiting item's value-date group, re-judged now an unjudged candidate stands
+            // (P8-TSK-016); a PARKED item re-matches by its reference alone.
             GroupMatch.Verdict group =
                     groupVerdict(
                             unitOfWork, item, residual.sourceId(), resolution, lockedHits,
                             java.util.Set.of());
-            if (group.kind() != GroupMatch.Kind.MATCH) {
-                return false;
+            if (group.kind() == GroupMatch.Kind.MATCH) {
+                applyGroupMatch(
+                        unitOfWork, run, item, resolution.groupRule().get(), group, ids.next(),
+                        LocalDate.ofInstant(now, ZoneOffset.UTC), lockedHits, claimantRanks,
+                        tolerance, DecisionOrigin.REMATCH, "UNMATCHED", now, correlation);
+                return Rematched.ACTED;
             }
-            applyGroupMatch(
-                    unitOfWork, run, item, resolution.groupRule().get(), group, ids.next(),
-                    LocalDate.ofInstant(now, ZoneOffset.UTC), lockedHits, claimantRanks,
-                    tolerance, DecisionOrigin.REMATCH, "UNMATCHED", now, correlation);
-            return true;
+            if (group.kind() == GroupMatch.Kind.MEMBERSHIP_MOVED) {
+                // A candidate committed after the lock-free read: nothing is written, and the
+                // next batch reads the whole group (the grace leg's rule).
+                return Rematched.UNJUDGED;
+            }
+            seen =
+                    group.candidates().isEmpty()
+                            ? Snapshot.none()
+                            : Snapshot.group(resolution.groupRule().get(), group.candidates());
+            basis =
+                    MatchingStore.Basis.group(
+                            DecisionVerdict.of(group.kind()), judged, judgedMinor, true);
+        } else if (verdict.kind() == MatchEngine.VerdictKind.ALLOCATE) {
+            if (judged == JudgedStatus.UNMATCHED) {
+                applyAllocation(
+                        unitOfWork, run, item, fired.orElseThrow(), verdict, ids.next(),
+                        LocalDate.ofInstant(now, ZoneOffset.UTC), lockedHits, claimantRanks,
+                        parks, tolerance, DecisionOrigin.REMATCH, "UNMATCHED", now,
+                        correlation);
+                return Rematched.ACTED;
+            }
+            switch (applyParkedRematch(
+                    unitOfWork, run, residual, fired.orElseThrow(), verdict,
+                    DecisionOrigin.REMATCH, claimantRanks, unparks, now, correlation)) {
+                case ACTED -> {
+                    return Rematched.ACTED;
+                }
+                case RELEASED -> {
+                    return Rematched.UNJUDGED; // Released meanwhile: converge.
+                }
+                case WAITS -> {
+                    // A fuller candidate or a person: examined below, the reach consumed.
+                }
+            }
         }
-        if (verdict.kind() != MatchEngine.VerdictKind.ALLOCATE) {
-            return false;
-        }
-        String status = store.itemStatus(unitOfWork, item.id());
-        if ("UNMATCHED".equals(status)) {
-            applyAllocation(
-                    unitOfWork, run, item, fired.orElseThrow(), verdict, ids.next(),
-                    LocalDate.ofInstant(now, ZoneOffset.UTC), lockedHits, claimantRanks,
-                    parks, tolerance, DecisionOrigin.REMATCH, "UNMATCHED", now, correlation);
-            return true;
-        }
-        if (!"PARKED".equals(status)) {
-            return false; // Disposed meanwhile: converge.
-        }
-        return applyParkedRematch(
-                unitOfWork, run, residual, fired.orElseThrow(), verdict,
-                DecisionOrigin.REMATCH, claimantRanks, unparks, now, correlation);
+        // Nothing changes: the examination records what was seen and concluded, the item as it
+        // was, and the reach it judged - consumed, so it never re-locks the worklist.
+        UUID decisionId = ids.next();
+        recordExamined(
+                unitOfWork, run, item, decisionId, DecisionOrigin.REMATCH, seen, basis,
+                judged == JudgedStatus.PARKED ? DecisionOutcome.PARKED : DecisionOutcome.UNMATCHED,
+                now, correlation);
+        store.insertReach(unitOfWork, decisionId, reach);
+        return Rematched.EXAMINED;
     }
 
     /**
@@ -640,13 +731,16 @@ public class Matching {
             Map<UUID, Integer> claimantRanks = new HashMap<>();
             for (MatchingStore.ResidualItem residual : residuals) {
                 MatchingStore.RunRow decisionRun = reprocessView(run, residual);
-                ItemSavepoint savepoint = savepoint(unitOfWork, residual.item());
+                ItemSavepoint savepoint =
+                        savepoint(unitOfWork, residual.item(), parks, unparks, claimantRanks);
                 try {
                     reprocessOne(
                             unitOfWork, residual, decisionRun, claimantRanks, parks, unparks,
                             now, correlation);
                 } catch (RuntimeException poisoned) {
-                    rollbackTo(unitOfWork, savepoint);
+                    // The attempt's queued parks and unparks and its claimant counts roll back
+                    // with its rows (ATOM-02): postPhase never acts on a rolled-back decision.
+                    rollbackTo(unitOfWork, savepoint, parks, unparks, claimantRanks);
                     log.warn(
                             "A reprocessed item was contained; it keeps its committed record:"
                                     + " {}",
@@ -657,7 +751,7 @@ public class Matching {
                                     store.itemStatus(unitOfWork, residual.item().id()));
                     recordExamined(
                             unitOfWork, decisionRun, residual.item(), ids.next(),
-                            Snapshot.none(),
+                            DecisionOrigin.REPROCESS, Snapshot.none(),
                             MatchingStore.Basis.of(
                                     DecisionVerdict.ERRORED, judged,
                                     judgedMinor(unitOfWork, residual.item(), judged)),
@@ -671,7 +765,8 @@ public class Matching {
             if (residuals.size() < config.chunkSize()) {
                 completeRun(unitOfWork, run, now, correlation);
             }
-            postPhase(unitOfWork, source, run.ruleSetId(), parks, unparks, now, correlation);
+            postPhase(unitOfWork, source, run.ruleSetId(), parks, unparks, List.of(), now,
+                    correlation);
             return residuals.size();
         }
     }
@@ -691,17 +786,56 @@ public class Matching {
         long judgedMinor = judgedMinor(unitOfWork, item, judged);
         Resolution resolution =
                 resolve(unitOfWork, run.ruleSetId(), residual.sourceId(), item);
+        if (resolution.firedRule().isEmpty()
+                && resolution.unlandedRule()
+                        .filter(rule -> rule.cardinality() == Cardinality.CHECK)
+                        .isPresent()
+                && judged == JudgedStatus.UNMATCHED) {
+            // A fee line left waiting - its check contained as ITEM_ERRORED, or no CHECK rule
+            // in its own version - is CHECKED under this run's version, and the contained
+            // PROCESSING_ERROR closes EVIDENCED naming the check: ADR-0069's "reprocess, then
+            // EVIDENCED" exit (the Phase 8 -> 9 transition's REC-6). The break is locked first
+            // (the section-3 break-first order; this leg holds the source's advisory).
+            Optional<UUID> contained =
+                    store.lockOpenBreakOnItem(unitOfWork, item.id(), BreakType.PROCESSING_ERROR);
+            UUID checked =
+                    applyFeeCheck(
+                            unitOfWork, run, item, resolution.unlandedRule().get(),
+                            DecisionOrigin.REPROCESS, JudgedStatus.UNMATCHED, now, correlation);
+            contained.ifPresent(
+                    breakId ->
+                            resolutions.evidence(
+                                    unitOfWork,
+                                    new Resolutions.Evidence(
+                                            ids.next(),
+                                            breakId,
+                                            item.amount(),
+                                            store.breakResidualVersion(unitOfWork, breakId),
+                                            checked,
+                                            Optional.empty(),
+                                            Optional.empty(),
+                                            Optional.empty(),
+                                            run.ruleSetId(),
+                                            SecurityContext.require(),
+                                            now,
+                                            correlation)));
+            return;
+        }
         Map<UUID, MatchEngine.HitFacts> lockedHits =
                 lockResolutionHits(unitOfWork, resolution);
         int tolerance = rules.settlementDateToleranceDays(unitOfWork, run.ruleSetId());
+        // The TRUE fingerprint (REC-1), stored so the replay re-runs what was judged.
+        boolean fingerprintSeen = fingerprintSeen(unitOfWork, residual.sourceId(), item);
         Optional<MatchEngine.FiredRule> fired = firedRule(resolution, lockedHits);
         MatchEngine.Verdict verdict =
                 MatchEngine.decide(
-                        facts(run, item), fired, resolution.anyLandedRule(), tolerance);
+                        facts(run, item, fingerprintSeen), fired, resolution.anyLandedRule(),
+                        tolerance);
         Snapshot seen = Snapshot.of(fired);
         MatchingStore.Basis basis =
                 MatchingStore.Basis.match(
-                        DecisionVerdict.of(verdict.kind()), judged, judgedMinor, false);
+                        DecisionVerdict.of(verdict.kind()), judged, judgedMinor,
+                        fingerprintSeen);
         if (verdict.kind() == MatchEngine.VerdictKind.NO_CANDIDATES
                 && resolution.groupRule().isPresent()
                 && judged == JudgedStatus.UNMATCHED) {
@@ -733,37 +867,43 @@ public class Matching {
                 return;
             }
             if (applyParkedRematch(
-                    unitOfWork, run, residual, fired.orElseThrow(), verdict,
-                    DecisionOrigin.REPROCESS, claimantRanks, unparks, now, correlation)) {
+                            unitOfWork, run, residual, fired.orElseThrow(), verdict,
+                            DecisionOrigin.REPROCESS, claimantRanks, unparks, now, correlation)
+                    == ParkedRematch.ACTED) {
                 return;
             }
         }
         // Nothing changes: the decision records what was seen and concluded, the item as it was.
         recordExamined(
-                unitOfWork, run, item, ids.next(), seen, basis,
+                unitOfWork, run, item, ids.next(), DecisionOrigin.REPROCESS, seen, basis,
                 judged == JudgedStatus.PARKED ? DecisionOutcome.PARKED : DecisionOutcome.UNMATCHED,
                 now, correlation);
     }
 
-    /** A reprocess decision that changed nothing - its snapshot and basis, no other write. */
+    /**
+     * A late leg's decision that changed nothing - its snapshot and basis, no other write: a
+     * {@code REPROCESS} run's examination, or a {@code REMATCH} that judged a new reach and could
+     * not act (the Phase 8 -> 9 transition). Written straight to the store: an examination is no
+     * late record found, so it never reaches the rematch series (`P8-TSK-024`'s gate).
+     */
     private void recordExamined(
             Connection unitOfWork,
             MatchingStore.RunRow run,
             MatchingStore.ChunkItem item,
             UUID decisionId,
+            DecisionOrigin origin,
             Snapshot snapshot,
             MatchingStore.Basis basis,
             DecisionOutcome outcome,
             Instant now,
             CorrelationId correlation) {
-        insertDecision(
-                run,
+        store.insertDecision(
                 unitOfWork,
                 new MatchingStore.NewDecision(
                         decisionId,
                         item.id(),
                         run.id(),
-                        DecisionOrigin.REPROCESS,
+                        origin,
                         run.ruleSetId(),
                         snapshot.rulePriority(),
                         snapshot.strategy(),
@@ -811,8 +951,15 @@ public class Matching {
                 residual.runCycle());
     }
 
+    /** What a parked rematch did: allocated, waits for a fuller candidate, or found it released. */
+    private enum ParkedRematch {
+        ACTED,
+        WAITS,
+        RELEASED
+    }
+
     /** {@code PARKED -> MATCHED}: the parked value allocated whole, unparked, EVIDENCED. */
-    private boolean applyParkedRematch(
+    private ParkedRematch applyParkedRematch(
             Connection unitOfWork,
             MatchingStore.RunRow run,
             MatchingStore.ResidualItem residual,
@@ -827,7 +974,7 @@ public class Matching {
         List<CorrectionEngine.ParkedOriginal> parked =
                 store.lockParkedOriginals(unitOfWork, List.of(item.id()));
         if (parked.isEmpty()) {
-            return false; // Released meanwhile: converge.
+            return ParkedRematch.RELEASED; // Released meanwhile: converge.
         }
         CorrectionEngine.ParkedOriginal suspenseRow = parked.get(0);
         MatchEngine.HitFacts candidate = verdict.candidate().orElseThrow();
@@ -836,7 +983,7 @@ public class Matching {
                 || !candidate.amount().currency().equals(suspenseRow.currency())) {
             // A partial unpark would leave a split record; the residual waits for a
             // fuller candidate or a person (the design's G2 refinement, recorded).
-            return false;
+            return ParkedRematch.WAITS;
         }
         Money amount =
                 Money.ofPersisted(
@@ -847,6 +994,16 @@ public class Matching {
                         ? store.lockOpenBreakOn(
                                 unitOfWork, candidate.expectationId(),
                                 BreakType.MISSING_EXTERNAL)
+                        : Optional.empty();
+        // The remainder's last tranche settles the expectation: its earlier shortfall break -
+        // AMOUNT_MISMATCH, or a remittance's SETTLEMENT_MISMATCH - is explained to zero too,
+        // locked after the overdue break (applyAllocation's order) and closed EVIDENCED below,
+        // never left open over a SETTLED expectation (the Phase 8 -> 9 transition's REC-5).
+        Optional<UUID> shortfallBreak =
+                settles
+                        ? store.lockOpenBreakOn(
+                                unitOfWork, candidate.expectationId(),
+                                differenceType(candidate.kind()))
                         : Optional.empty();
         UUID decisionId = ids.next();
         insertDecision(
@@ -897,11 +1054,13 @@ public class Matching {
         if (status == ExpectationStatus.SETTLED) {
             ReconciliationEvents.expectationSettled(
                     outbox, unitOfWork, ids, candidate.expectationId(), candidate.kind(),
-                    candidate.operationRef(), residual.sourceId(), now, correlation);
+                    residual.sourceId(), now, correlation);
         }
-        store.markItemMatchedFrom(
-                unitOfWork, item.id(), "PARKED", parkedRemainder,
-                SecurityContext.require(), now, correlation);
+        exitOrThrow(
+                store.markItemMatchedFrom(
+                        unitOfWork, item.id(), "PARKED", parkedRemainder,
+                        SecurityContext.require(), now, correlation),
+                item.id(), "PARKED -> MATCHED");
         // The cycle observed here as on any allocation (P8-TSK-017, the gate's find): a parked
         // line re-matched to a completion that announced another cycle is its zero-value
         // TIMING_DIFFERENCE - unless an open MISSING_EXTERNAL already states the timing, the L1
@@ -928,24 +1087,26 @@ public class Matching {
         }
         unparks.add(
                 new OffsetIntent(decisionId, suspenseRow, amount, ReleaseCause.UNPARK));
-        overdueBreak.ifPresent(
-                breakId ->
-                        resolutions.evidence(
-                                unitOfWork,
-                                new Resolutions.Evidence(
-                                        ids.next(),
-                                        breakId,
-                                        amount,
-                                        store.breakResidualVersion(unitOfWork, breakId),
-                                        decisionId,
-                                        Optional.empty(),
-                                        Optional.empty(),
-                                        Optional.empty(),
-                                        run.ruleSetId(),
-                                        SecurityContext.require(),
-                                        now,
-                                        correlation)));
-        return true;
+        for (Optional<UUID> explained : List.of(overdueBreak, shortfallBreak)) {
+            explained.ifPresent(
+                    breakId ->
+                            resolutions.evidence(
+                                    unitOfWork,
+                                    new Resolutions.Evidence(
+                                            ids.next(),
+                                            breakId,
+                                            amount,
+                                            store.breakResidualVersion(unitOfWork, breakId),
+                                            decisionId,
+                                            Optional.empty(),
+                                            Optional.empty(),
+                                            Optional.empty(),
+                                            run.ruleSetId(),
+                                            SecurityContext.require(),
+                                            now,
+                                            correlation)));
+        }
+        return ParkedRematch.ACTED;
     }
 
     /** The synthetic run view over a residual's stored facts — never persisted. */
@@ -1299,24 +1460,50 @@ public class Matching {
         for (MatchEngine.HitFacts hit : store.lockExpectations(unitOfWork, locked, reachedBy)) {
             lockedHits.put(hit.expectationId(), hit);
         }
-        store.lockItems(unitOfWork, items.stream().map(MatchingStore.ChunkItem::id).toList());
+        java.util.Set<UUID> stillPending =
+                store.lockItems(
+                        unitOfWork, items.stream().map(MatchingStore.ChunkItem::id).toList());
 
+        Map<UUID, MatchingStore.ChunkItem> chunk = new LinkedHashMap<>();
+        items.forEach(item -> chunk.put(item.id(), item));
         List<Suspense.ParkedItem> parks = new ArrayList<>();
         List<OffsetIntent> offsets = new ArrayList<>();
+        List<QueuedOffset> sameChunkOffsets = new ArrayList<>();
         // The chunk's own claimant ledger: each allocation diminishes the remainder the
         // NEXT item in claimant order sees (INV-REC-07 inside one chunk), and ranks count.
         Map<UUID, Integer> claimantRanks = new HashMap<>();
         int decided = 0;
         long lastLineNo = run.cursor();
         for (MatchingStore.ChunkItem item : items) {
-            ItemSavepoint savepoint = savepoint(unitOfWork, item);
+            if (!stillPending.contains(item.id())) {
+                // Decided by another writer between the lock-free chunk read and this
+                // chunk's item locks - the try-lock bypassed, or any future writer that
+                // skips it: the loser SKIPS what left PENDING, so it writes no second RUN
+                // decision and no break beside the winner's with no value to own, and the
+                // cursor still passes the line (the Phase 8 -> 9 transition's REC-10,
+                // MI-4 and IDEM-3).
+                lastLineNo = item.lineNo();
+                continue;
+            }
+            ItemSavepoint savepoint =
+                    savepoint(unitOfWork, item, parks, offsets, sameChunkOffsets,
+                            claimantRanks);
             try {
                 decideAndApply(
                         unitOfWork, run, item, resolutions.get(item.id()), lockedHits,
-                        keyClaims, claimantRanks, tolerance, parks, offsets, now,
-                        correlation);
+                        keyClaims, claimantRanks, tolerance, parks, offsets,
+                        sameChunkOffsets, chunk, now, correlation);
             } catch (RuntimeException poisoned) {
-                rollbackTo(unitOfWork, savepoint);
+                rollbackTo(unitOfWork, savepoint, parks, offsets, sameChunkOffsets,
+                        claimantRanks);
+                // The chunk's remainders the failed attempt had already diminished are re-read
+                // from the rows the rollback restored (still locked by this transaction): the
+                // next claimant is judged against what the database holds, never against an
+                // allocation that rolled back (the Phase 8 -> 9 transition's ATOM-02).
+                for (MatchEngine.HitFacts hit :
+                        store.lockExpectations(unitOfWork, lockedHits.keySet(), reachedBy)) {
+                    lockedHits.put(hit.expectationId(), hit);
+                }
                 containPoisoned(
                         unitOfWork, run, item, JudgedStatus.PENDING, parks, now, correlation,
                         poisoned);
@@ -1329,8 +1516,8 @@ public class Matching {
         if (lastChunk) {
             completeRun(unitOfWork, run, now, correlation);
         }
-        postPhase(unitOfWork, run.sourceId(), run.ruleSetId(), parks, offsets, now,
-                correlation);
+        postPhase(unitOfWork, run.sourceId(), run.ruleSetId(), parks, offsets,
+                sameChunkOffsets, now, correlation);
         return new ChunkOutcome(
                 lastChunk ? ChunkOutcome.Kind.COMPLETED : ChunkOutcome.Kind.CHUNKED,
                 run.id(),
@@ -1349,6 +1536,23 @@ public class Matching {
             ReleaseCause cause) {}
 
     /**
+     * A correction's offset of a park its OWN chunk queued (the Phase 8 -> 9 transition's
+     * ATOM-04): the original's park has no suspense row until the posting phase posts it, so
+     * the offset's snapshot row, the original's {@code PARKED -> RESOLVED} exit and the unpark
+     * with its {@code EVIDENCED} closure complete there, right after the park - the same
+     * record the two lines leave across two runs. Claimed in memory at the decision, so one
+     * chunk's queued park offsets at most once; the claim rolls back with the item's
+     * savepoint.
+     */
+    private record QueuedOffset(
+            UUID decisionId,
+            UUID originalItemId,
+            UUID breakId,
+            SuspenseSide side,
+            Money amount,
+            UUID positionAccountId) {}
+
+    /**
      * THE POSTINGS, LAST (the §3 rule): a transaction posting more than one entry over
      * the platform's shared projection rows pre-locks their union in the projection's
      * own order before its first posting — {@code Suspense.park}'s internal pre-lock
@@ -1362,24 +1566,152 @@ public class Matching {
             UUID ruleSetId,
             List<Suspense.ParkedItem> parks,
             List<OffsetIntent> offsets,
+            List<QueuedOffset> sameChunkOffsets,
             Instant now,
             CorrelationId correlation) {
-        if (parks.size() + offsets.size() > 1) {
+        if (parks.size() + offsets.size() + sameChunkOffsets.size() > 1) {
             preLockPostingUnion(unitOfWork, parks, offsets);
         }
+        // The parks each same-chunk offset releases, by their original item (ATOM-04).
+        Map<UUID, Suspense.ParkedOutcome> posted = new HashMap<>();
         if (!parks.isEmpty()) {
-            suspense.park(
-                    unitOfWork,
-                    new Suspense.ParkCommand(
-                            sourceId,
-                            LocalDate.ofInstant(now, ZoneOffset.UTC),
-                            parks,
-                            SecurityContext.require(),
-                            now,
-                            correlation));
+            Suspense.ParkResult parkResult =
+                    suspense.park(
+                            unitOfWork,
+                            new Suspense.ParkCommand(
+                                    sourceId,
+                                    LocalDate.ofInstant(now, ZoneOffset.UTC),
+                                    parks,
+                                    SecurityContext.require(),
+                                    now,
+                                    correlation));
+            for (Suspense.ParkedOutcome outcome : parkResult.parked()) {
+                posted.put(outcome.externalItemId(), outcome);
+            }
         }
         for (OffsetIntent offset : offsets) {
             applyOffsetPostingAndEvidence(unitOfWork, ruleSetId, offset, now, correlation);
+        }
+        for (QueuedOffset offset : sameChunkOffsets) {
+            applySameChunkOffset(unitOfWork, ruleSetId, offset, posted, now, correlation);
+        }
+    }
+
+    /**
+     * Completes a correction's offset of a park queued in its own chunk (ATOM-04), after
+     * {@link Suspense#park} posted it: the decision's parked-original snapshot — the suspense
+     * row exists now — the original's {@code PARKED -> RESOLVED} exit, and the unpark with
+     * its {@code EVIDENCED} closure through the shared path.
+     */
+    private void applySameChunkOffset(
+            Connection unitOfWork,
+            UUID ruleSetId,
+            QueuedOffset offset,
+            Map<UUID, Suspense.ParkedOutcome> posted,
+            Instant now,
+            CorrelationId correlation) {
+        Suspense.ParkedOutcome park = posted.get(offset.originalItemId());
+        if (park == null) {
+            // The claim is made only against a park queued earlier in this chunk, whose
+            // item this transaction holds locked, so its posting cannot have converged.
+            throw new IllegalStateException(
+                    "a same-chunk offset's park posts in this transaction (ATOM-04):"
+                            + " item " + offset.originalItemId());
+        }
+        CorrectionEngine.ParkedOriginal parked =
+                new CorrectionEngine.ParkedOriginal(
+                        offset.originalItemId(),
+                        park.suspenseItemId(),
+                        offset.breakId(),
+                        offset.side(),
+                        offset.amount().minorUnits(),
+                        offset.amount().currency(),
+                        offset.amount().scale(),
+                        offset.positionAccountId());
+        store.insertParkedOriginals(unitOfWork, offset.decisionId(), List.of(parked));
+        exitOrThrow(
+                store.markParkedItemResolved(
+                        unitOfWork, offset.originalItemId(), SecurityContext.require(), now,
+                        correlation),
+                offset.originalItemId(), "PARKED -> RESOLVED");
+        applyOffsetPostingAndEvidence(
+                unitOfWork,
+                ruleSetId,
+                new OffsetIntent(
+                        offset.decisionId(), parked, offset.amount(),
+                        ReleaseCause.CORRECTION_OFFSET),
+                now,
+                correlation);
+    }
+
+    /**
+     * The post phase of a TIME leg (grace, rematch) with a park failure contained per item (the
+     * Phase 8 -> 9 transition, REC-3): one item whose park cannot post must never jam a leg. The
+     * leg's worklist is oldest first, so a batch that rolled back whole on one item's park was
+     * taken again on every tick, and every later item of the source waited for ever.
+     *
+     * <p>The whole phase runs first, as before. When it fails, it is rolled back to its own
+     * savepoint - the items' decisions and breaks above it stand - and re-run piecewise: the
+     * union pre-locked again (a rolled-back savepoint released its locks), the offsets together
+     * (each is atomic with its own allocation, so an offset's failure still fails the batch
+     * whole), then each park alone under its own savepoint. A park that fails again is undone and
+     * its item left {@code UNMATCHED}, owned by the break its decision raised, its grace clock
+     * stopped ({@link MatchingStore#stopGrace}): the value stays in its position, where the
+     * position identity counts it, and no time leg takes the item again until evidence or a
+     * person does. Never the run leg: its items are its cursor's, and a chunk that cannot post
+     * rolls back whole and blocks the run, loudly.
+     */
+    private void postPhaseContained(
+            Connection unitOfWork,
+            UUID sourceId,
+            UUID ruleSetId,
+            List<Suspense.ParkedItem> parks,
+            List<OffsetIntent> offsets,
+            Instant now,
+            CorrelationId correlation) {
+        PhaseSavepoint whole = phaseSavepoint(unitOfWork, "post_phase");
+        try {
+            // A time leg's corrections never queue a same-chunk offset (the run leg's shape).
+            postPhase(unitOfWork, sourceId, ruleSetId, parks, offsets, List.of(), now,
+                    correlation);
+            return;
+        } catch (RuntimeException failed) {
+            if (parks.isEmpty()) {
+                throw failed; // Nothing per item to contain: the batch rolls back whole.
+            }
+            rollbackToPhase(unitOfWork, whole);
+            log.warn(
+                    "A time leg's postings failed and are re-posted one park at a time: {}",
+                    failed.getClass().getSimpleName());
+        }
+        if (parks.size() + offsets.size() > 1) {
+            preLockPostingUnion(unitOfWork, parks, offsets);
+        }
+        for (OffsetIntent offset : offsets) {
+            applyOffsetPostingAndEvidence(unitOfWork, ruleSetId, offset, now, correlation);
+        }
+        for (Suspense.ParkedItem park : parks) {
+            PhaseSavepoint one =
+                    phaseSavepoint(unitOfWork,
+                            "park_" + park.externalItemId().toString().replace("-", ""));
+            try {
+                suspense.park(
+                        unitOfWork,
+                        new Suspense.ParkCommand(
+                                sourceId,
+                                LocalDate.ofInstant(now, ZoneOffset.UTC),
+                                List.of(park),
+                                SecurityContext.require(),
+                                now,
+                                correlation));
+            } catch (RuntimeException poisoned) {
+                rollbackToPhase(unitOfWork, one);
+                store.stopGrace(unitOfWork, park.externalItemId());
+                log.warn(
+                        "A park was contained: its item waits UNMATCHED, owned by its break,"
+                                + " its grace clock stopped: {}",
+                        poisoned.getClass().getSimpleName());
+            }
         }
     }
 
@@ -1496,7 +1828,11 @@ public class Matching {
         // fee narrative starts at its first line), converging on the one-open unique.
         Map<String, long[]> foldByCurrency = new LinkedHashMap<>();
         Map<String, MatchingStore.FeeDecisionRow> firstByCurrency = new LinkedHashMap<>();
-        for (MatchingStore.FeeDecisionRow fee : store.feeDecisionsOf(unitOfWork, run.id())) {
+        // A BATCH run's fold alone: the per-batch bound is its batch's, and a REPROCESS run's
+        // re-checked fee lines (REC-6) span batches - each was judged per line at its re-check.
+        List<MatchingStore.FeeDecisionRow> batchFees =
+                run.batchId() == null ? List.of() : store.feeDecisionsOf(unitOfWork, run.id());
+        for (MatchingStore.FeeDecisionRow fee : batchFees) {
             foldByCurrency
                     .computeIfAbsent(fee.currency(), currency -> new long[] {0L, fee.scale()})
                     [0] += fee.feeReportedMinor() - fee.feeExpectedMinor();
@@ -1730,15 +2066,11 @@ public class Matching {
             int toleranceDays,
             List<Suspense.ParkedItem> parks,
             List<OffsetIntent> offsets,
+            List<QueuedOffset> sameChunkOffsets,
+            Map<UUID, MatchingStore.ChunkItem> chunk,
             Instant now,
             CorrelationId correlation) {
-        boolean fingerprintSeen =
-                store.fingerprintSeenEarlier(
-                        unitOfWork,
-                        run.sourceId(),
-                        item.fingerprint(),
-                        item.sourceSequence(),
-                        item.lineNo());
+        boolean fingerprintSeen = fingerprintSeen(unitOfWork, run.sourceId(), item);
         MatchEngine.ItemFacts facts =
                 new MatchEngine.ItemFacts(
                         item.id(),
@@ -1757,13 +2089,16 @@ public class Matching {
         if (resolution.firedRule().isEmpty() && resolution.unlandedRule().isPresent()) {
             MatchingRules.RuleRow unlanded = resolution.unlandedRule().get();
             if (unlanded.cardinality() == Cardinality.CHECK) {
-                applyFeeCheck(unitOfWork, run, item, unlanded, now, correlation);
+                applyFeeCheck(
+                        unitOfWork, run, item, unlanded, DecisionOrigin.RUN,
+                        JudgedStatus.PENDING, now, correlation);
                 return;
             }
             if (unlanded.cardinality() == Cardinality.CORRECTION) {
                 applyCorrection(
-                        unitOfWork, run, item, facts, resolution, unlanded,
-                        claimantRanks, parks, offsets, now, correlation);
+                        unitOfWork, run, item, facts, resolution, unlanded, lockedHits,
+                        claimantRanks, parks, offsets, sameChunkOffsets, chunk, now,
+                        correlation);
                 return;
             }
         }
@@ -1809,10 +2144,27 @@ public class Matching {
                                     ? BreakCause.REPEATED_FINGERPRINT
                                     : BreakCause.EXPECTATION_EXHAUSTED,
                             Optional.empty(), parks, now, correlation);
-            case NO_RULE ->
+            case NO_RULE -> {
+                if (item.lineType().allocating() && item.positionPurpose().isPresent()) {
+                    // No rule of the pinned version can ever allocate this line - an OTHER_IN
+                    // or OTHER_OUT no rule set can even name, or a line type its version does
+                    // not serve: its grace is zero, so the value is OWNED NOW, parked with its
+                    // UNKNOWN_EXTERNAL break, never left waiting with no clock and no break
+                    // (INV-REC-02; the Phase 8 -> 9 transition's REC-2). A later version's
+                    // REPROCESS run may still re-decide it.
+                    applyDefinitive(
+                            unitOfWork, run, item, seen, judged, decisionId, decidedOn,
+                            BreakType.UNKNOWN_EXTERNAL, BreakCause.GRACE_EXPIRED,
+                            Optional.empty(), parks, now, correlation);
+                } else {
+                    // A fee line its version names no CHECK for: nothing of it stands in the
+                    // position, so nothing parks; it waits for a REPROCESS run under a version
+                    // that checks it.
                     applyWaiting(
                             unitOfWork, run, item, decisionId, decidedOn,
                             Optional.empty(), seen, judged, now, correlation);
+                }
+            }
             case NO_CANDIDATES -> {
                 // No key reached anything: a line type riding a value-date group is judged
                 // against its date's untouched candidates before the lookup types what is
@@ -2018,13 +2370,15 @@ public class Matching {
             if (status == ExpectationStatus.SETTLED) {
                 ReconciliationEvents.expectationSettled(
                         outbox, unitOfWork, ids, member.expectationId(), member.kind(),
-                        member.operationRef(), run.sourceId(), now, correlation);
+                        run.sourceId(), now, correlation);
             }
             allocated.put(member.expectationId(), allocation);
         }
-        store.markItemMatchedFrom(
-                unitOfWork, item.id(), itemFromStatus, item.amount().minorUnits(),
-                SecurityContext.require(), now, correlation);
+        exitOrThrow(
+                store.markItemMatchedFrom(
+                        unitOfWork, item.id(), itemFromStatus, item.amount().minorUnits(),
+                        SecurityContext.require(), now, correlation),
+                item.id(), itemFromStatus + " -> MATCHED");
         overdueBreaks.forEach(
                 (expectationId, breakId) ->
                         resolutions.evidence(
@@ -2181,7 +2535,7 @@ public class Matching {
         if (status == ExpectationStatus.SETTLED) {
             ReconciliationEvents.expectationSettled(
                     outbox, unitOfWork, ids, candidate.expectationId(), candidate.kind(),
-                    candidate.operationRef(), run.sourceId(), now, correlation);
+                    run.sourceId(), now, correlation);
         }
         // Against a REMITTANCE the difference is the bank's cash against the report's promise
         // - SETTLEMENT_MISMATCH (REMITTANCE_DIFFERS) (P8-TSK-016); the arithmetic and the
@@ -2206,9 +2560,11 @@ public class Matching {
                             item.id(), raised.breakId(), excess,
                             positionAccount(unitOfWork, item)));
         } else {
-            store.markItemMatchedFrom(
-                    unitOfWork, item.id(), itemFromStatus, allocation.minorUnits(),
-                    SecurityContext.require(), now, correlation);
+            exitOrThrow(
+                    store.markItemMatchedFrom(
+                            unitOfWork, item.id(), itemFromStatus, allocation.minorUnits(),
+                            SecurityContext.require(), now, correlation),
+                    item.id(), itemFromStatus + " -> MATCHED");
         }
         if (verdict.underRemainder().isPresent()) {
             UUID expectationSource = item.keyScope(run.sourceId());
@@ -2306,12 +2662,23 @@ public class Matching {
      * gross, so its pinned schedule is judged against a gross of exactly zero — expected =
      * round(rate × 0 + fixed), the fixed part — never F1's unreachable-original zero, which
      * would price the fixed part away and stand the whole fee at issue.
+     *
+     * <p>The run leg checks a {@code PENDING} line under origin {@code RUN}; a {@code REPROCESS}
+     * run re-checks a fee line left {@code UNMATCHED} - its check contained, or no CHECK rule in
+     * its own version - under its own origin and pinned version (the Phase 8 -> 9 transition's
+     * REC-6). Returns the {@code CHECKED} decision.
+     *
+     * <p>A gross in another currency prices nothing (the transition's currency pre-filter,
+     * below): the fee is checked under F1's conservative rule instead of being handed to
+     * {@link FeeCheck}'s cross-currency arithmetic, whose {@code INV-MON-04} guard throws.
      */
-    private void applyFeeCheck(
+    private UUID applyFeeCheck(
             Connection unitOfWork,
             MatchingStore.RunRow run,
             MatchingStore.ChunkItem item,
             MatchingRules.RuleRow rule,
+            DecisionOrigin origin,
+            JudgedStatus judged,
             Instant now,
             CorrelationId correlation) {
         Optional<Money> gross = Optional.empty();
@@ -2332,6 +2699,18 @@ public class Matching {
                             .findFirst()
                             .flatMap(id -> store.expectationAmount(unitOfWork, id));
         }
+        if (gross.isPresent()
+                && !gross.get().currency().equals(item.amount().currency())) {
+            // The currency pre-filter (the Phase 8 -> 9 transition): a gross in another
+            // currency cannot price this fee - FeeCheck's own INV-MON-04 guard would throw,
+            // and the savepoint would contain the line as an untyped ITEM_ERRORED. The
+            // mismatched original prices NOTHING (F1's conservative rule): expected zero,
+            // the whole reported fee at issue, raised below as FEE_MISMATCH - deliberately
+            // never CURRENCY_MISMATCH, whose every kind disposes of parked value a fee line
+            // does not hold (its value was expensed at acceptance), so that type here could
+            // never close.
+            gross = Optional.empty();
+        }
         long tolerance =
                 rules.feeToleranceMinor(
                         unitOfWork, run.ruleSetId(), "PROCESSING_FEE_PER_LINE",
@@ -2344,14 +2723,15 @@ public class Matching {
                                 unitOfWork, run.ruleSetId(), item.lineType(),
                                 item.amount().currency()),
                         tolerance);
+        UUID decisionId = ids.next();
         insertDecision(
                 run,
                 unitOfWork,
                 new MatchingStore.NewDecision(
-                        ids.next(),
+                        decisionId,
                         item.id(),
                         run.id(),
-                        DecisionOrigin.RUN,
+                        origin,
                         run.ruleSetId(),
                         Optional.of(rule.priority()),
                         Optional.of(Cardinality.CHECK),
@@ -2371,10 +2751,13 @@ public class Matching {
                         // The gross the expected fee was priced on - absent when no
                         // original was reached (`P8-TSK-022`'s replay input).
                         MatchingStore.Basis.fee(
-                                verdict.beyondTolerance(), item.amount().minorUnits(),
+                                verdict.beyondTolerance(), judged, item.amount().minorUnits(),
                                 gross.map(Money::minorUnits))));
-        store.markItemChecked(
-                unitOfWork, item.id(), SecurityContext.require(), now, correlation);
+        exitOrThrow(
+                store.markItemCheckedFrom(
+                        unitOfWork, item.id(), judged.name(), SecurityContext.require(), now,
+                        correlation),
+                item.id(), judged.name() + " -> CHECKED");
         if (verdict.beyondTolerance()) {
             breaks.raise(
                     unitOfWork,
@@ -2388,6 +2771,7 @@ public class Matching {
                                     item.amount().scale()),
                             Optional.empty(), now));
         }
+        return decisionId;
     }
 
     /**
@@ -2404,9 +2788,12 @@ public class Matching {
             MatchEngine.ItemFacts facts,
             Resolution resolution,
             MatchingRules.RuleRow rule,
+            Map<UUID, MatchEngine.HitFacts> lockedHits,
             Map<UUID, Integer> claimantRanks,
             List<Suspense.ParkedItem> parks,
             List<OffsetIntent> offsets,
+            List<QueuedOffset> sameChunkOffsets,
+            Map<UUID, MatchingStore.ChunkItem> chunk,
             Instant now,
             CorrelationId correlation) {
         if (facts.fingerprintSeenEarlier()) {
@@ -2424,6 +2811,7 @@ public class Matching {
         String originalRef = item.keys().get(ItemKeyKind.ORIGINAL_REF);
         List<MatchEngine.HitFacts> hits = List.of();
         List<CorrectionEngine.ParkedOriginal> parkedOriginals = List.of();
+        java.util.Set<UUID> originalItems = java.util.Set.of();
         if (originalRef != null) {
             Map<UUID, KeyKind> reachedBy = new LinkedHashMap<>();
             for (KeyKind kind : List.of(KeyKind.PSP_CAPTURE_REF, KeyKind.PSP_REFUND_REF)) {
@@ -2435,13 +2823,14 @@ public class Matching {
                 }
             }
             hits = store.lockExpectations(unitOfWork, reachedBy.keySet(), reachedBy);
-            java.util.LinkedHashSet<UUID> originalItems = new java.util.LinkedHashSet<>();
+            java.util.LinkedHashSet<UUID> originals = new java.util.LinkedHashSet<>();
             for (ItemKeyKind kind :
                     List.of(ItemKeyKind.PSP_CAPTURE_REF, ItemKeyKind.PSP_REFUND_REF)) {
-                originalItems.addAll(
+                originals.addAll(
                         store.itemsByKey(unitOfWork, run.sourceId(), kind, originalRef));
             }
-            originalItems.remove(item.id()); // Never its own original.
+            originals.remove(item.id()); // Never its own original.
+            originalItems = originals;
             parkedOriginals = store.lockParkedOriginals(unitOfWork, originalItems);
         }
         CorrectionEngine.Verdict verdict =
@@ -2452,7 +2841,8 @@ public class Matching {
             case TOP_UP ->
                     applyTopUp(
                             unitOfWork, run, item, rule, verdict, hits, parkedOriginals,
-                            decisionId, decidedOn, claimantRanks, parks, now, correlation);
+                            decisionId, decidedOn, lockedHits, claimantRanks, parks, now,
+                            correlation);
             case OFFSET -> {
                 CorrectionEngine.ParkedOriginal parked = verdict.offset().orElseThrow();
                 insertDecision(
@@ -2482,26 +2872,144 @@ public class Matching {
                 // What the correction engine judged: the hits and the parked originals.
                 store.insertCandidates(unitOfWork, decisionId, hits);
                 store.insertParkedOriginals(unitOfWork, decisionId, parkedOriginals);
-                store.markItemOffset(
-                        unitOfWork, item.id(), item.amount().minorUnits(),
-                        SecurityContext.require(), now, correlation);
-                store.markParkedItemResolved(
-                        unitOfWork, parked.originalItemId(), SecurityContext.require(),
-                        now, correlation);
+                exitOrThrow(
+                        store.markItemOffset(
+                                unitOfWork, item.id(), item.amount().minorUnits(),
+                                SecurityContext.require(), now, correlation),
+                        item.id(), "PENDING -> OFFSET");
+                exitOrThrow(
+                        store.markParkedItemResolved(
+                                unitOfWork, parked.originalItemId(),
+                                SecurityContext.require(), now, correlation),
+                        parked.originalItemId(), "PARKED -> RESOLVED");
                 offsets.add(
                         new OffsetIntent(
                                 decisionId, parked, item.amount(),
                                 ReleaseCause.CORRECTION_OFFSET));
             }
-            case UNREACHED ->
-                    applyUnreached(
-                            unitOfWork, run, item, resolution,
-                            Snapshot.correction(rule, hits, parkedOriginals),
-                            MatchingStore.Basis.of(
-                                    DecisionVerdict.CORRECTION_UNREACHED,
-                                    JudgedStatus.PENDING, item.amount().minorUnits()),
-                            decisionId, decidedOn, parks, now, correlation);
+            case UNREACHED -> {
+                // A park the chunk itself queued is as offsettable as a committed one (the
+                // Phase 8 -> 9 transition's ATOM-04): the same two lines offset across two
+                // runs, so in one chunk they must not leave two opposite suspense items
+                // for a person's OFFSET_SUSPENSE.
+                Optional<Suspense.ParkedItem> queued =
+                        queuedParkToOffset(parks, sameChunkOffsets, originalItems, item, chunk);
+                if (queued.isPresent()) {
+                    applyQueuedOffset(
+                            unitOfWork, run, item, rule, hits, queued.get(),
+                            chunk.get(queued.get().externalItemId()), sameChunkOffsets,
+                            decisionId, decidedOn, now, correlation);
+                    return;
+                }
+                applyUnreached(
+                        unitOfWork, run, item, resolution,
+                        Snapshot.correction(rule, hits, parkedOriginals),
+                        MatchingStore.Basis.of(
+                                DecisionVerdict.CORRECTION_UNREACHED,
+                                JudgedStatus.PENDING, item.amount().minorUnits()),
+                        decisionId, decidedOn, parks, now, correlation);
+            }
         }
+    }
+
+    /**
+     * The one queued park of this chunk an exact opposite correction may offset (ATOM-04):
+     * the correction engine's own OFFSET predicate — opposite side, same currency and scale,
+     * EXACTLY the parked remainder, never partial — over the parks queued for the posting
+     * phase, in queue order, skipping parks an earlier correction of this chunk already
+     * claimed. Only reached when no committed parked original offset (the engine ran first).
+     */
+    private Optional<Suspense.ParkedItem> queuedParkToOffset(
+            List<Suspense.ParkedItem> parks,
+            List<QueuedOffset> sameChunkOffsets,
+            java.util.Set<UUID> originalItems,
+            MatchingStore.ChunkItem item,
+            Map<UUID, MatchingStore.ChunkItem> chunk) {
+        SuspenseSide offsettable =
+                item.direction() == ExpectationDirection.OUTBOUND
+                        ? SuspenseSide.CREDIT
+                        : SuspenseSide.DEBIT;
+        java.util.Set<UUID> claimed = new java.util.HashSet<>();
+        for (QueuedOffset earlier : sameChunkOffsets) {
+            claimed.add(earlier.originalItemId());
+        }
+        for (Suspense.ParkedItem park : parks) {
+            if (!originalItems.contains(park.externalItemId())
+                    || claimed.contains(park.externalItemId())) {
+                continue;
+            }
+            // A queued park is always this chunk's own: its item was decided lines ago in
+            // this very transaction.
+            MatchingStore.ChunkItem original = chunk.get(park.externalItemId());
+            if (original == null
+                    || SuspenseSide.of(original.direction()) != offsettable
+                    || !park.remainder().currency().equals(item.amount().currency())
+                    || park.remainder().scale() != item.amount().scale()
+                    || park.remainder().minorUnits() != item.amount().minorUnits()) {
+                continue;
+            }
+            return Optional.of(park);
+        }
+        return Optional.empty();
+    }
+
+    /**
+     * The correction's offset of a park its own chunk queued (ATOM-04): the {@code OFFSET}
+     * decision and the correcting item's exit now; the snapshot row, the original's
+     * {@code PARKED -> RESOLVED} and the unpark in the posting phase, right after the park
+     * posts ({@link #applySameChunkOffset}).
+     */
+    private void applyQueuedOffset(
+            Connection unitOfWork,
+            MatchingStore.RunRow run,
+            MatchingStore.ChunkItem item,
+            MatchingRules.RuleRow rule,
+            List<MatchEngine.HitFacts> hits,
+            Suspense.ParkedItem queuedPark,
+            MatchingStore.ChunkItem original,
+            List<QueuedOffset> sameChunkOffsets,
+            UUID decisionId,
+            LocalDate decidedOn,
+            Instant now,
+            CorrelationId correlation) {
+        insertDecision(
+                run,
+                unitOfWork,
+                new MatchingStore.NewDecision(
+                        decisionId,
+                        item.id(),
+                        run.id(),
+                        DecisionOrigin.RUN,
+                        run.ruleSetId(),
+                        Optional.of(rule.priority()),
+                        Optional.of(Cardinality.CORRECTION),
+                        Optional.empty(),
+                        DecisionOutcome.OFFSET,
+                        Optional.empty(),
+                        Optional.empty(),
+                        Optional.empty(),
+                        Optional.empty(),
+                        SecurityContext.require(),
+                        now,
+                        decidedOn,
+                        correlation,
+                        MatchingStore.Basis.of(
+                                DecisionVerdict.OFFSET, JudgedStatus.PENDING,
+                                item.amount().minorUnits())));
+        store.insertCandidates(unitOfWork, decisionId, hits);
+        exitOrThrow(
+                store.markItemOffset(
+                        unitOfWork, item.id(), item.amount().minorUnits(),
+                        SecurityContext.require(), now, correlation),
+                item.id(), "PENDING -> OFFSET");
+        sameChunkOffsets.add(
+                new QueuedOffset(
+                        decisionId,
+                        queuedPark.externalItemId(),
+                        queuedPark.breakId(),
+                        SuspenseSide.of(original.direction()),
+                        item.amount(),
+                        queuedPark.positionAccountId()));
     }
 
     /** The correction's allocating half: `ONE_TO_ONE`'s arithmetic, `EVIDENCED` at zero. */
@@ -2515,6 +3023,7 @@ public class Matching {
             List<CorrectionEngine.ParkedOriginal> parkedOriginals,
             UUID decisionId,
             LocalDate decidedOn,
+            Map<UUID, MatchEngine.HitFacts> lockedHits,
             Map<UUID, Integer> claimantRanks,
             List<Suspense.ParkedItem> parks,
             Instant now,
@@ -2522,10 +3031,18 @@ public class Matching {
         MatchEngine.HitFacts candidate = verdict.candidate().orElseThrow();
         Money allocation = verdict.allocation().orElseThrow();
         boolean settles = allocation.minorUnits() == candidate.remainderMinor();
-        // The break BEFORE the settling allocation (the §3 order): the one this top-up
-        // may close is locked first, so the evidence write serialises break-first with
-        // any other writer of that break. A REMITTANCE's shortfall is its
-        // SETTLEMENT_MISMATCH (P8-TSK-016), closed exactly as AMOUNT_MISMATCH is.
+        // The breaks BEFORE the settling allocation (the §3 order), in applyAllocation's order:
+        // the overdue MISSING_EXTERNAL first, then the shortfall - each explained to zero when
+        // the top-up settles the expectation, so neither is left open over a SETTLED expectation
+        // with nothing a person could dispose of (the Phase 8 -> 9 transition's REC-5: only the
+        // shortfall was closed). A REMITTANCE's shortfall is its SETTLEMENT_MISMATCH
+        // (P8-TSK-016), closed exactly as AMOUNT_MISMATCH is.
+        Optional<UUID> overdue =
+                settles
+                        ? store.lockOpenBreakOn(
+                                unitOfWork, candidate.expectationId(),
+                                BreakType.MISSING_EXTERNAL)
+                        : Optional.empty();
         Optional<UUID> explained =
                 settles
                         ? store.lockOpenBreakOn(
@@ -2578,10 +3095,18 @@ public class Matching {
                         now,
                         correlation);
         store.bumpResidualOnSubjects(unitOfWork, candidate.expectationId(), item.id());
+        // The NEXT item in this chunk sees the topped-up remainder (INV-REC-07 inside one chunk,
+        // the Phase 8 -> 9 transition's ATOM-01): the correction re-read its candidate under the
+        // held lock, so its remainder less this allocation is the database's - never the chunk's
+        // pre-correction value, which judged a later line against value already taken.
+        lockedHits.computeIfPresent(
+                candidate.expectationId(),
+                (id, chunkHit) ->
+                        withRemainder(chunkHit, candidate.remainderMinor() - allocation.minorUnits()));
         if (status == ExpectationStatus.SETTLED) {
             ReconciliationEvents.expectationSettled(
                     outbox, unitOfWork, ids, candidate.expectationId(), candidate.kind(),
-                    candidate.operationRef(), run.sourceId(), now, correlation);
+                    run.sourceId(), now, correlation);
         }
         if (verdict.excess().isPresent()) {
             Money excess = verdict.excess().get();
@@ -2599,29 +3124,48 @@ public class Matching {
                             item.id(), raised.breakId(), excess,
                             positionAccount(unitOfWork, item)));
         } else {
-            store.markItemMatchedFrom(
-                    unitOfWork, item.id(), "PENDING", allocation.minorUnits(),
-                    SecurityContext.require(), now, correlation);
+            exitOrThrow(
+                    store.markItemMatchedFrom(
+                            unitOfWork, item.id(), "PENDING", allocation.minorUnits(),
+                            SecurityContext.require(), now, correlation),
+                    item.id(), "PENDING -> MATCHED");
         }
-        // A zero remainder EXPLAINS the under-payment's own break: EVIDENCED, in this
-        // transaction, no posting of its own - the allocation is the effect.
-        explained.ifPresent(
-                breakId ->
-                        resolutions.evidence(
-                                unitOfWork,
-                                new Resolutions.Evidence(
-                                        ids.next(),
-                                        breakId,
-                                        allocation,
-                                        store.breakResidualVersion(unitOfWork, breakId),
-                                        decisionId,
-                                        Optional.empty(),
-                                        Optional.empty(),
-                                        Optional.empty(),
-                                        run.ruleSetId(),
-                                        SecurityContext.require(),
-                                        now,
-                                        correlation)));
+        // A zero remainder EXPLAINS the overdue break and the under-payment's own break:
+        // EVIDENCED, in this transaction, no posting of its own - the allocation is the effect.
+        for (Optional<UUID> closes : List.of(overdue, explained)) {
+            closes.ifPresent(
+                    breakId ->
+                            resolutions.evidence(
+                                    unitOfWork,
+                                    new Resolutions.Evidence(
+                                            ids.next(),
+                                            breakId,
+                                            allocation,
+                                            store.breakResidualVersion(unitOfWork, breakId),
+                                            decisionId,
+                                            Optional.empty(),
+                                            Optional.empty(),
+                                            Optional.empty(),
+                                            run.ruleSetId(),
+                                            SecurityContext.require(),
+                                            now,
+                                            correlation)));
+        }
+    }
+
+    /** The hit as the chunk now sees it: its facts, its remainder moved. */
+    private static MatchEngine.HitFacts withRemainder(MatchEngine.HitFacts hit, long remainder) {
+        return new MatchEngine.HitFacts(
+                hit.expectationId(),
+                hit.kind(),
+                hit.direction(),
+                hit.amount(),
+                remainder,
+                hit.openedAt(),
+                hit.expectedBy(),
+                hit.reachedBy(),
+                hit.operationRef(),
+                hit.settlementCycle());
     }
 
     private void applyDefinitive(
@@ -2733,8 +3277,11 @@ public class Matching {
                         basis));
         store.insertCandidates(unitOfWork, decisionId, snapshot.candidates());
         store.insertParkedOriginals(unitOfWork, decisionId, snapshot.parkedOriginals());
-        store.markItemUnmatched(
-                unitOfWork, item.id(), graceHours, SecurityContext.require(), now, correlation);
+        exitOrThrow(
+                store.markItemUnmatched(
+                        unitOfWork, item.id(), graceHours, SecurityContext.require(), now,
+                        correlation),
+                item.id(), "PENDING -> UNMATCHED");
     }
 
     /** No key reached anything: the lookup TYPES the remainder (ADR-0068 §6). */
@@ -2858,6 +3405,8 @@ public class Matching {
                             run, item, BreakType.PROCESSING_ERROR, BreakCause.ITEM_ERRORED,
                             BreakRegister.Subject.externalItem(item.id()), item.amount(),
                             Optional.empty(), now));
+            // Unchecked by design (IDEM-3's review): the grace leg contains an item already
+            // UNMATCHED - the PENDING edge finds no row and the item simply keeps waiting.
             store.markItemUnmatched(
                     unitOfWork, item.id(), Optional.empty(), SecurityContext.require(),
                     now, correlation);
@@ -2904,6 +3453,21 @@ public class Matching {
 
     // ------------------------------------------------------------------ plumbing
 
+    /**
+     * A conditional item exit is an arbiter (ADR-0068 §4): finding its locked row moved, the
+     * decision written beside it must not stand, so the attempt throws and rolls back to the
+     * item's savepoint — never a decision or an allocation committed over an item another
+     * writer disposed (the Phase 8 -> 9 transition's IDEM-3; the lockItems status re-read
+     * makes this unreachable in the run leg, and the late legs judge locked rows).
+     */
+    private static void exitOrThrow(boolean exited, UUID itemId, String edge) {
+        if (!exited) {
+            throw new IllegalStateException(
+                    "the conditional exit " + edge + " of item " + itemId + " updated no"
+                            + " row under its lock: the attempt rolls back (IDEM-3)");
+        }
+    }
+
     private BreakRegister.NewBreak newBreak(
             MatchingStore.RunRow run,
             MatchingStore.ChunkItem item,
@@ -2938,12 +3502,34 @@ public class Matching {
                 item.businessDate(), item.settlementDate(), false);
     }
 
-    /** The item's facts with its run's cycle — what the cycle comparison reads (`P8-TSK-017`). */
+    /**
+     * The item's facts with its run's cycle — what the cycle comparison reads (`P8-TSK-017`) —
+     * and its TRUE fingerprint verdict: every late leg judges with it (the Phase 8 -> 9
+     * transition's REC-1; a hard-coded {@code false} here let a definitive duplicate allocate).
+     */
     private static MatchEngine.ItemFacts facts(
-            MatchingStore.RunRow run, MatchingStore.ChunkItem item) {
+            MatchingStore.RunRow run, MatchingStore.ChunkItem item, boolean fingerprintSeen) {
         return new MatchEngine.ItemFacts(
                 item.id(), item.lineType(), item.direction(), item.amount(),
-                item.businessDate(), item.settlementDate(), false, run.settlementCycle());
+                item.businessDate(), item.settlementDate(), fingerprintSeen,
+                run.settlementCycle());
+    }
+
+    /**
+     * Whether an identical line stands EARLIER in claimant order (ADR-0068 §4) - the definitive
+     * duplicate. Never for a bank statement's line: a statement is unique by its chain's sequence,
+     * so a re-delivered statement never reaches here, and two equal same-day tranches of one
+     * remittance are genuine cash sharing one canonical fingerprint - a tranche that finds its
+     * remittance exhausted is the matching engine's {@code EXPECTATION_EXHAUSTED}, never a
+     * fingerprint duplicate (the Phase 8 -> 9 transition's T-3).
+     */
+    private boolean fingerprintSeen(
+            Connection unitOfWork, UUID sourceId, MatchingStore.ChunkItem item) {
+        if (item.lineType().isBankLine()) {
+            return false;
+        }
+        return store.fingerprintSeenEarlier(
+                unitOfWork, sourceId, item.fingerprint(), item.sourceSequence(), item.lineNo());
     }
 
     private UUID positionAccount(Connection unitOfWork, MatchingStore.ChunkItem item) {
@@ -2968,22 +3554,91 @@ public class Matching {
     }
 
     /**
-     * An item's savepoint and the count mark beside it: a rollback to it drops the counts the
-     * undone attempt deferred too (`P8-TSK-024`'s gate), never only its rows.
+     * An item's savepoint and everything beside it the attempt can move: the count mark (a
+     * rollback drops the counts the undone attempt deferred, `P8-TSK-024`'s gate), and the leg's
+     * Java state - how many parks and releases were queued, and the claimant counts - so a
+     * rollback undoes the attempt's Java effects with its rows, never only its rows (the
+     * Phase 8 -> 9 transition's ATOM-02: a rolled-back allocation's queued unpark still fired in
+     * the posting phase, and its claimant rank still counted). The run leg re-reads its chunk's
+     * remainders from the restored rows besides.
      */
-    private record ItemSavepoint(Savepoint savepoint, int countMark) {}
+    private record ItemSavepoint(
+            Savepoint savepoint,
+            int countMark,
+            int queuedParks,
+            int queuedReleases,
+            int queuedSameChunkOffsets,
+            Map<UUID, Integer> claimantRanks) {}
 
-    private ItemSavepoint savepoint(Connection unitOfWork, MatchingStore.ChunkItem item) {
+    private ItemSavepoint savepoint(
+            Connection unitOfWork,
+            MatchingStore.ChunkItem item,
+            List<Suspense.ParkedItem> parks,
+            List<OffsetIntent> releases,
+            Map<UUID, Integer> claimantRanks) {
+        return savepoint(unitOfWork, item, parks, releases, List.of(), claimantRanks);
+    }
+
+    private ItemSavepoint savepoint(
+            Connection unitOfWork,
+            MatchingStore.ChunkItem item,
+            List<Suspense.ParkedItem> parks,
+            List<OffsetIntent> releases,
+            List<QueuedOffset> sameChunkOffsets,
+            Map<UUID, Integer> claimantRanks) {
         try {
             return new ItemSavepoint(
-                    unitOfWork.setSavepoint("item_" + item.lineNo()), telemetry.countMark());
+                    unitOfWork.setSavepoint("item_" + item.lineNo()), telemetry.countMark(),
+                    parks.size(), releases.size(), sameChunkOffsets.size(),
+                    Map.copyOf(claimantRanks));
         } catch (SQLException failure) {
             throw new ReconciliationStorageException(
                     "could not set the item's savepoint", failure);
         }
     }
 
-    private void rollbackTo(Connection unitOfWork, ItemSavepoint savepoint) {
+    /**
+     * The posting phase's savepoint (the whole phase, or one park re-posted alone): its rows and
+     * the counts it deferred. The queued parks are the phase's input, never its effect, so a
+     * rollback here leaves them for the per-park re-post.
+     */
+    private record PhaseSavepoint(Savepoint savepoint, int countMark) {}
+
+    private PhaseSavepoint phaseSavepoint(Connection unitOfWork, String name) {
+        try {
+            return new PhaseSavepoint(unitOfWork.setSavepoint(name), telemetry.countMark());
+        } catch (SQLException failure) {
+            throw new ReconciliationStorageException(
+                    "could not set the posting phase's savepoint", failure);
+        }
+    }
+
+    private void rollbackToPhase(Connection unitOfWork, PhaseSavepoint savepoint) {
+        try {
+            unitOfWork.rollback(savepoint.savepoint());
+            telemetry.discardCountsAfter(savepoint.countMark());
+        } catch (SQLException failure) {
+            throw new ReconciliationStorageException(
+                    "could not contain the failed posting phase", failure);
+        }
+    }
+
+    private void rollbackTo(
+            Connection unitOfWork,
+            ItemSavepoint savepoint,
+            List<Suspense.ParkedItem> parks,
+            List<OffsetIntent> releases,
+            Map<UUID, Integer> claimantRanks) {
+        rollbackTo(unitOfWork, savepoint, parks, releases, List.of(), claimantRanks);
+    }
+
+    private void rollbackTo(
+            Connection unitOfWork,
+            ItemSavepoint savepoint,
+            List<Suspense.ParkedItem> parks,
+            List<OffsetIntent> releases,
+            List<QueuedOffset> sameChunkOffsets,
+            Map<UUID, Integer> claimantRanks) {
         try {
             unitOfWork.rollback(savepoint.savepoint());
             telemetry.discardCountsAfter(savepoint.countMark());
@@ -2991,5 +3646,14 @@ public class Matching {
             throw new ReconciliationStorageException(
                     "could not contain the poisoned item", failure);
         }
+        parks.subList(savepoint.queuedParks(), parks.size()).clear();
+        releases.subList(savepoint.queuedReleases(), releases.size()).clear();
+        if (sameChunkOffsets.size() > savepoint.queuedSameChunkOffsets()) {
+            sameChunkOffsets
+                    .subList(savepoint.queuedSameChunkOffsets(), sameChunkOffsets.size())
+                    .clear();
+        }
+        claimantRanks.clear();
+        claimantRanks.putAll(savepoint.claimantRanks());
     }
 }

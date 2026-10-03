@@ -691,6 +691,166 @@ transport guard extended to the pull sources):*
 - Rates are server-authoritative; client-supplied rates are rejected.
 - Currencies with 0, 2 and 3 minor units are all covered by tests.
 
+*Extended by the Phase 8 → 9 transition (2026-10-02): the five criteria above predate
+ADR-0074…0083 and said nothing measurable about the spread, the FX position, the frozen plan and
+its provenance, the FX provider's ambiguity, cross-border exactly-once, unwinds and returns,
+counterparty-keyed positions, FX and corridor reconciliation, compliance, security, audit,
+observability or the ten-instance question — the things Phase 9's review will be judged on. Each
+of the five is kept as written and made measurable by one criterion below: the first by Trial
+balance per currency, the second by The rounding residual, the third by Quote expiry, the fourth
+by Server-authoritative rates, the fifth by Minor units; criteria six onward are the additions.
+Every count is taken from a fresh run, and each criterion names the tasks that build its proof
+(**Owners**). A criterion that rests on a cut candidate — `P9-TSK-026`, then `P9-TSK-025`, cut in
+that order if the phase must shrink (O8; like each of O1–O10, a transition decision the owner may
+revisit) — is met by the task, or by the deferral recorded with Phase 15 as owner, and carries
+its conditional clause:*
+
+- **Trial balance per currency.** The trial balance is zero in all five currencies (EUR, GBP,
+  USD, JPY, BHD) in one snapshot: after `P9-TST-002`'s ≥ 10,000 conversions over 20 directional
+  pairs and both fixed sides, after every storm round, and at rest. **Owners**: `P9-TSK-003`
+  (JPY and BHD on every flow), `P9-TSK-009`, `P9-TST-002`, `P9-TST-001`.
+- **The rounding residual.** Every trade's residual equals its quote's, |r| ≤ 1 under policy v1
+  with both signs present in the battery; an out-of-bound residual or a non-balancing plan is
+  refused by the `CHECK` for a raw-SQL writer; `ROUNDING_RESIDUAL(c) = −Σ r(c)`,
+  `FX_SPREAD_REVENUE(c) = Σ margin(c)` and `FX_POSITION(c) = 0` once covers execute, over the
+  battery; a planted residual folded into the margin flips `finapp.fx.proof`. **Owners**:
+  `P9-TSK-002` (the bound), `-008` (the `CHECK`s), `-009` (the posting), `-013` (the proof and
+  its plant), `P9-TST-002`.
+- **Quote expiry.** The boundary race over ≥ 200 quotes × (10 acceptors + 10 sweepers) yields
+  exactly one of {`ACCEPTED` plus its trade, `EXPIRED` plus one `FxQuoteExpired`} for each; an
+  instance at ±5 s of clock skew neither accepts late nor refuses early; a stale or replayed
+  reference refuses quoting, and is counted. **Owners**: `P9-TSK-005` (staleness, replay),
+  `-008` (expiry, the event), `-009` (the boundary race).
+- **Server-authoritative rates.** Every request carrying a rate, an amount on acceptance, or any
+  unknown field is refused `422` with nothing written; `RatesAreNeverClientSuppliedTest` and the
+  OpenAPI request-schema guard are green, each with a planted violation refused, over every
+  Phase 9 request record and schema; an implausible or incoherent provider rate is never priced.
+  **Owners**: `P9-TSK-008` (both guards born, with their plants; plausibility and coherence at
+  quote time), extended by `-009`, `-018`, `-019` and `-024` as each adds a request body.
+- **Minor units.** Conversions 0↔2, 0↔3 and 2↔3 minor units, both directions and both fixed
+  sides; JPY and BHD exercised on every pre-existing flow, every JPY/BHD fee line judged against
+  its own schedule; the Phase 6 0/3-minor ledger fee batch green; minor units pinned (EUR/GBP/USD
+  2, JPY 0, BHD 3) with a planted drift failing both the build and startup. **Owners**:
+  `P9-TSK-002` (the pin test and the guard; the property tests), `-003` (the flows, the four
+  sources' v2 fee schedules, the fee batch), `-009` and `P9-TST-002` (the conversions).
+- **Spread is explicit.** One `FX_SPREAD_REVENUE` line per margined trade, equal to the quote's
+  margin, with its spread/markup attribution summing exactly; `FxBooksHaveOnePosterTest` is green
+  with a planted violation refused. **Owners**: `P9-TSK-002` (the attribution), `-009` (the
+  line, the static rule).
+- **The FX position is explained.** `finapp.fx.proof` reads 0 in every storm round and at rest,
+  and the FX books refuse a `MANUAL` line at the domain and at the trigger, each demonstrated.
+  **Owners**: `P9-TSK-009` (the refusals), `-013` (the proof), `P9-TST-001`.
+- **A quote is a frozen plan with provenance.** Every trade's provenance columns are `NOT NULL`;
+  `FxPlanVerification` is clean over the battery and the storm, and `DIVERGED` under a
+  perturbation (the internal rate and the disclosed margin replayed too); every quote replays
+  `IDENTICAL`. **Owners**: `P9-TSK-008`, `-009`, `-013`, `P9-TST-002`.
+- **Provider ambiguity ends only in knowledge.** Under every seeded fault, the simulator's
+  execution count equals the cover execution facts, which equal the trades; a new cover
+  reference appears only after a definitive rejection; no cover is ever concluded "never
+  received"; every abandoned covered quote has exactly one unwind. With `P9-TSK-025` landed,
+  every reversed trade has exactly one unwind too; if `-025` is cut, no trade can be reversed,
+  and its deferral is recorded with Phase 15 as owner. **Owners**: `P9-TSK-012`, `-021`, `-025`
+  (conditional), `P9-TST-001`.
+- **Cross-border happens exactly once.** Ten authorizers, a lost response and retries produce
+  one payment, hold, outbound credit, provider instruction (counted at the provider), trade, fee
+  line, clearing credit and expectation; what the customer was shown equals what was held,
+  posted and instructed (`INV-XB-03`). **Owners**: `P9-TSK-019`, `-020`.
+- **The lifecycles hold.** Every invalid transition of quote, cover, trade, payment, outbound
+  credit, beneficiary, screening, pricing and corridor policy, the availability-enable proposals
+  and (with `-025` landed) the trade reversal is refused by the domain and by raw SQL; the
+  cancellation request is born once and never updated; no customer line exists for a payment
+  that is not `IN_TRANSIT`, `DELIVERED` or `RETURNED`; `RECEIVED` is never concluded
+  `NEVER_RECEIVED`; an answer implying acceptance on a credit not yet `COMPLETED` applies its
+  facts in order, in one transaction. **Owners**: `P9-TSK-007` and `-015` (policies, enable
+  proposals), `-008` (quote), `-012` (cover), `-009` and `-025` (trade, reversal), `-016`
+  (screening), `-017` (beneficiary), `-019` and `-020` (payment, outbound credit), `-024` (the
+  cancellation request).
+- **Unwind, cancellation and return are exact.** A failed or cancelled payment leaves the
+  customer's wallet delta at zero and its hold released; a `TOO_LATE` recall is never shown as
+  cancelled; an exact return credits once, in the instructed currency, refunds the fee once, and
+  is never lost while its credit is in flight; any other return is never posted without a
+  person, and its resolution moves the payment to `RETURNED`. **Owners**: `P9-TSK-021`, `-023`,
+  `-024`.
+- **Counterparty positions.** `FX_PROVIDER_CLEARING` and `CORRIDOR_CLEARING` are keyed per
+  counterparty, and every counterparty account is seeded below the id ceiling; one settlement
+  source per (purpose, counterparty), with the startup refusal tested; the Phase 8 proofs are
+  unchanged in verdict. With M9.8 landed, failover and selection are proven and nothing is
+  netted across counterparties; if M9.8 is cut, its deferral is recorded with an owner.
+  **Owners**: `P9-TSK-010`, `-011`, `-014`, `-026` (conditional).
+- **Reconciliation never converts.** Both new sources are composed (the counterparty-keyed
+  descriptor with its settled currencies, the pull beans, the remittance attribution) and ingest
+  by upload with attestation and by pull, with golden files and a fault test per field; a
+  currency the counterparty does not settle is rejected; `EverySettlingPositionHasASourceTest`
+  covers both new positions; in the storm, every FX leg and outbound credit is matched to cash,
+  and the position, suspense, cash and completeness proofs read 0 per (counterparty, currency);
+  each FX and corridor discrepancy raises exactly its typed break, by its selection rule, and a
+  merchant and a corridor return can never be confused; `ReconciliationNeverConvertsTest` is
+  green, with a planted violation refused; no rule set is migration-seeded, and every source has
+  an active version activated by two persons, with a fee schedule in every currency it can
+  settle. **Owners**: `P9-TSK-011` (the FX source, the guard, the first-version door), `-014`
+  (the corridor source, the scoped reader and lookup), `-013` and `-022` (the typed breaks,
+  cash), `-003` (the existing sources' v2), `P9-TST-001`.
+- **Compliance.** No payment to, and no offer for, a beneficiary that is not `ACTIVE` with a
+  current `CLEAR` or `RELEASED` screening, and an automatic `CLEAR` only with a payee `MATCH`; a
+  hit, an indeterminate result or an unverified payee reaches review and is decided only by a
+  person with the permission and a reason, every outcome recording its decision basis; screening
+  unavailability holds and prices nothing; customer responses for screening, review, block and
+  revocation are byte-identical in shape at the beneficiary read, the revocation door, the quote
+  door and the authorization door; an authorization racing a screening hit is never committed
+  against an `IN_REVIEW` beneficiary; the limit and risk seams are required parameters with
+  reserved refusal codes, consulted in-lock. **Owners**: `P9-TSK-016`, `-017`, `-018`, `-019`.
+- **Security.** The permissions (five with `P9-TSK-025` landed, four if it is cut) and the
+  `FX_CONTROLLER` role carry `RoleNameTest`'s exact grants; every route is negatively tested and
+  in `RoutePermissionRegisterTest`; four-eyes self-approval is refused at the domain and the
+  `CHECK`, each alone; the new confined credentials are pinned, and every provider URL goes
+  through the transport guard; the `INV-RAIL-03` needle is absent everywhere except kyc's
+  ciphertext, on every leg; a signed-but-forged callback moves nothing. **Owners**: `P9-TSK-007`,
+  `-013`, `-015`, `-016`, `-025` (conditional); the needle's legs `-016`, `-017`, `-018`,
+  `-019`, `-023` and `-024` and the full walk `P9-TST-001`; the callbacks `-012`, `-020`.
+- **Audit.** Every privileged and platform act is catalogued in `AUDITABLE_ACTIONS.md`, with
+  `requiresReason` where a person judges, and recorded in the act's own transaction; losers
+  record nothing; every report and provenance read is audited. **Owners**: every task that adds
+  an act; `P9-TSK-027` (the reports).
+- **Observability.** `PHASE_9_PLAN.md` §15's series are published by a freshly started instance
+  (`PlannedMetersExistTest`, armed by the phase's flip to `COMPLETE`), with no amount in any
+  series, each schedule's gauge included; every "must be 0" gauge, unknown age, received age,
+  rate staleness, review age, in-transit age and missing rule set alerts, resolved against a
+  live scrape. **Owners**: `P9-TSK-027`, and each task for the series it ships.
+- **Multi-instance and concurrency.** Every contention in `PHASE_9_PLAN.md` §7 has a counted
+  ten-way race; the six born-once arbiters — `UNIQUE (fx.trade.quote_id)` (`P9-TSK-009`),
+  `UNIQUE (crossborder.payment.quote_id)` (`-019`), the `fx.cover_execution` PK (`-012`),
+  `UNIQUE (fx.cover.quote_id, kind)` (`-021`), the `scheme_execution_claim` PK, subject
+  `OUTBOUND_CREDIT` (`-020`), and `UNIQUE (outbound_credit_return.outbound_credit_id)` (`-023`)
+  — each survive a lock-bypass probe; two application contexts with clocks skewed by ±5 s race
+  the same quote, cover, payment, recall and return, with one effect each; the six schedules are
+  registered with their arguments, and advisory namespace `5` is registered in
+  `DISTRIBUTED_EXECUTION.md` §3 and pinned by `FxMigrationTest`; `X-TSK-013` is complete, so no
+  send permit on the platform is written from an instance clock; every task's ten-instance
+  answer is `PASS` on its named tests, never by construction. **Owners**: the tasks of
+  `PHASE_9_PLAN.md` §7's table; `P9-TST-001`; `X-TSK-013`.
+- **Atomicity.** Each Phase 9 cross-module transaction (T-a…T-g) and each local one — quote
+  creation, the recall request, policy activation, an enable-proposal approval and, with
+  `P9-TSK-025` landed, a reversal approval — is proven all-or-nothing by failure injection.
+  **Owners**: the task that builds each transaction (`P9-TSK-007`, `-008`, `-009`, `-012`,
+  `-015`, `-016`, `-019`, `-020`, `-023`, `-024`, `-025` conditional).
+- **Testing.** The FX and cross-border storm (`P9-TST-001`), green in three consecutive fresh
+  runs, and the value-preservation and rounding battery (`P9-TST-002`), both probed; the owner's
+  ten scenarios in `PHASE_9_PLAN.md` §13 each a counted test (scenario 8 met by
+  `UnwindRetryDatabaseTest` alone if `-025` is cut); each of the sixty failure scenarios a test
+  or a documented, accepted rationale; the fleet-wide battery counted from fresh results, or its
+  deliberate skip recorded as a deviation with the owner's instruction. **Owners**: `P9-TST-001`,
+  `P9-TST-002`, and the tasks `PHASE_9_PLAN.md` §13 names.
+- **Documentation and invariants.** Every `Phase: 9` invariant in `FINANCIAL_INVARIANTS.md` —
+  **read from the catalogue, not from the phase plan** — has a `MUTATION_TESTING.md` §2
+  demonstration, and `P9-TST-*` have their §4 rows; ADR-0074…0083 are read against the code and
+  accepted or amended; `FX_AND_CROSS_BORDER_LIFECYCLES.md` (every machine, the two proposal
+  machines and the born-once cancellation request included), `RECONCILIATION_MODEL.md`,
+  `LEDGER_MODEL.md`, the glossary, `DOMAIN_MODEL.md`, `MODULE_ARCHITECTURE.md`,
+  `BOUNDED_CONTEXTS.md`, `DISTRIBUTED_EXECUTION.md` §3, `DATA_CLASSIFICATION.md`,
+  `AUDITABLE_ACTIONS.md`, `ERROR_CONTRACT.md` and the `DELIVERY_PLAN.md` Phase 9 addendum are
+  current, the glossary carrying the design's twenty-three Phase 9 terms. **Owners**:
+  `P9-DOC-001`, with each task writing its own documents as it lands.
+
 ### Phase 10 — Credit Decisioning
 - Replaying a stored decision's inputs against its pinned policy version reproduces the
   identical outcome and reason codes.

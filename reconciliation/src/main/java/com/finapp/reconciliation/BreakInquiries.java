@@ -132,10 +132,17 @@ public interface BreakInquiries {
      */
     Optional<UUID> parkingExpectationOf(Connection unitOfWork, UUID entryId);
 
-    /** The parks (unparks) that released a suspense item, each with its entry. */
-    record ParkLink(UUID parkId, UUID entryId) {}
+    /**
+     * Every release of a suspense item, in order: an unpark's park and its entry, or - a release
+     * that posts no inverse (a resolution's transfer, write-off or gain, an offset's pairing, a
+     * repudiation's release of an unattributed line) - neither, its {@code cause_ref} naming the
+     * resolution or decision behind it. *(Corrected 2026-10-02 by the Phase 8 -> 9 transition,
+     * REC-9: this was the parks alone, so a park-less release fell out of the trace.)*
+     */
+    record ReleaseLink(
+            Optional<UUID> parkId, Optional<UUID> entryId, ReleaseCause cause, String causeRef) {}
 
-    List<ParkLink> releasesOf(Connection unitOfWork, UUID suspenseItemId);
+    List<ReleaseLink> releasesOf(Connection unitOfWork, UUID suspenseItemId);
 
     Optional<UUID> entryOfPark(Connection unitOfWork, UUID parkId);
 

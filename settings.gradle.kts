@@ -125,4 +125,17 @@ include("merchant")
 include("settlement")
 include("reconciliation")
 
+// The Phase 9 FX and cross-border modules (P9-TSK-001). Two bounded contexts, never one module,
+// because they hold two different decisions (ADR-0079, MODULE_ARCHITECTURE.md): `fx` PRICES and
+// BOOKS - quotes, trades, covers - and `crossborder` DECIDES who is paid abroad - corridors,
+// beneficiaries, the payment's lifecycle; `payments` executes. Each is declared after `ledger`
+// for the same structural reason as every money module before it: their postings are COMMANDED
+// through the ledger's APIs and never written (INV-LED-04), so with fx -> ledger and
+// crossborder -> ledger in the build graph, the reverse edges are Gradle dependency cycles the
+// build refuses outright. `fx <-> crossborder` is deliberately ABSENT in BOTH directions and no
+// cycle backs either refusal - the two isolation tests are the only controls; every hand-off goes
+// through a port `app` composes.
+include("fx")
+include("crossborder")
+
 include("app")

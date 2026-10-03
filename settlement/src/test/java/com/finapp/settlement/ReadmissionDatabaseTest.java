@@ -90,6 +90,11 @@ class ReadmissionDatabaseTest {
     private static final byte[] KEY = new byte[32];
     private static final String SOURCE = "simulated-psp.settlement";
 
+    /** A throwaway source THIS suite seeds and retires, so the shared one stays open (T-5). */
+    private static final String RETIRING_SOURCE = "retiring-readmit-psp.settlement";
+    private static final UUID RETIRING_SOURCE_ID =
+            UUID.fromString("01a0e2bc-8200-7009-8000-00000000000c");
+
     private static final String ACCEPT =
             "UPDATE settlement.file SET status = 'ACCEPTED', status_changed_at = now()"
                     + " WHERE id = ?";
@@ -173,6 +178,16 @@ class ReadmissionDatabaseTest {
                                         1,
                                         Set.of(DeliveryChannel.UPLOAD, DeliveryChannel.PULL),
                                         Optional.of(AccountPurpose.SETTLEMENT_CLEARING),
+                                        Optional.of("PSP-REM-[0-9]{4,12}")),
+                                new SettlementSourceDescriptor(
+                                        RETIRING_SOURCE,
+                                        SourceKind.PSP_SETTLEMENT_REPORT,
+                                        SettlementFormatId.SIM_PSP_CSV,
+                                        1,
+                                        Set.of(DeliveryChannel.UPLOAD, DeliveryChannel.PULL),
+                                        // A position of its own: one declared source per
+                                        // position (INV-SET-05); only this register holds it.
+                                        Optional.of(AccountPurpose.INSTANT_CLEARING),
                                         Optional.of("PSP-REM-[0-9]{4,12}"))));
         store = new JdbcSettlementFileStore(new SettlementFileCipher(KEY, 1, new SecureRandom()));
         batches = new JdbcSettlementBatchStore(IDS);
@@ -234,6 +249,21 @@ class ReadmissionDatabaseTest {
                         audit,
                         IDS);
         verification = new FileVerification(store, batches, formats, audit, IDS);
+        seedRetiringSource();
+    }
+
+    /** The throwaway source, seeded as the migrator: retirement stays in this suite (T-5). */
+    private static void seedRetiringSource() throws SQLException {
+        try (Connection migrator = DatabaseRoles.migrator();
+                Statement seed = migrator.createStatement()) {
+            migrator.setAutoCommit(false);
+            seed.execute(
+                    "INSERT INTO settlement.source (id, code, kind, status, next_sequence)"
+                            + " VALUES ('" + RETIRING_SOURCE_ID + "', '" + RETIRING_SOURCE
+                            + "', 'PSP_SETTLEMENT_REPORT', 'ACTIVE', 1)"
+                            + " ON CONFLICT (code) DO NOTHING");
+            migrator.commit();
+        }
     }
 
     @AfterAll
@@ -436,6 +466,55 @@ class ReadmissionDatabaseTest {
                         + readmissionsOf(original))
                 .as("every refusal wrote nothing")
                 .isZero();
+    }
+
+    @Test
+    @DisplayName("a retired SOURCE's readmission is refused settlement.SourceRetired with"
+            + " nothing written - no new file, no receipt, no audit record (the Phase 8 -> 9"
+            + " transition, T-5): a retired source's door is shut for its readmissions too")
+    void aRetiredSourcesReadmissionWritesNothing() throws SQLException {
+        byte[] content = freshReport();
+        FileReception.Result received =
+                reception.receive(
+                        application,
+                        new FileReception.Delivery(
+                                RETIRING_SOURCE,
+                                DeliveryChannel.UPLOAD,
+                                content,
+                                Optional.empty(),
+                                UPLOADER,
+                                TestAction.RECEIVED,
+                                FLOW));
+        application.commit();
+        UUID original = ((FileReception.Result.New) received).fileId();
+        rejected(original, FileStatus.RECEIVED, RejectionCode.MALFORMED);
+
+        assertThat(raw(
+                        "UPDATE settlement.source SET status = 'RETIRED' WHERE id = ?",
+                        RETIRING_SOURCE_ID))
+                .isEqualTo(1);
+        application.commit();
+
+        long filesBefore = count("SELECT count(*) FROM settlement.file");
+        long receiptsBefore = count("SELECT count(*) FROM settlement.file_receipt");
+        long auditsBefore = count("SELECT count(*) FROM platform.audit_record");
+        application.rollback();
+
+        assertThatThrownBy(() -> readmit(original, READMITTER))
+                .isInstanceOf(FileReception.SettlementSourceRetired.class)
+                .hasMessageContaining("settlement.SourceRetired")
+                .hasMessageContaining(RETIRING_SOURCE);
+        application.rollback();
+
+        assertThat(readmissionsOf(original)).isZero();
+        assertThat(count("SELECT count(*) FROM settlement.file")).isEqualTo(filesBefore);
+        assertThat(count("SELECT count(*) FROM settlement.file_receipt"))
+                .isEqualTo(receiptsBefore);
+        assertThat(count("SELECT count(*) FROM platform.audit_record"))
+                .as("a shut door is the caller's 4xx to audit, never a half-written act")
+                .isEqualTo(auditsBefore);
+        application.rollback();
+        // The original stays REJECTED - terminal - so no other suite's accept leg claims it.
     }
 
     @Test

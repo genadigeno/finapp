@@ -124,7 +124,41 @@ public final class PayoutReturns {
         /** The amount or currency is not the payout's: not this fact (a person decides). */
         AMOUNT_DIFFERS,
         /** The merchant's payable is not {@code ACTIVE} — a merchant closed since, say. */
-        PAYABLE_NOT_POSTABLE
+        PAYABLE_NOT_POSTABLE,
+        /**
+         * A person's transfer of the return's parked value stands, approved or proposed
+         * (ADR-0073 §5's fallback): the return is that person's to attribute, once. *(Added
+         * 2026-10-02 by the Phase 8 -> 9 transition, IDEM-1: the fallback left nothing this
+         * applier checked, so a later report's repeat of the line credited the payable twice.)*
+         */
+        RETURNED_BY_PERSON
+    }
+
+    /**
+     * Whether a person's fallback already attributes the payout's return (the Phase 8 -> 9
+     * transition, IDEM-1; ADR-0073 §5) - asked under the payout's row lock, the row every
+     * proposal and approval of that transfer also takes first, so the two can never both
+     * credit the payable. Composed in {@code app} over reconciliation's read; merchant names no
+     * sibling.
+     */
+    @FunctionalInterface
+    public interface PersonAttribution {
+
+        /** True when a person's transfer for the payout stands; the application then writes nothing. */
+        boolean attributes(Connection unitOfWork, MerchantPayoutId payout);
+    }
+
+    /**
+     * The payout the person-fallback's approval locks, whether its return stands, and its status
+     * as read under that lock - a fallback transfer waits for {@code COMPLETED} (the Phase 8 -> 9
+     * transition, IDEM-1's residual).
+     */
+    public record ReturnState(MerchantPayoutId payout, boolean returned, MerchantPayoutStatus status) {
+
+        public ReturnState {
+            Objects.requireNonNull(payout, "payout must not be null");
+            Objects.requireNonNull(status, "status must not be null");
+        }
     }
 
     /** The outcome, the payout it concerned, and the posted entry when applied. */
@@ -145,19 +179,21 @@ public final class PayoutReturns {
         }
     }
 
-    /** Applies the evidence's return, or writes nothing and says why. */
-    public Applied apply(Connection unitOfWork, ReturnEvidence evidence) {
+    /**
+     * Applies the evidence's return, or writes nothing and says why. {@code attribution} is
+     * asked under the payout's row lock: a person's standing transfer of the return is
+     * {@link Outcome#RETURNED_BY_PERSON} (the Phase 8 -> 9 transition, IDEM-1).
+     */
+    public Applied apply(
+            Connection unitOfWork, ReturnEvidence evidence, PersonAttribution attribution) {
         Objects.requireNonNull(unitOfWork, "unitOfWork must not be null");
         Objects.requireNonNull(evidence, "evidence must not be null");
+        Objects.requireNonNull(attribution, "attribution must not be null");
 
-        // 1. The payout row - the serialisation point for every applier of its return.
+        // 1. The payout row - the serialisation point for every applier of its return, and for
+        //    a person's fallback transfer of it.
         Optional<MerchantPayout> found =
-                evidence.providerReference()
-                        .flatMap(reference ->
-                                payouts.lockByProviderReference(unitOfWork, reference))
-                        .or(() -> evidence.ourReference()
-                                .flatMap(reference ->
-                                        payouts.lockByReference(unitOfWork, reference)));
+                lockPayout(unitOfWork, evidence.providerReference(), evidence.ourReference());
         if (found.isEmpty()) {
             return Applied.notApplied(Outcome.NO_PAYOUT, Optional.empty());
         }
@@ -170,6 +206,9 @@ public final class PayoutReturns {
         }
         if (returns.findByPayout(unitOfWork, payout.id()).isPresent()) {
             return Applied.notApplied(Outcome.ALREADY_RETURNED, named);
+        }
+        if (attribution.attributes(unitOfWork, payout.id())) {
+            return Applied.notApplied(Outcome.RETURNED_BY_PERSON, named);
         }
         if (!payout.amount().equals(evidence.amount())) {
             return Applied.notApplied(Outcome.AMOUNT_DIFFERS, named);
@@ -261,6 +300,33 @@ public final class PayoutReturns {
                                         + ", entry=" + posted.entryId()
                                         + ", item=" + evidence.externalItemRef())));
         return new Applied(Outcome.APPLIED, named, Optional.of(posted.entryId()));
+    }
+
+    /**
+     * The payout the references name, locked {@code FOR UPDATE} - the very row
+     * {@link #apply} takes first - and whether its return stands (the Phase 8 -> 9 transition,
+     * IDEM-1): a person's fallback transfer of a parked return reads it at proposal and at
+     * approval, so the transfer and the worker serialise on one row. Empty when no payout
+     * carries the references.
+     */
+    public Optional<ReturnState> lockReturnState(
+            Connection unitOfWork, Optional<String> providerReference, Optional<String> ourReference) {
+        Objects.requireNonNull(unitOfWork, "unitOfWork must not be null");
+        Objects.requireNonNull(providerReference, "providerReference must not be null");
+        Objects.requireNonNull(ourReference, "ourReference must not be null");
+        return lockPayout(unitOfWork, providerReference, ourReference)
+                .map(payout -> new ReturnState(
+                        payout.id(), returns.findByPayout(unitOfWork, payout.id()).isPresent(),
+                        payout.status()));
+    }
+
+    /** The provider's reference first, then ours - one lookup order for every locker. */
+    private Optional<MerchantPayout> lockPayout(
+            Connection unitOfWork, Optional<String> providerReference, Optional<String> ourReference) {
+        return providerReference
+                .flatMap(reference -> payouts.lockByProviderReference(unitOfWork, reference))
+                .or(() -> ourReference
+                        .flatMap(reference -> payouts.lockByReference(unitOfWork, reference)));
     }
 
     private void announce(

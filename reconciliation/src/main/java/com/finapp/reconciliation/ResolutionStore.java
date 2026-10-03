@@ -204,6 +204,55 @@ public interface ResolutionStore {
     /** The item's run — a manual decision's own run. */
     Optional<UUID> runOfItem(Connection unitOfWork, UUID externalItemId);
 
+    /**
+     * The item's references as the platform's lookup reads them (`P8-TSK-010`): its typed keys
+     * in the lookup's vocabulary, and its key-scope source (the attributed source, else its
+     * own) - what the transfer's re-asked lookup classifies (the Phase 8 -> 9 transition,
+     * IDEM-2). Lock-free: an item's keys and sources are frozen at ingestion.
+     */
+    Optional<InternalReferenceLookup.LookupSubject> lookupSubjectOf(
+            Connection unitOfWork, UUID externalItemId);
+
+    /** A payout return line's two payout references, as the return worker reads them. */
+    record PayoutReferences(Optional<String> providerReference, Optional<String> ourReference) {}
+
+    /** The item's {@code PAYOUT_PROVIDER_REF} and {@code OUR_REF} keys, lock-free (frozen). */
+    PayoutReferences payoutReferencesOf(Connection unitOfWork, UUID externalItemId);
+
+    /**
+     * Whether a person's {@code TRANSFER_TO_ACCOUNT} out of a {@code RETURN_NOT_APPLICABLE}
+     * break naming the payout's operation stands {@code PROPOSED} or {@code APPROVED} - on a
+     * break other than {@code exceptBreakId}, when one is named (the Phase 8 -> 9 transition,
+     * IDEM-1: the fallback bound to the payout). Lock-free: read under the payout row's lock,
+     * which every proposal, approval and return application of the payout takes first.
+     */
+    boolean payoutTransferStands(
+            Connection unitOfWork, String payoutOperationRef, Optional<UUID> exceptBreakId);
+
+    /**
+     * What an approver reads before approving (the Phase 8 -> 9 transition, SEC-01): the
+     * proposal's narrative and the stored operands, lock-free.
+     */
+    record ProposalText(UUID resolutionId, String narrative) {}
+
+    Optional<ProposalText> proposalText(Connection unitOfWork, UUID resolutionId);
+
+    /** One suspense item as stored, lock-free - an offset partner rendered for its approver. */
+    Optional<SuspenseHolding> suspenseItem(Connection unitOfWork, UUID suspenseItemId);
+
+    /** An expectation as an approver reads a manual match's chosen candidate, lock-free. */
+    record ExpectationOperand(
+            UUID expectationId,
+            ExpectationKind kind,
+            String operationRef,
+            ExpectationDirection direction,
+            ExpectationStatus status,
+            long remainderMinor,
+            String currency,
+            int scale) {}
+
+    Optional<ExpectationOperand> expectationOperand(Connection unitOfWork, UUID expectationId);
+
     /** The partial unique refused a second live proposal on the break. */
     final class OneLiveProposal extends RuntimeException {
 

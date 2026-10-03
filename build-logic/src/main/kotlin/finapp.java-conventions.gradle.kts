@@ -175,6 +175,13 @@ val externalTierTags = taggedTiers.filterKeys { it in externalInfrastructureTier
 
 tasks.test {
     useJUnitPlatform { excludeTags(*externalTierTags) }
+    // An explicit heap for `test` too (P9-TSK-002), for the external tiers' reason: app's hermetic JVM
+    // caches up to 32 Spring contexts AND runs the bytecode sweeps (TestTaxonomyTest,
+    // MutationDemonstrationTest) that import every module's test classes repeatedly. On the
+    // 512 MiB default it ran within a few MiB of the ceiling, and the fx module's first classes
+    // tipped TestTaxonomyTest into OutOfMemoryError - in app alone, reproducibly, never in fx.
+    // HermeticTierHeapTest holds it.
+    maxHeapSize = "2g"
 }
 
 tasks.register<Test>(defaultTierTask) {
@@ -183,6 +190,7 @@ tasks.register<Test>(defaultTierTask) {
     testClassesDirs = sourceSets.test.get().output.classesDirs
     classpath = sourceSets.test.get().runtimeClasspath
     useJUnitPlatform { excludeTags(*taggedTiers.values.toTypedArray()) }
+    maxHeapSize = "2g" // as `test`, above: the same classes, the same sweeps
 }
 
 taggedTiers.forEach { (taskName, tierTag) ->

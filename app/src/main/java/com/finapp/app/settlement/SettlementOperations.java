@@ -309,6 +309,11 @@ public class SettlementOperations {
                     SettlementErrorCode.FILE_NOT_ATTESTABLE,
                     "A settlement file refused a decline: " + terminal.getMessage(),
                     "this file is terminal; its verdict already stands on the record.");
+        } catch (FileReadmission.ReasonRequired reason) {
+            throw new ApiException(
+                    PlatformErrorCode.VALIDATION_FAILED,
+                    "A settlement decline was refused",
+                    reason.getMessage());
         }
         return new DeclineView(
                 declined.file().id().toString(),
@@ -356,8 +361,9 @@ public class SettlementOperations {
             throw new ApiException(
                     SettlementErrorCode.FILE_NOT_REJECTED,
                     "A settlement file refused a readmission",
-                    "only a file our validation rejected, a declined file, or a conflicting"
-                            + " batch's file whose conflict is gone is readmitted.");
+                    "only a file our validation rejected, a declined file, a conflicting"
+                            + " batch's file whose conflict is gone, or an accepted file whose"
+                            + " batch was repudiated is readmitted.");
         } catch (FileReadmission.ConflictingBatchStands stands) {
             throw new ApiException(
                     SettlementErrorCode.CONFLICTING_BATCH_STANDS,
@@ -571,12 +577,20 @@ public class SettlementOperations {
         UUID fileId = parsedIdOrNotFound(rawFileId);
         Actor actor = SecurityContext.require();
         Correlation correlation = resolvedCorrelation();
-        EvidenceContentReads.Outcome outcome =
-                inOneTransaction(
-                        unitOfWork ->
-                                contentReads.read(
-                                        unitOfWork, fileId, actor, request.reason(),
-                                        correlation));
+        EvidenceContentReads.Outcome outcome;
+        try {
+            outcome =
+                    inOneTransaction(
+                            unitOfWork ->
+                                    contentReads.read(
+                                            unitOfWork, fileId, actor, request.reason(),
+                                            correlation));
+        } catch (FileReadmission.ReasonRequired reason) {
+            throw new ApiException(
+                    PlatformErrorCode.VALIDATION_FAILED,
+                    "A settlement content read was refused",
+                    reason.getMessage());
+        }
         return switch (outcome) {
             case EvidenceContentReads.Outcome.Unknown unknown -> throw fileNotFound();
             case EvidenceContentReads.Outcome.Corrupt corrupt ->
@@ -689,7 +703,12 @@ public class SettlementOperations {
                 batch.id().toString(),
                 batch.fileId().toString(),
                 batch.sourceCode(),
-                batch.externalBatchRef(),
+                // Served verbatim only when it is a reference shape: a stored value that is not
+                // one - written before the Phase 8 -> 9 transition's SEC-02 correction, in a
+                // store that cannot be cleaned - is withheld (null), never echoed (INV-AUD-02).
+                com.finapp.settlement.ReferenceShape.isReference(batch.externalBatchRef())
+                        ? batch.externalBatchRef()
+                        : null,
                 batch.currency().code(),
                 batch.status().name(),
                 batch.businessDate().toString(),

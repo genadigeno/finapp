@@ -49,6 +49,7 @@ import lombok.RequiredArgsConstructor;
 public final class BatchRepudiation {
 
     @NonNull private final SettlementBatchStore<Connection> batches;
+    @NonNull private final SettlementFileStore<Connection> files;
     @NonNull private final OutboxWriter<Connection> outbox;
     @NonNull private final AuditWriter<Connection> audit;
     @NonNull private final IdGenerator ids;
@@ -82,6 +83,34 @@ public final class BatchRepudiation {
                                         row.journalEntryId(),
                                         row.currency().code(),
                                         row.businessDate()));
+    }
+
+    /**
+     * For a bank statement: the source row locked {@code FOR UPDATE} - the lock that serialises
+     * every acceptance of the source, the accept leg's own ({@code BatchAcceptance}) - and, read
+     * under it, the ACCEPTED statement of the same source and currency at the next sequence.
+     * Empty, taking no lock, for a report (the Phase 8 -> 9 transition, SET-2: a repudiated
+     * statement opens a hole before its successor, and only a read under this lock can see the
+     * successor an acceptance is committing concurrently).
+     */
+    public Optional<SettlementBatchStore.StatementLink> lockSourceAndReadSuccessor(
+            Connection unitOfWork, UUID batchId) {
+        Objects.requireNonNull(unitOfWork, "unitOfWork must not be null");
+        Objects.requireNonNull(batchId, "batchId must not be null");
+        Optional<SettlementBatchStore.BatchRow> batch = batches.batchById(unitOfWork, batchId);
+        if (batch.isEmpty() || batch.get().statement().isEmpty()) {
+            return Optional.empty();
+        }
+        files.sourceByIdForUpdate(unitOfWork, batch.get().sourceId())
+                .orElseThrow(
+                        () ->
+                                new SettlementStorageException(
+                                        "source " + batch.get().sourceId() + " is seeded (V002)"));
+        return batches.acceptedStatement(
+                unitOfWork,
+                batch.get().sourceId(),
+                batch.get().currency(),
+                batch.get().statement().get().sequence() + 1);
     }
 
     /**

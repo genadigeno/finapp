@@ -27,6 +27,8 @@ import com.finapp.payments.UnmatchedConfirmation;
 import com.finapp.payments.UnmatchedConfirmationStore;
 import com.finapp.payments.Withdrawal;
 import com.finapp.payments.WithdrawalStore;
+import com.finapp.platform.api.ApiException;
+import com.finapp.platform.api.PlatformErrorCode;
 import com.finapp.platform.audit.AuditId;
 import com.finapp.platform.audit.AuditOutcome;
 import com.finapp.platform.audit.AuditRecord;
@@ -42,6 +44,7 @@ import com.finapp.sharedkernel.correlation.CausationId;
 import com.finapp.sharedkernel.correlation.Correlation;
 import com.finapp.sharedkernel.id.IdGenerator;
 import com.finapp.sharedkernel.money.CurrencyCode;
+import com.finapp.sharedkernel.security.InstrumentShapes;
 import java.nio.charset.StandardCharsets;
 import java.sql.Connection;
 import java.time.Clock;
@@ -81,6 +84,12 @@ import org.springframework.transaction.support.TransactionTemplate;
  * the keyed transaction commits <em>last</em>, with the counts and the audit record — so a
  * same-key retry after a crash re-walks (and adds nothing, by the uniques), while a replay
  * of a recorded run answers the recorded counts byte for byte.
+ *
+ * <p><strong>The start is on the record before the walk writes anything</strong> (the Phase 8
+ * -> 9 transition, SEC-08): the walk is many transactions, so no single one can carry both its
+ * effects and its audit. Its first transaction records {@code OpeningPositionStarted} with the
+ * actor and the reason; the counts follow on {@code OpeningPositionRecorded} under the same
+ * correlation. A crash mid-walk leaves the adopted prefix AND the record of who began it.
  *
  * <h2>Never guessed</h2>
  *
@@ -171,8 +180,42 @@ public class OpeningPosition {
             throw new IllegalArgumentException(
                     "the opening position is a reasoned act (INV-AUD-01)");
         }
+        // The reason reaches the audit record, which can never be cleaned: screened before the
+        // walk writes anything (INV-PAY-02, INV-RAIL-03). Corrected 2026-10-02 by the Phase 8
+        // -> 9 transition (SEC-04): blank was the whole rule.
+        if (InstrumentShapes.holdsAny(reason)) {
+            throw new ApiException(
+                    PlatformErrorCode.VALIDATION_FAILED,
+                    "The opening position's reason was refused",
+                    "reason must not hold a card-number or bank-account shape (INV-PAY-02,"
+                            + " INV-RAIL-03)");
+        }
         Actor actor = SecurityContext.require();
         Correlation correlation = resolvedCorrelation();
+
+        // THE START, in the act's first transaction and before any adoption (SEC-08): the walk
+        // below commits page by page, so its effects can outlive a crash that the counts' record
+        // never reaches - this record is what such a prefix is traced back to.
+        inOneTransaction(
+                unitOfWork -> {
+                    audit.append(
+                            unitOfWork,
+                            new AuditRecord(
+                                    AuditId.next(ids),
+                                    actor,
+                                    Instant.now(clock),
+                                    com.finapp.reconciliation.ReconciliationAuditAction
+                                            .OPENING_POSITION_STARTED,
+                                    "reconciliation_register",
+                                    "opening-position",
+                                    Optional.of(reason),
+                                    AuditOutcome.SUCCEEDED,
+                                    correlation.correlationId(),
+                                    Optional.of(
+                                            "walk started; its counts follow on"
+                                                    + " reconciliation.OpeningPositionRecorded")));
+                    return null;
+                });
 
         // THE WALK, before the claim: page by page, each page its own transaction. Every
         // insert converges on the uniques, so however many runs, instances or keys walk,
@@ -181,8 +224,8 @@ public class OpeningPosition {
         walk(counters);
 
         // THE RECORD, keyed per principal and committed last: the counts and the reasoned
-        // audit record. A crash before here leaves the walk's prefix and no record; the
-        // retry re-walks and converges.
+        // audit record. A crash before here leaves the walk's prefix and the start's record
+        // alone; the retry re-walks and converges.
         IdempotencyKey key =
                 new IdempotencyKey(
                         SCOPE_PREFIX + actor.type().name() + ":" + actor.id(), idempotencyKey);

@@ -47,6 +47,16 @@ import lombok.RequiredArgsConstructor;
  * raised against a PRESENT predecessor (a mis-stitched opening) has nothing left to fill it: it
  * stays open until the repudiation of the wrong statement and its correction (`P8-TSK-023`).
  *
+ * <h2>A repudiated predecessor</h2>
+ *
+ * <p>Repudiating a statement in the middle of its chain opens a hole before its accepted
+ * successor; the repudiation's approval raises that successor's {@code STATEMENT_GAP}
+ * ({@link #predecessorRepudiated}) under the same settlement source row lock, so the hole is owned
+ * - a fresh break even where the repudiated statement had filled an earlier one - and the genuine
+ * statement's fill here closes it. *(Corrected 2026-10-02 by the Phase 8 -> 9 transition, SET-2:
+ * the acceptance was this class's only caller, and a repudiated mid-chain statement left the cash
+ * proof failing with no break.)*
+ *
  * <p>The closure locks a COMMITTED break row, so it first takes the break's source's namespace-4
  * advisory — the blocking form of the key every committed-break writer holds
  * (`DISTRIBUTED_EXECUTION.md` §3). No cycle: the matcher that holds the same advisory never waits
@@ -174,6 +184,49 @@ public final class StatementChain {
             filled = fillGap(unitOfWork, statement, statement.successor().get());
         }
         return new Outcome(raised, filled);
+    }
+
+    /**
+     * The successor's seam when its predecessor is REPUDIATED (the Phase 8 -> 9 transition,
+     * SET-2, `INV-SET-06`): the chain now has a hole before {@code successor}, so its run takes
+     * the {@code STATEMENT_GAP} a missing predecessor raises at acceptance - valued at its
+     * opening, exactly {@link #seamOf}'s - as a NEW break: a gap the repudiated statement had
+     * filled stays {@code RESOLVED} (a resolved break takes no write), and its successor here
+     * owns the hole again. The genuine statement's acceptance closes it {@code EVIDENCED}
+     * through {@link #judge}'s fill when it stitches. The caller is the repudiation's approval,
+     * holding settlement's source row lock - the lock every acceptance of the account holds -
+     * and the source's namespace-4 advisory.
+     */
+    public static BreakRegister.NewBreak predecessorRepudiated(
+            UUID breakId,
+            UUID successorRunId,
+            UUID sourceId,
+            UUID ruleSetId,
+            Link successor,
+            Actor actor,
+            Instant at,
+            CorrelationId correlation) {
+        Seam seam =
+                seamOf(successor.sequence(), successor.opening(), Optional.empty())
+                        .orElseThrow(() -> new IllegalArgumentException(
+                                "the first statement has no predecessor to lose"));
+        return new BreakRegister.NewBreak(
+                breakId,
+                BreakType.SETTLEMENT_MISMATCH,
+                seam.cause(),
+                BreakRegister.Subject.run(successorRunId),
+                sourceId,
+                ruleSetId,
+                seam.valueAtIssue(),
+                Optional.empty(),
+                Optional.empty(),
+                Optional.empty(),
+                Optional.empty(),
+                Optional.empty(),
+                Optional.empty(),
+                actor,
+                at,
+                correlation);
     }
 
     private boolean fillGap(Connection unitOfWork, Statement statement, Link successor) {

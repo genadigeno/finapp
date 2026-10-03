@@ -1,6 +1,6 @@
 # Task History
 
-The per-task completion records that accumulated behind `## Current Task` - 191 "Previously" blocks, newest first, from `P8-TST-002` back to project initiation. *(`X-TSK-005` is cross-cutting and completed after `P7-TSK-014` and before `P7-TSK-015`, so it stands between them; its record came in with its branch's merge.)* *(`X-TSK-004` is cross-cutting and completed after the Phase 6 → 7 transition, so it stands second, between `P7-TSK-001` and the transition's record - the transition's block moved here by `P7-TSK-001`'s gate, exactly as an earlier form of this note said it would.)*
+The per-task completion records that accumulated behind `## Current Task` - 194 "Previously" blocks, newest first, from `P9-TSK-001` back to project initiation. *(`X-TSK-005` is cross-cutting and completed after `P7-TSK-014` and before `P7-TSK-015`, so it stands between them; its record came in with its branch's merge.)* *(`X-TSK-004` is cross-cutting and completed after the Phase 6 → 7 transition, so it stands second, between `P7-TSK-001` and the transition's record - the transition's block moved here by `P7-TSK-001`'s gate, exactly as an earlier form of this note said it would.)*
 
 **Archive.** These records were moved verbatim out of
 [`CURRENT_STATE.md`](../CURRENT_STATE.md) on 2026-09-20 so that the canonical description of
@@ -12,6 +12,117 @@ Current state: [`CURRENT_STATE.md`](../CURRENT_STATE.md) ·
 Authoritative backlog: [`BACKLOG.md`](../BACKLOG.md)
 
 ---
+
+### Previously
+
+**`P9-TSK-001` — The `fx` and `crossborder` modules and schemas** — `COMPLETE` (2026-10-03).
+**Phase 9 is `IN_PROGRESS`; M9.1 opens at 1 of 4** — the module shape's eleventh and twelfth
+performances. Both modules are build-graph facts before they hold a line of domain code: per-schema
+Flyway in each build file (the duplication deliberate, ADR-0011), `fx` `V001` and `crossborder`
+`V001` laying the migrator-owned floor (`REVOKE ALL FROM PUBLIC`, `USAGE` alone to `finapp_app`, no
+tables, no default privileges), and the edges pinned both ways: each module requires exactly
+`{ledger, platform, sharedkernel}` and refuses every sibling — **each other included, the refusal
+with no Gradle cycle behind it** (ADR-0079: crossborder decides, fx prices and books, payments
+executes) — while all thirteen existing isolation tests refuse both new modules. **The planted
+probes run in-suite**: each new isolation test proves its matcher catches a sibling's jar and class
+directory and no lookalike (a module whose name contains another's, a source directory), so the
+guard is shown able to fail before it is trusted to pass. `app` depends on both, so
+`ProductionModules` sweeps them the moment `P9-TSK-002`'s first class lands (a module holding only
+`package-info` contributes nothing to import — the precedent's stance, kept); the lockfiles are
+generated and equal reconciliation's, no other lockfile moved. **FIVE PROBES, FIVE CAUGHT**, every
+restore byte-identical (sha256-verified; `MUTATION_TESTING.md` §2 +1 row): fx gaining a payments
+edge; crossborder gaining the fx edge; fx losing its ledger edge (the non-vacuity half); the fx
+floor widened to `CREATE` (two cases); payments gaining a crossborder edge. **Multi-instance PASS**
+— no state; concurrent migrators serialise on Flyway's lock. **NEXT**: `P9-TSK-002` `READY`.
+**Verified** by fresh runs — fx hermetic 3 and database 5, crossborder hermetic 3 and database 5,
+the thirteen sibling isolation suites 26, the fleet-wide hermetic tier at 2274 tests across 360 suites and 18 modules, and the
+architecture tier 143 across 23, ALL 0 FAILURES — the fleet-wide database and kafka tiers
+deliberately skipped on the owner's instruction.
+
+### Previously
+
+**The Phase 8 → 9 transition** — `COMPLETE` (2026-10-03). **Phase 8 `COMPLETE`,
+confirmed after repair; Phase 9 `READY`**
+([`reviews/PHASE_8_TO_9_TRANSITION.md`](reviews/PHASE_8_TO_9_TRANSITION.md)). **The second,
+independent pass the gate model requires again found the reviewed phase incorrect**: nine
+read-only audits with adversarial verification of all seventy findings left **eleven CRITICAL
+and eighteen IMPORTANT** real defects, every one repaired before the boundary - a payout
+return credited twice (the fallback and the worker now serialise on the payout row, the
+transfer admitted only for a `COMPLETED` payout), a transfer unbound from its in-flight
+operation (re-asked at proposal and approval; our own card references now resolvable), a
+fingerprint duplicate allocating by the late legs, a rule-less line owned by nothing, a
+reopened bank item that could never re-park (`V017`'s live-item uniques and the contained
+park), a repudiation leaving reopened overdue value unowned, a mid-chain hole uncut, a
+stranded remittance key, later-corrected value unexplained (the fourth refused shape), the
+run leg's discarded conditional exits (`lockItems` re-reads under the locks; `exitOrThrow`),
+the reach judged on rows (`match_reach`, `V016`), per-leg claimant order, the drain rule, the
+reclassification exit guard, one shared instrument screen at every reason door with its
+database twins (`V012`, `V019`), the approver's operand read with the echo, the escalation
+worklist's due band, intake failure backoff (`V013`) behind another instance's edge, the
+bounded pull, start-of-act audits, and the `FeeCheck` currency pre-filter. **The re-gate**:
+all nine dimensions `PASS`, every repair re-judged on code with its own hunt for regressions;
+its five new MINOR finds - two repaired at once (machine-grouped card numbers through every
+format and screen rank; a four-eyes repudiation reversible by one controller, closed by
+settlement `V014`: a repudiated batch's file passes nothing on) and three recorded with
+owners. **SEVENTY-TWO probe applications**, every restore byte-identical (sha256-verified);
+`MUTATION_TESTING.md` §2 +30 rows. **Multi-instance PASS**, re-answered over every repaired
+arbiter. **Verified fleet-wide**: the hermetic tier at 2255 tests across 357 suites and 16
+modules, 0 failures, beside every module tier, the architecture tier, every own-container
+suite, the proof group and the document guards - the database and kafka tiers module-wide and
+per-suite, never fleet-wide, on the owner's standing instruction. **Phase 9 initialised**:
+[`PHASE_9_PLAN.md`](PHASE_9_PLAN.md), ADR-0074…0083 `Proposed`,
+[`FX_AND_CROSS_BORDER_LIFECYCLES.md`](../domain/FX_AND_CROSS_BORDER_LIFECYCLES.md), ten new
+invariants and thirteen restated (**120**), the gate extension, the delivery-plan addendum
+(the §18 FX-deferral wording resolved: trade and corridor reconciliation are Phase 9's, FX
+P&L Phase 14's), the module, context, distributed-execution, glossary and domain-model
+registers, and thirty backlog items across M9.1–M9.9 plus `X-TSK-013`…`-012`, with
+`P9-TSK-001` `READY` - a judge panel of three designs, synthesised, resolved against a
+twenty-nine-gap completeness critic, drafted by six writers, re-checked by a consistency
+critic and integrated against the document guards before landing. **NEXT**: `P9-TSK-001`
+`READY`.
+
+### Previously
+
+**`P8-DOC-001` — The Phase 8 exit review** — `COMPLETE` (2026-10-01). **Phase 8 `COMPLETE`; M8.8,
+Proof, CLOSES at 3 of 3.** The review ([`reviews/PHASE_8_REVIEW.md`](reviews/PHASE_8_REVIEW.md))
+ruled 8 review areas, 12 universal criteria, F1–F8 and 28 phase-specific criteria `PASS` - criterion
+7 and the Testing bullet with their recorded deviation (no fleet-wide database or kafka count, on
+the owner's standing instruction). **Sixteen read-only readers** audited ADR-0064…0073 against the
+code, the 136 gate claims against their tests, 44 routes, nine documents and the javadoc, the
+register and every debt row, and the money end to end on three rails. **TWO CRITICAL FINDS,
+CORRECTED**: ADR-0069's "a `RESOLVED` break has its approved resolution, for every writer, by a
+deferred trigger" was held by nothing - reconciliation `V015` now requires every closure's
+`RESOLVED` event to name an `APPROVED` resolution, at commit, for every writer (the closing event's
+own link, because a remainder sibling and an offset partner close under one approval; stated limit,
+debt: it proves an approved resolution stands behind the closure, not that it is that break's own);
+and a gain was judged against the source's ACTIVE rule set - `gainEligible` now reads the owning
+break's pinned version. **IMPORTANT, CORRECTED**: `INV-IDEM-02` had no register row (the flip would
+have failed), and the §4 rows for both `P8-TST` items were missing; four audited acts were never
+asserted; 29 gate claims were partial - 27 closed by new tests (atomicity by failure injection for
+seven transactions, six contentions raced for the first time, claimant order, a replay over the
+battery, a chargeback ahead of its webhook, typing through the real lookup, the 100-defect bound,
+projection verification at rest), two answered by construction (`RecordAlreadyMatched` and a real
+`AMBIGUOUS_MATCH` are unreachable); `INV-SET-01`'s Phase 8 subject demonstrated; eleven
+Phase-8-owned debt rows ruled (one paid here - the PSP format's crash past its defect cap - one
+struck, nine re-owned with reasons, one merged), three stale rows fixed, five new rows recorded;
+one column reclassified. **DOCUMENTS**: all ten ADRs corrected and `Accepted`; the domain model and
+lifecycles, the plan, the delivery addendum, the glossary (nine terms added), the domain model, the
+module and distributed-execution registers and 22 javadoc sites made true; DECISIONS gains three
+named owners. **THE FLIP** surfaced one defect, the review's own (a row naming a nested class the
+parser cannot read) - corrected; proven non-vacuous: with `INV-REC-10`'s rows removed the guard
+failed naming exactly it, restored byte-identical. **THIRTY-EIGHT DEMONSTRATIONS** (`MUTATION_TESTING.md`
+§2 +16 rows, §4 +2): thirty-six caught at the first run, two first aimed at the wrong site -
+recorded as no verdict, re-aimed, caught - every restore byte-identical (sha256-verified).
+**Multi-instance PASS**: every §7 contention with its arbiter and counted test. **NEXT**: the
+Phase 8 → 9 transition `READY`. **Verified** by fresh runs - the hermetic tier fleet-wide before
+the flip 2194 tests across 16 modules and after the flip and the records 2198 tests across 16 modules (0 failures); settlement hermetic 170 across 28 and database 77 across 12; reconciliation
+hermetic 166 across 30 and database 189 across 21; app hermetic 643 across 117; the architecture
+tier 143 across 23; the battery 7, resolution 4, investigation 5, administration 7, repudiation 14,
+settlement routes 8, late evidence 3, bank cash 5, the storm 1, payout return 14, pull 11,
+readmission 10, E2E 9, payout cash 5, scheme cash 4, the twelve proof-group suites in ONE shared
+container 62 across 12, the column-classification guard 5, and the document guards 128 across 22 after
+the records landed, ALL 0 FAILURES - the fleet-wide database and kafka tiers deliberately skipped on
+the owner's instruction.
 
 ### Previously
 

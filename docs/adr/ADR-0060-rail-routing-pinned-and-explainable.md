@@ -51,7 +51,10 @@ Two failure shapes make this more than bookkeeping:
      observation *(the list named "the destination's reachability from the grant exchange" too
      until the review: Phase 7 judges reachability as a constant - a withdrawal's destination
      is reachable by construction, a pay-in has none - so it is not stored; the phase that makes
-     it a real input stores it)*;
+     it a real input stores it)* *(it arrived at the Phase 8 → 9 transition: ADR-0080,
+     `Proposed` — routing's third subject, the outbound credit, stores
+     `destination_country` as a rule matcher and decision input and per-candidate
+     reachability on the decision)*;
    - every candidate rail, in order up to the chosen one, with the reason it was rejected, or
      `CHOSEN` *(candidates after the chosen rail are not recorded - nothing continues from
      them, §5)*;
@@ -118,6 +121,11 @@ Two failure shapes make this more than bookkeeping:
    /v1/operator/reports/reconciliation/provider-costs?month=` per source and currency - what we
    were charged, what the evidence says, what the pinned schedules expected, and the month's
    `FEE_MISMATCH` breaks. Per rail through the compiled source register, never a rail literal.)*
+   *(Affirmed unamended at the Phase 8 → 9 transition: corridor routing — policy v5, the
+   third subject — still chooses only the rail, never the price (fees are per corridor,
+   ADR-0080, `Proposed`), and activates through this ADR's single-person door by this
+   ADR's own decision; the owner question on raising that to four-eyes is recorded in
+   `DECISIONS.md`.)*
 
 ## Alternatives Considered
 

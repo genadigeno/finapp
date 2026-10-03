@@ -47,6 +47,7 @@ import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
 import java.util.concurrent.Future;
 import java.util.concurrent.atomic.AtomicLong;
+import java.util.concurrent.atomic.AtomicReference;
 import java.util.function.Function;
 import org.junit.jupiter.api.AfterAll;
 import org.junit.jupiter.api.BeforeAll;
@@ -81,9 +82,14 @@ class ResolutionMachineDatabaseTest {
     private static final Actor APPROVER = new Actor("op-resolver-b", ActorType.EMPLOYEE);
     private static final Actor THIRD = new Actor("op-resolver-c", ActorType.EMPLOYEE);
     private static final CurrencyCode EUR = CurrencyCode.of("EUR");
+    private static final CurrencyCode GBP = CurrencyCode.of("GBP");
     private static final LocalDate SETTLED_ON = LocalDate.parse("2026-09-25");
     private static final LocalDate FAR = LocalDate.parse("2027-12-31");
     private static final AtomicLong SEQUENCES = new AtomicLong(System.nanoTime() % 70_000);
+
+    /** What the platform's records answer when the machine re-asks them (IDEM-2's script). */
+    private static final AtomicReference<InternalClassification> LIVE =
+            new AtomicReference<>(InternalClassification.UNKNOWN);
 
     // Private per run: a reused container never carries a stale gain age into this run.
     private static final UUID SOURCE = IDS.next();
@@ -125,7 +131,6 @@ class ResolutionMachineDatabaseTest {
                         new JdbcBreakCaseStore(),
                         suspense,
                         matchingStore,
-                        ResolutionFixtures.resolutions(IDS, CLOCK),
                         new JdbcRuleSets(),
                         ResolutionFixtures.adjustments(IDS, CLOCK),
                         new JdbcLedgerAccountStore(),
@@ -133,7 +138,15 @@ class ResolutionMachineDatabaseTest {
                         new JdbcAuditWriter(),
                         IDS,
                         CLOCK,
-                        ReconciliationTelemetry.NONE);
+                        ReconciliationTelemetry.NONE,
+                        // The platform's live answer, scripted per case (the transition's
+                        // IDEM-2): UNKNOWN unless a case says otherwise.
+                        (unitOfWork, subject) -> new InternalReferenceLookup.InternalReference(
+                                LIVE.get(), LIVE.get() == InternalClassification.UNKNOWN
+                                        ? Optional.empty()
+                                        : Optional.of("op-live"),
+                                Optional.empty()),
+                        ReturnedPayouts.NONE);
         LocalDate today = (LocalDate) one("SELECT current_date");
         parkedOn = today.minusDays(10);
         seedRuleSet(SOURCE, RULE_SET, 90);
@@ -376,7 +389,8 @@ class ResolutionMachineDatabaseTest {
     @Test
     @Order(5)
     @DisplayName("an offset pairs two breaks' items of equal amount and opposite sides: both"
-            + " released, both breaks RESOLVED, nothing posted; unequal or same-side refused")
+            + " released, both breaks RESOLVED, nothing posted; unequal, same-side or"
+            + " another-currency partners refused (T-1, the Phase 8 -> 9 transition)")
     void anOffsetClosesBothBreaks() throws Exception {
         Parked credit = parked(SOURCE, RULE_SET, ExternalLineType.CAPTURE, 20_00,
                 BreakType.UNKNOWN_EXTERNAL, BreakCause.PARKED_ON_RECEIPT);
@@ -391,6 +405,21 @@ class ResolutionMachineDatabaseTest {
             assertThatThrownBy(() -> proposeOffset(PROPOSER, credit.breakId(), refused))
                     .isInstanceOf(ResolutionMachine.ResolutionTargetRefused.class);
         }
+        // T-1 (the Phase 8 -> 9 transition): EQUAL minor units are no pair across currencies -
+        // SUSPENSE_UNMATCHED is one account per currency, so only a same-currency pair nets
+        // without a posting (INV-MON-04, INV-REC-09). The guard's scale clause has no reachable
+        // counterexample: within one currency the park's own posting refuses another scale
+        // (ledger INV-MON-03, one scale per account projection) - defence in depth, untestable
+        // through any real writer.
+        Parked foreign = parkedMoney(20_00, GBP);
+        assertThatThrownBy(() -> proposeOffset(PROPOSER, credit.breakId(),
+                        foreign.suspenseItemId()))
+                .as("20.00 EUR against 20.00 GBP: equal minor units, no pair")
+                .isInstanceOf(ResolutionMachine.ResolutionTargetRefused.class);
+        assertThat(string("SELECT status FROM reconciliation.suspense_item WHERE id = ?",
+                foreign.suspenseItemId())).isEqualTo("OPEN");
+        assertThat(count("SELECT count(*) FROM reconciliation.resolution WHERE break_id = ?",
+                credit.breakId())).as("every refused partner wrote nothing").isZero();
         ResolutionMachine.Proposed offset =
                 proposeOffset(PROPOSER, credit.breakId(), debit.suspenseItemId());
         ResolutionMachine.Decided approved = approve(APPROVER, offset.resolutionId());
@@ -977,6 +1006,385 @@ class ResolutionMachineDatabaseTest {
                 aged.breakId())).isEqualTo("RESOLVED");
     }
 
+    // ----------------------------------------------------------------- the transition's binds
+
+    @Test
+    @Order(16)
+    @DisplayName("IDEM-2 (the Phase 8 -> 9 transition): a transfer or a gain out of a grace-typed"
+            + " parking waits while the platform still knows its operation IN_FLIGHT or COMPLETED"
+            + " - refused at proposal, and at approval when the operation became known after the"
+            + " proposal, with nothing written - and is admitted once the operation is TERMINAL")
+    void aTransferWaitsForItsOperationsOwnEvidence() throws Exception {
+        try {
+            Parked inFlight = parked(GAIN_AT_SOURCE, GAIN_AT_RULE_SET, ExternalLineType.CAPTURE,
+                    44_00, BreakType.MISSING_INTERNAL, BreakCause.GRACE_EXPIRED);
+            for (InternalClassification live : List.of(InternalClassification.IN_FLIGHT,
+                    InternalClassification.COMPLETED)) {
+                LIVE.set(live);
+                assertThatThrownBy(() -> propose(PROPOSER, inFlight.breakId(),
+                                ResolutionKind.TRANSFER_TO_ACCOUNT,
+                                ResolutionReasonCode.FUNDS_ATTRIBUTED, Optional.of(wallet)))
+                        .as("a %s operation credits the party itself when it completes: a"
+                                + " transfer of the parked value now is the double credit", live)
+                        .isInstanceOf(ResolutionMachine.OperationNotTerminal.class);
+                assertThatThrownBy(() -> propose(PROPOSER, inFlight.breakId(),
+                                ResolutionKind.RECOGNISE_GAIN,
+                                ResolutionReasonCode.UNATTRIBUTABLE_AGED, Optional.empty()))
+                        .as("nor is the value the platform's gain while its operation is %s",
+                                live)
+                        .isInstanceOf(ResolutionMachine.OperationNotTerminal.class);
+            }
+            assertThat(count("SELECT count(*) FROM reconciliation.resolution WHERE break_id = ?",
+                    inFlight.breakId()))
+                    .as("every refusal wrote no resolution").isZero();
+            assertThat(string("SELECT status FROM reconciliation.break WHERE id = ?",
+                    inFlight.breakId())).isEqualTo("OPEN");
+            assertThat(string("SELECT status FROM reconciliation.suspense_item WHERE id = ?",
+                    inFlight.suspenseItemId()))
+                    .as("the parked value waits for the operation's own evidence")
+                    .isEqualTo("OPEN");
+
+            LIVE.set(InternalClassification.TERMINAL);
+            ResolutionMachine.Proposed transfer = propose(PROPOSER, inFlight.breakId(),
+                    ResolutionKind.TRANSFER_TO_ACCOUNT, ResolutionReasonCode.FUNDS_ATTRIBUTED,
+                    Optional.of(wallet));
+            UUID entry =
+                    approve(APPROVER, transfer.resolutionId()).journalEntryId().orElseThrow();
+            assertThat(entryLines(entry))
+                    .as("a terminal operation will never post: the transfer is admitted")
+                    .containsExactly(suspenseAccount + ">DEBIT>4400", wallet + ">CREDIT>4400");
+
+            // The operation becomes known AFTER the proposal: the approval re-asks under its
+            // locks and refuses, writing nothing.
+            LIVE.set(InternalClassification.UNKNOWN);
+            Parked unnamed = parked(SOURCE, RULE_SET, ExternalLineType.CAPTURE, 27_00,
+                    BreakType.UNKNOWN_EXTERNAL, BreakCause.GRACE_EXPIRED);
+            ResolutionMachine.Proposed early = propose(PROPOSER, unnamed.breakId(),
+                    ResolutionKind.TRANSFER_TO_ACCOUNT, ResolutionReasonCode.FUNDS_ATTRIBUTED,
+                    Optional.of(wallet));
+            LIVE.set(InternalClassification.COMPLETED);
+            assertThatThrownBy(() -> approve(APPROVER, early.resolutionId()))
+                    .as("the operation completed after the proposal: its own posting credited"
+                            + " the party, so the approval is refused")
+                    .isInstanceOf(ResolutionMachine.OperationNotTerminal.class);
+            assertThat(string("SELECT status FROM reconciliation.resolution WHERE id = ?",
+                    early.resolutionId())).isEqualTo("PROPOSED");
+            assertThat(count("SELECT count(*) FROM ledger.journal_entry WHERE reference = ?",
+                    early.resolutionId().toString()))
+                    .as("the refused approval posted nothing").isZero();
+            assertThat(string("SELECT status FROM reconciliation.suspense_item WHERE id = ?",
+                    unnamed.suspenseItemId())).isEqualTo("OPEN");
+            withdraw(PROPOSER, early.resolutionId());
+        } finally {
+            LIVE.set(InternalClassification.UNKNOWN);
+        }
+    }
+
+    @Test
+    @Order(17)
+    @DisplayName("SEC-01 (the Phase 8 -> 9 transition): the approver reads every operand and the"
+            + " frozen lines - a transfer's target with its purpose and owner, an offset's"
+            + " partner item - and an approval echoing another target or partner is refused"
+            + " stale with nothing written")
+    void theApproverReadsWhatTheyApprove() throws Exception {
+        UUID owner = IDS.next();
+        UUID named = openWallet(EUR, owner);
+        UUID confederate = openWallet(EUR);
+        Parked owed = parked(SOURCE, RULE_SET, ExternalLineType.CAPTURE, 50_00,
+                BreakType.UNKNOWN_EXTERNAL, BreakCause.PARKED_ON_RECEIPT);
+        ResolutionMachine.Proposed transfer = propose(PROPOSER, owed.breakId(),
+                ResolutionKind.TRANSFER_TO_ACCOUNT, ResolutionReasonCode.FUNDS_ATTRIBUTED,
+                Optional.of(named));
+
+        ResolutionMachine.ProposalView view = read(transfer.resolutionId());
+        assertThat(view.target())
+                .as("the transfer's destination, rendered for its approver: what it is and whose")
+                .contains(new ResolutionMachine.AccountOperand(named,
+                        AccountPurpose.CUSTOMER_WALLET, Optional.of(owner), EUR,
+                        LedgerAccountStatus.ACTIVE));
+        assertThat(view.lines().stream()
+                        .map(line -> line.account().accountId() + ">" + line.account().purpose()
+                                + ">" + line.direction() + ">" + line.amount().minorUnits())
+                        .toList())
+                .as("the frozen ledger proposal, line by line, each account with its purpose")
+                .containsExactly(suspenseAccount + ">SUSPENSE_UNMATCHED>DEBIT>5000",
+                        named + ">CUSTOMER_WALLET>CREDIT>5000");
+        assertThat(view.lines().get(1).account().ownerRef()).contains(owner);
+        assertThat(view.narrative()).isEqualTo("the investigator's account");
+        assertThat(view.offsetItem()).isEmpty();
+        assertThat(view.chosenExpectation()).isEmpty();
+
+        for (ResolutionMachine.ApprovalEcho seenOtherwise : List.of(
+                new ResolutionMachine.ApprovalEcho(
+                        Optional.of(confederate), Optional.empty(), Optional.empty()),
+                new ResolutionMachine.ApprovalEcho(
+                        Optional.empty(), Optional.of(owed.suspenseItemId()), Optional.empty()))) {
+            assertThatThrownBy(() -> approve(APPROVER, transfer.resolutionId(), seenOtherwise))
+                    .as("an approval of an operand the proposal does not hold is refused")
+                    .isInstanceOf(ResolutionMachine.ResolutionStale.class);
+        }
+        assertThat(string("SELECT status FROM reconciliation.resolution WHERE id = ?",
+                transfer.resolutionId())).isEqualTo("PROPOSED");
+        assertThat(count("SELECT count(*) FROM ledger.journal_entry WHERE reference = ?",
+                transfer.resolutionId().toString()))
+                .as("the refused approvals posted nothing").isZero();
+        assertThat(count("SELECT count(*) FROM ledger.journal_line WHERE ledger_account_id = ?",
+                confederate)).as("the echoed account received nothing").isZero();
+        UUID entry = approve(APPROVER, transfer.resolutionId(),
+                new ResolutionMachine.ApprovalEcho(
+                        Optional.of(named), Optional.empty(), Optional.empty()))
+                .journalEntryId().orElseThrow();
+        assertThat(entryLines(entry))
+                .containsExactly(suspenseAccount + ">DEBIT>5000", named + ">CREDIT>5000");
+
+        Parked credit = parked(SOURCE, RULE_SET, ExternalLineType.CAPTURE, 31_00,
+                BreakType.UNKNOWN_EXTERNAL, BreakCause.PARKED_ON_RECEIPT);
+        Parked debit = parked(SOURCE, RULE_SET, ExternalLineType.REFUND, 31_00,
+                BreakType.REFUND_MISMATCH, BreakCause.REFUND_CONTRADICTED);
+        Parked decoy = parked(SOURCE, RULE_SET, ExternalLineType.REFUND, 31_00,
+                BreakType.REFUND_MISMATCH, BreakCause.REFUND_CONTRADICTED);
+        ResolutionMachine.Proposed offset =
+                proposeOffset(PROPOSER, credit.breakId(), debit.suspenseItemId());
+        ResolutionMachine.ProposalView offsetView = read(offset.resolutionId());
+        assertThat(offsetView.offsetItem())
+                .as("the offset's partner item, rendered for its approver")
+                .hasValueSatisfying(partner -> {
+                    assertThat(partner.suspenseItemId()).isEqualTo(debit.suspenseItemId());
+                    assertThat(partner.breakId()).isEqualTo(debit.breakId());
+                    assertThat(partner.externalItemId()).contains(debit.itemId());
+                    assertThat(partner.side()).isEqualTo(SuspenseSide.DEBIT);
+                    assertThat(partner.unreleased().minorUnits()).isEqualTo(31_00);
+                });
+        assertThat(offsetView.lines()).as("an offset posts nothing").isEmpty();
+        assertThatThrownBy(() -> approve(APPROVER, offset.resolutionId(),
+                        new ResolutionMachine.ApprovalEcho(Optional.empty(),
+                                Optional.of(decoy.suspenseItemId()), Optional.empty())))
+                .as("an approval naming another partner than the stored one is refused")
+                .isInstanceOf(ResolutionMachine.ResolutionStale.class);
+        for (Parked untouched : List.of(debit, decoy)) {
+            assertThat(string("SELECT status FROM reconciliation.suspense_item WHERE id = ?",
+                    untouched.suspenseItemId())).isEqualTo("OPEN");
+        }
+        approve(APPROVER, offset.resolutionId(), new ResolutionMachine.ApprovalEcho(
+                Optional.empty(), Optional.of(debit.suspenseItemId()), Optional.empty()));
+        assertThat(string("SELECT status FROM reconciliation.suspense_item WHERE id = ?",
+                debit.suspenseItemId())).isEqualTo("RELEASED");
+        assertThat(string("SELECT status FROM reconciliation.suspense_item WHERE id = ?",
+                decoy.suspenseItemId())).isEqualTo("OPEN");
+    }
+
+    @Test
+    @Order(18)
+    @DisplayName("REC-5 (the Phase 8 -> 9 transition): a settling manual match closes EVERY break"
+            + " answering for the chosen expectation's remainder - its shortfall and its overdue"
+            + " break - under the approved match, after any sibling's own live proposal is"
+            + " decided; its approver reads the candidate first")
+    void aSettlingManualMatchClosesEveryRemainderBreak() throws Exception {
+        Seeded chosen = openExpectation("MM-SIB", 200_00, ExpectationDirection.INBOUND);
+        Seeded other = openExpectation("MM-SIB-B", 100_00, ExpectationDirection.INBOUND);
+        UUID overdue = raise(BreakType.MISSING_EXTERNAL, BreakCause.EXPECTATION_OVERDUE,
+                BreakRegister.Subject.expectation(chosen.id()), 200_00, SOURCE, RULE_SET);
+        seedRun(SOURCE, RULE_SET, new Line(1, ExternalLineType.CAPTURE, 100_00,
+                ItemKeyKind.PSP_CAPTURE_REF, chosen.key()));
+        matching().sweep();
+        UUID shortfall = id("SELECT id FROM reconciliation.break WHERE expectation_id = ? AND"
+                + " type = 'AMOUNT_MISMATCH'", chosen.id());
+        assertThat(shortfall).as("the first half's partial allocation raised the shortfall")
+                .isNotNull();
+        assertThat(string("SELECT status || '/' || allocated_minor FROM"
+                + " reconciliation.expectation WHERE id = ?", chosen.id()))
+                .isEqualTo("PARTIALLY_SETTLED/10000");
+
+        UUID run = seedRun(SOURCE, RULE_SET, new Line(1, ExternalLineType.CAPTURE, 100_00,
+                ItemKeyKind.PSP_CAPTURE_REF, "MM-SIB-ITEM-" + UUID.randomUUID()));
+        UUID item = itemOf(run, 1);
+        plantAmbiguous(run, item, chosen.id(), other.id(), 100_00);
+        UUID ambiguous = raise(BreakType.AMBIGUOUS_MATCH, BreakCause.MULTIPLE_CANDIDATES,
+                BreakRegister.Subject.externalItem(item), 100_00, SOURCE, RULE_SET);
+        park(SOURCE, item, ambiguous, 100_00);
+        completeRun(run);
+
+        ResolutionMachine.Proposed manual = proposeManual(PROPOSER, ambiguous, chosen.id());
+        assertThat(read(manual.resolutionId()).chosenExpectation())
+                .as("the chosen candidate, rendered for its approver")
+                .hasValueSatisfying(candidate -> {
+                    assertThat(candidate.expectationId()).isEqualTo(chosen.id());
+                    assertThat(candidate.kind()).isEqualTo(ExpectationKind.CARD_CAPTURE);
+                    assertThat(candidate.operationRef()).isEqualTo(chosen.operationRef());
+                    assertThat(candidate.remainderMinor()).isEqualTo(100_00);
+                });
+        assertThatThrownBy(() -> approve(APPROVER, manual.resolutionId(),
+                        new ResolutionMachine.ApprovalEcho(Optional.empty(), Optional.empty(),
+                                Optional.of(other.id()))))
+                .as("an approval naming another candidate than the stored one is refused")
+                .isInstanceOf(ResolutionMachine.ResolutionStale.class);
+        assertThat(string("SELECT status FROM reconciliation.expectation WHERE id = ?",
+                chosen.id())).isEqualTo("PARTIALLY_SETTLED");
+
+        // A sibling's own live proposal is decided first, never overtaken.
+        ResolutionMachine.Proposed writeOff = propose(THIRD, overdue, ResolutionKind.WRITE_OFF,
+                ResolutionReasonCode.LOSS_ACCEPTED, Optional.empty());
+        assertThatThrownBy(() -> approve(APPROVER, manual.resolutionId()))
+                .as("the overdue break carries a live write-off of the same remainder")
+                .isInstanceOf(ResolutionMachine.ResolutionStale.class);
+        assertThat(string("SELECT status FROM reconciliation.expectation WHERE id = ?",
+                chosen.id())).as("the refused approval wrote nothing")
+                .isEqualTo("PARTIALLY_SETTLED");
+        withdraw(THIRD, writeOff.resolutionId());
+
+        approve(APPROVER, manual.resolutionId(), new ResolutionMachine.ApprovalEcho(
+                Optional.empty(), Optional.empty(), Optional.of(chosen.id())));
+        assertThat(string("SELECT status FROM reconciliation.expectation WHERE id = ?",
+                chosen.id())).isEqualTo("SETTLED");
+        for (UUID closed : List.of(overdue, shortfall)) {
+            assertThat(string("SELECT status FROM reconciliation.break WHERE id = ?", closed))
+                    .as("a break answering for the emptied remainder never stands open over a"
+                            + " SETTLED expectation")
+                    .isEqualTo("RESOLVED");
+            assertThat(resolvedEventNames(closed))
+                    .as("closed under the approved manual match, V015's link by column")
+                    .isEqualTo(manual.resolutionId().toString());
+            assertThat(count("SELECT count(*) FROM platform.outbox_event WHERE event_type ="
+                    + " 'reconciliation.BreakResolved' AND aggregate_id = ?", closed))
+                    .isEqualTo(1);
+        }
+        assertThat(count("SELECT count(*) FROM reconciliation.break WHERE expectation_id = ? AND"
+                + " status <> 'RESOLVED'", chosen.id()))
+                .as("no open break is left on the settled expectation").isZero();
+    }
+
+    // ----------------------------------------------------------------- the case file's reach
+
+    /** The trace walked inside this module: settlement's side answers nothing (REC-9). */
+    private static final TraceEvidence NO_EVIDENCE = new TraceEvidence() {
+        @Override
+        public Optional<TraceEvidence.BatchFacts> batch(Connection unitOfWork, UUID batchId) {
+            return Optional.empty();
+        }
+
+        @Override
+        public Optional<UUID> batchOfLine(Connection unitOfWork, UUID lineId) {
+            return Optional.empty();
+        }
+
+        @Override
+        public List<UUID> providerEvidence(
+                Connection unitOfWork, ExpectationKind kind, String operationRef) {
+            return List.of();
+        }
+    };
+
+    @Test
+    @Order(19)
+    @DisplayName("REC-9 (the Phase 8 -> 9 transition): a remainder sibling and an offset partner"
+            + " each list the closing resolution in their case file and reach it in their trace"
+            + " - the entry behind it - and a park-less release (RESOLUTION, OFFSET_SUSPENSE) is"
+            + " a RELEASED_BY step naming the resolution")
+    void siblingAndPartnerCaseFilesReachTheClosingResolution() throws Exception {
+        BreakInquiries inquiries = new JdbcBreakInquiries();
+        BreakTraces traces = new BreakTraces(inquiries, NO_EVIDENCE);
+
+        // The remainder sibling: the write-off approved on the overdue break closes the
+        // AMOUNT_MISMATCH answering for the same remainder, and only break_event.resolution_id
+        // (V015) names the closer there - the resolution row's break_id is the primary break.
+        Seeded expectation = openExpectation("REC9", 55_00, ExpectationDirection.INBOUND);
+        UUID primary = raise(BreakType.MISSING_EXTERNAL, BreakCause.EXPECTATION_OVERDUE,
+                BreakRegister.Subject.expectation(expectation.id()), 55_00, SOURCE, RULE_SET);
+        UUID sibling = raise(BreakType.AMOUNT_MISMATCH, BreakCause.AMOUNT_DIFFERS,
+                BreakRegister.Subject.expectation(expectation.id()), 55_00, SOURCE, RULE_SET);
+        ResolutionMachine.Proposed writeOff = propose(PROPOSER, primary,
+                ResolutionKind.WRITE_OFF, ResolutionReasonCode.LOSS_ACCEPTED, Optional.empty());
+        UUID entry = approve(APPROVER, writeOff.resolutionId()).journalEntryId().orElseThrow();
+        assertThat(string("SELECT status FROM reconciliation.break WHERE id = ?", sibling))
+                .isEqualTo("RESOLVED");
+        assertThat(resolutionsListed(inquiries, sibling))
+                .as("REC-9: the sibling's case file lists the closing resolution")
+                .containsExactly(writeOff.resolutionId());
+        BreakTrace siblingTrace = trace(traces, sibling);
+        assertThat(reaches(siblingTrace, BreakTrace.NodeKind.BREAK, sibling,
+                BreakTrace.Relation.RESOLVED_BY, BreakTrace.NodeKind.RESOLUTION,
+                writeOff.resolutionId()))
+                .as("REC-9: the sibling's trace reaches the closing resolution").isTrue();
+        assertThat(reaches(siblingTrace, BreakTrace.NodeKind.RESOLUTION,
+                writeOff.resolutionId(), BreakTrace.Relation.POSTED_AS,
+                BreakTrace.NodeKind.JOURNAL_ENTRY, entry))
+                .as("REC-9: and the entry behind it").isTrue();
+
+        // The offset partner, and the offset's park-less OFFSET_SUSPENSE release.
+        Parked credit = parked(SOURCE, RULE_SET, ExternalLineType.CAPTURE, 23_00,
+                BreakType.UNKNOWN_EXTERNAL, BreakCause.PARKED_ON_RECEIPT);
+        Parked debit = parked(SOURCE, RULE_SET, ExternalLineType.REFUND, 23_00,
+                BreakType.REFUND_MISMATCH, BreakCause.REFUND_CONTRADICTED);
+        ResolutionMachine.Proposed offset =
+                proposeOffset(PROPOSER, credit.breakId(), debit.suspenseItemId());
+        approve(APPROVER, offset.resolutionId());
+        assertThat(resolutionsListed(inquiries, debit.breakId()))
+                .as("REC-9: the partner's case file lists the approving offset")
+                .containsExactly(offset.resolutionId());
+        BreakTrace partnerTrace = trace(traces, debit.breakId());
+        assertThat(reaches(partnerTrace, BreakTrace.NodeKind.BREAK, debit.breakId(),
+                BreakTrace.Relation.RESOLVED_BY, BreakTrace.NodeKind.RESOLUTION,
+                offset.resolutionId()))
+                .as("REC-9: the partner's trace reaches the approving offset").isTrue();
+        assertThat(reaches(partnerTrace, BreakTrace.NodeKind.SUSPENSE_ITEM,
+                debit.suspenseItemId(), BreakTrace.Relation.RELEASED_BY,
+                BreakTrace.NodeKind.RESOLUTION, offset.resolutionId()))
+                .as("REC-9: the OFFSET_SUSPENSE release, park-less, names the resolution")
+                .isTrue();
+
+        // A RESOLUTION-cause release is park-less too: a write-off of a parked DEBIT item.
+        Parked lost = parked(SOURCE, RULE_SET, ExternalLineType.REFUND, 8_00,
+                BreakType.REFUND_MISMATCH, BreakCause.REFUND_CONTRADICTED);
+        ResolutionMachine.Proposed wrote = propose(PROPOSER, lost.breakId(),
+                ResolutionKind.WRITE_OFF, ResolutionReasonCode.COUNTERPARTY_ERROR_CONFIRMED,
+                Optional.empty());
+        approve(APPROVER, wrote.resolutionId());
+        BreakTrace lostTrace = trace(traces, lost.breakId());
+        assertThat(reaches(lostTrace, BreakTrace.NodeKind.SUSPENSE_ITEM, lost.suspenseItemId(),
+                BreakTrace.Relation.RELEASED_BY, BreakTrace.NodeKind.RESOLUTION,
+                wrote.resolutionId()))
+                .as("REC-9: a RESOLUTION release, park-less, names the resolution").isTrue();
+    }
+
+    @Test
+    @Order(20)
+    @DisplayName("T-7 (the Phase 8 -> 9 transition): the manual match's candidate guards - a"
+            + " stored candidate of another direction, one in another currency, one whose"
+            + " remainder cannot absorb the whole parked value, and an expectation outside the"
+            + " stored snapshot - each refused at proposal with nothing written")
+    void manualCandidateGuardsRefuseTheWrongCandidate() throws Exception {
+        Seeded tooSmall = openExpectation("MMG-S", 60_00, ExpectationDirection.INBOUND);
+        Seeded wrongDirection = openExpectation("MMG-D", 120_00, ExpectationDirection.OUTBOUND);
+        Seeded wrongCurrency = openForeignExpectation("MMG-C", 120_00, GBP);
+        UUID run = seedRun(SOURCE, RULE_SET, new Line(1, ExternalLineType.CAPTURE, 120_00,
+                ItemKeyKind.PSP_CAPTURE_REF, "MMG-" + UUID.randomUUID()));
+        UUID item = itemOf(run, 1);
+        plantCandidates(run, item, Map.of(
+                tooSmall.id(), KeyKind.PSP_CAPTURE_REF,
+                wrongDirection.id(), KeyKind.PSP_REFUND_REF,
+                wrongCurrency.id(), KeyKind.PSP_CAPTURE_REF), 120_00);
+        UUID ambiguous = raise(BreakType.AMBIGUOUS_MATCH, BreakCause.MULTIPLE_CANDIDATES,
+                BreakRegister.Subject.externalItem(item), 120_00, SOURCE, RULE_SET);
+        park(SOURCE, item, ambiguous, 120_00);
+        completeRun(run);
+
+        record Wrong(String what, UUID chosen) {}
+        for (Wrong wrong : List.of(
+                new Wrong("a candidate of the other direction", wrongDirection.id()),
+                new Wrong("a candidate in another currency", wrongCurrency.id()),
+                new Wrong("a remainder too small to absorb the whole parked value",
+                        tooSmall.id()),
+                new Wrong("an expectation the stored snapshot never saw", IDS.next()))) {
+            assertThatThrownBy(() -> proposeManual(PROPOSER, ambiguous, wrong.chosen()))
+                    .as(wrong.what())
+                    .isInstanceOf(ResolutionMachine.ResolutionTargetRefused.class);
+        }
+        assertThat(string("SELECT status FROM reconciliation.break WHERE id = ?", ambiguous))
+                .as("every refusal wrote nothing").isEqualTo("OPEN");
+        assertThat(count("SELECT count(*) FROM reconciliation.resolution WHERE break_id = ?",
+                ambiguous)).isZero();
+    }
+
     // ----------------------------------------------------------------- seeding
 
     private record Seeded(UUID id, String operationRef, String key) {}
@@ -1022,6 +1430,36 @@ class ResolutionMachineDatabaseTest {
                 CorrelationContext.current().orElseThrow().correlationId()));
     }
 
+    private static ResolutionMachine.Decided approve(
+            Actor actor, UUID resolutionId, ResolutionMachine.ApprovalEcho echo) {
+        return as(actor, uow -> machine.approve(uow, resolutionId, echo, actor,
+                CorrelationContext.current().orElseThrow().correlationId()));
+    }
+
+    private static ResolutionMachine.ProposalView read(UUID resolutionId) {
+        return inCommittedTransaction(uow -> machine.read(uow, resolutionId)).orElseThrow();
+    }
+
+    /** The engine's AMBIGUOUS record, planted: one stored decision, its two candidates. */
+    private static void plantAmbiguous(
+            UUID run, UUID item, UUID first, UUID second, long minor) {
+        as(PLATFORM, uow -> {
+            UUID decision = IDS.next();
+            matchingStore.insertDecision(uow, new MatchingStore.NewDecision(
+                    decision, item, run, DecisionOrigin.RUN, RULE_SET, Optional.of(1),
+                    Optional.of(Cardinality.ONE_TO_ONE), Optional.of(KeyKind.PSP_CAPTURE_REF),
+                    DecisionOutcome.PARKED, Optional.empty(), Optional.empty(),
+                    Optional.empty(), Optional.empty(), PLATFORM, Instant.now(CLOCK),
+                    LocalDate.now(CLOCK), CorrelationId.generate(IDS),
+                    MatchingStore.Basis.match(
+                            DecisionVerdict.AMBIGUOUS, JudgedStatus.PENDING, minor, false)));
+            matchingStore.insertCandidates(uow, decision, matchingStore.lockExpectations(uow,
+                    List.of(first, second),
+                    Map.of(first, KeyKind.PSP_CAPTURE_REF, second, KeyKind.PSP_CAPTURE_REF)));
+            return null;
+        });
+    }
+
     private static ResolutionMachine.Decided reject(
             Actor actor, UUID resolutionId, String reason) {
         return as(actor, uow -> machine.reject(uow, resolutionId, reason, actor,
@@ -1051,6 +1489,128 @@ class ResolutionMachineDatabaseTest {
         completeRun(run);
         return new Parked(run, item, breakId, id("SELECT id FROM reconciliation.suspense_item"
                 + " WHERE external_item_id = ?", item));
+    }
+
+    /**
+     * A parked DEBIT item in another currency (T-1, the Phase 8 -> 9 transition): equal minor
+     * units that are no offset pair.
+     */
+    private static Parked parkedMoney(long minor, CurrencyCode currency) throws SQLException {
+        Money money = Money.ofPersisted(minor, currency, 2);
+        UUID run = IDS.next();
+        String key = "PK-FX-" + UUID.randomUUID();
+        try (Connection app = DatabaseRoles.application()) {
+            app.setAutoCommit(false);
+            runs.birth(
+                    app,
+                    new ReconciliationRuns.NewRun(
+                            run, SOURCE, Optional.of(IDS.next()), RunKind.BATCH, RULE_SET,
+                            SETTLED_ON, Optional.of(SEQUENCES.incrementAndGet()), 1,
+                            Optional.empty(), Optional.empty(), PLATFORM, Instant.now(CLOCK),
+                            CorrelationId.generate(IDS)));
+            byte[] fingerprint = new byte[32];
+            new SecureRandom().nextBytes(fingerprint);
+            items.birthAll(app, PLATFORM, List.of(new ExternalItems.NewItem(
+                    IDS.next(), run, SOURCE, IDS.next(), 1, ExternalLineType.REFUND,
+                    ExpectationDirection.OUTBOUND, money, AccountPurpose.SETTLEMENT_CLEARING,
+                    SETTLED_ON, Optional.of(SETTLED_ON), Optional.of(SETTLED_ON), fingerprint,
+                    Map.of(ItemKeyKind.PSP_REFUND_REF, key), Instant.now(CLOCK),
+                    CorrelationId.generate(IDS))));
+            app.commit();
+        }
+        UUID item = itemOf(run, 1);
+        UUID breakId = IDS.next();
+        try (Connection app = DatabaseRoles.application()) {
+            app.setAutoCommit(false);
+            register.raise(
+                    app,
+                    new BreakRegister.NewBreak(
+                            breakId, BreakType.REFUND_MISMATCH, BreakCause.REFUND_CONTRADICTED,
+                            BreakRegister.Subject.externalItem(item), SOURCE, RULE_SET, money,
+                            Optional.empty(), Optional.empty(), Optional.empty(),
+                            Optional.empty(), Optional.empty(), Optional.empty(), PLATFORM,
+                            Instant.now(CLOCK), CorrelationId.generate(IDS)));
+            app.commit();
+        }
+        UUID position = inCommittedTransaction(uow -> new JdbcLedgerAccountStore()
+                .findOperational(uow, AccountPurpose.SETTLEMENT_CLEARING, currency)
+                .orElseThrow()
+                .id()
+                .value());
+        as(PLATFORM, uow -> suspense.park(uow, new Suspense.ParkCommand(
+                SOURCE, parkedOn,
+                List.of(new Suspense.ParkedItem(item, breakId, money, position)),
+                PLATFORM, Instant.now(CLOCK), CorrelationId.generate(IDS))));
+        completeRun(run);
+        return new Parked(run, item, breakId, id("SELECT id FROM reconciliation.suspense_item"
+                + " WHERE external_item_id = ?", item));
+    }
+
+    /** An expectation in another currency: a stored candidate T-7's guard must refuse. */
+    private static Seeded openForeignExpectation(
+            String prefix, long minor, CurrencyCode currency) throws SQLException {
+        String key = prefix + "-" + UUID.randomUUID();
+        String operationRef = UUID.randomUUID().toString();
+        UUID position = inCommittedTransaction(uow -> new JdbcLedgerAccountStore()
+                .findOperational(uow, AccountPurpose.SETTLEMENT_CLEARING, currency)
+                .orElseThrow()
+                .id()
+                .value());
+        try (Connection app = DatabaseRoles.application()) {
+            app.setAutoCommit(false);
+            expectations.open(
+                    app,
+                    new NewExpectation(
+                            ExpectationKind.CARD_CAPTURE, operationRef, "p8t15:" + operationRef,
+                            SOURCE, AccountPurpose.SETTLEMENT_CLEARING, position,
+                            ExpectationDirection.INBOUND,
+                            Money.ofPersisted(minor, currency, 2), Optional.of(IDS.next()),
+                            SETTLED_ON, Optional.empty(), FAR, RULE_SET,
+                            List.of(new NewExpectation.ExpectationKey(
+                                    KeyKind.PSP_CAPTURE_REF, key)),
+                            PLATFORM, Instant.now(CLOCK), CorrelationId.generate(IDS)));
+            app.commit();
+        }
+        UUID id = (UUID) one("SELECT id FROM reconciliation.expectation WHERE operation_ref = ?"
+                + " AND kind = 'CARD_CAPTURE'", operationRef);
+        return new Seeded(id, operationRef, key);
+    }
+
+    /** The engine's stored decision for {@code item}, its candidates planted as given (T-7). */
+    private static void plantCandidates(
+            UUID run, UUID item, Map<UUID, KeyKind> candidates, long minor) {
+        as(PLATFORM, uow -> {
+            UUID decision = IDS.next();
+            matchingStore.insertDecision(uow, new MatchingStore.NewDecision(
+                    decision, item, run, DecisionOrigin.RUN, RULE_SET, Optional.of(1),
+                    Optional.of(Cardinality.ONE_TO_ONE), Optional.of(KeyKind.PSP_CAPTURE_REF),
+                    DecisionOutcome.PARKED, Optional.empty(), Optional.empty(),
+                    Optional.empty(), Optional.empty(), PLATFORM, Instant.now(CLOCK),
+                    LocalDate.now(CLOCK), CorrelationId.generate(IDS),
+                    MatchingStore.Basis.match(
+                            DecisionVerdict.AMBIGUOUS, JudgedStatus.PENDING, minor, false)));
+            matchingStore.insertCandidates(uow, decision, matchingStore.lockExpectations(uow,
+                    List.copyOf(candidates.keySet()), candidates));
+            return null;
+        });
+    }
+
+    /** The case file's structured resolution list, as the inquiry answers it (REC-9). */
+    private static List<UUID> resolutionsListed(BreakInquiries inquiries, UUID breakId) {
+        return inCommittedTransaction(uow -> inquiries.resolutions(uow, breakId)).stream()
+                .map(BreakInquiries.ResolutionRow::id)
+                .toList();
+    }
+
+    private static BreakTrace trace(BreakTraces traces, UUID breakId) {
+        return inCommittedTransaction(uow -> traces.trace(uow, breakId)).orElseThrow();
+    }
+
+    private static boolean reaches(BreakTrace trace, BreakTrace.NodeKind fromKind, Object fromId,
+            BreakTrace.Relation relation, BreakTrace.NodeKind toKind, Object toId) {
+        return trace.steps().stream().anyMatch(step -> step.fromKind() == fromKind
+                && step.fromId().equals(fromId.toString()) && step.relation() == relation
+                && step.toKind() == toKind && step.toId().equals(toId.toString()));
     }
 
     private static void park(UUID source, UUID item, UUID breakId, long minor) {

@@ -368,87 +368,164 @@ public final class JdbcMatchingStore implements MatchingStore {
             " i.source_id = ? AND i.status = 'UNMATCHED'"
                     + " AND i.grace_until IS NOT NULL AND i.grace_until <= now()";
 
-    /** The item's latest decision instant, or minus infinity before any. */
-    private static final String LATEST_DECISION =
-            "COALESCE((SELECT max(d.decided_at) FROM reconciliation.match_decision d"
-                    + " WHERE d.external_item_id = i.id), '-infinity'::timestamptz)";
+    /**
+     * An expectation a late leg could still allocate: {@code OPEN} or {@code PARTIALLY_SETTLED}
+     * with a remainder - a settled or adjusted reach can never allocate, so it never holds an
+     * item on the worklist (the Phase 8 -> 9 transition's rematch-key-clause-reselection).
+     */
+    private static String openRemainder(String expectation) {
+        return " " + expectation + ".status IN ('OPEN', 'PARTIALLY_SETTLED') AND "
+                + expectation + ".amount_minor - " + expectation + ".allocated_minor - "
+                + expectation + ".resolved_minor > 0";
+    }
 
     /**
-     * The rematch predicate (`P8-TSK-013`, widened by `P8-TSK-016` and `P8-TSK-019`): a residual
-     * whose keys, judged in its KEY SCOPE (its attributed source, else its own), reach an
-     * expectation opened after its latest decision — directly, or through an operation-anchored
-     * rule's anchor to its operation's expectation of the rule's kind that no decision of the
-     * item has yet seen (judged on rows, never across two instances' clocks); or an attributed
-     * waiting item for which an untouched candidate of a value-date group rule opened after its
-     * latest decision. Both rules are read from the source's ACTIVE rule set, never the item's
-     * run's pinned version — the version the rematch leg decides under (`P8-TSK-022`). *(Corrected
-     * 2026-10-01, `P8-DOC-001`: this read "its run's value-date group rule".)* A PARKED
-     * item leaves here only by the park's exact inverse, so an item owning a suspense item of
-     * another origin (an unattributed bank line's {@code BANK_UNATTRIBUTED}) is never read.
+     * Whether a decision of the item {@code i} has already judged {@code expectation}: it was
+     * one of that decision's recorded candidates, or a late leg's examination recorded it as
+     * reached ({@code match_reach}, `V016`). Rows, never clocks: an expectation opened on one
+     * instance and a decision stamped on another - or the same instance's stamp taken before a
+     * commit that lands after the decision - can never hide a reach (the Phase 8 -> 9
+     * transition's rematch-keyed-valuedate-clocks; the anchored clause's P8-TST-001 reading,
+     * now every clause's).
      */
-    private static final String REMATCH_PREDICATE =
-            " i.status IN ('UNMATCHED', 'PARKED')"
-                    + " AND NOT EXISTS (SELECT 1 FROM reconciliation.suspense_item s"
-                    + " WHERE s.external_item_id = i.id AND s.origin <> 'RECON_PARK')"
-                    + " AND (EXISTS (SELECT 1 FROM reconciliation.external_item_key ik"
+    private static String seen(String expectation) {
+        return " (EXISTS (SELECT 1 FROM reconciliation.match_candidate sc"
+                + " JOIN reconciliation.match_decision sd ON sd.id = sc.decision_id"
+                + " WHERE sd.external_item_id = i.id AND sc.expectation_id = " + expectation
+                + ") OR EXISTS (SELECT 1 FROM reconciliation.match_reach sr"
+                + " JOIN reconciliation.match_decision srd ON srd.id = sr.decision_id"
+                + " WHERE srd.external_item_id = i.id AND sr.expectation_id = " + expectation
+                + "))";
+    }
+
+    /**
+     * The item-side key a rule's expectation-side kind reads (`Matching.itemKeyValue`, the
+     * design's D8): the three dispute stages ride one item key; every other kind its own name.
+     */
+    private static String itemKindOf(String ruleKeyKind) {
+        return " CASE " + ruleKeyKind
+                + " WHEN 'DISPUTE_CB_REF' THEN 'DISPUTE_REF'"
+                + " WHEN 'DISPUTE_REV_REF' THEN 'DISPUTE_REF'"
+                + " WHEN 'DISPUTE_FEE_REF' THEN 'DISPUTE_REF'"
+                + " ELSE " + ruleKeyKind + " END";
+    }
+
+    /**
+     * The keys' reach, in the item's KEY SCOPE (its attributed source, else its own): through a
+     * key KIND one of the ACTIVE rule set's one-to-one rules for the line type reads, as the
+     * resolution reads it - an operation-anchored rule's key reaches its anchor, never a candidate
+     * (the clause below), so an open payout never holds its return line on this clause.
+     */
+    private static final String KEYED_REACH =
+            " FROM reconciliation.rule_set kset"
+                    + " JOIN reconciliation.rule krule ON krule.rule_set_id = kset.id"
+                    + " AND krule.line_type = i.line_type AND krule.cardinality = 'ONE_TO_ONE'"
+                    + " AND NOT krule.operation_anchored"
+                    + " JOIN reconciliation.external_item_key ik ON ik.item_id = i.id"
+                    + " AND ik.key_kind =" + itemKindOf("krule.key_kind")
                     + " JOIN reconciliation.expectation_key ek"
                     + " ON ek.source_id = COALESCE(i.attributed_source_id, i.source_id)"
-                    + " AND ek.key_value = ik.key_value"
+                    + " AND ek.key_kind = krule.key_kind AND ek.key_value = ik.key_value"
+                    // A key a repudiation released reaches nothing (V017).
+                    + " AND ek.released_by_resolution_id IS NULL"
                     + " JOIN reconciliation.expectation e ON e.id = ek.expectation_id"
-                    + " WHERE ik.item_id = i.id AND e.opened_at > " + LATEST_DECISION + ")"
-                    // The operation-anchored rule's reach (P8-TSK-019, P8-TSK-018's recorded
-                    // design input): a PAYOUT_RETURN opens no key of its own, so the keys above
-                    // never see it - the item's key reaches the ANCHOR (the payout's
-                    // MERCHANT_PAYOUT), and the anchored rule's kind for the same operation,
-                    // under the anchor's source, that NO decision of the item has seen as a
-                    // candidate and still holding a remainder - a spent return (a duplicate's
-                    // reach) leaves the worklist instead of being re-locked on every tick.
-                    // "Not yet seen", never "opened after the latest decision": the return is
-                    // opened on the worker's instance clock and the decision stamped on the
-                    // matcher's, and comparing two instances' clocks left a return opened
-                    // within their skew of the decision waiting for its 72-hour grace
-                    // (P8-TST-001's correction). The anchored rule's reach is one expectation
-                    // per operation, and a decision that judges the line against it records it
-                    // as a candidate. The two readings differ for a decision that records no
-                    // candidates - a DUPLICATE verdict's empty snapshot - so a later report's
-                    // repeat of a returned line, parked as a duplicate after the return opened,
-                    // is on this worklist where the old reading left it off, and claimant order
-                    // (line_no across runs) may let it take the return before the genuine line:
-                    // value conserved, attribution wrong - recorded debt (P8-TST-001's second
-                    // gate pass). A rematch that reaches the return and allocates nothing writes
-                    // no decision, which leaves the line on the worklist under either reading.
-                    + " OR EXISTS (SELECT 1 FROM reconciliation.external_item_key ak"
-                    + " JOIN reconciliation.expectation_key aek"
-                    + " ON aek.source_id = COALESCE(i.attributed_source_id, i.source_id)"
-                    + " AND aek.key_value = ak.key_value"
-                    + " JOIN reconciliation.expectation anchor ON anchor.id = aek.expectation_id"
-                    + " JOIN reconciliation.rule_set ar ON ar.source_id = i.source_id"
-                    + " AND ar.status = 'ACTIVE'"
+                    + " WHERE kset.source_id = i.source_id AND kset.status = 'ACTIVE'"
+                    + " AND" + openRemainder("e")
+                    + " AND NOT" + seen("e.id");
+
+    /**
+     * The operation-anchored rule's reach (P8-TSK-019, P8-TSK-018's recorded design input): a
+     * PAYOUT_RETURN opens no key of its own, so the keys never see it - the item's key reaches
+     * the ANCHOR (the payout's MERCHANT_PAYOUT), and the anchored rule's kind for the same
+     * operation, under the anchor's source, read from the source's ACTIVE rule set.
+     */
+    private static final String ANCHORED_REACH =
+            " FROM reconciliation.rule_set ar"
                     + " JOIN reconciliation.rule arule ON arule.rule_set_id = ar.id"
                     + " AND arule.line_type = i.line_type AND arule.operation_anchored"
+                    + " JOIN reconciliation.external_item_key ak ON ak.item_id = i.id"
+                    + " AND ak.key_kind =" + itemKindOf("arule.key_kind")
+                    + " JOIN reconciliation.expectation_key aek"
+                    + " ON aek.source_id = COALESCE(i.attributed_source_id, i.source_id)"
+                    + " AND aek.key_kind = arule.key_kind AND aek.key_value = ak.key_value"
+                    + " AND aek.released_by_resolution_id IS NULL"
+                    + " JOIN reconciliation.expectation anchor ON anchor.id = aek.expectation_id"
                     + " JOIN reconciliation.expectation reached"
                     + " ON reached.operation_ref = anchor.operation_ref"
                     + " AND reached.kind = arule.expectation_kind"
                     + " AND reached.source_id = anchor.source_id AND reached.id <> anchor.id"
-                    + " AND reached.status IN ('OPEN', 'PARTIALLY_SETTLED')"
-                    + " WHERE ak.item_id = i.id AND NOT EXISTS (SELECT 1 FROM"
-                    + " reconciliation.match_candidate seen JOIN reconciliation.match_decision sd"
-                    + " ON sd.id = seen.decision_id WHERE sd.external_item_id = i.id"
-                    + " AND seen.expectation_id = reached.id))"
-                    + " OR (i.status = 'UNMATCHED' AND i.attributed_source_id IS NOT NULL"
-                    + " AND EXISTS (SELECT 1 FROM reconciliation.rule g"
+                    + " WHERE ar.source_id = i.source_id AND ar.status = 'ACTIVE'"
+                    + " AND" + openRemainder("reached")
+                    + " AND NOT" + seen("reached.id");
+
+    /**
+     * An attributed waiting item's value-date group reach (`P8-TSK-016`): an untouched candidate
+     * of the ACTIVE rule set's group rule for its line type, promised for its value date.
+     */
+    private static final String GROUP_REACH =
+            " FROM reconciliation.rule g"
                     + " JOIN reconciliation.rule_set gr"
                     + " ON gr.id = g.rule_set_id AND gr.status = 'ACTIVE'"
                     + " JOIN reconciliation.expectation e"
                     + " ON e.source_id = i.attributed_source_id"
                     + " AND e.kind = g.expectation_kind"
-                    + " WHERE gr.source_id = i.source_id AND g.line_type = i.line_type"
+                    + " WHERE i.status = 'UNMATCHED' AND i.attributed_source_id IS NOT NULL"
+                    + " AND gr.source_id = i.source_id AND g.line_type = i.line_type"
                     + " AND g.cardinality = 'GROUP_BY_VALUE_DATE'"
                     + " AND e.status = 'OPEN' AND e.allocated_minor = 0"
                     + " AND e.resolved_minor = 0 AND e.direction = i.direction"
                     + " AND e.currency = i.currency"
                     + " AND e.expected_by = COALESCE(i.value_date, i.business_date)"
-                    + " AND e.opened_at > " + LATEST_DECISION + ")))";
+                    + " AND NOT" + seen("e.id");
+
+    /**
+     * A park owned by an open {@code REPEATED_FINGERPRINT} break is a definitive duplicate - the
+     * counterparty said the same thing twice - and never allocates outside a person's resolution:
+     * no late leg reads it (the Phase 8 -> 9 transition's REC-1). The cause is frozen at the raise
+     * (`V004`), so an investigator's reclassification cannot reopen the door.
+     */
+    private static final String NOT_A_FINGERPRINT_DUPLICATE =
+            " AND NOT EXISTS (SELECT 1 FROM reconciliation.break fb"
+                    + " WHERE fb.external_item_id = i.id AND fb.cause = 'REPEATED_FINGERPRINT'"
+                    + " AND fb.status <> 'RESOLVED')";
+
+    /**
+     * The rematch predicate (`P8-TSK-013`, widened by `P8-TSK-016` and `P8-TSK-019`, made
+     * clock-free by the Phase 8 -> 9 transition): a residual whose REACH - its keys, an
+     * operation-anchored rule's anchor, or an attributed waiting item's value-date group - holds
+     * an expectation with a remainder that no decision of the item has yet judged. Every rule is
+     * read from the source's ACTIVE rule set — the version the rematch leg decides under
+     * (`P8-TSK-022`). A rematch that does not act records its examination and the reach it judged
+     * ({@code match_reach}), so each reach is examined once and a residual that can never
+     * allocate leaves the worklist. A definitive duplicate - an item a decision concluded
+     * {@code DUPLICATE}, or owning an open {@code REPEATED_FINGERPRINT} break - never reads here:
+     * a DUPLICATE verdict has seen what it duplicates. A PARKED item leaves here only by the
+     * park's exact inverse, so an item owning a suspense item of another origin (an unattributed
+     * bank line's {@code BANK_UNATTRIBUTED}) is never read. *(Corrected 2026-10-02 by the
+     * Phase 8 -> 9 transition: the keyed and value-date clauses read "opened after its latest
+     * decision" - {@code opened_at} against {@code max(decided_at)}, two Java instants stamped
+     * before two commits, often on two instances' clocks - so a PARKED item whose expectation
+     * committed within that window never left suspense, and no clause carried a remainder
+     * condition, so a reach that could never allocate re-locked the worklist's head every tick.)*
+     */
+    private static final String REMATCH_PREDICATE =
+            " i.status IN ('UNMATCHED', 'PARKED')"
+                    + " AND NOT EXISTS (SELECT 1 FROM reconciliation.suspense_item s"
+                    + " WHERE s.external_item_id = i.id AND s.origin <> 'RECON_PARK')"
+                    + NOT_A_FINGERPRINT_DUPLICATE
+                    + " AND NOT EXISTS (SELECT 1 FROM reconciliation.match_decision dd"
+                    + " WHERE dd.external_item_id = i.id AND dd.verdict = 'DUPLICATE')"
+                    + " AND (EXISTS (SELECT 1" + KEYED_REACH + ")"
+                    + " OR EXISTS (SELECT 1" + ANCHORED_REACH + ")"
+                    + " OR EXISTS (SELECT 1" + GROUP_REACH + "))";
+
+    /** The predicate's reach for one item, every clause's expectation once. */
+    private static final String REMATCH_REACH =
+            "SELECT DISTINCT x.id FROM reconciliation.external_item i CROSS JOIN LATERAL ("
+                    + "SELECT e.id" + KEYED_REACH
+                    + " UNION SELECT reached.id" + ANCHORED_REACH
+                    + " UNION SELECT e.id" + GROUP_REACH
+                    + ") x WHERE i.id = ? ORDER BY x.id";
 
     /** A locking residual read admits the unattributed and the held attributions only. */
     private static final String HELD_ATTRIBUTION =
@@ -488,12 +565,14 @@ public final class JdbcMatchingStore implements MatchingStore {
     public List<ResidualItem> lockExpiredItems(
             Connection unitOfWork, UUID sourceId, Collection<UUID> heldAttributions,
             int limit) {
-        // FOR UPDATE OF i so the judgement is made on the locked row (ADR-0073 section 7).
+        // FOR UPDATE OF i so the judgement is made on the locked row (ADR-0073 section 7), in
+        // claimant order within the expired set (INV-REC-04, the Phase 8 -> 9 transition's
+        // claimant-order-by-leg: an earlier run's line claims a late expectation first).
         return lockedResiduals(
                 unitOfWork,
                 RESIDUAL_COLUMNS
                         + " WHERE" + EXPIRED_PREDICATE + HELD_ATTRIBUTION
-                        + " ORDER BY i.grace_until, i.id LIMIT ? FOR UPDATE OF i",
+                        + " ORDER BY r.source_sequence, i.line_no, i.id LIMIT ? FOR UPDATE OF i",
                 sourceId,
                 heldAttributions,
                 limit);
@@ -533,14 +612,56 @@ public final class JdbcMatchingStore implements MatchingStore {
     public List<ResidualItem> lockRematchCandidates(
             Connection unitOfWork, UUID sourceId, Collection<UUID> heldAttributions,
             int limit) {
+        // Claimant order across the source's runs (INV-REC-04, as the run and reprocess legs
+        // serve it): the earlier report's line claims first. *(Corrected 2026-10-02 by the
+        // Phase 8 -> 9 transition: this read "i.line_no, i.id" across runs.)*
         return lockedResiduals(
                 unitOfWork,
                 RESIDUAL_COLUMNS
                         + " WHERE i.source_id = ? AND" + REMATCH_PREDICATE + HELD_ATTRIBUTION
-                        + " ORDER BY i.line_no, i.id LIMIT ? FOR UPDATE OF i",
+                        + " ORDER BY r.source_sequence, i.line_no, i.id LIMIT ? FOR UPDATE OF i",
                 sourceId,
                 heldAttributions,
                 limit);
+    }
+
+    @Override
+    public List<UUID> rematchReach(Connection unitOfWork, UUID itemId) {
+        try (PreparedStatement read = unitOfWork.prepareStatement(REMATCH_REACH)) {
+            read.setObject(1, itemId);
+            try (ResultSet rows = read.executeQuery()) {
+                List<UUID> reach = new ArrayList<>();
+                while (rows.next()) {
+                    reach.add(rows.getObject(1, UUID.class));
+                }
+                return List.copyOf(reach);
+            }
+        } catch (SQLException failure) {
+            throw new ReconciliationStorageException(
+                    "could not read the residual's reach", failure);
+        }
+    }
+
+    @Override
+    public void insertReach(
+            Connection unitOfWork, UUID decisionId, Collection<UUID> expectationIds) {
+        if (expectationIds.isEmpty()) {
+            return;
+        }
+        try (PreparedStatement insert =
+                unitOfWork.prepareStatement(
+                        "INSERT INTO reconciliation.match_reach (decision_id, expectation_id)"
+                                + " VALUES (?, ?)")) {
+            for (UUID expectationId : new TreeSet<>(expectationIds)) {
+                insert.setObject(1, decisionId);
+                insert.setObject(2, expectationId);
+                insert.addBatch();
+            }
+            insert.executeBatch();
+        } catch (SQLException failure) {
+            throw new ReconciliationStorageException(
+                    "could not record the examination's reach", failure);
+        }
     }
 
     private static List<UUID> distinctAttributions(
@@ -594,7 +715,8 @@ public final class JdbcMatchingStore implements MatchingStore {
     }
 
     @Override
-    public List<OverdueCandidate> overdueCandidates(Connection unitOfWork, int limit) {
+    public List<OverdueCandidate> overdueCandidates(
+            Connection unitOfWork, Optional<OverdueCursor> after, int limit) {
         try (PreparedStatement read =
                 unitOfWork.prepareStatement(
                         "SELECT e.id, e.kind, e.direction, e.operation_ref,"
@@ -608,8 +730,16 @@ public final class JdbcMatchingStore implements MatchingStore {
                                 + " WHERE e.status IN ('OPEN', 'PARTIALLY_SETTLED')"
                                 + " AND e.overdue_since IS NULL"
                                 + " AND e.expected_by + COALESCE(t.days, 0) < current_date"
-                                + " ORDER BY e.expected_by LIMIT ?")) {
-            read.setInt(1, limit);
+                                // The keyset past the rows this sweep already tried: a row that
+                                // failed is passed, never re-read at the page's head.
+                                + (after.isPresent() ? " AND (e.expected_by, e.id) > (?, ?)" : "")
+                                + " ORDER BY e.expected_by, e.id LIMIT ?")) {
+            int index = 1;
+            if (after.isPresent()) {
+                read.setObject(index++, after.get().expectedBy());
+                read.setObject(index++, after.get().expectationId());
+            }
+            read.setInt(index, limit);
             try (ResultSet rows = read.executeQuery()) {
                 List<OverdueCandidate> candidates = new ArrayList<>();
                 while (rows.next()) {
@@ -665,10 +795,16 @@ public final class JdbcMatchingStore implements MatchingStore {
     }
 
     @Override
-    public List<EscalationRow> unresolvedBreaks(Connection unitOfWork, int limit) {
+    public List<EscalationRow> dueEscalations(
+            Connection unitOfWork,
+            List<Long> bandUpperBounds,
+            Optional<EscalationCursor> after,
+            int limit) {
         try (PreparedStatement read =
                 unitOfWork.prepareStatement(
-                        "SELECT b.id, b.source_id, b.severity,"
+                        "SELECT d.id, d.source_id, d.severity, d.raised_at, d.days_since,"
+                                + " d.escalations FROM (SELECT b.id, b.source_id, b.severity,"
+                                + " b.raised_at,"
                                 + " GREATEST(0, EXTRACT(day FROM now() - b.raised_at))"
                                 + " AS days_since,"
                                 + " (SELECT count(*) FROM reconciliation.break_event ev"
@@ -676,9 +812,21 @@ public final class JdbcMatchingStore implements MatchingStore {
                                 + " 'SEVERITY_ESCALATED') AS escalations"
                                 + " FROM reconciliation.break b"
                                 + " WHERE b.status <> 'RESOLVED'"
-                                + " AND b.severity <> 'CRITICAL'"
-                                + " ORDER BY b.raised_at LIMIT ?")) {
-            read.setInt(1, limit);
+                                + " AND b.severity <> 'CRITICAL') d"
+                                // DUE: more bands crossed than steps recorded - judged here, so
+                                // older breaks not yet due never fill the page (MI-1).
+                                + " WHERE (SELECT count(*) FROM unnest(?::bigint[]) AS band(upper)"
+                                + " WHERE d.days_since > band.upper) > d.escalations"
+                                + (after.isPresent() ? " AND (d.raised_at, d.id) > (?, ?)" : "")
+                                + " ORDER BY d.raised_at, d.id LIMIT ?")) {
+            int index = 1;
+            read.setArray(
+                    index++, unitOfWork.createArrayOf("int8", bandUpperBounds.toArray()));
+            if (after.isPresent()) {
+                read.setTimestamp(index++, Timestamp.from(after.get().raisedAt()));
+                read.setObject(index++, after.get().breakId());
+            }
+            read.setInt(index, limit);
             try (ResultSet rows = read.executeQuery()) {
                 List<EscalationRow> breaks = new ArrayList<>();
                 while (rows.next()) {
@@ -688,7 +836,8 @@ public final class JdbcMatchingStore implements MatchingStore {
                                     rows.getObject("source_id", UUID.class),
                                     Severity.valueOf(rows.getString("severity")),
                                     rows.getLong("days_since"),
-                                    rows.getLong("escalations")));
+                                    rows.getLong("escalations"),
+                                    rows.getTimestamp("raised_at").toInstant()));
                 }
                 return List.copyOf(breaks);
             }
@@ -865,7 +1014,10 @@ public final class JdbcMatchingStore implements MatchingStore {
                 unitOfWork.prepareStatement(
                         "SELECT expectation_id FROM reconciliation.expectation_key"
                                 + " WHERE source_id = ? AND key_kind = ? AND"
-                                + " key_value = ?")) {
+                                + " key_value = ?"
+                                // A key a repudiation released reaches nothing (V017): the
+                                // genuine remittance holds the reference now.
+                                + " AND released_by_resolution_id IS NULL")) {
             read.setObject(1, sourceId);
             read.setString(2, kind.name());
             read.setString(3, value);
@@ -1001,19 +1153,29 @@ public final class JdbcMatchingStore implements MatchingStore {
     }
 
     @Override
-    public void lockItems(Connection unitOfWork, Collection<UUID> itemIds) {
+    public java.util.Set<UUID> lockItems(Connection unitOfWork, Collection<UUID> itemIds) {
+        java.util.Set<UUID> stillPending = new java.util.HashSet<>();
         for (UUID id : new TreeSet<>(itemIds)) {
             try (PreparedStatement read =
                     unitOfWork.prepareStatement(
+                            // Judged AGAIN on the locked row (the Phase 8 -> 9 transition's
+                            // REC-10): a waiter re-checks the predicate after the holder
+                            // commits, so an item decided meanwhile is returned to no
+                            // caller - the chunk skips it, never deciding it twice.
                             "SELECT id FROM reconciliation.external_item WHERE id = ?"
-                                    + " FOR UPDATE")) {
+                                    + " AND status = 'PENDING' FOR UPDATE")) {
                 read.setObject(1, id);
-                read.executeQuery().close();
+                try (ResultSet row = read.executeQuery()) {
+                    if (row.next()) {
+                        stillPending.add(row.getObject("id", UUID.class));
+                    }
+                }
             } catch (SQLException failure) {
                 throw new ReconciliationStorageException(
                         "could not lock the chunk's items", failure);
             }
         }
+        return stillPending;
     }
 
     // ------------------------------------------------------------------ writes
@@ -1248,23 +1410,24 @@ public final class JdbcMatchingStore implements MatchingStore {
     }
 
     @Override
-    public boolean markItemChecked(
-            Connection unitOfWork, UUID itemId, Actor actor, Instant at,
+    public boolean markItemCheckedFrom(
+            Connection unitOfWork, UUID itemId, String fromStatus, Actor actor, Instant at,
             CorrelationId correlation) {
         try (PreparedStatement update =
                 unitOfWork.prepareStatement(
                         "UPDATE reconciliation.external_item SET status = 'CHECKED',"
                                 + " status_changed_at = ?"
-                                + " WHERE id = ? AND status = 'PENDING'")) {
+                                + " WHERE id = ? AND status = ?")) {
             update.setTimestamp(1, Timestamp.from(at));
             update.setObject(2, itemId);
+            update.setString(3, fromStatus);
             if (update.executeUpdate() != 1) {
                 return false;
             }
         } catch (SQLException failure) {
             throw new ReconciliationStorageException("could not check the item", failure);
         }
-        appendItemEvent(unitOfWork, itemId, "PENDING", "CHECKED", actor, at, correlation);
+        appendItemEvent(unitOfWork, itemId, fromStatus, "CHECKED", actor, at, correlation);
         return true;
     }
 
@@ -1573,6 +1736,26 @@ public final class JdbcMatchingStore implements MatchingStore {
     }
 
     @Override
+    public Optional<UUID> lockOpenBreakOnItem(
+            Connection unitOfWork, UUID itemId, BreakType type) {
+        try (PreparedStatement read =
+                unitOfWork.prepareStatement(
+                        "SELECT id FROM reconciliation.break WHERE external_item_id = ?"
+                                + " AND type = ? AND status <> 'RESOLVED' FOR UPDATE")) {
+            read.setObject(1, itemId);
+            read.setString(2, type.name());
+            try (ResultSet row = read.executeQuery()) {
+                return row.next()
+                        ? Optional.of(row.getObject("id", UUID.class))
+                        : Optional.empty();
+            }
+        } catch (SQLException failure) {
+            throw new ReconciliationStorageException(
+                    "could not lock the item's open break", failure);
+        }
+    }
+
+    @Override
     public List<FeeDecisionRow> feeDecisionsOf(Connection unitOfWork, UUID runId) {
         try (PreparedStatement read =
                 unitOfWork.prepareStatement(
@@ -1605,6 +1788,20 @@ public final class JdbcMatchingStore implements MatchingStore {
         } catch (SQLException failure) {
             throw new ReconciliationStorageException(
                     "could not read the run's fee decisions", failure);
+        }
+    }
+
+    @Override
+    public boolean stopGrace(Connection unitOfWork, UUID itemId) {
+        try (PreparedStatement update =
+                unitOfWork.prepareStatement(
+                        "UPDATE reconciliation.external_item SET grace_until = NULL"
+                                + " WHERE id = ? AND status = 'UNMATCHED'")) {
+            update.setObject(1, itemId);
+            return update.executeUpdate() == 1;
+        } catch (SQLException failure) {
+            throw new ReconciliationStorageException(
+                    "could not stop the item's grace clock", failure);
         }
     }
 
@@ -1825,14 +2022,19 @@ public final class JdbcMatchingStore implements MatchingStore {
 
     /**
      * The reprocess worklist (`P8-TSK-022`, ADR-0068 §9.2): residual items only - the rematch
-     * predicate's first two clauses without its "something new opened" condition - that hold no
-     * decision of THIS run ({@code ?}), so the run's progress is the existence of its decisions:
-     * a crash resumes exactly where the last commit left off, on any instance.
+     * predicate's first clauses without its reach condition - that hold no decision of THIS run
+     * ({@code ?}), so the run's progress is the existence of its decisions: a crash resumes
+     * exactly where the last commit left off, on any instance. A definitive fingerprint
+     * duplicate's park is never re-decided: it leaves by a person's resolution alone.
+     * *(Corrected 2026-10-02 by the Phase 8 -> 9 transition, REC-1: the worklist admitted a
+     * {@code REPEATED_FINGERPRINT} park, and the leg judged it with no fingerprint, so a repeated
+     * line could allocate, unpark and close its own duplicate break {@code EVIDENCED}.)*
      */
     private static final String REPROCESS_PREDICATE =
             " i.status IN ('UNMATCHED', 'PARKED')"
                     + " AND NOT EXISTS (SELECT 1 FROM reconciliation.suspense_item s"
                     + " WHERE s.external_item_id = i.id AND s.origin <> 'RECON_PARK')"
+                    + NOT_A_FINGERPRINT_DUPLICATE
                     + " AND NOT EXISTS (SELECT 1 FROM reconciliation.match_decision d"
                     + " WHERE d.external_item_id = i.id AND d.run_id = ?)";
 

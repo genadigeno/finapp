@@ -74,6 +74,12 @@ class BatchRepudiationDatabaseTest {
     private static final UUID SOURCE_ID =
             UUID.fromString("01a0e2bc-8200-7001-8000-000000000001");
 
+    private static final String ACCEPT =
+            "UPDATE settlement.file SET status = 'ACCEPTED', status_changed_at = now()"
+                    + " WHERE id = ?";
+    private static final String ATTEST =
+            "UPDATE settlement.file SET attested_by = ?, attested_at = now() WHERE id = ?";
+
     private static final TransactionRunner RUNNER =
             new TransactionRunner() {
                 @Override
@@ -216,7 +222,8 @@ class BatchRepudiationDatabaseTest {
                         IDS,
                         CLOCK,
                         RUNNER);
-        repudiation = new BatchRepudiation(batches, new JdbcOutboxWriter(), audit, IDS);
+        repudiation =
+                new BatchRepudiation(batches, store, new JdbcOutboxWriter(), audit, IDS);
     }
 
     @AfterAll
@@ -443,6 +450,118 @@ class BatchRepudiationDatabaseTest {
                 .singleElement()
                 .asString()
                 .startsWith("ACCEPTED>REPUDIATED|op-approver|resolution=");
+    }
+
+    @Test
+    @DisplayName("the readmission rank for every writer (the Phase 8 -> 9 transition, MI-2,"
+            + " settlement V011; re-gated by NEW-SEC-1, V014): a raw READMISSION row naming"
+            + " an ACCEPTED file whose batch stands is refused; once that batch is REPUDIATED"
+            + " the same row is admitted but inherits NOTHING - the real accept sweep passes"
+            + " it over, it is never ACCEPTED unattested, the readmitter's attestation is"
+            + " refused, and a distinct person's attestation admits acceptance again; a"
+            + " statement's chain read takes no lock for a report")
+    void aRepudiatedBatchsFileIsReadmissibleForEveryWriter() throws SQLException {
+        SettlementBatchStore.BatchRow accepted = acceptedBatch("PSPB-REPUD-07", "RPG");
+        assertThatThrownBy(() -> rawReadmissionOf(accepted.fileId()))
+                .as("an accepted file whose batch stands is no recoverable original")
+                .isInstanceOf(SQLException.class)
+                .hasMessageContaining("file_readmits_a_recoverable_original");
+        application.rollback();
+        assertThat(repudiation.lockSourceAndReadSuccessor(application, accepted.id()))
+                .as("a report has no chain: nothing read, no source row locked")
+                .isEmpty();
+        application.rollback();
+
+        assertThat(repudiated(accepted.id(), UUID.randomUUID())).isTrue();
+        UUID readmission = rawReadmissionOf(accepted.fileId());
+        assertThat(scalarIn("SELECT settlement.file_inherits_authentication(?)::text",
+                        readmission))
+                .as("NEW-SEC-1: a repudiated batch's file passes NOTHING on - the four-eyes"
+                        + " verdict is not undone by one readmitter (settlement V014)")
+                .isEqualTo("false");
+        application.commit();
+
+        // The database rank, past every domain guard: never ACCEPTED unattested.
+        assertThat(raw(
+                        "UPDATE settlement.file SET status = 'PARSED', status_changed_at ="
+                                + " now() WHERE id = ? AND status = 'RECEIVED'",
+                        readmission))
+                .isEqualTo(1);
+        application.commit();
+        acceptance.sweep();
+        assertThat(fileColumn(readmission, "status"))
+                .as("the real accept sweep passes the uninheriting readmission over")
+                .isEqualTo("PARSED");
+        assertThatThrownBy(() -> raw(ACCEPT, readmission))
+                .as("never ACCEPTED unattested (INV-SET-07)")
+                .isInstanceOf(SQLException.class)
+                .hasMessageContaining("inherits no authentication");
+        application.rollback();
+        assertThatThrownBy(() -> raw(ATTEST, "op-readmitter", readmission))
+                .as("the readmitter is a submitter - reinstating a repudiated batch is"
+                        + " never one person's act")
+                .isInstanceOf(SQLException.class)
+                .hasMessageContaining("second person to every submitter");
+        application.rollback();
+
+        assertThat(raw(ATTEST, "op-attester", readmission)).isEqualTo(1);
+        application.commit();
+        assertThat(raw(ACCEPT, readmission))
+                .as("attested by a person distinct from every submitter, acceptance is"
+                        + " admitted again: two people, the readmitter and the attester")
+                .isEqualTo(1);
+        // Proven; rolled back, and the fixture retired so no accept leg ever takes it.
+        application.rollback();
+        assertThat(raw(
+                        "UPDATE settlement.file SET status = 'REJECTED', rejection_code ="
+                                + " 'DECLINED', rejection_detail = 'retired test fixture',"
+                                + " status_changed_at = now() WHERE id = ?",
+                        readmission))
+                .isEqualTo(1);
+        application.commit();
+    }
+
+    /** A raw READMISSION row naming {@code originalFileId}, past every domain guard. */
+    private static UUID rawReadmissionOf(UUID originalFileId) throws SQLException {
+        UUID id = UUID.randomUUID();
+        try (PreparedStatement insert =
+                application.prepareStatement(
+                        "INSERT INTO settlement.file (id, source_id, received_via, status,"
+                                + " business_date, format_id, format_version, content_sha256,"
+                                + " content_length, line_count, key_version, received_by,"
+                                + " readmits_file_id, received_at, status_changed_at,"
+                                + " correlation_id)"
+                                + " SELECT ?, source_id, 'READMISSION', 'RECEIVED',"
+                                + " business_date, format_id, format_version, content_sha256,"
+                                + " content_length, line_count, key_version, 'op-readmitter',"
+                                + " id, now(), now(), 'phase-8-9-raw' FROM settlement.file"
+                                + " WHERE id = ?")) {
+            insert.setObject(1, id);
+            insert.setObject(2, originalFileId);
+            assertThat(insert.executeUpdate()).isEqualTo(1);
+        }
+        return id;
+    }
+
+    /** A raw write as finapp_app, past every domain guard - the database rank's probe. */
+    private static int raw(String sql, Object... args) throws SQLException {
+        try (PreparedStatement statement = application.prepareStatement(sql)) {
+            for (int i = 0; i < args.length; i++) {
+                statement.setObject(i + 1, args[i]);
+            }
+            return statement.executeUpdate();
+        }
+    }
+
+    /** A scalar read inside the caller's open transaction - never rolling it back. */
+    private static String scalarIn(String sql, Object arg) throws SQLException {
+        try (PreparedStatement read = application.prepareStatement(sql)) {
+            read.setObject(1, arg);
+            try (ResultSet row = read.executeQuery()) {
+                assertThat(row.next()).isTrue();
+                return row.getString(1);
+            }
+        }
     }
 
     @Test

@@ -600,7 +600,11 @@ recorded.
 The readmission door (`P8-TSK-022`, ADR-0066 §8) adds three 409s, each the original's own
 facts refusing the act. `settlement.FileNotRejected`: the file is not `REJECTED`, or its
 verdict is not one a readmission can answer (our validation's codes, `DECLINED`, or
-`CONFLICTING_BATCH`). `settlement.ConflictingBatchStands`: a `CONFLICTING_BATCH` file whose
+`CONFLICTING_BATCH`). *(Corrected 2026-10-02 by the Phase 8 -> 9 transition, MI-2: an
+`ACCEPTED` file whose batch is `REPUDIATED` is readmissible too - ADR-0065 §10's recovery of our
+own adapter's mis-normalisation - so `FileNotRejected` also answers an accepted file whose batch
+stands; a repudiated batch's file whose identity a live batch now holds answers
+`settlement.ConflictingBatchStands`.)* `settlement.ConflictingBatchStands`: a `CONFLICTING_BATCH` file whose
 conflict is still live - another file's batch holds the identity; decline that file first,
 then readmit. `settlement.FileAlreadyReadmitted`: a file is readmitted once (`UNIQUE
 (readmits_file_id)` beneath the domain's read under the original's lock), and recovery
@@ -611,6 +615,13 @@ record committed, and a keyed retry replays the refusal. A missing or over-long 
 `api.ValidationFailed`. The verification door raises no settlement code of its own - an
 unknown file is `settlement.FileNotFound`, and every verdict, divergence included, is a
 200 answer, never an error.
+
+*(Corrected 2026-10-02 by the Phase 8 → 9 transition, the audit's `SEC-04`: a person-written
+reason holding a card-number or account-identifier shape - at the decline, the readmission, the
+verification and the content read here, and at the reconciliation reprocess, requeue and
+opening-position doors - is the same `api.ValidationFailed`, judged before any claim, lock or
+read, with nothing written and the offending text never echoed in the detail, a log line or the
+audit trail.)*
 
 ### `reconciliation` — `ReconciliationErrorCode`
 
@@ -633,6 +644,8 @@ unknown file is `settlement.FileNotFound`, and every verdict, divergence include
 | `reconciliation.ReasonCodeNotAllowed` | 422 | This reason code is not admitted for this resolution kind. |
 | `reconciliation.ResolutionTargetRefused` | 422 | The resolution's target, offset item or chosen candidate is refused. |
 | `reconciliation.GainNotYetEligible` | 422 | The suspense item is not yet old enough to be recognised as a gain. |
+| `reconciliation.OperationNotTerminal` | 409 | The break's operation is still in flight or completed; its own evidence settles the value. |
+| `reconciliation.ReturnAlreadyAttributed` | 409 | The payout's return is already attributed; a second credit is refused. |
 | `reconciliation.RuleSetNotFound` | 404 | No matching rule set version has this identifier. |
 | `reconciliation.RuleSetNotPending` | 409 | This rule set version is no longer awaiting a decision. |
 | `reconciliation.RuleSetActivationBySameActor` | 409 | A rule set version is activated by someone other than its proposer. |
@@ -644,7 +657,7 @@ unknown file is `settlement.FileNotFound`, and every verdict, divergence include
 | `reconciliation.RunNotBlocked` | 409 | Only a blocked reconciliation run can be requeued. |
 | `reconciliation.BatchNotFound` | 404 | No settlement batch has this identifier. |
 | `reconciliation.BatchNotRepudiable` | 409 | Only an accepted settlement batch can be repudiated. |
-| `reconciliation.BatchNotDisposed` | 409 | The batch's run has not yet disposed of every item. |
+| `reconciliation.BatchNotDisposed` | 409 | The batch's run has not disposed of every item and rested: an item still `PENDING`, or a run started and not yet `COMPLETED`. |
 | `reconciliation.RepudiationNotSupported` | 409 | This batch's repudiation needs a compensation this phase does not provide. |
 
 The matcher's explanation doors (`P8-TSK-011`, ADR-0068 §7). All three follow the
@@ -663,11 +676,36 @@ The repudiation door (`P8-TSK-023`, ADR-0065 §10) adds four. `BatchNotFound` is
 `FileNotFound` departure at the batch door - the backlog's `api.NotFound`, departed from on
 purpose, since every reconciliation operator door names its own 404. `BatchNotRepudiable` (a
 batch not `ACCEPTED`, an already-repudiated one included), `BatchNotDisposed` (an item still
-`PENDING`: let the run dispose of it, or requeue a blocked one) and `RepudiationNotSupported`
+`PENDING`, or a run `IN_PROGRESS` or `BLOCKED` - started, its completion - the fee fold,
+a blocked run's break, `RunCompleted` - still owed over items this would repudiate: let
+the run finish, requeuing a blocked one; an `OPEN` run with nothing `PENDING`, a
+statement's, admits - its later walk completes trivially; judged at the proposal and
+again at the approval *(Corrected 2026-10-02 by the Phase 8 -> 9 transition, MI-8: an
+item still `PENDING` was the only refusal, so a batch whose run blocked at its completion
+was repudiated and the requeued run then completed over `REPUDIATED` items)*) and `RepudiationNotSupported`
 (a correction `OFFSET` in the batch, an expectation a person already closed, a matched bank item
 a person already resolved - refused before anything is written, recorded as debt) are the batch's
 own facts refusing the act. The decision doors reuse the resolver's codes: `SelfApprovalRefused`,
 `ResolutionNotPending`, `ResolutionStale` (the plan's digest moved), `ResolutionAlreadyProposed`.
+
+*(Corrected 2026-10-02 by the Phase 8 -> 9 transition.)* The resolver's doors add two more, both
+409s of a value that would be credited twice, each refused at proposal and again at approval
+under the locks with nothing written. `OperationNotTerminal` (IDEM-2): a `TRANSFER_TO_ACCOUNT` or
+`RECOGNISE_GAIN` of the parked value of a grace-typed break (`MISSING_INTERNAL`,
+`UNKNOWN_EXTERNAL`, or any type a `GRACE_EXPIRED` break was reclassified onto) while the
+platform's records, re-asked over the item's keys, still know its operation `IN_FLIGHT` or
+`COMPLETED` - the operation's own evidence settles the value; admitted once it is `TERMINAL` -
+and a `TRANSFER_TO_ACCOUNT` out of a `RETURN_NOT_APPLICABLE` break while its payout is still in
+flight (IDEM-1's residual; a payout that `FAILED` is `ResolutionTargetRefused`, 422).
+`ReturnAlreadyAttributed` (IDEM-1): a `TRANSFER_TO_ACCOUNT` out of a `RETURN_NOT_APPLICABLE`
+break for a payout whose return was already applied from settlement evidence, or that another
+break's transfer already attributes - one return, one credit, judged on the payout row the
+return worker locks. `ResolutionStale` also answers an approval whose optional body echoes a
+`targetAccountId`, `offsetItemId` or `chosenExpectationId` that is not the proposal's stored
+operand (SEC-01): the approver approves exactly what `GET /resolutions/{id}` showed them. A
+reclassification whose target type would leave the break's frozen cause no exit - no kind its
+subject takes, no evidence that still finds it, no acknowledgement back on its raise type - is
+`api.ValidationFailed` (422), nothing written.
 
 ## 3a. Rejection at the boundary
 

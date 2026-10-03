@@ -22,7 +22,10 @@ import java.util.stream.Collectors;
  * beside the reopening {@code MATCHED → UNMATCHED} (a bank item whose allocation named a
  * repudiated batch's remittance) it had stated from the start. *(Corrected 2026-10-01,
  * `P8-DOC-001`: this read "of which only birth is produced yet", and that `-023` would relax
- * nothing.)*
+ * nothing.)* `V016` (the Phase 8 -> 9 transition, REC-6) adds {@code UNMATCHED → CHECKED}: a
+ * {@code REPROCESS} run's re-check of a fee line left waiting - its check contained as
+ * {@code ITEM_ERRORED}, or its own version naming no {@code CHECK} - so the contained break has
+ * its {@code EVIDENCED} exit.
  */
 public enum ItemStatus {
 
@@ -58,7 +61,8 @@ public enum ItemStatus {
             // batch's REPUDIATED - both -023's producers.
             case MATCHED -> EnumSet.of(UNMATCHED, REPUDIATED);
             case CHECKED, OFFSET -> EnumSet.of(REPUDIATED);
-            case UNMATCHED -> EnumSet.of(MATCHED, PARKED, REPUDIATED);
+            // UNMATCHED -> CHECKED: a REPROCESS run re-checks a fee line left waiting (`V016`).
+            case UNMATCHED -> EnumSet.of(MATCHED, CHECKED, PARKED, REPUDIATED);
             // PARKED -> UNMATCHED: an over-paying bank item of ANOTHER batch reopened whole,
             // its excess unparked, when the remittance it matched is repudiated (`V013`).
             case PARKED -> EnumSet.of(MATCHED, UNMATCHED, RESOLVED, REPUDIATED);
@@ -74,6 +78,11 @@ public enum ItemStatus {
         return (from == PARKED && to == UNMATCHED) || (from == RESOLVED && to == REPUDIATED);
     }
 
+    /** The edge `V016` (the Phase 8 -> 9 transition, REC-6) adds - absent from every earlier one. */
+    static boolean addedByV016(ItemStatus from, ItemStatus to) {
+        return from == UNMATCHED && to == CHECKED;
+    }
+
     public boolean isTerminal() {
         return permittedTransitions().isEmpty();
     }
@@ -85,30 +94,43 @@ public enum ItemStatus {
                 .collect(Collectors.joining(", "));
     }
 
-    /** The transition trigger's edge condition as `V013` re-states it — the migration test's. */
+    /** The transition trigger's edge condition as `V016` re-states it — the migration test's. */
     public static String sqlTransitionRule() {
-        return sqlTransitionRule(false);
+        return sqlTransitionRule(Restatement.V016);
+    }
+
+    /** The edge condition `V013` re-stated (`P8-TSK-023`), before `V016`'s edge. */
+    public static String sqlTransitionRuleBeforeV016() {
+        return sqlTransitionRule(Restatement.V013);
     }
 
     /** The edge condition every restatement before `V013` carried (`V003`, `V008`, `V009`). */
     public static String sqlTransitionRuleBeforeV013() {
-        return sqlTransitionRule(true);
+        return sqlTransitionRule(Restatement.BEFORE_V013);
     }
 
-    private static String sqlTransitionRule(boolean beforeV013) {
+    /** Which migration's restatement of the trigger a rule reproduces. */
+    private enum Restatement {
+        BEFORE_V013,
+        V013,
+        V016
+    }
+
+    private static String sqlTransitionRule(Restatement restatement) {
         return Arrays.stream(values())
-                .filter(from -> edges(from, beforeV013).length() > 0)
+                .filter(from -> edges(from, restatement).length() > 0)
                 .map(
                         from ->
                                 "(OLD.status = '" + from.name() + "' AND NEW.status IN ("
-                                        + edges(from, beforeV013) + "))")
+                                        + edges(from, restatement) + "))")
                 .collect(Collectors.joining(" OR "));
     }
 
-    private static String edges(ItemStatus from, boolean beforeV013) {
+    private static String edges(ItemStatus from, Restatement restatement) {
         return Arrays.stream(values())
                 .filter(from.permittedTransitions()::contains)
-                .filter(to -> !beforeV013 || !addedByV013(from, to))
+                .filter(to -> restatement == Restatement.V016 || !addedByV016(from, to))
+                .filter(to -> restatement != Restatement.BEFORE_V013 || !addedByV013(from, to))
                 .map(to -> "'" + to.name() + "'")
                 .collect(Collectors.joining(", "));
     }

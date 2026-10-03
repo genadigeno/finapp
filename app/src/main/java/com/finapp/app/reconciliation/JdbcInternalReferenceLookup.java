@@ -114,6 +114,16 @@ public final class JdbcInternalReferenceLookup implements InternalReferenceLooku
                 .orElseGet(InternalReference::unknown);
     }
 
+    /**
+     * A reference the platform minted and handed the provider: a refund's, a payout's, or - since
+     * the Phase 8 -> 9 transition (IDEM-2's card residual) - a card attempt's authorization or
+     * capture reference. A capture whose answer was lost holds no provider reference, so its
+     * PSP line's {@code PSP_CAPTURE_REF} names nothing; the line's {@code OUR_REF} still names
+     * the attempt, which answers {@code IN_FLIGHT} - the line is {@code MISSING_INTERNAL}, never
+     * {@code UNKNOWN_EXTERNAL}, and a person's transfer of its parked value waits for the
+     * attempt's own conclusion (ADR-0071 §2). Each kind's references are unique and minted in
+     * its own shape, so at most one hit answers.
+     */
     private InternalReference byOperationReference(Connection unitOfWork, String value) {
         Optional<Refund> refund =
                 refunds.findByOperationReference(
@@ -121,8 +131,13 @@ public final class JdbcInternalReferenceLookup implements InternalReferenceLooku
         if (refund.isPresent()) {
             return ofRefund(refund.get());
         }
-        return payouts.findByReference(unitOfWork, value)
-                .map(this::ofPayout)
+        Optional<MerchantPayout> payout = payouts.findByReference(unitOfWork, value);
+        if (payout.isPresent()) {
+            return ofPayout(payout.get());
+        }
+        return attempts.findByOperationReference(
+                        unitOfWork, new ProviderIdempotencyReference(value))
+                .map(this::ofAttempt)
                 .orElseGet(InternalReference::unknown);
     }
 

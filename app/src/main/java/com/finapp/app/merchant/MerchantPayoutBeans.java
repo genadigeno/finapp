@@ -281,6 +281,7 @@ public class MerchantPayoutBeans {
     PayoutReturnSweep payoutReturnSweep(
             com.finapp.merchant.PayoutReturns payoutReturns,
             com.finapp.reconciliation.WaitingPayoutReturns waitingPayoutReturns,
+            com.finapp.reconciliation.PayoutReturnFallbacks payoutReturnFallbacks,
             com.finapp.settlement.SettlementBatchStore<Connection> settlementBatchStore,
             PlatformTransactionManager transactionManager,
             DataSource dataSource,
@@ -290,6 +291,7 @@ public class MerchantPayoutBeans {
                 waitingPayoutReturns,
                 settlementBatchStore,
                 payoutReturns,
+                payoutReturnFallbacks,
                 batchSize);
     }
 

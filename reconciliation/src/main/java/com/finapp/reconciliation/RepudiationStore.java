@@ -20,8 +20,12 @@ import java.util.UUID;
  */
 public interface RepudiationStore {
 
-    /** The batch's own run: one per accepted batch ({@code UNIQUE (batch_id)}). */
-    record RunFacts(UUID runId, UUID sourceId, UUID ruleSetId) {}
+    /**
+     * The batch's own run: one per accepted batch ({@code UNIQUE (batch_id)}), and its state -
+     * a repudiation refuses one {@code IN_PROGRESS} or {@code BLOCKED}, whose completion is
+     * still owed (MI-8); {@code COMPLETED} is terminal, so the fact survives every later lock.
+     */
+    record RunFacts(UUID runId, UUID sourceId, UUID ruleSetId, RunStatus status) {}
 
     /** An external item as the plan needs it. */
     record ItemRow(
@@ -46,14 +50,22 @@ public interface RepudiationStore {
             String currency,
             int scale) {}
 
+    /**
+     * An expectation the plan reaches. {@code overdue}: the ageing sweep recorded its one-way
+     * {@code overdue_since} - a reopened expectation already past due is owned again by the
+     * approval itself, since ageing never takes it twice (the Phase 8 -> 9 transition, REC-4).
+     */
     record ExpectationRow(
             UUID id,
             String kind,
             ExpectationStatus status,
+            ExpectationDirection direction,
             long amountMinor,
             long allocatedMinor,
             long resolvedMinor,
             UUID sourceId,
+            UUID ruleSetId,
+            boolean overdue,
             String currency,
             int scale) {
 
@@ -64,9 +76,13 @@ public interface RepudiationStore {
 
     /**
      * A suspense item the repudiation reaches, with how much of its released value left
-     * suspense to somewhere else ({@code RESOLUTION}, {@code OFFSET_SUSPENSE}) — value a late
-     * allocation's unpark or a correction's offset released went back to the position, and
-     * needs no answer.
+     * suspense to somewhere else ({@code RESOLUTION}, {@code OFFSET_SUSPENSE}) and is not yet
+     * answered by an earlier repudiation's {@code REPUDIATION} item — value a late allocation's
+     * unpark released went back to the position, and needs no answer — and how much a
+     * counterparty's correction offset ({@code CORRECTION_OFFSET}): that value went back to the
+     * position against a correction standing in ANOTHER batch, which the repudiation cannot
+     * compensate, so the plan is refused (the Phase 8 -> 9 transition, REC-7). An item may hold
+     * several rows since `V017` - one per park - and an old {@code RELEASED} row adds nothing.
      */
     record SuspenseRow(
             UUID id,
@@ -78,6 +94,7 @@ public interface RepudiationStore {
             long amountMinor,
             long releasedMinor,
             long releasedElsewhereMinor,
+            long correctedMinor,
             String currency,
             int scale,
             Optional<UUID> positionAccountId) {
@@ -154,6 +171,12 @@ public interface RepudiationStore {
     /** The grace a reopened item waits under: its source's active rule for its line type. */
     OptionalInt graceHours(Connection unitOfWork, UUID sourceId, String lineType);
 
+    /**
+     * The latest {@code RESOLVED} break of {@code type} on the expectation - the predecessor a
+     * re-raised {@code MISSING_EXTERNAL} follows (its closure rested on repudiated evidence).
+     */
+    Optional<UUID> lastResolvedBreakOn(Connection unitOfWork, UUID expectationId, BreakType type);
+
     // ------------------------------------------------------------------ the resolution
 
     /**
@@ -208,4 +231,12 @@ public interface RepudiationStore {
             UUID resolutionId,
             Instant at,
             CorrelationId correlation);
+
+    /**
+     * Releases the bound keys of the closed {@code REMITTANCE} - {@code NULL → resolutionId},
+     * `V017`'s one key edge - so the genuine re-presented batch's remittance registers the same
+     * reference and the reopened cash can reach it (the Phase 8 -> 9 transition, REC-8). Returns
+     * the number released.
+     */
+    int releaseKeys(Connection unitOfWork, UUID remittanceId, UUID resolutionId);
 }

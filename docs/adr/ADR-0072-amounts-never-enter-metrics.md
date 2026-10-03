@@ -567,3 +567,6 @@ Financial impact:
   - authentication on the scrape endpoint (still `P0-EPIC-10`'s).
 - **Acceptance.** The Phase 8 review (`P8-DOC-001`) read this ADR against the code, corrected it
   where it had drifted, and accepted it on 2026-10-01, following the `P7-DOC-001` precedent.
+- *The Phase 8 → 9 transition* (ADR-0082, `Proposed`): reaffirmed for FX and the corridor —
+  position, spread, residual and P&L amounts are audited operator reports, never series;
+  Phase 9's meters stay counts, ages and verdicts.

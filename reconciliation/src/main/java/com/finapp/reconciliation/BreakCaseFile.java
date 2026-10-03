@@ -36,8 +36,15 @@ public final class BreakCaseFile {
 
     static final String TARGET_TYPE = "reconciliation_break";
 
-    /** An identity's identifier: the event payload's own vocabulary, bounded as the column. */
-    public static final Pattern ASSIGNEE_SHAPE = Pattern.compile("[A-Za-z0-9_-]{1,100}");
+    /**
+     * An identity's identifier - the actor id every record names, a UUID - before the
+     * {@link Investigators} port judges who it is. *(Corrected 2026-10-02 by the Phase 8 -> 9
+     * transition, SEC-06: this admitted any 1..100 letters, digits, '-' or '_' - a card number,
+     * a mistyped id, a customer's - and the value reached the row and the published event.)*
+     */
+    public static final Pattern ASSIGNEE_SHAPE =
+            Pattern.compile(
+                    "[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}");
 
     public static final int MAX_REASON_LENGTH = 1000;
 
@@ -45,6 +52,7 @@ public final class BreakCaseFile {
 
     @NonNull private final BreakCaseStore store;
     @NonNull private final EvidenceTargets targets;
+    @NonNull private final Investigators investigators;
     @NonNull private final OutboxWriter<Connection> outbox;
     @NonNull private final AuditWriter<Connection> audit;
     @NonNull private final IdGenerator ids;
@@ -106,20 +114,28 @@ public final class BreakCaseFile {
     /**
      * Sets the assignee; the first assignment moves {@code OPEN → INVESTIGATING} and publishes
      * {@code reconciliation.BreakInvestigationStarted} — once, whoever races: the break row
-     * lock serialises the racers, and the loser reads {@code INVESTIGATING}.
+     * lock serialises the racers, and the loser reads {@code INVESTIGATING}. The assignee is an
+     * identity identifier naming an active investigator ({@link Investigators}), stored in its
+     * canonical form; anything else is refused before any lock, nothing written and nothing
+     * published (SEC-06), and the refusal never echoes the value.
      */
     public Assigned assign(
             Connection unitOfWork,
             UUID breakId,
-            String assignee,
+            String requested,
             Actor actor,
             CorrelationId correlation) {
-        Objects.requireNonNull(assignee, "assignee must not be null");
-        if (!ASSIGNEE_SHAPE.matcher(assignee).matches()) {
-            throw new CaseFileRefused(
-                    "assigneeId must be an identity identifier (letters, digits, '-' or '_',"
-                            + " at most 100)");
+        Objects.requireNonNull(requested, "assignee must not be null");
+        if (!ASSIGNEE_SHAPE.matcher(requested).matches()) {
+            throw new CaseFileRefused("assigneeId must be an identity identifier (a UUID)");
         }
+        UUID principal = UUID.fromString(requested);
+        if (!investigators.investigates(unitOfWork, principal)) {
+            throw new CaseFileRefused(
+                    "assigneeId must name an active identity holding"
+                            + " RECONCILIATION_INVESTIGATE");
+        }
+        String assignee = principal.toString();
         BreakCaseStore.BreakRow row = locked(unitOfWork, breakId, true);
         if (row.assignee().filter(assignee::equals).isPresent()) {
             return new Assigned(row, false, false);
@@ -294,9 +310,14 @@ public final class BreakCaseFile {
      * Moves the break's type (ADR-0069 §7) — in {@code OPEN} and {@code INVESTIGATING} only,
      * because a proposal's frozen lines depend on the type; onto a type that stands on the
      * break's own subject kind and parks exactly when the subject holds parked value
-     * ({@code INV-REC-09}); never onto an occupied (type, subject) seat. The cause, subject and
-     * value at issue never change; the severity is the higher of the stored and the recomputed
-     * grade (a relabel cannot quiet an alert); {@code residual_version} moves.
+     * ({@code INV-REC-09}); only where the frozen cause keeps an exit
+     * ({@link ResolutionTemplates#reclassificationStrands} - a kind the subject takes, the
+     * cause's own evidence, or an acknowledgement back on its raise type); never onto an
+     * occupied (type, subject) seat. The cause, subject and value at issue never change; the
+     * severity is the higher of the stored and the recomputed grade (a relabel cannot quiet an
+     * alert); {@code residual_version} moves. *(Corrected 2026-10-02 by the Phase 8 -> 9
+     * transition: the exit rule is new - before it, one investigator's reclassification could
+     * make a break permanently unclosable.)*
      */
     public Reclassified reclassify(
             Connection unitOfWork,
@@ -341,6 +362,19 @@ public final class BreakCaseFile {
                             : to.name() + " parks its value, and this break's subject holds"
                                     + " none");
         }
+        // The frozen cause must keep an exit on the target type (the Phase 8 -> 9 transition's
+        // correction): a type no kind and no evidence would ever close strands the break for
+        // good - a permanent false break, or one a type-filtered closer later discards.
+        ResolutionTemplates.reclassificationStrands(
+                        to,
+                        row.cause(),
+                        subject,
+                        store.holding(unitOfWork, row),
+                        store.subjectExpectationKind(unitOfWork, row))
+                .ifPresent(
+                        stranded -> {
+                            throw new CaseFileRefused(stranded);
+                        });
         if (store.openBreakOfTypeStands(
                 unitOfWork, to, subject, row.subjectId(), breakId)) {
             throw seatTaken(to);

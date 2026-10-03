@@ -517,6 +517,12 @@ class GraceAndRematchDatabaseTest {
         assertThat(count("SELECT count(*) FROM platform.outbox_event WHERE event_type ="
                 + " 'reconciliation.SettlementExpectationOverdue' AND aggregate_id = ?",
                 overdueExpectation)).isEqualTo(1);
+        assertThat(count("SELECT count(*) FROM platform.outbox_event WHERE event_type ="
+                + " 'reconciliation.SettlementExpectationOverdue' AND aggregate_id = ?"
+                + " AND causation_id = correlation_id AND causation_id <> aggregate_id::text",
+                overdueExpectation))
+                .as("the sweep's flow is the cause, never the expectation (ARCH-P8-04)")
+                .isEqualTo(1);
         assertThat(one("SELECT overdue_since FROM reconciliation.expectation WHERE"
                 + " id = ?", inside))
                 .as("inside its window: untouched")

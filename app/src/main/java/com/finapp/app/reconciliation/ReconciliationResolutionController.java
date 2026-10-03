@@ -11,6 +11,7 @@ import lombok.RequiredArgsConstructor;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.MediaType;
 import org.springframework.web.bind.annotation.DeleteMapping;
+import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PathVariable;
 import org.springframework.web.bind.annotation.PostMapping;
 import org.springframework.web.bind.annotation.RequestBody;
@@ -57,6 +58,14 @@ public class ReconciliationResolutionController {
     public record ResolutionRejectionRequest(@NotNull String reason) {}
 
     /**
+     * The approval's optional echo of the operand the approver read (the Phase 8 -> 9
+     * transition, SEC-01): each field optional; one that is not the proposal's stored operand is
+     * refused {@code 409 ResolutionStale} with nothing written.
+     */
+    public record ResolutionApprovalRequest(
+            String targetAccountId, String offsetItemId, String chosenExpectationId) {}
+
+    /**
      * A batch's repudiation: the closed reason code ({@code EVIDENCE_REPUDIATED}) and the
      * investigator's narrative - CONFIDENTIAL, screened, never logged, evented or audited.
      * No amount and no account: the plan is derived from the rows.
@@ -96,12 +105,33 @@ public class ReconciliationResolutionController {
                 settlementBatchId, idempotencyKey, body.reasonCode(), body.narrative());
     }
 
-    /** Approves a pending resolution — a second person's act; synchronous, one transaction. */
+    /**
+     * What an approver reads before approving (the Phase 8 -> 9 transition, SEC-01): every
+     * operand - a transfer's target with its purpose and owner, an offset's partner item, a
+     * manual match's chosen candidate - and the frozen ledger lines, account by account. One
+     * snapshot, recording nothing.
+     */
+    @GetMapping("/resolutions/{id}")
+    @RequiresPermission(PermissionName.RECONCILIATION_RESOLVE)
+    public BreakResolutionDesk.ResolutionDetail viewReconciliationResolution(
+            @PathVariable("id") String resolutionId) {
+        return desk.view(resolutionId);
+    }
+
+    /**
+     * Approves a pending resolution — a second person's act; synchronous, one transaction. The
+     * optional body echoes the operand the approver read; a different one is refused.
+     */
     @PostMapping("/resolutions/{id}/approval")
     @RequiresPermission(PermissionName.RECONCILIATION_RESOLVE)
     public BreakResolutionDesk.ResolutionDecision approveReconciliationResolution(
-            @PathVariable("id") String resolutionId) {
-        return desk.approve(resolutionId);
+            @PathVariable("id") String resolutionId,
+            @RequestBody(required = false) ResolutionApprovalRequest body) {
+        return body == null
+                ? desk.approve(resolutionId)
+                : desk.approve(
+                        resolutionId, body.targetAccountId(), body.offsetItemId(),
+                        body.chosenExpectationId());
     }
 
     /** Rejects a pending resolution — another person's reasoned act. */

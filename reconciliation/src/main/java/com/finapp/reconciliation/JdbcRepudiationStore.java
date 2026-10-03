@@ -42,7 +42,8 @@ public final class JdbcRepudiationStore implements RepudiationStore {
     public Optional<RunFacts> runOf(Connection unitOfWork, UUID settlementBatchId) {
         try (PreparedStatement read =
                 unitOfWork.prepareStatement(
-                        "SELECT id, source_id, rule_set_id FROM reconciliation.reconciliation_batch"
+                        "SELECT id, source_id, rule_set_id, status"
+                                + " FROM reconciliation.reconciliation_batch"
                                 + " WHERE batch_id = ? AND kind = 'BATCH'")) {
             read.setObject(1, settlementBatchId);
             try (ResultSet row = read.executeQuery()) {
@@ -51,7 +52,8 @@ public final class JdbcRepudiationStore implements RepudiationStore {
                                 new RunFacts(
                                         row.getObject("id", UUID.class),
                                         row.getObject("source_id", UUID.class),
-                                        row.getObject("rule_set_id", UUID.class)))
+                                        row.getObject("rule_set_id", UUID.class),
+                                        RunStatus.valueOf(row.getString("status"))))
                         : Optional.empty();
             }
         } catch (SQLException failure) {
@@ -183,8 +185,10 @@ public final class JdbcRepudiationStore implements RepudiationStore {
         }
         try (PreparedStatement read =
                 unitOfWork.prepareStatement(
-                        "SELECT id, kind, status, amount_minor, allocated_minor, resolved_minor,"
-                                + " source_id, currency, scale FROM reconciliation.expectation"
+                        "SELECT id, kind, status, direction, amount_minor, allocated_minor,"
+                                + " resolved_minor, source_id, rule_set_id,"
+                                + " overdue_since IS NOT NULL AS overdue, currency, scale"
+                                + " FROM reconciliation.expectation"
                                 + " WHERE id = ANY (?) ORDER BY id"
                                 + (lock ? " FOR UPDATE" : ""))) {
             bind(unitOfWork, read, 1, expectationIds);
@@ -196,10 +200,13 @@ public final class JdbcRepudiationStore implements RepudiationStore {
                                     row.getObject("id", UUID.class),
                                     row.getString("kind"),
                                     ExpectationStatus.valueOf(row.getString("status")),
+                                    ExpectationDirection.valueOf(row.getString("direction")),
                                     row.getLong("amount_minor"),
                                     row.getLong("allocated_minor"),
                                     row.getLong("resolved_minor"),
                                     row.getObject("source_id", UUID.class),
+                                    row.getObject("rule_set_id", UUID.class),
+                                    row.getBoolean("overdue"),
                                     row.getString("currency").trim(),
                                     row.getInt("scale")));
                 }
@@ -221,10 +228,17 @@ public final class JdbcRepudiationStore implements RepudiationStore {
                         "SELECT s.id, s.break_id, b.source_id AS break_source_id,"
                                 + " s.external_item_id, s.origin, s.side, s.amount_minor,"
                                 + " s.released_minor, s.currency, s.scale, s.position_account_id,"
+                                // Released elsewhere and not yet answered: an earlier
+                                // repudiation's REPUDIATION item names this row once.
+                                + " CASE WHEN EXISTS (SELECT 1 FROM reconciliation.suspense_item a"
+                                + " WHERE a.origin = 'REPUDIATION' AND a.origin_ref = s.id::text)"
+                                + " THEN 0 ELSE COALESCE((SELECT SUM(r.amount_minor)"
+                                + " FROM reconciliation.suspense_release r WHERE r.item_id = s.id"
+                                + " AND r.cause IN ('RESOLUTION', 'OFFSET_SUSPENSE')), 0) END"
+                                + " AS released_elsewhere_minor,"
                                 + " COALESCE((SELECT SUM(r.amount_minor)"
                                 + " FROM reconciliation.suspense_release r WHERE r.item_id = s.id"
-                                + " AND r.cause IN ('RESOLUTION', 'OFFSET_SUSPENSE')), 0)"
-                                + " AS released_elsewhere_minor"
+                                + " AND r.cause = 'CORRECTION_OFFSET'), 0) AS corrected_minor"
                                 + " FROM reconciliation.suspense_item s"
                                 + " JOIN reconciliation.break b ON b.id = s.break_id"
                                 + " WHERE s.external_item_id = ANY (?) ORDER BY s.id"
@@ -245,6 +259,7 @@ public final class JdbcRepudiationStore implements RepudiationStore {
                                     row.getLong("amount_minor"),
                                     row.getLong("released_minor"),
                                     row.getLong("released_elsewhere_minor"),
+                                    row.getLong("corrected_minor"),
                                     row.getString("currency").trim(),
                                     row.getInt("scale"),
                                     Optional.ofNullable(
@@ -334,6 +349,27 @@ public final class JdbcRepudiationStore implements RepudiationStore {
             }
         } catch (SQLException failure) {
             throw new ReconciliationStorageException("could not read the grace", failure);
+        }
+    }
+
+    @Override
+    public Optional<UUID> lastResolvedBreakOn(
+            Connection unitOfWork, UUID expectationId, BreakType type) {
+        try (PreparedStatement read =
+                unitOfWork.prepareStatement(
+                        "SELECT id FROM reconciliation.break WHERE expectation_id = ?"
+                                + " AND type = ? AND status = 'RESOLVED'"
+                                + " ORDER BY resolved_at DESC, id DESC LIMIT 1")) {
+            read.setObject(1, expectationId);
+            read.setString(2, type.name());
+            try (ResultSet row = read.executeQuery()) {
+                return row.next()
+                        ? Optional.of(row.getObject("id", UUID.class))
+                        : Optional.empty();
+            }
+        } catch (SQLException failure) {
+            throw new ReconciliationStorageException(
+                    "could not read the expectation's closed break", failure);
         }
     }
 
@@ -579,6 +615,21 @@ public final class JdbcRepudiationStore implements RepudiationStore {
             insert.executeUpdate();
         } catch (SQLException failure) {
             throw new ReconciliationStorageException("could not record the closure", failure);
+        }
+    }
+
+    @Override
+    public int releaseKeys(Connection unitOfWork, UUID remittanceId, UUID resolutionId) {
+        try (PreparedStatement update =
+                unitOfWork.prepareStatement(
+                        "UPDATE reconciliation.expectation_key SET released_by_resolution_id = ?"
+                                + " WHERE expectation_id = ? AND released_by_resolution_id IS NULL")) {
+            update.setObject(1, resolutionId);
+            update.setObject(2, remittanceId);
+            return update.executeUpdate();
+        } catch (SQLException failure) {
+            throw new ReconciliationStorageException(
+                    "could not release the remittance's keys", failure);
         }
     }
 

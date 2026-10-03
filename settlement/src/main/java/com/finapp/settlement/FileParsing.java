@@ -49,7 +49,9 @@ import lombok.extern.slf4j.Slf4j;
  *       {@code parse_failures + 1} and a backed-off {@code next_parse_at} commit in a second,
  *       small transaction that survives the first one's rollback, with a
  *       {@code RECEIVED → RECEIVED} history row — the file's own record of the platform's
- *       processing. The stuck file is loud on {@code finapp.settlement.file.age}.
+ *       processing. The stuck file is loud on {@code finapp.settlement.file.age}. That
+ *       transaction locks the row and writes only while it is still {@code RECEIVED}: the
+ *       rollback released our claim, and another instance's verdict may already stand.
  * </ul>
  *
  * <h2>Ten instances</h2>
@@ -156,8 +158,7 @@ public final class FileParsing {
                     "parse leg could not process settlement file {}: {}",
                     fileId,
                     ourDefect.getClass().getSimpleName());
-            transactions.inTransaction(uow -> recordOurFailure(uow, fileId, ourDefect));
-            return Outcome.FAILED;
+            return transactions.inTransaction(uow -> recordOurFailure(uow, fileId, ourDefect));
         }
     }
 
@@ -280,8 +281,20 @@ public final class FileParsing {
         return Outcome.REJECTED;
     }
 
-    /** The failure's own record — a second, small transaction after the rollback. */
+    /**
+     * The failure's own record — a second, small transaction after the rollback, written only
+     * while the file is still {@code RECEIVED} (the Phase 8 → 9 transition, MI-5). The
+     * rollback released our claim, so another instance may have claimed the file at once and
+     * committed {@code PARSED} or {@code REJECTED}: the row is locked WAITING, never skipping,
+     * so a verdict still in flight is read committed, and a file that moved records nothing —
+     * no failure counted against it, no back-off, no {@code RECEIVED → RECEIVED} row after its
+     * edge.
+     */
     private Outcome recordOurFailure(Connection uow, UUID fileId, RuntimeException ourDefect) {
+        Optional<SettlementFileStore.FileRow> current = files.lockFileById(uow, fileId);
+        if (current.isEmpty() || current.get().status() != FileStatus.RECEIVED) {
+            return Outcome.SKIPPED;
+        }
         int failures = files.bumpParseFailures(uow, fileId);
         long factor = 1L << Math.min(failures - 1, 20);
         Duration backoff = config.backoffBase().multipliedBy(factor);

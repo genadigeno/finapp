@@ -3,10 +3,12 @@ package com.finapp.app.reconciliation;
 import com.finapp.platform.correlation.CorrelationContext;
 import com.finapp.platform.security.Actor;
 import com.finapp.reconciliation.SettlementBatchRepudiations;
+import com.finapp.reconciliation.StatementChain;
 import com.finapp.settlement.BatchRepudiation;
 import com.finapp.settlement.BatchStatus;
 import com.finapp.sharedkernel.correlation.Correlation;
 import com.finapp.sharedkernel.correlation.CorrelationId;
+import com.finapp.sharedkernel.money.Money;
 import java.sql.Connection;
 import java.time.Instant;
 import java.util.Optional;
@@ -36,6 +38,23 @@ public class ComposedBatchRepudiations implements SettlementBatchRepudiations {
                                         batch.status() == BatchStatus.ACCEPTED,
                                         batch.recognitionEntryId(),
                                         batch.currency()));
+    }
+
+    @Override
+    public Optional<StatementChain.Link> lockChainAndReadSuccessor(
+            Connection unitOfWork, UUID batchId) {
+        return settlement.lockSourceAndReadSuccessor(unitOfWork, batchId)
+                .map(
+                        link ->
+                                new StatementChain.Link(
+                                        link.batchId(),
+                                        link.sequence(),
+                                        Money.ofPersisted(
+                                                link.openingMinor(), link.currency(),
+                                                link.scale()),
+                                        Money.ofPersisted(
+                                                link.closingMinor(), link.currency(),
+                                                link.scale())));
     }
 
     @Override

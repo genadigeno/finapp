@@ -1,6 +1,7 @@
 package com.finapp.app.reconciliation;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
 import com.finapp.app.settlement.SimulatedSchemeReports;
 import com.finapp.app.settlement.SimulatedSettlementReports;
@@ -143,6 +144,7 @@ class LateEvidenceAndBreakTypingDatabaseTest {
     @Autowired private SettlementFileStore<Connection> settlementFileStore;
     @Autowired private TransactionRunner settlementTransactionRunner;
     @Autowired private InternalReferenceLookup internalReferenceLookup;
+    @Autowired private com.finapp.reconciliation.ResolutionMachine resolutionMachine;
 
     // ================================================================= §14.15
 
@@ -308,6 +310,66 @@ class LateEvidenceAndBreakTypingDatabaseTest {
         assertTrialBalance();
     }
 
+    @Test
+    @DisplayName("IDEM-2's card residual (the Phase 8 -> 9 transition): a CAPTURE line whose PSP"
+            + " reference the platform never learned - the capture's answer lost, the attempt"
+            + " CAPTURE_UNKNOWN - but which carries our minted capture reference: after grace the"
+            + " REAL lookup answers IN_FLIGHT by that reference, the break is MISSING_INTERNAL, and"
+            + " a person's transfer of the parked value waits for the attempt's own conclusion")
+    void aCaptureWhoseAnswerWasLostIsMissingInternalAndItsTransferWaits() throws Exception {
+        String marker = letters(10);
+        String ourCapture = "cap-" + IDS.next();
+        UUID attempt = captureUnknownAttempt(ourCapture);
+
+        UUID report =
+                acceptedBatch(PSP_SOURCE,
+                        new SimulatedSettlementReports("PSPB-CU-" + marker, "EUR",
+                                LocalDate.now(CLOCK), "PSP-REM-" + digits(10))
+                                .with(SimulatedSettlementReports.Line.capture(
+                                        "PSP-CAP-CU-" + marker, "", ourCapture, "40.00", ""))
+                                .render());
+        matchUntilQuiet();
+        UUID item = itemOf(report, "CAPTURE");
+        expireGrace(item);
+        matchUntilQuiet();
+        assertThat(one("SELECT status FROM reconciliation.external_item WHERE id = ?", item))
+                .isEqualTo("PARKED");
+        assertThat(one("SELECT type || ':' || cause || ':' || status || ':'"
+                        + " || internal_classification || ':' || internal_operation_ref || ':'"
+                        + " || internal_state FROM reconciliation.break WHERE"
+                        + " external_item_id = ?", item))
+                .as("our capture reference names the attempt: MISSING_INTERNAL with the real"
+                        + " lookup's frozen IN_FLIGHT answer, never UNKNOWN_EXTERNAL")
+                .isEqualTo("MISSING_INTERNAL:GRACE_EXPIRED:OPEN:IN_FLIGHT:" + attempt
+                        + ":CAPTURE_UNKNOWN");
+        UUID breakId = (UUID) one("SELECT id FROM reconciliation.break WHERE"
+                + " external_item_id = ?", item);
+
+        Actor operator = new Actor(UUID.randomUUID().toString(),
+                com.finapp.platform.security.ActorType.CUSTOMER);
+        try (CorrelationContext.Scope scope = CorrelationContext.enter(flow());
+                SecurityContext.Scope acting = SecurityContext.enter(operator);
+                Connection proposing = DatabaseRoles.application()) {
+            proposing.setAutoCommit(false);
+            assertThatThrownBy(() -> resolutionMachine.propose(proposing, breakId,
+                            new com.finapp.reconciliation.ResolutionMachine.ProposalRequest(
+                                    com.finapp.reconciliation.ResolutionKind.TRANSFER_TO_ACCOUNT,
+                                    com.finapp.reconciliation.ResolutionReasonCode
+                                            .FUNDS_ATTRIBUTED,
+                                    "the capture's value goes to the merchant it names",
+                                    Optional.of(IDS.next()), Optional.empty(), Optional.empty()),
+                            operator, CorrelationContext.current().orElseThrow().correlationId()))
+                    .as("the capture can still conclude and credit its merchant itself: the"
+                            + " transfer waits (ADR-0071 section 2)")
+                    .isInstanceOf(
+                            com.finapp.reconciliation.ResolutionMachine.OperationNotTerminal.class);
+            proposing.rollback();
+        }
+        assertThat(count("SELECT count(*) FROM reconciliation.resolution WHERE break_id = ?",
+                breakId)).as("the waiting proposal wrote nothing").isZero();
+        assertTrialBalance();
+    }
+
     // ================================================================= second presentment
 
     @Test
@@ -421,6 +483,34 @@ class LateEvidenceAndBreakTypingDatabaseTest {
             app.commit();
         }
         return new CardPayment(intent, attempt, capture);
+    }
+
+    /**
+     * A card attempt whose capture was sent and never answered: CAPTURE_UNKNOWN, our capture
+     * reference minted and stored (INV-PAY-04), the provider's capture reference never learned.
+     */
+    private static UUID captureUnknownAttempt(String captureReference) throws SQLException {
+        UUID intent = IDS.next();
+        UUID attempt = IDS.next();
+        try (Connection app = DatabaseRoles.application()) {
+            execute(app,
+                    "INSERT INTO payments.payment_intent (id, party_id, customer_id,"
+                            + " payment_method_id, credit_account_id, amount_minor, currency,"
+                            + " scale, status, created_at, capture_mode)"
+                            + " VALUES (?, ?, ?, ?, ?, 4000, 'EUR', 2, 'PROCESSING', now(),"
+                            + " 'AUTOMATIC')",
+                    intent, IDS.next(), IDS.next(), IDS.next(), IDS.next());
+            execute(app,
+                    "INSERT INTO payments.payment_attempt (id, intent_id, auth_reference,"
+                            + " capture_reference, auth_provider_reference,"
+                            + " authorized_amount_minor, authorized_currency, authorized_scale,"
+                            + " status, created_at, rail, interaction_model)"
+                            + " VALUES (?, ?, ?, ?, ?, 4000, 'EUR', 2, 'CAPTURE_UNKNOWN', now(),"
+                            + " 'card', 'TWO_STEP')",
+                    attempt, intent, "auth-" + IDS.next(), captureReference,
+                    "psp-auth-" + IDS.next());
+        }
+        return attempt;
     }
 
     /** A push pay-in on the instant rail, still AWAITING_PAYER: in flight, executed by nobody. */

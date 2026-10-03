@@ -72,6 +72,10 @@ public final class EvidenceContentReads<T> {
                     "a content read requires a reason (INV-REC-10): the audited unit is the"
                             + " access, and an unreasoned access is not recordable");
         }
+        // The reason reaches the audit record, which is never cleaned: the person-written
+        // reason rule, before the file is even looked up (corrected 2026-10-02 by the Phase 8
+        // -> 9 transition, SEC-04: blank was the rule).
+        FileReadmission.requireReason(reason, "a content read");
 
         Optional<SettlementFileStore.FileRow> found = store.fileById(unitOfWork, fileId);
         if (found.isEmpty()) {

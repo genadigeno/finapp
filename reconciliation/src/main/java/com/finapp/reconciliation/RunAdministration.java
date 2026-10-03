@@ -67,12 +67,19 @@ public class RunAdministration {
         }
     }
 
-    /** A person's act without its reason, or a reason past the bound. */
+    /**
+     * A person's act without its reason, a reason past the bound, or a reason holding a
+     * card-number or account-identifier shape - the message names the rule, never the value.
+     */
     public static final class ReasonRequired extends RuntimeException {
         @java.io.Serial private static final long serialVersionUID = 1L;
 
         public ReasonRequired() {
             super("a controller's act on a run carries a reason of 1..1000 characters");
+        }
+
+        ReasonRequired(String detail) {
+            super(detail);
         }
     }
 
@@ -87,7 +94,7 @@ public class RunAdministration {
             String reason,
             Instant now,
             CorrelationId correlation) {
-        String checked = reason(reason);
+        String checked = refuseReason(reason);
         if (matching.openReprocessRun(unitOfWork, sourceId).isPresent()) {
             throw new ReprocessingInProgress();
         }
@@ -137,7 +144,7 @@ public class RunAdministration {
             String reason,
             Instant now,
             CorrelationId correlation) {
-        String checked = reason(reason);
+        String checked = refuseReason(reason);
         MatchingStore.RunRow run =
                 matching.lockRun(unitOfWork, runId).orElseThrow(RunNotFound::new);
         if (run.status() != RunStatus.BLOCKED
@@ -150,9 +157,25 @@ public class RunAdministration {
         return new Requeued(runId, RunStatus.IN_PROGRESS);
     }
 
-    private static String reason(String reason) {
+    /**
+     * The reason rule both acts share, judged before any claim or write: present, within the
+     * bound, and - because it reaches the run's history and the audit record, neither of which
+     * can be cleaned - never a card-number or account-identifier shape ({@code INV-PAY-02},
+     * {@code INV-RAIL-03}). The {@code reconciliation_batch(_event)} {@code CHECK}s are its twin
+     * for every other writer (`V019`).
+     *
+     * <p><em>(Corrected 2026-10-02 by the Phase 8 → 9 transition: blank and length were the
+     * whole rule, so a card number pasted into a reprocess or requeue reason was stored in
+     * plaintext in the run's history and the audit trail (the audit's {@code SEC-04}).)</em>
+     */
+    public static String refuseReason(String reason) {
         if (reason == null || reason.isBlank() || reason.length() > 1000) {
             throw new ReasonRequired();
+        }
+        if (NoteScreen.screenShapes(reason).isPresent()) {
+            throw new ReasonRequired(
+                    "a controller's reason must not hold a card-number or bank-account shape"
+                            + " (INV-PAY-02, INV-RAIL-03)");
         }
         return reason;
     }

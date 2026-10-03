@@ -1231,6 +1231,51 @@ class PayoutMatchingDatabaseTest {
                 payouts.runId().toString())).isEqualTo(1);
     }
 
+    // ----------------------------------------------------------------- the repeated return
+
+    @Test
+    @Order(16)
+    @DisplayName("(p) the duplicate never takes the return (the Phase 8 -> 9 transition's"
+            + " duplicate-takes-payout-return): a later report repeating the genuine returned line"
+            + " - at a LOWER line_no - is parked REPEATED_FINGERPRINT; when the worker opens the"
+            + " return, the genuine line takes it and the repeat stays parked, its break OPEN")
+    void theGenuineReturnedLineTakesTheReturn() throws SQLException {
+        Matching realTime = matching(false, Clock.systemUTC());
+        LocalDate day = day(16);
+        Payout payout = newPayout(COMPLETED_PAYOUT);
+        openPayout(payout, 33_00, day);
+        byte[] same = fingerprint();
+        UUID genuineRun = seedRun(same, returned(50, 33_00, day, refs(payout)));
+        realTime.sweep();
+        UUID repeatRun = seedRun(same, returned(3, 33_00, day, refs(payout)));
+        realTime.sweep();
+        UUID genuine = itemId(genuineRun, 50);
+        UUID repeat = itemId(repeatRun, 3);
+        assertThat(itemStatus(genuineRun, 50)).as("no return yet: it waits").isEqualTo("UNMATCHED");
+        assertThat(row("SELECT type, cause, status FROM reconciliation.break WHERE"
+                + " external_item_id = ?", repeat))
+                .as("precondition: the repeat is the definitive duplicate")
+                .containsExactly("DUPLICATE_EXTERNAL", "REPEATED_FINGERPRINT", "OPEN");
+
+        UUID applied = openReturn(payout, 33_00, day);
+        assertThat(rematchWorklist(SOURCE))
+                .as("the genuine line on the worklist; the duplicate never")
+                .contains(genuine).doesNotContain(repeat);
+        realTime.sweep();
+
+        assertThat(row("SELECT a.external_item_id, d.origin FROM reconciliation.allocation a JOIN"
+                + " reconciliation.match_decision d ON d.id = a.decision_id WHERE"
+                + " a.expectation_id = ?", applied))
+                .as("the genuine line took the return")
+                .containsExactly(genuine, "REMATCH");
+        assertThat(expectationStatus(applied)).isEqualTo("SETTLED");
+        assertThat(itemStatus(repeatRun, 3)).isEqualTo("PARKED");
+        assertThat(row("SELECT status FROM reconciliation.break WHERE external_item_id = ?",
+                repeat)).as("the repeat's break stands for a person").containsExactly("OPEN");
+        assertThat(count("SELECT count(*) FROM reconciliation.allocation WHERE"
+                + " external_item_id = ?", repeat)).isZero();
+    }
+
     // ----------------------------------------------------------------- the five-line run
 
     /** One payout run's facts: its id and its four expectations (three payouts, one return). */
@@ -1391,6 +1436,12 @@ class PayoutMatchingDatabaseTest {
      * provider's settlement date as business, settlement and value date, PENDING.
      */
     private static ExternalItems.NewItem newItem(UUID itemId, UUID runId, Line line) {
+        return newItem(itemId, runId, line, fingerprint());
+    }
+
+    /** As above, with the canonical fingerprint given - a repeated line's (case p). */
+    private static ExternalItems.NewItem newItem(
+            UUID itemId, UUID runId, Line line, byte[] canonicalFingerprint) {
         return new ExternalItems.NewItem(
                 itemId,
                 runId,
@@ -1404,7 +1455,7 @@ class PayoutMatchingDatabaseTest {
                 line.settlementDate(),
                 Optional.of(line.settlementDate()),
                 Optional.of(line.settlementDate()),
-                fingerprint(),
+                canonicalFingerprint,
                 line.keys(),
                 Instant.now(CLOCK),
                 CorrelationId.generate(IDS));
@@ -1421,6 +1472,17 @@ class PayoutMatchingDatabaseTest {
                 newItems.add(newItem(IDS.next(), runId, line));
             }
             items.birthAll(unitOfWork, PLATFORM, newItems);
+            return runId;
+        });
+    }
+
+    /** A committed payout run of one line carrying {@code canonicalFingerprint} (case p). */
+    private static UUID seedRun(byte[] canonicalFingerprint, Line line) {
+        UUID runId = IDS.next();
+        return runner().inTransaction(unitOfWork -> {
+            runs.birth(unitOfWork, newRun(runId, SOURCE, RULE_SET, line.settlementDate(), 1));
+            items.birthAll(unitOfWork, PLATFORM,
+                    List.of(newItem(IDS.next(), runId, line, canonicalFingerprint)));
             return runId;
         });
     }

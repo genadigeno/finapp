@@ -25,6 +25,7 @@ import java.sql.ResultSet;
 import java.sql.SQLException;
 import java.sql.Statement;
 import java.time.Clock;
+import java.time.Duration;
 import java.time.Instant;
 import java.time.ZoneOffset;
 import java.util.ArrayList;
@@ -35,6 +36,8 @@ import java.util.Set;
 import java.util.UUID;
 import java.util.concurrent.ConcurrentLinkedQueue;
 import java.util.concurrent.CountDownLatch;
+import java.util.concurrent.atomic.AtomicBoolean;
+import java.util.function.Function;
 import org.junit.jupiter.api.AfterAll;
 import org.junit.jupiter.api.BeforeAll;
 import org.junit.jupiter.api.DisplayName;
@@ -62,6 +65,11 @@ class FileReceptionDatabaseTest {
     private static final Actor OPERATOR = new Actor("op-alice", ActorType.EMPLOYEE);
 
     private static final byte[] KEY = new byte[32];
+
+    /** A throwaway source THIS suite seeds and retires, so the shared ones stay open (T-5). */
+    private static final String RETIRED_SOURCE = "retired-door-psp.settlement";
+    private static final UUID RETIRED_SOURCE_ID =
+            UUID.fromString("01a0e2bc-8200-7009-8000-00000000000b");
 
     private static Connection application;
     private static SettlementSources sources;
@@ -115,6 +123,7 @@ class FileReceptionDatabaseTest {
         reception =
                 new FileReception<>(
                         sources, store, Map.of(), observer, auditWriter(), IDS, CLOCK);
+        seedAndRetireTheRetiredSource();
     }
 
     private static SettlementSources register() {
@@ -135,7 +144,34 @@ class FileReceptionDatabaseTest {
                                 1,
                                 Set.of(DeliveryChannel.UPLOAD, DeliveryChannel.PULL),
                                 Optional.empty(),
-                                Optional.empty())));
+                                Optional.empty()),
+                        new SettlementSourceDescriptor(
+                                RETIRED_SOURCE,
+                                SourceKind.PSP_SETTLEMENT_REPORT,
+                                SettlementFormatId.SIM_PSP_CSV,
+                                1,
+                                Set.of(DeliveryChannel.UPLOAD, DeliveryChannel.PULL),
+                                // A position of its own: one declared source per position
+                                // (INV-SET-05); this register alone composes it.
+                                Optional.of(AccountPurpose.INSTANT_CLEARING),
+                                Optional.of("PSP-REM-[0-9]{4,12}"))));
+    }
+
+    /** The throwaway source, seeded as the migrator and retired at once (T-5's doors). */
+    private static void seedAndRetireTheRetiredSource() throws SQLException {
+        try (Connection migrator = DatabaseRoles.migrator();
+                Statement seed = migrator.createStatement()) {
+            migrator.setAutoCommit(false);
+            seed.execute(
+                    "INSERT INTO settlement.source (id, code, kind, status, next_sequence)"
+                            + " VALUES ('" + RETIRED_SOURCE_ID + "', '" + RETIRED_SOURCE
+                            + "', 'PSP_SETTLEMENT_REPORT', 'ACTIVE', 1)"
+                            + " ON CONFLICT (code) DO NOTHING");
+            seed.execute(
+                    "UPDATE settlement.source SET status = 'RETIRED' WHERE id = '"
+                            + RETIRED_SOURCE_ID + "'");
+            migrator.commit();
+        }
     }
 
     @SuppressWarnings("unchecked")
@@ -419,6 +455,116 @@ class FileReceptionDatabaseTest {
                 .isInstanceOf(SettlementStorageException.class)
                 .hasMessageContaining("INV-HIST-02")
                 .hasMessageNotContaining("tamper-");
+        application.rollback();
+    }
+
+    // -----------------------------------------------------------------
+    // The retired source's doors (the Phase 8 -> 9 transition, T-5): the ERROR_CONTRACT's
+    // settlement.SourceRetired, proven to write nothing at the upload and pull doors.
+    // -----------------------------------------------------------------
+
+    @Test
+    @DisplayName("a retired source's upload answers settlement.SourceRetired and writes"
+            + " nothing - no file, no receipt, no refusal row, no audit record (T-5)")
+    void aRetiredSourcesUploadWritesNothing() throws SQLException {
+        long filesBefore = count("SELECT count(*) FROM settlement.file");
+        long receiptsBefore = count("SELECT count(*) FROM settlement.file_receipt");
+        long refusalsBefore = count("SELECT count(*) FROM settlement.refused_delivery");
+        long auditsBefore = count("SELECT count(*) FROM platform.audit_record");
+        application.rollback();
+
+        byte[] content = "retired-upload,alpha\n".getBytes(StandardCharsets.UTF_8);
+        assertThatThrownBy(() -> reception.receive(application, uploadTo(RETIRED_SOURCE, content)))
+                .isInstanceOf(FileReception.SettlementSourceRetired.class)
+                .hasMessageContaining("settlement.SourceRetired")
+                .hasMessageContaining(RETIRED_SOURCE);
+        application.rollback();
+
+        assertThat(count("SELECT count(*) FROM settlement.file")).isEqualTo(filesBefore);
+        assertThat(count("SELECT count(*) FROM settlement.file_receipt"))
+                .isEqualTo(receiptsBefore);
+        assertThat(count("SELECT count(*) FROM settlement.refused_delivery"))
+                .isEqualTo(refusalsBefore);
+        assertThat(count("SELECT count(*) FROM platform.audit_record"))
+                .as("a shut door is the caller's 4xx to audit, never a half-written act")
+                .isEqualTo(auditsBefore);
+        application.rollback();
+    }
+
+    @Test
+    @DisplayName("a retired source's pull answers settlement.SourceRetired before any bytes"
+            + " move - the collector never asked, no permit, no file, no audit record (T-5)")
+    void aRetiredSourcesPullWritesNothing() throws SQLException {
+        long filesBefore = count("SELECT count(*) FROM settlement.file");
+        long auditsBefore = count("SELECT count(*) FROM platform.audit_record");
+        application.rollback();
+
+        TransactionRunner runner =
+                new TransactionRunner() {
+                    @Override
+                    public <R> R inTransaction(Function<Connection, R> work) {
+                        try (Connection connection = DatabaseRoles.application()) {
+                            connection.setAutoCommit(false);
+                            try {
+                                R result = work.apply(connection);
+                                connection.commit();
+                                return result;
+                            } catch (RuntimeException failure) {
+                                connection.rollback();
+                                throw failure;
+                            }
+                        } catch (SQLException infrastructure) {
+                            throw new IllegalStateException(infrastructure);
+                        }
+                    }
+                };
+        AtomicBoolean fetched = new AtomicBoolean();
+        SettlementReportCollector collector =
+                new SettlementReportCollector() {
+                    @Override
+                    public String sourceCode() {
+                        return RETIRED_SOURCE;
+                    }
+
+                    @Override
+                    public Collected collect(String businessKey) {
+                        fetched.set(true);
+                        return new Collected.NotYet();
+                    }
+                };
+        SettlementPull pull =
+                new SettlementPull(
+                        sources,
+                        store,
+                        new JdbcPullPermitStore(),
+                        reception,
+                        runner,
+                        (sourceCode, outcome) -> {},
+                        CLOCK,
+                        Map.of(RETIRED_SOURCE, collector));
+
+        assertThatThrownBy(
+                        () ->
+                                pull.pull(
+                                        RETIRED_SOURCE,
+                                        "2026-09-28",
+                                        Optional.of(Duration.ofMinutes(30)),
+                                        OPERATOR,
+                                        Correlation.startingWith(
+                                                CorrelationId.of("p8-tsk-002-reception-test"))))
+                .isInstanceOf(FileReception.SettlementSourceRetired.class)
+                .hasMessageContaining("settlement.SourceRetired");
+
+        assertThat(fetched)
+                .as("the door is judged before the fetch: not a byte moves for a retired source")
+                .isFalse();
+        assertThat(count(
+                        "SELECT count(*) FROM settlement.pull_permit WHERE source_id = '"
+                                + RETIRED_SOURCE_ID + "'"))
+                .as("the permit transaction rolled back whole")
+                .isZero();
+        assertThat(count("SELECT count(*) FROM settlement.file")).isEqualTo(filesBefore);
+        assertThat(count("SELECT count(*) FROM platform.audit_record")).isEqualTo(auditsBefore);
         application.rollback();
     }
 

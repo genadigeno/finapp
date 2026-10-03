@@ -30,7 +30,9 @@ import com.finapp.merchant.MerchantPayouts;
 import com.finapp.merchant.SimulatedPayoutProvider;
 import com.finapp.payments.SettlementExpectations;
 import com.finapp.platform.api.IdempotencyKeyHeader;
+import com.finapp.platform.audit.AuditWriter;
 import com.finapp.platform.correlation.CorrelationContext;
+import com.finapp.platform.outbox.OutboxWriter;
 import com.finapp.platform.security.Actor;
 import com.finapp.platform.security.ActorType;
 import com.finapp.platform.security.SecurityContext;
@@ -39,10 +41,20 @@ import com.finapp.platform.testing.provider.SimulatedProvider;
 import com.finapp.reconciliation.ExpectationDirection;
 import com.finapp.reconciliation.ExpectationKind;
 import com.finapp.reconciliation.ExpectationRegister;
+import com.finapp.reconciliation.InternalReferenceLookup;
+import com.finapp.reconciliation.JdbcRepudiationStore;
+import com.finapp.reconciliation.JdbcResolutionStore;
 import com.finapp.reconciliation.KeyKind;
 import com.finapp.reconciliation.Matching;
+import com.finapp.reconciliation.MatchingRules;
+import com.finapp.reconciliation.MatchingStore;
+import com.finapp.reconciliation.ReconciliationSweep;
 import com.finapp.reconciliation.NewExpectation;
+import com.finapp.reconciliation.RepudiationStore;
+import com.finapp.reconciliation.ResolutionStatus;
+import com.finapp.reconciliation.Resolutions;
 import com.finapp.reconciliation.RuleSets;
+import com.finapp.reconciliation.Suspense;
 import com.finapp.settlement.BatchAcceptance;
 import com.finapp.settlement.DeliveryChannel;
 import com.finapp.settlement.FileParsing;
@@ -124,6 +136,18 @@ import org.springframework.test.context.DynamicPropertySource;
  * {@code PayoutReturnDatabaseTest} pays them); and ten operators racing to propose one batch's
  * repudiation, one proposal landing (case 14, the plan's §7 C14).
  *
+ * <p>The Phase 8 -> 9 transition's corrections, each case its finding's reproduction: a bank item
+ * the repudiation reopened parks AGAIN at its next grace without jamming its source, the
+ * repudiated remittance's reference freed for the genuine one, the repudiated report's own bytes
+ * readmitted and re-settling everything, and the settlement status over standing allocations
+ * (case 15: REC-3, REC-8/ATOM-03, MI-2, SET-3); a reopened expectation already overdue owned at
+ * once by a fresh {@code MISSING_EXTERNAL} (case 16: REC-4/SET-1); the four shapes refused before
+ * anything is written, the corrected original among them (case 17: REC-7, T-2); and a statement
+ * repudiated in the middle of its chain owning its hole on the successor's run (case 18: SET-2),
+ * and the same while its successor's acceptance races the approval (case 19); and a batch whose
+ * run blocked at its completion, every item decided, refused at proposal and at approval until the
+ * run is requeued and completes (case 20: MI-8).
+ *
  * <p><strong>Run apart.</strong> Like {@code SchemeCycleCashDatabaseTest},
  * {@code PayoutSettlementCashDatabaseTest} and {@code PayoutReturnDatabaseTest}, this suite runs
  * in its own container: it repudiates batches, and its proof assertions are ABSOLUTE - every
@@ -187,6 +211,7 @@ class BatchRepudiationDatabaseTest {
     @Autowired private FileParsing parsing;
     @Autowired private BatchAcceptance acceptance;
     @Autowired private Matching matching;
+    @Autowired private ReconciliationSweep reconciliationSweep;
     @Autowired private PositionProof proof;
     @Autowired private PostingService postingService;
     @Autowired private LedgerAccountStore<Connection> ledgerAccountStore;
@@ -197,6 +222,16 @@ class BatchRepudiationDatabaseTest {
     @Autowired private MerchantPayouts payouts;
     @Autowired private PayoutReturnSweep payoutReturnSweep;
     @Autowired private SettlementExpectations settlementExpectations;
+    // The matcher's own parts, for case 20's matcher of two items a chunk.
+    @Autowired private MatchingStore matchingStore;
+    @Autowired private MatchingRules matchingRules;
+    @Autowired private com.finapp.reconciliation.BreakRegister breakRegister;
+    @Autowired private Suspense suspense;
+    @Autowired private Resolutions resolutions;
+    @Autowired private InternalReferenceLookup internalReferenceLookup;
+    @Autowired private OutboxWriter<Connection> outboxWriter;
+    @Autowired private AuditWriter<Connection> auditWriter;
+    @Autowired private com.finapp.reconciliation.TransactionRunner reconciliationTransactionRunner;
 
     private final HttpClient http = HttpClient.newHttpClient();
     private final SessionStore<Connection> sessions = new JdbcSessionStore();
@@ -1553,6 +1588,838 @@ class BatchRepudiationDatabaseTest {
         assertBooksHold("ten racing proposers");
     }
 
+    // ----------------------------------------------------------------- 15. recovery
+
+    @Test
+    @Order(15)
+    @DisplayName("the Phase 8 -> 9 transition (REC-3, REC-8, MI-2, SET-3): a bank credit parked at"
+            + " grace and rematched to a report's remittance is reopened by the report's"
+            + " repudiation, which releases the remittance's reference; at its next grace it parks"
+            + " AGAIN, owned by a new break, and a second expired line of the source is graced in"
+            + " the same sweep; the report's own bytes, readmitted, inherit NOTHING (NEW-SEC-1)"
+            + " and are accepted into the freed identity only once a distinct second person"
+            + " attests the readmission - the remittance takes the freed"
+            + " reference, the capture is re-allocated and the parked credit rematched to it; the"
+            + " capture's settlement status is CASH_CONFIRMED, its trail naming only standing"
+            + " evidence; the proofs hold")
+    void aReopenedBankItemParksAgainAndTheGenuineBytesRecoverIt() throws Exception {
+        String marker = letters(10);
+        LocalDate day = LocalDate.parse("2026-09-15");
+        String operationRef = "op-p8t23-" + UUID.randomUUID();
+        String captureRef = "PSP-CAP-" + marker;
+        String reference = remittanceRef();
+        String strayReference = remittanceRef();
+        // 500.00 under the pinned schedule (1.5% + 0.25): fee 7.75, net 492.25.
+        Head head = head("EUR");
+        UUID statement =
+                acceptedBatch(BANK_SOURCE,
+                        statement("SB-RPD-R3-" + marker, "EUR", head.sequence() + 1,
+                                "C," + day.plusDays(1) + ",EUR," + decimal(head.closingMinor()),
+                                "C," + day.plusDays(2) + ",EUR,"
+                                        + decimal(head.closingMinor() + 492_25 + 12_34),
+                                ":61:" + day.plusDays(2) + ",C,492.25," + reference,
+                                ":86:Remittance ahead of its report",
+                                ":61:" + day.plusDays(2) + ",C,12.34," + strayReference,
+                                ":86:A remittance no report announces"));
+        matchUntilQuiet();
+        List<UUID> credits =
+                rows("SELECT i.id::text FROM reconciliation.external_item i JOIN"
+                        + " reconciliation.reconciliation_batch r ON r.id = i.run_id WHERE"
+                        + " r.batch_id = ? AND i.line_type = 'BANK_CREDIT' ORDER BY"
+                        + " i.amount_minor DESC", statement)
+                        .stream().map(UUID::fromString).toList();
+        UUID cash = credits.get(0);
+        UUID stray = credits.get(1);
+        assertThat(itemStatus(cash)).as("no remittance names the credit yet").isEqualTo("UNMATCHED");
+        assertThat(itemStatus(stray)).isEqualTo("UNMATCHED");
+
+        // Its grace expires: parked whole, owned by its first break.
+        expireGrace(cash, "3 hours");
+        matchUntilQuiet();
+        assertThat(itemStatus(cash)).isEqualTo("PARKED");
+        UUID firstPark =
+                (UUID) one("SELECT id FROM reconciliation.suspense_item WHERE external_item_id = ?"
+                        + " AND origin = 'RECON_PARK'", cash);
+        UUID firstOwner =
+                (UUID) one("SELECT break_id FROM reconciliation.suspense_item WHERE id = ?",
+                        firstPark);
+        assertBooksHold("the early credit parked at grace");
+
+        // The report arrives: its remittance takes the reference, the parked credit rematches.
+        seedCapture(operationRef, captureRef, 500_00, day.minusDays(1));
+        UUID reportFile =
+                pulled(PSP_SOURCE,
+                        pspReport("PSPB-RPD-R3-" + marker, day, captureRef, "500.00", "7.75",
+                                "492.25", reference, "Sale"));
+        assertThat(parseSettled(reportFile)).isEqualTo("PARSED");
+        assertThat(acceptanceSettled(reportFile)).isEqualTo("ACCEPTED");
+        UUID report = batchOf(reportFile);
+        matchUntilQuiet();
+        UUID capture = expectationOf("CARD_CAPTURE", operationRef);
+        UUID remittance = expectationOf("REMITTANCE", report.toString());
+        assertThat(itemStatus(cash)).as("the parked credit rematched").isEqualTo("MATCHED");
+        assertThat(one("SELECT status FROM reconciliation.suspense_item WHERE id = ?", firstPark))
+                .as("its first park released by the rematch's unpark")
+                .isEqualTo("RELEASED");
+        assertThat(one("SELECT status FROM reconciliation.expectation WHERE id = ?", remittance))
+                .isEqualTo("SETTLED");
+        assertBooksHold("the report matched beneath the early credit");
+
+        // MI-2's refusal: an accepted file whose batch stands is no readmissible original.
+        // The readmitter ALSO holds the ingest permission, so their attestation below meets
+        // the domain's submitter rank (409), never the permission check (403).
+        Session controller =
+                sessionWith(RoleName.RECONCILIATION_CONTROLLER, RoleName.RECONCILIATION_OPERATOR);
+        HttpResponse<String> standing =
+                post(FILES + "/" + reportFile + "/readmission",
+                        reasonBody("re-parse while the batch still stands"), controller.token(),
+                        key());
+        assertThat(standing.statusCode()).as(standing.body()).isEqualTo(409);
+        assertThat(standing.body()).contains("settlement.FileNotRejected");
+
+        // The report repudiated beneath its statement: the credit reopened, the key released.
+        Session proposer = sessionWith(RoleName.RECONCILIATION_OPERATOR);
+        Session approver = sessionWith(RoleName.RECONCILIATION_OPERATOR);
+        HttpResponse<String> proposed =
+                propose(proposer, report.toString(), key(), "the adapter mis-normalised it");
+        assertThat(proposed.statusCode()).as(proposed.body()).isEqualTo(201);
+        String resolution = field(proposed.body(), "resolutionId");
+        HttpResponse<String> approved = approve(approver, resolution);
+        assertThat(approved.statusCode()).as(approved.body()).isEqualTo(200);
+        assertThat(itemStatus(cash)).isEqualTo("UNMATCHED");
+        assertThat(one("SELECT status FROM reconciliation.expectation WHERE id = ?", remittance))
+                .isEqualTo("RESOLVED_BY_ADJUSTMENT");
+        assertThat(count("SELECT count(*) FROM reconciliation.expectation_key WHERE"
+                        + " expectation_id = ? AND key_kind = 'REMITTANCE_REF' AND"
+                        + " released_by_resolution_id = ?::uuid", remittance, resolution))
+                .as("REC-8: the closed remittance's reference released by its repudiation")
+                .isEqualTo(1);
+        assertThat(count("SELECT count(*) FROM platform.audit_record WHERE operation ="
+                        + " 'reconciliation.ResolutionApproved' AND target_id = ? AND"
+                        + " change_summary LIKE '%releasedKeys=1%'", resolution))
+                .isEqualTo(1);
+        assertBooksHold("the report repudiated beneath its statement");
+
+        // REC-3: both graces expire - the reopened credit first in the worklist - ONE sweep.
+        expireGrace(cash, "2 hours");
+        expireGrace(stray, "1 hour");
+        matching.sweep();
+        assertThat(itemStatus(cash))
+                .as("REC-3: the reopened credit parks again - its released first park no bar")
+                .isEqualTo("PARKED");
+        assertThat(rows("SELECT status FROM reconciliation.suspense_item WHERE external_item_id ="
+                        + " ? AND origin = 'RECON_PARK' ORDER BY opened_on, status", cash))
+                .as("REC-3: one RECON_PARK item per park - the first RELEASED, the second OPEN")
+                .containsExactlyInAnyOrder("RELEASED", "OPEN");
+        UUID secondOwner =
+                (UUID) one("SELECT break_id FROM reconciliation.suspense_item WHERE"
+                        + " external_item_id = ? AND origin = 'RECON_PARK' AND status = 'OPEN'",
+                        cash);
+        assertThat(secondOwner).as("REC-3: the new park is owned by a new break")
+                .isNotEqualTo(firstOwner);
+        assertThat(one("SELECT status FROM reconciliation.break WHERE id = ?", secondOwner))
+                .isEqualTo("OPEN");
+        assertThat(itemStatus(stray))
+                .as("REC-3: the next expired line of the source is graced in the same sweep")
+                .isEqualTo("PARKED");
+        assertBooksHold("the reopened credit parked again");
+
+        // MI-2: the report's own bytes readmitted - an ACCEPTED file whose batch is REPUDIATED.
+        // NEW-SEC-1: the readmission inherits NOTHING - the four-eyes repudiation verdict is
+        // not undone by one person - so it waits for its own attestation.
+        HttpResponse<String> readmitted =
+                post(FILES + "/" + reportFile + "/readmission",
+                        reasonBody("re-parse the genuine bytes after the adapter fix"),
+                        controller.token(), key());
+        assertThat(readmitted.statusCode())
+                .as("MI-2: a repudiated batch's file is readmissible: %s", readmitted.body())
+                .isEqualTo(202);
+        assertThat(field(readmitted.body(), "authentication"))
+                .as("NEW-SEC-1: a repudiated batch's file passes nothing on")
+                .isEqualTo("ATTESTATION_REQUIRED");
+        UUID readmission = UUID.fromString(field(readmitted.body(), "fileId"));
+        assertThat(parseSettled(readmission)).isEqualTo("PARSED");
+        for (int sweep = 0; sweep < 3; sweep++) {
+            acceptance.sweep();
+        }
+        assertThat(one("SELECT status FROM settlement.file WHERE id = ?", readmission))
+                .as("NEW-SEC-1: the accept sweep passes the unattested readmission over")
+                .isEqualTo("PARSED");
+
+        // The readmitter's own attestation is refused by the distinct-person rank: the
+        // fabrication path stays shut - reinstating a repudiated batch takes two people.
+        HttpResponse<String> byReadmitter = attest(readmission, controller);
+        assertThat(byReadmitter.statusCode()).as(byReadmitter.body()).isEqualTo(409);
+        assertThat(byReadmitter.body()).contains("settlement.AttestationBySubmitter");
+
+        Session distinctAttester = sessionWith(RoleName.RECONCILIATION_OPERATOR);
+        HttpResponse<String> bySecondPerson = attest(readmission, distinctAttester);
+        assertThat(bySecondPerson.statusCode()).as(bySecondPerson.body()).isEqualTo(200);
+        assertThat(acceptanceSettled(readmission))
+                .as("attested by a person distinct from every submitter, the accept leg"
+                        + " takes it")
+                .isEqualTo("ACCEPTED");
+        UUID genuine = batchOf(readmission);
+        assertThat(one("SELECT external_batch_ref FROM settlement.batch WHERE id = ?", genuine))
+                .isEqualTo("PSPB-RPD-R3-" + marker);
+        UUID genuineRemittance = expectationOf("REMITTANCE", genuine.toString());
+        assertThat(count("SELECT count(*) FROM reconciliation.expectation_key WHERE"
+                        + " expectation_id = ? AND key_kind = 'REMITTANCE_REF' AND key_value = ?"
+                        + " AND released_by_resolution_id IS NULL", genuineRemittance, reference))
+                .as("REC-8: the genuine remittance holds the freed reference")
+                .isEqualTo(1);
+        assertThat(count("SELECT count(*) FROM reconciliation.expectation_event WHERE"
+                        + " expectation_id = ? AND event_type = 'KEY_COLLISION'",
+                        genuineRemittance))
+                .isZero();
+
+        matchUntilQuiet();
+        assertThat(one("SELECT status || ':' || allocated_minor::text FROM"
+                        + " reconciliation.expectation WHERE id = ?", capture))
+                .as("MI-2: the genuine capture line re-allocates the reopened capture")
+                .isEqualTo("SETTLED:50000");
+        assertThat(itemStatus(cash))
+                .as("REC-8: the re-parked credit rematched to the genuine remittance")
+                .isEqualTo("MATCHED");
+        assertThat(count("SELECT count(*) FROM reconciliation.allocation a WHERE"
+                        + " a.external_item_id = ? AND a.expectation_id = ? AND"
+                        + " a.reverses_allocation_id IS NULL AND NOT EXISTS (SELECT 1 FROM"
+                        + " reconciliation.allocation c WHERE c.reverses_allocation_id = a.id)",
+                        cash, genuineRemittance))
+                .isEqualTo(1);
+        assertThat(one("SELECT status FROM reconciliation.expectation WHERE id = ?",
+                        genuineRemittance))
+                .isEqualTo("SETTLED");
+        assertThat(count("SELECT count(*) FROM reconciliation.break WHERE status <> 'RESOLVED'"
+                        + " AND (expectation_id = ? OR external_item_id = ?) AND type IN"
+                        + " ('DUPLICATE_INTERNAL', 'DUPLICATE_EXTERNAL', 'MISSING_EXTERNAL')",
+                        genuineRemittance, cash))
+                .as("no duplicate and no missing remittance stands")
+                .isZero();
+        assertBooksHold("the genuine bytes recovered");
+
+        // SET-3: the capture's settlement status, over standing allocations only.
+        Session investigator = sessionWith(RoleName.RECONCILIATION_OPERATOR);
+        HttpResponse<String> status =
+                get(investigator, BASE + "/settlement-status?kind=CARD_CAPTURE&operationRef="
+                        + operationRef);
+        assertThat(status.statusCode()).as(status.body()).isEqualTo(200);
+        assertThat(field(status.body(), "status"))
+                .as("SET-3: re-settled after a repudiation, cash confirmed: %s", status.body())
+                .isEqualTo("CASH_CONFIRMED");
+        assertThat(status.body())
+                .as("SET-3: the trail names the genuine batch, its remittance and the cash")
+                .contains(genuine.toString(), genuineRemittance.toString(), cash.toString())
+                .doesNotContain(report.toString())
+                .doesNotContain(remittance.toString());
+    }
+
+    // ----------------------------------------------------------------- 16. overdue, reopened
+
+    @Test
+    @Order(16)
+    @DisplayName("the Phase 8 -> 9 transition (REC-4, SET-1): a capture aged overdue and then"
+            + " settled by a late report - its MISSING_EXTERNAL closed EVIDENCED - is reopened by"
+            + " the report's repudiation with a FRESH MISSING_EXTERNAL raised in the approval,"
+            + " following the closed one - ageing, run again, raises none and no second; a"
+            + " write-off is admitted against it; the proofs hold")
+    void aReopenedOverdueExpectationIsOwnedAtOnce() throws Exception {
+        String marker = letters(10);
+        LocalDate day = LocalDate.parse("2026-09-14");
+        String operationRef = "op-p8t23-" + UUID.randomUUID();
+        String captureRef = "PSP-CAP-" + marker;
+        // 550.00 under the pinned schedule: fee 8.50, net 541.50.
+        seedCapture(operationRef, captureRef, 550_00, day.minusDays(1));
+        UUID capture = expectationOf("CARD_CAPTURE", operationRef);
+        reconciliationSweep.sweep();
+        assertThat(count("SELECT count(*) FROM reconciliation.expectation WHERE id = ? AND"
+                        + " overdue_since IS NOT NULL", capture))
+                .as("aged: its window long past")
+                .isEqualTo(1);
+        UUID overdue =
+                (UUID) one("SELECT id FROM reconciliation.break WHERE expectation_id = ? AND"
+                        + " type = 'MISSING_EXTERNAL' AND status <> 'RESOLVED'", capture);
+        assertThat(overdue).as("ageing raised its MISSING_EXTERNAL").isNotNull();
+
+        UUID report =
+                acceptedBatch(PSP_SOURCE,
+                        pspReport("PSPB-RPD-R4-" + marker, day, captureRef, "550.00", "8.50",
+                                "541.50", remittanceRef(), "Late sale"));
+        matchUntilQuiet();
+        assertThat(one("SELECT status FROM reconciliation.expectation WHERE id = ?", capture))
+                .isEqualTo("SETTLED");
+        assertThat(one("SELECT status FROM reconciliation.break WHERE id = ?", overdue))
+                .as("the late evidence closed the overdue break")
+                .isEqualTo("RESOLVED");
+        assertBooksHold("the overdue capture settled late");
+
+        Session proposer = sessionWith(RoleName.RECONCILIATION_OPERATOR);
+        Session approver = sessionWith(RoleName.RECONCILIATION_OPERATOR);
+        HttpResponse<String> proposed =
+                propose(proposer, report.toString(), key(), "the late report is fabricated");
+        assertThat(proposed.statusCode()).as(proposed.body()).isEqualTo(201);
+        String resolution = field(proposed.body(), "resolutionId");
+        HttpResponse<String> approved = approve(approver, resolution);
+        assertThat(approved.statusCode()).as(approved.body()).isEqualTo(200);
+
+        assertThat(one("SELECT status || ':' || allocated_minor::text FROM"
+                        + " reconciliation.expectation WHERE id = ?", capture))
+                .isEqualTo("OPEN:0");
+        // Ageing runs again first: it never takes an expectation already overdue (overdue_since
+        // is one-way), so whatever owns the reopened remainder now was raised by the approval.
+        reconciliationSweep.sweep();
+        assertThat(rows("SELECT b.cause || ':' || b.status || ':' || b.value_at_issue_minor::text"
+                        + " || ':' || (b.follows_break_id = ?)::text FROM reconciliation.break b"
+                        + " WHERE b.expectation_id = ? AND b.type = 'MISSING_EXTERNAL' AND"
+                        + " b.status <> 'RESOLVED'", overdue, capture))
+                .as("REC-4: the reopened overdue capture is owned by exactly one fresh"
+                        + " MISSING_EXTERNAL that follows the break repudiated evidence closed -"
+                        + " ageing, run again, raised none and no second")
+                .containsExactly("EXPECTATION_OVERDUE:OPEN:55000:true");
+        UUID fresh =
+                (UUID) one("SELECT id FROM reconciliation.break WHERE expectation_id = ? AND"
+                        + " type = 'MISSING_EXTERNAL' AND status <> 'RESOLVED'", capture);
+        assertThat(count("SELECT count(*) FROM platform.audit_record WHERE operation ="
+                        + " 'reconciliation.ResolutionApproved' AND target_id = ? AND"
+                        + " change_summary LIKE ?", resolution, "%overdueBreaks=[" + fresh + "]%"))
+                .as("REC-4: raised in the approval itself, which names it")
+                .isEqualTo(1);
+
+        // A person can now dispose of the remainder.
+        Session resolver = sessionWith(RoleName.RECONCILIATION_OPERATOR);
+        HttpResponse<String> writeOff =
+                post(BASE + "/breaks/" + fresh + "/resolutions",
+                        "{\"kind\":\"WRITE_OFF\",\"reasonCode\":\"LOSS_ACCEPTED\","
+                                + "\"narrative\":\"the capture never settled\"}",
+                        resolver.token(), key());
+        assertThat(writeOff.statusCode())
+                .as("REC-4: a write-off is admitted against the reopened remainder: %s",
+                        writeOff.body())
+                .isEqualTo(201);
+        HttpResponse<String> withdrawn = withdraw(resolver, field(writeOff.body(), "resolutionId"));
+        assertThat(withdrawn.statusCode()).as(withdrawn.body()).isEqualTo(200);
+        assertBooksHold("the overdue capture reopened and owned");
+    }
+
+    // ----------------------------------------------------------------- 17. the four refusals
+
+    @Test
+    @Order(17)
+    @DisplayName("the Phase 8 -> 9 transition (REC-7, T-2): the four shapes this phase refuses,"
+            + " each 409 RepudiationNotSupported with nothing written - the ORIGINAL whose parked"
+            + " excess a later report's correction offset (at approval, the correction arriving"
+            + " after the proposal, and at a fresh proposal), the correcting report holding its"
+            + " OFFSET item, a report whose capture a person wrote off RESOLVED_BY_ADJUSTMENT, and"
+            + " a report whose remittance a bank item a person RESOLVED matched; the proofs hold")
+    void theFourUncompensatedShapesAreRefused() throws Exception {
+        String marker = letters(10);
+        LocalDate day = LocalDate.parse("2026-09-13");
+        Session proposer = sessionWith(RoleName.RECONCILIATION_OPERATOR);
+        Session approver = sessionWith(RoleName.RECONCILIATION_OPERATOR);
+        Session resolver = sessionWith(RoleName.RECONCILIATION_OPERATOR);
+        Session resolverApprover = sessionWith(RoleName.RECONCILIATION_OPERATOR);
+
+        // (1) and (2): an over-paid capture, its excess parked, then offset by a correction.
+        String overRef = "PSP-CAP-O" + marker;
+        String overOperation = "op-p8t23-" + UUID.randomUUID();
+        seedCapture(overOperation, overRef, 120_00, day.minusDays(1));
+        UUID original =
+                acceptedBatch(PSP_SOURCE,
+                        pspReport("PSPB-RPD-O-" + marker, day, overRef, "130.00", "2.20",
+                                "127.80", remittanceRef(), "Over-paid sale"));
+        matchUntilQuiet();
+        UUID overCapture = expectationOf("CARD_CAPTURE", overOperation);
+        UUID overItem = itemOf(original, "CAPTURE");
+        assertThat(itemStatus(overItem)).as("the excess parked").isEqualTo("PARKED");
+        HttpResponse<String> early =
+                propose(proposer, original.toString(), key(), "the over-paying report is wrong");
+        assertThat(early.statusCode()).as("proposed before the correction: %s", early.body())
+                .isEqualTo(201);
+        String earlyResolution = field(early.body(), "resolutionId");
+        UUID correction =
+                acceptedBatch(PSP_SOURCE,
+                        report("PSPB-RPD-OC-" + marker, day, "-10.00", remittanceRef(),
+                                adjustmentLine(1, day, overRef, "-10.00")));
+        matchUntilQuiet();
+        assertThat(itemStatus(overItem)).as("the correction offset the excess")
+                .isEqualTo("RESOLVED");
+        assertThat(itemsOf(correction)).containsExactly("COUNTERPARTY_ADJUSTMENT:OFFSET");
+        assertThat(count("SELECT count(*) FROM reconciliation.suspense_release r JOIN"
+                        + " reconciliation.suspense_item s ON s.id = r.item_id WHERE"
+                        + " s.external_item_id = ? AND r.cause = 'CORRECTION_OFFSET'", overItem))
+                .isEqualTo(1);
+        UUID originalRecognition = recognitionOf(original);
+        assertBooksHold("the excess offset by the correction");
+
+        HttpResponse<String> late = approve(approver, earlyResolution);
+        assertThat(late.statusCode())
+                .as("REC-7: the shape arose after the proposal - refused at approval: %s",
+                        late.body())
+                .isEqualTo(409);
+        assertThat(late.body()).contains("reconciliation.RepudiationNotSupported");
+        assertThat(resolutionStatus(earlyResolution)).isEqualTo("PROPOSED");
+        assertNothingRepudiated(original, originalRecognition, overCapture, "SETTLED");
+        assertThat(withdraw(proposer, earlyResolution).statusCode()).isEqualTo(200);
+        HttpResponse<String> again =
+                propose(proposer, original.toString(), key(), "the over-paying report is wrong");
+        assertThat(again.statusCode())
+                .as("REC-7: the corrected original refused at proposal: %s", again.body())
+                .isEqualTo(409);
+        assertThat(again.body()).contains("reconciliation.RepudiationNotSupported");
+        assertThat(resolutionsOf(original)).as("only the withdrawn proposal").isEqualTo(1);
+        HttpResponse<String> offset =
+                propose(proposer, correction.toString(), key(), "the correction is wrong");
+        assertThat(offset.statusCode())
+                .as("the correcting report's OFFSET item refused: %s", offset.body())
+                .isEqualTo(409);
+        assertThat(offset.body()).contains("reconciliation.RepudiationNotSupported");
+        assertThat(resolutionsOf(correction)).isZero();
+        assertThat(batchStatus(correction)).isEqualTo("ACCEPTED");
+
+        // (3): a short capture whose remainder a person wrote off.
+        String shortRef = "PSP-CAP-S" + marker;
+        String shortOperation = "op-p8t23-" + UUID.randomUUID();
+        seedCapture(shortOperation, shortRef, 150_00, day.minusDays(1));
+        UUID shortReport =
+                acceptedBatch(PSP_SOURCE,
+                        pspReport("PSPB-RPD-S-" + marker, day, shortRef, "140.00", "2.35",
+                                "137.65", remittanceRef(), "Short sale"));
+        matchUntilQuiet();
+        UUID shortCapture = expectationOf("CARD_CAPTURE", shortOperation);
+        UUID shortfall =
+                (UUID) one("SELECT id FROM reconciliation.break WHERE expectation_id = ? AND"
+                        + " status <> 'RESOLVED' ORDER BY raised_at LIMIT 1", shortCapture);
+        assertThat(shortfall).as("the shortfall is owned by a break").isNotNull();
+        HttpResponse<String> writeOff =
+                post(BASE + "/breaks/" + shortfall + "/resolutions",
+                        "{\"kind\":\"WRITE_OFF\",\"reasonCode\":\"LOSS_ACCEPTED\","
+                                + "\"narrative\":\"the shortfall is accepted\"}",
+                        resolver.token(), key());
+        assertThat(writeOff.statusCode()).as(writeOff.body()).isEqualTo(201);
+        HttpResponse<String> writtenOff =
+                approve(resolverApprover, field(writeOff.body(), "resolutionId"));
+        assertThat(writtenOff.statusCode()).as(writtenOff.body()).isEqualTo(200);
+        assertThat(one("SELECT status FROM reconciliation.expectation WHERE id = ?", shortCapture))
+                .isEqualTo("RESOLVED_BY_ADJUSTMENT");
+        UUID shortRecognition = recognitionOf(shortReport);
+        HttpResponse<String> adjusted =
+                propose(proposer, shortReport.toString(), key(), "the short report is wrong");
+        assertThat(adjusted.statusCode())
+                .as("a capture a person closed RESOLVED_BY_ADJUSTMENT refused: %s",
+                        adjusted.body())
+                .isEqualTo(409);
+        assertThat(adjusted.body()).contains("reconciliation.RepudiationNotSupported");
+        assertThat(resolutionsOf(shortReport)).isZero();
+        assertNothingRepudiated(shortReport, shortRecognition, shortCapture,
+                "RESOLVED_BY_ADJUSTMENT");
+
+        // (4): a remittance an over-paying bank credit matched, its excess transferred.
+        String paidRef = "PSP-CAP-P" + marker;
+        String paidOperation = "op-p8t23-" + UUID.randomUUID();
+        String paidReference = remittanceRef();
+        seedCapture(paidOperation, paidRef, 160_00, day.minusDays(1));
+        UUID paidReport =
+                acceptedBatch(PSP_SOURCE,
+                        pspReport("PSPB-RPD-P-" + marker, day, paidRef, "160.00", "2.65",
+                                "157.35", paidReference, "Sale"));
+        matchUntilQuiet();
+        UUID paidCapture = expectationOf("CARD_CAPTURE", paidOperation);
+        Head head = head("EUR");
+        UUID paidStatement =
+                acceptedBatch(BANK_SOURCE,
+                        statement("SB-RPD-P-" + marker, "EUR", head.sequence() + 1,
+                                "C," + day.plusDays(1) + ",EUR," + decimal(head.closingMinor()),
+                                "C," + day.plusDays(2) + ",EUR,"
+                                        + decimal(head.closingMinor() + 167_35),
+                                ":61:" + day.plusDays(2) + ",C,167.35," + paidReference,
+                                ":86:Remittance, over-paid"));
+        matchUntilQuiet();
+        UUID paidCash = itemOf(paidStatement, "BANK_CREDIT");
+        assertThat(itemStatus(paidCash)).as("the excess parked").isEqualTo("PARKED");
+        UUID excessOwner =
+                (UUID) one("SELECT break_id FROM reconciliation.suspense_item WHERE"
+                        + " external_item_id = ? AND status <> 'RELEASED'", paidCash);
+        UUID wallet = openWallet(EUR);
+        HttpResponse<String> transfer =
+                post(BASE + "/breaks/" + excessOwner + "/resolutions",
+                        "{\"kind\":\"TRANSFER_TO_ACCOUNT\",\"reasonCode\":\"FUNDS_ATTRIBUTED\","
+                                + "\"narrative\":\"the over-payment attributed\","
+                                + "\"targetAccountId\":\"" + wallet + "\"}",
+                        resolver.token(), key());
+        assertThat(transfer.statusCode()).as(transfer.body()).isEqualTo(201);
+        HttpResponse<String> transferred =
+                approve(resolverApprover, field(transfer.body(), "resolutionId"));
+        assertThat(transferred.statusCode()).as(transferred.body()).isEqualTo(200);
+        assertThat(itemStatus(paidCash)).isEqualTo("RESOLVED");
+        UUID paidRecognition = recognitionOf(paidReport);
+        HttpResponse<String> resolvedCash =
+                propose(proposer, paidReport.toString(), key(), "the paid report is wrong");
+        assertThat(resolvedCash.statusCode())
+                .as("a bank item a person RESOLVED on the remittance refused: %s",
+                        resolvedCash.body())
+                .isEqualTo(409);
+        assertThat(resolvedCash.body()).contains("reconciliation.RepudiationNotSupported");
+        assertThat(resolutionsOf(paidReport)).isZero();
+        assertNothingRepudiated(paidReport, paidRecognition, paidCapture, "SETTLED");
+        assertThat(itemStatus(paidCash)).isEqualTo("RESOLVED");
+        assertBooksHold("the four refusals");
+    }
+
+    // ----------------------------------------------------------------- 18. the chain
+
+    @Test
+    @Order(18)
+    @DisplayName("the Phase 8 -> 9 transition (SET-2): a statement repudiated in the middle of"
+            + " its chain opens a STATEMENT_GAP on its accepted successor's run - a fresh one too"
+            + " when it had filled that successor's earlier gap - the cash chain broken and"
+            + " owned, until the genuine statement's acceptance stitches and closes it EVIDENCED;"
+            + " the proofs hold")
+    void aMidChainRepudiationOwnsTheHole() throws Exception {
+        String marker = letters(10);
+        Session proposer = sessionWith(RoleName.RECONCILIATION_OPERATOR);
+        Session approver = sessionWith(RoleName.RECONCILIATION_OPERATOR);
+        Head head = head("GBP");
+        long s1 = head.sequence() + 1;
+        long c0 = head.closingMinor();
+        long c1 = c0 + 1_11;
+        long c2 = c1 + 2_22;
+        long c3 = c2 + 4_44;
+
+        // Case 1: 1, 2 and 3 stitched - no break - then 2 repudiated.
+        acceptedBatch(BANK_SOURCE, gbpStatement("SB-RPD-N1-" + marker, s1, c0, c1, "1.11"));
+        UUID second =
+                acceptedBatch(BANK_SOURCE,
+                        gbpStatement("SB-RPD-N2-" + marker, s1 + 1, c1, c2, "2.22"));
+        UUID third =
+                acceptedBatch(BANK_SOURCE,
+                        gbpStatement("SB-RPD-N3-" + marker, s1 + 2, c2, c3, "4.44"));
+        assertThat(gapsOn(third)).as("a stitched chain owns no gap").isEmpty();
+        assertBooksHold("three stitched statements");
+
+        repudiate(proposer, approver, second, "the middle statement is fabricated");
+        assertThat(gapsOn(third))
+                .as("SET-2: the successor of a repudiated statement owns the hole, valued at"
+                        + " its opening")
+                .containsExactly("OPEN:" + c2);
+        assertThat(proofs().cashOf(GBP).orElseThrow().explained())
+                .as("the chain is broken until the genuine statement arrives")
+                .isFalse();
+
+        acceptedBatch(BANK_SOURCE, gbpStatement("SB-RPD-N2G-" + marker, s1 + 1, c1, c2, "2.22"));
+        assertThat(gapsOn(third))
+                .as("the genuine statement stitches and closes the hole EVIDENCED")
+                .containsExactly("RESOLVED:" + c2);
+        assertThat(count("SELECT count(*) FROM reconciliation.break_event e JOIN"
+                        + " reconciliation.resolution r ON r.id = e.resolution_id JOIN"
+                        + " reconciliation.break b ON b.id = e.break_id JOIN"
+                        + " reconciliation.reconciliation_batch rb ON rb.id = b.run_id WHERE"
+                        + " rb.batch_id = ? AND b.cause = 'STATEMENT_GAP' AND e.event_type ="
+                        + " 'RESOLVED' AND r.kind = 'EVIDENCED'", third))
+                .isEqualTo(1);
+        assertBooksHold("the genuine middle statement accepted");
+
+        // Case 2: 3 before 2 - 3's gap filled by 2 - then 2 repudiated: a FRESH gap on 3.
+        long t1 = s1 + 3;
+        long d1 = c3 + 5_55;
+        long d2 = d1 + 6_66;
+        long d3 = d2 + 7_07;
+        acceptedBatch(BANK_SOURCE, gbpStatement("SB-RPD-M1-" + marker, t1, c3, d1, "5.55"));
+        UUID lastOfChain =
+                acceptedBatch(BANK_SOURCE,
+                        gbpStatement("SB-RPD-M3-" + marker, t1 + 2, d2, d3, "7.07"));
+        assertThat(gapsOn(lastOfChain)).as("accepted ahead of its predecessor")
+                .containsExactly("OPEN:" + d2);
+        UUID filler =
+                acceptedBatch(BANK_SOURCE,
+                        gbpStatement("SB-RPD-M2-" + marker, t1 + 1, d1, d2, "6.66"));
+        assertThat(gapsOn(lastOfChain)).as("filled by its predecessor")
+                .containsExactly("RESOLVED:" + d2);
+        assertBooksHold("the gap filled");
+
+        repudiate(proposer, approver, filler, "the filling statement is fabricated");
+        assertThat(gapsOn(lastOfChain))
+                .as("SET-2: the filled gap stays RESOLVED; a fresh one owns the reopened hole")
+                .containsExactlyInAnyOrder("RESOLVED:" + d2, "OPEN:" + d2);
+        acceptedBatch(BANK_SOURCE, gbpStatement("SB-RPD-M2G-" + marker, t1 + 1, d1, d2, "6.66"));
+        assertThat(gapsOn(lastOfChain))
+                .containsExactlyInAnyOrder("RESOLVED:" + d2, "RESOLVED:" + d2);
+        assertBooksHold("the genuine filler accepted");
+    }
+
+    @Test
+    @Order(19)
+    @DisplayName("the Phase 8 -> 9 transition (SET-2), raced: the approval repudiating a mid-chain"
+            + " statement and the acceptance of its successor start together - serialised on"
+            + " settlement's source row, whichever commits first, the successor's run owns exactly"
+            + " ONE open STATEMENT_GAP, never none; the genuine statement then closes it")
+    void theSuccessorsAcceptanceRacesTheRepudiation() throws Exception {
+        String marker = letters(10);
+        Session proposer = sessionWith(RoleName.RECONCILIATION_OPERATOR);
+        Session approver = sessionWith(RoleName.RECONCILIATION_OPERATOR);
+        Head head = head("GBP");
+        long first = head.sequence() + 1;
+        long c0 = head.closingMinor();
+        long c1 = c0 + 8_08;
+        long c2 = c1 + 9_09;
+        long c3 = c2 + 10_10;
+        acceptedBatch(BANK_SOURCE, gbpStatement("SB-RPD-K1-" + marker, first, c0, c1, "8.08"));
+        UUID middle =
+                acceptedBatch(BANK_SOURCE,
+                        gbpStatement("SB-RPD-K2-" + marker, first + 1, c1, c2, "9.09"));
+        UUID successorFile =
+                pulled(BANK_SOURCE,
+                        gbpStatement("SB-RPD-K3-" + marker, first + 2, c2, c3, "10.10"));
+        assertThat(parseSettled(successorFile)).isEqualTo("PARSED");
+        HttpResponse<String> proposed =
+                propose(proposer, middle.toString(), key(), "the middle statement is fabricated");
+        assertThat(proposed.statusCode()).as(proposed.body()).isEqualTo(201);
+        String resolution = field(proposed.body(), "resolutionId");
+
+        HttpResponse<String> decision;
+        ExecutorService pool = Executors.newFixedThreadPool(2);
+        try {
+            CountDownLatch start = new CountDownLatch(1);
+            Future<HttpResponse<String>> approval = pool.submit(() -> {
+                start.await();
+                return approve(approver, resolution);
+            });
+            Future<Object> accepting = pool.submit(() -> {
+                start.await();
+                acceptance.sweep();
+                return null;
+            });
+            start.countDown();
+            decision = approval.get(3, TimeUnit.MINUTES);
+            accepting.get(3, TimeUnit.MINUTES);
+        } finally {
+            pool.shutdownNow();
+        }
+        assertThat(decision.statusCode()).as("never a 500: %s", decision.body()).isEqualTo(200);
+        assertThat(acceptanceSettled(successorFile)).isEqualTo("ACCEPTED");
+        UUID successor = batchOf(successorFile);
+        assertThat(batchStatus(middle)).isEqualTo("REPUDIATED");
+        assertThat(gapsOn(successor))
+                .as("SET-2: whichever committed first, exactly one open gap owns the hole")
+                .containsExactly("OPEN:" + c2);
+
+        acceptedBatch(BANK_SOURCE, gbpStatement("SB-RPD-K2G-" + marker, first + 1, c1, c2, "9.09"));
+        assertThat(gapsOn(successor)).containsExactly("RESOLVED:" + c2);
+        assertBooksHold("the raced chain recovered");
+    }
+
+    // ----------------------------------------------------------------- 20. the run first
+
+    @Test
+    @Order(20)
+    @DisplayName("the Phase 8 -> 9 transition (MI-8): a batch whose run blocked at its completion -"
+            + " every item decided, the completion refused three times, the source held - is"
+            + " refused 409 BatchNotDisposed at proposal, and a proposal standing from before the"
+            + " correction is refused at approval, nothing written either time; requeued, the run"
+            + " completes and the batch is then repudiated; the proofs hold")
+    void aBatchIsRepudiatedOnlyOnceItsRunCompleted() throws Exception {
+        String marker = letters(10);
+        LocalDate day = LocalDate.parse("2026-09-12");
+        String operationRef = "op-p8t23-" + UUID.randomUUID();
+        String captureRef = "PSP-CAP-B" + marker;
+        seedCapture(operationRef, captureRef, 210_00, day.minusDays(1));
+        UUID batch =
+                acceptedBatch(PSP_SOURCE,
+                        pspReport("PSPB-RPD-B-" + marker, day, captureRef, "210.00", "3.40",
+                                "206.60", remittanceRef(), "Sale"));
+        UUID run = (UUID) one("SELECT id FROM reconciliation.reconciliation_batch WHERE"
+                + " batch_id = ? AND kind = 'BATCH'", batch);
+        UUID capture = expectationOf("CARD_CAPTURE", operationRef);
+        UUID recognition = recognitionOf(batch);
+
+        // MI-8's chunk boundary: two items a chunk, so both decisions commit in one chunk and the
+        // completion falls to the next - refused for this run alone by the owner's fixture
+        // trigger, standing in for whatever fails a completing chunk, three sweeps in a row.
+        Matching twoPerChunk =
+                new Matching(
+                        matchingStore, matchingRules, breakRegister, suspense, resolutions,
+                        internalReferenceLookup, ledgerAccountStore, outboxWriter, auditWriter,
+                        IDS, CLOCK, new Matching.Config(2, 3), reconciliationTransactionRunner);
+        refuseCompletionOf(run);
+        try {
+            for (int sweep = 0; sweep < 3; sweep++) {
+                twoPerChunk.sweep();
+            }
+        } finally {
+            allowCompletions();
+        }
+        assertThat(one("SELECT status || ':' || failures FROM"
+                        + " reconciliation.reconciliation_batch WHERE id = ?", run))
+                .as("every item decided, the completion refused three times")
+                .isEqualTo("BLOCKED:3");
+        assertThat(itemsOf(batch))
+                .containsExactlyInAnyOrder("CAPTURE:MATCHED", "PROCESSING_FEE:CHECKED");
+        UUID runBlocked =
+                (UUID) one("SELECT id FROM reconciliation.break WHERE run_id = ? AND cause ="
+                        + " 'RUN_BLOCKED' AND status <> 'RESOLVED'", run);
+        assertThat(runBlocked).as("the blocked run holds its source visibly").isNotNull();
+
+        Session proposer = sessionWith(RoleName.RECONCILIATION_OPERATOR);
+        Session approver = sessionWith(RoleName.RECONCILIATION_OPERATOR);
+        Session controller = sessionWith(RoleName.RECONCILIATION_CONTROLLER);
+        HttpResponse<String> early =
+                propose(proposer, batch.toString(), key(), "the report is fabricated");
+        assertThat(early.statusCode())
+                .as("MI-8: refused at proposal while the run is BLOCKED: %s", early.body())
+                .isEqualTo(409);
+        assertThat(early.body()).contains("reconciliation.BatchNotDisposed");
+        assertThat(resolutionsOf(batch)).isZero();
+
+        // A proposal standing from before the correction, written as the door then wrote it:
+        // the approval re-judges the run and refuses, nothing written.
+        UUID standing = IDS.next();
+        Actor standingProposer = new Actor(proposer.actorId(), ActorType.CUSTOMER);
+        try (Connection app = DatabaseRoles.application()) {
+            app.setAutoCommit(false);
+            byte[] digest = new byte[32];
+            RANDOMNESS.nextBytes(digest);
+            Instant now = Instant.now(CLOCK);
+            CorrelationId correlation = CorrelationId.generate(IDS);
+            new JdbcRepudiationStore().insert(app, new RepudiationStore.NewRepudiation(
+                    standing, batch, "the report is fabricated", Money.ofPersisted(210_00, EUR, 2),
+                    (UUID) one("SELECT rule_set_id FROM reconciliation.reconciliation_batch WHERE"
+                            + " id = ?", run),
+                    digest, standingProposer, now, correlation));
+            new JdbcResolutionStore().appendEvent(
+                    app, standing, Optional.empty(), ResolutionStatus.PROPOSED, standingProposer,
+                    Optional.empty(), now, correlation);
+            app.commit();
+        }
+        HttpResponse<String> late = approve(approver, standing.toString());
+        assertThat(late.statusCode())
+                .as("MI-8: refused at approval while the run is BLOCKED: %s", late.body())
+                .isEqualTo(409);
+        assertThat(late.body()).contains("reconciliation.BatchNotDisposed");
+        assertThat(resolutionStatus(standing.toString())).isEqualTo("PROPOSED");
+        assertNothingRepudiated(batch, recognition, capture, "SETTLED");
+        assertThat(itemsOf(batch))
+                .containsExactlyInAnyOrder("CAPTURE:MATCHED", "PROCESSING_FEE:CHECKED");
+        assertThat(withdraw(proposer, standing.toString()).statusCode()).isEqualTo(200);
+
+        HttpResponse<String> requeued =
+                post(BASE + "/runs/" + run + "/requeue",
+                        reasonBody("the completing chunk's failure is fixed"), controller.token(),
+                        null);
+        assertThat(requeued.statusCode()).as(requeued.body()).isEqualTo(200);
+        matchUntilQuiet();
+        assertThat(one("SELECT status FROM reconciliation.reconciliation_batch WHERE id = ?",
+                        run))
+                .isEqualTo("COMPLETED");
+        assertThat(one("SELECT status FROM reconciliation.break WHERE id = ?", runBlocked))
+                .as("the completion explains its blocked run")
+                .isEqualTo("RESOLVED");
+        repudiate(proposer, approver, batch, "the report is fabricated");
+        assertThat(itemsOf(batch))
+                .containsExactlyInAnyOrder("CAPTURE:REPUDIATED", "PROCESSING_FEE:REPUDIATED");
+        assertThat(reversalsOf(recognition)).isEqualTo(1);
+        assertNothingStandsOnARepudiatedItem();
+        assertBooksHold("MI-8: repudiated once its run completed");
+    }
+
+    /** A repudiation proposed by one person and approved by another: 201, then 200. */
+    private void repudiate(Session proposer, Session approver, UUID batch, String narrative)
+            throws Exception {
+        HttpResponse<String> proposed = propose(proposer, batch.toString(), key(), narrative);
+        assertThat(proposed.statusCode()).as(proposed.body()).isEqualTo(201);
+        HttpResponse<String> approved = approve(approver, field(proposed.body(), "resolutionId"));
+        assertThat(approved.statusCode()).as(approved.body()).isEqualTo(200);
+        assertThat(batchStatus(batch)).isEqualTo("REPUDIATED");
+    }
+
+    /** One GBP statement of the chain: one unattributed credit, opening and closing given. */
+    private static String gbpStatement(
+            String reference, long sequence, long openingMinor, long closingMinor,
+            String credit) {
+        return statement(reference, "GBP", sequence,
+                "C,2026-09-29,GBP," + decimal(openingMinor),
+                "C,2026-09-30,GBP," + decimal(closingMinor),
+                ":61:2026-09-30,C," + credit);
+    }
+
+    /** The STATEMENT_GAP breaks on the batch's run, as status:value. */
+    private static List<String> gapsOn(UUID batch) throws SQLException {
+        return rows("SELECT b.status || ':' || b.value_at_issue_minor::text FROM"
+                + " reconciliation.break b JOIN reconciliation.reconciliation_batch r ON r.id ="
+                + " b.run_id WHERE r.batch_id = ? AND b.cause = 'STATEMENT_GAP'", batch);
+    }
+
+    /** A refused repudiation wrote nothing: the batch, its recognition, its capture as they were. */
+    private static void assertNothingRepudiated(
+            UUID batch, UUID recognition, UUID capture, String captureStatus)
+            throws SQLException {
+        assertThat(batchStatus(batch)).as("nothing written: the batch").isEqualTo("ACCEPTED");
+        assertThat(reversalsOf(recognition)).as("nothing written: no reversal").isZero();
+        assertThat(one("SELECT status FROM reconciliation.expectation WHERE id = ?", capture))
+                .as("nothing written: the capture").isEqualTo(captureStatus);
+        assertThat(count("SELECT count(*) FROM reconciliation.allocation a JOIN"
+                        + " reconciliation.external_item i ON i.id = a.external_item_id JOIN"
+                        + " reconciliation.reconciliation_batch r ON r.id = i.run_id WHERE"
+                        + " r.batch_id = ? AND a.reverses_allocation_id IS NOT NULL", batch))
+                .as("nothing written: no counter-allocation")
+                .isZero();
+        assertThat(count("SELECT count(*) FROM reconciliation.external_item i JOIN"
+                        + " reconciliation.reconciliation_batch r ON r.id = i.run_id WHERE"
+                        + " r.batch_id = ? AND i.status = 'REPUDIATED'", batch))
+                .as("nothing written: no item repudiated")
+                .isZero();
+    }
+
+    /**
+     * The owner's fixture trigger (MI-8): this run's completion refused for every writer, as a
+     * completing chunk that fails is - the run blocks with every item decided.
+     */
+    private static void refuseCompletionOf(UUID run) throws SQLException {
+        try (Connection owner = DatabaseRoles.migrator()) {
+            execute(owner, "CREATE OR REPLACE FUNCTION reconciliation.mi8_refuse_completion()"
+                    + " RETURNS trigger LANGUAGE plpgsql AS $$ BEGIN RAISE EXCEPTION"
+                    + " 'MI-8 fixture: the completing chunk fails'; END; $$");
+            execute(owner, "CREATE TRIGGER mi8_refuse_completion BEFORE UPDATE ON"
+                    + " reconciliation.reconciliation_batch FOR EACH ROW WHEN (NEW.status ="
+                    + " 'COMPLETED' AND NEW.id = '" + run + "'::uuid) EXECUTE FUNCTION"
+                    + " reconciliation.mi8_refuse_completion()");
+        }
+    }
+
+    /** The fixture trigger dropped: completions commit again. */
+    private static void allowCompletions() throws SQLException {
+        try (Connection owner = DatabaseRoles.migrator()) {
+            execute(owner, "DROP TRIGGER IF EXISTS mi8_refuse_completion ON"
+                    + " reconciliation.reconciliation_batch");
+            execute(owner, "DROP FUNCTION IF EXISTS reconciliation.mi8_refuse_completion()");
+        }
+    }
+
+    /** The item's grace moved into the past by {@code interval} - the clock's work, done now. */
+    private static void expireGrace(UUID item, String interval) throws SQLException {
+        try (Connection app = DatabaseRoles.application()) {
+            execute(app, "UPDATE reconciliation.external_item SET grace_until = now() - ?::interval"
+                    + " WHERE id = ? AND status = 'UNMATCHED'", interval, item);
+        }
+    }
+
+    /** A PSP report of the given detail lines, its trailer's count and net stated. */
+    private static String report(
+            String batchRef, LocalDate day, String net, String remittanceRef, String... lines) {
+        StringBuilder text =
+                new StringBuilder("H,SIM_PSP_CSV,1," + batchRef + ",EUR," + day + "\n");
+        for (String line : lines) {
+            text.append(line).append('\n');
+        }
+        return text.append("T,").append(lines.length).append(',').append(net).append(',')
+                .append(remittanceRef).append('\n').toString();
+    }
+
+    /** A counterparty correction naming its original line's capture reference. */
+    private static String adjustmentLine(
+            int seq, LocalDate day, String originalRef, String signedAmount) {
+        return "D," + seq + ",ADJUSTMENT," + signedAmount + ",,EUR," + day + ",,," + originalRef
+                + ",,,,Counterparty correction";
+    }
+
     /** A merchant with an effective destination and a funded EUR payable. */
     private record PayoutMerchant(MerchantId id, LedgerAccountId payable) {}
 
@@ -2231,13 +3098,15 @@ class BatchRepudiationDatabaseTest {
         }
     }
 
-    private Session sessionWith(RoleName role) throws SQLException {
+    private Session sessionWith(RoleName... roles) throws SQLException {
         IdentityId identity = givenAnIdentity();
         try (CorrelationContext.Scope correlation = CorrelationContext.enter(flow());
                 SecurityContext.Scope actor = SecurityContext.enterSystem();
                 Connection app = DatabaseRoles.application()) {
             app.setAutoCommit(false);
-            authorization.assign(app, identity, role, identity, "test fixture");
+            for (RoleName role : roles) {
+                authorization.assign(app, identity, role, identity, "test fixture");
+            }
             app.commit();
         }
         return new Session(identity, givenASessionFor(identity));

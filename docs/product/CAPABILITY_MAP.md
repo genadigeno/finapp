@@ -45,8 +45,10 @@
 - Wallets
 - A2A
 - Instant-payment abstraction
-- Cross-border
-- FX
+
+## FX and Cross-Border *(Phase 9, planned)*
+- FX conversion (the platform as principal)
+- Cross-border payments (corridors, beneficiaries, screening)
 
 ## Credit
 - Credit profile

@@ -764,6 +764,24 @@ class SimSchemeJsonFormatTest {
         }
 
         @Test
+        @DisplayName("a card number grouped by machine separators in the SCHEME reference fails"
+                + " the class and the line is MALFORMED - never stored (the re-gate's"
+                + " NEW-SEC-2)")
+        void machineGroupedPanAsSchemeReferenceIsMalformed() {
+            for (String grouped : List.of("4111:1111:1111:1111", "4111_1111_1111_1111")) {
+                String content = goldenWith("\"schemeRef\": \"SCH-PAYIN-0001\"",
+                        "\"schemeRef\": \"" + grouped + "\"");
+                assertThat(screened(content).finding())
+                        .as("grouped %s passes the walk", grouped).isEmpty();
+                SettlementFormat.Result.Rejected verdict = rejected(content);
+                assertThat(verdict.code()).isEqualTo(RejectionCode.MALFORMED);
+                assertThat(verdict.defects())
+                        .anySatisfy(
+                                defect -> assertThat(defect.field()).contains("schemeRef"));
+            }
+        }
+
+        @Test
         @DisplayName("the platform's OWN minted reference - a dashless UUIDv7 - is admitted"
                 + " exactly as an end-to-end or our reference, even when its hex holds a digit"
                 + " run of card length; the same run in any other shape still fails the class")

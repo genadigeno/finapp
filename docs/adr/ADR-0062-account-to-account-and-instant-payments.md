@@ -240,6 +240,12 @@ The concepts this phase must keep apart:
    by ADR-0073, `Proposed`: the second trigger did not fire, because Phase 8's canonical settlement
    line already gives every outbound credit transfer one evidence shape. The first stays
    recorded.)*
+   *(The first trigger fired at the Phase 8 → 9 transition, when the corridor rail arrived —
+   and convergence was declined with reasons: the canonical settlement line already gives
+   every outbound credit transfer one evidence shape, and the payout's port carries a
+   single-currency merchant flow Phase 9 does not touch. The trigger is re-recorded as: a
+   merchant payout in a currency other than the settlement currency, or on a rail other
+   than `PayoutProvider` (ADR-0079 §9, `Proposed`).)*
 
 ## Alternatives Considered
 
@@ -268,6 +274,10 @@ Positive:
 - A second scheme, in another country, is an adapter, a routing rule and possibly a new clearing
   position. The chart of accounts is keyed by (purpose, currency), so two schemes in one currency
   would need owner-keyed clearing accounts. That is recorded as the split trigger.
+  *(Fired at the Phase 8 → 9 transition for the NEW clearings only: ADR-0078, `Proposed` —
+  `OwnerKind.COUNTERPARTY`, the seeded `ledger.counterparty` registry, and per-counterparty
+  `FX_PROVIDER_CLEARING` and `CORRIDOR_CLEARING` positions; the existing operational
+  clearings are untouched, their accounts having history.)*
 
 Negative:
 - Two outbound disciplines coexist (the payout's port and the push rail) until the convergence

@@ -105,7 +105,7 @@ Three existing texts pull against each other, and this ADR settles them:
    | `REVERSAL_MISMATCH` | Direction contradicts the record; a capture on a voided or failed attempt; a reversal without `WON`; a `PAYOUT_RETURNED` line that cannot be applied (payable not postable, amount ≠ payout) | item | amount | Yes | HIGH | `EVIDENCED` (a counterparty correction offsets it), `TRANSFER_TO_ACCOUNT` (for example, re-credit the payable), `OFFSET_SUSPENSE`, `WRITE_OFF` (DEBIT) — never `RECOGNISE_GAIN` |
    | `REFUND_MISMATCH` | A `REFUND` line against a refund that failed internally, or against a capture with no such refund | item | amount | Yes | CRITICAL | `EVIDENCED` (a late completion), `WRITE_OFF` (DEBIT), `TRANSFER_TO_ACCOUNT` — never `RECOGNISE_GAIN` |
    | `SETTLEMENT_MISMATCH` | Causes `REMITTANCE_DIFFERS` (bank ≠ remittance, surfacing as a remittance remainder or an item excess), `STATEMENT_GAP` (a sequence gap, or opening ≠ previous closing), `OPENING_BALANCE` (the first statement opens ≠ 0) | expectation, item, or the statement's run | difference | per side | HIGH; CRITICAL for statement causes | `EVIDENCED` (the gap fills, or funds arrive), `WRITE_OFF` (an INBOUND remainder; a DEBIT excess), `TRANSFER_TO_ACCOUNT`, `RECOGNISE_GAIN` (a CREDIT excess, after the minimum age) — the last three for `REMITTANCE_DIFFERS` only; the statement causes close only `EVIDENCED` (point 9) |
-   | `PROCESSING_ERROR` | An errored item; a blocked run; a diverged replay; a repudiation answering a value a resolution already released (`EVIDENCE_REPUDIATED`, `P8-TSK-023`) | item, run or decision; for `EVIDENCE_REPUDIATED`, the new `REPUDIATION` suspense item it owns | amount or 0 | items and the repudiation's suspense item: yes | CRITICAL | reprocess or requeue, then `EVIDENCED`; for a parked item or a repudiation's suspense item, `TRANSFER_TO_ACCOUNT`, `OFFSET_SUSPENSE`, `WRITE_OFF` (DEBIT), `RECOGNISE_GAIN` (CREDIT, after the minimum age); for a diverged replay (`REPLAY_DIVERGED`, a decision subject, value 0), `ACKNOWLEDGE` alone, **four-eyes** *(correction, 2026-10-01, below)* |
+   | `PROCESSING_ERROR` | An errored item; a blocked run; a diverged replay; a repudiation answering a value a resolution already released (`EVIDENCE_REPUDIATED`, `P8-TSK-023`) | item, run or decision; for `EVIDENCE_REPUDIATED`, the new `REPUDIATION` suspense item it owns | amount or 0 | items and the repudiation's suspense item: yes | CRITICAL | reprocess or requeue, then `EVIDENCED` (a contained fee line: the `REPROCESS` run's re-check, `CHECKED`, is the evidence - since the Phase 8 -> 9 transition, REC-6; *corrected 2026-10-02: no leg produced this exit for a non-allocating line*); for a parked item or a repudiation's suspense item, `TRANSFER_TO_ACCOUNT`, `OFFSET_SUSPENSE`, `WRITE_OFF` (DEBIT), `RECOGNISE_GAIN` (CREDIT, after the minimum age); for a diverged replay (`REPLAY_DIVERGED`, a decision subject, value 0), `ACKNOWLEDGE` alone, **four-eyes** *(correction, 2026-10-01, below)* |
 
    *(`DUPLICATE_EXTERNAL`'s `RECOGNISE_GAIN` goes beyond the break table the transition drafted,
    derived from its own late-settlement rule: a line arriving after its expectation was written
@@ -300,7 +300,13 @@ Three existing texts pull against each other, and this ADR settles them:
    - The result is capped at `CRITICAL`. It is stored at raise. Escalations are applied by
      `ReconciliationSweepSchedule`'s severity leg as conditional, forward-only updates
      (`WHERE severity < :computed`), each appending a `break_event`, so ten sweepers produce one
-     escalation per band.
+     escalation per band. The leg reads only the breaks whose next band is DUE - bands crossed
+     since `raised_at` (the database's day count) beyond the `SEVERITY_ESCALATED` events recorded,
+     judged in SQL - paging by keyset past any row that fails, so no backlog of older breaks not
+     yet due can keep a due one from its step. *(Corrected 2026-10-02 by the Phase 8 -> 9
+     transition: the leg read the oldest `batch` unresolved breaks whether due or not, so a page of
+     older breaks not yet due starved every newer due one for up to thirty days - the gate's
+     MI-1.)*
    - **Reclassification** recomputes the base under the new type and keeps the higher of the
      stored and the recomputed severity. A severity that could fall would let a relabel quiet an
      alert.
@@ -388,16 +394,56 @@ Three existing texts pull against each other, and this ADR settles them:
      identifier chain with no timestamp join: `file → batch → recognition entry → run → item →
      decision (candidates) → allocation | park | break → notes → resolution → adjustment proposal
      → journal entry`, and on the internal side `expectation → journal entry → operation →
-     provider_evidence`. Raw file content is read only through settlement's audited, reasoned
+     provider_evidence`. *(Corrected 2026-10-02 by the Phase 8 -> 9 transition, REC-9: the case
+     file's resolution list and the trace's `RESOLVED_BY` step now also reach the resolution
+     that closed a remainder sibling or an offset partner — read through `break_event.resolution_id`,
+     the link `V015` guarantees, since the resolution row's `break_id` is the primary break —
+     and a park-less suspense release (a resolution's, an offset's, a repudiation's) is a
+     `RELEASED_BY` step naming the resolution or decision its `cause_ref` carries; before, the
+     sibling's and partner's lists were empty and only unparks appeared in the trace.)* Raw file content is read only through settlement's audited, reasoned
      content reads (`settlement.SettlementFileContentRead`).
    - **Assignment** (`POST breaks/{id}/assignment`) sets `assignee` and appends a `break_event`
      (the assignee history). The first one moves `OPEN → INVESTIGATING`. Audited
      `reconciliation.BreakAssigned`; concurrent assignments serialise on the break row.
+     The assignee is an identity identifier (a UUID, stored canonically) naming an existing,
+     `ACTIVE` identity that holds `RECONCILIATION_INVESTIGATE` through a live role — judged
+     through reconciliation's `Investigators` port, composed in `app` over identity's public
+     reads (ADR-0064) on the assignment's own connection; anything else is refused `422` with
+     nothing written and nothing published, the value never echoed. *(Corrected 2026-10-02 by
+     the Phase 8 -> 9 transition, SEC-06: any 1..100 letters, digits, `-` or `_` was admitted —
+     a card number, a mistyped id, a customer's — and the unchecked value reached the row and
+     the published `BreakInvestigationStarted`.)*
    - **Notes** (`POST breaks/{id}/notes`, keyed) go to `break_note`, append-only, with a body of
      1..4000 characters. A body holding a Luhn-valid 13–19-digit run or an IBAN shape is refused
      `422 api.ValidationFailed` with nothing stored (`INV-PAY-02`, `INV-RAIL-03`). Bodies are
      `CONFIDENTIAL`: never logged, evented or audited. `reconciliation.BreakNoteAdded`
      carries no body.
+
+     *(Corrected 2026-10-02 by the Phase 8 → 9 transition, the audit's `SEC-03`: both ranks
+     scanned CONTIGUOUS digit runs and the contiguous account shape alone, so the most common way
+     a person writes a card number — `4111 1111 1111 1111`, `4111-1111-1111-1111` — and an
+     account identifier in its printed groups of four passed the note, the evidence reference,
+     the reclassification reason, the resolution narrative and rejection reason and the rule-set
+     reasons, and were served back by `GET /breaks/{id}`. The screen is now the platform's one
+     `InstrumentShapes` rule, at the domain (`NoteScreen` delegates to it) and by its PL/pgSQL
+     twin at the database (reconciliation `V019`): digit groups joined by single spaces or
+     dashes, any 12–19-digit window of one group or any span of whole groups Luhn-valid; the
+     contiguous account shape, or its ISO 13616 printed form whose mod-97 check holds; the
+     platform's own UUIDs masked, standing as whole tokens. `V019` re-adds the six case-file
+     screens over the twin under their own names and gives every reason column in the schema
+     its `<table>_reason_no_instrument_shape` CHECK. The band is ISO/IEC 7812's 12–19, wider
+     than the settlement door's 13–19 for files: a refused reason costs a retype. Proven by
+     `CaseFileRulesTest`, `InstrumentShapesTest` and `ReconciliationV019MigrationTest`, whose
+     corpus proves the two ranks agree.)*
+
+     *(Corrected 2026-10-03 by the Phase 8 → 9 transition's re-gate, NEW-SEC-2: the domain
+     scan's separators were the printed two, so a card number grouped by ':' or '_' —
+     `4111:1111:1111:1111`, `4111_1111_1111_1111` — passed every case-file and reason door.
+     `InstrumentShapes.find`, the screen behind `NoteScreen`, now collapses ':' and '_' beside
+     single spaces and dashes. The `V019` twin keeps the printed forms (`V020+` is reserved for
+     Phase 9): the domain rank is strictly wider, the twin stays the second rank for a raw
+     writer, and the corpus parity still holds against `holdsCardNumber`, the twin's verdict.
+     Proven by `CaseFileRulesTest`'s and `InstrumentShapesTest`'s machine-separator cases.)*
    - **Evidence links** (`POST breaks/{id}/evidence-links`, keyed) go to `break_evidence_link`,
      append-only, audited `reconciliation.BreakEvidenceLinked`.
    - **Reclassification** (`POST breaks/{id}/classification {type, reason}`) is allowed in `OPEN`
@@ -409,6 +455,22 @@ Three existing texts pull against each other, and this ADR settles them:
      (`INV-REC-09`). A reclassification onto a (type, subject) that already has an open break is
      refused by the partial unique (`409 api.Conflict`); the investigator links the two instead.
      `cause`, the subject and the value at issue never change.
+   - **The frozen cause must keep an exit on the new type** (`422 api.ValidationFailed`, nothing
+     written). An exit is one of three: a kind the new type admits for the cause that the
+     subject's current holding takes - an `ACKNOWLEDGE`, or any kind over parked value, whose
+     release or unpark closes its owning break (a kind over an expectation's remainder does not
+     count: an allocation can take the remainder while the closers look for other types); the
+     cause's own evidence still selects the new type (the statement chain's gap closer selects
+     `SETTLEMENT_MISMATCH`, a requeued run's completion its `PROCESSING_ERROR`, a settling
+     allocation the expectation's `MISSING_EXTERNAL` and its shortfall type); or the cause's raise
+     type admits `ACKNOWLEDGE`, so a reclassification back always recovers it.
+     `ResolutionTemplates.reclassificationStrands` is the one seat. *(Corrected 2026-10-02 by the
+     Phase 8 -> 9 transition: the case file checked only the subject, the parking parity and the
+     seat, so one investigator could strand a break for good - a `STATEMENT_GAP` moved onto
+     `PROCESSING_ERROR`, which the filling statement then passes by and a run's completion may
+     silently close; a `RUN_BLOCKED` onto `SETTLEMENT_MISMATCH`; an `EXPECTATION_OVERDUE` onto
+     `SETTLEMENT_MISMATCH`, left over nothing once a late line settles the expectation. Each is
+     now refused - `BreakCaseFileDatabaseTest`, the exit rule pinned in `CaseFileRulesTest`.)*
    - On a `RESOLVED` break every write is refused (`409 reconciliation.BreakTerminal`), and the
      case continues on its successor (point 4). An unknown id is `404
      reconciliation.BreakNotFound`.
@@ -775,3 +837,7 @@ postings (ADR-0071) move money, each in a transaction that names its break.
   stated limit), point 8's
   replay row, the repudiation's detector and closure edge (points 2, 3 and 6), point 4's
   uniques, the replay break's currency, and this record.
+- *The Phase 8 → 9 transition* (ADR-0082, `Proposed`): two new causes under existing types
+  — `FX_LEG_DIFFERS` under `AMOUNT_MISMATCH` and `VALUE_DATE_DIFFERS` under
+  `TIMING_DIFFERENCE` — and no fifteenth type, by §2's own split criterion; leg base
+  severities, with a missing FX leg whose paired leg settled escalating to CRITICAL.

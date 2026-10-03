@@ -34,6 +34,13 @@ import lombok.RequiredArgsConstructor;
  * writes nothing; a pull that FAILED with an exception is audited {@code FAILED} naming the
  * exception's class, then rethrown — its permit may have been renewed and its door may have
  * run, so the operator's ask is never left unrecorded (the tests agent's find).
+ *
+ * <p><strong>The start is recorded with the fetch's first effect</strong> (the Phase 8 -> 9
+ * transition, SEC-08): the fetch is three steps — the permit, the external read holding no
+ * connection, the door — so no one transaction holds it whole, and a process dying past the
+ * permit never reaches the closing record. {@code settlement.SettlementFetchStarted} commits in
+ * the permit's own transaction, naming the operator, the source and the key; the closing record
+ * then says what it came to.
  */
 @RequiredArgsConstructor
 public class SettlementFetch {
@@ -65,7 +72,10 @@ public class SettlementFetch {
             outcome =
                     pull.pull(
                             sourceCode, request.businessKey(), Optional.empty(), actor,
-                            correlation);
+                            correlation,
+                            unitOfWork ->
+                                    started(unitOfWork, actor, correlation, sourceCode,
+                                            request.businessKey()));
         } catch (FileReception.SettlementSourceUnknown unknown) {
             throw new ApiException(
                     SettlementErrorCode.SOURCE_UNKNOWN,
@@ -91,6 +101,28 @@ public class SettlementFetch {
         record(actor, correlation, sourceCode, request.businessKey(), AuditOutcome.SUCCEEDED,
                 answer.outcome());
         return answer;
+    }
+
+    /** The fetch's start, in the permit's transaction (SEC-08) - never a byte of the report. */
+    private void started(
+            java.sql.Connection unitOfWork,
+            Actor actor,
+            Correlation correlation,
+            String sourceCode,
+            String businessKey) {
+        audit.append(
+                unitOfWork,
+                new AuditRecord(
+                        AuditId.next(ids),
+                        actor,
+                        clock.instant(),
+                        SettlementAuditAction.SETTLEMENT_FETCH_STARTED,
+                        "settlement_source",
+                        sourceCode,
+                        Optional.empty(),
+                        AuditOutcome.SUCCEEDED,
+                        correlation.correlationId(),
+                        Optional.of("businessKey=" + businessKey)));
     }
 
     /** The request and what it came to, in its own transaction - never a byte of the report. */

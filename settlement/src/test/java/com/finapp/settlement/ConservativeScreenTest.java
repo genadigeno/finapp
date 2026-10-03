@@ -83,6 +83,26 @@ class ConservativeScreenTest {
     }
 
     @Test
+    @DisplayName("SEC-03's related gap: an account identifier in its printed groups of four -"
+            + " spaced, as a statement's free text carries it, or dashed - is refused on its"
+            + " line; groups of four that are words are not")
+    void aPrintedAccountIdentifierIsRefused() {
+        assertThat(screened(":61:2609290929C100,00\n:86:refund to GB82 WEST 1234 5698 7654 32\n")
+                        .finding())
+                .as("the spaced print form, on the line it sits on")
+                .contains(
+                        new DeliveryScreen.Finding(
+                                RefusalReason.ACCOUNT_IDENTIFIER, 2, Optional.empty()));
+        assertThat(screened("pay to DE89-3704-0044-0532-0130-00").finding())
+                .map(DeliveryScreen.Finding::reason)
+                .as("the dashed print form")
+                .contains(RefusalReason.ACCOUNT_IDENTIFIER);
+        assertThat(screened("FY26 plan 2027 will need more review\n").finding())
+                .as("the checksum is what tells an identifier from prose")
+                .isEmpty();
+    }
+
+    @Test
     @DisplayName("clean text passes, and short reference-like tokens pass")
     void cleanTextPasses() {
         assertThat(

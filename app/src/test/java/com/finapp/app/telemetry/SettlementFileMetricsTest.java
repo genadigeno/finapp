@@ -207,7 +207,7 @@ class SettlementFileMetricsTest {
         // The accept leg's surface (P8-TSK-009) - not the gauges', same as everything above.
 
         @Override
-        public List<UUID> dueForAccept(Connection unitOfWork, int limit) {
+        public List<UUID> dueForAccept(Connection unitOfWork, Instant now, int limit) {
             throw new UnsupportedOperationException("the gauges read pendingBySource alone");
         }
 
@@ -218,6 +218,16 @@ class SettlementFileMetricsTest {
 
         @Override
         public boolean markFileAccepted(Connection unitOfWork, UUID fileId, Instant at) {
+            throw new UnsupportedOperationException("the gauges read pendingBySource alone");
+        }
+
+        @Override
+        public int bumpAcceptFailures(Connection unitOfWork, UUID fileId) {
+            throw new UnsupportedOperationException("the gauges read pendingBySource alone");
+        }
+
+        @Override
+        public void scheduleNextAccept(Connection unitOfWork, UUID fileId, Instant nextAcceptAt) {
             throw new UnsupportedOperationException("the gauges read pendingBySource alone");
         }
 

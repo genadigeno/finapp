@@ -440,7 +440,7 @@ table of either schema.
 | `RECEIVED → REJECTED` | The parse leg | A content defect: `MALFORMED`, `CONTROL_TOTAL_MISMATCH`, `UNKNOWN_CURRENCY`, `SCALE_MISMATCH`, `UNSUPPORTED_FORMAT`, `CONFLICTING_BATCH` — up to 100 `ingestion_error` rows, never content, and no batch |
 | `RECEIVED` or `PARSED` → `REJECTED` | The uploader or an attester (`DECLINED`, reasoned) | The file is not terminal |
 | `PARSED → REJECTED` | The accept leg (`SOURCE_RETIRED`) | The source was retired after receipt |
-| `PARSED → ACCEPTED` | The accept leg (the platform) | PULL: always. UPLOAD: only once `attested_by` is set, with `attested_by ≠ received_by`. READMISSION: when the original was pulled or attested — or is itself a readmission that inherited — it inherits that authentication through the identical checksum; when the original was an unattested upload — rejected at parse before anyone attested it — or was `DECLINED`, which passes nothing on, the readmission is itself attested before acceptance, by a person distinct from every submitter along the chain (the readmitter, any earlier readmitter, the original's uploader), held at the database by settlement `V009`'s trigger and claimed by the accept leg through the same SQL functions *(the Phase 7 → 8 transition's re-check, R5; as built by `P8-TSK-022`)* |
+| `PARSED → ACCEPTED` | The accept leg (the platform) | PULL: always. UPLOAD: only once `attested_by` is set, with `attested_by ≠ received_by`. READMISSION: when the original was pulled or attested — or is itself a readmission that inherited — it inherits that authentication through the identical checksum; when the original was an unattested upload — rejected at parse before anyone attested it — or was `DECLINED` — or its batch is `REPUDIATED` *(the Phase 8 → 9 transition's re-gate, NEW-SEC-1, settlement `V014`)* — which passes nothing on, the readmission is itself attested before acceptance, by a person distinct from every submitter along the chain (the readmitter, any earlier readmitter, the original's uploader), held at the database by settlement `V009`'s trigger and claimed by the accept leg through the same SQL functions *(the Phase 7 → 8 transition's re-check, R5; as built by `P8-TSK-022`)* |
 
 - **Attestation** is a `NULL → value` fact (`attested_by`, `attested_at`), settable on `RECEIVED`
   or `PARSED` and never on a terminal file (`settlement.FileNotAttestable`), by a second person
@@ -449,7 +449,8 @@ table of either schema.
   writer: `CHECK (attested_by IS NULL OR attested_by <> received_by)` and `CHECK (status <>
   'ACCEPTED' OR received_via <> 'UPLOAD' OR attested_by IS NOT NULL)`. An unattested upload is
   retained but inert (`INV-SET-07`), and the same rule binds a readmission whose original was an
-  unattested upload or a declined file: it inherits no authentication, so it is attested before
+  unattested upload, a declined file or a repudiated batch's file *(the Phase 8 → 9 transition's
+  re-gate, NEW-SEC-1)*: it inherits no authentication, so it is attested before
   acceptance by a person distinct from every submitter along the chain. `V002`'s `CHECK`s bind
   only `UPLOAD`, and a cross-row rule needs a trigger, so `P8-TSK-022` holds it at the database
   with settlement `V009`: an insert-or-update trigger refusing `ACCEPTED` for a `READMISSION`
@@ -468,7 +469,19 @@ table of either schema.
   other original). **A genuine file rejected `CONFLICTING_BATCH` against a batch since
   `REPUDIATED` is admissible for readmission too**: the conflict was with evidence now proven false,
   and a byte-identical re-presentation would only meet the rejected file's own content address as
-  its duplicate, so readmission is how a repudiation's genuine file is recovered (§5.2). Whether
+  its duplicate, so readmission is how a repudiation's genuine file is recovered (§5.2).
+  *(Corrected 2026-10-02 by the Phase 8 -> 9 transition, MI-2: **an `ACCEPTED` file whose batch
+  is `REPUDIATED` is admissible too** - for our own adapter's mis-normalisation the genuine
+  evidence IS the accepted file's bytes, which a re-delivery could only meet as its duplicate. The
+  readmission inherits the original's authentication, is judged like a `CONFLICTING_BATCH`
+  original - refused `settlement.ConflictingBatchStands` while a live batch holds the identity
+  its bytes declare - and is parsed under the corrected format version; settlement `V011` holds
+  the rule for every writer.)* *(Corrected 2026-10-03 by the Phase 8 -> 9 transition's
+  re-gate, NEW-SEC-1: the readmission inherits NOTHING - inheritance let one controller undo
+  the four-eyes verdict alone, the repudiated recognition re-accepted with no second person.
+  A repudiated batch's file passes nothing on, exactly as a `DECLINED` one (settlement `V014`
+  for every writer), and its readmission is accepted only once attested by a person distinct
+  from every submitter along its chain.)* Whether
   a **declined upload** could be readmitted — declining is a person's judgement, not our
   validation — was ADR-0066 §8's recorded question, carried into `P8-TSK-022`; such a readmission
   inherits no authentication. *(The Phase 7 → 8 transition's
@@ -533,6 +546,17 @@ settlement's transition, then the reversal and the unparks last — postings las
 ADR-0064 §6, PHASE_8_PLAN §7) — their union pre-locked by the multi-entry rule (§3.5). The file
 and its content are retained, and the genuine file is then re-presented and accepted normally — or
 readmitted, when it was itself rejected `CONFLICTING_BATCH` against the repudiated batch (§5.1).
+*(Corrected 2026-10-02 by the Phase 8 -> 9 transition. The approval leaves nothing it reopens
+unowned or unrecoverable: a reopened expectation already overdue gets a fresh `MISSING_EXTERNAL`
+at once, ageing never taking it twice (REC-4); the closed remittance's `REMITTANCE_REF` is
+released (reconciliation `V017`), so the genuine batch's remittance takes the same reference and
+the reopened bank cash matches it (REC-8); a repudiated statement's accepted successor gets the
+`STATEMENT_GAP` its missing predecessor opens, under settlement's source row lock, closed
+`EVIDENCED` when the genuine statement stitches (SET-2); a bank item it reopened parks again at
+its next grace, owned by a new break (REC-3); an accepted file whose batch it repudiated is
+readmissible, so the same bytes re-parse under a corrected format (MI-2, §5.1); and the original
+whose parked excess a later batch's correction offset is refused before anything is written, a
+fourth uncompensated shape (REC-7).)*
 The item's `REPUDIATED` and its reopening `MATCHED → UNMATCHED` were stated by reconciliation
 `V003`, and the expectation's reopening edges by `V002`, inert until their producer;
 `P8-TSK-023`'s reconciliation `V013` adds the item's `PARKED → UNMATCHED` and `RESOLVED →
@@ -544,7 +568,13 @@ UNMATCHED` and the expectation's reopening edges.)*
 
 **What the transition left to `P8-TSK-023`, as settled.** **An item still `PENDING` has no edge
 to `REPUDIATED`**, so a repudiation is approvable only once the batch's run has disposed every
-item (`reconciliation.BatchNotDisposed`). **The remittance expectation the batch opened** leaves
+item - and not while that run stands `IN_PROGRESS` or `BLOCKED` (`reconciliation.BatchNotDisposed`).
+*(Corrected 2026-10-02 by the Phase 8 -> 9 transition, MI-8: every item decided is not enough -
+a run `BLOCKED` at its completion still owes the fee fold, its `RUN_BLOCKED` break's closure and
+`RunCompleted`, would complete after a requeue over `REPUDIATED` items, and holds its source
+meanwhile. An `OPEN` run with nothing `PENDING` - a statement's, every item disposed in the
+acceptance - still admits: its later walk completes trivially, and only `PROCESSING_FEE`
+decisions feed the completion's fold.)* **The remittance expectation the batch opened** leaves
 the position proof with it: the approval closes its unallocated remainder with the approved
 `REPUDIATE_BATCH` — the one edge the expectation machine offers an approved resolution, `→
 RESOLVED_BY_ADJUSTMENT` — including the part a bank allocation's counter-allocation restores
@@ -563,7 +593,9 @@ line opens a new item of the opposite side — origin `REPUDIATION`, the fourth 
 carrying its line — owned by a new `PROCESSING_ERROR` break (`EVIDENCE_REPUDIATED`) raised in the
 approval transaction, and a person decides where the loss falls (ADR-0070 §10). **A payout return
 applied from the repudiated batch** stands as a merchant fact — repudiation does not touch
-`merchant` — and its reopened `PAYOUT_RETURN` expectation ages into `MISSING_EXTERNAL`, so nothing
+`merchant` — and its reopened `PAYOUT_RETURN` expectation ages into `MISSING_EXTERNAL` *(corrected
+2026-10-02 by the Phase 8 -> 9 transition, REC-4: or, when it was already overdue, is owned at once
+by the fresh `MISSING_EXTERNAL` the approval raises - ageing never takes an expectation twice)*, so nothing
 is silent; taking the value back from the merchant is no Phase 8 resolution kind (ADR-0073). **A
 bank item `PARKED` with an allocation to the repudiated remittance standing beside its excess** (an
 over-payment) reopens whole, `PARKED → UNMATCHED`, its excess unparked. *(The Phase 7 → 8
@@ -580,7 +612,9 @@ batches/{settlementBatchId}/repudiation` and decided through the resolution door
 digests the plan derived from the rows (`subject_digest`, SHA-256); the approval re-derives it
 under the locks and refuses a moved subject `reconciliation.ResolutionStale`. Decided at design:
 **every item of the batch leaves to `REPUDIATED`**, a `RESOLVED` one included (`V013`'s edge);
-**an item still `PENDING` refuses the repudiation** (`reconciliation.BatchNotDisposed`); **an
+**an item still `PENDING` refuses the repudiation**, and - corrected 2026-10-02 by the Phase 8 -> 9
+transition, MI-8 - **so does a run `IN_PROGRESS` or `BLOCKED`**, at the proposal and again at the
+approval (`reconciliation.BatchNotDisposed`); **an
 over-paying bank item matched to the repudiated remittance reopens whole** (`PARKED → UNMATCHED`,
 its excess unparked); **a `RECON_PARK` value a resolution already released is answered like the
 unattributed one** - the park's exact inverse is posted (the position restored as if it were still
@@ -641,6 +675,7 @@ PENDING ────┼──> OFFSET ────┼──batch repudiated─�
             ├──> UNMATCHED ─┤
             └──> PARKED ────┘
 UNMATCHED ──rematch (the whole remainder)──> MATCHED
+UNMATCHED ──a REPROCESS run re-checks a fee line left waiting──> CHECKED
 UNMATCHED ──grace expired, or a definitive class──> PARKED
 PARKED ──rematch, or an approved MANUAL_MATCH (unpark)──> MATCHED
 PARKED ──an approved closing resolution──> RESOLVED
@@ -659,8 +694,9 @@ amount_minor` (`CHECK`).
 | `PENDING → CHECKED` | The run leg | A non-allocating fee or bank-fee line, checked under `CHECK` against the pinned `provider_fee_schedule`; `FEE_MISMATCH` raised beyond the tolerance |
 | `PENDING → OFFSET` | The run leg | A `CORRECTION` whose original item holds a parked excess of the opposite direction and equal amount: a suspense release with cause `CORRECTION_OFFSET` and an unpark posting; the original's `AMOUNT_MISMATCH` resolves `EVIDENCED` |
 | `PENDING → UNMATCHED` | The run leg | A remainder that late internal evidence could still change — `UNKNOWN_EXTERNAL` (the key is unknown), `MISSING_INTERNAL` (the operation is known but not completed), a `PAYOUT_RETURNED` with no return yet — with `grace_until` pinned per rule. A `PAYOUT_RETURNED` line always takes this edge: rule set v1 declares its rule **operation-anchored**, so it is never key-matched against the OUTBOUND `MERCHANT_PAYOUT` expectation its references name (which would be a direction mismatch, parked at once as `REVERSAL_MISMATCH`), and the matcher raises no break for it; it waits for the return worker (§5.10) *(the Phase 7 → 8 transition's consistency review, A4)* |
-| `PENDING → PARKED` | The run leg | A definitive class, parked at once with its break in this transaction: `DUPLICATE_EXTERNAL`, `CURRENCY_MISMATCH`, the `AMOUNT_MISMATCH` excess, `AMBIGUOUS_MATCH`, `REFUND_MISMATCH` against a terminal failed refund, `REVERSAL_MISMATCH` against a terminal state; or a poisoned item (decision `ERRORED`, a `PROCESSING_ERROR` break), contained so the chunk continues |
+| `PENDING → PARKED` | The run leg | A definitive class, parked at once with its break in this transaction: `DUPLICATE_EXTERNAL`, `CURRENCY_MISMATCH`, the `AMOUNT_MISMATCH` excess, `AMBIGUOUS_MATCH`, `REFUND_MISMATCH` against a terminal failed refund, `REVERSAL_MISMATCH` against a terminal state; an allocating line no rule of its pinned version can allocate (`NO_RULE`: an `OTHER_IN` or `OTHER_OUT`), `UNKNOWN_EXTERNAL` (`GRACE_EXPIRED`) at once - its grace is zero *(corrected 2026-10-02 by the Phase 8 -> 9 transition, REC-2: such a line waited `UNMATCHED` with no clock and no break, for ever)*; or a poisoned item (decision `ERRORED`, a `PROCESSING_ERROR` break), contained so the chunk continues |
 | `UNMATCHED → MATCHED` | The rematch leg; a `REPROCESS` run's leg | A late internal record — or, for reprocess, the active rule set the run pinned — allocates the whole remainder |
+| `UNMATCHED → CHECKED` | A `REPROCESS` run's leg | A fee line left waiting - its check contained as `ITEM_ERRORED`, or its own version naming no `CHECK` - is checked under the run's pinned version; its contained `PROCESSING_ERROR` resolves `EVIDENCED` naming the check *(added 2026-10-02 by the Phase 8 -> 9 transition, REC-6, reconciliation `V016`)* |
 | `UNMATCHED → PARKED` | The grace leg; the rematch leg | `grace_until` has passed, judged in SQL on the **database clock**, or the rematch finds a definitive class — parked with its break in this transaction |
 | `PARKED → MATCHED` | The rematch leg; a `REPROCESS` run's leg; an approved `MANUAL_MATCH` | A late allocation of the whole parked remainder, with the unpark in the same transaction; the break resolves `EVIDENCED`, or by the `MANUAL_MATCH` itself |
 | `PARKED → RESOLVED` | The approval of a closing resolution; the platform's `EVIDENCED` | The parked value removed by `WRITE_OFF`, `TRANSFER_TO_ACCOUNT`, `OFFSET_SUSPENSE` or `RECOGNISE_GAIN`, as the break's type admits (§6), or — for an original whose excess a correction offset — by the `EVIDENCED` resolution the offset produced |
@@ -672,23 +708,29 @@ amount_minor` (`CHECK`).
   remainder is fully parked (an over-payment is `PARKED` with its allocation standing beside the
   excess); `CHECKED` means a non-allocating line.
 - **Claimant order.** Every allocation to an expectation goes through one `allocate(E)`, shared by
-  the run, rematch, reprocess and manual legs. The run and reprocess legs serve claimants in
-  `(source_sequence, line_no)` order, so within them the earlier record wins; as built the other
-  legs walk their own worklists — the rematch leg `(line_no, id)` across the source's runs, the
-  grace leg `(grace_until, id)` — so across legs which of two claimants wins can depend on which
-  leg reaches it first. Namespace 4 **orders** allocation; the uniques and the Σ triggers
-  **arbitrate** it, so no order ever over-allocates. *(Corrected 2026-10-01, `P8-DOC-001`: this
-  read that every leg serves `(source_sequence, line_no)`.)*
+  the run, rematch, reprocess and manual legs. Every leg serves claimants in
+  `(source_sequence, line_no)` order - the run and reprocess legs, the rematch leg across the
+  source's runs and the grace leg within its expired set - so within a leg the earlier record
+  wins; across legs the sweep's order decides (a later run's line judged by the run leg can claim
+  an expectation opened after an earlier residual's last decision before the rematch leg reaches
+  the residual). Namespace 4 **orders** allocation; the uniques and the Σ triggers **arbitrate**
+  it, so no order ever over-allocates. *(Corrected 2026-10-01, `P8-DOC-001`: this read that every
+  leg serves `(source_sequence, line_no)`.)* *(Corrected 2026-10-02 by the Phase 8 -> 9
+  transition: the rematch leg had read `(line_no, id)` and the grace leg `(grace_until, id)`.)*
 - **The rematch worklist, as built** (`JdbcMatchingStore.REMATCH_PREDICATE`). An item returns to it
-  when a key reaches an expectation opened after its latest decision, when its operation-anchored
-  rule reaches an expectation no decision of the item has yet seen as a candidate (`P8-TST-001`'s
-  correction, clock-free), or when a value-date group could now form. Two recorded debts, both
-  scheduled to Phase 15: the keyed and value-date clauses still compare two instances' clocks
-  (`expectation.opened_at` against the latest decision's instant), so an expectation opened within
-  the skew is not rematched and the line waits for its grace — value never wrong; and a later
-  report's duplicate of a returned payout line, parked `DUPLICATE_EXTERNAL` with an empty
-  snapshot, stays on the anchored clause's worklist and may take the return before the genuine
-  line — value conserved, attribution wrong.
+  when its REACH - a key through a kind its active rules read, its operation-anchored rule's anchor,
+  or an attributed waiting item's value-date group - holds an expectation still holding a remainder
+  that no decision of the item has yet judged: recorded as a candidate, or as a reach a rematch
+  examination consumed (`match_reach`, `V016`). Judged on rows alone, never on two clocks; a
+  rematch that cannot act records its examination and its reach, so each reach is examined once
+  and a residual that can never allocate leaves the worklist. A definitive duplicate - a
+  `DUPLICATE` decision, or a park owned by a `REPEATED_FINGERPRINT` break - never returns to it,
+  nor to a `REPROCESS` run's worklist. *(Corrected 2026-10-02 by the Phase 8 -> 9 transition: this
+  recorded two Phase 15 debts - the keyed and value-date clauses comparing `opened_at` with the
+  latest decision's instant, and a duplicate's chance at a payout return. The transition's gate
+  ruled both defects: the instants were stamped before their commits, so the window was commit
+  latency as well as skew, a PARKED line had no grace to fall back on, and residents that could
+  never allocate starved the leg; both are fixed.)*
 - **Classification precedence** for an unallocated remainder: the definitive specific types
   first, then `MISSING_INTERNAL` (the operation is known), then `UNKNOWN_EXTERNAL`. On the instant
   rail the typing reads `payments.scheme_execution_claim` (payments `V023`) through
@@ -795,7 +837,14 @@ OPEN or INVESTIGATING ──a timing difference's zero-value ACKNOWLEDGE (one pe
   the named resolution is the break's own stays the domain's, recorded debt for Phase 15)
   *(added 2026-10-01, `P8-DOC-001`: until then only the domain refused it, and `finapp_app`'s
   `UPDATE (status, resolved_at)` grant let a raw update close a break with no resolution)*; `EVIDENCED` by a person; `RESOLVED` while the residual is non-zero, `ACKNOWLEDGE` of the types it
-  applies to excepted; a reclassification in `RESOLUTION_PROPOSED`.
+  applies to excepted; a reclassification in `RESOLUTION_PROPOSED`; a reclassification onto a
+  type that leaves the break's frozen cause no exit - no kind its subject takes, no evidence that
+  still selects the type, no acknowledgement back on its raise type (ADR-0069 §7)
+  *(added 2026-10-02 by the Phase 8 -> 9 transition: a `STATEMENT_GAP` moved onto
+  `PROCESSING_ERROR`, a `RUN_BLOCKED` onto `SETTLEMENT_MISMATCH` or an `EXPECTATION_OVERDUE` onto
+  `SETTLEMENT_MISMATCH` stood open for good)*; a settling `MANUAL_MATCH` that leaves a break
+  answering for the emptied remainder open (the approval closes them all, ADR-0071 §2)
+  *(added 2026-10-02, REC-5)*.
 - **Terminal:** `RESOLVED`. A recurrence is a new break with `follows_break_id`.
 - **The case file.** The break references its expectation, item or suspense item, each of which
   reaches the settlement line, file, batch and raw content; the payments or merchant record, its
@@ -893,7 +942,7 @@ OPEN ──partial release──> PARTIALLY_RELEASED ──release of the rest�
 
 | Edge | Driver | Condition |
 |---|---|---|
-| (birth) → `OPEN` | Only in the transaction that records its owning break, by one of four openers and no fifth: a park (origin `RECON_PARK` — CREDIT for an INBOUND remainder, DEBIT for an OUTBOUND one); bank recognition's unattributed line (`BANK_UNATTRIBUTED`, cause `BANK_LINE_UNATTRIBUTED`); an unmatched confirmation through the port (`UNMATCHED_CONFIRMATION`, cause `PARKED_ON_RECEIPT`), or the backfill adopting one; a repudiation (`REPUDIATION`), in the `REPUDIATE_BATCH` approval transaction, for a value a posting resolution had already released — a `BANK_UNATTRIBUTED` item's, whose line is the suspense line the recognition's reversal (`ReversalService`, scope `ledger.reverse`, key `settlement-batch:<batchId>`) carries for that item, or a `RECON_PARK` item's, whose line is the park's exact inverse posted for that value (`Suspense.repostReleased`) — so the new item is of the opposite side, owned by a new `PROCESSING_ERROR` break (`EVIDENCE_REPUDIATED`) raised in the same transaction, `origin_ref` the released item's id and `opened_on` the approval's date, the posting date of the entry carrying its line; no external item, park or position (`suspense_item_repudiation_shape`); the origin admitted by reconciliation `V013` (`P8-TSK-023`) *(the Phase 7 → 8 transition's re-check, R3; corrected 2026-10-01, `P8-DOC-001`: the `RECON_PARK` answer was missing)* | `break_id NOT NULL`; `UNIQUE (external_item_id)`; `UNIQUE origin_ref` — an item is repudiated once, so a `REPUDIATION` item's holds too |
+| (birth) → `OPEN` | Only in the transaction that records its owning break, by one of four openers and no fifth: a park (origin `RECON_PARK` — CREDIT for an INBOUND remainder, DEBIT for an OUTBOUND one); bank recognition's unattributed line (`BANK_UNATTRIBUTED`, cause `BANK_LINE_UNATTRIBUTED`); an unmatched confirmation through the port (`UNMATCHED_CONFIRMATION`, cause `PARKED_ON_RECEIPT`), or the backfill adopting one; a repudiation (`REPUDIATION`), in the `REPUDIATE_BATCH` approval transaction, for a value a posting resolution had already released — a `BANK_UNATTRIBUTED` item's, whose line is the suspense line the recognition's reversal (`ReversalService`, scope `ledger.reverse`, key `settlement-batch:<batchId>`) carries for that item, or a `RECON_PARK` item's, whose line is the park's exact inverse posted for that value (`Suspense.repostReleased`) — so the new item is of the opposite side, owned by a new `PROCESSING_ERROR` break (`EVIDENCE_REPUDIATED`) raised in the same transaction, `origin_ref` the released item's id and `opened_on` the approval's date, the posting date of the entry carrying its line; no external item, park or position (`suspense_item_repudiation_shape`); the origin admitted by reconciliation `V013` (`P8-TSK-023`) *(the Phase 7 → 8 transition's re-check, R3; corrected 2026-10-01, `P8-DOC-001`: the `RECON_PARK` answer was missing)* | `break_id NOT NULL`; `UNIQUE (external_item_id)`; `UNIQUE origin_ref` — an item is repudiated once, so a `REPUDIATION` item's holds too *(corrected 2026-10-02 by the Phase 8 -> 9 transition, REC-3: since reconciliation `V017` the external item's unique covers its LIVE items only and a `RECON_PARK` item is once per park - a bank item a repudiation reopened parks again, owned by a new break - while `UNIQUE origin_ref` holds whole for every other origin)* |
 | `OPEN → PARTIALLY_RELEASED` | A release: an unpark (a late allocation), an approved resolution, a correction offset (`CORRECTION_OFFSET`), a repudiation | Part of the amount; the item locked `FOR UPDATE` |
 | `OPEN` or `PARTIALLY_RELEASED` → `RELEASED` | The same | `released_minor` reaches `amount_minor` |
 

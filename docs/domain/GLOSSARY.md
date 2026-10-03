@@ -703,7 +703,12 @@ and a returned item adjusts the agreement — none of which a loan does.
 
 ---
 
-## 8. Foreign exchange
+## 8. Foreign exchange and cross-border
+
+*(Retitled, and the twenty-two Phase 9 terms added alphabetically after the three
+originals, by the Phase 8 → 9 transition, 2026-10-02 — ADR-0074…0083 (`Proposed`) — each
+keeping a distinction Phase 9 could collapse. The kernel's money vocabulary joins the
+canonical list here because five currencies at three scales now post.)*
 
 ### FX Quote
 **Is:** a rate offered to a specific party for a specific amount, valid for a stated window.
@@ -721,6 +726,187 @@ requires it to be posted as revenue explicitly rather than concealed inside the 
 **Is:** an executed conversion — two legs, through an FX position, preserving total value
 (`INV-FX-01`).
 **Not:** a Quote. A quote may expire unexercised; a trade has postings.
+**Owned by:** `fx`
+
+### Corridor
+**Is:** a priced, versioned route — (source currency, destination currency, destination
+country) — with ordered candidate rails, a fee schedule, a maximum per payment, a screening
+validity and a delivery estimate, under a four-eyes corridor policy version (`INV-AUD-04`,
+`INV-HIST-04`).
+**Not:** a Payment Rail. The corridor is policy about where value may go and at what price;
+the rail is the declared transport that carries it (`INV-RAIL-01`). Fees are per corridor,
+never per rail.
+**Owned by:** `crossborder`
+
+### Corridor Rail
+**Is:** a declared payment rail that carries outbound cross-border credits — push, final on
+acceptance, refunding nothing — with its own `CORRIDOR_CLEARING` position per counterparty
+(`INV-RAIL-04`), and its return window and decision deadline in its own declaration.
+**Not:** the Corridor, which is `crossborder`'s policy over it; nor a card PSP or instant
+scheme — a routing of a pay-in to it is refused, because it declares no pay-in direction.
+**Owned by:** `payments`
+
+### Counterparty
+**Is:** an external institution the platform itself settles with — an FX provider, a corridor
+provider — registered in the ledger's counterparty registry and owning its own clearing
+position per currency, discharged only by its own declared source's evidence (`INV-RAIL-04`,
+`INV-SET-05`).
+**Not:** a Beneficiary or a Merchant. A counterparty is who the platform owes or is owed by;
+a beneficiary is whom a customer pays. Netting two counterparties on one account is the
+collapse `INV-RAIL-04` forbids.
+**Owned by:** `ledger`
+
+### Counterparty Screening
+**Is:** kyc's sanctions screening of a payment counterparty — a cross-border beneficiary —
+every outcome a recorded platform decision with its basis, policy version and time
+(`INV-KYC-01`), a hit or an unverified payee resolved only by a person (`INV-KYC-04`,
+`INV-XB-02`).
+**Not:** the beneficiary's lifecycle, which is `crossborder`'s projection of the screening's
+outcome; nor the customer's own onboarding screening, which belongs to a KYC Case.
+**Owned by:** `kyc`
+
+### Cross-Border Beneficiary
+**Is:** the registered destination of cross-border payments — the corridor provider's opaque
+destination reference, a display suffix, the payee-check verdict and the provider-attested
+destination country, currency and entity type — payable only while `ACTIVE` with a current
+clearance (`INV-XB-02`).
+**Not:** the `transfers` Beneficiary, an internal book destination; and not a stored account:
+no account identifier enters the platform (`INV-RAIL-03`), and the name is held only by
+`kyc`, encrypted.
+**Owned by:** `crossborder`
+
+### Cross-Border Payment
+**Is:** a customer's instruction to deliver value abroad at a disclosed price — one accepted
+quote, a hold, then one entry at the corridor provider's acceptance; what was shown is what
+is held, posted and instructed (`INV-XB-01`, `INV-XB-03`).
+**Not:** the Outbound Credit (one instruction on one rail) nor the FX Trade (the conversion):
+the payment composes both and adds the price, the beneficiary and the return.
+**Owned by:** `crossborder`
+
+### Currency
+**Is:** an ISO 4217 code with its minor-unit scale, explicit on every monetary value
+(`INV-MON-02`).
+**Not:** a formatting detail. Arithmetic across currencies is rejected (`INV-MON-04`); only a
+conversion through an FX position turns one currency into another (`INV-FX-01`).
+**Owned by:** `sharedkernel`
+
+### Customer Quote
+**Is:** the customer-facing side of an FX Quote: the customer rate and the frozen amounts the
+customer is shown and may accept — the posting plan of `INV-FX-04`, with the margin over mid
+disclosed.
+**Not:** the Provider Rate or the Reference Rate. The customer rate is derived from the
+provider's firm rate under the pinned pricing policy, and the margin between them is posted
+explicitly (`INV-FX-03`), never concealed in the rate.
+**Owned by:** `fx`
+
+### FX Cover
+**Is:** the platform's back-to-back provider trade hedging an accepted quote — one per
+accepted quote, dispatched under a reference stored before sending, closing exactly the
+plan's position legs with any difference posted as realised result (`INV-FX-08`).
+**Not:** the FX Trade. The trade is the customer's conversion, booked locally and never
+waiting on a provider (`INV-FX-09`); the cover is the platform's own risk management, and
+its failure is the platform's P&L, never the customer's.
+**Owned by:** `fx`
+
+### FX Position
+**Is:** per currency, the platform's own ledger account for value opened by conversions and
+closed by covers — zero at rest, explainable from its open legs, with one poster and no free
+adjustment (`INV-FX-06`).
+**Not:** a clearing position, which is a counterparty's value in flight and opens settlement
+expectations; the FX position is nobody's debt — it is the platform's own currency exposure,
+and it joins no reconciled-positions proof.
+**Owned by:** `fx`
+
+### Markup
+**Is:** the commercial component of the conversion margin, applied over the internal rate to
+reach the customer rate, stored as its own attributed part of the one revenue line
+(`INV-FX-03`).
+**Not:** the Spread, which covers the platform's cost and risk between the provider's rate
+and the internal rate. The split is a stored fact, not a second posting.
+**Owned by:** `fx`
+
+### Minor unit
+**Is:** the smallest representable unit of a currency — 0 decimal places for JPY, 2 for EUR,
+GBP and USD, 3 for BHD — pinning the scale of every amount in it (`INV-MON-05`).
+**Not:** a rounding choice. The minor unit is the currency's fact; how an amount reaches that
+scale is a named rounding policy (`INV-MON-03`).
+**Owned by:** `sharedkernel`
+
+### Money
+**Is:** the kernel value type binding an exact decimal amount to its explicit currency and
+scale — the only representation of monetary value in the platform (`INV-MON-01`,
+`INV-MON-02`).
+**Not:** a number. An amount without currency and precision semantics is refused at the type
+level, and overflow is rejected, never wrapped (`INV-MON-06`).
+**Owned by:** `sharedkernel`
+
+### Outbound Credit
+**Is:** one instruction on one rail to one destination, carrying the provider's ambiguity —
+dispatched, unknown, received, completed or failed — with its end-to-end reference minted
+and stored before any send (`INV-PAY-04`) and its outcome adopted only from knowledge
+(`INV-LIFE-03`).
+**Not:** the Cross-Border Payment, which is the customer's product-level instruction and
+never shows the provider's ambiguity; and not a Withdrawal, which moves the customer's own
+money to the customer's own account.
+**Owned by:** `payments`
+
+### Payment Offer
+**Is:** the disclosed price of a cross-border payment — destination amount, transfer fee,
+total debit — frozen beside its FX quote under the pinned corridor policy version; accepting
+it is what `INV-XB-03` holds the posting and the instruction to.
+**Not:** the FX Quote, which is the conversion's frozen plan: the offer adds the corridor's
+fee and limits. An unaccepted offer is not a payment.
+**Owned by:** `crossborder`
+
+### Provider Rate
+**Is:** the FX provider's firm quoted rate, with its stated counter-amount and validity — the
+executable link of the rate chain, frozen on the quote and replayable (`INV-FX-05`).
+**Not:** the Customer Quote, which is derived from it under policy; nor the Reference Rate,
+against which it must be plausible before it may be used (`INV-FX-02`).
+**Owned by:** `fx`
+
+### Rate Lock
+**Is:** the issued FX quote itself — exclusive to its owner, single-use, bounded on the
+database clock, never lengthened by provider skew or network time (`INV-FX-04`).
+**Not:** a reservation of provider liquidity. If the provider refuses its own firm quote, the
+cover re-quotes and the difference is the platform's realised result — the customer's price
+stands (`INV-FX-09`).
+**Owned by:** `fx`
+
+### Realised FX Result
+**Is:** the gain or loss posted when a cover or unwind executes off its plan — one explained
+line per execution, gains never netted with losses (`INV-FX-06`, `INV-FX-08`).
+**Not:** revaluation or unrealised P&L, which wait for Phase 14: covered positions are zero
+at rest, so there is nothing to revalue.
+**Owned by:** `fx`
+
+### Reference Rate
+**Is:** an independently sourced market rate used for plausibility and disclosure only, fresh
+on the database clock and failing closed when stale (`INV-FX-02`).
+**Not:** an executable rate. No customer and no cover ever trades on it — it is the check on
+the provider, which is why it must not come from the provider.
+**Owned by:** `fx`
+
+### Rounding policy
+**Is:** a named rounding rule, recorded wherever an amount or rate is rounded
+(`INV-MON-03`); a conversion names three — rate, amount and margin — pinned on the decision
+(`INV-HIST-04`).
+**Not:** an implementation detail. Replaying the named policies reproduces the posted entry
+exactly (`INV-FX-05`); an unnamed rounding is an unexplainable cent.
+**Owned by:** `sharedkernel`
+
+### Scale
+**Is:** the number of decimal places a stored value carries — a currency's minor units for
+amounts, the pair's pinned rate scale for rates — preserved in persistence (`INV-MON-05`).
+**Not:** precision by accident. A value at the wrong scale is refused, never silently
+rescaled.
+**Owned by:** `sharedkernel`
+
+### Spread
+**Is:** the platform's margin between the provider's rate and the internal rate, posted
+explicitly as revenue with its attribution stored (`INV-FX-03`).
+**Not:** the Markup, the commercial component over the internal rate; and not something
+concealed inside the applied rate — hidden margin is unreportable revenue.
 **Owned by:** `fx`
 
 ---
@@ -998,11 +1184,12 @@ majority spelling.
    module's `Owns:` line, the glossary must agree — it is the authority on ownership (ADR-0012).
    Added during review, which found `Risk Score` attributed to `risk` while the register says
    `credit`.
-7. **Every `INV-*` the glossary cites exists.** Forty-two distinct invariants, cited
-   seventy-two times (recounted at the Phase 8 exit review, `P8-DOC-001`, after its nine new
-   entries; the Phase 7 → 8 transition had counted thirty-eight and fifty-four, and the Phase 6
-   review, `P6-DOC-001`, twenty-five and twenty-nine), none of which any other check would notice
-   going stale.
+7. **Every `INV-*` the glossary cites exists.** Sixty distinct invariants, cited one
+   hundred and fifteen times (recounted at the Phase 8 → 9 transition, 2026-10-02, after
+   its twenty-two new entries; the Phase 8 exit review, `P8-DOC-001`, had counted forty-two
+   and seventy-two, the Phase 7 → 8 transition thirty-eight and fifty-four, and the Phase 6
+   review, `P6-DOC-001`, twenty-five and twenty-nine), none of which any other check would
+   notice going stale.
 8. Every distinction group has a §2 heading repeating the group exactly, so a group added to
    `CLAUDE.md` fails the build until it is contrasted.
 9. All of the above are actually parsed, so a reformatted document fails loudly rather than

@@ -71,7 +71,11 @@ public record BreakTrace(UUID breakId, List<Step> steps, boolean truncated) {
         PARKED_AS,
         /** A suspense item's own park, and the parking entry. */
         PARKED_BY,
-        /** An unpark that released a suspense item. */
+        /**
+         * What released a suspense item: an unpark's park, or - a release that posts no inverse -
+         * the resolution its {@code cause_ref} names. *(Corrected 2026-10-02 by the Phase 8 -> 9
+         * transition, REC-9: the park-less releases were dropped.)*
+         */
         RELEASED_BY,
         /** A suspense item's owning break, where it is not the traced one. */
         OWNED_BY,

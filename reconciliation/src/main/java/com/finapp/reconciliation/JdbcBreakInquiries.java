@@ -142,8 +142,11 @@ public final class JdbcBreakInquiries implements BreakInquiries {
     public List<ResolutionRow> resolutions(Connection unitOfWork, UUID breakId) {
         return list(
                 unitOfWork,
-                // The break's own resolutions, and the batch repudiation that closed it
-                // (P8-TSK-023: a batch-subject resolution names no break - its closure does).
+                // The break's own resolutions; the batch repudiation that closed it
+                // (P8-TSK-023: a batch-subject resolution names no break - its closure does);
+                // and the resolution its RESOLVED edge names by V015's column - a remainder
+                // sibling's or an offset partner's closing resolution names another break
+                // (REC-9, the Phase 8 -> 9 transition).
                 "WITH subject(break_id) AS (SELECT ?::uuid)"
                         + " SELECT r.id, r.kind, r.status, r.reason_code, r.narrative,"
                         + " r.proposed_amount_minor, r.currency, r.scale, r.decision_id,"
@@ -152,7 +155,10 @@ public final class JdbcBreakInquiries implements BreakInquiries {
                         + " r.decided_at FROM reconciliation.resolution r, subject s"
                         + " WHERE r.break_id = s.break_id OR r.id IN (SELECT c.resolution_id"
                         + " FROM reconciliation.repudiation_closure c"
-                        + " WHERE c.break_id = s.break_id) ORDER BY r.proposed_at, r.id",
+                        + " WHERE c.break_id = s.break_id) OR r.id IN (SELECT e.resolution_id"
+                        + " FROM reconciliation.break_event e WHERE e.break_id = s.break_id"
+                        + " AND e.event_type = 'RESOLVED' AND e.resolution_id IS NOT NULL)"
+                        + " ORDER BY r.proposed_at, r.id",
                 breakId,
                 row ->
                         new ResolutionRow(
@@ -339,17 +345,21 @@ public final class JdbcBreakInquiries implements BreakInquiries {
     }
 
     @Override
-    public List<ParkLink> releasesOf(Connection unitOfWork, UUID suspenseItemId) {
+    public List<ReleaseLink> releasesOf(Connection unitOfWork, UUID suspenseItemId) {
+        // Every release, the park-less ones included (REC-9): only an unpark has a park.
         return list(
                 unitOfWork,
-                "SELECT r.park_id, p.journal_entry_id FROM reconciliation.suspense_release r"
-                        + " JOIN reconciliation.park p ON p.id = r.park_id"
+                "SELECT r.park_id, p.journal_entry_id, r.cause, r.cause_ref"
+                        + " FROM reconciliation.suspense_release r"
+                        + " LEFT JOIN reconciliation.park p ON p.id = r.park_id"
                         + " WHERE r.item_id = ? ORDER BY r.seq",
                 suspenseItemId,
                 row ->
-                        new ParkLink(
-                                row.getObject("park_id", UUID.class),
-                                row.getObject("journal_entry_id", UUID.class)));
+                        new ReleaseLink(
+                                Optional.ofNullable(row.getObject("park_id", UUID.class)),
+                                Optional.ofNullable(row.getObject("journal_entry_id", UUID.class)),
+                                ReleaseCause.valueOf(row.getString("cause")),
+                                row.getString("cause_ref")));
     }
 
     @Override

@@ -332,6 +332,13 @@ class MatchingDatabaseTest {
         assertThat(count("SELECT count(*) FROM platform.outbox_event WHERE event_type ="
                 + " 'reconciliation.SettlementExpectationSettled' AND aggregate_id IN"
                 + " (?, ?)", settled, settledToo)).isEqualTo(2);
+        assertThat(count("SELECT count(*) FROM platform.outbox_event WHERE event_type ="
+                + " 'reconciliation.SettlementExpectationSettled' AND aggregate_id IN"
+                + " (?, ?) AND causation_id = correlation_id"
+                + " AND causation_id <> aggregate_id::text", settled, settledToo))
+                .as("the cause is the flow's root, never the expectation itself"
+                        + " (EVENT_ARCHITECTURE; the Phase 8 -> 9 transition, ARCH-P8-04)")
+                .isEqualTo(2);
 
         // Completion: the acting-only audit record and the event, once.
         assertThat(count("SELECT count(*) FROM platform.audit_record WHERE operation ="
@@ -340,6 +347,12 @@ class MatchingDatabaseTest {
         assertThat(count("SELECT count(*) FROM platform.outbox_event WHERE event_type ="
                 + " 'reconciliation.ReconciliationRunCompleted' AND aggregate_id = ?",
                 runId)).isEqualTo(1);
+        assertThat(count("SELECT count(*) FROM platform.outbox_event WHERE event_type ="
+                + " 'reconciliation.ReconciliationRunCompleted' AND aggregate_id = ?"
+                + " AND causation_id = correlation_id AND causation_id <> aggregate_id::text",
+                runId))
+                .as("the run's completion names its flow as the cause, never the run (ARCH-P8-04)")
+                .isEqualTo(1);
 
         // The waiting: a graced clock where a landed rule reached nothing; the fee line
         // is CHECKED - judged at once, no clock, never parked (P8-TSK-012).
@@ -532,14 +545,42 @@ class MatchingDatabaseTest {
     @Test
     @Order(4)
     @DisplayName("the lock only ORDERS: bypassed, ten sweepers still produce one"
-            + " allocation per pair, one settle per expectation and one completion - the"
-            + " uniques, the conditional edges and the deferred sums arbitrate")
+            + " allocation per pair, one settle per expectation and one completion - and,"
+            + " in one chunk or in chunks of three, ONE RUN decision per item and no break:"
+            + " a loser re-reads each item under its lock and skips what left PENDING")
     void theLockOnlyOrders() throws Exception {
-        UUID runId = race(matching(new Matching.Config(200, 2), true));
-        // A bypassed loser may record its losing evaluation - money may not move twice.
-        assertThat(count("SELECT count(*) FROM platform.audit_record WHERE operation ="
-                + " 'reconciliation.RunCompleted' AND target_id = ?", runId.toString()))
-                .isEqualTo(1);
+        // The Phase 8 -> 9 transition's REC-10, MI-4, IDEM-3 and T-6: a bypassed loser read the
+        // chunk lock-free, waited on the winner's rows, then decided every item again - a second
+        // RUN decision, and on an item the winner MATCHED a DUPLICATE_EXTERNAL break owning no
+        // suspense that no resolution kind could close. Chunks of three race across chunks: a
+        // loser holding a stale cursor reads the NEXT pending items, never the decided ones.
+        for (Matching.Config shape :
+                List.of(new Matching.Config(200, 2), new Matching.Config(3, 2))) {
+            UUID runId = race(matching(shape, true));
+            assertThat(count("SELECT count(*) FROM platform.audit_record WHERE operation ="
+                    + " 'reconciliation.RunCompleted' AND target_id = ?", runId.toString()))
+                    .isEqualTo(1);
+            assertThat(count("SELECT count(*) FROM reconciliation.match_decision WHERE"
+                    + " run_id = ? AND origin = 'RUN'", runId))
+                    .as("chunks of %d: one RUN decision per item, though no try-lock stood",
+                            shape.chunkSize())
+                    .isEqualTo(10);
+            assertThat(count("SELECT count(*) FROM (SELECT external_item_id FROM"
+                    + " reconciliation.match_decision WHERE run_id = ? GROUP BY"
+                    + " external_item_id HAVING count(*) > 1) twice", runId))
+                    .as("chunks of %d: no item decided twice", shape.chunkSize())
+                    .isZero();
+            assertThat(count("SELECT count(*) FROM reconciliation.break b JOIN"
+                    + " reconciliation.external_item i ON i.id = b.external_item_id WHERE"
+                    + " i.run_id = ?", runId))
+                    .as("chunks of %d: no loser's break on an item the winner matched - no"
+                            + " break without its value", shape.chunkSize())
+                    .isZero();
+            assertThat(count("SELECT count(*) FROM reconciliation.reconciliation_batch WHERE"
+                    + " id = ? AND failures = 0", runId))
+                    .as("chunks of %d: no chunk failed on the way", shape.chunkSize())
+                    .isEqualTo(1);
+        }
     }
 
     /** Ten concurrent sweeps over a fresh ten-item run; the money-side asserts shared. */

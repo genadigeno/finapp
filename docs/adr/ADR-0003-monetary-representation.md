@@ -102,5 +102,9 @@ posting the platform ever writes.
 
 - Phase 0: allocation helper guaranteeing zero residual when splitting an amount.
 - Phase 9: per-currency-pair rounding policy for FX; residual account treatment.
+  *(Paid, as a decision, at the Phase 8 → 9 transition by ADR-0074, `Proposed`: rounding
+  mode and rate scale are named per `fx.pricing_pair` with no default, and the residual is
+  its own bounded line, posted to `ROUNDING_RESIDUAL` in the computed leg's currency, never
+  absorbed into margin or the customer amount.)*
 - Phase 11: day-count and interest rounding conventions.
 - Revisit only if a requirement emerges for amounts exceeding `long` minor units.

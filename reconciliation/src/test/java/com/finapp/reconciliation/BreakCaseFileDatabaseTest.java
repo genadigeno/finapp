@@ -115,6 +115,18 @@ class BreakCaseFileDatabaseTest {
     private static final EvidenceTargets TARGETS =
             (unitOfWork, kind, id) -> KNOWN_TARGETS.contains(id);
 
+    /** The identities this suite declares active investigators - SEC-06's port, faked. */
+    private static final UUID ALICE = IDS.next();
+    private static final UUID BOB = IDS.next();
+    private static final List<UUID> RACERS =
+            java.util.stream.IntStream.range(0, 10).mapToObj(racer -> IDS.next()).toList();
+    private static final Set<UUID> INVESTIGATORS =
+            java.util.stream.Stream.concat(java.util.stream.Stream.of(ALICE, BOB),
+                            RACERS.stream())
+                    .collect(java.util.stream.Collectors.toUnmodifiableSet());
+    private static final Investigators ACTIVE_INVESTIGATORS =
+            (unitOfWork, principal) -> INVESTIGATORS.contains(principal);
+
     private static Connection application;
     private static JdbcReconciliationRuns runs;
     private static JdbcExternalItems items;
@@ -151,8 +163,8 @@ class BreakCaseFileDatabaseTest {
         register = new JdbcBreakRegister(new JdbcOutboxWriter(), new JdbcAuditWriter(), IDS);
         caseFile =
                 new BreakCaseFile(
-                        new JdbcBreakCaseStore(), TARGETS, new JdbcOutboxWriter(),
-                        new JdbcAuditWriter(), IDS, CLOCK);
+                        new JdbcBreakCaseStore(), TARGETS, ACTIVE_INVESTIGATORS,
+                        new JdbcOutboxWriter(), new JdbcAuditWriter(), IDS, CLOCK);
         traces = new BreakTraces(new JdbcBreakInquiries(), TRACE_EVIDENCE);
         statuses = new SettlementStatuses(new JdbcExpectationInquiries());
         seedPrivateRuleSet();
@@ -318,25 +330,36 @@ class BreakCaseFileDatabaseTest {
 
     @Test
     @Order(3)
-    @DisplayName("the first assignment opens the investigation once; a repeat converges; a"
-            + " reassignment appends history and publishes nothing")
+    @DisplayName("the first assignment opens the investigation once; a repeat converges, its"
+            + " identifier canonical; a reassignment appends history and publishes nothing; an"
+            + " assignee that is no active investigator's identifier - a card number, a free-text"
+            + " id, an unknown identity - is refused with nothing written or published (SEC-06)")
     void assignmentOpensTheInvestigationOnce() throws SQLException {
+        CorrelationId opening = CorrelationId.generate(IDS);
         BreakCaseFile.Assigned first = command(uow -> caseFile.assign(
-                uow, breakOnItem, "op-alice", INVESTIGATOR, CorrelationId.generate(IDS)));
+                uow, breakOnItem, ALICE.toString(), INVESTIGATOR, opening));
         assertThat(first.changed()).isTrue();
         assertThat(first.started()).isTrue();
         assertThat(first.row().status()).isEqualTo(BreakStatus.INVESTIGATING);
-        assertThat(first.row().assignee()).contains("op-alice");
+        assertThat(first.row().assignee()).contains(ALICE.toString());
         assertThat(started(breakOnItem)).isEqualTo(1);
+        assertThat(string("SELECT causation_id FROM platform.outbox_event WHERE event_type ="
+                + " 'reconciliation.BreakInvestigationStarted' AND aggregate_id = ?",
+                breakOnItem))
+                .as("the assigning flow is the cause, never the break itself (ARCH-P8-04)")
+                .isEqualTo(opening.value());
 
         BreakCaseFile.Assigned repeat = command(uow -> caseFile.assign(
-                uow, breakOnItem, "op-alice", INVESTIGATOR, CorrelationId.generate(IDS)));
-        assertThat(repeat.changed()).as("the standing assignee converges").isFalse();
+                uow, breakOnItem, ALICE.toString().toUpperCase(java.util.Locale.ROOT),
+                INVESTIGATOR, CorrelationId.generate(IDS)));
+        assertThat(repeat.changed())
+                .as("the standing assignee converges, whatever the identifier's case")
+                .isFalse();
 
         BreakCaseFile.Assigned handover = command(uow -> caseFile.assign(
-                uow, breakOnItem, "op-bob", INVESTIGATOR, CorrelationId.generate(IDS)));
+                uow, breakOnItem, BOB.toString(), INVESTIGATOR, CorrelationId.generate(IDS)));
         assertThat(handover.started()).isFalse();
-        assertThat(handover.row().assignee()).contains("op-bob");
+        assertThat(handover.row().assignee()).contains(BOB.toString());
         assertThat(started(breakOnItem))
                 .as("a reassignment publishes nothing")
                 .isEqualTo(1);
@@ -346,12 +369,29 @@ class BreakCaseFileDatabaseTest {
                 + " 'reconciliation.BreakAssigned' AND target_id = ?",
                 breakOnItem.toString())).isEqualTo(2);
 
+        // SEC-06: what is no active investigator's identifier never reaches the row or an event.
+        String pan = "4111111111111111";
+        for (String refused : List.of("not an identifier!", pan, "op-alice",
+                IDS.next().toString())) {
+            assertThatThrownBy(() -> command(uow -> caseFile.assign(
+                            uow, breakOnItem, refused, INVESTIGATOR,
+                            CorrelationId.generate(IDS))))
+                    .as(refused)
+                    .isInstanceOf(BreakCaseFile.CaseFileRefused.class)
+                    .hasMessageNotContaining(refused);
+        }
+        assertThat(string("SELECT assignee FROM reconciliation.break WHERE id = ?", breakOnItem))
+                .as("the refused assignees wrote nothing")
+                .isEqualTo(BOB.toString());
+        assertThat(count("SELECT count(*) FROM reconciliation.break_event WHERE break_id = ?"
+                + " AND event_type = 'ASSIGNED'", breakOnItem)).isEqualTo(2);
+        assertThat(started(breakOnItem)).isEqualTo(1);
+        assertThat(count("SELECT count(*) FROM platform.outbox_event WHERE"
+                + " convert_from(payload, 'UTF8') LIKE '%" + pan + "%'"))
+                .as("the card number reached no event")
+                .isZero();
         assertThatThrownBy(() -> command(uow -> caseFile.assign(
-                        uow, breakOnItem, "not an identifier!", INVESTIGATOR,
-                        CorrelationId.generate(IDS))))
-                .isInstanceOf(BreakCaseFile.CaseFileRefused.class);
-        assertThatThrownBy(() -> command(uow -> caseFile.assign(
-                        uow, UUID.randomUUID(), "op-alice", INVESTIGATOR,
+                        uow, UUID.randomUUID(), ALICE.toString(), INVESTIGATOR,
                         CorrelationId.generate(IDS))))
                 .isInstanceOf(BreakCaseFile.BreakNotFound.class);
     }
@@ -362,7 +402,7 @@ class BreakCaseFileDatabaseTest {
             + " break row serialises them, every loser a recorded handover")
     void tenRacingFirstAssignmentsPublishOnce() throws Exception {
         List<Future<BreakCaseFile.Assigned>> outcomes = race(10, racer -> command(uow ->
-                caseFile.assign(uow, breakOnRun, "op-racer-" + racer, INVESTIGATOR,
+                caseFile.assign(uow, breakOnRun, RACERS.get(racer).toString(), INVESTIGATOR,
                         CorrelationId.generate(IDS))));
         int startedCount = 0;
         for (Future<BreakCaseFile.Assigned> outcome : outcomes) {
@@ -585,7 +625,7 @@ class BreakCaseFileDatabaseTest {
                 breakOnExpectation)).isEqualTo("RESOLVED");
 
         List<Function<Connection, Object>> writes = List.of(
-                uow -> caseFile.assign(uow, breakOnExpectation, "op-late", INVESTIGATOR,
+                uow -> caseFile.assign(uow, breakOnExpectation, ALICE.toString(), INVESTIGATOR,
                         CorrelationId.generate(IDS)),
                 uow -> caseFile.addNote(uow, breakOnExpectation, "too late", INVESTIGATOR,
                         CorrelationId.generate(IDS)),
@@ -602,6 +642,73 @@ class BreakCaseFileDatabaseTest {
         assertThat(nodes(resolved, NodeKind.RESOLUTION))
                 .as("the trace reaches the resolution that closed it")
                 .hasSize(1);
+    }
+
+    @Test
+    @Order(11)
+    @DisplayName("a reclassification is refused - 422, nothing written - unless the frozen cause"
+            + " keeps an exit on the target type: a STATEMENT_GAP onto PROCESSING_ERROR, a"
+            + " RUN_BLOCKED onto SETTLEMENT_MISMATCH, an EXPECTATION_OVERDUE onto"
+            + " SETTLEMENT_MISMATCH (the Phase 8 -> 9 transition); a type the cause's own"
+            + " evidence still finds is admitted")
+    void aReclassificationNeverStrandsTheBreak() throws Exception {
+        // Two runs of their own, each completed by the matcher (a line no key reaches), so no
+        // other break holds a seat on them and only the exit rule can refuse.
+        UUID gapRun = seedRun(line(1, 3_00, "CF-RC-GAP-" + UUID.randomUUID()));
+        UUID blockedRun = seedRun(line(1, 4_00, "CF-RC-BLK-" + UUID.randomUUID()));
+        matching().sweep();
+        for (UUID run : List.of(gapRun, blockedRun)) {
+            assertThat(string("SELECT status FROM reconciliation.reconciliation_batch WHERE"
+                    + " id = ?", run)).isEqualTo("COMPLETED");
+        }
+        UUID gap = raise(BreakType.SETTLEMENT_MISMATCH, BreakCause.STATEMENT_GAP,
+                BreakRegister.Subject.run(gapRun), 7_00);
+        UUID blocked = raise(BreakType.PROCESSING_ERROR, BreakCause.RUN_BLOCKED,
+                BreakRegister.Subject.run(blockedRun), 0);
+        Seeded overdueCapture = openExpectation("CF-RC-OD", 35_00, SETTLED_ON.plusDays(3));
+        UUID overdue = raise(BreakType.MISSING_EXTERNAL, BreakCause.EXPECTATION_OVERDUE,
+                BreakRegister.Subject.expectation(overdueCapture.expectationId()), 35_00);
+
+        record Shape(String name, UUID breakId, BreakType from, BreakType to) {}
+        for (Shape shape : List.of(
+                // (a) the gap's closer selects SETTLEMENT_MISMATCH: as PROCESSING_ERROR the
+                // filling statement passes it by, and no kind admits a statement cause.
+                new Shape("(a) STATEMENT_GAP", gap, BreakType.SETTLEMENT_MISMATCH,
+                        BreakType.PROCESSING_ERROR),
+                // (b) the requeued run's completion selects PROCESSING_ERROR.
+                new Shape("(b) RUN_BLOCKED", blocked, BreakType.PROCESSING_ERROR,
+                        BreakType.SETTLEMENT_MISMATCH),
+                // (c) the settling allocation's closers select MISSING_EXTERNAL and the
+                // capture's AMOUNT_MISMATCH; SETTLEMENT_MISMATCH admits no kind for the cause.
+                new Shape("(c) EXPECTATION_OVERDUE", overdue, BreakType.MISSING_EXTERNAL,
+                        BreakType.SETTLEMENT_MISMATCH))) {
+            BreakCaseStore.BreakRow before = breakRow(shape.breakId());
+            assertThatThrownBy(() -> command(uow -> caseFile.reclassify(
+                            uow, shape.breakId(), shape.to(), "looks like another kind of break",
+                            INVESTIGATOR, CorrelationId.generate(IDS))))
+                    .as(shape.name() + " onto " + shape.to() + " would strand the break: refused")
+                    .isInstanceOf(BreakCaseFile.CaseFileRefused.class)
+                    .hasMessageContaining("no exit");
+            BreakCaseStore.BreakRow after = breakRow(shape.breakId());
+            assertThat(after.type()).as(shape.name() + ": the type stands").isEqualTo(shape.from());
+            assertThat(after.residualVersion())
+                    .as(shape.name() + ": nothing moved").isEqualTo(before.residualVersion());
+            assertThat(count("SELECT count(*) FROM reconciliation.break_event WHERE break_id = ?"
+                    + " AND event_type = 'RECLASSIFIED'", shape.breakId()))
+                    .as(shape.name() + ": no history row").isZero();
+            assertThat(count("SELECT count(*) FROM platform.audit_record WHERE operation ="
+                    + " 'reconciliation.BreakReclassified' AND target_id = ?",
+                    shape.breakId().toString()))
+                    .as(shape.name() + ": no audit record").isZero();
+        }
+
+        // A type the cause's own evidence still finds keeps the exit: the capture's settling
+        // allocation selects its AMOUNT_MISMATCH, and its remainder admits a write-off there.
+        BreakCaseFile.Reclassified kept = command(uow -> caseFile.reclassify(
+                uow, overdue, BreakType.AMOUNT_MISMATCH, "a short payment, not a missing one",
+                INVESTIGATOR, CorrelationId.generate(IDS)));
+        assertThat(kept.changed()).isTrue();
+        assertThat(kept.row().type()).isEqualTo(BreakType.AMOUNT_MISMATCH);
     }
 
     // ----------------------------------------------------------------- seeding

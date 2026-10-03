@@ -341,6 +341,8 @@ class ReconciliationResolutionDatabaseTest {
         record Door(String method, String path, String body) {}
         List<Door> doors = List.of(
                 new Door("POST", "/breaks/" + some + "/resolutions", proposal),
+                // The approver's read (the Phase 8 -> 9 transition, SEC-01).
+                new Door("GET", "/resolutions/" + some, null),
                 new Door("POST", "/resolutions/" + some + "/approval", null),
                 new Door("POST", "/resolutions/" + some + "/rejection", "{\"reason\":\"r\"}"),
                 new Door("DELETE", "/resolutions/" + some, null));
@@ -366,6 +368,10 @@ class ReconciliationResolutionDatabaseTest {
                         "reconciliation.BreakNotFound"),
                 new Absent("POST", "/breaks/not-a-uuid/resolutions", proposal,
                         "reconciliation.BreakNotFound"),
+                new Absent("GET", "/resolutions/" + some, null,
+                        "reconciliation.ResolutionNotFound"),
+                new Absent("GET", "/resolutions/not-a-uuid", null,
+                        "reconciliation.ResolutionNotFound"),
                 new Absent("POST", "/resolutions/" + some + "/approval", null,
                         "reconciliation.ResolutionNotFound"),
                 new Absent("POST", "/resolutions/not-a-uuid/approval", null,
@@ -386,6 +392,70 @@ class ReconciliationResolutionDatabaseTest {
         assertThat(evidenced.statusCode()).as("EVIDENCED is refused before any lookup")
                 .isEqualTo(422);
         assertThat(evidenced.body()).contains("reconciliation.ResolutionKindNotAllowed");
+    }
+
+    // ----------------------------------------------------------------- the approver's read
+
+    @Test
+    @Order(5)
+    @DisplayName("SEC-01 (the Phase 8 -> 9 transition): GET /resolutions/{id} shows the approver"
+            + " where a transfer sends money - the target's purpose and owner and every frozen"
+            + " line - and an approval echoing another target is 409 ResolutionStale with"
+            + " nothing posted; the echo of the target read is approved")
+    void theApproverSeesWhatTheyApprove() throws Exception {
+        Session proposer = sessionWith(RoleName.RECONCILIATION_OPERATOR);
+        Session approver = sessionWith(RoleName.RECONCILIATION_OPERATOR);
+        UUID merchant = IDS.next();
+        UUID payable = openAccount(AccountPurpose.MERCHANT_PAYABLE, merchant);
+        UUID confederate = openAccount(AccountPurpose.CUSTOMER_WALLET, IDS.next());
+        UUID clearing = operational(AccountPurpose.SETTLEMENT_CLEARING);
+        Subject subject = completedExpectation(ExpectationDirection.OUTBOUND, 9_00);
+        HttpResponse<String> proposed = post(proposer.token(), "/breaks/" + subject.breakId()
+                + "/resolutions", key(),
+                "{\"kind\":\"TRANSFER_TO_ACCOUNT\",\"reasonCode\":\"FUNDS_ATTRIBUTED\","
+                        + "\"narrative\":\"returned to the merchant per the remittance advice\","
+                        + "\"targetAccountId\":\"" + payable + "\"}");
+        assertThat(proposed.statusCode()).as(proposed.body()).isEqualTo(201);
+        String resolution = field(proposed.body(), "resolutionId");
+
+        HttpResponse<String> read = call(approver.token(), "GET", BASE + "/resolutions/"
+                + resolution, null, null);
+        assertThat(read.statusCode()).as(read.body()).isEqualTo(200);
+        assertThat(read.body())
+                .as("the destination: the account, what it is and whose")
+                .contains("\"targetAccount\":{\"accountId\":\"" + payable
+                        + "\",\"purpose\":\"MERCHANT_PAYABLE\",\"ownerRef\":\"" + merchant
+                        + "\",\"currency\":\"EUR\",\"status\":\"ACTIVE\"}")
+                .as("the frozen lines, as they will post")
+                .contains("{\"account\":{\"accountId\":\"" + clearing
+                        + "\",\"purpose\":\"SETTLEMENT_CLEARING\"")
+                .contains("\"direction\":\"DEBIT\",\"amount\":\"9.00\",\"currency\":\"EUR\"}")
+                .contains("{\"account\":{\"accountId\":\"" + payable
+                        + "\",\"purpose\":\"MERCHANT_PAYABLE\",\"ownerRef\":\"" + merchant)
+                .contains("\"direction\":\"CREDIT\",\"amount\":\"9.00\",\"currency\":\"EUR\"}")
+                .contains("\"narrative\":\"returned to the merchant per the remittance advice\"")
+                .contains("\"status\":\"PROPOSED\"");
+
+        HttpResponse<String> elsewhere = post(approver.token(), "/resolutions/" + resolution
+                + "/approval", null, "{\"targetAccountId\":\"" + confederate + "\"}");
+        assertThat(elsewhere.statusCode())
+                .as("an approval of a target the proposal does not hold: " + elsewhere.body())
+                .isEqualTo(409);
+        assertThat(elsewhere.body()).contains("reconciliation.ResolutionStale");
+        assertThat(count("SELECT count(*) FROM ledger.journal_entry WHERE reference = ?",
+                resolution)).as("the refused approval posted nothing").isZero();
+        assertThat(count("SELECT count(*) FROM ledger.journal_line WHERE ledger_account_id = ?",
+                confederate)).as("the echoed account received nothing").isZero();
+        assertThat(one("SELECT status FROM reconciliation.resolution WHERE id = ?::uuid",
+                resolution)).isEqualTo("PROPOSED");
+
+        HttpResponse<String> approved = post(approver.token(), "/resolutions/" + resolution
+                + "/approval", null, "{\"targetAccountId\":\"" + payable + "\"}");
+        assertThat(approved.statusCode()).as(approved.body()).isEqualTo(200);
+        assertThat(count("SELECT count(*) FROM ledger.journal_line l JOIN ledger.journal_entry e"
+                + " ON e.id = l.entry_id WHERE e.reference = ? AND l.ledger_account_id = ? AND"
+                + " l.direction = 'CREDIT' AND l.amount_minor = 900", resolution, payable))
+                .as("the target the approver read, credited exactly").isEqualTo(1);
     }
 
     // ----------------------------------------------------------------- seeding

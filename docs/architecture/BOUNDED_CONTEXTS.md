@@ -21,6 +21,21 @@ settling completion opens, the matching, the breaks, the suspense and the resolu
 expectation belonged to Settlement until then; it is internal state that allocation and ageing
 drive, so it is Reconciliation's.
 
+**FX (15)** and **Cross-Border Payments (16)** were bounded by the Phase 8 → 9 transition
+(ADR-0074…0081, 2026-10-02): two contexts in two modules, `fx` and `crossborder`, with no build
+edge between them and none to `payments`, `kyc` or `accounts` (`MODULE_ARCHITECTURE.md` §4). FX
+is pricing and conversion — the server-authoritative quote that is a frozen posting plan, the
+trade that posts it, and the cover that squares the platform's position with the FX provider.
+Cross-Border Payments is the customer's instruction to pay a beneficiary abroad — corridors,
+beneficiaries, offers and the payment's business lifecycle — delegating pricing to `fx` and
+execution to `payments`, whose Outbound Credit owns the provider's ambiguity (ADR-0079). Two
+boundary decisions worth recording: counterparty screening is KYC/KYB's (context 3) — a
+transaction-time sanctions check on an external party is a kyc decision with evidence, review
+and a recorded basis, not a payment state (ADR-0081) — and the FX and corridor counterparties'
+clearing positions are the Ledger's (context 7), keyed per counterparty through
+`ledger.counterparty`, reconciled by Settlement and Reconciliation (13, 14) over their own
+report sources (ADR-0078, ADR-0082).
+
 1. Party & Customer
 2. Identity, Authentication & Authorization
 3. KYC/KYB

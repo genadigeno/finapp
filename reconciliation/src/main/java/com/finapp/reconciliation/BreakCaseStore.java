@@ -153,6 +153,14 @@ public interface BreakCaseStore {
     /** Whether the break owns suspense value not yet released ({@code INV-REC-09}'s side). */
     boolean holdsParkedValue(Connection unitOfWork, UUID breakId);
 
+    /**
+     * What the break's subject holds for a resolution to dispose of, read lock-free under the
+     * break row's lock - the resolution machine's own order: the break's OWN unreleased
+     * suspense first (parked value wins), else its expectation's open remainder, else nothing.
+     * The reclassification's exit rule reads it (the Phase 8 -> 9 transition).
+     */
+    ResolutionTemplates.Holding holding(Connection unitOfWork, BreakRow row);
+
     /** Whether another break of {@code type} stands open on the subject. */
     boolean openBreakOfTypeStands(
             Connection unitOfWork,

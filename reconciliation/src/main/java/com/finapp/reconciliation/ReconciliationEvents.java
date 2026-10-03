@@ -17,11 +17,32 @@ import java.util.UUID;
  * correctness ({@code INV-EVT-04}): dispositions and identifiers, never an amount. The
  * source rides as its UUID (the `P8-TSK-008` recorded stance: a dotted source code is not
  * payload vocabulary).
+ *
+ * <p><strong>Causation is the flow's, never the aggregate's own id</strong>
+ * ({@code EVENT_ARCHITECTURE.md} §Causation at the root of a flow): no reconciliation flow is
+ * caused by a message — each is a request or a scheduled leg — so its events name the flow's
+ * correlation identifier, recorded on the run, the audit record and the idempotency record, as
+ * {@code ReconciliationBreakRaised} always did. {@code BreakResolved} names the resolution that
+ * closed the break: a distinct, recorded cause. *(Corrected 2026-10-02 by the Phase 8 -> 9
+ * transition, ARCH-P8-04: the run, expectation and investigation events named their own
+ * aggregate, a causal self-loop that never reached the flow that caused them.)*
  */
 public final class ReconciliationEvents {
 
     static final String PRODUCER = "reconciliation";
     static final int EVENT_VERSION = 1;
+
+    /**
+     * The two expectation events' version: 2 since the Phase 8 -> 9 transition stopped publishing
+     * the expectation's {@code operation_ref}. The expectation's identifier and kind already name
+     * it, and the reference is not payload vocabulary: an unmatched confirmation's is
+     * {@code rail:schemeReference} - a CONFIDENTIAL scheme reference, and a {@code ':'} the
+     * outbox's {@link EventPayload} refuses, so publishing it threw inside the settling and the
+     * ageing transactions and neither could ever commit for such an expectation. *(Corrected
+     * 2026-10-02 by the Phase 8 -> 9 transition: version 1 carried {@code operationRef}.)*
+     */
+    static final int EXPECTATION_EVENT_VERSION = 2;
+
     static final String RUN_COMPLETED_EVENT_TYPE =
             "reconciliation.ReconciliationRunCompleted";
     static final String EXPECTATION_SETTLED_EVENT_TYPE =
@@ -33,7 +54,8 @@ public final class ReconciliationEvents {
     /**
      * Announced once, when the ageing sweep marks an expectation overdue
      * (`P8-TSK-013`, replacing the planned {@code settlement.SettlementExpectationUnmet})
-     * — identifiers, enumerated names and stored dates only, never an amount.
+     * — identifiers, enumerated names and stored dates only, never an amount, and never the
+     * expectation's operation reference (version {@link #EXPECTATION_EVENT_VERSION}).
      */
     static void expectationOverdue(
             OutboxWriter<Connection> outbox,
@@ -41,7 +63,6 @@ public final class ReconciliationEvents {
             IdGenerator ids,
             UUID expectationId,
             ExpectationKind kind,
-            String operationRef,
             java.time.LocalDate expectedBy,
             UUID breakId,
             Instant occurredAt,
@@ -51,18 +72,17 @@ public final class ReconciliationEvents {
                 new EventEnvelope(
                         EventId.next(ids),
                         EXPECTATION_OVERDUE_EVENT_TYPE,
-                        EVENT_VERSION,
+                        EXPECTATION_EVENT_VERSION,
                         EventEnvelope.CURRENT_SCHEMA_VERSION,
                         ExpectationId.of(expectationId),
                         "settlement_expectation",
                         occurredAt,
                         PRODUCER,
                         correlation,
-                        CausationId.of(expectationId.toString())),
+                        causedByTheFlow(correlation)),
                 EventPayload.of()
                         .with("expectationId", expectationId.toString())
                         .with("kind", kind.name())
-                        .with("operationRef", operationRef)
                         .with("expectedBy", expectedBy.toString())
                         .with("breakId", breakId.toString())
                         .toBytes(),
@@ -70,6 +90,11 @@ public final class ReconciliationEvents {
     }
 
     private ReconciliationEvents() {}
+
+    /** The flow's root as the cause: no message caused a reconciliation flow (ARCH-P8-04). */
+    private static CausationId causedByTheFlow(CorrelationId correlation) {
+        return CausationId.of(correlation.value());
+    }
 
     static final String INVESTIGATION_STARTED_EVENT_TYPE =
             "reconciliation.BreakInvestigationStarted";
@@ -99,7 +124,7 @@ public final class ReconciliationEvents {
                         occurredAt,
                         PRODUCER,
                         correlation,
-                        CausationId.of(breakId.toString())),
+                        causedByTheFlow(correlation)),
                 EventPayload.of()
                         .with("breakId", breakId.toString())
                         .with("assigneeId", assigneeId)
@@ -141,7 +166,7 @@ public final class ReconciliationEvents {
                         occurredAt,
                         PRODUCER,
                         correlation,
-                        CausationId.of(runId.toString())),
+                        causedByTheFlow(correlation)),
                 payload.toBytes(),
                 EventPayload.MEDIA_TYPE);
     }
@@ -187,14 +212,16 @@ public final class ReconciliationEvents {
                 EventPayload.MEDIA_TYPE);
     }
 
-    /** Announced when an expectation reaches {@code SETTLED} — identifiers only. */
+    /**
+     * Announced when an expectation reaches {@code SETTLED} — identifiers only, never the
+     * expectation's operation reference (version {@link #EXPECTATION_EVENT_VERSION}).
+     */
     static void expectationSettled(
             OutboxWriter<Connection> outbox,
             Connection unitOfWork,
             IdGenerator ids,
             UUID expectationId,
             ExpectationKind kind,
-            String operationRef,
             UUID sourceId,
             Instant occurredAt,
             CorrelationId correlation) {
@@ -203,18 +230,17 @@ public final class ReconciliationEvents {
                 new EventEnvelope(
                         EventId.next(ids),
                         EXPECTATION_SETTLED_EVENT_TYPE,
-                        EVENT_VERSION,
+                        EXPECTATION_EVENT_VERSION,
                         EventEnvelope.CURRENT_SCHEMA_VERSION,
                         ExpectationId.of(expectationId),
                         "settlement_expectation",
                         occurredAt,
                         PRODUCER,
                         correlation,
-                        CausationId.of(expectationId.toString())),
+                        causedByTheFlow(correlation)),
                 EventPayload.of()
                         .with("expectationId", expectationId.toString())
                         .with("kind", kind.name())
-                        .with("operationRef", operationRef)
                         .with("sourceId", sourceId.toString())
                         .toBytes(),
                 EventPayload.MEDIA_TYPE);

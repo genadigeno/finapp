@@ -622,6 +622,15 @@ class SimPayoutCsvFormatTest {
             assertRefused(
                     screened(goldenWith("H,SIM_PAYOUT_CSV,1,", "H," + PAN + ",1,")),
                     RefusalReason.PRIMARY_ACCOUNT_NUMBER, 1, "formatId");
+            // Machine-grouped (the re-gate's NEW-SEC-2): the class refuses, the free-text walk
+            // cannot see ':'/'_' groups, so the line is MALFORMED - stored nowhere - rather
+            // than refused by name.
+            for (String grouped : List.of("4111:1111:1111:1111", "4111_1111_1111_1111")) {
+                assertThat(screened(goldenWith("po_ij56kl", grouped)).finding())
+                        .as("grouped %s passes the walk", grouped).isEmpty();
+                assertSingleDefect(rejected(goldenWith("po_ij56kl", grouped)),
+                        RejectionCode.MALFORMED, 4, "providerRef");
+            }
         }
 
         @Test

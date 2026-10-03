@@ -211,6 +211,30 @@ public class ReconciliationBeans {
     }
 
     /**
+     * A payout return's person fallback, read by the return worker under the payout's row lock
+     * (the Phase 8 -> 9 transition, IDEM-1) - reconciliation's own statement.
+     */
+    @Bean
+    com.finapp.reconciliation.PayoutReturnFallbacks payoutReturnFallbacks() {
+        return new com.finapp.reconciliation.JdbcPayoutReturnFallbacks();
+    }
+
+    /**
+     * The payout a parked return names, locked through merchant's own applier - the very row
+     * the return worker serialises on - and whether its return stands (the Phase 8 -> 9
+     * transition, IDEM-1): the resolution machine binds the person's fallback transfer to it.
+     */
+    @Bean
+    com.finapp.reconciliation.ReturnedPayouts returnedPayouts(
+            com.finapp.merchant.PayoutReturns payoutReturns) {
+        return (unitOfWork, providerReference, ourReference) ->
+                payoutReturns.lockReturnState(unitOfWork, providerReference, ourReference)
+                        .map(state -> new com.finapp.reconciliation.ReturnedPayouts.LockedPayout(
+                                state.payout().value().toString(), state.returned(),
+                                JdbcInternalReferenceLookup.classifyPayout(state.status())));
+    }
+
+    /**
      * The typing lookup (`P8-TSK-010`, ADR-0064): reconciliation declares the port, this
      * composition joins it to payments' and merchant's public read stores — read-only,
      * lock-free, never allocating.
@@ -463,7 +487,6 @@ public class ReconciliationBeans {
     com.finapp.reconciliation.ResolutionMachine resolutionMachine(
             com.finapp.reconciliation.Suspense suspense,
             com.finapp.reconciliation.MatchingStore matchingStore,
-            com.finapp.reconciliation.Resolutions resolutions,
             RuleSets ruleSets,
             com.finapp.ledger.AdjustmentService adjustmentService,
             com.finapp.ledger.LedgerAccountStore<Connection> ledgerAccountStore,
@@ -471,13 +494,14 @@ public class ReconciliationBeans {
             com.finapp.platform.audit.AuditWriter<Connection> auditWriter,
             IdGenerator idGenerator,
             Clock clock,
-            com.finapp.app.telemetry.ReconciliationOutcomeMeters reconciliationOutcomeMeters) {
+            com.finapp.app.telemetry.ReconciliationOutcomeMeters reconciliationOutcomeMeters,
+            com.finapp.reconciliation.InternalReferenceLookup internalReferenceLookup,
+            com.finapp.reconciliation.ReturnedPayouts returnedPayouts) {
         return new com.finapp.reconciliation.ResolutionMachine(
                 new com.finapp.reconciliation.JdbcResolutionStore(),
                 new com.finapp.reconciliation.JdbcBreakCaseStore(),
                 suspense,
                 matchingStore,
-                resolutions,
                 ruleSets,
                 adjustmentService,
                 ledgerAccountStore,
@@ -485,10 +509,15 @@ public class ReconciliationBeans {
                 auditWriter,
                 idGenerator,
                 clock,
-                reconciliationOutcomeMeters);
+                reconciliationOutcomeMeters,
+                internalReferenceLookup,
+                returnedPayouts);
     }
 
-    /** The resolver's desk (`P8-TSK-015`): the four doors' one-transaction commands. */
+    /**
+     * The resolver's desk (`P8-TSK-015`): the four doors' one-transaction commands, and the
+     * approver's read in one {@code REPEATABLE READ} snapshot (the Phase 8 -> 9 transition).
+     */
     @Bean
     BreakResolutionDesk breakResolutionDesk(
             com.finapp.reconciliation.ResolutionMachine resolutionMachine,
@@ -496,10 +525,11 @@ public class ReconciliationBeans {
             TransactionTemplate reconciliationTransactions,
             javax.sql.DataSource dataSource,
             com.finapp.reconciliation.BatchRepudiations batchRepudiations,
-            com.finapp.platform.telemetry.Spans domainSpans) {
+            com.finapp.platform.telemetry.Spans domainSpans,
+            TransactionTemplate reconciliationSnapshotReads) {
         return new BreakResolutionDesk(
                 resolutionMachine, idempotentExecutor, reconciliationTransactions, dataSource,
-                batchRepudiations, domainSpans);
+                batchRepudiations, domainSpans, reconciliationSnapshotReads);
     }
 
     /**
@@ -768,10 +798,15 @@ public class ReconciliationBeans {
                 unmatchedConfirmationStore);
     }
 
-    /** The investigation as the break's case file (`P8-TSK-014`, ADR-0069 §7). */
+    /**
+     * The investigation as the break's case file (`P8-TSK-014`, ADR-0069 §7), its assignee judged
+     * over identity's public reads (the Phase 8 -> 9 transition, SEC-06).
+     */
     @Bean
     com.finapp.reconciliation.BreakCaseFile breakCaseFile(
             ComposedCaseFileEvidence composedCaseFileEvidence,
+            com.finapp.identity.IdentityStore<Connection> identityStore,
+            com.finapp.identity.Authorization authorization,
             com.finapp.platform.outbox.OutboxWriter<Connection> outboxWriter,
             com.finapp.platform.audit.AuditWriter<Connection> auditWriter,
             IdGenerator idGenerator,
@@ -779,6 +814,7 @@ public class ReconciliationBeans {
         return new com.finapp.reconciliation.BreakCaseFile(
                 new com.finapp.reconciliation.JdbcBreakCaseStore(),
                 composedCaseFileEvidence,
+                new ComposedInvestigators(identityStore, authorization),
                 outboxWriter,
                 auditWriter,
                 idGenerator,

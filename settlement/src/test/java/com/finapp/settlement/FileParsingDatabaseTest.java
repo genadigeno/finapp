@@ -41,6 +41,8 @@ import java.util.Set;
 import java.util.UUID;
 import java.util.concurrent.ConcurrentLinkedQueue;
 import java.util.concurrent.CountDownLatch;
+import java.util.concurrent.TimeUnit;
+import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.function.Function;
 import org.junit.jupiter.api.AfterAll;
 import org.junit.jupiter.api.BeforeAll;
@@ -175,6 +177,11 @@ class FileParsingDatabaseTest {
     }
 
     private static FileParsing parsingWith(Map<SettlementFormatId, SettlementFormat> formats) {
+        return parsingWith(formats, RUNNER);
+    }
+
+    private static FileParsing parsingWith(
+            Map<SettlementFormatId, SettlementFormat> formats, TransactionRunner runner) {
         return new FileParsing(
                 store,
                 batches,
@@ -185,7 +192,7 @@ class FileParsingDatabaseTest {
                 new JdbcAuditWriter(),
                 IDS,
                 CLOCK,
-                RUNNER,
+                runner,
                 sources);
     }
 
@@ -584,5 +591,182 @@ class FileParsingDatabaseTest {
                         fileId))
                 .as("one edge, however many instances swept")
                 .isEqualTo(1);
+    }
+
+    @Test
+    @DisplayName("our failure is recorded only while the file is still RECEIVED: another"
+            + " instance claims it the moment our rollback lets go, and its PARSED edge commits"
+            + " while our failure transaction waits on the row - nothing follows the edge, no"
+            + " failure is counted, no back-off is set (the Phase 8 -> 9 transition, MI-5)")
+    void ourFailureNeverFollowsAnotherInstancesEdge() throws Exception {
+        // Drain anything already due, so both instances' windows hold this file alone.
+        for (int sweep = 0; sweep < 20; sweep++) {
+            if (parsing.sweep().candidates() == 0) {
+                break;
+            }
+        }
+        String marker = "Raced failure";
+        UUID fileId = uploaded(variant("PSPB-MI5-01", marker));
+
+        CountDownLatch bHoldsTheClaim = new CountDownLatch(1);
+        CountDownLatch releaseB = new CountDownLatch(1);
+        AtomicBoolean ourParseFailed = new AtomicBoolean();
+        ConcurrentLinkedQueue<Throwable> unexpected = new ConcurrentLinkedQueue<>();
+        List<Thread> others = new ArrayList<>();
+
+        // Instance B: the real format, holding its claim on THIS file until A's failure
+        // transaction is observed waiting on the row.
+        FileParsing instanceB =
+                parsingWith(
+                        formatParsing(
+                                content -> {
+                                    if (holds(content, marker)) {
+                                        bHoldsTheClaim.countDown();
+                                        awaitOrFail(releaseB, "B is released");
+                                    }
+                                    return SimPspCsvFormat.INSTANCE.parse(content);
+                                }));
+        // Instance A: its parse of THIS file fails - our defect. Its runner opens the failure
+        // transaction only once B holds the claim A's rollback released, and lets B commit
+        // only once that transaction is observed waiting on the row.
+        TransactionRunner instanceARunner =
+                new TransactionRunner() {
+                    @Override
+                    public <R> R inTransaction(Function<Connection, R> work) {
+                        if (ourParseFailed.getAndSet(false)) {
+                            others.add(
+                                    Thread.ofPlatform()
+                                            .start(
+                                                    () -> {
+                                                        try {
+                                                            instanceB.sweep();
+                                                        } catch (Throwable failure) {
+                                                            unexpected.add(failure);
+                                                        }
+                                                    }));
+                            awaitOrFail(bHoldsTheClaim, "B claims what A's rollback released");
+                            others.add(
+                                    Thread.ofPlatform()
+                                            .start(
+                                                    () -> {
+                                                        try {
+                                                            awaitAFileWriterBlocked();
+                                                        } catch (Throwable failure) {
+                                                            unexpected.add(failure);
+                                                        } finally {
+                                                            releaseB.countDown();
+                                                        }
+                                                    }));
+                        }
+                        return RUNNER.inTransaction(work);
+                    }
+                };
+        FileParsing instanceA =
+                parsingWith(
+                        formatParsing(
+                                content -> {
+                                    if (holds(content, marker)) {
+                                        ourParseFailed.set(true);
+                                        throw new IllegalStateException("adapter defect");
+                                    }
+                                    return SimPspCsvFormat.INSTANCE.parse(content);
+                                }),
+                        instanceARunner);
+
+        instanceA.sweep();
+        for (Thread other : others) {
+            other.join();
+        }
+        assertThat(unexpected).isEmpty();
+        assertThat(others).as("the interleaving ran: A failed, B claimed").hasSize(2);
+
+        assertThat(fileColumn(fileId, "status")).as("B's verdict stands").isEqualTo("PARSED");
+        assertThat(fileColumn(fileId, "parse_failures"))
+                .as("no failure is counted against a file that moved")
+                .isEqualTo("0");
+        assertThat(fileColumn(fileId, "next_parse_at")).isNull();
+        assertThat(count(
+                        "SELECT count(*) FROM settlement.file_event WHERE file_id = ? AND seq >"
+                                + " (SELECT seq FROM settlement.file_event WHERE file_id = ?"
+                                + " AND to_status = 'PARSED')",
+                        fileId,
+                        fileId))
+                .as("nothing follows the PARSED edge in the file's history")
+                .isZero();
+        assertThat(count(
+                        "SELECT count(*) FROM settlement.file_event WHERE file_id = ?"
+                                + " AND from_status = 'RECEIVED' AND to_status = 'RECEIVED'",
+                        fileId))
+                .isZero();
+    }
+
+    // -----------------------------------------------------------------
+
+    /** The PSP format, its parse replaced - the instance-under-test's seam. */
+    private static Map<SettlementFormatId, SettlementFormat> formatParsing(
+            Function<byte[], SettlementFormat.Result> parse) {
+        return Map.of(
+                SettlementFormatId.SIM_PSP_CSV,
+                new SettlementFormat() {
+                    @Override
+                    public SettlementFormatId id() {
+                        return SettlementFormatId.SIM_PSP_CSV;
+                    }
+
+                    @Override
+                    public int version() {
+                        return 1;
+                    }
+
+                    @Override
+                    public DeliveryScreen.Screening screen(byte[] content) {
+                        return SimPspCsvFormat.INSTANCE.screen(content);
+                    }
+
+                    @Override
+                    public Result parse(byte[] content) {
+                        return parse.apply(content);
+                    }
+                });
+    }
+
+    private static boolean holds(byte[] content, String marker) {
+        return new String(content, StandardCharsets.UTF_8).contains(marker);
+    }
+
+    private static void awaitOrFail(CountDownLatch latch, String what) {
+        try {
+            if (!latch.await(30, TimeUnit.SECONDS)) {
+                throw new AssertionError("never happened: " + what);
+            }
+        } catch (InterruptedException interrupted) {
+            Thread.currentThread().interrupt();
+            throw new AssertionError("interrupted awaiting: " + what, interrupted);
+        }
+    }
+
+    /** The {@code P0-TST-004} idiom: the waiting side observed Lock-waiting, never assumed. */
+    private static void awaitAFileWriterBlocked() throws SQLException, InterruptedException {
+        long deadline = System.nanoTime() + TimeUnit.SECONDS.toNanos(30);
+        try (Connection observer = DatabaseRoles.application();
+                PreparedStatement select =
+                        observer.prepareStatement(
+                                "SELECT count(*) FROM pg_stat_activity"
+                                        + " WHERE datname = current_database()"
+                                        + " AND wait_event_type = 'Lock'"
+                                        + " AND query LIKE '%settlement.file%'")) {
+            while (System.nanoTime() < deadline) {
+                try (ResultSet row = select.executeQuery()) {
+                    row.next();
+                    if (row.getLong(1) > 0) {
+                        return;
+                    }
+                }
+                Thread.sleep(25);
+            }
+        }
+        throw new AssertionError(
+                "A's failure transaction never waited on the file row B holds - without the"
+                        + " lock its write is judged against a stale read");
     }
 }

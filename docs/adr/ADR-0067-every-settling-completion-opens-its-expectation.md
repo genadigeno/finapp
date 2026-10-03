@@ -133,6 +133,9 @@ payout return as a merchant fact is ADR-0073's.
      the clearing line, never the counterparty side.
 
 3. **It is keyed on the declared clearing purpose, never on a rail's name.**
+   *(Annotated at the Phase 8 → 9 transition: ADR-0078, `Proposed` — the declaration now
+   also names a counterparty, so the key is the (purpose, counterparty) position for the
+   counterparty-owned clearing purposes.)*
    - The applier asks the stored rail's declaration, `RailCapabilities.clearingPurpose()`. That is
      the same read that chose the posting's clearing account, so the
      expectation's position and the posted account come from one declaration. The call is made
@@ -276,6 +279,13 @@ payout return as a merchant fact is ADR-0073's.
    - **A colliding key or alias** is skipped. The expectation is still inserted, and an
      `expectation_event (KEY_COLLISION)` is recorded and counted. The sweep raises
      `DUPLICATE_INTERNAL` from recorded collisions (`P8-TSK-010`), and the payment completes.
+     *(Corrected 2026-10-02 by the Phase 8 -> 9 transition, REC-8: the key index stays
+     append-only with ONE edge - a `REMITTANCE_REF` released (`released_by_resolution_id`,
+     `NULL → the resolution`) by the approved `REPUDIATE_BATCH` that closed its remittance
+     `RESOLVED_BY_ADJUSTMENT`, refused for every other writer and subject by reconciliation
+     `V017`. The key unique covers the bound keys only, so the genuine re-presented batch's
+     remittance registers the same reference instead of colliding; a released key reaches
+     nothing.)*
    - **A conflict on either expectation unique** converges on the standing row: an earlier opener's
      or the backfill's, for the same entry, because both uniques name it. If a defect ever produced
      a second clearing entry for one operation, its line would have no expectation, and the
@@ -320,6 +330,10 @@ payout return as a merchant fact is ADR-0073's.
        (identity V018);
      - keyed per principal;
      - audited as `reconciliation.OpeningPositionRecorded` with its reason.
+       *(Corrected 2026-10-02 by the Phase 8 -> 9 transition, SEC-08: the walk is many
+       transactions and that record commits last, so a crash mid-walk left an adopted prefix
+       with no record of who began it. Its start is now audited first, in its own transaction
+       before the first page: `reconciliation.OpeningPositionStarted`, with the reason.)*
    - It walks the completed operations Phases 5–7 left behind, through `payments`' and `merchant`'s
      public read stores (never a cross-schema SQL join):
      - captures, card refunds, returns, executions and withdrawals;

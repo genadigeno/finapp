@@ -105,6 +105,21 @@ command, which is where "the database committed but the response was lost" becom
   there are two acts, each with one actor, paired on the proposal row. Four-eyes applies to
   **every** adjustment — a threshold is a versioned per-currency policy artefact with nothing to
   calibrate it yet, recorded as a future seam on the proposal row;
+  *(Corrected 2026-10-02 by the Phase 8 -> 9 transition, ARCH-P8-03: the second `LEDGER_ADJUST`
+  holder approves a `MANUAL` adjustment only. Since `P8-TSK-006` (ADR-0071 §6) an adjustment has
+  an origin, frozen on the proposal by ledger `V015`, and each origin has its own door, which
+  refuses the other's proposals (`ledger.AdjustmentOriginMismatch`). A `MANUAL` adjustment
+  (`MANUAL_CORRECTION`, or `UNCODED` for one proposed before `V015`) is proposed and approved at
+  `/v1/ledger/adjustments` under `LEDGER_ADJUST`, and may never touch a reconciled position
+  (`V015`'s trigger). A `RECONCILIATION` adjustment (`RECONCILIATION_WRITE_OFF`,
+  `RECONCILIATION_GAIN`, `RECONCILIATION_TRANSFER`) is proposed and approved only inside a break
+  resolution's own transaction, through `AdjustmentService.proposeOwned` and `approveOwned` —
+  called only from `reconciliation` — by a second holder of `RECONCILIATION_RESOLVE`, the
+  `RECONCILIATION_OPERATOR` role, which holds no ledger permission (ADR-0071 §10). Whoever traces
+  the approvers of adjusting entries reads both populations. Four-eyes holds for both at the same
+  rank: `V010`'s approver ≠ proposer `CHECK` is origin-agnostic, and reconciliation's
+  `resolution_four_eyes_distinct` `CHECK` holds it again on the resolution row, every posting
+  kind being four-eyes by `resolution_four_eyes_derived`.)*
 - a **rounding residual** is posted to a designated account, never absorbed (`INV-BAL-03`).
   Absorbed residual is money creation or destruction, at scale.
 
