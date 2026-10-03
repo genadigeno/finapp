@@ -1,6 +1,10 @@
 /**
- * Exact monetary values: {@link com.finapp.sharedkernel.money.Money} and
- * {@link com.finapp.sharedkernel.money.CurrencyCode}.
+ * Exact monetary values and the representation primitives every module shares:
+ * {@link com.finapp.sharedkernel.money.Money}, {@link com.finapp.sharedkernel.money.CurrencyCode},
+ * {@link com.finapp.sharedkernel.money.RoundingPolicy},
+ * {@link com.finapp.sharedkernel.money.ExchangeRate} and
+ * {@link com.finapp.sharedkernel.money.CountryCode} (the last two since {@code P9-TSK-002},
+ * ADR-0074 §§1, 10, which records ADR-0006's argument for them once).
  *
  * <p>The rules these types exist to make unbreakable, from
  * {@code docs/domain/FINANCIAL_INVARIANTS.md}:
@@ -13,9 +17,13 @@
  *   <li>{@code INV-MON-06} — overflow fails loudly rather than wrapping
  * </ul>
  *
- * <p>{@code INV-MON-03} (rounding is explicit and named) is upheld here by omission: this
- * package offers no operation that rounds. Rounding and allocation arrive with P0-TSK-010,
- * as operations that require the caller to name a rounding mode.
+ * <p>{@code INV-MON-03} (rounding is explicit and named): every operation that rounds takes a
+ * {@link com.finapp.sharedkernel.money.RoundingPolicy} at the call site, and none has a default.
+ * {@code ExchangeRate} ends each operation in at most one named rounding and offers no inversion
+ * and no cross rate - an inverted rate is a rounding decision nobody named. *(Corrected
+ * 2026-10-03 by {@code P9-TSK-002}: this paragraph said the package offered no operation that
+ * rounds, and that rounding would arrive with {@code P0-TSK-010} - true when written, stale
+ * since that task shipped {@code Money.of(…, RoundingPolicy)} and the allocations.)*
  *
  * <p>Nothing in this package performs I/O, depends on a framework, or knows about
  * persistence. That is what lets the financial kernel be tested without a container.

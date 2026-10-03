@@ -1,7 +1,9 @@
 package com.finapp.ledger;
 
 import com.finapp.sharedkernel.money.CurrencyCode;
+import java.util.LinkedHashMap;
 import java.util.List;
+import java.util.Map;
 
 /**
  * The currencies the ledger operates in (`P3-TSK-003`).
@@ -29,5 +31,31 @@ public final class SupportedCurrencies {
     public static final List<CurrencyCode> ALL =
             List.of(CurrencyCode.of("EUR"), CurrencyCode.of("GBP"), CurrencyCode.of("USD"));
 
+    /**
+     * The minor units every currency the platform posts or prices is PINNED to (`P9-TSK-002`,
+     * ADR-0074 §9) - EUR 2, GBP 2, USD 2, JPY 0, BHD 3 - covering {@link #ALL} and the two
+     * currencies Phase 9 makes postable (`P9-TSK-003`).
+     *
+     * <p><strong>Why a pin, when {@code CurrencyCode.minorUnits()} already answers.</strong> Its
+     * answer is the running JDK's ISO 4217 data, which changes between JDK versions. A stored
+     * amount keeps its own scale ({@code INV-MON-05}), so a JDK that moved a currency's minor units
+     * would make every new amount disagree with history, and {@code Money.plus} would throw
+     * {@code ScaleMismatchException} on the first sum across the boundary. The pin turns that
+     * silent drift into a refused startup ({@code SupportedCurrencyMinorUnitsGuard}) and a failed
+     * build ({@code SupportedCurrencyMinorUnitsArePinnedTest}). There is deliberately no currency
+     * table: the minor units ARE the JDK's, checked, never copied into a second source of truth.
+     */
+    public static final Map<CurrencyCode, Integer> PINNED_MINOR_UNITS = pinned();
+
     private SupportedCurrencies() {}
+
+    private static Map<CurrencyCode, Integer> pinned() {
+        Map<CurrencyCode, Integer> pins = new LinkedHashMap<>();
+        pins.put(CurrencyCode.of("EUR"), 2);
+        pins.put(CurrencyCode.of("GBP"), 2);
+        pins.put(CurrencyCode.of("USD"), 2);
+        pins.put(CurrencyCode.of("JPY"), 0);
+        pins.put(CurrencyCode.of("BHD"), 3);
+        return java.util.Collections.unmodifiableMap(pins);
+    }
 }

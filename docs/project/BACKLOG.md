@@ -12913,7 +12913,7 @@ break row, as the approval door must.)*
 
 # Phase 9 — FX and Cross-Border Payments
 
-Status: `IN_PROGRESS` — started 2026-10-03 with `P9-TSK-001` (1 of 30 items complete, M9.1 at 1 of 4); entry gate passed 2026-10-02 by the Phase 8 → 9 transition
+Status: `IN_PROGRESS` — started 2026-10-03 with `P9-TSK-001` (2 of 30 items complete, M9.1 at 2 of 4); entry gate passed 2026-10-02 by the Phase 8 → 9 transition
 ([`reviews/PHASE_8_TO_9_TRANSITION.md`](reviews/PHASE_8_TO_9_TRANSITION.md)), elaborated to task
 granularity by the same transition: thirty items (`P9-TSK-001`…`-027`, `P9-TST-001`, `P9-TST-002`,
 `P9-DOC-001`) across nine milestones, with `P9-TSK-001` marked `READY`. The engineering plan is
@@ -13024,7 +13024,8 @@ providers), each owned by Phase 15 and gating nothing here.
   demonstrated and every planted probe is caught.
 - **Definition of done**: `DOD-BUILD`, `DOD-ARCH`, `DOD-SEC`. **Risk**: Low. **Cx**: S.
 
-**P9-TSK-002 — `ExchangeRate`, `Margin` and the conversion plan** — `READY` (marked by `P9-TSK-001`'s completion gate, 2026-10-03)
+**P9-TSK-002 — `ExchangeRate`, `Margin` and the conversion plan** — `COMPLETE` (2026-10-03; marked `READY` by `P9-TSK-001`'s completion gate)
+- **As built** (2026-10-03): as `CURRENT_STATE.md` §Just completed records. Every scope item shipped. Placement decided at build: `CountryCode` beside `CurrencyCode` in `sharedkernel.money`, as the plan wrote; the pin as `SupportedCurrencies.PINNED_MINOR_UNITS` in `ledger` (beside the postable set it must cover); the guard in `app`. The plan also judges the fixed leg's notional bounds itself (pure), beside Tx1's later pre-check. **A harness defect found and fixed**: the hermetic tier's 512 MiB default heap, exhausted in app's whole-tier run once `fx` joined the bytecode sweeps - now 2 GiB on `test` and `unitTest`, guarded by `HermeticTierHeapTest`. Eight probes, eight caught. No deviation.
 - **Objective**: exact conversion arithmetic for both fixed sides, with a proven, bounded residual,
   as pure code.
 - **Bounded context**: `sharedkernel` (`ExchangeRate`, `CountryCode`), `platform` (`RateColumns`),
@@ -13070,7 +13071,7 @@ providers), each owned by Phase 15 and gating nothing here.
 - **Definition of done**: `DOD-KERNEL`, `DOD-DOMAIN`, `DOD-FIN` (F1–F8 over the arithmetic),
   `DOD-TEST`. **Risk**: Medium. **Cx**: M.
 
-**P9-TSK-003 — JPY and BHD become postable** — `PLANNED`
+**P9-TSK-003 — JPY and BHD become postable** — `READY` (marked by `P9-TSK-002`'s completion gate, 2026-10-03)
 - **Objective**: make 0- and 3-minor-unit currencies postable on every flow, and pay Phase 6's
   deferral.
 - **Bounded context**: `ledger`, `accounts`, `merchant`, `payments` (ceilings), `settlement` (bank

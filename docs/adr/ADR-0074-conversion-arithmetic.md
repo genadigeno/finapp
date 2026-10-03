@@ -146,6 +146,8 @@ created or destroyed on every conversion, silently, at volume. The forces:
     replay reproduces the plan and both derived figures exactly (`INV-FX-05`) — the basis of
     `FxPlanVerification` (ADR-0076) and the golden replays.
 
+**Implemented** (`P9-TSK-002`, 2026-10-03): points 1, 2-7, 9-11 as written - `ExchangeRate` and `CountryCode` in `sharedkernel.money`, `RateColumns.ddl()` in `platform`, `Margin`, `PricingPair`, `NotionalBounds`, `ProviderQuote` and `ConversionPlan` in `fx`, the pin `SupportedCurrencies.PINNED_MINOR_UNITS` with its test in `ledger` and `SupportedCurrencyMinorUnitsGuard` in `app`. The §12.2 figures, the internal rate 1.0812264160 and the disclosed margin 0.005162 are reproduced to the minor unit (`ConversionPlanTest`); a million seeded cases per policy family reach and never exceed the proven bound - 1 under half policies, 2 under directed ones (`ConversionPlanPropertiesTest`). Point 8's bounds are judged by the function too, so the pure plan refuses an out-of-range fixed leg on its own; Tx1's pre-check before the provider call is `P9-TSK-007`'s.
+
 ## Alternatives Considered
 
 ### `NUMERIC(24,12)`, or `ExchangeRate` owned by `fx`

@@ -1,6 +1,6 @@
 # Task History
 
-The per-task completion records that accumulated behind `## Current Task` - 192 "Previously" blocks, newest first, from the Phase 8 → 9 transition back to project initiation. *(`X-TSK-004` is cross-cutting and completed after the Phase 6 → 7 transition, so it stands second, between `P7-TSK-001` and the transition's record - the transition's block moved here by `P7-TSK-001`'s gate, exactly as an earlier form of this note said it would.)*
+The per-task completion records that accumulated behind `## Current Task` - 193 "Previously" blocks, newest first, from `P9-TSK-001` back to project initiation. *(`X-TSK-004` is cross-cutting and completed after the Phase 6 → 7 transition, so it stands second, between `P7-TSK-001` and the transition's record - the transition's block moved here by `P7-TSK-001`'s gate, exactly as an earlier form of this note said it would.)*
 
 **Archive.** These records were moved verbatim out of
 [`CURRENT_STATE.md`](../CURRENT_STATE.md) on 2026-09-20 so that the canonical description of
@@ -12,6 +12,32 @@ Current state: [`CURRENT_STATE.md`](../CURRENT_STATE.md) ·
 Authoritative backlog: [`BACKLOG.md`](../BACKLOG.md)
 
 ---
+
+### Previously
+
+**`P9-TSK-001` — The `fx` and `crossborder` modules and schemas** — `COMPLETE` (2026-10-03).
+**Phase 9 is `IN_PROGRESS`; M9.1 opens at 1 of 4** — the module shape's eleventh and twelfth
+performances. Both modules are build-graph facts before they hold a line of domain code: per-schema
+Flyway in each build file (the duplication deliberate, ADR-0011), `fx` `V001` and `crossborder`
+`V001` laying the migrator-owned floor (`REVOKE ALL FROM PUBLIC`, `USAGE` alone to `finapp_app`, no
+tables, no default privileges), and the edges pinned both ways: each module requires exactly
+`{ledger, platform, sharedkernel}` and refuses every sibling — **each other included, the refusal
+with no Gradle cycle behind it** (ADR-0079: crossborder decides, fx prices and books, payments
+executes) — while all thirteen existing isolation tests refuse both new modules. **The planted
+probes run in-suite**: each new isolation test proves its matcher catches a sibling's jar and class
+directory and no lookalike (a module whose name contains another's, a source directory), so the
+guard is shown able to fail before it is trusted to pass. `app` depends on both, so
+`ProductionModules` sweeps them the moment `P9-TSK-002`'s first class lands (a module holding only
+`package-info` contributes nothing to import — the precedent's stance, kept); the lockfiles are
+generated and equal reconciliation's, no other lockfile moved. **FIVE PROBES, FIVE CAUGHT**, every
+restore byte-identical (sha256-verified; `MUTATION_TESTING.md` §2 +1 row): fx gaining a payments
+edge; crossborder gaining the fx edge; fx losing its ledger edge (the non-vacuity half); the fx
+floor widened to `CREATE` (two cases); payments gaining a crossborder edge. **Multi-instance PASS**
+— no state; concurrent migrators serialise on Flyway's lock. **NEXT**: `P9-TSK-002` `READY`.
+**Verified** by fresh runs — fx hermetic 3 and database 5, crossborder hermetic 3 and database 5,
+the thirteen sibling isolation suites 26, the fleet-wide hermetic tier at 2274 tests across 360 suites and 18 modules, and the
+architecture tier 143 across 23, ALL 0 FAILURES — the fleet-wide database and kafka tiers
+deliberately skipped on the owner's instruction.
 
 ### Previously
 

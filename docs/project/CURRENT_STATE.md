@@ -432,8 +432,8 @@ cross-border payments are holds and corridor acceptances, beneficiary screening 
 returns credited in the currency received; clearings are keyed by counterparty; callbacks are
 hints; reconciliation never converts currency and gains causes, never types. Ten new invariants
 and thirteen restated take the platform to **120**. Thirty backlog items across nine milestones
-(M9.1–M9.9) plus `X-TSK-010`…`-012`. **1 of 30 items complete** (M9.1 at 1 of 4): the modules and floors
-(`P9-TSK-001`); next **`P9-TSK-002` — `ExchangeRate`, `Margin` and the conversion plan** — `READY`
+(M9.1–M9.9) plus `X-TSK-010`…`-012`. **2 of 30 items complete** (M9.1 at 2 of 4): the modules and floors
+(`P9-TSK-001`) and the conversion arithmetic (`P9-TSK-002`); next **`P9-TSK-003` — JPY and BHD become postable**** — `READY`
 ([§Current Task](#current-task) is kept current).
 
 ## Current Milestone
@@ -449,34 +449,47 @@ since M0.1". Moved, not edited.)*
 
 ## Current Task
 
-**`P9-TSK-002` — `ExchangeRate`, `Margin` and the conversion plan** — `READY`: marked by
-`P9-TSK-001`'s completion gate (2026-10-03). **Not started.**
+**`P9-TSK-003` — JPY and BHD become postable**** — `READY`: marked by
+`P9-TSK-002`'s completion gate (2026-10-03). **Not started.**
 
 ### Just completed
 
-**`P9-TSK-001` — The `fx` and `crossborder` modules and schemas** — `COMPLETE` (2026-10-03).
-**Phase 9 is `IN_PROGRESS`; M9.1 opens at 1 of 4** — the module shape's eleventh and twelfth
-performances. Both modules are build-graph facts before they hold a line of domain code: per-schema
-Flyway in each build file (the duplication deliberate, ADR-0011), `fx` `V001` and `crossborder`
-`V001` laying the migrator-owned floor (`REVOKE ALL FROM PUBLIC`, `USAGE` alone to `finapp_app`, no
-tables, no default privileges), and the edges pinned both ways: each module requires exactly
-`{ledger, platform, sharedkernel}` and refuses every sibling — **each other included, the refusal
-with no Gradle cycle behind it** (ADR-0079: crossborder decides, fx prices and books, payments
-executes) — while all thirteen existing isolation tests refuse both new modules. **The planted
-probes run in-suite**: each new isolation test proves its matcher catches a sibling's jar and class
-directory and no lookalike (a module whose name contains another's, a source directory), so the
-guard is shown able to fail before it is trusted to pass. `app` depends on both, so
-`ProductionModules` sweeps them the moment `P9-TSK-002`'s first class lands (a module holding only
-`package-info` contributes nothing to import — the precedent's stance, kept); the lockfiles are
-generated and equal reconciliation's, no other lockfile moved. **FIVE PROBES, FIVE CAUGHT**, every
-restore byte-identical (sha256-verified; `MUTATION_TESTING.md` §2 +1 row): fx gaining a payments
-edge; crossborder gaining the fx edge; fx losing its ledger edge (the non-vacuity half); the fx
-floor widened to `CREATE` (two cases); payments gaining a crossborder edge. **Multi-instance PASS**
-— no state; concurrent migrators serialise on Flyway's lock. **NEXT**: `P9-TSK-002` `READY`.
-**Verified** by fresh runs — fx hermetic 3 and database 5, crossborder hermetic 3 and database 5,
-the thirteen sibling isolation suites 26, the fleet-wide hermetic tier at 2274 tests across 360 suites and 18 modules, and the
-architecture tier 143 across 23, ALL 0 FAILURES — the fleet-wide database and kafka tiers
-deliberately skipped on the owner's instruction.
+**`P9-TSK-002` — `ExchangeRate`, `Margin` and the conversion plan** — `COMPLETE` (2026-10-03).
+**M9.1 at 2 of 4: every future conversion amount, margin, residual and attribution is decided
+by one pure, exact, proven function** (ADR-0074; `INV-MON-01`…`-06`, `INV-FX-03`,
+`INV-FX-07`). `ExchangeRate` in `sharedkernel.money` — a directed price, precision ≤ 20 and
+scale ≤ 10, refused rather than rounded beyond them, equality numeric, each operation ending in
+at most one named rounding (`exactProduct`, `convert`, `sourceFor` as ONE exactly-rounded
+division, `marginAgainst` same direction only) and **no inversion and no cross rate**;
+`CountryCode` beside it; `RateColumns.ddl()` generating `NUMERIC(20,10)` from the type's constants,
+proven live to hold every admitted rate exactly and to ROUND an eleventh decimal silently — why
+the domain refuses one. In `fx`: `Margin` (`[0, 0.1)`, scale 6, its weight `value × 10⁶` exact),
+`PricingPair`, `NotionalBounds`, `ProviderQuote`, and `ConversionPlan.compute` for both fixed
+sides — the margin from the ROUNDED customer rate, coherence by cross-multiplication with no
+division, the destination-fixed leg one exactly-rounded division, attribution through
+`allocateByWeights` (its first production caller), the residual posted on its own line and
+asserted against its policy family's proven bound — with five typed refusals, never a shipped
+price; the internal rate at scale 10 and the disclosed margin at scale 6 with their named
+roundings. The minor units pinned (EUR 2, GBP 2, USD 2, JPY 0, BHD 3) by a test in `ledger` and a
+startup guard in `app`. **Every `PHASE_9_PLAN.md` §12.2 figure reproduced to the minor unit**,
+with §12.4's internal rate 1.0812264160 and disclosed margin 0.005162, each re-derived with
+exact decimals first; **a million seeded cases per policy family** over all twenty pairs at ten-
+decimal provider rates, the bound reached and never exceeded (1 half, 2 directed). The stale
+`money/package-info.java` corrected. **THE BUILD'S FIND, A HARNESS DEFECT FIXED**: app's hermetic JVM ran on Gradle's 512 MiB
+default a few MiB from its ceiling - up to 32 cached Spring contexts beside the bytecode sweeps
+that import every module's test classes - and `fx`'s first classes, joining those sweeps, tipped
+`TestTaxonomyTest` into `OutOfMemoryError`, reproducibly and only in app's whole-tier run; the
+`test` and `unitTest` tasks now carry `maxHeapSize = "2g"` (`finapp.java-conventions`, the
+Phase 7 → 8 transition's database-tier precedent), held by `HermeticTierHeapTest` - probed,
+the setting removed, the guard failed at the default. **EIGHT PROBES, EIGHT CAUGHT**, every restore byte-identical
+(sha256-verified; `MUTATION_TESTING.md` §2 +4 rows): the margin from the unrounded rate, the
+destination leg by an inverted rate (caught only by the properties — the worked figure happens to
+agree), coherence never judged, the residual folded into the margin, the attribution's weights
+swapped, the guard silenced, an over-scaled rate admitted, the hermetic heap removed. **Multi-instance PASS** — pure and
+stateless. **NEXT**: `P9-TSK-003` `READY`. **Verified** by fresh runs — the new suites (kernel 7,
+platform 2 and database 1, fx 17, ledger 3, the guard 2), the heap guard 1, the fleet-wide hermetic tier at 2305 tests across 370 suites and 18
+modules, and the architecture tier 143 across 23, ALL 0 FAILURES — the fleet-wide database and
+kafka tiers deliberately skipped on the owner's instruction.
 
 ### Previously
 
@@ -936,8 +949,8 @@ Resolved during initiation:
 
 ## Next Task
 
-**`P9-TSK-002` — `ExchangeRate`, `Margin` and the conversion plan** — `READY` (the Current
-Task), marked by `P9-TSK-001`'s completion gate.
+**`P9-TSK-003` — JPY and BHD become postable**** — `READY` (the Current Task),
+marked by `P9-TSK-002`'s completion gate.
 *(This section read "`P8-TSK-009` — `READY`" from `P8-TSK-008`'s gate until
 `P8-TSK-013`'s record found it — the stale-second-copy class, in the section whose
 whole job is to mirror.)*
