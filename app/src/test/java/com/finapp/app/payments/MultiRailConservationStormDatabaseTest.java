@@ -277,6 +277,7 @@ class MultiRailConservationStormDatabaseTest {
     @LocalServerPort private int port;
     @Autowired private Authorization authorization;
     @Autowired private com.finapp.app.reconciliation.PositionProof positionProof;
+    @Autowired private com.finapp.settlement.SettlementSources settlementSources;
     @Autowired private PaymentSweeper paymentSweeper;
     @Autowired private WithdrawalResolution withdrawalResolution;
     @Autowired private PayInResolution payInResolution;
@@ -2978,7 +2979,7 @@ class MultiRailConservationStormDatabaseTest {
                     .isTrue();
         }
         for (com.finapp.ledger.AccountPurpose purpose :
-                com.finapp.app.reconciliation.PositionProof.PROVEN) {
+                com.finapp.app.reconciliation.PositionProof.provenPurposes(settlementSources)) {
             assertThat(report.unattributedByPurpose().get(purpose))
                     .as("at rest: every %s line is known", purpose)
                     .isZero();

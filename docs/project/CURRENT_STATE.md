@@ -432,11 +432,12 @@ cross-border payments are holds and corridor acceptances, beneficiary screening 
 returns credited in the currency received; clearings are keyed by counterparty; callbacks are
 hints; reconciliation never converts currency and gains causes, never types. Ten new invariants
 and thirteen restated take the platform to **120**. Thirty backlog items across nine milestones
-(M9.1–M9.9) plus `X-TSK-013`…`-015`. **9 of 30 items complete** (M9.1 and M9.2 closed; M9.3 at 1 of 4): the modules and floors
+(M9.1–M9.9) plus `X-TSK-013`…`-015`. **10 of 30 items complete** (M9.1 and M9.2 closed; M9.3 at 2 of 4): the modules and floors
 (`P9-TSK-001`), the conversion arithmetic (`P9-TSK-002`), JPY and BHD postable (`P9-TSK-003`), multi-currency
 wallets (`P9-TSK-004`), reference rates (`P9-TSK-005`), the FX provider port (`P9-TSK-006`), the
-pricing policy (`P9-TSK-007`), the quote (`P9-TSK-008`) and wallet conversion (`P9-TSK-009`); next
-**`P9-TSK-010` — Counterparty-keyed clearing positions** — `READY`
+pricing policy (`P9-TSK-007`), the quote (`P9-TSK-008`), wallet conversion (`P9-TSK-009`) and
+counterparty-keyed clearing positions (`P9-TSK-010`); next **`P9-TSK-011` — The FX provider's
+position, source and vocabulary** — `READY`
 ([§Current Task](#current-task) is kept current).
 
 ## Current Milestone
@@ -452,59 +453,58 @@ since M0.1". Moved, not edited.)*
 
 ## Current Task
 
-**`P9-TSK-010` — Counterparty-keyed clearing positions** — `READY`: marked by
-`P9-TSK-009`'s completion gate (2026-10-04). **Not started.**
+**`P9-TSK-011` — The FX provider's position, source and vocabulary** — `READY`:
+marked by `P9-TSK-010`'s completion gate (2026-10-05). **Not started.**
 
 ### Just completed
 
-**`P9-TSK-009` — Wallet conversion** — `COMPLETE` (2026-10-04). **M9.3 OPENS AT 1 OF 4: a quote
-accepted and its conversion booked in ONE local transaction through `FX_POSITION`** (ADR-0076 §§1-6,
-ADR-0077; `INV-FX-01`, `-03`, `-04`, `-05`, `-07`, `-09`, `INV-BAL-04`, `INV-LED-01`, `INV-ACC-01`).
-**The schema**: `fx V006`'s `trade` - copies of the frozen plan, `UNIQUE (quote_id)`,
-`executed_rate = customer_rate`, the plan identity and residual `CHECK`s, a birth trigger requiring an
-`ACCEPTED` quote whose every copied column is EQUAL (no re-pricing at execution), `booked_at`/`booked_on`
-stamped by the database, the freeze, the entry attached once, and a deferred constraint trigger that
-refuses a trade committing without its entry; the quote's edge rule restated so `ACCEPTED -> EXECUTED`
-needs a trade; `cover` (`UNIQUE (quote_id, kind)`, born `DISPATCHED` at attempt 1, the send permit
-stamped by the database and only forward, the full machine with `EXECUTED` refused until `P9-TSK-012`)
-and append-only `cover_attempt` (`T-<32hex>` stored before any send). Ledger `V020`: `FX_SPREAD_REVENUE`
-joins the chart (five seeded REVENUE accounts) and `AccountPurpose.closedToFreeAdjustments()` =
-`reconciledPositions()` + `FX_POSITION`, `FX_SPREAD_REVENUE`, `ROUNDING_RESIDUAL`, bound at the domain
-(`AdjustmentService`) and by the restated trigger. **T-a** (`FxConversion` behind `FxConversionDesk`,
-keyed `fx.convert:<actorType>:<actorId>`): the quote `FOR UPDATE` by its owner; the conditional accept on
-the database clock - a lapsed quote is the one committed refusal (expired with `detectedBy ACCEPTANCE`,
-`409 fx.QuoteExpired`); the destination wallet opened if absent inside the transaction (D28); both
-wallets locked in id order and funds judged under the lock; the trade, the posting `fx-trade:<id>`
-(each currency balanced through `FX_POSITION`, margin and residual in the computed leg), the entry
-attached, the quote `EXECUTED`, the cover born, `fx.FxQuoteAccepted` and `fx.FxTradeExecuted`, and
-`fx.ConversionExecuted` audited - one commit; every other refusal rolls back and leaves the quote
-reusable. **Doors**: `POST /v1/me/fx/conversions` (closed body `{quoteId}` - the customer's one live
-wallet product names the wallets), `GET /v1/me/fx/conversions/{tradeId}` (owner-scoped); eight
-`FxErrorCode`s; `finapp.fx.trade` and `finapp.fx.residual` (tag `direction`, a closed three-value key
-added to `MetricNames`). **Static rules**: `FxBooksHaveOnePosterTest` (only `ConversionLines` names
-the FX books) and `NoProviderPortInConversionTest`, each with a planted violation; the no-rate guard
-names the conversion body; `theSeamsStaySeams` retired. **Deviations, recorded**: the ten-conversions
-one-wallet case lives in `FxConversionRaceDatabaseTest`, not `WalletOpenIfAbsentRaceDatabaseTest`; the
-event's `postingReference` is written `fx-trade-<id>` (an event value admits no colon); of the five
-closed FX purposes three exist now - `FX_REALISED_GAINS`/`_LOSSES` join with their own migrations,
-with the cover's lines, at `P9-TSK-012`. **THE BUILD'S FINDS, FIXED**: the register rows (five store
-methods, the `fx-trade:` prefix as touching no reconciled position with its ledger-backed proof, the
-`direction` tag key), the provider-port rule's planted class name unescaped (`$`) and its tier tag, and
-the INV-REC-05 mutation row naming the retired test. **TWELVE PROBES** (T1-T12, all caught), every
-restore byte-identical (sha256-verified; `MUTATION_TESTING.md` §2 +8 rows). **Multi-instance PASS** -
-ten acceptors of one quote (five sharing a key, five with their own) book one trade, one entry and one
-cover; ten conversions into a new currency open ONE wallet with no aborted transaction; two hundred
-quotes lapsing under ten acceptors and ten sweepers each end in exactly one terminal path with one
-expiry event; both expiry orders forced; a failure injected at each booking step leaves nothing (all
-counted). **NEXT**: `P9-TSK-010` `READY`. **Verified** by fresh runs - fx hermetic 39 across 9 and
-database 60 across 12, ledger hermetic 86 across 17, the conversion, race, quote-endpoint, adjustment and
-chart suites 37 across 5, the column-classification guard 5, the fleet-wide hermetic tier 2400 across 387 suites and 18 modules;
-the architecture tier 153 across 26; the app hermetic tier with every document guard 703 across 131 after the records landed, ALL 0 FAILURES - the
+**`P9-TSK-010` — Counterparty-keyed clearing positions** — `COMPLETE` (2026-10-05). **M9.3 AT 2 OF 4:
+each external counterparty settles on its own clearing position, and two counterparties can never
+net** (ADR-0078 §§1-6, 8-9; `INV-RAIL-04` and `INV-SET-05` restated per counterparty, `INV-LED-04`,
+`INV-LED-06`, `INV-REC-06`). **The ledger**: `V021` - `OwnerKind.COUNTERPARTY`; the registry
+`ledger.counterparty` (uuid id, shaped code, kind) with SELECT and INSERT grants and an append-only
+trigger for every writer; the four chart rules restated from the enums; a BEFORE INSERT trigger holding
+a `COUNTERPARTY` account's `owner_ref` to a registry row for every writer (a NULL left to the `CHECK`, so
+each rank refuses alone); and `FX_PROVIDER_CLEARING` admitted as the first counterparty-owned purpose,
+type ASSET pinned, **no registry row and no account** - `V022` (`P9-TSK-011`) admits `fx-sim-a` and its
+five. `ChartOfAccounts.resolve(uow, purpose, counterpartyCode, currency)` serves counterparty purposes and
+the shared two-argument form refuses them; `LedgerAccountStore.findCounterpartyAccount` (joined through
+the registry by code) and `findAllOfPurpose`; `CounterpartyStore`; `CounterpartyChart`'s completeness
+rule run at startup by the app's `CounterpartyChartGuard` over `CounterpartyClearings` (empty until
+`-011`) - a reachable chart with a gap refuses startup, an unreachable database defers to the per-call
+refusal. **Settlement**: `SettlementSourceDescriptor.settledCounterparty` (present exactly on a
+counterparty-owned position) and `settledCurrencies`; `SettlementSources.of` keyed per (purpose,
+counterparty) - one counterparty twice refused, two counterparties on one purpose admitted as two
+positions; the composition proves both ways that each declared counterparty position has its one source
+and each counterparty a source names is declared, with equal currencies; recognitions settle on the
+source's counterparty's own account and the remittance opens there. **Reconciliation**: `PositionProof`'s
+proven purposes derived from the register (today exactly the three clearings) and completeness over
+every account of every reconciled purpose. **Static rules**: `CounterpartyClearingIsNamedByDeclarationsTest`
+(derived from the enum, planted violations), `RailVocabularyIsConfinedTest`'s `CLEARING_POSITIONS` amended
+to a set of declaring files per purpose. **Deviation, recorded**: the purpose's admission moved from `V022`
+to `V021` so every rule is proven against a real purpose. **THE BUILD'S FINDS, FIXED**: the counterparty
+acceptance case found that a report on a counterparty's position could never be accepted - the report
+constructor built the batch without its counterparty before a wither could add it - the counterparty now
+rides the constructor; the register claimed a declaration order `Map.copyOf` does not keep - the new
+method claims a set (the existing `declared()` javadoc carries the same false claim, noted). **DEFERRED TO
+`-011`, recorded in its entry**: the counterparty branches of `ReconciliationIntake.openRemittance` and of
+`PositionProof`'s keying are unreachable until a counterparty purpose is reconciled with an active rule
+set; `-011`'s FX report acceptance proves them. **FOUND, NOT CAUSED - recorded as debt and offered as its
+own task**: 22 Phase 8 database cases are red on master itself (the identical set on this branch, the
+fleet database tier having been skipped). **PROBES** (U1-U11, eleven caught), every restore byte-identical
+(sha256-verified; `MUTATION_TESTING.md` §2 +8 rows). **Multi-instance PASS** - nothing is minted at
+runtime, so no instance can race another for an account; seeded registry and account ids sort below
+the ceiling (asserted, planted both ways); the registry and `owner_ref` are immutable for every writer;
+ten instances starting run the read-only guard identically. **NEXT**: `P9-TSK-011` `READY`. **Verified**
+by fresh runs - ledger hermetic 94 across 18, settlement hermetic 195 across 30 and database 88 across 14
+with the acceptance suite 9 of 9, the counterparty chart database suite 5, the fleet-wide hermetic tier
+2414 across 389 suites and 18 modules; the architecture tier 153 across 26; the app hermetic tier with every document guard 707 across 132 after the records landed,
+ALL 0 FAILURES - and the Phase 8 database selection (219 cases) failing exactly master's 22, no more; the
 fleet-wide database and kafka tiers deliberately skipped on the owner's instruction.
 
 ### Previously
 
-The per-task completion records — 201 blocks, from `P9-TSK-008` back to project initiation
+The per-task completion records — 202 blocks, from `P9-TSK-009` back to project initiation
 (`X-TSK-005` cross-cutting, standing between `P7-TSK-015` and `P7-TSK-014`; `X-TSK-004`
 cross-cutting, standing between `P7-TSK-001` and the Phase 6 → 7 transition) — are archived in
 [`history/TASK_HISTORY.md`](history/TASK_HISTORY.md).
@@ -897,6 +897,7 @@ carries, what triggers paying it down, and the owning phase.
 
 | Deferred | Why | Risk carried | Trigger | Owning phase |
 |---|---|---|---|---|
+| **22 Phase 8 database-tier cases are red on master** (found 2026-10-05 by `P9-TSK-010`, which ran the reconciliation, settlement, storm and payout database selection and found the identical 22 failures on unchanged master) - among them `OpeningPosition`'s walk refusing a non-UUIDv7 journal entry id a suite plants in the shared container (`JdbcPayoutReturnStore.map`), `MerchantPayoutDatabaseTest` still expecting three currencies after JPY and BHD joined (`P9-TSK-003`), the bank-statement and payout cash suites rejecting `CONFLICTING_BATCH`, and the two storms | The fleet-wide database tier has been skipped by the owner's standing instruction since early Phase 9, so the drift accumulated unseen; repairing other suites' fixtures is outside `P9-TSK-010`'s scope, and its own changes were proven not to add a single failure | The Phase 8 proofs (`INV-REC-06`, `INV-SET-06`) are unverified at the database rank until repaired; a real regression could hide among known-red cases | Offered as its own task 2026-10-05; at the latest the Phase 9 exit gate, which runs every tier | 9 |
 | **Time decided across instances outside the session store** (`X-TSK-008`). Five stores still compare a stored bound with a caller's instant: recovery tokens, contact-channel verification, checkout expiry, the fee schedule in force, and payout-destination cooling-off. `CHECK`s in most schemas order two business timestamps that different instances write. Two session leftovers remain: the touch extends by the current policy, and bulk revocation counts expired sessions. Found by `X-TSK-007`'s design, 2026-09-27 | `X-TSK-007` was scoped by the owner to sessions, and folding in five modules' stores and every schema's ordering constraints would have made one task of many. The routing store is `X-TSK-005`'s | **Varies by site, none silent.** The fee schedule can price a transaction at an activation boundary under the version a skewed instance believes in force; its pinned version keeps the fee explainable but not right, so it goes first, with `X-TSK-005`'s fix as the template. Recovery, contact-channel and cooling-off windows stretch or shrink by the skew. The ordering `CHECK`s fail closed, refusing a legitimate revocation, release or dispatch as a `500` | Owner scheduling. The fee schedule is due before the next change to it | Cross-cutting; Phase 15 (security hardening) at the latest |
 | ~~**`PositionProof` reads a credit-normal clearing's balance with the wrong sign**~~ — **paid 2026-09-30** by `P8-TSK-018`, the first task whose proofs met it (and independently the same day on the main line by `734d6f5`, whose `readFrom` form the merge kept): the verdict now negates a CREDIT-normal position's settled balance, so every position reads DR−CR like its remainders — proven with an open payout's expectation in `PayoutSettlementCashDatabaseTest`, the reverted negation caught by that suite (`MUTATION_TESTING.md` §2). *As recorded:* it compares `derive(...).settled()`, signed by the account's NORMAL balance, against remainders signed DR−CR; `PAYOUT_CLEARING` is seeded `LIABILITY`/`CREDIT` (ledger `V012`), so any open merchant-payout expectation fails the verdict (ledger +X against remainders −X) | Found in passing by `P8-TSK-015`'s verification, when the merchant storm shared the proofs' container; outside the resolution machine's scope, and the proof suites' own container group never includes a suite that leaves a payout expectation open | `finapp.reconciliation.position.proof` and the positions report read a FALSE failure for `PAYOUT_CLEARING` whenever a payout is in flight — an alert that cries wolf hides the real break it exists to show | Its own task, flagged 2026-09-30: derive DR−CR explicitly (or negate for a credit-normal position), with a test holding an open payout expectation and its probe | **PAID — `P8-TSK-018`** |
 | ~~**The rematch worklist's KEY clause re-selects residuals it can never allocate**~~ - **paid 2026-10-02** by the Phase 8 -> 9 transition's repair round: a rematch that cannot act records an examination decision and the reach it read before judging (`match_reach`, reconciliation `V016`), each reach examined once, a residual that can never allocate leaving the worklist while the leg drains (`MatchingLegCorrectionsDatabaseTest#residentsThatCannotActNeverStarveTheLeg`, probed) — `JdbcMatchingStore.REMATCH_PREDICATE`'s key clause selects a residual whose key reaches an expectation opened after its latest decision whatever that expectation's remainder, and joins `expectation_key` by value alone, not kind; `Matching.rematchOne` writes no decision on a non-allocating verdict, so such a residual is re-locked on every tick until a person resolves its break, and a source holding a chunk's worth (200) of them keeps its other residuals out of the leg *(Ruled by the Phase 8 exit review, `P8-DOC-001`, 2026-10-01: re-owned to Phase 15. Availability only - a re-selected residual re-locks and allocates nothing, value is never moved; the remainder condition the anchored clause carries is the model, but a keyed reach answered by a lower-priority key needs its own design, which is `P8-TST-001`'s recorded question too. Its trigger task `P8-TSK-022` closed without paying it, and the review records that rather than inherit the decay)* | Found by `P8-TSK-019`'s tests agent, which fixed the same shape in the new anchored clause (the remainder condition) and left the pre-existing clause alone: changing the key clause is the matcher's own change, not the return's | Availability only — an `UNMATCHED` residual still meets its grace; a `PARKED` one waiting to be unparked by late evidence is the exposed case; no money moves wrongly, since the rematch decides under the locks by kind | The first source whose parked residuals reach a chunk, or `P8-TSK-022`'s requeue and reprocess work on the legs | Phase 15 |
@@ -1048,8 +1049,8 @@ Resolved during initiation:
 
 ## Next Task
 
-**`P9-TSK-010` — Counterparty-keyed clearing positions** — `READY` (the Current Task),
-marked by `P9-TSK-009`'s completion gate.
+**`P9-TSK-011` — The FX provider's position, source and vocabulary** — `READY` (the
+Current Task), marked by `P9-TSK-010`'s completion gate.
 *(This section read "`P8-TSK-009` — `READY`" from `P8-TSK-008`'s gate until
 `P8-TSK-013`'s record found it — the stale-second-copy class, in the section whose
 whole job is to mirror.)*

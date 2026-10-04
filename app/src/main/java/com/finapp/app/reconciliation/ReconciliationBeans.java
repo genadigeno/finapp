@@ -101,7 +101,8 @@ public class ReconciliationBeans {
                 settlementFileStore,
                 settlementBatchStore,
                 suspenseReadings,
-                unmatchedConfirmationStore);
+                unmatchedConfirmationStore,
+                new com.finapp.ledger.JdbcCounterpartyStore());
     }
 
     /** The suspense proof's and gauges' reads (`P8-TSK-010`, ADR-0070 §§5, 7). */

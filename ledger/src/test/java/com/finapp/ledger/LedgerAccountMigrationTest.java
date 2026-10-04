@@ -33,7 +33,7 @@ class LedgerAccountMigrationTest {
      * migration fails here, which is the entire point.
      */
     private static final String LATEST_CHART_RULES =
-            "db/migration/ledger/V020__fx_spread_revenue_joins_the_chart.sql";
+            "db/migration/ledger/V021__counterparty_keyed_clearing_positions.sql";
 
     @Test
     @DisplayName("every enum's CHECK lists exactly the values the enum declares")
@@ -110,6 +110,15 @@ class LedgerAccountMigrationTest {
                 .contains("CREATE TRIGGER ledger_account_classification_is_frozen")
                 .contains("BEFORE UPDATE ON ledger.ledger_account")
                 .contains("to_regclass('ledger.journal_line')");
+    }
+
+    @Test
+    @DisplayName("the counterparty registry's kind list and code shape are the domain's own (P9-TSK-010)")
+    void theRegistryIsTheDomainsOwn() {
+        String rules = read(LATEST_CHART_RULES);
+        assertThat(rules).contains("CHECK (kind IN (" + CounterpartyKind.sqlValueList() + "))");
+        assertThat(rules).contains("CHECK (code ~ '^" + Counterparty.CODE_SHAPE.pattern() + "$')");
+        assertThat(rules).contains("GRANT SELECT, INSERT ON ledger.counterparty TO finapp_app;");
     }
 
     @Test

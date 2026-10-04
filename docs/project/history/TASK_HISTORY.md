@@ -1,6 +1,6 @@
 # Task History
 
-The per-task completion records that accumulated behind `## Current Task` - 201 "Previously" blocks, newest first, from `P9-TSK-008` back to project initiation. *(`X-TSK-005` is cross-cutting and completed after `P7-TSK-014` and before `P7-TSK-015`, so it stands between them; its record came in with its branch's merge.)* *(`X-TSK-004` is cross-cutting and completed after the Phase 6 → 7 transition, so it stands second, between `P7-TSK-001` and the transition's record - the transition's block moved here by `P7-TSK-001`'s gate, exactly as an earlier form of this note said it would.)*
+The per-task completion records that accumulated behind `## Current Task` - 202 "Previously" blocks, newest first, from `P9-TSK-009` back to project initiation. *(`X-TSK-005` is cross-cutting and completed after `P7-TSK-014` and before `P7-TSK-015`, so it stands between them; its record came in with its branch's merge.)* *(`X-TSK-004` is cross-cutting and completed after the Phase 6 → 7 transition, so it stands second, between `P7-TSK-001` and the transition's record - the transition's block moved here by `P7-TSK-001`'s gate, exactly as an earlier form of this note said it would.)*
 
 **Archive.** These records were moved verbatim out of
 [`CURRENT_STATE.md`](../CURRENT_STATE.md) on 2026-09-20 so that the canonical description of
@@ -12,6 +12,53 @@ Current state: [`CURRENT_STATE.md`](../CURRENT_STATE.md) ·
 Authoritative backlog: [`BACKLOG.md`](../BACKLOG.md)
 
 ---
+
+### Previously
+
+**`P9-TSK-009` — Wallet conversion** — `COMPLETE` (2026-10-04). **M9.3 OPENS AT 1 OF 4: a quote
+accepted and its conversion booked in ONE local transaction through `FX_POSITION`** (ADR-0076 §§1-6,
+ADR-0077; `INV-FX-01`, `-03`, `-04`, `-05`, `-07`, `-09`, `INV-BAL-04`, `INV-LED-01`, `INV-ACC-01`).
+**The schema**: `fx V006`'s `trade` - copies of the frozen plan, `UNIQUE (quote_id)`,
+`executed_rate = customer_rate`, the plan identity and residual `CHECK`s, a birth trigger requiring an
+`ACCEPTED` quote whose every copied column is EQUAL (no re-pricing at execution), `booked_at`/`booked_on`
+stamped by the database, the freeze, the entry attached once, and a deferred constraint trigger that
+refuses a trade committing without its entry; the quote's edge rule restated so `ACCEPTED -> EXECUTED`
+needs a trade; `cover` (`UNIQUE (quote_id, kind)`, born `DISPATCHED` at attempt 1, the send permit
+stamped by the database and only forward, the full machine with `EXECUTED` refused until `P9-TSK-012`)
+and append-only `cover_attempt` (`T-<32hex>` stored before any send). Ledger `V020`: `FX_SPREAD_REVENUE`
+joins the chart (five seeded REVENUE accounts) and `AccountPurpose.closedToFreeAdjustments()` =
+`reconciledPositions()` + `FX_POSITION`, `FX_SPREAD_REVENUE`, `ROUNDING_RESIDUAL`, bound at the domain
+(`AdjustmentService`) and by the restated trigger. **T-a** (`FxConversion` behind `FxConversionDesk`,
+keyed `fx.convert:<actorType>:<actorId>`): the quote `FOR UPDATE` by its owner; the conditional accept on
+the database clock - a lapsed quote is the one committed refusal (expired with `detectedBy ACCEPTANCE`,
+`409 fx.QuoteExpired`); the destination wallet opened if absent inside the transaction (D28); both
+wallets locked in id order and funds judged under the lock; the trade, the posting `fx-trade:<id>`
+(each currency balanced through `FX_POSITION`, margin and residual in the computed leg), the entry
+attached, the quote `EXECUTED`, the cover born, `fx.FxQuoteAccepted` and `fx.FxTradeExecuted`, and
+`fx.ConversionExecuted` audited - one commit; every other refusal rolls back and leaves the quote
+reusable. **Doors**: `POST /v1/me/fx/conversions` (closed body `{quoteId}` - the customer's one live
+wallet product names the wallets), `GET /v1/me/fx/conversions/{tradeId}` (owner-scoped); eight
+`FxErrorCode`s; `finapp.fx.trade` and `finapp.fx.residual` (tag `direction`, a closed three-value key
+added to `MetricNames`). **Static rules**: `FxBooksHaveOnePosterTest` (only `ConversionLines` names
+the FX books) and `NoProviderPortInConversionTest`, each with a planted violation; the no-rate guard
+names the conversion body; `theSeamsStaySeams` retired. **Deviations, recorded**: the ten-conversions
+one-wallet case lives in `FxConversionRaceDatabaseTest`, not `WalletOpenIfAbsentRaceDatabaseTest`; the
+event's `postingReference` is written `fx-trade-<id>` (an event value admits no colon); of the five
+closed FX purposes three exist now - `FX_REALISED_GAINS`/`_LOSSES` join with their own migrations,
+with the cover's lines, at `P9-TSK-012`. **THE BUILD'S FINDS, FIXED**: the register rows (five store
+methods, the `fx-trade:` prefix as touching no reconciled position with its ledger-backed proof, the
+`direction` tag key), the provider-port rule's planted class name unescaped (`$`) and its tier tag, and
+the INV-REC-05 mutation row naming the retired test. **TWELVE PROBES** (T1-T12, all caught), every
+restore byte-identical (sha256-verified; `MUTATION_TESTING.md` §2 +8 rows). **Multi-instance PASS** -
+ten acceptors of one quote (five sharing a key, five with their own) book one trade, one entry and one
+cover; ten conversions into a new currency open ONE wallet with no aborted transaction; two hundred
+quotes lapsing under ten acceptors and ten sweepers each end in exactly one terminal path with one
+expiry event; both expiry orders forced; a failure injected at each booking step leaves nothing (all
+counted). **NEXT**: `P9-TSK-010` `READY`. **Verified** by fresh runs - fx hermetic 39 across 9 and
+database 60 across 12, ledger hermetic 86 across 17, the conversion, race, quote-endpoint, adjustment and
+chart suites 37 across 5, the column-classification guard 5, the fleet-wide hermetic tier 2400 across 387 suites and 18 modules;
+the architecture tier 153 across 26; the app hermetic tier with every document guard 703 across 131 after the records landed, ALL 0 FAILURES - the
+fleet-wide database and kafka tiers deliberately skipped on the owner's instruction.
 
 ### Previously
 

@@ -81,6 +81,26 @@ public interface LedgerAccountStore<T> {
             T unitOfWork, AccountPurpose purpose, CurrencyCode currency);
 
     /**
+     * One counterparty's account for a counterparty-owned purpose in one currency, if seeded -
+     * the read behind {@link ChartOfAccounts#resolve(Object, AccountPurpose, String,
+     * CurrencyCode)} and the settlement recognitions of a counterparty's source (`P9-TSK-010`,
+     * ADR-0078 section 5). Joined through the registry by code, so a caller names the
+     * counterparty its declaration names and never handles the registry's uuid. Absence is a
+     * seed defect, made loud by the chart; this stays an {@code Optional} for the same reason
+     * {@link #findOperational} does.
+     */
+    Optional<LedgerAccount> findCounterpartyAccount(
+            T unitOfWork, AccountPurpose purpose, String counterpartyCode, CurrencyCode currency);
+
+    /**
+     * Every account of one purpose - operational and counterparty-owned alike, in id order
+     * (`P9-TSK-010`, ADR-0078 section 8): what the position proof and completeness walk, so a
+     * counterparty admitted by migration is proven by construction rather than by a list.
+     * Owned purposes (wallets, payables) are never asked: their accounts are read by owner.
+     */
+    java.util.List<LedgerAccount> findAllOfPurpose(T unitOfWork, AccountPurpose purpose);
+
+    /**
      * Every ledger account owned by {@code ownerRef} — the lock-free sibling of
      * {@link #lockOwnedForUpdate}, arrived with its first caller (`P4-TSK-005`): the
      * participant resolutions, which answer "which of this product's wallets serves this

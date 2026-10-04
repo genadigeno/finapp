@@ -115,7 +115,7 @@ public final class ReconciliationMetrics {
         this.connections = connections;
         this.clock = clock;
 
-        for (AccountPurpose purpose : PositionProof.PROVEN) {
+        for (AccountPurpose purpose : PositionProof.provenPurposes(sources)) {
             Gauge.builder(PROOF, this, self -> self.proofOf(purpose))
                     .tag("purpose", purpose.name())
                     .description(

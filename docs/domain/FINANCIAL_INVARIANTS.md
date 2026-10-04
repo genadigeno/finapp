@@ -579,6 +579,16 @@ declaration when `app` composes the register — and a second provider of either
 declaration, a seed migration and its own source, never a second writer of an existing
 position.)*
 
+*(As built by `P9-TSK-010` (2026-10-05): `SettlementSourceDescriptor` carries
+`settledCounterparty` (present exactly on a counterparty-owned position) and its
+`settledCurrencies`; `SettlementSources.of` refuses two sources on one (purpose, counterparty)
+and admits two counterparties on one purpose as two positions; the composition proves both ways
+that every declared counterparty position (`CounterpartyClearings`) has its one source and every
+counterparty a source names is declared (`EverySettlingPositionHasASourceTest`, planted);
+recognitions and remittances resolve the counterparty's own account; `PositionProof`'s proven
+purposes are derived from the register and completeness walks every account of a reconciled
+purpose. No counterparty is declared until `P9-TSK-011`.)*
+
 ### INV-SET-06 — Cash moves only on the bank's own statement
 **Statement:** `CASH_AT_BANK` is posted only by the recognition of an accepted bank statement, or
 by the repudiation of one. Whenever the chain of accepted statements for a currency is unbroken —
@@ -1951,6 +1961,15 @@ counterparty-owned purposes — `FX_PROVIDER_CLEARING` and `CORRIDOR_CLEARING` a
 `OwnerKind.COUNTERPARTY`, one account per declared counterparty and currency, seeded by the
 migration that admits the counterparty, never minted at runtime — and still never nets two
 counterparties. The existing operational clearings are untouched.)*
+
+*(As built by `P9-TSK-010` (2026-10-05): ledger `V021` admits `OwnerKind.COUNTERPARTY`, the
+append-only registry `ledger.counterparty` and `FX_PROVIDER_CLEARING` as the first
+counterparty-owned purpose — no account yet; `fx-sim-a` and its five arrive with `V022`. A
+`COUNTERPARTY` account's `owner_ref` names a registry row by trigger for every writer;
+`ChartOfAccounts.resolve(purpose, currency)` refuses a counterparty purpose and
+`resolve(purpose, counterpartyCode, currency)` serves it; `CounterpartyClearingIsNamedByDeclarationsTest`
+confines the purpose to its declarations. Proven by `CounterpartyChartDatabaseTest` and
+`ChartOfAccountsTest`; the probes are recorded in `MUTATION_TESTING.md` §2.)*
 
 ---
 

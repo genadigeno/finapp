@@ -75,10 +75,59 @@ class ChartOfAccountsTest {
         assertThat(store.asked).containsExactlyElementsOf(unowned);
     }
 
+    @Test
+    @DisplayName("a counterparty-owned purpose is resolved by counterparty: the shared form refuses"
+            + " it naming the keyed form, and the keyed form refuses every other purpose (ADR-0078)")
+    void aCounterpartyPurposeIsResolvedByCounterparty() {
+        List<AccountPurpose> counterpartyOwned =
+                Arrays.stream(AccountPurpose.values())
+                        .filter(purpose -> purpose.ownerKind() == OwnerKind.COUNTERPARTY)
+                        .toList();
+        assertThat(counterpartyOwned).as("not vacuous").contains(AccountPurpose.FX_PROVIDER_CLEARING);
+        for (AccountPurpose purpose : counterpartyOwned) {
+            assertThatThrownBy(() -> chart.resolve(unitOfWork, purpose, EUR))
+                    .isInstanceOf(IllegalArgumentException.class)
+                    .hasMessageContaining("resolved by counterparty")
+                    .hasMessageContaining("INV-RAIL-04");
+            assertThatThrownBy(() -> chart.resolve(unitOfWork, purpose, "fx-sim-a", EUR))
+                    .as("an empty store is the missing-seed defect, loud")
+                    .isInstanceOf(IllegalStateException.class)
+                    .hasMessageContaining("fx-sim-a")
+                    .hasMessageContaining(purpose.name());
+        }
+        assertThat(store.askedByCounterparty).containsExactlyElementsOf(counterpartyOwned);
+        for (AccountPurpose purpose : AccountPurpose.values()) {
+            if (purpose.ownerKind() == OwnerKind.COUNTERPARTY) {
+                continue;
+            }
+            assertThatThrownBy(() -> chart.resolve(unitOfWork, purpose, "fx-sim-a", EUR))
+                    .as("%s has no counterparty account", purpose)
+                    .isInstanceOf(IllegalArgumentException.class)
+                    .hasMessageContaining(purpose.name());
+        }
+        assertThat(store.askedByCounterparty).as("no other purpose reached the keyed read")
+                .containsExactlyElementsOf(counterpartyOwned);
+        assertThat(store.asked).as("nor the operational read").isEmpty();
+    }
+
     /** Records what the chart asked for and answers every question with nothing. */
     private static final class RecordingStore implements LedgerAccountStore<Object> {
 
         private final List<AccountPurpose> asked = new ArrayList<>();
+
+        private final List<AccountPurpose> askedByCounterparty = new ArrayList<>();
+
+        @Override
+        public Optional<LedgerAccount> findCounterpartyAccount(
+                Object unitOfWork, AccountPurpose purpose, String counterpartyCode, CurrencyCode currency) {
+            askedByCounterparty.add(purpose);
+            return Optional.empty();
+        }
+
+        @Override
+        public List<LedgerAccount> findAllOfPurpose(Object unitOfWork, AccountPurpose purpose) {
+            throw new UnsupportedOperationException("the chart never reads a population");
+        }
 
         @Override
         public Optional<LedgerAccount> findOperational(

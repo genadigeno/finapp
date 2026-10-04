@@ -80,8 +80,21 @@ public class SettlementBeans {
      * payment (`EverySettlingPositionHasASourceTest` drives both ways).
      */
     static SettlementSources composedSettlementSources(PaymentRails rails) {
-        SettlementSources sources =
-                SettlementSources.of(
+        return composedSettlementSources(rails, CounterpartyClearings.declared(), List.of());
+    }
+
+    /**
+     * The register with the counterparties' own sources (`P9-TSK-010`, ADR-0078 section 6), each
+     * read off its counterparty's declaration: every declared counterparty position has exactly
+     * one source discharging it, and every counterparty a source names is declared - proven both
+     * ways at composition, so a counterparty without a source, or a source without a declared
+     * counterparty, refuses the build and every startup ({@code INV-SET-05} per counterparty).
+     */
+    static SettlementSources composedSettlementSources(
+            PaymentRails rails,
+            java.util.Collection<com.finapp.ledger.CounterpartyClearing> counterparties,
+            java.util.Collection<SettlementSourceDescriptor> counterpartySources) {
+        java.util.List<SettlementSourceDescriptor> declared = new java.util.ArrayList<>(
                         List.of(
                                 new SettlementSourceDescriptor(
                                         "simulated-psp.settlement",
@@ -122,6 +135,40 @@ public class SettlementBeans {
                                         Set.of(DeliveryChannel.UPLOAD, DeliveryChannel.PULL),
                                         Optional.empty(),
                                         Optional.empty())));
+        declared.addAll(counterpartySources);
+        SettlementSources sources = SettlementSources.of(declared);
+        for (com.finapp.ledger.CounterpartyClearing counterparty : counterparties) {
+            SettlementSourceDescriptor source =
+                    sources.dischargedBy(counterparty.purpose(), counterparty.code())
+                            .orElseThrow(
+                                    () ->
+                                            new IllegalStateException(
+                                                    "counterparty '" + counterparty.code() + "' settles on "
+                                                            + counterparty.purpose() + " and no settlement"
+                                                            + " source discharges its position: every"
+                                                            + " counterparty position has exactly one"
+                                                            + " declared source (INV-SET-05, ADR-0078)"));
+            if (!source.settledCurrencies().equals(counterparty.currencies())) {
+                throw new IllegalStateException(
+                        "source '" + source.code() + "' settles " + source.settledCurrencies()
+                                + " but counterparty '" + counterparty.code() + "' declares "
+                                + counterparty.currencies() + " - both are read off one declaration");
+            }
+        }
+        for (SettlementSourceDescriptor source : sources.declared()) {
+            source.settledCounterparty()
+                    .filter(code -> counterparties.stream().noneMatch(
+                            counterparty -> counterparty.code().equals(code)
+                                    && Optional.of(counterparty.purpose()).equals(source.settledPosition())))
+                    .ifPresent(
+                            code -> {
+                                throw new IllegalStateException(
+                                        "source '" + source.code() + "' discharges counterparty '" + code
+                                                + "', which declares no position on "
+                                                + source.settledPosition().orElseThrow()
+                                                + " (INV-SET-05, ADR-0078)");
+                            });
+        }
         for (RailId rail : rails.declaredIds()) {
             rails.capabilitiesOf(rail)
                     .clearingPurpose()

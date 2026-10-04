@@ -92,4 +92,84 @@ class EverySettlingPositionHasASourceTest {
         assertThatCode(() -> SettlementBeans.composedSettlementSources(DECLARED))
                 .doesNotThrowAnyException();
     }
+
+    // ---------------------------------------- per counterparty (P9-TSK-010, ADR-0078 section 6)
+
+    private static final com.finapp.sharedkernel.money.CurrencyCode EUR =
+            com.finapp.sharedkernel.money.CurrencyCode.of("EUR");
+
+    private static com.finapp.ledger.CounterpartyClearing clearing(String code) {
+        return new com.finapp.ledger.CounterpartyClearing(
+                code, com.finapp.ledger.CounterpartyKind.FX_PROVIDER, AccountPurpose.FX_PROVIDER_CLEARING,
+                java.util.Set.of(EUR));
+    }
+
+    private static com.finapp.settlement.SettlementSourceDescriptor source(
+            String code, String counterparty, java.util.Set<com.finapp.sharedkernel.money.CurrencyCode> currencies) {
+        return new com.finapp.settlement.SettlementSourceDescriptor(
+                code,
+                com.finapp.settlement.SourceKind.PSP_SETTLEMENT_REPORT,
+                com.finapp.settlement.SettlementFormatId.SIM_PSP_CSV,
+                1,
+                java.util.Set.of(com.finapp.settlement.DeliveryChannel.UPLOAD),
+                Optional.of(AccountPurpose.FX_PROVIDER_CLEARING),
+                Optional.of(code.replace('.', '-').toUpperCase() + "-[0-9]{4}"),
+                Optional.of(counterparty),
+                currencies);
+    }
+
+    @Test
+    @DisplayName("each declared counterparty position has its own source - planted: a counterparty"
+            + " with none, a source with no declared counterparty, a second source on one"
+            + " counterparty, a currency disagreement - each refuses composition")
+    void everyCounterpartyPositionHasItsSource() {
+        SettlementSources composed = SettlementBeans.composedSettlementSources(
+                DECLARED,
+                List.of(clearing("fx-sim-a"), clearing("fx-sim-b")),
+                List.of(source("fx-sim-a.trade-report", "fx-sim-a", java.util.Set.of(EUR)),
+                        source("fx-sim-b.trade-report", "fx-sim-b", java.util.Set.of(EUR))));
+        assertThat(composed.dischargedBy(AccountPurpose.FX_PROVIDER_CLEARING, "fx-sim-b")).isPresent();
+        assertThat(com.finapp.app.reconciliation.PositionProof.provenPurposes(composed))
+                .as("a counterparty admitted with its source is proven by construction")
+                .contains(AccountPurpose.FX_PROVIDER_CLEARING);
+
+        assertThatThrownBy(() -> SettlementBeans.composedSettlementSources(
+                        DECLARED, List.of(clearing("fx-sim-a")), List.of()))
+                .isInstanceOf(IllegalStateException.class)
+                .hasMessageContaining("counterparty 'fx-sim-a'")
+                .hasMessageContaining("INV-SET-05");
+        assertThatThrownBy(() -> SettlementBeans.composedSettlementSources(
+                        DECLARED, List.of(), List.of(source("fx-sim-a.trade-report", "fx-sim-a", java.util.Set.of(EUR)))))
+                .isInstanceOf(IllegalStateException.class)
+                .hasMessageContaining("which declares no position");
+        assertThatThrownBy(() -> SettlementBeans.composedSettlementSources(
+                        DECLARED,
+                        List.of(clearing("fx-sim-a")),
+                        List.of(source("fx-sim-a.trade-report", "fx-sim-a", java.util.Set.of(EUR)),
+                                source("fx-sim-a.second-report", "fx-sim-a", java.util.Set.of(EUR)))))
+                .isInstanceOf(IllegalArgumentException.class)
+                .hasMessageContaining("INV-SET-05");
+        assertThatThrownBy(() -> SettlementBeans.composedSettlementSources(
+                        DECLARED,
+                        List.of(clearing("fx-sim-a")),
+                        List.of(source("fx-sim-a.trade-report", "fx-sim-a",
+                                java.util.Set.of(EUR, com.finapp.sharedkernel.money.CurrencyCode.of("USD"))))))
+                .isInstanceOf(IllegalStateException.class)
+                .hasMessageContaining("one declaration");
+    }
+
+    @Test
+    @DisplayName("the proof's purposes are derived from the composed register - today exactly the"
+            + " three clearings the hard-coded list named (ADR-0078 section 8)")
+    void theProvenPurposesAreDerived() {
+        assertThat(com.finapp.app.reconciliation.PositionProof.provenPurposes(
+                        SettlementBeans.composedSettlementSources(DECLARED)))
+                .containsExactlyInAnyOrder(
+                        AccountPurpose.SETTLEMENT_CLEARING,
+                        AccountPurpose.INSTANT_CLEARING,
+                        AccountPurpose.PAYOUT_CLEARING);
+        assertThat(CounterpartyClearings.declared())
+                .as("no counterparty is declared before P9-TSK-011 admits fx-sim-a")
+                .isEmpty();
+    }
 }

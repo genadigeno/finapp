@@ -12913,7 +12913,7 @@ break row, as the approval door must.)*
 
 # Phase 9 — FX and Cross-Border Payments
 
-Status: `IN_PROGRESS` — started 2026-10-03 with `P9-TSK-001` (9 of 30 items complete, M9.1 and M9.2 closed, M9.3 at 1 of 4); entry gate passed 2026-10-02 by the Phase 8 → 9 transition
+Status: `IN_PROGRESS` — started 2026-10-03 with `P9-TSK-001` (10 of 30 items complete, M9.1 and M9.2 closed, M9.3 at 2 of 4); entry gate passed 2026-10-02 by the Phase 8 → 9 transition
 ([`reviews/PHASE_8_TO_9_TRANSITION.md`](reviews/PHASE_8_TO_9_TRANSITION.md)), elaborated to task
 granularity by the same transition: thirty items (`P9-TSK-001`…`-027`, `P9-TST-001`, `P9-TST-002`,
 `P9-DOC-001`) across nine milestones, with `P9-TSK-001` marked `READY`. The engineering plan is
@@ -13367,7 +13367,8 @@ providers), each owned by Phase 15 and gating nothing here.
   scenarios 1 and 2 are counted.
 - **Definition of done**: `DOD-FIN` (+F1–F8), `DOD-API`, `DOD-EVENT`. **Risk**: High. **Cx**: L.
 
-**P9-TSK-010 — Counterparty-keyed clearing positions** — `READY` (marked by `P9-TSK-009`'s completion gate, 2026-10-04)
+**P9-TSK-010 — Counterparty-keyed clearing positions** — `COMPLETE` (2026-10-05; marked `READY` by `P9-TSK-009`'s completion gate)
+- **As built** (2026-10-05): as `CURRENT_STATE.md` §Just completed records. Every scope item shipped. Deviation: `V021` also admits the purpose `FX_PROVIDER_CLEARING` (no registry row, no account) so every counterparty rule is proven against a real purpose; `V022` keeps `fx-sim-a` and its accounts. Decided at build: the startup guard refuses a reachable incomplete chart and defers on an unreachable database; the composition proves coverage both ways. Deferred to `-011` (recorded there): the counterparty branches of `ReconciliationIntake.openRemittance` and `PositionProof`'s keying, unreachable until a counterparty purpose is reconciled.
 - **Objective**: give each external counterparty its own clearing position, without touching any
   existing clearing.
 - **Bounded context**: `ledger`, `settlement`, `reconciliation`, `app`.
@@ -13405,7 +13406,8 @@ providers), each owned by Phase 15 and gating nothing here.
   refused.
 - **Definition of done**: `DOD-FIN`, `DOD-ARCH`. **Risk**: High. **Cx**: M.
 
-**P9-TSK-011 — The FX provider's position, source and vocabulary** — `PLANNED`
+**P9-TSK-011 — The FX provider's position, source and vocabulary** — `READY` (marked by `P9-TSK-010`'s completion gate, 2026-10-05)
+- **Carried from `P9-TSK-010`** (2026-10-05): `FX_PROVIDER_CLEARING` is already admitted by ledger `V021` (type ASSET pinned), so `V022` registers `fx-sim-a` and seeds its five accounts only, adding the purpose to `reconciledPositions()`; `FxProviderDeclaration` gains `clearingPurpose()` and `CounterpartyClearings` its first entry; `CounterpartyClearingIsNamedByDeclarationsTest.PERMITTED` gains the declaration and the settlement composition. Its acceptance also proves the counterparty branches `-010` could not reach: the remittance opened on `fx-sim-a`'s account (`ReconciliationIntake.openRemittance`) and `PositionProof`'s verdict and completeness keyed per (purpose, counterparty, currency).
 - **Objective**: give `fx-sim-a` its settling position, settlement source, format and reconciliation
   vocabulary, before anything posts to it.
 - **Bounded context**: `ledger`, `settlement`, `reconciliation`, `fx`, `app`.

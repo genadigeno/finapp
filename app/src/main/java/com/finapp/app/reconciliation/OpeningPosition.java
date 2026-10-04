@@ -707,9 +707,15 @@ public class OpeningPosition {
         if (net.minorUnits() == 0) {
             return; // Nothing was promised; the live intake opened none (P8-TSK-009).
         }
+        com.finapp.settlement.SettlementSourceDescriptor declared =
+                settlementSources.byCode(batch.sourceCode())
+                        .orElseThrow(
+                                () ->
+                                        new IllegalStateException(
+                                                "an accepted batch's source is declared"
+                                                        + " (INV-SET-05)"));
         AccountPurpose purpose =
-                settlementSources
-                        .byCode(batch.sourceCode())
+                java.util.Optional.of(declared)
                         .flatMap(com.finapp.settlement.SettlementSourceDescriptor
                                 ::settledPosition)
                         .orElseThrow(
@@ -722,6 +728,7 @@ public class OpeningPosition {
                 batch.id(),
                 batch.sourceId(),
                 purpose,
+                declared.settledCounterparty(),
                 net,
                 batch.acceptedOn(),
                 batch.businessDate(), // D2: the batch's stored value date.

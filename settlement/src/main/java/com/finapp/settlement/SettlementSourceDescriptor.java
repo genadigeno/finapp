@@ -1,6 +1,9 @@
 package com.finapp.settlement;
 
 import com.finapp.ledger.AccountPurpose;
+import com.finapp.ledger.Counterparty;
+import com.finapp.ledger.OwnerKind;
+import com.finapp.sharedkernel.money.CurrencyCode;
 import java.util.Objects;
 import java.util.Optional;
 import java.util.Set;
@@ -39,6 +42,13 @@ import java.util.regex.PatternSyntaxException;
  *     expectation (ADR-0065); a compiled fact, validated here so a malformed pattern fails the
  *     build rather than the first match. Present for exactly the report kinds: the bank
  *     statement is where remittances LAND, so it has none of its own
+ * @param settledCounterparty whose position the evidence discharges, when the settled purpose
+ *     is counterparty-owned (`P9-TSK-010`, ADR-0078 section 6) - present exactly then, so a
+ *     counterparty's source discharges its own position and no other ({@code INV-RAIL-04},
+ *     {@code INV-SET-05} per counterparty); the existing operational clearings carry none
+ * @param settledCurrencies the counterparty's settled currencies, read off its declaration -
+ *     present (non-empty) exactly with {@code settledCounterparty}; a batch in any other
+ *     currency has no position to land on
  */
 public record SettlementSourceDescriptor(
         String code,
@@ -47,7 +57,9 @@ public record SettlementSourceDescriptor(
         int formatVersion,
         Set<DeliveryChannel> channels,
         Optional<AccountPurpose> settledPosition,
-        Optional<String> remittanceReferencePattern) {
+        Optional<String> remittanceReferencePattern,
+        Optional<String> settledCounterparty,
+        Set<CurrencyCode> settledCurrencies) {
 
     /** `simulated-psp.settlement` and its siblings; also the DB `CHECK`'s shape. */
     private static final Pattern CODE_SHAPE =
@@ -61,6 +73,8 @@ public record SettlementSourceDescriptor(
         Objects.requireNonNull(settledPosition, "settledPosition must not be null");
         Objects.requireNonNull(
                 remittanceReferencePattern, "remittanceReferencePattern must not be null");
+        Objects.requireNonNull(settledCounterparty, "settledCounterparty must not be null");
+        Objects.requireNonNull(settledCurrencies, "settledCurrencies must not be null");
         if (!CODE_SHAPE.matcher(code).matches() || code.length() > 100) {
             throw new IllegalArgumentException(
                     "a source code is lowercase, dotted and at most 100 characters; '"
@@ -112,6 +126,41 @@ public record SettlementSourceDescriptor(
                                 malformed);
                     }
                 });
+        boolean counterpartyOwned =
+                settledPosition.map(position -> position.ownerKind() == OwnerKind.COUNTERPARTY)
+                        .orElse(false);
+        if (settledCounterparty.isPresent() != counterpartyOwned) {
+            throw new IllegalArgumentException(
+                    "source '" + code + "' " + (counterpartyOwned
+                            ? "settles the counterparty-owned " + settledPosition.orElseThrow()
+                                    + " and names no counterparty: there is no shared position"
+                                    + " to discharge (INV-RAIL-04, ADR-0078)"
+                            : "names a counterparty, but " + settledPosition.map(String::valueOf)
+                                    .orElse("no settled position") + " is not counterparty-owned"));
+        }
+        settledCounterparty.ifPresent(Counterparty::requireCode);
+        if (settledCurrencies.isEmpty() == settledCounterparty.isPresent()) {
+            throw new IllegalArgumentException(
+                    "source '" + code + "': a counterparty's source declares the currencies it"
+                            + " settles, and a source with no counterparty declares none");
+        }
         channels = Set.copyOf(channels);
+        settledCurrencies = Set.copyOf(settledCurrencies);
+    }
+
+    /**
+     * A source discharging no counterparty's position - every source before `P9-TSK-010`, and
+     * every source of an operational clearing or of cash since.
+     */
+    public SettlementSourceDescriptor(
+            String code,
+            SourceKind kind,
+            SettlementFormatId format,
+            int formatVersion,
+            Set<DeliveryChannel> channels,
+            Optional<AccountPurpose> settledPosition,
+            Optional<String> remittanceReferencePattern) {
+        this(code, kind, format, formatVersion, channels, settledPosition,
+                remittanceReferencePattern, Optional.empty(), Set.of());
     }
 }

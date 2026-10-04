@@ -349,7 +349,7 @@ adding "just the user agent", which is why the ceiling is set before anything po
 | `ledger_account` | `account_type` | `INTERNAL` | An enumeration of the five classifications accounting has |
 | `ledger_account` | `normal_balance` | `INTERNAL` | An enumeration of two values, derived from the type |
 | `ledger_account` | `currency` | `INTERNAL` | An ISO 4217 code; which currency an account is in says nothing about anybody |
-| `ledger_account` | `owner_kind` | `INTERNAL` | An enumeration of three values |
+| `ledger_account` | `owner_kind` | `INTERNAL` | An enumeration of five values (`COUNTERPARTY` joined with `P9-TSK-010`) |
 | `ledger_account` | `owner_ref` | `INTERNAL` | The `kyc_case.customer_id` reasoning: an identifier of a thing, not a fact about it — and it must appear in the log lines and audit records that make a posting investigable. What it *resolves to* is the accounts module's to classify |
 | `ledger_account` | `purpose` | `INTERNAL` | An enumeration member |
 | `ledger_account` | `gl_code` | `INTERNAL` | A GL classification code, free-form but platform-written (Phase 14); it classifies an account, never a person |
@@ -362,7 +362,16 @@ adding "just the user agent", which is why the ceiling is set before anything po
 (`P3-TSK-005`), which is where the plan's *"balances and postings are RESTRICTED-FINANCIAL"*
 sentence lands.
 
-### `ledger.journal_entry` and `ledger.journal_line` — *added by `P3-TSK-005`*
+### `ledger.counterparty` — *added by `P9-TSK-010`*
+
+| Table | Column | Level | Why |
+|---|---|---|---|
+| `counterparty` | `id` | `INTERNAL` | A registry identifier, what a `COUNTERPARTY` account's `owner_ref` names; hand-minted by the admitting migration |
+| `counterparty` | `code` | `INTERNAL` | A platform-declared code for an institution the platform settles with (`fx-sim-a`) - it names a firm's role, never a person, and appears in the logs and reports that make a counterparty's position investigable |
+| `counterparty` | `kind` | `INTERNAL` | An enumeration of two values |
+| `counterparty` | `created_at` | `INTERNAL` | Dates the migration that registered the counterparty - a deployment fact, not a person's activity |
+
+
 
 | Table | Column | Level | Why |
 |---|---|---|---|

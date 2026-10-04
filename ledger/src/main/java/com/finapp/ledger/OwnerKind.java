@@ -44,11 +44,23 @@ public enum OwnerKind {
      * position the platform holds on purpose, and folding the two together is how parked value
      * stops being tracked and aged.
      */
-    SUSPENSE;
+    SUSPENSE,
+
+    /**
+     * Owned by a declared external counterparty - an FX provider, a corridor provider - whose
+     * clearing position it is (`P9-TSK-010`, ADR-0078). {@code owner_ref} names the
+     * counterparty's row in the ledger's own registry ({@code ledger.counterparty}, a trigger
+     * holding the reference for every writer), never a code: a code does not fit a uuid, and
+     * widening the column for one kind would weaken every other kind's reference. Deliberately
+     * not {@code OPERATIONAL}: two providers on one purpose must never net ({@code INV-RAIL-04}),
+     * and an account shared by the purpose is exactly where they would meet - so the account
+     * itself says who owes.
+     */
+    COUNTERPARTY;
 
     /** True when an account of this kind names the owner it belongs to. */
     public boolean requiresOwnerRef() {
-        return this == CUSTOMER || this == MERCHANT;
+        return this == CUSTOMER || this == MERCHANT || this == COUNTERPARTY;
     }
 
     /** The kinds as a SQL literal list, for the {@code CHECK} constraint. */
