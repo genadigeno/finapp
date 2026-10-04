@@ -5572,7 +5572,7 @@
           },
           "owners": {
             "items": {
-              "$ref": "#/components/schemas/OwnerView"
+              "$ref": "#/components/schemas/ReviewOwnerView"
             },
             "type": "array"
           },
@@ -8774,6 +8774,33 @@
             "type": "string"
           },
           "status": {
+            "type": "string"
+          }
+        },
+        "type": "object"
+      },
+      "ReviewOwnerView": {
+        "properties": {
+          "controlRole": {
+            "type": "string"
+          },
+          "declaredAt": {
+            "format": "date-time",
+            "type": "string"
+          },
+          "ownerPartyId": {
+            "format": "uuid",
+            "type": "string"
+          },
+          "stakeBasisPoints": {
+            "format": "int32",
+            "type": "integer"
+          },
+          "verificationCaseId": {
+            "format": "uuid",
+            "type": "string"
+          },
+          "verificationStatus": {
             "type": "string"
           }
         },
