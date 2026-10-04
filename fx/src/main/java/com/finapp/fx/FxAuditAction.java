@@ -12,6 +12,13 @@ import lombok.RequiredArgsConstructor;
 @RequiredArgsConstructor
 public enum FxAuditAction implements AuditableAction {
 
+    /** The owner converted between two of their wallets (`P9-TSK-009`) - a customer act. */
+    FX_CONVERSION_EXECUTED(
+            "fx.ConversionExecuted",
+            "The owner accepted a quote and the conversion was booked: the trade, its entry"
+                    + " fx-trade:<id> and the cover it wants, in one transaction.",
+            false),
+
     /** The owner cancelled a live quote (`P9-TSK-008`) - a customer act. */
     QUOTE_CANCELLED(
             "fx.QuoteCancelled",

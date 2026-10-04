@@ -428,6 +428,8 @@ class CredentialReachesNoEmittedSinkTest {
                         // P9-TSK-008: the customer's quote request - a pair, a fixed side and an
                         // amount as a decimal string. No secret, and closed: no rate can be sent.
                         "QuoteRequestBody",
+                        // P9-TSK-009: the conversion request - a quote id. No secret; closed.
+                        "ConversionRequestBody",
                         // P8-TSK-014: the investigator's case file. No secret in any of them.
                         // The assignee is an identity identifier; the classification carries a
                         // type and a REASON (screened like a note for card-number and account

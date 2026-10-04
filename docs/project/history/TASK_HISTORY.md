@@ -1,6 +1,6 @@
 # Task History
 
-The per-task completion records that accumulated behind `## Current Task` - 200 "Previously" blocks, newest first, from `P9-TSK-007` back to project initiation. *(`X-TSK-005` is cross-cutting and completed after `P7-TSK-014` and before `P7-TSK-015`, so it stands between them; its record came in with its branch's merge.)* *(`X-TSK-004` is cross-cutting and completed after the Phase 6 → 7 transition, so it stands second, between `P7-TSK-001` and the transition's record - the transition's block moved here by `P7-TSK-001`'s gate, exactly as an earlier form of this note said it would.)*
+The per-task completion records that accumulated behind `## Current Task` - 201 "Previously" blocks, newest first, from `P9-TSK-008` back to project initiation. *(`X-TSK-005` is cross-cutting and completed after `P7-TSK-014` and before `P7-TSK-015`, so it stands between them; its record came in with its branch's merge.)* *(`X-TSK-004` is cross-cutting and completed after the Phase 6 → 7 transition, so it stands second, between `P7-TSK-001` and the transition's record - the transition's block moved here by `P7-TSK-001`'s gate, exactly as an earlier form of this note said it would.)*
 
 **Archive.** These records were moved verbatim out of
 [`CURRENT_STATE.md`](../CURRENT_STATE.md) on 2026-09-20 so that the canonical description of
@@ -12,6 +12,59 @@ Current state: [`CURRENT_STATE.md`](../CURRENT_STATE.md) ·
 Authoritative backlog: [`BACKLOG.md`](../BACKLOG.md)
 
 ---
+
+### Previously
+
+**`P9-TSK-008` — The quote lifecycle** — `COMPLETE` (2026-10-04). **M9.2 CLOSES AT 4 OF 4: a
+server-authoritative, single-use, frozen-plan quote whose expiry is an event** (ADR-0075 §§3-6,
+ADR-0076 §1; `INV-FX-02`, `INV-FX-04`, `INV-FX-05`, `INV-FX-07`). **The schema**: `fx V005`'s `quote` -
+the frozen posting plan (the per-currency plan identity and the residual within ±2 as `CHECK`s, each
+scale its currency's minor units, the customer rate at its pinned scale, the copied pricing terms
+required by trigger to equal the pinned version's `pricing_pair` row), the window COMPUTED by the
+insert trigger (`least(requested_at + valid_for - cover_margin, issued_at + window)`, at least 5 s),
+the freeze (every column but the status) and the edge trigger with complementary clock predicates
+(`EXECUTED` refused until `P9-TSK-009`'s trade), and the cap trigger under advisory namespace `5`
+(registered, pinned) counting only live quotes; `quote_request` (our `QR`, `requested_at` stamped by
+the database before any provider call, the pinned version); `quote_sourcing_step` (one judged outcome
+per candidate and one `CHOSEN`, keyed to the request so a refused attempt keeps them); `quote_event`.
+**Creation** (`QuoteIssuance` behind `FxQuoteDesk`, keyed `fx.quote:<actorType>:<actorId>`): Tx1 claims
+the key and records every refusal on it BEFORE any provider call - standing (`fx.CustomerNotEligible`,
+one code for every case), the pair offered and unsuspended, the fixed leg's bounds, a stale reference
+(pre-checked so a stale feed farms no RFQs), the cap pre-check (`429`); the wire asks candidates in the
+pinned order with no connection held (2 s each, 5 s in all on the instance's clock), judging coherence
+and the band in memory and failing over; Tx2 holds the pinned version `FOR SHARE` (`409 fx.PolicyStale`
+when superseded), re-judges the reference and band, and inserts the quote with its steps, evidence
+under `QR`, history, `fx.FxQuoteIssued` and the claim's completion in one transaction - a racing flight
+converged on. **Life**: the owner's read (`EXPIRED` once lapsed, before any sweep) and cancellation
+(`fx.QuoteCancelled` audited, `fx.FxQuoteCancelled`); the leaderless `FxQuoteExpirySchedule` - one
+conditional `UPDATE ... FOR UPDATE SKIP LOCKED` per page on `statement_timestamp()`, one
+`fx.FxQuoteExpired` per row under the quote's correlation, caused by its issue. **Doors**:
+`POST /v1/me/fx/quotes`, `GET .../{id}`, `POST .../{id}/cancellation`, `GET /v1/me/fx/pairs`; nine
+`FxErrorCode`s. **No client rate**: strict deserialisation as an opt-in `ClosedBody` (the platform's
+mapper ignores unknown fields - a Jackson problem handler refuses them on marked types only, `422
+api.ValidationFailed`), every fx request record closed, held by `RatesAreNeverClientSuppliedTest` and
+the OpenAPI request-schema guard, each with planted violations. `ConversionParticipants` implemented in
+`app` over the party projection; `finapp.fx.quote`, `.quote.closed`, `.quote.open`,
+`.quote.expiry.sweeper.enabled`. **THE BUILD'S FINDS, FIXED**: PL/pgSQL ends an `IF` at the first
+`THEN`, a `CASE` inside it broke the migration - parenthesised; the `CHOSEN` step collided with its
+candidate's key - one judged outcome per position plus one `CHOSEN` per attempt; the customer's
+`PairView` would have been published as the operator's schema of the same name - renamed, and a new
+guard (`ApiSchemaNamesAreUniqueTest`) now fails any simple-name collision, finding a pre-existing one
+(KYC's `OwnerView`, recorded as debt and offered as its own task); the meters, the schedule, the
+system-actor site and five store methods given their register rows; `Actor.SYSTEM` replaced by the
+established scope. **THE GATE'S FINDS, FIXED**: no test proved a crash between the transactions
+converges on the same `QR` and pinned version - added; Tx2's atomicity had no failure injection -
+added (an outbox failure leaves no quote, step or event); probe S6 SURVIVED - the freeze was masked
+by the edge rule - a frozen column changed with a LEGAL edge is now refused by the freeze alone.
+**TWELVE PROBES, TWELVE CAUGHT** (S6 after the gate's case), every restore byte-identical
+(sha256-verified; `MUTATION_TESTING.md` §2 +7 rows). **Multi-instance PASS** - ten same-key requests
+make one provider call, ten racers at four live quotes issue one, an owner at the cap makes none, ten
+sweepers expire each quote once and cancellers racing sweepers give one terminal path each (all
+counted); every window on the database clock. **NEXT**: `P9-TSK-009` `READY`. **Verified** by fresh
+runs - fx hermetic 39 across 9 and database 56 across 11, the endpoint suites 10, the column-
+classification guard 5, the fleet-wide hermetic tier 2396 across 385 suites and 18 modules; the architecture tier 151 across 25;
+the document guards 145 across 27, ALL 0 FAILURES - the fleet-wide database and kafka tiers
+deliberately skipped on the owner's instruction.
 
 ### Previously
 

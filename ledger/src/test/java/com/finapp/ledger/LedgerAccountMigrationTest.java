@@ -33,7 +33,7 @@ class LedgerAccountMigrationTest {
      * migration fails here, which is the entire point.
      */
     private static final String LATEST_CHART_RULES =
-            "db/migration/ledger/V018__cash_at_bank_joins_the_chart.sql";
+            "db/migration/ledger/V020__fx_spread_revenue_joins_the_chart.sql";
 
     @Test
     @DisplayName("every enum's CHECK lists exactly the values the enum declares")

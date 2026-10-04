@@ -348,6 +348,78 @@ public final class JdbcQuoteStore implements QuoteStore {
     }
 
     @Override
+    public boolean accept(Connection unitOfWork, FxQuoteId id) {
+        return transition(unitOfWork, "UPDATE fx.quote SET status = 'ACCEPTED' WHERE id = ? AND status = 'ISSUED'"
+                + " AND expires_at > statement_timestamp()", id, "accepting a quote");
+    }
+
+    @Override
+    public boolean expire(Connection unitOfWork, FxQuoteId id) {
+        return transition(unitOfWork, "UPDATE fx.quote SET status = 'EXPIRED' WHERE id = ? AND status = 'ISSUED'"
+                + " AND expires_at <= statement_timestamp()", id, "expiring a quote on acceptance");
+    }
+
+    @Override
+    public boolean execute(Connection unitOfWork, FxQuoteId id) {
+        return transition(unitOfWork, "UPDATE fx.quote SET status = 'EXECUTED' WHERE id = ? AND status = 'ACCEPTED'",
+                id, "executing a quote");
+    }
+
+    @Override
+    public Optional<PlanRow> plan(Connection unitOfWork, FxQuoteId id) {
+        Objects.requireNonNull(id, "id must not be null");
+        try (PreparedStatement select = unitOfWork.prepareStatement(
+                "SELECT id, owner_party_id, purpose, source_currency, destination_currency, fixed_side,"
+                        + " pricing_policy_version_id, provider_code, provider_quote_reference, customer_rate,"
+                        + " source_scale, destination_scale, customer_source_minor, customer_destination_minor,"
+                        + " position_source_minor, position_destination_minor, margin_minor, spread_margin_minor,"
+                        + " markup_margin_minor, residual_minor, correlation_id, issued_event_id"
+                        + " FROM fx.quote WHERE id = ?")) {
+            select.setObject(1, id.value());
+            try (ResultSet row = select.executeQuery()) {
+                if (!row.next()) {
+                    return Optional.empty();
+                }
+                return Optional.of(new PlanRow(
+                        FxQuoteId.of(row.getObject("id", UUID.class)),
+                        row.getObject("owner_party_id", UUID.class),
+                        PricingPurpose.valueOf(row.getString("purpose")),
+                        CurrencyCode.of(row.getString("source_currency")),
+                        CurrencyCode.of(row.getString("destination_currency")),
+                        FixedSide.valueOf(row.getString("fixed_side")),
+                        PricingPolicyId.of(row.getObject("pricing_policy_version_id", UUID.class)),
+                        row.getString("provider_code"),
+                        row.getString("provider_quote_reference"),
+                        row.getBigDecimal("customer_rate"),
+                        row.getInt("source_scale"),
+                        row.getInt("destination_scale"),
+                        row.getLong("customer_source_minor"),
+                        row.getLong("customer_destination_minor"),
+                        row.getLong("position_source_minor"),
+                        row.getLong("position_destination_minor"),
+                        row.getLong("margin_minor"),
+                        row.getLong("spread_margin_minor"),
+                        row.getLong("markup_margin_minor"),
+                        row.getLong("residual_minor"),
+                        row.getString("correlation_id"),
+                        row.getObject("issued_event_id", UUID.class)));
+            }
+        } catch (SQLException failure) {
+            throw failure("reading a quote's plan", failure);
+        }
+    }
+
+    private static boolean transition(Connection unitOfWork, String sql, FxQuoteId id, String operation) {
+        Objects.requireNonNull(id, "id must not be null");
+        try (PreparedStatement update = unitOfWork.prepareStatement(sql)) {
+            update.setObject(1, id.value());
+            return update.executeUpdate() == 1;
+        } catch (SQLException failure) {
+            throw failure(operation, failure);
+        }
+    }
+
+    @Override
     public List<ExpiredRow> expirePage(Connection unitOfWork, int limit) {
         if (limit < 1 || limit > 1000) {
             throw new IllegalArgumentException("an expiry page is 1..1000 rows");

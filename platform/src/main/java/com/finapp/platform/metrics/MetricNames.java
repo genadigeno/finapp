@@ -155,7 +155,13 @@ public final class MetricNames {
                     // this list's job: the Phase 9 plan's own table says the reference age is
                     // "gauge pair", and a name-split would invent ten series and make "which
                     // reference is stale" ten queries.
-                    "pair");
+                    "pair",
+                    // Which way a conversion's rounding residual fell (P9-TSK-009). Bounded by the
+                    // CODE: FxQuoteMetrics.traded writes one of three constants - positive,
+                    // negative, zero - from the sign of a residual the plan computed, never a
+                    // caller-supplied value. A name-split would make "is rounding biased" three
+                    // queries instead of one.
+                    "direction");
 
     /**
      * Allowed keys the fragment rule below would otherwise refuse <strong>on a spelling

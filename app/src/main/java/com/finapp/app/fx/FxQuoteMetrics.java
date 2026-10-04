@@ -31,6 +31,9 @@ public final class FxQuoteMetrics {
     public static final String QUOTE = "finapp.fx.quote";
     public static final String CLOSED = "finapp.fx.quote.closed";
     public static final String OPEN = "finapp.fx.quote.open";
+    public static final String TRADE = "finapp.fx.trade";
+    public static final String RESIDUAL = "finapp.fx.residual";
+    static final List<String> RESIDUAL_DIRECTIONS = List.of("positive", "negative", "zero");
 
     static final List<String> QUOTE_OUTCOMES = List.of(
             "issued", "refused_rate_unavailable", "refused_reference_stale", "refused_implausible",
@@ -58,6 +61,8 @@ public final class FxQuoteMetrics {
         for (String pair : pairs()) {
             QUOTE_OUTCOMES.forEach(outcome -> quote(pair, outcome));
             CLOSED_OUTCOMES.forEach(outcome -> closed(pair, outcome));
+            trade(pair);
+            RESIDUAL_DIRECTIONS.forEach(direction -> residual(pair, direction));
             Gauge.builder(OPEN, this, self -> self.liveOf(pair).doubleValue())
                     .tag("pair", pair)
                     .description("Live FX quotes for this pair: ISSUED and not yet past expiry on the"
@@ -80,6 +85,32 @@ public final class FxQuoteMetrics {
     /** A quote outcome, after its transaction committed. */
     public void quoted(String pair, String outcome) {
         quote(pair, outcome).increment();
+    }
+
+    /**
+     * A booked conversion, after its transaction committed (`P9-TSK-009`): one trade, and its
+     * residual's DIRECTION - a frequency, never the amount (ADR-0072); under half roundings the
+     * residual random-walks around zero, so a drift of one direction is a defect signal.
+     */
+    public void traded(String pair, long residualMinor) {
+        trade(pair).increment();
+        residual(pair, residualMinor > 0 ? "positive" : residualMinor < 0 ? "negative" : "zero").increment();
+    }
+
+    private Counter trade(String pair) {
+        return Counter.builder(TRADE)
+                .tag("pair", pair)
+                .description("Booked FX conversions per pair. A count, never an amount")
+                .register(registry);
+    }
+
+    private Counter residual(String pair, String direction) {
+        return Counter.builder(RESIDUAL)
+                .tag("pair", pair)
+                .tag("direction", direction)
+                .description("Booked conversions by their rounding residual's direction - the platform kept"
+                        + " the fraction (positive), bore it (negative), or none. A frequency, never an amount")
+                .register(registry);
     }
 
     /** A quote left ISSUED, after its transaction committed. */

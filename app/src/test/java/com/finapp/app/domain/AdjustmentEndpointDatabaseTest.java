@@ -665,6 +665,67 @@ class AdjustmentEndpointDatabaseTest {
     }
 
     @Test
+    @DisplayName("the FX books are closed to free adjustment (P9-TSK-009, ledger V020): a MANUAL"
+            + " line on FX_POSITION, FX_SPREAD_REVENUE or ROUNDING_RESIDUAL is 422 at the door and"
+            + " refused by the re-stated trigger for a raw writer")
+    void theFxBooksAreClosedToFreeAdjustments() throws Exception {
+        Operator initiator = givenAnOperator();
+        LedgerAccount wallet = givenAWallet();
+        for (AccountPurpose book : java.util.List.of(
+                AccountPurpose.FX_POSITION, AccountPurpose.FX_SPREAD_REVENUE, AccountPurpose.ROUNDING_RESIDUAL)) {
+            LedgerAccount account;
+            try (Connection app = DatabaseRoles.application()) {
+                account = accounts.findOperational(app, book, USD).orElseThrow();
+            }
+            // The domain rank, through the door: every line on an FX book is a conversion's.
+            String onBook =
+                    "{\"postingDate\":\"2026-10-04\",\"valueDate\":\"2026-10-04\","
+                            + "\"reference\":\"adj-fx-probe\",\"reason\":\"free fx book probe\","
+                            + "\"lines\":[" + line(account, "DEBIT", "5.00") + ","
+                            + line(wallet, "CREDIT", "5.00") + "]}";
+            HttpResponse<String> refused = post(onBook, initiator.token(), "adj-" + IDS.next());
+            assertThat(refused.statusCode()).as(book.name()).isEqualTo(422);
+            assertThat(refused.body())
+                    .contains("ledger.AdjustmentOnReconciledPosition")
+                    .doesNotContain(account.id().value().toString());
+
+            // The database rank, past every domain guard: V020's re-stated trigger.
+            try (Connection app = DatabaseRoles.application()) {
+                app.setAutoCommit(false);
+                UUID proposal = UUID.fromString(IDS.next().toString());
+                try (PreparedStatement head =
+                        app.prepareStatement(
+                                "INSERT INTO ledger.adjustment_proposal (id, status,"
+                                        + " posting_date, value_date, reference, reason,"
+                                        + " proposed_by, proposed_at, reason_code, origin)"
+                                        + " VALUES (?, 'PROPOSED', '2026-10-04', '2026-10-04',"
+                                        + " 'raw-fx-probe', 'raw probe', 'op-raw', now(),"
+                                        + " 'MANUAL_CORRECTION', 'MANUAL')")) {
+                    head.setObject(1, proposal);
+                    head.executeUpdate();
+                }
+                assertThatThrownBy(
+                                () -> {
+                                    try (PreparedStatement raw =
+                                            app.prepareStatement(
+                                                    "INSERT INTO ledger.adjustment_proposal_line"
+                                                            + " (proposal_id, seq, ledger_account_id,"
+                                                            + " direction, amount_minor, currency, scale)"
+                                                            + " VALUES (?, 0, ?, 'DEBIT', 500, 'USD', 2)")) {
+                                        raw.setObject(1, proposal);
+                                        raw.setObject(2, account.id().value());
+                                        raw.executeUpdate();
+                                    }
+                                })
+                        .as(book.name())
+                        .isInstanceOf(SQLException.class)
+                        .hasMessageContaining("closed to free adjustments");
+                app.rollback();
+            }
+        }
+    }
+
+    @Test
     @DisplayName("CASH_AT_BANK joined the closed set with its one poster (P8-TSK-016, ledger"
             + " V018, INV-SET-06): cash is never adjusted to fit the statement - a MANUAL line"
             + " is 422 at the door and refused by the re-stated trigger for a raw writer")

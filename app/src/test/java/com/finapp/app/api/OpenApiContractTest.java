@@ -590,6 +590,9 @@ class OpenApiContractTest {
                         ApiVersion.CURRENT_PREFIX + "/me/fx/quotes/{id}",
                         ApiVersion.CURRENT_PREFIX + "/me/fx/quotes/{id}/cancellation",
                         ApiVersion.CURRENT_PREFIX + "/me/fx/pairs",
+                        // P9-TSK-009: the wallet conversion - convert at a quote, read a conversion.
+                        ApiVersion.CURRENT_PREFIX + "/me/fx/conversions",
+                        ApiVersion.CURRENT_PREFIX + "/me/fx/conversions/{tradeId}",
                         ApiVersion.CURRENT_PREFIX + "/sessions/{id}",
                         ApiVersion.CURRENT_PREFIX + "/sessions/current",
                         ApiVersion.CURRENT_PREFIX + "/me/mfa",

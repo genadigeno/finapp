@@ -731,6 +731,14 @@ subject takes, no evidence that still finds it, no acknowledgement back on its r
 | `fx.RateUnavailable` | 503 | No rate is available right now; retry with a new key. |
 | `fx.QuoteNotFound` | 404 | No quote matches the requested identifier. |
 | `fx.QuoteNotCancellable` | 409 | The quote can no longer be cancelled. |
+| `fx.QuoteExpired` | 409 | The quote has expired; request a new one. |
+| `fx.QuoteAlreadyAccepted` | 409 | The quote has already been accepted. |
+| `fx.QuoteNotAcceptable` | 409 | The quote can no longer be accepted. |
+| `fx.QuoteKindMismatch` | 422 | The quote is not for a wallet conversion. |
+| `fx.SourceWalletMissing` | 422 | No wallet holds the currency being sold. |
+| `fx.WalletNotPostable` | 422 | A wallet this conversion needs is not open. |
+| `fx.InsufficientFunds` | 422 | The wallet's available balance is not enough. |
+| `fx.TradeNotFound` | 404 | No conversion matches the requested identifier. |
 
 The FX controller's doors (`P9-TSK-007`, ADR-0075 §3). `NotFound` is the `FileNotFound`
 departure at the pricing-policy and enable-request doors - every route sits behind
@@ -761,6 +769,19 @@ under the successor. `QuoteNotFound` is the uniform `404` for a quote that is ab
 owner's, or a malformed id. `QuoteNotCancellable` refuses a quote already closed - or lapsed on the
 database clock, even before the sweeper writes `EXPIRED`. An unknown field in the request body -
 a rate above all - is `api.ValidationFailed` (`422`, `ClosedBody`), the field neither echoed nor used.
+
+The conversion doors (`P9-TSK-009`, ADR-0076 §1-2) add eight. Every refusal ROLLS BACK - the
+idempotency key unburned and the quote still `ISSUED`, reusable: `QuoteAlreadyAccepted` (accepted by
+this or another request; the same key replays the trade), `QuoteNotAcceptable` (cancelled or
+abandoned), `QuoteKindMismatch` (a cross-border quote at the wallet door), `PairSuspended` (the kill
+switch beats the outstanding quote), `SourceWalletMissing` (no live WALLET agreement, or none of its
+wallets in the sold currency - one answer), `WalletNotPostable` (a wallet the conversion moves is not
+open) and `InsufficientFunds` (judged under the wallet lock; a destination wallet the attempt opened
+is rolled back with it). The one COMMITTED refusal is `QuoteExpired`: an acceptance that finds the
+quote lapsed on the database clock performs the sweeper's own conditional expiry, writes its event
+(`detectedBy ACCEPTANCE`) and records the claim's failed outcome, so the key replays the same `409`.
+`QuoteNotFound` answers another owner's quote and a malformed id alike; `TradeNotFound` is the uniform
+`404` of the conversion read.
 
 ## 3a. Rejection at the boundary
 

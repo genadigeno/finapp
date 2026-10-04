@@ -6,15 +6,8 @@ import com.finapp.fx.JdbcRateSnapshotStore;
 import com.finapp.fx.RateObservation;
 import com.finapp.fx.ReferencePair;
 import com.finapp.fx.ReferenceSourceDeclaration;
-import com.finapp.identity.Authorization;
-import com.finapp.identity.IdentityId;
-import com.finapp.identity.RoleName;
 import com.finapp.platform.api.IdempotencyKeyHeader;
-import com.finapp.platform.correlation.CorrelationContext;
-import com.finapp.platform.security.SecurityContext;
 import com.finapp.platform.testing.database.DatabaseRoles;
-import com.finapp.sharedkernel.correlation.Correlation;
-import com.finapp.sharedkernel.correlation.CorrelationId;
 import com.finapp.sharedkernel.id.IdGenerator;
 import com.finapp.sharedkernel.money.ExchangeRate;
 import java.math.BigDecimal;
@@ -75,10 +68,10 @@ class FxQuoteEndpointDatabaseTest {
             "EUR", "100.00", "GBP", "100.00", "USD", "100.00", "JPY", "15000", "BHD", "40.000");
 
     private static SimulatedFxEngine engine;
-    private static boolean v1Active;
 
     @LocalServerPort private int port;
-    @Autowired private Authorization authorization;
+    @Autowired private com.finapp.fx.PricingPolicyAdministration administration;
+    @Autowired private com.finapp.fx.PricingPolicyStore policyStore;
 
     @DynamicPropertySource
     static void providerUrl(DynamicPropertyRegistry registry) throws Exception {
@@ -102,10 +95,8 @@ class FxQuoteEndpointDatabaseTest {
 
     @BeforeEach
     void v1AndFreshReferences() throws Exception {
-        if (!v1Active) {
-            activateV1();
-            v1Active = true;
-        }
+        // v1 active - re-established if another FX suite made its own version active meanwhile.
+        FxTestPolicy.ensure(administration, policyStore, FxTestPolicy.V1);
         try (Connection app = DatabaseRoles.application()) {
             app.setAutoCommit(false);
             for (Map.Entry<String, String> mid : MIDS.entrySet()) {
@@ -244,26 +235,6 @@ class FxQuoteEndpointDatabaseTest {
 
     // -----------------------------------------------------------------
 
-    private void activateV1() throws Exception {
-        String first = sessionWith(RoleName.FX_CONTROLLER);
-        String second = sessionWith(RoleName.FX_CONTROLLER);
-        try (Connection app = DatabaseRoles.application();
-                PreparedStatement select = app.prepareStatement(
-                        "SELECT id FROM fx.pricing_policy_version WHERE status = 'PROPOSED'");
-                ResultSet row = select.executeQuery()) {
-            if (row.next()) {
-                post("/v1/operator/fx/pricing-policies/" + row.getObject(1, UUID.class) + "/rejection",
-                        "{\"reason\":\"cleared by the quote suite\"}", first, null);
-            }
-        }
-        HttpResponse<String> proposed = post("/v1/operator/fx/pricing-policies",
-                PricingPolicyV1.json("pricing policy v1 for the quote suite"), first, someKey());
-        assertThat(proposed.statusCode()).as(proposed.body()).isEqualTo(201);
-        HttpResponse<String> approved = post("/v1/operator/fx/pricing-policies/" + field(proposed.body(), "id")
-                + "/approval", "{\"reason\":\"checked against O7\"}", second, null);
-        assertThat(approved.statusCode()).as(approved.body()).isEqualTo(200);
-    }
-
     private static String quoteBody(String source, String destination, String side, String amount) {
         return "{\"sourceCurrency\":\"" + source + "\",\"destinationCurrency\":\"" + destination + "\",\"fixedSide\":\""
                 + side + "\",\"amount\":\"" + amount + "\"}";
@@ -306,27 +277,6 @@ class FxQuoteEndpointDatabaseTest {
     private HttpResponse<String> authenticate(String login) throws Exception {
         return post("/v1/authentications",
                 "{\"loginIdentifier\":\"" + login + "\",\"password\":\"" + PASSWORD + "\"}", null, someKey());
-    }
-
-    private String sessionWith(RoleName role) throws Exception {
-        String login = registered();
-        UUID identity;
-        try (Connection app = DatabaseRoles.application();
-                PreparedStatement read = app.prepareStatement("SELECT id FROM identity.identity WHERE login_identifier = ?")) {
-            read.setString(1, login);
-            try (ResultSet row = read.executeQuery()) {
-                assertThat(row.next()).isTrue();
-                identity = row.getObject("id", UUID.class);
-            }
-        }
-        try (CorrelationContext.Scope flow = CorrelationContext.enter(Correlation.startingWith(CorrelationId.generate(IDS)));
-                SecurityContext.Scope actor = SecurityContext.enterSystem();
-                Connection app = DatabaseRoles.application()) {
-            app.setAutoCommit(false);
-            authorization.assign(app, IdentityId.of(identity), role, IdentityId.of(identity), "test fixture");
-            app.commit();
-        }
-        return field(authenticate(login).body(), "sessionToken");
     }
 
     private static long count(String sql, String parameter) throws Exception {

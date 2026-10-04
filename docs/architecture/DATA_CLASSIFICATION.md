@@ -1739,6 +1739,61 @@ every door. Nothing here is a person's PII beyond identifiers.
 | `quote_event` | `occurred_at` | `INTERNAL` | The database's instant |
 | `quote_event` | `correlation_id` | `INTERNAL` | The flow's correlation |
 
+### `fx` — the trade and the cover — *added by `P9-TSK-009`*
+
+**The booked conversion and the cover it wants** (ADR-0076 §1, ADR-0077). The trade's amounts
+are the posted plan - `RESTRICTED-FINANCIAL`; the rates are the platform's price - `CONFIDENTIAL`;
+the cover's fixed amount is the platform's exposure - `RESTRICTED-FINANCIAL`. Owner-scoped at every
+door.
+
+| Table | Column | Level | Why |
+|---|---|---|---|
+| `trade` | `id` | `INTERNAL` | A trade identifier - the posting key's subject |
+| `trade` | `quote_id` | `INTERNAL` | The executed quote (`UNIQUE`) |
+| `trade` | `owner_party_id` | `INTERNAL` | An identifier of a party - `ledger_account.owner_ref`'s reasoning |
+| `trade` | `purpose` | `INTERNAL` | A closed vocabulary |
+| `trade` | `source_currency` | `INTERNAL` | An ISO 4217 code |
+| `trade` | `destination_currency` | `INTERNAL` | An ISO 4217 code |
+| `trade` | `fixed_side` | `INTERNAL` | A closed vocabulary |
+| `trade` | `pricing_policy_version_id` | `INTERNAL` | The pinned version, copied (`INV-HIST-04`) |
+| `trade` | `provider_code` | `INTERNAL` | A declared provider's compiled code |
+| `trade` | `customer_rate` | `CONFIDENTIAL` | The platform's price to its customer, copied (`quote.customer_rate`'s reasoning) |
+| `trade` | `executed_rate` | `CONFIDENTIAL` | Equal to the customer rate by `CHECK` - the same fact |
+| `trade` | `source_scale` | `INTERNAL` | Part of the monetary shape |
+| `trade` | `destination_scale` | `INTERNAL` | Part of the monetary shape |
+| `trade` | `customer_source_minor` | `RESTRICTED-FINANCIAL` | A booked plan amount - the quote's copy, posted by the trade's entry (`journal_line.amount_minor`'s reasoning) |
+| `trade` | `customer_destination_minor` | `RESTRICTED-FINANCIAL` | A booked plan amount - the quote's copy, posted by the trade's entry (`journal_line.amount_minor`'s reasoning) |
+| `trade` | `position_source_minor` | `RESTRICTED-FINANCIAL` | A booked plan amount - the quote's copy, posted by the trade's entry (`journal_line.amount_minor`'s reasoning) |
+| `trade` | `position_destination_minor` | `RESTRICTED-FINANCIAL` | A booked plan amount - the quote's copy, posted by the trade's entry (`journal_line.amount_minor`'s reasoning) |
+| `trade` | `margin_minor` | `RESTRICTED-FINANCIAL` | A booked plan amount - the quote's copy, posted by the trade's entry (`journal_line.amount_minor`'s reasoning) |
+| `trade` | `spread_margin_minor` | `RESTRICTED-FINANCIAL` | A booked plan amount - the quote's copy, posted by the trade's entry (`journal_line.amount_minor`'s reasoning) |
+| `trade` | `markup_margin_minor` | `RESTRICTED-FINANCIAL` | A booked plan amount - the quote's copy, posted by the trade's entry (`journal_line.amount_minor`'s reasoning) |
+| `trade` | `residual_minor` | `RESTRICTED-FINANCIAL` | A booked plan amount - the quote's copy, posted by the trade's entry (`journal_line.amount_minor`'s reasoning) |
+| `trade` | `status` | `INTERNAL` | An enumeration member |
+| `trade` | `booked_at` | `INTERNAL` | The database's instant of booking |
+| `trade` | `booked_on` | `INTERNAL` | The booking's UTC date - the entry's posting and value date |
+| `trade` | `journal_entry_id` | `INTERNAL` | The entry `fx-trade:<id>` - an identifier of a thing |
+| `trade` | `correlation_id` | `INTERNAL` | The flow's correlation |
+| `cover` | `id` | `INTERNAL` | A cover identifier |
+| `cover` | `quote_id` | `INTERNAL` | The quote whose position it covers |
+| `cover` | `kind` | `INTERNAL` | A closed vocabulary - COVER or UNWIND |
+| `cover` | `status` | `INTERNAL` | An enumeration member |
+| `cover` | `provider_code` | `INTERNAL` | A declared provider's compiled code |
+| `cover` | `source_currency` | `INTERNAL` | An ISO 4217 code |
+| `cover` | `destination_currency` | `INTERNAL` | An ISO 4217 code |
+| `cover` | `fixed_side` | `INTERNAL` | A closed vocabulary |
+| `cover` | `fixed_amount_minor` | `RESTRICTED-FINANCIAL` | The position's fixed leg the cover replicates - the platform's exposure |
+| `cover` | `fixed_scale` | `INTERNAL` | Part of the monetary shape |
+| `cover` | `attempts` | `INTERNAL` | An ordinal |
+| `cover` | `last_dispatched_at` | `INTERNAL` | The send permit, stamped by the database |
+| `cover` | `created_at` | `INTERNAL` | The database's instant of birth |
+| `cover` | `correlation_id` | `INTERNAL` | The booking's correlation |
+| `cover_attempt` | `cover_id` | `INTERNAL` | Its cover |
+| `cover_attempt` | `attempt` | `INTERNAL` | An ordinal |
+| `cover_attempt` | `client_reference` | `INTERNAL` | Our reference `T`, minted and stored before any send - an identifier of a thing |
+| `cover_attempt` | `provider_quote_ref` | `CONFIDENTIAL` | The provider's quote it executes (`PHASE_9_PLAN.md` §8: provider references `CONFIDENTIAL`) |
+| `cover_attempt` | `created_at` | `INTERNAL` | The database's instant |
+
 ### `consent.consent_text` and `consent.consent_record` — *added by `P2-TSK-017`*
 
 | Table | Column | Level | Why |
