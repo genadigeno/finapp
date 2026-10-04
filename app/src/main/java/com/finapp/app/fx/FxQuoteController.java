@@ -35,6 +35,7 @@ import org.springframework.web.bind.annotation.RestController;
 public class FxQuoteController {
 
     @NonNull private final FxQuoteDesk desk;
+    @NonNull private final FxConversionDesk conversions;
 
     @PostMapping(path = "/quotes", consumes = MediaType.APPLICATION_JSON_VALUE)
     @RequiresIdempotencyKey
@@ -64,6 +65,26 @@ public class FxQuoteController {
     public FxQuoteDesk.OfferedPairs pairs() {
         return desk.pairs();
     }
+
+    /** Converts at a quote: synchronous and final - one transaction, no provider call (`P9-TSK-009`). */
+    @PostMapping(path = "/conversions", consumes = MediaType.APPLICATION_JSON_VALUE)
+    @RequiresIdempotencyKey
+    @ResponseStatus(HttpStatus.CREATED)
+    public FxConversionDesk.FxTradeView convert(
+            @Valid @RequestBody ConversionRequestBody body,
+            @RequestHeader(IdempotencyKeyHeader.NAME) String idempotencyKey,
+            HttpServletRequest request) {
+        return conversions.convert(current(request), idempotencyKey, body);
+    }
+
+    @GetMapping("/conversions/{tradeId}")
+    public FxConversionDesk.FxTradeView readConversion(@PathVariable("tradeId") String tradeId, HttpServletRequest request) {
+        return conversions.read(current(request), tradeId);
+    }
+
+    /** A conversion request: the quote to accept, and nothing else - closed, with no rate field. */
+    @ClosedBody
+    public record ConversionRequestBody(@NotBlank @Size(max = 64) String quoteId) {}
 
     /**
      * A quote request: the pair, which side is fixed, and its exact amount as a decimal string.

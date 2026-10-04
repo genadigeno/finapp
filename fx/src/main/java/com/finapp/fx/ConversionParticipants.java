@@ -17,4 +17,18 @@ public interface ConversionParticipants {
      * apart.
      */
     Optional<UUID> activeCustomer(Connection unitOfWork, UUID partyId);
+
+    /**
+     * The customer's wallet in {@code currency}, in their one live WALLET agreement - exactly
+     * that currency, never a fallback (`P9-TSK-009`). Empty when the customer holds no such
+     * agreement or no wallet in the currency.
+     */
+    Optional<com.finapp.ledger.LedgerAccountId> wallet(Connection unitOfWork, UUID customerId, com.finapp.sharedkernel.money.CurrencyCode currency);
+
+    /**
+     * Ensures the customer's live WALLET agreement holds a wallet in {@code currency}, opening it
+     * when absent in the caller's transaction (D28: insert-if-absent, then a re-read - ten racers
+     * open one, none aborts) - empty when the customer holds no live agreement.
+     */
+    Optional<com.finapp.ledger.LedgerAccountId> openIfAbsent(Connection unitOfWork, UUID customerId, com.finapp.sharedkernel.money.CurrencyCode currency);
 }

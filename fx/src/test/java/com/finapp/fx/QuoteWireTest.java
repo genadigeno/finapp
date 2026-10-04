@@ -145,7 +145,7 @@ class QuoteWireTest {
                         stub(OutboxWriter.class), IDS),
                 stub(QuoteStore.class),
                 stub(RateSnapshotStore.class), new FxProviders(List.of()), stub(FxProviderEvidenceStore.class),
-                (unitOfWork, party) -> java.util.Optional.of(party), (OutboxWriter<Connection>) stub(OutboxWriter.class),
+                FxQuoteFixtures.everyoneActive(), (OutboxWriter<Connection>) stub(OutboxWriter.class),
                 IDS, clock);
     }
 

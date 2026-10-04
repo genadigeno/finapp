@@ -41,8 +41,9 @@ class RatesAreNeverClientSuppliedTest {
     void everyRequestBodyIsClosedAndRateFree() throws ClassNotFoundException {
         Set<Class<?>> bodies = requestBodies();
         assertThat(bodies)
-                .as("not vacuous: the customer's quote and the operator's policy are scanned")
-                .contains(FxQuoteController.QuoteRequestBody.class, FxAdministrationController.PricingPolicyRequest.class);
+                .as("not vacuous: the customer's quote and conversion and the operator's policy are scanned")
+                .contains(FxQuoteController.QuoteRequestBody.class, FxQuoteController.ConversionRequestBody.class,
+                        FxAdministrationController.PricingPolicyRequest.class);
         List<String> violations = new ArrayList<>();
         bodies.forEach(body -> violations.addAll(violations(body)));
         assertThat(violations).isEmpty();

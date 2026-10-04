@@ -250,7 +250,7 @@ public final class AdjustmentService {
         java.util.List<LedgerAccountId> named =
                 lines.stream().map(JournalLine::account).distinct().toList();
         for (LedgerAccount account : accounts.findAllById(unitOfWork, named)) {
-            if (AccountPurpose.reconciledPositions().contains(account.purpose())) {
+            if (AccountPurpose.closedToFreeAdjustments().contains(account.purpose())) {
                 throw new AdjustmentOnReconciledPositionException(account.purpose());
             }
         }

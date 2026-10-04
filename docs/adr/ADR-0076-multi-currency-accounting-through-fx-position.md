@@ -101,6 +101,11 @@ must remain explainable from authoritative records (CLAUDE.md rule 11). The forc
    currency judgement refuses with the real account — a transfer's committed
    `FAILED(CURRENCY_MISMATCH)` row must carry real accounts — and `CURRENCY_MISMATCH` now means
    exactly "a side holds no wallet in this currency".
+   *As built (`P9-TSK-009`):* the conversion uses the customer's ONE live WALLET agreement - the
+   schema's `customer_account_one_live_per_customer_product` makes it unique - so the request is
+   `{quoteId}` alone; the source wallet must exist in exactly the sold currency
+   (`fx.SourceWalletMissing`), the destination opens through `WalletAccounts.openIfAbsent` inside
+   T-a, and a refusal after it rolls the opened wallet back.
 7. **The books are proven, report-only** (`PHASE_9_PLAN.md` §12.9.4). **The FX books proof** (`fx.FxBooksProof`,
    `INV-FX-06`), per currency `c`, in one `REPEATABLE READ` snapshot with `Money` folds:
    - `FX_POSITION(c)` DR−CR = Σ over every quote of its plan's position legs in `c` ×

@@ -331,6 +331,42 @@ class OwnershipIsScopedTest {
                                     "com.finapp.fx.JdbcQuoteStore.lockOwned",
                                     "P9-TSK-008. The conditional ISSUED -> CANCELLED, run by QuoteLifecycle.cancel only on the" + " id lockOwned resolved as the caller's own in the same transaction; V005's freeze makes" + " the owner immutable, so the ownership that read established still holds.")),
                     Map.entry(
+                            "com.finapp.fx.JdbcQuoteStore.plan",
+                            new Entry(
+                                    Scope.AUTHORITATIVE_ID,
+                                    "com.finapp.fx.JdbcQuoteStore.lockOwned",
+                                    "P9-TSK-009. The frozen posting plan, read by FxConversion.convert only on the id"
+                                        + " lockOwned resolved as the caller's own in the same transaction (the quote row is"
+                                        + " held FOR UPDATE); V005's freeze makes the owner immutable.")),
+                    Map.entry(
+                            "com.finapp.fx.JdbcQuoteStore.transition",
+                            new Entry(
+                                    Scope.AUTHORITATIVE_ID,
+                                    "com.finapp.fx.JdbcQuoteStore.lockOwned",
+                                    "P9-TSK-009. The private conditional UPDATE behind accept, expire and execute - each"
+                                        + " called by FxConversion.convert only on the id lockOwned resolved as the caller's"
+                                        + " own in the same transaction, the row still held FOR UPDATE.")),
+                    Map.entry(
+                            "com.finapp.fx.JdbcTradeStore.insert",
+                            new Entry(
+                                    Scope.ADMINISTERED,
+                                    "P9-TSK-009. The trade's birth: the id is minted by the conversion (FxTradeId.next),"
+                                        + " never a request value, and the owner is copied from the plan of the quote"
+                                        + " lockOwned resolved - V006's birth trigger requires the copy to equal the quote's.")),
+                    Map.entry(
+                            "com.finapp.fx.JdbcTradeStore.attachEntry",
+                            new Entry(
+                                    Scope.ADMINISTERED,
+                                    "P9-TSK-009. Attaches the posted entry to the trade the same transaction just inserted"
+                                        + " on its minted id - never a request value; V006's edge trigger admits it once.")),
+                    Map.entry(
+                            "com.finapp.fx.JdbcTradeStore.findOwned",
+                            new Entry(
+                                    Scope.OWNER_SCOPED,
+                                    "P9-TSK-009. GET /v1/me/fx/conversions/{tradeId} - a resource identifier from the"
+                                        + " request; owner_party_id = ? in the statement: a stranger's id, a malformed one"
+                                        + " and an absent one are one 404.")),
+                    Map.entry(
                             "com.finapp.fx.JdbcQuoteStore.appendEvent",
                             new Entry(
                                     Scope.ADMINISTERED,
@@ -2470,7 +2506,10 @@ class OwnershipIsScopedTest {
                             "com.finapp.app.fx.FxQuoteEndpointDatabaseTest.theQuoteIsItsOwners"),
                     Map.entry(
                             "com.finapp.fx.JdbcQuoteStore.lockOwned",
-                            "com.finapp.app.fx.FxQuoteEndpointDatabaseTest.theQuoteIsItsOwners"));
+                            "com.finapp.app.fx.FxQuoteEndpointDatabaseTest.theQuoteIsItsOwners"),
+                    Map.entry(
+                            "com.finapp.fx.JdbcTradeStore.findOwned",
+                            "com.finapp.app.fx.FxConversionDatabaseTest.theDoors"));
 
     /**
      * The identity schema's owner column. (This said "one name, because one module owns every

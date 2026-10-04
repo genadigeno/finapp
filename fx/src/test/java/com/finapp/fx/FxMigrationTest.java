@@ -116,7 +116,7 @@ class FxMigrationTest {
                         "fx_provider_evidence", "pricing_policy_version", "pricing_policy_event",
                         "pricing_pair", "availability_enable_request", "pair_availability",
                         "provider_availability", "quote_request", "quote_sourcing_step", "quote",
-                        "quote_event");
+                        "quote_event", "trade", "cover", "cover_attempt");
 
         assertThatExceptionOfType(SQLException.class)
                 .isThrownBy(() -> asApplication(

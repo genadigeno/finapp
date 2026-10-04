@@ -137,21 +137,21 @@ class AdjustmentProposalMigrationTest {
     }
 
     @Test
-    @DisplayName("the binding's purpose list is AccountPurpose.reconciledPositions(),"
-            + " generated (P8-TSK-006, ADR-0071) - its LATEST re-statement is V018's"
-            + " (P8-TSK-015: the resolution's P&L accounts joined with their poster)")
+    @DisplayName("the binding's purpose list is AccountPurpose.closedToFreeAdjustments(),"
+            + " generated (P8-TSK-006, ADR-0071) - its LATEST re-statement is V020's"
+            + " (P9-TSK-009: the FX books closed to free adjustment)")
     void theBindingListIsTheEnums() {
         assertThat(migrationV015())
                 .contains("CREATE TRIGGER adjustment_line_respects_reconciled_positions")
                 .contains("BEFORE INSERT ON ledger.adjustment_proposal_line");
         assertThat(read(
-                        "db/migration/ledger/V018__cash_at_bank_joins_the_chart.sql"))
+                        "db/migration/ledger/V020__fx_spread_revenue_joins_the_chart.sql"))
                 .as("the current generated list lives in the latest re-statement")
                 .contains(
                         "CREATE OR REPLACE FUNCTION"
                                 + " ledger.adjustment_line_respects_reconciled_positions")
                 .contains("account_purpose IN ("
-                        + AccountPurpose.sqlReconciledPositionsList() + ")");
+                        + AccountPurpose.sqlClosedToFreeAdjustmentsList() + ")");
     }
 
     @Test

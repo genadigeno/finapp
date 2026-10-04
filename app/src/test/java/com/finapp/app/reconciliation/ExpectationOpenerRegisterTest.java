@@ -182,6 +182,11 @@ class ExpectationOpenerRegisterTest {
                                 + " DISPUTE_COSTS",
                         proof(NOTHING, CHARGEBACKS, "aWinGivesASiblingsExcessBack"),
                         proof(NOTHING, BATTERY, "theDisputeBatteryHoldsUnderLoad")));
+        rows.put("fx-trade:",
+                touchesNothing("a wallet conversion (P9-TSK-009, ADR-0076): the customer's two wallets"
+                                + " against FX_POSITION, FX_SPREAD_REVENUE and ROUNDING_RESIDUAL - none a"
+                                + " reconciled position; the provider's cover settles at P9-TSK-012",
+                        proof(NOTHING, "fx.FxConversionDatabaseTest", "theWorkedExamplesPostExactly")));
         rows.put("transfer:",
                 touchesNothing("wallet to wallet and its reversal - FINAL_ON_POSTING, nothing"
                                 + " external settles (the storm's scope asserted to hold"

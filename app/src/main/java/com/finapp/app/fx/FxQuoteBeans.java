@@ -12,7 +12,6 @@ import com.finapp.fx.QuoteStore;
 import com.finapp.fx.RateSnapshotStore;
 import com.finapp.fx.TransactionRunner;
 import com.finapp.identity.IdentityStore;
-import com.finapp.party.PartyStore;
 import com.finapp.platform.audit.AuditWriter;
 import com.finapp.platform.idempotency.IdempotentExecutor;
 import com.finapp.platform.outbox.OutboxWriter;
@@ -30,8 +29,8 @@ import org.springframework.context.annotation.Configuration;
 
 /**
  * The FX quote's composition (`P9-TSK-008`): the store, the issuance and lifecycle services, the
- * customer's desk, the metrics, {@code fx}'s {@link ConversionParticipants} over the party
- * projection, and the leaderless expiry schedule (off in test contexts).
+ * customer's desk, the metrics, and the leaderless expiry schedule (off in test contexts). The
+ * {@link ConversionParticipants} the issuance asks is composed by {@code FxConversionBeans}.
  */
 @Configuration
 public class FxQuoteBeans {
@@ -39,11 +38,6 @@ public class FxQuoteBeans {
     @Bean
     QuoteStore quoteStore(IdGenerator idGenerator) {
         return new JdbcQuoteStore(idGenerator);
-    }
-
-    @Bean
-    ConversionParticipants conversionParticipants(PartyStore<Connection> partyStore) {
-        return new PartyConversionParticipants(partyStore);
     }
 
     @Bean

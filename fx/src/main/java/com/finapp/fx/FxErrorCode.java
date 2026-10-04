@@ -65,6 +65,30 @@ public enum FxErrorCode implements ErrorCode {
     /** The quote is no longer live. */
     QUOTE_NOT_CANCELLABLE("fx.QuoteNotCancellable", 409, "The quote can no longer be cancelled."),
 
+    /** The quote lapsed before its acceptance (`P9-TSK-009`): request a new one. */
+    QUOTE_EXPIRED("fx.QuoteExpired", 409, "The quote has expired; request a new one."),
+
+    /** The quote was already accepted - by this or another request. */
+    QUOTE_ALREADY_ACCEPTED("fx.QuoteAlreadyAccepted", 409, "The quote has already been accepted."),
+
+    /** The quote was cancelled or abandoned. */
+    QUOTE_NOT_ACCEPTABLE("fx.QuoteNotAcceptable", 409, "The quote can no longer be accepted."),
+
+    /** The quote prices another purpose than a wallet conversion. */
+    QUOTE_KIND_MISMATCH("fx.QuoteKindMismatch", 422, "The quote is not for a wallet conversion."),
+
+    /** The customer holds no wallet in the currency the quote sells. */
+    SOURCE_WALLET_MISSING("fx.SourceWalletMissing", 422, "No wallet holds the currency being sold."),
+
+    /** A wallet the conversion would move is not open for postings. */
+    WALLET_NOT_POSTABLE("fx.WalletNotPostable", 422, "A wallet this conversion needs is not open."),
+
+    /** The source wallet's available balance does not cover the amount sold. */
+    INSUFFICIENT_FUNDS("fx.InsufficientFunds", 422, "The wallet's available balance is not enough."),
+
+    /** No trade of the caller's has this identifier - one answer for absent and another's. */
+    TRADE_NOT_FOUND("fx.TradeNotFound", 404, "No conversion matches the requested identifier."),
+
     /** The proposal or the decision is malformed; the detail names the defect. */
     PRICING_POLICY_INVALID(
             "fx.PricingPolicyInvalid", 422, "The FX policy request is not well formed.");

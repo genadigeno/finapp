@@ -12913,7 +12913,7 @@ break row, as the approval door must.)*
 
 # Phase 9 — FX and Cross-Border Payments
 
-Status: `IN_PROGRESS` — started 2026-10-03 with `P9-TSK-001` (8 of 30 items complete, M9.1 and M9.2 closed); entry gate passed 2026-10-02 by the Phase 8 → 9 transition
+Status: `IN_PROGRESS` — started 2026-10-03 with `P9-TSK-001` (9 of 30 items complete, M9.1 and M9.2 closed, M9.3 at 1 of 4); entry gate passed 2026-10-02 by the Phase 8 → 9 transition
 ([`reviews/PHASE_8_TO_9_TRANSITION.md`](reviews/PHASE_8_TO_9_TRANSITION.md)), elaborated to task
 granularity by the same transition: thirty items (`P9-TSK-001`…`-027`, `P9-TST-001`, `P9-TST-002`,
 `P9-DOC-001`) across nine milestones, with `P9-TSK-001` marked `READY`. The engineering plan is
@@ -13326,7 +13326,8 @@ providers), each owned by Phase 15 and gating nothing here.
   price; expiry happens exactly once.
 - **Definition of done**: `DOD-FIN`, `DOD-API`, `DOD-EVENT`, `DOD-SEC`. **Risk**: High. **Cx**: L.
 
-**P9-TSK-009 — Wallet conversion** — `READY` (marked by `P9-TSK-008`'s completion gate, 2026-10-04)
+**P9-TSK-009 — Wallet conversion** — `COMPLETE` (2026-10-04; marked `READY` by `P9-TSK-008`'s completion gate)
+- **As built** (2026-10-04): as `CURRENT_STATE.md` §Just completed records. Every scope item shipped. Decided at build: the request is `{quoteId}` only (one live wallet product per customer names both wallets); a lapsed quote is the one committed refusal; the event's `postingReference` is written `fx-trade-<id>`; the `fx-trade:` prefix is registered as touching no reconciled position. Deviations: the one-wallet race case lives in `FxConversionRaceDatabaseTest`; of the five closed FX purposes, `FX_REALISED_GAINS`/`_LOSSES` (and their `MANUAL`-line refusals) arrive with their migrations at `P9-TSK-012`. Twelve probes, all caught.
 - **Objective**: accept a quote and book the conversion atomically through `FX_POSITION`.
 - **Bounded context**: `fx`, `ledger`, `accounts` (via the port).
 - **Dependencies**: `-004`, `-008`.
@@ -13366,7 +13367,7 @@ providers), each owned by Phase 15 and gating nothing here.
   scenarios 1 and 2 are counted.
 - **Definition of done**: `DOD-FIN` (+F1–F8), `DOD-API`, `DOD-EVENT`. **Risk**: High. **Cx**: L.
 
-**P9-TSK-010 — Counterparty-keyed clearing positions** — `PLANNED`
+**P9-TSK-010 — Counterparty-keyed clearing positions** — `READY` (marked by `P9-TSK-009`'s completion gate, 2026-10-04)
 - **Objective**: give each external counterparty its own clearing position, without touching any
   existing clearing.
 - **Bounded context**: `ledger`, `settlement`, `reconciliation`, `app`.

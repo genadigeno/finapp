@@ -109,7 +109,29 @@ final class FxQuoteFixtures {
         return new QuoteIssuance(
                 new JdbcPricingPolicyStore(IDS), availability(), new JdbcQuoteStore(IDS), new JdbcRateSnapshotStore(),
                 providers, new JdbcFxProviderEvidenceStore(new FxEvidenceCipher(new byte[32], 1, new java.security.SecureRandom()), IDS),
-                (unitOfWork, party) -> Optional.of(party), outbox, IDS, clock);
+                everyoneActive(), outbox, IDS, clock);
+    }
+
+    /** Every party an active customer of itself; the conversion's wallet methods are not asked here. */
+    static ConversionParticipants everyoneActive() {
+        return new ConversionParticipants() {
+            @Override
+            public Optional<UUID> activeCustomer(Connection unitOfWork, UUID partyId) {
+                return Optional.of(partyId);
+            }
+
+            @Override
+            public Optional<com.finapp.ledger.LedgerAccountId> wallet(Connection unitOfWork, UUID customerId,
+                    CurrencyCode currency) {
+                throw new UnsupportedOperationException("the quote suites convert nothing");
+            }
+
+            @Override
+            public Optional<com.finapp.ledger.LedgerAccountId> openIfAbsent(Connection unitOfWork, UUID customerId,
+                    CurrencyCode currency) {
+                throw new UnsupportedOperationException("the quote suites convert nothing");
+            }
+        };
     }
 
     static QuoteLifecycle lifecycle() {

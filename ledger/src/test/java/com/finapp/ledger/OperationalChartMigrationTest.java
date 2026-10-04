@@ -43,7 +43,9 @@ class OperationalChartMigrationTest {
                     // P8-TSK-016: the platform's cash, with its one poster.
                     "db/migration/ledger/V018__cash_at_bank_joins_the_chart.sql",
                     // P9-TSK-003: the thirteen operational purposes in JPY and BHD.
-                    "db/migration/ledger/V019__jpy_and_bhd_join_the_chart.sql");
+                    "db/migration/ledger/V019__jpy_and_bhd_join_the_chart.sql",
+                    // P9-TSK-009: the conversion's spread revenue, with its one poster.
+                    "db/migration/ledger/V020__fx_spread_revenue_joins_the_chart.sql");
 
     /**
      * The seed's type decisions, pinned as its contract. Changing one is a reclassification of
@@ -71,6 +73,9 @@ class OperationalChartMigrationTest {
                     // recognised at its report's acceptance - growing on the debit side the
                     // recognition debits, a rebate crediting it back.
                     Map.entry(AccountPurpose.PROCESSING_COSTS, AccountType.EXPENSE),
+                    // ADR-0076 section 4 (P9-TSK-009): the conversion's spread and markup -
+                    // earned, so revenue, growing on the credit side ConversionLines credits.
+                    Map.entry(AccountPurpose.FX_SPREAD_REVENUE, AccountType.REVENUE),
                     // ADR-0071 section 2 (P8-TSK-015): an approved WRITE_OFF's loss - growing
                     // on the debit side the write-off debits.
                     Map.entry(AccountPurpose.RECONCILIATION_LOSSES, AccountType.EXPENSE),

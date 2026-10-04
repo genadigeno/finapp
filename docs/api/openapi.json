@@ -1032,6 +1032,41 @@
           }
         }
       },
+      "fx.InsufficientFunds": {
+        "content": {
+          "application/problem+json": {
+            "schema": {
+              "allOf": [
+                {
+                  "$ref": "#/components/schemas/ProblemDetail"
+                },
+                {
+                  "properties": {
+                    "code": {
+                      "const": "fx.InsufficientFunds"
+                    },
+                    "status": {
+                      "const": 422
+                    },
+                    "type": {
+                      "const": "https://finapp.example/problems/fx.InsufficientFunds"
+                    }
+                  }
+                }
+              ]
+            }
+          }
+        },
+        "description": "[422] The wallet's available balance is not enough.",
+        "headers": {
+          "X-Client-Correlation-Id": {
+            "$ref": "#/components/headers/X-Client-Correlation-Id"
+          },
+          "X-Correlation-Id": {
+            "$ref": "#/components/headers/X-Correlation-Id"
+          }
+        }
+      },
       "fx.NotFound": {
         "content": {
           "application/problem+json": {
@@ -1312,6 +1347,146 @@
           }
         }
       },
+      "fx.QuoteAlreadyAccepted": {
+        "content": {
+          "application/problem+json": {
+            "schema": {
+              "allOf": [
+                {
+                  "$ref": "#/components/schemas/ProblemDetail"
+                },
+                {
+                  "properties": {
+                    "code": {
+                      "const": "fx.QuoteAlreadyAccepted"
+                    },
+                    "status": {
+                      "const": 409
+                    },
+                    "type": {
+                      "const": "https://finapp.example/problems/fx.QuoteAlreadyAccepted"
+                    }
+                  }
+                }
+              ]
+            }
+          }
+        },
+        "description": "[409] The quote has already been accepted.",
+        "headers": {
+          "X-Client-Correlation-Id": {
+            "$ref": "#/components/headers/X-Client-Correlation-Id"
+          },
+          "X-Correlation-Id": {
+            "$ref": "#/components/headers/X-Correlation-Id"
+          }
+        }
+      },
+      "fx.QuoteExpired": {
+        "content": {
+          "application/problem+json": {
+            "schema": {
+              "allOf": [
+                {
+                  "$ref": "#/components/schemas/ProblemDetail"
+                },
+                {
+                  "properties": {
+                    "code": {
+                      "const": "fx.QuoteExpired"
+                    },
+                    "status": {
+                      "const": 409
+                    },
+                    "type": {
+                      "const": "https://finapp.example/problems/fx.QuoteExpired"
+                    }
+                  }
+                }
+              ]
+            }
+          }
+        },
+        "description": "[409] The quote has expired; request a new one.",
+        "headers": {
+          "X-Client-Correlation-Id": {
+            "$ref": "#/components/headers/X-Client-Correlation-Id"
+          },
+          "X-Correlation-Id": {
+            "$ref": "#/components/headers/X-Correlation-Id"
+          }
+        }
+      },
+      "fx.QuoteKindMismatch": {
+        "content": {
+          "application/problem+json": {
+            "schema": {
+              "allOf": [
+                {
+                  "$ref": "#/components/schemas/ProblemDetail"
+                },
+                {
+                  "properties": {
+                    "code": {
+                      "const": "fx.QuoteKindMismatch"
+                    },
+                    "status": {
+                      "const": 422
+                    },
+                    "type": {
+                      "const": "https://finapp.example/problems/fx.QuoteKindMismatch"
+                    }
+                  }
+                }
+              ]
+            }
+          }
+        },
+        "description": "[422] The quote is not for a wallet conversion.",
+        "headers": {
+          "X-Client-Correlation-Id": {
+            "$ref": "#/components/headers/X-Client-Correlation-Id"
+          },
+          "X-Correlation-Id": {
+            "$ref": "#/components/headers/X-Correlation-Id"
+          }
+        }
+      },
+      "fx.QuoteNotAcceptable": {
+        "content": {
+          "application/problem+json": {
+            "schema": {
+              "allOf": [
+                {
+                  "$ref": "#/components/schemas/ProblemDetail"
+                },
+                {
+                  "properties": {
+                    "code": {
+                      "const": "fx.QuoteNotAcceptable"
+                    },
+                    "status": {
+                      "const": 409
+                    },
+                    "type": {
+                      "const": "https://finapp.example/problems/fx.QuoteNotAcceptable"
+                    }
+                  }
+                }
+              ]
+            }
+          }
+        },
+        "description": "[409] The quote can no longer be accepted.",
+        "headers": {
+          "X-Client-Correlation-Id": {
+            "$ref": "#/components/headers/X-Client-Correlation-Id"
+          },
+          "X-Correlation-Id": {
+            "$ref": "#/components/headers/X-Correlation-Id"
+          }
+        }
+      },
       "fx.QuoteNotCancellable": {
         "content": {
           "application/problem+json": {
@@ -1452,6 +1627,41 @@
           }
         }
       },
+      "fx.SourceWalletMissing": {
+        "content": {
+          "application/problem+json": {
+            "schema": {
+              "allOf": [
+                {
+                  "$ref": "#/components/schemas/ProblemDetail"
+                },
+                {
+                  "properties": {
+                    "code": {
+                      "const": "fx.SourceWalletMissing"
+                    },
+                    "status": {
+                      "const": 422
+                    },
+                    "type": {
+                      "const": "https://finapp.example/problems/fx.SourceWalletMissing"
+                    }
+                  }
+                }
+              ]
+            }
+          }
+        },
+        "description": "[422] No wallet holds the currency being sold.",
+        "headers": {
+          "X-Client-Correlation-Id": {
+            "$ref": "#/components/headers/X-Client-Correlation-Id"
+          },
+          "X-Correlation-Id": {
+            "$ref": "#/components/headers/X-Correlation-Id"
+          }
+        }
+      },
       "fx.TooManyOpenQuotes": {
         "content": {
           "application/problem+json": {
@@ -1478,6 +1688,76 @@
           }
         },
         "description": "[429] Too many open quotes; let one expire or cancel it.",
+        "headers": {
+          "X-Client-Correlation-Id": {
+            "$ref": "#/components/headers/X-Client-Correlation-Id"
+          },
+          "X-Correlation-Id": {
+            "$ref": "#/components/headers/X-Correlation-Id"
+          }
+        }
+      },
+      "fx.TradeNotFound": {
+        "content": {
+          "application/problem+json": {
+            "schema": {
+              "allOf": [
+                {
+                  "$ref": "#/components/schemas/ProblemDetail"
+                },
+                {
+                  "properties": {
+                    "code": {
+                      "const": "fx.TradeNotFound"
+                    },
+                    "status": {
+                      "const": 404
+                    },
+                    "type": {
+                      "const": "https://finapp.example/problems/fx.TradeNotFound"
+                    }
+                  }
+                }
+              ]
+            }
+          }
+        },
+        "description": "[404] No conversion matches the requested identifier.",
+        "headers": {
+          "X-Client-Correlation-Id": {
+            "$ref": "#/components/headers/X-Client-Correlation-Id"
+          },
+          "X-Correlation-Id": {
+            "$ref": "#/components/headers/X-Correlation-Id"
+          }
+        }
+      },
+      "fx.WalletNotPostable": {
+        "content": {
+          "application/problem+json": {
+            "schema": {
+              "allOf": [
+                {
+                  "$ref": "#/components/schemas/ProblemDetail"
+                },
+                {
+                  "properties": {
+                    "code": {
+                      "const": "fx.WalletNotPostable"
+                    },
+                    "status": {
+                      "const": 422
+                    },
+                    "type": {
+                      "const": "https://finapp.example/problems/fx.WalletNotPostable"
+                    }
+                  }
+                }
+              ]
+            }
+          }
+        },
+        "description": "[422] A wallet this conversion needs is not open.",
         "headers": {
           "X-Client-Correlation-Id": {
             "$ref": "#/components/headers/X-Client-Correlation-Id"
@@ -6095,6 +6375,19 @@
         },
         "type": "object"
       },
+      "ConversionRequestBody": {
+        "properties": {
+          "quoteId": {
+            "maxLength": 64,
+            "minLength": 0,
+            "type": "string"
+          }
+        },
+        "required": [
+          "quoteId"
+        ],
+        "type": "object"
+      },
       "CreateFeeScheduleRequest": {
         "properties": {
           "currency": {
@@ -7008,6 +7301,44 @@
             "type": "string"
           },
           "issuedAt": {
+            "type": "string"
+          },
+          "sourceAmount": {
+            "type": "string"
+          },
+          "sourceCurrency": {
+            "type": "string"
+          },
+          "status": {
+            "type": "string"
+          }
+        },
+        "type": "object"
+      },
+      "FxTradeView": {
+        "properties": {
+          "bookedAt": {
+            "type": "string"
+          },
+          "bookedOn": {
+            "type": "string"
+          },
+          "destinationAmount": {
+            "type": "string"
+          },
+          "destinationCurrency": {
+            "type": "string"
+          },
+          "executedRate": {
+            "type": "string"
+          },
+          "fixedSide": {
+            "type": "string"
+          },
+          "id": {
+            "type": "string"
+          },
+          "quoteId": {
             "type": "string"
           },
           "sourceAmount": {
@@ -11710,6 +12041,70 @@
               }
             },
             "description": "Created"
+          }
+        }
+      }
+    },
+    "/v1/me/fx/conversions": {
+      "post": {
+        "operationId": "convert",
+        "parameters": [
+          {
+            "in": "header",
+            "name": "Idempotency-Key",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ConversionRequestBody"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "201": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/FxTradeView"
+                }
+              }
+            },
+            "description": "Created"
+          }
+        }
+      }
+    },
+    "/v1/me/fx/conversions/{tradeId}": {
+      "get": {
+        "operationId": "readConversion",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "tradeId",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/FxTradeView"
+                }
+              }
+            },
+            "description": "OK"
           }
         }
       }

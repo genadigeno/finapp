@@ -148,6 +148,14 @@ public enum AccountPurpose {
     /** Where allocation residuals are posted, never absorbed ({@code INV-BAL-03}). */
     ROUNDING_RESIDUAL(OwnerKind.OPERATIONAL),
 
+    /**
+     * The spread and markup a wallet conversion earns, recognised explicitly in the computed
+     * leg's currency ({@code INV-FX-03}). Posted only by {@code fx}'s {@code ConversionLines}
+     * ({@code FxBooksHaveOnePosterTest}); a REVENUE account, credit-normal. Added beside `V020`
+     * with its first poster (`P9-TSK-009`).
+     */
+    FX_SPREAD_REVENUE(OwnerKind.OPERATIONAL),
+
     /** Unattributable value, parked, aged and reported ({@code INV-REC-05}). Phase 8's seam. */
     SUSPENSE_UNMATCHED(OwnerKind.SUSPENSE);
 
@@ -187,6 +195,30 @@ public enum AccountPurpose {
     /** The reconciled positions as a SQL literal list, for `V015`'s binding trigger. */
     public static String sqlReconciledPositionsList() {
         return reconciledPositions().stream()
+                .map(purpose -> "'" + purpose.name() + "'")
+                .collect(Collectors.joining(", "));
+    }
+
+    /**
+     * Every purpose a free {@code MANUAL} adjustment may never touch (`P9-TSK-009`;
+     * PHASE_9_PLAN.md section 12.6): the reconciled positions, and the FX books - the position,
+     * the spread revenue and the rounding residual - whose every line is a conversion's (or, from
+     * `P9-TSK-012`, a cover's). The FX books do NOT join {@link #reconciledPositions()}: they open
+     * no expectations, and the completeness proof would report every conversion line unattributed.
+     * `V020` re-states `V015`'s binding trigger with this list; `ReversalService` mirrors and
+     * reconciliation-origin resolutions stay admitted.
+     */
+    public static java.util.Set<AccountPurpose> closedToFreeAdjustments() {
+        java.util.Set<AccountPurpose> closed = java.util.EnumSet.copyOf(reconciledPositions());
+        closed.add(FX_POSITION);
+        closed.add(FX_SPREAD_REVENUE);
+        closed.add(ROUNDING_RESIDUAL);
+        return closed;
+    }
+
+    /** {@link #closedToFreeAdjustments()} as a SQL literal list, for the binding trigger. */
+    public static String sqlClosedToFreeAdjustmentsList() {
+        return closedToFreeAdjustments().stream()
                 .map(purpose -> "'" + purpose.name() + "'")
                 .collect(Collectors.joining(", "));
     }

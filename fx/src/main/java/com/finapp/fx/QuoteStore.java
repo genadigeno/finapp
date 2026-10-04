@@ -117,6 +117,60 @@ public interface QuoteStore {
             String correlationId,
             UUID issuedEventId) {}
 
+    /**
+     * A quote's whole frozen plan, as the trade copies it (`P9-TSK-009`) - read under the
+     * caller's row lock.
+     */
+    record PlanRow(
+            FxQuoteId id,
+            UUID owner,
+            PricingPurpose purpose,
+            CurrencyCode source,
+            CurrencyCode destination,
+            FixedSide fixedSide,
+            PricingPolicyId version,
+            String providerCode,
+            String providerQuoteReference,
+            BigDecimal customerRate,
+            int sourceScale,
+            int destinationScale,
+            long customerSourceMinor,
+            long customerDestinationMinor,
+            long positionSourceMinor,
+            long positionDestinationMinor,
+            long marginMinor,
+            long spreadMarginMinor,
+            long markupMarginMinor,
+            long residualMinor,
+            String correlationId,
+            UUID issuedEventId) {
+
+        public Money customerSource() {
+            return Money.ofPersisted(customerSourceMinor, source, sourceScale);
+        }
+
+        public Money customerDestination() {
+            return Money.ofPersisted(customerDestinationMinor, destination, destinationScale);
+        }
+
+        public Money positionSource() {
+            return Money.ofPersisted(positionSourceMinor, source, sourceScale);
+        }
+
+        public Money positionDestination() {
+            return Money.ofPersisted(positionDestinationMinor, destination, destinationScale);
+        }
+
+        /** The computed leg's currency: where the margin and the residual arise. */
+        public CurrencyCode computedCurrency() {
+            return fixedSide == FixedSide.FIXED_SOURCE ? destination : source;
+        }
+
+        public int computedScale() {
+            return fixedSide == FixedSide.FIXED_SOURCE ? destinationScale : sourceScale;
+        }
+    }
+
     /** A quote the sweeper expired. */
     record ExpiredRow(FxQuoteId id, CurrencyCode source, CurrencyCode destination, String correlationId, UUID issuedEventId) {}
 
@@ -158,6 +212,21 @@ public interface QuoteStore {
 
     /** {@code ISSUED -> CANCELLED} while live; false when the conditional did not match. */
     boolean cancel(Connection unitOfWork, FxQuoteId id);
+
+    /** {@code ISSUED -> ACCEPTED} while live on the database clock; false otherwise (`P9-TSK-009`). */
+    boolean accept(Connection unitOfWork, FxQuoteId id);
+
+    /**
+     * {@code ISSUED -> EXPIRED} once lapsed on the database clock - an acceptance that found the
+     * quote late performs the sweeper's own conditional; false when it did not match.
+     */
+    boolean expire(Connection unitOfWork, FxQuoteId id);
+
+    /** {@code ACCEPTED -> EXECUTED}, admitted by the edge trigger only beside the quote's trade. */
+    boolean execute(Connection unitOfWork, FxQuoteId id);
+
+    /** The quote's whole plan - the caller holds its row lock. */
+    Optional<PlanRow> plan(Connection unitOfWork, FxQuoteId id);
 
     /**
      * Expires up to {@code limit} lapsed quotes in one statement - {@code FOR UPDATE SKIP LOCKED}
