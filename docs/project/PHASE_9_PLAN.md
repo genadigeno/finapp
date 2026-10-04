@@ -1445,6 +1445,7 @@ declarations.
 | `finapp.fx.quote.open` | gauge `pair` | Live quotes |
 | `finapp.fx.provider.quote.latency` | timer `provider`, `outcome` | Provider quoting health; failover |
 | `finapp.fx.rate.age` | gauge `pair` | Seconds since the latest reference snapshot (alert past the maximum age) |
+| `finapp.fx.rate.fetch` | counter `outcome` (`stored`, `not_newer`, `rejected`, `paced`, the four fetch failures, `crashed`) | The reference fetch's rounds and rows - why a pair is ageing (added by `P9-TSK-005`) |
 | `finapp.fx.trade` | counter `pair`, `outcome` (`executed`, `reversed`) | Conversions |
 | `finapp.fx.residual` | counter `currency`, `direction` (`debit`, `credit`, `none`) | Residual *frequency* (the amount is the revenue report) |
 | `finapp.fx.cover` | counter `provider`, `kind`, `outcome` (`executed`, `rejected`, `requoted`, `off_plan`, `voided`) | Cover health |

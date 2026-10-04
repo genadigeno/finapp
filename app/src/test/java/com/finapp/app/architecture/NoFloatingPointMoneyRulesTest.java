@@ -257,6 +257,13 @@ class NoFloatingPointMoneyRulesTest {
                     // unreadable or never accepted; the failure counter increments by one.
                     // An age and a count, never an amount.
                     "com.finapp.app.telemetry.SettlementPullMetrics",
+                    // P9-TSK-005. The SAME case again: each reference pair's AGE - a Duration
+                    // the database computed in whole microseconds (fx stays float-free: the
+                    // store returns a Duration, never a double), converted to seconds only at
+                    // the registry boundary through the ToDoubleFunction a Gauge imposes, NaN
+                    // the sentinel for unreadable or never fetched; the fetch counters
+                    // increment by row counts. Ages and counts, never a rate (ADR-0072).
+                    "com.finapp.app.fx.FxRateMetrics",
                     // P8-TSK-024. The SAME case again: the open breaks per type and severity
                     // (counts) and the oldest open break's age in whole SECONDS per severity,
                     // published through the ToDoubleFunction a Gauge imposes, NaN the sentinel

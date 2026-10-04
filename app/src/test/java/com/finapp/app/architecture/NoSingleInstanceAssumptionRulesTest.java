@@ -240,7 +240,17 @@ class NoSingleInstanceAssumptionRulesTest {
                     // or a pull racing an upload of the same bytes, land one file with a
                     // DUPLICATE receipt each, counted. Register row: DISTRIBUTED_EXECUTION.md
                     // section 3; the herd is SettlementPullDatabaseTest's.
-                    "com.finapp.app.settlement.SettlementPullSchedule");
+                    "com.finapp.app.settlement.SettlementPullSchedule",
+                    // P9-TSK-005: the reference-rate fetch - an EXTERNAL READ, holding no
+                    // connection across it. fx.rate_fetch_permit's conditional, strictly
+                    // advancing upsert - stamped by the DATABASE - paces the herd to one
+                    // attempt per window (pacing only); the snapshot's unique and its
+                    // newer-than-latest trigger (namespace 6, every writer) decide what is
+                    // stored, so N fetchers of one observation store it once and an older one
+                    // never overwrites a newer, counted. Nothing is cached for any decision.
+                    // Register row: DISTRIBUTED_EXECUTION.md section 3; the herd is
+                    // RateFetchRaceDatabaseTest's.
+                    "com.finapp.app.fx.FxRateFetchSchedule");
 
     /** Types that schedule work with no lease, so every instance runs it. */
     private static final Set<String> AMBIENT_SCHEDULERS =

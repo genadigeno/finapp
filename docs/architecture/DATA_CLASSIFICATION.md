@@ -1533,6 +1533,29 @@ counters and dates of things.
 | `resolution_event` | `occurred_at` | `INTERNAL` | When the edge was driven |
 | `resolution_event` | `correlation_id` | `INTERNAL` | The flow's correlation |
 
+### `fx` — the reference rate and its fetch permit — *added by `P9-TSK-005`*
+
+**The independent reference's evidence** (ADR-0075 §1, `INV-FX-02`): a public market price per
+canonical currency pair, the instant the source says it observed it and the instant the database
+received it, and the herd's pacing row. Nothing here is about a person or a customer; a reference
+mid-rate is market data, never executable and never a price anyone was offered. `INTERNAL`
+throughout - the rate included, because it is the source's published mid, not the platform's
+pricing (the margins and customer rates that ARE commercial arrive with the quote, `P9-TSK-008`).
+
+| Table | Column | Level | Why |
+|---|---|---|---|
+| `rate_snapshot` | `id` | `INTERNAL` | A snapshot identifier. Generated |
+| `rate_snapshot` | `source` | `INTERNAL` | The declared source's compiled code - `simulated-reference` - an organisation, never a person |
+| `rate_snapshot` | `base_currency` | `INTERNAL` | An ISO 4217 code, one of the declaration's canonical pairs |
+| `rate_snapshot` | `quote_currency` | `INTERNAL` | An ISO 4217 code, one of the declaration's canonical pairs |
+| `rate_snapshot` | `rate` | `INTERNAL` | The source's published mid-market rate - market data, not the platform's pricing or anyone's offer |
+| `rate_snapshot` | `observed_at` | `INTERNAL` | When the source says it observed the rate |
+| `rate_snapshot` | `received_at` | `INTERNAL` | When the database received it - the instant freshness is judged from |
+| `rate_fetch_permit` | `source` | `INTERNAL` | The paced source's compiled code |
+| `rate_fetch_permit` | `last_attempt_at` | `INTERNAL` | The herd's last attempt, database-stamped - operational state |
+| `rate_fetch_permit` | `attempts` | `INTERNAL` | A counter |
+| `rate_fetch_permit` | `created_at` | `INTERNAL` | When the source was first fetched |
+
 ### `consent.consent_text` and `consent.consent_record` — *added by `P2-TSK-017`*
 
 | Table | Column | Level | Why |

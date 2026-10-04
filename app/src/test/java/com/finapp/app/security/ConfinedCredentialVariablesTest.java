@@ -82,7 +82,12 @@ class ConfinedCredentialVariablesTest {
                             "finapp.settlement.payout.report.key"),
                     Map.entry(
                             com.finapp.app.settlement.BankStatementKey.class,
-                            "finapp.settlement.bank.statement.key"));
+                            "finapp.settlement.bank.statement.key"),
+                    // The seventeenth (P9-TSK-005): the independent reference rate - a
+                    // different party than the FX provider, so never that provider's key.
+                    Map.entry(
+                            com.finapp.app.fx.ReferenceRateKey.class,
+                            "finapp.fx.reference.key"));
 
     @Test
     @DisplayName("the variable a refusal names is the relaxed-binding form of the property read")

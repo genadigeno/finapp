@@ -146,7 +146,16 @@ public final class MetricNames {
                     // The plan's section 15 alerts break age PER SEVERITY (CRITICAL > 0 h,
                     // HIGH > 1 d, MEDIUM > 5 d, LOW > 15 d), which a name-split per severity
                     // would make four series and "the open breaks by severity" four queries.
-                    "severity");
+                    "severity",
+                    // Which reference currency pair (P9-TSK-005). Bounded by the CODE: the
+                    // value is one of ReferenceSourceDeclaration's ten canonical pairs
+                    // (EUR/USD, ...), each two ISO 4217 codes - the currency key's reasoning
+                    // twice over, a category shared by everyone, structurally never a person,
+                    // a resource or anything a caller supplies. Added deliberately, which is
+                    // this list's job: the Phase 9 plan's own table says the reference age is
+                    // "gauge pair", and a name-split would invent ten series and make "which
+                    // reference is stale" ten queries.
+                    "pair");
 
     /**
      * Allowed keys the fragment rule below would otherwise refuse <strong>on a spelling

@@ -46,6 +46,13 @@ there:
      latest — a stuck feed replaying an old observation never looks fresh. Fetching is
      leaderless on every instance, paced by a `rate_fetch_permit` row renewed conditionally and
      strictly forward (the `pull_permit` shape).
+   - *As built (`P9-TSK-005`):* the newer-than-latest rule is `fx V002`'s `BEFORE INSERT` trigger,
+     serialised per (source, pair) on advisory namespace 6 and forcing `received_at` to
+     `statement_timestamp()`, so it holds for every writer and under racing inserts (a Java
+     pre-check could not); pairs are the declaration's ten canonical directions, the inverse
+     never stored; an observation more than a minute ahead of the database is refused (a source
+     clock running ahead would otherwise freeze its pair); the permit is stamped inside its own
+     statement. The `simulated-reference` wire is a strict line grammar, never JSON numbers.
    - **Freshness is judged in SQL**: `received_at > statement_timestamp() − reference_max_age`.
      **A stale reference fails closed**: no quote, `503 fx.RateUnavailable`, the cause
      (`REFERENCE_STALE`) counted and never shown. **No in-process rate cache takes part in any
