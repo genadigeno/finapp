@@ -118,6 +118,29 @@ class FeeCheckTest {
                 .hasMessageContaining("INV-MON-04");
     }
 
+    @org.junit.jupiter.api.Test
+    @DisplayName("a schedule at another scale than the fee is refused loud, never priced - a JPY"
+            + " fee against a scale-2 schedule would read its fixed part a hundred times too large"
+            + " (P9-TSK-003, INV-MON-05)")
+    void aScheduleAtAnotherScaleIsRefused() {
+        CurrencyCode jpy = CurrencyCode.of("JPY");
+        org.assertj.core.api.Assertions.assertThatIllegalArgumentException()
+                .isThrownBy(() -> FeeCheck.check(
+                        Money.ofPersisted(190, jpy, 0),
+                        Optional.of(Money.ofPersisted(10_000, jpy, 0)),
+                        Optional.of(TERMS), 3))
+                .withMessageContaining("scale 2 cannot price a fee at scale 0");
+        FeeCheck.Verdict jpyAtItsOwnScale = FeeCheck.check(
+                Money.ofPersisted(190, jpy, 0),
+                Optional.of(Money.ofPersisted(10_000, jpy, 0)),
+                Optional.of(new FeeCheck.Schedule(new BigDecimal("0.015000"), 40, 0,
+                        RoundingMode.HALF_UP)),
+                3);
+        assertThat(jpyAtItsOwnScale.expectedMinor())
+                .as("1.5% of 10,000 JPY plus 40 is 190 yen").isEqualTo(190L);
+        assertThat(jpyAtItsOwnScale.beyondTolerance()).isFalse();
+    }
+
     private static Money money(long minor) {
         return Money.ofPersisted(minor, EUR, 2);
     }

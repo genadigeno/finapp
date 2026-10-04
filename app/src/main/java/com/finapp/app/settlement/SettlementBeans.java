@@ -206,7 +206,13 @@ public class SettlementBeans {
             @Value("${finapp.settlement.bank.account-reference.GBP:SIMBANK-GBP-01}")
                     String gbpAccountReference,
             @Value("${finapp.settlement.bank.account-reference.USD:SIMBANK-USD-01}")
-                    String usdAccountReference) {
+                    String usdAccountReference,
+            // P9-TSK-003: JPY and BHD are postable, so the bank statement has an account in
+            // each - without one, verifyAccount marks a JPY or BHD statement's :25: MALFORMED.
+            @Value("${finapp.settlement.bank.account-reference.JPY:SIMBANK-JPY-01}")
+                    String jpyAccountReference,
+            @Value("${finapp.settlement.bank.account-reference.BHD:SIMBANK-BHD-01}")
+                    String bhdAccountReference) {
         return Map.of(
                 SettlementFormatId.SIM_PSP_CSV,
                 SimPspCsvFormat.INSTANCE,
@@ -219,7 +225,9 @@ public class SettlementBeans {
                         Map.of(
                                 CurrencyCode.of("EUR"), eurAccountReference,
                                 CurrencyCode.of("GBP"), gbpAccountReference,
-                                CurrencyCode.of("USD"), usdAccountReference)));
+                                CurrencyCode.of("USD"), usdAccountReference,
+                                CurrencyCode.of("JPY"), jpyAccountReference,
+                                CurrencyCode.of("BHD"), bhdAccountReference)));
     }
 
     /**

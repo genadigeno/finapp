@@ -393,6 +393,23 @@ class RuleSetProposalTest {
         }
 
         @Test
+        @DisplayName("a schedule is priced at its currency's own minor units - a JPY schedule at"
+                + " scale 2 is refused, at 0 admitted; a BHD one at 3 (P9-TSK-003)")
+        void scaleIsTheCurrencysMinorUnits() {
+            Draft draft = new Draft();
+            draft.fees = List.of(
+                    fee(ExternalLineType.PROCESSING_FEE, CurrencyCode.of("JPY"), "0.015000", 40, 2));
+            assertInvalid(draft, "is priced at JPY's 0 minor units, not at scale 2");
+            draft.fees = List.of(
+                    fee(ExternalLineType.SCHEME_FEE, CurrencyCode.of("BHD"), "0", 40, 2));
+            assertInvalid(draft, "is priced at BHD's 3 minor units, not at scale 2");
+            draft.fees = List.of(
+                    fee(ExternalLineType.PROCESSING_FEE, CurrencyCode.of("JPY"), "0.015000", 40, 0),
+                    fee(ExternalLineType.PROCESSING_FEE, CurrencyCode.of("BHD"), "0.015000", 100, 3));
+            draft.build().validate();
+        }
+
+        @Test
         @DisplayName("the rounding is the named HALF_UP")
         void roundingNamed() {
             Draft draft = new Draft();

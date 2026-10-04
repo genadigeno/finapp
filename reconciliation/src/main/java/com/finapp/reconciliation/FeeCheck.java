@@ -45,6 +45,15 @@ public final class FeeCheck {
         Objects.requireNonNull(schedule, "schedule must not be null");
 
         long expected = 0L;
+        if (schedule.isPresent() && reported.scale() != schedule.get().scale()) {
+            // P9-TSK-003: the arithmetic below is raw minor units, so a schedule at another scale
+            // would misprice by a power of ten, silently. Refused loud - the caller's savepoint
+            // contains the line - never priced (INV-MON-05). The proposal door refuses such a
+            // schedule before it can be stored; this is the second rank.
+            throw new IllegalArgumentException(
+                    "a fee schedule at scale " + schedule.get().scale() + " cannot price a fee at"
+                            + " scale " + reported.scale() + " (INV-MON-05)");
+        }
         if (schedule.isPresent() && gross.isPresent()) {
             Schedule terms = schedule.get();
             if (!gross.get().currency().equals(reported.currency())) {

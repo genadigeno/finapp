@@ -896,7 +896,8 @@ class MerchantCaptureDatabaseTest {
     // ----------------------------------------------------------------- the fee batch
 
     @Test
-    @DisplayName("INV-MER-04 AT VOLUME (P6-TST-001): 360 assessments across three currencies, six"
+    @DisplayName("INV-MER-04 AT VOLUME (P6-TST-001; every supported currency since P9-TSK-003): 600"
+            + " assessments across five currencies - two decimals, JPY's zero and BHD's three - six"
             + " rounding policies, seven rates and four fixed parts conserve every minor unit - the"
             + " cumulative residual is ZERO per currency, and so is the trial balance")
     void theFeeBatchConservesEveryMinorUnit() throws Exception {
@@ -907,8 +908,10 @@ class MerchantCaptureDatabaseTest {
         //
         // Seeded, so a failure is reproducible from its message (FeeCalculationTest's rule).
         java.util.Random random = new java.util.Random(20260923L);
-        List<CurrencyCode> currencies =
-                List.of(EUR, CurrencyCode.of("GBP"), CurrencyCode.of("USD"));
+        // Every postable currency (P9-TSK-003 paid Phase 6's deferral: until JPY and BHD joined the
+        // chart, this batch could run only two-minor-unit currencies, and the engine's 0/3 coverage
+        // was hermetic alone - FeeCalculationTest#theSplitConservesExactly).
+        List<CurrencyCode> currencies = com.finapp.ledger.SupportedCurrencies.ALL;
         List<String> rates = List.of("0", "0.0001", "0.0175", "0.025", "0.029", "0.0999", "0.35");
         long[] fixedParts = {0L, 1L, 25L, 30L};
 
@@ -937,7 +940,9 @@ class MerchantCaptureDatabaseTest {
                 }
             }
         }
-        assertThat(references).as("the batch is the size it claims").hasSize(360);
+        assertThat(currencies).as("the batch covers a zero- and a three-minor-unit currency")
+                .contains(CurrencyCode.of("JPY"), CurrencyCode.of("BHD"));
+        assertThat(references).as("the batch is the size it claims").hasSize(600);
 
         try (Connection app = DatabaseRoles.application()) {
             java.util.Map<String, Long> booked = bookedByLine(app, references);
@@ -981,19 +986,21 @@ class MerchantCaptureDatabaseTest {
             com.finapp.ledger.TrialBalance.Report trial =
                     new com.finapp.ledger.TrialBalance().sweep(app);
             assertThat(trial.outOfBalance()).as("the trial balance is zero per currency").isEmpty();
-            assertThat(trial.currenciesVerified()).isGreaterThanOrEqualTo(3L);
+            assertThat(trial.currenciesVerified()).isGreaterThanOrEqualTo(5L);
         }
         assertThat(feeAssessments())
                 .as("each assessment counted once, at the seam")
-                .isEqualTo(360.0d);
+                .isEqualTo(600.0d);
     }
 
     /**
      * Twenty sale amounts for {@code rate}: ten drawn at random, and ten on which
      * {@code gross x rate} is an EXACT half - where HALF_EVEN, HALF_UP and the directed policies
      * part company, and where a policy defaulted rather than used shows. A rate with no halves
-     * (zero) gets twenty random amounts. Every amount is at least 1.00, which the batch's dearest
-     * terms (35% + 0.30) still leave a positive net on, so no sale is below its fee (ADR-0058).
+     * (zero) gets twenty random amounts. Every amount is at least 100 minor units - 1.00 EUR, 100 JPY,
+     * 0.100 BHD - which the batch's dearest terms (35% plus 30 minor units, 65 at most) still leave
+     * a positive net on in every currency, so no sale is below its fee (ADR-0058). Minor units
+     * throughout, so the generator holds at any scale.
      */
     private static List<Long> discriminatingAmounts(BigDecimal rate, java.util.Random random) {
         List<Long> amounts = new ArrayList<>();

@@ -27,9 +27,20 @@ import java.util.Map;
  */
 public final class SupportedCurrencies {
 
-    /** Ordered for stable iteration in tests and generated artefacts; the order means nothing. */
+    /**
+     * Ordered for stable iteration in tests and generated artefacts; the order means nothing.
+     *
+     * <p>JPY (0 minor units) and BHD (3) joined in `P9-TSK-003`, with their thirteen operational
+     * accounts each (ledger `V019`) - after their minor units were pinned
+     * ({@link #PINNED_MINOR_UNITS}, ADR-0074 D27), never before.
+     */
     public static final List<CurrencyCode> ALL =
-            List.of(CurrencyCode.of("EUR"), CurrencyCode.of("GBP"), CurrencyCode.of("USD"));
+            List.of(
+                    CurrencyCode.of("EUR"),
+                    CurrencyCode.of("GBP"),
+                    CurrencyCode.of("USD"),
+                    CurrencyCode.of("JPY"),
+                    CurrencyCode.of("BHD"));
 
     /**
      * The minor units every currency the platform posts or prices is PINNED to (`P9-TSK-002`,

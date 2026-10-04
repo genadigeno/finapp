@@ -156,6 +156,97 @@ class SimulatedSettlementReportsTest {
     }
 
     @Test
+    @DisplayName("the two-decimal renders are byte for byte what they were before the generators"
+            + " learned each currency's own scale (P9-TSK-003): the PSP report and the bank"
+            + " statement in EUR, pinned whole")
+    void theTwoDecimalRendersAreUnchanged() {
+        assertThat(new String(genuine().render(), java.nio.charset.StandardCharsets.UTF_8))
+                .isEqualTo("H,SIM_PSP_CSV,1,PSPB-FIX-01,EUR,2026-09-29\n"
+                        + "D,1,SALE,100.00,1.75,EUR,2026-09-29,,,PSP-CAP-9001,44400012345678901,,"
+                        + "ORD-9001,Card capture\n"
+                        + "D,2,REFUND,-40.25,,EUR,2026-09-29,,,PSP-REF-9002,,,ORD-9001,Card refund\n"
+                        + "D,3,CHARGEBACK,-100.00,,EUR,2026-09-29,,,DSP-9003,,,,Chargeback\n"
+                        + "D,4,PROMO_BONUS,5.00,,EUR,2026-09-29,,,MISC-9004,,,,"
+                        + "Unclassified by the platform\n"
+                        + "T,4,-37.00,PSP-REM-777001\n");
+        LocalDate day = LocalDate.parse("2026-09-29");
+        assertThat(new String(
+                        new SimulatedBankStatements("SB-EUR-FIX-1", "EUR", 4, day, 10_00)
+                                .credit(day, 98_25, java.util.Optional.of("PSP-REM-777001"))
+                                .narrative("Remittance for the day")
+                                .debit(day, 120_00, java.util.Optional.of("PAY-REM-777003"))
+                                .fee(day, 50)
+                                .render(day),
+                        java.nio.charset.StandardCharsets.UTF_8))
+                .isEqualTo(":20:SB-EUR-FIX-1\n"
+                        + ":25:SIMBANK-EUR-01\n"
+                        + ":28C:4\n"
+                        + ":60F:C,2026-09-29,EUR,10.00\n"
+                        + ":61:2026-09-29,C,98.25,PSP-REM-777001\n"
+                        + ":86:Remittance for the day\n"
+                        + ":61:2026-09-29,D,120.00,PAY-REM-777003\n"
+                        + ":61:2026-09-29,F,0.50\n"
+                        + ":62F:D,2026-09-29,EUR,12.25\n");
+    }
+
+    @Test
+    @DisplayName("a JPY and a BHD render are written at the currency's own minor units - 0 and 3 -"
+            + " and parse whole through the real adapters to exactly the minor units stated"
+            + " (P9-TSK-003)")
+    void zeroAndThreeMinorUnitRendersParseExactly() {
+        LocalDate day = LocalDate.parse("2026-10-04");
+        record Case(String currency, String gross, String fee, long grossMinor, long feeMinor,
+                long netMinor, int scale) {}
+        for (Case each : java.util.List.of(
+                new Case("JPY", "12345", "225", 12_345, 225, 12_120, 0),
+                new Case("BHD", "12.345", "0.285", 12_345, 285, 12_060, 3))) {
+            byte[] report =
+                    new SimulatedSettlementReports("PSPB-FIX-" + each.currency(), each.currency(),
+                                    day, "PSP-REM-777009")
+                            .with(SimulatedSettlementReports.Line.capture(
+                                    "PSP-CAP-9201", "", "", each.gross(), each.fee()))
+                            .render();
+            assertThat(new String(report, java.nio.charset.StandardCharsets.UTF_8))
+                    .as("%s: the trailer's net at the currency's own scale", each.currency())
+                    .endsWith("T,1," + java.math.BigDecimal.valueOf(each.netMinor(), each.scale())
+                            .toPlainString() + ",PSP-REM-777009\n");
+            SettlementFormat.Result result = SimPspCsvFormat.INSTANCE.parse(report);
+            assertThat(result).as("%s parses", each.currency())
+                    .isInstanceOf(SettlementFormat.Result.Parsed.class);
+            com.finapp.settlement.format.ParsedBatch batch =
+                    ((SettlementFormat.Result.Parsed) result).batch();
+            assertThat(batch.lines()).extracting(line -> line.amount().minorUnits())
+                    .containsExactly(each.grossMinor(), each.feeMinor());
+            assertThat(batch.lines()).extracting(line -> line.amount().scale())
+                    .containsOnly(each.scale());
+            assertThat(batch.declaredNet().minorUnits()).isEqualTo(each.netMinor());
+
+            SimulatedBankStatements statement =
+                    new SimulatedBankStatements("SB-" + each.currency() + "-FIX-1",
+                                    each.currency(), 1, day, 0)
+                            .credit(day, each.netMinor(), java.util.Optional.of("PSP-REM-777009"))
+                            .fee(day, each.feeMinor());
+            com.finapp.settlement.format.simstatement.SimStatementTaggedFormat format =
+                    new com.finapp.settlement.format.simstatement.SimStatementTaggedFormat(
+                            java.util.Map.of(
+                                    com.finapp.sharedkernel.money.CurrencyCode.of(each.currency()),
+                                    "SIMBANK-" + each.currency() + "-01"));
+            SettlementFormat.Result parsed = format.parse(statement.render(day));
+            assertThat(parsed).as("%s's statement parses", each.currency())
+                    .isInstanceOf(SettlementFormat.Result.Parsed.class);
+            com.finapp.settlement.format.ParsedBatch facts =
+                    ((SettlementFormat.Result.Parsed) parsed).batch();
+            assertThat(facts.lines()).extracting(line -> line.amount().minorUnits())
+                    .containsExactly(each.netMinor(), each.feeMinor());
+            assertThat(facts.statement()).hasValueSatisfying(chain -> {
+                assertThat(chain.closing().minorUnits())
+                        .isEqualTo(each.netMinor() - each.feeMinor());
+                assertThat(chain.closing().scale()).isEqualTo(each.scale());
+            });
+        }
+    }
+
+    @Test
     @DisplayName("instrument data in free text is the DOOR's to refuse: the screen finds the"
             + " PAN and the account identifier, so such a report is never stored")
     void theFreeTextFaultsAreRefusedAtTheScreen() {

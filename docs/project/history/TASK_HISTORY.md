@@ -1,6 +1,6 @@
 # Task History
 
-The per-task completion records that accumulated behind `## Current Task` - 193 "Previously" blocks, newest first, from `P9-TSK-001` back to project initiation. *(`X-TSK-004` is cross-cutting and completed after the Phase 6 → 7 transition, so it stands second, between `P7-TSK-001` and the transition's record - the transition's block moved here by `P7-TSK-001`'s gate, exactly as an earlier form of this note said it would.)*
+The per-task completion records that accumulated behind `## Current Task` - 194 "Previously" blocks, newest first, from `P9-TSK-002` back to project initiation. *(`X-TSK-004` is cross-cutting and completed after the Phase 6 → 7 transition, so it stands second, between `P7-TSK-001` and the transition's record - the transition's block moved here by `P7-TSK-001`'s gate, exactly as an earlier form of this note said it would.)*
 
 **Archive.** These records were moved verbatim out of
 [`CURRENT_STATE.md`](../CURRENT_STATE.md) on 2026-09-20 so that the canonical description of
@@ -12,6 +12,45 @@ Current state: [`CURRENT_STATE.md`](../CURRENT_STATE.md) ·
 Authoritative backlog: [`BACKLOG.md`](../BACKLOG.md)
 
 ---
+
+### Previously
+
+**`P9-TSK-002` — `ExchangeRate`, `Margin` and the conversion plan** — `COMPLETE` (2026-10-03).
+**M9.1 at 2 of 4: every future conversion amount, margin, residual and attribution is decided
+by one pure, exact, proven function** (ADR-0074; `INV-MON-01`…`-06`, `INV-FX-03`,
+`INV-FX-07`). `ExchangeRate` in `sharedkernel.money` — a directed price, precision ≤ 20 and
+scale ≤ 10, refused rather than rounded beyond them, equality numeric, each operation ending in
+at most one named rounding (`exactProduct`, `convert`, `sourceFor` as ONE exactly-rounded
+division, `marginAgainst` same direction only) and **no inversion and no cross rate**;
+`CountryCode` beside it; `RateColumns.ddl()` generating `NUMERIC(20,10)` from the type's constants,
+proven live to hold every admitted rate exactly and to ROUND an eleventh decimal silently — why
+the domain refuses one. In `fx`: `Margin` (`[0, 0.1)`, scale 6, its weight `value × 10⁶` exact),
+`PricingPair`, `NotionalBounds`, `ProviderQuote`, and `ConversionPlan.compute` for both fixed
+sides — the margin from the ROUNDED customer rate, coherence by cross-multiplication with no
+division, the destination-fixed leg one exactly-rounded division, attribution through
+`allocateByWeights` (its first production caller), the residual posted on its own line and
+asserted against its policy family's proven bound — with five typed refusals, never a shipped
+price; the internal rate at scale 10 and the disclosed margin at scale 6 with their named
+roundings. The minor units pinned (EUR 2, GBP 2, USD 2, JPY 0, BHD 3) by a test in `ledger` and a
+startup guard in `app`. **Every `PHASE_9_PLAN.md` §12.2 figure reproduced to the minor unit**,
+with §12.4's internal rate 1.0812264160 and disclosed margin 0.005162, each re-derived with
+exact decimals first; **a million seeded cases per policy family** over all twenty pairs at ten-
+decimal provider rates, the bound reached and never exceeded (1 half, 2 directed). The stale
+`money/package-info.java` corrected. **THE BUILD'S FIND, A HARNESS DEFECT FIXED**: app's hermetic JVM ran on Gradle's 512 MiB
+default a few MiB from its ceiling - up to 32 cached Spring contexts beside the bytecode sweeps
+that import every module's test classes - and `fx`'s first classes, joining those sweeps, tipped
+`TestTaxonomyTest` into `OutOfMemoryError`, reproducibly and only in app's whole-tier run; the
+`test` and `unitTest` tasks now carry `maxHeapSize = "2g"` (`finapp.java-conventions`, the
+Phase 7 → 8 transition's database-tier precedent), held by `HermeticTierHeapTest` - probed,
+the setting removed, the guard failed at the default. **EIGHT PROBES, EIGHT CAUGHT**, every restore byte-identical
+(sha256-verified; `MUTATION_TESTING.md` §2 +4 rows): the margin from the unrounded rate, the
+destination leg by an inverted rate (caught only by the properties — the worked figure happens to
+agree), coherence never judged, the residual folded into the margin, the attribution's weights
+swapped, the guard silenced, an over-scaled rate admitted, the hermetic heap removed. **Multi-instance PASS** — pure and
+stateless. **NEXT**: `P9-TSK-003` `READY`. **Verified** by fresh runs — the new suites (kernel 7,
+platform 2 and database 1, fx 17, ledger 3, the guard 2), the heap guard 1, the fleet-wide hermetic tier at 2305 tests across 370 suites and 18
+modules, and the architecture tier 143 across 23, ALL 0 FAILURES — the fleet-wide database and
+kafka tiers deliberately skipped on the owner's instruction.
 
 ### Previously
 

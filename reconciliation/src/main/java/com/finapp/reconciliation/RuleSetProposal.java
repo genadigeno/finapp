@@ -308,6 +308,15 @@ public record RuleSetProposal(
             if (terms.scale() < 0 || terms.scale() > MAX_FEE_SCALE) {
                 throw invalid("a " + line + " fee schedule's scale is 0.." + MAX_FEE_SCALE);
             }
+            if (terms.scale() != terms.currency().minorUnits()) {
+                // P9-TSK-003: FeeCheck prices in raw minor units (rate x gross + fixed), so a JPY
+                // schedule entered at scale 2 would read its fixed part a hundred times too large,
+                // silently. A schedule is priced in its currency's own minor units (INV-MON-05);
+                // this door is its only writer, since no migration seeds a rule set (D26).
+                throw invalid("a " + line + " fee schedule in " + terms.currency() + " is priced"
+                        + " at " + terms.currency() + "'s " + terms.currency().minorUnits()
+                        + " minor units, not at scale " + terms.scale());
+            }
             if (!HALF_UP.equals(terms.roundingPolicy())) {
                 throw invalid("a " + line + " fee schedule names the HALF_UP rounding policy");
             }

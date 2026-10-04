@@ -41,7 +41,9 @@ class OperationalChartMigrationTest {
                     // P8-TSK-015: the resolution's P&L accounts, with their poster.
                     "db/migration/ledger/V017__reconciliation_losses_and_gains_join_the_chart.sql",
                     // P8-TSK-016: the platform's cash, with its one poster.
-                    "db/migration/ledger/V018__cash_at_bank_joins_the_chart.sql");
+                    "db/migration/ledger/V018__cash_at_bank_joins_the_chart.sql",
+                    // P9-TSK-003: the thirteen operational purposes in JPY and BHD.
+                    "db/migration/ledger/V019__jpy_and_bhd_join_the_chart.sql");
 
     /**
      * The seed's type decisions, pinned as its contract. Changing one is a reclassification of

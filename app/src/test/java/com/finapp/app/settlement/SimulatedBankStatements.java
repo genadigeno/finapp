@@ -1,5 +1,7 @@
 package com.finapp.app.settlement;
 
+import com.finapp.sharedkernel.money.CurrencyCode;
+import java.math.BigDecimal;
 import java.nio.charset.StandardCharsets;
 import java.time.LocalDate;
 import java.util.ArrayList;
@@ -21,7 +23,8 @@ import java.util.Optional;
  * statement whose sequence skips one, a non-zero opening is a first statement opening anywhere
  * but zero. The account record is the simulated bank's opaque reference for the currency
  * ({@code SIMBANK-<CCY>-01}), the one the composition configures by default. Integer arithmetic
- * only — no floating point near money.
+ * only — no floating point near money. Amounts render at the statement currency's own minor
+ * units (`P9-TSK-003`: JPY {@code 12120}, BHD {@code 24.960}; EUR, GBP and USD unchanged).
  */
 public final class SimulatedBankStatements {
 
@@ -31,6 +34,7 @@ public final class SimulatedBankStatements {
     private final LocalDate openingDate;
     private final long openingMinor;
     private final List<String> records = new ArrayList<>();
+    private final int scale;
     private long movementMinor;
 
     public SimulatedBankStatements(
@@ -47,6 +51,7 @@ public final class SimulatedBankStatements {
         }
         this.sequence = sequence;
         this.openingMinor = openingMinor;
+        this.scale = CurrencyCode.of(currency).minorUnits();
     }
 
     /** Money in, attributed by its remittance reference when it carries one. */
@@ -106,7 +111,7 @@ public final class SimulatedBankStatements {
                 + decimal(Math.abs(signedMinor));
     }
 
-    private static String line(
+    private String line(
             LocalDate valueDate, String mark, long minor, Optional<String> remittanceRef) {
         return ":61:" + valueDate + "," + mark + "," + decimal(minor)
                 + remittanceRef.map(ref -> "," + ref).orElse("");
@@ -119,8 +124,8 @@ public final class SimulatedBankStatements {
         return minor;
     }
 
-    /** Two-decimal money as the format writes it — integer arithmetic only. */
-    private static String decimal(long minor) {
-        return (minor / 100) + "." + String.format("%02d", minor % 100);
+    /** Minor units as the format writes them, at the currency's own scale - exact. */
+    private String decimal(long minor) {
+        return BigDecimal.valueOf(minor, scale).toPlainString();
     }
 }

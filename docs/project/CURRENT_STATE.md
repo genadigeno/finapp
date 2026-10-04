@@ -432,8 +432,9 @@ cross-border payments are holds and corridor acceptances, beneficiary screening 
 returns credited in the currency received; clearings are keyed by counterparty; callbacks are
 hints; reconciliation never converts currency and gains causes, never types. Ten new invariants
 and thirteen restated take the platform to **120**. Thirty backlog items across nine milestones
-(M9.1–M9.9) plus `X-TSK-010`…`-012`. **2 of 30 items complete** (M9.1 at 2 of 4): the modules and floors
-(`P9-TSK-001`) and the conversion arithmetic (`P9-TSK-002`); next **`P9-TSK-003` — JPY and BHD become postable**** — `READY`
+(M9.1–M9.9) plus `X-TSK-010`…`-012`. **3 of 30 items complete** (M9.1 at 3 of 4): the modules and floors
+(`P9-TSK-001`), the conversion arithmetic (`P9-TSK-002`) and JPY and BHD postable (`P9-TSK-003`); next
+**`P9-TSK-004` — Multi-currency wallets** — `READY`
 ([§Current Task](#current-task) is kept current).
 
 ## Current Milestone
@@ -449,47 +450,53 @@ since M0.1". Moved, not edited.)*
 
 ## Current Task
 
-**`P9-TSK-003` — JPY and BHD become postable**** — `READY`: marked by
-`P9-TSK-002`'s completion gate (2026-10-03). **Not started.**
+**`P9-TSK-004` — Multi-currency wallets** — `READY`: marked by
+`P9-TSK-003`'s completion gate (2026-10-04). **Not started.**
 
 ### Just completed
 
-**`P9-TSK-002` — `ExchangeRate`, `Margin` and the conversion plan** — `COMPLETE` (2026-10-03).
-**M9.1 at 2 of 4: every future conversion amount, margin, residual and attribution is decided
-by one pure, exact, proven function** (ADR-0074; `INV-MON-01`…`-06`, `INV-FX-03`,
-`INV-FX-07`). `ExchangeRate` in `sharedkernel.money` — a directed price, precision ≤ 20 and
-scale ≤ 10, refused rather than rounded beyond them, equality numeric, each operation ending in
-at most one named rounding (`exactProduct`, `convert`, `sourceFor` as ONE exactly-rounded
-division, `marginAgainst` same direction only) and **no inversion and no cross rate**;
-`CountryCode` beside it; `RateColumns.ddl()` generating `NUMERIC(20,10)` from the type's constants,
-proven live to hold every admitted rate exactly and to ROUND an eleventh decimal silently — why
-the domain refuses one. In `fx`: `Margin` (`[0, 0.1)`, scale 6, its weight `value × 10⁶` exact),
-`PricingPair`, `NotionalBounds`, `ProviderQuote`, and `ConversionPlan.compute` for both fixed
-sides — the margin from the ROUNDED customer rate, coherence by cross-multiplication with no
-division, the destination-fixed leg one exactly-rounded division, attribution through
-`allocateByWeights` (its first production caller), the residual posted on its own line and
-asserted against its policy family's proven bound — with five typed refusals, never a shipped
-price; the internal rate at scale 10 and the disclosed margin at scale 6 with their named
-roundings. The minor units pinned (EUR 2, GBP 2, USD 2, JPY 0, BHD 3) by a test in `ledger` and a
-startup guard in `app`. **Every `PHASE_9_PLAN.md` §12.2 figure reproduced to the minor unit**,
-with §12.4's internal rate 1.0812264160 and disclosed margin 0.005162, each re-derived with
-exact decimals first; **a million seeded cases per policy family** over all twenty pairs at ten-
-decimal provider rates, the bound reached and never exceeded (1 half, 2 directed). The stale
-`money/package-info.java` corrected. **THE BUILD'S FIND, A HARNESS DEFECT FIXED**: app's hermetic JVM ran on Gradle's 512 MiB
-default a few MiB from its ceiling - up to 32 cached Spring contexts beside the bytecode sweeps
-that import every module's test classes - and `fx`'s first classes, joining those sweeps, tipped
-`TestTaxonomyTest` into `OutOfMemoryError`, reproducibly and only in app's whole-tier run; the
-`test` and `unitTest` tasks now carry `maxHeapSize = "2g"` (`finapp.java-conventions`, the
-Phase 7 → 8 transition's database-tier precedent), held by `HermeticTierHeapTest` - probed,
-the setting removed, the guard failed at the default. **EIGHT PROBES, EIGHT CAUGHT**, every restore byte-identical
-(sha256-verified; `MUTATION_TESTING.md` §2 +4 rows): the margin from the unrounded rate, the
-destination leg by an inverted rate (caught only by the properties — the worked figure happens to
-agree), coherence never judged, the residual folded into the margin, the attribution's weights
-swapped, the guard silenced, an over-scaled rate admitted, the hermetic heap removed. **Multi-instance PASS** — pure and
-stateless. **NEXT**: `P9-TSK-003` `READY`. **Verified** by fresh runs — the new suites (kernel 7,
-platform 2 and database 1, fx 17, ledger 3, the guard 2), the heap guard 1, the fleet-wide hermetic tier at 2305 tests across 370 suites and 18
-modules, and the architecture tier 143 across 23, ALL 0 FAILURES — the fleet-wide database and
-kafka tiers deliberately skipped on the owner's instruction.
+**`P9-TSK-003` — JPY and BHD become postable** — `COMPLETE` (2026-10-04). **M9.1 at 3 of 4: a
+zero- and a three-minor-unit currency post on every flow, and Phase 6's deferral is paid**
+(ADR-0074 §9, D27; owner decision O6; `INV-ACC-01`, `INV-LED-01`, `INV-MON-03`, `INV-MON-05`).
+`SupportedCurrencies.ALL` holds five; ledger `V019` seeds the thirteen operational purposes in JPY
+and BHD (26 rows, hand-minted UUIDv7 stamped `2026-09-27T12:00:00Z`, below the ceiling, so every
+seed still sorts before every runtime id); the simulated bank statement gains `SIMBANK-JPY-01`
+and `SIMBANK-BHD-01`. Account opening, merchant onboarding, the eager per-currency gauges and the
+position proof follow the supported set already - **the map found ONE hard-coded currency list
+in production**, the statement's references, and no currency `CHECK` anywhere. **Two scale
+guards, the build's find**: `FeeCheck` prices in raw minor units and never compared a schedule's
+scale with the fee's, so a JPY schedule entered at scale 2 would have read its fixed part a
+hundred times too large, silently - now `RuleSetProposal.validate` refuses a schedule whose scale
+is not its currency's minor units (the door is its only writer: no migration seeds a rule set,
+D26) and `FeeCheck` refuses a scale disagreement loud, contained, never priced. **The v2
+successors** of the four sources' rule sets, carrying O6's JPY and BHD thresholds, fee schedules
+and PSP fee tolerances, are activated through the existing four-eyes door - a fixture
+(`JpyAndBhdRuleSets`, two actors, convergent) and the platform's first operations runbook entry
+(`docs/architecture/OPERATIONS_RUNBOOK.md` §1: activate before the first JPY/BHD traffic, and
+why). **End to end** (`JpyAndBhdPostableDatabaseTest`, its own container): a JPY card pay-in
+through capture (the merchant fee in yen), the PSP report (its `PROCESSING_FEE` CHECKED
+`225:225:3` against the JPY schedule, no break), the bank statement on `SIMBANK-JPY-01` and
+`CASH_CONFIRMED`; a BHD scheme fee and a BHD bank fee each CHECKED against their BHD rows; a BHD
+merchant fee in fils; decisions before activation replaying `IDENTICAL` under their pinned v1,
+after it under v2; and the before-activation behaviour pinned (a zero-priced JPY fee raises
+`FEE_MISMATCH` for its whole 190 yen - why the runbook orders the activation first). The report
+generators render at each currency's scale, EUR/GBP/USD output pinned byte for byte. **Phase 6's
+deferral paid**: the ledger-level fee batch runs all five currencies (600 assessments, books
+exact, trial balance zero per currency) - and its debt row's wording corrected: the fee engine
+never assumed two decimals; the batch test could only run what the chart held. "Routing and rail
+ceilings at scale 0/3": none is declared, and the existing scale guards refuse a mis-scaled one -
+nothing to change. **EIGHT PROBES, EIGHT CAUGHT**, every restore byte-identical (sha256-verified;
+`MUTATION_TESTING.md` §2 +3 rows): `V019` seeding a residual account in the wrong currency; the
+supported set claiming a currency with no chart; the door admitting a mis-scaled schedule; `FeeCheck`
+pricing across scales; the JPY statement reference dropped; the fixture omitting the JPY fee row;
+a BHD schedule proposed at scale 2; the replay reading the active version. **Multi-instance PASS**
+- no new contended state. **NEXT**: `P9-TSK-004` `READY`. **Verified** by fresh runs - ledger 86
+and reconciliation 176 hermetic; reconciliation database 230, settlement database 88, the
+classification guard 5; the new suite alone 6 (three times), the cash, capture, late-evidence,
+pull, readmission and routes suites each alone, the twelve proof-group suites in one container 64
+across 12, the storm alone 1; the fleet-wide hermetic tier 2309 across 370 suites and 18 modules; the architecture tier
+143 across 23, ALL 0 FAILURES - the fleet-wide database and kafka tiers deliberately skipped on the
+owner's instruction.
 
 ### Previously
 
@@ -858,14 +865,14 @@ carries, what triggers paying it down, and the owning phase.
 | ~~**A duplicate line can take a payout return before the genuine line**~~ - **paid 2026-10-02** by the Phase 8 -> 9 transition's repair round: every late leg judges with the item's true fingerprint, a park owned by a REPEATED_FINGERPRINT break and any item with a DUPLICATE decision are off the late legs' worklists (`PayoutMatchingDatabaseTest#theGenuineReturnedLineTakesTheReturn`, probed) — the anchored clause's "not yet seen" reading (`P8-TST-001`) puts a later report's repeat of a returned line, parked DUPLICATE after the return opened, on the rematch worklist, and claimant order (`line_no` across runs) may let it allocate first *(Ruled by the Phase 8 exit review, `P8-DOC-001`, 2026-10-01: scheduled to Phase 15 - attribution only, value conserved; the fix (a DUPLICATE verdict counting as having seen the reach) needs a test against the claimant order, which the review records rather than rushes)* | The old clause had the same race when both decisions came before the return; the fix widens its window; no test covers it | Attribution wrong (the genuine line parks at grace and a break is raised), value conserved | Have a DUPLICATE verdict count as having seen the reach, with a test | Phase 15 |
 | **The reconciliation tables' owner can TRUNCATE** — every table refuses DELETE to every writer by trigger and to `finapp_app` by privilege, but row triggers do not fire on TRUNCATE (`P8-TST-002`'s schema-wide scan) | Statement-level TRUNCATE triggers on 31 tables were beyond a test task | A migrator or owner session could empty history | A statement-level `BEFORE TRUNCATE` refusal per table, by migration | Phase 15 (operational hardening) |
 | ~~**A reclassification can strand a break**~~ - **paid 2026-10-02** by the Phase 8 -> 9 transition's repair round: `BreakCaseFile.reclassify` refuses (422, nothing written) unless the frozen cause keeps an exit on the target type - an acknowledgement, a kind over parked value, or the cause's own evidence closer still selecting it (`BreakCaseFileDatabaseTest#aReclassificationNeverStrandsTheBreak`, probed) — a `TIMING_DIFFERENCE` reclassified onto `PROCESSING_ERROR` stands on a decision subject no kind or evidence can close; a `STATEMENT_GAP` reclassified likewise is no longer found by `StatementChain`'s filling (`P8-TST-002`'s second gate pass; older than the task) *(Ruled by the Phase 8 exit review, `P8-DOC-001`, 2026-10-01: scheduled to Phase 15 - neither stranded shape owns a suspense item, so `INV-REC-05`'s "never permanent" is not engaged; the break stays visible and alertable. The fix refuses a reclassification onto a type with no exit for its subject)* | Out of the battery's scope | A break that can never close, visible but unresolvable | Refuse reclassifications to a type with no exit for the subject | Phase 15 |
-| **The settlement and reconciliation storm runs in its own container** — like the cash suites (`BankStatementCashDatabaseTest` - also the only demonstration of INV-SET-01's Phase 8 wiring, which this row omitted until the Phase 8 -> 9 transition's gate, its T-4 - `PayoutReturnDatabaseTest`, `BatchRepudiationDatabaseTest`, `UnmatchedConfirmationSuspenseDatabaseTest`, the pull and readmission suites), `SettlementReconciliationStormDatabaseTest` reads the whole database in its exact censuses and counts, so a fleet-wide `databaseTest` co-locating it fails it with no code wrong *(Ruled by the Phase 8 exit review, `P8-DOC-001`, 2026-10-01: widened to every suite run apart - the storm, `SchemeCycleCashDatabaseTest`, `PayoutSettlementCashDatabaseTest`, `PayoutReturnDatabaseTest`, `BatchRepudiationDatabaseTest`, `ResolutionBatteryDatabaseTest`, the E2E, pull and readmission suites - and the merged row above's two co-location causes (the Phase 7 storm's at-rest count and the register rebuild's comparison). The exit review ran no fleet-wide `databaseTest` on the owner's standing instruction, so the tier's co-location was not exercised)* | Global proofs and censuses are the point of a storm | A fleet-wide run reports false failures | `databaseTest` running such suites in their own JVM or container | Phase 15 |
+| **The settlement and reconciliation storm runs in its own container** — like the cash suites (`BankStatementCashDatabaseTest` - also the only demonstration of INV-SET-01's Phase 8 wiring, which this row omitted until the Phase 8 -> 9 transition's gate, its T-4 - `PayoutReturnDatabaseTest`, `BatchRepudiationDatabaseTest`, `UnmatchedConfirmationSuspenseDatabaseTest`, the pull and readmission suites, and since `P9-TSK-003` `JpyAndBhdPostableDatabaseTest`, which activates the seeded sources' v2 rule sets so every later opener on them pins v2), `SettlementReconciliationStormDatabaseTest` reads the whole database in its exact censuses and counts, so a fleet-wide `databaseTest` co-locating it fails it with no code wrong *(Ruled by the Phase 8 exit review, `P8-DOC-001`, 2026-10-01: widened to every suite run apart - the storm, `SchemeCycleCashDatabaseTest`, `PayoutSettlementCashDatabaseTest`, `PayoutReturnDatabaseTest`, `BatchRepudiationDatabaseTest`, `ResolutionBatteryDatabaseTest`, the E2E, pull and readmission suites - and the merged row above's two co-location causes (the Phase 7 storm's at-rest count and the register rebuild's comparison). The exit review ran no fleet-wide `databaseTest` on the owner's standing instruction, so the tier's co-location was not exercised)* | Global proofs and censuses are the point of a storm | A fleet-wide run reports false failures | `databaseTest` running such suites in their own JVM or container | Phase 15 |
 | **Acceptance holds `settlement.source` `FOR UPDATE` for the whole acceptance** - every upload, pull and parse of that source waits while one batch is accepted (the Phase 8 -> 9 transition's gate, its MI-6) | The source row IS the acceptance's arbiter for the gapless sequence and the statement chain, taken first in the one order every writer shares - narrowing it means a new arbiter, not a smaller lock | Intake latency on a busy source during long acceptances; correctness is unaffected | The ingestion latency's accept stage (`finapp.settlement.batch.accepted`) sustaining above the alert threshold | Phase 15 |
 | **Explanation reads cannot answer "why" from the external side** - no item/line/run-to-decision route exists, and the decision view omits the stored verdict and basis (the Phase 8 -> 9 transition's gate, its REC-11) | The investigation doors were built subject-first (break, resolution, case file); the decision's basis is stored whole and replayable (`P8-TSK-022`), so nothing is lost, only unexposed | An investigator walks SQL for a line-first question | The investigation-tooling review of Phase 15 | Phase 15 |
 | **The app composition owns reconciliation intake rules it should only call** - the statement intake's typing and remittance construction and the recorder's cause/classification mapping live in `app`, where reconciliation's own module suites never exercise them (the Phase 8 -> 9 transition's gate, its ARCH-P8-02) | Moving them behind reconciliation entry points is a boundary refactor, not a repair; the rules are tested end to end through the app database suites today | A second caller (Phase 9's corridor intake) could re-implement a rule differently and diverge silently | `P9-TSK-014`, the first second caller of the settlement-source composition | Phase 9 |
 | **A circumstantial duplicate park never returns to time's worklist** - an EXPECTATION_EXHAUSTED duplicate's park stays off the rematch worklist even after a repudiation restores the remainder it once found exhausted (the re-gate's NEW-REC-1, 2026-10-03) | The blanket DUPLICATE exclusion is what stops a repeated line taking a payout return ahead of the genuine one (REC-1); narrowing it by cause re-opens that door | The parked value waits visibly under its DUPLICATE_EXTERNAL break until a person opens a REPROCESS run (whose leg re-judges the fingerprint and allocates) or resolves it - honest, surfaced state | A DUPLICATE_EXTERNAL break outliving a repudiation of its expectation's settling batch | Phase 15 |
 | **A transfer can pre-empt an in-flight instant execution the platform cannot yet name** - a scheme line carrying only SCHEME_REF (the optional end-to-end reference omitted) resolves through `scheme_execution_claim`, which is written at completion, so the lookup answers UNKNOWN while the execution is in flight and a four-eyes transfer is admitted; the late completion then posts its own credit (the re-gate's NEW-IDEM-1, 2026-10-03) | The in-flight execution holds no stored reference the lookup could resolve; refusing every UNKNOWN scheme-rail transfer would strand every genuinely unknown line | The double credit is NOT silent: the completion opens an expectation that can never reach the RESOLVED item, goes overdue, and surfaces as MISSING_EXTERNAL for a person's claw-back | The completion side learning to detect a person-resolved item (the payments-side design ADR-0071 section 2 names) | Phase 15 |
 | **A rematch residual that faults every tick leaves no durable record** - the rematch leg's containment rolls back and logs WARN, unlike the reprocess leg's ERRORED examination, so a permanently faulting residual re-heads the worklist each tick with only logs to show for it (the re-gate's NEW-ATOM-1, 2026-10-03) | A durable exclusion would strand transient faults, which time's leg must retry; the drain rule (the transition's repair) keeps the leg progressing past it | One chunk slot occupied; an operator reads WARN logs, not a row | Repeated "A rematch candidate was skipped" warnings for one item across ticks | Phase 15 |
-| **The Phase 6 fee engine prices 0- and 3-minor-unit currencies by a 2-minor assumption** - the 0/3-minor fee-batch deferral recorded at Phase 6, now load-bearing: Phase 9 makes JPY and BHD postable (the Phase 8 → 9 transition, ADR-0074 D27) | Deferred at Phase 6 because no such currency was postable; Phase 9 ends that | A JPY fee batch priced before the repair would round at the wrong scale | `P9-TSK-003`, which pays it in the task that makes the currencies postable | Phase 9 (`P9-TSK-003`) |
+| ~~**The Phase 6 fee engine prices 0- and 3-minor-unit currencies by a 2-minor assumption**~~ - **paid 2026-10-04** by `P9-TSK-003`, and the row's premise corrected: the engine never assumed two decimals (`FeeCalculation` derives every rounding from the currency's own scale, and `FeeCalculationTest` covered 0/2/3 hermetically since Phase 6); what was deferred was the LEDGER-LEVEL fee batch, which could run only the currencies the chart held - now all five (`MerchantCaptureDatabaseTest#theFeeBatchConservesEveryMinorUnit`, 600 assessments). Was: the 0/3-minor fee-batch deferral recorded at Phase 6, now load-bearing: Phase 9 makes JPY and BHD postable (the Phase 8 → 9 transition, ADR-0074 D27) | Deferred at Phase 6 because no such currency was postable; Phase 9 ends that | A JPY fee batch priced before the repair would round at the wrong scale | `P9-TSK-003`, which pays it in the task that makes the currencies postable | Phase 9 (`P9-TSK-003`) |
 | **The Phase 5–7 send permits are instance-stamped** - `last_dispatched_at` and the permit renewals are stamped from the instance clock, correct only while every rail's outcome-deadline margin exceeds the maximum instance skew (the Phase 8 → 9 transition; ADR-0057 §4's premise, `PHASE_9_PLAN.md` §7/§12.5) | The margin holds today by orders of magnitude; restamping five stores is `X-TSK-010`'s one change | A skewed instance could re-send inside another's live flight only if skew approached the deadline margin | `X-TSK-010`, scheduled in M9.9 before the storm | Phase 9 (M9.9) |
 | **Pre-Phase-9 amount events carry no explicit scale** - minor-unit strings with a currency leave the scale implicit, readable only through the currency's definition (the Phase 8 → 9 transition; `PHASE_9_PLAN.md` §12.2) | Phase 9's events carry `<x>Scale` from birth; earlier producers change under `X-TSK-011` | A JPY amount on a pre-Phase-9 event shape would read at the wrong scale after `P9-TSK-003` | `X-TSK-011`'s trigger: the first pre-Phase-9 producer that can carry a 0- or 3-minor currency | Phase 15 (`X-TSK-011`) |
 | **The Phase 5 and Phase 7 providers adopt a callback's own outcome** - ADR-0083 makes a verified callback a hint, adopted only from an authenticated inquiry; the PSP and instant-rail pipelines predate it (the Phase 8 → 9 transition, D25) | Re-plumbing two live pipelines is its own task with its own failure modes | A forged-but-verified callback class is already excluded by HMAC; the hint rule is defence in depth | `X-TSK-012`'s trigger: the first provider whose callback authenticity the platform cannot verify | Phase 15 (`X-TSK-012`) |
@@ -949,8 +956,8 @@ Resolved during initiation:
 
 ## Next Task
 
-**`P9-TSK-003` — JPY and BHD become postable**** — `READY` (the Current Task),
-marked by `P9-TSK-002`'s completion gate.
+**`P9-TSK-004` — Multi-currency wallets** — `READY` (the Current Task), marked by
+`P9-TSK-003`'s completion gate.
 *(This section read "`P8-TSK-009` — `READY`" from `P8-TSK-008`'s gate until
 `P8-TSK-013`'s record found it — the stale-second-copy class, in the section whose
 whole job is to mirror.)*
