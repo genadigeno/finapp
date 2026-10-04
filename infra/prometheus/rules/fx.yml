@@ -1,0 +1,37 @@
+# FX alerts (P9-TSK-005 onward, PHASE_9_PLAN.md section 15, ADR-0075's operational impact).
+#
+# Every expression names a series the application publishes - AlertRulesResolveTest checks each one
+# against a live scrape, as it does the settlement and reconciliation rules.
+#
+# Conventions (settlement-reconciliation.yml's):
+# - Gauges read the shared database, so every instance publishes the same reading: aggregate with
+#   max(), never sum(). Counters are per instance: sum(increase(...)).
+# - A gauge that cannot be read, or a pair never fetched, is NaN, never zero; x != x holds only for
+#   NaN, so the threshold rule cannot see it and the never-fetched rule can.
+# - Never a rate anywhere: labels and annotations name pairs and outcomes only (ADR-0072, D32).
+# - Local development only: no Alertmanager is wired; routing and paging are Phase 15's.
+
+groups:
+  - name: fx
+    rules:
+      - alert: ReferenceRateStale
+        # A reference older than five minutes. Quoting already fails closed past the pricing
+        # policy's reference_max_age (INV-FX-02); this makes the outage loud long before customers
+        # see a 503 fx.RateUnavailable.
+        expr: max by (pair) (finapp_fx_rate_age) > 300
+        for: 2m
+        labels:
+          severity: page
+        annotations:
+          summary: "The reference rate for {{ $labels.pair }} is stale"
+          description: "The latest {{ $labels.pair }} reference snapshot was received {{ $value | humanizeDuration }} ago on the database clock. Quotes in this pair fail closed. Check the simulated-reference source and finapp_fx_rate_fetch_total by outcome."
+
+      - alert: ReferenceRateNeverFetched
+        # NaN: never fetched, or unreadable - a reference that never arrives must stay visible.
+        expr: max by (pair) (finapp_fx_rate_age != finapp_fx_rate_age)
+        for: 15m
+        labels:
+          severity: ticket
+        annotations:
+          summary: "No reference rate has ever been read for {{ $labels.pair }}"
+          description: "The {{ $labels.pair }} age gauge is unreadable or no snapshot exists. Confirm finapp.fx.reference.url is configured and the database is reachable."

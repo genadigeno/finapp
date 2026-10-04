@@ -432,9 +432,10 @@ cross-border payments are holds and corridor acceptances, beneficiary screening 
 returns credited in the currency received; clearings are keyed by counterparty; callbacks are
 hints; reconciliation never converts currency and gains causes, never types. Ten new invariants
 and thirteen restated take the platform to **120**. Thirty backlog items across nine milestones
-(M9.1–M9.9) plus `X-TSK-010`…`-012`. **4 of 30 items complete** (M9.1 closed at 4 of 4): the modules and floors
-(`P9-TSK-001`), the conversion arithmetic (`P9-TSK-002`), JPY and BHD postable (`P9-TSK-003`) and multi-currency
-wallets (`P9-TSK-004`); next **`P9-TSK-005` — Reference rates** — `READY`
+(M9.1–M9.9) plus `X-TSK-010`…`-012`. **5 of 30 items complete** (M9.1 closed; M9.2 at 1 of 4): the modules and floors
+(`P9-TSK-001`), the conversion arithmetic (`P9-TSK-002`), JPY and BHD postable (`P9-TSK-003`), multi-currency
+wallets (`P9-TSK-004`) and reference rates (`P9-TSK-005`); next **`P9-TSK-006` — The FX provider
+port and simulator** — `READY`
 ([§Current Task](#current-task) is kept current).
 
 ## Current Milestone
@@ -450,64 +451,63 @@ since M0.1". Moved, not edited.)*
 
 ## Current Task
 
-**`P9-TSK-005` — Reference rates** — `READY`: marked by
-`P9-TSK-004`'s completion gate (2026-10-04); M9.2 opens with it. **Not started.**
+**`P9-TSK-006` — The FX provider port and simulator** — `READY`: marked by
+`P9-TSK-005`'s completion gate (2026-10-04). **Not started.**
 
 ### Just completed
 
-**`P9-TSK-004` — Multi-currency wallets** — `COMPLETE` (2026-10-04). **M9.1 CLOSES AT 4 OF 4:
-one wallet product holds n currencies, and every resolver is keyed by currency** (ADR-0076 §6,
-D28; `INV-MON-04`, `INV-BAL-04`, `INV-KYC-05` unchanged; `INV-CON-01`, `INV-IDEM-01`). **The add-currency
-act**: `POST /v1/me/accounts/{id}/currencies`, keyed (`accounts.add-currency`, the fingerprint
-binding party, agreement and currency), `201` for the creation and the converged repeat alike,
-`422 accounts.UnsupportedCurrency`, one `404` for unknown, not-yours and malformed, the gate's
-`409 accounts.AccountOpeningRefused`, and the new `409 accounts.AccountNotActive` for the caller's
-own closed agreement; `AccountOpening.addCurrency` audits `accounts.WalletCurrencyAdded` only when
-its insert created the wallet. **The one door**: `accounts.WalletAccounts.openIfAbsent` reads the
-agreement `FOR SHARE` with ownership in the statement, then the ledger's new `insertIfAbsent`
-(`INSERT … ON CONFLICT (owner_ref, purpose, currency) WHERE owner_ref IS NOT NULL DO NOTHING
-RETURNING` the row, then a re-read) - a racing loser waits for the winner and never aborts, and the
-call whose insert returned the row writes `accounts.WalletCurrencyAdded`, once; the first currency
-at opening goes through the same door, so every wallet account is announced exactly once.
-**The design's find, a race the plan did not name**: without the agreement lock an add-currency
-racing a close strands an `ACTIVE` wallet under a `CLOSED` agreement - now the opener's
-`FOR SHARE` and the close's `FOR UPDATE` serialise both ways, each order observed Lock-waiting.
-**Every resolver keyed by currency**: `TransferParticipants.sourceOwnedBy`/`destination`,
-`PaymentParticipants.walletOwnedBy`/`payerWalletOwnedBy` (pay-in, withdrawal, wallet payment) and
-checkout's payer side take the currency and resolve through `WalletAccounts.resolve` - the wallet
-in the asked currency, else the first-opened by `(created_at, id)`, so each flow's existing
-currency judgement refuses with the real account (a transfer's committed
-`FAILED(CURRENCY_MISMATCH)` row must carry real accounts) and `CURRENCY_MISMATCH` means exactly
-"a side holds no wallet in this currency"; the beneficiary asks `destinationExists`; the
-withdrawal read resolves its owner through the party projection, not a wallet. Before this task
-every resolver took `findFirst()` - a GBP flow on a USD-then-GBP product resolved the USD wallet.
-`WalletsAreResolvedByCurrencyTest` (bytecode, planted picks caught in-suite) keeps it out.
-**Balances**: `GET …/{id}/balances` one line per currency, never summed; `/balance` keeps its
-shape and answers the first-opened currency. The OpenAPI baseline +133 lines, zero removed or
-changed. **THE BUILD'S FIND, FIXED**: the creating call rendered the in-memory nanosecond
-`created_at` while a converged one read Postgres's microseconds - `insertIfAbsent` now returns the
-row as stored. **THE GATE'S FINDS, EACH FIXED** (the fleet-wide hermetic run): four registers the
-build had not moved - the published-routes declaration, `MODULE_ARCHITECTURE.md` §6 for the new
-rule and its anchor guard, the request-schema vocabulary, and the ownership register, where
-`lockOwnedForShare` was unclassified and a shared lock helper had moved `lockOwnedBy`'s
-`customer_id = ?` out of the statement the guard reads (each lock method now spells its own);
-and two stale texts - the `accounts` package-info still saying "Nothing is implemented yet", and
-this document's own history pointer, four archivals behind.
-**SIX PROBES, SIX CAUGHT**, every restore byte-identical (sha256-verified;
-`MUTATION_TESTING.md` §2 +4 rows): a plain `INSERT` (losers abort); every opener announcing; the
-agreement read without a lock (the close race); currency-blind resolution; the `findFirst()` pick
-restored in the transfer resolver; the one-line balance answering every currency.
-**Multi-instance PASS** - ten openers of one currency, five acts and five door calls, make one
-account, ten commits, one event, at most one record (counted, `WalletOpenIfAbsentRaceDatabaseTest`).
-**NEXT**: `P9-TSK-005` `READY`. **Verified** by fresh runs - the wallet race 5, the flows 3, the
-affected database suites 300 across 28, the proof group in one container 64 across 12 (the Phase 7
-storm inside it) and the dispute battery; the fleet-wide hermetic tier 2312 across 371 suites and 18 modules; the
-architecture tier 146 across 24; the document guards 138 across 25 (inside that run, after the records landed), ALL 0 FAILURES - the fleet-wide
-database and kafka tiers deliberately skipped on the owner's instruction.
+**`P9-TSK-005` — Reference rates** — `COMPLETE` (2026-10-04). **M9.2 opens at 1 of 4:
+independent, fresh, server-side reference rates that fail closed** (ADR-0075 §1; `INV-FX-02`).
+**The port and the source**: `fx.RateSource` (one fetch answers every declared pair, as values,
+never an exception) and `ReferenceSourceDeclaration` - the `simulated-reference` source, a
+different party than the FX provider so the band is an independent check, and its ten canonical
+pairs held once each in market direction (no inversion, ADR-0074). The adapter in `app`,
+`HttpReferenceRateSource`: `GET {base}/fx/reference/rates` under its own confined key
+(`FINAPP_FX_REFERENCE_KEY`, `ConfinedCredentialVariablesTest`'s seventeenth row), the URL behind
+`ProviderTransportGuard`, the body bounded at 64 KiB, and a strict `BASE/QUOTE,RATE,OBSERVED_AT`
+line grammar so no rate ever passes through a double - an undeclared pair, the inverse direction,
+an eleventh decimal, an exponent, zero or a bad instant each rejected and counted, never stored.
+**`fx V002`**: the append-only `rate_snapshot` (`NUMERIC(20,10)`, proven equal to
+`RateColumns.ddl()`; the canonical-pair `CHECK` proven equal to the declaration) whose `BEFORE
+INSERT` trigger takes `pg_advisory_xact_lock(6, ...)` per (source, pair) - namespace 6 reserved -
+stores a row only when strictly newer than every stored observation and forces `received_at` to
+the database's `statement_timestamp()`, for every writer, raw SQL included; an observation more
+than a minute ahead of the database is refused (a source clock running ahead would freeze its
+pair - the design's find); update and delete refused for every role. The `rate_fetch_permit` is
+the `pull_permit` shape **stamped by the database** inside its own statement, strictly forward and
+never deleted. **The fetch**: `ReferenceRateFetch` - the permit claim committed alone (a loser is
+`paced`), the wire holding no connection, one transaction per observation - behind the leaderless
+`FxRateFetchSchedule` (`LEASE_PROTECTED_SCHEDULERS`, the `DISTRIBUTED_EXECUTION.md` row
+rewritten from the code). **Freshness**: `RateSnapshotStore.freshLatest` judges the latest row's
+`received_at` against `statement_timestamp()` in SQL with the maximum age as a parameter (the
+policy's value, `P9-TSK-007`) - no clock, no cache; a stale or never-fetched pair answers empty
+and the caller fails closed. **Observability**: `finapp.fx.rate.age{pair}` on the database clock
+(NaN when unreadable or never fetched), `finapp.fx.rate.fetch{outcome}` (added to the plan's
+table), `finapp.fx.rate.sweeper.enabled`; `pair` joins `MetricNames.ALLOWED_TAG_KEYS` with its
+argument; the first FX alert rules (`infra/prometheus/rules/fx.yml`: stale and never fetched),
+held by `AlertRulesResolveTest`. `DATA_CLASSIFICATION` gains the fx rows. **THE BUILD'S FINDS,
+FIXED**: the age arrived as a `double` from the store - `NoFloatingPointMoneyRulesTest` refused
+it; fx now returns a `Duration` in whole microseconds and only the gauge class (exempted with its
+argument) converts at the registry boundary; Postgres restates the pair `IN` list as `OR`s, so the
+declaration guard reads the stored definition's own form. **THE GATE'S FIND, FIXED**:
+the backlog's "staleness with a skewed instance" had no test - the design is clock-free, now held
+structurally (`ReferenceRateFetchTest`: neither store nor the round takes a `Clock` or an `Instant`,
+so a skewed instance has nothing to skew; the database tier proves the SQL's own clock). **SEVEN PROBES, SEVEN CAUGHT**, every
+restore byte-identical (sha256-verified; `MUTATION_TESTING.md` §2 +2 rows): the trigger without
+its lock; the newer-than-latest rule switched off; `received_at` from the writer; freshness never
+judged; the permit claimed without its window; the adapter admitting the inverse direction; the
+round fetching without the permit. **Multi-instance PASS** - ten fetchers with pacing off store
+each observation once (counted), ten claimants take one permit, and an older observation waiting
+on a newer one's insert stores nothing (the waiter observed on namespace 6). **NEXT**:
+`P9-TSK-006` `READY`. **Verified** by fresh runs - fx hermetic 25 across 6 (the gate's structural case included) and database 16 across
+4, the adapter suite, the column-classification guard 5, the alert rules 6, app hermetic 656
+across 121; the fleet-wide hermetic tier 2319 across 373 suites and 18 modules (run before the gate's one added fx case); the architecture tier 146 across 24; the
+document guards 138 across 25 (inside that run, after the records landed), ALL 0 FAILURES - the fleet-wide database and kafka tiers
+deliberately skipped on the owner's instruction.
 
 ### Previously
 
-The per-task completion records — 195 blocks, from `P9-TSK-003` back to project initiation
+The per-task completion records — 196 blocks, from `P9-TSK-004` back to project initiation
 (`X-TSK-004` cross-cutting, standing between `P7-TSK-001` and the Phase 6 → 7 transition) —
 are archived in [`history/TASK_HISTORY.md`](history/TASK_HISTORY.md).
 *(This pointer read "130 blocks, from `P6-TSK-005`" through four archivals — corrected by
@@ -965,8 +965,8 @@ Resolved during initiation:
 
 ## Next Task
 
-**`P9-TSK-005` — Reference rates** — `READY` (the Current Task), marked by
-`P9-TSK-004`'s completion gate.
+**`P9-TSK-006` — The FX provider port and simulator** — `READY` (the Current Task), marked by
+`P9-TSK-005`'s completion gate.
 *(This section read "`P8-TSK-009` — `READY`" from `P8-TSK-008`'s gate until
 `P8-TSK-013`'s record found it — the stale-second-copy class, in the section whose
 whole job is to mirror.)*

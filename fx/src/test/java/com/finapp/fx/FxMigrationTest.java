@@ -103,12 +103,16 @@ class FxMigrationTest {
     }
 
     @Test
-    @DisplayName("the schema holds no table but Flyway's history, which the application cannot read")
+    @DisplayName("the schema holds exactly its declared tables, and the application cannot read"
+            + " Flyway's history")
     void floorsOnlyAndTheHistoryIsConfined() throws SQLException {
-        // "No tables" with one honest exception: Flyway keeps this schema's history HERE, which
-        // is the record of what was applied. An application role that could read or write it
-        // could make the schema's provenance disagree with the schema.
-        assertThat(tablesIn(SCHEMA)).containsExactly("flyway_schema_history");
+        // The floor (P9-TSK-001) plus exactly the tables each later migration declares
+        // (P9-TSK-005's V002: the reference snapshots and the fetch permit). Flyway keeps this
+        // schema's history HERE, which is the record of what was applied; an application role
+        // that could read or write it could make the schema's provenance disagree with it.
+        assertThat(tablesIn(SCHEMA))
+                .containsExactlyInAnyOrder(
+                        "flyway_schema_history", "rate_fetch_permit", "rate_snapshot");
 
         assertThatExceptionOfType(SQLException.class)
                 .isThrownBy(() -> asApplication(

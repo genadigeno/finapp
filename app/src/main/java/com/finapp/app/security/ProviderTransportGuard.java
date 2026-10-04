@@ -41,7 +41,9 @@ public class ProviderTransportGuard {
                     "finapp.payments.instant.url",
                     "finapp.paymentmethods.tokenisation.url",
                     "finapp.kyc.provider.url",
-                    "finapp.merchant.payout.provider.url");
+                    "finapp.merchant.payout.provider.url",
+                    // P9-TSK-005: the independent reference rate (ADR-0075).
+                    "finapp.fx.reference.url");
 
     /**
      * Every settlement pull source URL (`P8-TSK-021`): {@code https} or {@code sftp} off

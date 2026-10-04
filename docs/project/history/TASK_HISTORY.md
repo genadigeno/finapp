@@ -1,6 +1,6 @@
 # Task History
 
-The per-task completion records that accumulated behind `## Current Task` - 195 "Previously" blocks, newest first, from `P9-TSK-003` back to project initiation. *(`X-TSK-004` is cross-cutting and completed after the Phase 6 → 7 transition, so it stands second, between `P7-TSK-001` and the transition's record - the transition's block moved here by `P7-TSK-001`'s gate, exactly as an earlier form of this note said it would.)*
+The per-task completion records that accumulated behind `## Current Task` - 196 "Previously" blocks, newest first, from `P9-TSK-004` back to project initiation. *(`X-TSK-004` is cross-cutting and completed after the Phase 6 → 7 transition, so it stands second, between `P7-TSK-001` and the transition's record - the transition's block moved here by `P7-TSK-001`'s gate, exactly as an earlier form of this note said it would.)*
 
 **Archive.** These records were moved verbatim out of
 [`CURRENT_STATE.md`](../CURRENT_STATE.md) on 2026-09-20 so that the canonical description of
@@ -12,6 +12,58 @@ Current state: [`CURRENT_STATE.md`](../CURRENT_STATE.md) ·
 Authoritative backlog: [`BACKLOG.md`](../BACKLOG.md)
 
 ---
+
+### Previously
+
+**`P9-TSK-004` — Multi-currency wallets** — `COMPLETE` (2026-10-04). **M9.1 CLOSES AT 4 OF 4:
+one wallet product holds n currencies, and every resolver is keyed by currency** (ADR-0076 §6,
+D28; `INV-MON-04`, `INV-BAL-04`, `INV-KYC-05` unchanged; `INV-CON-01`, `INV-IDEM-01`). **The add-currency
+act**: `POST /v1/me/accounts/{id}/currencies`, keyed (`accounts.add-currency`, the fingerprint
+binding party, agreement and currency), `201` for the creation and the converged repeat alike,
+`422 accounts.UnsupportedCurrency`, one `404` for unknown, not-yours and malformed, the gate's
+`409 accounts.AccountOpeningRefused`, and the new `409 accounts.AccountNotActive` for the caller's
+own closed agreement; `AccountOpening.addCurrency` audits `accounts.WalletCurrencyAdded` only when
+its insert created the wallet. **The one door**: `accounts.WalletAccounts.openIfAbsent` reads the
+agreement `FOR SHARE` with ownership in the statement, then the ledger's new `insertIfAbsent`
+(`INSERT … ON CONFLICT (owner_ref, purpose, currency) WHERE owner_ref IS NOT NULL DO NOTHING
+RETURNING` the row, then a re-read) - a racing loser waits for the winner and never aborts, and the
+call whose insert returned the row writes `accounts.WalletCurrencyAdded`, once; the first currency
+at opening goes through the same door, so every wallet account is announced exactly once.
+**The design's find, a race the plan did not name**: without the agreement lock an add-currency
+racing a close strands an `ACTIVE` wallet under a `CLOSED` agreement - now the opener's
+`FOR SHARE` and the close's `FOR UPDATE` serialise both ways, each order observed Lock-waiting.
+**Every resolver keyed by currency**: `TransferParticipants.sourceOwnedBy`/`destination`,
+`PaymentParticipants.walletOwnedBy`/`payerWalletOwnedBy` (pay-in, withdrawal, wallet payment) and
+checkout's payer side take the currency and resolve through `WalletAccounts.resolve` - the wallet
+in the asked currency, else the first-opened by `(created_at, id)`, so each flow's existing
+currency judgement refuses with the real account (a transfer's committed
+`FAILED(CURRENCY_MISMATCH)` row must carry real accounts) and `CURRENCY_MISMATCH` means exactly
+"a side holds no wallet in this currency"; the beneficiary asks `destinationExists`; the
+withdrawal read resolves its owner through the party projection, not a wallet. Before this task
+every resolver took `findFirst()` - a GBP flow on a USD-then-GBP product resolved the USD wallet.
+`WalletsAreResolvedByCurrencyTest` (bytecode, planted picks caught in-suite) keeps it out.
+**Balances**: `GET …/{id}/balances` one line per currency, never summed; `/balance` keeps its
+shape and answers the first-opened currency. The OpenAPI baseline +133 lines, zero removed or
+changed. **THE BUILD'S FIND, FIXED**: the creating call rendered the in-memory nanosecond
+`created_at` while a converged one read Postgres's microseconds - `insertIfAbsent` now returns the
+row as stored. **THE GATE'S FINDS, EACH FIXED** (the fleet-wide hermetic run): four registers the
+build had not moved - the published-routes declaration, `MODULE_ARCHITECTURE.md` §6 for the new
+rule and its anchor guard, the request-schema vocabulary, and the ownership register, where
+`lockOwnedForShare` was unclassified and a shared lock helper had moved `lockOwnedBy`'s
+`customer_id = ?` out of the statement the guard reads (each lock method now spells its own);
+and two stale texts - the `accounts` package-info still saying "Nothing is implemented yet", and
+this document's own history pointer, four archivals behind.
+**SIX PROBES, SIX CAUGHT**, every restore byte-identical (sha256-verified;
+`MUTATION_TESTING.md` §2 +4 rows): a plain `INSERT` (losers abort); every opener announcing; the
+agreement read without a lock (the close race); currency-blind resolution; the `findFirst()` pick
+restored in the transfer resolver; the one-line balance answering every currency.
+**Multi-instance PASS** - ten openers of one currency, five acts and five door calls, make one
+account, ten commits, one event, at most one record (counted, `WalletOpenIfAbsentRaceDatabaseTest`).
+**NEXT**: `P9-TSK-005` `READY`. **Verified** by fresh runs - the wallet race 5, the flows 3, the
+affected database suites 300 across 28, the proof group in one container 64 across 12 (the Phase 7
+storm inside it) and the dispute battery; the fleet-wide hermetic tier 2312 across 371 suites and 18 modules; the
+architecture tier 146 across 24; the document guards 138 across 25 (inside that run, after the records landed), ALL 0 FAILURES - the fleet-wide
+database and kafka tiers deliberately skipped on the owner's instruction.
 
 ### Previously
 

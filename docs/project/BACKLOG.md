@@ -12913,7 +12913,7 @@ break row, as the approval door must.)*
 
 # Phase 9 — FX and Cross-Border Payments
 
-Status: `IN_PROGRESS` — started 2026-10-03 with `P9-TSK-001` (4 of 30 items complete, M9.1 closed at 4 of 4); entry gate passed 2026-10-02 by the Phase 8 → 9 transition
+Status: `IN_PROGRESS` — started 2026-10-03 with `P9-TSK-001` (5 of 30 items complete, M9.1 closed, M9.2 at 1 of 4); entry gate passed 2026-10-02 by the Phase 8 → 9 transition
 ([`reviews/PHASE_8_TO_9_TRANSITION.md`](reviews/PHASE_8_TO_9_TRANSITION.md)), elaborated to task
 granularity by the same transition: thirty items (`P9-TSK-001`…`-027`, `P9-TST-001`, `P9-TST-002`,
 `P9-DOC-001`) across nine milestones, with `P9-TSK-001` marked `READY`. The engineering plan is
@@ -13163,7 +13163,8 @@ providers), each owned by Phase 15 and gating nothing here.
 - **Definition of done**: `DOD-FIN`, `DOD-API`, `DOD-EVENT`, `DOD-ARCH`. **Risk**: Medium. **Cx**:
   M.
 
-**P9-TSK-005 — Reference rates** — `READY` (marked by `P9-TSK-004`'s completion gate, 2026-10-04)
+**P9-TSK-005 — Reference rates** — `COMPLETE` (2026-10-04; marked `READY` by `P9-TSK-004`'s completion gate)
+- **As built** (2026-10-04): as `CURRENT_STATE.md` §Just completed records. Every scope item shipped. Decided at build: the ten canonical pairs held once in market direction (no inversion); the newer-than-latest rule as a trigger under advisory namespace 6, forcing `received_at`, so it holds for every writer and under racing inserts; an observation more than a minute ahead of the database refused; the adapter's wire a strict line grammar rather than JSON numbers; the maximum age a parameter of the freshness read (its value is `P9-TSK-007`'s policy); a fetch-outcome counter added beside the planned age gauge, and the first FX alert rules. Seven probes, seven caught. No deviation.
 - **Objective**: independent, fresh, server-side reference rates that fail closed.
 - **Bounded context**: `fx`.
 - **Dependencies**: `-002`.
@@ -13194,7 +13195,7 @@ providers), each owned by Phase 15 and gating nothing here.
 - **Acceptance criteria**: a stale or replayed reference is never read as fresh.
 - **Definition of done**: `DOD-OBS`, `DOD-SEC`, `DOD-TEST`. **Risk**: Low. **Cx**: M.
 
-**P9-TSK-006 — The FX provider port and simulator** — `PLANNED`
+**P9-TSK-006 — The FX provider port and simulator** — `READY` (marked by `P9-TSK-005`'s completion gate, 2026-10-04)
 - **Objective**: a provider-neutral FX boundary with an honest, fault-injectable simulator.
 - **Bounded context**: `fx`; `app` (the adapter).
 - **Dependencies**: `-002`.

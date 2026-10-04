@@ -60,6 +60,11 @@ class AlertRulesResolveTest {
 
     private static final String GROUP = "settlement-reconciliation";
 
+    /** The FX rules (P9-TSK-005 onward), held to the same checks. */
+    private static final String FX_RULES = "infra/prometheus/rules/fx.yml";
+
+    private static final String FX_GROUP = "fx";
+
     /** A PromQL metric selector: an identifier not immediately followed by an opening bracket. */
     private static final Pattern METRIC = Pattern.compile("\\b([a-zA-Z_][a-zA-Z0-9_]*)\\b(?!\\s*\\()");
 
@@ -84,7 +89,7 @@ class AlertRulesResolveTest {
                     // Set operators and modifiers.
                     "or", "and", "unless", "by", "without", "on", "ignoring", "bool", "offset",
                     // Label names the rules group or select by.
-                    "source", "outcome", "purpose", "currency", "severity", "type");
+                    "source", "outcome", "purpose", "currency", "severity", "type", "pair");
 
     /** Every series PHASE_8_PLAN section 15 says is alerted, in its published form. */
     private static final Set<String> ALERTED_SERIES =
@@ -144,6 +149,38 @@ class AlertRulesResolveTest {
                         Published series: %s""",
                         published)
                 .allSatisfy(series -> assertThat(published).contains(series));
+    }
+
+    @Test
+    @DisplayName("the fx rules: every queried series is published, each rule a well-formed alert,"
+            + " the file loaded, and the reference age covered (P9-TSK-005)")
+    void theFxRulesResolve() {
+        List<Map<String, Object>> fx = rules(FX_RULES, FX_GROUP);
+        Set<String> queried =
+                fx.stream()
+                        .map(rule -> String.valueOf(rule.get("expr")))
+                        .flatMap(AlertRulesResolveTest::seriesIn)
+                        .collect(Collectors.toCollection(TreeSet::new));
+        assertThat(queried).contains("finapp_fx_rate_age");
+        assertThat(publishedSeriesNames()).containsAll(queried);
+        assertThat(fx)
+                .allSatisfy(
+                        rule -> {
+                            assertThat(String.valueOf(rule.get("for"))).matches("\\d+[smhd]");
+                            assertThat(map(rule.get("labels")).get("severity"))
+                                    .isIn("page", "ticket");
+                            assertThat(String.valueOf(map(rule.get("annotations")).get("summary")))
+                                    .isNotBlank();
+                        });
+        Path rulesFile = Path.of(PROMETHEUS_CONFIG).getParent().relativize(Path.of(FX_RULES));
+        assertThat(list(yaml(PROMETHEUS_CONFIG).get("rule_files")).stream().map(String::valueOf))
+                .anySatisfy(
+                        pattern ->
+                                assertThat(
+                                                FileSystems.getDefault()
+                                                        .getPathMatcher("glob:" + pattern)
+                                                        .matches(rulesFile))
+                                        .isTrue());
     }
 
     @Test
@@ -270,13 +307,17 @@ class AlertRulesResolveTest {
     }
 
     private static List<Map<String, Object>> rules() {
+        return rules(RULES, GROUP);
+    }
+
+    private static List<Map<String, Object>> rules(String file, String name) {
         List<Map<String, Object>> groups =
-                list(yaml(RULES).get("groups")).stream().map(AlertRulesResolveTest::map).toList();
+                list(yaml(file).get("groups")).stream().map(AlertRulesResolveTest::map).toList();
         Map<String, Object> group =
                 groups.stream()
-                        .filter(candidate -> GROUP.equals(candidate.get("name")))
+                        .filter(candidate -> name.equals(candidate.get("name")))
                         .findFirst()
-                        .orElseThrow(() -> new AssertionError("no rules group named " + GROUP));
+                        .orElseThrow(() -> new AssertionError("no rules group named " + name));
         return list(group.get("rules")).stream().map(AlertRulesResolveTest::map).toList();
     }
 
