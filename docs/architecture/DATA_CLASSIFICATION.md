@@ -1579,6 +1579,81 @@ precedent).
 | `fx_provider_evidence` | `content_length` | `INTERNAL` | A byte count |
 | `fx_provider_evidence` | `recorded_at` | `INTERNAL` | When the exchange was retained |
 
+### `fx` — the pricing policy and the kill switch — *added by `P9-TSK-007`*
+
+**The platform's pricing and its stop switch** (ADR-0075 §7, the lifecycle document §3.10).
+The margins, the band and the notional bounds ARE the platform's commercial terms -
+`CONFIDENTIAL`; whether a pair or provider is stopped is operational posture - `CONFIDENTIAL`,
+the `rail_availability` reasoning; every person-written reason and every actor follows the rule
+set's precedent. Nothing here is about a customer.
+
+| Table | Column | Level | Why |
+|---|---|---|---|
+| `pricing_policy_version` | `id` | `INTERNAL` | A version identifier - **the value a quote pins** (`INV-HIST-04`). Generated |
+| `pricing_policy_version` | `version` | `INTERNAL` | An ordinal |
+| `pricing_policy_version` | `status` | `INTERNAL` | An enumeration member |
+| `pricing_policy_version` | `open_quote_cap` | `INTERNAL` | A policy magnitude - a count of quotes, nobody's money |
+| `pricing_policy_version` | `proposed_by` | `CONFIDENTIAL` | Who proposed or decided it (`audit_record.actor`'s reasoning - the `rule_set.proposed_by` precedent) |
+| `pricing_policy_version` | `proposed_at` | `INTERNAL` | A property of the artefact |
+| `pricing_policy_version` | `proposal_reason` | `CONFIDENTIAL` | Free prose by a person about a pricing or availability decision (`audit_record.reason`'s reasoning). Screened for card-number and account-identifier shapes at the domain and by `fx V004`'s `<table>_<column>_no_instrument_shape` |
+| `pricing_policy_version` | `decided_by` | `CONFIDENTIAL` | Who activated or rejected it - the four-eyes fact |
+| `pricing_policy_version` | `decided_at` | `INTERNAL` | When the version was activated or rejected |
+| `pricing_policy_version` | `decision_reason` | `CONFIDENTIAL` | Free prose by a person about a pricing or availability decision (`audit_record.reason`'s reasoning). Screened for card-number and account-identifier shapes at the domain and by `fx V004`'s `<table>_<column>_no_instrument_shape` |
+| `pricing_policy_version` | `retired_at` | `INTERNAL` | When a successor retired it |
+| `pricing_policy_event` | `id` | `INTERNAL` | An event identifier. Generated |
+| `pricing_policy_event` | `policy_id` | `INTERNAL` | The moved version - an identifier of a thing |
+| `pricing_policy_event` | `from_status` | `INTERNAL` | The edge's origin, NULL at the proposal |
+| `pricing_policy_event` | `to_status` | `INTERNAL` | The edge's destination - a closed vocabulary |
+| `pricing_policy_event` | `actor_id` | `CONFIDENTIAL` | Who proposed or decided it (`audit_record.actor`'s reasoning - the `rule_set.proposed_by` precedent) |
+| `pricing_policy_event` | `reason` | `CONFIDENTIAL` | Free prose by a person about a pricing or availability decision (`audit_record.reason`'s reasoning). Screened for card-number and account-identifier shapes at the domain and by `fx V004`'s `<table>_<column>_no_instrument_shape` |
+| `pricing_policy_event` | `occurred_at` | `INTERNAL` | Application-stamped transition instant |
+| `pricing_pair` | `policy_id` | `INTERNAL` | The version it belongs to |
+| `pricing_pair` | `source_currency` | `INTERNAL` | An ISO 4217 code |
+| `pricing_pair` | `destination_currency` | `INTERNAL` | An ISO 4217 code |
+| `pricing_pair` | `purpose` | `INTERNAL` | A closed vocabulary - conversion or cross-border |
+| `pricing_pair` | `providers` | `INTERNAL` | Declared providers' compiled codes, in order - organisations, never persons |
+| `pricing_pair` | `spread` | `CONFIDENTIAL` | The platform's pricing - a commercial term no competitor or customer should read off the table |
+| `pricing_pair` | `markup` | `CONFIDENTIAL` | The platform's pricing - a commercial term no competitor or customer should read off the table |
+| `pricing_pair` | `rate_scale` | `INTERNAL` | A precision - digits, nobody's money |
+| `pricing_pair` | `rate_rounding` | `INTERNAL` | A closed vocabulary (`RoundingPolicy`) |
+| `pricing_pair` | `amount_rounding` | `INTERNAL` | A closed vocabulary (`RoundingPolicy`) |
+| `pricing_pair` | `margin_rounding` | `INTERNAL` | A closed vocabulary (`RoundingPolicy`) |
+| `pricing_pair` | `window_seconds` | `INTERNAL` | A policy magnitude - seconds |
+| `pricing_pair` | `cover_margin_seconds` | `INTERNAL` | A policy magnitude - seconds |
+| `pricing_pair` | `band` | `CONFIDENTIAL` | How far a provider may stray from the reference before the platform refuses - with the margins it discloses how the platform hedges |
+| `pricing_pair` | `reference_max_age_seconds` | `INTERNAL` | A policy magnitude - seconds |
+| `pricing_pair` | `source_min_minor` | `CONFIDENTIAL` | An operational bound the platform chose, not a person's amount (the `routing_rule.ceiling_amount_minor` reasoning) |
+| `pricing_pair` | `source_max_minor` | `CONFIDENTIAL` | An operational bound the platform chose, not a person's amount (the `routing_rule.ceiling_amount_minor` reasoning) |
+| `pricing_pair` | `destination_min_minor` | `CONFIDENTIAL` | An operational bound the platform chose, not a person's amount (the `routing_rule.ceiling_amount_minor` reasoning) |
+| `pricing_pair` | `destination_max_minor` | `CONFIDENTIAL` | An operational bound the platform chose, not a person's amount (the `routing_rule.ceiling_amount_minor` reasoning) |
+| `availability_enable_request` | `id` | `INTERNAL` | A request identifier. Generated |
+| `availability_enable_request` | `subject_kind` | `INTERNAL` | A closed vocabulary - pair or provider |
+| `availability_enable_request` | `subject` | `INTERNAL` | `AAA-BBB` or a declared provider's code |
+| `availability_enable_request` | `status` | `INTERNAL` | An enumeration member |
+| `availability_enable_request` | `proposed_by` | `CONFIDENTIAL` | Who proposed or decided it (`audit_record.actor`'s reasoning - the `rule_set.proposed_by` precedent) |
+| `availability_enable_request` | `proposed_at` | `INTERNAL` | A property of the request |
+| `availability_enable_request` | `proposal_reason` | `CONFIDENTIAL` | Free prose by a person about a pricing or availability decision (`audit_record.reason`'s reasoning). Screened for card-number and account-identifier shapes at the domain and by `fx V004`'s `<table>_<column>_no_instrument_shape` |
+| `availability_enable_request` | `decided_by` | `CONFIDENTIAL` | Who approved or rejected it - the four-eyes fact |
+| `availability_enable_request` | `decided_at` | `INTERNAL` | When it was decided |
+| `availability_enable_request` | `decision_reason` | `CONFIDENTIAL` | Free prose by a person about a pricing or availability decision (`audit_record.reason`'s reasoning). Screened for card-number and account-identifier shapes at the domain and by `fx V004`'s `<table>_<column>_no_instrument_shape` |
+| `pair_availability` | `seq` | `INTERNAL` | The facts' server-assigned order - the newest is the subject's availability |
+| `pair_availability` | `id` | `INTERNAL` | A fact identifier. Generated |
+| `pair_availability` | `source_currency` | `INTERNAL` | An ISO 4217 code |
+| `pair_availability` | `destination_currency` | `INTERNAL` | An ISO 4217 code |
+| `pair_availability` | `available` | `CONFIDENTIAL` | Whether FX is stopped is operational posture - the `rail_availability.available` reasoning |
+| `pair_availability` | `actor_id` | `CONFIDENTIAL` | Who proposed or decided it (`audit_record.actor`'s reasoning - the `rule_set.proposed_by` precedent) |
+| `pair_availability` | `reason` | `CONFIDENTIAL` | Free prose by a person about a pricing or availability decision (`audit_record.reason`'s reasoning). Screened for card-number and account-identifier shapes at the domain and by `fx V004`'s `<table>_<column>_no_instrument_shape` |
+| `pair_availability` | `recorded_at` | `INTERNAL` | Application-stamped instant of the act |
+| `pair_availability` | `enable_request_id` | `INTERNAL` | The APPROVED request an enabling fact names; NULL on a disable |
+| `provider_availability` | `seq` | `INTERNAL` | The facts' server-assigned order - the newest is the subject's availability |
+| `provider_availability` | `id` | `INTERNAL` | A fact identifier. Generated |
+| `provider_availability` | `provider_code` | `INTERNAL` | A declared provider's compiled code - an organisation |
+| `provider_availability` | `available` | `CONFIDENTIAL` | Whether FX is stopped is operational posture - the `rail_availability.available` reasoning |
+| `provider_availability` | `actor_id` | `CONFIDENTIAL` | Who proposed or decided it (`audit_record.actor`'s reasoning - the `rule_set.proposed_by` precedent) |
+| `provider_availability` | `reason` | `CONFIDENTIAL` | Free prose by a person about a pricing or availability decision (`audit_record.reason`'s reasoning). Screened for card-number and account-identifier shapes at the domain and by `fx V004`'s `<table>_<column>_no_instrument_shape` |
+| `provider_availability` | `recorded_at` | `INTERNAL` | Application-stamped instant of the act |
+| `provider_availability` | `enable_request_id` | `INTERNAL` | The APPROVED request an enabling fact names; NULL on a disable |
+
 ### `consent.consent_text` and `consent.consent_record` — *added by `P2-TSK-017`*
 
 | Table | Column | Level | Why |

@@ -69,3 +69,49 @@ successor.
 
 **If a proposal is wrong.** Reject it (`POST …/rule-sets/{id}/rejection`, reasoned) and propose
 again. Once active, a version is never edited — a further successor corrects it.
+
+---
+
+## 2. Activating FX pricing policy v1 — before the first quote
+
+*(Added by `P9-TSK-007`, 2026-10-04; owner decision O7 in `PHASE_9_PLAN.md` §2; ADR-0075 §7;
+decision D26.)*
+
+**When.** Once, after a deployment carrying `fx V004`, and **before** quoting is opened
+(`P9-TSK-008`). Until a version is `ACTIVE` nothing can be priced: a quote finds no policy and is
+refused - closed, never priced on a default.
+
+**Why.** No migration seeds a pricing policy (D26): a price the platform charges is a four-eyes
+decision with two named people, and a migration has neither. v1 is O7's values - 20 directional
+pairs of EUR, GBP, USD, JPY and BHD under both purposes (40 rows): spread `0.003500` and markup
+`0.001500`; rate scale 10 from JPY and 6 otherwise, the rate rounded towards zero, amounts and
+the margin half-even; a 30 s window for a conversion and 60 s across a border, a 10 s cover
+margin; a 150 bps band among EUR, GBP and USD and 300 bps for any JPY or BHD pair; the reference
+at most 120 s old; five open quotes per customer; notional bounds EUR/GBP/USD 1.00-50,000.00,
+JPY 100-7,500,000, BHD 0.500-20,000.000. The canonical body is `PricingPolicyV1` in the app's
+tests (held to O7 by `PricingPolicyV1Test`, and proposed and activated end to end by
+`FxAdministrationEndpointDatabaseTest`).
+
+**Steps** — two different people holding `FX_CONTROLLER` (`FX_ADMINISTER`):
+
+1. **Read**: `GET /v1/operator/fx/pricing-policies` — empty on a fresh deployment.
+2. **Propose** (person A): `POST /v1/operator/fx/pricing-policies` with an `Idempotency-Key`, the
+   40 rows (every decimal a JSON string) and a reason naming this procedure. The answer is the
+   version's id (`PROPOSED`, version 1).
+3. **Approve** (person B — the proposer is refused `fx.SelfApprovalRefused`, at the domain and
+   by the database's `CHECK`): `POST /v1/operator/fx/pricing-policies/{id}/approval` with a
+   reason. The version moves `PROPOSED → ACTIVE`; both acts are audited
+   (`fx.PricingPolicyProposed`, `fx.PricingPolicyActivated`) and `fx.PricingPolicyActivated` is
+   published.
+
+**Verify.** Step 1 again shows version 1 `ACTIVE` with 40 rows.
+
+**If a proposal is wrong.** Reject it (`POST …/pricing-policies/{id}/rejection`, reasoned) and
+propose again. Once active, a version is never edited — a successor, approved the same way,
+replaces it, and only new quotes see it.
+
+**The kill switch.** One controller stops a pair or provider at once:
+`POST /v1/operator/fx/pairs/{AAA-BBB}/availability` or `…/providers/{code}/availability` with
+`{"available": false, "reason": …}`. Restarting is two people: the same route with
+`"available": true` opens an enable request (`ENABLE_PROPOSED`), which a DIFFERENT controller
+approves at `POST /v1/operator/fx/enable-requests/{id}/approval`.

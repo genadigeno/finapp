@@ -313,6 +313,51 @@ class OwnershipIsScopedTest {
                                         + " PaymentRefundEndpointDatabaseTest's permissionless"
                                         + " refusal. Customer HTTP reads go through findOwned.")),
                     Map.entry(
+                            "com.finapp.fx.JdbcPricingPolicyStore.insertProposal",
+                            new Entry(
+                                    Scope.ADMINISTERED,
+                                    "P9-TSK-007. The identifier is minted by the domain (PricingPolicyId.next) inside the proposal's own transaction - never a request value. The pricing policy is platform-wide"
+                                        + " configuration with no owner to scope by; every door"
+                                        + " is behind @RequiresPermission(FX_ADMINISTER),"
+                                        + " asserted per route with nothing written by"
+                                        + " FxAdministrationEndpointDatabaseTest.")),
+                    Map.entry(
+                            "com.finapp.fx.JdbcPricingPolicyStore.decide",
+                            new Entry(
+                                    Scope.ADMINISTERED,
+                                    "P9-TSK-007. The version is locked FOR UPDATE by lock(id) in the same transaction first, and the move is conditional on its status (V004's machine trigger beneath). The pricing policy is platform-wide"
+                                        + " configuration with no owner to scope by; every door"
+                                        + " is behind @RequiresPermission(FX_ADMINISTER),"
+                                        + " asserted per route with nothing written by"
+                                        + " FxAdministrationEndpointDatabaseTest.")),
+                    Map.entry(
+                            "com.finapp.fx.JdbcPricingPolicyStore.retire",
+                            new Entry(
+                                    Scope.ADMINISTERED,
+                                    "P9-TSK-007. The id comes only from lockActive's row, locked in the same transaction - never a request value. The pricing policy is platform-wide"
+                                        + " configuration with no owner to scope by; every door"
+                                        + " is behind @RequiresPermission(FX_ADMINISTER),"
+                                        + " asserted per route with nothing written by"
+                                        + " FxAdministrationEndpointDatabaseTest.")),
+                    Map.entry(
+                            "com.finapp.fx.JdbcPricingPolicyStore.appendEvent",
+                            new Entry(
+                                    Scope.ADMINISTERED,
+                                    "P9-TSK-007. The id comes only from a row this transaction just inserted or locked; the history is append-only for every writer. The pricing policy is platform-wide"
+                                        + " configuration with no owner to scope by; every door"
+                                        + " is behind @RequiresPermission(FX_ADMINISTER),"
+                                        + " asserted per route with nothing written by"
+                                        + " FxAdministrationEndpointDatabaseTest.")),
+                    Map.entry(
+                            "com.finapp.fx.JdbcPricingPolicyStore.pairsOf",
+                            new Entry(
+                                    Scope.ADMINISTERED,
+                                    "P9-TSK-007. A private loader: the version id comes only from a version row this store just read. The pricing policy is platform-wide"
+                                        + " configuration with no owner to scope by; every door"
+                                        + " is behind @RequiresPermission(FX_ADMINISTER),"
+                                        + " asserted per route with nothing written by"
+                                        + " FxAdministrationEndpointDatabaseTest.")),
+                    Map.entry(
                             "com.finapp.payments.JdbcRoutingStore.findVersionById",
                             new Entry(
                                     Scope.ADMINISTERED,

@@ -711,6 +711,31 @@ reclassification whose target type would leave the break's frozen cause no exit 
 subject takes, no evidence that still finds it, no acknowledgement back on its raise type - is
 `api.ValidationFailed` (422), nothing written.
 
+### `fx` — `FxErrorCode`
+
+| Code | Status | Meaning |
+|---|---|---|
+| `fx.NotFound` | 404 | No FX policy record matches the requested identifier. |
+| `fx.SelfApprovalRefused` | 409 | A proposal is approved by someone other than its proposer; the proposer may reject it. |
+| `fx.ProposalNotPending` | 409 | The proposal is no longer awaiting a decision. |
+| `fx.ProposalPending` | 409 | A proposal already awaits a decision; decide or reject it first. |
+| `fx.AlreadyAvailable` | 409 | The pair or provider is already available. |
+| `fx.ProviderNotDeclared` | 422 | The provider is not declared by this build. |
+| `fx.PricingPolicyInvalid` | 422 | The FX policy request is not well formed. |
+
+The FX controller's doors (`P9-TSK-007`, ADR-0075 §3). `NotFound` is the `FileNotFound`
+departure at the pricing-policy and enable-request doors - every route sits behind
+`FX_ADMINISTER` - and also answers a pair path that is not `AAA-BBB` over two supported
+currencies. The 409s are the machines' own states, shared by the policy version and the enable
+request: `SelfApprovalRefused` (four-eyes, `INV-AUD-04`, held also by `fx V004`'s `CHECK`s),
+`ProposalNotPending` (decided meanwhile - the same person's retry converges and is not an
+error), `ProposalPending` (one live proposal - per policy, and per subject for an enabling - held
+by a partial unique; the racer that loses it is answered here) and `AlreadyAvailable` (enabling
+what no disable stopped). `ProviderNotDeclared` (422) refuses a provider code this build does not
+compile - in a policy or on the kill switch; `PricingPolicyInvalid` (422) anything else not well
+formed, a reason holding a card-number or account-identifier shape included, never echoing it.
+A disable of what is already stopped is not an error: it answers `UNCHANGED` and writes nothing.
+
 ## 3a. Rejection at the boundary
 
 Untrusted input is refused before any domain code runs (`P0-TSK-025`).

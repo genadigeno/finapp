@@ -575,6 +575,15 @@ class OpenApiContractTest {
                         ApiVersion.CURRENT_PREFIX
                                 + "/operator/reconciliation/resolutions/{id}/rejection",
                         ApiVersion.CURRENT_PREFIX + "/operator/reconciliation/resolutions/{id}",
+                        // P9-TSK-007: the FX controller's doors - the pricing policy under
+                        // four-eyes and the kill switch (FX_ADMINISTER).
+                        ApiVersion.CURRENT_PREFIX + "/operator/fx/pricing-policies",
+                        ApiVersion.CURRENT_PREFIX + "/operator/fx/pricing-policies/{id}/approval",
+                        ApiVersion.CURRENT_PREFIX + "/operator/fx/pricing-policies/{id}/rejection",
+                        ApiVersion.CURRENT_PREFIX + "/operator/fx/pairs/{pair}/availability",
+                        ApiVersion.CURRENT_PREFIX + "/operator/fx/providers/{code}/availability",
+                        ApiVersion.CURRENT_PREFIX + "/operator/fx/enable-requests/{rid}/approval",
+                        ApiVersion.CURRENT_PREFIX + "/operator/fx/enable-requests/{rid}/rejection",
                         ApiVersion.CURRENT_PREFIX + "/sessions/{id}",
                         ApiVersion.CURRENT_PREFIX + "/sessions/current",
                         ApiVersion.CURRENT_PREFIX + "/me/mfa",
