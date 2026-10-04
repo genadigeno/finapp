@@ -219,6 +219,56 @@ public final class JdbcPricingPolicyStore implements PricingPolicyStore {
         }
     }
 
+    @Override
+    public Optional<VersionView> active(Connection unitOfWork) {
+        return view(unitOfWork,
+                "SELECT " + VERSION_COLUMNS + " FROM fx.pricing_policy_version WHERE status = 'ACTIVE'", null);
+    }
+
+    @Override
+    public Optional<VersionView> version(Connection unitOfWork, PricingPolicyId id) {
+        Objects.requireNonNull(id, "id must not be null");
+        return view(unitOfWork,
+                "SELECT " + VERSION_COLUMNS + " FROM fx.pricing_policy_version WHERE id = ?", id.value());
+    }
+
+    @Override
+    public boolean holdActive(Connection unitOfWork, PricingPolicyId id) {
+        Objects.requireNonNull(unitOfWork, "unitOfWork must not be null");
+        Objects.requireNonNull(id, "id must not be null");
+        try (PreparedStatement select =
+                unitOfWork.prepareStatement(
+                        "SELECT 1 FROM fx.pricing_policy_version WHERE id = ? AND status = 'ACTIVE' FOR SHARE")) {
+            select.setObject(1, id.value());
+            try (ResultSet row = select.executeQuery()) {
+                return row.next();
+            }
+        } catch (SQLException failure) {
+            throw new FxStorageException(DatabaseFailure.describe("holding a pricing policy", failure), failure);
+        }
+    }
+
+    private Optional<VersionView> view(Connection unitOfWork, String sql, UUID id) {
+        Objects.requireNonNull(unitOfWork, "unitOfWork must not be null");
+        try (PreparedStatement select = unitOfWork.prepareStatement(sql)) {
+            if (id != null) {
+                select.setObject(1, id);
+            }
+            VersionRow version;
+            Instant proposedAt;
+            try (ResultSet row = select.executeQuery()) {
+                if (!row.next()) {
+                    return Optional.empty();
+                }
+                version = rehydrate(row);
+                proposedAt = row.getTimestamp("proposed_at").toInstant();
+            }
+            return Optional.of(new VersionView(version, proposedAt, pairsOf(unitOfWork, version.id())));
+        } catch (SQLException failure) {
+            throw new FxStorageException(DatabaseFailure.describe("reading a pricing policy", failure), failure);
+        }
+    }
+
     private List<PolicyPair> pairsOf(Connection unitOfWork, PricingPolicyId id) throws SQLException {
         List<PolicyPair> pairs = new ArrayList<>();
         try (PreparedStatement select =

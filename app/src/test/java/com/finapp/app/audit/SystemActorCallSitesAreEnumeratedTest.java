@@ -360,6 +360,14 @@ class SystemActorCallSitesAreEnumeratedTest {
                         + " The scope wraps each item's re-read-and-apply, one transaction per"
                         + " item; the page read before it claims nothing."),
                     Map.entry(
+                            "com.finapp.app.fx.FxQuoteExpirySchedule.sweepOnce",
+                    "Quote expiry (P9-TSK-008, ADR-0075 section 5): a quote lapses because the"
+                        + " database clock passed its expires_at - nobody chose it. Attributing the"
+                        + " EXPIRED edge to any person would record them as having closed a"
+                        + " customer's price they never saw; when a person DOES close one - the"
+                        + " owner's cancellation - they act as themselves. The scope wraps the"
+                        + " tick's pages, each one conditional UPDATE and its events."),
+                    Map.entry(
                             "com.finapp.app.settlement.SettlementPullSweep.sweep",
                     "The settlement pull schedule (P8-TSK-021, ADR-0066 section 1): the platform"
                         + " fetches a counterparty's report over the source's own credential"

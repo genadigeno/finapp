@@ -73,6 +73,7 @@ final class SimulatedFxEngine implements AutoCloseable {
     private final Map<String, String> outcomes = new ConcurrentHashMap<>();
     private final Map<String, String> rates = new ConcurrentHashMap<>(DEFAULT_RATES);
     private final AtomicInteger executions = new AtomicInteger();
+    private final AtomicInteger quoteRequests = new AtomicInteger();
     private final AtomicInteger quoteSequence = new AtomicInteger();
     private final AtomicInteger tradeSequence = new AtomicInteger();
     private final List<SignedCallback> callbacks = new CopyOnWriteArrayList<>();
@@ -150,6 +151,11 @@ final class SimulatedFxEngine implements AutoCloseable {
 
     // ------------------------------------------------------------- what the test reads
 
+    /** Every firm-quote request received - the RFQ count the quote suites assert (`P9-TSK-008`). */
+    int quoteRequests() {
+        return quoteRequests.get();
+    }
+
     int executions() {
         return executions.get();
     }
@@ -179,6 +185,7 @@ final class SimulatedFxEngine implements AutoCloseable {
     // ------------------------------------------------------------- the provider
 
     private void quote(HttpExchange exchange) throws IOException {
+        quoteRequests.incrementAndGet();
         record(exchange);
         String body = read(exchange);
         String fault = armed.getAndSet("");
