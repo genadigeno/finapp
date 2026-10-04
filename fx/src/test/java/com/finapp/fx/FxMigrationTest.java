@@ -112,7 +112,8 @@ class FxMigrationTest {
         // that could read or write it could make the schema's provenance disagree with it.
         assertThat(tablesIn(SCHEMA))
                 .containsExactlyInAnyOrder(
-                        "flyway_schema_history", "rate_fetch_permit", "rate_snapshot");
+                        "flyway_schema_history", "rate_fetch_permit", "rate_snapshot",
+                        "fx_provider_evidence");
 
         assertThatExceptionOfType(SQLException.class)
                 .isThrownBy(() -> asApplication(

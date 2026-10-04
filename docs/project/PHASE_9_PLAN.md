@@ -498,7 +498,7 @@ table is corrected with provenance if the order changes (ADR-0011).
 | `crossborder` | `V001` | `-001` | Schema floor (no tables) |
 | `ledger` | `V019` | `-003` | The thirteen operational purposes × JPY, BHD (26 accounts below the ceiling) |
 | `fx` | `V002` | `-005` | `rate_snapshot`, `rate_fetch_permit` |
-| `fx` | `V003` | `-006` | `provider_evidence` (encrypted) |
+| `fx` | `V003` | `-006` | `fx_provider_evidence` (encrypted; named with its domain because the classification register keys on `table.column` and `payments.provider_evidence` exists - `P9-TSK-006`) |
 | `identity` | `V019` | `-007` | The `FX_CONTROLLER` role *(written `V018`; renumbered `V019` when this plan merged, identity `V018` being the reconciliation controller role there)* |
 | `fx` | `V004` | `-007` | Pricing policy (`spread + markup > 0`, per-pair rate scale), pair and provider availability, `availability_enable_request` |
 | `fx` | `V005` | `-008` | `quote` (plan, residual, freeze, edge and live-quote cap triggers), `quote_event`, `quote_request` (pinned pricing version), `quote_sourcing_step` |

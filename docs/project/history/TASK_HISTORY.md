@@ -1,6 +1,6 @@
 # Task History
 
-The per-task completion records that accumulated behind `## Current Task` - 197 "Previously" blocks, newest first, from `P9-TSK-004` back to project initiation. *(`X-TSK-005` is cross-cutting and completed after `P7-TSK-014` and before `P7-TSK-015`, so it stands between them; its record came in with its branch's merge.)* *(`X-TSK-004` is cross-cutting and completed after the Phase 6 → 7 transition, so it stands second, between `P7-TSK-001` and the transition's record - the transition's block moved here by `P7-TSK-001`'s gate, exactly as an earlier form of this note said it would.)*
+The per-task completion records that accumulated behind `## Current Task` - 198 "Previously" blocks, newest first, from `P9-TSK-005` back to project initiation. *(`X-TSK-005` is cross-cutting and completed after `P7-TSK-014` and before `P7-TSK-015`, so it stands between them; its record came in with its branch's merge.)* *(`X-TSK-004` is cross-cutting and completed after the Phase 6 → 7 transition, so it stands second, between `P7-TSK-001` and the transition's record - the transition's block moved here by `P7-TSK-001`'s gate, exactly as an earlier form of this note said it would.)*
 
 **Archive.** These records were moved verbatim out of
 [`CURRENT_STATE.md`](../CURRENT_STATE.md) on 2026-09-20 so that the canonical description of
@@ -12,6 +12,111 @@ Current state: [`CURRENT_STATE.md`](../CURRENT_STATE.md) ·
 Authoritative backlog: [`BACKLOG.md`](../BACKLOG.md)
 
 ---
+
+### Previously
+
+**`P9-TSK-005` — Reference rates** — `COMPLETE` (2026-10-04). **M9.2 opens at 1 of 4:
+independent, fresh, server-side reference rates that fail closed** (ADR-0075 §1; `INV-FX-02`).
+**The port and the source**: `fx.RateSource` (one fetch answers every declared pair, as values,
+never an exception) and `ReferenceSourceDeclaration` - the `simulated-reference` source, a
+different party than the FX provider so the band is an independent check, and its ten canonical
+pairs held once each in market direction (no inversion, ADR-0074). The adapter in `app`,
+`HttpReferenceRateSource`: `GET {base}/fx/reference/rates` under its own confined key
+(`FINAPP_FX_REFERENCE_KEY`, `ConfinedCredentialVariablesTest`'s seventeenth row), the URL behind
+`ProviderTransportGuard`, the body bounded at 64 KiB, and a strict `BASE/QUOTE,RATE,OBSERVED_AT`
+line grammar so no rate ever passes through a double - an undeclared pair, the inverse direction,
+an eleventh decimal, an exponent, zero or a bad instant each rejected and counted, never stored.
+**`fx V002`**: the append-only `rate_snapshot` (`NUMERIC(20,10)`, proven equal to
+`RateColumns.ddl()`; the canonical-pair `CHECK` proven equal to the declaration) whose `BEFORE
+INSERT` trigger takes `pg_advisory_xact_lock(6, ...)` per (source, pair) - namespace 6 reserved -
+stores a row only when strictly newer than every stored observation and forces `received_at` to
+the database's `statement_timestamp()`, for every writer, raw SQL included; an observation more
+than a minute ahead of the database is refused (a source clock running ahead would freeze its
+pair - the design's find); update and delete refused for every role. The `rate_fetch_permit` is
+the `pull_permit` shape **stamped by the database** inside its own statement, strictly forward and
+never deleted. **The fetch**: `ReferenceRateFetch` - the permit claim committed alone (a loser is
+`paced`), the wire holding no connection, one transaction per observation - behind the leaderless
+`FxRateFetchSchedule` (`LEASE_PROTECTED_SCHEDULERS`, the `DISTRIBUTED_EXECUTION.md` row
+rewritten from the code). **Freshness**: `RateSnapshotStore.freshLatest` judges the latest row's
+`received_at` against `statement_timestamp()` in SQL with the maximum age as a parameter (the
+policy's value, `P9-TSK-007`) - no clock, no cache; a stale or never-fetched pair answers empty
+and the caller fails closed. **Observability**: `finapp.fx.rate.age{pair}` on the database clock
+(NaN when unreadable or never fetched), `finapp.fx.rate.fetch{outcome}` (added to the plan's
+table), `finapp.fx.rate.sweeper.enabled`; `pair` joins `MetricNames.ALLOWED_TAG_KEYS` with its
+argument; the first FX alert rules (`infra/prometheus/rules/fx.yml`: stale and never fetched),
+held by `AlertRulesResolveTest`. `DATA_CLASSIFICATION` gains the fx rows. **THE BUILD'S FINDS,
+FIXED**: the age arrived as a `double` from the store - `NoFloatingPointMoneyRulesTest` refused
+it; fx now returns a `Duration` in whole microseconds and only the gauge class (exempted with its
+argument) converts at the registry boundary; Postgres restates the pair `IN` list as `OR`s, so the
+declaration guard reads the stored definition's own form. **THE GATE'S FIND, FIXED**:
+the backlog's "staleness with a skewed instance" had no test - the design is clock-free, now held
+structurally (`ReferenceRateFetchTest`: neither store nor the round takes a `Clock` or an `Instant`,
+so a skewed instance has nothing to skew; the database tier proves the SQL's own clock). **SEVEN PROBES, SEVEN CAUGHT**, every
+restore byte-identical (sha256-verified; `MUTATION_TESTING.md` §2 +2 rows): the trigger without
+its lock; the newer-than-latest rule switched off; `received_at` from the writer; freshness never
+judged; the permit claimed without its window; the adapter admitting the inverse direction; the
+round fetching without the permit. **Multi-instance PASS** - ten fetchers with pacing off store
+each observation once (counted), ten claimants take one permit, and an older observation waiting
+on a newer one's insert stores nothing (the waiter observed on namespace 6). **NEXT**:
+`P9-TSK-006` `READY`. **Verified** by fresh runs - fx hermetic 25 across 6 (the gate's structural case included) and database 16 across
+4, the adapter suite, the column-classification guard 5, the alert rules 6, app hermetic 656
+across 121; the fleet-wide hermetic tier 2319 across 373 suites and 18 modules (run before the gate's one added fx case); the architecture tier 146 across 24; the
+document guards 138 across 25 (inside that run, after the records landed), ALL 0 FAILURES - the fleet-wide database and kafka tiers
+deliberately skipped on the owner's instruction.
+
+### Since: the PSP format's defect cap no longer decides a record (2026-09-30, outside the task loop)
+
+**A production defect in `P8-TSK-008`'s `SimPspCsvFormat`, fixed** (`INV-SET-07`). `detail(…)`
+judged a record clean when the shared defect list had not grown, but that list drops defects
+past `MAX_DEFECTS` (100). So in a file with more than a hundred defects, every later malformed
+record read as clean and threw a `NullPointerException` on its missing amount. The file stayed
+`RECEIVED` and was retried forever, never rejected whole as `MALFORMED`. Each record's defects
+are now gathered locally, copied into the capped list, and judged from the local list. The shared
+list gets the same defects in the same order, so v1's verdicts are unchanged and no new format
+version is needed. Red-first test `defectOverflowRejectsWhole` and two probes are recorded
+(`MUTATION_TESTING` §2, change log).
+
+### Since: the shared container's residue, judged last (2026-09-30, outside the task loop)
+
+**The fixture class below cannot return unseen** (test infrastructure, no production code,
+`INV-REC-06`). `ReconciledPositionResidueDatabaseTest` runs last in `:app:databaseTest` (the tier
+orders classes by `@Order`; every other class keeps its place), runs the opening backfill, and
+asserts zero unexplained lines on every reconciled position but `SUSPENSE_UNMATCHED` (the recorded
+exception until `P8-TSK-020`) and every position and suspense identity — naming each writer by its
+idempotency scope. A source rule was weighed and refused: after the fixture moves it would have
+allow-listed every file still able to offend. Its first fleet-wide run found the tier red at
+baseline for two more reasons, both fixed: raw fixture rows on the undeclared rail `push-test`
+made every later backfill answer 500, and three suites asserted the whole-ledger identity without
+a backfill — they now judge their own writes as unchanged residuals (`PositionResiduals`). Rules
+in `TESTING.md` §5. **Found, not fixed here**: the storm's whole-database `SUSPENSE_UNMATCHED`
+count fails whenever the suspense suite runs first (observed once Gradle ran last run's failures
+first) — fixed in its own session; two suites still commit `push-test` attempts in non-terminal
+states no backfill or proof reads. Verified: the targeted run with every polluter ordered first, 65/0; five probes; the fleet-wide tier stopped by the owner at 836/0 before the proof suites and the sentinel ran - the next fleet-wide run is its first full verdict.
+
+### Since: no app test fixture leaves an unexplained reconciled line (2026-09-30, outside the task loop)
+
+**The fixture defect below, fixed with its whole class** (test-only, `INV-REC-06`). Twenty-one
+app database suites posted fixture entries onto `SETTLEMENT_CLEARING` with no expectation —
+lines no backfill can adopt, left in the shared container to fail the opening suite's and the
+multi-rail storm's proofs whenever they ran first (EUR, GBP and USD all failed in the control
+run). Each moved to the counterparty its assertions need: a payer's `CUSTOMER_WALLET` (the book
+rail's shape, so the payable view still reads captured/refunded), `FEE_REVENUE` for wallet
+funders, `CHARGEBACK_RECOVERABLE` where a debit-normal account is the point. The adoptable
+dispute captures stay by design. Details, runs and counts: the change log.
+
+### Since: the position proof's sign on `PAYOUT_CLEARING` (2026-09-30, outside the task loop)
+
+**A production defect in `P8-TSK-007`'s `PositionProof`, fixed** (`INV-REC-06`). The proof
+compared the ledger's *normal-signed* settled balance with the DR−CR remainder fold; on
+CREDIT-normal `PAYOUT_CLEARING` (ledger `V012`) that judged every open payout against its own
+negation, so `position.proof{purpose=PAYOUT_CLEARING}` counted failing currencies and the
+positions report showed a 2X difference on a correct position. The invariant and ADR-0067 §3
+already said DR−CR; the code now reads each identity's named side from the account's stored
+normal balance (`readFrom`) — DR−CR on clearing, CR−DR on suspense. `SETTLEMENT_CLEARING` and
+`INSTANT_CLEARING` (DEBIT-normal) were unaffected. Red-first test and three probes recorded
+(`MUTATION_TESTING` §2, change log). **Found, not fixed** at the time, fixed since (above):
+`MerchantPayoutDatabaseTest`'s `funded()` fixture posted to `SETTLEMENT_CLEARING` with no
+expectation, so the opening suite failed whenever that class ran before it in one container.
 
 ### Previously
 
