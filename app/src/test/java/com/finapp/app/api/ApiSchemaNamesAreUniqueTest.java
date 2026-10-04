@@ -34,12 +34,10 @@ class ApiSchemaNamesAreUniqueTest {
 
     /**
      * The collisions that predate this guard, each a recorded debt (CURRENT_STATE.md section Known
-     * Architectural Debt): the operator review door's {@code OwnerView} is published as the KYB
-     * door's shape. The map may only shrink - a new collision fails the build.
+     * Architectural Debt). Empty since the review door's {@code OwnerView} became
+     * {@code ReviewOwnerView}. The map may only shrink - a new collision fails the build.
      */
-    private static final Map<String, Set<String>> KNOWN = Map.of(
-            "OwnerView", new TreeSet<>(Set.of(
-                    "com.finapp.app.kyc.KybController$OwnerView", "com.finapp.app.kyc.ReviewController$OwnerView")));
+    private static final Map<String, Set<String>> KNOWN = Map.of();
 
     @Test
     @DisplayName("no two request or response records reachable from a controller share a simple name")
