@@ -169,7 +169,7 @@ public class ReviewController {
             Instant openedAt,
             List<CheckView> checks,
             List<TaskView> reviewTasks,
-            List<OwnerView> owners) {
+            List<ReviewOwnerView> owners) {
 
         static CaseFileResponse of(ReviewService.CaseFile file) {
             return new CaseFileResponse(
@@ -180,7 +180,7 @@ public class ReviewController {
                     file.kycCase().openedAt(),
                     file.checks().stream().map(CheckView::of).toList(),
                     file.tasks().stream().map(TaskView::of).toList(),
-                    file.owners().stream().map(OwnerView::of).toList());
+                    file.owners().stream().map(ReviewOwnerView::of).toList());
         }
     }
 
@@ -190,15 +190,15 @@ public class ReviewController {
      * and the reviewer is the person who must defend it — the shaping the acting person's view
      * applies would blind exactly the reader it exists to inform.
      */
-    public record OwnerView(
+    public record ReviewOwnerView(
             UUID ownerPartyId,
             Integer stakeBasisPoints,
             String controlRole,
             Instant declaredAt,
             UUID verificationCaseId,
             String verificationStatus) {
-        static OwnerView of(com.finapp.kyc.BeneficialOwnerStore.DeclaredOwner declared) {
-            return new OwnerView(
+        static ReviewOwnerView of(com.finapp.kyc.BeneficialOwnerStore.DeclaredOwner declared) {
+            return new ReviewOwnerView(
                     declared.owner().ownerPartyId(),
                     declared.owner().stakeBasisPoints().isPresent()
                             ? declared.owner().stakeBasisPoints().getAsInt()
