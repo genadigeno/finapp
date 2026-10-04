@@ -68,8 +68,9 @@ import lombok.RequiredArgsConstructor;
  * <p>{@code SELF_TRANSFER} is judged first — any other reason committed with an equal account
  * pair is a shape {@link Transfer}'s constructor refuses, which is the coherence design doing
  * the teaching — then {@code SOURCE_NOT_POSTABLE}, {@code DESTINATION_NOT_POSTABLE},
- * {@code CURRENCY_MISMATCH} (either side's wallet is not in the amount's currency — resolution
- * is deliberately currency-blind so this row still carries the real accounts), and only then,
+ * {@code CURRENCY_MISMATCH} (a side holds no wallet in the amount's currency — resolution is
+ * keyed by currency and falls back to the side's first-opened wallet, so this row still carries
+ * the real accounts, `P9-TSK-004`), and only then,
  * under the lock, {@code INSUFFICIENT_FUNDS}.
  *
  * <h2>The lock, and what runs inside it</h2>
@@ -186,11 +187,18 @@ public final class TransferExecution {
         UUID actorId = UUID.fromString(actor.id());
         TransferParticipants.Source source =
                 participants
-                        .sourceOwnedBy(uow, command.callerPartyId(), command.sourceProductRef())
+                        .sourceOwnedBy(
+                                uow,
+                                command.callerPartyId(),
+                                command.sourceProductRef(),
+                                command.amount().currency())
                         .orElseThrow(UnknownTransferSourceException::new);
         TransferParticipants.Side destination =
                 participants
-                        .destination(uow, command.destinationProductRef())
+                        .destination(
+                                uow,
+                                command.destinationProductRef(),
+                                command.amount().currency())
                         .orElseThrow(UnknownTransferDestinationException::new);
 
         Transfer initiated =

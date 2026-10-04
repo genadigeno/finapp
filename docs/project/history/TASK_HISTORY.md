@@ -1,6 +1,6 @@
 # Task History
 
-The per-task completion records that accumulated behind `## Current Task` - 194 "Previously" blocks, newest first, from `P9-TSK-002` back to project initiation. *(`X-TSK-004` is cross-cutting and completed after the Phase 6 → 7 transition, so it stands second, between `P7-TSK-001` and the transition's record - the transition's block moved here by `P7-TSK-001`'s gate, exactly as an earlier form of this note said it would.)*
+The per-task completion records that accumulated behind `## Current Task` - 195 "Previously" blocks, newest first, from `P9-TSK-003` back to project initiation. *(`X-TSK-004` is cross-cutting and completed after the Phase 6 → 7 transition, so it stands second, between `P7-TSK-001` and the transition's record - the transition's block moved here by `P7-TSK-001`'s gate, exactly as an earlier form of this note said it would.)*
 
 **Archive.** These records were moved verbatim out of
 [`CURRENT_STATE.md`](../CURRENT_STATE.md) on 2026-09-20 so that the canonical description of
@@ -12,6 +12,51 @@ Current state: [`CURRENT_STATE.md`](../CURRENT_STATE.md) ·
 Authoritative backlog: [`BACKLOG.md`](../BACKLOG.md)
 
 ---
+
+### Previously
+
+**`P9-TSK-003` — JPY and BHD become postable** — `COMPLETE` (2026-10-04). **M9.1 at 3 of 4: a
+zero- and a three-minor-unit currency post on every flow, and Phase 6's deferral is paid**
+(ADR-0074 §9, D27; owner decision O6; `INV-ACC-01`, `INV-LED-01`, `INV-MON-03`, `INV-MON-05`).
+`SupportedCurrencies.ALL` holds five; ledger `V019` seeds the thirteen operational purposes in JPY
+and BHD (26 rows, hand-minted UUIDv7 stamped `2026-09-27T12:00:00Z`, below the ceiling, so every
+seed still sorts before every runtime id); the simulated bank statement gains `SIMBANK-JPY-01`
+and `SIMBANK-BHD-01`. Account opening, merchant onboarding, the eager per-currency gauges and the
+position proof follow the supported set already - **the map found ONE hard-coded currency list
+in production**, the statement's references, and no currency `CHECK` anywhere. **Two scale
+guards, the build's find**: `FeeCheck` prices in raw minor units and never compared a schedule's
+scale with the fee's, so a JPY schedule entered at scale 2 would have read its fixed part a
+hundred times too large, silently - now `RuleSetProposal.validate` refuses a schedule whose scale
+is not its currency's minor units (the door is its only writer: no migration seeds a rule set,
+D26) and `FeeCheck` refuses a scale disagreement loud, contained, never priced. **The v2
+successors** of the four sources' rule sets, carrying O6's JPY and BHD thresholds, fee schedules
+and PSP fee tolerances, are activated through the existing four-eyes door - a fixture
+(`JpyAndBhdRuleSets`, two actors, convergent) and the platform's first operations runbook entry
+(`docs/architecture/OPERATIONS_RUNBOOK.md` §1: activate before the first JPY/BHD traffic, and
+why). **End to end** (`JpyAndBhdPostableDatabaseTest`, its own container): a JPY card pay-in
+through capture (the merchant fee in yen), the PSP report (its `PROCESSING_FEE` CHECKED
+`225:225:3` against the JPY schedule, no break), the bank statement on `SIMBANK-JPY-01` and
+`CASH_CONFIRMED`; a BHD scheme fee and a BHD bank fee each CHECKED against their BHD rows; a BHD
+merchant fee in fils; decisions before activation replaying `IDENTICAL` under their pinned v1,
+after it under v2; and the before-activation behaviour pinned (a zero-priced JPY fee raises
+`FEE_MISMATCH` for its whole 190 yen - why the runbook orders the activation first). The report
+generators render at each currency's scale, EUR/GBP/USD output pinned byte for byte. **Phase 6's
+deferral paid**: the ledger-level fee batch runs all five currencies (600 assessments, books
+exact, trial balance zero per currency) - and its debt row's wording corrected: the fee engine
+never assumed two decimals; the batch test could only run what the chart held. "Routing and rail
+ceilings at scale 0/3": none is declared, and the existing scale guards refuse a mis-scaled one -
+nothing to change. **EIGHT PROBES, EIGHT CAUGHT**, every restore byte-identical (sha256-verified;
+`MUTATION_TESTING.md` §2 +3 rows): `V019` seeding a residual account in the wrong currency; the
+supported set claiming a currency with no chart; the door admitting a mis-scaled schedule; `FeeCheck`
+pricing across scales; the JPY statement reference dropped; the fixture omitting the JPY fee row;
+a BHD schedule proposed at scale 2; the replay reading the active version. **Multi-instance PASS**
+- no new contended state. **NEXT**: `P9-TSK-004` `READY`. **Verified** by fresh runs - ledger 86
+and reconciliation 176 hermetic; reconciliation database 230, settlement database 88, the
+classification guard 5; the new suite alone 6 (three times), the cash, capture, late-evidence,
+pull, readmission and routes suites each alone, the twelve proof-group suites in one container 64
+across 12, the storm alone 1; the fleet-wide hermetic tier 2309 across 370 suites and 18 modules; the architecture tier
+143 across 23, ALL 0 FAILURES - the fleet-wide database and kafka tiers deliberately skipped on the
+owner's instruction.
 
 ### Previously
 

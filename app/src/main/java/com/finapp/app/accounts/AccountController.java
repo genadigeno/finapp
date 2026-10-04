@@ -106,7 +106,49 @@ public class AccountController {
                 .orElseThrow(AccountController::accountNotFound);
     }
 
-    /** The balances of the caller's account, per currency, named for what they are. */
+    /**
+     * Adds a wallet currency to the caller's account, or replays the addition (`P9-TSK-004`).
+     *
+     * <p>{@code 201} for the converged repeat as well as the creation — the open's own idiom:
+     * what distinguishes the adding call is the records (one wallet account, one audit record,
+     * one {@code accounts.WalletCurrencyAdded}), never the answer. Unknown, not-yours and
+     * malformed are one {@code 404}.
+     */
+    @PostMapping(path = "/{id}/currencies", consumes = MediaType.APPLICATION_JSON_VALUE)
+    @RequiresIdempotencyKey
+    @ResponseStatus(HttpStatus.CREATED)
+    public AccountService.WalletView addCurrency(
+            @PathVariable("id") String id,
+            @Valid @RequestBody AccountCurrencyRequest body,
+            @RequestHeader(IdempotencyKeyHeader.NAME) String idempotencyKey,
+            HttpServletRequest request) {
+        return accounts
+                .addCurrency(
+                        current(request),
+                        parsedOrAbsent(id),
+                        CurrencyCode.of(body.currency()),
+                        idempotencyKey)
+                .orElseThrow(AccountController::accountNotFound);
+    }
+
+    /**
+     * The balances of the caller's account, one per currency, never summed (`P9-TSK-004`) —
+     * each named for what it is, exactly as the single-currency read names them.
+     */
+    @GetMapping("/{id}/balances")
+    public BalanceResponse readBalances(
+            @PathVariable("id") String id, HttpServletRequest request) {
+        return accounts
+                .balances(current(request), parsedOrAbsent(id))
+                .map(AccountController::render)
+                .orElseThrow(AccountController::accountNotFound);
+    }
+
+    /**
+     * The balance of the caller's account in its first-opened currency, named for what it is
+     * — the one-line shape clients were written against, kept since an account can hold n
+     * currencies (`P9-TSK-004`; {@code /balances} answers them all).
+     */
     @GetMapping("/{id}/balance")
     public BalanceResponse readBalance(@PathVariable("id") String id, HttpServletRequest request) {
         return accounts

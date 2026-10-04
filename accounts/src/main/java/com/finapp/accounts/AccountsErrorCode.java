@@ -60,7 +60,20 @@ public enum AccountsErrorCode implements ErrorCode {
     ACCOUNT_NOT_EMPTY(
             "accounts.AccountNotEmpty",
             409,
-            "The account still holds a non-zero balance; empty it and retry.");
+            "The account still holds a non-zero balance; empty it and retry."),
+
+    /**
+     * The caller's own agreement is not {@code ACTIVE}, so a wallet currency cannot be added
+     * to it (`P9-TSK-004`).
+     *
+     * <p>A {@code 409}: the request was well-formed and the agreement's state refuses it.
+     * Distinct from the {@code 404} for unknown and not-yours identifiers because ownership is
+     * proven first — the answer is about the caller's own agreement, so it discloses nothing.
+     */
+    ACCOUNT_NOT_ACTIVE(
+            "accounts.AccountNotActive",
+            409,
+            "The account is not active; a wallet currency cannot be added to it.");
 
     private final String code;
     private final int status;

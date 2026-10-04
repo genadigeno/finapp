@@ -27,7 +27,12 @@ public enum FailureReason {
     /** The destination ledger account refuses postings ({@code P3-TSK-014}'s trigger, observed). */
     DESTINATION_NOT_POSTABLE,
 
-    /** The two legs are not the same currency; cross-currency transfers are Phase 9's. */
+    /**
+     * A side holds no wallet in the transfer's currency — in practice the recipient
+     * (`P9-TSK-004`: resolution is keyed by currency, so a product holding the currency always
+     * answers that wallet). Cross-currency internal transfers stay refused: conversion is its
+     * own act (ADR-0076), never implicit ({@code INV-MON-04}).
+     */
     CURRENCY_MISMATCH,
 
     /**

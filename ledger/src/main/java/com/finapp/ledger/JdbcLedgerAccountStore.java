@@ -78,25 +78,83 @@ public final class JdbcLedgerAccountStore implements LedgerAccountStore<Connecti
         }
     }
 
+    @Override
+    public Creation insertIfAbsent(Connection unitOfWork, LedgerAccount fresh) {
+        Objects.requireNonNull(unitOfWork, "unitOfWork must not be null");
+        Objects.requireNonNull(fresh, "fresh must not be null");
+        UUID ownerRef =
+                fresh.ownerRef()
+                        .orElseThrow(
+                                () ->
+                                        new IllegalArgumentException(
+                                                "insertIfAbsent is for owned accounts; the"
+                                                    + " operational chart is seeded by"
+                                                    + " migration"));
+        try {
+            Optional<LedgerAccount> inserted;
+            try (PreparedStatement insert =
+                    unitOfWork.prepareStatement(
+                            "INSERT INTO " + TABLE + " (" + COLUMNS
+                                    + ") VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)"
+                                    // The partial index's own predicate, so the conflict
+                                    // target infers ledger_account_one_per_owner_purpose_currency.
+                                    + " ON CONFLICT (owner_ref, purpose, currency)"
+                                    + " WHERE owner_ref IS NOT NULL DO NOTHING"
+                                    + " RETURNING " + COLUMNS)) {
+                bind(insert, fresh);
+                try (ResultSet returned = insert.executeQuery()) {
+                    // The row AS STORED: the column's microsecond instant, so the creator and a
+                    // converged caller render one identical account.
+                    inserted =
+                            returned.next()
+                                    ? Optional.of(rehydrate(returned))
+                                    : Optional.empty();
+                }
+            }
+            if (inserted.isPresent()) {
+                return new Creation(inserted.get(), true);
+            }
+            // The conflict waited for the winner's commit; this new statement sees its row.
+            return findOwned(unitOfWork, ownerRef, fresh.purpose(), fresh.currency())
+                    .map(existing -> new Creation(existing, false))
+                    .orElseThrow(
+                            () ->
+                                    new LedgerStorageException(
+                                            "ON CONFLICT DO NOTHING found a conflicting row but"
+                                                    + " no account is visible for the owner -"
+                                                    + " the caller is not READ COMMITTED"));
+        } catch (SQLException failure) {
+            throw new LedgerStorageException(
+                    DatabaseFailure.describe(
+                            "opening a ledger account if absent for owner " + ownerRef,
+                            failure));
+        }
+    }
+
     private static void insert(Connection unitOfWork, LedgerAccount account)
             throws SQLException {
         try (PreparedStatement insert =
                 unitOfWork.prepareStatement(
                         "INSERT INTO " + TABLE + " (" + COLUMNS
                                 + ") VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)")) {
-            insert.setObject(1, account.id().value());
-            insert.setString(2, account.accountType().name());
-            insert.setString(3, account.normalBalance().name());
-            insert.setString(4, account.currency().code());
-            insert.setString(5, account.ownerKind().name());
-            insert.setObject(6, account.ownerRef().orElse(null));
-            insert.setString(7, account.purpose().name());
-            insert.setString(8, account.glCode().orElse(null));
-            insert.setString(9, account.status().name());
-            insert.setTimestamp(10, Timestamp.from(account.createdAt()));
-            insert.setTimestamp(11, Timestamp.from(account.statusChangedAt()));
+            bind(insert, account);
             insert.executeUpdate();
         }
+    }
+
+    private static void bind(PreparedStatement insert, LedgerAccount account)
+            throws SQLException {
+        insert.setObject(1, account.id().value());
+        insert.setString(2, account.accountType().name());
+        insert.setString(3, account.normalBalance().name());
+        insert.setString(4, account.currency().code());
+        insert.setString(5, account.ownerKind().name());
+        insert.setObject(6, account.ownerRef().orElse(null));
+        insert.setString(7, account.purpose().name());
+        insert.setString(8, account.glCode().orElse(null));
+        insert.setString(9, account.status().name());
+        insert.setTimestamp(10, Timestamp.from(account.createdAt()));
+        insert.setTimestamp(11, Timestamp.from(account.statusChangedAt()));
     }
 
     @Override

@@ -982,16 +982,18 @@ class PaymentAuthorizationDatabaseTest {
         final LedgerAccountId wallet = LedgerAccountId.next(IDS);
 
         @Override
-        public Optional<Wallet> walletOwnedBy(Connection uow, UUID callerPartyId) {
+        public Optional<Wallet> walletOwnedBy(
+                Connection uow, UUID callerPartyId, CurrencyCode currency) {
             return callerPartyId.equals(party)
                     ? Optional.of(new Wallet(customerId, wallet, EUR))
                     : Optional.empty();
         }
 
         @Override
-        public Optional<Wallet> payerWalletOwnedBy(Connection uow, UUID callerPartyId) {
+        public Optional<Wallet> payerWalletOwnedBy(
+                Connection uow, UUID callerPartyId, CurrencyCode currency) {
             // The top-up wiring's identity: the payer's wallet IS the credit wallet.
-            return walletOwnedBy(uow, callerPartyId);
+            return walletOwnedBy(uow, callerPartyId, currency);
         }
 
         @Override

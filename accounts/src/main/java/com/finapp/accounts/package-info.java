@@ -18,11 +18,13 @@
  * and {@code AccountsModuleIsolationTest} pins the positive half so the asymmetry is asserted in
  * both directions rather than implied by one.
  *
- * <p><strong>Nothing is implemented yet.</strong> This module is the skeleton created by
- * {@code P3-TSK-011}: the boundary and the migrator-owned schema exist so that the first product
- * table lands inside an enforced boundary and under the right owner - the column-narrowed grant
- * {@code PHASE_3_PLAN.md} §8 plans for {@code customer_account} is only available that way.
- * {@code CustomerAccount} is {@code P3-TSK-012}; its audit actions arrive with the designs that
- * fix their meaning ({@code P2-TSK-005}'s precedent), not with this skeleton.
+ * <p><strong>What is built.</strong> The skeleton was {@code P3-TSK-011}'s; {@code CustomerAccount}
+ * and its opening are {@code P3-TSK-012}'s, the surface {@code P3-TSK-013}'s and the close
+ * {@code P3-TSK-014}'s. Since {@code P9-TSK-004} a wallet agreement holds one
+ * {@code CUSTOMER_WALLET} ledger account <em>per currency</em>: {@link WalletAccounts} is the one
+ * door that opens one (race-free, in the caller's transaction, announced once) and the one rule
+ * every flow resolves a wallet by (the asked currency, else the first-opened), and
+ * {@link AccountOpening#addCurrency} is the customer's act of adding a currency. <em>(This
+ * paragraph read "Nothing is implemented yet" from the skeleton until {@code P9-TSK-004}'s gate.)</em>
  */
 package com.finapp.accounts;

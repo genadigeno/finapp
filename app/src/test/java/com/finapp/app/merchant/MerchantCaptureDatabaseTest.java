@@ -1431,12 +1431,14 @@ class MerchantCaptureDatabaseTest {
             LedgerAccountId creditAccount, UUID customer) {
         return new PaymentParticipants<>() {
             @Override
-            public Optional<Wallet> walletOwnedBy(Connection uow, UUID callerPartyId) {
+            public Optional<Wallet> walletOwnedBy(
+                    Connection uow, UUID callerPartyId, CurrencyCode currency) {
                 return Optional.of(new Wallet(customer, creditAccount, EUR));
             }
 
             @Override
-            public Optional<Wallet> payerWalletOwnedBy(Connection uow, UUID callerPartyId) {
+            public Optional<Wallet> payerWalletOwnedBy(
+                    Connection uow, UUID callerPartyId, CurrencyCode currency) {
                 // A card-capture suite: the book instrument never resolves here.
                 return Optional.empty();
             }

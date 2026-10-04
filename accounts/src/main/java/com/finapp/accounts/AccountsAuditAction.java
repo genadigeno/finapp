@@ -50,6 +50,20 @@ public enum AccountsAuditAction implements AuditableAction {
             "accounts.AccountClosed",
             "A customer account product was closed; the agreement ended, the accounting history"
                     + " did not (INV-HIST-01).",
+            false),
+
+    /**
+     * A wallet currency was added to a customer's agreement (`P9-TSK-004`).
+     *
+     * <p>No reason required: the customer's own act on their own agreement, the opening's
+     * reasoning. Emitted by {@link AccountOpening#addCurrency} only when its insert created
+     * the wallet account — a converged repeat, or a racing loser handed the winner's row, is
+     * not a second act. The code matches the event every wallet opening publishes.
+     */
+    WALLET_CURRENCY_ADDED(
+            "accounts.WalletCurrencyAdded",
+            "A wallet currency was added to a customer account product; the record names the"
+                    + " account, the currency and the ledger account, never a balance.",
             false);
 
     private final String code;

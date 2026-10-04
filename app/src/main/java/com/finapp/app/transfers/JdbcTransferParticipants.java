@@ -4,16 +4,16 @@ import com.finapp.accounts.CustomerAccount;
 import com.finapp.accounts.CustomerAccountId;
 import com.finapp.accounts.CustomerAccountStatus;
 import com.finapp.accounts.CustomerAccountStore;
-import com.finapp.ledger.AccountPurpose;
+import com.finapp.accounts.WalletAccounts;
 import com.finapp.ledger.LedgerAccount;
 import com.finapp.ledger.LedgerAccountStatus;
 import com.finapp.ledger.LedgerAccountStore;
 import com.finapp.party.CustomerStatus;
 import com.finapp.party.PartyId;
 import com.finapp.party.PartyStore;
+import com.finapp.sharedkernel.money.CurrencyCode;
 import com.finapp.transfers.TransferParticipants;
 import java.sql.Connection;
-import java.util.List;
 import java.util.Objects;
 import java.util.Optional;
 import java.util.UUID;
@@ -47,10 +47,14 @@ public final class JdbcTransferParticipants implements TransferParticipants<Conn
 
     @Override
     public Optional<Source> sourceOwnedBy(
-            Connection unitOfWork, UUID callerPartyId, UUID sourceProductRef) {
+            Connection unitOfWork,
+            UUID callerPartyId,
+            UUID sourceProductRef,
+            CurrencyCode currency) {
         Objects.requireNonNull(unitOfWork, "unitOfWork must not be null");
         Objects.requireNonNull(callerPartyId, "callerPartyId must not be null");
         Objects.requireNonNull(sourceProductRef, "sourceProductRef must not be null");
+        Objects.requireNonNull(currency, "currency must not be null");
         return parties
                 .findLiveCustomerFor(unitOfWork, PartyId.of(callerPartyId))
                 .filter(customer -> customer.status() == CustomerStatus.ACTIVE)
@@ -62,7 +66,7 @@ public final class JdbcTransferParticipants implements TransferParticipants<Conn
                                         customer.id().value()))
                 .flatMap(
                         product ->
-                                walletOf(unitOfWork, product.id().value())
+                                walletOf(unitOfWork, product.id().value(), currency)
                                         .map(
                                                 wallet ->
                                                         new Source(
@@ -75,18 +79,33 @@ public final class JdbcTransferParticipants implements TransferParticipants<Conn
     }
 
     @Override
-    public Optional<Side> destination(Connection unitOfWork, UUID destinationProductRef) {
+    public Optional<Side> destination(
+            Connection unitOfWork, UUID destinationProductRef, CurrencyCode currency) {
         Objects.requireNonNull(unitOfWork, "unitOfWork must not be null");
         Objects.requireNonNull(destinationProductRef, "destinationProductRef must not be null");
-        return walletOf(unitOfWork, destinationProductRef).map(wallet -> side(wallet, true));
+        Objects.requireNonNull(currency, "currency must not be null");
+        return walletOf(unitOfWork, destinationProductRef, currency)
+                .map(wallet -> side(wallet, true));
     }
 
-    /** The product's single wallet today; multi-currency products are Phase 9's seam. */
-    private Optional<LedgerAccount> walletOf(Connection unitOfWork, UUID productRef) {
-        List<LedgerAccount> owned = ledgerAccounts.findAllOwned(unitOfWork, productRef);
-        return owned.stream()
-                .filter(account -> account.purpose() == AccountPurpose.CUSTOMER_WALLET)
-                .findFirst();
+    @Override
+    public boolean destinationExists(Connection unitOfWork, UUID destinationProductRef) {
+        Objects.requireNonNull(unitOfWork, "unitOfWork must not be null");
+        Objects.requireNonNull(destinationProductRef, "destinationProductRef must not be null");
+        return WalletAccounts.firstOpened(
+                        ledgerAccounts.findAllOwned(unitOfWork, destinationProductRef))
+                .isPresent();
+    }
+
+    /**
+     * The product's wallet in {@code currency}, else its first-opened wallet (`P9-TSK-004`):
+     * the one resolution rule, {@link WalletAccounts#resolve}, so no flow picks among a
+     * multi-currency product's wallets by accident.
+     */
+    private Optional<LedgerAccount> walletOf(
+            Connection unitOfWork, UUID productRef, CurrencyCode currency) {
+        return WalletAccounts.resolve(
+                ledgerAccounts.findAllOwned(unitOfWork, productRef), currency);
     }
 
     private static Side side(LedgerAccount wallet, boolean productActive) {

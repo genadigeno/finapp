@@ -222,6 +222,15 @@ class OwnershipIsScopedTest {
                                         + " session-derived customer: a stranger's close finds"
                                         + " nothing to lock.")),
                     Map.entry(
+                            "com.finapp.accounts.JdbcCustomerAccountStore.lockOwnedForShare",
+                            new Entry(
+                                    Scope.OWNER_SCOPED,
+                                    "POST /v1/me/accounts/{id}/currencies - findOwnedBy's"
+                                        + " statement plus FOR SHARE, the wallet openers' rank"
+                                        + " beneath the close (P9-TSK-004). Same ownership"
+                                        + " predicate, same session-derived customer: a"
+                                        + " stranger's addition finds nothing to lock.")),
+                    Map.entry(
                             "com.finapp.accounts.JdbcCustomerAccountStore.moveStatus",
                             new Entry(
                                     Scope.AUTHORITATIVE_ID,
@@ -2378,7 +2387,11 @@ class OwnershipIsScopedTest {
                     Map.entry(
                             "com.finapp.accounts.JdbcCustomerAccountStore.lockOwnedBy",
                             "com.finapp.app.domain.AccountEndpointDatabaseTest"
-                            + ".closingEndToEnd"));
+                            + ".closingEndToEnd"),
+                    Map.entry(
+                            "com.finapp.accounts.JdbcCustomerAccountStore.lockOwnedForShare",
+                            "com.finapp.app.domain.AccountEndpointDatabaseTest"
+                            + ".addingACurrencyOverHttp"));
 
     /**
      * The identity schema's owner column. (This said "one name, because one module owns every

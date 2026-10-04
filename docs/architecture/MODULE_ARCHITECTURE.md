@@ -337,7 +337,7 @@ read "modules from Phase 1 onward do not exist yet" until the Phase 6 review, `P
 ### `accounts` — Phase 3
 - **Responsibility:** the customer-facing account and wallet *product* — its lifecycle and status, not its money.
 - **Owns:** Customer Account, Wallet, account product lifecycle and status.
-- **Phase 9** *(planned by the Phase 8 → 9 transition, ADR-0076, D28; nothing built yet)*: a wallet product holds n `CUSTOMER_WALLET` ledger accounts, one per currency, and every wallet resolver is keyed by currency; the add-a-currency door (`POST /v1/me/accounts/{id}/currencies`, keyed) and open-if-absent in the caller's transaction — the ledger's `(owner_ref, CUSTOMER_WALLET, currency)` unique under `INSERT … ON CONFLICT DO NOTHING`, then a re-read, so ten racing openers converge on one account and one `accounts.WalletCurrencyAdded`, written by the act whose insert returned the row; balances answer one per currency, never summed. Built by `P9-TSK-004`.
+- **Phase 9** *(planned by the Phase 8 → 9 transition, ADR-0076, D28; built by `P9-TSK-004`)*: a wallet product holds n `CUSTOMER_WALLET` ledger accounts, one per currency, and every wallet resolver is keyed by currency (`WalletAccounts.resolve` — the wallet in the asked currency, else the first-opened for the caller's currency judgement to refuse; `WalletsAreResolvedByCurrencyTest` refuses a `findFirst()` pick); a wallet opener reads the agreement `FOR SHARE`, so it serialises with a close; the add-a-currency door (`POST /v1/me/accounts/{id}/currencies`, keyed) and open-if-absent in the caller's transaction — the ledger's `(owner_ref, CUSTOMER_WALLET, currency)` unique under `INSERT … ON CONFLICT DO NOTHING`, then a re-read, so ten racing openers converge on one account and one `accounts.WalletCurrencyAdded`, written by the act whose insert returned the row; balances answer one per currency, never summed. Built by `P9-TSK-004`.
 - **Transaction:** own. Requests ledger postings for financial effects; does not write them.
 - **Consistency:** account status strong. Balance is read from `ledger` and never stored here.
 - **APIs:** open, close, freeze, query; balance query delegating to `ledger`.
@@ -704,6 +704,14 @@ counts, ages and verdicts, so it may not depend on `Money` or `MoneyColumns` - t
 amount travels in. A `CurrencyCode` stays permitted, since a currency is a tag value. The
 known edge: a store method returning a monetary `long` passes, which is why each exemption's
 argument names what it counts. *(ArchUnit: `noExemptClassDependsOnMoney`)*
+
+**Wallets are resolved by currency** (ADR-0076 §6, `P9-TSK-004`). A product holds one
+`CUSTOMER_WALLET` per currency, so no production method that reads a product's owned accounts
+(`LedgerAccountStore.findAllOwned`/`lockOwnedForUpdate`) or names `CUSTOMER_WALLET` may pick
+one with `Stream.findFirst()`/`findAny()`; the one rule is `WalletAccounts.resolve`. Its anchor is
+proven real at the resolvers, and planted picks are refused in-suite. The stated limit: a pick
+split across two methods is not seen. *(ArchUnit: `noWalletIsPickedByFindFirst`, and its
+non-vacuity guard `theAnchorIsReal`)*
 
 **Coverage guard.** Both rule suites derive the set of modules they must have analysed from
 the classpath (`ProductionModules`), because an ArchUnit rule is vacuously satisfied over

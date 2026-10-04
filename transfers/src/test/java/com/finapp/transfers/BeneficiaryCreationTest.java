@@ -85,13 +85,22 @@ class BeneficiaryCreationTest {
         return new TransferParticipants<>() {
             @Override
             public Optional<Source> sourceOwnedBy(
-                    Object unitOfWork, UUID callerPartyId, UUID sourceProductRef) {
+                    Object unitOfWork,
+                    UUID callerPartyId,
+                    UUID sourceProductRef,
+                    CurrencyCode currency) {
                 throw new UnsupportedOperationException("not this command's question");
             }
 
             @Override
-            public Optional<Side> destination(Object unitOfWork, UUID destinationProductRef) {
-                return destination;
+            public Optional<Side> destination(
+                    Object unitOfWork, UUID destinationProductRef, CurrencyCode currency) {
+                throw new UnsupportedOperationException("a beneficiary asks about existence");
+            }
+
+            @Override
+            public boolean destinationExists(Object unitOfWork, UUID destinationProductRef) {
+                return destination.isPresent();
             }
         };
     }

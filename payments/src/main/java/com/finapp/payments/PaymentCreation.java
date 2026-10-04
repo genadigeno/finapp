@@ -153,7 +153,8 @@ public final class PaymentCreation {
         // refusal here writes nothing and consumes no key.
         PaymentParticipants.Wallet wallet =
                 participants
-                        .walletOwnedBy(unitOfWork, command.callerPartyId())
+                        .walletOwnedBy(
+                                unitOfWork, command.callerPartyId(), command.amount().currency())
                         .orElseThrow(NoWalletForPaymentException::new);
         Optional<PaymentParticipants.Wallet> payerWallet = Optional.empty();
         if (command.walletInstrument()) {
@@ -165,7 +166,10 @@ public final class PaymentCreation {
             payerWallet =
                     Optional.of(
                             participants
-                                    .payerWalletOwnedBy(unitOfWork, command.callerPartyId())
+                                    .payerWalletOwnedBy(
+                                            unitOfWork,
+                                            command.callerPartyId(),
+                                            command.amount().currency())
                                     .orElseThrow(NoWalletForPaymentException::new));
             if (!command.amount().currency().equals(payerWallet.get().currency())) {
                 throw new PaymentCurrencyMismatchException(

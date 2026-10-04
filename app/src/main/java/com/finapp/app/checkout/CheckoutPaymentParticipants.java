@@ -60,12 +60,16 @@ public final class CheckoutPaymentParticipants implements PaymentParticipants<Co
      * The merchant's payable, read authoritatively.
      *
      * <p>{@code callerPartyId} is deliberately unused: the account this capture credits does
-     * not depend on who is paying. Empty when the merchant has no payable in this currency —
+     * not depend on who is paying. {@code requested} is too: the credit side is the payable in
+     * the OFFER's currency, pinned at construction from the session, and the create command
+     * judges the amount against it (`P9-TSK-004`'s keyed resolution, already true here by
+     * construction). Empty when the merchant has no payable in this currency —
      * the one empty answer the port's contract promises, which the creating flow turns into
      * its own refusal rather than an oracle over merchants.
      */
     @Override
-    public Optional<Wallet> walletOwnedBy(Connection unitOfWork, UUID callerPartyId) {
+    public Optional<Wallet> walletOwnedBy(
+            Connection unitOfWork, UUID callerPartyId, CurrencyCode requested) {
         return ledgerAccounts
                 .findOwned(unitOfWork, merchantRef, AccountPurpose.MERCHANT_PAYABLE, currency)
                 .map(this::asDestination);
@@ -90,8 +94,9 @@ public final class CheckoutPaymentParticipants implements PaymentParticipants<Co
      * CREDIT side, and the book instrument's debit side is not it.
      */
     @Override
-    public Optional<Wallet> payerWalletOwnedBy(Connection unitOfWork, UUID callerPartyId) {
-        return instruments.payerWalletOwnedBy(unitOfWork, callerPartyId);
+    public Optional<Wallet> payerWalletOwnedBy(
+            Connection unitOfWork, UUID callerPartyId, CurrencyCode currency) {
+        return instruments.payerWalletOwnedBy(unitOfWork, callerPartyId, currency);
     }
 
     /** Delegated unchanged: the instrument must still be the paying customer's own. */

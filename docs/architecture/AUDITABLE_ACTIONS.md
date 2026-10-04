@@ -271,6 +271,7 @@ so the adjustment's reason regime cannot be skipped by a careless caller.
 |---|---|---|
 | `accounts.AccountOpened` | No | A customer account product was opened; the record names the account, the product type and the customer, never a balance. |
 | `accounts.AccountClosed` | No | A customer account product was closed; the agreement ended, the accounting history did not (INV-HIST-01). |
+| `accounts.WalletCurrencyAdded` | No | A wallet currency was added to a customer account product; the record names the account, the currency and the ledger account, never a balance. |
 
 Declared with the aggregate whose design fixes its meaning (`P3-TSK-012`) rather than with the
 module skeleton — `P3-TSK-011`'s recorded decision, the `kyc.CaseOpened`/`P2-TSK-005`
@@ -285,6 +286,13 @@ a person's exit from their own agreement, and a demanded justification at that m
 pressure applied where none may exist; the control is the zero-balance precondition. Emitted by
 the closing call only — a converged repeat is not a second act. Suspension still has no
 producer this phase.
+`accounts.WalletCurrencyAdded` arrived with `P9-TSK-004` (ADR-0076 §6): the add-currency door's
+act, no reason for the opening's own argument. Emitted by `AccountOpening.addCurrency` only when
+**its** insert created the wallet account — a converged repeat, or a racing loser handed the
+winner's row, is not a second act. The code matches the event every wallet opening publishes
+(`WalletAccounts.openIfAbsent` writes it on every open path, the first currency at opening
+included), but the record is the door's alone: the conversion and return paths that will reuse
+the open audit their own acts.
 
 ### `transfers` — `TransfersAuditAction`
 

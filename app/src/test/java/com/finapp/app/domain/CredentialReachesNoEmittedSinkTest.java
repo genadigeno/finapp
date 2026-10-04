@@ -323,6 +323,11 @@ class CredentialReachesNoEmittedSinkTest {
                         // classified in accounts.customer_account's register rows, not in
                         // this vocabulary.
                         "AccountOpenRequest",
+                        // P9-TSK-004. Carries an ISO currency code - no secret and no PII; here
+                        // because the set is every schema REACHABLE from a request body. The
+                        // wallet it opens is a ledger account, classified in ledger_account's
+                        // register rows.
+                        "AccountCurrencyRequest",
                         // P4-TSK-007. Carries a display name (RESTRICTED-PII at the register,
                         // never a secret) and a destination account identifier - here because
                         // the set is every schema REACHABLE from a request body. What creating

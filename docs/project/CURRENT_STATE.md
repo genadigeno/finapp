@@ -432,9 +432,9 @@ cross-border payments are holds and corridor acceptances, beneficiary screening 
 returns credited in the currency received; clearings are keyed by counterparty; callbacks are
 hints; reconciliation never converts currency and gains causes, never types. Ten new invariants
 and thirteen restated take the platform to **120**. Thirty backlog items across nine milestones
-(M9.1–M9.9) plus `X-TSK-010`…`-012`. **3 of 30 items complete** (M9.1 at 3 of 4): the modules and floors
-(`P9-TSK-001`), the conversion arithmetic (`P9-TSK-002`) and JPY and BHD postable (`P9-TSK-003`); next
-**`P9-TSK-004` — Multi-currency wallets** — `READY`
+(M9.1–M9.9) plus `X-TSK-010`…`-012`. **4 of 30 items complete** (M9.1 closed at 4 of 4): the modules and floors
+(`P9-TSK-001`), the conversion arithmetic (`P9-TSK-002`), JPY and BHD postable (`P9-TSK-003`) and multi-currency
+wallets (`P9-TSK-004`); next **`P9-TSK-005` — Reference rates** — `READY`
 ([§Current Task](#current-task) is kept current).
 
 ## Current Milestone
@@ -450,57 +450,64 @@ since M0.1". Moved, not edited.)*
 
 ## Current Task
 
-**`P9-TSK-004` — Multi-currency wallets** — `READY`: marked by
-`P9-TSK-003`'s completion gate (2026-10-04). **Not started.**
+**`P9-TSK-005` — Reference rates** — `READY`: marked by
+`P9-TSK-004`'s completion gate (2026-10-04); M9.2 opens with it. **Not started.**
 
 ### Just completed
 
-**`P9-TSK-003` — JPY and BHD become postable** — `COMPLETE` (2026-10-04). **M9.1 at 3 of 4: a
-zero- and a three-minor-unit currency post on every flow, and Phase 6's deferral is paid**
-(ADR-0074 §9, D27; owner decision O6; `INV-ACC-01`, `INV-LED-01`, `INV-MON-03`, `INV-MON-05`).
-`SupportedCurrencies.ALL` holds five; ledger `V019` seeds the thirteen operational purposes in JPY
-and BHD (26 rows, hand-minted UUIDv7 stamped `2026-09-27T12:00:00Z`, below the ceiling, so every
-seed still sorts before every runtime id); the simulated bank statement gains `SIMBANK-JPY-01`
-and `SIMBANK-BHD-01`. Account opening, merchant onboarding, the eager per-currency gauges and the
-position proof follow the supported set already - **the map found ONE hard-coded currency list
-in production**, the statement's references, and no currency `CHECK` anywhere. **Two scale
-guards, the build's find**: `FeeCheck` prices in raw minor units and never compared a schedule's
-scale with the fee's, so a JPY schedule entered at scale 2 would have read its fixed part a
-hundred times too large, silently - now `RuleSetProposal.validate` refuses a schedule whose scale
-is not its currency's minor units (the door is its only writer: no migration seeds a rule set,
-D26) and `FeeCheck` refuses a scale disagreement loud, contained, never priced. **The v2
-successors** of the four sources' rule sets, carrying O6's JPY and BHD thresholds, fee schedules
-and PSP fee tolerances, are activated through the existing four-eyes door - a fixture
-(`JpyAndBhdRuleSets`, two actors, convergent) and the platform's first operations runbook entry
-(`docs/architecture/OPERATIONS_RUNBOOK.md` §1: activate before the first JPY/BHD traffic, and
-why). **End to end** (`JpyAndBhdPostableDatabaseTest`, its own container): a JPY card pay-in
-through capture (the merchant fee in yen), the PSP report (its `PROCESSING_FEE` CHECKED
-`225:225:3` against the JPY schedule, no break), the bank statement on `SIMBANK-JPY-01` and
-`CASH_CONFIRMED`; a BHD scheme fee and a BHD bank fee each CHECKED against their BHD rows; a BHD
-merchant fee in fils; decisions before activation replaying `IDENTICAL` under their pinned v1,
-after it under v2; and the before-activation behaviour pinned (a zero-priced JPY fee raises
-`FEE_MISMATCH` for its whole 190 yen - why the runbook orders the activation first). The report
-generators render at each currency's scale, EUR/GBP/USD output pinned byte for byte. **Phase 6's
-deferral paid**: the ledger-level fee batch runs all five currencies (600 assessments, books
-exact, trial balance zero per currency) - and its debt row's wording corrected: the fee engine
-never assumed two decimals; the batch test could only run what the chart held. "Routing and rail
-ceilings at scale 0/3": none is declared, and the existing scale guards refuse a mis-scaled one -
-nothing to change. **EIGHT PROBES, EIGHT CAUGHT**, every restore byte-identical (sha256-verified;
-`MUTATION_TESTING.md` §2 +3 rows): `V019` seeding a residual account in the wrong currency; the
-supported set claiming a currency with no chart; the door admitting a mis-scaled schedule; `FeeCheck`
-pricing across scales; the JPY statement reference dropped; the fixture omitting the JPY fee row;
-a BHD schedule proposed at scale 2; the replay reading the active version. **Multi-instance PASS**
-- no new contended state. **NEXT**: `P9-TSK-004` `READY`. **Verified** by fresh runs - ledger 86
-and reconciliation 176 hermetic; reconciliation database 230, settlement database 88, the
-classification guard 5; the new suite alone 6 (three times), the cash, capture, late-evidence,
-pull, readmission and routes suites each alone, the twelve proof-group suites in one container 64
-across 12, the storm alone 1; the fleet-wide hermetic tier 2309 across 370 suites and 18 modules; the architecture tier
-143 across 23, ALL 0 FAILURES - the fleet-wide database and kafka tiers deliberately skipped on the
-owner's instruction.
+**`P9-TSK-004` — Multi-currency wallets** — `COMPLETE` (2026-10-04). **M9.1 CLOSES AT 4 OF 4:
+one wallet product holds n currencies, and every resolver is keyed by currency** (ADR-0076 §6,
+D28; `INV-MON-04`, `INV-BAL-04`, `INV-KYC-05` unchanged; `INV-CON-01`, `INV-IDEM-01`). **The add-currency
+act**: `POST /v1/me/accounts/{id}/currencies`, keyed (`accounts.add-currency`, the fingerprint
+binding party, agreement and currency), `201` for the creation and the converged repeat alike,
+`422 accounts.UnsupportedCurrency`, one `404` for unknown, not-yours and malformed, the gate's
+`409 accounts.AccountOpeningRefused`, and the new `409 accounts.AccountNotActive` for the caller's
+own closed agreement; `AccountOpening.addCurrency` audits `accounts.WalletCurrencyAdded` only when
+its insert created the wallet. **The one door**: `accounts.WalletAccounts.openIfAbsent` reads the
+agreement `FOR SHARE` with ownership in the statement, then the ledger's new `insertIfAbsent`
+(`INSERT … ON CONFLICT (owner_ref, purpose, currency) WHERE owner_ref IS NOT NULL DO NOTHING
+RETURNING` the row, then a re-read) - a racing loser waits for the winner and never aborts, and the
+call whose insert returned the row writes `accounts.WalletCurrencyAdded`, once; the first currency
+at opening goes through the same door, so every wallet account is announced exactly once.
+**The design's find, a race the plan did not name**: without the agreement lock an add-currency
+racing a close strands an `ACTIVE` wallet under a `CLOSED` agreement - now the opener's
+`FOR SHARE` and the close's `FOR UPDATE` serialise both ways, each order observed Lock-waiting.
+**Every resolver keyed by currency**: `TransferParticipants.sourceOwnedBy`/`destination`,
+`PaymentParticipants.walletOwnedBy`/`payerWalletOwnedBy` (pay-in, withdrawal, wallet payment) and
+checkout's payer side take the currency and resolve through `WalletAccounts.resolve` - the wallet
+in the asked currency, else the first-opened by `(created_at, id)`, so each flow's existing
+currency judgement refuses with the real account (a transfer's committed
+`FAILED(CURRENCY_MISMATCH)` row must carry real accounts) and `CURRENCY_MISMATCH` means exactly
+"a side holds no wallet in this currency"; the beneficiary asks `destinationExists`; the
+withdrawal read resolves its owner through the party projection, not a wallet. Before this task
+every resolver took `findFirst()` - a GBP flow on a USD-then-GBP product resolved the USD wallet.
+`WalletsAreResolvedByCurrencyTest` (bytecode, planted picks caught in-suite) keeps it out.
+**Balances**: `GET …/{id}/balances` one line per currency, never summed; `/balance` keeps its
+shape and answers the first-opened currency. The OpenAPI baseline +133 lines, zero removed or
+changed. **THE BUILD'S FIND, FIXED**: the creating call rendered the in-memory nanosecond
+`created_at` while a converged one read Postgres's microseconds - `insertIfAbsent` now returns the
+row as stored. **THE GATE'S FINDS, EACH FIXED** (the fleet-wide hermetic run): four registers the
+build had not moved - the published-routes declaration, `MODULE_ARCHITECTURE.md` §6 for the new
+rule and its anchor guard, the request-schema vocabulary, and the ownership register, where
+`lockOwnedForShare` was unclassified and a shared lock helper had moved `lockOwnedBy`'s
+`customer_id = ?` out of the statement the guard reads (each lock method now spells its own);
+and two stale texts - the `accounts` package-info still saying "Nothing is implemented yet", and
+this document's own history pointer, four archivals behind.
+**SIX PROBES, SIX CAUGHT**, every restore byte-identical (sha256-verified;
+`MUTATION_TESTING.md` §2 +4 rows): a plain `INSERT` (losers abort); every opener announcing; the
+agreement read without a lock (the close race); currency-blind resolution; the `findFirst()` pick
+restored in the transfer resolver; the one-line balance answering every currency.
+**Multi-instance PASS** - ten openers of one currency, five acts and five door calls, make one
+account, ten commits, one event, at most one record (counted, `WalletOpenIfAbsentRaceDatabaseTest`).
+**NEXT**: `P9-TSK-005` `READY`. **Verified** by fresh runs - the wallet race 5, the flows 3, the
+affected database suites 300 across 28, the proof group in one container 64 across 12 (the Phase 7
+storm inside it) and the dispute battery; the fleet-wide hermetic tier 2312 across 371 suites and 18 modules; the
+architecture tier 146 across 24; the document guards 138 across 25 (inside that run, after the records landed), ALL 0 FAILURES - the fleet-wide
+database and kafka tiers deliberately skipped on the owner's instruction.
 
 ### Previously
 
-The per-task completion records — 190 blocks, from `P8-TST-002` back to project initiation
+The per-task completion records — 195 blocks, from `P9-TSK-003` back to project initiation
 (`X-TSK-004` cross-cutting, standing between `P7-TSK-001` and the Phase 6 → 7 transition) —
 are archived in [`history/TASK_HISTORY.md`](history/TASK_HISTORY.md).
 *(This pointer read "130 blocks, from `P6-TSK-005`" through four archivals — corrected by
@@ -508,7 +515,9 @@ are archived in [`history/TASK_HISTORY.md`](history/TASK_HISTORY.md).
 by `P7-TSK-007`'s gate: the stale-second-copy class, this time in the pointer whose last
 correction note was sitting right beside the staleness. It then read "183 blocks, from
 `P8-TSK-019`" through `P8-TSK-020`'s and `P8-TSK-021`'s archivals — corrected by
-`P8-TSK-022`'s gate, the same class a third time.)*
+`P8-TSK-022`'s gate, the same class a third time. It then read "190 blocks, from `P8-TST-002`"
+through the Phase 8 exit review, the transition and `P9-TSK-001`…`-003`, while
+`TASK_HISTORY.md`'s own header moved on - corrected by `P9-TSK-004`'s gate, a fourth time.)*
 Each records what the task delivered, the mutations performed, and the findings made on the way.
 
 ---
@@ -956,8 +965,8 @@ Resolved during initiation:
 
 ## Next Task
 
-**`P9-TSK-004` — Multi-currency wallets** — `READY` (the Current Task), marked by
-`P9-TSK-003`'s completion gate.
+**`P9-TSK-005` — Reference rates** — `READY` (the Current Task), marked by
+`P9-TSK-004`'s completion gate.
 *(This section read "`P8-TSK-009` — `READY`" from `P8-TSK-008`'s gate until
 `P8-TSK-013`'s record found it — the stale-second-copy class, in the section whose
 whole job is to mirror.)*
