@@ -169,7 +169,21 @@ public enum RoleName {
      * the other populations' permissions and they hold none of this, asserted pairwise and
      * over HTTP in both directions ({@code INV-AUD-03}).
      */
-    RECONCILIATION_CONTROLLER(EnumSet.of(PermissionName.RECONCILIATION_ADMINISTER));
+    RECONCILIATION_CONTROLLER(EnumSet.of(PermissionName.RECONCILIATION_ADMINISTER)),
+
+    /**
+     * Sets FX prices and availability (`P9-TSK-007`, ADR-0075 §7): holds
+     * {@link PermissionName#FX_ADMINISTER} - pricing policy versions under four eyes, and the
+     * pair and provider kill switch.
+     *
+     * <p><strong>A seventh role, because this IS a distinct trust decision</strong>: the margin
+     * every conversion freezes and posts is the platform's revenue policy, which is neither
+     * operating the money ({@link #LEDGER_OPERATOR}, which will reverse trades), nor judging
+     * the outside world's account of it, nor administering identities. Holds none of the
+     * other populations' permissions and they hold none of this, asserted pairwise and over
+     * HTTP in both directions ({@code INV-AUD-03}).
+     */
+    FX_CONTROLLER(EnumSet.of(PermissionName.FX_ADMINISTER));
 
     private final Set<PermissionName> permissions;
 

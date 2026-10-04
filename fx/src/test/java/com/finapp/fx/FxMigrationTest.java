@@ -113,7 +113,9 @@ class FxMigrationTest {
         assertThat(tablesIn(SCHEMA))
                 .containsExactlyInAnyOrder(
                         "flyway_schema_history", "rate_fetch_permit", "rate_snapshot",
-                        "fx_provider_evidence");
+                        "fx_provider_evidence", "pricing_policy_version", "pricing_policy_event",
+                        "pricing_pair", "availability_enable_request", "pair_availability",
+                        "provider_availability");
 
         assertThatExceptionOfType(SQLException.class)
                 .isThrownBy(() -> asApplication(

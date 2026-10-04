@@ -149,6 +149,18 @@ class RoleNameTest {
     }
 
     @Test
+    @DisplayName("FX_CONTROLLER grants exactly FX_ADMINISTER")
+    void fxControllerGrantsExactlyOne() {
+        // The seventh population (P9-TSK-007, ADR-0075 section 7): the margin every conversion
+        // freezes and posts is revenue policy, so whoever sets it must not also be able to
+        // reverse trades (LEDGER_OPERATOR's, P9-TSK-025) or clear screenings - the exact set is
+        // what keeps the role from quietly gaining either.
+        assertThat(RoleName.FX_CONTROLLER.permissions())
+                .as("setting prices is not operating, reconciling or reversing the money")
+                .containsExactlyInAnyOrder(PermissionName.FX_ADMINISTER);
+    }
+
+    @Test
     @DisplayName("every pair of grants is disjoint, so the populations really are separate")
     void theGrantsArePairwiseDisjoint() {
         // No exact-set assertion alone says the SETS do not overlap - each pins its own role.
@@ -207,6 +219,6 @@ class RoleNameTest {
                 .isEqualTo(
                         "'ADMINISTRATOR', 'KYC_REVIEWER', 'LEDGER_OPERATOR',"
                                 + " 'MERCHANT_ADMINISTRATOR', 'RECONCILIATION_OPERATOR',"
-                                + " 'RECONCILIATION_CONTROLLER'");
+                                + " 'RECONCILIATION_CONTROLLER', 'FX_CONTROLLER'");
     }
 }

@@ -416,6 +416,15 @@ class CredentialReachesNoEmittedSinkTest {
                         "RuleSetDecisionRequest",
                         "ReprocessingRequest",
                         "RunRequeueRequest",
+                        // P9-TSK-007: the FX controller's doors. No secret in any of them. A
+                        // proposal is policy - pairs, provider codes, margins and bounds as
+                        // decimal strings, in a nested schema this list does not name - with a
+                        // REASON; the decisions and the kill switch carry a REASON (and a flag).
+                        // Every reason is screened for card-number and account shapes at the
+                        // domain and by fx V004's CHECKs.
+                        "PricingPolicyRequest",
+                        "FxDecisionRequest",
+                        "AvailabilityRequest",
                         // P8-TSK-014: the investigator's case file. No secret in any of them.
                         // The assignee is an identity identifier; the classification carries a
                         // type and a REASON (screened like a note for card-number and account

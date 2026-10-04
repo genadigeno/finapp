@@ -250,6 +250,13 @@ four-eyes, no seed), `INV-HIST-04` (pricing policy as a versioned, pinned subjec
   `fx V003` encrypted provider evidence.
 - `P9-TSK-007`: identity `V019` (`FX_CONTROLLER`, `FX_ADMINISTER`); `fx V004` (the pricing
   policy, pair and provider availability, the enable proposal); v1 activated four-eyes per O7.
+- *As built (`P9-TSK-007`):* the open-quote cap lives on the version, not the pair; the band is
+  stored as a fraction (`0.015` is 150 bps); availability is an append-only FACT per change, not
+  a machine - no fact means available, a disable is one person at once, an enabling fact must
+  name an APPROVED request for exactly its subject (trigger, every writer) - its writers ordered
+  by advisory namespace `7`; every reason column refuses a card-number or account-identifier
+  shape (`fx V004`'s twin of `InstrumentShapes`, the settlement `V012` precedent). v1 is proposed
+  through the API by two controllers (OPERATIONS_RUNBOOK §2), never seeded.
 - `P9-TSK-008`: `fx V005` (the quote with its `CHECK`s, freeze, edge and cap triggers;
   `quote_event`; `quote_request`; `quote_sourcing_step`); creation, read, cancel;
   `FxQuoteExpirySchedule` and lazy expiry; `RatesAreNeverClientSuppliedTest` and the OpenAPI

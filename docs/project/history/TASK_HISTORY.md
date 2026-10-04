@@ -1,6 +1,6 @@
 # Task History
 
-The per-task completion records that accumulated behind `## Current Task` - 198 "Previously" blocks, newest first, from `P9-TSK-005` back to project initiation. *(`X-TSK-005` is cross-cutting and completed after `P7-TSK-014` and before `P7-TSK-015`, so it stands between them; its record came in with its branch's merge.)* *(`X-TSK-004` is cross-cutting and completed after the Phase 6 → 7 transition, so it stands second, between `P7-TSK-001` and the transition's record - the transition's block moved here by `P7-TSK-001`'s gate, exactly as an earlier form of this note said it would.)*
+The per-task completion records that accumulated behind `## Current Task` - 199 "Previously" blocks, newest first, from `P9-TSK-006` back to project initiation. *(`X-TSK-005` is cross-cutting and completed after `P7-TSK-014` and before `P7-TSK-015`, so it stands between them; its record came in with its branch's merge.)* *(`X-TSK-004` is cross-cutting and completed after the Phase 6 → 7 transition, so it stands second, between `P7-TSK-001` and the transition's record - the transition's block moved here by `P7-TSK-001`'s gate, exactly as an earlier form of this note said it would.)*
 
 **Archive.** These records were moved verbatim out of
 [`CURRENT_STATE.md`](../CURRENT_STATE.md) on 2026-09-20 so that the canonical description of
@@ -12,6 +12,58 @@ Current state: [`CURRENT_STATE.md`](../CURRENT_STATE.md) ·
 Authoritative backlog: [`BACKLOG.md`](../BACKLOG.md)
 
 ---
+
+### Previously
+
+**`P9-TSK-006` — The FX provider port and simulator** — `COMPLETE` (2026-10-04). **M9.2 at 2 of
+4: a provider-neutral FX boundary with an honest, fault-injectable simulator** (ADR-0075 §1-2,
+ADR-0077 §4, ADR-0008; `INV-PAY-03`, `INV-PAY-04`, `INV-HIST-02`). **The port**: `fx.FxProvider` -
+`firmQuote` (information, so failover is safe), `execute` under our client reference `T` (the
+money act: a lost response is never a "no") and `inquire(T)` - answering sealed verdicts
+(`Quoted`/`Declined`/`NothingSent`/`Indeterminate`; `Executed`/`Rejected`/`Unrecognised`/
+`NothingSent`/`Indeterminate`) carrying exact `ExchangeRate`s and `Money`, and the received bytes
+as `Evidence` that renders as its length only; `FxProviderDeclaration` (code, version, ordered
+pairs, settled currencies, maximum validity) and the `FxProviders` directory (one adapter per
+declared code). **The adapter**, `fx-sim-a` in `app`: our reference in `Idempotency-Key` and the
+bearer `FINAPP_FX_PROVIDER_KEY` (`ConfinedCredentialVariablesTest`'s eighteenth row), the URL behind
+`ProviderTransportGuard`, amounts and rates as JSON strings read by pattern, and a **total mapping**:
+only a refused connection is `NothingSent`; a timeout, a broken transport, any non-200, a body
+empty or past 1 MiB, an unknown status or reason, a missing field and a rate or amount more
+precise than its type (`OVER_PRECISE` - refused, never rounded) are `Indeterminate`; no default
+anywhere is a success; its vocabulary confined to the one file (`FxProviderVocabularyIsConfinedTest`,
+planted leaks caught). **Evidence**: `fx V003`'s append-only `fx_provider_evidence`, AES-256-GCM
+under `FINAPP_FX_EVIDENCE_KEY` (the nineteenth row), keyed by our reference and the provider
+code, the cipher's arithmetic held as `CHECK`s; **named with its domain** - not the plan's
+`provider_evidence` - because the classification register keys on `table.column` and
+`payments.provider_evidence` exists (the `merchant.payout_evidence` precedent), recorded in the
+plan and ADR-0075. `finapp.fx.provider.quote.latency{provider, outcome}`, eager per declared
+provider, timed on the registry's clock. **The simulator**: `SimulatedFxEngine` (test scope, the
+ADR-0049 rule) - stateful, test-clocked, deduping on `T` **before** judging the quote's lock,
+counting real executions, emitting HMAC-signed callbacks, and faults armed per call. **The
+contract battery** (`SimulatedFxProviderContractTest`): exact quote; declined; refuse before
+send; execute then drop the response (indeterminate, the re-send returns the same trade,
+executed once); duplicate `T`; **dedupe before validity**; late inquiry; lock expiry under a new
+`T`; price change; deviation carried verbatim; unrecognised on inquiry only; over-precise;
+malformed and 5xx; eight unknown statuses each indeterminate; ADR-0008's harness modes; nothing
+sensitive rendered. **THE BUILD'S FINDS, FIXED**: `payments.provider_evidence`'s name collision
+(the table renamed, above); `System.nanoTime` refused by `NoAmbientTimeRulesTest` - the timer
+samples the registry's clock; a `bearer()` accessor refused by `NoUnwrappedSecretRulesTest` - the
+header built inline; the vocabulary scanner's regex overflowing the stack on large files - a
+character scanner; the remote-database startup test lacked the new evidence key, which every
+evidence key is supplied to - added. **THE GATE'S FIND, FIXED**: a `rejected` or `declined` answer
+with a reason the adapter does not know was mapped to indeterminate, but no case proved it - and a
+definitive `Rejected` is what licenses minting a new `T`, so an unknown word earning one is a
+double-cover risk; five unknown reasons now held on both paths, probed. **SEVEN PROBES, SEVEN
+CAUGHT**, every restore byte-identical (sha256-verified; `MUTATION_TESTING.md` §2 +3 rows): an
+unknown reject reason read as `QUOTE_EXPIRED`; the simulator forgetting `T`; an unknown quote status read as
+a decline; a refused connection treated as ambiguity; an over-precise rate rounded; the evidence
+trigger dropped; our reference left off the wire. **Multi-instance PASS** - a stateless adapter and
+insert-only evidence; the dedupe the cover will rely on is the provider's, contract-tested.
+**NEXT**: `P9-TSK-007` `READY`. **Verified** by fresh runs - fx hermetic and database, the
+contract battery (25 cases after the gate's), the guard suites, the column-classification guard; the fleet-wide hermetic tier
+2372 across 378 suites and 18 modules (run before the gate's one added case); the architecture tier 151 across 25; the document guards 145 across 27 (inside that run, after the records landed), ALL 0
+FAILURES - the fleet-wide database and kafka tiers deliberately skipped on the owner's
+instruction.
 
 ### Previously
 

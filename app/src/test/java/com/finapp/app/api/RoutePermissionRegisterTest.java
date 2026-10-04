@@ -176,7 +176,18 @@ class RoutePermissionRegisterTest {
                     entry("GET /v1/operator/reconciliation/resolutions/{id}", PermissionName.RECONCILIATION_RESOLVE),
                     entry("POST /v1/operator/reconciliation/resolutions/{id}/approval", PermissionName.RECONCILIATION_RESOLVE),
                     entry("POST /v1/operator/reconciliation/resolutions/{id}/rejection", PermissionName.RECONCILIATION_RESOLVE),
-                    entry("DELETE /v1/operator/reconciliation/resolutions/{id}", PermissionName.RECONCILIATION_RESOLVE)));
+                    entry("DELETE /v1/operator/reconciliation/resolutions/{id}", PermissionName.RECONCILIATION_RESOLVE),
+                    // P9-TSK-007: the FX controller's doors - the pricing policy under four-eyes,
+                    // the kill switch one person to stop and two to restart; a population no
+                    // other role holds (ADR-0075 section 3).
+                    entry("GET /v1/operator/fx/pricing-policies", PermissionName.FX_ADMINISTER),
+                    entry("POST /v1/operator/fx/pricing-policies", PermissionName.FX_ADMINISTER),
+                    entry("POST /v1/operator/fx/pricing-policies/{id}/approval", PermissionName.FX_ADMINISTER),
+                    entry("POST /v1/operator/fx/pricing-policies/{id}/rejection", PermissionName.FX_ADMINISTER),
+                    entry("POST /v1/operator/fx/pairs/{pair}/availability", PermissionName.FX_ADMINISTER),
+                    entry("POST /v1/operator/fx/providers/{code}/availability", PermissionName.FX_ADMINISTER),
+                    entry("POST /v1/operator/fx/enable-requests/{rid}/approval", PermissionName.FX_ADMINISTER),
+                    entry("POST /v1/operator/fx/enable-requests/{rid}/rejection", PermissionName.FX_ADMINISTER)));
 
     /** The MVC mapping, by name - actuator registers a second one (the rule test's reason). */
     @Autowired
@@ -208,7 +219,8 @@ class RoutePermissionRegisterTest {
                         PermissionName.PAYOUT_DESTINATION_APPROVE,
                         PermissionName.MERCHANT_PAYOUT,
                         PermissionName.PAYMENT_ROUTING_ADMINISTER,
-                        PermissionName.DISPUTE_ADMINISTER);
+                        PermissionName.DISPUTE_ADMINISTER,
+                        PermissionName.FX_ADMINISTER);
     }
 
     private Map<String, PermissionName> declared() {

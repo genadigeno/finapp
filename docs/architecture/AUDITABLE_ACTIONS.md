@@ -526,6 +526,18 @@ Matching's, the breaks' and the resolutions' actions arrive with their tasks (`P
 `-015`); the administration's (rule sets, reprocessing, requeue, replay) with `P8-TSK-022`; the
 repudiation's with `P8-TSK-023`.
 
+### `fx` — `FxAuditAction`
+
+| Action | Reason required | What it records, and why |
+|---|---|---|
+| `fx.PricingPolicyProposed` | **Yes** | An FX controller proposed a whole pricing policy version (`P9-TSK-007`, ADR-0075 §7): every (pair, purpose) row frozen from the proposal by trigger, awaiting a DIFFERENT controller. The summary names the version, the row count and the open-quote cap - never a margin; the reason is the proposer's. |
+| `fx.PricingPolicyActivated` | **Yes** | A second controller activated a proposed version (`P9-TSK-007`, `INV-AUD-04`), its predecessor retired first in the same transaction - at most one version is ever `ACTIVE`, and a retirement commits only beside its successor. The summary names both versions; a new version prices only new quotes (`INV-HIST-04`). |
+| `fx.PricingPolicyRejected` | **Yes** | A controller rejected a proposed version (`P9-TSK-007`) - the proposer withdrawing their own included, since declining a change changes no price. |
+| `fx.AvailabilityDisabled` | **Yes** | One FX controller stopped a pair or a provider at once (`P9-TSK-007`, the lifecycle document §3.10): one append-only fact, and `fx.FxAvailabilityChanged` published. Stopping money must never wait for a second person. A disable of what is already stopped converges: no fact, no event and no record - nothing changed. |
+| `fx.AvailabilityEnableProposed` | **Yes** | A controller proposed restarting a stopped pair or provider (`P9-TSK-007`): nothing is enabled by it - one live proposal per subject. |
+| `fx.AvailabilityEnabled` | **Yes** | A second controller approved the enabling (`INV-AUD-04`): the enabling fact names the APPROVED request, so no fact enables without one (held by `fx V004`'s trigger for every writer), and `fx.FxAvailabilityChanged` published. |
+| `fx.AvailabilityEnableRejected` | **Yes** | A controller rejected an enable proposal - the proposer withdrawing their own included; the subject stays stopped. |
+
 ### What is emitted, and what is declared not to be
 
 **The two registration actions are emitted; none of the three `platform` actions is**, and that is

@@ -432,10 +432,10 @@ cross-border payments are holds and corridor acceptances, beneficiary screening 
 returns credited in the currency received; clearings are keyed by counterparty; callbacks are
 hints; reconciliation never converts currency and gains causes, never types. Ten new invariants
 and thirteen restated take the platform to **120**. Thirty backlog items across nine milestones
-(M9.1–M9.9) plus `X-TSK-013`…`-015`. **6 of 30 items complete** (M9.1 closed; M9.2 at 2 of 4): the modules and floors
+(M9.1–M9.9) plus `X-TSK-013`…`-015`. **7 of 30 items complete** (M9.1 closed; M9.2 at 3 of 4): the modules and floors
 (`P9-TSK-001`), the conversion arithmetic (`P9-TSK-002`), JPY and BHD postable (`P9-TSK-003`), multi-currency
-wallets (`P9-TSK-004`), reference rates (`P9-TSK-005`) and the FX provider port (`P9-TSK-006`);
-next **`P9-TSK-007` — The pricing policy and FX administration** — `READY`
+wallets (`P9-TSK-004`), reference rates (`P9-TSK-005`), the FX provider port (`P9-TSK-006`) and
+the pricing policy (`P9-TSK-007`); next **`P9-TSK-008` — The quote lifecycle** — `READY`
 ([§Current Task](#current-task) is kept current).
 
 ## Current Milestone
@@ -451,64 +451,67 @@ since M0.1". Moved, not edited.)*
 
 ## Current Task
 
-**`P9-TSK-007` — The pricing policy and FX administration** — `READY`: marked by
-`P9-TSK-006`'s completion gate (2026-10-04). **Not started.**
+**`P9-TSK-008` — The quote lifecycle** — `READY`: marked by
+`P9-TSK-007`'s completion gate (2026-10-04). **Not started.**
 
 ### Just completed
 
-**`P9-TSK-006` — The FX provider port and simulator** — `COMPLETE` (2026-10-04). **M9.2 at 2 of
-4: a provider-neutral FX boundary with an honest, fault-injectable simulator** (ADR-0075 §1-2,
-ADR-0077 §4, ADR-0008; `INV-PAY-03`, `INV-PAY-04`, `INV-HIST-02`). **The port**: `fx.FxProvider` -
-`firmQuote` (information, so failover is safe), `execute` under our client reference `T` (the
-money act: a lost response is never a "no") and `inquire(T)` - answering sealed verdicts
-(`Quoted`/`Declined`/`NothingSent`/`Indeterminate`; `Executed`/`Rejected`/`Unrecognised`/
-`NothingSent`/`Indeterminate`) carrying exact `ExchangeRate`s and `Money`, and the received bytes
-as `Evidence` that renders as its length only; `FxProviderDeclaration` (code, version, ordered
-pairs, settled currencies, maximum validity) and the `FxProviders` directory (one adapter per
-declared code). **The adapter**, `fx-sim-a` in `app`: our reference in `Idempotency-Key` and the
-bearer `FINAPP_FX_PROVIDER_KEY` (`ConfinedCredentialVariablesTest`'s eighteenth row), the URL behind
-`ProviderTransportGuard`, amounts and rates as JSON strings read by pattern, and a **total mapping**:
-only a refused connection is `NothingSent`; a timeout, a broken transport, any non-200, a body
-empty or past 1 MiB, an unknown status or reason, a missing field and a rate or amount more
-precise than its type (`OVER_PRECISE` - refused, never rounded) are `Indeterminate`; no default
-anywhere is a success; its vocabulary confined to the one file (`FxProviderVocabularyIsConfinedTest`,
-planted leaks caught). **Evidence**: `fx V003`'s append-only `fx_provider_evidence`, AES-256-GCM
-under `FINAPP_FX_EVIDENCE_KEY` (the nineteenth row), keyed by our reference and the provider
-code, the cipher's arithmetic held as `CHECK`s; **named with its domain** - not the plan's
-`provider_evidence` - because the classification register keys on `table.column` and
-`payments.provider_evidence` exists (the `merchant.payout_evidence` precedent), recorded in the
-plan and ADR-0075. `finapp.fx.provider.quote.latency{provider, outcome}`, eager per declared
-provider, timed on the registry's clock. **The simulator**: `SimulatedFxEngine` (test scope, the
-ADR-0049 rule) - stateful, test-clocked, deduping on `T` **before** judging the quote's lock,
-counting real executions, emitting HMAC-signed callbacks, and faults armed per call. **The
-contract battery** (`SimulatedFxProviderContractTest`): exact quote; declined; refuse before
-send; execute then drop the response (indeterminate, the re-send returns the same trade,
-executed once); duplicate `T`; **dedupe before validity**; late inquiry; lock expiry under a new
-`T`; price change; deviation carried verbatim; unrecognised on inquiry only; over-precise;
-malformed and 5xx; eight unknown statuses each indeterminate; ADR-0008's harness modes; nothing
-sensitive rendered. **THE BUILD'S FINDS, FIXED**: `payments.provider_evidence`'s name collision
-(the table renamed, above); `System.nanoTime` refused by `NoAmbientTimeRulesTest` - the timer
-samples the registry's clock; a `bearer()` accessor refused by `NoUnwrappedSecretRulesTest` - the
-header built inline; the vocabulary scanner's regex overflowing the stack on large files - a
-character scanner; the remote-database startup test lacked the new evidence key, which every
-evidence key is supplied to - added. **THE GATE'S FIND, FIXED**: a `rejected` or `declined` answer
-with a reason the adapter does not know was mapped to indeterminate, but no case proved it - and a
-definitive `Rejected` is what licenses minting a new `T`, so an unknown word earning one is a
-double-cover risk; five unknown reasons now held on both paths, probed. **SEVEN PROBES, SEVEN
-CAUGHT**, every restore byte-identical (sha256-verified; `MUTATION_TESTING.md` §2 +3 rows): an
-unknown reject reason read as `QUOTE_EXPIRED`; the simulator forgetting `T`; an unknown quote status read as
-a decline; a refused connection treated as ambiguity; an over-precise rate rounded; the evidence
-trigger dropped; our reference left off the wire. **Multi-instance PASS** - a stateless adapter and
-insert-only evidence; the dedupe the cover will rely on is the provider's, contract-tested.
-**NEXT**: `P9-TSK-007` `READY`. **Verified** by fresh runs - fx hermetic and database, the
-contract battery (25 cases after the gate's), the guard suites, the column-classification guard; the fleet-wide hermetic tier
-2372 across 378 suites and 18 modules (run before the gate's one added case); the architecture tier 151 across 25; the document guards 145 across 27 (inside that run, after the records landed), ALL 0
-FAILURES - the fleet-wide database and kafka tiers deliberately skipped on the owner's
-instruction.
+**`P9-TSK-007` — The pricing policy and FX administration** — `COMPLETE` (2026-10-04). **M9.2 at
+3 of 4: prices as four-eyes, versioned, pinned data, owned by a dedicated operator role**
+(ADR-0075 §7, D26, O7; `INV-AUD-04`, `INV-HIST-04`, `INV-MON-03`). **The role**: identity `V019`
+admits `FX_CONTROLLER`, granting exactly `FX_ADMINISTER` (`RoleNameTest`). **The policy**: `fx V004`'s
+`pricing_policy_version` (the open-quote cap on the version), `pricing_pair` per (pair, purpose) -
+ordered providers, spread and markup as `NUMERIC(8,6)` with `CHECK (spread + markup > 0)`, the rate
+scale `BETWEEN 0 AND 10`, the three rounding names as `CHECK` lists equal to `RoundingPolicy`'s,
+window, cover margin, band (a fraction), reference maximum age and the notional bounds - frozen
+by trigger once proposed - and the append-only `pricing_policy_event`. `PricingPolicyAdministration`:
+propose a whole version (keyed per principal; one proposal at a time by a partial unique), approve -
+a DIFFERENT person, the predecessor retired FIRST and the successor activated in one transaction
+with both history rows, the reasoned audit record and `fx.PricingPolicyActivated` - and reject. One
+`ACTIVE` by a partial unique; a retirement commits only beside its successor (deferred constraint
+trigger); four-eyes at the domain and by `CHECK (decided_by <> proposed_by)` with no seed
+exemption, each rank proven alone. **The kill switch**: availability is an append-only FACT per
+change (`pair_availability`, `provider_availability`; no fact is available) - one person disables
+at once; enabling is an `availability_enable_request` (`PROPOSED -> APPROVED | REJECTED`, four-eyes
+`CHECK`, every-writer edge trigger, one live proposal per subject) approved by a second person,
+and the enabling fact must name an APPROVED request for exactly its subject (trigger, every
+writer); writers ordered by advisory namespace `7` (registered); `fx.FxAvailabilityChanged`.
+**The doors**: eight `/v1/operator/fx` routes under `FX_ADMINISTER` behind `FxAdministrationDesk`
+(`RoutePermissionRegisterTest`, a 403 and a 401 per route with nothing written); `FxErrorCode`'s
+seven codes; `FxAuditAction`'s seven reasoned actions; an undeclared provider is `422`. **v1** per
+O7 - 40 rows, the per-pair scales and bands included (`PricingPolicyV1`, held by
+`PricingPolicyV1Test`) - proposed and activated by two controllers end to end
+(`FxAdministrationEndpointDatabaseTest`) and in OPERATIONS_RUNBOOK §2; no migration seeds it.
+**THE BUILD'S FINDS, FIXED**: the FX `DecisionRequest` record silently REPLACED KYC's schema of the
+same simple name in the published contract (springdoc keys schemas by simple class name) - caught
+by `OpenApiContractTest`, renamed `FxDecisionRequest`; reasons reached the database length-checked
+only, unlike the transition's SEC-04 rule - `fx V004` gains this schema's twin of `InstrumentShapes`
+(statement-identical to settlement `V012`'s) and a `no_instrument_shape` `CHECK` on all seven reason
+columns, parity proven over a corpus (`FxReasonScreenDatabaseTest`) - folded into `V004`, not a
+`V005`, so the plan's migration numbers (the quote's `V005`, `P9-TSK-008`) stand; boundary reasons
+bounded 1..1000 like the reconciliation doors; the ownership register (five store methods
+`ADMINISTERED`) and the credential register (three request schemas) given their rows. **THE GATE'S
+FINDS, FIXED**: the enable request's invalid edges were proven by raw SQL only - the domain's
+`REJECTED -> APPROVED` and second rejection now refused too; the negatives covered three of eight
+routes - now every route, 403 and 401; no race proved namespace 7 - `tenDisablersOneFact` added, and
+its probe wrote TEN facts without the lock. **TEN PROBES, TEN CAUGHT**, every restore
+byte-identical (sha256-verified; `MUTATION_TESTING.md` §2 +6 rows): the policy's `CHECK` and its
+domain check, each alone; the retirement trigger dropped; the one-`ACTIVE` index dropped; the
+rounding list widened; an enabling fact admitted without its approval; the enabling's domain check
+and its `CHECK`, each alone; a reason column unscreened; the disable without namespace 7.
+**Multi-instance PASS** - ten approvers make one activation, ten proposers one proposal, ten
+approvers of one enable request one enabling fact, ten disablers one fact (all counted); nothing
+cached. **NEXT**: `P9-TSK-008` `READY`. **Verified** by fresh runs - fx hermetic 34 across 8 and
+database 36 across 8, the endpoint suite 4, identity hermetic 129, the column-classification guard
+5, the OpenAPI, ownership and credential guards; the fleet-wide hermetic tier 2384 across 380 suites and 18 modules; the
+architecture tier 151 across 25; the document guards 145 across 27, ALL 0 FAILURES. Observed, not
+this task's: `RateSnapshotDatabaseTest`'s freshness case (a 300 ms sleep against a 100 ms window)
+failed once while two database tiers ran in parallel and passed on its own re-run. The fleet-wide
+database and kafka tiers deliberately skipped on the owner's instruction.
 
 ### Previously
 
-The per-task completion records — 198 blocks, from `P9-TSK-005` back to project initiation
+The per-task completion records — 199 blocks, from `P9-TSK-006` back to project initiation
 (`X-TSK-005` cross-cutting, standing between `P7-TSK-015` and `P7-TSK-014`; `X-TSK-004`
 cross-cutting, standing between `P7-TSK-001` and the Phase 6 → 7 transition) — are archived in
 [`history/TASK_HISTORY.md`](history/TASK_HISTORY.md).
@@ -1052,8 +1055,8 @@ Resolved during initiation:
 
 ## Next Task
 
-**`P9-TSK-007` — The pricing policy and FX administration** — `READY` (the Current Task), marked by
-`P9-TSK-006`'s completion gate.
+**`P9-TSK-008` — The quote lifecycle** — `READY` (the Current Task), marked by
+`P9-TSK-007`'s completion gate.
 *(This section read "`P8-TSK-009` — `READY`" from `P8-TSK-008`'s gate until
 `P8-TSK-013`'s record found it — the stale-second-copy class, in the section whose
 whole job is to mirror.)*

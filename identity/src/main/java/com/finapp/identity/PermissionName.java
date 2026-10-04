@@ -325,5 +325,24 @@ public enum PermissionName {
      * resolve the breaks it would hide. Four-eyes is distinct identities, not distinct
      * permissions: the approver holds this like the proposer.
      */
-    RECONCILIATION_RESOLVE
+    RECONCILIATION_RESOLVE,
+
+    /**
+     * Administer FX pricing and availability (`P9-TSK-007`, ADR-0075 §7, `PHASE_9_PLAN.md`
+     * §11): propose, approve or reject a pricing policy version (four-eyes: same permission,
+     * different persons, held at the domain and by {@code CHECK}); disable a pair or a
+     * provider (one person and a reason, at once - stopping money never waits); propose,
+     * approve or reject an enable request (four-eyes). The routes are
+     * {@code GET/POST /v1/operator/fx/pricing-policies}, {@code .../'{id}'/approval|rejection},
+     * {@code POST /v1/operator/fx/pairs/'{pair}'/availability},
+     * {@code .../providers/'{code}'/availability} and
+     * {@code .../enable-requests/'{rid}'/approval|rejection}; it names the {@code fx.*} policy
+     * and availability audit actions and ships with its real check sites.
+     *
+     * <p><strong>Held by {@code FX_CONTROLLER} alone</strong>: whoever sets prices can neither
+     * reverse trades nor clear screenings, and there is deliberately no door that types a
+     * rate, books a trade or executes a cover - rates come only from providers
+     * ({@code INV-FX-02}).
+     */
+    FX_ADMINISTER
 }
