@@ -156,6 +156,17 @@ public enum AccountPurpose {
      */
     FX_SPREAD_REVENUE(OwnerKind.OPERATIONAL),
 
+    /**
+     * What one FX provider owes the platform, per currency - the first counterparty-owned
+     * purpose (ADR-0078; {@code INV-RAIL-04}): there is no "the" FX provider clearing, only
+     * {@code fx-sim-a}'s, resolved by {@link ChartOfAccounts#resolve(Object, AccountPurpose,
+     * String, CurrencyCode)}. An ASSET, debit-normal (pinned in {@code OperationalChartMigrationTest}).
+     * Admitted by `V021` with the mechanism (`P9-TSK-010`) so every counterparty rule is proven
+     * against a real purpose; its counterparty and accounts arrive together in `V022`
+     * (`P9-TSK-011`), and it joins {@link #reconciledPositions()} there, with its source.
+     */
+    FX_PROVIDER_CLEARING(OwnerKind.COUNTERPARTY),
+
     /** Unattributable value, parked, aged and reported ({@code INV-REC-05}). Phase 8's seam. */
     SUSPENSE_UNMATCHED(OwnerKind.SUSPENSE);
 

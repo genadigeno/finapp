@@ -78,11 +78,18 @@ class RailVocabularyIsConfinedTest {
      * rail exists, and invisible to the rail-name rule above because a purpose is not a name.
      * Scoped to {@code payments}, the module that ACTS on rails: the merchant drill-down's
      * read-side labelling of entry shapes decides nothing a rail does.
+     *
+     * <p><em>Amended `P9-TSK-010` (ADR-0078; ADR-0080's "several declaring adapters, each with
+     * its own counterparty code"): each position maps to the SET of files that may declare it -
+     * a second adapter of one position joins its set, and each set must be found at least once.
+     * A counterparty-owned position is not here at all: it is never a rail's, and
+     * {@code CounterpartyClearingIsNamedByDeclarationsTest} confines it to its counterparties'
+     * declarations.</em>
      */
-    private static final Map<String, String> CLEARING_POSITIONS =
+    private static final Map<String, Set<String>> CLEARING_POSITIONS =
             Map.of(
-                    "AccountPurpose.SETTLEMENT_CLEARING", "SimulatedCardPspAdapter.java",
-                    "AccountPurpose.INSTANT_CLEARING", "SimulatedInstantSchemeAdapter.java");
+                    "AccountPurpose.SETTLEMENT_CLEARING", Set.of("SimulatedCardPspAdapter.java"),
+                    "AccountPurpose.INSTANT_CLEARING", Set.of("SimulatedInstantSchemeAdapter.java"));
 
     @Test
     @DisplayName("no rail-name literal exists outside its declaring adapter")
@@ -159,11 +166,11 @@ class RailVocabularyIsConfinedTest {
             }
             String fileName = source.getFileName().toString();
             String code = codeOf(read(source));
-            for (Map.Entry<String, String> purpose : CLEARING_POSITIONS.entrySet()) {
+            for (Map.Entry<String, Set<String>> purpose : CLEARING_POSITIONS.entrySet()) {
                 if (!code.contains(purpose.getKey())) {
                     continue;
                 }
-                if (purpose.getValue().equals(fileName)) {
+                if (purpose.getValue().contains(fileName)) {
                     declared.put(purpose.getKey(), true);
                 } else {
                     outside.add(purpose.getKey() + " in " + source);

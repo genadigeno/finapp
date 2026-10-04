@@ -80,6 +80,20 @@ class BatchAcceptanceDatabaseTest {
     private static final String RETIRING_SOURCE = "retiring-psp.settlement";
     private static final UUID RETIRING_SOURCE_ID =
             UUID.fromString("01a0e2bc-8200-7009-8000-000000000009");
+    /**
+     * A counterparty's own source (`P9-TSK-010`, ADR-0078 section 6), settling the planted
+     * counterparty's {@code FX_PROVIDER_CLEARING} in EUR - registered with its one account by
+     * this suite, never {@code fx-sim-a} (ledger `V022`'s).
+     */
+    private static final String COUNTERPARTY_SOURCE = "cp-accept.trade-report";
+    private static final UUID COUNTERPARTY_SOURCE_ID =
+            UUID.fromString("01a0e2bc-8200-7010-8000-000000000010");
+    private static final String COUNTERPARTY = "cp-accept-a";
+    private static final UUID COUNTERPARTY_ID =
+            UUID.fromString("01a0e2bc-8200-7010-8000-000000000011");
+    private static final UUID COUNTERPARTY_ACCOUNT_ID =
+            UUID.fromString("01a0e2bc-8200-7010-8000-000000000012");
+
     /** The accept leg's first back-off step (MI-7), doubling per failure. */
     private static final Duration BACKOFF_BASE = Duration.ofMinutes(1);
 
@@ -169,7 +183,17 @@ class BatchAcceptanceDatabaseTest {
                                 // A position of its own: one declared source per position
                                 // (INV-SET-05), and this register composes only these two.
                                 Optional.of(AccountPurpose.INSTANT_CLEARING),
-                                Optional.of("PSP-REM-[0-9]{4,12}"))));
+                                Optional.of("PSP-REM-[0-9]{4,12}")),
+                        new SettlementSourceDescriptor(
+                                COUNTERPARTY_SOURCE,
+                                SourceKind.PSP_SETTLEMENT_REPORT,
+                                SettlementFormatId.SIM_PSP_CSV,
+                                1,
+                                Set.of(DeliveryChannel.UPLOAD, DeliveryChannel.PULL),
+                                Optional.of(AccountPurpose.FX_PROVIDER_CLEARING),
+                                Optional.of("PSP-REM-[0-9]{4,12}"),
+                                Optional.of(COUNTERPARTY),
+                                Set.of(com.finapp.sharedkernel.money.CurrencyCode.of("EUR")))));
     }
 
     private static PostingService postingService(Clock clock) {
@@ -271,6 +295,22 @@ class BatchAcceptanceDatabaseTest {
                             + " VALUES ('" + RETIRING_SOURCE_ID + "', '" + RETIRING_SOURCE
                             + "', 'PSP_SETTLEMENT_REPORT', 'ACTIVE', 1)"
                             + " ON CONFLICT (code) DO NOTHING");
+            // The counterparty's source, its registry row and its one account (P9-TSK-010).
+            seed.execute(
+                    "INSERT INTO settlement.source (id, code, kind, status, next_sequence)"
+                            + " VALUES ('" + COUNTERPARTY_SOURCE_ID + "', '" + COUNTERPARTY_SOURCE
+                            + "', 'PSP_SETTLEMENT_REPORT', 'ACTIVE', 1)"
+                            + " ON CONFLICT (code) DO NOTHING");
+            seed.execute(
+                    "INSERT INTO ledger.counterparty (id, code, kind) VALUES ('" + COUNTERPARTY_ID
+                            + "', '" + COUNTERPARTY + "', 'FX_PROVIDER') ON CONFLICT (code) DO NOTHING");
+            seed.execute(
+                    "INSERT INTO ledger.ledger_account (id, account_type, normal_balance, currency,"
+                            + " owner_kind, owner_ref, purpose, gl_code, status, created_at,"
+                            + " status_changed_at) VALUES ('" + COUNTERPARTY_ACCOUNT_ID + "', 'ASSET',"
+                            + " 'DEBIT', 'EUR', 'COUNTERPARTY', '" + COUNTERPARTY_ID + "',"
+                            + " 'FX_PROVIDER_CLEARING', NULL, 'ACTIVE', now(), now())"
+                            + " ON CONFLICT (id) DO NOTHING");
             migrator.commit();
         }
     }
@@ -434,6 +474,43 @@ class BatchAcceptanceDatabaseTest {
                                 + " 'settlement.SettlementBatchAccepted' AND aggregate_id = ?",
                         fileId))
                 .isEqualTo(1);
+    }
+
+    @Test
+    @DisplayName("a counterparty's report recognises on THAT counterparty's own account, never a"
+            + " shared position, and its counterparty rides to the intake (P9-TSK-010, INV-RAIL-04)")
+    void aCounterpartysReportSettlesItsOwnPosition() throws SQLException {
+        assertThat(new JdbcLedgerAccountStore().findCounterpartyAccount(
+                                application, AccountPurpose.FX_PROVIDER_CLEARING, COUNTERPARTY,
+                                com.finapp.sharedkernel.money.CurrencyCode.of("EUR"))
+                        .map(account -> account.id().value()))
+                .as("the counterparty account this suite seeded resolves by its code")
+                .contains(COUNTERPARTY_ACCOUNT_ID);
+        application.rollback();
+        UUID fileId = pulled(COUNTERPARTY_SOURCE, report(COUNTERPARTY_SOURCE, "PSPB-CP-01", "C01"));
+        parsing.sweep();
+        assertThat(fileColumn(fileId, "status")).isEqualTo("PARSED");
+        acceptance.sweep();
+        assertThat(fileColumn(fileId, "status")).isEqualTo("ACCEPTED");
+        UUID entryId = UUID.fromString(columnOfBatch(batchOf(fileId).id(), "journal_entry_id"));
+
+        assertThat(count(
+                        "SELECT count(*) FROM ledger.journal_line WHERE entry_id = ?"
+                                + " AND ledger_account_id = ? AND direction = 'CREDIT' AND amount_minor = 175",
+                        entryId, COUNTERPARTY_ACCOUNT_ID))
+                .as("the position credit lands on the counterparty's own account")
+                .isEqualTo(1);
+        assertThat(count(
+                        "SELECT count(*) FROM ledger.journal_line l"
+                                + " JOIN ledger.ledger_account a ON a.id = l.ledger_account_id"
+                                + " WHERE l.entry_id = ? AND a.owner_ref IS NULL AND a.purpose LIKE '%CLEARING'",
+                        entryId))
+                .as("and on no shared clearing")
+                .isZero();
+        AcceptedBatchIntake.AcceptedBatch handed =
+                intake.batches.stream().filter(b -> b.fileId().equals(fileId)).findFirst().orElseThrow();
+        assertThat(handed.positionPurpose()).contains(AccountPurpose.FX_PROVIDER_CLEARING);
+        assertThat(handed.positionCounterparty()).contains(COUNTERPARTY);
     }
 
     @Test

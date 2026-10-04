@@ -189,4 +189,49 @@ class SettlementSourcesTest {
         assertThatThrownBy(() -> sources.attribute(null))
                 .isInstanceOf(NullPointerException.class);
     }
+
+    // ------------------------------------------ per counterparty (P9-TSK-010, ADR-0078 section 6)
+
+    private static SettlementSourceDescriptor counterpartySource(String code, String counterparty) {
+        return new SettlementSourceDescriptor(
+                code,
+                SourceKind.PSP_SETTLEMENT_REPORT,
+                SettlementFormatId.SIM_PSP_CSV,
+                1,
+                Set.of(DeliveryChannel.UPLOAD),
+                Optional.of(AccountPurpose.FX_PROVIDER_CLEARING),
+                Optional.of(code.replace('.', '-').toUpperCase() + "-[0-9]{4}"),
+                Optional.of(counterparty),
+                Set.of(com.finapp.sharedkernel.money.CurrencyCode.of("EUR")));
+    }
+
+    @Test
+    @DisplayName("two sources on ONE counterparty's position are refused; two counterparties on one"
+            + " purpose are two positions, each with its own source (INV-SET-05, INV-RAIL-04)")
+    void theRegisterIsKeyedPerCounterparty() {
+        assertThatThrownBy(() -> SettlementSources.of(List.of(
+                        counterpartySource("fx-sim-a.trade-report", "fx-sim-a"),
+                        counterpartySource("fx-sim-a.second-report", "fx-sim-a"))))
+                .isInstanceOf(IllegalArgumentException.class)
+                .hasMessageContaining("FX_PROVIDER_CLEARING of fx-sim-a")
+                .hasMessageContaining("INV-SET-05");
+
+        SettlementSources two = SettlementSources.of(List.of(
+                counterpartySource("fx-sim-a.trade-report", "fx-sim-a"),
+                counterpartySource("fx-sim-b.trade-report", "fx-sim-b"),
+                psp("simulated-psp.settlement", AccountPurpose.SETTLEMENT_CLEARING)));
+        assertThat(two.dischargedBy(AccountPurpose.FX_PROVIDER_CLEARING, "fx-sim-a").orElseThrow().code())
+                .isEqualTo("fx-sim-a.trade-report");
+        assertThat(two.dischargedBy(AccountPurpose.FX_PROVIDER_CLEARING, "fx-sim-b").orElseThrow().code())
+                .isEqualTo("fx-sim-b.trade-report");
+        assertThat(two.dischargedBy(AccountPurpose.FX_PROVIDER_CLEARING, "fx-sim-c")).isEmpty();
+        assertThat(two.settledPositions()).containsExactlyInAnyOrder(
+                new SettlementSources.Position(AccountPurpose.FX_PROVIDER_CLEARING, Optional.of("fx-sim-a")),
+                new SettlementSources.Position(AccountPurpose.FX_PROVIDER_CLEARING, Optional.of("fx-sim-b")),
+                new SettlementSources.Position(AccountPurpose.SETTLEMENT_CLEARING, Optional.empty()));
+        assertThatThrownBy(() -> two.dischargedBy(AccountPurpose.FX_PROVIDER_CLEARING))
+                .as("a counterparty-owned purpose has no shared position to ask about")
+                .isInstanceOf(IllegalArgumentException.class)
+                .hasMessageContaining("counterparty-owned");
+    }
 }

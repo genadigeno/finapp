@@ -1,5 +1,6 @@
 package com.finapp.settlement;
 
+import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatCode;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
@@ -190,5 +191,50 @@ class SettlementSourceDescriptorTest {
                                         Optional.of("PSP-REM-[0-9]{4,12}")))
                 .isInstanceOf(IllegalArgumentException.class)
                 .hasMessageContaining("lowercase");
+    }
+
+    // ---------------------------------- the counterparty's coherence (P9-TSK-010, ADR-0078)
+
+    private static SettlementSourceDescriptor settling(
+            AccountPurpose position, Optional<String> counterparty,
+            Set<com.finapp.sharedkernel.money.CurrencyCode> currencies) {
+        return new SettlementSourceDescriptor(
+                "fx-sim-a.trade-report",
+                SourceKind.PSP_SETTLEMENT_REPORT,
+                SettlementFormatId.SIM_PSP_CSV,
+                1,
+                Set.of(DeliveryChannel.UPLOAD),
+                Optional.of(position),
+                Optional.of("FXA-[0-9]{4}"),
+                counterparty,
+                currencies);
+    }
+
+    @Test
+    @DisplayName("a counterparty is named exactly on a counterparty-owned position, in its shape,"
+            + " with the currencies it settles - and on no other")
+    void theCounterpartyIsCoherent() {
+        Set<com.finapp.sharedkernel.money.CurrencyCode> eur =
+                Set.of(com.finapp.sharedkernel.money.CurrencyCode.of("EUR"));
+        assertThat(settling(AccountPurpose.FX_PROVIDER_CLEARING, Optional.of("fx-sim-a"), eur)
+                        .settledCounterparty())
+                .contains("fx-sim-a");
+        assertThatThrownBy(() -> settling(AccountPurpose.FX_PROVIDER_CLEARING, Optional.empty(), Set.of()))
+                .isInstanceOf(IllegalArgumentException.class)
+                .hasMessageContaining("names no counterparty")
+                .hasMessageContaining("INV-RAIL-04");
+        assertThatThrownBy(() -> settling(AccountPurpose.SETTLEMENT_CLEARING, Optional.of("fx-sim-a"), eur))
+                .isInstanceOf(IllegalArgumentException.class)
+                .hasMessageContaining("not counterparty-owned");
+        assertThatThrownBy(() -> settling(AccountPurpose.FX_PROVIDER_CLEARING, Optional.of("fx-sim-a"), Set.of()))
+                .isInstanceOf(IllegalArgumentException.class)
+                .hasMessageContaining("currencies it settles");
+        assertThatThrownBy(() -> settling(AccountPurpose.FX_PROVIDER_CLEARING, Optional.of("FX SIM"), eur))
+                .isInstanceOf(IllegalArgumentException.class)
+                .hasMessageContaining("'FX SIM'");
+        assertThatThrownBy(() -> settling(AccountPurpose.SETTLEMENT_CLEARING, Optional.empty(), eur))
+                .as("currencies without a counterparty")
+                .isInstanceOf(IllegalArgumentException.class)
+                .hasMessageContaining("declares none");
     }
 }

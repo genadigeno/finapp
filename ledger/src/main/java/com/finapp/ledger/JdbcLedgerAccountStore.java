@@ -215,6 +215,73 @@ public final class JdbcLedgerAccountStore implements LedgerAccountStore<Connecti
     }
 
     @Override
+    public Optional<LedgerAccount> findCounterpartyAccount(
+            Connection unitOfWork,
+            AccountPurpose purpose,
+            String counterpartyCode,
+            CurrencyCode currency) {
+        Objects.requireNonNull(unitOfWork, "unitOfWork must not be null");
+        Objects.requireNonNull(purpose, "purpose must not be null");
+        Objects.requireNonNull(counterpartyCode, "counterpartyCode must not be null");
+        Objects.requireNonNull(currency, "currency must not be null");
+        try (PreparedStatement select =
+                unitOfWork.prepareStatement(
+                        "SELECT " + qualified("a") + " FROM " + TABLE + " a"
+                                + " JOIN ledger.counterparty c ON c.id = a.owner_ref"
+                                + " WHERE a.owner_kind = 'COUNTERPARTY' AND c.code = ?"
+                                + " AND a.purpose = ? AND a.currency = ?")) {
+            select.setString(1, counterpartyCode);
+            select.setString(2, purpose.name());
+            select.setString(3, currency.code());
+            try (ResultSet row = select.executeQuery()) {
+                if (!row.next()) {
+                    return Optional.empty();
+                }
+                return Optional.of(rehydrate(row));
+            }
+        } catch (SQLException failure) {
+            throw new LedgerStorageException(
+                    DatabaseFailure.describe(
+                            "reading " + counterpartyCode + "'s " + purpose + " account in "
+                                    + currency,
+                            failure));
+        }
+    }
+
+    @Override
+    public java.util.List<LedgerAccount> findAllOfPurpose(
+            Connection unitOfWork, AccountPurpose purpose) {
+        Objects.requireNonNull(unitOfWork, "unitOfWork must not be null");
+        Objects.requireNonNull(purpose, "purpose must not be null");
+        if (purpose.ownerKind() == OwnerKind.CUSTOMER || purpose.ownerKind() == OwnerKind.MERCHANT) {
+            throw new IllegalArgumentException(
+                    purpose + " accounts are read by owner, never as one purpose's population");
+        }
+        try (PreparedStatement read =
+                unitOfWork.prepareStatement(
+                        "SELECT " + COLUMNS + " FROM " + TABLE + " WHERE purpose = ? ORDER BY id")) {
+            read.setString(1, purpose.name());
+            try (ResultSet rows = read.executeQuery()) {
+                java.util.List<LedgerAccount> accounts = new java.util.ArrayList<>();
+                while (rows.next()) {
+                    accounts.add(rehydrate(rows));
+                }
+                return java.util.List.copyOf(accounts);
+            }
+        } catch (SQLException failure) {
+            throw new LedgerStorageException(
+                    DatabaseFailure.describe("reading every " + purpose + " account", failure));
+        }
+    }
+
+    /** {@link #COLUMNS}, each qualified by {@code alias} - for a joined read. */
+    private static String qualified(String alias) {
+        return java.util.Arrays.stream(COLUMNS.split(","))
+                .map(column -> alias + "." + column.strip())
+                .collect(java.util.stream.Collectors.joining(", "));
+    }
+
+    @Override
     public java.util.List<LedgerAccount> findAllOwned(Connection unitOfWork, UUID ownerRef) {
         Objects.requireNonNull(unitOfWork, "unitOfWork must not be null");
         Objects.requireNonNull(ownerRef, "ownerRef must not be null");

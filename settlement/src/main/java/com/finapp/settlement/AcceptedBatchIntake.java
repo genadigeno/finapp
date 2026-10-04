@@ -83,7 +83,8 @@ public interface AcceptedBatchIntake {
             Instant at,
             Correlation correlation,
             Optional<StatementContinuity> statement,
-            Optional<String> settlementCycle) {
+            Optional<String> settlementCycle,
+            Optional<String> positionCounterparty) {
 
         public AcceptedBatch {
             Objects.requireNonNull(batchId, "batchId must not be null");
@@ -101,6 +102,14 @@ public interface AcceptedBatchIntake {
             Objects.requireNonNull(correlation, "correlation must not be null");
             Objects.requireNonNull(statement, "statement must not be null");
             Objects.requireNonNull(settlementCycle, "settlementCycle must not be null");
+            Objects.requireNonNull(positionCounterparty, "positionCounterparty must not be null");
+            if (positionCounterparty.isPresent()
+                    != positionPurpose.map(purpose -> purpose.ownerKind()
+                            == com.finapp.ledger.OwnerKind.COUNTERPARTY).orElse(false)) {
+                throw new IllegalArgumentException(
+                        "a report on a counterparty-owned position names its counterparty, and"
+                                + " no other report does (P9-TSK-010, ADR-0078)");
+            }
             if (settlementCycle.isPresent() && statement.isPresent()) {
                 throw new IllegalArgumentException(
                         "a scheme cycle is a report's (P8-TSK-017), never a statement's");
@@ -118,7 +127,7 @@ public interface AcceptedBatchIntake {
             lines = List.copyOf(lines);
         }
 
-        /** A report's acceptance (`P8-TSK-009`'s shape). */
+        /** A report's acceptance (`P8-TSK-009`'s shape), on a shared position. */
         public AcceptedBatch(
                 UUID batchId,
                 UUID fileId,
@@ -134,13 +143,40 @@ public interface AcceptedBatchIntake {
                 Actor actor,
                 Instant at,
                 Correlation correlation) {
+            this(batchId, fileId, sourceId, positionPurpose, businessDate, valueDate, acceptedOn,
+                    sourceSequence, remittanceReference, net, lines, actor, at, correlation,
+                    Optional.empty());
+        }
+
+        /**
+         * A report's acceptance on its source's position - a counterparty's own when the source
+         * names one (`P9-TSK-010`, ADR-0078): the counterparty rides to the remittance, which
+         * opens on that counterparty's account.
+         */
+        public AcceptedBatch(
+                UUID batchId,
+                UUID fileId,
+                UUID sourceId,
+                AccountPurpose positionPurpose,
+                LocalDate businessDate,
+                LocalDate valueDate,
+                LocalDate acceptedOn,
+                long sourceSequence,
+                String remittanceReference,
+                Money net,
+                List<CanonicalLine> lines,
+                Actor actor,
+                Instant at,
+                Correlation correlation,
+                Optional<String> positionCounterparty) {
             this(batchId, fileId, sourceId,
                     Optional.of(Objects.requireNonNull(positionPurpose,
                             "positionPurpose must not be null")),
                     businessDate, valueDate, acceptedOn, sourceSequence,
                     Optional.of(Objects.requireNonNull(remittanceReference,
                             "remittanceReference must not be null")),
-                    net, lines, actor, at, correlation, Optional.empty(), Optional.empty());
+                    net, lines, actor, at, correlation, Optional.empty(), Optional.empty(),
+                    positionCounterparty);
         }
 
         /** A statement's or a cycle-less report's acceptance (`P8-TSK-016`'s shape). */
@@ -162,7 +198,7 @@ public interface AcceptedBatchIntake {
                 Optional<StatementContinuity> statement) {
             this(batchId, fileId, sourceId, positionPurpose, businessDate, valueDate, acceptedOn,
                     sourceSequence, remittanceReference, net, lines, actor, at, correlation,
-                    statement, Optional.empty());
+                    statement, Optional.empty(), Optional.empty());
         }
 
         /** A report settling a scheme cycle (`P8-TSK-017`): the cycle token rides with it. */
@@ -170,7 +206,7 @@ public interface AcceptedBatchIntake {
             return new AcceptedBatch(
                     batchId, fileId, sourceId, positionPurpose, businessDate, valueDate,
                     acceptedOn, sourceSequence, remittanceReference, net, lines, actor, at,
-                    correlation, statement, Optional.of(cycle));
+                    correlation, statement, Optional.of(cycle), positionCounterparty);
         }
     }
 

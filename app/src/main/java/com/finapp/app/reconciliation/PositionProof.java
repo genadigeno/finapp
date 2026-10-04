@@ -79,15 +79,19 @@ import lombok.RequiredArgsConstructor;
 public final class PositionProof {
 
     /**
-     * The positions the proof's identity covers — the three clearings, with the items term
-     * since `P8-TSK-009`. {@code CASH_AT_BANK} and {@code SUSPENSE_UNMATCHED} have verdicts of
-     * their own, and completeness walks every reconciled position.
+     * The purposes the proof's identity covers - every position a declared source discharges,
+     * DERIVED from the composed register (`P9-TSK-010`, ADR-0078 section 8), so a counterparty
+     * admitted with its source is proven by construction. Today exactly the three clearings,
+     * with the items term since `P8-TSK-009` - the hard-coded list this replaced, verdict for
+     * verdict. {@code CASH_AT_BANK} and {@code SUSPENSE_UNMATCHED} have verdicts of their own,
+     * and completeness walks every account of every reconciled purpose.
      */
-    public static final Set<AccountPurpose> PROVEN =
-            Set.of(
-                    AccountPurpose.SETTLEMENT_CLEARING,
-                    AccountPurpose.PAYOUT_CLEARING,
-                    AccountPurpose.INSTANT_CLEARING);
+    public static Set<AccountPurpose> provenPurposes(SettlementSources sources) {
+        Objects.requireNonNull(sources, "sources must not be null");
+        Set<AccountPurpose> proven = new java.util.LinkedHashSet<>();
+        sources.settledPositions().forEach(position -> proven.add(position.purpose()));
+        return java.util.Collections.unmodifiableSet(proven);
+    }
 
     @NonNull private final LedgerAccountStore<Connection> accounts;
     @NonNull private final BalanceDerivation<Connection> balances;
@@ -110,6 +114,12 @@ public final class PositionProof {
     private final com.finapp.payments.UnmatchedConfirmationStore<Connection> parkings;
 
     /**
+     * The counterparty registry (`P9-TSK-010`), naming each counterparty account's owner -
+     * appended last (the Lombok rule).
+     */
+    @NonNull private final com.finapp.ledger.CounterpartyStore<Connection> counterparties;
+
+    /**
      * One position-and-currency verdict: the identity's terms, and whether they agree.
      * Since `P8-TSK-009` the identity carries the items term ({@code INV-REC-06} extended
      * at acceptance): balance = open remainders − open item remainders, with every accepted
@@ -125,7 +135,23 @@ public final class PositionProof {
             Money openItems,
             long openCount,
             long openItemCount,
-            boolean explained) {}
+            boolean explained,
+            Optional<String> counterparty) {
+
+        /** A shared position's verdict - every verdict before `P9-TSK-010`. */
+        public PositionVerdict(
+                AccountPurpose purpose,
+                CurrencyCode currency,
+                Money ledgerBalance,
+                Money openRemainders,
+                Money openItems,
+                long openCount,
+                long openItemCount,
+                boolean explained) {
+            this(purpose, currency, ledgerBalance, openRemainders, openItems, openCount,
+                    openItemCount, explained, Optional.empty());
+        }
+    }
 
     /**
      * The suspense identity, per currency (`P8-TSK-010`, ADR-0070 §7):
@@ -227,26 +253,67 @@ public final class PositionProof {
     public Report sweep(Connection unitOfWork) {
         Objects.requireNonNull(unitOfWork, "unitOfWork must not be null");
 
-        // The reconciled positions' seeded accounts, per purpose and currency.
+        // EVERY account of every reconciled purpose (P9-TSK-010, ADR-0078 section 8): the shared
+        // positions per purpose and supported currency - the cash and suspense proofs read these
+        // - and each counterparty's own, keyed (purpose, counterparty), so two counterparties on
+        // one purpose are two positions and never one sum (INV-RAIL-04).
+        Map<UUID, String> codeOf = new HashMap<>();
+        counterparties.all(unitOfWork).forEach(registered -> codeOf.put(registered.id(), registered.code()));
         Map<AccountPurpose, Map<CurrencyCode, LedgerAccount>> positions =
                 new EnumMap<>(AccountPurpose.class);
+        Map<SettlementSources.Position, Map<CurrencyCode, LedgerAccount>> counterpartyPositions =
+                new LinkedHashMap<>();
+        List<LedgerAccount> population = new ArrayList<>();
         for (AccountPurpose purpose : AccountPurpose.reconciledPositions()) {
+            List<LedgerAccount> ofPurpose = accounts.findAllOfPurpose(unitOfWork, purpose);
+            population.addAll(ofPurpose);
             Map<CurrencyCode, LedgerAccount> byCurrency = new LinkedHashMap<>();
             for (CurrencyCode currency : SupportedCurrencies.ALL) {
-                accounts.findOperational(unitOfWork, purpose, currency)
+                ofPurpose.stream()
+                        .filter(account -> account.ownerRef().isEmpty() && account.currency().equals(currency))
+                        .findFirst()
                         .ifPresent(account -> byCurrency.put(currency, account));
             }
             positions.put(purpose, byCurrency);
+            for (LedgerAccount account : ofPurpose) {
+                account.ownerRef().ifPresent(owner -> counterpartyPositions
+                        .computeIfAbsent(
+                                new SettlementSources.Position(purpose, Optional.of(
+                                        Objects.requireNonNull(codeOf.get(owner),
+                                                "a counterparty account names a registered counterparty (V021)"))),
+                                key -> new LinkedHashMap<>())
+                        .put(account.currency(), account));
+            }
         }
+        // Whose position a remainder sits on: a counterparty-owned purpose's remainder is its
+        // source's counterparty's (one source per (purpose, counterparty), INV-SET-05).
+        Map<UUID, Optional<String>> counterpartyBySource = new HashMap<>();
+        for (SettlementSourceDescriptor declared : sources.declared()) {
+            sourceRows.sourceByCode(unitOfWork, declared.code())
+                    .ifPresent(row -> counterpartyBySource.put(row.id(), declared.settledCounterparty()));
+        }
+        java.util.function.BiFunction<AccountPurpose, UUID, SettlementSources.Position> positionOf =
+                (purpose, sourceId) -> {
+                    if (purpose.ownerKind() != com.finapp.ledger.OwnerKind.COUNTERPARTY) {
+                        return new SettlementSources.Position(purpose, Optional.empty());
+                    }
+                    Optional<String> counterparty =
+                            counterpartyBySource.getOrDefault(sourceId, Optional.empty());
+                    if (counterparty.isEmpty()) {
+                        throw new IllegalStateException(
+                                "a remainder on the counterparty-owned " + purpose
+                                        + " names no counterparty's source (INV-SET-05)");
+                    }
+                    return new SettlementSources.Position(purpose, counterparty);
+                };
 
         // THE PROOF: the signed Money fold of open remainders, per position and currency.
-        Map<AccountPurpose, Map<CurrencyCode, Money>> folded = new EnumMap<>(AccountPurpose.class);
-        Map<AccountPurpose, Map<CurrencyCode, Long>> openCounts =
-                new EnumMap<>(AccountPurpose.class);
+        Map<SettlementSources.Position, Map<CurrencyCode, Money>> folded = new HashMap<>();
+        Map<SettlementSources.Position, Map<CurrencyCode, Long>> openCounts = new HashMap<>();
         for (ExpectationReadings.OpenRemainder remainder : readings.openRemainders(unitOfWork)) {
             CurrencyCode currency = remainder.remainder().currency();
-            Map<CurrencyCode, Money> sums =
-                    folded.computeIfAbsent(remainder.position(), p -> new HashMap<>());
+            SettlementSources.Position at = positionOf.apply(remainder.position(), remainder.sourceId());
+            Map<CurrencyCode, Money> sums = folded.computeIfAbsent(at, p -> new HashMap<>());
             Money signed = remainder.remainder();
             Money current =
                     sums.getOrDefault(
@@ -256,22 +323,18 @@ public final class PositionProof {
                     remainder.direction() == ExpectationDirection.INBOUND
                             ? current.plus(signed)
                             : current.minus(signed));
-            openCounts
-                    .computeIfAbsent(remainder.position(), p -> new HashMap<>())
-                    .merge(currency, 1L, Long::sum);
+            openCounts.computeIfAbsent(at, p -> new HashMap<>()).merge(currency, 1L, Long::sum);
         }
 
         // THE ITEMS TERM (P8-TSK-009): every accepted, undisposed allocating line's claim,
         // folded the same way - INBOUND positive, OUTBOUND negative, never a SQL SUM.
-        Map<AccountPurpose, Map<CurrencyCode, Money>> itemsFolded =
-                new EnumMap<>(AccountPurpose.class);
-        Map<AccountPurpose, Map<CurrencyCode, Long>> itemCounts =
-                new EnumMap<>(AccountPurpose.class);
+        Map<SettlementSources.Position, Map<CurrencyCode, Money>> itemsFolded = new HashMap<>();
+        Map<SettlementSources.Position, Map<CurrencyCode, Long>> itemCounts = new HashMap<>();
         for (ExpectationReadings.OpenItemRemainder item :
                 readings.openItemRemainders(unitOfWork)) {
             CurrencyCode currency = item.remainder().currency();
-            Map<CurrencyCode, Money> sums =
-                    itemsFolded.computeIfAbsent(item.position(), p -> new HashMap<>());
+            SettlementSources.Position at = positionOf.apply(item.position(), item.sourceId());
+            Map<CurrencyCode, Money> sums = itemsFolded.computeIfAbsent(at, p -> new HashMap<>());
             Money signed = item.remainder();
             Money current =
                     sums.getOrDefault(
@@ -281,35 +344,37 @@ public final class PositionProof {
                     item.direction() == ExpectationDirection.INBOUND
                             ? current.plus(signed)
                             : current.minus(signed));
-            itemCounts
-                    .computeIfAbsent(item.position(), p -> new HashMap<>())
-                    .merge(currency, 1L, Long::sum);
+            itemCounts.computeIfAbsent(at, p -> new HashMap<>()).merge(currency, 1L, Long::sum);
         }
 
         List<PositionVerdict> verdicts = new ArrayList<>();
-        for (AccountPurpose purpose : PROVEN) {
-            for (Map.Entry<CurrencyCode, LedgerAccount> position :
-                    positions.get(purpose).entrySet()) {
+        for (SettlementSources.Position proven : sources.settledPositions()) {
+            AccountPurpose purpose = proven.purpose();
+            Map<CurrencyCode, LedgerAccount> proofAccounts =
+                    proven.counterparty().isEmpty()
+                            ? positions.getOrDefault(purpose, Map.of())
+                            : counterpartyPositions.getOrDefault(proven, Map.of());
+            for (Map.Entry<CurrencyCode, LedgerAccount> position : proofAccounts.entrySet()) {
                 Money balance =
                         readFrom(NormalBalance.DEBIT, unitOfWork, position.getValue());
                 Money remainders =
-                        Optional.ofNullable(folded.get(purpose))
+                        Optional.ofNullable(folded.get(proven))
                                 .map(sums -> sums.get(position.getKey()))
                                 .orElse(
                                         Money.ofPersisted(
                                                 0, position.getKey(), balance.scale()));
                 Money items =
-                        Optional.ofNullable(itemsFolded.get(purpose))
+                        Optional.ofNullable(itemsFolded.get(proven))
                                 .map(sums -> sums.get(position.getKey()))
                                 .orElse(
                                         Money.ofPersisted(
                                                 0, position.getKey(), balance.scale()));
                 long open =
-                        Optional.ofNullable(openCounts.get(purpose))
+                        Optional.ofNullable(openCounts.get(proven))
                                 .map(counts -> counts.getOrDefault(position.getKey(), 0L))
                                 .orElse(0L);
                 long openItems =
-                        Optional.ofNullable(itemCounts.get(purpose))
+                        Optional.ofNullable(itemCounts.get(proven))
                                 .map(counts -> counts.getOrDefault(position.getKey(), 0L))
                                 .orElse(0L);
                 verdicts.add(
@@ -321,19 +386,19 @@ public final class PositionProof {
                                 items,
                                 open,
                                 openItems,
-                                balance.equals(remainders.minus(items))));
+                                balance.equals(remainders.minus(items)),
+                                proven.counterparty()));
             }
         }
 
         // COMPLETENESS: every line on a reconciled position, against the known pairs.
+        // Every account of every reconciled purpose - the shared ones and each counterparty's
+        // (P9-TSK-010) - never one per purpose.
         Map<LedgerAccountId, AccountPurpose> purposeOf = new HashMap<>();
         List<LedgerAccountId> reconciled = new ArrayList<>();
-        for (Map.Entry<AccountPurpose, Map<CurrencyCode, LedgerAccount>> byPurpose :
-                positions.entrySet()) {
-            for (LedgerAccount account : byPurpose.getValue().values()) {
-                purposeOf.put(account.id(), byPurpose.getKey());
-                reconciled.add(account.id());
-            }
+        for (LedgerAccount account : population) {
+            purposeOf.put(account.id(), account.purpose());
+            reconciled.add(account.id());
         }
         Set<ExpectationReadings.KnownLine> known =
                 new HashSet<>(readings.knownLines(unitOfWork));

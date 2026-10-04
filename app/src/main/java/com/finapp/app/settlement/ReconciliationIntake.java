@@ -142,6 +142,7 @@ public class ReconciliationIntake implements AcceptedBatchIntake {
                         batch.batchId(),
                         batch.sourceId(),
                         batch.positionPurpose().orElseThrow(),
+                        batch.positionCounterparty(),
                         batch.net(),
                         batch.acceptedOn(),
                         batch.valueDate(),
@@ -269,6 +270,7 @@ public class ReconciliationIntake implements AcceptedBatchIntake {
             UUID batchId,
             UUID sourceId,
             AccountPurpose positionPurpose,
+            Optional<String> positionCounterparty,
             Money net,
             LocalDate acceptedOn,
             LocalDate valueDate,
@@ -280,8 +282,15 @@ public class ReconciliationIntake implements AcceptedBatchIntake {
             return false;
         }
         RuleSets.ActiveRuleSet ruleSet = ruleSets.activeFor(unitOfWork, sourceId);
+        // A counterparty's remittance opens on that counterparty's own account (P9-TSK-010,
+        // ADR-0078): the shared position for an operational clearing, never a shared one for a
+        // counterparty-owned purpose (INV-RAIL-04).
         LedgerAccount position =
-                accounts.findOperational(unitOfWork, positionPurpose, net.currency())
+                (positionCounterparty.isPresent()
+                                ? accounts.findCounterpartyAccount(
+                                        unitOfWork, positionPurpose, positionCounterparty.orElseThrow(),
+                                        net.currency())
+                                : accounts.findOperational(unitOfWork, positionPurpose, net.currency()))
                         .orElseThrow(
                                 () ->
                                         new IllegalStateException(

@@ -504,8 +504,8 @@ table is corrected with provenance if the order changes (ADR-0011).
 | `fx` | `V005` | `-008` | `quote` (plan, residual, freeze, edge and live-quote cap triggers), `quote_event`, `quote_request` (pinned pricing version), `quote_sourcing_step` |
 | `fx` | `V006` | `-009` | `trade`, `cover`, `cover_attempt` |
 | `ledger` | `V020` | `-009` | `FX_SPREAD_REVENUE`; the `closedToFreeAdjustments()` binding restated |
-| `ledger` | `V021` | `-010` | `OwnerKind.COUNTERPARTY`, `ledger.counterparty`, the four constraints, the `owner_ref` trigger |
-| `ledger` | `V022` | `-011` | `FX_PROVIDER_CLEARING`, counterparty `fx-sim-a` and its five accounts |
+| `ledger` | `V021` | `-010` | `OwnerKind.COUNTERPARTY`, `ledger.counterparty`, the four constraints, the `owner_ref` trigger; *as built, also the purpose `FX_PROVIDER_CLEARING` with no account, so every counterparty rule is proven against a real purpose* |
+| `ledger` | `V022` | `-011` | counterparty `fx-sim-a` and its five `FX_PROVIDER_CLEARING` accounts (the purpose admitted by `V021`) |
 | `settlement` | `V015` | `-011` | `FX_PROVIDER_REPORT`, `SIM_FX_CSV`, `FX_SOLD`/`FX_BOUGHT`/`FX_FEE`, `COVER_REF`/`FX_TRADE_REF`, `RejectionCode.CURRENCY_NOT_SETTLED`, source row `fx-sim-a.trade-report` |
 | `reconciliation` | `V020` | `-011` | `FX_SELL_LEG`/`FX_BUY_LEG`, key `COVER_REF`, the three FX line types in the item and rule `CHECK`s, `FX_FEE` in `provider_fee_line_type`, causes `FX_LEG_DIFFERS`/`VALUE_DATE_DIFFERS`, the pairing trigger and the `V014` list restated |
 | `fx` | `V007` | `-012` | `cover_execution`, the realised result |

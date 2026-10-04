@@ -204,6 +204,18 @@ admitting migration, before any line).
   `-b` counterparties, proving each settles on its own position and never nets.
 - `P9-TST-001`: the storm's position, cash and completeness proofs per counterparty, every
   round and at rest.
-- Until `P9-TSK-010` lands, nothing in this ADR is implemented: every statement is the decided
-  design, to be corrected by the tasks that build it.
+- *As built by `P9-TSK-010` (2026-10-05):* sections 2-6 and 8-9 are implemented - ledger `V021`
+  (`OwnerKind.COUNTERPARTY`, the registry with SELECT and INSERT grants and an append-only trigger
+  for every writer, the four rules restated, the `owner_ref` trigger leaving a NULL to the
+  `CHECK`), `ChartOfAccounts.resolve(uow, purpose, counterpartyCode, currency)` with the
+  two-argument form refusing, `CounterpartyChart` + `CounterpartyChartGuard` (a reachable chart
+  with a gap refuses startup; an unreachable database defers to the per-call refusal),
+  `SettlementSourceDescriptor.settledCounterparty`/`settledCurrencies`, `SettlementSources.of`
+  keyed per (purpose, counterparty), recognitions and remittances on the counterparty's account,
+  `PositionProof`'s proven purposes derived from the register and completeness over every account,
+  the `CLEARING_POSITIONS` rule amended to a set of declaring files per purpose, and
+  `CounterpartyClearingIsNamedByDeclarationsTest`. **One deviation:** `V021` also admits the
+  purpose `FX_PROVIDER_CLEARING` (type ASSET pinned), with no registry row and no account, so every
+  rule is proven against a real counterparty-owned purpose; `V022` admits `fx-sim-a` and its five
+  accounts as section 4 says. Section 7 (`CURRENCY_NOT_SETTLED`) lands with `P9-TSK-011`.
 - The Phase 9 review reads this ADR against the code before accepting it (`P9-DOC-001`).

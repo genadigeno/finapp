@@ -66,7 +66,8 @@ class ReconciliationMetricsTest {
                         new SettlementFileCipher(new byte[32], 1, new SecureRandom())),
                 new com.finapp.settlement.JdbcSettlementBatchStore(IDS),
                 new com.finapp.reconciliation.JdbcSuspenseReadings(),
-                new com.finapp.payments.JdbcUnmatchedConfirmationStore());
+                new com.finapp.payments.JdbcUnmatchedConfirmationStore(),
+                new com.finapp.ledger.JdbcCounterpartyStore());
     }
 
     @Test
@@ -86,7 +87,7 @@ class ReconciliationMetricsTest {
                 CLOCK,
                 registry);
 
-        for (AccountPurpose purpose : PositionProof.PROVEN) {
+        for (AccountPurpose purpose : PositionProof.provenPurposes(register())) {
             assertThat(registry.find(ReconciliationMetrics.PROOF)
                             .tag("purpose", purpose.name())
                             .gauge())

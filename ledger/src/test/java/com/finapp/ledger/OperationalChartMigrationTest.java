@@ -83,6 +83,11 @@ class OperationalChartMigrationTest {
                     // ADR-0070 section 4 (P8-TSK-015): an approved RECOGNISE_GAIN's income.
                     Map.entry(AccountPurpose.RECONCILIATION_GAINS, AccountType.REVENUE),
                     Map.entry(AccountPurpose.FX_POSITION, AccountType.ASSET),
+                    // ADR-0078 / PHASE_9_PLAN.md section 12.6 (P9-TSK-010): what one FX provider
+                    // owes the platform - a receivable, growing on the debit side the cover's
+                    // provider leg debits. Decided here, with the purpose's admission (V021),
+                    // before its first account exists (V022, P9-TSK-011; INV-LED-06).
+                    Map.entry(AccountPurpose.FX_PROVIDER_CLEARING, AccountType.ASSET),
                     Map.entry(AccountPurpose.ROUNDING_RESIDUAL, AccountType.EXPENSE),
                     Map.entry(AccountPurpose.SUSPENSE_UNMATCHED, AccountType.LIABILITY));
 
@@ -206,6 +211,120 @@ class OperationalChartMigrationTest {
             assertThat(migration(seed)).as(seed).contains("INSERT INTO ledger.ledger_account");
             assertThat(ROW.matcher(migration(seed)).results()).as(seed).isNotEmpty();
         }
+    }
+
+    // ------------------------------------------------------------------------------------------
+    // THE COUNTERPARTY PART (P9-TSK-010, ADR-0078 section 4): each counterparty is registered and
+    // seeded with its accounts by the migration that admits it - never minted at runtime - so
+    // the same rules hold for its rows as for the operational seed: a registry row's id and an
+    // account's id are UUIDv7 literals below the ceiling (the lock order), each (counterparty,
+    // purpose, currency) is seeded once, each account names a counterparty registered in the
+    // same or an earlier admitting migration, its purpose is counterparty-owned, and its type is
+    // the pinned decision. V021 admits the mechanism and no counterparty; V022 (P9-TSK-011) is
+    // the first to add rows here. The rules are proven against planted seeds below, so they are
+    // live before the first real row lands.
+
+    /** Every migration that registers counterparties or seeds their accounts, in order. */
+    private static final List<String> COUNTERPARTY_SEEDS =
+            List.of("db/migration/ledger/V021__counterparty_keyed_clearing_positions.sql");
+
+    private static final Pattern REGISTRY_ROW =
+            Pattern.compile("\\('([0-9a-f-]{36})',\\s*'([a-z][a-z0-9-]*)',\\s*'([A-Z_]+)'\\)");
+
+    private static final Pattern COUNTERPARTY_ROW =
+            Pattern.compile(
+                    "\\('([0-9a-f-]{36})',\\s*'([A-Z_]+)',\\s*'([A-Z]+)',\\s*'([A-Z]{3})',"
+                            + "\\s*'COUNTERPARTY',\\s*'([0-9a-f-]{36})',\\s*'([A-Z_]+)',");
+
+    @Test
+    @DisplayName("every counterparty seed holds the chart's rules - registered first, once per"
+            + " (counterparty, purpose, currency), typed as pinned, below the ceiling")
+    void theCounterpartySeedHoldsTheRules() {
+        List<String> seeds = COUNTERPARTY_SEEDS.stream().map(OperationalChartMigrationTest::migration).toList();
+        assertThat(counterpartyViolations(seeds)).isEmpty();
+        assertThat(migration(COUNTERPARTY_SEEDS.get(0)))
+                .as("not vacuous: the first counterparty migration is the one creating the registry")
+                .contains("CREATE TABLE ledger.counterparty");
+    }
+
+    @Test
+    @DisplayName("the counterparty rules bite: each planted defect in a seed is named")
+    void theCounterpartyRulesBite() {
+        String registry = "INSERT INTO ledger.counterparty (id, code, kind) VALUES"
+                + " ('01a0e2bc-8200-7021-8000-000000000001', 'fx-sim-a', 'FX_PROVIDER');\n";
+        String account = "('01a0e2bc-8200-7021-8000-000000000101', 'ASSET', 'DEBIT', 'EUR', 'COUNTERPARTY',"
+                + " '01a0e2bc-8200-7021-8000-000000000001', 'FX_PROVIDER_CLEARING', NULL, 'ACTIVE')";
+        assertThat(counterpartyViolations(List.of(registry + account))).as("the control seed").isEmpty();
+
+        assertThat(counterpartyViolations(List.of(registry + account + ",\n" + account.replace("0101", "0102"))))
+                .singleElement().asString().contains("seeded twice");
+        assertThat(counterpartyViolations(List.of(account + "\n" + registry)))
+                .singleElement().asString().contains("no counterparty registered before it");
+        assertThat(counterpartyViolations(List.of(registry + account.replace("'ASSET', 'DEBIT'", "'LIABILITY', 'CREDIT'"))))
+                .singleElement().asString().contains("pinned");
+        assertThat(counterpartyViolations(List.of(registry + account.replace("'ASSET', 'DEBIT'", "'ASSET', 'CREDIT'"))))
+                .singleElement().asString().contains("normal balance");
+        assertThat(counterpartyViolations(List.of(registry + account.replace("FX_PROVIDER_CLEARING", "SETTLEMENT_CLEARING"))))
+                .anySatisfy(violation -> assertThat(violation).contains("not counterparty-owned"));
+        // A registry id stamped after the ceiling (2026-10-04, 0x019... -> 01a1...).
+        assertThat(counterpartyViolations(List.of(registry.replace("01a0e2bc-8200-7021", "01a10820-3976-7021")
+                        + account.replace("'01a0e2bc-8200-7021-8000-000000000001'", "'01a10820-3976-7021-8000-000000000001'"))))
+                .singleElement().asString().contains("ceiling");
+        assertThat(counterpartyViolations(List.of(registry + account.replace("01a0e2bc-8200-7021-8000-000000000101", "01a0e2bc-8200-4021-8000-000000000101"))))
+                .singleElement().asString().contains("version 7");
+    }
+
+    /** Every rule a counterparty seed breaks, across {@code seeds} read in order. */
+    static List<String> counterpartyViolations(List<String> seeds) {
+        long ceilingMillis = java.time.Instant.parse("2026-09-28T00:00:00Z").toEpochMilli();
+        List<String> violations = new java.util.ArrayList<>();
+        java.util.Set<String> registered = new java.util.HashSet<>();
+        java.util.Set<String> seeded = new java.util.HashSet<>();
+        java.util.function.BiConsumer<String, String> idRules =
+                (id, what) -> {
+                    if (id.charAt(14) != '7') {
+                        violations.add(what + " " + id + " is not version 7");
+                    } else if ((java.util.UUID.fromString(id).getMostSignificantBits() >>> 16) >= ceilingMillis) {
+                        violations.add(what + " " + id + " embeds a timestamp at or after the ceiling");
+                    }
+                };
+        for (String seed : seeds) {
+            // A counterparty is registered before its accounts: in an earlier admitting
+            // migration, or earlier in this one.
+            java.util.Map<String, Integer> registeredAt = new java.util.HashMap<>();
+            for (MatchResult row : REGISTRY_ROW.matcher(seed).results().toList()) {
+                idRules.accept(row.group(1), "registry row");
+                registeredAt.putIfAbsent(row.group(1), row.start());
+            }
+            for (MatchResult row : COUNTERPARTY_ROW.matcher(seed).results().toList()) {
+                String id = row.group(1);
+                AccountPurpose purpose = AccountPurpose.valueOf(row.group(6));
+                AccountType type = AccountType.valueOf(row.group(2));
+                idRules.accept(id, "account");
+                boolean before = registered.contains(row.group(5))
+                        || registeredAt.getOrDefault(row.group(5), Integer.MAX_VALUE) < row.start();
+                if (!before) {
+                    violations.add("account " + id + " names " + row.group(5)
+                            + ", with no counterparty registered before it");
+                }
+                if (purpose.ownerKind() != OwnerKind.COUNTERPARTY) {
+                    violations.add("account " + id + " is COUNTERPARTY-owned but " + purpose
+                            + " is not counterparty-owned");
+                }
+                if (type != SEEDED_TYPES.get(purpose)) {
+                    violations.add("account " + id + " is " + type + ", not the pinned "
+                            + SEEDED_TYPES.get(purpose) + " of " + purpose);
+                } else if (NormalBalance.valueOf(row.group(3)) != type.normalBalance()) {
+                    violations.add("account " + id + "'s normal balance is not its type's derivation");
+                }
+                if (!seeded.add(row.group(5) + "|" + purpose + "|" + row.group(4))) {
+                    violations.add("(" + row.group(5) + ", " + purpose + ", " + row.group(4)
+                            + ") is seeded twice");
+                }
+            }
+            registered.addAll(registeredAt.keySet());
+        }
+        return violations;
     }
 
     private static List<MatchResult> rows() {

@@ -451,22 +451,12 @@ public final class BatchAcceptance {
             Actor actor,
             Instant now,
             Correlation correlation) {
-        var positionAccount =
-                accounts.findOperational(
-                                uow,
-                                declared.settledPosition()
-                                        .orElseThrow(
-                                                () ->
-                                                        new SettlementStorageException(
-                                                                "a report source declares"
-                                                                        + " its position"
-                                                                        + " (INV-SET-05)")),
-                                batch.currency())
-                        .orElseThrow(
-                                () ->
-                                        new SettlementStorageException(
-                                                "the chart seeds every position per"
-                                                        + " currency"));
+        declared.settledPosition()
+                .orElseThrow(
+                        () ->
+                                new SettlementStorageException(
+                                        "a report source declares its position (INV-SET-05)"));
+        LedgerAccountId positionAccount = settling(uow, declared, batch);
         var costsAccount = operational(uow, AccountPurpose.PROCESSING_COSTS, batch);
         BatchRecognition.Recognition recognition =
                 BatchRecognition.recognise(
@@ -474,7 +464,7 @@ public final class BatchAcceptance {
                         batch.currency(),
                         batch.netScale(),
                         costsAccount,
-                        positionAccount.id());
+                        positionAccount);
         AcceptedBatchIntake.AcceptedBatch accepted =
                 new AcceptedBatchIntake.AcceptedBatch(
                         batch.id(),
@@ -495,7 +485,10 @@ public final class BatchAcceptance {
                         canonicalLines(lines, Map.of()),
                         actor,
                         now,
-                        correlation);
+                        correlation,
+                        // A counterparty's source settles its own position (P9-TSK-010): the
+                        // remittance opens on that counterparty's account, never a shared one.
+                        declared.settledCounterparty());
         // A scheme's cycle report settles ONE cycle, and its token is the batch's identity
         // (settlement V006): it rides to the run, where the matcher compares it with each
         // matched completion's announced cycle (P8-TSK-017).
@@ -535,10 +528,10 @@ public final class BatchAcceptance {
                                 if (positionBySource.containsKey(sourceId)) {
                                     return;
                                 }
-                                AccountPurpose purpose =
+                                SettlementSourceDescriptor attributed =
                                         Optional.ofNullable(codeById.get(sourceId))
                                                 .flatMap(sources::byCode)
-                                                .flatMap(SettlementSourceDescriptor::settledPosition)
+                                                .filter(source -> source.settledPosition().isPresent())
                                                 .orElseThrow(
                                                         () ->
                                                                 new SettlementStorageException(
@@ -546,8 +539,8 @@ public final class BatchAcceptance {
                                                                                 + " declared report"
                                                                                 + " source"
                                                                                 + " (INV-SET-05)"));
-                                positionBySource.put(sourceId, purpose);
-                                accountBySource.put(sourceId, operational(uow, purpose, batch));
+                                positionBySource.put(sourceId, attributed.settledPosition().orElseThrow());
+                                accountBySource.put(sourceId, settling(uow, attributed, batch));
                             });
         }
         BankRecognition.Recognition recognition =
@@ -609,6 +602,27 @@ public final class BatchAcceptance {
                 link.sequence(),
                 Money.ofPersisted(link.openingMinor(), link.currency(), link.scale()),
                 Money.ofPersisted(link.closingMinor(), link.currency(), link.scale()));
+    }
+
+    /**
+     * The account a report source's evidence settles in the batch's currency: the shared
+     * operational position, or - for a counterparty's source - that counterparty's own
+     * (`P9-TSK-010`, ADR-0078 section 6), never another's ({@code INV-RAIL-04}).
+     */
+    private LedgerAccountId settling(
+            Connection uow, SettlementSourceDescriptor source, SettlementBatchStore.BatchRow batch) {
+        AccountPurpose purpose = source.settledPosition().orElseThrow();
+        if (source.settledCounterparty().isEmpty()) {
+            return operational(uow, purpose, batch);
+        }
+        String counterparty = source.settledCounterparty().orElseThrow();
+        return accounts.findCounterpartyAccount(uow, purpose, counterparty, batch.currency())
+                .orElseThrow(
+                        () ->
+                                new SettlementStorageException(
+                                        "the chart seeds " + counterparty + "'s " + purpose
+                                                + " in every currency it settles (ADR-0078)"))
+                .id();
     }
 
     private LedgerAccountId operational(
