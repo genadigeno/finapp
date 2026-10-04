@@ -241,6 +241,10 @@ four-eyes, no seed), `INV-HIST-04` (pricing policy as a versioned, pinned subjec
 
 - `P9-TSK-005`: the `RateSource` port, the `simulated-reference` adapter, `fx V002`
   (`rate_snapshot`, `rate_fetch_permit`), `FxRateFetchSchedule`, staleness judged in SQL.
+- *As built (`P9-TSK-006`):* the port answers sealed verdicts mapped totally by the adapter
+  (only a refused connection is `NothingSent`; an over-precise rate is `Indeterminate`, never
+  rounded); the evidence table is `fx.fx_provider_evidence`, keyed by our reference; the simulator
+  lives in test scope with the contract battery, deduping on `T` before validity.
 - `P9-TSK-006`: the `FxProvider` port, `FxProviderDeclaration`, the `fx-sim-a` simulator
   (firm quotes with stated counters and `validFor`, dedupe on `T` before judging validity),
   `fx V003` encrypted provider evidence.

@@ -1556,6 +1556,29 @@ pricing (the margins and customer rates that ARE commercial arrive with the quot
 | `rate_fetch_permit` | `attempts` | `INTERNAL` | A counter |
 | `rate_fetch_permit` | `created_at` | `INTERNAL` | When the source was first fetched |
 
+### `fx.fx_provider_evidence` — the FX provider's answers — *added by `P9-TSK-006`*
+
+**Verbatim provider payloads** (`INV-HIST-02`): every request, response, inquiry result and
+callback exchanged with an FX provider, AES-256-GCM under `FINAPP_FX_EVIDENCE_KEY`. The one content
+column is the ciphertext, `CONFIDENTIAL` at the ceiling of what it decrypts to - the platform's
+commercial traffic with its counterparty (rates, amounts, trade references), never a customer's
+personal data; every other column is metadata. Named with its domain because the register keys on
+`table.column` and `payments.provider_evidence` already exists (the `merchant.payout_evidence`
+precedent).
+
+| Table | Column | Level | Why |
+|---|---|---|---|
+| `fx_provider_evidence` | `id` | `INTERNAL` | An evidence identifier. Generated |
+| `fx_provider_evidence` | `provider_code` | `INTERNAL` | The declared provider's compiled code - an organisation, never a person |
+| `fx_provider_evidence` | `client_reference` | `INTERNAL` | Our own minted reference (`QR` or `T`, `INV-PAY-04`) - an identifier of a thing |
+| `fx_provider_evidence` | `kind` | `INTERNAL` | Request, response, inquiry result or callback - a closed list |
+| `fx_provider_evidence` | `content_ciphertext` | `CONFIDENTIAL` | The provider exchange, encrypted: rates, amounts and trade references - commercial traffic, at the ceiling of what it decrypts to |
+| `fx_provider_evidence` | `content_nonce` | `INTERNAL` | The GCM nonce - public by design |
+| `fx_provider_evidence` | `key_version` | `INTERNAL` | Which key wrote it - rotation metadata |
+| `fx_provider_evidence` | `checksum_sha256` | `INTERNAL` | A fingerprint of the plaintext, recoverable from nothing |
+| `fx_provider_evidence` | `content_length` | `INTERNAL` | A byte count |
+| `fx_provider_evidence` | `recorded_at` | `INTERNAL` | When the exchange was retained |
+
 ### `consent.consent_text` and `consent.consent_record` — *added by `P2-TSK-017`*
 
 | Table | Column | Level | Why |

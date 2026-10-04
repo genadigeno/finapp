@@ -432,10 +432,10 @@ cross-border payments are holds and corridor acceptances, beneficiary screening 
 returns credited in the currency received; clearings are keyed by counterparty; callbacks are
 hints; reconciliation never converts currency and gains causes, never types. Ten new invariants
 and thirteen restated take the platform to **120**. Thirty backlog items across nine milestones
-(M9.1–M9.9) plus `X-TSK-013`…`-015`. **5 of 30 items complete** (M9.1 closed; M9.2 at 1 of 4): the modules and floors
+(M9.1–M9.9) plus `X-TSK-013`…`-015`. **6 of 30 items complete** (M9.1 closed; M9.2 at 2 of 4): the modules and floors
 (`P9-TSK-001`), the conversion arithmetic (`P9-TSK-002`), JPY and BHD postable (`P9-TSK-003`), multi-currency
-wallets (`P9-TSK-004`) and reference rates (`P9-TSK-005`); next **`P9-TSK-006` — The FX provider
-port and simulator** — `READY`
+wallets (`P9-TSK-004`), reference rates (`P9-TSK-005`) and the FX provider port (`P9-TSK-006`);
+next **`P9-TSK-007` — The pricing policy and FX administration** — `READY`
 ([§Current Task](#current-task) is kept current).
 
 ## Current Milestone
@@ -451,117 +451,64 @@ since M0.1". Moved, not edited.)*
 
 ## Current Task
 
-**`P9-TSK-006` — The FX provider port and simulator** — `READY`: marked by
-`P9-TSK-005`'s completion gate (2026-10-04). **Not started.**
+**`P9-TSK-007` — The pricing policy and FX administration** — `READY`: marked by
+`P9-TSK-006`'s completion gate (2026-10-04). **Not started.**
 
 ### Just completed
 
-**`P9-TSK-005` — Reference rates** — `COMPLETE` (2026-10-04). **M9.2 opens at 1 of 4:
-independent, fresh, server-side reference rates that fail closed** (ADR-0075 §1; `INV-FX-02`).
-**The port and the source**: `fx.RateSource` (one fetch answers every declared pair, as values,
-never an exception) and `ReferenceSourceDeclaration` - the `simulated-reference` source, a
-different party than the FX provider so the band is an independent check, and its ten canonical
-pairs held once each in market direction (no inversion, ADR-0074). The adapter in `app`,
-`HttpReferenceRateSource`: `GET {base}/fx/reference/rates` under its own confined key
-(`FINAPP_FX_REFERENCE_KEY`, `ConfinedCredentialVariablesTest`'s seventeenth row), the URL behind
-`ProviderTransportGuard`, the body bounded at 64 KiB, and a strict `BASE/QUOTE,RATE,OBSERVED_AT`
-line grammar so no rate ever passes through a double - an undeclared pair, the inverse direction,
-an eleventh decimal, an exponent, zero or a bad instant each rejected and counted, never stored.
-**`fx V002`**: the append-only `rate_snapshot` (`NUMERIC(20,10)`, proven equal to
-`RateColumns.ddl()`; the canonical-pair `CHECK` proven equal to the declaration) whose `BEFORE
-INSERT` trigger takes `pg_advisory_xact_lock(6, ...)` per (source, pair) - namespace 6 reserved -
-stores a row only when strictly newer than every stored observation and forces `received_at` to
-the database's `statement_timestamp()`, for every writer, raw SQL included; an observation more
-than a minute ahead of the database is refused (a source clock running ahead would freeze its
-pair - the design's find); update and delete refused for every role. The `rate_fetch_permit` is
-the `pull_permit` shape **stamped by the database** inside its own statement, strictly forward and
-never deleted. **The fetch**: `ReferenceRateFetch` - the permit claim committed alone (a loser is
-`paced`), the wire holding no connection, one transaction per observation - behind the leaderless
-`FxRateFetchSchedule` (`LEASE_PROTECTED_SCHEDULERS`, the `DISTRIBUTED_EXECUTION.md` row
-rewritten from the code). **Freshness**: `RateSnapshotStore.freshLatest` judges the latest row's
-`received_at` against `statement_timestamp()` in SQL with the maximum age as a parameter (the
-policy's value, `P9-TSK-007`) - no clock, no cache; a stale or never-fetched pair answers empty
-and the caller fails closed. **Observability**: `finapp.fx.rate.age{pair}` on the database clock
-(NaN when unreadable or never fetched), `finapp.fx.rate.fetch{outcome}` (added to the plan's
-table), `finapp.fx.rate.sweeper.enabled`; `pair` joins `MetricNames.ALLOWED_TAG_KEYS` with its
-argument; the first FX alert rules (`infra/prometheus/rules/fx.yml`: stale and never fetched),
-held by `AlertRulesResolveTest`. `DATA_CLASSIFICATION` gains the fx rows. **THE BUILD'S FINDS,
-FIXED**: the age arrived as a `double` from the store - `NoFloatingPointMoneyRulesTest` refused
-it; fx now returns a `Duration` in whole microseconds and only the gauge class (exempted with its
-argument) converts at the registry boundary; Postgres restates the pair `IN` list as `OR`s, so the
-declaration guard reads the stored definition's own form. **THE GATE'S FIND, FIXED**:
-the backlog's "staleness with a skewed instance" had no test - the design is clock-free, now held
-structurally (`ReferenceRateFetchTest`: neither store nor the round takes a `Clock` or an `Instant`,
-so a skewed instance has nothing to skew; the database tier proves the SQL's own clock). **SEVEN PROBES, SEVEN CAUGHT**, every
-restore byte-identical (sha256-verified; `MUTATION_TESTING.md` §2 +2 rows): the trigger without
-its lock; the newer-than-latest rule switched off; `received_at` from the writer; freshness never
-judged; the permit claimed without its window; the adapter admitting the inverse direction; the
-round fetching without the permit. **Multi-instance PASS** - ten fetchers with pacing off store
-each observation once (counted), ten claimants take one permit, and an older observation waiting
-on a newer one's insert stores nothing (the waiter observed on namespace 6). **NEXT**:
-`P9-TSK-006` `READY`. **Verified** by fresh runs - fx hermetic 25 across 6 (the gate's structural case included) and database 16 across
-4, the adapter suite, the column-classification guard 5, the alert rules 6, app hermetic 656
-across 121; the fleet-wide hermetic tier 2319 across 373 suites and 18 modules (run before the gate's one added fx case); the architecture tier 146 across 24; the
-document guards 138 across 25 (inside that run, after the records landed), ALL 0 FAILURES - the fleet-wide database and kafka tiers
-deliberately skipped on the owner's instruction.
-
-### Since: the PSP format's defect cap no longer decides a record (2026-09-30, outside the task loop)
-
-**A production defect in `P8-TSK-008`'s `SimPspCsvFormat`, fixed** (`INV-SET-07`). `detail(…)`
-judged a record clean when the shared defect list had not grown, but that list drops defects
-past `MAX_DEFECTS` (100). So in a file with more than a hundred defects, every later malformed
-record read as clean and threw a `NullPointerException` on its missing amount. The file stayed
-`RECEIVED` and was retried forever, never rejected whole as `MALFORMED`. Each record's defects
-are now gathered locally, copied into the capped list, and judged from the local list. The shared
-list gets the same defects in the same order, so v1's verdicts are unchanged and no new format
-version is needed. Red-first test `defectOverflowRejectsWhole` and two probes are recorded
-(`MUTATION_TESTING` §2, change log).
-
-### Since: the shared container's residue, judged last (2026-09-30, outside the task loop)
-
-**The fixture class below cannot return unseen** (test infrastructure, no production code,
-`INV-REC-06`). `ReconciledPositionResidueDatabaseTest` runs last in `:app:databaseTest` (the tier
-orders classes by `@Order`; every other class keeps its place), runs the opening backfill, and
-asserts zero unexplained lines on every reconciled position but `SUSPENSE_UNMATCHED` (the recorded
-exception until `P8-TSK-020`) and every position and suspense identity — naming each writer by its
-idempotency scope. A source rule was weighed and refused: after the fixture moves it would have
-allow-listed every file still able to offend. Its first fleet-wide run found the tier red at
-baseline for two more reasons, both fixed: raw fixture rows on the undeclared rail `push-test`
-made every later backfill answer 500, and three suites asserted the whole-ledger identity without
-a backfill — they now judge their own writes as unchanged residuals (`PositionResiduals`). Rules
-in `TESTING.md` §5. **Found, not fixed here**: the storm's whole-database `SUSPENSE_UNMATCHED`
-count fails whenever the suspense suite runs first (observed once Gradle ran last run's failures
-first) — fixed in its own session; two suites still commit `push-test` attempts in non-terminal
-states no backfill or proof reads. Verified: the targeted run with every polluter ordered first, 65/0; five probes; the fleet-wide tier stopped by the owner at 836/0 before the proof suites and the sentinel ran - the next fleet-wide run is its first full verdict.
-
-### Since: no app test fixture leaves an unexplained reconciled line (2026-09-30, outside the task loop)
-
-**The fixture defect below, fixed with its whole class** (test-only, `INV-REC-06`). Twenty-one
-app database suites posted fixture entries onto `SETTLEMENT_CLEARING` with no expectation —
-lines no backfill can adopt, left in the shared container to fail the opening suite's and the
-multi-rail storm's proofs whenever they ran first (EUR, GBP and USD all failed in the control
-run). Each moved to the counterparty its assertions need: a payer's `CUSTOMER_WALLET` (the book
-rail's shape, so the payable view still reads captured/refunded), `FEE_REVENUE` for wallet
-funders, `CHARGEBACK_RECOVERABLE` where a debit-normal account is the point. The adoptable
-dispute captures stay by design. Details, runs and counts: the change log.
-
-### Since: the position proof's sign on `PAYOUT_CLEARING` (2026-09-30, outside the task loop)
-
-**A production defect in `P8-TSK-007`'s `PositionProof`, fixed** (`INV-REC-06`). The proof
-compared the ledger's *normal-signed* settled balance with the DR−CR remainder fold; on
-CREDIT-normal `PAYOUT_CLEARING` (ledger `V012`) that judged every open payout against its own
-negation, so `position.proof{purpose=PAYOUT_CLEARING}` counted failing currencies and the
-positions report showed a 2X difference on a correct position. The invariant and ADR-0067 §3
-already said DR−CR; the code now reads each identity's named side from the account's stored
-normal balance (`readFrom`) — DR−CR on clearing, CR−DR on suspense. `SETTLEMENT_CLEARING` and
-`INSTANT_CLEARING` (DEBIT-normal) were unaffected. Red-first test and three probes recorded
-(`MUTATION_TESTING` §2, change log). **Found, not fixed** at the time, fixed since (above):
-`MerchantPayoutDatabaseTest`'s `funded()` fixture posted to `SETTLEMENT_CLEARING` with no
-expectation, so the opening suite failed whenever that class ran before it in one container.
+**`P9-TSK-006` — The FX provider port and simulator** — `COMPLETE` (2026-10-04). **M9.2 at 2 of
+4: a provider-neutral FX boundary with an honest, fault-injectable simulator** (ADR-0075 §1-2,
+ADR-0077 §4, ADR-0008; `INV-PAY-03`, `INV-PAY-04`, `INV-HIST-02`). **The port**: `fx.FxProvider` -
+`firmQuote` (information, so failover is safe), `execute` under our client reference `T` (the
+money act: a lost response is never a "no") and `inquire(T)` - answering sealed verdicts
+(`Quoted`/`Declined`/`NothingSent`/`Indeterminate`; `Executed`/`Rejected`/`Unrecognised`/
+`NothingSent`/`Indeterminate`) carrying exact `ExchangeRate`s and `Money`, and the received bytes
+as `Evidence` that renders as its length only; `FxProviderDeclaration` (code, version, ordered
+pairs, settled currencies, maximum validity) and the `FxProviders` directory (one adapter per
+declared code). **The adapter**, `fx-sim-a` in `app`: our reference in `Idempotency-Key` and the
+bearer `FINAPP_FX_PROVIDER_KEY` (`ConfinedCredentialVariablesTest`'s eighteenth row), the URL behind
+`ProviderTransportGuard`, amounts and rates as JSON strings read by pattern, and a **total mapping**:
+only a refused connection is `NothingSent`; a timeout, a broken transport, any non-200, a body
+empty or past 1 MiB, an unknown status or reason, a missing field and a rate or amount more
+precise than its type (`OVER_PRECISE` - refused, never rounded) are `Indeterminate`; no default
+anywhere is a success; its vocabulary confined to the one file (`FxProviderVocabularyIsConfinedTest`,
+planted leaks caught). **Evidence**: `fx V003`'s append-only `fx_provider_evidence`, AES-256-GCM
+under `FINAPP_FX_EVIDENCE_KEY` (the nineteenth row), keyed by our reference and the provider
+code, the cipher's arithmetic held as `CHECK`s; **named with its domain** - not the plan's
+`provider_evidence` - because the classification register keys on `table.column` and
+`payments.provider_evidence` exists (the `merchant.payout_evidence` precedent), recorded in the
+plan and ADR-0075. `finapp.fx.provider.quote.latency{provider, outcome}`, eager per declared
+provider, timed on the registry's clock. **The simulator**: `SimulatedFxEngine` (test scope, the
+ADR-0049 rule) - stateful, test-clocked, deduping on `T` **before** judging the quote's lock,
+counting real executions, emitting HMAC-signed callbacks, and faults armed per call. **The
+contract battery** (`SimulatedFxProviderContractTest`): exact quote; declined; refuse before
+send; execute then drop the response (indeterminate, the re-send returns the same trade,
+executed once); duplicate `T`; **dedupe before validity**; late inquiry; lock expiry under a new
+`T`; price change; deviation carried verbatim; unrecognised on inquiry only; over-precise;
+malformed and 5xx; eight unknown statuses each indeterminate; ADR-0008's harness modes; nothing
+sensitive rendered. **THE BUILD'S FINDS, FIXED**: `payments.provider_evidence`'s name collision
+(the table renamed, above); `System.nanoTime` refused by `NoAmbientTimeRulesTest` - the timer
+samples the registry's clock; a `bearer()` accessor refused by `NoUnwrappedSecretRulesTest` - the
+header built inline; the vocabulary scanner's regex overflowing the stack on large files - a
+character scanner; the remote-database startup test lacked the new evidence key, which every
+evidence key is supplied to - added. **THE GATE'S FIND, FIXED**: a `rejected` or `declined` answer
+with a reason the adapter does not know was mapped to indeterminate, but no case proved it - and a
+definitive `Rejected` is what licenses minting a new `T`, so an unknown word earning one is a
+double-cover risk; five unknown reasons now held on both paths, probed. **SEVEN PROBES, SEVEN
+CAUGHT**, every restore byte-identical (sha256-verified; `MUTATION_TESTING.md` §2 +3 rows): an
+unknown reject reason read as `QUOTE_EXPIRED`; the simulator forgetting `T`; an unknown quote status read as
+a decline; a refused connection treated as ambiguity; an over-precise rate rounded; the evidence
+trigger dropped; our reference left off the wire. **Multi-instance PASS** - a stateless adapter and
+insert-only evidence; the dedupe the cover will rely on is the provider's, contract-tested.
+**NEXT**: `P9-TSK-007` `READY`. **Verified** by fresh runs - fx hermetic and database, the
+contract battery (25 cases after the gate's), the guard suites, the column-classification guard; the fleet-wide hermetic tier
+2372 across 378 suites and 18 modules (run before the gate's one added case); the architecture tier 151 across 25; the document guards 145 across 27 (inside that run, after the records landed), ALL 0
+FAILURES - the fleet-wide database and kafka tiers deliberately skipped on the owner's
+instruction.
 
 ### Previously
 
-The per-task completion records — 197 blocks, from `P9-TSK-004` back to project initiation
+The per-task completion records — 198 blocks, from `P9-TSK-005` back to project initiation
 (`X-TSK-005` cross-cutting, standing between `P7-TSK-015` and `P7-TSK-014`; `X-TSK-004`
 cross-cutting, standing between `P7-TSK-001` and the Phase 6 → 7 transition) — are archived in
 [`history/TASK_HISTORY.md`](history/TASK_HISTORY.md).
@@ -1105,8 +1052,8 @@ Resolved during initiation:
 
 ## Next Task
 
-**`P9-TSK-006` — The FX provider port and simulator** — `READY` (the Current Task), marked by
-`P9-TSK-005`'s completion gate.
+**`P9-TSK-007` — The pricing policy and FX administration** — `READY` (the Current Task), marked by
+`P9-TSK-006`'s completion gate.
 *(This section read "`P8-TSK-009` — `READY`" from `P8-TSK-008`'s gate until
 `P8-TSK-013`'s record found it — the stale-second-copy class, in the section whose
 whole job is to mirror.)*
