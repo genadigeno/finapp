@@ -1,5 +1,6 @@
 package com.finapp.app.fx;
 
+import com.finapp.app.api.ClosedBody;
 import com.finapp.app.session.RequiresPermission;
 import com.finapp.identity.PermissionName;
 import com.finapp.platform.api.IdempotencyKeyHeader;
@@ -120,12 +121,14 @@ public class FxAdministrationController {
      * A whole pricing policy version. Amounts and fractions are decimal strings - never JSON
      * numbers - so no margin or bound passes through a double.
      */
+    @ClosedBody
     public record PricingPolicyRequest(
             @NotEmpty List<@Valid @NotNull PairRequest> pairs,
             @NotNull Integer openQuoteCap,
             @NotBlank @Size(min = 1, max = 1000) String reason) {}
 
     /** One (pair, purpose): every term the version freezes. */
+    @ClosedBody
     public record PairRequest(
             @NotBlank String source,
             @NotBlank String destination,
@@ -147,8 +150,10 @@ public class FxAdministrationController {
             @NotBlank String destinationMaximum) {}
 
     /** A decision's reason. */
+    @ClosedBody
     public record FxDecisionRequest(@NotBlank @Size(min = 1, max = 1000) String reason) {}
 
     /** Disable ({@code false}) or propose enabling ({@code true}), with the reason. */
+    @ClosedBody
     public record AvailabilityRequest(@NotNull Boolean available, @NotBlank @Size(min = 1, max = 1000) String reason) {}
 }

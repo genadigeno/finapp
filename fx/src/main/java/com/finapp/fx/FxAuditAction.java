@@ -12,6 +12,13 @@ import lombok.RequiredArgsConstructor;
 @RequiredArgsConstructor
 public enum FxAuditAction implements AuditableAction {
 
+    /** The owner cancelled a live quote (`P9-TSK-008`) - a customer act. */
+    QUOTE_CANCELLED(
+            "fx.QuoteCancelled",
+            "The owner cancelled an ISSUED quote before it expired; the price is released and the"
+                    + " quote can never be accepted.",
+            false),
+
     /** A whole pricing policy version was proposed - frozen from this moment. */
     PRICING_POLICY_PROPOSED(
             "fx.PricingPolicyProposed",

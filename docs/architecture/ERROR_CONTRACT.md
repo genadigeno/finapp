@@ -722,6 +722,15 @@ subject takes, no evidence that still finds it, no acknowledgement back on its r
 | `fx.AlreadyAvailable` | 409 | The pair or provider is already available. |
 | `fx.ProviderNotDeclared` | 422 | The provider is not declared by this build. |
 | `fx.PricingPolicyInvalid` | 422 | The FX policy request is not well formed. |
+| `fx.PairNotOffered` | 422 | The currency pair is not offered. |
+| `fx.AmountOutOfRange` | 422 | The amount is outside the pair's bounds. |
+| `fx.CustomerNotEligible` | 422 | The customer cannot request a quote. |
+| `fx.PairSuspended` | 409 | The currency pair is suspended; try again later. |
+| `fx.PolicyStale` | 409 | The pricing policy changed; request a new quote with a new key. |
+| `fx.TooManyOpenQuotes` | 429 | Too many open quotes; let one expire or cancel it. |
+| `fx.RateUnavailable` | 503 | No rate is available right now; retry with a new key. |
+| `fx.QuoteNotFound` | 404 | No quote matches the requested identifier. |
+| `fx.QuoteNotCancellable` | 409 | The quote can no longer be cancelled. |
 
 The FX controller's doors (`P9-TSK-007`, ADR-0075 §3). `NotFound` is the `FileNotFound`
 departure at the pricing-policy and enable-request doors - every route sits behind
@@ -735,6 +744,23 @@ what no disable stopped). `ProviderNotDeclared` (422) refuses a provider code th
 compile - in a policy or on the kill switch; `PricingPolicyInvalid` (422) anything else not well
 formed, a reason holding a card-number or account-identifier shape included, never echoing it.
 A disable of what is already stopped is not an error: it answers `UNCHANGED` and writes nothing.
+
+The customer's quote doors (`P9-TSK-008`, ADR-0075 §§3-6) add nine. Every refusal before the
+provider is asked - `CustomerNotEligible` (one code for every standing: no party, not a customer,
+unverified, suspended - the `merchant.NotEligible` precedent, so the door is no oracle),
+`PairNotOffered` (not in the active policy, or no policy active, or a currency the platform does not
+know), `AmountOutOfRange` (the fixed leg outside the pair's notional bounds), `PairSuspended` (the
+kill switch) and `TooManyOpenQuotes` (the owner's live quotes at the policy's cap, `429`, so an owner
+at the cap cannot farm provider quotes) - is recorded on the idempotency claim, so a replay of the
+key answers the same refusal. `RateUnavailable` (`503`) is every rate trouble alike: no provider
+answered usably, the reference is stale on the database clock (fail closed), the chosen rate left the
+band against a newer reference, or under five seconds of validity remained - the cause is counted
+(`finapp.fx.quote`), never shown; the client retries with a NEW key. `PolicyStale` (`409`) answers a
+pricing policy activated between the claim and the insert: nothing is issued, and a new key prices
+under the successor. `QuoteNotFound` is the uniform `404` for a quote that is absent, another
+owner's, or a malformed id. `QuoteNotCancellable` refuses a quote already closed - or lapsed on the
+database clock, even before the sweeper writes `EXPIRED`. An unknown field in the request body -
+a rate above all - is `api.ValidationFailed` (`422`, `ClosedBody`), the field neither echoed nor used.
 
 ## 3a. Rejection at the boundary
 

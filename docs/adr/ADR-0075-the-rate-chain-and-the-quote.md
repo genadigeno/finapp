@@ -257,6 +257,14 @@ four-eyes, no seed), `INV-HIST-04` (pricing policy as a versioned, pinned subjec
   by advisory namespace `7`; every reason column refuses a card-number or account-identifier
   shape (`fx V004`'s twin of `InstrumentShapes`, the settlement `V012` precedent). v1 is proposed
   through the API by two controllers (OPERATIONS_RUNBOOK §2), never seeded.
+- *As built (`P9-TSK-008`):* the insert trigger COMPUTES `expires_at` (no writer supplies one) and a
+  `CHECK` holds the formula and the five-second floor; the copied terms must equal the pinned
+  version's `pricing_pair` row for every writer; the claim's refusals - including a stale reference,
+  pre-checked so a stale feed farms no RFQs - are recorded before any provider call; the sourcing
+  steps are keyed to the request (a refused attempt keeps them); the edge trigger refuses `EXECUTED`
+  until `P9-TSK-009` adds the trade; strict deserialisation is opt-in per type (`ClosedBody`), since
+  the platform's mapper ignores unknown fields; `expiresAt` travels on the event as
+  `expiresAtEpochMicros` (`EventPayload` admits no `:`).
 - `P9-TSK-008`: `fx V005` (the quote with its `CHECK`s, freeze, edge and cap triggers;
   `quote_event`; `quote_request`; `quote_sourcing_step`); creation, read, cancel;
   `FxQuoteExpirySchedule` and lazy expiry; `RatesAreNeverClientSuppliedTest` and the OpenAPI

@@ -127,6 +127,13 @@ public class ApiErrorHandler extends ResponseEntityExceptionHandler {
                                                 "The maximum request body is "+tooLarge.maxBytes()+" bytes.")));
             }
         }
+        for (Throwable cause = exception; cause != null; cause = cause.getCause()) {
+            if (cause instanceof tools.jackson.databind.exc.UnrecognizedPropertyException) {
+                // Only a ClosedBody refuses an unknown field (ClosedBodies): 422, the data is
+                // wrong. Neither the field's name nor its value is echoed - both are the caller's.
+                return validationFailed("the body carries a field this operation does not accept", request);
+            }
+        }
         return super.handleHttpMessageNotReadable(exception, headers, status, request);
     }
 

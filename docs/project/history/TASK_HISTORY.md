@@ -1,6 +1,6 @@
 # Task History
 
-The per-task completion records that accumulated behind `## Current Task` - 199 "Previously" blocks, newest first, from `P9-TSK-006` back to project initiation. *(`X-TSK-005` is cross-cutting and completed after `P7-TSK-014` and before `P7-TSK-015`, so it stands between them; its record came in with its branch's merge.)* *(`X-TSK-004` is cross-cutting and completed after the Phase 6 → 7 transition, so it stands second, between `P7-TSK-001` and the transition's record - the transition's block moved here by `P7-TSK-001`'s gate, exactly as an earlier form of this note said it would.)*
+The per-task completion records that accumulated behind `## Current Task` - 200 "Previously" blocks, newest first, from `P9-TSK-007` back to project initiation. *(`X-TSK-005` is cross-cutting and completed after `P7-TSK-014` and before `P7-TSK-015`, so it stands between them; its record came in with its branch's merge.)* *(`X-TSK-004` is cross-cutting and completed after the Phase 6 → 7 transition, so it stands second, between `P7-TSK-001` and the transition's record - the transition's block moved here by `P7-TSK-001`'s gate, exactly as an earlier form of this note said it would.)*
 
 **Archive.** These records were moved verbatim out of
 [`CURRENT_STATE.md`](../CURRENT_STATE.md) on 2026-09-20 so that the canonical description of
@@ -12,6 +12,61 @@ Current state: [`CURRENT_STATE.md`](../CURRENT_STATE.md) ·
 Authoritative backlog: [`BACKLOG.md`](../BACKLOG.md)
 
 ---
+
+### Previously
+
+**`P9-TSK-007` — The pricing policy and FX administration** — `COMPLETE` (2026-10-04). **M9.2 at
+3 of 4: prices as four-eyes, versioned, pinned data, owned by a dedicated operator role**
+(ADR-0075 §7, D26, O7; `INV-AUD-04`, `INV-HIST-04`, `INV-MON-03`). **The role**: identity `V019`
+admits `FX_CONTROLLER`, granting exactly `FX_ADMINISTER` (`RoleNameTest`). **The policy**: `fx V004`'s
+`pricing_policy_version` (the open-quote cap on the version), `pricing_pair` per (pair, purpose) -
+ordered providers, spread and markup as `NUMERIC(8,6)` with `CHECK (spread + markup > 0)`, the rate
+scale `BETWEEN 0 AND 10`, the three rounding names as `CHECK` lists equal to `RoundingPolicy`'s,
+window, cover margin, band (a fraction), reference maximum age and the notional bounds - frozen
+by trigger once proposed - and the append-only `pricing_policy_event`. `PricingPolicyAdministration`:
+propose a whole version (keyed per principal; one proposal at a time by a partial unique), approve -
+a DIFFERENT person, the predecessor retired FIRST and the successor activated in one transaction
+with both history rows, the reasoned audit record and `fx.PricingPolicyActivated` - and reject. One
+`ACTIVE` by a partial unique; a retirement commits only beside its successor (deferred constraint
+trigger); four-eyes at the domain and by `CHECK (decided_by <> proposed_by)` with no seed
+exemption, each rank proven alone. **The kill switch**: availability is an append-only FACT per
+change (`pair_availability`, `provider_availability`; no fact is available) - one person disables
+at once; enabling is an `availability_enable_request` (`PROPOSED -> APPROVED | REJECTED`, four-eyes
+`CHECK`, every-writer edge trigger, one live proposal per subject) approved by a second person,
+and the enabling fact must name an APPROVED request for exactly its subject (trigger, every
+writer); writers ordered by advisory namespace `7` (registered); `fx.FxAvailabilityChanged`.
+**The doors**: eight `/v1/operator/fx` routes under `FX_ADMINISTER` behind `FxAdministrationDesk`
+(`RoutePermissionRegisterTest`, a 403 and a 401 per route with nothing written); `FxErrorCode`'s
+seven codes; `FxAuditAction`'s seven reasoned actions; an undeclared provider is `422`. **v1** per
+O7 - 40 rows, the per-pair scales and bands included (`PricingPolicyV1`, held by
+`PricingPolicyV1Test`) - proposed and activated by two controllers end to end
+(`FxAdministrationEndpointDatabaseTest`) and in OPERATIONS_RUNBOOK §2; no migration seeds it.
+**THE BUILD'S FINDS, FIXED**: the FX `DecisionRequest` record silently REPLACED KYC's schema of the
+same simple name in the published contract (springdoc keys schemas by simple class name) - caught
+by `OpenApiContractTest`, renamed `FxDecisionRequest`; reasons reached the database length-checked
+only, unlike the transition's SEC-04 rule - `fx V004` gains this schema's twin of `InstrumentShapes`
+(statement-identical to settlement `V012`'s) and a `no_instrument_shape` `CHECK` on all seven reason
+columns, parity proven over a corpus (`FxReasonScreenDatabaseTest`) - folded into `V004`, not a
+`V005`, so the plan's migration numbers (the quote's `V005`, `P9-TSK-008`) stand; boundary reasons
+bounded 1..1000 like the reconciliation doors; the ownership register (five store methods
+`ADMINISTERED`) and the credential register (three request schemas) given their rows. **THE GATE'S
+FINDS, FIXED**: the enable request's invalid edges were proven by raw SQL only - the domain's
+`REJECTED -> APPROVED` and second rejection now refused too; the negatives covered three of eight
+routes - now every route, 403 and 401; no race proved namespace 7 - `tenDisablersOneFact` added, and
+its probe wrote TEN facts without the lock. **TEN PROBES, TEN CAUGHT**, every restore
+byte-identical (sha256-verified; `MUTATION_TESTING.md` §2 +6 rows): the policy's `CHECK` and its
+domain check, each alone; the retirement trigger dropped; the one-`ACTIVE` index dropped; the
+rounding list widened; an enabling fact admitted without its approval; the enabling's domain check
+and its `CHECK`, each alone; a reason column unscreened; the disable without namespace 7.
+**Multi-instance PASS** - ten approvers make one activation, ten proposers one proposal, ten
+approvers of one enable request one enabling fact, ten disablers one fact (all counted); nothing
+cached. **NEXT**: `P9-TSK-008` `READY`. **Verified** by fresh runs - fx hermetic 34 across 8 and
+database 36 across 8, the endpoint suite 4, identity hermetic 129, the column-classification guard
+5, the OpenAPI, ownership and credential guards; the fleet-wide hermetic tier 2384 across 380 suites and 18 modules; the
+architecture tier 151 across 25; the document guards 145 across 27, ALL 0 FAILURES. Observed, not
+this task's: `RateSnapshotDatabaseTest`'s freshness case (a 300 ms sleep against a 100 ms window)
+failed once while two database tiers ran in parallel and passed on its own re-run. The fleet-wide
+database and kafka tiers deliberately skipped on the owner's instruction.
 
 ### Previously
 

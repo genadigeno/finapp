@@ -71,4 +71,17 @@ public interface PricingPolicyStore {
 
     /** Versions newest first, at most {@code limit}, each with its pairs. */
     List<VersionView> versions(Connection unitOfWork, int limit);
+
+    /** The {@code ACTIVE} version with its pairs, if one exists - read, not locked (`P9-TSK-008`). */
+    Optional<VersionView> active(Connection unitOfWork);
+
+    /** The version {@code id} with its pairs - a quote claim's pinned version (`P9-TSK-008`). */
+    Optional<VersionView> version(Connection unitOfWork, PricingPolicyId id);
+
+    /**
+     * Whether {@code id} is still {@code ACTIVE}, holding it {@code FOR SHARE} to the end of the
+     * caller's transaction - so a racing activation's retirement waits for the quote that priced
+     * under it (`P9-TSK-008`, ADR-0075 section 4).
+     */
+    boolean holdActive(Connection unitOfWork, PricingPolicyId id);
 }

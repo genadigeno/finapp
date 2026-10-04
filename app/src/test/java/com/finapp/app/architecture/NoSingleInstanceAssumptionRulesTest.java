@@ -250,7 +250,15 @@ class NoSingleInstanceAssumptionRulesTest {
                     // never overwrites a newer, counted. Nothing is cached for any decision.
                     // Register row: DISTRIBUTED_EXECUTION.md section 3; the herd is
                     // RateFetchRaceDatabaseTest's.
-                    "com.finapp.app.fx.FxRateFetchSchedule");
+                    "com.finapp.app.fx.FxRateFetchSchedule",
+                    // P9-TSK-008: quote expiry - leaderless and idempotent PER ROW. Each page is
+                    // one conditional UPDATE judged on statement_timestamp(), rows another
+                    // sweeper holds skipped (FOR UPDATE SKIP LOCKED), fx V005's edge trigger
+                    // admitting ISSUED -> EXPIRED only once lapsed; the expired event is written
+                    // in the moving statement's transaction, so N sweepers expire each quote
+                    // once, counted. The instance's clock decides nothing. Register row:
+                    // DISTRIBUTED_EXECUTION.md section 3; the herd is QuoteLifecycleDatabaseTest's.
+                    "com.finapp.app.fx.FxQuoteExpirySchedule");
 
     /** Types that schedule work with no lease, so every instance runs it. */
     private static final Set<String> AMBIENT_SCHEDULERS =
