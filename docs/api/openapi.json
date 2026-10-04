@@ -962,6 +962,76 @@
           }
         }
       },
+      "fx.AmountOutOfRange": {
+        "content": {
+          "application/problem+json": {
+            "schema": {
+              "allOf": [
+                {
+                  "$ref": "#/components/schemas/ProblemDetail"
+                },
+                {
+                  "properties": {
+                    "code": {
+                      "const": "fx.AmountOutOfRange"
+                    },
+                    "status": {
+                      "const": 422
+                    },
+                    "type": {
+                      "const": "https://finapp.example/problems/fx.AmountOutOfRange"
+                    }
+                  }
+                }
+              ]
+            }
+          }
+        },
+        "description": "[422] The amount is outside the pair's bounds.",
+        "headers": {
+          "X-Client-Correlation-Id": {
+            "$ref": "#/components/headers/X-Client-Correlation-Id"
+          },
+          "X-Correlation-Id": {
+            "$ref": "#/components/headers/X-Correlation-Id"
+          }
+        }
+      },
+      "fx.CustomerNotEligible": {
+        "content": {
+          "application/problem+json": {
+            "schema": {
+              "allOf": [
+                {
+                  "$ref": "#/components/schemas/ProblemDetail"
+                },
+                {
+                  "properties": {
+                    "code": {
+                      "const": "fx.CustomerNotEligible"
+                    },
+                    "status": {
+                      "const": 422
+                    },
+                    "type": {
+                      "const": "https://finapp.example/problems/fx.CustomerNotEligible"
+                    }
+                  }
+                }
+              ]
+            }
+          }
+        },
+        "description": "[422] The customer cannot request a quote.",
+        "headers": {
+          "X-Client-Correlation-Id": {
+            "$ref": "#/components/headers/X-Client-Correlation-Id"
+          },
+          "X-Correlation-Id": {
+            "$ref": "#/components/headers/X-Correlation-Id"
+          }
+        }
+      },
       "fx.NotFound": {
         "content": {
           "application/problem+json": {
@@ -988,6 +1058,111 @@
           }
         },
         "description": "[404] No FX policy record matches the requested identifier.",
+        "headers": {
+          "X-Client-Correlation-Id": {
+            "$ref": "#/components/headers/X-Client-Correlation-Id"
+          },
+          "X-Correlation-Id": {
+            "$ref": "#/components/headers/X-Correlation-Id"
+          }
+        }
+      },
+      "fx.PairNotOffered": {
+        "content": {
+          "application/problem+json": {
+            "schema": {
+              "allOf": [
+                {
+                  "$ref": "#/components/schemas/ProblemDetail"
+                },
+                {
+                  "properties": {
+                    "code": {
+                      "const": "fx.PairNotOffered"
+                    },
+                    "status": {
+                      "const": 422
+                    },
+                    "type": {
+                      "const": "https://finapp.example/problems/fx.PairNotOffered"
+                    }
+                  }
+                }
+              ]
+            }
+          }
+        },
+        "description": "[422] The currency pair is not offered.",
+        "headers": {
+          "X-Client-Correlation-Id": {
+            "$ref": "#/components/headers/X-Client-Correlation-Id"
+          },
+          "X-Correlation-Id": {
+            "$ref": "#/components/headers/X-Correlation-Id"
+          }
+        }
+      },
+      "fx.PairSuspended": {
+        "content": {
+          "application/problem+json": {
+            "schema": {
+              "allOf": [
+                {
+                  "$ref": "#/components/schemas/ProblemDetail"
+                },
+                {
+                  "properties": {
+                    "code": {
+                      "const": "fx.PairSuspended"
+                    },
+                    "status": {
+                      "const": 409
+                    },
+                    "type": {
+                      "const": "https://finapp.example/problems/fx.PairSuspended"
+                    }
+                  }
+                }
+              ]
+            }
+          }
+        },
+        "description": "[409] The currency pair is suspended; try again later.",
+        "headers": {
+          "X-Client-Correlation-Id": {
+            "$ref": "#/components/headers/X-Client-Correlation-Id"
+          },
+          "X-Correlation-Id": {
+            "$ref": "#/components/headers/X-Correlation-Id"
+          }
+        }
+      },
+      "fx.PolicyStale": {
+        "content": {
+          "application/problem+json": {
+            "schema": {
+              "allOf": [
+                {
+                  "$ref": "#/components/schemas/ProblemDetail"
+                },
+                {
+                  "properties": {
+                    "code": {
+                      "const": "fx.PolicyStale"
+                    },
+                    "status": {
+                      "const": 409
+                    },
+                    "type": {
+                      "const": "https://finapp.example/problems/fx.PolicyStale"
+                    }
+                  }
+                }
+              ]
+            }
+          }
+        },
+        "description": "[409] The pricing policy changed; request a new quote with a new key.",
         "headers": {
           "X-Client-Correlation-Id": {
             "$ref": "#/components/headers/X-Client-Correlation-Id"
@@ -1137,6 +1312,111 @@
           }
         }
       },
+      "fx.QuoteNotCancellable": {
+        "content": {
+          "application/problem+json": {
+            "schema": {
+              "allOf": [
+                {
+                  "$ref": "#/components/schemas/ProblemDetail"
+                },
+                {
+                  "properties": {
+                    "code": {
+                      "const": "fx.QuoteNotCancellable"
+                    },
+                    "status": {
+                      "const": 409
+                    },
+                    "type": {
+                      "const": "https://finapp.example/problems/fx.QuoteNotCancellable"
+                    }
+                  }
+                }
+              ]
+            }
+          }
+        },
+        "description": "[409] The quote can no longer be cancelled.",
+        "headers": {
+          "X-Client-Correlation-Id": {
+            "$ref": "#/components/headers/X-Client-Correlation-Id"
+          },
+          "X-Correlation-Id": {
+            "$ref": "#/components/headers/X-Correlation-Id"
+          }
+        }
+      },
+      "fx.QuoteNotFound": {
+        "content": {
+          "application/problem+json": {
+            "schema": {
+              "allOf": [
+                {
+                  "$ref": "#/components/schemas/ProblemDetail"
+                },
+                {
+                  "properties": {
+                    "code": {
+                      "const": "fx.QuoteNotFound"
+                    },
+                    "status": {
+                      "const": 404
+                    },
+                    "type": {
+                      "const": "https://finapp.example/problems/fx.QuoteNotFound"
+                    }
+                  }
+                }
+              ]
+            }
+          }
+        },
+        "description": "[404] No quote matches the requested identifier.",
+        "headers": {
+          "X-Client-Correlation-Id": {
+            "$ref": "#/components/headers/X-Client-Correlation-Id"
+          },
+          "X-Correlation-Id": {
+            "$ref": "#/components/headers/X-Correlation-Id"
+          }
+        }
+      },
+      "fx.RateUnavailable": {
+        "content": {
+          "application/problem+json": {
+            "schema": {
+              "allOf": [
+                {
+                  "$ref": "#/components/schemas/ProblemDetail"
+                },
+                {
+                  "properties": {
+                    "code": {
+                      "const": "fx.RateUnavailable"
+                    },
+                    "status": {
+                      "const": 503
+                    },
+                    "type": {
+                      "const": "https://finapp.example/problems/fx.RateUnavailable"
+                    }
+                  }
+                }
+              ]
+            }
+          }
+        },
+        "description": "[503] No rate is available right now; retry with a new key.",
+        "headers": {
+          "X-Client-Correlation-Id": {
+            "$ref": "#/components/headers/X-Client-Correlation-Id"
+          },
+          "X-Correlation-Id": {
+            "$ref": "#/components/headers/X-Correlation-Id"
+          }
+        }
+      },
       "fx.SelfApprovalRefused": {
         "content": {
           "application/problem+json": {
@@ -1163,6 +1443,41 @@
           }
         },
         "description": "[409] A proposal is approved by someone other than its proposer; the proposer may reject it.",
+        "headers": {
+          "X-Client-Correlation-Id": {
+            "$ref": "#/components/headers/X-Client-Correlation-Id"
+          },
+          "X-Correlation-Id": {
+            "$ref": "#/components/headers/X-Correlation-Id"
+          }
+        }
+      },
+      "fx.TooManyOpenQuotes": {
+        "content": {
+          "application/problem+json": {
+            "schema": {
+              "allOf": [
+                {
+                  "$ref": "#/components/schemas/ProblemDetail"
+                },
+                {
+                  "properties": {
+                    "code": {
+                      "const": "fx.TooManyOpenQuotes"
+                    },
+                    "status": {
+                      "const": 429
+                    },
+                    "type": {
+                      "const": "https://finapp.example/problems/fx.TooManyOpenQuotes"
+                    }
+                  }
+                }
+              ]
+            }
+          }
+        },
+        "description": "[429] Too many open quotes; let one expire or cancel it.",
         "headers": {
           "X-Client-Correlation-Id": {
             "$ref": "#/components/headers/X-Client-Correlation-Id"
@@ -6669,6 +6984,44 @@
         ],
         "type": "object"
       },
+      "FxQuoteView": {
+        "properties": {
+          "customerRate": {
+            "type": "string"
+          },
+          "destinationAmount": {
+            "type": "string"
+          },
+          "destinationCurrency": {
+            "type": "string"
+          },
+          "disclosedMarginOverMid": {
+            "type": "string"
+          },
+          "expiresAt": {
+            "type": "string"
+          },
+          "fixedSide": {
+            "type": "string"
+          },
+          "id": {
+            "type": "string"
+          },
+          "issuedAt": {
+            "type": "string"
+          },
+          "sourceAmount": {
+            "type": "string"
+          },
+          "sourceCurrency": {
+            "type": "string"
+          },
+          "status": {
+            "type": "string"
+          }
+        },
+        "type": "object"
+      },
       "HistoryView": {
         "properties": {
           "actor": {
@@ -7104,6 +7457,49 @@
           },
           "id": {
             "type": "string"
+          }
+        },
+        "type": "object"
+      },
+      "OfferedPair": {
+        "properties": {
+          "available": {
+            "type": "boolean"
+          },
+          "destinationCurrency": {
+            "type": "string"
+          },
+          "destinationMaximum": {
+            "type": "string"
+          },
+          "destinationMinimum": {
+            "type": "string"
+          },
+          "marketBase": {
+            "type": "string"
+          },
+          "sourceCurrency": {
+            "type": "string"
+          },
+          "sourceMaximum": {
+            "type": "string"
+          },
+          "sourceMinimum": {
+            "type": "string"
+          }
+        },
+        "type": "object"
+      },
+      "OfferedPairs": {
+        "properties": {
+          "pairs": {
+            "items": {
+              "$ref": "#/components/schemas/OfferedPair"
+            },
+            "type": "array"
+          },
+          "truncated": {
+            "type": "boolean"
           }
         },
         "type": "object"
@@ -8235,6 +8631,37 @@
             "type": "string"
           }
         },
+        "type": "object"
+      },
+      "QuoteRequestBody": {
+        "properties": {
+          "amount": {
+            "maxLength": 32,
+            "minLength": 0,
+            "type": "string"
+          },
+          "destinationCurrency": {
+            "maxLength": 3,
+            "minLength": 0,
+            "type": "string"
+          },
+          "fixedSide": {
+            "maxLength": 32,
+            "minLength": 0,
+            "type": "string"
+          },
+          "sourceCurrency": {
+            "maxLength": 3,
+            "minLength": 0,
+            "type": "string"
+          }
+        },
+        "required": [
+          "amount",
+          "destinationCurrency",
+          "fixedSide",
+          "sourceCurrency"
+        ],
         "type": "object"
       },
       "ReadmissionAnswer": {
@@ -11283,6 +11710,122 @@
               }
             },
             "description": "Created"
+          }
+        }
+      }
+    },
+    "/v1/me/fx/pairs": {
+      "get": {
+        "operationId": "pairs",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/OfferedPairs"
+                }
+              }
+            },
+            "description": "OK"
+          }
+        }
+      }
+    },
+    "/v1/me/fx/quotes": {
+      "post": {
+        "operationId": "requestQuote",
+        "parameters": [
+          {
+            "in": "header",
+            "name": "Idempotency-Key",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/QuoteRequestBody"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "201": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/FxQuoteView"
+                }
+              }
+            },
+            "description": "Created"
+          }
+        }
+      }
+    },
+    "/v1/me/fx/quotes/{id}": {
+      "get": {
+        "operationId": "readQuote",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "id",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/FxQuoteView"
+                }
+              }
+            },
+            "description": "OK"
+          }
+        }
+      }
+    },
+    "/v1/me/fx/quotes/{id}/cancellation": {
+      "post": {
+        "operationId": "cancelQuote",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "id",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "in": "header",
+            "name": "Idempotency-Key",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/FxQuoteView"
+                }
+              }
+            },
+            "description": "OK"
           }
         }
       }

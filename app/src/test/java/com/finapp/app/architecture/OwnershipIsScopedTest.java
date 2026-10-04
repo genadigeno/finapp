@@ -313,6 +313,34 @@ class OwnershipIsScopedTest {
                                         + " PaymentRefundEndpointDatabaseTest's permissionless"
                                         + " refusal. Customer HTTP reads go through findOwned.")),
                     Map.entry(
+                            "com.finapp.fx.JdbcQuoteStore.findOwned",
+                            new Entry(
+                                    Scope.OWNER_SCOPED,
+                                    "P9-TSK-008. GET /v1/me/fx/quotes/{id} - a resource identifier from the request; the"
+                                        + " owner is the session's party, owner_party_id = ? in the statement: a stranger's"
+                                        + " id, a malformed one and an absent one are one 404.")),
+                    Map.entry(
+                            "com.finapp.fx.JdbcQuoteStore.lockOwned",
+                            new Entry(
+                                    Scope.OWNER_SCOPED,
+                                    "P9-TSK-008. POST /v1/me/fx/quotes/{id}/cancellation - findOwned's statement plus FOR" + " UPDATE, the cancellation's serialization point against the sweep. Same ownership" + " predicate: a stranger's cancel finds nothing to lock.")),
+                    Map.entry(
+                            "com.finapp.fx.JdbcQuoteStore.cancel",
+                            new Entry(
+                                    Scope.AUTHORITATIVE_ID,
+                                    "com.finapp.fx.JdbcQuoteStore.lockOwned",
+                                    "P9-TSK-008. The conditional ISSUED -> CANCELLED, run by QuoteLifecycle.cancel only on the" + " id lockOwned resolved as the caller's own in the same transaction; V005's freeze makes" + " the owner immutable, so the ownership that read established still holds.")),
+                    Map.entry(
+                            "com.finapp.fx.JdbcQuoteStore.appendEvent",
+                            new Entry(
+                                    Scope.ADMINISTERED,
+                                    "P9-TSK-008. The append-only history row, written beside the edge it evidences on the id" + " the caller just inserted, locked as its own or moved by the expiry conditional - the" + " JdbcCheckoutSessionStore.appendHistory reasoning: a history row belongs to the quote it" + " names, and an unowned provenance cannot be cited as AUTHORITATIVE_ID.")),
+                    Map.entry(
+                            "com.finapp.fx.JdbcPricingPolicyStore.holdActive",
+                            new Entry(
+                                    Scope.ADMINISTERED,
+                                    "P9-TSK-008. The pinned version's FOR SHARE re-read in the quote's Tx2: the id comes only" + " from the quote request the same flight stored - never a request value; the pricing" + " policy is platform-wide configuration with no owner to scope by.")),
+                    Map.entry(
                             "com.finapp.fx.JdbcPricingPolicyStore.insertProposal",
                             new Entry(
                                     Scope.ADMINISTERED,
@@ -2436,7 +2464,13 @@ class OwnershipIsScopedTest {
                     Map.entry(
                             "com.finapp.accounts.JdbcCustomerAccountStore.lockOwnedForShare",
                             "com.finapp.app.domain.AccountEndpointDatabaseTest"
-                            + ".addingACurrencyOverHttp"));
+                            + ".addingACurrencyOverHttp"),
+                    Map.entry(
+                            "com.finapp.fx.JdbcQuoteStore.findOwned",
+                            "com.finapp.app.fx.FxQuoteEndpointDatabaseTest.theQuoteIsItsOwners"),
+                    Map.entry(
+                            "com.finapp.fx.JdbcQuoteStore.lockOwned",
+                            "com.finapp.app.fx.FxQuoteEndpointDatabaseTest.theQuoteIsItsOwners"));
 
     /**
      * The identity schema's owner column. (This said "one name, because one module owns every

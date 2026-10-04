@@ -1654,6 +1654,91 @@ set's precedent. Nothing here is about a customer.
 | `provider_availability` | `recorded_at` | `INTERNAL` | Application-stamped instant of the act |
 | `provider_availability` | `enable_request_id` | `INTERNAL` | The APPROVED request an enabling fact names; NULL on a disable |
 
+### `fx` — the quote — *added by `P9-TSK-008`*
+
+**The customer's frozen price** (ADR-0075 §§3-6, ADR-0076 §1). The plan's amounts are
+`RESTRICTED-FINANCIAL` - the amounts the trade will post; the customer, provider and internal rates
+and the margins are the platform's commercial terms, `CONFIDENTIAL`; the reference rate stays
+`INTERNAL` (a published mid, `rate_snapshot.rate`'s reasoning). Every quote is owner-scoped at
+every door. Nothing here is a person's PII beyond identifiers.
+
+| Table | Column | Level | Why |
+|---|---|---|---|
+| `quote_request` | `id` | `INTERNAL` | A request identifier. Generated |
+| `quote_request` | `reference` | `INTERNAL` | Our reference `QR`, sent to the provider - an identifier of a thing |
+| `quote_request` | `claim_key` | `CONFIDENTIAL` | The idempotency scope and the caller's key - the `idempotency_record` key's reasoning |
+| `quote_request` | `owner_party_id` | `INTERNAL` | An identifier of a party - `ledger_account.owner_ref`'s reasoning |
+| `quote_request` | `purpose` | `INTERNAL` | A closed vocabulary |
+| `quote_request` | `source_currency` | `INTERNAL` | An ISO 4217 code |
+| `quote_request` | `destination_currency` | `INTERNAL` | An ISO 4217 code |
+| `quote_request` | `fixed_side` | `INTERNAL` | A closed vocabulary |
+| `quote_request` | `fixed_amount_minor` | `RESTRICTED-FINANCIAL` | An amount of the customer's planned conversion - `hold.amount_minor`'s reasoning, before the movement it plans exists |
+| `quote_request` | `fixed_scale` | `INTERNAL` | Part of the monetary shape; meaningless without the amount |
+| `quote_request` | `pricing_policy_version_id` | `INTERNAL` | The pinned version - an identifier of a thing (`INV-HIST-04`) |
+| `quote_request` | `requested_at` | `INTERNAL` | The database's instant before the provider call - the window's anchor |
+| `quote_request` | `correlation_id` | `INTERNAL` | The flow's correlation |
+| `quote_sourcing_step` | `quote_request_id` | `INTERNAL` | The request it sourced |
+| `quote_sourcing_step` | `attempt` | `INTERNAL` | An ordinal |
+| `quote_sourcing_step` | `position` | `INTERNAL` | The candidate's place in the pinned order |
+| `quote_sourcing_step` | `provider_code` | `INTERNAL` | A declared provider's compiled code - an organisation |
+| `quote_sourcing_step` | `declaration_version` | `INTERNAL` | Which declaration judged it |
+| `quote_sourcing_step` | `outcome` | `INTERNAL` | A closed vocabulary |
+| `quote_sourcing_step` | `detail` | `INTERNAL` | An enumerated reason name, never a provider's text |
+| `quote_sourcing_step` | `recorded_at` | `INTERNAL` | The database's instant |
+| `quote` | `id` | `INTERNAL` | A quote identifier - what the customer accepts and the trade pins |
+| `quote` | `quote_request_id` | `INTERNAL` | Its request |
+| `quote` | `owner_party_id` | `INTERNAL` | An identifier of a party - `ledger_account.owner_ref`'s reasoning |
+| `quote` | `purpose` | `INTERNAL` | A closed vocabulary |
+| `quote` | `source_currency` | `INTERNAL` | An ISO 4217 code |
+| `quote` | `destination_currency` | `INTERNAL` | An ISO 4217 code |
+| `quote` | `fixed_side` | `INTERNAL` | A closed vocabulary |
+| `quote` | `pricing_policy_version_id` | `INTERNAL` | The pinned version (`INV-HIST-04`) |
+| `quote` | `provider_code` | `INTERNAL` | A declared provider's compiled code |
+| `quote` | `provider_quote_reference` | `CONFIDENTIAL` | The provider's own reference (`PHASE_9_PLAN.md` §8: provider references `CONFIDENTIAL`) |
+| `quote` | `provider_rate` | `CONFIDENTIAL` | The provider's firm price to the platform - commercial, never shown to a customer |
+| `quote` | `provider_valid_for_ms` | `INTERNAL` | A duration the provider stated |
+| `quote` | `provider_value_date` | `INTERNAL` | A date the provider stated |
+| `quote` | `obtained_at` | `INTERNAL` | When the answer arrived - provenance, never a decision |
+| `quote` | `requested_at` | `INTERNAL` | The request's database instant, copied - the window's anchor |
+| `quote` | `reference_snapshot_id` | `INTERNAL` | The reference the band judged against |
+| `quote` | `reference_rate` | `INTERNAL` | The independent source's published mid - `rate_snapshot.rate`'s reasoning |
+| `quote` | `customer_rate` | `CONFIDENTIAL` | The platform's price to its customer (`PHASE_9_PLAN.md` §8: quotes and rates `CONFIDENTIAL`, owner-scoped) |
+| `quote` | `internal_rate` | `CONFIDENTIAL` | The dealing rate - commercial, stored for Phase 14's split |
+| `quote` | `disclosed_margin` | `CONFIDENTIAL` | The margin over mid disclosed to this customer - their price's anatomy |
+| `quote` | `spread` | `CONFIDENTIAL` | The pinned terms, copied - `pricing_pair.spread`'s reasoning |
+| `quote` | `markup` | `CONFIDENTIAL` | The pinned terms, copied - `pricing_pair.markup`'s reasoning |
+| `quote` | `rate_scale` | `INTERNAL` | A precision |
+| `quote` | `rate_rounding` | `INTERNAL` | A closed vocabulary (`RoundingPolicy`) |
+| `quote` | `amount_rounding` | `INTERNAL` | A closed vocabulary (`RoundingPolicy`) |
+| `quote` | `margin_rounding` | `INTERNAL` | A closed vocabulary (`RoundingPolicy`) |
+| `quote` | `window_seconds` | `INTERNAL` | A policy magnitude, copied |
+| `quote` | `cover_margin_seconds` | `INTERNAL` | A policy magnitude, copied |
+| `quote` | `source_scale` | `INTERNAL` | Part of the monetary shape |
+| `quote` | `destination_scale` | `INTERNAL` | Part of the monetary shape |
+| `quote` | `customer_source_minor` | `RESTRICTED-FINANCIAL` | A frozen posting-plan amount the trade will post - `journal_line.amount_minor`'s reasoning, ahead of the entry |
+| `quote` | `customer_destination_minor` | `RESTRICTED-FINANCIAL` | A frozen posting-plan amount the trade will post - `journal_line.amount_minor`'s reasoning, ahead of the entry |
+| `quote` | `position_source_minor` | `RESTRICTED-FINANCIAL` | A frozen posting-plan amount the trade will post - `journal_line.amount_minor`'s reasoning, ahead of the entry |
+| `quote` | `position_destination_minor` | `RESTRICTED-FINANCIAL` | A frozen posting-plan amount the trade will post - `journal_line.amount_minor`'s reasoning, ahead of the entry |
+| `quote` | `margin_minor` | `RESTRICTED-FINANCIAL` | A frozen posting-plan amount the trade will post - `journal_line.amount_minor`'s reasoning, ahead of the entry |
+| `quote` | `spread_margin_minor` | `RESTRICTED-FINANCIAL` | A frozen posting-plan amount the trade will post - `journal_line.amount_minor`'s reasoning, ahead of the entry |
+| `quote` | `markup_margin_minor` | `RESTRICTED-FINANCIAL` | A frozen posting-plan amount the trade will post - `journal_line.amount_minor`'s reasoning, ahead of the entry |
+| `quote` | `residual_minor` | `RESTRICTED-FINANCIAL` | A frozen posting-plan amount the trade will post - `journal_line.amount_minor`'s reasoning, ahead of the entry |
+| `quote` | `status` | `INTERNAL` | An enumeration member |
+| `quote` | `issued_at` | `INTERNAL` | The database's instant of issue |
+| `quote` | `expires_at` | `INTERNAL` | Computed by the database from durations - the lock's end |
+| `quote` | `closed_at` | `INTERNAL` | The database's instant of the terminal edge |
+| `quote` | `issued_event_id` | `INTERNAL` | The issue event's identifier - the expiry's causation |
+| `quote` | `correlation_id` | `INTERNAL` | The request's correlation, restored by the sweeper |
+| `quote_event` | `id` | `INTERNAL` | An event identifier. Generated |
+| `quote_event` | `quote_id` | `INTERNAL` | The moved quote |
+| `quote_event` | `from_status` | `INTERNAL` | The edge's origin, NULL at birth |
+| `quote_event` | `to_status` | `INTERNAL` | The edge's destination - a closed vocabulary |
+| `quote_event` | `actor_id` | `CONFIDENTIAL` | Who moved it - the audit actor class |
+| `quote_event` | `actor_type` | `INTERNAL` | An enumerated population |
+| `quote_event` | `detected_by` | `INTERNAL` | `SWEEP` or `ACCEPTANCE` - a closed vocabulary |
+| `quote_event` | `occurred_at` | `INTERNAL` | The database's instant |
+| `quote_event` | `correlation_id` | `INTERNAL` | The flow's correlation |
+
 ### `consent.consent_text` and `consent.consent_record` — *added by `P2-TSK-017`*
 
 | Table | Column | Level | Why |

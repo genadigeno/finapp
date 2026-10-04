@@ -530,6 +530,7 @@ repudiation's with `P8-TSK-023`.
 
 | Action | Reason required | What it records, and why |
 |---|---|---|
+| `fx.QuoteCancelled` | No | The owner cancelled a live quote (`P9-TSK-008`) - a customer act, under the quote row's lock, conditional on `expires_at > statement_timestamp()`. The summary names the quote; a customer's cancellation needs no reason. Issuance and expiry are not audit records: the quote's own history (`fx.quote_event`) and events (`fx.FxQuoteIssued`, `fx.FxQuoteExpired`) record them, and the expiry has no person. |
 | `fx.PricingPolicyProposed` | **Yes** | An FX controller proposed a whole pricing policy version (`P9-TSK-007`, ADR-0075 §7): every (pair, purpose) row frozen from the proposal by trigger, awaiting a DIFFERENT controller. The summary names the version, the row count and the open-quote cap - never a margin; the reason is the proposer's. |
 | `fx.PricingPolicyActivated` | **Yes** | A second controller activated a proposed version (`P9-TSK-007`, `INV-AUD-04`), its predecessor retired first in the same transaction - at most one version is ever `ACTIVE`, and a retirement commits only beside its successor. The summary names both versions; a new version prices only new quotes (`INV-HIST-04`). |
 | `fx.PricingPolicyRejected` | **Yes** | A controller rejected a proposed version (`P9-TSK-007`) - the proposer withdrawing their own included, since declining a change changes no price. |

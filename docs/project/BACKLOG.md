@@ -12913,7 +12913,7 @@ break row, as the approval door must.)*
 
 # Phase 9 — FX and Cross-Border Payments
 
-Status: `IN_PROGRESS` — started 2026-10-03 with `P9-TSK-001` (7 of 30 items complete, M9.1 closed, M9.2 at 3 of 4); entry gate passed 2026-10-02 by the Phase 8 → 9 transition
+Status: `IN_PROGRESS` — started 2026-10-03 with `P9-TSK-001` (8 of 30 items complete, M9.1 and M9.2 closed); entry gate passed 2026-10-02 by the Phase 8 → 9 transition
 ([`reviews/PHASE_8_TO_9_TRANSITION.md`](reviews/PHASE_8_TO_9_TRANSITION.md)), elaborated to task
 granularity by the same transition: thirty items (`P9-TSK-001`…`-027`, `P9-TST-001`, `P9-TST-002`,
 `P9-DOC-001`) across nine milestones, with `P9-TSK-001` marked `READY`. The engineering plan is
@@ -13275,7 +13275,8 @@ providers), each owned by Phase 15 and gating nothing here.
 - **Definition of done**: `DOD-FIN`, `DOD-SEC`, `DOD-API`, `DOD-EVENT`, `DOD-DOMAIN`. **Risk**: Low.
   **Cx**: M.
 
-**P9-TSK-008 — The quote lifecycle** — `READY` (marked by `P9-TSK-007`'s completion gate, 2026-10-04)
+**P9-TSK-008 — The quote lifecycle** — `COMPLETE` (2026-10-04; marked `READY` by `P9-TSK-007`'s completion gate)
+- **As built** (2026-10-04): as `CURRENT_STATE.md` §Just completed records. Every scope item shipped. Decided at build: the insert trigger computes the window; the copied terms are checked against the pinned version for every writer; the stale reference is pre-checked in the claim too; strict deserialisation is the opt-in `ClosedBody`; the event carries `expiresAtEpochMicros`; the acceptance path's `detectedBy ACCEPTANCE` arrives with `P9-TSK-009`. Twelve probes, twelve caught. No deviation from scope.
 - **Objective**: a server-authoritative, single-use, frozen-plan quote whose expiry is an event.
 - **Bounded context**: `fx`.
 - **Dependencies**: `-005`, `-006`, `-007`.
@@ -13325,7 +13326,7 @@ providers), each owned by Phase 15 and gating nothing here.
   price; expiry happens exactly once.
 - **Definition of done**: `DOD-FIN`, `DOD-API`, `DOD-EVENT`, `DOD-SEC`. **Risk**: High. **Cx**: L.
 
-**P9-TSK-009 — Wallet conversion** — `PLANNED`
+**P9-TSK-009 — Wallet conversion** — `READY` (marked by `P9-TSK-008`'s completion gate, 2026-10-04)
 - **Objective**: accept a quote and book the conversion atomically through `FX_POSITION`.
 - **Bounded context**: `fx`, `ledger`, `accounts` (via the port).
 - **Dependencies**: `-004`, `-008`.

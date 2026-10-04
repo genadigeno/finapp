@@ -115,7 +115,8 @@ class FxMigrationTest {
                         "flyway_schema_history", "rate_fetch_permit", "rate_snapshot",
                         "fx_provider_evidence", "pricing_policy_version", "pricing_policy_event",
                         "pricing_pair", "availability_enable_request", "pair_availability",
-                        "provider_availability");
+                        "provider_availability", "quote_request", "quote_sourcing_step", "quote",
+                        "quote_event");
 
         assertThatExceptionOfType(SQLException.class)
                 .isThrownBy(() -> asApplication(
