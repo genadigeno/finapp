@@ -95,7 +95,7 @@ class LedgerMetricsTest {
         MeterRegistry registry = new SimpleMeterRegistry();
         new LedgerMetrics(counting(0).verification, balancedTrial(), noHolds(), reachable(), CLOCK, registry);
 
-        for (String currency : List.of("EUR", "GBP", "USD")) {
+        for (String currency : List.of("EUR", "GBP", "USD", "JPY", "BHD")) {
             assertThat(trialGauge(registry, currency))
                     .as("a balanced ledger reads verified-zero for %s", currency)
                     .isEqualTo(0.0d);
@@ -130,7 +130,7 @@ class LedgerMetricsTest {
         MeterRegistry registry = new SimpleMeterRegistry();
         new LedgerMetrics(counting(0).verification, balancedTrial(), noHolds(), unreachable(), CLOCK, registry);
 
-        for (String currency : List.of("EUR", "GBP", "USD")) {
+        for (String currency : List.of("EUR", "GBP", "USD", "JPY", "BHD")) {
             assertThat(trialGauge(registry, currency)).isNaN();
         }
     }

@@ -327,7 +327,7 @@ guards before landing.
 | 7 | Idempotency stated for every money-moving command | Yes — §4 and each task |
 | 8 | External dependencies and failure modes listed | Yes — §14's sixty scenarios |
 | 9 | Security, audit and reconciliation implications stated | Yes — §11, §12 |
-| 10 | Backlog at task granularity with acceptance criteria | Yes — thirty items plus `X-TSK-013`…`-012`, the twenty-three fields each |
+| 10 | Backlog at task granularity with acceptance criteria | Yes — thirty items plus `X-TSK-013`…`-015`, the twenty-three fields each |
 | 11 | Required decisions have ADRs at least `Proposed` | Yes — ADR-0074…0083 |
 | 12 | `CURRENT_STATE.md` names the phase active | Yes — Phase 9 `READY`, `P9-TSK-001` the current task |
 

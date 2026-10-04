@@ -1,7 +1,5 @@
 package com.finapp.accounts;
 
-import com.finapp.ledger.AccountPurpose;
-import com.finapp.ledger.AccountType;
 import com.finapp.ledger.LedgerAccount;
 import com.finapp.ledger.LedgerAccountStore;
 import com.finapp.ledger.SupportedCurrencies;
@@ -26,7 +24,6 @@ import java.time.Instant;
 import java.util.Objects;
 import java.util.UUID;
 import lombok.NonNull;
-import lombok.RequiredArgsConstructor;
 
 /**
  * Opens a customer account product: the agreement and its ledger account, in one transaction
@@ -51,10 +48,14 @@ import lombok.RequiredArgsConstructor;
  * a double-tap, the losers of a race — is not a second act: one agreement, one record, one
  * event, however many times it was asked for ({@code INV-KYC-03}'s discipline). The converged
  * caller gets the existing live product <em>unchanged</em>, including when it asked in a
- * different currency: adding a currency to an existing product is a different act with no owner
- * this phase, recorded rather than smuggled in here.
+ * different currency: adding a currency is a different act, {@link #addCurrency}
+ * (`P9-TSK-004`), never smuggled in here.
+ *
+ * <p><strong>Every wallet account opens through {@link WalletAccounts#openIfAbsent}</strong>
+ * (`P9-TSK-004`, D28) — the first currency here, every later one at {@link #addCurrency} — so
+ * each wallet account is announced by exactly one {@code accounts.WalletCurrencyAdded}, written
+ * by the call whose insert created it, whichever act that was.
  */
-@RequiredArgsConstructor
 public final class AccountOpening {
 
     /** One fact, named once, in two registries — the audit action carries the same code. */
@@ -64,13 +65,37 @@ public final class AccountOpening {
     static final int EVENT_VERSION = 1;
     static final String TARGET_TYPE = "customer_account";
 
-    @NonNull private final CustomerAccountStore<Connection> accounts;
-    @NonNull private final LedgerAccountStore<Connection> ledgerAccounts;
-    @NonNull private final AccountHolderVerification<Connection> holders;
-    @NonNull private final AuditWriter<Connection> audit;
-    @NonNull private final OutboxWriter<Connection> outbox;
-    @NonNull private final IdGenerator ids;
-    @NonNull private final Clock clock;
+    private final CustomerAccountStore<Connection> accounts;
+    private final AccountHolderVerification<Connection> holders;
+    private final AuditWriter<Connection> audit;
+    private final OutboxWriter<Connection> outbox;
+    private final IdGenerator ids;
+    private final Clock clock;
+
+    /** The one door every wallet account opens through, built from this act's own stores. */
+    private final WalletAccounts wallets;
+
+    /**
+     * Explicit rather than generated: the wallet door is <em>derived</em> from the stores, so
+     * every caller of this act opens wallets through the same code path without a second
+     * constructor argument to forget. Parameter names are the bean names (`AccountsBeans`).
+     */
+    public AccountOpening(
+            @NonNull CustomerAccountStore<Connection> accounts,
+            @NonNull LedgerAccountStore<Connection> ledgerAccounts,
+            @NonNull AccountHolderVerification<Connection> holders,
+            @NonNull AuditWriter<Connection> audit,
+            @NonNull OutboxWriter<Connection> outbox,
+            @NonNull IdGenerator ids,
+            @NonNull Clock clock) {
+        this.accounts = accounts;
+        this.holders = holders;
+        this.audit = audit;
+        this.outbox = outbox;
+        this.ids = ids;
+        this.clock = clock;
+        this.wallets = new WalletAccounts(accounts, ledgerAccounts, outbox, ids, clock);
+    }
 
     /**
      * Ensures the party's live account of {@code productType} exists, creating it — and its
@@ -113,21 +138,6 @@ public final class AccountOpening {
 
         CustomerAccount account = creation.account();
 
-        // The product's money side, in the same transaction (ADR-0042): a customer's stored
-        // value is the platform's LIABILITY - every customer credit is money the platform owes -
-        // and the ledger sees only owner_kind CUSTOMER with this aggregate's id as the opaque
-        // owner_ref. createOrConverge, so a partially-repeated open (this row lost its race but
-        // the product converged on a winner mid-crash-recovery) still lands on one account.
-        ledgerAccounts.createOrConverge(
-                unitOfWork,
-                LedgerAccount.owned(
-                        ids,
-                        clock,
-                        AccountType.LIABILITY,
-                        AccountPurpose.CUSTOMER_WALLET,
-                        currency,
-                        account.id().value()));
-
         Instant now = Instant.now(clock);
         audit.append(
                 unitOfWork,
@@ -163,15 +173,94 @@ public final class AccountOpening {
                 EventPayload.of().with("productType", productType.name()).toBytes(),
                 EventPayload.MEDIA_TYPE);
 
+        // The product's money side, in the same transaction (ADR-0042), through the one wallet
+        // door (P9-TSK-004) - after the agreement is announced, so a consumer meets
+        // AccountOpened before the wallet it holds. The agreement row is this transaction's
+        // own, so its FOR SHARE is granted at once; the door announces the wallet
+        // (accounts.WalletCurrencyAdded).
+        wallets.openIfAbsent(unitOfWork, customerId, account.id(), currency)
+                .orElseThrow(
+                        () ->
+                                new AccountsStorageException(
+                                        "an agreement this transaction created is not visible"
+                                                + " to its own wallet door - an invariant is"
+                                                + " already broken"));
+
         return creation;
+    }
+
+    /** The agreement and its wallet in the asked currency, and whether this act opened it. */
+    public record CurrencyAddition(CustomerAccount account, LedgerAccount wallet, boolean added) {}
+
+    /**
+     * Adds a wallet in {@code currency} to the party's agreement {@code accountId}, or converges
+     * on the wallet it already holds (`P9-TSK-004`). Every write on {@code unitOfWork}; a
+     * refusal thrown here writes nothing.
+     *
+     * <p>The gate is the opening's own authoritative read ({@code INV-KYC-05}, unchanged): a
+     * party with no {@code ACTIVE} customer adds nothing. Ownership is the agreement lock's
+     * statement predicate inside {@link WalletAccounts#openIfAbsent}; only the call whose
+     * insert created the wallet audits, as only the creating opening does.
+     *
+     * @return empty when the agreement does not exist or is not the party's customer's
+     * @throws AccountOpeningRefusedException when the party holds no {@code ACTIVE} customer
+     * @throws UnsupportedAccountCurrencyException when the currency is not postable
+     * @throws AccountNotActiveException when the agreement is not {@code ACTIVE}
+     */
+    public java.util.Optional<CurrencyAddition> addCurrency(
+            Connection unitOfWork, UUID partyId, CustomerAccountId accountId,
+            CurrencyCode currency) {
+        Objects.requireNonNull(unitOfWork, "unitOfWork must not be null");
+        Objects.requireNonNull(partyId, "partyId must not be null");
+        Objects.requireNonNull(accountId, "accountId must not be null");
+        Objects.requireNonNull(currency, "currency must not be null");
+
+        Actor actor = SecurityContext.require();
+        Correlation correlation = resolvedCorrelation();
+
+        // Refused before any lookup, as the opening refuses it.
+        if (!SupportedCurrencies.ALL.contains(currency)) {
+            throw new UnsupportedAccountCurrencyException(currency);
+        }
+        UUID customerId =
+                holders.eligibleCustomer(unitOfWork, partyId)
+                        .orElseThrow(AccountOpeningRefusedException::new);
+
+        java.util.Optional<WalletAccounts.Opened> opened =
+                wallets.openIfAbsent(unitOfWork, customerId, accountId, currency);
+        if (opened.isEmpty()) {
+            return java.util.Optional.empty();
+        }
+        WalletAccounts.Opened wallet = opened.get();
+        if (wallet.created()) {
+            audit.append(
+                    unitOfWork,
+                    new AuditRecord(
+                            AuditId.next(ids),
+                            actor,
+                            Instant.now(clock),
+                            AccountsAuditAction.WALLET_CURRENCY_ADDED,
+                            TARGET_TYPE,
+                            accountId.value().toString(),
+                            java.util.Optional.empty(),
+                            AuditOutcome.SUCCEEDED,
+                            correlation.correlationId(),
+                            // Identifiers and an ISO code - never a balance (INV-AUD-02).
+                            java.util.Optional.of(
+                                    "account=" + accountId + ", currency=" + currency.code()
+                                            + ", ledgerAccount=" + wallet.wallet().id())));
+        }
+        return java.util.Optional.of(
+                new CurrencyAddition(wallet.product(), wallet.wallet(), wallet.created()));
     }
 
     /**
      * The flow's correlation, with the cause resolved: at a flow root the request is the cause —
      * the {@code PostingService}/{@code OrganisationRegistration} idiom, because the envelope's
-     * causation field is mandatory ({@code INV-EVT-03}).
+     * causation field is mandatory ({@code INV-EVT-03}). Shared with {@link WalletAccounts},
+     * whose event joins whichever act's flow opened the wallet.
      */
-    private static Correlation resolvedCorrelation() {
+    static Correlation resolvedCorrelation() {
         Correlation current =
                 CorrelationContext.current()
                         .orElseThrow(

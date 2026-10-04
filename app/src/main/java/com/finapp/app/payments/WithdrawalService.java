@@ -6,6 +6,9 @@ import com.finapp.identity.IdentityStore;
 import com.finapp.identity.MfaEnrolmentStore;
 import com.finapp.identity.MfaFactorType;
 import com.finapp.identity.Session;
+import com.finapp.party.CustomerStatus;
+import com.finapp.party.PartyId;
+import com.finapp.party.PartyStore;
 import com.finapp.payments.NoEligibleRailException;
 import com.finapp.payments.PaymentParticipants;
 import com.finapp.payments.PaymentsErrorCode;
@@ -47,6 +50,7 @@ public final class WithdrawalService {
     private final WithdrawalStore<Connection> withdrawals;
     private final MfaEnrolmentStore<Connection> enrolments;
     private final IdentityStore<Connection> identities;
+    private final PartyStore<Connection> parties;
     private final TransactionRunner transactions;
 
     public WithdrawalService(
@@ -55,12 +59,14 @@ public final class WithdrawalService {
             WithdrawalStore<Connection> withdrawals,
             MfaEnrolmentStore<Connection> enrolments,
             IdentityStore<Connection> identities,
+            PartyStore<Connection> parties,
             TransactionRunner transactions) {
         this.engine = Objects.requireNonNull(engine, "engine must not be null");
         this.participants = Objects.requireNonNull(participants, "participants must not be null");
         this.withdrawals = Objects.requireNonNull(withdrawals, "withdrawals must not be null");
         this.enrolments = Objects.requireNonNull(enrolments, "enrolments must not be null");
         this.identities = Objects.requireNonNull(identities, "identities must not be null");
+        this.parties = Objects.requireNonNull(parties, "parties must not be null");
         this.transactions = Objects.requireNonNull(transactions, "transactions must not be null");
     }
 
@@ -93,7 +99,8 @@ public final class WithdrawalService {
                     command.withdraw(
                             idempotencyKey,
                             amount,
-                            unitOfWork -> resolved(unitOfWork, current, methodId));
+                            unitOfWork ->
+                                    resolved(unitOfWork, current, methodId, amount.currency()));
         } catch (WithdrawalUnfundedException unfunded) {
             throw new ApiException(
                     PaymentsErrorCode.WITHDRAWAL_UNFUNDED,
@@ -134,14 +141,18 @@ public final class WithdrawalService {
         return transactions.inTransaction(
                 unitOfWork -> {
                     UUID partyId = partyOf(unitOfWork, current);
-                    return participants
-                            .walletOwnedBy(unitOfWork, partyId)
+                    // The owner, not a wallet (P9-TSK-004): a read keyed by the withdrawal's
+                    // id asks whose record it is, and a wallet is per currency - the party's
+                    // live ACTIVE customer is the owning principal the record stores.
+                    return parties
+                            .findLiveCustomerFor(unitOfWork, PartyId.of(partyId))
+                            .filter(customer -> customer.status() == CustomerStatus.ACTIVE)
                             .flatMap(
-                                    wallet ->
+                                    customer ->
                                             withdrawals.findOwned(
                                                     unitOfWork,
                                                     WithdrawalId.of(id),
-                                                    wallet.customerId()))
+                                                    customer.id().value()))
                             .map(WithdrawalService::viewOf);
                 });
     }
@@ -149,12 +160,13 @@ public final class WithdrawalService {
     // -----------------------------------------------------------------
 
     /** The engine's resolver: runs inside the dispatch transaction, refusals and all. */
-    private Withdrawals.Resolved resolved(Connection unitOfWork, Session current, UUID methodId) {
+    private Withdrawals.Resolved resolved(
+            Connection unitOfWork, Session current, UUID methodId, CurrencyCode currency) {
         UUID partyId = partyOf(unitOfWork, current);
         requireConditionalAssurance(unitOfWork, current);
         PaymentParticipants.Wallet wallet =
                 participants
-                        .walletOwnedBy(unitOfWork, partyId)
+                        .walletOwnedBy(unitOfWork, partyId, currency)
                         .orElseThrow(
                                 () ->
                                         new ApiException(

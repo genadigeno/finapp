@@ -285,6 +285,14 @@ final class StormTraffic {
      * is {@code P6-TSK-011}'s subject, not this storm's).
      */
     Merchant merchant(Staff administrator) throws Exception {
+        return merchant(administrator, EUR);
+    }
+
+    /**
+     * The same merchant settling in {@code currency} (`P9-TSK-003`): its settlement currency and
+     * its fee schedule's, priced at 2.9% plus 30 of the currency's own minor units.
+     */
+    Merchant merchant(Staff administrator, CurrencyCode currency) throws Exception {
         UUID party = IDS.next();
         try (Connection app = DatabaseRoles.application()) {
             execute(app,
@@ -300,14 +308,16 @@ final class StormTraffic {
         HttpResponse<String> created =
                 post("/v1/operator/merchants",
                         "{\"partyId\":\"" + party + "\",\"legalName\":\"Storm Traders GmbH\","
-                                + "\"displayName\":\"Storm\",\"settlementCurrency\":\"EUR\"}",
+                                + "\"displayName\":\"Storm\",\"settlementCurrency\":\""
+                                + currency.code() + "\"}",
                         administrator.token(), someKey());
         assertThat(created.statusCode()).as(created.body()).isEqualTo(201);
         String merchantId = field(created.body(), "merchantId");
         String schedule =
                 field(post("/v1/operator/fee-schedules",
                                         "{\"name\":\"Storm " + UUID.randomUUID()
-                                                + "\",\"currency\":\"EUR\"}",
+                                                + "\",\"currency\":\"" + currency.code()
+                                                + "\"}",
                                         administrator.token(), null)
                                 .body(),
                         "feeScheduleId");
@@ -344,14 +354,19 @@ final class StormTraffic {
 
     /** The merchant with its payable, which exists once it has sold. */
     Merchant withPayable(Merchant merchant) throws SQLException {
+        return withPayable(merchant, EUR);
+    }
+
+    /** The merchant with its payable in {@code currency}, which exists once it has sold. */
+    Merchant withPayable(Merchant merchant, CurrencyCode currency) throws SQLException {
         try (Connection app = DatabaseRoles.application()) {
             return new Merchant(merchant.id(), merchant.key(),
                     UUID.fromString(
                             one(app,
                                     "SELECT id::text FROM ledger.ledger_account WHERE owner_ref"
                                             + " = ?::uuid AND purpose = 'MERCHANT_PAYABLE' AND"
-                                            + " currency = 'EUR'",
-                                    merchant.id())));
+                                            + " currency = ?",
+                                    merchant.id(), currency.code())));
         }
     }
 
@@ -437,9 +452,16 @@ final class StormTraffic {
 
     /** A checkout paid by card, completed: the merchant's payable credited. */
     void cardSale(Merchant merchant, Customer customer, long minor) throws Exception {
+        cardSale(merchant, customer, minor, EUR);
+    }
+
+    /** A checkout in {@code currency}, paid by card, completed (`P9-TSK-003`). */
+    void cardSale(Merchant merchant, Customer customer, long minor, CurrencyCode currency)
+            throws Exception {
         HttpResponse<String> opened =
                 post("/v1/checkout/sessions",
-                        "{\"amountMinor\":" + minor + ",\"currency\":\"EUR\","
+                        "{\"amountMinor\":" + minor + ",\"currency\":\"" + currency.code()
+                                + "\","
                                 + "\"lineSummary\":\"A storm of coffees\"}",
                         merchant.key(), someKey());
         assertThat(opened.statusCode()).as(opened.body()).isEqualTo(201);

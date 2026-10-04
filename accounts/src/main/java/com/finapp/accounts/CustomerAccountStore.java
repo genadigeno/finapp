@@ -82,6 +82,16 @@ public interface CustomerAccountStore<T> {
             T unitOfWork, CustomerAccountId accountId, UUID customerId);
 
     /**
+     * {@link #findOwnedBy}, read {@code FOR SHARE} — the wallet opener's rank beneath the
+     * closer's {@code FOR UPDATE} (`P9-TSK-004`): openers of one product's currencies do not
+     * block each other, and an opener and a close serialise, so a wallet is never opened under
+     * an agreement a concurrent close is ending. Same ownership predicate, same one empty
+     * answer.
+     */
+    Optional<CustomerAccount> lockOwnedForShare(
+            T unitOfWork, CustomerAccountId accountId, UUID customerId);
+
+    /**
      * Moves an agreement {@code from} one status {@code to} another — the conditional whose
      * row count is the outcome, arriving with its first caller exactly as this interface's
      * javadoc deferred it (`P3-TSK-014`'s close). The machine is asked before any SQL

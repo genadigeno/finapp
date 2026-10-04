@@ -1,5 +1,8 @@
 package com.finapp.app.settlement;
 
+import com.finapp.sharedkernel.money.CurrencyCode;
+import java.math.BigDecimal;
+import java.math.RoundingMode;
 import java.nio.charset.StandardCharsets;
 import java.time.LocalDate;
 import java.util.ArrayList;
@@ -26,6 +29,10 @@ import java.util.Set;
  * (the header's currency is every line's - the line-level {@link Fault#WRONG_CURRENCY} is a
  * parse defect, kept as one). {@code SimulatedSettlementReportsTest} pins that each fault
  * produces exactly the defect it claims.
+ *
+ * <p>Amounts are the caller's decimal strings, written as given; the trailer's net is folded
+ * and written at the REPORT CURRENCY'S own minor units (`P9-TSK-003`: JPY's 0, BHD's 3, two
+ * for EUR, GBP and USD, whose renders are byte for byte what they were).
  */
 public final class SimulatedSettlementReports {
 
@@ -123,6 +130,7 @@ public final class SimulatedSettlementReports {
     private final String remittanceReference;
     private final List<Line> lines = new ArrayList<>();
     private final Set<Fault> faults = EnumSet.noneOf(Fault.class);
+    private final int scale;
 
     public SimulatedSettlementReports(
             String batchRef, String currency, LocalDate businessDate,
@@ -131,6 +139,7 @@ public final class SimulatedSettlementReports {
         this.currency = Objects.requireNonNull(currency);
         this.businessDate = Objects.requireNonNull(businessDate);
         this.remittanceReference = Objects.requireNonNull(remittanceReference);
+        this.scale = CurrencyCode.of(currency).minorUnits();
     }
 
     public SimulatedSettlementReports with(Line line) {
@@ -189,18 +198,17 @@ public final class SimulatedSettlementReports {
         return report.toString().getBytes(StandardCharsets.UTF_8);
     }
 
-    /** Two-decimal money as the format writes it — a fixture, so the scale is the report's. */
-    private static long minorOf(String decimal) {
-        boolean negative = decimal.startsWith("-");
-        String[] parts = (negative ? decimal.substring(1) : decimal).split("\\.", 2);
-        long minor = Long.parseLong(parts[0]) * 100
-                + (parts.length == 2 ? Long.parseLong((parts[1] + "00").substring(0, 2)) : 0);
-        return negative ? -minor : minor;
+    /**
+     * A decimal string as minor units at the report currency's scale - a fixture, so a digit
+     * past the scale is cut (toward zero) as the two-decimal reading always cut it.
+     */
+    private long minorOf(String decimal) {
+        return new BigDecimal(decimal).setScale(scale, RoundingMode.DOWN).unscaledValue()
+                .longValueExact();
     }
 
-    private static String decimalOf(long minor) {
-        long magnitude = Math.abs(minor);
-        return (minor < 0 ? "-" : "") + (magnitude / 100) + "."
-                + String.format("%02d", magnitude % 100);
+    /** Minor units as the format writes them: the currency's scale, a sign when negative. */
+    private String decimalOf(long minor) {
+        return BigDecimal.valueOf(minor, scale).toPlainString();
     }
 }

@@ -334,6 +334,7 @@ class PaymentBeans {
             com.finapp.payments.WithdrawalStore<Connection> withdrawalStore,
             com.finapp.identity.MfaEnrolmentStore<Connection> mfaEnrolmentStore,
             com.finapp.identity.IdentityStore<Connection> identityStore,
+            PartyStore<Connection> partyStore,
             TransactionRunner paymentTransactionRunner) {
         return new WithdrawalService(
                 withdrawals,
@@ -341,6 +342,7 @@ class PaymentBeans {
                 withdrawalStore,
                 mfaEnrolmentStore,
                 identityStore,
+                partyStore,
                 paymentTransactionRunner);
     }
 

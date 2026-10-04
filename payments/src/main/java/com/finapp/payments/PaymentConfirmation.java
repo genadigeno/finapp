@@ -240,7 +240,7 @@ public final class PaymentConfirmation {
             kind = InstrumentKind.WALLET;
             PaymentParticipants.Wallet payer =
                     participants
-                            .payerWalletOwnedBy(uow, callerPartyId)
+                            .payerWalletOwnedBy(uow, callerPartyId, intent.amount().currency())
                             .orElseThrow(UnknownPaymentInstrumentException::new);
             if (!payer.account().equals(intent.debitAccount().orElseThrow())
                     || !payer.currency().equals(intent.amount().currency())) {

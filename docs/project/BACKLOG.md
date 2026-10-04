@@ -12913,7 +12913,7 @@ break row, as the approval door must.)*
 
 # Phase 9 — FX and Cross-Border Payments
 
-Status: `IN_PROGRESS` — started 2026-10-03 with `P9-TSK-001` (2 of 30 items complete, M9.1 at 2 of 4); entry gate passed 2026-10-02 by the Phase 8 → 9 transition
+Status: `IN_PROGRESS` — started 2026-10-03 with `P9-TSK-001` (4 of 30 items complete, M9.1 closed at 4 of 4); entry gate passed 2026-10-02 by the Phase 8 → 9 transition
 ([`reviews/PHASE_8_TO_9_TRANSITION.md`](reviews/PHASE_8_TO_9_TRANSITION.md)), elaborated to task
 granularity by the same transition: thirty items (`P9-TSK-001`…`-027`, `P9-TST-001`, `P9-TST-002`,
 `P9-DOC-001`) across nine milestones, with `P9-TSK-001` marked `READY`. The engineering plan is
@@ -13071,7 +13071,8 @@ providers), each owned by Phase 15 and gating nothing here.
 - **Definition of done**: `DOD-KERNEL`, `DOD-DOMAIN`, `DOD-FIN` (F1–F8 over the arithmetic),
   `DOD-TEST`. **Risk**: Medium. **Cx**: M.
 
-**P9-TSK-003 — JPY and BHD become postable** — `READY` (marked by `P9-TSK-002`'s completion gate, 2026-10-03)
+**P9-TSK-003 — JPY and BHD become postable** — `COMPLETE` (2026-10-04; marked `READY` by `P9-TSK-002`'s completion gate)
+- **As built** (2026-10-04): as `CURRENT_STATE.md` §Just completed records. Every scope item shipped or found already true: account opening, onboarding, the gauges and the position proof follow `SupportedCurrencies` with no change; no routing or rail ceiling is declared, so none needed pricing. **Added beyond the scope, the build's find**: the fee-schedule scale guards at the door and in `FeeCheck`. The runbook entry starts `docs/architecture/OPERATIONS_RUNBOOK.md`. The end-to-end suite runs in its own container (it activates the v2s). Eight probes, eight caught. No deviation.
 - **Objective**: make 0- and 3-minor-unit currencies postable on every flow, and pay Phase 6's
   deferral.
 - **Bounded context**: `ledger`, `accounts`, `merchant`, `payments` (ceilings), `settlement` (bank
@@ -13119,7 +13120,8 @@ providers), each owned by Phase 15 and gating nothing here.
   currency across the suites; no regression.
 - **Definition of done**: `DOD-FIN` (+F1–F8), `DOD-TEST`. **Risk**: Medium. **Cx**: M.
 
-**P9-TSK-004 — Multi-currency wallets** — `PLANNED`
+**P9-TSK-004 — Multi-currency wallets** — `COMPLETE` (2026-10-04; marked `READY` by `P9-TSK-003`'s completion gate)
+- **As built** (2026-10-04): as `CURRENT_STATE.md` §Just completed records. Every scope item shipped. Decided at build: the first currency at opening goes through the same door and announces `WalletCurrencyAdded` too, so every wallet account is announced once; the opener reads the agreement `FOR SHARE` (the design's find - a close race the plan did not name) and a closed agreement refuses with the new `409 accounts.AccountNotActive`; a resolver asked for a currency the product does not hold answers its first-opened wallet so each flow's existing refusal keeps its real accounts; the beneficiary asks `destinationExists`; the withdrawal read resolves its owner through the party projection (its history stays readable after the wallet closes, as statements do). Six probes, six caught. No deviation.
 - **Objective**: one wallet product holding n currencies, with every resolver deterministic.
 - **Bounded context**: `accounts`; resolvers in `transfers`, `payments`, `checkout`; `app`.
 - **Dependencies**: `-003`.
@@ -13161,7 +13163,7 @@ providers), each owned by Phase 15 and gating nothing here.
 - **Definition of done**: `DOD-FIN`, `DOD-API`, `DOD-EVENT`, `DOD-ARCH`. **Risk**: Medium. **Cx**:
   M.
 
-**P9-TSK-005 — Reference rates** — `PLANNED`
+**P9-TSK-005 — Reference rates** — `READY` (marked by `P9-TSK-004`'s completion gate, 2026-10-04)
 - **Objective**: independent, fresh, server-side reference rates that fail closed.
 - **Bounded context**: `fx`.
 - **Dependencies**: `-002`.

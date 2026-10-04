@@ -17,6 +17,41 @@
       }
     },
     "responses": {
+      "accounts.AccountNotActive": {
+        "content": {
+          "application/problem+json": {
+            "schema": {
+              "allOf": [
+                {
+                  "$ref": "#/components/schemas/ProblemDetail"
+                },
+                {
+                  "properties": {
+                    "code": {
+                      "const": "accounts.AccountNotActive"
+                    },
+                    "status": {
+                      "const": 409
+                    },
+                    "type": {
+                      "const": "https://finapp.example/problems/accounts.AccountNotActive"
+                    }
+                  }
+                }
+              ]
+            }
+          }
+        },
+        "description": "[409] The account is not active; a wallet currency cannot be added to it.",
+        "headers": {
+          "X-Client-Correlation-Id": {
+            "$ref": "#/components/headers/X-Client-Correlation-Id"
+          },
+          "X-Correlation-Id": {
+            "$ref": "#/components/headers/X-Correlation-Id"
+          }
+        }
+      },
       "accounts.AccountNotEmpty": {
         "content": {
           "application/problem+json": {
@@ -4614,6 +4649,18 @@
         },
         "required": [
           "reason"
+        ],
+        "type": "object"
+      },
+      "AccountCurrencyRequest": {
+        "properties": {
+          "currency": {
+            "pattern": "[A-Z]{3}",
+            "type": "string"
+          }
+        },
+        "required": [
+          "currency"
         ],
         "type": "object"
       },
@@ -9674,6 +9721,20 @@
         ],
         "type": "object"
       },
+      "WalletView": {
+        "properties": {
+          "accountId": {
+            "type": "string"
+          },
+          "currency": {
+            "type": "string"
+          },
+          "openedAt": {
+            "type": "string"
+          }
+        },
+        "type": "object"
+      },
       "WithdrawalRequest": {
         "properties": {
           "amount": {
@@ -10408,6 +10469,78 @@
               }
             },
             "description": "OK"
+          }
+        }
+      }
+    },
+    "/v1/me/accounts/{id}/balances": {
+      "get": {
+        "operationId": "readBalances",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "id",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/BalanceResponse"
+                }
+              }
+            },
+            "description": "OK"
+          }
+        }
+      }
+    },
+    "/v1/me/accounts/{id}/currencies": {
+      "post": {
+        "operationId": "addCurrency",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "id",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "in": "header",
+            "name": "Idempotency-Key",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/AccountCurrencyRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "201": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/WalletView"
+                }
+              }
+            },
+            "description": "Created"
           }
         }
       }

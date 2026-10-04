@@ -77,6 +77,8 @@ class AccountEndpointDatabaseTest {
 
     private static final String OPEN_USD = "{\"productType\":\"WALLET\",\"currency\":\"USD\"}";
 
+    private static final String GBP_BODY = "{\"currency\":\"GBP\"}";
+
     @LocalServerPort private int port;
 
     @org.springframework.beans.factory.annotation.Autowired private MeterRegistry registry;
@@ -319,11 +321,89 @@ class AccountEndpointDatabaseTest {
     }
 
     @Test
-    @DisplayName("all four endpoints refuse an unauthenticated caller")
+    @DisplayName("adding a wallet currency over HTTP: 201, the converged repeat and the replay,"
+            + " /balances one line per currency, /balance the first-opened, and every refusal"
+            + " (P9-TSK-004)")
+    void addingACurrencyOverHttp() throws Exception {
+        Person person = givenAPerson("ACTIVE");
+        String accountId =
+                field(post("/me/accounts", person.session(), OPEN_USD, key()).body(), "id");
+        String currencies = "/me/accounts/" + accountId + "/currencies";
+
+        String sameKey = key();
+        HttpResponse<String> added = post(currencies, person.session(), GBP_BODY, sameKey);
+        assertThat(added.statusCode()).isEqualTo(201);
+        assertThat(added.body())
+                .contains("\"accountId\":\"" + accountId + "\"")
+                .contains("\"currency\":\"GBP\"");
+        // The retry replays the original body byte for byte (INV-IDEM-01); a new key converges
+        // on the one wallet - same answer, no second account (the open's own idiom).
+        assertThat(post(currencies, person.session(), GBP_BODY, sameKey).body())
+                .isEqualTo(added.body());
+        HttpResponse<String> converged = post(currencies, person.session(), GBP_BODY, key());
+        assertThat(converged.statusCode()).isEqualTo(201);
+        assertThat(field(converged.body(), "openedAt")).isEqualTo(field(added.body(), "openedAt"));
+        assertThat(walletRowsFor(UUID.fromString(accountId))).isEqualTo(2);
+        // The same key with another currency is a conflict, never a second effect.
+        HttpResponse<String> conflicting =
+                post(currencies, person.session(), "{\"currency\":\"EUR\"}", sameKey);
+        assertThat(conflicting.statusCode()).isEqualTo(409);
+        assertThat(walletRowsFor(UUID.fromString(accountId))).isEqualTo(2);
+
+        // One balance per currency, never summed; the one-line read answers the first-opened.
+        HttpResponse<String> all = get("/me/accounts/" + accountId + "/balances", person.session());
+        assertThat(all.statusCode()).isEqualTo(200);
+        assertThat(all.body())
+                .contains("\"kind\":\"PROJECTION\"")
+                .contains("\"currency\":\"GBP\"")
+                .contains("\"currency\":\"USD\"");
+        HttpResponse<String> one = get("/me/accounts/" + accountId + "/balance", person.session());
+        assertThat(one.body()).contains("\"currency\":\"USD\"").doesNotContain("GBP");
+
+        // Refusals: an unsupported currency, a stranger's account (one 404 with unknown and
+        // malformed), and a key-less request.
+        HttpResponse<String> chf =
+                post(currencies, person.session(), "{\"currency\":\"CHF\"}", key());
+        assertThat(chf.statusCode()).isEqualTo(422);
+        assertThat(chf.body()).contains("accounts.UnsupportedCurrency");
+        Person stranger = givenAPerson("ACTIVE");
+        HttpResponse<String> notYours = post(currencies, stranger.session(), GBP_BODY, key());
+        HttpResponse<String> unknown =
+                post("/me/accounts/" + IDS.next() + "/currencies", person.session(), GBP_BODY,
+                        key());
+        HttpResponse<String> malformed =
+                post("/me/accounts/nope/currencies", person.session(), GBP_BODY, key());
+        assertThat(notYours.statusCode()).isEqualTo(404);
+        assertThat(withoutCorrelation(notYours.body()))
+                .isEqualTo(withoutCorrelation(unknown.body()))
+                .isEqualTo(withoutCorrelation(malformed.body()));
+        assertThat(post(currencies, person.session(), GBP_BODY, null).statusCode())
+                .isEqualTo(422);
+        assertThat(get("/me/accounts/" + accountId + "/balances", stranger.session())
+                        .statusCode())
+                .isEqualTo(404);
+
+        // A closed account takes no further currency: the caller's own, so a 409, not a 404.
+        assertThat(delete("/me/accounts/" + accountId, person.session()).statusCode())
+                .isEqualTo(204);
+        HttpResponse<String> closed =
+                post(currencies, person.session(), "{\"currency\":\"EUR\"}", key());
+        assertThat(closed.statusCode()).isEqualTo(409);
+        assertThat(closed.body()).contains("accounts.AccountNotActive");
+        assertThat(walletRowsFor(UUID.fromString(accountId))).isEqualTo(2);
+    }
+
+    @Test
+    @DisplayName("every account endpoint refuses an unauthenticated caller")
     void unauthenticatedIsRefused() throws Exception {
         assertThat(post("/me/accounts", null, OPEN_USD, key()).statusCode()).isEqualTo(401);
         assertThat(get("/me/accounts", null).statusCode()).isEqualTo(401);
         assertThat(get("/me/accounts/" + IDS.next() + "/balance", null).statusCode())
+                .isEqualTo(401);
+        assertThat(get("/me/accounts/" + IDS.next() + "/balances", null).statusCode())
+                .isEqualTo(401);
+        assertThat(post("/me/accounts/" + IDS.next() + "/currencies", null, GBP_BODY, key())
+                        .statusCode())
                 .isEqualTo(401);
         assertThat(delete("/me/accounts/" + IDS.next(), null).statusCode()).isEqualTo(401);
     }
@@ -398,6 +478,20 @@ class AccountEndpointDatabaseTest {
                 new JdbcBalanceProjection(),
                 IDS,
                 CLOCK, PostingObserver.NONE);
+    }
+
+    private static long walletRowsFor(UUID accountId) throws SQLException {
+        try (Connection app = DatabaseRoles.application();
+                PreparedStatement count =
+                        app.prepareStatement(
+                                "SELECT count(*) FROM ledger.ledger_account WHERE owner_ref = ?"
+                                        + " AND purpose = 'CUSTOMER_WALLET'")) {
+            count.setObject(1, accountId);
+            try (ResultSet row = count.executeQuery()) {
+                row.next();
+                return row.getLong(1);
+            }
+        }
     }
 
     private static long accountRowsFor(UUID customerId) throws SQLException {

@@ -432,12 +432,14 @@ class PaymentConfirmationTest {
         boolean instrumentPresent = true;
 
         @Override
-        public Optional<Wallet> walletOwnedBy(Connection uow, UUID callerPartyId) {
+        public Optional<Wallet> walletOwnedBy(
+                Connection uow, UUID callerPartyId, CurrencyCode currency) {
             throw new UnsupportedOperationException("confirm never resolves the wallet");
         }
 
         @Override
-        public Optional<Wallet> payerWalletOwnedBy(Connection uow, UUID callerPartyId) {
+        public Optional<Wallet> payerWalletOwnedBy(
+                Connection uow, UUID callerPartyId, CurrencyCode currency) {
             // These suites confirm method-instrument intents; the book branch never asks.
             throw new UnsupportedOperationException(
                     "this suite's confirms never resolve the payer wallet");

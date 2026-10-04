@@ -173,17 +173,43 @@ public final class JdbcCustomerAccountStore implements CustomerAccountStore<Conn
                         // FOR UPDATE is the closers' serialization point (P3-TSK-014).
                         "SELECT " + COLUMNS + " FROM " + TABLE
                                 + " WHERE id = ? AND customer_id = ? FOR UPDATE")) {
-            read.setObject(1, accountId.value());
-            read.setObject(2, customerId);
-            try (ResultSet row = read.executeQuery()) {
-                if (!row.next()) {
-                    return Optional.empty();
-                }
-                return Optional.of(rehydrate(row));
-            }
+            return lockedRow(read, accountId, customerId);
         } catch (SQLException failure) {
             throw new AccountsStorageException(
                     DatabaseFailure.describe("locking an owned account", failure));
+        }
+    }
+
+    @Override
+    public Optional<CustomerAccount> lockOwnedForShare(
+            Connection unitOfWork, CustomerAccountId accountId, UUID customerId) {
+        Objects.requireNonNull(unitOfWork, "unitOfWork must not be null");
+        Objects.requireNonNull(accountId, "accountId must not be null");
+        Objects.requireNonNull(customerId, "customerId must not be null");
+        try (PreparedStatement read =
+                unitOfWork.prepareStatement(
+                        // The same ownership predicate, in the statement; FOR SHARE is the wallet
+                        // openers' rank beneath the close (P9-TSK-004). Spelled out in full, not
+                        // shared, so OwnershipIsScopedTest reads each method's own predicate.
+                        "SELECT " + COLUMNS + " FROM " + TABLE
+                                + " WHERE id = ? AND customer_id = ? FOR SHARE")) {
+            return lockedRow(read, accountId, customerId);
+        } catch (SQLException failure) {
+            throw new AccountsStorageException(
+                    DatabaseFailure.describe("share-locking an owned account", failure));
+        }
+    }
+
+    private static Optional<CustomerAccount> lockedRow(
+            PreparedStatement read, CustomerAccountId accountId, UUID customerId)
+            throws SQLException {
+        read.setObject(1, accountId.value());
+        read.setObject(2, customerId);
+        try (ResultSet row = read.executeQuery()) {
+            if (!row.next()) {
+                return Optional.empty();
+            }
+            return Optional.of(rehydrate(row));
         }
     }
 

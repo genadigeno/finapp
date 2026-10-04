@@ -2,7 +2,7 @@ package com.finapp.app.payments;
 
 import com.finapp.accounts.CustomerAccountStore;
 import com.finapp.accounts.ProductType;
-import com.finapp.ledger.AccountPurpose;
+import com.finapp.accounts.WalletAccounts;
 import com.finapp.ledger.LedgerAccount;
 import com.finapp.ledger.LedgerAccountStatus;
 import com.finapp.ledger.LedgerAccountStore;
@@ -16,6 +16,7 @@ import com.finapp.paymentmethods.PaymentMethodStore;
 import com.finapp.payments.InstrumentToken;
 import com.finapp.payments.PaymentParticipants;
 import com.finapp.payments.ProviderReference;
+import com.finapp.sharedkernel.money.CurrencyCode;
 import java.sql.Connection;
 import java.util.List;
 import java.util.Objects;
@@ -61,9 +62,11 @@ public final class JdbcPaymentParticipants implements PaymentParticipants<Connec
     }
 
     @Override
-    public Optional<Wallet> walletOwnedBy(Connection unitOfWork, UUID callerPartyId) {
+    public Optional<Wallet> walletOwnedBy(
+            Connection unitOfWork, UUID callerPartyId, CurrencyCode currency) {
         Objects.requireNonNull(unitOfWork, "unitOfWork must not be null");
         Objects.requireNonNull(callerPartyId, "callerPartyId must not be null");
+        Objects.requireNonNull(currency, "currency must not be null");
         return parties
                 .findLiveCustomerFor(unitOfWork, PartyId.of(callerPartyId))
                 .filter(customer -> customer.status() == CustomerStatus.ACTIVE)
@@ -73,7 +76,7 @@ public final class JdbcPaymentParticipants implements PaymentParticipants<Connec
                                         unitOfWork, customer.id().value(), ProductType.WALLET))
                 .flatMap(
                         product ->
-                                walletAccountOf(unitOfWork, product.id().value())
+                                walletAccountOf(unitOfWork, product.id().value(), currency)
                                         .map(
                                                 account ->
                                                         new Wallet(
@@ -89,8 +92,9 @@ public final class JdbcPaymentParticipants implements PaymentParticipants<Connec
      * {@code walletOwnedBy} deliberately answers the merchant's payable.
      */
     @Override
-    public Optional<Wallet> payerWalletOwnedBy(Connection unitOfWork, UUID callerPartyId) {
-        return walletOwnedBy(unitOfWork, callerPartyId);
+    public Optional<Wallet> payerWalletOwnedBy(
+            Connection unitOfWork, UUID callerPartyId, CurrencyCode currency) {
+        return walletOwnedBy(unitOfWork, callerPartyId, currency);
     }
 
     @Override
@@ -170,12 +174,17 @@ public final class JdbcPaymentParticipants implements PaymentParticipants<Connec
                                 });
     }
 
-    /** The product's live customer-wallet account; the transfers precedent's read. */
-    private Optional<LedgerAccount> walletAccountOf(Connection unitOfWork, UUID productRef) {
-        List<LedgerAccount> owned = ledgerAccounts.findAllOwned(unitOfWork, productRef);
-        return owned.stream()
-                .filter(account -> account.purpose() == AccountPurpose.CUSTOMER_WALLET)
-                .filter(account -> account.status() == LedgerAccountStatus.ACTIVE)
-                .findFirst();
+    /**
+     * The product's live customer-wallet account in {@code currency}, else its first-opened
+     * live wallet — {@link WalletAccounts#resolve}, the one rule every flow resolves by
+     * (`P9-TSK-004`).
+     */
+    private Optional<LedgerAccount> walletAccountOf(
+            Connection unitOfWork, UUID productRef, CurrencyCode currency) {
+        List<LedgerAccount> live =
+                ledgerAccounts.findAllOwned(unitOfWork, productRef).stream()
+                        .filter(account -> account.status() == LedgerAccountStatus.ACTIVE)
+                        .toList();
+        return WalletAccounts.resolve(live, currency);
     }
 }

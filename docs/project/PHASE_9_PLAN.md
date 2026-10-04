@@ -619,7 +619,7 @@ anything financial (`INV-EVT-04`); Phase 9 has no Kafka consumer.
 | `crossborder.BeneficiaryRegistered` / `Activated` / `Blocked` / `Revoked` | crossborder / beneficiary | country, currency (an internal topic, never a customer surface); `Revoked` from whichever state it left | registration / screening / review / the customer |
 | `crossborder.CorridorPolicyActivated` | crossborder / policy | version id | the approval |
 | `crossborder.CorridorAvailabilityChanged` | crossborder / corridor | enabled or disabled | the disabling act, or the enable proposal's approval |
-| `accounts.WalletCurrencyAdded` | accounts / wallet product | product id, ledger account id, currency | the add-currency request, or the conversion, return or resolved return that opened it; written **once, by the act whose insert returned the row**, a converging loser writing nothing |
+| `accounts.WalletCurrencyAdded` | accounts / wallet product | product id, ledger account id, currency | the add-currency request, or the conversion, return or resolved return that opened it — and, as built by `P9-TSK-004`, the account opening for its first currency, so every wallet account is announced; written **once, by the act whose insert returned the row**, a converging loser writing nothing |
 | `kyc.CounterpartyScreeningDecided` | kyc / screening | outcome (internal) | request / review |
 | *(settled)* | reconciliation | the existing `SettlementExpectationSettled`, kinds `FX_SELL_LEG`, `FX_BUY_LEG`, `CROSSBORDER_PAYOUT`, `CROSSBORDER_RETURN` | — |
 

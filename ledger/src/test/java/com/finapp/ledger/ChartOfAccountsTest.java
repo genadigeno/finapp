@@ -93,6 +93,11 @@ class ChartOfAccountsTest {
         }
 
         @Override
+        public Creation insertIfAbsent(Object unitOfWork, LedgerAccount fresh) {
+            throw new UnsupportedOperationException("the chart never creates");
+        }
+
+        @Override
         public Optional<LedgerAccount> findOwned(
                 Object unitOfWork, UUID ownerRef, AccountPurpose purpose, CurrencyCode currency) {
             throw new UnsupportedOperationException("the chart never reads by owner");

@@ -415,15 +415,21 @@ class TransferExecutionDatabaseTest {
                 new TransferParticipants<>() {
                     @Override
                     public Optional<Source> sourceOwnedBy(
-                            Connection uow, UUID party, UUID product) {
-                        return participants.sourceOwnedBy(uow, party, product);
+                            Connection uow, UUID party, UUID product, CurrencyCode currency) {
+                        return participants.sourceOwnedBy(uow, party, product, currency);
                     }
 
                     @Override
-                    public Optional<Side> destination(Connection uow, UUID product) {
+                    public Optional<Side> destination(
+                            Connection uow, UUID product, CurrencyCode currency) {
                         return participants
-                                .destination(uow, product)
+                                .destination(uow, product, currency)
                                 .map(side -> new Side(side.account(), side.currency(), true));
+                    }
+
+                    @Override
+                    public boolean destinationExists(Connection uow, UUID product) {
+                        return participants.destinationExists(uow, product);
                     }
                 };
         asInstance(source, app -> {

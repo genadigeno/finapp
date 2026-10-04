@@ -91,6 +91,16 @@ must remain explainable from authoritative records (CLAUDE.md rule 11). The forc
    re-read — a racing loser waits for the winner's commit, reads its row, and never aborts —
    and the act whose insert returned the row writes `accounts.WalletCurrencyAdded`, once,
    whichever path opened it.
+   *As built (`P9-TSK-004`):* the one door is `accounts.WalletAccounts.openIfAbsent`, which first
+   reads the agreement `FOR SHARE` with the ownership predicate in the statement — openers do not
+   block each other, and an opener and a close (`FOR UPDATE`) serialise both ways, so no wallet is
+   opened under an agreement being closed (a race the original wording did not name); the first
+   currency at opening goes through the same door, so every wallet account is announced exactly
+   once. A resolver asked for a currency the product does not hold answers its **first-opened**
+   wallet (`created_at`, then id) with that wallet's own currency, so each flow's existing
+   currency judgement refuses with the real account — a transfer's committed
+   `FAILED(CURRENCY_MISMATCH)` row must carry real accounts — and `CURRENCY_MISMATCH` now means
+   exactly "a side holds no wallet in this currency".
 7. **The books are proven, report-only** (`PHASE_9_PLAN.md` §12.9.4). **The FX books proof** (`fx.FxBooksProof`,
    `INV-FX-06`), per currency `c`, in one `REPEATABLE READ` snapshot with `Money` folds:
    - `FX_POSITION(c)` DR−CR = Σ over every quote of its plan's position legs in `c` ×

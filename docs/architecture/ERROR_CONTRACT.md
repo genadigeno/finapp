@@ -198,6 +198,7 @@ are a closed enum shared by everyone.
 | `accounts.AccountOpeningRefused` | 409 | The caller is not eligible to hold accounts; complete verification and retry. |
 | `accounts.UnsupportedCurrency` | 422 | The platform does not operate accounts in this currency. |
 | `accounts.AccountNotEmpty` | 409 | The account still holds a non-zero balance; empty it and retry. |
+| `accounts.AccountNotActive` | 409 | The account is not active; a wallet currency cannot be added to it. |
 
 **The opening refusal is cause-blind, on purpose** (`P3-TSK-012`/`P3-TSK-013`): no customer
 relationship, a verification still pending and a terminal one are one refusal — the
@@ -207,7 +208,10 @@ malformed account identifier on the balance endpoint is `api.NotFound`, byte-ide
 its causes (the `P1-TSK-016` session reasoning — a distinct answer would confirm the identifier
 belongs to somebody). `accounts.UnsupportedCurrency` names its subject because the currency is a
 value the caller chose and must be able to correct, and the supported set is published by every
-account the platform opens. `accounts.AccountNotEmpty` (`P3-TSK-014`) is the close's one refusal
+account the platform opens. `accounts.AccountNotActive` (`P9-TSK-004`) refuses a wallet currency
+added to the caller's own closed agreement — a `409`, distinct from the identifier `api.NotFound`
+because ownership is proven first, so it discloses nothing about anybody else's accounts.
+`accounts.AccountNotEmpty` (`P3-TSK-014`) is the close's one refusal
 with a code of its own — actionable (empty the account and retry), and its title and detail name
 **no amount and no currency**: which balance refused is the caller's own to read from the balance
 endpoint they already own, and a refusal that quoted the number would put a

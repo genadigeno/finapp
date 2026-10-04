@@ -11,15 +11,16 @@ import java.util.UUID;
  * {@code party} (the {@code AccountHolderVerification} shape): the module that moves the money
  * and the module that owns the product must not become one dependency ball.
  *
- * <p><strong>Resolution is per decision and currency-blind.</strong> Per decision: the
- * implementation reads authoritative state inside the execution transaction, never a cache and
- * never a request's claim (the {@code ConsentGate} discipline). Currency-blind: the side's
- * wallet comes back with <em>its own</em> currency, because a currency-mismatched transfer
- * still commits {@code FAILED(CURRENCY_MISMATCH)} carrying the real accounts — a refusal row
- * whose accounts could not be stored would be unconstructible (`P4-TSK-003`'s coherence).
- * Today a product holds one wallet (opened with one initial currency); multi-currency products
- * are Phase 9's, and this port's list-free shape is deliberately the seam that phase will
- * widen.
+ * <p><strong>Resolution is per decision and keyed by currency</strong> (`P9-TSK-004`). Per
+ * decision: the implementation reads authoritative state inside the execution transaction,
+ * never a cache and never a request's claim (the {@code ConsentGate} discipline). Keyed by
+ * currency: a product holds one wallet per currency (ADR-0076 §6), and each side answers
+ * <em>its wallet in the transfer's currency</em> — or, when it holds none in that currency,
+ * its first-opened wallet with <em>that wallet's own</em> currency, because a
+ * currency-mismatched transfer still commits {@code FAILED(CURRENCY_MISMATCH)} carrying the
+ * real accounts: a refusal row whose accounts could not be stored would be unconstructible
+ * (`P4-TSK-003`'s coherence). {@code CURRENCY_MISMATCH} therefore means exactly "a side holds
+ * no wallet in this currency" — never an arbitrary pick among several.
  *
  * <p><strong>The source is owned; the destination is merely real.</strong>
  * {@link #sourceOwnedBy} answers empty for unknown, malformed-ownership and not-yours alike —
@@ -40,12 +41,22 @@ public interface TransferParticipants<T> {
 
     /**
      * The caller's product, resolved through the caller's <strong>live customer</strong> —
-     * party → live customer → owned product → wallet — or empty when any link is absent:
-     * unknown product, somebody else's product, or a party with no live customer are one
-     * indistinguishable answer.
+     * party → live customer → owned product → its wallet in {@code currency} (else its
+     * first-opened wallet) — or empty when any link is absent: unknown product, somebody else's
+     * product, or a party with no live customer are one indistinguishable answer.
      */
-    Optional<Source> sourceOwnedBy(T unitOfWork, UUID callerPartyId, UUID sourceProductRef);
+    Optional<Source> sourceOwnedBy(
+            T unitOfWork, UUID callerPartyId, UUID sourceProductRef, CurrencyCode currency);
 
-    /** The destination product's wallet, or empty when no such product holds one. */
-    Optional<Side> destination(T unitOfWork, UUID destinationProductRef);
+    /**
+     * The destination product's wallet in {@code currency} (else its first-opened wallet), or
+     * empty when no such product holds a wallet at all.
+     */
+    Optional<Side> destination(T unitOfWork, UUID destinationProductRef, CurrencyCode currency);
+
+    /**
+     * Whether {@code destinationProductRef} names a product holding any wallet — the
+     * beneficiary's question, which is about existence and never about a currency.
+     */
+    boolean destinationExists(T unitOfWork, UUID destinationProductRef);
 }

@@ -6,10 +6,13 @@ import com.finapp.accounts.CustomerAccount;
 import com.finapp.accounts.CustomerAccountId;
 import com.finapp.accounts.CustomerAccountStore;
 import com.finapp.accounts.ProductType;
+import com.finapp.accounts.WalletAccounts;
 import com.finapp.app.telemetry.AccountMetrics;
 import com.finapp.identity.IdentityStore;
 import com.finapp.identity.Session;
 import com.finapp.ledger.BalanceDisplay;
+import com.finapp.ledger.LedgerAccount;
+import com.finapp.ledger.LedgerAccountStore;
 import com.finapp.ledger.StatementDerivation;
 import com.finapp.party.Customer;
 import com.finapp.party.PartyId;
@@ -58,10 +61,14 @@ public final class AccountService {
     /** The idempotency scope (ADR-0004): one command type, one scope. */
     static final String IDEMPOTENCY_SCOPE = "accounts.open";
 
+    /** The add-currency door's own scope (`P9-TSK-004`): another command, another scope. */
+    static final String ADD_CURRENCY_SCOPE = "accounts.add-currency";
+
     @NonNull private final AccountOpening opening;
     @NonNull private final AccountClosing closing;
     @NonNull private final CustomerAccountStore<Connection> accounts;
     @NonNull private final BalanceDisplay<Connection> balances;
+    @NonNull private final LedgerAccountStore<Connection> ledgerAccounts;
     @NonNull private final StatementDerivation<Connection> statements;
     @NonNull private final IdentityStore<Connection> identities;
     @NonNull private final PartyStore<Connection> parties;
@@ -146,6 +153,107 @@ public final class AccountService {
         return parse(body);
     }
 
+    /** A wallet currency of an agreement — also the stored idempotent response, replayed. */
+    public record WalletView(String accountId, String currency, String openedAt) {}
+
+    /**
+     * Adds a wallet in {@code currency} to the caller's agreement {@code accountId}, or replays
+     * the addition (`P9-TSK-004`) — empty for not-yours, does-not-exist and a caller with no
+     * live customer alike, the balance read's one answer.
+     *
+     * <p>Idempotent at the same two layers as the open: the executor replays the recorded
+     * outcome for a retried key and refuses a reused key whose request differs (the fingerprint
+     * binds the party, the agreement and the currency — ADR-0004's owning principal), and
+     * underneath, {@code WalletAccounts.openIfAbsent} makes any re-execution converge on the
+     * ledger's one account per currency. Every refusal — the gate, a closed agreement, an
+     * unsupported currency, an unknown or not-yours identifier — throws inside the claim's
+     * transaction, so it writes nothing and burns no key.
+     */
+    public Optional<WalletView> addCurrency(
+            Session current,
+            CustomerAccountId accountId,
+            CurrencyCode currency,
+            String idempotencyKey) {
+        Objects.requireNonNull(current, "current must not be null");
+        Objects.requireNonNull(accountId, "accountId must not be null");
+        Objects.requireNonNull(currency, "currency must not be null");
+        Objects.requireNonNull(idempotencyKey, "idempotencyKey must not be null");
+
+        IdempotencyKey key = new IdempotencyKey(ADD_CURRENCY_SCOPE, idempotencyKey);
+        byte[] body;
+        try {
+            body =
+                    inOneTransaction(
+                            unitOfWork -> {
+                                UUID partyId = partyOf(unitOfWork, current);
+                                RequestFingerprint fingerprint =
+                                        RequestFingerprint.sha256(
+                                                (ADD_CURRENCY_SCOPE + "|" + partyId + "|"
+                                                                + accountId.value() + "|"
+                                                                + currency.code())
+                                                        .getBytes(StandardCharsets.UTF_8));
+                                IdempotentExecutor.ExecutionOutcome outcome =
+                                        executor.execute(
+                                                unitOfWork,
+                                                key,
+                                                fingerprint,
+                                                uow ->
+                                                        com.finapp.platform.idempotency
+                                                                .CommandResult.succeeded(
+                                                                        renderWallet(
+                                                                                added(
+                                                                                        uow,
+                                                                                        partyId,
+                                                                                        accountId,
+                                                                                        currency),
+                                                                                accountId)));
+                                return outcome.body()
+                                        .orElseThrow(
+                                                () ->
+                                                        new IllegalStateException(
+                                                                "a recorded addition outcome"
+                                                                        + " always carries its"
+                                                                        + " body"));
+                            });
+        } catch (UnknownAccountForCurrency unknown) {
+            return Optional.empty();
+        }
+        return Optional.of(parseWallet(body));
+    }
+
+    /** The added (or converged) wallet; unknown and not-yours thrown so the claim rolls back. */
+    private LedgerAccount added(
+            Connection uow, UUID partyId, CustomerAccountId accountId, CurrencyCode currency) {
+        return opening.addCurrency(uow, partyId, accountId, currency)
+                .map(AccountOpening.CurrencyAddition::wallet)
+                .orElseThrow(UnknownAccountForCurrency::new);
+    }
+
+    /**
+     * The balances of the caller's account {@code accountId}, one per currency, never summed
+     * (`P9-TSK-004`) — or empty, the balance read's one answer.
+     */
+    public Optional<Balances> balances(Session current, CustomerAccountId accountId) {
+        Objects.requireNonNull(current, "current must not be null");
+        Objects.requireNonNull(accountId, "accountId must not be null");
+        return inOneTransaction(
+                unitOfWork ->
+                        liveCustomerOf(unitOfWork, current)
+                                .flatMap(
+                                        customer ->
+                                                accounts.findOwnedBy(
+                                                        unitOfWork,
+                                                        accountId,
+                                                        customer.id().value()))
+                                .map(
+                                        account ->
+                                                new Balances(
+                                                        account,
+                                                        balances.balancesFor(
+                                                                unitOfWork,
+                                                                account.id().value()))));
+    }
+
     /** The caller's products — every status, oldest first; empty for no live customer. */
     public List<AccountView> list(Session current) {
         Objects.requireNonNull(current, "current must not be null");
@@ -165,8 +273,10 @@ public final class AccountService {
     }
 
     /**
-     * The balances of the caller's account {@code accountId} — or empty, one answer for
-     * not-yours, does-not-exist and a caller with no live customer alike.
+     * The balance of the caller's account {@code accountId} in its <strong>first-opened</strong>
+     * currency — or empty, one answer for not-yours, does-not-exist and a caller with no live
+     * customer alike. Since `P9-TSK-004` an agreement holds n currencies; this read keeps its
+     * one-line shape for the clients written against it, and {@link #balances} answers all.
      */
     public Optional<Balances> balance(Session current, CustomerAccountId accountId) {
         Objects.requireNonNull(current, "current must not be null");
@@ -184,9 +294,23 @@ public final class AccountService {
                                         account ->
                                                 new Balances(
                                                         account,
-                                                        balances.balancesFor(
+                                                        firstOpenedOnly(
                                                                 unitOfWork,
                                                                 account.id().value()))));
+    }
+
+    /** The first-opened wallet's line alone: an order, stated (WalletAccounts.firstOpened). */
+    private List<BalanceDisplay.DisplayedBalance> firstOpenedOnly(
+            Connection unitOfWork, UUID productRef) {
+        Optional<CurrencyCode> first =
+                WalletAccounts.firstOpened(ledgerAccounts.findAllOwned(unitOfWork, productRef))
+                        .map(LedgerAccount::currency);
+        return balances.balancesFor(unitOfWork, productRef).stream()
+                .filter(
+                        line ->
+                                first.isPresent()
+                                        && line.settled().currency().equals(first.get()))
+                .toList();
     }
 
     /** An owned account and its per-currency displayed balances. */
@@ -277,6 +401,33 @@ public final class AccountService {
         String joined =
                 view.id() + "|" + view.productType() + "|" + view.status() + "|" + view.openedAt();
         return StoredResponse.of(joined.getBytes(StandardCharsets.UTF_8), "text/plain");
+    }
+
+    /** The stored addition: agreement, currency, the wallet's opening instant, pipe-joined. */
+    private static StoredResponse renderWallet(
+            LedgerAccount wallet, CustomerAccountId accountId) {
+        String joined =
+                accountId.value() + "|" + wallet.currency().code() + "|" + wallet.createdAt();
+        return StoredResponse.of(joined.getBytes(StandardCharsets.UTF_8), "text/plain");
+    }
+
+    private static WalletView parseWallet(byte[] body) {
+        String[] fields = new String(body, StandardCharsets.UTF_8).split("\\|", 3);
+        if (fields.length != 3) {
+            throw new IllegalStateException(
+                    "a stored addition body always carries the view's three fields");
+        }
+        return new WalletView(fields[0], fields[1], fields[2]);
+    }
+
+    /** Unknown or not-yours, thrown inside the claim so it rolls back; one empty answer. */
+    private static final class UnknownAccountForCurrency extends RuntimeException {
+
+        @java.io.Serial private static final long serialVersionUID = 1L;
+
+        UnknownAccountForCurrency() {
+            super("no account of the caller's matches the identifier", null, false, false);
+        }
     }
 
     private static AccountView parse(byte[] body) {

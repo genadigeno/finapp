@@ -52,9 +52,9 @@ public final class BeneficiaryCreation<T> {
         Objects.requireNonNull(callerPartyId, "callerPartyId must not be null");
         Objects.requireNonNull(destinationProductRef, "destinationProductRef must not be null");
         // The display name is validated by the aggregate's constructor below, before any write.
-        participants
-                .destination(unitOfWork, destinationProductRef)
-                .orElseThrow(UnknownBeneficiaryDestinationException::new);
+        if (!participants.destinationExists(unitOfWork, destinationProductRef)) {
+            throw new UnknownBeneficiaryDestinationException();
+        }
         return beneficiaries.createOrConverge(
                 unitOfWork,
                 Beneficiary.create(

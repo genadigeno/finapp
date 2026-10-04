@@ -945,7 +945,11 @@ class PaymentConservationDatabaseTest {
         // that could agree with a broken resolution.
         LedgerAccountId account =
                 runner.inTransaction(
-                        uow -> participants.walletOwnedBy(uow, party).orElseThrow().account());
+                        uow ->
+                                participants
+                                        .walletOwnedBy(uow, party, EUR)
+                                        .orElseThrow()
+                                        .account());
         return new Wallet(party, method, account);
     }
 

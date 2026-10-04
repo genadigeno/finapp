@@ -323,6 +323,8 @@ class OpenApiContractTest {
                         // P3-TSK-014: DELETE lives on the account path itself.
                         ApiVersion.CURRENT_PREFIX + "/me/accounts/{id}",
                         ApiVersion.CURRENT_PREFIX + "/me/accounts/{id}/balance",
+                        ApiVersion.CURRENT_PREFIX + "/me/accounts/{id}/balances",
+                        ApiVersion.CURRENT_PREFIX + "/me/accounts/{id}/currencies",
                         // P3-TSK-018: the period statement, derived from postings - the
                         // drill-down shape (INV-ACC-02), opening + lines = closing.
                         ApiVersion.CURRENT_PREFIX + "/me/accounts/{id}/statement",

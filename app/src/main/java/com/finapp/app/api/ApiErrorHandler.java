@@ -1,5 +1,6 @@
 package com.finapp.app.api;
 
+import com.finapp.accounts.AccountNotActiveException;
 import com.finapp.accounts.AccountNotEmptyException;
 import com.finapp.accounts.AccountOpeningRefusedException;
 import com.finapp.accounts.IllegalCustomerAccountTransitionException;
@@ -411,6 +412,21 @@ public class ApiErrorHandler extends ResponseEntityExceptionHandler {
                         AccountsErrorCode.ACCOUNT_NOT_EMPTY,
                         request.getRequestURI(),
                         "Empty the account (see its balance endpoint) and retry."));
+    }
+
+    /**
+     * The caller's own agreement is not {@code ACTIVE}, so no wallet currency can be added to
+     * it (`P9-TSK-004`). Ownership was proven first, so the answer discloses nothing about
+     * anybody else's accounts.
+     */
+    @ExceptionHandler(AccountNotActiveException.class)
+    public ResponseEntity<ProblemDetailBody> handleAccountNotActive(
+            AccountNotActiveException exception, HttpServletRequest request) {
+        return render(
+                ProblemDetail.of(
+                        AccountsErrorCode.ACCOUNT_NOT_ACTIVE,
+                        request.getRequestURI(),
+                        "Only an active account can hold a further wallet currency."));
     }
 
     /**

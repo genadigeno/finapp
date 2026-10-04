@@ -75,12 +75,15 @@ class OperationalChartDatabaseTest {
                                     chart.resolve(
                                             app,
                                             AccountPurpose.ROUNDING_RESIDUAL,
-                                            CurrencyCode.of("JPY")))
+                                            // CHF: a real currency the platform does not
+                                            // post (JPY was this test's until P9-TSK-003
+                                            // seeded it).
+                                            CurrencyCode.of("CHF")))
                     .as("a supported-looking ask outside the seed is a deployment defect, and"
                             + " a silent empty answer would route a posting nowhere")
                     .isInstanceOf(IllegalStateException.class)
                     .hasMessageContaining("ROUNDING_RESIDUAL")
-                    .hasMessageContaining("JPY");
+                    .hasMessageContaining("CHF");
         }
     }
 

@@ -19,11 +19,14 @@ import java.util.UUID;
 public interface PaymentParticipants<T> {
 
     /**
-     * The caller's wallet: the party's live {@code ACTIVE} customer's live wallet product's
-     * ledger account, with the currency the create command judges the amount against — the
-     * command's authoritative resolution, never a request's claim.
+     * The caller's wallet in {@code currency}: the party's live {@code ACTIVE} customer's live
+     * wallet product's ledger account in that currency — or, when the product holds none in
+     * it, its first-opened wallet, whose own currency the create command then judges the
+     * amount against and refuses (`P9-TSK-004`: resolution is keyed by currency, never an
+     * arbitrary pick among a product's wallets). The command's authoritative resolution,
+     * never a request's claim.
      */
-    Optional<Wallet> walletOwnedBy(T unitOfWork, UUID callerPartyId);
+    Optional<Wallet> walletOwnedBy(T unitOfWork, UUID callerPartyId, CurrencyCode currency);
 
     /**
      * The caller's instrument, resolved to the token the provider wire presents — present only
@@ -69,14 +72,15 @@ public interface PaymentParticipants<T> {
     /**
      * The PAYER's own wallet, whatever this flow's credit wiring (`P7-TSK-011`, ADR-0059
      * §6): the book instrument's resolution — the party's live {@code ACTIVE} customer's
-     * live wallet product's {@code ACTIVE} ledger account, with its currency. For the
+     * live wallet product's {@code ACTIVE} ledger account in {@code currency} (else its
+     * first-opened wallet, for the caller's currency judgement to refuse). For the
      * top-up wiring this is {@link #walletOwnedBy}'s own answer; for the checkout wiring,
      * whose {@code walletOwnedBy} deliberately answers the MERCHANT's payable, this stays
      * the payer's side. Empty folds no-wallet and not-live into the one refusal, and the
      * confirmation re-asks it at the act so a wallet closed since creation refuses rather
      * than posts.
      */
-    Optional<Wallet> payerWalletOwnedBy(T unitOfWork, UUID callerPartyId);
+    Optional<Wallet> payerWalletOwnedBy(T unitOfWork, UUID callerPartyId, CurrencyCode currency);
 
     /** The wallet's owner, account and currency — what the intent records and judges. */
     record Wallet(UUID customerId, LedgerAccountId account, CurrencyCode currency) {}

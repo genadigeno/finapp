@@ -48,6 +48,21 @@ public interface LedgerAccountStore<T> {
     Creation createOrConverge(T unitOfWork, LedgerAccount fresh);
 
     /**
+     * Inserts {@code fresh} if the owner holds no account of its purpose and currency, then
+     * re-reads the one that exists — {@code createOrConverge}'s question asked without an
+     * error (`P9-TSK-004`, ADR-0076 §6, D28).
+     *
+     * <p>{@code INSERT … ON CONFLICT (owner_ref, purpose, currency) WHERE owner_ref IS NOT NULL
+     * DO NOTHING RETURNING id}: a racing loser's insert <strong>waits</strong> for the
+     * winner's transaction on the partial unique index, then does nothing, and the re-read — a
+     * fresh {@code READ COMMITTED} statement — sees the winner's committed row. No unique
+     * violation is raised, so no savepoint is needed and nothing aborts; if the winner rolls
+     * back instead, the waiting insert proceeds and this call is the creator.
+     * {@code created} is true exactly when this call's insert returned the row.
+     */
+    Creation insertIfAbsent(T unitOfWork, LedgerAccount fresh);
+
+    /**
      * The owner's account for one purpose in one currency, if it exists — the converge read,
      * and the read `P3-TSK-012`'s balance query starts from. The predicate is the partial
      * index's own, so "the owned account" and "the row the index guards" are one question.
@@ -67,11 +82,12 @@ public interface LedgerAccountStore<T> {
 
     /**
      * Every ledger account owned by {@code ownerRef} — the lock-free sibling of
-     * {@link #lockOwnedForUpdate}, arrived with its first caller (`P4-TSK-005`): the transfer's
-     * participant resolution, which must answer "which wallet does this product hold, in which
-     * currency, in what status?" <em>currency-blind</em> — {@link #findOwned} demands a currency
-     * and a currency-mismatched transfer still needs the real accounts for its committed
-     * {@code FAILED} row. No lock, deliberately: resolution is not the serialization point (the
+     * {@link #lockOwnedForUpdate}, arrived with its first caller (`P4-TSK-005`): the
+     * participant resolutions, which answer "which of this product's wallets serves this
+     * currency, in what status?" — through {@code WalletAccounts.resolve} since `P9-TSK-004`,
+     * because a currency-mismatched transfer still needs a real account (the product's
+     * first-opened wallet) for its committed {@code FAILED} row, which {@link #findOwned}
+     * alone cannot give. No lock, deliberately: resolution is not the serialization point (the
      * source lock in the execution is), and a destination is never locked at all (ADR-0041's
      * recorded stance — credits need no availability answer).
      */
