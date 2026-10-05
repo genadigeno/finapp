@@ -31,7 +31,7 @@ import org.springframework.context.annotation.Configuration;
  * The wallet conversion's composition (`P9-TSK-009`): the trade store, {@code fx}'s
  * {@link ConversionParticipants} over the party projection and {@code accounts} (the wallet door
  * {@link WalletAccounts}), the conversion over the ledger's chart, available balance and posting,
- * the desk, and the cover nudge - {@link CoverDispatchNudge#NONE} until the sender (`P9-TSK-012`).
+ * and the desk, nudging the cover sender after commit ({@code FxCoverBeans}' {@link CoverDispatchNudge}, `P9-TSK-012`).
  */
 @Configuration
 public class FxConversionBeans {
@@ -52,11 +52,6 @@ public class FxConversionBeans {
         return new PartyConversionParticipants(
                 partyStore, customerAccountStore, ledgerAccountStore,
                 new WalletAccounts(customerAccountStore, ledgerAccountStore, outboxWriter, idGenerator, clock));
-    }
-
-    @Bean
-    CoverDispatchNudge coverDispatchNudge() {
-        return CoverDispatchNudge.NONE;
     }
 
     @Bean

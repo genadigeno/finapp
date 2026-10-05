@@ -195,6 +195,7 @@ spans the provider call: permit transaction, wire, outcome transaction).
 
 - `P9-TSK-009`: the cover row born `DISPATCHED` with `T₁` and the permit in the conversion's
   accepting transaction; a post-commit nudge to the dispatcher.
+- **Built by `P9-TSK-012` (2026-10-05)** - as decided above, with these settled at build: a cover leg's reconciliation key is qualified by the leg's currency at both sides (reconciliation's `CoverLegKey`, applied by its own `NewExpectation` and `ExternalItems.NewItem`) so a cover's two legs, sharing `T`, hold two keys under one source's unique; the cover row carries `caused_by_event_id` (the acceptance) and `requote_failures` (the refused-requote backoff, `requote-base x 2^min(n, 6)`); a targeted `FxCoverDispatch.dispatchNow` claims any open cover, the post-commit nudge one of them; the meter's kind rides the registered `type` tag key; an execution in other currencies than the plan's is not knowledge (`DISPATCHED -> UNKNOWN`, counted `anomaly`), and one for a superseded attempt is evidence only. The legs' FX source must have its v1 ACTIVE (runbook section 3) or the outcome transaction refuses - fail closed, the cover re-sent until it can book.
 - `P9-TSK-012`: `FxCoverSchedule`, `FxCoverOutcomes` (answer, inquiry, hinted inquiry through
   one class), the permit trigger, re-send and requote, `fx V007` (`cover_execution`, the
   realised result), ledger `V023` (`FX_REALISED_GAINS`/`LOSSES`), the cover entry, the leg

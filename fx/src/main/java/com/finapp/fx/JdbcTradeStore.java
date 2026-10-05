@@ -137,8 +137,8 @@ public final class JdbcTradeStore implements TradeStore {
         try (PreparedStatement cover = unitOfWork.prepareStatement(
                         "INSERT INTO fx.cover (id, quote_id, kind, status, provider_code, source_currency,"
                                 + " destination_currency, fixed_side, fixed_amount_minor, fixed_scale, attempts,"
-                                + " last_dispatched_at, correlation_id)"
-                                + " VALUES (?, ?, ?, 'DISPATCHED', ?, ?, ?, ?, ?, ?, 1, statement_timestamp(), ?)");
+                                + " last_dispatched_at, caused_by_event_id, correlation_id)"
+                                + " VALUES (?, ?, ?, 'DISPATCHED', ?, ?, ?, ?, ?, ?, 1, statement_timestamp(), ?, ?)");
                 PreparedStatement attempt = unitOfWork.prepareStatement(
                         "INSERT INTO fx.cover_attempt (cover_id, attempt, client_reference, provider_quote_ref)"
                                 + " VALUES (?, 1, ?, ?)")) {
@@ -152,6 +152,7 @@ public final class JdbcTradeStore implements TradeStore {
             cover.setString(i++, draft.fixedSide().name());
             cover.setLong(i++, draft.fixedAmount().minorUnits());
             cover.setInt(i++, draft.fixedAmount().scale());
+            cover.setObject(i++, draft.causedByEventId());
             cover.setString(i, draft.correlationId());
             cover.executeUpdate();
             attempt.setObject(1, draft.id());

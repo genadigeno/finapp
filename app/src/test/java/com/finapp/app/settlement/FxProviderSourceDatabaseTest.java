@@ -233,7 +233,8 @@ class FxProviderSourceDatabaseTest {
                 .isEqualTo(entry);
         assertThat(one("SELECT key_value FROM reconciliation.expectation_key k JOIN reconciliation.expectation e"
                 + " ON e.id = k.expectation_id WHERE e.operation_ref = ? AND k.key_kind = 'COVER_REF'", cover))
-                .isEqualTo(cover);
+                .as("the leg's key is its currency's (P9-TSK-012): a cover's two legs share T")
+                .isEqualTo(cover + ":EUR");
 
         PositionProof.Report report;
         try (Connection app = DatabaseRoles.application()) {

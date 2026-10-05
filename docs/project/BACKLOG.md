@@ -12913,7 +12913,7 @@ break row, as the approval door must.)*
 
 # Phase 9 — FX and Cross-Border Payments
 
-Status: `IN_PROGRESS` — started 2026-10-03 with `P9-TSK-001` (11 of 30 items complete, M9.1 and M9.2 closed, M9.3 at 3 of 4); entry gate passed 2026-10-02 by the Phase 8 → 9 transition
+Status: `IN_PROGRESS` — started 2026-10-03 with `P9-TSK-001` (12 of 30 items complete, M9.1, M9.2 and M9.3 closed); entry gate passed 2026-10-02 by the Phase 8 → 9 transition
 ([`reviews/PHASE_8_TO_9_TRANSITION.md`](reviews/PHASE_8_TO_9_TRANSITION.md)), elaborated to task
 granularity by the same transition: thirty items (`P9-TSK-001`…`-027`, `P9-TST-001`, `P9-TST-002`,
 `P9-DOC-001`) across nine milestones, with `P9-TSK-001` marked `READY`. The engineering plan is
@@ -13458,7 +13458,8 @@ providers), each owned by Phase 15 and gating nothing here.
   first rule set is activated by two persons.
 - **Definition of done**: `DOD-FIN`, `DOD-SEC`, `DOD-API`. **Risk**: Medium. **Cx**: L.
 
-**P9-TSK-012 — The FX cover** — `READY` (marked by `P9-TSK-011`'s completion gate, 2026-10-05)
+**P9-TSK-012 — The FX cover** — `COMPLETE` (2026-10-05; marked `READY` by `P9-TSK-011`'s completion gate)
+- **As built** (2026-10-05): as `CURRENT_STATE.md` §Just completed records. Every scope item shipped; unwinds (`-021`) and abandonment (`-020`) stay out. Decided at build: the cover leg's key is qualified by its currency at both sides (`CoverLegKey`); the cover meters carry the kind under the registered `type` tag key; the cover row gains `caused_by_event_id` and `requote_failures`; the nudge and the sweep are off in test contexts.
 - **Carried from `P9-TSK-011`** (2026-10-05): **a cover's two legs share `COVER_REF = Tn`, and reconciliation's `expectation_key_once UNIQUE (source_id, key_kind, key_value)` admits Tn ONCE per source** - the second leg's key would be skipped as a `KEY_COLLISION` (`DUPLICATE_INTERNAL`) and its line would park; the design must decide the leg's key (a currency-qualified value normalised at both sides, or the unique widened by currency for `COVER_REF`) before the first cover opens its legs, and prove both legs of one cover settle. The opener register (`ExpectationOpenerRegisterTest`) gains `FxSettlementExpectations`' kinds with their proving rows on the cover entry.
 - **Objective**: cover each accepted quote with the provider exactly once, however the provider
   answers.
@@ -13499,7 +13500,8 @@ providers), each owned by Phase 15 and gating nothing here.
 - **Definition of done**: `DOD-FIN`, `DOD-SEC`, `DOD-API` (the FX webhook route), `DOD-EVENT`.
   **Risk**: High. **Cx**: L.
 
-**P9-TSK-013 — FX explained and settled to cash** — `PLANNED`
+**P9-TSK-013 — FX explained and settled to cash** — `READY` (marked by `P9-TSK-012`'s completion gate, 2026-10-05)
+- **Carried from `P9-TSK-012`** (2026-10-05): the cover's legs are keyed `Tn:<currency>` (`CoverLegKey`) and dated by the cover entry's posting date plus v1's 2-day lag, while the provider's own `value_date` is stored on `fx.cover_execution` - the `VALUE_DATE_DIFFERS` judgement compares against the stored value date; `FxBooksProof` explains `FX_POSITION` by open trade legs minus executed covers, and `FX_REALISED_GAINS`/`LOSSES` by the executions' stored `realised_*_minor`; the realised result's direction is on `fx.FxCoverExecuted` (`deliveredResult`/`receivedResult`).
 - **Objective**: prove the FX books, and carry the FX legs to cash with every discrepancy typed.
 - **Bounded context**: `fx`, `reconciliation`, `app`.
 - **Dependencies**: `-012`.

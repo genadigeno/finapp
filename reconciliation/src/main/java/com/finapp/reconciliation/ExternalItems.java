@@ -101,6 +101,10 @@ public interface ExternalItems {
             }
             canonicalFingerprint = canonicalFingerprint.clone();
             keys = Map.copyOf(keys);
+            if (CoverLegKey.qualifies(lineType)) {
+                // An FX provider line's cover references are its currency's leg's (P9-TSK-012).
+                keys = Map.copyOf(CoverLegKey.qualifyItemKeys(keys, amount.currency()));
+            }
         }
 
         /** A report line's item — its source's position, never attributed. */

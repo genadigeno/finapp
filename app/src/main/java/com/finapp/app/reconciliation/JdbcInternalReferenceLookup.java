@@ -104,8 +104,9 @@ public final class JdbcInternalReferenceLookup implements InternalReferenceLooku
                             .orElseGet(InternalReference::unknown);
             // The platform's cover reference (`P9-TSK-011`, PHASE_9_PLAN.md 12.9.2): a cover in
             // flight is MISSING_INTERNAL's case, a reference we never minted UNKNOWN_EXTERNAL's.
+            // The item's key is its leg's currency-qualified form (P9-TSK-012): our T is the reference.
             case COVER_REF ->
-                    covers.coverByClientReference(unitOfWork, value)
+                    covers.coverByClientReference(unitOfWork, com.finapp.reconciliation.CoverLegKey.reference(value))
                             .map(this::ofCover)
                             .orElseGet(InternalReference::unknown);
             // The ARN's alias resolution is the matcher's (`P8-TSK-011`); a remittance

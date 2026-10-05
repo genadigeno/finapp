@@ -1070,6 +1070,8 @@ edge, the `fx.cover_execution` PK) + `DOMAIN`.
 **Verify:** Response-lost, unrecognised and lock-expiry tests; simulator execution counts.
 **Phase:** 9
 
+*(As built by `P9-TSK-012` (2026-10-05): `fx V007`'s `cover_execution` - PK `cover_id`, `UNIQUE (provider_code, provider_trade_ref)`, the plan's legs copied from the quote and checked at birth, realised = executed - plan and `executed_off_plan` by `CHECK`; the cover trigger admits `-> EXECUTED` only with the fact and `REJECTED -> DISPATCHED` only once attempt n+1's reference is stored; `CoverLines` closes exactly the plan, the difference to `FX_REALISED_GAINS`/`LOSSES` (ledger `V023`). Proven by `FxCoverDatabaseTest` (scenarios 3 and 4, the same-`T` re-send), `FxCoverRaceDatabaseTest` and `CoverLinesTest`; the probes in `MUTATION_TESTING.md` section 2.)*
+
 ### INV-FX-09 — A booked conversion never waits on a provider
 **Statement:** A customer's booked conversion never waits on, and is never changed by, a
 provider outcome.
@@ -1091,6 +1093,8 @@ every statement is the decided design, corrected by the tasks that build it.*
 ---
 
 # Cross-Border Payments — `INV-XB`
+
+*(As built by `P9-TSK-012`: every cover suite asserts the conversion's entry byte-identical before and after the cover's outcome, a requote's realised loss included.)*
 
 ### INV-XB-01 — A cross-border payment debits once, at acceptance, or not at all
 **Statement:** A cross-border payment is priced by one accepted quote, holds the customer's
@@ -1676,7 +1680,7 @@ schema tests on the uniqueness.
 **Phase:** 5
 
 *(Amended at the Phase 8 → 9 transition (2026-10-02), ADR-0077 and ADR-0079 (`Proposed`), in
-force when `P9-TSK-012`, `-019` and `-024` land: the rule extends to the FX cover — the
+force when `P9-TSK-012`, `-019` and `-024` land - for the FX cover since `P9-TSK-012`: the rule extends to the FX cover — the
 client reference `T`, one per attempt, re-sent only under the same reference until the
 provider knows of it, a new reference only after a definitive rejection (`INV-FX-08`) — to
 the outbound credit's end-to-end reference `E`, minted and stored before any send, and to

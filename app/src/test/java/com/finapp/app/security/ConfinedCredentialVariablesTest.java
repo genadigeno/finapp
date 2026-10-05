@@ -91,6 +91,8 @@ class ConfinedCredentialVariablesTest {
                     // The eighteenth and nineteenth (P9-TSK-006): the FX provider's money-moving
                     // API key, and its evidence encryption key - one key per concern.
                     Map.entry(com.finapp.app.fx.FxProviderKey.class, "finapp.fx.provider.key"),
+                    // P9-TSK-012: the FX callback door's HMAC secret - its own key, never the API key's.
+                    Map.entry(com.finapp.app.fx.FxWebhookKey.class, "finapp.fx.webhook.key"),
                     Map.entry(com.finapp.app.fx.FxEvidenceKey.class, "finapp.fx.evidence.key"),
                     // The twentieth (P9-TSK-011): the FX provider's trade-report pull - report
                     // access is neither its money-moving API nor its evidence encryption.

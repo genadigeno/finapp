@@ -157,6 +157,21 @@ public enum AccountPurpose {
     FX_SPREAD_REVENUE(OwnerKind.OPERATIONAL),
 
     /**
+     * A cover's realised gain: the provider executed better than the plan's position leg, in that
+     * leg's currency (`P9-TSK-012`; ADR-0077 section 6, PHASE_9_PLAN.md section 12.4(f)). Posted
+     * only by {@code fx}'s {@code CoverLines} ({@code FxBooksHaveOnePosterTest}); REVENUE,
+     * credit-normal; never netted with {@link #FX_REALISED_LOSSES}. Added beside `V023`.
+     */
+    FX_REALISED_GAINS(OwnerKind.OPERATIONAL),
+
+    /**
+     * A cover's realised loss: the provider executed worse than the plan's position leg, in that
+     * leg's currency (`P9-TSK-012`). Posted only by {@code CoverLines}; EXPENSE, debit-normal.
+     * Added beside `V023`.
+     */
+    FX_REALISED_LOSSES(OwnerKind.OPERATIONAL),
+
+    /**
      * What one FX provider owes the platform, per currency - the first counterparty-owned
      * purpose (ADR-0078; {@code INV-RAIL-04}): there is no "the" FX provider clearing, only
      * {@code fx-sim-a}'s, resolved by {@link ChartOfAccounts#resolve(Object, AccountPurpose,
@@ -216,8 +231,8 @@ public enum AccountPurpose {
     /**
      * Every purpose a free {@code MANUAL} adjustment may never touch (`P9-TSK-009`;
      * PHASE_9_PLAN.md section 12.6): the reconciled positions, and the FX books - the position,
-     * the spread revenue and the rounding residual - whose every line is a conversion's (or, from
-     * `P9-TSK-012`, a cover's). The FX books do NOT join {@link #reconciledPositions()}: they open
+     * the spread revenue, the rounding residual and the realised results - whose every line is a
+     * conversion's or a cover's (`FX_REALISED_GAINS`/`_LOSSES` beside `V023`, `P9-TSK-012`). The FX books do NOT join {@link #reconciledPositions()}: they open
      * no expectations, and the completeness proof would report every conversion line unattributed.
      * `V020` re-states `V015`'s binding trigger with this list; `ReversalService` mirrors and
      * reconciliation-origin resolutions stay admitted.
@@ -227,6 +242,8 @@ public enum AccountPurpose {
         closed.add(FX_POSITION);
         closed.add(FX_SPREAD_REVENUE);
         closed.add(ROUNDING_RESIDUAL);
+        closed.add(FX_REALISED_GAINS);
+        closed.add(FX_REALISED_LOSSES);
         return closed;
     }
 

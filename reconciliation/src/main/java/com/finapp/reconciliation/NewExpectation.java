@@ -73,6 +73,14 @@ public record NewExpectation(
         Objects.requireNonNull(openedAt, "openedAt must not be null");
         Objects.requireNonNull(correlation, "correlation must not be null");
         keys = List.copyOf(keys);
+        if (CoverLegKey.qualifies(kind)) {
+            // A cover's two legs share their references: each leg's key is its currency's (P9-TSK-012).
+            keys = keys.stream()
+                    .map(key -> CoverLegKey.qualifies(key.kind())
+                            ? new ExpectationKey(key.kind(), CoverLegKey.qualify(key.value(), amount.currency()))
+                            : key)
+                    .toList();
+        }
         // Invalid input is a programming defect and throws loudly, rolling the completion
         // back with its expectation (ADR-0067 §6): an amount that asserts nothing cannot
         // decompose a position, and a non-remittance with no entry records no posting.

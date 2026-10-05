@@ -137,6 +137,10 @@ class TradeSchemaDatabaseTest {
                     .isEqualTo("t");
             execute(app, "UPDATE fx.cover SET status = 'REJECTED' WHERE id = '" + cover + "'");
             refusedSql(app, "UPDATE fx.cover SET status = 'DISPATCHED' WHERE id = '" + cover + "'", RAISED);
+            refusedSql(app, "UPDATE fx.cover SET status = 'DISPATCHED', attempts = 2 WHERE id = '" + cover + "'", RAISED);
+            // P9-TSK-012: a requote's new reference is stored BEFORE the edge that licenses sending it.
+            execute(app, "INSERT INTO fx.cover_attempt (cover_id, attempt, client_reference, provider_quote_ref)"
+                    + " VALUES ('" + cover + "', 2, 'T-" + UUID.randomUUID().toString().replace("-", "") + "', 'PQ-2')");
             execute(app, "UPDATE fx.cover SET status = 'DISPATCHED', attempts = 2 WHERE id = '" + cover + "'");
             execute(app, "UPDATE fx.cover SET status = 'UNKNOWN' WHERE id = '" + cover + "'");
             refusedSql(app, "UPDATE fx.cover SET status = 'VOIDED' WHERE id = '" + cover + "'", RAISED);
@@ -182,10 +186,11 @@ class TradeSchemaDatabaseTest {
 
     private static String coverInsert(String id, String quote, String status, int attempts) {
         return "INSERT INTO fx.cover (id, quote_id, kind, status, provider_code, source_currency, destination_currency,"
-                + " fixed_side, fixed_amount_minor, fixed_scale, attempts, last_dispatched_at, correlation_id)"
+                + " fixed_side, fixed_amount_minor, fixed_scale, attempts, last_dispatched_at, caused_by_event_id,"
+                + " correlation_id)"
                 + " SELECT '" + id + "', id, 'COVER', '" + status + "', provider_code, source_currency,"
                 + " destination_currency, fixed_side, position_source_minor, source_scale, " + attempts + ", now(),"
-                + " correlation_id FROM fx.quote WHERE id = '" + quote + "'";
+                + " issued_event_id, correlation_id FROM fx.quote WHERE id = '" + quote + "'";
     }
 
     /** A trade copying quote {@code quote}, {@code overrides} applied as SQL; returns its id. */

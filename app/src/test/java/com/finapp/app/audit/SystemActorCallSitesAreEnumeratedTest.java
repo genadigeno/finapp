@@ -360,6 +360,24 @@ class SystemActorCallSitesAreEnumeratedTest {
                         + " The scope wraps each item's re-read-and-apply, one transaction per"
                         + " item; the page read before it claims nothing."),
                     Map.entry(
+                            "com.finapp.app.fx.FxCoverSchedule.sweepOnce",
+                    "The cover sweep (P9-TSK-012, ADR-0077): the platform is principal, and its"
+                        + " cover is the platform's own trade with its provider - nobody commands a"
+                        + " send, an inquiry or a requote; the customer's act ended at the booking,"
+                        + " which they made as themselves. Attributing a cover leg to the customer"
+                        + " would record them as having traded with the provider."),
+                    Map.entry(
+                            "com.finapp.app.fx.FxCoverNudge.send",
+                    "The cover's post-commit nudge (P9-TSK-012): the same platform act as the"
+                        + " sweep, sent sooner - off the customer's request thread, after their"
+                        + " booking committed under their own name."),
+                    Map.entry(
+                            "com.finapp.app.fx.FxCallbackService.deliver",
+                    "The FX provider's callback (P9-TSK-012, ADR-0077 section 9): a provider's"
+                        + " unsolicited hint has no session - the PaymentWebhookService.effect"
+                        + " reasoning - and what it triggers is the platform's authenticated"
+                        + " inquiry of its own cover, never the callback's claim."),
+                    Map.entry(
                             "com.finapp.app.fx.FxQuoteExpirySchedule.sweepOnce",
                     "Quote expiry (P9-TSK-008, ADR-0075 section 5): a quote lapses because the"
                         + " database clock passed its expires_at - nobody chose it. Attributing the"

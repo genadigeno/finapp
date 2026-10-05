@@ -40,12 +40,15 @@ import java.util.UUID;
  */
 public final class ClearingLineCopies {
 
-    /** The positions whose lines an expectation must copy (ADR-0067 §9's clearing three). */
+    /**
+     * The positions whose lines an expectation must copy (ADR-0067 §9's clearing three, and the FX
+     * provider's counterparty clearing a cover's legs copy - `P9-TSK-012`).
+     */
     public static final List<String> RECONCILED_CLEARINGS =
-            List.of("SETTLEMENT_CLEARING", "INSTANT_CLEARING", "PAYOUT_CLEARING");
+            List.of("SETTLEMENT_CLEARING", "INSTANT_CLEARING", "PAYOUT_CLEARING", "FX_PROVIDER_CLEARING");
 
     private static final String CLEARINGS_SQL = "('SETTLEMENT_CLEARING', 'INSTANT_CLEARING',"
-            + " 'PAYOUT_CLEARING')";
+            + " 'PAYOUT_CLEARING', 'FX_PROVIDER_CLEARING')";
 
     private ClearingLineCopies() {}
 

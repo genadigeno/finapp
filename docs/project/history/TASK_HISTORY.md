@@ -1,6 +1,6 @@
 # Task History
 
-The per-task completion records that accumulated behind `## Current Task` - 203 "Previously" blocks, newest first, from `P9-TSK-010` back to project initiation. *(`X-TSK-005` is cross-cutting and completed after `P7-TSK-014` and before `P7-TSK-015`, so it stands between them; its record came in with its branch's merge.)* *(`X-TSK-004` is cross-cutting and completed after the Phase 6 → 7 transition, so it stands second, between `P7-TSK-001` and the transition's record - the transition's block moved here by `P7-TSK-001`'s gate, exactly as an earlier form of this note said it would.)*
+The per-task completion records that accumulated behind `## Current Task` - 204 "Previously" blocks, newest first, from `P9-TSK-011` back to project initiation. *(`X-TSK-005` is cross-cutting and completed after `P7-TSK-014` and before `P7-TSK-015`, so it stands between them; its record came in with its branch's merge.)* *(`X-TSK-004` is cross-cutting and completed after the Phase 6 → 7 transition, so it stands second, between `P7-TSK-001` and the transition's record - the transition's block moved here by `P7-TSK-001`'s gate, exactly as an earlier form of this note said it would.)*
 
 **Archive.** These records were moved verbatim out of
 [`CURRENT_STATE.md`](../CURRENT_STATE.md) on 2026-09-20 so that the canonical description of
@@ -12,6 +12,50 @@ Current state: [`CURRENT_STATE.md`](../CURRENT_STATE.md) ·
 Authoritative backlog: [`BACKLOG.md`](../BACKLOG.md)
 
 ---
+
+### Previously
+
+**`P9-TSK-011` — The FX provider's position, source and vocabulary** — `COMPLETE` (2026-10-05). **M9.3
+AT 3 OF 4: `fx-sim-a` has its position, its source, its format and its reconciliation vocabulary,
+before anything posts to it** (ADR-0078 §§6-8, PHASE_9_PLAN.md §12.9; `INV-SET-05`, `INV-SET-07`,
+`INV-RAIL-04`, `INV-AUD-04`, `INV-REC-06`…`-08`). **Ledger `V022`**: `fx-sim-a` registered with its five
+`FX_PROVIDER_CLEARING` accounts below the ceiling; the purpose joins `reconciledPositions()`; the
+free-adjustment binding restated. **Settlement `V015`**: `FX_PROVIDER_REPORT`, `SIM_FX_CSV` v1
+(`SimFxCsvFormat`, pure, one currency and value date per file - `SOLD` OUTBOUND, `BOUGHT` INBOUND, a fee
+split into `FX_FEE` naming its leg by `ORIGINAL_REF` = the cover reference, the cover reference admitted
+only in its minted `T-` + 32-hex shape; golden file, a fault per field), `FX_SOLD`/`FX_BOUGHT`/`FX_FEE`,
+`COVER_REF`/`FX_TRADE_REF`, the appended `CURRENCY_NOT_SETTLED` - refused at the parse leg before any batch,
+retained, never readmitted (the readmission rule restated) - and the source row; every CHECK reconciled to
+its enum, the source-kind and format-id lists for the first time. **Reconciliation `V020`**:
+`FX_SELL_LEG`/`FX_BUY_LEG`, the key and line mirrors, `FX_FEE` a priced non-allocating fee line,
+`FX_LEG_DIFFERS`/`VALUE_DATE_DIFFERS`, the pairing trigger and V014's timing list restated; FX legs missing
+are HIGH. **The first version**: `RuleSetAdministration` admits a source's version 1 when it has no ACTIVE
+one and activates it retiring nothing, four-eyes at both ranks; `RuleSetMissing` typed - a parsed report
+waits PARSED with the accept leg's backoff - and `finapp.reconciliation.rule.set.missing{source}`
+(Prometheus `finapp_reconciliation_rule_set_missing`, the plan's name; the convention admits no underscore).
+**Composition**: `FxProviderDeclaration.clearingPurpose()`; `CounterpartyClearings` declares `fx-sim-a`;
+`SettlementBeans.fxProviderSources()` composes `fx-sim-a.trade-report` from the declaration (`FXA-`
+remittances); the pull collector under `FINAPP_FX_REPORT_KEY`; `FxRuleSetV1` (O7) activated by two
+controllers, runbook §3. **Ports**: `FxSettlementExpectations` (fx) implemented by the recorder on the
+counterparty's own source; `JdbcInternalReferenceLookup` resolves `COVER_REF` over cover attempts (in flight
+MISSING_INTERNAL's case, unknown UNKNOWN_EXTERNAL's); `ReconciliationNeverConvertsTest` (transitive, planted).
+**THE BUILD'S FINDS, FIXED**: the matcher parked a counterparty-position item on a shared operational account
+that does not exist - every FX item would have poisoned its chunk and blocked the source - now through
+reconciliation's `PositionAccounts` port, composed in app from the register (`FxMatchingDatabaseTest`
+found it); `tradeRef` is the FX provider's own wire word - the format's field is `fxTradeRef`; the meter
+renamed to the convention. **FOUND, CARRIED TO `-012` (recorded in its entry)**: a cover's two legs share
+`COVER_REF = Tn` and `expectation_key_once (source, kind, value)` admits Tn once - the second leg's key would
+be a `KEY_COLLISION`; the opener register's FX rows arrive with the cover entry. **PROBES** (TWELVE PROBES, TWELVE CAUGHT - W7, the matcher parking on a shared account, SURVIVED its first run because neither FX case parked; `FxMatchingDatabaseTest` case (c) was added and caught it on the re-run),
+every restore byte-identical (sha256-verified; `MUTATION_TESTING.md` §2 +10 rows). **Multi-instance
+PASS** - ten first-version proposers leave one proposal and ten approvers one activation (counted); a file
+with no rule set fails once and waits on its backoff, never a hot loop; the currency screen runs in the
+parse leg's claimed transaction; every gauge read is the database's. **NEXT**: `P9-TSK-012` `READY`.
+**Verified** by fresh runs - the fleet-wide hermetic tier 2441 across 397 suites and 18 modules (its one red case the mutation-row parser naming three new rows, fixed and re-run green with the app tier); the architecture tier 155 across 27; the
+app hermetic tier with every document guard 714 across 134; settlement database 89 across 14, reconciliation database 236 across 26 (the FX matching suite 3), fx database 60 across 12 and hermetic 39 across 9 after master's clock correction merged, and the app database selection 224 across 32 (the FX source suite 5, the counterparty chart 5) failing exactly master's 22, ALL 0 FAILURES beyond what master fails
+identically - the fleet-wide database and kafka tiers deliberately skipped on the owner's instruction.
+**FOUND, NOT CAUSED, FIXED BESIDE IT**: the `fx` quote-lapse database cases red on master itself - they slept
+on the JVM clock while lapse is judged on the database's - were corrected on master by `85879c14` (merged
+here) and re-run green with this task.
 
 ### Previously
 

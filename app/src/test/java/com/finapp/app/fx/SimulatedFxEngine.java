@@ -73,9 +73,11 @@ final class SimulatedFxEngine implements AutoCloseable {
     private final Map<String, String> outcomes = new ConcurrentHashMap<>();
     private final Map<String, String> rates = new ConcurrentHashMap<>(DEFAULT_RATES);
     private final AtomicInteger executions = new AtomicInteger();
+    private final Map<String, AtomicInteger> executionsByReference = new ConcurrentHashMap<>();
     private final AtomicInteger quoteRequests = new AtomicInteger();
     private final AtomicInteger quoteSequence = new AtomicInteger();
     private final AtomicInteger tradeSequence = new AtomicInteger();
+    private final String instance = java.util.UUID.randomUUID().toString().substring(0, 8);
     private final List<SignedCallback> callbacks = new CopyOnWriteArrayList<>();
     private final List<String> idempotencyKeys = new CopyOnWriteArrayList<>();
     private final List<String> authorizations = new CopyOnWriteArrayList<>();
@@ -154,6 +156,12 @@ final class SimulatedFxEngine implements AutoCloseable {
     /** Every firm-quote request received - the RFQ count the quote suites assert (`P9-TSK-008`). */
     int quoteRequests() {
         return quoteRequests.get();
+    }
+
+    /** Real executions under one of our references - the per-cover "exactly once" count (P9-TSK-012). */
+    int executionsOf(String reference) {
+        AtomicInteger count = executionsByReference.get(reference);
+        return count == null ? 0 : count.get();
     }
 
     int executions() {
@@ -264,7 +272,9 @@ final class SimulatedFxEngine implements AutoCloseable {
             if (fault.equals("deviate")) {
                 bought = bought.subtract(BigDecimal.valueOf(deviationMinor, minorUnits(quote.destination())));
             }
-            String tradeRef = "FT-" + tradeSequence.incrementAndGet();
+            // Unique across simulator instances, as a real provider's trade references are: the
+            // suites share one database and fx.cover_execution holds (provider, trade ref) once.
+            String tradeRef = "FT-" + instance + "-" + tradeSequence.incrementAndGet();
             outcome =
                     "{\"status\":\"executed\",\"tradeRef\":\"" + tradeRef + "\",\"sold\":\""
                             + quote.sold().toPlainString() + "\",\"soldCurrency\":\"" + quote.source()
@@ -273,8 +283,13 @@ final class SimulatedFxEngine implements AutoCloseable {
                             + "\",\"valueDate\":\""
                             + now.get().atZone(ZoneOffset.UTC).toLocalDate().plusDays(2) + "\"}";
             executions.incrementAndGet();
+            executionsByReference.computeIfAbsent(reference, ignored -> new AtomicInteger()).incrementAndGet();
             long timestamp = now.get().getEpochSecond();
-            callbacks.add(new SignedCallback(outcome, timestamp, sign(callbackKey, timestamp, outcome)));
+            // The callback names the provider's event and OUR reference - the door's inquiry subject
+            // (P9-TSK-012) - beside the outcome it claims, which the door never trusts.
+            String callback = "{\"eventId\":\"fxcb-" + tradeRef + "\",\"clientRef\":\"" + reference + "\","
+                    + outcome.substring(1);
+            callbacks.add(new SignedCallback(callback, timestamp, sign(callbackKey, timestamp, callback)));
         }
         if (reference != null) {
             outcomes.put(reference, outcome);

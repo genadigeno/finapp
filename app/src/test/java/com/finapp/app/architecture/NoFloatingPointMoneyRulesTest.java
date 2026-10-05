@@ -269,6 +269,11 @@ class NoFloatingPointMoneyRulesTest {
                     // sentinel for unreadable; the quote and closed counters increment by counts.
                     // Counts, never an amount or a rate (ADR-0072).
                     "com.finapp.app.fx.FxQuoteMetrics",
+                    // P9-TSK-012. The SAME case again: UNKNOWN covers (a COUNT) and two AGES the
+                    // database computed (fx stays float-free: the store returns a Duration), in
+                    // seconds only at the registry boundary through the ToDoubleFunction a Gauge
+                    // imposes, NaN the sentinel for unreadable. Counts and ages, never an amount.
+                    "com.finapp.app.fx.FxCoverMetrics",
                     // P9-TSK-011. The SAME case again: whether each declared source has an
                     // ACTIVE rule set - a boolean read from the database, published as 1 or 0
                     // through the ToDoubleFunction a Gauge imposes, NaN the sentinel for

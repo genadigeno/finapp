@@ -174,17 +174,19 @@ public final class FxConversion {
         quotes.appendEvent(unitOfWork, quoteId, Optional.of(QuoteStatus.ACCEPTED), QuoteStatus.EXECUTED,
                 actor.id(), actor.type().name(), Optional.empty(), correlation.value());
 
-        // 5. The cover the position wants: born DISPATCHED, T1 stored before any send (ADR-0077).
+        // 5. The cover the position wants: born DISPATCHED, T1 stored before any send (ADR-0077),
+        //    naming the acceptance its events are caused by (P9-TSK-012).
+        EventId accepted = EventId.next(ids);
         UUID coverId = ids.next();
         trades.insertCover(unitOfWork, new TradeStore.CoverDraft(
                 coverId, quoteId, CoverKind.COVER, plan.providerCode(), plan.source(), plan.destination(),
                 plan.fixedSide(),
                 plan.fixedSide() == FixedSide.FIXED_SOURCE ? plan.positionSource() : plan.positionDestination(),
-                "T-" + ids.next().toString().replace("-", ""), plan.providerQuoteReference(), correlation.value()));
+                "T-" + ids.next().toString().replace("-", ""), plan.providerQuoteReference(), accepted.value(),
+                correlation.value()));
 
         // 6. The facts: two events, one audit record.
         Instant now = Instant.now(clock);
-        EventId accepted = EventId.next(ids);
         outbox.write(unitOfWork,
                 new EventEnvelope(accepted, ACCEPTED_EVENT, QuoteIssuance.EVENT_VERSION, EventEnvelope.CURRENT_SCHEMA_VERSION,
                         quoteId, QuoteIssuance.AGGREGATE_TYPE, now, QuoteIssuance.PRODUCER, correlation,

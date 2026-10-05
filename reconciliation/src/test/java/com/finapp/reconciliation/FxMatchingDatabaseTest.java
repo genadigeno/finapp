@@ -58,6 +58,7 @@ class FxMatchingDatabaseTest {
     private static final IdGenerator IDS = new IdGenerator(CLOCK, new SecureRandom());
     private static final Actor PLATFORM = new Actor("system", ActorType.SYSTEM);
     private static final CurrencyCode EUR = CurrencyCode.of("EUR");
+    private static final CurrencyCode USD = CurrencyCode.of("USD");
     private static final UUID SOURCE = UUID.fromString("01a0e2bc-8200-7019-8000-000000000019");
     private static final UUID RULE_SET = UUID.fromString("01a0e2bd-8300-7019-8000-000000000019");
     private static final LocalDate BASE = LocalDate.parse("2026-11-01").plusDays(100L * new SecureRandom().nextInt(30));
@@ -104,8 +105,7 @@ class FxMatchingDatabaseTest {
     @DisplayName("(a) each leg settles its cover leg by COVER_REF on fx-sim-a's own position - sold OUTBOUND,"
             + " bought INBOUND - the trade reference only an alias")
     void eachLegSettlesByItsCoverReference() throws SQLException {
-        // One leg per cover in this currency's file: a cover's two legs share Tn, and the
-        // per-source key unique admits Tn once - the keying -012 resolves (recorded on its entry).
+        // One leg per cover in this currency's file; (d) settles ONE cover's two legs.
         LocalDate day = BASE.plusDays(1);
         String sellCover = coverRef();
         String buyCover = coverRef();
@@ -181,14 +181,45 @@ class FxMatchingDatabaseTest {
         assertThat(parkedOn).isEqualTo(runner().inTransaction(FxMatchingDatabaseTest::position));
     }
 
+    @Test
+    @DisplayName("(d) ONE cover's two legs - the same T in the EUR file and the USD file - each hold their own key"
+            + " (qualified by the leg's currency, P9-TSK-012) and each settles; no KEY_COLLISION, nothing parked")
+    void oneCoversTwoLegsBothSettle() throws SQLException {
+        LocalDate day = BASE.plusDays(4);
+        String cover = coverRef();
+        UUID sold = open(ExpectationKind.FX_SELL_LEG, cover, ExpectationDirection.OUTBOUND, 100_000, day, EUR);
+        UUID bought = open(ExpectationKind.FX_BUY_LEG, cover, ExpectationDirection.INBOUND, 108_502, day, USD);
+        assertThat(count("SELECT count(*) FROM reconciliation.expectation_key WHERE key_kind = 'COVER_REF'"
+                + " AND key_value IN (?, ?)", cover + ":EUR", cover + ":USD"))
+                .as("two keys, one per leg").isEqualTo(2);
+        UUID eurRun = seedRun(day, line(1, ExternalLineType.FX_SOLD, ExpectationDirection.OUTBOUND, 100_000, day,
+                Map.of(ItemKeyKind.COVER_REF, cover, ItemKeyKind.FX_TRADE_REF, "FT-d1"), EUR));
+        UUID usdRun = seedRun(day, line(1, ExternalLineType.FX_BOUGHT, ExpectationDirection.INBOUND, 108_502, day,
+                Map.of(ItemKeyKind.COVER_REF, cover, ItemKeyKind.FX_TRADE_REF, "FT-d1"), USD));
+
+        matching.sweep();
+
+        assertThat(string("SELECT status FROM reconciliation.external_item WHERE run_id = ?", eurRun)).isEqualTo("MATCHED");
+        assertThat(string("SELECT status FROM reconciliation.external_item WHERE run_id = ?", usdRun)).isEqualTo("MATCHED");
+        assertThat(string("SELECT status FROM reconciliation.expectation WHERE id = ?", sold)).isEqualTo("SETTLED");
+        assertThat(string("SELECT status FROM reconciliation.expectation WHERE id = ?", bought)).isEqualTo("SETTLED");
+        assertThat(count("SELECT count(*) FROM reconciliation.break b JOIN reconciliation.external_item i"
+                + " ON i.id = b.external_item_id WHERE i.run_id IN (?, ?)", eurRun, usdRun)).isZero();
+    }
+
     // -----------------------------------------------------------------
 
     private record Line(int lineNo, ExternalLineType type, ExpectationDirection direction, long minor,
-            LocalDate day, Map<ItemKeyKind, String> keys) {}
+            LocalDate day, Map<ItemKeyKind, String> keys, CurrencyCode currency) {}
 
     private static Line line(int lineNo, ExternalLineType type, ExpectationDirection direction, long minor,
             LocalDate day, Map<ItemKeyKind, String> keys) {
-        return new Line(lineNo, type, direction, minor, day, keys);
+        return new Line(lineNo, type, direction, minor, day, keys, EUR);
+    }
+
+    private static Line line(int lineNo, ExternalLineType type, ExpectationDirection direction, long minor,
+            LocalDate day, Map<ItemKeyKind, String> keys, CurrencyCode currency) {
+        return new Line(lineNo, type, direction, minor, day, keys, currency);
     }
 
     private static String coverRef() {
@@ -198,20 +229,29 @@ class FxMatchingDatabaseTest {
     }
 
     private static UUID position(Connection unitOfWork) {
+        return position(unitOfWork, EUR);
+    }
+
+    private static UUID position(Connection unitOfWork, CurrencyCode currency) {
         return new JdbcLedgerAccountStore()
-                .findCounterpartyAccount(unitOfWork, AccountPurpose.FX_PROVIDER_CLEARING, "fx-sim-a", EUR)
-                .orElseThrow(() -> new IllegalStateException("ledger V022 seeds fx-sim-a's EUR account"))
+                .findCounterpartyAccount(unitOfWork, AccountPurpose.FX_PROVIDER_CLEARING, "fx-sim-a", currency)
+                .orElseThrow(() -> new IllegalStateException("ledger V022 seeds fx-sim-a's account in " + currency))
                 .id().value();
     }
 
     /** A cover leg's expectation, as the cover outcome opens it (P9-TSK-012), keyed COVER_REF. */
     private static UUID open(ExpectationKind kind, String cover, ExpectationDirection direction, long minor,
             LocalDate expectedBy) {
+        return open(kind, cover, direction, minor, expectedBy, EUR);
+    }
+
+    private static UUID open(ExpectationKind kind, String cover, ExpectationDirection direction, long minor,
+            LocalDate expectedBy, CurrencyCode currency) {
         String operationRef = cover + ":" + kind;
         return runner().inTransaction(unitOfWork -> {
             expectations.open(unitOfWork, new NewExpectation(
                     kind, operationRef, "fx-cover-test:" + operationRef, SOURCE, AccountPurpose.FX_PROVIDER_CLEARING,
-                    position(unitOfWork), direction, Money.ofPersisted(minor, EUR, 2), Optional.of(IDS.next()),
+                    position(unitOfWork, currency), direction, Money.ofPersisted(minor, currency, 2), Optional.of(IDS.next()),
                     expectedBy.minusDays(2), Optional.empty(), expectedBy, RULE_SET,
                     List.of(new NewExpectation.ExpectationKey(KeyKind.COVER_REF, cover)),
                     PLATFORM, Instant.now(), CorrelationId.generate(IDS)));
@@ -242,7 +282,7 @@ class FxMatchingDatabaseTest {
                 new SecureRandom().nextBytes(print);
                 newItems.add(new ExternalItems.NewItem(
                         IDS.next(), runId, SOURCE, IDS.next(), line.lineNo(), line.type(), line.direction(),
-                        Money.ofPersisted(line.minor(), EUR, 2), AccountPurpose.FX_PROVIDER_CLEARING, line.day(),
+                        Money.ofPersisted(line.minor(), line.currency(), 2), AccountPurpose.FX_PROVIDER_CLEARING, line.day(),
                         Optional.of(line.day()), Optional.of(line.day()), print, line.keys(),
                         Instant.now(CLOCK), CorrelationId.generate(IDS)));
             }

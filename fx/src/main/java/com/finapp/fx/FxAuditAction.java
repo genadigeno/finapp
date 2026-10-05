@@ -73,7 +73,27 @@ public enum FxAuditAction implements AuditableAction {
             "fx.AvailabilityEnableRejected",
             "An enable proposal was rejected, or withdrawn by its proposer; availability did not"
                     + " change.",
-            true);
+            true),
+
+    COVER_EXECUTED(
+            "fx.CoverExecuted",
+            "The platform's cover executed with its provider: the execution fact, the entry"
+                    + " fx-cover:<id> closing the plan's position legs and the leg expectations, in one"
+                    + " transaction - written by the acting applier only.",
+            false),
+
+    COVER_REQUOTED(
+            "fx.CoverRequoted",
+            "A definitively rejected cover was requoted at a fresh, plausible firm quote: a new"
+                    + " attempt and reference T(n+1), stored before it is sent - written by the acting"
+                    + " requoter only.",
+            false),
+
+    COVER_VOIDED(
+            "fx.CoverVoided",
+            "A definitively rejected cover its quote no longer wants was voided; nothing was ever"
+                    + " executed under it.",
+            false);
 
     private final String code;
     private final String description;

@@ -1138,7 +1138,7 @@ an ambiguous conversion: a retry replays a committed booking.
 
 | Pair | Ours (minted before send, stored) | Theirs (stored once) | Evidence reference on the line | Expectation (opened by) |
 |---|---|---|---|---|
-| FX trade ↔ FX provider | `fx.cover_attempt.client_reference` `Tn` (per attempt) | `fx.cover_execution.provider_trade_ref` | `COVER_REF` = `Tn` (key); `FX_TRADE_REF` (alias, trace) | `FX_SELL_LEG` (OUTBOUND), `FX_BUY_LEG` (INBOUND) on `FX_PROVIDER_CLEARING(provider)`, by the cover entry |
+| FX trade ↔ FX provider | `fx.cover_attempt.client_reference` `Tn` (per attempt) | `fx.cover_execution.provider_trade_ref` | `COVER_REF` = `Tn` (key); `FX_TRADE_REF` (alias, trace) - *as built (`P9-TSK-012`): reconciliation keys a cover leg as `Tn:<currency>` at both sides, so the two legs sharing `Tn` hold two keys* | `FX_SELL_LEG` (OUTBOUND), `FX_BUY_LEG` (INBOUND) on `FX_PROVIDER_CLEARING(provider)`, by the cover entry |
 | Cross-border payment ↔ provider / network | `payments.outbound_credit.end_to_end_reference` `E` | `provider_reference` (claimed in `scheme_execution_claim`) | `END_TO_END_REF` (key); `PAYOUT_PROVIDER_REF` (alias) | `CROSSBORDER_PAYOUT` (OUTBOUND) on `CORRIDOR_CLEARING(rail)`, by the completion |
 | Return ↔ provider | the outbound credit (the operation anchor) | `return_reference` (claimed, subject `CROSSBORDER_RETURN`) | none of its own: **operation-anchored** (ADR-0067 §5, the payout-return precedent) | `CROSSBORDER_RETURN` (INBOUND), `UNIQUE (kind, operation_ref)`, by the return |
 | Settlement ↔ ledger | every expectation names `(journal_entry_id, ledger_account_id)` | — | — | recognitions keyed `settlement-batch:<id>` |
@@ -1451,7 +1451,7 @@ declarations.
 | `finapp.fx.cover` | counter `provider`, `kind`, `outcome` (`executed`, `rejected`, `requoted`, `off_plan`, `voided`) | Cover health |
 | `finapp.fx.cover.unknown.active` / `.unknown.age` | gauge `provider` | `INV-LIFE-03` for covers (alert) |
 | `finapp.fx.cover.open.age` | gauge `provider` | The oldest uncovered position leg (alert) |
-| `finapp.fx.cover.latency` | timer `pair` | Acceptance → cover executed |
+| `finapp.fx.cover.latency` | timer `pair` | Acceptance → cover executed. *As built (`P9-TSK-012`): the cover meters are tagged `provider` and `type` (the cover's kind, under the registered tag key - `kind` is not one), outcomes `executed`, `off_plan`, `rejected`, `unknown`, `requoted`, `requote_refused`, `voided`, `anomaly`; the latency timer by `provider` and `type` (a cover knows its provider, not a pricing pair); the unknown and open-age gauges fleet-wide, read from the database* |
 | `finapp.fx.proof` | gauge `purpose` | Currencies failing the FX books proof (must be 0) |
 | `finapp.fx.plan.verdict` | gauge | 1 clean / 0 diverged |
 | `finapp.payments.outbound.unknown.active` / `.unknown.age` | gauge `rail` | `INV-LIFE-03` for outbound credits (alert) |

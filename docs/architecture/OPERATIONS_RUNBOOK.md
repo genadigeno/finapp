@@ -149,3 +149,30 @@ admitting a source's FIRST version):
 
 **Verify.** The gauge reads 0 within 15 s, and a waiting file is accepted at its next backoff
 deadline.
+
+## 4. An FX cover that will not conclude - UNKNOWN, refused requotes, off plan, anomalies
+
+*(Added by `P9-TSK-012`, 2026-10-05; ADR-0077; `INV-FX-08`, `INV-LIFE-03`.)*
+
+**Signals.** `finapp.fx.cover.unknown.active` and `.unknown.age` (covers sent and unanswered);
+`finapp.fx.cover.open.age` (the oldest uncovered position); `finapp.fx.cover{outcome="requote_refused"}`,
+`{outcome="off_plan"}` and `{outcome="anomaly"}`, each with an `ALERT:` log line naming the cover.
+
+**What the platform already does.** An `UNKNOWN` cover is inquired on every sweep and re-sent under its SAME
+reference only if the provider has never seen it - never concluded "never received", never re-sent under a
+new reference. A refused requote (declined, unanswered, or outside the band against a fresh reference) leaves
+the cover `REJECTED` and backs off (`requote-base x 2^min(failures, 6)`). An off-plan execution is booked
+exactly - `FX_POSITION` closes, the difference is realised in that leg's currency - and flagged.
+
+**What a person does.**
+1. **UNKNOWN ageing:** confirm the provider is reachable (`finapp.fx.provider.*` meters); nothing is to be
+   forced - the next inquiry concludes. Never edit a cover row: there is no manual execution (PHASE_9_PLAN.md
+   section 11, "deliberately absent").
+2. **Requote refused repeatedly:** check the reference feed's freshness (a stale reference refuses every
+   requote, fail closed) and the provider's quotes against the band; a sustained market move beyond the band
+   is a pricing-policy question for two FX controllers, not a cover edit.
+3. **Off plan / anomaly:** raise it with the provider - an execution off its own firm quote, or one for a
+   superseded reference, is a provider breach; the settlement line will reach reconciliation and be judged
+   there (`AMOUNT_MISMATCH`/`FX_LEG_DIFFERS`, or `UNKNOWN_EXTERNAL`), resolved four-eyes.
+4. **The FX source's v1 missing:** an executed cover cannot open its legs and its outcome refuses - fail
+   closed; activate v1 (section 3) and the next sweep books it.
