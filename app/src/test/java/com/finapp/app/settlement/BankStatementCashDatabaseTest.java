@@ -88,13 +88,16 @@ import org.springframework.boot.test.web.server.LocalServerPort;
  * opening, unattributed cash owned from its transaction), ten racing acceptors of competing
  * statements, and the IBAN needle refused at the door leaving metadata only.
  *
- * <p>Chain discipline: bank statements are this suite's alone in the shared container, and each
- * currency's chain is used by exactly one ordered step — EUR by the confirmed flow and the storm,
- * GBP by the gap, USD by the opening balance (which leaves USD's cash proof failing, loudly and
- * truthfully, for the rest of the run). The capture is seeded WITH its posting, so the clearing
- * identity holds at every step.
+ * <p>Chain discipline: the suite runs in a database of its own ({@code own-container},
+ * `X-TSK-016`), because each currency's chain must start at sequence 1 and is used by exactly one
+ * ordered step — EUR by the confirmed flow and the racing acceptors, GBP by the gap, USD by the
+ * opening balance (which leaves USD's cash proof failing, loudly and truthfully, for the rest of
+ * the run). Until `X-TSK-016` this read "bank statements are this suite's alone in the shared
+ * container"; three later suites wrote sequence 1 too, and whichever ran first won. The capture is
+ * seeded WITH its posting, so the clearing identity holds at every step.
  */
 @Tag("database")
+@Tag("own-container") // its own JVM and database: ownContainerDatabaseTest (X-TSK-016)
 @SpringBootTest(webEnvironment = SpringBootTest.WebEnvironment.RANDOM_PORT)
 @org.junit.jupiter.api.extension.ExtendWith(OutputCaptureExtension.class)
 @TestMethodOrder(MethodOrderer.OrderAnnotation.class)

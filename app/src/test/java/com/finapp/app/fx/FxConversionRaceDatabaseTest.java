@@ -240,7 +240,7 @@ class FxConversionRaceDatabaseTest {
         fund(postings, client.openWallet(customer, "EUR"), money("100.00", "EUR"));
         String swept = client.quoteId(customer, "EUR", "USD", "FIXED_SOURCE", "10.00");
         String unswept = client.quoteId(customer, "EUR", "USD", "FIXED_SOURCE", "10.00");
-        Thread.sleep(6000);
+        awaitLapsedOnTheDatabaseClock(swept, unswept);
         try (SecurityContext.Scope system = SecurityContext.enterSystem()) {
             fxTransactionRunner.inTransaction(unitOfWork -> {
                 assertThat(quotes.expire(unitOfWork, FxQuoteId.of(UUID.fromString(swept)))).isTrue();
@@ -265,6 +265,26 @@ class FxConversionRaceDatabaseTest {
                 .isEqualTo(1);
         assertThat(count("SELECT count(*) FROM platform.outbox_event WHERE event_type = 'fx.FxQuoteExpired'"
                 + " AND aggregate_id = ?::uuid", unswept)).isEqualTo(1);
+    }
+
+    /**
+     * Waits until the DATABASE's clock - the one that stamped {@code expires_at} and judges it -
+     * has passed each quote's expiry. A JVM sleep of the 5 s window plus one second measured the
+     * wrong clock: the container's VM clock was measured stepping back 1.7 s at once
+     * (`X-TSK-005`), so the database could still hold a quote live when the conditional expire ran
+     * (found red by `X-TSK-016`'s full tier run).
+     */
+    private static void awaitLapsedOnTheDatabaseClock(String... quoteIds) throws Exception {
+        Instant deadline = Instant.now().plusSeconds(60);
+        for (String quote : quoteIds) {
+            while (!"t".equals(scalar("SELECT expires_at <= statement_timestamp() FROM fx.quote"
+                    + " WHERE id = ?::uuid", quote))) {
+                assertThat(Instant.now())
+                        .as("quote %s lapsed on the database clock within a minute", quote)
+                        .isBefore(deadline);
+                Thread.sleep(100);
+            }
+        }
     }
 
     @Test
@@ -313,6 +333,70 @@ class FxConversionRaceDatabaseTest {
     }
 
     /** The conversion with a failure injected at one step - the rest are the real collaborators. */
+    @Test
+    @DisplayName("an acceptance judged in time records THAT instant: the booking outlives the quote's expiry"
+            + " before the ACCEPTED event is written, and the event still reads before expires_at (X-TSK-016)")
+    void theAcceptedEventRecordsTheInstantItWasJudged() throws Exception {
+        FxTestClient client = new FxTestClient(port);
+        FxTestClient.Customer customer = client.verifiedCustomer();
+        fund(postings, client.openWallet(customer, "EUR"), money("100.00", "EUR"));
+        String quote = client.quoteId(customer, "EUR", "USD", "FIXED_SOURCE", "10.00");
+        // The trade's insert runs after the accept and before the events: held, in the converting
+        // transaction itself, until the database's clock has passed the quote's expiry.
+        TradeStore heldTrades = (TradeStore) Proxy.newProxyInstance(TradeStore.class.getClassLoader(),
+                new Class<?>[] {TradeStore.class}, (proxy, method, args) -> {
+                    if (method.getName().equals("insert")) {
+                        holdPastExpiry((Connection) args[0], quote);
+                    }
+                    try {
+                        return method.invoke(trades, args);
+                    } catch (java.lang.reflect.InvocationTargetException failure) {
+                        throw failure.getCause();
+                    }
+                });
+        FxConversion conversion = new FxConversion(quotes, heldTrades, availability, participants,
+                ledgerAccountStore, new AvailableBalance<>(new JdbcBalanceDerivation(), new JdbcHoldStore()),
+                new ChartOfAccounts<>(ledgerAccountStore), postings, auditWriter, outboxWriter,
+                FxTestClient.IDS, Clock.systemUTC());
+        Actor actor = new Actor(customer.party().toString(), ActorType.CUSTOMER);
+        try (CorrelationContext.Scope flow = CorrelationContext.enter(Correlation.startingWith(CorrelationId.generate(FxTestClient.IDS)));
+                SecurityContext.Scope scope = SecurityContext.enter(actor)) {
+            fxTransactionRunner.inTransaction(unitOfWork -> conversion.convert(unitOfWork,
+                    FxQuoteId.of(UUID.fromString(quote)), customer.party(), actor,
+                    CorrelationId.generate(FxTestClient.IDS)));
+        }
+        assertThat(scalar("SELECT status FROM fx.quote WHERE id = ?::uuid", quote)).isEqualTo("EXECUTED");
+        assertThat(scalar("SELECT e.occurred_at >= q.expires_at FROM fx.quote_event e JOIN fx.quote q"
+                        + " ON q.id = e.quote_id WHERE q.id = ?::uuid AND e.to_status = 'EXECUTED'", quote))
+                .as("the hold outlived the quote: the EXECUTED event, stamped by its own statement, reads past"
+                        + " expiry - so the check below is not vacuous")
+                .isEqualTo("t");
+        assertThat(scalar("SELECT e.occurred_at < q.expires_at FROM fx.quote_event e JOIN fx.quote q"
+                        + " ON q.id = e.quote_id WHERE q.id = ?::uuid AND e.to_status = 'ACCEPTED'", quote))
+                .as("the ACCEPTED event records the instant the conditional judged, before expiry - never a"
+                        + " later statement's clock, which would make the history contradict the rule")
+                .isEqualTo("t");
+    }
+
+    /** Waits, on the transaction's own connection, until the database's clock is past the expiry. */
+    private static void holdPastExpiry(Connection unitOfWork, String quote) throws Exception {
+        Instant deadline = Instant.now().plusSeconds(60);
+        try (java.sql.PreparedStatement lapsed = unitOfWork.prepareStatement(
+                "SELECT statement_timestamp() > expires_at FROM fx.quote WHERE id = ?::uuid")) {
+            lapsed.setString(1, quote);
+            while (true) {
+                try (java.sql.ResultSet row = lapsed.executeQuery()) {
+                    row.next();
+                    if (row.getBoolean(1)) {
+                        return;
+                    }
+                }
+                assertThat(Instant.now()).as("the quote lapsed within a minute").isBefore(deadline);
+                Thread.sleep(100);
+            }
+        }
+    }
+
     private FxConversion conversionFailingAt(String step) {
         TradeStore failingTrades = (TradeStore) Proxy.newProxyInstance(TradeStore.class.getClassLoader(),
                 new Class<?>[] {TradeStore.class}, (proxy, method, args) -> {

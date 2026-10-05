@@ -161,7 +161,7 @@ class QuoteIssuanceDatabaseTest {
         QuoteStore.QuoteRow first = issue(issuance, owner, claim(), "EUR", "USD", FixedSide.FIXED_SOURCE, "100.00").quote();
         assertThatThrownBy(() -> issue(issuance, owner, claim(), "EUR", "USD", FixedSide.FIXED_SOURCE, "100.00"))
                 .isInstanceOf(QuoteRefusal.Refused.class);
-        awaitDatabaseClock(first.expiresAt().plusMillis(500));
+        FxQuoteFixtures.awaitDatabaseClockPast(first.expiresAt());
         reference("EUR", "USD", "1.0850000000");
         assertThat(issue(issuance, owner, claim(), "EUR", "USD", FixedSide.FIXED_SOURCE, "100.00").quote().status())
                 .isEqualTo(QuoteStatus.ISSUED);

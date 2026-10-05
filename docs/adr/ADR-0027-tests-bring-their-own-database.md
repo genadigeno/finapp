@@ -1,6 +1,6 @@
 # ADR-0027 — Tests bring their own database
 
-Status: Accepted
+Status: Accepted (amended 2026-10-05 by `X-TSK-016`: own-container suites)
 
 Date: 2026-09-02
 
@@ -99,6 +99,21 @@ a long-lived database shared between runs.
 registering in `MODULE_ARCHITECTURE.md`'s module map and would look like a production module to
 `ProductionModules.of()`. Test fixtures are the supported mechanism for sharing test code between
 modules and cost one plugin line.
+
+## Amendment — `X-TSK-016`: a suite that needs a database of its own gets a JVM of its own
+
+One container per JVM means one database for a whole tier, and every suite inherits what the
+suites before it committed (`TESTING.md` §5). Nine `app` suites cannot hold under that - absolute
+proofs over the whole database, or a bank statement chain that must start at sequence 1 - and
+through Phase 8 they were run apart by hand. Run together they failed in an order-dependent way.
+
+The harness is unchanged. A suite carrying the declared non-tier selector `own-container`, and
+named in its module's `extra["ownContainerSuites"]`, is left out of `databaseTest`'s shared JVM
+and run by `ownContainerDatabaseTest` (`forkEvery = 1`) in a JVM of its own - so this decision's
+one container per JVM gives it a fresh database. A second container or database inside one JVM
+was not chosen: the suites and the Spring context read the coordinates this listener publishes as
+JVM-wide system properties, so a per-suite database would mean switching them between classes, a
+JVM-global mutable setting of exactly the kind ADR-0024 refuses.
 
 ## References
 

@@ -134,7 +134,7 @@ class QuoteSchemaDatabaseTest {
         activate(eurUsdBothWays(FxQuoteFixtures.MINIMUM_WINDOW, Duration.ZERO), 5);
         QuoteStore.QuoteRow quote = issue(issuance(providers(a, b), Clock.systemUTC()), UUID.randomUUID(), claim(),
                 "EUR", "USD", FixedSide.FIXED_SOURCE, "100.00").quote();
-        awaitDatabaseClock(quote.expiresAt().plusMillis(500));
+        FxQuoteFixtures.awaitDatabaseClockPast(quote.expiresAt());
         String id = quote.id().value().toString();
         try (Connection app = application()) {
             refusedSql(app, "UPDATE fx.quote SET status = 'ACCEPTED' WHERE id = '" + id + "'", RAISED);

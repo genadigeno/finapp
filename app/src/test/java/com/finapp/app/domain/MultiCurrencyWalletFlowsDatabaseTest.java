@@ -375,15 +375,20 @@ class MultiCurrencyWalletFlowsDatabaseTest {
                 CLOCK);
     }
 
-    /** Credits {@code holder}'s wallet in {@code currency} from that currency's clearing. */
+    /**
+     * Credits {@code holder}'s wallet in {@code currency} from that currency's FEE_REVENUE - not
+     * SETTLEMENT_CLEARING (the P8-TSK-006 move, TESTING.md section 5): clearing is a reconciled
+     * position whose every line answers to an expectation (INV-REC-06), and a funding entry is no
+     * operation a backfill could adopt, so it stood unexplained in the shared container. The
+     * fixture only ever wanted an operational account facing the wallet.
+     */
     private void fund(Holder holder, CurrencyCode currency, long minorUnits) throws Exception {
         asInstance(
                 holder,
                 app -> {
-                    LedgerAccountId clearing =
+                    LedgerAccountId operational =
                             ledgerAccounts
-                                    .findOperational(
-                                            app, AccountPurpose.SETTLEMENT_CLEARING, currency)
+                                    .findOperational(app, AccountPurpose.FEE_REVENUE, currency)
                                     .orElseThrow()
                                     .id();
                     LocalDate today = LocalDate.now(CLOCK);
@@ -398,7 +403,8 @@ class MultiCurrencyWalletFlowsDatabaseTest {
                                             "funding",
                                             List.of(
                                                     new JournalLine(
-                                                            clearing, Direction.DEBIT, amount),
+                                                            operational, Direction.DEBIT,
+                                                            amount),
                                                     new JournalLine(
                                                             LedgerAccountId.of(
                                                                     holder.wallet(currency)),

@@ -95,6 +95,7 @@ import org.springframework.boot.test.web.server.LocalServerPort;
  * flow moves {@code INSTANT_CLEARING}'s identity by exactly nothing.
  */
 @Tag("database")
+@Tag("own-container") // its own JVM and database: ownContainerDatabaseTest (X-TSK-016)
 @SpringBootTest(webEnvironment = SpringBootTest.WebEnvironment.RANDOM_PORT)
 @TestMethodOrder(MethodOrderer.OrderAnnotation.class)
 @DisplayName("the instant scheme's cycle report: allocated per cycle, cash confirmed (P8-TSK-017)")

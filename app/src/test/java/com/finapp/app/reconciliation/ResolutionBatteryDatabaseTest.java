@@ -126,6 +126,7 @@ import org.springframework.boot.test.web.server.LocalServerPort;
  * absolute proofs read.
  */
 @Tag("database")
+@Tag("own-container") // its own JVM and database: ownContainerDatabaseTest (X-TSK-016)
 @SpringBootTest(webEnvironment = SpringBootTest.WebEnvironment.RANDOM_PORT)
 @TestMethodOrder(MethodOrderer.OrderAnnotation.class)
 @DisplayName("the break and resolution battery over HTTP (P8-TST-002)")
@@ -173,6 +174,7 @@ class ResolutionBatteryDatabaseTest {
     private static UUID counterpartWallet;
     private static Map<ResolutionKind, Map<ResolutionOutcome, Double>> metersBefore;
     private static Map<String, Long> rowsBefore;
+    private static long lossLinesBefore;
     private static final List<String> PERSON_RESOLUTIONS = new ArrayList<>();
     private static final List<String> RECONCILIATION_PROPOSALS = new ArrayList<>();
     private static String evidencedResolution;
@@ -190,6 +192,7 @@ class ResolutionBatteryDatabaseTest {
         seedPrivateRuleSet();
         metersBefore = meters();
         rowsBefore = resolutionRows();
+        lossLinesBefore = lossLines();
         assertBooksHold("before the battery");
         counterpartWallet = openAccount(AccountPurpose.CUSTOMER_WALLET, EUR, IDS.next());
         Subject subject = completedExpectation(ExpectationDirection.INBOUND, 12_00,
@@ -550,8 +553,9 @@ class ResolutionBatteryDatabaseTest {
                 + " ('WRITE_OFF', 'RECOGNISE_GAIN') AND journal_entry_id IS NOT NULL)"))
                 .as("the two P&L positions posted by nothing but approved write-offs and gains")
                 .isZero();
-        assertThat(count("SELECT count(*) FROM ledger.journal_line l JOIN ledger.ledger_account a"
-                + " ON a.id = l.ledger_account_id WHERE a.purpose = 'RECONCILIATION_LOSSES'"))
+        // A delta, like the resolution rows: the container is shared, and other suites' approved
+        // write-offs post to the same position before this one runs.
+        assertThat(lossLines() - lossLinesBefore)
                 .as("this suite's write-offs posted there").isEqualTo(2);
         for (String proposal : RECONCILIATION_PROPOSALS) {
             assertThat(one("SELECT origin FROM ledger.adjustment_proposal WHERE id = ?::uuid",
@@ -750,6 +754,11 @@ class ResolutionBatteryDatabaseTest {
             counted.put(parts[0] + "/" + parts[1], Long.parseLong(parts[2]));
         }
         return counted;
+    }
+
+    private static long lossLines() throws SQLException {
+        return count("SELECT count(*) FROM ledger.journal_line l JOIN ledger.ledger_account a"
+                + " ON a.id = l.ledger_account_id WHERE a.purpose = 'RECONCILIATION_LOSSES'");
     }
 
     private static long delta(Map<String, Long> after, ResolutionKind kind, String status) {

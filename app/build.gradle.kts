@@ -264,6 +264,25 @@ tasks.named<Test>("databaseTest") {
     // external infrastructure, so it is not repeated here.
 }
 
+// The database suites that need a database of their own (X-TSK-016): each carries
+// @Tag("own-container"), `databaseTest` leaves it out of the shared JVM, and the convention
+// plugin's `ownContainerDatabaseTest` runs it in a JVM - so a container - of its own. Each is here
+// for a reason its javadoc states: absolute proofs over the whole database, or a bank statement
+// chain that must start at sequence 1 - so the shared JVM writes no bank statement at all.
+// TestTaxonomyTest holds this list equal to the tagged set.
+extra["ownContainerSuites"] =
+    listOf(
+        "com.finapp.app.merchant.PayoutReturnDatabaseTest",
+        "com.finapp.app.reconciliation.BatchRepudiationDatabaseTest",
+        "com.finapp.app.reconciliation.JpyAndBhdPostableDatabaseTest",
+        "com.finapp.app.reconciliation.ResolutionBatteryDatabaseTest",
+        "com.finapp.app.reconciliation.SettlementReconciliationStormDatabaseTest",
+        "com.finapp.app.reconciliation.UnmatchedConfirmationSuspenseDatabaseTest",
+        "com.finapp.app.settlement.BankStatementCashDatabaseTest",
+        "com.finapp.app.settlement.PayoutSettlementCashDatabaseTest",
+        "com.finapp.app.settlement.SchemeCycleCashDatabaseTest",
+    )
+
 // The document inputs below are declared on EVERY test task, not only on `test`.
 //
 // Each document-backed guard runs in whichever tier its own test belongs to:

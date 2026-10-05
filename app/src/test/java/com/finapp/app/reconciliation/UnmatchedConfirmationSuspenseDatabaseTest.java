@@ -130,6 +130,7 @@ import org.springframework.test.context.DynamicPropertySource;
  * outright, because an open item without an open owner is never legitimate.
  */
 @Tag("database")
+@Tag("own-container") // its own JVM and database: ownContainerDatabaseTest (X-TSK-016)
 @SpringBootTest(webEnvironment = SpringBootTest.WebEnvironment.RANDOM_PORT)
 @TestMethodOrder(MethodOrderer.OrderAnnotation.class)
 @DisplayName("unmatched confirmations join suspense: owned at birth, adopted once, released only"

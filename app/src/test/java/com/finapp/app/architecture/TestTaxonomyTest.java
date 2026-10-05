@@ -84,11 +84,24 @@ class TestTaxonomyTest {
     /**
      * Tags that carry no scheduling meaning but are deliberate selectors.
      *
-     * <p>Empty, and that is the point: the vocabulary is closed, so a tag outside it fails the
-     * build rather than being silently ignored. Adding one here is a decision somebody makes,
-     * which is the whole difference between a selector and a typo.
+     * <p>The vocabulary is closed, so a tag outside it fails the build rather than being silently
+     * ignored. Adding one here is a decision somebody makes, which is the whole difference between
+     * a selector and a typo. The one made so far:
+     *
+     * <ul>
+     *   <li>{@value #OWN_CONTAINER} (`X-TSK-016`, owner-decided 2026-10-05): a database suite that
+     *       needs a database of its own - absolute proofs, or a bank statement chain from sequence
+     *       1. {@code databaseTest} leaves it out of the shared JVM and
+     *       {@code ownContainerDatabaseTest} runs it in a JVM of its own. It selects WITHIN the
+     *       database tier, never a tier of its own.
+     * </ul>
      */
-    private static final Set<String> NON_TIER_TAGS = Set.of();
+    private static final String OWN_CONTAINER = "own-container";
+
+    private static final Set<String> NON_TIER_TAGS = Set.of(OWN_CONTAINER);
+
+    /** Each module's declared own-container suites, as its build passes them across. */
+    private static final String OWN_CONTAINER_SUITES_PROPERTY = "finapp.test.ownContainerSuites";
 
     // ------------------------------------------------------------------
     // The tier a test is in
@@ -249,6 +262,58 @@ class TestTaxonomyTest {
                                 + " %s",
                         declared)
                 .isEmpty();
+    }
+
+    @Test
+    @DisplayName("an own-container suite is a database suite: the selector narrows that tier only")
+    void anOwnContainerSuiteIsADatabaseSuite() {
+        // ownContainerDatabaseTest selects `database & own-container`, so the selector on a class
+        // in any other tier would run it nowhere - databaseTest excludes it and the sibling's
+        // expression does not match. Silent, which is why it is refused here.
+        Map<String, TestTier> elsewhere = new TreeMap<>();
+        for (SelectedTest testClass : testClasses()) {
+            if (TestTier.tagValues(testClass.outer()).contains(OWN_CONTAINER)
+                    && testClass.declaredTier() != TestTier.DATABASE) {
+                elsewhere.put(testClass.name(), testClass.declaredTier());
+            }
+        }
+        assertThat(elsewhere).as("@Tag(\"%s\") outside the database tier", OWN_CONTAINER).isEmpty();
+    }
+
+    @Test
+    @DisplayName("the build's own-container list is exactly the set of classes carrying the tag")
+    void theOwnContainerListIsTheTaggedSet() {
+        // The tag excludes a suite from the shared JVM; the build's list is what scopes the
+        // forking sibling to its class file (Gradle reads no tag before the worker). A tagged
+        // class the list omits runs NOWHERE; a listed class without the tag runs TWICE, once in
+        // the shared JVM it was meant to leave. Both silent, both refused.
+        String declaration = System.getProperty(OWN_CONTAINER_SUITES_PROPERTY);
+        assertThat(declaration)
+                .as("%s is not set - this test must run through Gradle, where the list lives",
+                        OWN_CONTAINER_SUITES_PROPERTY)
+                .isNotNull();
+        Set<String> listed = new TreeSet<>();
+        for (String name : declaration.split(",")) {
+            if (!name.isBlank()) {
+                listed.add(name);
+            }
+        }
+        Set<String> tagged = new TreeSet<>();
+        for (SelectedTest testClass : testClasses()) {
+            if (TestTier.tagValues(testClass.outer()).contains(OWN_CONTAINER)) {
+                tagged.add(testClass.name());
+            }
+        }
+        // The property carries THIS module's list (app's), and app is where every own-container
+        // suite lives today; a second module adopting the selector extends this guard with it.
+        assertThat(tagged)
+                .as("every @Tag(\"%s\") class is app's, and app's build lists exactly them"
+                        + " (extra[\"ownContainerSuites\"] in app/build.gradle.kts)", OWN_CONTAINER)
+                .allSatisfy(name -> assertThat(name).startsWith("com.finapp.app."))
+                .containsExactlyInAnyOrderElementsOf(listed);
+        assertThat(tagged)
+                .as("the sweep must find the own-container suites, or this guard checks nothing")
+                .isNotEmpty();
     }
 
     @Test

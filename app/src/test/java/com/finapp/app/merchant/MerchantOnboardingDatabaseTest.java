@@ -382,7 +382,13 @@ class MerchantOnboardingDatabaseTest {
                     // itself still exists only in the ledger, and no row sums payouts into a
                     // figure. The sweep flagged it the moment V007 arrived: the list working.
                     // (currency and scale carry no flagged word, so only the amount is named.)
-                    "merchant_payout.amount_minor");
+                    "merchant_payout.amount_minor",
+                    // P8-TSK-019: what ONE returned payout gave back - the payout's own money,
+                    // held equal to it by V008's composite key, born once and never edited. The
+                    // merchant-payout-return:<payoutId> posting moves the payable; the row sums
+                    // nothing into a figure. Named by X-TSK-016: V008 arrived while the database
+                    // tier went unrun, so the sweep's flag waited three phases to be read.
+                    "payout_return.amount_minor");
 
     @Test
     @DisplayName("no balance column exists in the live merchant schema (INV-MER-02's sweep)")

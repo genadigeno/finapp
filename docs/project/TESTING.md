@@ -97,8 +97,11 @@ running for this to work?"**
 - **The tag vocabulary is closed.** A tag that is neither a tier nor a declared non-tier selector
   fails the build. An unrecognised tag is otherwise *ignored* rather than rejected, so
   `@Tag("databse")` reads as a tier and schedules nothing — the same argument that makes
-  `AuditableAction` a closed set. The non-tier list is currently empty; adding to it is a decision
-  somebody makes, which is the whole difference between a selector and a typo.
+  `AuditableAction` a closed set. Adding to the non-tier list is a decision somebody makes, which
+  is the whole difference between a selector and a typo. It holds one: `own-container`
+  (`X-TSK-016`, owner-decided 2026-10-05), which selects *within* the database tier — see §5,
+  *A suite that needs a database of its own*. A second tag on a class compiles to a `@Tags`
+  container; `TestTier.tagValues` reads both forms, so the tier tag stays visible beside it.
 
 ### `contract` is deliberately not a tier
 
@@ -197,6 +200,40 @@ To judge one suite's residue, run it with the sentinel — the orderer still put
 
 ```bash
 ./gradlew :app:databaseTest --tests '*MerchantPayoutDatabaseTest' --tests '*ReconciledPositionResidueDatabaseTest'
+```
+
+### A suite that needs a database of its own
+
+The three rules are the default, and a few suites cannot meet them without losing what they
+prove: a proof that is **absolute** over the whole database (the settlement storm's census, the
+batch repudiations, the resolution battery), or a bank statement chain that must **start at
+sequence 1** — one chain per currency for the whole database, and two suites need the same first
+USD statement. Through Phase 8 they said "runs in its own container" in their javadoc and were
+run apart by hand; nothing in the build made it true. Run together, the tier went red in an
+order-dependent way (22 failures on one run of unchanged code, 31 on the next, `X-TSK-016`).
+
+Such a suite carries `@Tag("own-container")` beside `@Tag("database")`, and its module's build
+lists it in `extra["ownContainerSuites"]`. `databaseTest` leaves it out of the shared JVM; the
+convention plugin's `ownContainerDatabaseTest` runs each listed suite in a JVM of its own
+(`forkEvery = 1`), so `DatabaseUnderTest` starts it a fresh container. `databaseTest` is finalized
+by it, so `./gradlew databaseTest` — CI's invocation — runs both halves, and a `--tests` filter
+given to `databaseTest` selects in both (a pattern neither half matches still fails). The tag is
+what the shared JVM reads; the list is what scopes the forking task to the suite's class file,
+because Gradle hands every class file to the worker before any tag is read — `forkEvery = 1` over
+the whole source set would start a container per class. `TestTaxonomyTest` holds the list equal
+to the tagged set, and the tag to the database tier.
+
+It is an exception that costs a container start and a Spring context per suite, so it is for a
+suite whose proof genuinely needs the whole database, not for one whose fixture is untidy: a
+fixture that writes a reconciled position, or counts the whole container, is fixed under the three
+rules instead. Suites in the shared JVM must not assume an own-container suite's state either way.
+One consequence is a rule of its own: **the shared JVM writes no bank statement.** A statement
+chain is one sequence per currency for the whole database, and every suite that writes one runs
+apart; a shared suite that needs statement behaviour proves it hermetically
+(`ReconciliationReportsFoldTest`) or becomes an own-container suite.
+
+```bash
+./gradlew :app:databaseTest --tests '*SettlementReconciliationStormDatabaseTest'
 ```
 
 ---
@@ -313,7 +350,9 @@ test reports success.
 ./gradlew databaseTest
 ```
 
-Needs Docker and nothing else. The harness starts its own PostgreSQL (ADR-0027). Set
+Needs Docker and nothing else. The harness starts its own PostgreSQL (ADR-0027) — one for the
+shared JVM, and one more for each own-container suite, which `ownContainerDatabaseTest` runs after
+it (§5). Set
 `FINAPP_DB_URL` to point `:platform:databaseTest` at a long-lived database instead — the
 deliberate escape hatch for inspecting what a test left behind. Only the platform module's build
 passes the URL to its test JVM, so every other module's tier, `:app:databaseTest` included,

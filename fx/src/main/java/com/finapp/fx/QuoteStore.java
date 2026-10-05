@@ -204,17 +204,43 @@ public interface QuoteStore {
             Optional<String> detectedBy,
             String correlationId);
 
+    /**
+     * As {@link #appendEvent}, but {@code occurred_at} is {@code occurredAt} - an instant the
+     * database already judged in this transaction - rather than this statement's own clock. An
+     * acceptance or cancellation is judged by its conditional UPDATE's {@code statement_timestamp()}
+     * against {@code expires_at}; its event, written later in the transaction (after the whole
+     * booking, for a conversion), would otherwise record a later instant - past the expiry the
+     * transition was judged before, so the history would contradict the rule (`X-TSK-016`).
+     */
+    void appendEventAt(
+            Connection unitOfWork,
+            FxQuoteId id,
+            Optional<QuoteStatus> from,
+            QuoteStatus to,
+            String actorId,
+            String actorType,
+            Optional<String> detectedBy,
+            String correlationId,
+            Instant occurredAt);
+
     /** The quote, only if {@code owner} owns it. */
     Optional<QuoteRow> findOwned(Connection unitOfWork, FxQuoteId id, UUID owner);
 
     /** The quote {@code FOR UPDATE}, only if {@code owner} owns it. */
     Optional<QuoteRow> lockOwned(Connection unitOfWork, FxQuoteId id, UUID owner);
 
-    /** {@code ISSUED -> CANCELLED} while live; false when the conditional did not match. */
-    boolean cancel(Connection unitOfWork, FxQuoteId id);
+    /**
+     * {@code ISSUED -> CANCELLED} while live: the database instant the conditional judged it, for
+     * the event to record ({@link #appendEventAt}); empty when the conditional did not match.
+     */
+    Optional<Instant> cancel(Connection unitOfWork, FxQuoteId id);
 
-    /** {@code ISSUED -> ACCEPTED} while live on the database clock; false otherwise (`P9-TSK-009`). */
-    boolean accept(Connection unitOfWork, FxQuoteId id);
+    /**
+     * {@code ISSUED -> ACCEPTED} while live on the database clock (`P9-TSK-009`): the instant the
+     * conditional judged it, for the event to record ({@link #appendEventAt}, `X-TSK-016`); empty
+     * otherwise.
+     */
+    Optional<Instant> accept(Connection unitOfWork, FxQuoteId id);
 
     /**
      * {@code ISSUED -> EXPIRED} once lapsed on the database clock - an acceptance that found the

@@ -38,8 +38,9 @@ import org.junit.jupiter.api.Test;
  * summary's four-place match rate (half up) and its ageing bands, and the provider-costs fold's
  * four things over a PSP report's fee, a bank statement's bank fee, a batch accepted and
  * repudiated in the month, a reversal of an earlier month's batch and a disagreeing evidence
- * total. Bank statements live here because they are {@code BankStatementCashDatabaseTest}'s
- * alone in the shared container (its chain discipline). The live reads, the audit and the doors
+ * total. Bank statements live here because the shared container holds none: every suite that
+ * writes one runs in a database of its own ({@code own-container}, `X-TSK-016`). The live reads,
+ * the audit and the doors
  * ride {@code ReconciliationReportsDatabaseTest}.
  */
 @DisplayName("the reconciliation reports' folds (P8-TSK-024)")

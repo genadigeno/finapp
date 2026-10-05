@@ -166,6 +166,7 @@ import org.springframework.transaction.support.TransactionTemplate;
  * so a tick's candidates are the case's own. Every count of record is read from the tables.
  */
 @Tag("database")
+@Tag("own-container") // its own JVM and database: ownContainerDatabaseTest (X-TSK-016)
 @SpringBootTest(webEnvironment = SpringBootTest.WebEnvironment.RANDOM_PORT)
 @TestMethodOrder(MethodOrderer.OrderAnnotation.class)
 @DisplayName("the payout return worker: applied once, rematched, raced (P8-TSK-019)")
@@ -1851,12 +1852,15 @@ class PayoutReturnDatabaseTest {
     private static UUID insertReturn(Connection connection, UUID payout, long amountMinor)
             throws SQLException {
         UUID id = IDS.next();
+        // IDS.next(), not UUID.randomUUID(): the row this commits stays in the shared container,
+        // and every reader of it - the opening walk among them - maps journal_entry_id through
+        // JournalEntryId.of, which refuses anything but a UUIDv7 (ADR-0013).
         executeOn(connection,
                 "INSERT INTO merchant.payout_return (id, payout_id, amount_minor, currency,"
                         + " scale, external_item_ref, journal_entry_id, returned_on, value_date,"
                         + " recorded_at) VALUES (?, ?, ?, 'EUR', 2, ?, ?, CURRENT_DATE,"
                         + " CURRENT_DATE, now())",
-                id, payout, amountMinor, UUID.randomUUID(), UUID.randomUUID());
+                id, payout, amountMinor, IDS.next(), IDS.next());
         return id;
     }
 

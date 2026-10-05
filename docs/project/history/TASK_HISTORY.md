@@ -1,6 +1,6 @@
 # Task History
 
-The per-task completion records that accumulated behind `## Current Task` - 204 "Previously" blocks, newest first, from `P9-TSK-011` back to project initiation. *(`X-TSK-005` is cross-cutting and completed after `P7-TSK-014` and before `P7-TSK-015`, so it stands between them; its record came in with its branch's merge.)* *(`X-TSK-004` is cross-cutting and completed after the Phase 6 → 7 transition, so it stands second, between `P7-TSK-001` and the transition's record - the transition's block moved here by `P7-TSK-001`'s gate, exactly as an earlier form of this note said it would.)*
+The per-task completion records that accumulated behind `## Current Task` - 205 "Previously" blocks, newest first, from `P9-TSK-011` back to project initiation. *(`X-TSK-016` is cross-cutting and completed after `P9-TSK-010` and before `P9-TSK-011`, so it stands between them.)* *(`X-TSK-005` is cross-cutting and completed after `P7-TSK-014` and before `P7-TSK-015`, so it stands between them; its record came in with its branch's merge.)* *(`X-TSK-004` is cross-cutting and completed after the Phase 6 → 7 transition, so it stands second, between `P7-TSK-001` and the transition's record - the transition's block moved here by `P7-TSK-001`'s gate, exactly as an earlier form of this note said it would.)*
 
 **Archive.** These records were moved verbatim out of
 [`CURRENT_STATE.md`](../CURRENT_STATE.md) on 2026-09-20 so that the canonical description of
@@ -56,6 +56,63 @@ identically - the fleet-wide database and kafka tiers deliberately skipped on th
 **FOUND, NOT CAUSED, FIXED BESIDE IT**: the `fx` quote-lapse database cases red on master itself - they slept
 on the JVM clock while lapse is judged on the database's - were corrected on master by `85879c14` (merged
 here) and re-run green with this task.
+
+### Previously
+
+**`X-TSK-016` — The app database tier, green: fixtures repaired and the own-container suites given
+their own database** — `COMPLETE` (2026-10-05; cross-cutting, owner-directed, chipped by
+`P9-TSK-010`'s record; it does not displace `P9-TSK-011`, still `READY`). **The 22 red cases were three
+different things, and only one of them was what it looked like.** **Six stale or polluting fixtures,
+repaired, no production check touched**: `PayoutReturnDatabaseTest`'s schema case committed a
+`merchant.payout_return` row with `UUID.randomUUID()` for `journal_entry_id` and `external_item_ref`,
+so `OpeningPosition`'s walk (`JdbcPayoutReturnStore.map` → `JournalEntryId.of`) refused it and every
+later opening backfill in the JVM answered `500` - now `IDS.next()`, the ADR-0013 check unchanged
+(10 of the 22 directly: the opening, parking and acceptance suites, the multi-rail storm and the residue sentinel); `MerchantPayoutDatabaseTest` listed EUR, GBP, USD after JPY and BHD joined
+(`P9-TSK-003`) - now derived from `SupportedCurrencies.ALL`; `SettlementExpectationDatabaseTest`
+pinned the seeded v1 rule set that `JpyAndBhdPostableDatabaseTest`'s v2 activation supersedes for
+every later suite - now reads the ACTIVE version; `ResolutionBatteryDatabaseTest` counted every
+`RECONCILIATION_LOSSES` line in the container - now a delta, as its sibling assertions already were;
+and two found only by the full run - `MultiCurrencyWalletFlowsDatabaseTest` (`P9-TSK-004`) funded
+wallets by debiting `SETTLEMENT_CLEARING`, a reconciled position, which the residue sentinel named
+(`fund-<id>`) and three suites inherited - now `FEE_REVENUE`, the `P8-TSK-006` move;
+`MerchantOnboardingDatabaseTest`'s INV-MER-02 sweep had never been told of `payout_return.amount_minor`
+(`P8-TSK-019`) - named, with its reason. **Five timing defects in tests, one class**:
+`FxConversionRaceDatabaseTest#bothExpiryOrders` and four fx module cases (`QuoteLifecycle`,
+`QuoteSchema`, `QuoteIssuance`) slept JVM time to a quote's database-stamped expiry plus 1 s or 0.5 s,
+inside the VM clock's measured 1.7 s step-back (`X-TSK-005`) - each now waits until the database's
+own clock has passed it (`FxQuoteFixtures.awaitDatabaseClockPast`). **ONE PRODUCTION DEFECT, FIXED
+(`P9-TSK-009`'s, fx)**: the race's scenario 2 found an EXECUTED quote whose ACCEPTED event read AFTER
+its `expires_at` - the conditional `UPDATE` judged the acceptance in time, but the event was written at
+the end of the booking by a later statement's clock, so the stored history contradicted the rule it
+records; `cancel` had the same shape. `QuoteStore.accept`/`cancel` now return the instant their
+conditional judged (`RETURNING statement_timestamp()`) and `appendEventAt` records exactly it;
+`FxConversionRaceDatabaseTest#theAcceptedEventRecordsTheInstantItWasJudged` holds the booking past
+expiry before the event and asserts it deterministically (reverting the stamp turns it red);
+`OwnershipIsScopedTest`'s register follows the SQL into the two private helpers (`judged`, `insertEvent`),
+`cancel`'s and `appendEvent`'s P9-TSK-008 reasoning moved with it. **And the rest was structural**: nine suites
+declared "runs in its own container" (absolute proofs, or a bank statement chain from sequence 1 -
+two of them the same first USD statement) and the build never gave them one, so the full tier was red
+in an order-dependent way: **22 failures on one run of unchanged code, 31 on the next**, Gradle having
+moved last run's failures first. **Owner's decision (2026-10-05): enforce it in the build** - the
+declared non-tier selector `own-container` (`TESTING.md` §3's hook, the first entry);
+`databaseTest` excludes it from the shared JVM, and the convention plugin's
+`ownContainerDatabaseTest` (`forkEvery = 1`, finalizing `databaseTest`, so CI's
+`./gradlew databaseTest` still runs the whole tier) gives each listed suite a JVM and so a container of
+its own; a `--tests` filter selects in both halves and a pattern neither matches still fails; the
+module's `extra["ownContainerSuites"]` scopes the forking task to the suites' class files (Gradle hands
+every class file to the worker before any tag is read, so the tag alone would have forked a container
+per class). `TestTaxonomyTest` holds the list equal to the tagged set and the tag to the database
+tier; `TestTier.tagValues` now reads the `@Tags` container a second tag compiles to. **The shared JVM
+writes no bank statement** - `BankStatementCashDatabaseTest` joined the eight, its "this suite's alone
+in the shared container" having been the drift's origin. **PAID**: the 22-case debt row and the
+storm's own-container row (Phase 15's, its trigger exactly this). **Recorded**: the opening walk's
+one-corrupt-row stall widened onto the existing `EntityId` debt row. **PROBES, four of four caught**,
+each restore byte-identical (sha256-verified): a suite dropped from the list, the selector on an
+architecture-tier class, and the `@Tags` read reverted (the nine read as UNIT); plus the quote event's
+stamp reverted (caught by the new deterministic case). **Multi-instance PASS**: the event's instant is
+the database's own, judged once in the transaction that moves the quote under its row lock, so every
+instance records the same truth; the fixtures now hold under any class order, the tier's own
+multi-instance premise. **Verified** by fresh runs on the final code - the whole `:app:databaseTest` tier, both halves: the shared JVM 1251 tests across 157 suites and the own-container suites 75 across 9 (1326 across 166), 0 failures; the fx tiers hermetic 39 across 9 and database 60 across 12; the fleet-wide hermetic tier 2416 across 389 suites and 18 modules, its one red case (app's ownership register, which the store's new private helpers entered) classified, and app's hermetic tier re-run with every document guard after the records landed, 709 across 132 - all read from the JUnit XML, ALL 0 FAILURES; the other modules' database and kafka tiers not run, on the owner's standing instruction (the build change configures fleet-wide, shown by a dry run, and a module with no own-container suite keeps Gradle's own "no tests found")
 
 ### Previously
 

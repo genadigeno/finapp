@@ -288,10 +288,40 @@ public final class JdbcQuoteStore implements QuoteStore {
             String actorType,
             Optional<String> detectedBy,
             String correlationId) {
+        insertEvent(unitOfWork, id, from, to, actorId, actorType, detectedBy, correlationId, Optional.empty());
+    }
+
+    @Override
+    public void appendEventAt(
+            Connection unitOfWork,
+            FxQuoteId id,
+            Optional<QuoteStatus> from,
+            QuoteStatus to,
+            String actorId,
+            String actorType,
+            Optional<String> detectedBy,
+            String correlationId,
+            Instant occurredAt) {
+        Objects.requireNonNull(occurredAt, "occurredAt must not be null");
+        insertEvent(unitOfWork, id, from, to, actorId, actorType, detectedBy, correlationId, Optional.of(occurredAt));
+    }
+
+    /** One history row: {@code occurred_at} the given judged instant, else this statement's clock. */
+    private void insertEvent(
+            Connection unitOfWork,
+            FxQuoteId id,
+            Optional<QuoteStatus> from,
+            QuoteStatus to,
+            String actorId,
+            String actorType,
+            Optional<String> detectedBy,
+            String correlationId,
+            Optional<Instant> occurredAt) {
         try (PreparedStatement insert =
                 unitOfWork.prepareStatement(
                         "INSERT INTO fx.quote_event (id, quote_id, from_status, to_status, actor_id, actor_type,"
-                                + " detected_by, correlation_id) VALUES (?, ?, ?, ?, ?, ?, ?, ?)")) {
+                                + " detected_by, correlation_id, occurred_at)"
+                                + " VALUES (?, ?, ?, ?, ?, ?, ?, ?, coalesce(?, statement_timestamp()))")) {
             insert.setObject(1, ids.next());
             insert.setObject(2, id.value());
             insert.setString(3, from.map(Enum::name).orElse(null));
@@ -300,6 +330,7 @@ public final class JdbcQuoteStore implements QuoteStore {
             insert.setString(6, actorType);
             insert.setString(7, detectedBy.orElse(null));
             insert.setString(8, correlationId);
+            insert.setTimestamp(9, occurredAt.map(Timestamp::from).orElse(null));
             insert.executeUpdate();
         } catch (SQLException failure) {
             throw failure("recording a quote's history", failure);
@@ -335,22 +366,15 @@ public final class JdbcQuoteStore implements QuoteStore {
     }
 
     @Override
-    public boolean cancel(Connection unitOfWork, FxQuoteId id) {
-        try (PreparedStatement update =
-                unitOfWork.prepareStatement(
-                        "UPDATE fx.quote SET status = 'CANCELLED' WHERE id = ? AND status = 'ISSUED'"
-                                + " AND expires_at > statement_timestamp()")) {
-            update.setObject(1, id.value());
-            return update.executeUpdate() == 1;
-        } catch (SQLException failure) {
-            throw failure("cancelling a quote", failure);
-        }
+    public Optional<Instant> cancel(Connection unitOfWork, FxQuoteId id) {
+        return judged(unitOfWork, "UPDATE fx.quote SET status = 'CANCELLED' WHERE id = ? AND status = 'ISSUED'"
+                + " AND expires_at > statement_timestamp() RETURNING statement_timestamp()", id, "cancelling a quote");
     }
 
     @Override
-    public boolean accept(Connection unitOfWork, FxQuoteId id) {
-        return transition(unitOfWork, "UPDATE fx.quote SET status = 'ACCEPTED' WHERE id = ? AND status = 'ISSUED'"
-                + " AND expires_at > statement_timestamp()", id, "accepting a quote");
+    public Optional<Instant> accept(Connection unitOfWork, FxQuoteId id) {
+        return judged(unitOfWork, "UPDATE fx.quote SET status = 'ACCEPTED' WHERE id = ? AND status = 'ISSUED'"
+                + " AND expires_at > statement_timestamp() RETURNING statement_timestamp()", id, "accepting a quote");
     }
 
     @Override
@@ -406,6 +430,19 @@ public final class JdbcQuoteStore implements QuoteStore {
             }
         } catch (SQLException failure) {
             throw failure("reading a quote's plan", failure);
+        }
+    }
+
+    /** A conditional transition that returns the instant its own statement judged, if it matched. */
+    private static Optional<Instant> judged(Connection unitOfWork, String sql, FxQuoteId id, String operation) {
+        Objects.requireNonNull(id, "id must not be null");
+        try (PreparedStatement update = unitOfWork.prepareStatement(sql)) {
+            update.setObject(1, id.value());
+            try (ResultSet row = update.executeQuery()) {
+                return row.next() ? Optional.of(row.getTimestamp(1).toInstant()) : Optional.empty();
+            }
+        } catch (SQLException failure) {
+            throw failure(operation, failure);
         }
     }
 

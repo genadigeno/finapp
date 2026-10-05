@@ -3,6 +3,8 @@
 // Applied explicitly by each module. Adding a module to the build does not
 // silently opt it into anything; it must ask for these conventions by name.
 
+import java.util.concurrent.atomic.AtomicLong
+
 plugins {
     // java-library, not plain java: it provides the api/implementation split.
     //
@@ -216,6 +218,137 @@ taggedTiers.forEach { (taskName, tierTag) ->
     }
 }
 
+// ---------------------------------------------------------------------------
+// Database suites that need a database of their own (X-TSK-016).
+//
+// The database tier runs in one JVM against one container, so every suite inherits what the
+// suites before it committed, in an order that is no contract (TESTING.md section 5). A few
+// suites cannot hold under that: their proofs are absolute over the whole database, or they need
+// a currency's bank statement chain to start at sequence 1, and two of them need the SAME first
+// USD statement. They said so in their javadoc ("runs in its own container") and nothing made it
+// true, so the full tier was red in an order-dependent way: 22 failures on one run, 31 on the next.
+//
+// `own-container` is the declared non-tier selector that makes it structural. `databaseTest` leaves
+// those suites out of its shared JVM; `ownContainerDatabaseTest` runs each in a JVM of its own
+// (forkEvery = 1), and DatabaseUnderTest starts one container per JVM, so each gets a fresh
+// database. It runs after `databaseTest`, failed or not, so `./gradlew databaseTest` - CI's
+// invocation - still runs the whole tier. It is a sibling of the tier, not a tier: the tag still
+// says `database`, and TestTier is unchanged.
+//
+// The tag alone cannot scope the sibling. Under the JUnit Platform Gradle hands EVERY class file
+// to the worker and the tag is read inside it, so forkEvery = 1 over the whole source set would
+// fork a JVM - and DatabaseUnderTest a container - per class file. A module therefore also names
+// its own-container suites in `extra["ownContainerSuites"]` (fully-qualified class names), which
+// narrows the sibling's scan to those files; TestTaxonomyTest holds that list equal to the set of
+// classes carrying the tag, so neither can drift from the other.
+// ---------------------------------------------------------------------------
+val ownContainerTag = "own-container"
+val ownContainerTaskName = "ownContainerDatabaseTest"
+val ownContainerSuitesProperty = "ownContainerSuites"
+
+// Read when a task is configured, which is after the module's build script has set it.
+fun Project.ownContainerSuites(): List<String> =
+    if (extra.has(ownContainerSuitesProperty)) {
+        @Suppress("UNCHECKED_CAST")
+        (extra[ownContainerSuitesProperty] as List<String>)
+    } else {
+        emptyList()
+    }
+
+val declaredOwnContainerSuites = provider { ownContainerSuites().sorted().joinToString(",") }
+
+// The `--tests` patterns the command line gave THIS project's `databaseTest`. A targeted run
+// (`./gradlew :app:databaseTest --tests '*SomeSuite'`) must select the same suites in both halves:
+// the shared half alone would answer "no tests found" for an own-container suite, and the sibling
+// unfiltered would run every own-container suite behind a one-suite request. Read from the start
+// parameter, which is public API; an unqualified task name applies to every project, as Gradle's
+// own resolution does.
+val databaseTestPatterns: List<String> =
+    gradle.startParameter.taskRequests.flatMap { request ->
+        val patterns = mutableListOf<String>()
+        var selected = false
+        var index = 0
+        val args = request.args
+        while (index < args.size) {
+            val arg = args[index]
+            when {
+                arg == "--tests" && index + 1 < args.size -> {
+                    if (selected) patterns += args[index + 1]
+                    index++
+                }
+                arg.startsWith("--tests=") -> if (selected) patterns += arg.removePrefix("--tests=")
+                !arg.startsWith("-") -> {
+                    val qualified = if (arg.startsWith(":")) arg else ":$arg"
+                    selected = arg == "databaseTest" ||
+                        qualified == "${project.path.removeSuffix(":")}:databaseTest"
+                }
+            }
+            index++
+        }
+        patterns
+    }
+
+// Counts what both halves ran, so a pattern that matches nothing in either still fails the build:
+// each half must tolerate an empty selection on its own, and that must not let a typo pass.
+val databaseTestsRun = AtomicLong()
+fun Test.countsDatabaseTests() =
+    addTestListener(object : TestListener {
+        override fun beforeSuite(suite: TestDescriptor) {}
+        override fun afterSuite(suite: TestDescriptor, result: TestResult) {
+            if (suite.parent == null) databaseTestsRun.addAndGet(result.testCount)
+        }
+        override fun beforeTest(testDescriptor: TestDescriptor) {}
+        override fun afterTest(testDescriptor: TestDescriptor, result: TestResult) {}
+    })
+
+val sharedDatabaseTest = tasks.named<Test>("databaseTest") {
+    useJUnitPlatform { excludeTags(ownContainerTag) }
+    countsDatabaseTests()
+    // Relaxed only where the sibling can answer for the pattern instead: in a module with no
+    // own-container suite the sibling has no source, never runs its check, and Gradle's own
+    // "no tests found" must stay this task's.
+    if (databaseTestPatterns.isNotEmpty() && project.ownContainerSuites().isNotEmpty()) {
+        filter.isFailOnNoMatchingTests = false
+    }
+    finalizedBy(ownContainerTaskName)
+}
+
+tasks.register<Test>(ownContainerTaskName) {
+    group = "verification"
+    description = "Runs the database tier's own-container suites, each in a JVM and container of its own."
+    testClassesDirs = sourceSets.test.get().output.classesDirs
+    classpath = sourceSets.test.get().runtimeClasspath
+    useJUnitPlatform { includeTags("${taggedTiers.getValue("databaseTest")} & $ownContainerTag") }
+    val suites = project.ownContainerSuites()
+    // Only the named suites' own class files - not their nested records, each of which would
+    // otherwise be handed to a fresh JVM of its own. An empty list selects nothing at all.
+    if (suites.isEmpty()) {
+        include("__no_own_container_suite__")
+    } else {
+        suites.forEach { include(it.replace('.', '/') + ".class") }
+    }
+    forkEvery = 1
+    maxHeapSize = "2g" // as `databaseTest`, for the same reason
+    outputs.upToDateWhen { false }
+    // A module with no own-container suite discovers nothing, and that is not a failure.
+    failOnNoDiscoveredTests = false
+    filter.isFailOnNoMatchingTests = false
+    databaseTestPatterns.forEach { filter.includeTestsMatching(it) }
+    countsDatabaseTests()
+    // Whatever a module's build gives `databaseTest` - the container image, its escape hatch -
+    // the own-container suites need too. Read when this task is configured, which is after every
+    // build script has configured `databaseTest`.
+    systemProperties(sharedDatabaseTest.get().systemProperties)
+    doLast {
+        if (databaseTestPatterns.isNotEmpty() && databaseTestsRun.get() == 0L) {
+            throw GradleException(
+                "No database tests found for given includes: $databaseTestPatterns" +
+                    " (neither databaseTest nor $ownContainerTaskName selected one)"
+            )
+        }
+    }
+}
+
 tasks.withType<Test>().configureEach {
     useJUnitPlatform()
     // Tests assert the toolchain pin (BuildToolchainTest). Injecting it here means the
@@ -233,6 +366,9 @@ tasks.withType<Test>().configureEach {
         "finapp.test.tiers.external",
         externalInfrastructureTiers.sorted().joinToString(",")
     )
+    // The module's declared own-container suites, for TestTaxonomyTest to hold against the tag.
+    // At execution, because the module's build script sets the list after this plugin applies.
+    doFirst { systemProperty("finapp.test.ownContainerSuites", declaredOwnContainerSuites.get()) }
 
     testLogging {
         events("passed", "skipped", "failed")
