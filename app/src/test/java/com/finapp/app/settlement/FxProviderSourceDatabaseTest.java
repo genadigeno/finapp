@@ -203,11 +203,13 @@ class FxProviderSourceDatabaseTest {
             Object[] posted = inTransaction(uow -> {
                 com.finapp.ledger.LedgerAccount provider = new com.finapp.ledger.ChartOfAccounts<>(new JdbcLedgerAccountStore())
                         .resolve(uow, AccountPurpose.FX_PROVIDER_CLEARING, "fx-sim-a", EUR);
+                // The counter line is FEE_REVENUE, never an FX book: a raw line there would be a plant the
+                // FX books proof (P9-TSK-013) reports for every later suite in the shared container.
                 com.finapp.ledger.LedgerAccount position = new com.finapp.ledger.ChartOfAccounts<>(new JdbcLedgerAccountStore())
-                        .resolve(uow, AccountPurpose.FX_POSITION, EUR);
+                        .resolve(uow, AccountPurpose.FEE_REVENUE, EUR);
                 java.time.LocalDate today = java.time.LocalDate.now(java.time.ZoneOffset.UTC);
                 com.finapp.ledger.PostingResult result = postingService.post(uow, new com.finapp.ledger.PostingCommand(
-                        "fx-cover-test:" + cover, today, today, "fx-cover-test:" + cover, java.util.List.of(
+                        "fx-cover-test:" + cover, today, today.plusDays(2), "fx-cover-test:" + cover, java.util.List.of(
                                 new com.finapp.ledger.JournalLine(provider.id(), com.finapp.ledger.Direction.DEBIT,
                                         com.finapp.sharedkernel.money.Money.ofPersisted(12_345, EUR, 2)),
                                 new com.finapp.ledger.JournalLine(position.id(), com.finapp.ledger.Direction.CREDIT,
@@ -225,7 +227,8 @@ class FxProviderSourceDatabaseTest {
         }
         assertThat(one("SELECT kind || ':' || direction || ':' || amount_minor || ':' || (expected_by - posting_date)"
                 + " FROM reconciliation.expectation WHERE operation_ref = ? AND kind = 'FX_BUY_LEG'", cover))
-                .as("INBOUND (the entry debited the provider's position), 123.45, dated by v1's 2-day lag")
+                .as("INBOUND (the entry debited the provider's position), 123.45, expected on the cover entry's value"
+                        + " date - the provider's T+2 (P9-TSK-013)")
                 .isEqualTo("FX_BUY_LEG:INBOUND:12345:2");
         assertThat(one("SELECT ledger_account_id FROM reconciliation.expectation WHERE operation_ref = ?", cover))
                 .isEqualTo(providerAccount.value());

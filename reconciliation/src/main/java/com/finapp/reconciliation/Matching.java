@@ -2440,9 +2440,26 @@ public class Matching {
     }
 
     private static BreakCause differenceCause(ExpectationKind kind) {
-        return kind == ExpectationKind.REMITTANCE
-                ? BreakCause.REMITTANCE_DIFFERS
-                : BreakCause.AMOUNT_DIFFERS;
+        return switch (kind) {
+            case REMITTANCE -> BreakCause.REMITTANCE_DIFFERS;
+            // A cover leg settled at another amount than the cover confirmed (P9-TSK-013,
+            // PHASE_9_PLAN.md section 12.9.3): the rate difference, typed by the leg's kind.
+            case FX_SELL_LEG, FX_BUY_LEG -> BreakCause.FX_LEG_DIFFERS;
+            default -> BreakCause.AMOUNT_DIFFERS;
+        };
+    }
+
+    /**
+     * The timing verdict's cause (`P8-TSK-017`, `P9-TSK-013`): a cover leg's value date beyond the
+     * source's tolerance is {@code VALUE_DATE_DIFFERS} (a cover announces no cycle); otherwise a
+     * cycle shift names {@code CYCLE_MISMATCH}, else {@code LATE_MATCH}. The open-
+     * {@code MISSING_EXTERNAL} rule is the caller's, before this.
+     */
+    private static BreakCause timingCause(ExpectationKind kind, MatchEngine.Verdict.Timing timing) {
+        if (kind == ExpectationKind.FX_SELL_LEG || kind == ExpectationKind.FX_BUY_LEG) {
+            return BreakCause.VALUE_DATE_DIFFERS;
+        }
+        return timing.cycleShift() ? BreakCause.CYCLE_MISMATCH : BreakCause.LATE_MATCH;
     }
 
     private void applyAllocation(
@@ -2626,9 +2643,7 @@ public class Matching {
                     unitOfWork,
                     newBreak(
                             run, item, BreakType.TIMING_DIFFERENCE,
-                            verdict.timing().get().cycleShift()
-                                    ? BreakCause.CYCLE_MISMATCH
-                                    : BreakCause.LATE_MATCH,
+                            timingCause(candidate.kind(), verdict.timing().get()),
                             BreakRegister.Subject.decision(decisionId),
                             Money.ofPersisted(
                                     0, item.amount().currency(), item.amount().scale()),

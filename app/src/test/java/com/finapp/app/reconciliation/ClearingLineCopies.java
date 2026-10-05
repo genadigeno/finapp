@@ -81,9 +81,10 @@ public final class ClearingLineCopies {
 
             UUID entry;
             LocalDate entryDate;
+            LocalDate entryValueDate;
             try (PreparedStatement read =
                     app.prepareStatement(
-                            "SELECT id, posting_date FROM ledger.journal_entry"
+                            "SELECT id, posting_date, value_date FROM ledger.journal_entry"
                                     + " WHERE idempotency_scope = ?")) {
                 read.setString(1, PostingService.IDEMPOTENCY_SCOPE + ":" + postingKey);
                 try (ResultSet rows = read.executeQuery()) {
@@ -91,6 +92,7 @@ public final class ClearingLineCopies {
                             .isTrue();
                     entry = rows.getObject("id", UUID.class);
                     entryDate = rows.getObject("posting_date", LocalDate.class);
+                    entryValueDate = rows.getObject("value_date", LocalDate.class);
                     assertThat(rows.next()).as("one entry per posting key").isFalse();
                 }
             }
@@ -153,7 +155,10 @@ public final class ClearingLineCopies {
                             .isEqualTo(active.getObject(1, UUID.class));
                     assertThat(row.expectedBy())
                             .as("expected_by = the entry's date + the seeded %s lag", kind)
-                            .isEqualTo(entryDate.plusDays(active.getInt(2)));
+                            .isEqualTo(kind == ExpectationKind.FX_SELL_LEG || kind == ExpectationKind.FX_BUY_LEG
+                                    // A cover leg is expected on the provider's confirmed value date (P9-TSK-013).
+                                    ? entryValueDate
+                                    : entryDate.plusDays(active.getInt(2)));
                 }
             }
             assertThat(count(app,

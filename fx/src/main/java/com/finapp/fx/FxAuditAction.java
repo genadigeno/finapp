@@ -89,6 +89,13 @@ public enum FxAuditAction implements AuditableAction {
                     + " requoter only.",
             false),
 
+    TRADE_PROVENANCE_READ(
+            "fx.TradeProvenanceRead",
+            "An investigator read an FX trade's provenance - its whole rate chain, the entry, the cover"
+                    + " and its execution (FX_INVESTIGATE); a read of a customer's trade, so every serving"
+                    + " is recorded.",
+            false),
+
     COVER_VOIDED(
             "fx.CoverVoided",
             "A definitively rejected cover its quote no longer wants was voided; nothing was ever"

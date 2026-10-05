@@ -240,12 +240,24 @@ public class ReconciliationExpectationRecorder
                         Optional.of(entryId.value()),
                         line.postingDate(),
                         settlementCycle,
-                        line.postingDate().plusDays(ruleSet.lagDaysFor(kind)),
+                        expectedBy(kind, line, ruleSet),
                         ruleSet.id(),
                         keys,
                         SecurityContext.require(),
                         clock.instant(),
                         correlation.correlationId()));
+    }
+
+    /**
+     * When the counterparty is expected to settle the line: the entry's date plus the rule set's
+     * lag - except a cover leg, which the provider confirmed for its own value date, carried as
+     * the cover entry's value date (`P9-TSK-013`, PHASE_9_PLAN.md section 12.9.3): the timing
+     * verdict compares the report's value date with what the provider stated, not with a lag.
+     */
+    private static LocalDate expectedBy(ExpectationKind kind, ClearingLine line, RuleSets.ActiveRuleSet ruleSet) {
+        return kind == ExpectationKind.FX_SELL_LEG || kind == ExpectationKind.FX_BUY_LEG
+                ? line.valueDate()
+                : line.postingDate().plusDays(ruleSet.lagDaysFor(kind));
     }
 
     private UUID sourceIdFor(Connection unitOfWork, AccountPurpose position) {
@@ -285,7 +297,8 @@ public class ReconciliationExpectationRecorder
                 line.direction() == Direction.DEBIT
                         ? ExpectationDirection.INBOUND
                         : ExpectationDirection.OUTBOUND,
-                line.postingDate());
+                line.postingDate(),
+                line.valueDate());
     }
 
     /** The one line of {@code entryId} on {@code account}, as the ledger posted it. */
@@ -310,13 +323,14 @@ public class ReconciliationExpectationRecorder
                             + " expectation, or the suspense item, is that line's copy");
         }
         JournalLine line = onAccount.get(0);
-        return new PostedLine(line.amount(), line.direction(), posted.entry().postingDate());
+        return new PostedLine(
+                line.amount(), line.direction(), posted.entry().postingDate(), posted.entry().valueDate());
     }
 
-    private record PostedLine(Money amount, Direction direction, LocalDate postingDate) {}
+    private record PostedLine(Money amount, Direction direction, LocalDate postingDate, LocalDate valueDate) {}
 
     private record ClearingLine(
-            Money amount, ExpectationDirection direction, LocalDate postingDate) {}
+            Money amount, ExpectationDirection direction, LocalDate postingDate, LocalDate valueDate) {}
 
     /**
      * The one line of {@code entryId} on the suspense account — side, amount, date. The side is

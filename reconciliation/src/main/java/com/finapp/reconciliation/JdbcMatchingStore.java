@@ -856,6 +856,50 @@ public final class JdbcMatchingStore implements MatchingStore {
             Actor actor,
             Instant at,
             CorrelationId correlation) {
+        return escalate(unitOfWork, breakId, from, to, null, actor, at, correlation);
+    }
+
+    @Override
+    public List<PairedLegRow> pairedLegEscalations(Connection unitOfWork, int limit) {
+        try (PreparedStatement read =
+                unitOfWork.prepareStatement(
+                        "SELECT b.id, b.source_id, b.severity FROM reconciliation.break b"
+                                + " JOIN reconciliation.expectation e ON e.id = b.expectation_id"
+                                + " WHERE b.type = 'MISSING_EXTERNAL' AND b.status <> 'RESOLVED'"
+                                + " AND b.severity <> 'CRITICAL'"
+                                + " AND e.kind IN ('FX_SELL_LEG', 'FX_BUY_LEG')"
+                                + " AND EXISTS (SELECT 1 FROM reconciliation.expectation p"
+                                + " WHERE p.source_id = e.source_id AND p.operation_ref = e.operation_ref"
+                                + " AND p.kind = CASE e.kind WHEN 'FX_SELL_LEG' THEN 'FX_BUY_LEG'"
+                                + " ELSE 'FX_SELL_LEG' END AND p.allocated_minor > 0)"
+                                + " ORDER BY b.raised_at, b.id LIMIT ?")) {
+            read.setInt(1, limit);
+            try (ResultSet rows = read.executeQuery()) {
+                List<PairedLegRow> found = new ArrayList<>();
+                while (rows.next()) {
+                    found.add(new PairedLegRow(
+                            rows.getObject("id", UUID.class),
+                            rows.getObject("source_id", UUID.class),
+                            Severity.valueOf(rows.getString("severity"))));
+                }
+                return List.copyOf(found);
+            }
+        } catch (SQLException failure) {
+            throw new ReconciliationStorageException(
+                    "could not list the paired-leg escalations", failure);
+        }
+    }
+
+    @Override
+    public boolean escalate(
+            Connection unitOfWork,
+            UUID breakId,
+            Severity from,
+            Severity to,
+            String why,
+            Actor actor,
+            Instant at,
+            CorrelationId correlation) {
         try (PreparedStatement update =
                 unitOfWork.prepareStatement(
                         "UPDATE reconciliation.break SET severity = ?,"
@@ -882,7 +926,7 @@ public final class JdbcMatchingStore implements MatchingStore {
             insert.setObject(1, breakId);
             insert.setString(2, actor.id());
             insert.setString(3, actor.type().name());
-            insert.setString(4, "from=" + from.name() + ", to=" + to.name());
+            insert.setString(4, "from=" + from.name() + ", to=" + to.name() + (why == null ? "" : ", " + why));
             insert.setTimestamp(5, Timestamp.from(at));
             insert.setString(6, correlation.value());
             insert.executeUpdate();

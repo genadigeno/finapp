@@ -635,6 +635,32 @@ public interface MatchingStore {
             Instant at,
             CorrelationId correlation);
 
+    /**
+     * The same step to {@code to} directly, its event's detail naming {@code why} beside the
+     * grades - the paired-leg escalation's (`P9-TSK-013`): the expected-value predicate converges
+     * racers exactly as {@link #escalate} does.
+     */
+    boolean escalate(
+            Connection unitOfWork,
+            UUID breakId,
+            Severity from,
+            Severity to,
+            String why,
+            Actor actor,
+            Instant at,
+            CorrelationId correlation);
+
+    /** An open FX leg's overdue break whose paired leg is allocated (`P9-TSK-013`). */
+    record PairedLegRow(UUID breakId, UUID sourceId, Severity severity) {}
+
+    /**
+     * Unresolved non-{@code CRITICAL} {@code MISSING_EXTERNAL} breaks on a cover leg
+     * ({@code FX_SELL_LEG}, {@code FX_BUY_LEG}) whose PAIRED leg - the same source and operation
+     * (the cover), the other kind - has money allocated (PHASE_9_PLAN.md section 12.9.3: one leg
+     * settled, the other never - the principal's risk), oldest first.
+     */
+    List<PairedLegRow> pairedLegEscalations(Connection unitOfWork, int limit);
+
     /** Runs whose recorded failures reached the bound but whose block was lost. */
     List<RunRow> runsAtFailureBound(Connection unitOfWork, int bound);
 

@@ -69,6 +69,8 @@ class FxMatchingDatabaseTest {
     private static JdbcExternalItems items;
     private static JdbcExpectationRegister expectations;
     private static Matching matching;
+    private static JdbcBreakRegister breaks;
+    private static JdbcMatchingStore store;
 
     @BeforeAll
     static void connect() throws SQLException {
@@ -78,6 +80,8 @@ class FxMatchingDatabaseTest {
         items = new JdbcExternalItems();
         expectations = new JdbcExpectationRegister(IDS);
         JdbcBreakRegister register = new JdbcBreakRegister(new JdbcOutboxWriter(), new JdbcAuditWriter(), IDS);
+        breaks = register;
+        store = new JdbcMatchingStore();
         Suspense suspense = new Suspense(postingService(), new JdbcLedgerAccountStore(), IDS);
         matching = new Matching(
                 new JdbcMatchingStore(), new MatchingRules(), register, suspense,
@@ -207,7 +211,125 @@ class FxMatchingDatabaseTest {
                 + " ON i.id = b.external_item_id WHERE i.run_id IN (?, ?)", eurRun, usdRun)).isZero();
     }
 
+    @Test
+    @DisplayName("(e) a leg settled one minor unit short of what the cover confirmed is AMOUNT_MISMATCH caused"
+            + " FX_LEG_DIFFERS - the rate difference typed by the leg's kind, never AMOUNT_DIFFERS (P9-TSK-013)")
+    void aLegOffByOneMinorUnitIsFxLegDiffers() throws SQLException {
+        LocalDate day = BASE.plusDays(5);
+        String cover = coverRef();
+        UUID leg = open(ExpectationKind.FX_BUY_LEG, cover, ExpectationDirection.INBOUND, 108_502, day, USD);
+        UUID runId = seedRun(day, line(1, ExternalLineType.FX_BOUGHT, ExpectationDirection.INBOUND, 108_501, day,
+                Map.of(ItemKeyKind.COVER_REF, cover), USD));
+
+        matching.sweep();
+
+        assertThat(row("SELECT type, cause, value_at_issue_minor FROM reconciliation.break WHERE expectation_id = ?"
+                + " AND status <> 'RESOLVED'", leg)).containsExactly("AMOUNT_MISMATCH", "FX_LEG_DIFFERS", 1L);
+        assertThat(string("SELECT status FROM reconciliation.external_item WHERE run_id = ?", runId)).isEqualTo("MATCHED");
+    }
+
+    @Test
+    @DisplayName("(f) a leg whose value date is later than the provider confirmed, beyond the source's tolerance, is"
+            + " TIMING_DIFFERENCE caused VALUE_DATE_DIFFERS - value 0 - never LATE_MATCH (P9-TSK-013)")
+    void aLateValueDateIsValueDateDiffers() throws SQLException {
+        LocalDate day = BASE.plusDays(6);
+        String cover = coverRef();
+        open(ExpectationKind.FX_SELL_LEG, cover, ExpectationDirection.OUTBOUND, 70_000, day, EUR);
+        UUID runId = seedRun(day.plusDays(5), line(1, ExternalLineType.FX_SOLD, ExpectationDirection.OUTBOUND, 70_000,
+                day.plusDays(5), Map.of(ItemKeyKind.COVER_REF, cover)));
+
+        matching.sweep();
+
+        assertThat(row("SELECT b.type, b.cause, b.value_at_issue_minor FROM reconciliation.break b"
+                + " JOIN reconciliation.match_decision d ON d.id = b.decision_id"
+                + " JOIN reconciliation.external_item i ON i.id = d.external_item_id WHERE i.run_id = ?", runId))
+                .containsExactly("TIMING_DIFFERENCE", "VALUE_DATE_DIFFERS", 0L);
+    }
+
+    @Test
+    @DisplayName("(g) the same late leg with an open MISSING_EXTERNAL already stating its lateness raises nothing"
+            + " more - one fact, one break; the overdue break closes EVIDENCED by the settlement")
+    void anOpenMissingExternalStatesTheTiming() throws SQLException {
+        LocalDate overdue = LocalDate.now(java.time.ZoneOffset.UTC).minusDays(10);
+        String cover = coverRef();
+        UUID leg = open(ExpectationKind.FX_SELL_LEG, cover, ExpectationDirection.OUTBOUND, 60_000, overdue, EUR);
+        raiseOverdue(leg, ExpectationKind.FX_SELL_LEG, 60_000, EUR);
+        UUID runId = seedRun(overdue.plusDays(8), line(1, ExternalLineType.FX_SOLD, ExpectationDirection.OUTBOUND,
+                60_000, overdue.plusDays(8), Map.of(ItemKeyKind.COVER_REF, cover)));
+
+        matching.sweep();
+
+        assertThat(string("SELECT status FROM reconciliation.expectation WHERE id = ?", leg)).isEqualTo("SETTLED");
+        assertThat(count("SELECT count(*) FROM reconciliation.break b JOIN reconciliation.match_decision d"
+                + " ON d.id = b.decision_id JOIN reconciliation.external_item i ON i.id = d.external_item_id"
+                + " WHERE i.run_id = ? AND b.type = 'TIMING_DIFFERENCE'", runId)).isZero();
+        assertThat(string("SELECT status FROM reconciliation.break WHERE expectation_id = ? AND type = 'MISSING_EXTERNAL'",
+                leg)).isEqualTo("RESOLVED");
+    }
+
+    @Test
+    @DisplayName("(h) one leg settled and its pair overdue is the principal's risk: ten sweepers raise the overdue leg's"
+            + " MISSING_EXTERNAL to CRITICAL once - one severity change, one SEVERITY_ESCALATED event detailed"
+            + " PAIRED_LEG_ALLOCATED (counted)")
+    void tenSweepersEscalateThePairedLegOnce() throws Exception {
+        LocalDate overdue = LocalDate.now(java.time.ZoneOffset.UTC).minusDays(10);
+        String cover = coverRef();
+        String operation = "cover-" + cover.substring(2, 14);
+        UUID sold = open(ExpectationKind.FX_SELL_LEG, cover, operation, ExpectationDirection.OUTBOUND, 40_000, overdue, EUR);
+        UUID bought = open(ExpectationKind.FX_BUY_LEG, cover, operation, ExpectationDirection.INBOUND, 43_400, overdue, USD);
+        seedRun(overdue, line(1, ExternalLineType.FX_SOLD, ExpectationDirection.OUTBOUND, 40_000, overdue,
+                Map.of(ItemKeyKind.COVER_REF, cover)));
+        matching.sweep();
+        assertThat(string("SELECT status FROM reconciliation.expectation WHERE id = ?", sold)).isEqualTo("SETTLED");
+        UUID overdueBreak = raiseOverdue(bought, ExpectationKind.FX_BUY_LEG, 43_400, USD);
+        assertThat(string("SELECT severity FROM reconciliation.break WHERE id = ?", overdueBreak)).isEqualTo("HIGH");
+
+        ReconciliationSweep sweep = new ReconciliationSweep(store, breaks,
+                new KeyCollisionBreaks(breaks, new JdbcRuleSets(), IDS), new JdbcOutboxWriter(), IDS, Clock.systemUTC(),
+                new ReconciliationSweep.Config(500, 3), runner());
+        java.util.concurrent.ExecutorService pool = java.util.concurrent.Executors.newFixedThreadPool(10);
+        try {
+            java.util.concurrent.CountDownLatch start = new java.util.concurrent.CountDownLatch(1);
+            List<java.util.concurrent.Future<?>> racers = new ArrayList<>();
+            for (int i = 0; i < 10; i++) {
+                racers.add(pool.submit(() -> {
+                    start.await();
+                    return sweep.sweep();
+                }));
+            }
+            start.countDown();
+            for (java.util.concurrent.Future<?> racer : racers) {
+                racer.get(120, java.util.concurrent.TimeUnit.SECONDS);
+            }
+        } finally {
+            pool.shutdownNow();
+        }
+
+        assertThat(string("SELECT severity FROM reconciliation.break WHERE id = ?", overdueBreak)).isEqualTo("CRITICAL");
+        assertThat(count("SELECT count(*) FROM reconciliation.break_event WHERE break_id = ?"
+                + " AND event_type = 'SEVERITY_ESCALATED'", overdueBreak)).isEqualTo(1);
+        assertThat(string("SELECT detail FROM reconciliation.break_event WHERE break_id = ?"
+                + " AND event_type = 'SEVERITY_ESCALATED'", overdueBreak))
+                .isEqualTo("from=HIGH, to=CRITICAL, PAIRED_LEG_ALLOCATED");
+    }
+
     // -----------------------------------------------------------------
+
+    /** The ageing leg's own two writes: the expectation marked overdue, its MISSING_EXTERNAL raised. */
+    private static UUID raiseOverdue(UUID expectation, ExpectationKind kind, long minor, CurrencyCode currency) {
+        return runner().inTransaction(unitOfWork -> {
+            if (!store.lockAndMarkOverdue(unitOfWork, expectation, Instant.now())) {
+                throw new IllegalStateException("the expectation is not overdue");
+            }
+            return breaks.raise(unitOfWork, new BreakRegister.NewBreak(
+                    IDS.next(), BreakType.MISSING_EXTERNAL, BreakCause.EXPECTATION_OVERDUE,
+                    BreakRegister.Subject.expectation(expectation), SOURCE, RULE_SET,
+                    Money.ofPersisted(minor, currency, 2),
+                    Optional.of(kind == ExpectationKind.FX_SELL_LEG ? ExpectationDirection.OUTBOUND : ExpectationDirection.INBOUND),
+                    Optional.of(kind), Optional.empty(), Optional.empty(), Optional.empty(), Optional.empty(),
+                    PLATFORM, Instant.now(), CorrelationId.generate(IDS))).breakId();
+        });
+    }
 
     private record Line(int lineNo, ExternalLineType type, ExpectationDirection direction, long minor,
             LocalDate day, Map<ItemKeyKind, String> keys, CurrencyCode currency) {}
@@ -247,7 +369,12 @@ class FxMatchingDatabaseTest {
 
     private static UUID open(ExpectationKind kind, String cover, ExpectationDirection direction, long minor,
             LocalDate expectedBy, CurrencyCode currency) {
-        String operationRef = cover + ":" + kind;
+        return open(kind, cover, cover + ":" + kind, direction, minor, expectedBy, currency);
+    }
+
+    /** A cover leg under an explicit operation - both legs of one cover share it, as the cover opens them. */
+    private static UUID open(ExpectationKind kind, String cover, String operationRef, ExpectationDirection direction,
+            long minor, LocalDate expectedBy, CurrencyCode currency) {
         return runner().inTransaction(unitOfWork -> {
             expectations.open(unitOfWork, new NewExpectation(
                     kind, operationRef, "fx-cover-test:" + operationRef, SOURCE, AccountPurpose.FX_PROVIDER_CLEARING,

@@ -344,5 +344,18 @@ public enum PermissionName {
      * rate, books a trade or executes a cover - rates come only from providers
      * ({@code INV-FX-02}).
      */
-    FX_ADMINISTER
+    FX_ADMINISTER,
+
+    /**
+     * Reads an FX trade's provenance (`P9-TSK-013`, PHASE_9_PLAN.md section 11): the whole rate
+     * chain - the reference, the provider's firm quote and rate, the internal and customer rates,
+     * the margins, the pinned policy, the entry, the cover and its execution - over
+     * {@code GET /v1/operator/fx/trades/'{id}'/provenance}, each read audited
+     * ({@code fx.TradeProvenanceRead}).
+     *
+     * <p><strong>Held by {@code RECONCILIATION_OPERATOR}</strong>: whoever investigates the FX
+     * legs' breaks needs the chain that explains them; whoever sets prices ({@code FX_CONTROLLER})
+     * does not investigate the trades priced by them. Read-only - nothing here moves a value.
+     */
+    FX_INVESTIGATE
 }

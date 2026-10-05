@@ -584,6 +584,8 @@ class OpenApiContractTest {
                         ApiVersion.CURRENT_PREFIX + "/operator/fx/providers/{code}/availability",
                         ApiVersion.CURRENT_PREFIX + "/operator/fx/enable-requests/{rid}/approval",
                         ApiVersion.CURRENT_PREFIX + "/operator/fx/enable-requests/{rid}/rejection",
+                        // P9-TSK-013: the FX investigator's provenance read (FX_INVESTIGATE).
+                        ApiVersion.CURRENT_PREFIX + "/operator/fx/trades/{id}/provenance",
                         // P9-TSK-008: the customer's quote doors - request, read, cancel, and the
                         // offered pairs (a session; the owner's own quotes only).
                         ApiVersion.CURRENT_PREFIX + "/me/fx/quotes",
