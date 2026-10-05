@@ -17,5 +17,8 @@ public enum InternalSubject {
     /** A merchant payout. */
     PAYOUT,
     /** A Phase 7 parking of an execution that matched nothing (an unmatched confirmation). */
-    PARKING
+    PARKING,
+
+    /** An FX cover, named by one of its attempts' {@code COVER_REF} (`P9-TSK-011`). */
+    COVER
 }

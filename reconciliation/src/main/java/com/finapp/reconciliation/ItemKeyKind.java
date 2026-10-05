@@ -31,7 +31,13 @@ public enum ItemKeyKind {
     /** The platform's end-to-end reference for a push execution, echoed by the scheme. */
     END_TO_END_REF,
     /** The payout provider's own reference for a payout it accepted (`P8-TSK-018`). */
-    PAYOUT_PROVIDER_REF;
+    PAYOUT_PROVIDER_REF,
+
+    /** The platform's cover reference on an FX provider's line - a leg's key (`P9-TSK-011`). */
+    COVER_REF,
+
+    /** The FX provider's own trade reference - an alias, for the trace. */
+    FX_TRADE_REF;
 
     /** The report vocabulary `V003` admitted; {@code REMITTANCE_REF} arrived with `V008`. */
     public static java.util.Set<ItemKeyKind> reportVocabulary() {

@@ -19,7 +19,6 @@ import com.finapp.ledger.LedgerAccountId;
 import com.finapp.ledger.LedgerAccountStore;
 import com.finapp.ledger.PostingCommand;
 import com.finapp.ledger.PostingService;
-import com.finapp.ledger.SupportedCurrencies;
 import com.finapp.platform.correlation.CorrelationContext;
 import com.finapp.platform.security.SecurityContext;
 import com.finapp.platform.testing.database.DatabaseRoles;
@@ -345,12 +344,12 @@ class ReconciledPositionResidueDatabaseTest {
     private Judgement judge(Connection unitOfWork) throws SQLException {
         PositionProof.Report report = positionProof.sweep(unitOfWork);
 
+        // Every account of every reconciled purpose - the verifier's own population since
+        // P9-TSK-010 (each counterparty's account too, FX_PROVIDER_CLEARING since P9-TSK-011).
         Map<LedgerAccountId, AccountPurpose> purposeOf = new HashMap<>();
         for (AccountPurpose purpose : AccountPurpose.reconciledPositions()) {
-            for (CurrencyCode currency : SupportedCurrencies.ALL) {
-                ledgerAccountStore
-                        .findOperational(unitOfWork, purpose, currency)
-                        .ifPresent(account -> purposeOf.put(account.id(), purpose));
+            for (LedgerAccount account : ledgerAccountStore.findAllOfPurpose(unitOfWork, purpose)) {
+                purposeOf.put(account.id(), purpose);
             }
         }
         Set<ExpectationReadings.KnownLine> known =

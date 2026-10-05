@@ -62,7 +62,7 @@ public record RuleSetProposal(
     private static final Set<String> RULE_KEY_KINDS = ruleKeyKinds();
 
     /**
-     * {@code rule_line_type} as `V010` regenerated it, listed rather than derived so a line type
+     * {@code rule_line_type} as `V020` regenerated it, listed rather than derived so a line type
      * added to the item vocabulary is not silently admitted here before the {@code CHECK} is.
      */
     private static final Set<ExternalLineType> RULE_LINE_TYPES =
@@ -83,16 +83,21 @@ public record RuleSetProposal(
                             ExternalLineType.PAYOUT_FEE,
                             ExternalLineType.BANK_CREDIT,
                             ExternalLineType.BANK_DEBIT,
-                            ExternalLineType.BANK_FEE));
+                            ExternalLineType.BANK_FEE,
+                            // P9-TSK-011, reconciliation V020: the FX provider's legs and fee.
+                            ExternalLineType.FX_SOLD,
+                            ExternalLineType.FX_BOUGHT,
+                            ExternalLineType.FX_FEE));
 
-    /** {@code provider_fee_line_type} as `V010` regenerated it: the four priced fee lines. */
+    /** {@code provider_fee_line_type} as `V020` regenerated it: the five priced fee lines. */
     private static final Set<ExternalLineType> FEE_LINE_TYPES =
             Collections.unmodifiableSet(
                     EnumSet.of(
                             ExternalLineType.PROCESSING_FEE,
                             ExternalLineType.SCHEME_FEE,
                             ExternalLineType.BANK_FEE,
-                            ExternalLineType.PAYOUT_FEE));
+                            ExternalLineType.PAYOUT_FEE,
+                            ExternalLineType.FX_FEE));
 
     /** {@code rate NUMERIC(7, 6)}: six decimal places, and below ten. */
     private static final int MAX_RATE_SCALE = 6;
@@ -288,8 +293,7 @@ public record RuleSetProposal(
             String line = terms.lineType().name();
             if (!FEE_LINE_TYPES.contains(terms.lineType())) {
                 throw invalid(
-                        line + " carries no fee schedule: only PROCESSING_FEE, SCHEME_FEE,"
-                                + " BANK_FEE and PAYOUT_FEE are priced");
+                        line + " carries no fee schedule: only " + FEE_LINE_TYPES + " are priced");
             }
             if (terms.rate().signum() < 0) {
                 throw invalid("a " + line + " rate must not be negative");

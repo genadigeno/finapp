@@ -30,6 +30,13 @@ class ReconciliationV002MigrationTest {
     private static final String V002 =
             "db/migration/reconciliation/V002__expectation_register_and_rule_set_v1.sql";
 
+    /**
+     * The key kinds as V002 wrote them - applied history: reconciliation `V020` (`P9-TSK-011`)
+     * appended the FX provider's, and {@code ReconciliationV020MigrationTest} holds the whole lists.
+     */
+    private static final java.util.Set<KeyKind> AS_OF_V002 =
+            java.util.EnumSet.range(KeyKind.PSP_CAPTURE_REF, KeyKind.REMITTANCE_REF);
+
     @Test
     @DisplayName("the expectation's status and kind CHECKs are the enums' value lists")
     void statusAndKindChecksMatchTheEnums() {
@@ -40,7 +47,8 @@ class ReconciliationV002MigrationTest {
                                 + ExpectationStatus.sqlValueList() + "))"))
                 .contains(normalized(
                         "CONSTRAINT expectation_kind CHECK (kind IN ("
-                                + ExpectationKind.sqlValueList() + "))"));
+                                + ExpectationKind.sqlValueList(java.util.EnumSet.range(
+                                        ExpectationKind.CARD_CAPTURE, ExpectationKind.REMITTANCE)) + "))"));
     }
 
     @Test
@@ -50,10 +58,10 @@ class ReconciliationV002MigrationTest {
         assertThat(sql)
                 .contains(normalized(
                         "CONSTRAINT expectation_key_kind CHECK (key_kind IN ("
-                                + KeyKind.sqlValueList() + "))"))
+                                + KeyKind.sqlValueList(AS_OF_V002) + "))"))
                 .contains(normalized(
                         "CONSTRAINT reference_alias_kind CHECK (key_kind IN ("
-                                + KeyKind.sqlValueList() + "))"));
+                                + KeyKind.sqlValueList(AS_OF_V002) + "))"));
     }
 
     @Test

@@ -269,6 +269,12 @@ class NoFloatingPointMoneyRulesTest {
                     // sentinel for unreadable; the quote and closed counters increment by counts.
                     // Counts, never an amount or a rate (ADR-0072).
                     "com.finapp.app.fx.FxQuoteMetrics",
+                    // P9-TSK-011. The SAME case again: whether each declared source has an
+                    // ACTIVE rule set - a boolean read from the database, published as 1 or 0
+                    // through the ToDoubleFunction a Gauge imposes, NaN the sentinel for
+                    // unreadable. A flag, never an amount or a rate (ADR-0072).
+                    "com.finapp.app.telemetry.RuleSetMissingMetrics",
+                    "com.finapp.app.telemetry.RuleSetMissingMetrics$Cached",
                     // P8-TSK-024. The SAME case again: the open breaks per type and severity
                     // (counts) and the oldest open break's age in whole SECONDS per severity,
                     // published through the ToDoubleFunction a Gauge imposes, NaN the sentinel

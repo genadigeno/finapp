@@ -94,6 +94,13 @@ class BreakSeverityTest {
                                 Money.ofPersisted(1, EUR, 2),
                                 Optional.of(THRESHOLD)))
                 .isEqualTo(Severity.HIGH);
+        // P9-TSK-011: an unsettled FX leg is principal at risk (PHASE_9_PLAN.md 12.9.3).
+        for (ExpectationKind leg : java.util.List.of(ExpectationKind.FX_SELL_LEG, ExpectationKind.FX_BUY_LEG)) {
+            assertThat(BreakSeverity.assess(BreakType.MISSING_EXTERNAL, BreakCause.EXPECTATION_OVERDUE,
+                            Optional.empty(), Optional.of(leg), Money.ofPersisted(1, EUR, 2), Optional.of(THRESHOLD)))
+                    .as("%s missing is HIGH", leg)
+                    .isEqualTo(Severity.HIGH);
+        }
         assertThat(assess(BreakType.SETTLEMENT_MISMATCH, BreakCause.STATEMENT_GAP, 1))
                 .isEqualTo(Severity.CRITICAL);
         assertThat(assess(BreakType.SETTLEMENT_MISMATCH, BreakCause.OPENING_BALANCE, 1))

@@ -18,7 +18,25 @@ import java.util.UUID;
  */
 public interface RuleSets {
 
+    /**
+     * The source's {@code ACTIVE} version.
+     *
+     * @throws RuleSetMissing when the source has none yet (`P9-TSK-011`)
+     */
     ActiveRuleSet activeFor(Connection unitOfWork, UUID sourceId);
+
+    /**
+     * Whether the source has an {@code ACTIVE} version - the {@code rule_set.missing} gauge's read
+     * (`P9-TSK-011`), in terms of {@link #activeFor} so every implementation answers alike.
+     */
+    default boolean hasActive(Connection unitOfWork, UUID sourceId) {
+        try {
+            activeFor(unitOfWork, sourceId);
+            return true;
+        } catch (RuleSetMissing missing) {
+            return false;
+        }
+    }
 
     /** The active version's identity and the dating facts the opener reads off it. */
     record ActiveRuleSet(

@@ -276,7 +276,9 @@ public class ReconciliationBeans {
                                                                 .clearingPurpose()
                                                                 .equals(java.util.Optional.of(
                                                                         position)))
-                                                .findFirst()));
+                                                .findFirst()),
+                // The FX covers, for an FX provider's COVER_REF (P9-TSK-011).
+                new com.finapp.fx.JdbcTradeStore());
     }
 
     /**
@@ -357,6 +359,23 @@ public class ReconciliationBeans {
                 settlementSources,
                 dataSource::getConnection,
                 clock,
+                meterRegistry);
+    }
+
+    /**
+     * {@code finapp.reconciliation.rule_set.missing{source}} (`P9-TSK-011`): a declared source with
+     * no ACTIVE rule set version - alerted, so a new source's waiting files are never silent.
+     */
+    @Bean
+    com.finapp.app.telemetry.RuleSetMissingMetrics ruleSetMissingMetrics(
+            SettlementSources settlementSources,
+            SettlementFileStore<Connection> settlementFileStore,
+            com.finapp.reconciliation.RuleSets ruleSets,
+            javax.sql.DataSource dataSource,
+            Clock clock,
+            io.micrometer.core.instrument.MeterRegistry meterRegistry) {
+        return new com.finapp.app.telemetry.RuleSetMissingMetrics(
+                settlementSources, settlementFileStore, ruleSets, dataSource::getConnection, clock,
                 meterRegistry);
     }
 
@@ -618,7 +637,9 @@ public class ReconciliationBeans {
                             "${finapp.reconciliation.matching.block-after:3}")
                     int blockAfterFailures,
             com.finapp.reconciliation.TransactionRunner reconciliationTransactionRunner,
-            com.finapp.app.telemetry.ReconciliationOutcomeMeters reconciliationOutcomeMeters) {
+            com.finapp.app.telemetry.ReconciliationOutcomeMeters reconciliationOutcomeMeters,
+            SettlementFileStore<Connection> settlementFileStore,
+            SettlementSources settlementSources) {
         return new com.finapp.reconciliation.Matching(
                 matchingStore,
                 matchingRules,
@@ -633,7 +654,31 @@ public class ReconciliationBeans {
                 clock,
                 new com.finapp.reconciliation.Matching.Config(chunkSize, blockAfterFailures),
                 reconciliationTransactionRunner,
-                reconciliationOutcomeMeters);
+                reconciliationOutcomeMeters,
+                positionAccounts(ledgerAccountStore, settlementFileStore, settlementSources));
+    }
+
+    /**
+     * The account a source's position is (`P9-TSK-011`, ADR-0078): read off the composed register -
+     * the source row's code, its descriptor, and the counterparty's OWN account when it names one,
+     * else the shared operational account. Reconciliation names neither a counterparty nor a source.
+     */
+    static com.finapp.reconciliation.PositionAccounts positionAccounts(
+            com.finapp.ledger.LedgerAccountStore<Connection> accounts,
+            SettlementFileStore<Connection> sourceRows,
+            SettlementSources sources) {
+        return (unitOfWork, sourceId, position, currency) -> {
+            java.util.Optional<String> counterparty =
+                    sourceRows.sources(unitOfWork).stream()
+                            .filter(row -> row.id().equals(sourceId))
+                            .findFirst()
+                            .flatMap(row -> sources.byCode(row.code()))
+                            .flatMap(com.finapp.settlement.SettlementSourceDescriptor::settledCounterparty);
+            return (counterparty.isPresent()
+                            ? accounts.findCounterpartyAccount(unitOfWork, position, counterparty.get(), currency)
+                            : accounts.findOperational(unitOfWork, position, currency))
+                    .map(account -> account.id().value());
+        };
     }
 
     /**

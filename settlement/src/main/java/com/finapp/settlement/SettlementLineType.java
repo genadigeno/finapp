@@ -93,7 +93,21 @@ public enum SettlementLineType {
      * The payout provider's own charge (`P8-TSK-018`) — posted DR {@code PROCESSING_COSTS} at the
      * report's recognition, carrying {@code ORIGINAL_REF} to the payout it rode in on.
      */
-    PAYOUT_FEE;
+    PAYOUT_FEE,
+
+    /** The platform delivered this currency to the FX provider: a cover's sold leg (`P9-TSK-011`). */
+    FX_SOLD,
+
+    /** The FX provider delivered this currency to the platform: a cover's bought leg. */
+    FX_BOUGHT,
+
+    /** The FX provider's fee, named by {@code ORIGINAL_REF} = the cover reference it rode in on. */
+    FX_FEE;
+
+    /** The FX provider report's own lines (`P9-TSK-011`), contiguous. */
+    public static java.util.Set<SettlementLineType> fxVocabulary() {
+        return java.util.EnumSet.range(FX_SOLD, FX_FEE);
+    }
 
     /** The report vocabulary `V003` admitted; the bank members arrived with `V005`. */
     public static java.util.Set<SettlementLineType> reportVocabulary() {
@@ -116,7 +130,7 @@ public enum SettlementLineType {
      * `P8-TSK-018`). The bank's fee is hop 2's ({@code BankRecognition}).
      */
     public boolean isReportFee() {
-        return this == PROCESSING_FEE || this == SCHEME_FEE || this == PAYOUT_FEE;
+        return this == PROCESSING_FEE || this == SCHEME_FEE || this == PAYOUT_FEE || this == FX_FEE;
     }
 
     /** Whether this is a bank statement's line (`P8-TSK-016`). */

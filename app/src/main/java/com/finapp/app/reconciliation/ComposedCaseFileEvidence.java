@@ -119,6 +119,9 @@ public final class ComposedCaseFileEvidence implements EvidenceTargets, TraceEvi
                                     .orElse(List.of());
                     case UNMATCHED_CONFIRMATION -> parkingEvidence(unitOfWork, operationRef);
                     case MERCHANT_PAYOUT, PAYOUT_RETURN, REMITTANCE -> List.of();
+                    // A cover leg's provider evidence is the cover's own, retained by fx under
+                    // its request reference - the trace joins it with the cover (P9-TSK-012).
+                    case FX_SELL_LEG, FX_BUY_LEG -> List.of();
                 };
         return found.stream().map(ProviderEvidenceStore.EvidenceMetadata::id).toList();
     }

@@ -10,17 +10,24 @@ import java.util.List;
  * chart seeds and the settlement composition proves exactly one source discharges
  * ({@code INV-SET-05} per counterparty).
  *
- * <p><strong>Empty until the first counterparty is admitted</strong>: `P9-TSK-011` adds
- * {@code fx-sim-a}'s, from {@code FxProviderDeclaration}, beside ledger `V022`'s registry row
- * and five accounts and its settlement source. The mechanism is proven now against planted
- * declarations.
+ * <p>Since `P9-TSK-011`: every declared FX provider's position ({@code fx-sim-a}'s), read off its
+ * {@code FxProviderDeclaration} - its code, its clearing purpose and its settled currencies - beside
+ * ledger `V022`'s registry row and five accounts and its settlement source. A corridor provider
+ * joins with `P9-TSK-014`.
  */
 public final class CounterpartyClearings {
 
     private CounterpartyClearings() {}
 
-    /** The declared counterparty positions, in declaration order. */
+    /** The declared counterparty positions, in code order. */
     public static List<CounterpartyClearing> declared() {
-        return List.of();
+        return com.finapp.app.fx.FxProviderBeans.DECLARED.values().stream()
+                .sorted(java.util.Comparator.comparing(com.finapp.fx.FxProviderDeclaration::code))
+                .map(declaration -> new CounterpartyClearing(
+                        declaration.code(),
+                        com.finapp.ledger.CounterpartyKind.FX_PROVIDER,
+                        declaration.clearingPurpose(),
+                        declaration.settledCurrencies()))
+                .toList();
     }
 }

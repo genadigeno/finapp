@@ -60,6 +60,12 @@ public final class JdbcInternalReferenceLookup implements InternalReferenceLooku
      */
     @NonNull private final RailOfSource railOfSource;
 
+    /**
+     * The FX covers, for an FX provider's {@code COVER_REF} (`P9-TSK-011`) - appended last (the
+     * Lombok rule).
+     */
+    @NonNull private final com.finapp.fx.TradeStore covers;
+
     /** A source's rail, resolved by the composition over its compiled registers. */
     @FunctionalInterface
     public interface RailOfSource {
@@ -96,9 +102,16 @@ public final class JdbcInternalReferenceLookup implements InternalReferenceLooku
                     payouts.findByProviderReference(unitOfWork, value)
                             .map(this::ofPayout)
                             .orElseGet(InternalReference::unknown);
+            // The platform's cover reference (`P9-TSK-011`, PHASE_9_PLAN.md 12.9.2): a cover in
+            // flight is MISSING_INTERNAL's case, a reference we never minted UNKNOWN_EXTERNAL's.
+            case COVER_REF ->
+                    covers.coverByClientReference(unitOfWork, value)
+                            .map(this::ofCover)
+                            .orElseGet(InternalReference::unknown);
             // The ARN's alias resolution is the matcher's (`P8-TSK-011`); a remittance
-            // reference names evidence, not an operation.
-            case ACQUIRER_REF, REMITTANCE_REF -> InternalReference.unknown();
+            // reference names evidence, not an operation; the FX provider's trade reference is
+            // an alias recorded for the trace, never an operation key.
+            case ACQUIRER_REF, REMITTANCE_REF, FX_TRADE_REF -> InternalReference.unknown();
         };
     }
 
@@ -211,6 +224,15 @@ public final class JdbcInternalReferenceLookup implements InternalReferenceLooku
         };
     }
 
+    /** A cover: executed is completed, rejected or voided terminal, dispatched or unknown in flight. */
+    static InternalClassification classifyCover(com.finapp.fx.CoverStatus status) {
+        return switch (status) {
+            case EXECUTED -> InternalClassification.COMPLETED;
+            case REJECTED, VOIDED -> InternalClassification.TERMINAL;
+            case DISPATCHED, UNKNOWN -> InternalClassification.IN_FLIGHT;
+        };
+    }
+
     static InternalClassification classifyDispute(DisputeStage stage) {
         if (stage == DisputeStage.LOST || stage == DisputeStage.ACCEPTED) {
             return InternalClassification.TERMINAL;
@@ -242,6 +264,14 @@ public final class JdbcInternalReferenceLookup implements InternalReferenceLooku
                 Optional.of(withdrawal.id().value().toString()),
                 Optional.of(withdrawal.status().name()),
                 Optional.of(InternalSubject.WITHDRAWAL));
+    }
+
+    private InternalReference ofCover(com.finapp.fx.TradeStore.CoverByReference cover) {
+        return new InternalReference(
+                classifyCover(cover.status()),
+                Optional.of(cover.coverId().toString()),
+                Optional.of(cover.status().name()),
+                Optional.of(InternalSubject.COVER));
     }
 
     private InternalReference ofPayout(MerchantPayout payout) {

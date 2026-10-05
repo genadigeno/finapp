@@ -576,6 +576,99 @@ class RuleSetAdministrationDatabaseTest {
                 .isEqualTo("ACTIVE");
     }
 
+    // ------------------------------------------- (9) the first version (P9-TSK-011, D26)
+
+    @Test
+    @Order(9)
+    @DisplayName("a source with no ACTIVE version is admitted its FIRST version, activated by a second"
+            + " person retiring nothing - one history edge, one audit naming it the first; until then"
+            + " the opener's read is the typed RuleSetMissing")
+    void aFirstVersionIsActivatedRetiringNothing() throws SQLException {
+        UUID source = IDS.next();
+        JdbcRuleSets ruleSets = new JdbcRuleSets();
+        assertThatThrownBy(() -> ruleSets.activeFor(application, source))
+                .isInstanceOf(RuleSetMissing.class)
+                .satisfies(missing -> assertThat(((RuleSetMissing) missing).sourceId()).isEqualTo(source));
+        assertThat(ruleSets.hasActive(application, source)).isFalse();
+        application.rollback();
+
+        RuleSetAdministration.Proposed proposed = propose(PROPOSER, proposal(source, "The new source's first version"));
+        assertThat(proposed.version()).isEqualTo(1);
+        RuleSetAdministration.Decided decided = approve(APPROVER, proposed.ruleSetId(), "Reviewed: first version");
+        assertThat(decided.status()).isEqualTo(RuleSetStatus.ACTIVE);
+        assertThat(decided.retiredRuleSetId()).as("nothing to retire").isEmpty();
+        assertThat(lines("SELECT version || ':' || status FROM reconciliation.rule_set WHERE source_id = ?"
+                + " ORDER BY version", source)).containsExactly("1:ACTIVE");
+        assertThat(count("SELECT count(*) FROM reconciliation.rule_set_event e JOIN reconciliation.rule_set r"
+                + " ON r.id = e.rule_set_id WHERE r.source_id = ? AND e.from_status IS NOT NULL", source))
+                .as("one edge, PROPOSED -> ACTIVE").isEqualTo(1);
+        assertThat(string("SELECT change_summary FROM platform.audit_record WHERE target_id = ? AND"
+                + " operation = 'reconciliation.RuleSetActivated'", proposed.ruleSetId().toString()))
+                .contains("activated=v1").contains("the source's first version");
+        assertThat(ruleSets.activeFor(application, source).version()).isEqualTo(1);
+        assertThat(ruleSets.hasActive(application, source)).isTrue();
+        application.rollback();
+    }
+
+    @Test
+    @Order(10)
+    @DisplayName("the first version is four-eyes at both ranks: the proposer's approval refused, and a raw"
+            + " self-activation refused by the CHECK")
+    void aFirstVersionIsFourEyesAtBothRanks() throws SQLException {
+        UUID source = IDS.next();
+        RuleSetAdministration.Proposed proposed = propose(PROPOSER, proposal(source, "A first version"));
+        assertThatThrownBy(() -> approve(PROPOSER, proposed.ruleSetId(), "my own first version"))
+                .isInstanceOf(RuleSetAdministration.RuleSetActivationBySameActor.class);
+        assertThat(string("SELECT status FROM reconciliation.rule_set WHERE id = ?", proposed.ruleSetId()))
+                .isEqualTo("PROPOSED");
+        try (Connection raw = DatabaseRoles.application()) {
+            raw.setAutoCommit(false);
+            SQLException selfActivated = refused(raw, "UPDATE reconciliation.rule_set SET status = 'ACTIVE',"
+                    + " decided_by = proposed_by, decided_at = now() WHERE id = ?", proposed.ruleSetId());
+            assertThat(selfActivated.getSQLState()).isEqualTo(CHECK_VIOLATION);
+            assertThat(selfActivated.getMessage()).contains("rule_set_activation_is_four_eyes");
+        }
+    }
+
+    @Test
+    @Order(11)
+    @DisplayName("ten racing first-version proposers leave one proposal; ten racing approvers activate it once"
+            + " - counted")
+    void tenFirstVersionRacersActOnce() throws Exception {
+        UUID source = IDS.next();
+        List<String> proposals = new ArrayList<>();
+        for (Future<String> outcome : race(10, racer -> {
+            try {
+                propose(new Actor("op-first-" + racer, ActorType.EMPLOYEE), proposal(source, "First " + racer));
+                return "PROPOSED";
+            } catch (RuleSetAdministration.RuleSetProposalPending pending) {
+                return "PENDING";
+            }
+        })) {
+            proposals.add(outcome.get());
+        }
+        assertThat(proposals).filteredOn("PROPOSED"::equals).hasSize(1);
+        UUID pending = id("SELECT id FROM reconciliation.rule_set WHERE source_id = ? AND status = 'PROPOSED'", source);
+        List<String> approvals = new ArrayList<>();
+        for (Future<String> outcome : race(10, racer -> {
+            try {
+                approve(new Actor("op-approver-first-" + racer, ActorType.EMPLOYEE), pending, "Reviewed " + racer);
+                return "ACTIVATED";
+            } catch (RuleSetAdministration.RuleSetNotPending lost) {
+                return "NOT_PENDING";
+            } catch (RuleSetAdministration.RuleSetActivationBySameActor self) {
+                return "SELF";
+            }
+        })) {
+            approvals.add(outcome.get());
+        }
+        assertThat(approvals).filteredOn("ACTIVATED"::equals).hasSize(1);
+        assertThat(lines("SELECT version || ':' || status FROM reconciliation.rule_set WHERE source_id = ?"
+                + " ORDER BY version", source)).containsExactly("1:ACTIVE");
+        assertThat(count("SELECT count(*) FROM platform.audit_record WHERE target_id = ? AND"
+                + " operation = 'reconciliation.RuleSetActivated'", pending.toString())).isEqualTo(1);
+    }
+
     // ----------------------------------------------------------------- the commands
 
     private static RuleSetAdministration.Proposed propose(Actor actor, RuleSetProposal proposal) {

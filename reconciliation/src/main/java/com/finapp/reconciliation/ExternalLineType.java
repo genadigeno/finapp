@@ -36,14 +36,29 @@ public enum ExternalLineType {
     SCHEME_FEE,
     PAYOUT_EXECUTED,
     PAYOUT_RETURNED,
-    PAYOUT_FEE;
+    PAYOUT_FEE,
+
+    /** A cover's sold leg on the FX provider's report - the settlement mirror (`P9-TSK-011`). */
+    FX_SOLD,
+
+    /** A cover's bought leg on the FX provider's report. */
+    FX_BOUGHT,
+
+    /** The FX provider's fee - priced by the source's schedule, allocating nothing. */
+    FX_FEE;
+
+    /** The FX provider report's lines (`P9-TSK-011`), contiguous like their settlement mirror. */
+    public static java.util.Set<ExternalLineType> fxVocabulary() {
+        return java.util.EnumSet.range(FX_SOLD, FX_FEE);
+    }
 
     /** Whether this line claims value in the position — false exactly for the fees. */
     public boolean allocating() {
         return this != PROCESSING_FEE
                 && this != BANK_FEE
                 && this != SCHEME_FEE
-                && this != PAYOUT_FEE;
+                && this != PAYOUT_FEE
+                && this != FX_FEE;
     }
 
     /**
@@ -57,6 +72,8 @@ public enum ExternalLineType {
             case PROCESSING_FEE -> java.util.Optional.of(KeyKind.PSP_CAPTURE_REF);
             case SCHEME_FEE -> java.util.Optional.of(KeyKind.SCHEME_REF);
             case PAYOUT_FEE -> java.util.Optional.of(KeyKind.PAYOUT_PROVIDER_REF);
+            // The FX fee names its leg by the cover reference (PHASE_9_PLAN.md 12.9.1, P9-TSK-011).
+            case FX_FEE -> java.util.Optional.of(KeyKind.COVER_REF);
             default -> java.util.Optional.empty();
         };
     }

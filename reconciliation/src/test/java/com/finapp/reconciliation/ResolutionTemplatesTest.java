@@ -204,7 +204,9 @@ class ResolutionTemplatesTest {
         assertThat(EnumSet.copyOf(java.util.Arrays.stream(BreakCause.values())
                         .filter(ResolutionTemplates::timingCause).toList()))
                 .as("the timing detectors: exactly the causes raising TIMING_DIFFERENCE")
-                .containsExactlyInAnyOrder(BreakCause.LATE_MATCH, BreakCause.CYCLE_MISMATCH);
+                .containsExactlyInAnyOrder(BreakCause.LATE_MATCH, BreakCause.CYCLE_MISMATCH,
+                        // P9-TSK-011: an FX leg's value-date difference is a timing detector's.
+                        BreakCause.VALUE_DATE_DIFFERS);
         assertThat(ResolutionTemplates.fourEyes(ResolutionKind.ACKNOWLEDGE, eur(1),
                         BreakType.TIMING_DIFFERENCE, BreakCause.LATE_MATCH))
                 .as("one unit at issue is two people's").isTrue();
@@ -217,7 +219,8 @@ class ResolutionTemplatesTest {
                         .as("EVIDENCED is the platform's: %s/%s", type, cause).isFalse();
                 boolean onePerson = type == BreakType.TIMING_DIFFERENCE
                         && (cause == BreakCause.LATE_MATCH
-                                || cause == BreakCause.CYCLE_MISMATCH);
+                                || cause == BreakCause.CYCLE_MISMATCH
+                                || cause == BreakCause.VALUE_DATE_DIFFERS);
                 assertThat(ResolutionTemplates.fourEyes(ResolutionKind.ACKNOWLEDGE, eur(0), type,
                                 cause))
                         .as("a zero-value ACKNOWLEDGE of a %s raised by %s is %s", type, cause,
@@ -302,7 +305,9 @@ class ResolutionTemplatesTest {
                         .isEqualTo(expected);
             }
         }
-        assertThat(raisedPairs).as("every detector's (cause, type) pair checked").isEqualTo(26);
+        // 28 since P9-TSK-011: FX_LEG_DIFFERS raises AMOUNT_MISMATCH and VALUE_DATE_DIFFERS raises
+        // TIMING_DIFFERENCE - each admitting exactly its type's row, no fifteenth type.
+        assertThat(raisedPairs).as("every detector's (cause, type) pair checked").isEqualTo(28);
         for (BreakCause refined : REFINED.keySet()) {
             assertThat(refined.raisesAs()).as(refined + " refines one type").hasSize(1);
         }

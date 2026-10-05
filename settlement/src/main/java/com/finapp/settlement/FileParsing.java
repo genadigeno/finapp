@@ -184,6 +184,20 @@ public final class FileParsing {
             return rejectClaimed(uow, fileId, rejection.code(), rejection.defects());
         }
         ParsedBatch parsed = ((SettlementFormat.Result.Parsed) result).batch();
+        // A counterparty's source settles only its declared currencies (P9-TSK-010/-011,
+        // ADR-0078 section 7): any other currency has no position to land on - refused here and
+        // retained, before a batch exists, never accepted and never posted.
+        SettlementSourceDescriptor declared =
+                sources.byCode(file.sourceCode())
+                        .orElseThrow(
+                                () ->
+                                        new SettlementStorageException(
+                                                "source '" + file.sourceCode()
+                                                        + "' is declared (INV-SET-05)"));
+        if (declared.settledCounterparty().isPresent()
+                && !declared.settledCurrencies().contains(parsed.declaredNet().currency())) {
+            return rejectClaimed(uow, fileId, RejectionCode.CURRENCY_NOT_SETTLED, List.of());
+        }
         if (batches.liveBatchStands(
                 uow, file.sourceId(), parsed.externalBatchRef(),
                 parsed.declaredNet().currency())) {

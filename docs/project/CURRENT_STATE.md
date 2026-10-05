@@ -432,12 +432,12 @@ cross-border payments are holds and corridor acceptances, beneficiary screening 
 returns credited in the currency received; clearings are keyed by counterparty; callbacks are
 hints; reconciliation never converts currency and gains causes, never types. Ten new invariants
 and thirteen restated take the platform to **120**. Thirty backlog items across nine milestones
-(M9.1–M9.9) plus `X-TSK-013`…`-015`. **10 of 30 items complete** (M9.1 and M9.2 closed; M9.3 at 2 of 4): the modules and floors
+(M9.1–M9.9) plus `X-TSK-013`…`-015`. **11 of 30 items complete** (M9.1 and M9.2 closed; M9.3 at 3 of 4): the modules and floors
 (`P9-TSK-001`), the conversion arithmetic (`P9-TSK-002`), JPY and BHD postable (`P9-TSK-003`), multi-currency
 wallets (`P9-TSK-004`), reference rates (`P9-TSK-005`), the FX provider port (`P9-TSK-006`), the
-pricing policy (`P9-TSK-007`), the quote (`P9-TSK-008`), wallet conversion (`P9-TSK-009`) and
-counterparty-keyed clearing positions (`P9-TSK-010`); next **`P9-TSK-011` — The FX provider's
-position, source and vocabulary** — `READY`
+pricing policy (`P9-TSK-007`), the quote (`P9-TSK-008`), wallet conversion (`P9-TSK-009`),
+counterparty-keyed clearing positions (`P9-TSK-010`) and the FX provider's source (`P9-TSK-011`); next
+**`P9-TSK-012` — The FX cover** — `READY`
 ([§Current Task](#current-task) is kept current).
 
 ## Current Milestone
@@ -453,58 +453,56 @@ since M0.1". Moved, not edited.)*
 
 ## Current Task
 
-**`P9-TSK-011` — The FX provider's position, source and vocabulary** — `READY`:
-marked by `P9-TSK-010`'s completion gate (2026-10-05). **Not started.**
+**`P9-TSK-012` — The FX cover** — `READY`: marked by `P9-TSK-011`'s completion
+gate (2026-10-05). **Not started.**
 
 ### Just completed
 
-**`P9-TSK-010` — Counterparty-keyed clearing positions** — `COMPLETE` (2026-10-05). **M9.3 AT 2 OF 4:
-each external counterparty settles on its own clearing position, and two counterparties can never
-net** (ADR-0078 §§1-6, 8-9; `INV-RAIL-04` and `INV-SET-05` restated per counterparty, `INV-LED-04`,
-`INV-LED-06`, `INV-REC-06`). **The ledger**: `V021` - `OwnerKind.COUNTERPARTY`; the registry
-`ledger.counterparty` (uuid id, shaped code, kind) with SELECT and INSERT grants and an append-only
-trigger for every writer; the four chart rules restated from the enums; a BEFORE INSERT trigger holding
-a `COUNTERPARTY` account's `owner_ref` to a registry row for every writer (a NULL left to the `CHECK`, so
-each rank refuses alone); and `FX_PROVIDER_CLEARING` admitted as the first counterparty-owned purpose,
-type ASSET pinned, **no registry row and no account** - `V022` (`P9-TSK-011`) admits `fx-sim-a` and its
-five. `ChartOfAccounts.resolve(uow, purpose, counterpartyCode, currency)` serves counterparty purposes and
-the shared two-argument form refuses them; `LedgerAccountStore.findCounterpartyAccount` (joined through
-the registry by code) and `findAllOfPurpose`; `CounterpartyStore`; `CounterpartyChart`'s completeness
-rule run at startup by the app's `CounterpartyChartGuard` over `CounterpartyClearings` (empty until
-`-011`) - a reachable chart with a gap refuses startup, an unreachable database defers to the per-call
-refusal. **Settlement**: `SettlementSourceDescriptor.settledCounterparty` (present exactly on a
-counterparty-owned position) and `settledCurrencies`; `SettlementSources.of` keyed per (purpose,
-counterparty) - one counterparty twice refused, two counterparties on one purpose admitted as two
-positions; the composition proves both ways that each declared counterparty position has its one source
-and each counterparty a source names is declared, with equal currencies; recognitions settle on the
-source's counterparty's own account and the remittance opens there. **Reconciliation**: `PositionProof`'s
-proven purposes derived from the register (today exactly the three clearings) and completeness over
-every account of every reconciled purpose. **Static rules**: `CounterpartyClearingIsNamedByDeclarationsTest`
-(derived from the enum, planted violations), `RailVocabularyIsConfinedTest`'s `CLEARING_POSITIONS` amended
-to a set of declaring files per purpose. **Deviation, recorded**: the purpose's admission moved from `V022`
-to `V021` so every rule is proven against a real purpose. **THE BUILD'S FINDS, FIXED**: the counterparty
-acceptance case found that a report on a counterparty's position could never be accepted - the report
-constructor built the batch without its counterparty before a wither could add it - the counterparty now
-rides the constructor; the register claimed a declaration order `Map.copyOf` does not keep - the new
-method claims a set (the existing `declared()` javadoc carries the same false claim, noted). **DEFERRED TO
-`-011`, recorded in its entry**: the counterparty branches of `ReconciliationIntake.openRemittance` and of
-`PositionProof`'s keying are unreachable until a counterparty purpose is reconciled with an active rule
-set; `-011`'s FX report acceptance proves them. **FOUND, NOT CAUSED - recorded as debt and offered as its
-own task**: 22 Phase 8 database cases are red on master itself (the identical set on this branch, the
-fleet database tier having been skipped). **PROBES** (U1-U11, eleven caught), every restore byte-identical
-(sha256-verified; `MUTATION_TESTING.md` §2 +8 rows). **Multi-instance PASS** - nothing is minted at
-runtime, so no instance can race another for an account; seeded registry and account ids sort below
-the ceiling (asserted, planted both ways); the registry and `owner_ref` are immutable for every writer;
-ten instances starting run the read-only guard identically. **NEXT**: `P9-TSK-011` `READY`. **Verified**
-by fresh runs - ledger hermetic 94 across 18, settlement hermetic 195 across 30 and database 88 across 14
-with the acceptance suite 9 of 9, the counterparty chart database suite 5, the fleet-wide hermetic tier
-2414 across 389 suites and 18 modules; the architecture tier 153 across 26; the app hermetic tier with every document guard 707 across 132 after the records landed,
-ALL 0 FAILURES - and the Phase 8 database selection (219 cases) failing exactly master's 22, no more; the
-fleet-wide database and kafka tiers deliberately skipped on the owner's instruction.
+**`P9-TSK-011` — The FX provider's position, source and vocabulary** — `COMPLETE` (2026-10-05). **M9.3
+AT 3 OF 4: `fx-sim-a` has its position, its source, its format and its reconciliation vocabulary,
+before anything posts to it** (ADR-0078 §§6-8, PHASE_9_PLAN.md §12.9; `INV-SET-05`, `INV-SET-07`,
+`INV-RAIL-04`, `INV-AUD-04`, `INV-REC-06`…`-08`). **Ledger `V022`**: `fx-sim-a` registered with its five
+`FX_PROVIDER_CLEARING` accounts below the ceiling; the purpose joins `reconciledPositions()`; the
+free-adjustment binding restated. **Settlement `V015`**: `FX_PROVIDER_REPORT`, `SIM_FX_CSV` v1
+(`SimFxCsvFormat`, pure, one currency and value date per file - `SOLD` OUTBOUND, `BOUGHT` INBOUND, a fee
+split into `FX_FEE` naming its leg by `ORIGINAL_REF` = the cover reference, the cover reference admitted
+only in its minted `T-` + 32-hex shape; golden file, a fault per field), `FX_SOLD`/`FX_BOUGHT`/`FX_FEE`,
+`COVER_REF`/`FX_TRADE_REF`, the appended `CURRENCY_NOT_SETTLED` - refused at the parse leg before any batch,
+retained, never readmitted (the readmission rule restated) - and the source row; every CHECK reconciled to
+its enum, the source-kind and format-id lists for the first time. **Reconciliation `V020`**:
+`FX_SELL_LEG`/`FX_BUY_LEG`, the key and line mirrors, `FX_FEE` a priced non-allocating fee line,
+`FX_LEG_DIFFERS`/`VALUE_DATE_DIFFERS`, the pairing trigger and V014's timing list restated; FX legs missing
+are HIGH. **The first version**: `RuleSetAdministration` admits a source's version 1 when it has no ACTIVE
+one and activates it retiring nothing, four-eyes at both ranks; `RuleSetMissing` typed - a parsed report
+waits PARSED with the accept leg's backoff - and `finapp.reconciliation.rule.set.missing{source}`
+(Prometheus `finapp_reconciliation_rule_set_missing`, the plan's name; the convention admits no underscore).
+**Composition**: `FxProviderDeclaration.clearingPurpose()`; `CounterpartyClearings` declares `fx-sim-a`;
+`SettlementBeans.fxProviderSources()` composes `fx-sim-a.trade-report` from the declaration (`FXA-`
+remittances); the pull collector under `FINAPP_FX_REPORT_KEY`; `FxRuleSetV1` (O7) activated by two
+controllers, runbook §3. **Ports**: `FxSettlementExpectations` (fx) implemented by the recorder on the
+counterparty's own source; `JdbcInternalReferenceLookup` resolves `COVER_REF` over cover attempts (in flight
+MISSING_INTERNAL's case, unknown UNKNOWN_EXTERNAL's); `ReconciliationNeverConvertsTest` (transitive, planted).
+**THE BUILD'S FINDS, FIXED**: the matcher parked a counterparty-position item on a shared operational account
+that does not exist - every FX item would have poisoned its chunk and blocked the source - now through
+reconciliation's `PositionAccounts` port, composed in app from the register (`FxMatchingDatabaseTest`
+found it); `tradeRef` is the FX provider's own wire word - the format's field is `fxTradeRef`; the meter
+renamed to the convention. **FOUND, CARRIED TO `-012` (recorded in its entry)**: a cover's two legs share
+`COVER_REF = Tn` and `expectation_key_once (source, kind, value)` admits Tn once - the second leg's key would
+be a `KEY_COLLISION`; the opener register's FX rows arrive with the cover entry. **PROBES** (TWELVE PROBES, TWELVE CAUGHT - W7, the matcher parking on a shared account, SURVIVED its first run because neither FX case parked; `FxMatchingDatabaseTest` case (c) was added and caught it on the re-run),
+every restore byte-identical (sha256-verified; `MUTATION_TESTING.md` §2 +10 rows). **Multi-instance
+PASS** - ten first-version proposers leave one proposal and ten approvers one activation (counted); a file
+with no rule set fails once and waits on its backoff, never a hot loop; the currency screen runs in the
+parse leg's claimed transaction; every gauge read is the database's. **NEXT**: `P9-TSK-012` `READY`.
+**Verified** by fresh runs - the fleet-wide hermetic tier 2441 across 397 suites and 18 modules (its one red case the mutation-row parser naming three new rows, fixed and re-run green with the app tier); the architecture tier 155 across 27; the
+app hermetic tier with every document guard 714 across 134; settlement database 89 across 14, reconciliation database 236 across 26 (the FX matching suite 3), fx database 60 across 12 failing only master's three quote-expiry cases, and the app database selection 224 across 32 (the FX source suite 5, the counterparty chart 5) failing exactly master's 22, ALL 0 FAILURES beyond what master fails
+identically - the fleet-wide database and kafka tiers deliberately skipped on the owner's instruction.
+**FOUND, NOT CAUSED**: three `fx` quote-expiry database cases (`QuoteLifecycleDatabaseTest`,
+`QuoteIssuanceDatabaseTest`) red on master itself today - they sleep on the JVM clock until a quote lapses
+while expiry is judged on the database clock - offered as their own task.
 
 ### Previously
 
-The per-task completion records — 202 blocks, from `P9-TSK-009` back to project initiation
+The per-task completion records — 203 blocks, from `P9-TSK-010` back to project initiation
 (`X-TSK-005` cross-cutting, standing between `P7-TSK-015` and `P7-TSK-014`; `X-TSK-004`
 cross-cutting, standing between `P7-TSK-001` and the Phase 6 → 7 transition) — are archived in
 [`history/TASK_HISTORY.md`](history/TASK_HISTORY.md).
@@ -1049,8 +1047,8 @@ Resolved during initiation:
 
 ## Next Task
 
-**`P9-TSK-011` — The FX provider's position, source and vocabulary** — `READY` (the
-Current Task), marked by `P9-TSK-010`'s completion gate.
+**`P9-TSK-012` — The FX cover** — `READY` (the Current Task), marked by
+`P9-TSK-011`'s completion gate.
 *(This section read "`P8-TSK-009` — `READY`" from `P8-TSK-008`'s gate until
 `P8-TSK-013`'s record found it — the stale-second-copy class, in the section whose
 whole job is to mirror.)*

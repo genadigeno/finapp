@@ -80,7 +80,30 @@ public class SettlementBeans {
      * payment (`EverySettlingPositionHasASourceTest` drives both ways).
      */
     static SettlementSources composedSettlementSources(PaymentRails rails) {
-        return composedSettlementSources(rails, CounterpartyClearings.declared(), List.of());
+        return composedSettlementSources(rails, CounterpartyClearings.declared(), fxProviderSources());
+    }
+
+    /**
+     * Each declared FX provider's trade-report source (`P9-TSK-011`, PHASE_9_PLAN.md section
+     * 12.9.2): {@code <provider>.trade-report}, the {@code SIM_FX_CSV} v1 format, upload and pull,
+     * settling the provider's OWN clearing position in exactly the currencies its declaration
+     * settles - every fact read off the {@code FxProviderDeclaration}, so the source and the
+     * counterparty chart cannot disagree. The remittance shape is the format's {@code FXA-...}.
+     */
+    static List<SettlementSourceDescriptor> fxProviderSources() {
+        return com.finapp.app.fx.FxProviderBeans.DECLARED.values().stream()
+                .sorted(java.util.Comparator.comparing(com.finapp.fx.FxProviderDeclaration::code))
+                .map(declaration -> new SettlementSourceDescriptor(
+                        declaration.code() + ".trade-report",
+                        SourceKind.FX_PROVIDER_REPORT,
+                        SettlementFormatId.SIM_FX_CSV,
+                        1,
+                        Set.of(DeliveryChannel.UPLOAD, DeliveryChannel.PULL),
+                        Optional.of(declaration.clearingPurpose()),
+                        Optional.of(com.finapp.settlement.format.simfx.SimFxCsvFormat.REMITTANCE_REFERENCE),
+                        Optional.of(declaration.code()),
+                        declaration.settledCurrencies()))
+                .toList();
     }
 
     /**
@@ -267,6 +290,9 @@ public class SettlementBeans {
                 SimSchemeJsonFormat.INSTANCE,
                 SettlementFormatId.SIM_PAYOUT_CSV,
                 SimPayoutCsvFormat.INSTANCE,
+                // P9-TSK-011: the FX provider's trade report, pure, a singleton like the others.
+                SettlementFormatId.SIM_FX_CSV,
+                com.finapp.settlement.format.simfx.SimFxCsvFormat.INSTANCE,
                 SettlementFormatId.SIM_STATEMENT_TAGGED,
                 new SimStatementTaggedFormat(
                         Map.of(

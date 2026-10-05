@@ -49,7 +49,15 @@ public enum RejectionCode {
      * stands, its door closed, and the parsed evidence is rejected RETAINED — a re-opened
      * source is a NEW source whose re-issue arrives through its own door.
      */
-    SOURCE_RETIRED(false);
+    SOURCE_RETIRED(false),
+
+    /**
+     * A parsed batch in a currency its source's counterparty does not settle (`P9-TSK-011`,
+     * ADR-0078 section 7): there is no position for it to land on, so it is refused at the parse leg
+     * and retained - never accepted, never posted, never readmitted (a currency the counterparty
+     * comes to settle is a new declaration and a new seed, and a new delivery).
+     */
+    CURRENCY_NOT_SETTLED(false);
 
     private final boolean leavesErrorRows;
 
@@ -70,6 +78,14 @@ public enum RejectionCode {
     }
 
     /** The `V003` {@code CHECK}'s value list for {@code ingestion_error.error_code}. */
+    /** The members of {@code members}, in declaration order, as a SQL literal list. */
+    public static String sqlValueList(java.util.Set<RejectionCode> members) {
+        return Arrays.stream(values())
+                .filter(members::contains)
+                .map(value -> "'" + value.name() + "'")
+                .collect(Collectors.joining(", "));
+    }
+
     public static String sqlErrorRowList() {
         return Arrays.stream(values())
                 .filter(RejectionCode::leavesErrorRows)

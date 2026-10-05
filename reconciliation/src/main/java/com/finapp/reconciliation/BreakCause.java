@@ -93,7 +93,20 @@ public enum BreakCause {
      * (`P8-TSK-020`, ADR-0070's recorded design input): its value must never be attributed a
      * second time, so the break admits no transfer. Appended by reconciliation `V011`.
      */
-    EXECUTION_ALREADY_EXPLAINED(BreakType.DUPLICATE_EXTERNAL);
+    EXECUTION_ALREADY_EXPLAINED(BreakType.DUPLICATE_EXTERNAL),
+
+    /**
+     * An FX leg settled for another amount than the cover executed (`P9-TSK-011`, PHASE_9_PLAN.md
+     * section 12.9.3): reconciliation never converts, so a rate difference IS a leg's amount
+     * mismatch. Selected by the expectation's kind in matching (`P9-TSK-013`).
+     */
+    FX_LEG_DIFFERS(BreakType.AMOUNT_MISMATCH),
+
+    /**
+     * An FX leg settled on another value date than the cover expected, beyond the source's
+     * {@code SETTLEMENT_DATE_DAYS}: a timing detector's cause, one person's zero-value acknowledgement.
+     */
+    VALUE_DATE_DIFFERS(BreakType.TIMING_DIFFERENCE);
 
     private final Set<BreakType> raisesAs;
 

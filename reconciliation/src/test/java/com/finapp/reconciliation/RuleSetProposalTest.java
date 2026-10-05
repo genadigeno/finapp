@@ -345,7 +345,7 @@ class RuleSetProposalTest {
     class TheFeeSchedules {
 
         @Test
-        @DisplayName("only the four fee lines are priced")
+        @DisplayName("only the fee lines are priced - the four Phase 8 fees and FX_FEE")
         void onlyFeeLines() {
             Draft draft = new Draft();
             draft.fees = List.of(fee(ExternalLineType.CAPTURE, EUR, "0.015000", 25, 2));

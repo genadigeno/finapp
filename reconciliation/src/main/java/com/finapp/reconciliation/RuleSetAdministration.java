@@ -164,9 +164,14 @@ public final class RuleSetAdministration {
      * {@code max + 1}, and written {@code PROPOSED} with every member, its history row and the
      * reasoned audit record. Nothing is activated and nothing already decided changes.
      *
+     * <p><strong>The first version</strong> (`P9-TSK-011`, PHASE_9_PLAN.md section 12.9.2): a
+     * source with no {@code ACTIVE} version - a source declared after Phase 8, whose version 1 no
+     * migration seeds (D26) - is admitted a proposal with nothing to cover; it is still one pending
+     * proposal per source ({@code rule_set_one_proposed}) and still activated by a different person.
+     *
      * @throws ToleranceNotPermitted for an amount tolerance ({@code INV-REC-08})
-     * @throws RuleSetInvalid for a malformed version, a source with no {@code ACTIVE} version,
-     *     or a lag kind the predecessor dates and the proposal does not
+     * @throws RuleSetInvalid for a malformed version, or a lag kind the predecessor dates and the
+     *     proposal does not
      * @throws RuleSetProposalPending when a proposal already awaits a decision for the source
      *     (the caller's transaction is then aborted and must roll back)
      */
@@ -184,15 +189,11 @@ public final class RuleSetAdministration {
         proposal.validate();
         // Advisory and lock-free: a concurrent activation shows either predecessor, and the
         // approval re-judges coverage against the predecessor it locks.
-        RuleSetStore.VersionRow active =
-                store.active(unitOfWork, proposal.sourceId())
-                        .orElseThrow(
-                                () ->
-                                        new RuleSetInvalid(
-                                                "the source has no ACTIVE rule set version to"
-                                                        + " succeed: a proposal names a"
-                                                        + " declared source"));
-        refuseUncovered(proposal.lagDays().keySet(), store.lagKinds(unitOfWork, active.id()));
+        Optional<RuleSetStore.VersionRow> active = store.active(unitOfWork, proposal.sourceId());
+        if (active.isPresent()) {
+            refuseUncovered(proposal.lagDays().keySet(), store.lagKinds(unitOfWork, active.get().id()));
+        }
+        // No ACTIVE version: the source's first version, with no predecessor to cover.
 
         int version = store.maxVersion(unitOfWork, proposal.sourceId()) + 1;
         UUID ruleSetId = ids.next();
@@ -222,6 +223,8 @@ public final class RuleSetAdministration {
      * FIRST ({@code rule_set_one_active} admits one active row at every statement), then the
      * proposal {@code PROPOSED → ACTIVE} naming its approver; both history rows and the reasoned
      * audit record follow, all in the caller's transaction. The same person's retry converges.
+     * A source's FIRST version (`P9-TSK-011`) has no predecessor: it activates retiring nothing,
+     * under the same row lock and the same four-eyes rule (and {@code V012}'s {@code CHECK}).
      *
      * @throws RuleSetNotFound when no version has this id
      * @throws RuleSetNotPending when the version is no longer {@code PROPOSED}
@@ -255,26 +258,21 @@ public final class RuleSetAdministration {
             throw new RuleSetActivationBySameActor();
         }
         refuseReason(reason);
-        RuleSetStore.VersionRow predecessor =
-                store.lockActive(unitOfWork, row.sourceId())
-                        .orElseThrow(
-                                () ->
-                                        new IllegalStateException(
-                                                "a source always has an ACTIVE rule set version"
-                                                        + " (V002's seed; an activation retires"
-                                                        + " its predecessor in its own"
-                                                        + " transaction)"));
-        // The coverage the proposal was judged by may have been read before a racing activation
-        // committed: re-judged here against the predecessor this transaction holds.
-        refuseUncovered(
-                store.lagKinds(unitOfWork, row.id()),
-                store.lagKinds(unitOfWork, predecessor.id()));
-
-        if (!store.move(unitOfWork, predecessor.id(), RuleSetStatus.ACTIVE, RuleSetStatus.RETIRED,
-                Optional.empty(), now)) {
-            throw new IllegalStateException(
-                    "the locked ACTIVE version moved under its own row lock: the FOR UPDATE"
-                            + " protocol was bypassed");
+        // The source's ACTIVE version, locked - or none, for its first version (P9-TSK-011).
+        Optional<RuleSetStore.VersionRow> locked = store.lockActive(unitOfWork, row.sourceId());
+        if (locked.isPresent()) {
+            RuleSetStore.VersionRow predecessor = locked.get();
+            // The coverage the proposal was judged by may have been read before a racing
+            // activation committed: re-judged here against the predecessor this transaction holds.
+            refuseUncovered(
+                    store.lagKinds(unitOfWork, row.id()),
+                    store.lagKinds(unitOfWork, predecessor.id()));
+            if (!store.move(unitOfWork, predecessor.id(), RuleSetStatus.ACTIVE, RuleSetStatus.RETIRED,
+                    Optional.empty(), now)) {
+                throw new IllegalStateException(
+                        "the locked ACTIVE version moved under its own row lock: the FOR UPDATE"
+                                + " protocol was bypassed");
+            }
         }
         if (!store.move(unitOfWork, row.id(), RuleSetStatus.PROPOSED, RuleSetStatus.ACTIVE,
                 Optional.of(actor), now)) {
@@ -282,20 +280,23 @@ public final class RuleSetAdministration {
                     "the locked proposal was decided by another writer: the FOR UPDATE protocol"
                             + " was bypassed");
         }
-        store.appendEvent(
-                unitOfWork, predecessor.id(), Optional.of(RuleSetStatus.ACTIVE),
-                RuleSetStatus.RETIRED, actor, retirementReason(row.version(), reason), now,
-                correlation);
+        if (locked.isPresent()) {
+            store.appendEvent(
+                    unitOfWork, locked.get().id(), Optional.of(RuleSetStatus.ACTIVE),
+                    RuleSetStatus.RETIRED, actor, retirementReason(row.version(), reason), now,
+                    correlation);
+        }
         store.appendEvent(
                 unitOfWork, row.id(), Optional.of(RuleSetStatus.PROPOSED), RuleSetStatus.ACTIVE,
                 actor, reason, now, correlation);
         audit(unitOfWork, actor, now, ReconciliationAuditAction.RULE_SET_ACTIVATED, row.id(),
                 reason,
                 "source=" + row.sourceId() + ", activated=v" + row.version()
-                        + ", retired=v" + predecessor.version(),
+                        + locked.map(predecessor -> ", retired=v" + predecessor.version())
+                                .orElse(", the source's first version"),
                 correlation);
         return new Decided(
-                row.id(), row.version(), RuleSetStatus.ACTIVE, Optional.of(predecessor.id()),
+                row.id(), row.version(), RuleSetStatus.ACTIVE, locked.map(RuleSetStore.VersionRow::id),
                 false);
     }
 

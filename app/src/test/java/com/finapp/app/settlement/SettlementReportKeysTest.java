@@ -42,7 +42,12 @@ class SettlementReportKeysTest {
                     new Key(
                             "bank statement key",
                             "FINAPP_SETTLEMENT_BANK_STATEMENT_KEY",
-                            BankStatementKey::decode));
+                            BankStatementKey::decode),
+                    // P9-TSK-011: the FX provider's trade report.
+                    new Key(
+                            "FX provider report key",
+                            "FINAPP_FX_REPORT_KEY",
+                            FxReportKey::decode));
 
     @Test
     @DisplayName("each local default is separated from the other three and from the provider"

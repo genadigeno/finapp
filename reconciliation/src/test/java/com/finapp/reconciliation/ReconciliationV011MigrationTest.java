@@ -36,6 +36,10 @@ class ReconciliationV011MigrationTest {
                 .doesNotContain("suspense_item_break_fk");
     }
 
+    /** The causes as V011 wrote them - `V020` (`P9-TSK-011`) appended the FX legs' two. */
+    private static final Set<BreakCause> AS_OF_V011 =
+            EnumSet.range(BreakCause.EXPECTATION_OVERDUE, BreakCause.EXECUTION_ALREADY_EXPLAINED);
+
     @Test
     @DisplayName("the cause CHECK and the raise-time pairing are the enum's whole lists, and V011"
             + " adds exactly EXECUTION_ALREADY_EXPLAINED, raising DUPLICATE_EXTERNAL alone")
@@ -44,9 +48,9 @@ class ReconciliationV011MigrationTest {
         assertThat(sql)
                 .contains(normalized(
                         "CONSTRAINT break_cause CHECK (cause IN ("
-                                + BreakCause.sqlValueList() + "))"))
-                .contains(BreakCause.sqlRaisePairingRule());
-        Set<BreakCause> added = EnumSet.allOf(BreakCause.class);
+                                + BreakCause.sqlValueList(AS_OF_V011) + "))"))
+                .contains(BreakCause.sqlRaisePairingRule(AS_OF_V011));
+        Set<BreakCause> added = EnumSet.copyOf(AS_OF_V011);
         added.removeAll(BreakCause.v004Vocabulary());
         assertThat(added).containsExactly(BreakCause.EXECUTION_ALREADY_EXPLAINED);
         assertThat(BreakCause.EXECUTION_ALREADY_EXPLAINED.raisesAs())

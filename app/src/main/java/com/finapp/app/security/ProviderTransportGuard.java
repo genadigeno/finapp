@@ -56,7 +56,9 @@ public class ProviderTransportGuard {
                     "finapp.settlement.psp.report.url",
                     "finapp.settlement.scheme.report.url",
                     "finapp.settlement.payout.report.url",
-                    "finapp.settlement.bank.statement.url");
+                    "finapp.settlement.bank.statement.url",
+                    // P9-TSK-011: the FX provider's trade report.
+                    "finapp.fx.report.url");
 
     ProviderTransportGuard(Environment environment) {
         for (String property : PROVIDER_URLS) {

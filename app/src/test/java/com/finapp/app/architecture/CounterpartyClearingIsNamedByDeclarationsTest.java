@@ -40,13 +40,15 @@ class CounterpartyClearingIsNamedByDeclarationsTest {
 
     /**
      * The counterparties' declarations and the composition reading them, each with its role.
-     * EMPTY until the first counterparty is admitted: `P9-TSK-011` adds
-     * {@code FxProviderDeclaration.java} (its {@code clearingPurpose()}) and the settlement
-     * composition ({@code SettlementBeans.java}) as they first name {@code FX_PROVIDER_CLEARING} -
-     * a permit naming nothing would silently stop applying (the `P1-TSK-015` rule), so none is
-     * listed before its file names the purpose.
+     * {@code FxProviderDeclaration.java} since `P9-TSK-011`; the settlement composition reads the
+     * purpose off the declaration and names none, so it holds no permit - a permit naming nothing
+     * would silently stop applying (the `P1-TSK-015` rule).
      */
-    static final Map<String, String> PERMITTED = Map.of();
+    static final Map<String, String> PERMITTED =
+            Map.of(
+                    "FxProviderDeclaration.java",
+                    "DECLARATION: an FX provider's clearingPurpose() (P9-TSK-011) - the settlement"
+                            + " composition and the counterparty chart read it, never name it");
 
     /** Every counterparty-owned purpose, derived. */
     static final List<String> COUNTERPARTY_PURPOSES =

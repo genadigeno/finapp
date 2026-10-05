@@ -233,9 +233,14 @@ class ReconciliationV014MigrationTest {
     }
 
     /** ResolutionTemplates.timingCause's members, as the trigger lists them. */
+    /**
+     * The timing causes as V014 wrote them - applied history: reconciliation `V020` (`P9-TSK-011`)
+     * re-stated the list with VALUE_DATE_DIFFERS, held by {@code ReconciliationV020MigrationTest}.
+     */
     private static String timingCauses() {
         return java.util.Arrays.stream(BreakCause.values())
                 .filter(ResolutionTemplates::timingCause)
+                .filter(cause -> cause != BreakCause.VALUE_DATE_DIFFERS)
                 .map(cause -> "'" + cause.name() + "'")
                 .collect(java.util.stream.Collectors.joining(", "));
     }

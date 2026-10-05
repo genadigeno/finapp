@@ -29,11 +29,28 @@ public enum ExpectationKind {
     PUSH_RETURN,
     MERCHANT_PAYOUT,
     PAYOUT_RETURN,
-    REMITTANCE;
+    REMITTANCE,
+
+    /**
+     * A cover's sold leg on {@code FX_PROVIDER_CLEARING(provider)} - OUTBOUND, opened by the cover
+     * entry through {@code FxSettlementExpectations} (`P9-TSK-011`; the cover posts at -012).
+     */
+    FX_SELL_LEG,
+
+    /** A cover's bought leg - INBOUND, the same opening. */
+    FX_BUY_LEG;
 
     /** The `V002` {@code CHECK}'s value list — reconciled by the migration test. */
     public static String sqlValueList() {
         return Arrays.stream(values())
+                .map(value -> "'" + value.name() + "'")
+                .collect(Collectors.joining(", "));
+    }
+
+    /** The members of {@code members}, in declaration order, as a SQL literal list. */
+    public static String sqlValueList(java.util.Set<ExpectationKind> members) {
+        return Arrays.stream(values())
+                .filter(members::contains)
                 .map(value -> "'" + value.name() + "'")
                 .collect(Collectors.joining(", "));
     }

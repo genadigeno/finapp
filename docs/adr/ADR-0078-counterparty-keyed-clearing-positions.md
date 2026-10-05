@@ -217,5 +217,5 @@ admitting migration, before any line).
   `CounterpartyClearingIsNamedByDeclarationsTest`. **One deviation:** `V021` also admits the
   purpose `FX_PROVIDER_CLEARING` (type ASSET pinned), with no registry row and no account, so every
   rule is proven against a real counterparty-owned purpose; `V022` admits `fx-sim-a` and its five
-  accounts as section 4 says. Section 7 (`CURRENCY_NOT_SETTLED`) lands with `P9-TSK-011`.
+  accounts as section 4 says. Section 7 (`CURRENCY_NOT_SETTLED`) landed with `P9-TSK-011` (2026-10-05): refused at the parse leg, retained, never readmitted; and `fx-sim-a` was admitted - ledger `V022`, its source `fx-sim-a.trade-report` read off `FxProviderDeclaration`.
 - The Phase 9 review reads this ADR against the code before accepting it (`P9-DOC-001`).

@@ -36,8 +36,12 @@ import org.springframework.core.env.Environment;
 @Configuration
 public class FxProviderBeans {
 
-    /** Every FX provider this build can describe - the adapter's own declaration. */
-    static final Map<String, FxProviderDeclaration> DECLARED =
+    /**
+     * Every FX provider this build can describe - the adapter's own declaration. Public since
+     * `P9-TSK-011`: the settlement composition and the counterparty chart read each provider's
+     * position, counterparty and settled currencies off it.
+     */
+    public static final Map<String, FxProviderDeclaration> DECLARED =
             Map.of(SimulatedFxProviderAdapter.CODE, SimulatedFxProviderAdapter.DECLARATION);
 
     @Bean
