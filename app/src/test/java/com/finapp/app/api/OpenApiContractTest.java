@@ -586,6 +586,15 @@ class OpenApiContractTest {
                         ApiVersion.CURRENT_PREFIX + "/operator/fx/enable-requests/{rid}/rejection",
                         // P9-TSK-013: the FX investigator's provenance read (FX_INVESTIGATE).
                         ApiVersion.CURRENT_PREFIX + "/operator/fx/trades/{id}/provenance",
+                        // P9-TSK-015: the corridor doors (CROSSBORDER_ADMINISTER) and the customer's
+                        // corridor discovery (a session).
+                        ApiVersion.CURRENT_PREFIX + "/operator/cross-border/corridor-policies",
+                        ApiVersion.CURRENT_PREFIX + "/operator/cross-border/corridor-policies/{id}/approval",
+                        ApiVersion.CURRENT_PREFIX + "/operator/cross-border/corridor-policies/{id}/rejection",
+                        ApiVersion.CURRENT_PREFIX + "/operator/cross-border/corridors/{corridor}/availability",
+                        ApiVersion.CURRENT_PREFIX + "/operator/cross-border/corridor-enable-requests/{rid}/approval",
+                        ApiVersion.CURRENT_PREFIX + "/operator/cross-border/corridor-enable-requests/{rid}/rejection",
+                        ApiVersion.CURRENT_PREFIX + "/me/cross-border/corridors",
                         // P9-TSK-008: the customer's quote doors - request, read, cancel, and the
                         // offered pairs (a session; the owner's own quotes only).
                         ApiVersion.CURRENT_PREFIX + "/me/fx/quotes",

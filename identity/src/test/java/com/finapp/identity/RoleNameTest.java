@@ -151,7 +151,7 @@ class RoleNameTest {
     }
 
     @Test
-    @DisplayName("FX_CONTROLLER grants exactly FX_ADMINISTER")
+    @DisplayName("FX_CONTROLLER grants exactly FX_ADMINISTER and CROSSBORDER_ADMINISTER")
     void fxControllerGrantsExactlyOne() {
         // The seventh population (P9-TSK-007, ADR-0075 section 7): the margin every conversion
         // freezes and posts is revenue policy, so whoever sets it must not also be able to
@@ -159,7 +159,7 @@ class RoleNameTest {
         // what keeps the role from quietly gaining either.
         assertThat(RoleName.FX_CONTROLLER.permissions())
                 .as("setting prices is not operating, reconciling or reversing the money")
-                .containsExactlyInAnyOrder(PermissionName.FX_ADMINISTER);
+                .containsExactlyInAnyOrder(PermissionName.FX_ADMINISTER, PermissionName.CROSSBORDER_ADMINISTER);
     }
 
     @Test

@@ -544,6 +544,18 @@ repudiation's with `P8-TSK-023`.
 | `fx.AvailabilityEnabled` | **Yes** | A second controller approved the enabling (`INV-AUD-04`): the enabling fact names the APPROVED request, so no fact enables without one (held by `fx V004`'s trigger for every writer), and `fx.FxAvailabilityChanged` published. |
 | `fx.AvailabilityEnableRejected` | **Yes** | A controller rejected an enable proposal - the proposer withdrawing their own included; the subject stays stopped. |
 
+### `crossborder` — `CrossborderAuditAction`
+
+| Action | Reason required | What it records, and why |
+|---|---|---|
+| `crossborder.CorridorPolicyProposed` | **Yes** | A holder of CROSSBORDER_ADMINISTER proposed a whole corridor policy version (`P9-TSK-015`, ADR-0080 §4): every corridor frozen from the proposal by trigger, its rails declared by the build and covering the destination, awaiting a DIFFERENT person. The summary names the version and the corridor count - never a fee; the reason is the proposer's. |
+| `crossborder.CorridorPolicyActivated` | **Yes** | A different person activated a proposed corridor policy version (`INV-AUD-04`), the build judged again, retiring its predecessor in the same transaction; the event `crossborder.CorridorPolicyActivated` carries the version. |
+| `crossborder.CorridorPolicyRejected` | **Yes** | A proposed corridor policy version was rejected - or withdrawn by its proposer; no corridor changed. |
+| `crossborder.CorridorDisabled` | **Yes** | One person disabled a corridor with a reason, at once (stopping money never waits for a second person); the event `crossborder.CorridorAvailabilityChanged` follows. |
+| `crossborder.CorridorEnableProposed` | **Yes** | Enabling a corridor was proposed; nothing is enabled until a different person approves. |
+| `crossborder.CorridorEnabled` | **Yes** | A different person approved a corridor enable proposal (`INV-AUD-04`) and the enabling fact was appended in the same transaction; the event `crossborder.CorridorAvailabilityChanged` follows. |
+| `crossborder.CorridorEnableRejected` | **Yes** | A corridor enable proposal was rejected - or withdrawn by its proposer; the corridor stays unavailable. |
+
 ### What is emitted, and what is declared not to be
 
 **The two registration actions are emitted; none of the three `platform` actions is**, and that is

@@ -1,6 +1,6 @@
 # Task History
 
-The per-task completion records that accumulated behind `## Current Task` - 208 "Previously" blocks, newest first, from `P9-TST-002` back to project initiation. *(`X-TSK-016` is cross-cutting and completed after `P9-TSK-010` and before `P9-TSK-011`, so it stands between them.)* *(`X-TSK-005` is cross-cutting and completed after `P7-TSK-014` and before `P7-TSK-015`, so it stands between them; its record came in with its branch's merge.)* *(`X-TSK-004` is cross-cutting and completed after the Phase 6 → 7 transition, so it stands second, between `P7-TSK-001` and the transition's record - the transition's block moved here by `P7-TSK-001`'s gate, exactly as an earlier form of this note said it would.)*
+The per-task completion records that accumulated behind `## Current Task` - 209 "Previously" blocks, newest first, from `P9-TSK-014` back to project initiation. *(`X-TSK-016` is cross-cutting and completed after `P9-TSK-010` and before `P9-TSK-011`, so it stands between them.)* *(`X-TSK-005` is cross-cutting and completed after `P7-TSK-014` and before `P7-TSK-015`, so it stands between them; its record came in with its branch's merge.)* *(`X-TSK-004` is cross-cutting and completed after the Phase 6 → 7 transition, so it stands second, between `P7-TSK-001` and the transition's record - the transition's block moved here by `P7-TSK-001`'s gate, exactly as an earlier form of this note said it would.)*
 
 **Archive.** These records were moved verbatim out of
 [`CURRENT_STATE.md`](../CURRENT_STATE.md) on 2026-09-20 so that the canonical description of
@@ -12,6 +12,44 @@ Current state: [`CURRENT_STATE.md`](../CURRENT_STATE.md) ·
 Authoritative backlog: [`BACKLOG.md`](../BACKLOG.md)
 
 ---
+
+### Previously
+
+**`P9-TSK-014` — The corridor rail, its position and its source** — `COMPLETE` (2026-10-05). **M9.5 OPENS AT
+1 OF 4: the corridor rail is declared truthfully, with its counterparty position, its settlement source and per-rail
+operations, before anything is sent** (PHASE_9_PLAN.md §3, §12.9.2; ADR-0080 §§1-2, ADR-0082; `INV-RAIL-01`,
+`INV-RAIL-04`, `INV-PAY-03`, `INV-SET-05`, `INV-REV-03`). **THE RAIL** (payments): `RefundMode.NONE` - credits only,
+coherent only on a push rail - and `RoutingRejection.DIRECTION_UNSUPPORTED`, judged first, for a `PAY_IN` on such a
+rail (payments `V024` regenerating the step's rejection `CHECK`); the `CorridorRail` port (beneficiary exchange with
+provider-attested attributes and a total payee check - a close match or any unmapped word is `NO_MATCH`; send keyed
+by our `E`; inquiry carrying acceptance, delivery and return facts at once; recall); `CorridorDeclaration` (coverage
+US/USD, JP/JPY, BH/BHD, return window 30 d, decision deadline 4 h, delivery estimate 1 d, charge bearer `OUR`; its
+counterparty is its rail id); `SimulatedCorridorAdapter` (`corridor-sim-a`, frozen in
+`RailMoneySemanticsArePinnedTest`, its wire confined to its file); **THE DIRECTORY**: `RailOperations` (`RailId ->
+PushRail | CorridorRail`, verified against the declared rails at startup), through which `Withdrawals` and
+`PaymentConfirmation` look their routed rail up - a planted corridor rule for a withdrawal is refused inside Tx1
+with nothing written or sent. **THE POSITION** (ledger `V024`): `CORRIDOR_CLEARING`, LIABILITY/CREDIT,
+counterparty-owned, `corridor-sim-a` and its USD/JPY/BHD accounts, joining the reconciled positions, the binding
+restated. **THE SOURCE**: settlement `V016` (`SIM_CORRIDOR_CSV` v1, `SimCorridorCsvFormat`, under
+`PAYOUT_PROVIDER_REPORT`; `CREDITED`/`BOUNCED`; both references required; a golden file and a fault test per field;
+source row `corridor-sim-a.settlement`), composed in `SettlementBeans` from the rail's declaration (`XBA-...`,
+{USD, JPY, BHD}, a EUR file `CURRENCY_NOT_SETTLED`) with its pull bean; reconciliation `V021`
+(`CROSSBORDER_PAYOUT`, `CROSSBORDER_RETURN` in the expectation, rule and lag `CHECK`s); the corridor v1 through the
+first-version door (`CorridorRuleSetV1`, the runbook's procedure). **SCOPED BY SOURCE**: `WaitingPayoutReturns` -
+one reader per worker, the merchant sweep's over the `PAYOUT_CLEARING` sources, the corridor's ready for `-023` -
+and `JdbcInternalReferenceLookup` resolving `END_TO_END_REF`/`PAYOUT_PROVIDER_REF` within the item's source family.
+**KEYS**: `FINAPP_CORRIDOR_PROVIDER_KEY`, `FINAPP_CORRIDOR_REPORT_KEY`, both URLs in `ProviderTransportGuard`.
+**THE CONTRACT BATTERY** (`SimulatedCorridorContractTest` against `SimulatedCorridorEngine`): a send deduped on `E`
+answering `Received`/`Accepted` with one credit counted, a lost response recovered by the same `E`, the payee check's
+totality, the inquiry's facts, recall only on the provider's word, totality, signed callbacks. **TWO DEVIATIONS,
+RECORDED** (PHASE_9_PLAN.md, ADR-0082): the corridor fee names its credit by the provider's reference, the key every
+`PAYOUT_FEE`'s original is read by; payments' expectation port gains the two kinds with their opener (`-019`).
+**PROBES** (Nine probes, nine caught, each by its own case), every restore byte-identical (sha256-verified; `MUTATION_TESTING.md` §2 +9 rows).
+**Multi-instance PASS** - no new contended state; the scoped reader filters the existing lock-free page and share
+re-read. Nothing posts. **NEXT**: `P9-TSK-015` `READY`. **Verified** by fresh runs - the fleet-wide hermetic tier 2494 across 408 suites and 18 modules;
+the architecture tier 157 across 27; the task's own database suites while built (CorridorSourceDatabaseTest 4, WithdrawalDatabaseTest, FxProviderSourceDatabaseTest and PayByBankDatabaseTest - 55 across 4); ALL 0 FAILURES - the
+other database tiers (the Phase 7 storm and the merchant payout-return suite among them) skipped on the owner's
+instruction.
 
 ### Previously
 

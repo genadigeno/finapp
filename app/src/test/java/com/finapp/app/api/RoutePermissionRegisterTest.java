@@ -190,7 +190,19 @@ class RoutePermissionRegisterTest {
                     entry("POST /v1/operator/fx/enable-requests/{rid}/rejection", PermissionName.FX_ADMINISTER),
                     // P9-TSK-013: the FX investigator's read of a trade's provenance - held by the
                     // reconciliation operator, never by whoever sets prices; audited at every serving.
-                    entry("GET /v1/operator/fx/trades/{id}/provenance", PermissionName.FX_INVESTIGATE)));
+                    entry("GET /v1/operator/fx/trades/{id}/provenance", PermissionName.FX_INVESTIGATE),
+                    // P9-TSK-015: the corridor doors - the corridor policy under four-eyes, the corridor
+                    // kill switch one person to stop and two to restart; held by FX_CONTROLLER beside the
+                    // pricing policy (ADR-0080 section 4).
+                    entry("GET /v1/operator/cross-border/corridor-policies", PermissionName.CROSSBORDER_ADMINISTER),
+                    entry("POST /v1/operator/cross-border/corridor-policies", PermissionName.CROSSBORDER_ADMINISTER),
+                    entry("POST /v1/operator/cross-border/corridor-policies/{id}/approval", PermissionName.CROSSBORDER_ADMINISTER),
+                    entry("POST /v1/operator/cross-border/corridor-policies/{id}/rejection", PermissionName.CROSSBORDER_ADMINISTER),
+                    entry("POST /v1/operator/cross-border/corridors/{corridor}/availability", PermissionName.CROSSBORDER_ADMINISTER),
+                    entry("POST /v1/operator/cross-border/corridor-enable-requests/{rid}/approval",
+                            PermissionName.CROSSBORDER_ADMINISTER),
+                    entry("POST /v1/operator/cross-border/corridor-enable-requests/{rid}/rejection",
+                            PermissionName.CROSSBORDER_ADMINISTER)));
 
     /** The MVC mapping, by name - actuator registers a second one (the rule test's reason). */
     @Autowired
@@ -223,7 +235,8 @@ class RoutePermissionRegisterTest {
                         PermissionName.MERCHANT_PAYOUT,
                         PermissionName.PAYMENT_ROUTING_ADMINISTER,
                         PermissionName.DISPUTE_ADMINISTER,
-                        PermissionName.FX_ADMINISTER);
+                        PermissionName.FX_ADMINISTER,
+                        PermissionName.CROSSBORDER_ADMINISTER);
     }
 
     private Map<String, PermissionName> declared() {

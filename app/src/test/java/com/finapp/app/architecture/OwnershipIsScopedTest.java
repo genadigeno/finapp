@@ -395,6 +395,51 @@ class OwnershipIsScopedTest {
                                     Scope.ADMINISTERED,
                                     "P9-TSK-008. The pinned version's FOR SHARE re-read in the quote's Tx2: the id comes only" + " from the quote request the same flight stored - never a request value; the pricing" + " policy is platform-wide configuration with no owner to scope by.")),
                     Map.entry(
+                            "com.finapp.crossborder.JdbcCorridorPolicyStore.insertProposal",
+                            new Entry(
+                                    Scope.ADMINISTERED,
+                                    "P9-TSK-015. The identifier is minted by the domain (CorridorPolicyId.next) inside the proposal's own transaction - never a request value. The corridor policy is platform-wide"
+                                        + " configuration with no owner to scope by; every door"
+                                        + " is behind @RequiresPermission(CROSSBORDER_ADMINISTER),"
+                                        + " asserted per route with nothing written by"
+                                        + " CorridorAdministrationEndpointDatabaseTest.")),
+                    Map.entry(
+                            "com.finapp.crossborder.JdbcCorridorPolicyStore.decide",
+                            new Entry(
+                                    Scope.ADMINISTERED,
+                                    "P9-TSK-015. The version is locked FOR UPDATE by lock(id) in the same transaction first, and the move is conditional on its status (V002's machine trigger beneath). The corridor policy is platform-wide"
+                                        + " configuration with no owner to scope by; every door"
+                                        + " is behind @RequiresPermission(CROSSBORDER_ADMINISTER),"
+                                        + " asserted per route with nothing written by"
+                                        + " CorridorAdministrationEndpointDatabaseTest.")),
+                    Map.entry(
+                            "com.finapp.crossborder.JdbcCorridorPolicyStore.retire",
+                            new Entry(
+                                    Scope.ADMINISTERED,
+                                    "P9-TSK-015. The id comes only from lockActive's row, locked in the same transaction - never a request value. The corridor policy is platform-wide"
+                                        + " configuration with no owner to scope by; every door"
+                                        + " is behind @RequiresPermission(CROSSBORDER_ADMINISTER),"
+                                        + " asserted per route with nothing written by"
+                                        + " CorridorAdministrationEndpointDatabaseTest.")),
+                    Map.entry(
+                            "com.finapp.crossborder.JdbcCorridorPolicyStore.appendEvent",
+                            new Entry(
+                                    Scope.ADMINISTERED,
+                                    "P9-TSK-015. The id comes only from a row this transaction just inserted or locked; the history is append-only for every writer. The corridor policy is platform-wide"
+                                        + " configuration with no owner to scope by; every door"
+                                        + " is behind @RequiresPermission(CROSSBORDER_ADMINISTER),"
+                                        + " asserted per route with nothing written by"
+                                        + " CorridorAdministrationEndpointDatabaseTest.")),
+                    Map.entry(
+                            "com.finapp.crossborder.JdbcCorridorPolicyStore.corridorsOf",
+                            new Entry(
+                                    Scope.ADMINISTERED,
+                                    "P9-TSK-015. A private loader: the version id comes only from a version row this store just read. The corridor policy is platform-wide"
+                                        + " configuration with no owner to scope by; every door"
+                                        + " is behind @RequiresPermission(CROSSBORDER_ADMINISTER),"
+                                        + " asserted per route with nothing written by"
+                                        + " CorridorAdministrationEndpointDatabaseTest.")),
+                    Map.entry(
                             "com.finapp.fx.JdbcPricingPolicyStore.insertProposal",
                             new Entry(
                                     Scope.ADMINISTERED,

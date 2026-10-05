@@ -12913,7 +12913,7 @@ break row, as the approval door must.)*
 
 # Phase 9 — FX and Cross-Border Payments
 
-Status: `IN_PROGRESS` — started 2026-10-03 with `P9-TSK-001` (15 of 30 items complete, M9.1 to M9.4 closed, M9.5 at 1 of 4); entry gate passed 2026-10-02 by the Phase 8 → 9 transition
+Status: `IN_PROGRESS` — started 2026-10-03 with `P9-TSK-001` (16 of 30 items complete, M9.1 to M9.4 closed, M9.5 at 2 of 4); entry gate passed 2026-10-02 by the Phase 8 → 9 transition
 ([`reviews/PHASE_8_TO_9_TRANSITION.md`](reviews/PHASE_8_TO_9_TRANSITION.md)), elaborated to task
 granularity by the same transition: thirty items (`P9-TSK-001`…`-027`, `P9-TST-001`, `P9-TST-002`,
 `P9-DOC-001`) across nine milestones, with `P9-TSK-001` marked `READY`. The engineering plan is
@@ -13636,7 +13636,8 @@ providers), each owned by Phase 15 and gating nothing here.
   misroute is refused; no reader or lookup crosses from one source family to the other.
 - **Definition of done**: `DOD-SEC`, `DOD-ARCH`, `DOD-FIN`. **Risk**: Medium. **Cx**: L.
 
-**P9-TSK-015 — The corridor policy and availability** — `READY` (marked by `P9-TSK-014`'s completion gate, 2026-10-05)
+**P9-TSK-015 — The corridor policy and availability** — `COMPLETE` (2026-10-05; marked `READY` by `P9-TSK-014`'s completion gate)
+- **As built** (2026-10-05): as `CURRENT_STATE.md` §Just completed records. `required_data` is a set of named data (`RequiredData`), the platform holding `BENEFICIARY_NAME` and `ENTITY_TYPE`; availability is keyed by the corridor's stable code `S-D-CC` across versions; the operator routes are `/v1/operator/cross-border/corridor-policies` (+ `/{id}/approval|rejection`), `/corridors/{corridor}/availability` and `/corridor-enable-requests/{rid}/approval|rejection`.
 - **Objective**: corridors as four-eyes, versioned data, discoverable by customers.
 - **Bounded context**: `crossborder`, `identity`.
 - **Dependencies**: `-007` (the role), `-014`.
@@ -13673,7 +13674,7 @@ providers), each owned by Phase 15 and gating nothing here.
 - **Acceptance criteria**: no corridor is offered without two named persons.
 - **Definition of done**: `DOD-FIN`, `DOD-SEC`, `DOD-API`, `DOD-EVENT`. **Risk**: Low. **Cx**: M.
 
-**P9-TSK-016 — Counterparty screening in kyc, and the Phase 13 seams** — `PLANNED`
+**P9-TSK-016 — Counterparty screening in kyc, and the Phase 13 seams** — `READY` (marked by `P9-TSK-015`'s completion gate, 2026-10-05)
 - **Objective**: kyc screens counterparties at transaction time; a hit waits for a person; the risk
   and limit seams are reserved.
 - **Bounded context**: `kyc`, `identity`, `crossborder`, `app`.

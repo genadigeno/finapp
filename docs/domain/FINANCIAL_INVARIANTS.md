@@ -1282,6 +1282,12 @@ the activator proposed it (`CHECK decided_by <> proposed_by` on an `ACTIVE` rule
 Person-distinctness is by actor id; resolution rows hold both ids, so the recorded debt of
 operators audited as `CUSTOMER` does not weaken it.)*
 
+*(As built by `P9-TSK-015` (2026-10-05): the corridor policy and the corridor enable request are four-eyes at
+every rank - the domain refuses the proposer's approval, and crossborder `V002`'s `CHECK`s refuse it for a raw
+writer, with no seed exemption, so no corridor is offered without two named persons (`CorridorPolicyDatabaseTest`,
+`CorridorAvailabilityDatabaseTest`, `CorridorAdministrationEndpointDatabaseTest`; the probes in
+`MUTATION_TESTING.md` §2).)*
+
 ---
 
 # Credit and Decisioning — `INV-CRD`

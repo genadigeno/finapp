@@ -357,5 +357,21 @@ public enum PermissionName {
      * legs' breaks needs the chain that explains them; whoever sets prices ({@code FX_CONTROLLER})
      * does not investigate the trades priced by them. Read-only - nothing here moves a value.
      */
-    FX_INVESTIGATE
+    FX_INVESTIGATE,
+
+    /**
+     * Administer corridors (`P9-TSK-015`, ADR-0080 section 4, `PHASE_9_PLAN.md` §11): propose, approve
+     * or reject a corridor policy version (four-eyes: same permission, different persons, held at the
+     * domain and by {@code CHECK}); disable a corridor (one person and a reason, at once); propose,
+     * approve or reject a corridor enable request (four-eyes). The routes are
+     * {@code GET/POST /v1/operator/cross-border/corridor-policies}, {@code .../'{id}'/approval|rejection},
+     * {@code POST /v1/operator/cross-border/corridors/'{corridor}'/availability} and
+     * {@code .../corridor-enable-requests/'{rid}'/approval|rejection}; it names the {@code crossborder.*}
+     * corridor audit actions and ships with its real check sites.
+     *
+     * <p><strong>Held by {@code FX_CONTROLLER}</strong>, beside {@link #FX_ADMINISTER}: the transfer
+     * fee and the corridor limits are the same revenue and exposure policy as the FX margin, decided by
+     * the same population - which can neither reverse trades nor clear screenings.
+     */
+    CROSSBORDER_ADMINISTER
 }
