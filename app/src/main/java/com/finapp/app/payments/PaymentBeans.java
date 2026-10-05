@@ -55,7 +55,7 @@ import org.springframework.transaction.support.TransactionTemplate;
  * answers the honest 503 for its absence (the {@code ObjectProvider} decision recorded there).
  */
 @Configuration
-class PaymentBeans {
+public class PaymentBeans {
 
     @Bean
     PaymentIntentStore<Connection> paymentIntentStore() {
@@ -210,14 +210,67 @@ class PaymentBeans {
      */
     @Bean
     com.finapp.payments.PaymentRails paymentRails() {
-        return com.finapp.payments.PaymentRails.of(
-                java.util.List.of(
-                        SimulatedCardPspAdapter.RAIL,
-                        com.finapp.payments.SimulatedInstantSchemeAdapter.RAIL,
-                        // The book rail (P7-TSK-011, ADR-0059 section 6): declared
-                        // unconditionally like every rail - no adapter exists because
-                        // no wire does; liveness stays routing's database fact.
-                        com.finapp.payments.BookRail.RAIL));
+        return DECLARED_RAILS;
+    }
+
+    /**
+     * The declared rails, as data the other compositions read (`P9-TSK-014`): the counterparty chart
+     * and the settlement register read each corridor rail's position and currencies off these
+     * declarations, never naming them.
+     */
+    public static final com.finapp.payments.PaymentRails DECLARED_RAILS =
+            com.finapp.payments.PaymentRails.of(
+                    java.util.List.of(
+                            SimulatedCardPspAdapter.RAIL,
+                            com.finapp.payments.SimulatedInstantSchemeAdapter.RAIL,
+                            // The book rail (P7-TSK-011, ADR-0059 section 6): declared
+                            // unconditionally like every rail - no adapter exists because
+                            // no wire does; liveness stays routing's database fact.
+                            com.finapp.payments.BookRail.RAIL,
+                            // The corridor rail (P9-TSK-014, ADR-0080 section 1): declared
+                            // unconditionally too - its position, accounts and source compose at
+                            // every startup, configured adapter or not; no routing rule names it yet.
+                            com.finapp.payments.SimulatedCorridorAdapter.RAIL));
+
+    /** Every declared corridor rail's corridor facts (`P9-TSK-014`, ADR-0080 section 1). */
+    public static final java.util.List<com.finapp.payments.CorridorDeclaration> CORRIDOR_DECLARATIONS =
+            java.util.List.of(com.finapp.payments.SimulatedCorridorAdapter.DECLARATION);
+
+    /**
+     * The corridor provider {@code corridor-sim-a} (`P9-TSK-014`, ADR-0080) - wired when configured,
+     * like the instant rail: the bean is what makes the confined credential a property the
+     * application really reads. Nothing calls it yet; the outbound credit (`P9-TSK-019`) sends
+     * through it and the beneficiary registration (`P9-TSK-017`) exchanges through it.
+     */
+    @Bean
+    @ConditionalOnProperty("finapp.corridor.provider.url")
+    com.finapp.payments.CorridorRail corridorRail(
+            @Value("${finapp.corridor.provider.url}") java.net.URI url,
+            @Value("${finapp.corridor.provider.timeout:PT2S}") java.time.Duration timeout,
+            @Value("${finapp.corridor.provider.key:" + com.finapp.app.mfa.MfaKey.MARKED_LOCAL_DEFAULT + "}")
+                    String configuredKey,
+            Environment environment) {
+        boolean loopback = DatabaseEndpoint.isEntirelyLoopback(DatabaseEndpoint.url(environment));
+        return new com.finapp.payments.SimulatedCorridorAdapter(
+                url, timeout, CorridorProviderKey.decode(configuredKey, loopback));
+    }
+
+    /**
+     * Which rails speak which operation (`P9-TSK-014`, ADR-0080 section 2, paying ADR-0059 section 1):
+     * the instant rail's push adapter and the corridor rail's adapter where configured, beside every
+     * declared corridor rail's declaration - verified against the declared rails at every startup.
+     */
+    @Bean
+    com.finapp.payments.RailOperations railOperations(
+            com.finapp.payments.PaymentRails paymentRails,
+            org.springframework.beans.factory.ObjectProvider<com.finapp.payments.PushRail> instantRail,
+            org.springframework.beans.factory.ObjectProvider<com.finapp.payments.CorridorRail> corridorRail) {
+        java.util.Map<com.finapp.payments.RailId, com.finapp.payments.PushRail> push = new java.util.HashMap<>();
+        instantRail.ifAvailable(
+                rail -> push.put(com.finapp.payments.SimulatedInstantSchemeAdapter.RAIL.id(), rail));
+        java.util.Map<com.finapp.payments.RailId, com.finapp.payments.CorridorRail> corridor = new java.util.HashMap<>();
+        corridorRail.ifAvailable(rail -> corridor.put(rail.id(), rail));
+        return com.finapp.payments.RailOperations.of(paymentRails, CORRIDOR_DECLARATIONS, push, corridor);
     }
 
     /**
@@ -303,7 +356,7 @@ class PaymentBeans {
             com.finapp.ledger.HoldService holdService,
             com.finapp.payments.RoutingStore<Connection> routingStore,
             com.finapp.payments.PaymentRails paymentRails,
-            com.finapp.payments.PushRail instantRail,
+            com.finapp.payments.RailOperations railOperations,
             ProviderEvidenceStore<Connection> providerEvidenceStore,
             IdempotentExecutor idempotentExecutor,
             AuditWriter<Connection> auditWriter,
@@ -316,8 +369,8 @@ class PaymentBeans {
                 holdService,
                 routingStore,
                 paymentRails,
-                instantRail,
-                com.finapp.payments.SimulatedInstantSchemeAdapter.RAIL.id(),
+                // The routed rail is looked up, never wired (P9-TSK-014, ADR-0080 section 2).
+                railOperations,
                 providerEvidenceStore,
                 idempotentExecutor,
                 auditWriter,
@@ -1033,8 +1086,7 @@ class PaymentBeans {
             IdGenerator ids,
             Clock clock,
             com.finapp.payments.RoutingTelemetry routingTelemetry,
-            org.springframework.beans.factory.ObjectProvider<com.finapp.payments.PushRail>
-                    pushRail) {
+            com.finapp.payments.RailOperations railOperations) {
         return new PaymentConfirmation(
                 paymentTransactionRunner,
                 paymentIntentStore,
@@ -1052,10 +1104,9 @@ class PaymentBeans {
                 ids,
                 clock,
                 routingTelemetry,
-                // The push dispatch (P7-TSK-009): present exactly when the instant rail
-                // is configured; an Optional because payments cannot name Spring's
-                // ObjectProvider, and the absent case is the bank branch's honest 503.
-                java.util.Optional.ofNullable(pushRail.getIfAvailable()));
+                // The push dispatch (P7-TSK-009): the routed rail's push adapter, looked up in
+                // the directory (P9-TSK-014); none configured is the bank branch's honest 503.
+                railOperations);
     }
 
     /**

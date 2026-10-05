@@ -1404,7 +1404,7 @@ class PaymentRefundDatabaseTest {
                 IDS,
                 CLOCK,
                 com.finapp.payments.RoutingTelemetry.NONE,
-                java.util.Optional.empty())
+                com.finapp.payments.RailOperations.none())
                                         .confirm(created.party(), created.intent()))
                 .isInstanceOf(com.finapp.payments.NoWalletForPaymentException.class);
         assertThat(psp.requestCount(SimulatedCardPspAdapter.AUTHORIZATIONS_PATH))
@@ -1480,7 +1480,7 @@ class PaymentRefundDatabaseTest {
                 IDS,
                 CLOCK,
                 com.finapp.payments.RoutingTelemetry.NONE,
-                java.util.Optional.empty())
+                com.finapp.payments.RailOperations.none())
                                             .confirm(created.party(), created.intent());
                                 }
                                 return null;
@@ -1886,7 +1886,7 @@ class PaymentRefundDatabaseTest {
                 IDS,
                 CLOCK,
                 com.finapp.payments.RoutingTelemetry.NONE,
-                java.util.Optional.empty())
+                com.finapp.payments.RailOperations.none())
                 .confirm(party, created.intent());
         PaymentAttemptId attemptId =
                 runner.inTransaction(

@@ -432,13 +432,13 @@ cross-border payments are holds and corridor acceptances, beneficiary screening 
 returns credited in the currency received; clearings are keyed by counterparty; callbacks are
 hints; reconciliation never converts currency and gains causes, never types. Ten new invariants
 and thirteen restated take the platform to **120**. Thirty backlog items across nine milestones
-(M9.1–M9.9) plus `X-TSK-013`…`-015`. **14 of 30 items complete** (M9.1 to M9.4 closed): the modules and floors
+(M9.1–M9.9) plus `X-TSK-013`…`-015`. **15 of 30 items complete** (M9.1 to M9.4 closed, M9.5 at 1 of 4): the modules and floors
 (`P9-TSK-001`), the conversion arithmetic (`P9-TSK-002`), JPY and BHD postable (`P9-TSK-003`), multi-currency
 wallets (`P9-TSK-004`), reference rates (`P9-TSK-005`), the FX provider port (`P9-TSK-006`), the
 pricing policy (`P9-TSK-007`), the quote (`P9-TSK-008`), wallet conversion (`P9-TSK-009`),
 counterparty-keyed clearing positions (`P9-TSK-010`), the FX provider's source (`P9-TSK-011`), the FX cover
-(`P9-TSK-012`), FX explained to cash (`P9-TSK-013`) and the value-preservation battery (`P9-TST-002`); next
-**`P9-TSK-014` — The corridor rail, its position and its source** — `READY`
+(`P9-TSK-012`), FX explained to cash (`P9-TSK-013`), the value-preservation battery (`P9-TST-002`) and the corridor
+rail (`P9-TSK-014`); next **`P9-TSK-015` — The corridor policy and availability** — `READY`
 ([§Current Task](#current-task) is kept current).
 
 ## Current Milestone
@@ -454,30 +454,50 @@ since M0.1". Moved, not edited.)*
 
 ## Current Task
 
-**`P9-TSK-014` — The corridor rail, its position and its source** — `READY`: marked
-by `P9-TST-002`'s completion gate (2026-10-05). **Not started.**
+**`P9-TSK-015` — The corridor policy and availability** — `READY`: marked
+by `P9-TSK-014`'s completion gate (2026-10-05). **Not started.**
 
 ### Just completed
 
-**`P9-TST-002` — The value-preservation and rounding battery** — `COMPLETE` (2026-10-05). **M9.4 CLOSES AT
-2 OF 2: at volume, conversion creates and destroys no value across 0, 2 and 3 minor units** (PHASE_9_PLAN.md
-§13; `INV-ACC-01`, `INV-FX-01`, `INV-FX-03`…`-07`, `INV-BAL-03`). `FxValuePreservationBatteryDatabaseTest`: ten
-concurrent converters through the real doors over all twenty directional pairs and both fixed sides, amounts from each
-fixed currency's minimum to its maximum (the bounds' edges first, then log-uniform, seeded), the reference refreshed
-throughout; a sample of the covers executed, one in five rejected and requoted at a moved rate (gains and losses both
-realised); then ONE `REPEATABLE READ` snapshot: the trial balance zero in all five currencies, `FxBooksProof` clean in
-every book and currency, `FxPlanVerification` clean over every booked trade (the golden replay), every residual of the
-run within one minor unit with BOTH signs present, and the plan verdict gauge 1. Run in full while built: 10,000 conversions by ten converters, every one booked, every identity holding, in 353 s. The size is
-`FINAPP_FX_BATTERY_CONVERSIONS` (default 10,000), so a probe runs it small. **PROBES** (Two probes, both caught, each by its own identity - the directed rounding left no negative residual in the run (the both-signs census; the replay, using the same function, could not see it), and the loss posted as a gain broke FX_REALISED_GAINS and FX_REALISED_LOSSES in EUR (-7.44 against 0, and 0 against 7.44) in the books proof), every
-restore byte-identical (sha256-verified; `MUTATION_TESTING.md` §4's `P9-TST-002` row). **Multi-instance PASS** -
-ten converters, every attempted conversion booked (counted). No production change. **NEXT**: `P9-TSK-014` `READY`.
-**Verified** by fresh runs - the fleet-wide hermetic tier 2454 across 399 suites and 18 modules; the architecture tier 157 across 27; the app
-hermetic tier with every document guard 716 across 134 within it; ALL 0 FAILURES - the other database tiers skipped on the
-owner's instruction.
+**`P9-TSK-014` — The corridor rail, its position and its source** — `COMPLETE` (2026-10-05). **M9.5 OPENS AT
+1 OF 4: the corridor rail is declared truthfully, with its counterparty position, its settlement source and per-rail
+operations, before anything is sent** (PHASE_9_PLAN.md §3, §12.9.2; ADR-0080 §§1-2, ADR-0082; `INV-RAIL-01`,
+`INV-RAIL-04`, `INV-PAY-03`, `INV-SET-05`, `INV-REV-03`). **THE RAIL** (payments): `RefundMode.NONE` - credits only,
+coherent only on a push rail - and `RoutingRejection.DIRECTION_UNSUPPORTED`, judged first, for a `PAY_IN` on such a
+rail (payments `V024` regenerating the step's rejection `CHECK`); the `CorridorRail` port (beneficiary exchange with
+provider-attested attributes and a total payee check - a close match or any unmapped word is `NO_MATCH`; send keyed
+by our `E`; inquiry carrying acceptance, delivery and return facts at once; recall); `CorridorDeclaration` (coverage
+US/USD, JP/JPY, BH/BHD, return window 30 d, decision deadline 4 h, delivery estimate 1 d, charge bearer `OUR`; its
+counterparty is its rail id); `SimulatedCorridorAdapter` (`corridor-sim-a`, frozen in
+`RailMoneySemanticsArePinnedTest`, its wire confined to its file); **THE DIRECTORY**: `RailOperations` (`RailId ->
+PushRail | CorridorRail`, verified against the declared rails at startup), through which `Withdrawals` and
+`PaymentConfirmation` look their routed rail up - a planted corridor rule for a withdrawal is refused inside Tx1
+with nothing written or sent. **THE POSITION** (ledger `V024`): `CORRIDOR_CLEARING`, LIABILITY/CREDIT,
+counterparty-owned, `corridor-sim-a` and its USD/JPY/BHD accounts, joining the reconciled positions, the binding
+restated. **THE SOURCE**: settlement `V016` (`SIM_CORRIDOR_CSV` v1, `SimCorridorCsvFormat`, under
+`PAYOUT_PROVIDER_REPORT`; `CREDITED`/`BOUNCED`; both references required; a golden file and a fault test per field;
+source row `corridor-sim-a.settlement`), composed in `SettlementBeans` from the rail's declaration (`XBA-...`,
+{USD, JPY, BHD}, a EUR file `CURRENCY_NOT_SETTLED`) with its pull bean; reconciliation `V021`
+(`CROSSBORDER_PAYOUT`, `CROSSBORDER_RETURN` in the expectation, rule and lag `CHECK`s); the corridor v1 through the
+first-version door (`CorridorRuleSetV1`, the runbook's procedure). **SCOPED BY SOURCE**: `WaitingPayoutReturns` -
+one reader per worker, the merchant sweep's over the `PAYOUT_CLEARING` sources, the corridor's ready for `-023` -
+and `JdbcInternalReferenceLookup` resolving `END_TO_END_REF`/`PAYOUT_PROVIDER_REF` within the item's source family.
+**KEYS**: `FINAPP_CORRIDOR_PROVIDER_KEY`, `FINAPP_CORRIDOR_REPORT_KEY`, both URLs in `ProviderTransportGuard`.
+**THE CONTRACT BATTERY** (`SimulatedCorridorContractTest` against `SimulatedCorridorEngine`): a send deduped on `E`
+answering `Received`/`Accepted` with one credit counted, a lost response recovered by the same `E`, the payee check's
+totality, the inquiry's facts, recall only on the provider's word, totality, signed callbacks. **TWO DEVIATIONS,
+RECORDED** (PHASE_9_PLAN.md, ADR-0082): the corridor fee names its credit by the provider's reference, the key every
+`PAYOUT_FEE`'s original is read by; payments' expectation port gains the two kinds with their opener (`-019`).
+**PROBES** (Nine probes, nine caught, each by its own case), every restore byte-identical (sha256-verified; `MUTATION_TESTING.md` §2 +9 rows).
+**Multi-instance PASS** - no new contended state; the scoped reader filters the existing lock-free page and share
+re-read. Nothing posts. **NEXT**: `P9-TSK-015` `READY`. **Verified** by fresh runs - the fleet-wide hermetic tier 2494 across 408 suites and 18 modules;
+the architecture tier 157 across 27; the task's own database suites while built (CorridorSourceDatabaseTest 4, WithdrawalDatabaseTest, FxProviderSourceDatabaseTest and PayByBankDatabaseTest - 55 across 4); ALL 0 FAILURES - the
+other database tiers (the Phase 7 storm and the merchant payout-return suite among them) skipped on the owner's
+instruction.
 
 ### Previously
 
-The per-task completion records — 207 blocks, from `P9-TSK-013` back to project initiation
+The per-task completion records — 208 blocks, from `P9-TST-002` back to project initiation
 (`X-TSK-016` cross-cutting, standing between `P9-TSK-011` and `P9-TSK-010`; `X-TSK-005` cross-cutting, standing between `P7-TSK-015` and `P7-TSK-014`; `X-TSK-004`
 cross-cutting, standing between `P7-TSK-001` and the Phase 6 → 7 transition) — are archived in
 [`history/TASK_HISTORY.md`](history/TASK_HISTORY.md).
@@ -1022,8 +1042,8 @@ Resolved during initiation:
 
 ## Next Task
 
-**`P9-TSK-014` — The corridor rail, its position and its source** — `READY` (the
-Current Task), marked by `P9-TST-002`'s completion gate.
+**`P9-TSK-015` — The corridor policy and availability** — `READY` (the
+Current Task), marked by `P9-TSK-014`'s completion gate.
 *(This section read "`P8-TSK-009` — `READY`" from `P8-TSK-008`'s gate until
 `P8-TSK-013`'s record found it — the stale-second-copy class, in the section whose
 whole job is to mirror.)*

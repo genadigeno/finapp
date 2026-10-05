@@ -13,8 +13,17 @@ import java.util.Objects;
 import java.util.Optional;
 import java.util.UUID;
 
-/** {@link WaitingPayoutReturns} over JDBC (`P8-TSK-019`, ADR-0033: explicit SQL, no ORM). */
+/**
+ * {@link WaitingPayoutReturns} over JDBC (`P8-TSK-019`, ADR-0033: explicit SQL, no ORM) - scoped to
+ * the sources its worker is handed ({@code i.source_id = ANY(?)}, `P9-TSK-014`).
+ */
 public final class JdbcWaitingPayoutReturns implements WaitingPayoutReturns {
+
+    private final SourceScope scope;
+
+    public JdbcWaitingPayoutReturns(SourceScope scope) {
+        this.scope = Objects.requireNonNull(scope, "scope must not be null");
+    }
 
     private static final String SELECT =
             "SELECT i.id, i.run_id, r.batch_id, i.source_id, i.amount_minor, i.currency,"
@@ -28,7 +37,7 @@ public final class JdbcWaitingPayoutReturns implements WaitingPayoutReturns {
                     + " FROM reconciliation.external_item i"
                     + " JOIN reconciliation.reconciliation_batch r ON r.id = i.run_id"
                     + " WHERE i.status = 'UNMATCHED' AND i.line_type = 'PAYOUT_RETURNED'"
-                    + " AND r.batch_id IS NOT NULL";
+                    + " AND r.batch_id IS NOT NULL AND i.source_id = ANY(?)";
 
     @Override
     public List<WaitingReturn> page(Connection unitOfWork, Optional<UUID> after, int limit) {
@@ -52,6 +61,7 @@ public final class JdbcWaitingPayoutReturns implements WaitingPayoutReturns {
                         SELECT + keyset + " ORDER BY r.source_sequence, i.line_no, i.id"
                                 + " LIMIT ?")) {
             int parameter = 1;
+            read.setArray(parameter++, scoped(unitOfWork));
             if (after.isPresent()) {
                 read.setObject(parameter++, after.get());
             }
@@ -75,7 +85,8 @@ public final class JdbcWaitingPayoutReturns implements WaitingPayoutReturns {
         Objects.requireNonNull(itemId, "itemId must not be null");
         try (PreparedStatement read =
                 unitOfWork.prepareStatement(SELECT + " AND i.id = ? FOR SHARE OF i")) {
-            read.setObject(1, itemId);
+            read.setArray(1, scoped(unitOfWork));
+            read.setObject(2, itemId);
             try (ResultSet rows = read.executeQuery()) {
                 return rows.next() ? Optional.of(map(rows)) : Optional.empty();
             }
@@ -83,6 +94,11 @@ public final class JdbcWaitingPayoutReturns implements WaitingPayoutReturns {
             throw new ReconciliationStorageException(
                     "could not re-read a waiting payout return under its share lock", failure);
         }
+    }
+
+    /** The worker's sources as a {@code uuid[]} - empty scopes read nothing, never everything. */
+    private java.sql.Array scoped(Connection unitOfWork) throws SQLException {
+        return unitOfWork.createArrayOf("uuid", scope.sourceIds(unitOfWork).toArray());
     }
 
     private static WaitingReturn map(ResultSet row) throws SQLException {

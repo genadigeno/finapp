@@ -45,7 +45,9 @@ public class ProviderTransportGuard {
                     // P9-TSK-005: the independent reference rate (ADR-0075).
                     "finapp.fx.reference.url",
                     // P9-TSK-006: the FX provider fx-sim-a (ADR-0075, ADR-0077).
-                    "finapp.fx.provider.url");
+                    "finapp.fx.provider.url",
+                    // P9-TSK-014: the corridor provider corridor-sim-a (ADR-0080).
+                    "finapp.corridor.provider.url");
 
     /**
      * Every settlement pull source URL (`P8-TSK-021`): {@code https} or {@code sftp} off
@@ -58,7 +60,9 @@ public class ProviderTransportGuard {
                     "finapp.settlement.payout.report.url",
                     "finapp.settlement.bank.statement.url",
                     // P9-TSK-011: the FX provider's trade report.
-                    "finapp.fx.report.url");
+                    "finapp.fx.report.url",
+                    // P9-TSK-014: the corridor provider's settlement report.
+                    "finapp.corridor.report.url");
 
     ProviderTransportGuard(Environment environment) {
         for (String property : PROVIDER_URLS) {

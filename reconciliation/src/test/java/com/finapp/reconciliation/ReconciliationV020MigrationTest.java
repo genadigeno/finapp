@@ -22,16 +22,22 @@ class ReconciliationV020MigrationTest {
 
     private static final String V020 = "db/migration/reconciliation/V020__the_fx_provider_vocabulary.sql";
 
+    /** ExpectationKind's list as V020 wrote it, before V021 appended the corridor's kinds. */
+    private static final String V020_KINDS =
+            "'CARD_CAPTURE', 'CARD_REFUND', 'CHARGEBACK', 'CHARGEBACK_REVERSAL', 'DISPUTE_FEE', 'PUSH_PAY_IN', 'UNMATCHED_CONFIRMATION', 'PUSH_WITHDRAWAL', 'PUSH_RETURN', 'MERCHANT_PAYOUT', 'PAYOUT_RETURN', 'REMITTANCE', 'FX_SELL_LEG', 'FX_BUY_LEG'";
+
     @Test
     @DisplayName("each CHECK is its enum's whole list")
     void everyListIsTheEnum() {
         String sql = normalized(migration());
         assertThat(sql)
-                .contains(normalized("ADD CONSTRAINT expectation_kind CHECK (kind IN (" + ExpectationKind.sqlValueList() + "))"))
+                // The kind lists as V020 wrote them - applied history: V021 (P9-TSK-014) appended the
+                // corridor's two kinds, and ReconciliationV021MigrationTest holds the current list.
+                .contains(normalized("ADD CONSTRAINT expectation_kind CHECK (kind IN (" + V020_KINDS + "))"))
                 .contains(normalized("ADD CONSTRAINT rule_expectation_kind CHECK (expectation_kind IS NULL OR expectation_kind IN ("
-                        + ExpectationKind.sqlValueList() + "))"))
+                        + V020_KINDS + "))"))
                 .contains(normalized("ADD CONSTRAINT rule_set_lag_kind CHECK (expectation_kind IN ("
-                        + ExpectationKind.sqlValueList() + "))"))
+                        + V020_KINDS + "))"))
                 .contains(normalized("ADD CONSTRAINT expectation_key_kind CHECK (key_kind IN (" + KeyKind.sqlValueList() + "))"))
                 .contains(normalized("ADD CONSTRAINT reference_alias_kind CHECK (key_kind IN (" + KeyKind.sqlValueList() + "))"))
                 .contains(normalized("ADD CONSTRAINT reference_alias_anchor_kind CHECK (anchor_kind IN ("
@@ -59,6 +65,7 @@ class ReconciliationV020MigrationTest {
     void theMembers() {
         Set<ExpectationKind> kinds = EnumSet.allOf(ExpectationKind.class);
         kinds.removeAll(EnumSet.range(ExpectationKind.CARD_CAPTURE, ExpectationKind.REMITTANCE));
+        kinds.removeAll(EnumSet.of(ExpectationKind.CROSSBORDER_PAYOUT, ExpectationKind.CROSSBORDER_RETURN));
         assertThat(kinds).containsExactly(ExpectationKind.FX_SELL_LEG, ExpectationKind.FX_BUY_LEG);
         assertThat(ExternalLineType.fxVocabulary())
                 .containsExactly(ExternalLineType.FX_SOLD, ExternalLineType.FX_BOUGHT, ExternalLineType.FX_FEE);

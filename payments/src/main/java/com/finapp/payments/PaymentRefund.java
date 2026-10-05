@@ -513,6 +513,13 @@ public final class PaymentRefund {
                         }
                         yield intent.amount();
                     }
+                    case NONE ->
+                            // No attempt rides a credits-only rail: routing refuses every PAY_IN on
+                            // it (P9-TSK-014, DIRECTION_UNSUPPORTED) - a stored attempt there is a
+                            // wiring fault, loud before anything is written.
+                            throw new IllegalStateException(
+                                    "the attempt's rail '" + attempt.rail().value() + "' declares"
+                                            + " RefundMode.NONE and carries no pay-in (ADR-0080)");
                     case BOOK_REFUND -> {
                         // The book rail's refund (P7-TSK-011, ADR-0059 section 6): the
                         // eligible subject is the book machine's own EXECUTED, the base is
@@ -594,6 +601,9 @@ public final class PaymentRefund {
                                     hold.id(),
                                     new ProviderIdempotencyReference(
                                             ids.next().toString().replace("-", "")));
+                    case NONE ->
+                            throw new IllegalStateException(
+                                    "RefundMode.NONE was refused above, before the hold");
                     case BOOK_REFUND ->
                             Refund.createBookRefund(
                                     ids,

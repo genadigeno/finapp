@@ -47,7 +47,12 @@ class SettlementReportKeysTest {
                     new Key(
                             "FX provider report key",
                             "FINAPP_FX_REPORT_KEY",
-                            FxReportKey::decode));
+                            FxReportKey::decode),
+                    // P9-TSK-014: the corridor provider's settlement report.
+                    new Key(
+                            "corridor provider report key",
+                            "FINAPP_CORRIDOR_REPORT_KEY",
+                            CorridorReportKey::decode));
 
     @Test
     @DisplayName("each local default is separated from the other three and from the provider"

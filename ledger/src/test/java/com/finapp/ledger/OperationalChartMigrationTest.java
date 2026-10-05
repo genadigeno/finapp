@@ -94,6 +94,10 @@ class OperationalChartMigrationTest {
                     // provider leg debits. Decided here, with the purpose's admission (V021),
                     // before its first account exists (V022, P9-TSK-011; INV-LED-06).
                     Map.entry(AccountPurpose.FX_PROVIDER_CLEARING, AccountType.ASSET),
+                    // ADR-0080 section 1 / PHASE_9_PLAN.md section 12.6 (P9-TSK-014): what the platform
+                    // owes one corridor provider - a payable, growing on the credit side an accepted
+                    // outbound credit credits (P9-TSK-019).
+                    Map.entry(AccountPurpose.CORRIDOR_CLEARING, AccountType.LIABILITY),
                     Map.entry(AccountPurpose.ROUNDING_RESIDUAL, AccountType.EXPENSE),
                     Map.entry(AccountPurpose.SUSPENSE_UNMATCHED, AccountType.LIABILITY));
 
@@ -235,7 +239,9 @@ class OperationalChartMigrationTest {
             List.of(
                     "db/migration/ledger/V021__counterparty_keyed_clearing_positions.sql",
                     // P9-TSK-011: fx-sim-a and its five FX_PROVIDER_CLEARING accounts.
-                    "db/migration/ledger/V022__fx_sim_a_joins_the_chart.sql");
+                    "db/migration/ledger/V022__fx_sim_a_joins_the_chart.sql",
+                    // P9-TSK-014: corridor-sim-a and its three CORRIDOR_CLEARING accounts.
+                    "db/migration/ledger/V024__corridor_sim_a_joins_the_chart.sql");
 
     private static final Pattern REGISTRY_ROW =
             Pattern.compile("\\('([0-9a-f-]{36})',\\s*'([a-z][a-z0-9-]*)',\\s*'([A-Z_]+)'\\)");
@@ -252,8 +258,9 @@ class OperationalChartMigrationTest {
         List<String> seeds = COUNTERPARTY_SEEDS.stream().map(OperationalChartMigrationTest::migration).toList();
         assertThat(counterpartyViolations(seeds)).isEmpty();
         assertThat(seeds.stream().flatMap(seed -> COUNTERPARTY_ROW.matcher(seed).results()).count())
-                .as("not vacuous: fx-sim-a's five FX_PROVIDER_CLEARING accounts are read (V022)")
-                .isEqualTo(5);
+                .as("not vacuous: fx-sim-a's five FX_PROVIDER_CLEARING accounts (V022) and"
+                        + " corridor-sim-a's three CORRIDOR_CLEARING accounts (V024) are read")
+                .isEqualTo(8);
         assertThat(migration(COUNTERPARTY_SEEDS.get(0)))
                 .as("not vacuous: the first counterparty migration is the one creating the registry")
                 .contains("CREATE TABLE ledger.counterparty");

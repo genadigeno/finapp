@@ -92,10 +92,43 @@ class RailMoneySemanticsArePinnedTest {
                             RailCapabilities.SettlementModel.NONE,
                             RailCapabilities.DisputeModel.NONE,
                             Optional.empty(),
-                            Optional.empty()));
+                            Optional.empty()),
+                    // P9-TSK-014 (ADR-0080 section 1, D17): credits only - final on acceptance, no
+                    // reversal, NO refund (no pay-in), cleared on the provider's own position.
+                    "corridor-sim-a",
+                    new MoneySemantics(
+                            InteractionModel.PUSH,
+                            RailCapabilities.Finality.FINAL_ON_ACCEPTANCE,
+                            Set.of(),
+                            RailCapabilities.RefundMode.NONE,
+                            RailCapabilities.SettlementModel.DEFERRED_VIA_CLEARING,
+                            RailCapabilities.DisputeModel.NONE,
+                            Optional.of(AccountPurpose.CORRIDOR_CLEARING),
+                            Optional.of(Duration.ofMinutes(10))));
 
     private static final Set<PaymentRail> DECLARED =
-            Set.of(SimulatedCardPspAdapter.RAIL, SimulatedInstantSchemeAdapter.RAIL, BookRail.RAIL);
+            Set.of(
+                    SimulatedCardPspAdapter.RAIL,
+                    SimulatedInstantSchemeAdapter.RAIL,
+                    BookRail.RAIL,
+                    SimulatedCorridorAdapter.RAIL);
+
+    private static final com.finapp.sharedkernel.money.CurrencyCode USD =
+            com.finapp.sharedkernel.money.CurrencyCode.of("USD");
+    private static final com.finapp.sharedkernel.money.CurrencyCode JPY =
+            com.finapp.sharedkernel.money.CurrencyCode.of("JPY");
+    private static final com.finapp.sharedkernel.money.CurrencyCode BHD =
+            com.finapp.sharedkernel.money.CurrencyCode.of("BHD");
+
+    /** The restricted rails' currencies and ceilings, per declaration version (`P9-TSK-014`). */
+    private static final Map<String, Map<com.finapp.sharedkernel.money.CurrencyCode, com.finapp.sharedkernel.money.Money>>
+            CEILINGS =
+                    Map.of(
+                            "corridor-sim-a",
+                            Map.of(
+                                    USD, com.finapp.sharedkernel.money.Money.of(new java.math.BigDecimal("10000.00"), USD),
+                                    JPY, com.finapp.sharedkernel.money.Money.of(new java.math.BigDecimal("1500000"), JPY),
+                                    BHD, com.finapp.sharedkernel.money.Money.of(new java.math.BigDecimal("4000.000"), BHD)));
 
     @Test
     @DisplayName("every declared rail's money semantics equal the ones frozen under its id - a"
@@ -119,19 +152,21 @@ class RailMoneySemanticsArePinnedTest {
     @DisplayName("the rest of each declaration is pinned to its declaration version - a change"
             + " bumps the version the routing steps record, and this pin, together")
     void everyOtherCapabilityIsPinnedToItsVersion() {
-        Map<String, Integer> versions = Map.of("card", 1, "instant", 1, "book", 1);
+        Map<String, Integer> versions = Map.of("card", 1, "instant", 1, "book", 1, "corridor-sim-a", 1);
         for (PaymentRail rail : DECLARED) {
             RailCapabilities declared = rail.capabilities();
             String id = rail.id().value();
             assertThat(rail.declarationVersion())
                     .as("rail '%s': the declaration version this pin describes", id)
                     .isEqualTo(versions.get(id));
+            Map<com.finapp.sharedkernel.money.CurrencyCode, com.finapp.sharedkernel.money.Money> ceilings =
+                    CEILINGS.getOrDefault(id, Map.of());
             assertThat(declared.currencies())
                     .as("rail '%s' v%d: currencies", id, rail.declarationVersion())
-                    .isEmpty();
+                    .isEqualTo(ceilings.isEmpty() ? Optional.empty() : Optional.of(ceilings.keySet()));
             assertThat(declared.perCurrencyMaximum())
                     .as("rail '%s' v%d: per-currency maximum", id, rail.declarationVersion())
-                    .isEmpty();
+                    .isEqualTo(ceilings);
         }
     }
 }

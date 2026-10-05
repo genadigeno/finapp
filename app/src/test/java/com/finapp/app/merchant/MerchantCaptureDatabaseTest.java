@@ -1333,7 +1333,7 @@ class MerchantCaptureDatabaseTest {
                 IDS,
                 CLOCK,
                 com.finapp.payments.RoutingTelemetry.NONE,
-                java.util.Optional.empty())
+                com.finapp.payments.RailOperations.none())
                             .confirm(payment.party(), payment.intent());
             assertThat(confirmed.attempt()).contains(PaymentAttemptStatus.AUTHORIZED);
         }

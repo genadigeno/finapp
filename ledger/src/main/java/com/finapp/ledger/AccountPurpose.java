@@ -182,6 +182,16 @@ public enum AccountPurpose {
      */
     FX_PROVIDER_CLEARING(OwnerKind.COUNTERPARTY),
 
+    /**
+     * What the platform owes one corridor provider, per currency (`P9-TSK-014`, ADR-0078, ADR-0080
+     * section 1; {@code INV-RAIL-04}): the corridor rail's clearing position, counterparty-owned like
+     * {@link #FX_PROVIDER_CLEARING} - {@code corridor-sim-a}'s, never a shared one. A LIABILITY,
+     * credit-normal (pinned in {@code OperationalChartMigrationTest}): an accepted outbound credit
+     * (`P9-TSK-019`) credits it, the provider's own report discharges it. Admitted with its
+     * counterparty, its three accounts and its source in `V024`, joining {@link #reconciledPositions()}.
+     */
+    CORRIDOR_CLEARING(OwnerKind.COUNTERPARTY),
+
     /** Unattributable value, parked, aged and reported ({@code INV-REC-05}). Phase 8's seam. */
     SUSPENSE_UNMATCHED(OwnerKind.SUSPENSE);
 
@@ -206,7 +216,8 @@ public enum AccountPurpose {
      * resolutions. `CASH_AT_BANK` joined with its one poster, the bank statement's recognition
      * (`P8-TSK-016`, `V018`): cash is never adjusted to fit (`INV-SET-06`). `FX_PROVIDER_CLEARING`
      * joined with its counterparty and source (`P9-TSK-011`, `V022`): every account of it is a
-     * counterparty's own position, discharged only by that counterparty's evidence.
+     * counterparty's own position, discharged only by that counterparty's evidence; so does
+     * `CORRIDOR_CLEARING` (`P9-TSK-014`, `V024`), the corridor provider's.
      */
     public static java.util.Set<AccountPurpose> reconciledPositions() {
         return java.util.EnumSet.of(
@@ -218,7 +229,8 @@ public enum AccountPurpose {
                 PROCESSING_COSTS,
                 RECONCILIATION_LOSSES,
                 RECONCILIATION_GAINS,
-                FX_PROVIDER_CLEARING);
+                FX_PROVIDER_CLEARING,
+                CORRIDOR_CLEARING);
     }
 
     /** The reconciled positions as a SQL literal list, for `V015`'s binding trigger. */

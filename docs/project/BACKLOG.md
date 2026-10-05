@@ -12913,7 +12913,7 @@ break row, as the approval door must.)*
 
 # Phase 9 — FX and Cross-Border Payments
 
-Status: `IN_PROGRESS` — started 2026-10-03 with `P9-TSK-001` (14 of 30 items complete, M9.1 to M9.4 closed); entry gate passed 2026-10-02 by the Phase 8 → 9 transition
+Status: `IN_PROGRESS` — started 2026-10-03 with `P9-TSK-001` (15 of 30 items complete, M9.1 to M9.4 closed, M9.5 at 1 of 4); entry gate passed 2026-10-02 by the Phase 8 → 9 transition
 ([`reviews/PHASE_8_TO_9_TRANSITION.md`](reviews/PHASE_8_TO_9_TRANSITION.md)), elaborated to task
 granularity by the same transition: thirty items (`P9-TSK-001`…`-027`, `P9-TST-001`, `P9-TST-002`,
 `P9-DOC-001`) across nine milestones, with `P9-TSK-001` marked `READY`. The engineering plan is
@@ -13578,7 +13578,8 @@ providers), each owned by Phase 15 and gating nothing here.
   present; the residual, margin and position identities exact; plan verification clean.
 - **Definition of done**: `DOD-TEST`, `DOD-FIN`. **Risk**: Medium. **Cx**: L.
 
-**P9-TSK-014 — The corridor rail, its position and its source** — `READY` (marked by `P9-TST-002`'s completion gate, 2026-10-05)
+**P9-TSK-014 — The corridor rail, its position and its source** — `COMPLETE` (2026-10-05; marked `READY` by `P9-TST-002`'s completion gate)
+- **As built** (2026-10-05): as `CURRENT_STATE.md` §Just completed records. Two recorded deviations: the corridor `PAYOUT_FEE`'s `ORIGINAL_REF` is the provider's reference (reconciliation reads every `PAYOUT_FEE`'s original by `PAYOUT_PROVIDER_REF`); payments' `SettlementExpectations.Kind` gains `CROSSBORDER_*` with its opener in `-019`. The Phase 7 storm and the merchant payout-return suite were not re-run (the owner's instruction).
 - **Objective**: declare the corridor rail truthfully, with its counterparty position, settlement
   source and per-rail operations, before anything is sent.
 - **Bounded context**: `payments`, `ledger`, `settlement`, `reconciliation`, `app`.
@@ -13635,7 +13636,7 @@ providers), each owned by Phase 15 and gating nothing here.
   misroute is refused; no reader or lookup crosses from one source family to the other.
 - **Definition of done**: `DOD-SEC`, `DOD-ARCH`, `DOD-FIN`. **Risk**: Medium. **Cx**: L.
 
-**P9-TSK-015 — The corridor policy and availability** — `PLANNED`
+**P9-TSK-015 — The corridor policy and availability** — `READY` (marked by `P9-TSK-014`'s completion gate, 2026-10-05)
 - **Objective**: corridors as four-eyes, versioned data, discoverable by customers.
 - **Bounded context**: `crossborder`, `identity`.
 - **Dependencies**: `-007` (the role), `-014`.

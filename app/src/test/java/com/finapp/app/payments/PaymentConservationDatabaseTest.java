@@ -782,7 +782,7 @@ class PaymentConservationDatabaseTest {
                 IDS,
                 CLOCK,
                 com.finapp.payments.RoutingTelemetry.NONE,
-                java.util.Optional.empty());
+                com.finapp.payments.RailOperations.none());
     }
 
     private PaymentCapture capture() {

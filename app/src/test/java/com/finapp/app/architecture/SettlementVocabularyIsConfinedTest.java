@@ -58,7 +58,10 @@ class SettlementVocabularyIsConfinedTest {
                     Set.of("SETTLED", "RETURNED"),
                     // SIM_FX_CSV v1's record codes (P9-TSK-011).
                     "SimFxCsvFormat",
-                    Set.of("SOLD", "BOUGHT"));
+                    Set.of("SOLD", "BOUGHT"),
+                    // SIM_CORRIDOR_CSV v1's record codes (P9-TSK-014).
+                    "SimCorridorCsvFormat",
+                    Set.of("CREDITED", "BOUNCED"));
 
     /** Every adapter's words together — none may appear as a literal outside the adapters. */
     private static final Set<String> PROVIDER_WORDS =
@@ -69,7 +72,7 @@ class SettlementVocabularyIsConfinedTest {
     /** Each adapter type, confined to its own package and the composition root. */
     private static final Set<String> ADAPTER_TYPES =
             Set.of("SimPspCsvFormat", "SimStatementTaggedFormat", "SimSchemeJsonFormat",
-                    "SimPayoutCsvFormat", "SimFxCsvFormat");
+                    "SimPayoutCsvFormat", "SimFxCsvFormat", "SimCorridorCsvFormat");
 
     /** The composition root may bind an adapter; nothing else outside its package may. */
     private static final Set<String> CONFIGURATION_FILES = Set.of("SettlementBeans.java");

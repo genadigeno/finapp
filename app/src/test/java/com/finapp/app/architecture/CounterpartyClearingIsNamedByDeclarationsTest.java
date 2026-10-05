@@ -48,7 +48,10 @@ class CounterpartyClearingIsNamedByDeclarationsTest {
             Map.of(
                     "FxProviderDeclaration.java",
                     "DECLARATION: an FX provider's clearingPurpose() (P9-TSK-011) - the settlement"
-                            + " composition and the counterparty chart read it, never name it");
+                            + " composition and the counterparty chart read it, never name it",
+                    "SimulatedCorridorAdapter.java",
+                    "DECLARATION: the corridor rail's clearingPurpose() (P9-TSK-014) - the settlement"
+                            + " composition and the counterparty chart read it off the rail, never name it");
 
     /** Every counterparty-owned purpose, derived. */
     static final List<String> COUNTERPARTY_PURPOSES =
@@ -64,7 +67,7 @@ class CounterpartyClearingIsNamedByDeclarationsTest {
     @DisplayName("every counterparty-owned purpose is named only by its declaration and its counterparties' own")
     void counterpartyClearingsAreNamedOnlyByDeclarations() {
         assertThat(COUNTERPARTY_PURPOSES).as("not vacuous: a counterparty-owned purpose exists")
-                .contains("FX_PROVIDER_CLEARING");
+                .contains("FX_PROVIDER_CLEARING", "CORRIDOR_CLEARING");
         Map<String, String> sources = new LinkedHashMap<>();
         for (Path source : mainSources()) {
             sources.put(source.toString(), read(source));

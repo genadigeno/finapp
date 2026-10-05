@@ -53,14 +53,17 @@ class RailVocabularyIsConfinedTest {
                     "instant", "SimulatedInstantSchemeAdapter.java",
                     // The book rail (P7-TSK-011): no adapter exists because no wire
                     // does, so the declaration class IS the declaring file.
-                    "book", "BookRail.java");
+                    "book", "BookRail.java",
+                    // The corridor rail (P9-TSK-014): its adapter declares it.
+                    "corridor-sim-a", "SimulatedCorridorAdapter.java");
 
     /** Each declaration constant, confined to its adapter and the composition root. */
     private static final Map<String, String> DECLARATION_CONSTANTS =
             Map.of(
                     "SimulatedCardPspAdapter.RAIL", "SimulatedCardPspAdapter.java",
                     "SimulatedInstantSchemeAdapter.RAIL", "SimulatedInstantSchemeAdapter.java",
-                    "BookRail.RAIL", "BookRail.java");
+                    "BookRail.RAIL", "BookRail.java",
+                    "SimulatedCorridorAdapter.RAIL", "SimulatedCorridorAdapter.java");
 
     /**
      * The composition root may bind the declaration; nothing else may name it.

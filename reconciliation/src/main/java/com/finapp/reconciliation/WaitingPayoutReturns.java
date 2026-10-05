@@ -17,8 +17,24 @@ import java.util.UUID;
  * applies anything: the item judged on its locked row is what orders the worker against the
  * grace leg, which locks the same row {@code FOR UPDATE} (ADR-0073 §7). Never SQL across schemas
  * — this is the seam.
+ *
+ * <p><strong>Scoped by source</strong> since `P9-TSK-014` (ADR-0082; PHASE_9_PLAN.md section 3): one
+ * reader per worker, each handed the sources it serves - the merchant {@code PayoutReturnSweep} the
+ * sources settling {@code PAYOUT_CLEARING}, the corridor's return worker (`P9-TSK-023`) those settling
+ * {@code CORRIDOR_CLEARING} - so a merchant return and a corridor return can never be mistaken for
+ * each other, whatever their references. The scope filters the page AND the share-locked re-read.
  */
 public interface WaitingPayoutReturns {
+
+    /**
+     * The sources a worker is handed, resolved on every call (`P9-TSK-014`): the composition reads
+     * them off the compiled register and the seeded source rows, so no instance caches a scope and
+     * reconciliation never names a source family.
+     */
+    @FunctionalInterface
+    interface SourceScope {
+        java.util.Set<UUID> sourceIds(Connection unitOfWork);
+    }
 
     /**
      * One waiting return, as the worker needs it.

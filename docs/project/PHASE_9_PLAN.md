@@ -513,7 +513,7 @@ table is corrected with provenance if the order changes (ADR-0011).
 | `payments` | `V024` | `-014` | `RefundMode.NONE`, `RoutingRejection.DIRECTION_UNSUPPORTED` (the enum `CHECK`s regenerated) |
 | `ledger` | `V024` | `-014` | `CORRIDOR_CLEARING`, counterparty `corridor-sim-a` and its three accounts |
 | `settlement` | `V016` | `-014` | `SIM_CORRIDOR_CSV` under `PAYOUT_PROVIDER_REPORT`, source row `corridor-sim-a.settlement` |
-| `reconciliation` | `V021` | `-014` | `CROSSBORDER_PAYOUT`, `CROSSBORDER_RETURN` and their mirrors |
+| `reconciliation` | `V021` | `-014` | `CROSSBORDER_PAYOUT`, `CROSSBORDER_RETURN` and their mirrors; *as built, the expectation, rule and lag `CHECK`s - payments' port gains the kinds with their opener in `-019`, because the opener register requires a proving row per port kind* |
 | `crossborder` | `V002` | `-015` | Corridor policy, corridor availability, `corridor_enable_request` |
 | `kyc` | `V009` | `-016` | `counterparty_screening` (encrypted subject, attempts, evidence, review, decision basis, policy version, payee verdict) |
 | `crossborder` | `V003` | `-017` | `beneficiary` (revocation from every state), `corridor_selection` and its steps |
@@ -1142,7 +1142,7 @@ an ambiguous conversion: a retry replays a committed booking.
 | Cross-border payment ↔ provider / network | `payments.outbound_credit.end_to_end_reference` `E` | `provider_reference` (claimed in `scheme_execution_claim`) | `END_TO_END_REF` (key); `PAYOUT_PROVIDER_REF` (alias) | `CROSSBORDER_PAYOUT` (OUTBOUND) on `CORRIDOR_CLEARING(rail)`, by the completion |
 | Return ↔ provider | the outbound credit (the operation anchor) | `return_reference` (claimed, subject `CROSSBORDER_RETURN`) | none of its own: **operation-anchored** (ADR-0067 §5, the payout-return precedent) | `CROSSBORDER_RETURN` (INBOUND), `UNIQUE (kind, operation_ref)`, by the return |
 | Settlement ↔ ledger | every expectation names `(journal_entry_id, ledger_account_id)` | — | — | recognitions keyed `settlement-batch:<id>` |
-| Fees ↔ provider settlement | the source's pinned `provider_fee_schedule` | fee lines (`FX_FEE`, `PAYOUT_FEE`) with `ORIGINAL_REF` = `E` or `Tn` | `FeeCheck` per line (now currency-safe, §2) | `FEE_MISMATCH` beyond tolerance |
+| Fees ↔ provider settlement | the source's pinned `provider_fee_schedule` | fee lines (`FX_FEE`, `PAYOUT_FEE`) with `ORIGINAL_REF` = `Tn` or, *as built by `-014`*, the corridor provider's reference (reconciliation reads every `PAYOUT_FEE`'s original by `PAYOUT_PROVIDER_REF`, the credit's alias) | `FeeCheck` per line (now currency-safe, §2) | `FEE_MISMATCH` beyond tolerance |
 | Customer trade ↔ cover | `fx.cover.quote_id`, `fx.trade.quote_id` | — | internal | proven by the FX books proof |
 
 #### 12.9.2 Sources, formats and vocabulary

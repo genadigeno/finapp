@@ -89,14 +89,17 @@ public final class PaymentConfirmation {
     @NonNull private final RoutingTelemetry telemetry;
 
     /**
-     * The push rail, when this deployment configures one (`P7-TSK-009`): a pay-by-bank
-     * confirmation dispatches an INITIATION through it instead of an authorization —
-     * chosen by routing over the instrument's kind, gated by the declared model, never by
-     * a rail's name ({@code INV-RAIL-01}). Empty refuses the bank branch inside Tx1 with
-     * nothing written ({@link PushRailUnavailableException}). Last, so no existing
-     * positional argument moved (the Lombok field-order rule).
+     * Which rails speak the push operation (`P7-TSK-009`; a directory since `P9-TSK-014`, ADR-0080
+     * section 2): a pay-by-bank confirmation dispatches an INITIATION through the routed rail's
+     * push adapter instead of an authorization — chosen by routing over the instrument's kind,
+     * gated by the declared model, never by a rail's name ({@code INV-RAIL-01}). No push adapter
+     * at all refuses the bank branch inside Tx1 with nothing written
+     * ({@link PushRailUnavailableException}); a routed rail speaking no push operation - a
+     * corridor, which routing already refuses for a pay-in - is refused the same way, before
+     * anything is sent. Last, so no existing positional argument moved (the Lombok field-order
+     * rule).
      */
-    @NonNull private final Optional<PushRail> pushRail;
+    @NonNull private final RailOperations operations;
 
     /** {@code RailSelected} (`P7-TSK-003`): the routed dispatch, published with Tx1. */
     static final String RAIL_SELECTED_EVENT_TYPE = "payments.RailSelected";
@@ -176,7 +179,7 @@ public final class PaymentConfirmation {
         // subject, exactly as a stranded AUTH_DISPATCHED is the card sweeper's.
         if (dispatch.attempt().interactionModel() == InteractionModel.PUSH) {
             InitiationAnswer opened =
-                    pushRail
+                    operations.pushRail(dispatch.attempt().rail())
                             .orElseThrow(PushRailUnavailableException::new)
                             .initiate(
                                     new PushRail.PayInInitiation(
@@ -258,7 +261,7 @@ public final class PaymentConfirmation {
                                         .instrumentOwnedBy(
                                                 uow, callerPartyId, intent.paymentMethodId())
                                         .orElseThrow(UnknownPaymentInstrumentException::new));
-            } else if (pushRail.isEmpty()) {
+            } else if (!operations.anyPushRail()) {
                 // Refused BEFORE the arbiter: the whole transaction rolls back with nothing
                 // written and nothing sent, and the intent still awaits confirmation - the
                 // honest 503, retryable once the deployment configures the rail.
@@ -359,6 +362,11 @@ public final class PaymentConfirmation {
                     "routing chose '" + chosen.value() + "', whose interaction model is not"
                             + " the " + dispatched + " machine this command dispatches"
                             + " (P7-TSK-003): eligibility should have refused it");
+        }
+        if (dispatched == InteractionModel.PUSH && operations.pushRail(chosen).isEmpty()) {
+            // The directory's lookup (P9-TSK-014, ADR-0080 section 2): the routed rail speaks no
+            // push operation here - the whole transaction rolls back before anything is sent.
+            throw new PushRailUnavailableException();
         }
 
         if (dispatched == InteractionModel.BOOK) {

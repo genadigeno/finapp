@@ -296,6 +296,55 @@ class RoutingPolicyVersionTest {
                 .contains(PUSH_RAIL);
     }
 
+    @Test
+    @DisplayName("a PAY_IN rule naming the corridor rail is refused DIRECTION_UNSUPPORTED - before every"
+            + " other reason - while a PAY_OUT on it is judged as usual (P9-TSK-014, ADR-0080 section 1)")
+    void aPayInOnACreditsOnlyRailIsRefused() {
+        RailId corridor = SimulatedCorridorAdapter.RAIL.id();
+        PaymentRails rails = PaymentRails.of(List.of(SimulatedCardPspAdapter.RAIL, SimulatedCorridorAdapter.RAIL));
+        RoutingPolicyVersion payIn = version(
+                1,
+                List.of(new RoutingPolicyVersion.NewRule(
+                        PaymentDirection.PAY_IN,
+                        InstrumentKind.BANK_ACCOUNT,
+                        Optional.empty(),
+                        Optional.empty(),
+                        List.of(corridor))));
+        RoutingPlan refused = payIn.decide(
+                new RoutingInputs(
+                        PaymentDirection.PAY_IN, InstrumentKind.BANK_ACCOUNT, Money.ofMinorUnits(5_00, USD),
+                        Optional.empty()),
+                rails,
+                Map.of());
+        assertThat(refused.chosen()).isEmpty();
+        assertThat(refused.steps()).singleElement().satisfies(step -> {
+            assertThat(step.rejection()).contains(RoutingRejection.DIRECTION_UNSUPPORTED);
+            assertThat(step.descriptorVersion()).contains(SimulatedCorridorAdapter.RAIL.declarationVersion());
+        });
+        // First among the reasons: a EUR pay-in (a currency the corridor does not carry) is refused
+        // for its direction, not its currency.
+        assertThat(payIn.decide(
+                                new RoutingInputs(
+                                        PaymentDirection.PAY_IN, InstrumentKind.BANK_ACCOUNT,
+                                        Money.ofMinorUnits(5_00, EUR), Optional.empty()),
+                                rails,
+                                Map.of())
+                        .steps().get(0).rejection())
+                .contains(RoutingRejection.DIRECTION_UNSUPPORTED);
+        // The control: a PAY_OUT on the same rail passes routing (the withdrawal's lookup refuses it).
+        RoutingPolicyVersion payOutPolicy = version(
+                1,
+                List.of(new RoutingPolicyVersion.NewRule(
+                        PaymentDirection.PAY_OUT,
+                        InstrumentKind.BANK_ACCOUNT,
+                        Optional.empty(),
+                        Optional.empty(),
+                        List.of(corridor))));
+        assertThat(payOutPolicy.decide(payOut(Money.ofMinorUnits(5_00, USD), Optional.of(true)), rails, Map.of())
+                        .chosen())
+                .contains(corridor);
+    }
+
     // ----------------------------------------------------------------- recomputation
 
     @Test
@@ -362,7 +411,7 @@ class RoutingPolicyVersionTest {
         assertThat(RoutingRejection.sqlValueList())
                 .isEqualTo("'UNAVAILABLE', 'CURRENCY_UNSUPPORTED', 'AMOUNT_EXCEEDS_CEILING',"
                         + " 'MODEL_CANNOT_CARRY_INSTRUMENT', 'DESTINATION_UNREACHABLE',"
-                        + " 'NOTHING_SENT', 'UNDECLARED_BY_BUILD'");
+                        + " 'NOTHING_SENT', 'UNDECLARED_BY_BUILD', 'DIRECTION_UNSUPPORTED'");
         assertThatCode(() -> RoutingPolicyVersion.create(
                         IDS, 1, List.of(cardRule()), Optional.empty(), "op-1", "why", CLOCK))
                 .doesNotThrowAnyException();
