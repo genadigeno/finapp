@@ -927,6 +927,286 @@
           }
         }
       },
+      "crossborder.AlreadyAvailable": {
+        "content": {
+          "application/problem+json": {
+            "schema": {
+              "allOf": [
+                {
+                  "$ref": "#/components/schemas/ProblemDetail"
+                },
+                {
+                  "properties": {
+                    "code": {
+                      "const": "crossborder.AlreadyAvailable"
+                    },
+                    "status": {
+                      "const": 409
+                    },
+                    "type": {
+                      "const": "https://finapp.example/problems/crossborder.AlreadyAvailable"
+                    }
+                  }
+                }
+              ]
+            }
+          }
+        },
+        "description": "[409] The corridor is already available.",
+        "headers": {
+          "X-Client-Correlation-Id": {
+            "$ref": "#/components/headers/X-Client-Correlation-Id"
+          },
+          "X-Correlation-Id": {
+            "$ref": "#/components/headers/X-Correlation-Id"
+          }
+        }
+      },
+      "crossborder.CorridorPolicyInvalid": {
+        "content": {
+          "application/problem+json": {
+            "schema": {
+              "allOf": [
+                {
+                  "$ref": "#/components/schemas/ProblemDetail"
+                },
+                {
+                  "properties": {
+                    "code": {
+                      "const": "crossborder.CorridorPolicyInvalid"
+                    },
+                    "status": {
+                      "const": 422
+                    },
+                    "type": {
+                      "const": "https://finapp.example/problems/crossborder.CorridorPolicyInvalid"
+                    }
+                  }
+                }
+              ]
+            }
+          }
+        },
+        "description": "[422] The corridor policy request is not well formed.",
+        "headers": {
+          "X-Client-Correlation-Id": {
+            "$ref": "#/components/headers/X-Client-Correlation-Id"
+          },
+          "X-Correlation-Id": {
+            "$ref": "#/components/headers/X-Correlation-Id"
+          }
+        }
+      },
+      "crossborder.NotFound": {
+        "content": {
+          "application/problem+json": {
+            "schema": {
+              "allOf": [
+                {
+                  "$ref": "#/components/schemas/ProblemDetail"
+                },
+                {
+                  "properties": {
+                    "code": {
+                      "const": "crossborder.NotFound"
+                    },
+                    "status": {
+                      "const": 404
+                    },
+                    "type": {
+                      "const": "https://finapp.example/problems/crossborder.NotFound"
+                    }
+                  }
+                }
+              ]
+            }
+          }
+        },
+        "description": "[404] No corridor policy record matches the requested identifier.",
+        "headers": {
+          "X-Client-Correlation-Id": {
+            "$ref": "#/components/headers/X-Client-Correlation-Id"
+          },
+          "X-Correlation-Id": {
+            "$ref": "#/components/headers/X-Correlation-Id"
+          }
+        }
+      },
+      "crossborder.ProposalNotPending": {
+        "content": {
+          "application/problem+json": {
+            "schema": {
+              "allOf": [
+                {
+                  "$ref": "#/components/schemas/ProblemDetail"
+                },
+                {
+                  "properties": {
+                    "code": {
+                      "const": "crossborder.ProposalNotPending"
+                    },
+                    "status": {
+                      "const": 409
+                    },
+                    "type": {
+                      "const": "https://finapp.example/problems/crossborder.ProposalNotPending"
+                    }
+                  }
+                }
+              ]
+            }
+          }
+        },
+        "description": "[409] The proposal is no longer awaiting a decision.",
+        "headers": {
+          "X-Client-Correlation-Id": {
+            "$ref": "#/components/headers/X-Client-Correlation-Id"
+          },
+          "X-Correlation-Id": {
+            "$ref": "#/components/headers/X-Correlation-Id"
+          }
+        }
+      },
+      "crossborder.ProposalPending": {
+        "content": {
+          "application/problem+json": {
+            "schema": {
+              "allOf": [
+                {
+                  "$ref": "#/components/schemas/ProblemDetail"
+                },
+                {
+                  "properties": {
+                    "code": {
+                      "const": "crossborder.ProposalPending"
+                    },
+                    "status": {
+                      "const": 409
+                    },
+                    "type": {
+                      "const": "https://finapp.example/problems/crossborder.ProposalPending"
+                    }
+                  }
+                }
+              ]
+            }
+          }
+        },
+        "description": "[409] A proposal already awaits a decision; decide or reject it first.",
+        "headers": {
+          "X-Client-Correlation-Id": {
+            "$ref": "#/components/headers/X-Client-Correlation-Id"
+          },
+          "X-Correlation-Id": {
+            "$ref": "#/components/headers/X-Correlation-Id"
+          }
+        }
+      },
+      "crossborder.RailNotDeclared": {
+        "content": {
+          "application/problem+json": {
+            "schema": {
+              "allOf": [
+                {
+                  "$ref": "#/components/schemas/ProblemDetail"
+                },
+                {
+                  "properties": {
+                    "code": {
+                      "const": "crossborder.RailNotDeclared"
+                    },
+                    "status": {
+                      "const": 422
+                    },
+                    "type": {
+                      "const": "https://finapp.example/problems/crossborder.RailNotDeclared"
+                    }
+                  }
+                }
+              ]
+            }
+          }
+        },
+        "description": "[422] A candidate rail is not declared by this build as covering the corridor's destination.",
+        "headers": {
+          "X-Client-Correlation-Id": {
+            "$ref": "#/components/headers/X-Client-Correlation-Id"
+          },
+          "X-Correlation-Id": {
+            "$ref": "#/components/headers/X-Correlation-Id"
+          }
+        }
+      },
+      "crossborder.RequiredDataUnsatisfiable": {
+        "content": {
+          "application/problem+json": {
+            "schema": {
+              "allOf": [
+                {
+                  "$ref": "#/components/schemas/ProblemDetail"
+                },
+                {
+                  "properties": {
+                    "code": {
+                      "const": "crossborder.RequiredDataUnsatisfiable"
+                    },
+                    "status": {
+                      "const": 422
+                    },
+                    "type": {
+                      "const": "https://finapp.example/problems/crossborder.RequiredDataUnsatisfiable"
+                    }
+                  }
+                }
+              ]
+            }
+          }
+        },
+        "description": "[422] The corridor requires data the platform does not hold.",
+        "headers": {
+          "X-Client-Correlation-Id": {
+            "$ref": "#/components/headers/X-Client-Correlation-Id"
+          },
+          "X-Correlation-Id": {
+            "$ref": "#/components/headers/X-Correlation-Id"
+          }
+        }
+      },
+      "crossborder.SelfApprovalRefused": {
+        "content": {
+          "application/problem+json": {
+            "schema": {
+              "allOf": [
+                {
+                  "$ref": "#/components/schemas/ProblemDetail"
+                },
+                {
+                  "properties": {
+                    "code": {
+                      "const": "crossborder.SelfApprovalRefused"
+                    },
+                    "status": {
+                      "const": 409
+                    },
+                    "type": {
+                      "const": "https://finapp.example/problems/crossborder.SelfApprovalRefused"
+                    }
+                  }
+                }
+              ]
+            }
+          }
+        },
+        "description": "[409] A proposal is approved by someone other than its proposer; the proposer may reject it.",
+        "headers": {
+          "X-Client-Correlation-Id": {
+            "$ref": "#/components/headers/X-Client-Correlation-Id"
+          },
+          "X-Correlation-Id": {
+            "$ref": "#/components/headers/X-Correlation-Id"
+          }
+        }
+      },
       "fx.AlreadyAvailable": {
         "content": {
           "application/problem+json": {
@@ -6399,6 +6679,259 @@
         ],
         "type": "object"
       },
+      "CorridorAvailabilityReceipt": {
+        "properties": {
+          "corridor": {
+            "type": "string"
+          },
+          "outcome": {
+            "type": "string"
+          },
+          "requestId": {
+            "type": "string"
+          }
+        },
+        "type": "object"
+      },
+      "CorridorAvailabilityRequest": {
+        "properties": {
+          "available": {
+            "type": "boolean"
+          },
+          "reason": {
+            "maxLength": 1000,
+            "minLength": 1,
+            "type": "string"
+          }
+        },
+        "required": [
+          "available",
+          "reason"
+        ],
+        "type": "object"
+      },
+      "CorridorDecisionRequest": {
+        "properties": {
+          "reason": {
+            "maxLength": 1000,
+            "minLength": 1,
+            "type": "string"
+          }
+        },
+        "required": [
+          "reason"
+        ],
+        "type": "object"
+      },
+      "CorridorEnableReceipt": {
+        "properties": {
+          "corridor": {
+            "type": "string"
+          },
+          "requestId": {
+            "type": "string"
+          },
+          "status": {
+            "type": "string"
+          }
+        },
+        "type": "object"
+      },
+      "CorridorPolicyList": {
+        "properties": {
+          "truncated": {
+            "type": "boolean"
+          },
+          "versions": {
+            "items": {
+              "$ref": "#/components/schemas/CorridorPolicyView"
+            },
+            "type": "array"
+          }
+        },
+        "type": "object"
+      },
+      "CorridorPolicyReceipt": {
+        "properties": {
+          "id": {
+            "type": "string"
+          },
+          "retiredId": {
+            "type": "string"
+          },
+          "status": {
+            "type": "string"
+          },
+          "version": {
+            "format": "int32",
+            "type": "integer"
+          }
+        },
+        "type": "object"
+      },
+      "CorridorPolicyRequest": {
+        "properties": {
+          "corridors": {
+            "items": {
+              "$ref": "#/components/schemas/CorridorRequest"
+            },
+            "minItems": 1,
+            "type": "array"
+          },
+          "reason": {
+            "maxLength": 1000,
+            "minLength": 1,
+            "type": "string"
+          }
+        },
+        "required": [
+          "corridors",
+          "reason"
+        ],
+        "type": "object"
+      },
+      "CorridorPolicyView": {
+        "properties": {
+          "corridors": {
+            "items": {
+              "$ref": "#/components/schemas/CorridorView"
+            },
+            "type": "array"
+          },
+          "id": {
+            "type": "string"
+          },
+          "proposedAt": {
+            "type": "string"
+          },
+          "status": {
+            "type": "string"
+          },
+          "version": {
+            "format": "int32",
+            "type": "integer"
+          }
+        },
+        "type": "object"
+      },
+      "CorridorRequest": {
+        "properties": {
+          "country": {
+            "minLength": 1,
+            "type": "string"
+          },
+          "deliveryEstimateHours": {
+            "format": "int64",
+            "type": "integer"
+          },
+          "destination": {
+            "minLength": 1,
+            "type": "string"
+          },
+          "feeFixed": {
+            "minLength": 1,
+            "type": "string"
+          },
+          "feeMargin": {
+            "minLength": 1,
+            "type": "string"
+          },
+          "feeRounding": {
+            "minLength": 1,
+            "type": "string"
+          },
+          "maximum": {
+            "minLength": 1,
+            "type": "string"
+          },
+          "rails": {
+            "items": {
+              "minLength": 1,
+              "type": "string"
+            },
+            "minItems": 1,
+            "type": "array"
+          },
+          "requiredData": {
+            "items": {
+              "minLength": 1,
+              "type": "string"
+            },
+            "type": "array"
+          },
+          "screeningValidityHours": {
+            "format": "int64",
+            "type": "integer"
+          },
+          "source": {
+            "minLength": 1,
+            "type": "string"
+          }
+        },
+        "required": [
+          "country",
+          "deliveryEstimateHours",
+          "destination",
+          "feeFixed",
+          "feeMargin",
+          "feeRounding",
+          "maximum",
+          "rails",
+          "requiredData",
+          "screeningValidityHours",
+          "source"
+        ],
+        "type": "object"
+      },
+      "CorridorView": {
+        "properties": {
+          "corridor": {
+            "type": "string"
+          },
+          "country": {
+            "type": "string"
+          },
+          "deliveryEstimateHours": {
+            "format": "int64",
+            "type": "integer"
+          },
+          "destination": {
+            "type": "string"
+          },
+          "feeFixed": {
+            "type": "string"
+          },
+          "feeMargin": {
+            "type": "string"
+          },
+          "feeRounding": {
+            "type": "string"
+          },
+          "maximum": {
+            "type": "string"
+          },
+          "rails": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array"
+          },
+          "requiredData": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array"
+          },
+          "screeningValidityHours": {
+            "format": "int64",
+            "type": "integer"
+          },
+          "source": {
+            "type": "string"
+          }
+        },
+        "type": "object"
+      },
       "CoverView": {
         "properties": {
           "attempts": {
@@ -7849,6 +8382,50 @@
           },
           "id": {
             "type": "string"
+          }
+        },
+        "type": "object"
+      },
+      "OfferedCorridor": {
+        "properties": {
+          "corridor": {
+            "type": "string"
+          },
+          "country": {
+            "type": "string"
+          },
+          "deliveryEstimateHours": {
+            "format": "int64",
+            "type": "integer"
+          },
+          "destination": {
+            "type": "string"
+          },
+          "feeFixed": {
+            "type": "string"
+          },
+          "feeMargin": {
+            "type": "string"
+          },
+          "maximum": {
+            "type": "string"
+          },
+          "source": {
+            "type": "string"
+          }
+        },
+        "type": "object"
+      },
+      "OfferedCorridors": {
+        "properties": {
+          "corridors": {
+            "items": {
+              "$ref": "#/components/schemas/OfferedCorridor"
+            },
+            "type": "array"
+          },
+          "truncated": {
+            "type": "boolean"
           }
         },
         "type": "object"
@@ -12216,6 +12793,23 @@
         }
       }
     },
+    "/v1/me/cross-border/corridors": {
+      "get": {
+        "operationId": "listCrossBorderCorridors",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/OfferedCorridors"
+                }
+              }
+            },
+            "description": "OK"
+          }
+        }
+      }
+    },
     "/v1/me/fx/conversions": {
       "post": {
         "operationId": "convert",
@@ -13033,6 +13627,251 @@
               "application/json": {
                 "schema": {
                   "$ref": "#/components/schemas/TransactionsView"
+                }
+              }
+            },
+            "description": "OK"
+          }
+        }
+      }
+    },
+    "/v1/operator/cross-border/corridor-enable-requests/{rid}/approval": {
+      "post": {
+        "operationId": "approveCorridorEnableRequest",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "rid",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/CorridorDecisionRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/CorridorEnableReceipt"
+                }
+              }
+            },
+            "description": "OK"
+          }
+        }
+      }
+    },
+    "/v1/operator/cross-border/corridor-enable-requests/{rid}/rejection": {
+      "post": {
+        "operationId": "rejectCorridorEnableRequest",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "rid",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/CorridorDecisionRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/CorridorEnableReceipt"
+                }
+              }
+            },
+            "description": "OK"
+          }
+        }
+      }
+    },
+    "/v1/operator/cross-border/corridor-policies": {
+      "get": {
+        "operationId": "listCorridorPolicies",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/CorridorPolicyList"
+                }
+              }
+            },
+            "description": "OK"
+          }
+        }
+      },
+      "post": {
+        "operationId": "proposeCorridorPolicy",
+        "parameters": [
+          {
+            "in": "header",
+            "name": "Idempotency-Key",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/CorridorPolicyRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "201": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/CorridorPolicyReceipt"
+                }
+              }
+            },
+            "description": "Created"
+          }
+        }
+      }
+    },
+    "/v1/operator/cross-border/corridor-policies/{id}/approval": {
+      "post": {
+        "operationId": "approveCorridorPolicy",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "id",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/CorridorDecisionRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/CorridorPolicyReceipt"
+                }
+              }
+            },
+            "description": "OK"
+          }
+        }
+      }
+    },
+    "/v1/operator/cross-border/corridor-policies/{id}/rejection": {
+      "post": {
+        "operationId": "rejectCorridorPolicy",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "id",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/CorridorDecisionRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/CorridorPolicyReceipt"
+                }
+              }
+            },
+            "description": "OK"
+          }
+        }
+      }
+    },
+    "/v1/operator/cross-border/corridors/{corridor}/availability": {
+      "post": {
+        "operationId": "setCorridorAvailability",
+        "parameters": [
+          {
+            "in": "header",
+            "name": "Idempotency-Key",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "in": "path",
+            "name": "corridor",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/CorridorAvailabilityRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/CorridorAvailabilityReceipt"
                 }
               }
             },

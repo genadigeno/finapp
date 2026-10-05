@@ -425,6 +425,14 @@ class CredentialReachesNoEmittedSinkTest {
                         "PricingPolicyRequest",
                         "FxDecisionRequest",
                         "AvailabilityRequest",
+                        // P9-TSK-015: the corridor doors. No secret in any of them. A proposal is
+                        // policy - corridors, rail ids, fees and maxima as decimal strings, in a
+                        // nested schema this list does not name - with a REASON; the decisions and
+                        // the kill switch carry a REASON (and a flag). Every reason is screened for
+                        // card-number and account shapes at the domain and by crossborder V002's CHECKs.
+                        "CorridorPolicyRequest",
+                        "CorridorDecisionRequest",
+                        "CorridorAvailabilityRequest",
                         // P9-TSK-008: the customer's quote request - a pair, a fixed side and an
                         // amount as a decimal string. No secret, and closed: no rate can be sent.
                         "QuoteRequestBody",

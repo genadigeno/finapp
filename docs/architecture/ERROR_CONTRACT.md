@@ -740,6 +740,19 @@ subject takes, no evidence that still finds it, no acknowledgement back on its r
 | `fx.InsufficientFunds` | 422 | The wallet's available balance is not enough. |
 | `fx.TradeNotFound` | 404 | No conversion matches the requested identifier. |
 
+### `crossborder` — `CrossborderErrorCode`
+
+| Code | Status | Meaning |
+|---|---|---|
+| `crossborder.NotFound` | 404 | No corridor policy record matches the requested identifier. |
+| `crossborder.SelfApprovalRefused` | 409 | A proposal is approved by someone other than its proposer; the proposer may reject it. |
+| `crossborder.ProposalNotPending` | 409 | The proposal is no longer awaiting a decision. |
+| `crossborder.ProposalPending` | 409 | A proposal already awaits a decision; decide or reject it first. |
+| `crossborder.AlreadyAvailable` | 409 | The corridor is already available. |
+| `crossborder.RailNotDeclared` | 422 | A candidate rail is not declared by this build as covering the corridor's destination. |
+| `crossborder.RequiredDataUnsatisfiable` | 422 | The corridor requires data the platform does not hold. |
+| `crossborder.CorridorPolicyInvalid` | 422 | The corridor policy request is not well formed. |
+
 The FX controller's doors (`P9-TSK-007`, ADR-0075 §3). `NotFound` is the `FileNotFound`
 departure at the pricing-policy and enable-request doors - every route sits behind
 `FX_ADMINISTER` - and also answers a pair path that is not `AAA-BBB` over two supported

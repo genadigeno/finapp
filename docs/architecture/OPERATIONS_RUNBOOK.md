@@ -162,6 +162,35 @@ thresholds USD 1,000.00, JPY 150000, BHD 400.000. The canonical body is `Corrido
 app's tests (held by `CorridorRuleSetV1Test`, proposed and activated by two controllers in
 `CorridorSourceDatabaseTest`).
 
+## 3b. Activating the corridor policy v1 - before any corridor is offered
+
+*(Added by `P9-TSK-015`, 2026-10-05; ADR-0080 section 4, owner decision O7, decision D26.)*
+
+**When.** Once, after a deployment carrying crossborder `V002`. Until a version is `ACTIVE`,
+`GET /v1/me/cross-border/corridors` offers nothing - no corridor exists without two named persons.
+
+**What v1 is (O7).** EUR -> USD/US, EUR -> JPY/JP, USD -> BHD/BH and GBP -> USD/US, each on
+`corridor-sim-a`; transfer fees EUR 2.50 / GBP 2.00 / USD 3.00 + 0 bps, rounded half-even; maxima
+USD 10,000.00 / JPY 1,500,000 / BHD 4,000.000; screening valid 168 hours (7 days); delivery estimated at
+24 hours; the beneficiary's name and entity type required. The canonical body is `CorridorPolicyV1` in
+the app's tests (proposed and activated by two controllers in `CorridorAdministrationEndpointDatabaseTest`).
+
+**Steps** - two different people holding `FX_CONTROLLER` (which grants `CROSSBORDER_ADMINISTER`):
+
+1. **Propose** (person A): `POST /v1/operator/cross-border/corridor-policies` with an `Idempotency-Key`,
+   the corridors and a reason naming this procedure. A rail the build does not declare, or one not
+   covering a corridor's destination, is `422 crossborder.RailNotDeclared`; a datum the platform does not
+   hold is `422 crossborder.RequiredDataUnsatisfiable`.
+2. **Approve** (person B - the proposer is refused at the domain and by the database's `CHECK`):
+   `POST /v1/operator/cross-border/corridor-policies/{id}/approval`. The build is judged again; version 1
+   moves `PROPOSED -> ACTIVE`, retiring nothing; `crossborder.CorridorPolicyActivated` is published.
+
+**The kill switch.** `POST /v1/operator/cross-border/corridors/{S-D-CC}/availability` with
+`{"available": false, "reason": ...}` stops a corridor at once (one person); `{"available": true}`
+opens an enable request a different person approves at `…/corridor-enable-requests/{rid}/approval`.
+
+**Verify.** Discovery lists the four corridors with their fees, maxima and delivery estimates.
+
 ## 4. An FX cover that will not conclude - UNKNOWN, refused requotes, off plan, anomalies
 
 *(Added by `P9-TSK-012`, 2026-10-05; ADR-0077; `INV-FX-08`, `INV-LIFE-03`.)*

@@ -243,3 +243,9 @@ disable names one and a reason), `INV-PAY-03` (provider vocabulary confined to t
   rail - a planted corridor rule for a withdrawal is refused inside Tx1 with nothing written or sent.
   The `CLEARING_POSITIONS` amendment is held by `CounterpartyClearingIsNamedByDeclarationsTest`, which
   permits the corridor adapter's declaration alone to name `CORRIDOR_CLEARING`.
+- *As built by `P9-TSK-015` (2026-10-05):* point 4 is implemented - crossborder `V002`'s versioned, four-eyes
+  corridor policy with no seed exemption (v1 per O7 activated by two controllers, `CorridorPolicyV1` and the
+  runbook), the asymmetric availability (one person disables at once; enabling is a `corridor_enable_request` a
+  second person approves) keyed by the corridor's stable code across versions, and the `required_data` rule as a
+  set of named data the platform must hold (`BENEFICIARY_NAME` and `ENTITY_TYPE` today), refused with every
+  undeclared or non-covering rail at proposal and again at approval.

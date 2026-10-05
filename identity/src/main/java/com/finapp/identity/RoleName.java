@@ -183,9 +183,10 @@ public enum RoleName {
      * operating the money ({@link #LEDGER_OPERATOR}, which will reverse trades), nor judging
      * the outside world's account of it, nor administering identities. Holds none of the
      * other populations' permissions and they hold none of this, asserted pairwise and over
-     * HTTP in both directions ({@code INV-AUD-03}).
+     * HTTP in both directions ({@code INV-AUD-03}). Since `P9-TSK-015` it also holds
+     * {@code CROSSBORDER_ADMINISTER}: the corridors' transfer fees and limits are the same policy.
      */
-    FX_CONTROLLER(EnumSet.of(PermissionName.FX_ADMINISTER));
+    FX_CONTROLLER(EnumSet.of(PermissionName.FX_ADMINISTER, PermissionName.CROSSBORDER_ADMINISTER));
 
     private final Set<PermissionName> permissions;
 
