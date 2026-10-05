@@ -595,6 +595,8 @@ class OpenApiContractTest {
                         ApiVersion.CURRENT_PREFIX + "/operator/cross-border/corridor-enable-requests/{rid}/approval",
                         ApiVersion.CURRENT_PREFIX + "/operator/cross-border/corridor-enable-requests/{rid}/rejection",
                         ApiVersion.CURRENT_PREFIX + "/me/cross-border/corridors",
+                        // P9-TSK-016: the counterparty reviewer's door (COUNTERPARTY_SCREENING_REVIEW).
+                        ApiVersion.CURRENT_PREFIX + "/operator/kyc/counterparty-screenings/{id}/decision",
                         // P9-TSK-008: the customer's quote doors - request, read, cancel, and the
                         // offered pairs (a session; the owner's own quotes only).
                         ApiVersion.CURRENT_PREFIX + "/me/fx/quotes",

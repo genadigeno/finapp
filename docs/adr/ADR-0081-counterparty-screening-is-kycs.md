@@ -200,3 +200,22 @@ row conditionals; T-e).
   clearance as a policy option, KYC tiers, residence, velocity limits and risk scoring —
   each recorded with its trigger.
 - The Phase 9 review (`P9-DOC-001`) reads this ADR against the code before accepting it.
+- *As built by `P9-TSK-016` (2026-10-06):* points 1, 2, 4 (kyc's half), 5 (the retry) and 8 are
+  implemented. `kyc V009`'s `counterparty_screening` holds the name AES-256-GCM under kyc's evidence key
+  with the screening id's sixteen bytes as associated data (`CounterpartySubjectCipher`), the payee
+  verdict as handed in, and the decision-basis `CHECK`s verbatim; the provider's answers are the
+  append-only `counterparty_screening_attempt` rows, their bytes sealed under the same binding (the
+  evidence table named here is that table's columns - one append-only fact per attempt, not two).
+  `CounterpartyScreeningProvider` is the existing `ScreeningAdapter` and credential on
+  `/counterparty-screenings`, wired as a port of its own so it never joins the case-bound providers;
+  nothing arriving is `UNAVAILABLE`, an unreadable answer `INDETERMINATE`. `CounterpartyScreenings`
+  screens (idempotent on the caller's reference), re-screens from the stored subject - so the
+  quote-time re-screen never needs the name outside kyc - retries, reviews and reads clearance; T-e
+  writes the attempt, the outcome, `kyc.CounterpartyScreeningDecided` (audit and event) and calls
+  `ScreeningOutcomeListener`, which refuses until `P9-TSK-017` composes the beneficiary. The review
+  door is `POST /v1/operator/kyc/counterparty-screenings/{id}/decision` under
+  `COUNTERPARTY_SCREENING_REVIEW` (held by `KYC_REVIEWER`); `CounterpartyScreeningRetrySchedule` is
+  leaderless. Point 8's seams are crossborder's `CrossBorderLimitCheck`, `CrossBorderRiskDecision`,
+  `CrossBorderVerdict` and `PermitAllUntilPhase13` over a `CrossBorderInstruction`, with
+  `crossborder.LimitRefused` and `crossborder.RiskRefused` reserved; the proof that a `REFUSE` writes
+  nothing needs the seams' consumer and lands with the authorization (`P9-TSK-019`).

@@ -99,6 +99,83 @@ final class SimulatedProviderClient {
         return VerificationProvider.ProviderResult.of(outcomeOf(response), received);
     }
 
+    /**
+     * Screens a counterparty (`P9-TSK-016`, ADR-0081): the screening id, the name (JSON-escaped - a
+     * name is free text), the country and the entity type - never a bank identifier. Unlike a case
+     * check, <strong>nothing arriving is {@code UNAVAILABLE}</strong>, not indeterminate: a refused
+     * connection, a timeout, a 5xx or an empty body means the provider could not be asked, so the
+     * screening is retried and nothing is cleared; an answer that arrived but cannot be read is
+     * {@code INDETERMINATE} - a person reviews it. Neither is ever a success.
+     */
+    CounterpartyScreeningProvider.Answer askCounterparty(
+            String path, CounterpartyScreeningId screeningId, CounterpartySubject subject) {
+        Objects.requireNonNull(path, "path must not be null");
+        Objects.requireNonNull(screeningId, "screeningId must not be null");
+        Objects.requireNonNull(subject, "subject must not be null");
+        String body =
+                "{\"screeningId\":\"" + screeningId.value() + "\",\"name\":\"" + json(subject.name())
+                        + "\",\"country\":\"" + subject.country().code() + "\",\"entityType\":\""
+                        + subject.entityType().name() + "\"}";
+        HttpRequest request =
+                HttpRequest.newBuilder(baseUrl.resolve(path))
+                        .timeout(timeout)
+                        .header("Content-Type", "application/json")
+                        .header("Idempotency-Key", screeningId.value().toString())
+                        .POST(HttpRequest.BodyPublishers.ofString(body, java.nio.charset.StandardCharsets.UTF_8))
+                        .build();
+        HttpResponse<byte[]> response;
+        try {
+            response = http.send(request, HttpResponse.BodyHandlers.ofByteArray());
+        } catch (IOException nothingArrived) {
+            return CounterpartyScreeningProvider.Answer.withoutEvidence(CounterpartyScreeningVocabulary.Verdict.UNAVAILABLE);
+        } catch (InterruptedException interrupted) {
+            Thread.currentThread().interrupt();
+            return CounterpartyScreeningProvider.Answer.withoutEvidence(CounterpartyScreeningVocabulary.Verdict.UNAVAILABLE);
+        }
+        byte[] received = response.body();
+        if (response.statusCode() >= 500 || received.length == 0) {
+            return received.length == 0 || received.length > DocumentBytes.MAX_BYTES
+                    ? CounterpartyScreeningProvider.Answer.withoutEvidence(CounterpartyScreeningVocabulary.Verdict.UNAVAILABLE)
+                    : CounterpartyScreeningProvider.Answer.of(CounterpartyScreeningVocabulary.Verdict.UNAVAILABLE, received);
+        }
+        if (received.length > DocumentBytes.MAX_BYTES) {
+            return CounterpartyScreeningProvider.Answer.withoutEvidence(CounterpartyScreeningVocabulary.Verdict.INDETERMINATE);
+        }
+        if (response.statusCode() != 200) {
+            return CounterpartyScreeningProvider.Answer.of(CounterpartyScreeningVocabulary.Verdict.INDETERMINATE, received);
+        }
+        Matcher status = STATUS_FIELD.matcher(new String(received, java.nio.charset.StandardCharsets.UTF_8));
+        if (!status.find()) {
+            return CounterpartyScreeningProvider.Answer.of(CounterpartyScreeningVocabulary.Verdict.INDETERMINATE, received);
+        }
+        CounterpartyScreeningVocabulary.Verdict verdict = switch (CheckOutcome.fromWire(status.group(1))) {
+            case CLEAR -> CounterpartyScreeningVocabulary.Verdict.CLEAR;
+            case HIT -> CounterpartyScreeningVocabulary.Verdict.HIT;
+            case INDETERMINATE -> CounterpartyScreeningVocabulary.Verdict.INDETERMINATE;
+        };
+        return CounterpartyScreeningProvider.Answer.of(verdict, received);
+    }
+
+    /** JSON string escaping for free text - quotes, backslashes and every control character. */
+    static String json(String text) {
+        StringBuilder escaped = new StringBuilder(text.length() + 8);
+        for (int i = 0; i < text.length(); i++) {
+            char c = text.charAt(i);
+            switch (c) {
+                case '"' -> escaped.append("\\\"");
+                case '\\' -> escaped.append("\\\\");
+                default -> {
+                    if (c < 0x20) {
+                        escaped.append(String.format("\\u%04x", (int) c));
+                    } else {
+                        escaped.append(c);
+                    }
+                }
+            }
+        }
+        return escaped.toString();
+    }
+
     private static CheckOutcome outcomeOf(HttpResponse<byte[]> response) {
         if (response.statusCode() != 200) {
             return CheckOutcome.INDETERMINATE;

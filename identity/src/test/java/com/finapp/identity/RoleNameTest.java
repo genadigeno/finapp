@@ -49,14 +49,14 @@ class RoleNameTest {
     }
 
     @Test
-    @DisplayName("KYC_REVIEWER grants exactly KYC_REVIEW - and neither administrative permission")
+    @DisplayName("KYC_REVIEWER grants exactly KYC_REVIEW and COUNTERPARTY_SCREENING_REVIEW - and neither administrative permission")
     void kycReviewerGrantsExactlyOne() {
         // The least-privilege split is the point of the role (P2-TSK-004), so it is asserted as
         // an exact set: this is the assertion that catches the previously-untestable mutations -
         // the role granting everything, or quietly gaining IDENTITY_SUSPEND or ROLE_ASSIGN.
         assertThat(RoleName.KYC_REVIEWER.permissions())
                 .as("a reviewer reviews; managing identities is a different trust decision")
-                .containsExactlyInAnyOrder(PermissionName.KYC_REVIEW);
+                .containsExactlyInAnyOrder(PermissionName.KYC_REVIEW, PermissionName.COUNTERPARTY_SCREENING_REVIEW);
     }
 
     @Test

@@ -46,9 +46,11 @@ public enum RoleName {
      * the administrative endpoints is asserted over HTTP, in both directions, because least
      * privilege is only real when it is tested from the attacker's side ({@code INV-AUD-03}).
      * The first assignment needs no bootstrap: administrators exist and hold
-     * {@code ROLE_ASSIGN}, so a reviewer arrives through the ordinary audited endpoint.
+     * {@code ROLE_ASSIGN}, so a reviewer arrives through the ordinary audited endpoint. Since
+     * `P9-TSK-016` it also holds {@code COUNTERPARTY_SCREENING_REVIEW}: a counterparty hit is the
+     * same judgement as an onboarding hit (ADR-0081 point 4).
      */
-    KYC_REVIEWER(EnumSet.of(PermissionName.KYC_REVIEW)),
+    KYC_REVIEWER(EnumSet.of(PermissionName.KYC_REVIEW, PermissionName.COUNTERPARTY_SCREENING_REVIEW)),
 
     /**
      * Operates the platform's money and nothing else (`P3-TSK-007`, widened by `P4-TSK-009`,

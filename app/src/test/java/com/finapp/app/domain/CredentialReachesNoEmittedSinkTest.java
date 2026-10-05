@@ -433,6 +433,11 @@ class CredentialReachesNoEmittedSinkTest {
                         "CorridorPolicyRequest",
                         "CorridorDecisionRequest",
                         "CorridorAvailabilityRequest",
+                        // P9-TSK-016: the counterparty reviewer's decision - a decision, a reason code
+                        // and a NARRATIVE; no secret. The narrative is screened for card-number and
+                        // account shapes at the domain and by kyc V009's CHECK, and the request's
+                        // toString carries its length only.
+                        "ScreeningDecisionRequest",
                         // P9-TSK-008: the customer's quote request - a pair, a fixed side and an
                         // amount as a decimal string. No secret, and closed: no rate can be sent.
                         "QuoteRequestBody",

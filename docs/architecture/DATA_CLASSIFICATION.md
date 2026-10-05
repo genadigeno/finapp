@@ -1897,6 +1897,44 @@ the reason is a person's prose about a person.
 | `kyc_decision_check` | `decision_id` | `INTERNAL` | As `kyc_decision.id` — an identifier of a thing |
 | `kyc_decision_check` | `check_id` | `INTERNAL` | As `verification_check.id` — an identifier of a thing |
 
+### `kyc.counterparty_screening` and `kyc.counterparty_screening_attempt` — *added by `P9-TSK-016`*
+
+A counterparty is a payee abroad, never a customer: it cannot consent, and screening it rests on the
+platform's **legal obligation** (ADR-0081 point 7). Its name rests **only here**, encrypted with the
+screening id as associated data; every other module, log, event and audit body is asserted free of it
+(the needle). The status columns carry `verification_check.status`'s tipping-off reasoning.
+
+| Table | Column | Level | Note |
+|---|---|---|---|
+| `counterparty_screening` | `id` | `INTERNAL` | An aggregate identifier. Generated |
+| `counterparty_screening` | `request_reference` | `INTERNAL` | The caller's identifier for the request (a beneficiary's, from `P9-TSK-017`) - an identifier of a thing |
+| `counterparty_screening` | `subject_ciphertext` | `RESTRICTED-PII` | **The counterparty's name.** Classified at the ceiling of what it decrypts to (ADR-0022); AES-256-GCM bound to the row by its id, so a copied ciphertext names nobody |
+| `counterparty_screening` | `subject_nonce` | `INTERNAL` | Public-by-design cryptographic material |
+| `counterparty_screening` | `subject_key_version` | `INTERNAL` | Which key wrote the row - rotation metadata |
+| `counterparty_screening` | `country` | `CONFIDENTIAL` | Provider-attested destination country - with the entity type, narrows who the payee is (`INV-RAIL-03` admits it) |
+| `counterparty_screening` | `entity_type` | `CONFIDENTIAL` | An enumeration of two values, about a person or firm |
+| `counterparty_screening` | `payee_verdict` | `CONFIDENTIAL` | The payee check as handed in - part of the decision's basis; says whether the name matched the account |
+| `counterparty_screening` | `status` | `CONFIDENTIAL` | **The tipping-off column.** `IN_REVIEW` after a hit, `BLOCKED` after a true match - never shown to a customer |
+| `counterparty_screening` | `review_reason` | `CONFIDENTIAL` | Why a person was asked - `HIT` is the disclosure the status column hides |
+| `counterparty_screening` | `decision_basis` | `CONFIDENTIAL` | `AUTOMATIC` or `REVIEWER` - with the status, says whether a person judged a match |
+| `counterparty_screening` | `policy_version` | `INTERNAL` | A platform policy label |
+| `counterparty_screening` | `decided_at` | `CONFIDENTIAL` | Dates the outcome - `verification_check.status_changed_at`'s reasoning |
+| `counterparty_screening` | `decided_by` | `CONFIDENTIAL` | The reviewer's actor id - who judged a sanctions match |
+| `counterparty_screening` | `decision_reason_code` | `CONFIDENTIAL` | `TRUE_MATCH` is the sharpest disclosure the table holds |
+| `counterparty_screening` | `decision_narrative` | `CONFIDENTIAL` | A reviewer's free prose about a counterparty - screened for instrument shapes at the domain and by `CHECK`; classified with the reasons it sits beside |
+| `counterparty_screening` | `attempts` | `INTERNAL` | A counter |
+| `counterparty_screening` | `next_attempt_at` | `INTERNAL` | The retry permit |
+| `counterparty_screening` | `requested_at` | `CONFIDENTIAL` | Dates a screening event |
+| `counterparty_screening_attempt` | `screening_id` | `INTERNAL` | As `counterparty_screening.id` |
+| `counterparty_screening_attempt` | `attempt` | `INTERNAL` | A counter |
+| `counterparty_screening_attempt` | `verdict` | `CONFIDENTIAL` | The provider's verdict - evidence, never the decision (`INV-KYC-01`); `HIT` is a tipping-off fact |
+| `counterparty_screening_attempt` | `evidence_ciphertext` | `RESTRICTED-PII` | **The provider's raw answer about a counterparty** - `verification_evidence.content_ciphertext`'s reasoning verbatim |
+| `counterparty_screening_attempt` | `evidence_nonce` | `INTERNAL` | Public-by-design cryptographic material |
+| `counterparty_screening_attempt` | `evidence_key_version` | `INTERNAL` | Rotation metadata |
+| `counterparty_screening_attempt` | `evidence_checksum` | `RESTRICTED-PII` | The possession oracle - classified with what it fingerprints |
+| `counterparty_screening_attempt` | `evidence_length` | `CONFIDENTIAL` | A hit answer is longer than a clear one - `verification_evidence.content_length`'s reasoning |
+| `counterparty_screening_attempt` | `answered_at` | `CONFIDENTIAL` | Dates a screening event |
+
 ### Free text, classified at its ceiling
 
 `audit_record.reason`, `audit_record.change_summary`, `idempotency_record.response_body`,

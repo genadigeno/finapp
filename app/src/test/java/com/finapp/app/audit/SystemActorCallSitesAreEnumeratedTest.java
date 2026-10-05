@@ -360,6 +360,19 @@ class SystemActorCallSitesAreEnumeratedTest {
                         + " The scope wraps each item's re-read-and-apply, one transaction per"
                         + " item; the page read before it claims nothing."),
                     Map.entry(
+                            "com.finapp.kyc.CounterpartyScreenings.decide",
+                    "The automatic counterparty screening decision (P9-TSK-016, ADR-0081): kyc decides"
+                        + " from the provider's verdict and the payee check under a stated policy -"
+                        + " the DecisionRecording.automatically reasoning. Whoever registered the"
+                        + " beneficiary asked for the screening as themselves; recording them as"
+                        + " having cleared or held a counterparty would attribute a compliance"
+                        + " judgement to a customer. A person's release or block acts as themselves."),
+                    Map.entry(
+                            "com.finapp.app.kyc.CounterpartyScreeningRetrySchedule.sweepOnce",
+                    "The counterparty screening retry (P9-TSK-016): nobody commands a retry of an"
+                        + " unavailable screening - the platform asks its provider again, and what it"
+                        + " decides is the automatic decision above."),
+                    Map.entry(
                             "com.finapp.app.fx.FxCoverSchedule.sweepOnce",
                     "The cover sweep (P9-TSK-012, ADR-0077): the platform is principal, and its"
                         + " cover is the platform's own trade with its provider - nobody commands a"

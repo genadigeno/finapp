@@ -266,7 +266,14 @@ class NoSingleInstanceAssumptionRulesTest {
                     // the provider dedupes, and every outcome resolves through FxCoverOutcomes under
                     // the cover row lock, the execution fact's PK the arbiter. Register row:
                     // DISTRIBUTED_EXECUTION.md section 3; the herd is FxCoverDispatchRaceDatabaseTest's.
-                    "com.finapp.app.fx.FxCoverSchedule");
+                    "com.finapp.app.fx.FxCoverSchedule",
+                    // P9-TSK-016: the counterparty screening retry - leaderless and idempotent PER ROW.
+                    // Each tick claims the due screenings in ONE statement on statement_timestamp(),
+                    // the permit moved forward and rows another sweeper holds skipped (FOR UPDATE SKIP
+                    // LOCKED); every answer is decided under the row lock from an unanswered status
+                    // only, the attempt's primary key the second arbiter. Register row:
+                    // DISTRIBUTED_EXECUTION.md section 3; the herd is CounterpartyScreeningDatabaseTest's.
+                    "com.finapp.app.kyc.CounterpartyScreeningRetrySchedule");
 
     /** Types that schedule work with no lease, so every instance runs it. */
     private static final Set<String> AMBIENT_SCHEDULERS =

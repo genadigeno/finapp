@@ -71,7 +71,34 @@ public enum KycErrorCode implements ErrorCode {
     STAKE_EXCEEDS_WHOLE(
             "kyc.StakeExceedsWhole",
             422,
-            "The declared stakes would exceed the whole of the organisation.");
+            "The declared stakes would exceed the whole of the organisation."),
+
+    /**
+     * No counterparty screening has this identifier (`P9-TSK-016`) - the uniform {@code 404}, a
+     * malformed identifier included.
+     */
+    SCREENING_NOT_FOUND(
+            "kyc.ScreeningNotFound",
+            404,
+            "No counterparty screening matches the requested identifier."),
+
+    /**
+     * The counterparty screening is not waiting for a person (`P9-TSK-016`): it was cleared, is still
+     * unanswered, or another reviewer already decided it - a {@code 409}, because nothing was changed.
+     */
+    SCREENING_NOT_IN_REVIEW(
+            "kyc.ScreeningNotInReview",
+            409,
+            "The counterparty screening is not in review."),
+
+    /**
+     * The review is malformed (`P9-TSK-016`): the reason code cannot justify the decision, or the
+     * narrative is blank, too long or holds an instrument shape.
+     */
+    SCREENING_REVIEW_INVALID(
+            "kyc.ScreeningReviewInvalid",
+            422,
+            "The counterparty screening review is not acceptable.");
 
     private final String code;
     private final int status;

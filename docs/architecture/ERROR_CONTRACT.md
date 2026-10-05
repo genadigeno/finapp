@@ -151,6 +151,9 @@ platform's failure — a `500` for a request that can never succeed by being ret
 | `kyc.OwnerAlreadyDeclared` | 409 | This party is already declared on the ownership graph. |
 | `kyc.CaseNotAcceptingOwners` | 409 | The case is no longer accepting owner declarations. |
 | `kyc.StakeExceedsWhole` | 422 | The declared stakes would exceed the whole of the organisation. |
+| `kyc.ScreeningNotFound` | 404 | No counterparty screening matches the requested identifier. |
+| `kyc.ScreeningNotInReview` | 409 | The counterparty screening is not in review. |
+| `kyc.ScreeningReviewInvalid` | 422 | The counterparty screening review is not acceptable. |
 
 **A distinct code because it is actionable** (`P1-TSK-018`'s test for earning one): the caller's
 case was decided, changed circumstances are a *new* case (`INV-LIFE-04`), so the remedy is opening
@@ -168,6 +171,15 @@ an organisation, or is not a registered customer with a verification case — be
 endpoint an oracle over other people's registrations (`INV-IDN-07`'s reasoning applied to a body
 field). A malformed identifier lands on the same code: a value that can name nobody is just
 another party that cannot be declared.
+
+**The three counterparty review codes** (`P9-TSK-016`, ADR-0081 point 4) answer only the reviewer's
+door, behind `COUNTERPARTY_SCREENING_REVIEW`. `ScreeningNotFound` is the uniform `404`, a malformed
+identifier included. `ScreeningNotInReview` is a `409` because nothing changed: the screening was
+cleared, is still unanswered, or another reviewer decided it first - the same reviewer's identical
+retry converges instead. `ScreeningReviewInvalid` is the `422` for a reason code that cannot justify
+the decision, or a narrative that is blank, too long or holds an instrument shape. There is no
+customer-facing screening code at all: nothing tells a customer a counterparty was screened
+(tipping-off).
 
 ### `consent` — `ConsentErrorCode`
 
@@ -752,6 +764,8 @@ subject takes, no evidence that still finds it, no acknowledgement back on its r
 | `crossborder.RailNotDeclared` | 422 | A candidate rail is not declared by this build as covering the corridor's destination. |
 | `crossborder.RequiredDataUnsatisfiable` | 422 | The corridor requires data the platform does not hold. |
 | `crossborder.CorridorPolicyInvalid` | 422 | The corridor policy request is not well formed. |
+| `crossborder.LimitRefused` | 422 | The transfer exceeds a limit that applies to it. |
+| `crossborder.RiskRefused` | 422 | The transfer cannot be accepted. |
 
 The FX controller's doors (`P9-TSK-007`, ADR-0075 §3). `NotFound` is the `FileNotFound`
 departure at the pricing-policy and enable-request doors - every route sits behind
@@ -795,6 +809,12 @@ quote lapsed on the database clock performs the sweeper's own conditional expiry
 (`detectedBy ACCEPTANCE`) and records the claim's failed outcome, so the key replays the same `409`.
 `QuoteNotFound` answers another owner's quote and a malformed id alike; `TradeNotFound` is the uniform
 `404` of the conversion read.
+
+`LimitRefused` and `RiskRefused` (`P9-TSK-016`, ADR-0081 point 8) are **reserved, not produced**: the
+Phase 13 seams `CrossBorderLimitCheck` and `CrossBorderRiskDecision` are required parameters of the
+cross-border authorization (`P9-TSK-019`), consulted in-lock before the offer is accepted, and Phase 9
+wires `PermitAllUntilPhase13`. A `REFUSE` will consume nothing; reserving the codes now means Phase 13
+changes no contract.
 
 ## 3a. Rejection at the boundary
 

@@ -373,5 +373,17 @@ public enum PermissionName {
      * fee and the corridor limits are the same revenue and exposure policy as the FX margin, decided by
      * the same population - which can neither reverse trades nor clear screenings.
      */
-    CROSSBORDER_ADMINISTER
+    CROSSBORDER_ADMINISTER,
+
+    /**
+     * Release or block a counterparty screening in review (`P9-TSK-016`, ADR-0081 point 4,
+     * `PHASE_9_PLAN.md` §11): {@code POST /v1/operator/kyc/counterparty-screenings/'{id}'/decision},
+     * keyed, with a reason code and a narrative; it names {@code kyc.CounterpartyScreeningDecided} and
+     * ships with its real check site.
+     *
+     * <p><strong>Held by {@code KYC_REVIEWER}</strong>, beside {@link #KYC_REVIEW}: a counterparty hit
+     * is judged by the population that already judges onboarding hits ({@code INV-KYC-04}). Whoever sets
+     * prices ({@code FX_CONTROLLER}) cannot clear a screening.
+     */
+    COUNTERPARTY_SCREENING_REVIEW
 }

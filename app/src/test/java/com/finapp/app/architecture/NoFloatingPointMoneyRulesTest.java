@@ -278,6 +278,10 @@ class NoFloatingPointMoneyRulesTest {
                     // count) and the plan replay's verdict (1 or 0), through the ToDoubleFunction a
                     // Gauge imposes, NaN the sentinel for unreadable. Verdicts, never an amount.
                     "com.finapp.app.fx.FxProofMetrics",
+                    // P9-TSK-016. The SAME case again: screenings waiting for a person (a COUNT) and
+                    // the oldest one's AGE in seconds, through the ToDoubleFunction a Gauge imposes,
+                    // NaN the sentinel for unreadable. Counts and ages, never an amount or a name.
+                    "com.finapp.app.kyc.CounterpartyScreeningMetrics",
                     // P9-TSK-011. The SAME case again: whether each declared source has an
                     // ACTIVE rule set - a boolean read from the database, published as 1 or 0
                     // through the ToDoubleFunction a Gauge imposes, NaN the sentinel for

@@ -1,6 +1,6 @@
 # Task History
 
-The per-task completion records that accumulated behind `## Current Task` - 209 "Previously" blocks, newest first, from `P9-TSK-014` back to project initiation. *(`X-TSK-016` is cross-cutting and completed after `P9-TSK-010` and before `P9-TSK-011`, so it stands between them.)* *(`X-TSK-005` is cross-cutting and completed after `P7-TSK-014` and before `P7-TSK-015`, so it stands between them; its record came in with its branch's merge.)* *(`X-TSK-004` is cross-cutting and completed after the Phase 6 → 7 transition, so it stands second, between `P7-TSK-001` and the transition's record - the transition's block moved here by `P7-TSK-001`'s gate, exactly as an earlier form of this note said it would.)*
+The per-task completion records that accumulated behind `## Current Task` - 210 "Previously" blocks, newest first, from `P9-TSK-015` back to project initiation. *(`X-TSK-016` is cross-cutting and completed after `P9-TSK-010` and before `P9-TSK-011`, so it stands between them.)* *(`X-TSK-005` is cross-cutting and completed after `P7-TSK-014` and before `P7-TSK-015`, so it stands between them; its record came in with its branch's merge.)* *(`X-TSK-004` is cross-cutting and completed after the Phase 6 → 7 transition, so it stands second, between `P7-TSK-001` and the transition's record - the transition's block moved here by `P7-TSK-001`'s gate, exactly as an earlier form of this note said it would.)*
 
 **Archive.** These records were moved verbatim out of
 [`CURRENT_STATE.md`](../CURRENT_STATE.md) on 2026-09-20 so that the canonical description of
@@ -12,6 +12,34 @@ Current state: [`CURRENT_STATE.md`](../CURRENT_STATE.md) ·
 Authoritative backlog: [`BACKLOG.md`](../BACKLOG.md)
 
 ---
+
+### Previously
+
+**`P9-TSK-015` — The corridor policy and availability** — `COMPLETE` (2026-10-05). **M9.5 AT 2 OF 4:
+corridors are four-eyes, versioned data, discoverable by customers - no corridor is offered without two named
+persons** (ADR-0080 §4, the lifecycle document §3.9-3.10; `INV-HIST-04`, `INV-AUD-04`). **crossborder `V002`**,
+the module's first tables: `corridor_policy_version` on the pricing policy's machine (`PROPOSED -> ACTIVE | REJECTED`,
+`ACTIVE -> RETIRED` only beside its successor, one `ACTIVE` and one `PROPOSED`, activator <> proposer by `CHECK`
+with no seed exemption), its append-only `corridor_policy_event`, the frozen `corridor` rows (S, D, country,
+candidate rails in order, fee as fixed minor units in S plus a margin with a named rounding, maximum in D,
+screening validity and delivery estimate in hours, required data), the append-only `corridor_availability` facts
+keyed by the stable code `S-D-CC`, the four-eyes `corridor_enable_request`, and the reason screen twinned from fx
+`V004`. **The domain** (crossborder): `CorridorPolicyAdministration` (propose, approve, reject - the build judged
+through the new `CorridorDirectory` port at proposal AND at approval: every candidate rail declared and covering
+(country, D), every required datum one the platform holds) and `CorridorAvailability` (one person disables at
+once; enabling is a proposal a second person approves; advisory namespace 8), `CorridorTerms`, `CorridorKey`,
+`RequiredData`, `CrossborderAuditAction` (seven reasoned acts), `CrossborderErrorCode`, events
+`crossborder.CorridorPolicyActivated` and `crossborder.CorridorAvailabilityChanged`. **identity**:
+`CROSSBORDER_ADMINISTER`, held by `FX_CONTROLLER`. **app**: `CrossborderBeans` (crossborder's own transaction
+runner; the directory over payments' `RailOperations`), the operator doors under
+`/v1/operator/cross-border/...` and the customer's `GET /v1/me/cross-border/corridors` (the active version's
+available corridors a declared rail carries, never naming a rail), the OpenAPI contract, the route, ownership and
+request-schema registers; v1 per O7 (`CorridorPolicyV1`, the runbook) activated by two controllers.
+**PROBES** (Eight probes, eight caught, each by its own case), every restore byte-identical (sha256-verified; `MUTATION_TESTING.md` §2 +8 rows).
+**Multi-instance PASS** - ten proposers leave one proposal, ten approvers one activation, ten enable approvers one
+enabling fact, ten disablers one fact (each counted). Nothing posts. **NEXT**: `P9-TSK-016` `READY`. **Verified** by
+fresh runs - the fleet-wide hermetic tier 2498 across 409 suites and 18 modules; the architecture tier 157 across 27; the task's own database
+suites while built (the crossborder module 30 across 6, CorridorAdministrationEndpointDatabaseTest 5); ALL 0 FAILURES - the other database tiers skipped on the owner's instruction.
 
 ### Previously
 

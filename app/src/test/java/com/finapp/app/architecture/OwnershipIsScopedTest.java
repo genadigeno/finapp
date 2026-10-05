@@ -440,6 +440,27 @@ class OwnershipIsScopedTest {
                                         + " asserted per route with nothing written by"
                                         + " CorridorAdministrationEndpointDatabaseTest.")),
                     Map.entry(
+                            "com.finapp.kyc.JdbcCounterpartyScreeningStore.decideAutomatically",
+                            new Entry(
+                                    Scope.ADMINISTERED,
+                                    "P9-TSK-016. The screening id comes only from a row this"
+                                        + " transaction locked FOR UPDATE (lock(id)) - minted by kyc"
+                                        + " at the request, never a customer's value - and the move"
+                                        + " is conditional on the expected unanswered status. A"
+                                        + " counterparty screening is kyc's compliance record with no"
+                                        + " customer owner to scope by; no customer door reaches it.")),
+                    Map.entry(
+                            "com.finapp.kyc.JdbcCounterpartyScreeningStore.decideByReviewer",
+                            new Entry(
+                                    Scope.ADMINISTERED,
+                                    "P9-TSK-016. The screening id comes from a reviewer's URL; what"
+                                        + " stands in for the ownership predicate is"
+                                        + " @RequiresPermission(COUNTERPARTY_SCREENING_REVIEW) at the"
+                                        + " boundary, asserted per route by"
+                                        + " CounterpartyScreeningDatabaseTest, plus the row locked FOR"
+                                        + " UPDATE first and the statement's status = 'IN_REVIEW'"
+                                        + " condition.")),
+                    Map.entry(
                             "com.finapp.fx.JdbcPricingPolicyStore.insertProposal",
                             new Entry(
                                     Scope.ADMINISTERED,

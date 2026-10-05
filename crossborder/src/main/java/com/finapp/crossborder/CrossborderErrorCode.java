@@ -41,7 +41,20 @@ public enum CrossborderErrorCode implements ErrorCode {
 
     /** The proposal or the decision is malformed; the detail names the defect. */
     CORRIDOR_POLICY_INVALID(
-            "crossborder.CorridorPolicyInvalid", 422, "The corridor policy request is not well formed.");
+            "crossborder.CorridorPolicyInvalid", 422, "The corridor policy request is not well formed."),
+
+    /**
+     * Reserved for the Phase 13 limit seam (`P9-TSK-016`, ADR-0081 point 8): {@link CrossBorderLimitCheck}
+     * refused the instruction, and nothing was consumed. Phase 9's {@link PermitAllUntilPhase13} never
+     * produces it; reserving it now means Phase 13 changes no contract.
+     */
+    LIMIT_REFUSED("crossborder.LimitRefused", 422, "The transfer exceeds a limit that applies to it."),
+
+    /**
+     * Reserved for the Phase 13 risk seam (`P9-TSK-016`, ADR-0081 point 8): {@link CrossBorderRiskDecision}
+     * refused the instruction before the offer was accepted, and nothing was consumed.
+     */
+    RISK_REFUSED("crossborder.RiskRefused", 422, "The transfer cannot be accepted.");
 
     private final String code;
     private final int status;

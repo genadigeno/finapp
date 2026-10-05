@@ -172,6 +172,7 @@ that is recorded debt rather than an omission here.
 | `kyc.DocumentContentRead` | No | Document content was read, naming who looked and at which document. |
 | `kyc.CaseRead` | No | A reviewer read a KYC/KYB case, naming who looked and at which case. |
 | `kyc.OwnerDeclared` | No | A beneficial owner was declared onto a KYB case, pinning the verification case the graph rests on. |
+| `kyc.CounterpartyScreeningDecided` | **Yes** | kyc decided a counterparty screening - automatically from the provider's verdict and the payee check, or a reviewer's release or block - naming its basis and policy version. |
 
 The two reason-required actions are the invariants speaking: `INV-KYC-02` makes a decision's
 reason a `NOT NULL` column, and `INV-KYC-04` requires a hit's resolution to carry its
@@ -198,6 +199,14 @@ decision record (`INV-KYC-01`: a provider verdict is evidence, never the decisio
 decision will rest on (`INV-KYC-02` — the owner set is part of the decision's evidence), which
 is what makes it an action of consequence; no reason, because declaring the graph is the
 declarant's own compliance act, taken for and against nobody — the consent-pair argument.
+`kyc.CounterpartyScreeningDecided` joined at `P9-TSK-016` (ADR-0081): **every** outcome of a
+counterparty screening - `CLEAR`, `IN_REVIEW`, `UNAVAILABLE` by the platform, `RELEASED` or
+`BLOCKED` by a person - is a recorded decision (`INV-KYC-01` extended), written in the decision's
+own transaction. **Reason required**: an outcome nobody can explain is one nobody can defend. The
+platform's reason names the provider's verdict, the payee check and the outcome (*"the provider
+answered HIT and the payee check was MATCH: decided IN_REVIEW (HIT)"*); a reviewer's is the reason
+code and the narrative. The change summary carries the screening id, status, basis, policy version
+and attempts - **never the counterparty's name**, which rests only in kyc's ciphertext (the needle).
 
 `party.OrganisationRegistered` joined at `P2-TSK-016`, and its actor is **the proven person,
 never the platform** — the opposite of `party.CustomerRegistered`, whose caller is
