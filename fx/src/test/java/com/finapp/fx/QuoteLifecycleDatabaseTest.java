@@ -6,6 +6,7 @@ import static com.finapp.fx.FxPolicyFixtures.scalar;
 import static com.finapp.fx.FxQuoteFixtures.A;
 import static com.finapp.fx.FxQuoteFixtures.B;
 import static com.finapp.fx.FxQuoteFixtures.activate;
+import static com.finapp.fx.FxQuoteFixtures.awaitDatabaseClock;
 import static com.finapp.fx.FxQuoteFixtures.claim;
 import static com.finapp.fx.FxQuoteFixtures.customer;
 import static com.finapp.fx.FxQuoteFixtures.eurUsdBothWays;
@@ -93,7 +94,7 @@ class QuoteLifecycleDatabaseTest {
         UUID owner = UUID.randomUUID();
         QuoteStore.QuoteRow quote = issue(issuance(providers(a, b), Clock.systemUTC()), owner, claim(), "EUR", "USD",
                 FixedSide.FIXED_SOURCE, "100.00").quote();
-        Thread.sleep(Duration.between(Instant.now(), quote.expiresAt()).toMillis() + 500);
+        awaitDatabaseClock(quote.expiresAt().plusMillis(500));
         String id = quote.id().value().toString();
         try (Connection app = application()) {
             assertThat(lifecycle().read(app, quote.id(), owner).orElseThrow().status()).isEqualTo(QuoteStatus.EXPIRED);
@@ -126,7 +127,7 @@ class QuoteLifecycleDatabaseTest {
             }
         }
         Instant last = quotes.stream().map(QuoteStore.QuoteRow::expiresAt).max(Instant::compareTo).orElseThrow();
-        Thread.sleep(Duration.between(Instant.now(), last).toMillis() + 500);
+        awaitDatabaseClock(last.plusMillis(500));
         AtomicInteger expired = new AtomicInteger();
         race(10, () -> {
             while (true) {
@@ -168,7 +169,7 @@ class QuoteLifecycleDatabaseTest {
             quotes.add(issue(issuance, owner, claim(), "EUR", "USD", FixedSide.FIXED_SOURCE, "100.00").quote());
         }
         Instant first = quotes.stream().map(QuoteStore.QuoteRow::expiresAt).min(Instant::compareTo).orElseThrow();
-        Thread.sleep(Math.max(0, Duration.between(Instant.now(), first).toMillis() - 150));
+        awaitDatabaseClock(first.minusMillis(150));
         Instant until = Instant.now().plusMillis(1500);
         race(20, index -> {
             while (Instant.now().isBefore(until)) {

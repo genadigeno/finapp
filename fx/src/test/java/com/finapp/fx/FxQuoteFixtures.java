@@ -16,10 +16,13 @@ import com.finapp.sharedkernel.money.Money;
 import com.finapp.sharedkernel.money.RoundingPolicy;
 import java.math.BigDecimal;
 import java.sql.Connection;
+import java.sql.PreparedStatement;
+import java.sql.ResultSet;
 import java.sql.SQLException;
 import java.time.Clock;
 import java.time.Duration;
 import java.time.Instant;
+import java.time.ZoneOffset;
 import java.util.Arrays;
 import java.util.List;
 import java.util.Optional;
@@ -33,6 +36,7 @@ final class FxQuoteFixtures {
     static final String B = "test-b";
     static final Set<String> DECLARED = Set.of(A, B, FxPolicyFixtures.PROVIDER);
     static final Duration MINIMUM_WINDOW = Duration.ofSeconds(5);
+    private static final Duration CLOCK_WAIT_BOUND = Duration.ofSeconds(60);
 
     private FxQuoteFixtures() {}
 
@@ -192,5 +196,43 @@ final class FxQuoteFixtures {
 
     static String claim() {
         return "fx.quote:CUSTOMER:test|" + UUID.randomUUID();
+    }
+
+    /**
+     * Waits until the database's own clock has reached {@code instant} - the clock every lapse is
+     * judged on ({@code expires_at <= statement_timestamp()}) and {@code expires_at} is stamped from.
+     *
+     * <p>The JVM's clock is not that clock: the container runs in a VM whose clock drifts from the
+     * host's (measured 565 ms behind on 2026-10-05), so a sleep timed on {@link Instant#now()} can
+     * wake before the quote has lapsed where it is judged. Bounded: past {@link #CLOCK_WAIT_BOUND}
+     * the case fails rather than hangs.
+     */
+    static void awaitDatabaseClock(Instant instant) throws SQLException, InterruptedException {
+        long deadline = System.nanoTime() + CLOCK_WAIT_BOUND.toNanos();
+        try (Connection probe = application();
+                PreparedStatement remaining = probe.prepareStatement(
+                        "SELECT statement_timestamp() >= ?,"
+                                + " CAST(CEIL(EXTRACT(EPOCH FROM (? - statement_timestamp())) * 1000) AS bigint)")) {
+            remaining.setObject(1, instant.atOffset(ZoneOffset.UTC));
+            remaining.setObject(2, instant.atOffset(ZoneOffset.UTC));
+            while (true) {
+                boolean reached;
+                long millis;
+                try (ResultSet row = remaining.executeQuery()) {
+                    row.next();
+                    reached = row.getBoolean(1);
+                    millis = row.getLong(2);
+                }
+                probe.rollback();
+                if (reached) {
+                    return;
+                }
+                if (System.nanoTime() > deadline) {
+                    throw new AssertionError("the database clock did not reach " + instant + " within "
+                            + CLOCK_WAIT_BOUND + " (" + millis + " ms short)");
+                }
+                Thread.sleep(Math.max(1, millis));
+            }
+        }
     }
 }

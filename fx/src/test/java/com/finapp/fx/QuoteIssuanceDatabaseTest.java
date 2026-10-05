@@ -5,6 +5,7 @@ import static com.finapp.fx.FxPolicyFixtures.scalar;
 import static com.finapp.fx.FxQuoteFixtures.A;
 import static com.finapp.fx.FxQuoteFixtures.B;
 import static com.finapp.fx.FxQuoteFixtures.activate;
+import static com.finapp.fx.FxQuoteFixtures.awaitDatabaseClock;
 import static com.finapp.fx.FxQuoteFixtures.claim;
 import static com.finapp.fx.FxQuoteFixtures.eurUsdBothWays;
 import static com.finapp.fx.FxQuoteFixtures.issuance;
@@ -160,7 +161,7 @@ class QuoteIssuanceDatabaseTest {
         QuoteStore.QuoteRow first = issue(issuance, owner, claim(), "EUR", "USD", FixedSide.FIXED_SOURCE, "100.00").quote();
         assertThatThrownBy(() -> issue(issuance, owner, claim(), "EUR", "USD", FixedSide.FIXED_SOURCE, "100.00"))
                 .isInstanceOf(QuoteRefusal.Refused.class);
-        Thread.sleep(Duration.between(Instant.now(), first.expiresAt()).toMillis() + 500);
+        awaitDatabaseClock(first.expiresAt().plusMillis(500));
         reference("EUR", "USD", "1.0850000000");
         assertThat(issue(issuance, owner, claim(), "EUR", "USD", FixedSide.FIXED_SOURCE, "100.00").quote().status())
                 .isEqualTo(QuoteStatus.ISSUED);
