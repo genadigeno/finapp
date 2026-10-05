@@ -46,6 +46,7 @@ public interface TradeStore {
             Money fixedAmount,
             String clientReference,
             String providerQuoteReference,
+            UUID causedByEventId,
             String correlationId) {}
 
     /** Books the plan of {@code plan}'s quote - which must be ACCEPTED - as trade {@code id}. */

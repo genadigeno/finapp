@@ -33,6 +33,10 @@ class LedgerAccountMigrationTest {
      * migration fails here, which is the entire point.
      */
     private static final String LATEST_CHART_RULES =
+            "db/migration/ledger/V023__fx_realised_results_join_the_chart.sql";
+
+    /** Where the counterparty registry was created (`P9-TSK-010`) - no later migration restates it. */
+    private static final String COUNTERPARTY_REGISTRY =
             "db/migration/ledger/V021__counterparty_keyed_clearing_positions.sql";
 
     @Test
@@ -115,7 +119,7 @@ class LedgerAccountMigrationTest {
     @Test
     @DisplayName("the counterparty registry's kind list and code shape are the domain's own (P9-TSK-010)")
     void theRegistryIsTheDomainsOwn() {
-        String rules = read(LATEST_CHART_RULES);
+        String rules = read(COUNTERPARTY_REGISTRY);
         assertThat(rules).contains("CHECK (kind IN (" + CounterpartyKind.sqlValueList() + "))");
         assertThat(rules).contains("CHECK (code ~ '^" + Counterparty.CODE_SHAPE.pattern() + "$')");
         assertThat(rules).contains("GRANT SELECT, INSERT ON ledger.counterparty TO finapp_app;");

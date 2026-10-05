@@ -20,9 +20,10 @@ import org.junit.jupiter.api.Test;
 
 /**
  * The FX books have one poster (`P9-TSK-009`; PHASE_9_PLAN.md section 12.6): {@code FX_POSITION},
- * {@code FX_SPREAD_REVENUE} and {@code ROUNDING_RESIDUAL} are named in production code only by
- * their declaration and {@code fx}'s {@code ConversionLines} - a second place naming one is a second
- * way value could move on it. {@code CoverLines} (`P9-TSK-012`) joins the permit. Read from the
+ * {@code FX_SPREAD_REVENUE}, {@code ROUNDING_RESIDUAL}, {@code FX_REALISED_GAINS} and
+ * {@code FX_REALISED_LOSSES} are named in production code only by their declaration and {@code fx}'s
+ * two line composers - {@code ConversionLines} and {@code CoverLines} (`P9-TSK-012`) - a second place
+ * naming one is a second way value could move on it. Read from the
  * code with comments stripped and from the string literals, the {@code CashAtBankHasOnePosterTest}
  * scanner; planted posters prove the rule bites.
  */
@@ -38,12 +39,18 @@ class FxBooksHaveOnePosterTest {
                     "ConversionLines.java",
                     "POSTER: a wallet conversion's lines - wallet against FX_POSITION per currency,"
                             + " the margin to FX_SPREAD_REVENUE and the residual to ROUNDING_RESIDUAL"
-                            + " in the computed leg's currency. CoverLines (P9-TSK-012) joins it");
+                            + " in the computed leg's currency",
+                    "CoverLines.java",
+                    "POSTER: a cover's lines (P9-TSK-012) - FX_POSITION's plan legs closed onto the"
+                            + " provider's own clearing, the difference to FX_REALISED_GAINS or"
+                            + " FX_REALISED_LOSSES in that leg's currency");
 
-    /** The FX books: the position, the spread revenue and the rounding residual. */
-    private static final List<String> BOOKS = List.of("FX_POSITION", "FX_SPREAD_REVENUE", "ROUNDING_RESIDUAL");
+    /** The FX books: the position, the spread revenue, the rounding residual and the realised results. */
+    private static final List<String> BOOKS =
+            List.of("FX_POSITION", "FX_SPREAD_REVENUE", "ROUNDING_RESIDUAL", "FX_REALISED_GAINS", "FX_REALISED_LOSSES");
 
-    private static final Pattern TOKEN = Pattern.compile("\\b(FX_POSITION|FX_SPREAD_REVENUE|ROUNDING_RESIDUAL)\\b");
+    private static final Pattern TOKEN = Pattern.compile(
+            "\\b(FX_POSITION|FX_SPREAD_REVENUE|ROUNDING_RESIDUAL|FX_REALISED_GAINS|FX_REALISED_LOSSES)\\b");
 
     @Test
     @DisplayName("the FX books are named only by their declaration and the conversion's line composer")

@@ -185,8 +185,15 @@ class ExpectationOpenerRegisterTest {
         rows.put("fx-trade:",
                 touchesNothing("a wallet conversion (P9-TSK-009, ADR-0076): the customer's two wallets"
                                 + " against FX_POSITION, FX_SPREAD_REVENUE and ROUNDING_RESIDUAL - none a"
-                                + " reconciled position; the provider's cover settles at P9-TSK-012",
+                                + " reconciled position; the provider's cover opens the legs (fx-cover:)",
                         proof(NOTHING, "fx.FxConversionDatabaseTest", "theWorkedExamplesPostExactly")));
+        rows.put("fx-cover:",
+                opens("an executed cover (P9-TSK-012, ADR-0077 section 6): FX_POSITION closed onto the"
+                                + " provider's OWN FX_PROVIDER_CLEARING - the sold currency's CR line and the"
+                                + " bought currency's DR line, each copied into its leg's expectation through"
+                                + " fx's FxSettlementExpectations port, keyed COVER_REF",
+                        proof("FX_SELL_LEG", "fx.FxCoverDatabaseTest", "theCoverExecutesAtThePlan"),
+                        proof("FX_BUY_LEG", "fx.FxCoverDatabaseTest", "theCoverExecutesAtThePlan")));
         rows.put("transfer:",
                 touchesNothing("wallet to wallet and its reversal - FINAL_ON_POSTING, nothing"
                                 + " external settles (the storm's scope asserted to hold"

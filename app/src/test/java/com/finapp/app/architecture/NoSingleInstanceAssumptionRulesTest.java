@@ -258,7 +258,15 @@ class NoSingleInstanceAssumptionRulesTest {
                     // in the moving statement's transaction, so N sweepers expire each quote
                     // once, counted. The instance's clock decides nothing. Register row:
                     // DISTRIBUTED_EXECUTION.md section 3; the herd is QuoteLifecycleDatabaseTest's.
-                    "com.finapp.app.fx.FxQuoteExpirySchedule");
+                    "com.finapp.app.fx.FxQuoteExpirySchedule",
+                    // P9-TSK-012: the cover sweep - leaderless and idempotent PER ROW. Each tick
+                    // claims the due covers in ONE statement, the forward-only permit renewed by
+                    // statement_timestamp() (fx V006's trigger), rows another sweeper holds skipped
+                    // and the due predicate re-evaluated on the locked row; every send is the same T
+                    // the provider dedupes, and every outcome resolves through FxCoverOutcomes under
+                    // the cover row lock, the execution fact's PK the arbiter. Register row:
+                    // DISTRIBUTED_EXECUTION.md section 3; the herd is FxCoverDispatchRaceDatabaseTest's.
+                    "com.finapp.app.fx.FxCoverSchedule");
 
     /** Types that schedule work with no lease, so every instance runs it. */
     private static final Set<String> AMBIENT_SCHEDULERS =

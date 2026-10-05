@@ -331,6 +331,15 @@ class OwnershipIsScopedTest {
                                     "com.finapp.fx.JdbcQuoteStore.lockOwned",
                                     "P9-TSK-008. The conditional ISSUED -> CANCELLED, run by QuoteLifecycle.cancel only on the" + " id lockOwned resolved as the caller's own in the same transaction; V005's freeze makes" + " the owner immutable, so the ownership that read established still holds.")),
                     Map.entry(
+                            "com.finapp.fx.JdbcCoverStore.lockWanted",
+                            new Entry(
+                                    Scope.AUTHORITATIVE_ID,
+                                    "com.finapp.fx.JdbcQuoteStore.lockOwned",
+                                    "P9-TSK-012. Whether a cover's quote still wants it - two statuses FOR SHARE, read by"
+                                        + " the platform's cover legs (FxCoverOutcomes, FxCoverDispatch) only, never a surface;"
+                                        + " the quote id is the cover row's, written in the conversion's transaction from the"
+                                        + " quote lockOwned resolved as the caller's own and frozen by fx V006's trigger.")),
+                    Map.entry(
                             "com.finapp.fx.JdbcQuoteStore.plan",
                             new Entry(
                                     Scope.AUTHORITATIVE_ID,
