@@ -5,6 +5,7 @@ import static com.finapp.fx.FxPolicyFixtures.scalar;
 import static com.finapp.fx.FxQuoteFixtures.A;
 import static com.finapp.fx.FxQuoteFixtures.B;
 import static com.finapp.fx.FxQuoteFixtures.activate;
+import static com.finapp.fx.FxQuoteFixtures.awaitDatabaseClock;
 import static com.finapp.fx.FxQuoteFixtures.claim;
 import static com.finapp.fx.FxQuoteFixtures.eurUsdBothWays;
 import static com.finapp.fx.FxQuoteFixtures.issuance;
@@ -24,7 +25,6 @@ import java.sql.Savepoint;
 import java.sql.Statement;
 import java.time.Clock;
 import java.time.Duration;
-import java.time.Instant;
 import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.List;
@@ -134,7 +134,7 @@ class QuoteSchemaDatabaseTest {
         activate(eurUsdBothWays(FxQuoteFixtures.MINIMUM_WINDOW, Duration.ZERO), 5);
         QuoteStore.QuoteRow quote = issue(issuance(providers(a, b), Clock.systemUTC()), UUID.randomUUID(), claim(),
                 "EUR", "USD", FixedSide.FIXED_SOURCE, "100.00").quote();
-        Thread.sleep(Duration.between(Instant.now(), quote.expiresAt()).toMillis() + 500);
+        awaitDatabaseClock(quote.expiresAt().plusMillis(500));
         String id = quote.id().value().toString();
         try (Connection app = application()) {
             refusedSql(app, "UPDATE fx.quote SET status = 'ACCEPTED' WHERE id = '" + id + "'", RAISED);

@@ -494,11 +494,11 @@ PASS** - ten first-version proposers leave one proposal and ten approvers one ac
 with no rule set fails once and waits on its backoff, never a hot loop; the currency screen runs in the
 parse leg's claimed transaction; every gauge read is the database's. **NEXT**: `P9-TSK-012` `READY`.
 **Verified** by fresh runs - the fleet-wide hermetic tier 2441 across 397 suites and 18 modules (its one red case the mutation-row parser naming three new rows, fixed and re-run green with the app tier); the architecture tier 155 across 27; the
-app hermetic tier with every document guard 714 across 134; settlement database 89 across 14, reconciliation database 236 across 26 (the FX matching suite 3), fx database 60 across 12 failing only master's three quote-expiry cases, and the app database selection 224 across 32 (the FX source suite 5, the counterparty chart 5) failing exactly master's 22, ALL 0 FAILURES beyond what master fails
+app hermetic tier with every document guard 714 across 134; settlement database 89 across 14, reconciliation database 236 across 26 (the FX matching suite 3), fx database 60 across 12 and hermetic 39 across 9 after master's clock correction merged, and the app database selection 224 across 32 (the FX source suite 5, the counterparty chart 5) failing exactly master's 22, ALL 0 FAILURES beyond what master fails
 identically - the fleet-wide database and kafka tiers deliberately skipped on the owner's instruction.
-**FOUND, NOT CAUSED**: three `fx` quote-expiry database cases (`QuoteLifecycleDatabaseTest`,
-`QuoteIssuanceDatabaseTest`) red on master itself today - they sleep on the JVM clock until a quote lapses
-while expiry is judged on the database clock - offered as their own task.
+**FOUND, NOT CAUSED, FIXED BESIDE IT**: the `fx` quote-lapse database cases red on master itself - they slept
+on the JVM clock while lapse is judged on the database's - were corrected on master by `85879c14` (merged
+here) and re-run green with this task.
 
 ### Previously
 
