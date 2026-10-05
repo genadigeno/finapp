@@ -113,6 +113,25 @@ public final class JdbcTradeStore implements TradeStore {
     }
 
     @Override
+    public Optional<CoverByReference> coverByClientReference(Connection unitOfWork, String clientReference) {
+        Objects.requireNonNull(unitOfWork, "unitOfWork must not be null");
+        Objects.requireNonNull(clientReference, "clientReference must not be null");
+        try (PreparedStatement select = unitOfWork.prepareStatement(
+                "SELECT c.id, c.status FROM fx.cover_attempt a JOIN fx.cover c ON c.id = a.cover_id"
+                        + " WHERE a.client_reference = ?")) {
+            select.setString(1, clientReference);
+            try (ResultSet row = select.executeQuery()) {
+                return row.next()
+                        ? Optional.of(new CoverByReference(
+                                row.getObject("id", UUID.class), CoverStatus.valueOf(row.getString("status"))))
+                        : Optional.empty();
+            }
+        } catch (SQLException failure) {
+            throw new IllegalStateException(DatabaseFailure.describe("reading a cover by its reference", failure), failure);
+        }
+    }
+
+    @Override
     public void insertCover(Connection unitOfWork, CoverDraft draft) {
         Objects.requireNonNull(draft, "draft must not be null");
         try (PreparedStatement cover = unitOfWork.prepareStatement(

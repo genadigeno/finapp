@@ -32,11 +32,25 @@ public enum KeyKind {
     SCHEME_REF,
     END_TO_END_REF,
     PAYOUT_PROVIDER_REF,
-    REMITTANCE_REF;
+    REMITTANCE_REF,
+
+    /** The platform's cover reference {@code T-...}: an FX leg's key (`P9-TSK-011`). */
+    COVER_REF,
+
+    /** The FX provider's trade reference: an FX leg's alias, recorded for the trace. */
+    FX_TRADE_REF;
 
     /** The `V002` {@code CHECK}s' value list — reconciled by the migration test. */
     public static String sqlValueList() {
         return Arrays.stream(values())
+                .map(value -> "'" + value.name() + "'")
+                .collect(Collectors.joining(", "));
+    }
+
+    /** The members of {@code members}, in declaration order, as a SQL literal list. */
+    public static String sqlValueList(java.util.Set<KeyKind> members) {
+        return Arrays.stream(values())
+                .filter(members::contains)
                 .map(value -> "'" + value.name() + "'")
                 .collect(Collectors.joining(", "));
     }

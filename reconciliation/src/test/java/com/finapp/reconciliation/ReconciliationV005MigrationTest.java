@@ -41,10 +41,10 @@ class ReconciliationV005MigrationTest {
                 .contains(normalized(
                         "CONSTRAINT match_decision_key_kind CHECK (matched_key_kind IS"
                                 + " NULL OR matched_key_kind IN ("
-                                + KeyKind.sqlValueList() + "))"))
+                                + KeyKind.sqlValueList(java.util.EnumSet.range(KeyKind.PSP_CAPTURE_REF, KeyKind.REMITTANCE_REF)) + "))"))
                 .contains(normalized(
                         "CONSTRAINT match_candidate_key_kind CHECK (key_kind IN ("
-                                + KeyKind.sqlValueList() + "))"))
+                                + KeyKind.sqlValueList(java.util.EnumSet.range(KeyKind.PSP_CAPTURE_REF, KeyKind.REMITTANCE_REF)) + "))"))
                 .contains(normalized(
                         "CONSTRAINT match_candidate_direction CHECK (direction IN ("
                                 + Arrays.stream(ExpectationDirection.values())

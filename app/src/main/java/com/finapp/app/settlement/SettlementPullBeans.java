@@ -47,6 +47,9 @@ public class SettlementPullBeans {
     static final String PAYOUT = "simulated-payout.settlement";
     static final String BANK = "simulated-bank.statement";
 
+    /** The FX provider's trade report (`P9-TSK-011`) - its code read off the provider's declaration. */
+    static final String FX = com.finapp.app.fx.SimulatedFxProviderAdapter.CODE + ".trade-report";
+
     @Bean
     PullPermitStore<Connection> pullPermitStore() {
         return new JdbcPullPermitStore();
@@ -96,6 +99,19 @@ public class SettlementPullBeans {
         return new HttpSettlementReportCollector(
                 PAYOUT, url, timeout,
                 PayoutReportKey.decode(configuredKey, loopback(environment)));
+    }
+
+    @Bean
+    @ConditionalOnProperty("finapp.fx.report.url")
+    SettlementReportCollector fxReportCollector(
+            @Value("${finapp.fx.report.url}") URI url,
+            @Value("${finapp.settlement.pull.timeout:PT10S}") Duration timeout,
+            @Value("${finapp.fx.report.key:"
+                            + com.finapp.app.mfa.MfaKey.MARKED_LOCAL_DEFAULT + "}")
+                    String configuredKey,
+            Environment environment) {
+        return new HttpSettlementReportCollector(
+                FX, url, timeout, FxReportKey.decode(configuredKey, loopback(environment)));
     }
 
     @Bean

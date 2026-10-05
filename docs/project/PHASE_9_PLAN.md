@@ -1463,7 +1463,7 @@ declarations.
 | `finapp.crossborder.return` | counter `corridor`, `outcome` (`applied`, `deferred`, `not_applicable`, `resolved`) | Returns: applied automatically, deferred while the credit is in flight, not applicable (parked later by reconciliation, whose break meters count the park), resolved by a person |
 | `finapp.kyc.counterparty.screening` | counter `outcome` (`clear`, `in_review`, `released`, `blocked`, `unavailable`) | Screening |
 | `finapp.kyc.counterparty.review.pending` / `.review.age` | gauge | The review backlog (alert) |
-| `finapp.reconciliation.rule_set.missing` | gauge `source` | A declared source without an active rule set (alert) |
+| `finapp.reconciliation.rule.set.missing` | gauge `source` | A declared source without an active rule set (alert). *As built (`P9-TSK-011`): spelled with dots - the meter convention admits no underscore - and exported to Prometheus as `finapp_reconciliation_rule_set_missing`, this row's earlier spelling exactly* |
 | `finapp.fx.rate.sweeper.enabled`, `finapp.fx.quote.expiry.sweeper.enabled`, `finapp.fx.cover.sweeper.enabled`, `finapp.kyc.counterparty.sweeper.enabled`, `finapp.payments.outbound.sweeper.enabled`, `finapp.payments.outbound.return.sweeper.enabled` | gauge, one per §7 schedule, each built by its task | Schedules on (`crossborder` owns no schedule, so it has no such gauge) |
 | `finapp.ledger.trial.balance` | gauge `currency` (existing) | Now eager for five currencies |
 

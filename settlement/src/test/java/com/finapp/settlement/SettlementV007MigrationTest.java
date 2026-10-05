@@ -21,6 +21,17 @@ class SettlementV007MigrationTest {
     private static final String MIGRATION =
             "db/migration/settlement/V007__the_payout_provider_report.sql";
 
+    /**
+     * The vocabularies as V007 wrote them - applied history (ADR-0011): settlement `V015`
+     * (`P9-TSK-011`) appended the FX provider's members, and {@code SettlementV015MigrationTest}
+     * holds the whole lists since.
+     */
+    private static final Set<SettlementLineType> AS_OF_V007 =
+            EnumSet.range(SettlementLineType.CAPTURE, SettlementLineType.PAYOUT_FEE);
+
+    private static final Set<LineReferenceKind> REFERENCES_AS_OF_V007 =
+            EnumSet.range(LineReferenceKind.PSP_CAPTURE_REF, LineReferenceKind.PAYOUT_PROVIDER_REF);
+
     @Test
     @DisplayName("the line-type and reference CHECKs are the enums' whole lists - exactly the"
             + " payout provider's members added to V006's")
@@ -28,13 +39,13 @@ class SettlementV007MigrationTest {
         String sql = normalized(migration());
         assertThat(sql)
                 .contains(normalized("ADD CONSTRAINT batch_total_line_type CHECK (line_type IN ("
-                        + SettlementLineType.sqlValueList() + "))"))
+                        + SettlementLineType.sqlValueList(AS_OF_V007) + "))"))
                 .contains(normalized("ADD CONSTRAINT line_type CHECK (line_type IN ("
-                        + SettlementLineType.sqlValueList() + "))"))
+                        + SettlementLineType.sqlValueList(AS_OF_V007) + "))"))
                 .contains(normalized("ADD CONSTRAINT line_reference_kind CHECK (kind IN ("
-                        + LineReferenceKind.sqlValueList() + "))"));
+                        + LineReferenceKind.sqlValueList(REFERENCES_AS_OF_V007) + "))"));
 
-        Set<SettlementLineType> added = EnumSet.allOf(SettlementLineType.class);
+        Set<SettlementLineType> added = EnumSet.copyOf(AS_OF_V007);
         added.removeAll(SettlementLineType.schemeVocabulary());
         assertThat(added)
                 .containsExactly(
@@ -46,7 +57,7 @@ class SettlementV007MigrationTest {
                 .isTrue();
         assertThat(SettlementLineType.PAYOUT_EXECUTED.isReportFee()).isFalse();
         assertThat(SettlementLineType.PAYOUT_RETURNED.isReportFee()).isFalse();
-        Set<LineReferenceKind> references = EnumSet.allOf(LineReferenceKind.class);
+        Set<LineReferenceKind> references = EnumSet.copyOf(REFERENCES_AS_OF_V007);
         references.removeAll(LineReferenceKind.schemeVocabulary());
         assertThat(references).containsExactly(LineReferenceKind.PAYOUT_PROVIDER_REF);
         assertThat(sql)

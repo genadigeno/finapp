@@ -159,17 +159,19 @@ class EverySettlingPositionHasASourceTest {
     }
 
     @Test
-    @DisplayName("the proof's purposes are derived from the composed register - today exactly the"
-            + " three clearings the hard-coded list named (ADR-0078 section 8)")
+    @DisplayName("the proof's purposes are derived from the composed register - the three clearings the"
+            + " hard-coded list named, and fx-sim-a's position since P9-TSK-011 (ADR-0078 section 8)")
     void theProvenPurposesAreDerived() {
         assertThat(com.finapp.app.reconciliation.PositionProof.provenPurposes(
                         SettlementBeans.composedSettlementSources(DECLARED)))
                 .containsExactlyInAnyOrder(
                         AccountPurpose.SETTLEMENT_CLEARING,
                         AccountPurpose.INSTANT_CLEARING,
-                        AccountPurpose.PAYOUT_CLEARING);
+                        AccountPurpose.PAYOUT_CLEARING,
+                        AccountPurpose.FX_PROVIDER_CLEARING);
         assertThat(CounterpartyClearings.declared())
-                .as("no counterparty is declared before P9-TSK-011 admits fx-sim-a")
-                .isEmpty();
+                .as("fx-sim-a, read off its FxProviderDeclaration (P9-TSK-011)")
+                .singleElement()
+                .satisfies(clearing -> assertThat(clearing.code()).isEqualTo("fx-sim-a"));
     }
 }

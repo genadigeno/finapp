@@ -116,7 +116,9 @@ class BatchRecognitionTest {
                 .containsExactlyInAnyOrder(
                         SettlementLineType.PROCESSING_FEE,
                         SettlementLineType.SCHEME_FEE,
-                        SettlementLineType.PAYOUT_FEE);
+                        SettlementLineType.PAYOUT_FEE,
+                        // P9-TSK-011: the FX provider's fee, recognised like the payout's.
+                        SettlementLineType.FX_FEE);
     }
 
     @Test

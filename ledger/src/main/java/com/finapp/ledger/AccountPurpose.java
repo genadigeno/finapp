@@ -162,8 +162,8 @@ public enum AccountPurpose {
      * {@code fx-sim-a}'s, resolved by {@link ChartOfAccounts#resolve(Object, AccountPurpose,
      * String, CurrencyCode)}. An ASSET, debit-normal (pinned in {@code OperationalChartMigrationTest}).
      * Admitted by `V021` with the mechanism (`P9-TSK-010`) so every counterparty rule is proven
-     * against a real purpose; its counterparty and accounts arrive together in `V022`
-     * (`P9-TSK-011`), and it joins {@link #reconciledPositions()} there, with its source.
+     * against a real purpose; its counterparty and accounts arrived together in `V022`
+     * (`P9-TSK-011`), when it joined {@link #reconciledPositions()} with its source.
      */
     FX_PROVIDER_CLEARING(OwnerKind.COUNTERPARTY),
 
@@ -189,7 +189,9 @@ public enum AccountPurpose {
      * `RECONCILIATION_LOSSES` and `RECONCILIATION_GAINS` joined with their poster, the
      * four-eyes resolution (`P8-TSK-015`, `V017`): posted by nothing but approved
      * resolutions. `CASH_AT_BANK` joined with its one poster, the bank statement's recognition
-     * (`P8-TSK-016`, `V018`): cash is never adjusted to fit (`INV-SET-06`).
+     * (`P8-TSK-016`, `V018`): cash is never adjusted to fit (`INV-SET-06`). `FX_PROVIDER_CLEARING`
+     * joined with its counterparty and source (`P9-TSK-011`, `V022`): every account of it is a
+     * counterparty's own position, discharged only by that counterparty's evidence.
      */
     public static java.util.Set<AccountPurpose> reconciledPositions() {
         return java.util.EnumSet.of(
@@ -200,7 +202,8 @@ public enum AccountPurpose {
                 SUSPENSE_UNMATCHED,
                 PROCESSING_COSTS,
                 RECONCILIATION_LOSSES,
-                RECONCILIATION_GAINS);
+                RECONCILIATION_GAINS,
+                FX_PROVIDER_CLEARING);
     }
 
     /** The reconciled positions as a SQL literal list, for `V015`'s binding trigger. */

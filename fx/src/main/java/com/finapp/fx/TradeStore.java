@@ -57,6 +57,17 @@ public interface TradeStore {
     /** The trade, only if {@code owner} owns it. */
     Optional<TradeRow> findOwned(Connection unitOfWork, FxTradeId id, UUID owner);
 
+    /** A cover named by one of its attempts' references - its identity and where it stands. */
+    record CoverByReference(UUID coverId, CoverStatus status) {}
+
+    /**
+     * The cover one of whose attempts carries {@code clientReference} (`P9-TSK-011`): what
+     * reconciliation's reference lookup asks of an FX provider's {@code COVER_REF} - a cover still in
+     * flight is our evidence not yet confirmed, an absent one is a reference we never minted. Read
+     * through {@code cover_attempt}'s unique reference; no lock, the answer is a classification.
+     */
+    Optional<CoverByReference> coverByClientReference(Connection unitOfWork, String clientReference);
+
     /** The cover and its attempt 1 - our reference stored before anything is ever sent. */
     void insertCover(Connection unitOfWork, CoverDraft draft);
 }

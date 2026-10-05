@@ -30,13 +30,11 @@ public final class JdbcRuleSets implements RuleSets {
                 read.setObject(1, sourceId);
                 try (ResultSet row = read.executeQuery()) {
                     if (!row.next()) {
-                        // Version 1 is seeded ACTIVE per source and activation retires the
-                        // prior version in its own transaction (ADR-0068 §8): an absence is
-                        // a defect, and an opener that guessed a default would date
+                        // Phase 8's sources were seeded version 1 (V002); a newer source's
+                        // version 1 is a four-eyes act (P9-TSK-011, D26), so an absence is the
+                        // typed RuleSetMissing - an opener that guessed a default would date
                         // expectations nothing decided (INV-HIST-04).
-                        throw new ReconciliationStorageException(
-                                "no ACTIVE rule set for source " + sourceId
-                                        + ": V002 seeds version 1 for every source");
+                        throw new RuleSetMissing(sourceId);
                     }
                     ruleSetId = row.getObject("id", UUID.class);
                     version = row.getInt("version");

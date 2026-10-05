@@ -164,7 +164,10 @@ class SettlementMigrationTest {
         // SOURCE_RETIRED arrived with their producers) - the current definitions live there.
         assertThat(v004).contains("status IN (" + FileStatus.sqlValueList() + ")");
         assertThat(v004).contains(FileStatus.sqlTransitionRule());
-        assertThat(v004).contains("rejection_code IN (" + RejectionCode.sqlValueList() + ")");
+        // The rejection codes were re-stated whole by V015 (CURRENCY_NOT_SETTLED arrived with
+        // P9-TSK-011) - SettlementV015MigrationTest holds the current list; V004's is history.
+        assertThat(v004).contains("rejection_code IN (" + RejectionCode.sqlValueList(
+                java.util.EnumSet.range(RejectionCode.MALFORMED, RejectionCode.SOURCE_RETIRED)) + ")");
         // The batch machine was re-stated whole by V010 (REPUDIATED arrived with P8-TSK-023).
         assertThat(v010).contains("status IN (" + BatchStatus.sqlValueList() + ")");
         assertThat(v010).contains(BatchStatus.sqlTransitionRule());

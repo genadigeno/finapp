@@ -61,7 +61,11 @@ public final class BreakSeverity {
                                                     kind == ExpectationKind.MERCHANT_PAYOUT
                                                             || kind
                                                                     == ExpectationKind
-                                                                            .REMITTANCE)
+                                                                            .REMITTANCE
+                                                            // An unsettled FX leg is principal at
+                                                            // risk (PHASE_9_PLAN.md 12.9.3).
+                                                            || kind == ExpectationKind.FX_SELL_LEG
+                                                            || kind == ExpectationKind.FX_BUY_LEG)
                                     .isPresent()
                             ? Severity.HIGH
                             : Severity.MEDIUM;

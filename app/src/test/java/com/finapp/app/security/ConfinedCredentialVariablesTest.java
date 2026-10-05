@@ -91,7 +91,10 @@ class ConfinedCredentialVariablesTest {
                     // The eighteenth and nineteenth (P9-TSK-006): the FX provider's money-moving
                     // API key, and its evidence encryption key - one key per concern.
                     Map.entry(com.finapp.app.fx.FxProviderKey.class, "finapp.fx.provider.key"),
-                    Map.entry(com.finapp.app.fx.FxEvidenceKey.class, "finapp.fx.evidence.key"));
+                    Map.entry(com.finapp.app.fx.FxEvidenceKey.class, "finapp.fx.evidence.key"),
+                    // The twentieth (P9-TSK-011): the FX provider's trade-report pull - report
+                    // access is neither its money-moving API nor its evidence encryption.
+                    Map.entry(com.finapp.app.settlement.FxReportKey.class, "finapp.fx.report.key"));
 
     @Test
     @DisplayName("the variable a refusal names is the relaxed-binding form of the property read")

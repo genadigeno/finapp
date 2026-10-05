@@ -70,6 +70,20 @@ class JdbcInternalReferenceLookupTest {
         }
     }
 
+    @Test
+    @DisplayName("every cover status (P9-TSK-011): EXECUTED completed, REJECTED or VOIDED terminal, DISPATCHED or"
+            + " UNKNOWN in flight - an FX provider line naming a cover still in flight is MISSING_INTERNAL's case")
+    void everyCoverStatusIsClassified() {
+        for (com.finapp.fx.CoverStatus status : com.finapp.fx.CoverStatus.values()) {
+            InternalClassification expected = switch (status) {
+                case EXECUTED -> InternalClassification.COMPLETED;
+                case REJECTED, VOIDED -> InternalClassification.TERMINAL;
+                case DISPATCHED, UNKNOWN -> InternalClassification.IN_FLIGHT;
+            };
+            assertThat(JdbcInternalReferenceLookup.classifyCover(status)).as("cover %s", status).isEqualTo(expected);
+        }
+    }
+
     private static InternalClassification operationExpectation(String name) {
         return switch (name) {
             case "COMPLETED" -> InternalClassification.COMPLETED;

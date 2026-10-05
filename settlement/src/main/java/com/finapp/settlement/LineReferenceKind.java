@@ -52,7 +52,13 @@ public enum LineReferenceKind {
      * The payout provider's own reference for a payout it accepted (`P8-TSK-018`) — the
      * {@code MERCHANT_PAYOUT} expectation's first key.
      */
-    PAYOUT_PROVIDER_REF;
+    PAYOUT_PROVIDER_REF,
+
+    /** The platform's cover reference {@code T-...} - an FX leg's key (`P9-TSK-011`). */
+    COVER_REF,
+
+    /** The FX provider's own trade reference - an alias, for the trace. */
+    FX_TRADE_REF;
 
     /** The report vocabulary `V003` admitted; {@code REMITTANCE_REF} arrived with `V005`. */
     public static java.util.Set<LineReferenceKind> reportVocabulary() {

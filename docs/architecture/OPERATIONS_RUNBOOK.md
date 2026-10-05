@@ -115,3 +115,37 @@ replaces it, and only new quotes see it.
 `{"available": false, "reason": …}`. Restarting is two people: the same route with
 `"available": true` opens an enable request (`ENABLE_PROPOSED`), which a DIFFERENT controller
 approves at `POST /v1/operator/fx/enable-requests/{id}/approval`.
+
+## 3. Activating the FX provider source's rule set v1 - before the first cover settles
+
+*(Added by `P9-TSK-011`, 2026-10-05; `PHASE_9_PLAN.md` §12.9.2, owner decision O7; decision D26.)*
+
+**When.** Once, after a deployment carrying reconciliation `V020` and settlement `V015`, and before
+the first FX provider report is expected (the first cover posts with `P9-TSK-012`). Until a version
+is `ACTIVE`, `fx-sim-a.trade-report`'s parsed files wait `PARSED` with the accept leg's backoff
+(`RuleSetMissing`) and `finapp.reconciliation.rule.set.missing{source="fx-sim-a.trade-report"}`
+reads 1 and alerts - nothing from the source is matched, nothing is guessed.
+
+**Why.** No migration seeds a new source's rule set (D26): how the platform matches a counterparty's
+evidence is a four-eyes decision with two named people. v1 is the plan's: the legs `FX_SOLD` and
+`FX_BOUGHT` `ONE_TO_ONE` keyed `COVER_REF`, grace 24 h, lag 2 days each; an `FX_FEE` rule of
+cardinality `CHECK` (its original by `ORIGINAL_REF` = the cover reference) priced 0 + 0 in all five
+currencies - the simulated provider bills nothing, so any reported FX fee is a `FEE_MISMATCH`;
+`SETTLEMENT_DATE_DAYS` 2; no fee tolerance; high-value thresholds EUR/GBP/USD 1,000.00, JPY 150000,
+BHD 400.000. The canonical body is `FxRuleSetV1` in the app's tests (held by `FxRuleSetV1Test`, and
+proposed and activated by two controllers in `FxProviderSourceDatabaseTest`).
+
+**Steps** - two different people holding the reconciliation controller role (§1's door, now
+admitting a source's FIRST version):
+
+1. **Read**: `GET /v1/operator/reconciliation/rule-sets?source=<fx-sim-a.trade-report's id>` - empty.
+2. **Propose** (person A): `POST /v1/operator/reconciliation/rule-sets` with an `Idempotency-Key`,
+   the source's code and v1's members, and a reason naming this procedure. The answer is version 1,
+   `PROPOSED` - admitted because the source has no `ACTIVE` version (nothing to cover).
+3. **Approve** (person B - the proposer is refused at the domain and by the database's `CHECK`):
+   `POST /v1/operator/reconciliation/rule-sets/{id}/approval`. Version 1 moves `PROPOSED -> ACTIVE`,
+   retiring nothing; both acts are audited (`reconciliation.RuleSetProposed`,
+   `reconciliation.RuleSetActivated`, the latter naming it the source's first version).
+
+**Verify.** The gauge reads 0 within 15 s, and a waiting file is accepted at its next backoff
+deadline.

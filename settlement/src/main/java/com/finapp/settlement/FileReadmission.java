@@ -349,6 +349,8 @@ public final class FileReadmission {
             return code.name();
         }
         // SOURCE_RETIRED: the source closed its door; a re-opened source is a NEW source.
+        // CURRENCY_NOT_SETTLED: the counterparty settles no such currency; settling one is a new
+        // declaration with its own seeded account, and the provider's next delivery.
         throw new FileNotRejected(original.id(), "a " + code + " rejection is never readmitted");
     }
 

@@ -67,7 +67,8 @@ import lombok.RequiredArgsConstructor;
  */
 @RequiredArgsConstructor
 public class ReconciliationExpectationRecorder
-        implements SettlementExpectations, PayoutSettlementExpectations {
+        implements SettlementExpectations, PayoutSettlementExpectations,
+                com.finapp.fx.FxSettlementExpectations {
 
     @NonNull private final SettlementSources sources;
     @NonNull private final SettlementFileStore<Connection> sourceRows;
@@ -90,6 +91,7 @@ public class ReconciliationExpectationRecorder
                 opening.clearingAccount(),
                 opening.journalEntryId(),
                 opening.settlementCycle(),
+                Optional.empty(),
                 opening.keys().stream()
                         .map(
                                 key ->
@@ -113,6 +115,36 @@ public class ReconciliationExpectationRecorder
                 opening.journalEntryId(),
                 // A payout announces no cycle: its report's own dating is the comparison.
                 Optional.empty(),
+                Optional.empty(),
+                opening.keys().stream()
+                        .map(
+                                key ->
+                                        new NewExpectation.ExpectationKey(
+                                                KeyKind.valueOf(key.kind().name()), key.value()))
+                        .toList(),
+                opening.correlation());
+    }
+
+    /**
+     * A cover leg (`P9-TSK-011`): on the provider's OWN position, so the source is the one
+     * discharging (purpose, counterparty) - never the purpose's, which a counterparty-owned purpose
+     * does not have ({@code INV-SET-05} per counterparty, ADR-0078).
+     */
+    @Override
+    public void open(Connection unitOfWork, com.finapp.fx.FxSettlementExpectations.Opening opening) {
+        Objects.requireNonNull(unitOfWork, "unitOfWork must not be null");
+        Objects.requireNonNull(opening, "opening must not be null");
+        record(
+                unitOfWork,
+                ExpectationKind.valueOf(opening.kind().name()),
+                opening.operationRef(),
+                opening.postingKey(),
+                opening.position(),
+                opening.clearingAccount(),
+                opening.journalEntryId(),
+                // A cover announces no cycle: its leg's value date is the comparison.
+                Optional.empty(),
+                Optional.of(opening.counterparty()),
                 opening.keys().stream()
                         .map(
                                 key ->
@@ -188,9 +220,10 @@ public class ReconciliationExpectationRecorder
             LedgerAccountId clearingAccount,
             JournalEntryId entryId,
             Optional<String> settlementCycle,
+            Optional<String> counterparty,
             List<NewExpectation.ExpectationKey> keys,
             Correlation correlation) {
-        UUID sourceId = sourceIdFor(unitOfWork, position);
+        UUID sourceId = sourceIdFor(unitOfWork, position, counterparty);
         ClearingLine line = clearingLineOf(unitOfWork, entryId, clearingAccount);
         RuleSets.ActiveRuleSet ruleSet = ruleSets.activeFor(unitOfWork, sourceId);
         register.open(
@@ -216,8 +249,15 @@ public class ReconciliationExpectationRecorder
     }
 
     private UUID sourceIdFor(Connection unitOfWork, AccountPurpose position) {
+        return sourceIdFor(unitOfWork, position, Optional.empty());
+    }
+
+    /** The one source discharging the position - a counterparty's own when one is named. */
+    private UUID sourceIdFor(Connection unitOfWork, AccountPurpose position, Optional<String> counterparty) {
         SettlementSourceDescriptor declared =
-                sources.dischargedBy(position)
+                (counterparty.isPresent()
+                                ? sources.dischargedBy(position, counterparty.get())
+                                : sources.dischargedBy(position))
                         .orElseThrow(
                                 () ->
                                         new IllegalStateException(

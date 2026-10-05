@@ -699,6 +699,8 @@ eligibility widened, each caught — `MUTATION_TESTING.md` §2.)*
 
 # Reconciliation — `INV-REC`
 
+*(As built by `P9-TSK-011` (2026-10-05): a parsed batch in a currency its source's counterparty does not settle is refused at the parse leg `CURRENCY_NOT_SETTLED` and retained - no batch, nothing posted - and never readmitted (settlement `V015` restates the readmission rule); proven by `FxProviderSourceDatabaseTest` and the probe in `MUTATION_TESTING.md` §2.)*
+
 ### INV-REC-01 — Evidence is preserved
 **Statement:** When internal and external records disagree, both sides of the evidence are
 preserved in full.
@@ -905,6 +907,8 @@ reconciliation.ToleranceNotPermitted`).
 **Verify:** A one-minor-unit difference raising a break in both directions; an amount-tolerance
 row unstorable.
 **Phase:** 8
+
+*(As built by `P9-TSK-011` (2026-10-05): reconciliation never converts - `ReconciliationNeverConvertsTest` refuses any `settlement` or `reconciliation` class that can reach an `ExchangeRate`, transitively, with a planted two-hop reach; an FX rate difference is a leg's `AMOUNT_MISMATCH` with cause `FX_LEG_DIFFERS`, and the FX source's v1 carries no amount tolerance.)*
 
 ### INV-REC-09 — Every suspense item is owned by exactly one break
 **Statement:** Value enters `SUSPENSE_UNMATCHED` only in a transaction that records its owning

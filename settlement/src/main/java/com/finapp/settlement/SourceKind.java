@@ -22,10 +22,24 @@ public enum SourceKind {
     PAYOUT_PROVIDER_REPORT,
 
     /** The platform's bank statement — hop 2, cash against each attributed position. */
-    BANK_STATEMENT;
+    BANK_STATEMENT,
+
+    /**
+     * An FX provider's trade report (`P9-TSK-011`): the cover legs it settled, per currency and
+     * value date, discharging that provider's own {@code FX_PROVIDER_CLEARING} position.
+     */
+    FX_PROVIDER_REPORT;
 
     /** Whether sources of this kind settle a declared clearing position. */
     public boolean settlesAPosition() {
         return this != BANK_STATEMENT;
     }
+
+    /** The values as a SQL literal list, for the {@code CHECK} constraint (settlement `V015`). */
+    public static String sqlValueList() {
+        return java.util.Arrays.stream(values())
+                .map(value -> "'" + value.name() + "'")
+                .collect(java.util.stream.Collectors.joining(", "));
+    }
+
 }

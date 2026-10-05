@@ -56,6 +56,16 @@ public record FxProviderDeclaration(
         }
     }
 
+    /**
+     * The counterparty-owned purpose this provider settles on (`P9-TSK-011`, ADR-0078 section 6):
+     * what the provider owes the platform, per currency, on its OWN accounts - read off the
+     * declaration by the settlement composition and the counterparty chart, never hand-named
+     * ({@code CounterpartyClearingIsNamedByDeclarationsTest}).
+     */
+    public com.finapp.ledger.AccountPurpose clearingPurpose() {
+        return com.finapp.ledger.AccountPurpose.FX_PROVIDER_CLEARING;
+    }
+
     /** Whether the provider quotes {@code source -> destination}. */
     public boolean quotes(CurrencyCode source, CurrencyCode destination) {
         return pairs.contains(new QuotedPair(source, destination));

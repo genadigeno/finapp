@@ -28,6 +28,13 @@ class ReconciliationV010MigrationTest {
             "db/migration/reconciliation/V010__payout_items_and_the_payout_fee_terms.sql";
     private static final String PAYOUT_RULE_SET = "01a0e2bd-8300-7003-8000-000000000003";
 
+    /** The vocabularies as V010 wrote them - `V020` (`P9-TSK-011`) appended the FX provider's. */
+    private static final Set<ExternalLineType> LINES_AS_OF_V010 =
+            EnumSet.range(ExternalLineType.CAPTURE, ExternalLineType.PAYOUT_FEE);
+
+    private static final Set<ItemKeyKind> KEYS_AS_OF_V010 =
+            EnumSet.range(ItemKeyKind.PSP_CAPTURE_REF, ItemKeyKind.PAYOUT_PROVIDER_REF);
+
     @Test
     @DisplayName("the item's line-type and key-kind CHECKs are the enums' whole lists - the payout"
             + " members and reference exactly what V010 adds to V009's scheme vocabulary")
@@ -36,18 +43,18 @@ class ReconciliationV010MigrationTest {
         assertThat(sql)
                 .contains(normalized(
                         "ADD CONSTRAINT external_item_line_type CHECK (line_type IN ("
-                                + ExternalLineType.sqlValueList() + "))"))
+                                + ExternalLineType.sqlValueList(LINES_AS_OF_V010) + "))"))
                 .contains(normalized(
                         "ADD CONSTRAINT external_item_key_kind CHECK (key_kind IN ("
-                                + ItemKeyKind.sqlValueList() + "))"));
-        Set<ExternalLineType> payoutMembers = EnumSet.allOf(ExternalLineType.class);
+                                + ItemKeyKind.sqlValueList(KEYS_AS_OF_V010) + "))"));
+        Set<ExternalLineType> payoutMembers = EnumSet.copyOf(LINES_AS_OF_V010);
         payoutMembers.removeAll(ExternalLineType.schemeVocabulary());
         assertThat(payoutMembers)
                 .containsExactly(
                         ExternalLineType.PAYOUT_EXECUTED,
                         ExternalLineType.PAYOUT_RETURNED,
                         ExternalLineType.PAYOUT_FEE);
-        Set<ItemKeyKind> payoutKeys = EnumSet.allOf(ItemKeyKind.class);
+        Set<ItemKeyKind> payoutKeys = EnumSet.copyOf(KEYS_AS_OF_V010);
         payoutKeys.removeAll(ItemKeyKind.schemeVocabulary());
         assertThat(payoutKeys).containsExactly(ItemKeyKind.PAYOUT_PROVIDER_REF);
 

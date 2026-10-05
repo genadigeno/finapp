@@ -113,6 +113,7 @@ public class Matching {
     private final Config config;
     private final TransactionRunner transactions;
     private final ReconciliationTelemetry telemetry;
+    private final PositionAccounts positionAccounts;
 
     /** The matcher without telemetry - its suites' shape (`P8-TSK-024`). */
     public Matching(
@@ -148,6 +149,31 @@ public class Matching {
             Config config,
             TransactionRunner transactions,
             ReconciliationTelemetry telemetry) {
+        this(store, rules, breaks, suspense, resolutions, lookup, accounts, outbox, audit, ids,
+                clock, config, transactions, telemetry, PositionAccounts.operational(accounts));
+    }
+
+    /**
+     * The matcher whose items' positions resolve through the composed register (`P9-TSK-011`): a
+     * counterparty's source parks on that counterparty's own account (ADR-0078).
+     */
+    public Matching(
+            MatchingStore store,
+            MatchingRules rules,
+            BreakRegister breaks,
+            Suspense suspense,
+            Resolutions resolutions,
+            InternalReferenceLookup lookup,
+            LedgerAccountStore<Connection> accounts,
+            OutboxWriter<Connection> outbox,
+            AuditWriter<Connection> audit,
+            IdGenerator ids,
+            Clock clock,
+            Config config,
+            TransactionRunner transactions,
+            ReconciliationTelemetry telemetry,
+            PositionAccounts positionAccounts) {
+        this.positionAccounts = Objects.requireNonNull(positionAccounts, "positionAccounts must not be null");
         this.store = Objects.requireNonNull(store, "store must not be null");
         this.rules = Objects.requireNonNull(rules, "rules must not be null");
         this.breaks = Objects.requireNonNull(breaks, "breaks must not be null");
@@ -2032,6 +2058,9 @@ public class Matching {
                     case END_TO_END_REF -> ItemKeyKind.END_TO_END_REF;
                     // The payout provider's reference (`P8-TSK-018`).
                     case PAYOUT_PROVIDER_REF -> ItemKeyKind.PAYOUT_PROVIDER_REF;
+                    // The FX provider's cover reference and trade reference (`P9-TSK-011`).
+                    case COVER_REF -> ItemKeyKind.COVER_REF;
+                    case FX_TRADE_REF -> ItemKeyKind.FX_TRADE_REF;
                     default -> null; // The other sources' kinds arrive with their tasks.
                 };
         return itemKind == null
@@ -2558,7 +2587,7 @@ public class Matching {
             parks.add(
                     new Suspense.ParkedItem(
                             item.id(), raised.breakId(), excess,
-                            positionAccount(unitOfWork, item)));
+                            positionAccount(unitOfWork, run, item)));
         } else {
             exitOrThrow(
                     store.markItemMatchedFrom(
@@ -3122,7 +3151,7 @@ public class Matching {
             parks.add(
                     new Suspense.ParkedItem(
                             item.id(), raised.breakId(), excess,
-                            positionAccount(unitOfWork, item)));
+                            positionAccount(unitOfWork, run, item)));
         } else {
             exitOrThrow(
                     store.markItemMatchedFrom(
@@ -3234,7 +3263,7 @@ public class Matching {
         parks.add(
                 new Suspense.ParkedItem(
                         item.id(), raised.breakId(), item.amount(),
-                        positionAccount(unitOfWork, item)));
+                        positionAccount(unitOfWork, run, item)));
     }
 
     /**
@@ -3448,7 +3477,7 @@ public class Matching {
         parks.add(
                 new Suspense.ParkedItem(
                         item.id(), raised.breakId(), item.amount(),
-                        positionAccount(unitOfWork, item)));
+                        positionAccount(unitOfWork, run, item)));
     }
 
     // ------------------------------------------------------------------ plumbing
@@ -3532,7 +3561,8 @@ public class Matching {
                 unitOfWork, sourceId, item.fingerprint(), item.sourceSequence(), item.lineNo());
     }
 
-    private UUID positionAccount(Connection unitOfWork, MatchingStore.ChunkItem item) {
+    private UUID positionAccount(
+            Connection unitOfWork, MatchingStore.RunRow run, MatchingStore.ChunkItem item) {
         com.finapp.ledger.AccountPurpose position =
                 item.positionPurpose()
                         .orElseThrow(
@@ -3543,14 +3573,15 @@ public class Matching {
                                                         + " a bank fee or an unattributed"
                                                         + " bank line stands in none"
                                                         + " (P8-TSK-016's position rule)"));
-        return accounts
-                .findOperational(unitOfWork, position, item.amount().currency())
+        // The item's own source settles it - an attributed bank line its attributed source's -
+        // and a counterparty's source settles its OWN account (P9-TSK-011, ADR-0078).
+        UUID source = item.attributedSourceId().orElse(run.sourceId());
+        return positionAccounts
+                .accountOf(unitOfWork, source, position, item.amount().currency())
                 .orElseThrow(
                         () ->
                                 new IllegalStateException(
-                                        "the chart seeds every position per currency"))
-                .id()
-                .value();
+                                        "the chart seeds every position per currency"));
     }
 
     /**

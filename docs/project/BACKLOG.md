@@ -12913,7 +12913,7 @@ break row, as the approval door must.)*
 
 # Phase 9 — FX and Cross-Border Payments
 
-Status: `IN_PROGRESS` — started 2026-10-03 with `P9-TSK-001` (10 of 30 items complete, M9.1 and M9.2 closed, M9.3 at 2 of 4); entry gate passed 2026-10-02 by the Phase 8 → 9 transition
+Status: `IN_PROGRESS` — started 2026-10-03 with `P9-TSK-001` (11 of 30 items complete, M9.1 and M9.2 closed, M9.3 at 3 of 4); entry gate passed 2026-10-02 by the Phase 8 → 9 transition
 ([`reviews/PHASE_8_TO_9_TRANSITION.md`](reviews/PHASE_8_TO_9_TRANSITION.md)), elaborated to task
 granularity by the same transition: thirty items (`P9-TSK-001`…`-027`, `P9-TST-001`, `P9-TST-002`,
 `P9-DOC-001`) across nine milestones, with `P9-TSK-001` marked `READY`. The engineering plan is
@@ -13406,7 +13406,8 @@ providers), each owned by Phase 15 and gating nothing here.
   refused.
 - **Definition of done**: `DOD-FIN`, `DOD-ARCH`. **Risk**: High. **Cx**: M.
 
-**P9-TSK-011 — The FX provider's position, source and vocabulary** — `READY` (marked by `P9-TSK-010`'s completion gate, 2026-10-05)
+**P9-TSK-011 — The FX provider's position, source and vocabulary** — `COMPLETE` (2026-10-05; marked `READY` by `P9-TSK-010`'s completion gate)
+- **As built** (2026-10-05): as `CURRENT_STATE.md` §Just completed records. Every scope item shipped. Decided at build: `CURRENCY_NOT_SETTLED` is refused at the parse leg and never readmitted; the meter is spelled `finapp.reconciliation.rule.set.missing` (the plan's Prometheus name); the format's trade reference field is `fxTradeRef`; the matcher resolves an item's position through the new `PositionAccounts` port. Carried to `-012`: the two-leg `COVER_REF` collision and the opener register's FX rows.
 - **Carried from `P9-TSK-010`** (2026-10-05): `FX_PROVIDER_CLEARING` is already admitted by ledger `V021` (type ASSET pinned), so `V022` registers `fx-sim-a` and seeds its five accounts only, adding the purpose to `reconciledPositions()`; `FxProviderDeclaration` gains `clearingPurpose()` and `CounterpartyClearings` its first entry; `CounterpartyClearingIsNamedByDeclarationsTest.PERMITTED` gains the declaration and the settlement composition. Its acceptance also proves the counterparty branches `-010` could not reach: the remittance opened on `fx-sim-a`'s account (`ReconciliationIntake.openRemittance`) and `PositionProof`'s verdict and completeness keyed per (purpose, counterparty, currency).
 - **Objective**: give `fx-sim-a` its settling position, settlement source, format and reconciliation
   vocabulary, before anything posts to it.
@@ -13457,7 +13458,8 @@ providers), each owned by Phase 15 and gating nothing here.
   first rule set is activated by two persons.
 - **Definition of done**: `DOD-FIN`, `DOD-SEC`, `DOD-API`. **Risk**: Medium. **Cx**: L.
 
-**P9-TSK-012 — The FX cover** — `PLANNED`
+**P9-TSK-012 — The FX cover** — `READY` (marked by `P9-TSK-011`'s completion gate, 2026-10-05)
+- **Carried from `P9-TSK-011`** (2026-10-05): **a cover's two legs share `COVER_REF = Tn`, and reconciliation's `expectation_key_once UNIQUE (source_id, key_kind, key_value)` admits Tn ONCE per source** - the second leg's key would be skipped as a `KEY_COLLISION` (`DUPLICATE_INTERNAL`) and its line would park; the design must decide the leg's key (a currency-qualified value normalised at both sides, or the unique widened by currency for `COVER_REF`) before the first cover opens its legs, and prove both legs of one cover settle. The opener register (`ExpectationOpenerRegisterTest`) gains `FxSettlementExpectations`' kinds with their proving rows on the cover entry.
 - **Objective**: cover each accepted quote with the provider exactly once, however the provider
   answers.
 - **Bounded context**: `fx`, `ledger`, `app`.

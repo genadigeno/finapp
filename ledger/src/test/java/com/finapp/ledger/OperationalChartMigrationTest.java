@@ -226,7 +226,10 @@ class OperationalChartMigrationTest {
 
     /** Every migration that registers counterparties or seeds their accounts, in order. */
     private static final List<String> COUNTERPARTY_SEEDS =
-            List.of("db/migration/ledger/V021__counterparty_keyed_clearing_positions.sql");
+            List.of(
+                    "db/migration/ledger/V021__counterparty_keyed_clearing_positions.sql",
+                    // P9-TSK-011: fx-sim-a and its five FX_PROVIDER_CLEARING accounts.
+                    "db/migration/ledger/V022__fx_sim_a_joins_the_chart.sql");
 
     private static final Pattern REGISTRY_ROW =
             Pattern.compile("\\('([0-9a-f-]{36})',\\s*'([a-z][a-z0-9-]*)',\\s*'([A-Z_]+)'\\)");
@@ -242,6 +245,9 @@ class OperationalChartMigrationTest {
     void theCounterpartySeedHoldsTheRules() {
         List<String> seeds = COUNTERPARTY_SEEDS.stream().map(OperationalChartMigrationTest::migration).toList();
         assertThat(counterpartyViolations(seeds)).isEmpty();
+        assertThat(seeds.stream().flatMap(seed -> COUNTERPARTY_ROW.matcher(seed).results()).count())
+                .as("not vacuous: fx-sim-a's five FX_PROVIDER_CLEARING accounts are read (V022)")
+                .isEqualTo(5);
         assertThat(migration(COUNTERPARTY_SEEDS.get(0)))
                 .as("not vacuous: the first counterparty migration is the one creating the registry")
                 .contains("CREATE TABLE ledger.counterparty");

@@ -24,7 +24,10 @@ public enum SettlementFormatId {
     SIM_PAYOUT_CSV(SourceKind.PAYOUT_PROVIDER_REPORT),
 
     /** The simulated bank's tagged statement (`P8-TSK-016`). */
-    SIM_STATEMENT_TAGGED(SourceKind.BANK_STATEMENT);
+    SIM_STATEMENT_TAGGED(SourceKind.BANK_STATEMENT),
+
+    /** The simulated FX provider's trade report (`P9-TSK-011`, {@code SimFxCsvFormat}). */
+    SIM_FX_CSV(SourceKind.FX_PROVIDER_REPORT);
 
     private final SourceKind kind;
 
@@ -36,4 +39,12 @@ public enum SettlementFormatId {
     public SourceKind kind() {
         return kind;
     }
+
+    /** The values as a SQL literal list, for the {@code CHECK} constraint (settlement `V015`). */
+    public static String sqlValueList() {
+        return java.util.Arrays.stream(values())
+                .map(value -> "'" + value.name() + "'")
+                .collect(java.util.stream.Collectors.joining(", "));
+    }
+
 }
