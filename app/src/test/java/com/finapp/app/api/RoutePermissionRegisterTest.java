@@ -187,7 +187,10 @@ class RoutePermissionRegisterTest {
                     entry("POST /v1/operator/fx/pairs/{pair}/availability", PermissionName.FX_ADMINISTER),
                     entry("POST /v1/operator/fx/providers/{code}/availability", PermissionName.FX_ADMINISTER),
                     entry("POST /v1/operator/fx/enable-requests/{rid}/approval", PermissionName.FX_ADMINISTER),
-                    entry("POST /v1/operator/fx/enable-requests/{rid}/rejection", PermissionName.FX_ADMINISTER)));
+                    entry("POST /v1/operator/fx/enable-requests/{rid}/rejection", PermissionName.FX_ADMINISTER),
+                    // P9-TSK-013: the FX investigator's read of a trade's provenance - held by the
+                    // reconciliation operator, never by whoever sets prices; audited at every serving.
+                    entry("GET /v1/operator/fx/trades/{id}/provenance", PermissionName.FX_INVESTIGATE)));
 
     /** The MVC mapping, by name - actuator registers a second one (the rule test's reason). */
     @Autowired

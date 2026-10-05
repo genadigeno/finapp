@@ -43,7 +43,10 @@ class FxBooksHaveOnePosterTest {
                     "CoverLines.java",
                     "POSTER: a cover's lines (P9-TSK-012) - FX_POSITION's plan legs closed onto the"
                             + " provider's own clearing, the difference to FX_REALISED_GAINS or"
-                            + " FX_REALISED_LOSSES in that leg's currency");
+                            + " FX_REALISED_LOSSES in that leg's currency",
+                    "FxBooksProof.java",
+                    "READER: the FX books proof (P9-TSK-013, INV-FX-06) - reads each book's balance"
+                            + " through ledger's BalanceDerivation against fx's own rows; posts nothing");
 
     /** The FX books: the position, the spread revenue, the rounding residual and the realised results. */
     private static final List<String> BOOKS =

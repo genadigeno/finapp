@@ -12913,7 +12913,7 @@ break row, as the approval door must.)*
 
 # Phase 9 — FX and Cross-Border Payments
 
-Status: `IN_PROGRESS` — started 2026-10-03 with `P9-TSK-001` (12 of 30 items complete, M9.1, M9.2 and M9.3 closed); entry gate passed 2026-10-02 by the Phase 8 → 9 transition
+Status: `IN_PROGRESS` — started 2026-10-03 with `P9-TSK-001` (13 of 30 items complete, M9.1, M9.2 and M9.3 closed, M9.4 at 1 of 2); entry gate passed 2026-10-02 by the Phase 8 → 9 transition
 ([`reviews/PHASE_8_TO_9_TRANSITION.md`](reviews/PHASE_8_TO_9_TRANSITION.md)), elaborated to task
 granularity by the same transition: thirty items (`P9-TSK-001`…`-027`, `P9-TST-001`, `P9-TST-002`,
 `P9-DOC-001`) across nine milestones, with `P9-TSK-001` marked `READY`. The engineering plan is
@@ -13500,7 +13500,8 @@ providers), each owned by Phase 15 and gating nothing here.
 - **Definition of done**: `DOD-FIN`, `DOD-SEC`, `DOD-API` (the FX webhook route), `DOD-EVENT`.
   **Risk**: High. **Cx**: L.
 
-**P9-TSK-013 — FX explained and settled to cash** — `READY` (marked by `P9-TSK-012`'s completion gate, 2026-10-05)
+**P9-TSK-013 — FX explained and settled to cash** — `COMPLETE` (2026-10-05; marked `READY` by `P9-TSK-012`'s completion gate)
+- **As built** (2026-10-05): as `CURRENT_STATE.md` §Just completed records. Every scope item shipped. Decided at build: a cover leg is expected on the cover entry's value date; the paired leg is found by the same operation and the other kind; `FX_INVESTIGATE` is granted in code (`RoleName`), no migration; the books proof's reversal and unwind terms are zero until `-025`/`-021`.
 - **Carried from `P9-TSK-012`** (2026-10-05): the cover's legs are keyed `Tn:<currency>` (`CoverLegKey`) and dated by the cover entry's posting date plus v1's 2-day lag, while the provider's own `value_date` is stored on `fx.cover_execution` - the `VALUE_DATE_DIFFERS` judgement compares against the stored value date; `FxBooksProof` explains `FX_POSITION` by open trade legs minus executed covers, and `FX_REALISED_GAINS`/`LOSSES` by the executions' stored `realised_*_minor`; the realised result's direction is on `fx.FxCoverExecuted` (`deliveredResult`/`receivedResult`).
 - **Objective**: prove the FX books, and carry the FX legs to cash with every discrepancy typed.
 - **Bounded context**: `fx`, `reconciliation`, `app`.
@@ -13546,7 +13547,8 @@ providers), each owned by Phase 15 and gating nothing here.
 - **Definition of done**: `DOD-FIN`, `DOD-API` (the provenance route), `DOD-OBS`. **Risk**: Medium.
   **Cx**: M.
 
-**P9-TST-002 — The value-preservation and rounding battery** — `PLANNED`
+**P9-TST-002 — The value-preservation and rounding battery** — `READY` (marked by `P9-TSK-013`'s completion gate, 2026-10-05)
+- **Carried from `P9-TSK-013`** (2026-10-05): the battery's identities are `FxBooksProof` and `FxPlanVerification` read in one snapshot (`FxProofMetrics.readNow()`); covers are driven through `FxCoverDispatch.dispatchNow` against `SimulatedFxEngine` (rejections by `advance`, requotes by a moved `rate`), the sweep and the nudge being off in test contexts.
 - **Objective**: prove at volume that conversion creates and destroys no value, across 0/2/3 minor
   units.
 - **Bounded context**: `fx`, `ledger`, `reconciliation`.

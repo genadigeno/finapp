@@ -51,7 +51,7 @@ import java.util.regex.Pattern;
 final class FxTestClient {
 
     static final IdGenerator IDS = new IdGenerator(Clock.systemUTC(), new SecureRandom());
-    private static final String PASSWORD = "a-perfectly-fine-pw-7";
+    static final String PASSWORD = "a-perfectly-fine-pw-7";
 
     /** The reference mid per canonical pair; the simulator quotes these and their inverses. */
     static final Map<String, String> MIDS = Map.of(

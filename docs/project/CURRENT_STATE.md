@@ -432,12 +432,13 @@ cross-border payments are holds and corridor acceptances, beneficiary screening 
 returns credited in the currency received; clearings are keyed by counterparty; callbacks are
 hints; reconciliation never converts currency and gains causes, never types. Ten new invariants
 and thirteen restated take the platform to **120**. Thirty backlog items across nine milestones
-(M9.1–M9.9) plus `X-TSK-013`…`-015`. **12 of 30 items complete** (M9.1, M9.2 and M9.3 closed): the modules and floors
+(M9.1–M9.9) plus `X-TSK-013`…`-015`. **13 of 30 items complete** (M9.1, M9.2 and M9.3 closed; M9.4 at 1 of 2): the modules and floors
 (`P9-TSK-001`), the conversion arithmetic (`P9-TSK-002`), JPY and BHD postable (`P9-TSK-003`), multi-currency
 wallets (`P9-TSK-004`), reference rates (`P9-TSK-005`), the FX provider port (`P9-TSK-006`), the
 pricing policy (`P9-TSK-007`), the quote (`P9-TSK-008`), wallet conversion (`P9-TSK-009`),
-counterparty-keyed clearing positions (`P9-TSK-010`), the FX provider's source (`P9-TSK-011`) and the
-FX cover (`P9-TSK-012`); next **`P9-TSK-013` — FX explained and settled to cash** — `READY`
+counterparty-keyed clearing positions (`P9-TSK-010`), the FX provider's source (`P9-TSK-011`), the FX cover
+(`P9-TSK-012`) and FX explained to cash (`P9-TSK-013`); next **`P9-TST-002` — The value-preservation and
+rounding battery** — `READY`
 ([§Current Task](#current-task) is kept current).
 
 ## Current Milestone
@@ -453,48 +454,40 @@ since M0.1". Moved, not edited.)*
 
 ## Current Task
 
-**`P9-TSK-013` — FX explained and settled to cash** — `READY`: marked by
-`P9-TSK-012`'s completion gate (2026-10-05). **Not started.**
+**`P9-TST-002` — The value-preservation and rounding battery** — `READY`: marked
+by `P9-TSK-013`'s completion gate (2026-10-05). **Not started.**
 
 ### Just completed
 
-**`P9-TSK-012` — The FX cover** — `COMPLETE` (2026-10-05). **M9.3 CLOSES AT 4 OF 4: each accepted
-quote is covered with its provider exactly once, however the provider answers** (ADR-0077 §§2-9,
-PHASE_9_PLAN.md §§12.4(b)/(f) and 12.5; `INV-FX-06`, `INV-FX-08`, `INV-FX-09`, `INV-PAY-04`, `INV-LIFE-03`).
-**`fx V007`**: `cover_execution` - PK `cover_id`, `UNIQUE (provider_code, provider_trade_ref)`, `UNIQUE
-journal_entry_id`, the plan's legs copied from the quote and checked at birth for every writer, realised =
-executed - plan and `executed_off_plan` by `CHECK`, append-only but for the entry attached once (a deferred
-trigger refuses a commit without it); the cover machine restated - `-> EXECUTED` only with the fact,
-`REJECTED -> DISPATCHED` only once attempt n+1's `T(n+1)` is stored, `requote_failures` (the backoff) and
-`caused_by_event_id` (the acceptance). **Ledger `V023`**: `FX_REALISED_GAINS`/`FX_REALISED_LOSSES` in five
-currencies, closed to free adjustment. **The domain**: `CoverLines` (the plan's legs closed exactly onto the
-provider's OWN clearing, the difference realised in that leg's currency - §12.4(b) and (f) posted
-exactly); `FxCoverOutcomes` (T-d: the answer, the inquiry and the hinted inquiry through one applier under
-the lock order, only the current attempt's definitive answer concluding, the execution fact, the entry
-`fx-cover:<id>`, both leg expectations through `FxSettlementExpectations`, `fx.FxCoverExecuted`/`Rejected`
-and the `fx.CoverExecuted` audit - one commit); `FxCoverDispatch` (send and re-send the SAME `T`, inquire an
-`UNKNOWN` cover first, requote only after a definitive rejection at a fresh firm quote inside the band of the
-quote's pinned policy against a fresh reference, void an unwanted rejected cover - no transaction spans a
-provider call). **The composition**: `FxCoverSchedule` (leaderless, one claiming statement, `FOR UPDATE SKIP
-LOCKED`), the post-commit `FxCoverNudge`, `FxCoverMetrics` (`finapp.fx.cover{provider,type,outcome}`,
-`.latency`, `.unknown.active`/`.age`, `.open.age`, `.sweeper.enabled`), and the callback door `POST
-/v1/providers/fx/webhooks` (HMAC under `FINAPP_FX_WEBHOOK_KEY`, freshness, evidence first, the inbox, then an
-authenticated inquiry - a callback is a hint). **Carried from `-011`, resolved**: a cover leg's reconciliation
-key is qualified by its currency at both sides (`CoverLegKey`), so a cover's two legs sharing `T` hold two
-keys and both settle. **THE BUILD'S FINDS, FIXED**: a requote race loser was reported as a refusal; every leg
-now runs in the cover's own correlation and actor scope (the posting, inbox and idempotency layers require
-them); the simulator's trade references were reused across instances (a real provider never reuses one).
-**PROBES** (TWELVE PROBES, TWELVE CAUGHT - X11, the sweep claiming whatever the permit's age, SURVIVED its first run because the ten-sweeper race claims within one instant; a pacing assertion was added to `FxCoverRaceDatabaseTest` and caught it on the re-run), every restore byte-identical (sha256-verified; `MUTATION_TESTING.md` §2 +11 rows). **Multi-instance PASS** - ten sweepers send one cover once; a lost response plus ten
-sweepers and ten inquirers leave one execution, one fact, one entry; ten appliers of one rejection one
-successor; ten appliers of one answer one fact; ten callback deliveries plus a sweep one effect; the PK and the
-trade-reference unique refuse with every trigger off (all counted). **NEXT**: `P9-TSK-013` `READY`.
-**Verified** by fresh runs - the fleet-wide hermetic tier 2452 across 399 suites and 18 modules; the architecture tier 155 across 27; the
-app hermetic tier with every document guard 714 across 134 within it; the task's own database suites run green while built - FxCoverDatabaseTest 10, FxCoverRaceDatabaseTest 4, FxCallbackDuplicateDatabaseTest 4, the conversion and FX source suites, fx database 60 across 12 and FxMatchingDatabaseTest 4 - and the twelve probes against them; the final database tiers SKIPPED on the owner's instruction (2026-10-05: the code assumed correct, refactored after the phase), ALL 0 FAILURES
-- the fleet-wide database and kafka tiers likewise skipped.
+**`P9-TSK-013` — FX explained and settled to cash** — `COMPLETE` (2026-10-05). **M9.4 OPENS AT 1 OF 2:
+the FX books are proven, every plan replays, and the FX legs carry to cash with every discrepancy typed**
+(PHASE_9_PLAN.md §§12.9.3-12.9.4; `INV-FX-05`, `INV-FX-06`, `INV-SET-02`, `INV-REC-06`…`-09`, `INV-MON-04`).
+**The proofs** (`fx`, report-only, one `REPEATABLE READ` snapshot): `FxBooksProof` - each of the five FX books per
+currency through ledger's `BalanceDerivation` against fx's own rows (trades' and executed covers' plan legs,
+margins, residuals, realised results; the reversal and unwind terms zero until `-025`/`-021`); `FxPlanVerification`
+- every trade replayed from its quote's frozen inputs through `ConversionPlan.compute`, the amounts, the customer and
+internal rates, the disclosed margin and the posted entry line by line; gauged by `FxProofMetrics`
+(`finapp.fx.proof{purpose}`, `finapp.fx.plan.verdict`, a CRITICAL line on divergence). **Reconciliation**:
+`differenceCause` names `FX_LEG_DIFFERS` and the timing verdict `VALUE_DATE_DIFFERS` for the cover-leg kinds,
+after the open-`MISSING_EXTERNAL` rule; `ReconciliationSweep`'s paired-leg escalation raises an overdue leg whose
+pair is allocated to CRITICAL under namespace 4, one `SEVERITY_ESCALATED` event detailed `PAIRED_LEG_ALLOCATED`;
+a cover leg is expected on the cover entry's value date (the provider's confirmed T+2, carried from `-012`).
+**The door**: `GET /v1/operator/fx/trades/{id}/provenance` behind the new `FX_INVESTIGATE`, held by
+`RECONCILIATION_OPERATOR`, every serving audited (`fx.TradeProvenanceRead`). **Scenario 10 for FX**:
+`FxSettledToCashDatabaseTest` - the cover, the provider's EUR and USD files allocated leg by leg, two remittances,
+the bank's two statements, the conversion's movements netting to 0 on `FX_POSITION` and fx-sim-a's clearing.
+**THE BUILD'S FINDS, FIXED**: `FxProviderSourceDatabaseTest` planted a raw line on `FX_POSITION` the proof would
+report for every later suite - its counter line moved to `FEE_REVENUE`. **PROBES** (SEVEN PROBES, SEVEN CAUGHT), every restore
+byte-identical (sha256-verified; `MUTATION_TESTING.md` §2 +7 rows). **Multi-instance PASS** - ten
+sweepers over one overdue leg whose pair is allocated write one severity change and one event (counted); the proofs
+write nothing. **NEXT**: `P9-TST-002` `READY`.
+**Verified** by fresh runs - the fleet-wide hermetic tier 2454 across 399 suites and 18 modules; the architecture tier 157 across 27; the
+app hermetic tier with every document guard 716 across 134 within it; the task's own database suites run green while built - FxMatchingDatabaseTest 8 (the mismatch battery and the escalation race), FxProofDatabaseTest 3, FxProvenanceDatabaseTest 1, FxSettledToCashDatabaseTest 1, every app FX database suite 47 across 11 - and the seven probes against them, ALL 0 FAILURES - the final database
+tiers skipped on the owner's instruction (the code assumed correct, refactored after the phase).
 
 ### Previously
 
-The per-task completion records — 205 blocks, from `P9-TSK-011` back to project initiation
+The per-task completion records — 206 blocks, from `P9-TSK-012` back to project initiation
 (`X-TSK-016` cross-cutting, standing between `P9-TSK-011` and `P9-TSK-010`; `X-TSK-005` cross-cutting, standing between `P7-TSK-015` and `P7-TSK-014`; `X-TSK-004`
 cross-cutting, standing between `P7-TSK-001` and the Phase 6 → 7 transition) — are archived in
 [`history/TASK_HISTORY.md`](history/TASK_HISTORY.md).
@@ -1039,8 +1032,8 @@ Resolved during initiation:
 
 ## Next Task
 
-**`P9-TSK-013` — FX explained and settled to cash** — `READY` (the Current
-Task), marked by `P9-TSK-012`'s completion gate.
+**`P9-TST-002` — The value-preservation and rounding battery** — `READY` (the
+Current Task), marked by `P9-TSK-013`'s completion gate.
 *(This section read "`P8-TSK-009` — `READY`" from `P8-TSK-008`'s gate until
 `P8-TSK-013`'s record found it — the stale-second-copy class, in the section whose
 whole job is to mirror.)*

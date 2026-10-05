@@ -274,6 +274,10 @@ class NoFloatingPointMoneyRulesTest {
                     // seconds only at the registry boundary through the ToDoubleFunction a Gauge
                     // imposes, NaN the sentinel for unreadable. Counts and ages, never an amount.
                     "com.finapp.app.fx.FxCoverMetrics",
+                    // P9-TSK-013. The SAME case again: the FX books proof's failing CURRENCIES (a
+                    // count) and the plan replay's verdict (1 or 0), through the ToDoubleFunction a
+                    // Gauge imposes, NaN the sentinel for unreadable. Verdicts, never an amount.
+                    "com.finapp.app.fx.FxProofMetrics",
                     // P9-TSK-011. The SAME case again: whether each declared source has an
                     // ACTIVE rule set - a boolean read from the database, published as 1 or 0
                     // through the ToDoubleFunction a Gauge imposes, NaN the sentinel for

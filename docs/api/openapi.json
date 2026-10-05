@@ -5663,6 +5663,17 @@
         },
         "type": "object"
       },
+      "AmountView": {
+        "properties": {
+          "amount": {
+            "type": "string"
+          },
+          "currency": {
+            "type": "string"
+          }
+        },
+        "type": "object"
+      },
       "AssignFeeScheduleRequest": {
         "properties": {
           "feeScheduleId": {
@@ -6388,6 +6399,24 @@
         ],
         "type": "object"
       },
+      "CoverView": {
+        "properties": {
+          "attempts": {
+            "format": "int32",
+            "type": "integer"
+          },
+          "execution": {
+            "$ref": "#/components/schemas/ExecutionView"
+          },
+          "id": {
+            "type": "string"
+          },
+          "status": {
+            "type": "string"
+          }
+        },
+        "type": "object"
+      },
       "CreateFeeScheduleRequest": {
         "properties": {
           "currency": {
@@ -6845,6 +6874,38 @@
             "type": "string"
           },
           "uploadedAt": {
+            "type": "string"
+          }
+        },
+        "type": "object"
+      },
+      "ExecutionView": {
+        "properties": {
+          "bought": {
+            "$ref": "#/components/schemas/AmountView"
+          },
+          "executedOffPlan": {
+            "type": "boolean"
+          },
+          "executedRate": {
+            "type": "string"
+          },
+          "journalEntryId": {
+            "type": "string"
+          },
+          "providerTradeReference": {
+            "type": "string"
+          },
+          "realisedBought": {
+            "$ref": "#/components/schemas/AmountView"
+          },
+          "realisedSold": {
+            "$ref": "#/components/schemas/AmountView"
+          },
+          "sold": {
+            "$ref": "#/components/schemas/AmountView"
+          },
+          "valueDate": {
             "type": "string"
           }
         },
@@ -8862,6 +8923,89 @@
           "destinationToken",
           "reason"
         ],
+        "type": "object"
+      },
+      "ProvenanceView": {
+        "properties": {
+          "bookedAt": {
+            "type": "string"
+          },
+          "cover": {
+            "$ref": "#/components/schemas/CoverView"
+          },
+          "customerDestination": {
+            "$ref": "#/components/schemas/AmountView"
+          },
+          "customerRate": {
+            "type": "string"
+          },
+          "customerSource": {
+            "$ref": "#/components/schemas/AmountView"
+          },
+          "disclosedMargin": {
+            "type": "string"
+          },
+          "fixedSide": {
+            "type": "string"
+          },
+          "internalRate": {
+            "type": "string"
+          },
+          "journalEntryId": {
+            "type": "string"
+          },
+          "margin": {
+            "$ref": "#/components/schemas/AmountView"
+          },
+          "markupMargin": {
+            "$ref": "#/components/schemas/AmountView"
+          },
+          "positionDestination": {
+            "$ref": "#/components/schemas/AmountView"
+          },
+          "positionSource": {
+            "$ref": "#/components/schemas/AmountView"
+          },
+          "pricingPolicyVersionId": {
+            "type": "string"
+          },
+          "providerCode": {
+            "type": "string"
+          },
+          "providerQuoteReference": {
+            "type": "string"
+          },
+          "providerRate": {
+            "type": "string"
+          },
+          "providerValueDate": {
+            "type": "string"
+          },
+          "purpose": {
+            "type": "string"
+          },
+          "quoteId": {
+            "type": "string"
+          },
+          "referenceRate": {
+            "type": "string"
+          },
+          "referenceSnapshotId": {
+            "type": "string"
+          },
+          "residual": {
+            "$ref": "#/components/schemas/AmountView"
+          },
+          "spreadMargin": {
+            "$ref": "#/components/schemas/AmountView"
+          },
+          "status": {
+            "type": "string"
+          },
+          "tradeId": {
+            "type": "string"
+          }
+        },
         "type": "object"
       },
       "ProviderCostRow": {
@@ -13477,6 +13621,33 @@
               "application/json": {
                 "schema": {
                   "$ref": "#/components/schemas/AvailabilityReceipt"
+                }
+              }
+            },
+            "description": "OK"
+          }
+        }
+      }
+    },
+    "/v1/operator/fx/trades/{id}/provenance": {
+      "get": {
+        "operationId": "readFxTradeProvenance",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "id",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProvenanceView"
                 }
               }
             },

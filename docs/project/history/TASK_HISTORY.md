@@ -1,6 +1,6 @@
 # Task History
 
-The per-task completion records that accumulated behind `## Current Task` - 205 "Previously" blocks, newest first, from `P9-TSK-011` back to project initiation. *(`X-TSK-016` is cross-cutting and completed after `P9-TSK-010` and before `P9-TSK-011`, so it stands between them.)* *(`X-TSK-005` is cross-cutting and completed after `P7-TSK-014` and before `P7-TSK-015`, so it stands between them; its record came in with its branch's merge.)* *(`X-TSK-004` is cross-cutting and completed after the Phase 6 → 7 transition, so it stands second, between `P7-TSK-001` and the transition's record - the transition's block moved here by `P7-TSK-001`'s gate, exactly as an earlier form of this note said it would.)*
+The per-task completion records that accumulated behind `## Current Task` - 206 "Previously" blocks, newest first, from `P9-TSK-012` back to project initiation. *(`X-TSK-016` is cross-cutting and completed after `P9-TSK-010` and before `P9-TSK-011`, so it stands between them.)* *(`X-TSK-005` is cross-cutting and completed after `P7-TSK-014` and before `P7-TSK-015`, so it stands between them; its record came in with its branch's merge.)* *(`X-TSK-004` is cross-cutting and completed after the Phase 6 → 7 transition, so it stands second, between `P7-TSK-001` and the transition's record - the transition's block moved here by `P7-TSK-001`'s gate, exactly as an earlier form of this note said it would.)*
 
 **Archive.** These records were moved verbatim out of
 [`CURRENT_STATE.md`](../CURRENT_STATE.md) on 2026-09-20 so that the canonical description of
@@ -12,6 +12,42 @@ Current state: [`CURRENT_STATE.md`](../CURRENT_STATE.md) ·
 Authoritative backlog: [`BACKLOG.md`](../BACKLOG.md)
 
 ---
+
+### Previously
+
+**`P9-TSK-012` — The FX cover** — `COMPLETE` (2026-10-05). **M9.3 CLOSES AT 4 OF 4: each accepted
+quote is covered with its provider exactly once, however the provider answers** (ADR-0077 §§2-9,
+PHASE_9_PLAN.md §§12.4(b)/(f) and 12.5; `INV-FX-06`, `INV-FX-08`, `INV-FX-09`, `INV-PAY-04`, `INV-LIFE-03`).
+**`fx V007`**: `cover_execution` - PK `cover_id`, `UNIQUE (provider_code, provider_trade_ref)`, `UNIQUE
+journal_entry_id`, the plan's legs copied from the quote and checked at birth for every writer, realised =
+executed - plan and `executed_off_plan` by `CHECK`, append-only but for the entry attached once (a deferred
+trigger refuses a commit without it); the cover machine restated - `-> EXECUTED` only with the fact,
+`REJECTED -> DISPATCHED` only once attempt n+1's `T(n+1)` is stored, `requote_failures` (the backoff) and
+`caused_by_event_id` (the acceptance). **Ledger `V023`**: `FX_REALISED_GAINS`/`FX_REALISED_LOSSES` in five
+currencies, closed to free adjustment. **The domain**: `CoverLines` (the plan's legs closed exactly onto the
+provider's OWN clearing, the difference realised in that leg's currency - §12.4(b) and (f) posted
+exactly); `FxCoverOutcomes` (T-d: the answer, the inquiry and the hinted inquiry through one applier under
+the lock order, only the current attempt's definitive answer concluding, the execution fact, the entry
+`fx-cover:<id>`, both leg expectations through `FxSettlementExpectations`, `fx.FxCoverExecuted`/`Rejected`
+and the `fx.CoverExecuted` audit - one commit); `FxCoverDispatch` (send and re-send the SAME `T`, inquire an
+`UNKNOWN` cover first, requote only after a definitive rejection at a fresh firm quote inside the band of the
+quote's pinned policy against a fresh reference, void an unwanted rejected cover - no transaction spans a
+provider call). **The composition**: `FxCoverSchedule` (leaderless, one claiming statement, `FOR UPDATE SKIP
+LOCKED`), the post-commit `FxCoverNudge`, `FxCoverMetrics` (`finapp.fx.cover{provider,type,outcome}`,
+`.latency`, `.unknown.active`/`.age`, `.open.age`, `.sweeper.enabled`), and the callback door `POST
+/v1/providers/fx/webhooks` (HMAC under `FINAPP_FX_WEBHOOK_KEY`, freshness, evidence first, the inbox, then an
+authenticated inquiry - a callback is a hint). **Carried from `-011`, resolved**: a cover leg's reconciliation
+key is qualified by its currency at both sides (`CoverLegKey`), so a cover's two legs sharing `T` hold two
+keys and both settle. **THE BUILD'S FINDS, FIXED**: a requote race loser was reported as a refusal; every leg
+now runs in the cover's own correlation and actor scope (the posting, inbox and idempotency layers require
+them); the simulator's trade references were reused across instances (a real provider never reuses one).
+**PROBES** (TWELVE PROBES, TWELVE CAUGHT - X11, the sweep claiming whatever the permit's age, SURVIVED its first run because the ten-sweeper race claims within one instant; a pacing assertion was added to `FxCoverRaceDatabaseTest` and caught it on the re-run), every restore byte-identical (sha256-verified; `MUTATION_TESTING.md` §2 +11 rows). **Multi-instance PASS** - ten sweepers send one cover once; a lost response plus ten
+sweepers and ten inquirers leave one execution, one fact, one entry; ten appliers of one rejection one
+successor; ten appliers of one answer one fact; ten callback deliveries plus a sweep one effect; the PK and the
+trade-reference unique refuse with every trigger off (all counted). **NEXT**: `P9-TSK-013` `READY`.
+**Verified** by fresh runs - the fleet-wide hermetic tier 2452 across 399 suites and 18 modules; the architecture tier 155 across 27; the
+app hermetic tier with every document guard 714 across 134 within it; the task's own database suites run green while built - FxCoverDatabaseTest 10, FxCoverRaceDatabaseTest 4, FxCallbackDuplicateDatabaseTest 4, the conversion and FX source suites, fx database 60 across 12 and FxMatchingDatabaseTest 4 - and the twelve probes against them; the final database tiers SKIPPED on the owner's instruction (2026-10-05: the code assumed correct, refactored after the phase), ALL 0 FAILURES
+- the fleet-wide database and kafka tiers likewise skipped.
 
 ### Previously
 

@@ -253,6 +253,7 @@ retained), `INV-PAY-03` (provider vocabulary confined to format adapters).
 
 ## Follow-up
 
+- *(`P9-TSK-013`, built 2026-10-05: `differenceCause` names `FX_LEG_DIFFERS` and the timing verdict `VALUE_DATE_DIFFERS` for the cover-leg kinds, after the open-`MISSING_EXTERNAL` rule; a cover leg is expected on the cover entry's value date - the provider's confirmed T+2 - rather than posting date plus lag; the paired leg is found by the same operation and the other kind, equivalent to `COVER_REF` since a cover has one execution.)*
 - `P9-TSK-011` builds the FX source, vocabulary and vendor rows; `-013` the FX legs to cash
   and the proofs' coverage; `-014` the corridor source, the scoped lookup and waiting-return
   reader; `-022` corridor settlement to cash; `-023` the return path's reconciliation half;

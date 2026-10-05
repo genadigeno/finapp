@@ -238,7 +238,7 @@ use), ADR-0048 (a hold is not a posting).
 - `P9-TSK-012`: ledger `V023` (`FX_REALISED_GAINS`/`LOSSES`), the cover entry closing the
   plan's legs ± realised result (ADR-0077).
 - `P9-TSK-013`: `FxBooksProof` and `FxPlanVerification`, each flipped by a plant; at rest
-  `FX_POSITION` and `FX_PROVIDER_CLEARING` are 0.
+  `FX_POSITION` and `FX_PROVIDER_CLEARING` are 0. *(Built 2026-10-05: the books proof reads each FX book through ledger's `BalanceDerivation` against fx's own rows - trades' and executed covers' plan legs, margins, residuals, realised results - with the reversal and unwind terms zero until `-025`/`-021`; the replay recomputes each plan from the quote's frozen inputs through `ConversionPlan.compute` and compares the trade, the rates and the posted entry line by line; `FxSettledToCashDatabaseTest` proves the zero for a conversion carried to cash.)*
 - `P9-TST-002`: ≥ 10,000 conversions over all 20 pairs and both fixed sides — trial balance
   zero in five currencies, the residual, margin and position identities exact, plan
   verification clean, golden replay of every quote.

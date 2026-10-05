@@ -132,7 +132,9 @@ class RoleNameTest {
                 .containsExactlyInAnyOrder(
                         PermissionName.SETTLEMENT_INGEST,
                         PermissionName.RECONCILIATION_INVESTIGATE,
-                        PermissionName.RECONCILIATION_RESOLVE);
+                        PermissionName.RECONCILIATION_RESOLVE,
+                        // P9-TSK-013: reading an FX trade's provenance - a read, never a mover.
+                        PermissionName.FX_INVESTIGATE);
     }
 
     @Test

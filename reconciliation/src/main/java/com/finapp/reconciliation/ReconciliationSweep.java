@@ -120,6 +120,7 @@ public class ReconciliationSweep {
                     () -> telemetry.spans().within(
                             "reconciliation.age", java.util.Map.of(), this::age));
             escalated = contained("escalation", this::escalate);
+            escalated += contained("paired-leg escalation", this::escalatePairedLegs);
             blocked = contained("run-block detection", this::detectLostBlocks);
             raisedCollisions = contained("key collisions", this::raiseCollisions);
         }
@@ -304,6 +305,49 @@ public class ReconciliationSweep {
             }
         }
         return stepped;
+    }
+
+    // ----------------------------------------------------------------- paired legs
+
+    /** The paired-leg escalation's event detail (PHASE_9_PLAN.md section 12.9.3). */
+    static final String PAIRED_LEG_ALLOCATED = "PAIRED_LEG_ALLOCATED";
+
+    /**
+     * One leg of a cover settled and the other overdue is the principal's risk (`P9-TSK-013`,
+     * PHASE_9_PLAN.md section 12.9.3): the overdue leg's open {@code MISSING_EXTERNAL} is raised
+     * straight to {@code CRITICAL}, each break its own transaction - the source's namespace-4
+     * advisory first, then the expected-value step - so ten sweepers write one severity change and
+     * one {@code SEVERITY_ESCALATED} event detailed {@code PAIRED_LEG_ALLOCATED}; a loser converges.
+     */
+    @SuppressWarnings("try")
+    private int escalatePairedLegs() {
+        List<MatchingStore.PairedLegRow> rows =
+                transactions.inTransaction(
+                        unitOfWork -> store.pairedLegEscalations(unitOfWork, config.batch()));
+        int escalated = 0;
+        for (MatchingStore.PairedLegRow row : rows) {
+            CorrelationId correlation = CorrelationId.generate(ids);
+            try (CorrelationContext.Scope scope =
+                    CorrelationContext.enter(Correlation.startingWith(correlation))) {
+                boolean stepped =
+                        transactions.inTransaction(
+                                unitOfWork -> {
+                                    advisorySourceLock(unitOfWork, row.sourceId());
+                                    return store.escalate(
+                                            unitOfWork, row.breakId(), row.severity(), Severity.CRITICAL,
+                                            PAIRED_LEG_ALLOCATED, SecurityContext.require(),
+                                            Instant.now(clock), correlation);
+                                });
+                if (stepped) {
+                    escalated++;
+                }
+            } catch (RuntimeException failure) {
+                log.warn(
+                        "A paired-leg escalation row failed and rolled back: {}",
+                        failure.getClass().getSimpleName());
+            }
+        }
+        return escalated;
     }
 
     // ----------------------------------------------------------------- lost blocks

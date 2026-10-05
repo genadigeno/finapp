@@ -517,6 +517,15 @@ class OwnershipIsScopedTest {
                                         + " transaction. Another tenant's dispute, unknown and"
                                         + " malformed are one empty answer and one 404.")),
                     Map.entry(
+                            "com.finapp.fx.JdbcFxProvenanceStore.provenance",
+                            new Entry(
+                                    Scope.ADMINISTERED,
+                                    "P9-TSK-013. The investigator's read of one FX trade's provenance names"
+                                        + " SOMEBODY ELSE'S conversion by design: @RequiresPermission(FX_INVESTIGATE)"
+                                        + " stands in for the ownership predicate - asserted by"
+                                        + " FxProvenanceDatabaseTest's wrong-role refusal - and every serving is"
+                                        + " audited (fx.TradeProvenanceRead). No customer surface reaches it.")),
+                    Map.entry(
                             "com.finapp.payments.JdbcDisputeStore.findById",
                             new Entry(
                                     Scope.ADMINISTERED,

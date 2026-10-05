@@ -154,7 +154,9 @@ public enum RoleName {
             EnumSet.of(
                     PermissionName.SETTLEMENT_INGEST,
                     PermissionName.RECONCILIATION_INVESTIGATE,
-                    PermissionName.RECONCILIATION_RESOLVE)),
+                    PermissionName.RECONCILIATION_RESOLVE,
+                    // P9-TSK-013: the FX legs' investigator reads the trade's rate chain.
+                    PermissionName.FX_INVESTIGATE)),
 
     /**
      * Controls the reconciliation register (`P8-TSK-007`, ADR-0067 §8, owner decision O1's

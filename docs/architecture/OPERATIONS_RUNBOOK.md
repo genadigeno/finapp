@@ -176,3 +176,21 @@ exactly - `FX_POSITION` closes, the difference is realised in that leg's currenc
    there (`AMOUNT_MISMATCH`/`FX_LEG_DIFFERS`, or `UNKNOWN_EXTERNAL`), resolved four-eyes.
 4. **The FX source's v1 missing:** an executed cover cannot open its legs and its outcome refuses - fail
    closed; activate v1 (section 3) and the next sweep books it.
+
+## 5. The FX proofs fail - a book unexplained, or a plan that does not replay
+
+*(Added by `P9-TSK-013`, 2026-10-05; PHASE_9_PLAN.md section 12.9.4; `INV-FX-05`, `INV-FX-06`.)*
+
+**Signals.** `finapp.fx.proof{purpose}` above 0 (currencies failing that FX book's identity) with a
+`CRITICAL: the FX books proof fails` log line naming each book and currency; `finapp.fx.plan.verdict` at 0
+with a `CRITICAL: FX trade ... does not replay` line naming the trade and what differs.
+
+**What it means.** Not a reconciliation break - no external evidence states the platform's own spread,
+position or residual. A failing book is value on an FX book that no conversion or cover explains (a raw line,
+a defect in a composer); a failing replay is a stored plan the pricing function no longer reproduces from its
+own stored inputs. Both are the platform's defect.
+
+**What a person does.** Nothing is repaired automatically and nothing may be adjusted by hand: the FX books are
+closed to free adjustment (`422 ledger.AdjustmentOnReconciledPosition`). Read the trade's provenance
+(`GET /v1/operator/fx/trades/{id}/provenance`, `FX_INVESTIGATE`) and the book's entries; open an incident; the
+only corrector of a booked conversion is the four-eyes trade reversal (`P9-TSK-025`).

@@ -1033,6 +1033,8 @@ defended to a customer, an auditor or a regulator — `INV-HIST-04` pointed at p
 perturbation demonstration; the 10-decimal property test on every pair.
 **Phase:** 9
 
+*(As built by `P9-TSK-013` (2026-10-05): `FxPlanVerification` replays every booked trade from its quote's frozen inputs through `ConversionPlan.compute` - the trade's amounts, the customer and internal rates, the disclosed margin against the stored reference, and the posted entry line by line; a divergence is CRITICAL and `finapp.fx.plan.verdict` reads 0. A perturbed stored rate flips it (`FxProofDatabaseTest`).)*
+
 ### INV-FX-06 — The FX books are explainable and have one poster
 **Statement:** Per currency, `FX_POSITION` equals the sum of its open legs and is zero at rest
 once covers execute. Spread, residual and realised results equal their trades' and executions'
@@ -1044,6 +1046,8 @@ discipline for the platform's own currency risk).
 `closedToFreeAdjustments()` binding trigger) + `DOMAIN`.
 **Verify:** The FX books proof every storm round and at rest; a planted raw line flips it.
 **Phase:** 9
+
+*(As built by `P9-TSK-013`: `FxBooksProof` per book and currency, `finapp.fx.proof{purpose}` the failing currencies; a raw line planted on each of the five books flips that book alone (`FxProofDatabaseTest`); `FxBooksHaveOnePosterTest` permits the proof as the books' one reader.)*
 
 ### INV-FX-07 — The rounding residual is bounded and posted
 **Statement:** A conversion's residual is computed from stored amounts, bounded — |r| ≤ 2
