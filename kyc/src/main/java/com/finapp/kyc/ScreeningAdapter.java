@@ -17,13 +17,19 @@ import java.util.Objects;
  * {@link SimulatedProviderClient} and is inherited, not restated; its matrix is
  * {@code VerificationAdapterTest}'s subject and is deliberately not duplicated per type.
  */
-public final class ScreeningAdapter implements VerificationProvider {
+public final class ScreeningAdapter implements VerificationProvider, CounterpartyScreeningProvider {
 
     /** The simulated wire paths — published for tests that stub the provider. */
     public static final String SANCTIONS_PATH = "/sanctions-screenings";
 
     public static final String PEP_PATH = "/pep-screenings";
     public static final String ADVERSE_MEDIA_PATH = "/adverse-media-screenings";
+
+    /**
+     * The counterparty screening path (`P9-TSK-016`, ADR-0081): the same provider and client, a
+     * counterparty subject - every factory's instance can screen a counterparty here.
+     */
+    public static final String COUNTERPARTY_PATH = "/counterparty-screenings";
 
     private final CheckType type;
     private final String path;
@@ -55,5 +61,10 @@ public final class ScreeningAdapter implements VerificationProvider {
     @Override
     public ProviderResult verify(VerificationSubject subject) {
         return client.ask(path, subject);
+    }
+
+    @Override
+    public Answer screen(CounterpartyScreeningId screeningId, CounterpartySubject subject) {
+        return client.askCounterparty(COUNTERPARTY_PATH, screeningId, subject);
     }
 }

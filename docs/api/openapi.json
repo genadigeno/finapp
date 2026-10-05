@@ -997,6 +997,41 @@
           }
         }
       },
+      "crossborder.LimitRefused": {
+        "content": {
+          "application/problem+json": {
+            "schema": {
+              "allOf": [
+                {
+                  "$ref": "#/components/schemas/ProblemDetail"
+                },
+                {
+                  "properties": {
+                    "code": {
+                      "const": "crossborder.LimitRefused"
+                    },
+                    "status": {
+                      "const": 422
+                    },
+                    "type": {
+                      "const": "https://finapp.example/problems/crossborder.LimitRefused"
+                    }
+                  }
+                }
+              ]
+            }
+          }
+        },
+        "description": "[422] The transfer exceeds a limit that applies to it.",
+        "headers": {
+          "X-Client-Correlation-Id": {
+            "$ref": "#/components/headers/X-Client-Correlation-Id"
+          },
+          "X-Correlation-Id": {
+            "$ref": "#/components/headers/X-Correlation-Id"
+          }
+        }
+      },
       "crossborder.NotFound": {
         "content": {
           "application/problem+json": {
@@ -1163,6 +1198,41 @@
           }
         },
         "description": "[422] The corridor requires data the platform does not hold.",
+        "headers": {
+          "X-Client-Correlation-Id": {
+            "$ref": "#/components/headers/X-Client-Correlation-Id"
+          },
+          "X-Correlation-Id": {
+            "$ref": "#/components/headers/X-Correlation-Id"
+          }
+        }
+      },
+      "crossborder.RiskRefused": {
+        "content": {
+          "application/problem+json": {
+            "schema": {
+              "allOf": [
+                {
+                  "$ref": "#/components/schemas/ProblemDetail"
+                },
+                {
+                  "properties": {
+                    "code": {
+                      "const": "crossborder.RiskRefused"
+                    },
+                    "status": {
+                      "const": 422
+                    },
+                    "type": {
+                      "const": "https://finapp.example/problems/crossborder.RiskRefused"
+                    }
+                  }
+                }
+              ]
+            }
+          }
+        },
+        "description": "[422] The transfer cannot be accepted.",
         "headers": {
           "X-Client-Correlation-Id": {
             "$ref": "#/components/headers/X-Client-Correlation-Id"
@@ -2283,6 +2353,111 @@
           }
         },
         "description": "[422] This party cannot be declared as a beneficial owner.",
+        "headers": {
+          "X-Client-Correlation-Id": {
+            "$ref": "#/components/headers/X-Client-Correlation-Id"
+          },
+          "X-Correlation-Id": {
+            "$ref": "#/components/headers/X-Correlation-Id"
+          }
+        }
+      },
+      "kyc.ScreeningNotFound": {
+        "content": {
+          "application/problem+json": {
+            "schema": {
+              "allOf": [
+                {
+                  "$ref": "#/components/schemas/ProblemDetail"
+                },
+                {
+                  "properties": {
+                    "code": {
+                      "const": "kyc.ScreeningNotFound"
+                    },
+                    "status": {
+                      "const": 404
+                    },
+                    "type": {
+                      "const": "https://finapp.example/problems/kyc.ScreeningNotFound"
+                    }
+                  }
+                }
+              ]
+            }
+          }
+        },
+        "description": "[404] No counterparty screening matches the requested identifier.",
+        "headers": {
+          "X-Client-Correlation-Id": {
+            "$ref": "#/components/headers/X-Client-Correlation-Id"
+          },
+          "X-Correlation-Id": {
+            "$ref": "#/components/headers/X-Correlation-Id"
+          }
+        }
+      },
+      "kyc.ScreeningNotInReview": {
+        "content": {
+          "application/problem+json": {
+            "schema": {
+              "allOf": [
+                {
+                  "$ref": "#/components/schemas/ProblemDetail"
+                },
+                {
+                  "properties": {
+                    "code": {
+                      "const": "kyc.ScreeningNotInReview"
+                    },
+                    "status": {
+                      "const": 409
+                    },
+                    "type": {
+                      "const": "https://finapp.example/problems/kyc.ScreeningNotInReview"
+                    }
+                  }
+                }
+              ]
+            }
+          }
+        },
+        "description": "[409] The counterparty screening is not in review.",
+        "headers": {
+          "X-Client-Correlation-Id": {
+            "$ref": "#/components/headers/X-Client-Correlation-Id"
+          },
+          "X-Correlation-Id": {
+            "$ref": "#/components/headers/X-Correlation-Id"
+          }
+        }
+      },
+      "kyc.ScreeningReviewInvalid": {
+        "content": {
+          "application/problem+json": {
+            "schema": {
+              "allOf": [
+                {
+                  "$ref": "#/components/schemas/ProblemDetail"
+                },
+                {
+                  "properties": {
+                    "code": {
+                      "const": "kyc.ScreeningReviewInvalid"
+                    },
+                    "status": {
+                      "const": 422
+                    },
+                    "type": {
+                      "const": "https://finapp.example/problems/kyc.ScreeningReviewInvalid"
+                    }
+                  }
+                }
+              ]
+            }
+          }
+        },
+        "description": "[422] The counterparty screening review is not acceptable.",
         "headers": {
           "X-Client-Correlation-Id": {
             "$ref": "#/components/headers/X-Client-Correlation-Id"
@@ -10807,6 +10982,40 @@
         },
         "type": "object"
       },
+      "ScreeningDecisionReceipt": {
+        "properties": {
+          "id": {
+            "type": "string"
+          },
+          "status": {
+            "type": "string"
+          }
+        },
+        "type": "object"
+      },
+      "ScreeningDecisionRequest": {
+        "properties": {
+          "decision": {
+            "minLength": 1,
+            "type": "string"
+          },
+          "narrative": {
+            "maxLength": 1000,
+            "minLength": 1,
+            "type": "string"
+          },
+          "reasonCode": {
+            "minLength": 1,
+            "type": "string"
+          }
+        },
+        "required": [
+          "decision",
+          "narrative",
+          "reasonCode"
+        ],
+        "type": "object"
+      },
       "SectionView": {
         "properties": {
           "closing": {
@@ -14487,6 +14696,51 @@
               "application/json": {
                 "schema": {
                   "$ref": "#/components/schemas/ProvenanceView"
+                }
+              }
+            },
+            "description": "OK"
+          }
+        }
+      }
+    },
+    "/v1/operator/kyc/counterparty-screenings/{id}/decision": {
+      "post": {
+        "operationId": "decideCounterpartyScreening",
+        "parameters": [
+          {
+            "in": "header",
+            "name": "Idempotency-Key",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "in": "path",
+            "name": "id",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ScreeningDecisionRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ScreeningDecisionReceipt"
                 }
               }
             },

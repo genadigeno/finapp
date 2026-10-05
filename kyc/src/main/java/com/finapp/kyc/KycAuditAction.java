@@ -140,7 +140,21 @@ public enum KycAuditAction implements AuditableAction {
     DOCUMENT_CONTENT_READ(
             "kyc.DocumentContentRead",
             "Document content was read, naming who looked and at which document.",
-            false);
+            false),
+
+    /**
+     * kyc decided a counterparty screening (`P9-TSK-016`, ADR-0081; {@code INV-KYC-01},
+     * {@code INV-KYC-04}): every outcome, automatic or a person's, in the decision's own transaction.
+     * <strong>Reason required</strong> - an outcome nobody can explain is one nobody can defend: the
+     * platform's names the provider's verdict, the payee check and the outcome; a reviewer's is the
+     * reason code and the narrative. The actor is the platform for an automatic outcome and the
+     * reviewer for a release or block. Never the counterparty's name.
+     */
+    COUNTERPARTY_SCREENING_DECIDED(
+            "kyc.CounterpartyScreeningDecided",
+            "kyc decided a counterparty screening - automatically from the provider's verdict and the"
+                    + " payee check, or a reviewer's release or block - naming its basis and policy version.",
+            true);
 
     private final String code;
     private final String description;

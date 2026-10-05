@@ -1479,6 +1479,14 @@ own decisioning ran; evidence bytes asserted identical to the bytes received.
 `decision_basis` (`AUTOMATIC` | `REVIEWER`), the kyc policy version and decided-at, with the
 provider's verdict retained as evidence only.)*
 
+*(In force since `P9-TSK-016` (2026-10-06). Enforced at `DB-CONSTRAINT` by `kyc V009`:
+`counterparty_screening_every_outcome_is_decided` (a basis, policy version and time exactly when no
+longer `REQUESTED`), `..._basis_matches_the_outcome` (`REVIEWER` exactly for `RELEASED`/`BLOCKED`) and
+`..._reviewer_names_a_person`; the provider's answer is the append-only
+`counterparty_screening_attempt` row, its bytes sealed. Verified by `CounterpartyScreeningDatabaseTest`
+- every outcome carries its basis, policy and time; the raw-SQL refusals - and
+`CounterpartyScreeningRuleTest`.)*
+
 ### INV-KYC-02 — A decision is immutable, attributable and reproducible
 **Statement:** A recorded KYC/KYB decision is never updated or deleted; it names its actor
 (a reviewer, or the platform under a stated automatic policy), its reason, the policy version
@@ -1521,6 +1529,14 @@ handled as a hit** — a `CLEAR` on a name whose payee check answered `NO_MATCH`
 `UNAVAILABLE` goes to a person (reason `PAYEE_UNVERIFIED`), an `AUTOMATIC` `CLEAR` exists
 only with a payee `MATCH` (a kyc `CHECK` on the stored payee verdict), and release or block
 takes `COUNTERPARTY_SCREENING_REVIEW` with a recorded reason (`INV-XB-02`).)*
+
+*(In force since `P9-TSK-016` (2026-10-06). `DOMAIN`: `CounterpartyScreenings.route` - only a
+provider `CLEAR` beside a payee `MATCH` clears; a hit, an indeterminate answer or an unverified payee
+goes `IN_REVIEW` with its reason, and the machine has no automatic edge to `RELEASED` or `BLOCKED`.
+`DB-CONSTRAINT`: `counterparty_screening_automatic_clear_needs_a_payee_match`. A person's decision
+takes `COUNTERPARTY_SCREENING_REVIEW` (held by `KYC_REVIEWER`), a reason code that justifies it and a
+narrative, audited as `kyc.CounterpartyScreeningDecided`. Verified by `CounterpartyScreeningRuleTest`
+and `CounterpartyScreeningDatabaseTest` - including the review door's negative authorization.)*
 
 ### INV-KYC-05 — The verification outcome has one authority
 **Statement:** The KYC context owns the verification decision. Any copy elsewhere — including

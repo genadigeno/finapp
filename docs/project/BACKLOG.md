@@ -12913,7 +12913,7 @@ break row, as the approval door must.)*
 
 # Phase 9 — FX and Cross-Border Payments
 
-Status: `IN_PROGRESS` — started 2026-10-03 with `P9-TSK-001` (16 of 30 items complete, M9.1 to M9.4 closed, M9.5 at 2 of 4); entry gate passed 2026-10-02 by the Phase 8 → 9 transition
+Status: `IN_PROGRESS` — started 2026-10-03 with `P9-TSK-001` (17 of 30 items complete, M9.1 to M9.4 closed, M9.5 at 3 of 4); entry gate passed 2026-10-02 by the Phase 8 → 9 transition
 ([`reviews/PHASE_8_TO_9_TRANSITION.md`](reviews/PHASE_8_TO_9_TRANSITION.md)), elaborated to task
 granularity by the same transition: thirty items (`P9-TSK-001`…`-027`, `P9-TST-001`, `P9-TST-002`,
 `P9-DOC-001`) across nine milestones, with `P9-TSK-001` marked `READY`. The engineering plan is
@@ -13674,7 +13674,8 @@ providers), each owned by Phase 15 and gating nothing here.
 - **Acceptance criteria**: no corridor is offered without two named persons.
 - **Definition of done**: `DOD-FIN`, `DOD-SEC`, `DOD-API`, `DOD-EVENT`. **Risk**: Low. **Cx**: M.
 
-**P9-TSK-016 — Counterparty screening in kyc, and the Phase 13 seams** — `READY` (marked by `P9-TSK-015`'s completion gate, 2026-10-05)
+**P9-TSK-016 — Counterparty screening in kyc, and the Phase 13 seams** — `COMPLETE` (2026-10-06; marked `READY` by `P9-TSK-015`'s completion gate)
+- **As built** (2026-10-06): as `CURRENT_STATE.md` §Just completed records. The evidence is the append-only `counterparty_screening_attempt` row's sealed columns (one fact per attempt, not a second table); `decided_by` is the reviewer's actor id; the review door answers `404 kyc.ScreeningNotFound`, `409 kyc.ScreeningNotInReview` and `422 kyc.ScreeningReviewInvalid`; the seams judge a `CrossBorderInstruction` (customer, corridor, source amount). **Deviation:** the seam `REFUSE`-writes-nothing test needs the seams' consumer and lands with `P9-TSK-019`.
 - **Objective**: kyc screens counterparties at transaction time; a hit waits for a person; the risk
   and limit seams are reserved.
 - **Bounded context**: `kyc`, `identity`, `crossborder`, `app`.
@@ -13719,7 +13720,7 @@ providers), each owned by Phase 15 and gating nothing here.
 - **Definition of done**: `DOD-SEC`, `DOD-API`, `DOD-EVENT`, `DOD-DOMAIN`. **Risk**: Medium. **Cx**:
   M.
 
-**P9-TSK-017 — Cross-border beneficiaries** — `PLANNED`
+**P9-TSK-017 — Cross-border beneficiaries** — `READY` (marked by `P9-TSK-016`'s completion gate, 2026-10-06)
 - **Objective**: register a beneficiary abroad by provider reference, select its corridor provider,
   and screen it before it can be paid.
 - **Bounded context**: `crossborder`; `payments` and `kyc` through ports.

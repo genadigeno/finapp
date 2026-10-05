@@ -432,14 +432,14 @@ cross-border payments are holds and corridor acceptances, beneficiary screening 
 returns credited in the currency received; clearings are keyed by counterparty; callbacks are
 hints; reconciliation never converts currency and gains causes, never types. Ten new invariants
 and thirteen restated take the platform to **120**. Thirty backlog items across nine milestones
-(M9.1–M9.9) plus `X-TSK-013`…`-015`. **16 of 30 items complete** (M9.1 to M9.4 closed, M9.5 at 2 of 4): the modules and floors
+(M9.1–M9.9) plus `X-TSK-013`…`-015`. **17 of 30 items complete** (M9.1 to M9.4 closed, M9.5 at 3 of 4): the modules and floors
 (`P9-TSK-001`), the conversion arithmetic (`P9-TSK-002`), JPY and BHD postable (`P9-TSK-003`), multi-currency
 wallets (`P9-TSK-004`), reference rates (`P9-TSK-005`), the FX provider port (`P9-TSK-006`), the
 pricing policy (`P9-TSK-007`), the quote (`P9-TSK-008`), wallet conversion (`P9-TSK-009`),
 counterparty-keyed clearing positions (`P9-TSK-010`), the FX provider's source (`P9-TSK-011`), the FX cover
 (`P9-TSK-012`), FX explained to cash (`P9-TSK-013`), the value-preservation battery (`P9-TST-002`), the corridor
-rail (`P9-TSK-014`) and the corridor policy (`P9-TSK-015`); next **`P9-TSK-016` — Counterparty screening in kyc,
-and the Phase 13 seams** — `READY`
+rail (`P9-TSK-014`), the corridor policy (`P9-TSK-015`) and counterparty screening (`P9-TSK-016`); next
+**`P9-TSK-017` — Cross-border beneficiaries** — `READY`
 ([§Current Task](#current-task) is kept current).
 
 ## Current Milestone
@@ -455,40 +455,44 @@ since M0.1". Moved, not edited.)*
 
 ## Current Task
 
-**`P9-TSK-016` — Counterparty screening in kyc, and the Phase 13 seams** — `READY`:
-marked by `P9-TSK-015`'s completion gate (2026-10-05). **Not started.**
+**`P9-TSK-017` — Cross-border beneficiaries** — `READY`:
+marked by `P9-TSK-016`'s completion gate (2026-10-06). **Not started.**
 
 ### Just completed
 
-**`P9-TSK-015` — The corridor policy and availability** — `COMPLETE` (2026-10-05). **M9.5 AT 2 OF 4:
-corridors are four-eyes, versioned data, discoverable by customers - no corridor is offered without two named
-persons** (ADR-0080 §4, the lifecycle document §3.9-3.10; `INV-HIST-04`, `INV-AUD-04`). **crossborder `V002`**,
-the module's first tables: `corridor_policy_version` on the pricing policy's machine (`PROPOSED -> ACTIVE | REJECTED`,
-`ACTIVE -> RETIRED` only beside its successor, one `ACTIVE` and one `PROPOSED`, activator <> proposer by `CHECK`
-with no seed exemption), its append-only `corridor_policy_event`, the frozen `corridor` rows (S, D, country,
-candidate rails in order, fee as fixed minor units in S plus a margin with a named rounding, maximum in D,
-screening validity and delivery estimate in hours, required data), the append-only `corridor_availability` facts
-keyed by the stable code `S-D-CC`, the four-eyes `corridor_enable_request`, and the reason screen twinned from fx
-`V004`. **The domain** (crossborder): `CorridorPolicyAdministration` (propose, approve, reject - the build judged
-through the new `CorridorDirectory` port at proposal AND at approval: every candidate rail declared and covering
-(country, D), every required datum one the platform holds) and `CorridorAvailability` (one person disables at
-once; enabling is a proposal a second person approves; advisory namespace 8), `CorridorTerms`, `CorridorKey`,
-`RequiredData`, `CrossborderAuditAction` (seven reasoned acts), `CrossborderErrorCode`, events
-`crossborder.CorridorPolicyActivated` and `crossborder.CorridorAvailabilityChanged`. **identity**:
-`CROSSBORDER_ADMINISTER`, held by `FX_CONTROLLER`. **app**: `CrossborderBeans` (crossborder's own transaction
-runner; the directory over payments' `RailOperations`), the operator doors under
-`/v1/operator/cross-border/...` and the customer's `GET /v1/me/cross-border/corridors` (the active version's
-available corridors a declared rail carries, never naming a rail), the OpenAPI contract, the route, ownership and
-request-schema registers; v1 per O7 (`CorridorPolicyV1`, the runbook) activated by two controllers.
-**PROBES** (Eight probes, eight caught, each by its own case), every restore byte-identical (sha256-verified; `MUTATION_TESTING.md` §2 +8 rows).
-**Multi-instance PASS** - ten proposers leave one proposal, ten approvers one activation, ten enable approvers one
-enabling fact, ten disablers one fact (each counted). Nothing posts. **NEXT**: `P9-TSK-016` `READY`. **Verified** by
-fresh runs - the fleet-wide hermetic tier 2498 across 409 suites and 18 modules; the architecture tier 157 across 27; the task's own database
-suites while built (the crossborder module 30 across 6, CorridorAdministrationEndpointDatabaseTest 5); ALL 0 FAILURES - the other database tiers skipped on the owner's instruction.
+**`P9-TSK-016` — Counterparty screening in kyc, and the Phase 13 seams** — `COMPLETE` (2026-10-06). **M9.5 AT
+3 OF 4: kyc screens a counterparty and decides - a hit, an indeterminate answer or an unverified payee always waits
+for a person, and unavailable means unpayable** (ADR-0081 §§1-2, 4-5, 8; `INV-KYC-01`, `INV-KYC-04`, `INV-KYC-05`,
+`INV-AUD-01`). **kyc `V009`**: `counterparty_screening` (the name AES-256-GCM under kyc's evidence key with the
+screening id's sixteen bytes as associated data - `CounterpartySubjectCipher`; `request_reference UNIQUE`; the payee
+verdict as handed in; every outcome's `decision_basis`, `policy_version` and `decided_at`, with
+`CHECK ((decision_basis = 'REVIEWER') = (decided_by IS NOT NULL))`, a reason code and narrative exactly with a
+person, and no `AUTOMATIC` `CLEAR` without a payee `MATCH`; an edge trigger and column grants freezing the subject),
+the append-only `counterparty_screening_attempt` (the verdict and the provider's bytes sealed under the same binding),
+the reason screen twinned from fx `V004` on the narrative. **The domain** (kyc): `CounterpartyScreeningProvider` on the
+existing `ScreeningAdapter` and credential (`/counterparty-screenings`, the name JSON-escaped, no bank identifier;
+nothing arriving is `UNAVAILABLE`, an unreadable answer `INDETERMINATE`); `CounterpartyScreenings` - screen
+(idempotent on the caller's reference), re-screen from the stored subject, retry, review, clearance - the rule
+`route` (only `CLEAR` beside `MATCH` clears; a provider `CLEAR` with an unverified payee is evidence and goes
+`IN_REVIEW`, `PAYEE_UNVERIFIED`), T-e writing the attempt, the outcome, `kyc.CounterpartyScreeningDecided` (audit with
+a reason, and event) and calling `ScreeningOutcomeListener` (refusing until `-017`) in one transaction; kyc's own
+`TransactionRunner`; `CounterpartyScreeningObserver`. **identity**: `COUNTERPARTY_SCREENING_REVIEW`, held by
+`KYC_REVIEWER`. **crossborder**: the Phase 13 seams `CrossBorderLimitCheck`, `CrossBorderRiskDecision`,
+`CrossBorderVerdict`, `CrossBorderInstruction` and the field-free `PermitAllUntilPhase13`, with `crossborder.LimitRefused`
+and `crossborder.RiskRefused` reserved. **app**: `CounterpartyScreeningBeans`, the review door
+`POST /v1/operator/kyc/counterparty-screenings/{id}/decision` (keyed), the leaderless
+`CounterpartyScreeningRetrySchedule`, the meters `finapp.kyc.counterparty.screening{outcome}`, `.review.pending`,
+`.review.age`, `finapp.kyc.counterparty.sweeper.enabled`; the registers and the data classification. **PROBES**
+(Ten probes, ten caught, each by its own case), every restore byte-identical (sha256-verified; `MUTATION_TESTING.md` §2 +10 rows). **Multi-instance
+PASS** - ten reviewers one decision, ten sweepers one attempt per due screening (each counted). One deviation
+recorded: the seam `REFUSE`-writes-nothing proof lands with its consumer, the authorization (`P9-TSK-019`). Nothing
+posts. **NEXT**: `P9-TSK-017` `READY`. **Verified** by fresh runs - the fleet-wide hermetic tier 2526 across 414 suites and 18 modules; the
+architecture tier 157 across 27; the task's own database suites while built (CounterpartyScreeningDatabaseTest 12, KycReasonScreenDatabaseTest 3); ALL 0 FAILURES - the other
+database tiers skipped on the owner's instruction.
 
 ### Previously
 
-The per-task completion records — 209 blocks, from `P9-TSK-014` back to project initiation
+The per-task completion records — 210 blocks, from `P9-TSK-015` back to project initiation
 (`X-TSK-016` cross-cutting, standing between `P9-TSK-011` and `P9-TSK-010`; `X-TSK-005` cross-cutting, standing between `P7-TSK-015` and `P7-TSK-014`; `X-TSK-004`
 cross-cutting, standing between `P7-TSK-001` and the Phase 6 → 7 transition) — are archived in
 [`history/TASK_HISTORY.md`](history/TASK_HISTORY.md).
@@ -1033,8 +1037,8 @@ Resolved during initiation:
 
 ## Next Task
 
-**`P9-TSK-016` — Counterparty screening in kyc, and the Phase 13 seams** — `READY`
-(the Current Task), marked by `P9-TSK-015`'s completion gate.
+**`P9-TSK-017` — Cross-border beneficiaries** — `READY`
+(the Current Task), marked by `P9-TSK-016`'s completion gate.
 *(This section read "`P8-TSK-009` — `READY`" from `P8-TSK-008`'s gate until
 `P8-TSK-013`'s record found it — the stale-second-copy class, in the section whose
 whole job is to mirror.)*
