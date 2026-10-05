@@ -432,13 +432,13 @@ cross-border payments are holds and corridor acceptances, beneficiary screening 
 returns credited in the currency received; clearings are keyed by counterparty; callbacks are
 hints; reconciliation never converts currency and gains causes, never types. Ten new invariants
 and thirteen restated take the platform to **120**. Thirty backlog items across nine milestones
-(M9.1–M9.9) plus `X-TSK-013`…`-015`. **13 of 30 items complete** (M9.1, M9.2 and M9.3 closed; M9.4 at 1 of 2): the modules and floors
+(M9.1–M9.9) plus `X-TSK-013`…`-015`. **14 of 30 items complete** (M9.1 to M9.4 closed): the modules and floors
 (`P9-TSK-001`), the conversion arithmetic (`P9-TSK-002`), JPY and BHD postable (`P9-TSK-003`), multi-currency
 wallets (`P9-TSK-004`), reference rates (`P9-TSK-005`), the FX provider port (`P9-TSK-006`), the
 pricing policy (`P9-TSK-007`), the quote (`P9-TSK-008`), wallet conversion (`P9-TSK-009`),
 counterparty-keyed clearing positions (`P9-TSK-010`), the FX provider's source (`P9-TSK-011`), the FX cover
-(`P9-TSK-012`) and FX explained to cash (`P9-TSK-013`); next **`P9-TST-002` — The value-preservation and
-rounding battery** — `READY`
+(`P9-TSK-012`), FX explained to cash (`P9-TSK-013`) and the value-preservation battery (`P9-TST-002`); next
+**`P9-TSK-014` — The corridor rail, its position and its source** — `READY`
 ([§Current Task](#current-task) is kept current).
 
 ## Current Milestone
@@ -454,40 +454,30 @@ since M0.1". Moved, not edited.)*
 
 ## Current Task
 
-**`P9-TST-002` — The value-preservation and rounding battery** — `READY`: marked
-by `P9-TSK-013`'s completion gate (2026-10-05). **Not started.**
+**`P9-TSK-014` — The corridor rail, its position and its source** — `READY`: marked
+by `P9-TST-002`'s completion gate (2026-10-05). **Not started.**
 
 ### Just completed
 
-**`P9-TSK-013` — FX explained and settled to cash** — `COMPLETE` (2026-10-05). **M9.4 OPENS AT 1 OF 2:
-the FX books are proven, every plan replays, and the FX legs carry to cash with every discrepancy typed**
-(PHASE_9_PLAN.md §§12.9.3-12.9.4; `INV-FX-05`, `INV-FX-06`, `INV-SET-02`, `INV-REC-06`…`-09`, `INV-MON-04`).
-**The proofs** (`fx`, report-only, one `REPEATABLE READ` snapshot): `FxBooksProof` - each of the five FX books per
-currency through ledger's `BalanceDerivation` against fx's own rows (trades' and executed covers' plan legs,
-margins, residuals, realised results; the reversal and unwind terms zero until `-025`/`-021`); `FxPlanVerification`
-- every trade replayed from its quote's frozen inputs through `ConversionPlan.compute`, the amounts, the customer and
-internal rates, the disclosed margin and the posted entry line by line; gauged by `FxProofMetrics`
-(`finapp.fx.proof{purpose}`, `finapp.fx.plan.verdict`, a CRITICAL line on divergence). **Reconciliation**:
-`differenceCause` names `FX_LEG_DIFFERS` and the timing verdict `VALUE_DATE_DIFFERS` for the cover-leg kinds,
-after the open-`MISSING_EXTERNAL` rule; `ReconciliationSweep`'s paired-leg escalation raises an overdue leg whose
-pair is allocated to CRITICAL under namespace 4, one `SEVERITY_ESCALATED` event detailed `PAIRED_LEG_ALLOCATED`;
-a cover leg is expected on the cover entry's value date (the provider's confirmed T+2, carried from `-012`).
-**The door**: `GET /v1/operator/fx/trades/{id}/provenance` behind the new `FX_INVESTIGATE`, held by
-`RECONCILIATION_OPERATOR`, every serving audited (`fx.TradeProvenanceRead`). **Scenario 10 for FX**:
-`FxSettledToCashDatabaseTest` - the cover, the provider's EUR and USD files allocated leg by leg, two remittances,
-the bank's two statements, the conversion's movements netting to 0 on `FX_POSITION` and fx-sim-a's clearing.
-**THE BUILD'S FINDS, FIXED**: `FxProviderSourceDatabaseTest` planted a raw line on `FX_POSITION` the proof would
-report for every later suite - its counter line moved to `FEE_REVENUE`. **PROBES** (SEVEN PROBES, SEVEN CAUGHT), every restore
-byte-identical (sha256-verified; `MUTATION_TESTING.md` §2 +7 rows). **Multi-instance PASS** - ten
-sweepers over one overdue leg whose pair is allocated write one severity change and one event (counted); the proofs
-write nothing. **NEXT**: `P9-TST-002` `READY`.
-**Verified** by fresh runs - the fleet-wide hermetic tier 2454 across 399 suites and 18 modules; the architecture tier 157 across 27; the
-app hermetic tier with every document guard 716 across 134 within it; the task's own database suites run green while built - FxMatchingDatabaseTest 8 (the mismatch battery and the escalation race), FxProofDatabaseTest 3, FxProvenanceDatabaseTest 1, FxSettledToCashDatabaseTest 1, every app FX database suite 47 across 11 - and the seven probes against them, ALL 0 FAILURES - the final database
-tiers skipped on the owner's instruction (the code assumed correct, refactored after the phase).
+**`P9-TST-002` — The value-preservation and rounding battery** — `COMPLETE` (2026-10-05). **M9.4 CLOSES AT
+2 OF 2: at volume, conversion creates and destroys no value across 0, 2 and 3 minor units** (PHASE_9_PLAN.md
+§13; `INV-ACC-01`, `INV-FX-01`, `INV-FX-03`…`-07`, `INV-BAL-03`). `FxValuePreservationBatteryDatabaseTest`: ten
+concurrent converters through the real doors over all twenty directional pairs and both fixed sides, amounts from each
+fixed currency's minimum to its maximum (the bounds' edges first, then log-uniform, seeded), the reference refreshed
+throughout; a sample of the covers executed, one in five rejected and requoted at a moved rate (gains and losses both
+realised); then ONE `REPEATABLE READ` snapshot: the trial balance zero in all five currencies, `FxBooksProof` clean in
+every book and currency, `FxPlanVerification` clean over every booked trade (the golden replay), every residual of the
+run within one minor unit with BOTH signs present, and the plan verdict gauge 1. Run in full while built: 10,000 conversions by ten converters, every one booked, every identity holding, in 353 s. The size is
+`FINAPP_FX_BATTERY_CONVERSIONS` (default 10,000), so a probe runs it small. **PROBES** (Two probes, both caught, each by its own identity - the directed rounding left no negative residual in the run (the both-signs census; the replay, using the same function, could not see it), and the loss posted as a gain broke FX_REALISED_GAINS and FX_REALISED_LOSSES in EUR (-7.44 against 0, and 0 against 7.44) in the books proof), every
+restore byte-identical (sha256-verified; `MUTATION_TESTING.md` §4's `P9-TST-002` row). **Multi-instance PASS** -
+ten converters, every attempted conversion booked (counted). No production change. **NEXT**: `P9-TSK-014` `READY`.
+**Verified** by fresh runs - the fleet-wide hermetic tier 2454 across 399 suites and 18 modules; the architecture tier 157 across 27; the app
+hermetic tier with every document guard 716 across 134 within it; ALL 0 FAILURES - the other database tiers skipped on the
+owner's instruction.
 
 ### Previously
 
-The per-task completion records — 206 blocks, from `P9-TSK-012` back to project initiation
+The per-task completion records — 207 blocks, from `P9-TSK-013` back to project initiation
 (`X-TSK-016` cross-cutting, standing between `P9-TSK-011` and `P9-TSK-010`; `X-TSK-005` cross-cutting, standing between `P7-TSK-015` and `P7-TSK-014`; `X-TSK-004`
 cross-cutting, standing between `P7-TSK-001` and the Phase 6 → 7 transition) — are archived in
 [`history/TASK_HISTORY.md`](history/TASK_HISTORY.md).
@@ -1032,8 +1022,8 @@ Resolved during initiation:
 
 ## Next Task
 
-**`P9-TST-002` — The value-preservation and rounding battery** — `READY` (the
-Current Task), marked by `P9-TSK-013`'s completion gate.
+**`P9-TSK-014` — The corridor rail, its position and its source** — `READY` (the
+Current Task), marked by `P9-TST-002`'s completion gate.
 *(This section read "`P8-TSK-009` — `READY`" from `P8-TSK-008`'s gate until
 `P8-TSK-013`'s record found it — the stale-second-copy class, in the section whose
 whole job is to mirror.)*

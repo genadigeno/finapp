@@ -1,6 +1,6 @@
 # Task History
 
-The per-task completion records that accumulated behind `## Current Task` - 206 "Previously" blocks, newest first, from `P9-TSK-012` back to project initiation. *(`X-TSK-016` is cross-cutting and completed after `P9-TSK-010` and before `P9-TSK-011`, so it stands between them.)* *(`X-TSK-005` is cross-cutting and completed after `P7-TSK-014` and before `P7-TSK-015`, so it stands between them; its record came in with its branch's merge.)* *(`X-TSK-004` is cross-cutting and completed after the Phase 6 → 7 transition, so it stands second, between `P7-TSK-001` and the transition's record - the transition's block moved here by `P7-TSK-001`'s gate, exactly as an earlier form of this note said it would.)*
+The per-task completion records that accumulated behind `## Current Task` - 207 "Previously" blocks, newest first, from `P9-TSK-013` back to project initiation. *(`X-TSK-016` is cross-cutting and completed after `P9-TSK-010` and before `P9-TSK-011`, so it stands between them.)* *(`X-TSK-005` is cross-cutting and completed after `P7-TSK-014` and before `P7-TSK-015`, so it stands between them; its record came in with its branch's merge.)* *(`X-TSK-004` is cross-cutting and completed after the Phase 6 → 7 transition, so it stands second, between `P7-TSK-001` and the transition's record - the transition's block moved here by `P7-TSK-001`'s gate, exactly as an earlier form of this note said it would.)*
 
 **Archive.** These records were moved verbatim out of
 [`CURRENT_STATE.md`](../CURRENT_STATE.md) on 2026-09-20 so that the canonical description of
@@ -12,6 +12,34 @@ Current state: [`CURRENT_STATE.md`](../CURRENT_STATE.md) ·
 Authoritative backlog: [`BACKLOG.md`](../BACKLOG.md)
 
 ---
+
+### Previously
+
+**`P9-TSK-013` — FX explained and settled to cash** — `COMPLETE` (2026-10-05). **M9.4 OPENS AT 1 OF 2:
+the FX books are proven, every plan replays, and the FX legs carry to cash with every discrepancy typed**
+(PHASE_9_PLAN.md §§12.9.3-12.9.4; `INV-FX-05`, `INV-FX-06`, `INV-SET-02`, `INV-REC-06`…`-09`, `INV-MON-04`).
+**The proofs** (`fx`, report-only, one `REPEATABLE READ` snapshot): `FxBooksProof` - each of the five FX books per
+currency through ledger's `BalanceDerivation` against fx's own rows (trades' and executed covers' plan legs,
+margins, residuals, realised results; the reversal and unwind terms zero until `-025`/`-021`); `FxPlanVerification`
+- every trade replayed from its quote's frozen inputs through `ConversionPlan.compute`, the amounts, the customer and
+internal rates, the disclosed margin and the posted entry line by line; gauged by `FxProofMetrics`
+(`finapp.fx.proof{purpose}`, `finapp.fx.plan.verdict`, a CRITICAL line on divergence). **Reconciliation**:
+`differenceCause` names `FX_LEG_DIFFERS` and the timing verdict `VALUE_DATE_DIFFERS` for the cover-leg kinds,
+after the open-`MISSING_EXTERNAL` rule; `ReconciliationSweep`'s paired-leg escalation raises an overdue leg whose
+pair is allocated to CRITICAL under namespace 4, one `SEVERITY_ESCALATED` event detailed `PAIRED_LEG_ALLOCATED`;
+a cover leg is expected on the cover entry's value date (the provider's confirmed T+2, carried from `-012`).
+**The door**: `GET /v1/operator/fx/trades/{id}/provenance` behind the new `FX_INVESTIGATE`, held by
+`RECONCILIATION_OPERATOR`, every serving audited (`fx.TradeProvenanceRead`). **Scenario 10 for FX**:
+`FxSettledToCashDatabaseTest` - the cover, the provider's EUR and USD files allocated leg by leg, two remittances,
+the bank's two statements, the conversion's movements netting to 0 on `FX_POSITION` and fx-sim-a's clearing.
+**THE BUILD'S FINDS, FIXED**: `FxProviderSourceDatabaseTest` planted a raw line on `FX_POSITION` the proof would
+report for every later suite - its counter line moved to `FEE_REVENUE`. **PROBES** (SEVEN PROBES, SEVEN CAUGHT), every restore
+byte-identical (sha256-verified; `MUTATION_TESTING.md` §2 +7 rows). **Multi-instance PASS** - ten
+sweepers over one overdue leg whose pair is allocated write one severity change and one event (counted); the proofs
+write nothing. **NEXT**: `P9-TST-002` `READY`.
+**Verified** by fresh runs - the fleet-wide hermetic tier 2454 across 399 suites and 18 modules; the architecture tier 157 across 27; the
+app hermetic tier with every document guard 716 across 134 within it; the task's own database suites run green while built - FxMatchingDatabaseTest 8 (the mismatch battery and the escalation race), FxProofDatabaseTest 3, FxProvenanceDatabaseTest 1, FxSettledToCashDatabaseTest 1, every app FX database suite 47 across 11 - and the seven probes against them, ALL 0 FAILURES - the final database
+tiers skipped on the owner's instruction (the code assumed correct, refactored after the phase).
 
 ### Previously
 

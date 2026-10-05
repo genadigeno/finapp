@@ -12913,7 +12913,7 @@ break row, as the approval door must.)*
 
 # Phase 9 — FX and Cross-Border Payments
 
-Status: `IN_PROGRESS` — started 2026-10-03 with `P9-TSK-001` (13 of 30 items complete, M9.1, M9.2 and M9.3 closed, M9.4 at 1 of 2); entry gate passed 2026-10-02 by the Phase 8 → 9 transition
+Status: `IN_PROGRESS` — started 2026-10-03 with `P9-TSK-001` (14 of 30 items complete, M9.1 to M9.4 closed); entry gate passed 2026-10-02 by the Phase 8 → 9 transition
 ([`reviews/PHASE_8_TO_9_TRANSITION.md`](reviews/PHASE_8_TO_9_TRANSITION.md)), elaborated to task
 granularity by the same transition: thirty items (`P9-TSK-001`…`-027`, `P9-TST-001`, `P9-TST-002`,
 `P9-DOC-001`) across nine milestones, with `P9-TSK-001` marked `READY`. The engineering plan is
@@ -13547,7 +13547,8 @@ providers), each owned by Phase 15 and gating nothing here.
 - **Definition of done**: `DOD-FIN`, `DOD-API` (the provenance route), `DOD-OBS`. **Risk**: Medium.
   **Cx**: M.
 
-**P9-TST-002 — The value-preservation and rounding battery** — `READY` (marked by `P9-TSK-013`'s completion gate, 2026-10-05)
+**P9-TST-002 — The value-preservation and rounding battery** — `COMPLETE` (2026-10-05; marked `READY` by `P9-TSK-013`'s completion gate)
+- **As built** (2026-10-05): as `CURRENT_STATE.md` §Just completed records. Driven over HTTP by ten converters; the size configurable by `FINAPP_FX_BATTERY_CONVERSIONS` (default 10,000) so the probes run it small.
 - **Carried from `P9-TSK-013`** (2026-10-05): the battery's identities are `FxBooksProof` and `FxPlanVerification` read in one snapshot (`FxProofMetrics.readNow()`); covers are driven through `FxCoverDispatch.dispatchNow` against `SimulatedFxEngine` (rejections by `advance`, requotes by a moved `rate`), the sweep and the nudge being off in test contexts.
 - **Objective**: prove at volume that conversion creates and destroys no value, across 0/2/3 minor
   units.
@@ -13577,7 +13578,7 @@ providers), each owned by Phase 15 and gating nothing here.
   present; the residual, margin and position identities exact; plan verification clean.
 - **Definition of done**: `DOD-TEST`, `DOD-FIN`. **Risk**: Medium. **Cx**: L.
 
-**P9-TSK-014 — The corridor rail, its position and its source** — `PLANNED`
+**P9-TSK-014 — The corridor rail, its position and its source** — `READY` (marked by `P9-TST-002`'s completion gate, 2026-10-05)
 - **Objective**: declare the corridor rail truthfully, with its counterparty position, settlement
   source and per-rail operations, before anything is sent.
 - **Bounded context**: `payments`, `ledger`, `settlement`, `reconciliation`, `app`.
