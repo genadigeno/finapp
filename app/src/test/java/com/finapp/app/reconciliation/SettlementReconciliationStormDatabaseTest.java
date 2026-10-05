@@ -241,6 +241,7 @@ import org.springframework.test.context.DynamicPropertySource;
  * storm, read from the captured log rather than retried away.
  */
 @Tag("database")
+@Tag("own-container") // its own JVM and database: ownContainerDatabaseTest (X-TSK-016)
 @SpringBootTest(webEnvironment = SpringBootTest.WebEnvironment.RANDOM_PORT)
 @ExtendWith(OutputCaptureExtension.class)
 @DisplayName("the settlement and reconciliation storm (P8-TST-001)")

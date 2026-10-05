@@ -99,8 +99,9 @@ import tools.jackson.databind.json.JsonMapper;
  * capture is seeded with its posting and its {@code CARD_CAPTURE} expectation; the waiting and
  * parked captures are balanced by their reports' own {@code REMITTANCE} expectations and the
  * park's own posting; the repudiation reverses its recognition. EUR only, and no bank
- * statement: statements are {@code BankStatementCashDatabaseTest}'s alone in the shared
- * container (its chain discipline), so the bank-fee leg of provider costs, the 101-row bound
+ * statement: the shared container holds none - every suite that writes one runs in a database of
+ * its own, its chain starting at sequence 1 ({@code own-container}, `X-TSK-016`) - so the
+ * bank-fee leg of provider costs, the 101-row bound
  * and the OUTBOUND half of the direction split are proven in {@code
  * ReconciliationReportsFoldTest}, hermetically.
  */

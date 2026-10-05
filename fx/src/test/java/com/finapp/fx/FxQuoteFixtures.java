@@ -16,7 +16,10 @@ import com.finapp.sharedkernel.money.Money;
 import com.finapp.sharedkernel.money.RoundingPolicy;
 import java.math.BigDecimal;
 import java.sql.Connection;
+import java.sql.PreparedStatement;
+import java.sql.ResultSet;
 import java.sql.SQLException;
+import java.sql.Timestamp;
 import java.time.Clock;
 import java.time.Duration;
 import java.time.Instant;
@@ -132,6 +135,32 @@ final class FxQuoteFixtures {
                 throw new UnsupportedOperationException("the quote suites convert nothing");
             }
         };
+    }
+
+    /**
+     * Waits until the DATABASE's clock - the one that stamped {@code expires_at} and judges it - is
+     * past {@code instant}. A JVM sleep to the instant plus 500 ms measured the wrong clock: the
+     * container's VM clock was measured stepping back 1.7 s at once (`X-TSK-005`), so a quote could
+     * still be live on the database when the case judged it lapsed (found red by `X-TSK-016`).
+     */
+    static void awaitDatabaseClockPast(Instant instant) throws Exception {
+        Instant deadline = Instant.now().plusSeconds(60);
+        try (Connection app = application();
+                PreparedStatement past = app.prepareStatement("SELECT statement_timestamp() > ?")) {
+            past.setTimestamp(1, Timestamp.from(instant));
+            while (true) {
+                try (ResultSet row = past.executeQuery()) {
+                    row.next();
+                    if (row.getBoolean(1)) {
+                        return;
+                    }
+                }
+                if (Instant.now().isAfter(deadline)) {
+                    throw new AssertionError("the database clock did not pass " + instant + " within a minute");
+                }
+                Thread.sleep(100);
+            }
+        }
     }
 
     static QuoteLifecycle lifecycle() {

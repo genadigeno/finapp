@@ -93,7 +93,7 @@ class QuoteLifecycleDatabaseTest {
         UUID owner = UUID.randomUUID();
         QuoteStore.QuoteRow quote = issue(issuance(providers(a, b), Clock.systemUTC()), owner, claim(), "EUR", "USD",
                 FixedSide.FIXED_SOURCE, "100.00").quote();
-        Thread.sleep(Duration.between(Instant.now(), quote.expiresAt()).toMillis() + 500);
+        FxQuoteFixtures.awaitDatabaseClockPast(quote.expiresAt());
         String id = quote.id().value().toString();
         try (Connection app = application()) {
             assertThat(lifecycle().read(app, quote.id(), owner).orElseThrow().status()).isEqualTo(QuoteStatus.EXPIRED);
@@ -126,7 +126,7 @@ class QuoteLifecycleDatabaseTest {
             }
         }
         Instant last = quotes.stream().map(QuoteStore.QuoteRow::expiresAt).max(Instant::compareTo).orElseThrow();
-        Thread.sleep(Duration.between(Instant.now(), last).toMillis() + 500);
+        FxQuoteFixtures.awaitDatabaseClockPast(last);
         AtomicInteger expired = new AtomicInteger();
         race(10, () -> {
             while (true) {

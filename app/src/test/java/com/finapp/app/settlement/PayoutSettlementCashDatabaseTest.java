@@ -118,6 +118,7 @@ import org.springframework.test.context.DynamicPropertySource;
  * are absolute for {@code PAYOUT_CLEARING}.
  */
 @Tag("database")
+@Tag("own-container") // its own JVM and database: ownContainerDatabaseTest (X-TSK-016)
 @SpringBootTest(webEnvironment = SpringBootTest.WebEnvironment.RANDOM_PORT)
 @TestMethodOrder(MethodOrderer.OrderAnnotation.class)
 @DisplayName("the payout provider's report: payouts allocated, cash confirmed (P8-TSK-018)")

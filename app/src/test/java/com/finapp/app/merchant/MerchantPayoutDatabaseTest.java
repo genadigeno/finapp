@@ -23,6 +23,7 @@ import com.finapp.ledger.LedgerAccountId;
 import com.finapp.ledger.LedgerAccountStore;
 import com.finapp.ledger.PostingCommand;
 import com.finapp.ledger.PostingService;
+import com.finapp.ledger.SupportedCurrencies;
 import com.finapp.merchant.MerchantId;
 import com.finapp.merchant.MerchantNotTradingException;
 import com.finapp.merchant.MerchantPayable;
@@ -244,9 +245,11 @@ class MerchantPayoutDatabaseTest {
                 report.verdicts().stream()
                         .filter(verdict -> verdict.purpose() == AccountPurpose.PAYOUT_CLEARING)
                         .toList();
+        // One verdict per account of the purpose, so one per supported currency - derived, not
+        // listed: a literal "EUR, GBP, USD" went stale when JPY and BHD joined (P9-TSK-003).
         assertThat(payoutClearing)
-                .extracting(verdict -> verdict.currency().code())
-                .containsExactlyInAnyOrder("EUR", "GBP", "USD");
+                .extracting(PositionProof.PositionVerdict::currency)
+                .containsExactlyInAnyOrderElementsOf(SupportedCurrencies.ALL);
         for (PositionProof.PositionVerdict verdict : payoutClearing) {
             assertThat(verdict.explained())
                     .as("%s %s: DR-CR %s = open remainders %s - open items %s (INV-REC-06)",

@@ -14873,6 +14873,88 @@ applied and verified 2026-09-23; criterion 5 met by the Phase 6 → 7 transition
 - **Accept**: every provider callback is a hint; a forged-but-signed callback moves nothing on any
   rail (a planted test per provider). **Risk**: Medium. **Cx**: M. **DoD**: `DOD-SEC`, `DOD-FIN`
 
+**X-TSK-016 — The app database tier, green: fixtures repaired and the own-container suites given their own database** — `COMPLETE`
+*(2026-10-05. See **Result**)*
+- **Context**: `app`'s database tier and the build's test tasks. Owner-directed, 2026-10-05, chipped
+  by `P9-TSK-010`'s record, which found 22 Phase 8 database cases red on unchanged master (the
+  reconciliation, settlement, storm and payout selection, 214 tests). Pays the debt rows *22 Phase 8
+  database-tier cases are red on master* and *The settlement and reconciliation storm runs in its own
+  container* (Phase 15's, by its stated trigger).
+- **Description**: find each failure's cause and decide whether the expectation is stale or the
+  failure real; repair fixtures, never a production check (the owner's instruction: the UUIDv7
+  refusal in `JdbcPayoutReturnStore.map` stays); prove the whole `:app:databaseTest` tier green.
+- **Deps**: none. It does not displace `P9-TSK-011`.
+- **Accept**:
+  - every failure classified, with its cause named;
+  - each fixture fixed at its cause: no production check changed, no assertion weakened beyond
+    turning a whole-container claim into the suite's own (`TESTING.md` §5 rule 1); a failure that
+    proves real is fixed in its owning module, with a test that fails without the fix;
+  - whatever the suites' "own container" claims need, made true by the build rather than by
+    convention, with a guard that keeps it true (owner's decision on the form, 2026-10-05);
+  - the whole `:app:databaseTest` tier green from a fresh run, read from the JUnit XML.
+- **Result (2026-10-05)**: every criterion holds.
+  - **Classified.** The 22 were three things. *Fixtures*: `PayoutReturnDatabaseTest`'s schema case
+    committed a v4 `journal_entry_id`, and `OpeningPosition`'s walk refused it, failing every later
+    opening backfill (10 of the 22 directly); `MerchantPayoutDatabaseTest`'s literal EUR, GBP, USD
+    (stale since `P9-TSK-003`); `SettlementExpectationDatabaseTest`'s pinned v1 rule set (superseded
+    in the shared container by `JpyAndBhdPostableDatabaseTest`'s v2); `ResolutionBatteryDatabaseTest`
+    counting every `RECONCILIATION_LOSSES` line in the container. *Structure*: nine suites whose
+    javadoc said "runs in its own container" - absolute proofs, or a bank statement chain from
+    sequence 1 (`CONFLICTING_BATCH` whenever another suite took sequence 1 first) - shared one JVM's
+    database. Order decided the rest: unchanged code failed 22 on one run and **31** on the next,
+    Gradle having moved last run's failures first. *Found by the full run, after both*:
+    `MultiCurrencyWalletFlowsDatabaseTest` funding wallets from `SETTLEMENT_CLEARING` (the residue
+    sentinel named its `fund-<id>` lines, and three suites inherited them),
+    `MerchantOnboardingDatabaseTest`'s INV-MER-02 sweep never told of `payout_return.amount_minor`,
+    and `FxConversionRaceDatabaseTest#bothExpiryOrders` timing a database-judged 5 s window with a
+    6 s JVM sleep inside the VM clock's measured 1.7 s step-back - four fx module cases share the
+    pattern, and two were red on the fx tier. *Real, found by the final run*: the race's scenario 2
+    caught an EXECUTED quote whose ACCEPTED event read after `expires_at`. The conditional `UPDATE`
+    judged the acceptance in time; the event, written at the end of the booking, took a later
+    statement's clock, so the history contradicted the rule. `cancel` had the same shape.
+  - **Repaired.** v7 ids from the suite's generator; the currencies from `SupportedCurrencies.ALL`;
+    the ACTIVE rule set read, not named; the loss lines a delta from the suite's start, like its
+    resolution rows; the wallets funded from `FEE_REVENUE` (the `P8-TSK-006` move); the column named
+    with its reason; the quotes awaited on the database's own clock (`FxQuoteFixtures.awaitDatabaseClockPast`
+    for the fx module). *The defect*: `QuoteStore.accept`/`cancel` return the instant their
+    conditional judged (`RETURNING statement_timestamp()`), and `appendEventAt` records exactly it;
+    `DATA_CLASSIFICATION.md` says which instant `occurred_at` holds; `OwnershipIsScopedTest`'s register
+    follows the SQL into the private `judged` and `insertEvent` (the build's find: the fleet's
+    hermetic run named them), `cancel`'s and `appendEvent`'s P9-TSK-008 reasoning moved with it.
+    `FxConversionRaceDatabaseTest#theAcceptedEventRecordsTheInstantItWasJudged` holds the trade's
+    insert until the database clock passes the expiry, then asserts the EXECUTED event reads past it
+    (the hold is real) and the ACCEPTED event before it.
+  - **Enforced, as the owner chose.** `@Tag("own-container")`, the first declared non-tier selector;
+    `databaseTest` excludes it; `ownContainerDatabaseTest` (convention plugin, `forkEvery = 1`,
+    finalizing `databaseTest`) runs each suite listed in the module's `extra["ownContainerSuites"]` in
+    a JVM and container of its own, inheriting `databaseTest`'s system properties. `--tests` selects
+    in both halves (read from the start parameter); a pattern neither half matches still fails, and a
+    module with no own-container suite keeps Gradle's own "no tests found". The list exists because
+    Gradle hands every class file to the worker before a tag is read: the tag alone would fork a
+    container per class file. `TestTaxonomyTest` holds list = tagged set and tag ⇒ database tier;
+    `TestTier.tagValues` reads the `@Tags` container. `BankStatementCashDatabaseTest` joined, so the
+    shared JVM writes no bank statement. `TESTING.md` §3, §5 and §7 say so.
+  - **Rejected alternative**: rewriting the nine to baseline-relative claims - a large rewrite (the
+    storm's census among them), weaker proofs, and two suites that each need USD's first statement
+    cannot both hold in one database.
+  - **Probes, four of four caught**, each restore byte-identical (sha256): the conversion's ACCEPTED
+    event put back on its own statement's clock (`theAcceptedEventRecordsTheInstantItWasJudged`); `BankStatementCash`
+    dropped from the list (`theOwnContainerListIsTheTaggedSet`); `@Tag("own-container")` on
+    `TestTaxonomyTest` (both new guards); the `@Tags` branch disabled
+    (`everyTestClassDeclaresATierAtLeastAsHeavyAsItNeeds` and the list guard - the nine read as
+    UNIT). The targeted shape was exercised both ways: `--tests '*SchemeCycleCashDatabaseTest'` ran 4
+    of 4 in its own JVM with the shared half empty, and `--tests '*NoSuchSuiteAnywhere'` failed naming
+    both halves.
+  - **Recorded, not built**: the opening walk's one-corrupt-row stall, onto the existing `EntityId`
+    debt row (Phase 15). `SettlementExpectationDatabaseTest`'s planted expectation still names
+    `UUID.randomUUID()` account and entry ids; no reader maps either today. The cancellation's event
+    stamp shares the acceptance's fix but has no deterministic case of its own: nothing runs between
+    its conditional and its event to hold.
+  - **Verified**: the whole `:app:databaseTest` tier, both halves: the shared JVM 1251 tests across 157 suites and the own-container suites 75 across 9 (1326 across 166), 0 failures; the fx tiers hermetic 39 across 9 and database 60 across 12; the fleet-wide hermetic tier 2416 across 389 suites and 18 modules, its one red case (app's ownership register, which the store's new private helpers entered) classified, and app's hermetic tier re-run with every document guard after the records landed, 709 across 132 - all read from the JUnit XML, ALL 0 FAILURES; the other modules' database and kafka tiers not run, on the owner's standing instruction (the build change configures fleet-wide, shown by a dry run, and a module with no own-container suite keeps Gradle's own "no tests found")
+- **Risk**: Low - test fixtures and test-task wiring, and one fx store contract (the judged instant
+  carried into the quote's history; no money path changes). **Cx**: M.
+  **DoD**: `DOD-TEST`, `DOD-BUILD`
+
 ---
 
 # Phases 10–16 — Epics

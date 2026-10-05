@@ -117,6 +117,9 @@ enum TestTier {
 
     private static final String TAG_ANNOTATION = "org.junit.jupiter.api.Tag";
 
+    /** The container javac writes in place of two or more {@code @Tag}s on one class. */
+    private static final String TAGS_ANNOTATION = "org.junit.jupiter.api.Tags";
+
     private final String tag;
     private final String taskName;
 
@@ -201,12 +204,26 @@ enum TestTier {
         return declared.isEmpty() ? UNIT : declared.iterator().next();
     }
 
-    /** Every {@code @Tag} value on the class, tier tags and others alike. */
+    /**
+     * Every {@code @Tag} value on the class, tier tags and others alike - including those javac
+     * folded into a {@code @Tags} container, which is what a second tag on one class compiles to
+     * (the {@code own-container} selector beside {@code database}, `X-TSK-016`). Read only
+     * directly, a tagged pair would hide the tier and the class would read as UNIT.
+     */
     static Set<String> tagValues(JavaClass testClass) {
         Set<String> values = new LinkedHashSet<>();
         for (JavaAnnotation<?> annotation : testClass.getAnnotations()) {
-            if (annotation.getRawType().getName().equals(TAG_ANNOTATION)) {
+            String type = annotation.getRawType().getName();
+            if (type.equals(TAG_ANNOTATION)) {
                 annotation.get("value").ifPresent(value -> values.add(String.valueOf(value)));
+            } else if (type.equals(TAGS_ANNOTATION)) {
+                annotation.get("value").ifPresent(contained -> {
+                    for (Object tag : (Object[]) contained) {
+                        ((JavaAnnotation<?>) tag)
+                                .get("value")
+                                .ifPresent(value -> values.add(String.valueOf(value)));
+                    }
+                });
             }
         }
         return values;

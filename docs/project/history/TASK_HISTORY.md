@@ -1,6 +1,6 @@
 # Task History
 
-The per-task completion records that accumulated behind `## Current Task` - 202 "Previously" blocks, newest first, from `P9-TSK-009` back to project initiation. *(`X-TSK-005` is cross-cutting and completed after `P7-TSK-014` and before `P7-TSK-015`, so it stands between them; its record came in with its branch's merge.)* *(`X-TSK-004` is cross-cutting and completed after the Phase 6 → 7 transition, so it stands second, between `P7-TSK-001` and the transition's record - the transition's block moved here by `P7-TSK-001`'s gate, exactly as an earlier form of this note said it would.)*
+The per-task completion records that accumulated behind `## Current Task` - 203 "Previously" blocks, newest first, from `P9-TSK-010` back to project initiation. *(`X-TSK-016` is cross-cutting and completed after `P9-TSK-010` while `P9-TSK-011` stood `READY`; its record stands in `CURRENT_STATE.md` until the next completion moves it here, above `P9-TSK-010`.)* *(`X-TSK-005` is cross-cutting and completed after `P7-TSK-014` and before `P7-TSK-015`, so it stands between them; its record came in with its branch's merge.)* *(`X-TSK-004` is cross-cutting and completed after the Phase 6 → 7 transition, so it stands second, between `P7-TSK-001` and the transition's record - the transition's block moved here by `P7-TSK-001`'s gate, exactly as an earlier form of this note said it would.)*
 
 **Archive.** These records were moved verbatim out of
 [`CURRENT_STATE.md`](../CURRENT_STATE.md) on 2026-09-20 so that the canonical description of
@@ -14,6 +14,50 @@ Authoritative backlog: [`BACKLOG.md`](../BACKLOG.md)
 ---
 
 ### Previously
+
+**`P9-TSK-010` — Counterparty-keyed clearing positions** — `COMPLETE` (2026-10-05). **M9.3 AT 2 OF 4:
+each external counterparty settles on its own clearing position, and two counterparties can never
+net** (ADR-0078 §§1-6, 8-9; `INV-RAIL-04` and `INV-SET-05` restated per counterparty, `INV-LED-04`,
+`INV-LED-06`, `INV-REC-06`). **The ledger**: `V021` - `OwnerKind.COUNTERPARTY`; the registry
+`ledger.counterparty` (uuid id, shaped code, kind) with SELECT and INSERT grants and an append-only
+trigger for every writer; the four chart rules restated from the enums; a BEFORE INSERT trigger holding
+a `COUNTERPARTY` account's `owner_ref` to a registry row for every writer (a NULL left to the `CHECK`, so
+each rank refuses alone); and `FX_PROVIDER_CLEARING` admitted as the first counterparty-owned purpose,
+type ASSET pinned, **no registry row and no account** - `V022` (`P9-TSK-011`) admits `fx-sim-a` and its
+five. `ChartOfAccounts.resolve(uow, purpose, counterpartyCode, currency)` serves counterparty purposes and
+the shared two-argument form refuses them; `LedgerAccountStore.findCounterpartyAccount` (joined through
+the registry by code) and `findAllOfPurpose`; `CounterpartyStore`; `CounterpartyChart`'s completeness
+rule run at startup by the app's `CounterpartyChartGuard` over `CounterpartyClearings` (empty until
+`-011`) - a reachable chart with a gap refuses startup, an unreachable database defers to the per-call
+refusal. **Settlement**: `SettlementSourceDescriptor.settledCounterparty` (present exactly on a
+counterparty-owned position) and `settledCurrencies`; `SettlementSources.of` keyed per (purpose,
+counterparty) - one counterparty twice refused, two counterparties on one purpose admitted as two
+positions; the composition proves both ways that each declared counterparty position has its one source
+and each counterparty a source names is declared, with equal currencies; recognitions settle on the
+source's counterparty's own account and the remittance opens there. **Reconciliation**: `PositionProof`'s
+proven purposes derived from the register (today exactly the three clearings) and completeness over
+every account of every reconciled purpose. **Static rules**: `CounterpartyClearingIsNamedByDeclarationsTest`
+(derived from the enum, planted violations), `RailVocabularyIsConfinedTest`'s `CLEARING_POSITIONS` amended
+to a set of declaring files per purpose. **Deviation, recorded**: the purpose's admission moved from `V022`
+to `V021` so every rule is proven against a real purpose. **THE BUILD'S FINDS, FIXED**: the counterparty
+acceptance case found that a report on a counterparty's position could never be accepted - the report
+constructor built the batch without its counterparty before a wither could add it - the counterparty now
+rides the constructor; the register claimed a declaration order `Map.copyOf` does not keep - the new
+method claims a set (the existing `declared()` javadoc carries the same false claim, noted). **DEFERRED TO
+`-011`, recorded in its entry**: the counterparty branches of `ReconciliationIntake.openRemittance` and of
+`PositionProof`'s keying are unreachable until a counterparty purpose is reconciled with an active rule
+set; `-011`'s FX report acceptance proves them. **FOUND, NOT CAUSED - recorded as debt and offered as its
+own task**: 22 Phase 8 database cases are red on master itself (the identical set on this branch, the
+fleet database tier having been skipped). **PROBES** (U1-U11, eleven caught), every restore byte-identical
+(sha256-verified; `MUTATION_TESTING.md` §2 +8 rows). **Multi-instance PASS** - nothing is minted at
+runtime, so no instance can race another for an account; seeded registry and account ids sort below
+the ceiling (asserted, planted both ways); the registry and `owner_ref` are immutable for every writer;
+ten instances starting run the read-only guard identically. **NEXT**: `P9-TSK-011` `READY`. **Verified**
+by fresh runs - ledger hermetic 94 across 18, settlement hermetic 195 across 30 and database 88 across 14
+with the acceptance suite 9 of 9, the counterparty chart database suite 5, the fleet-wide hermetic tier
+2414 across 389 suites and 18 modules; the architecture tier 153 across 26; the app hermetic tier with every document guard 707 across 132 after the records landed,
+ALL 0 FAILURES - and the Phase 8 database selection (219 cases) failing exactly master's 22, no more; the
+fleet-wide database and kafka tiers deliberately skipped on the owner's instruction.
 
 **`P9-TSK-009` — Wallet conversion** — `COMPLETE` (2026-10-04). **M9.3 OPENS AT 1 OF 4: a quote
 accepted and its conversion booked in ONE local transaction through `FX_POSITION`** (ADR-0076 §§1-6,

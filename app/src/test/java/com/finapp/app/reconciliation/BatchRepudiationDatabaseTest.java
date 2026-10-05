@@ -163,6 +163,7 @@ import org.springframework.test.context.DynamicPropertySource;
  * file, case 8 probes case 4's standing statement, case 7 races over case 6's batch.
  */
 @Tag("database")
+@Tag("own-container") // its own JVM and database: ownContainerDatabaseTest (X-TSK-016)
 @SpringBootTest(webEnvironment = SpringBootTest.WebEnvironment.RANDOM_PORT)
 @TestMethodOrder(MethodOrderer.OrderAnnotation.class)
 @DisplayName("a settlement batch repudiated, four-eyes, over HTTP (P8-TSK-023)")

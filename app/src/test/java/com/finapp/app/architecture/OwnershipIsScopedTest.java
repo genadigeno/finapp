@@ -325,12 +325,6 @@ class OwnershipIsScopedTest {
                                     Scope.OWNER_SCOPED,
                                     "P9-TSK-008. POST /v1/me/fx/quotes/{id}/cancellation - findOwned's statement plus FOR" + " UPDATE, the cancellation's serialization point against the sweep. Same ownership" + " predicate: a stranger's cancel finds nothing to lock.")),
                     Map.entry(
-                            "com.finapp.fx.JdbcQuoteStore.cancel",
-                            new Entry(
-                                    Scope.AUTHORITATIVE_ID,
-                                    "com.finapp.fx.JdbcQuoteStore.lockOwned",
-                                    "P9-TSK-008. The conditional ISSUED -> CANCELLED, run by QuoteLifecycle.cancel only on the" + " id lockOwned resolved as the caller's own in the same transaction; V005's freeze makes" + " the owner immutable, so the ownership that read established still holds.")),
-                    Map.entry(
                             "com.finapp.fx.JdbcQuoteStore.plan",
                             new Entry(
                                     Scope.AUTHORITATIVE_ID,
@@ -343,9 +337,29 @@ class OwnershipIsScopedTest {
                             new Entry(
                                     Scope.AUTHORITATIVE_ID,
                                     "com.finapp.fx.JdbcQuoteStore.lockOwned",
-                                    "P9-TSK-009. The private conditional UPDATE behind accept, expire and execute - each"
-                                        + " called by FxConversion.convert only on the id lockOwned resolved as the caller's"
-                                        + " own in the same transaction, the row still held FOR UPDATE.")),
+                                    "P9-TSK-009. The private conditional UPDATE behind expire and execute (accept moved to"
+                                        + " judged, X-TSK-016) - each called by FxConversion.convert only on the id lockOwned"
+                                        + " resolved as the caller's own in the same transaction, the row still held FOR UPDATE.")),
+                    Map.entry(
+                            "com.finapp.fx.JdbcQuoteStore.judged",
+                            new Entry(
+                                    Scope.AUTHORITATIVE_ID,
+                                    "com.finapp.fx.JdbcQuoteStore.lockOwned",
+                                    "X-TSK-016. The private conditional UPDATE behind accept and cancel that returns the"
+                                        + " instant it judged - called by FxConversion.convert and QuoteLifecycle.cancel only"
+                                        + " on the id lockOwned resolved as the caller's own in the same transaction (cancel's"
+                                        + " P9-TSK-008 entry moved here with it: V005's freeze makes the owner immutable, so"
+                                        + " the ownership that read established still holds).")),
+                    Map.entry(
+                            "com.finapp.fx.JdbcQuoteStore.insertEvent",
+                            new Entry(
+                                    Scope.ADMINISTERED,
+                                    "X-TSK-016. The private insert behind appendEvent and appendEventAt (appendEvent's"
+                                        + " P9-TSK-008 entry moved here with it): the append-only history row, written beside the"
+                                        + " edge it evidences on the id the caller just inserted, locked as its own or moved by"
+                                        + " the expiry conditional - the JdbcCheckoutSessionStore.appendHistory reasoning: a"
+                                        + " history row belongs to the quote it names, and an unowned provenance cannot be cited"
+                                        + " as AUTHORITATIVE_ID.")),
                     Map.entry(
                             "com.finapp.fx.JdbcTradeStore.insert",
                             new Entry(
@@ -366,11 +380,6 @@ class OwnershipIsScopedTest {
                                     "P9-TSK-009. GET /v1/me/fx/conversions/{tradeId} - a resource identifier from the"
                                         + " request; owner_party_id = ? in the statement: a stranger's id, a malformed one"
                                         + " and an absent one are one 404.")),
-                    Map.entry(
-                            "com.finapp.fx.JdbcQuoteStore.appendEvent",
-                            new Entry(
-                                    Scope.ADMINISTERED,
-                                    "P9-TSK-008. The append-only history row, written beside the edge it evidences on the id" + " the caller just inserted, locked as its own or moved by the expiry conditional - the" + " JdbcCheckoutSessionStore.appendHistory reasoning: a history row belongs to the quote it" + " names, and an unowned provenance cannot be cited as AUTHORITATIVE_ID.")),
                     Map.entry(
                             "com.finapp.fx.JdbcPricingPolicyStore.holdActive",
                             new Entry(

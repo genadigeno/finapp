@@ -108,10 +108,13 @@ class SettlementExpectationDatabaseTest {
     private static final Money AMOUNT = Money.ofMinorUnits(12_00, EUR);
     private static final Actor PLATFORM = Actor.SYSTEM;
 
-    /** The psp source's seeded identity and rule set (settlement/reconciliation V002). */
+    /**
+     * The psp source's seeded identity (settlement/reconciliation V002). Its rule set is read, not
+     * named: the container is shared, and a suite that activates a successor
+     * ({@link JpyAndBhdRuleSets}, `P9-TSK-003`) makes the seeded v1 a superseded version for every
+     * suite after it - so the version a row must pin is whichever is ACTIVE when it opens.
+     */
     private static final UUID PSP_SOURCE = UUID.fromString("01a0e2bc-8200-7001-8000-000000000001");
-    private static final UUID PSP_RULE_SET =
-            UUID.fromString("01a0e2bd-8300-7001-8000-000000000001");
 
     private final Runner runner = new Runner();
     private final JdbcPaymentIntentStore intents = new JdbcPaymentIntentStore();
@@ -153,7 +156,7 @@ class SettlementExpectationDatabaseTest {
         assertThat(expectation.sourceId()).isEqualTo(PSP_SOURCE);
         assertThat(expectation.ruleSetId())
                 .as("the deciding version pinned on the row (INV-HIST-04)")
-                .isEqualTo(PSP_RULE_SET);
+                .isEqualTo(activeRuleSet(PSP_SOURCE));
         assertThat(expectation.expectedBy())
                 .as("posting date + the seeded card lag of 3")
                 .isEqualTo(LocalDate.now(CLOCK.withZone(ZoneOffset.UTC)).plusDays(3));
@@ -730,6 +733,7 @@ class SettlementExpectationDatabaseTest {
     private UUID plantExpectationWithKey(String pspRef) throws SQLException {
         try (SecurityContext.Scope scope = SecurityContext.enterSystem()) {
             String planted = "planted-" + UUID.randomUUID();
+            UUID ruleSet = activeRuleSet(PSP_SOURCE);
             runner.inTransaction(
                     uow -> {
                         register.open(
@@ -747,7 +751,7 @@ class SettlementExpectationDatabaseTest {
                                         LocalDate.now(ZoneOffset.UTC),
                                         Optional.empty(),
                                         LocalDate.now(ZoneOffset.UTC).plusDays(3),
-                                        PSP_RULE_SET,
+                                        ruleSet,
                                         List.of(
                                                 new NewExpectation.ExpectationKey(
                                                         KeyKind.PSP_CAPTURE_REF, pspRef)),
@@ -1002,6 +1006,23 @@ class SettlementExpectationDatabaseTest {
             try (ResultSet row = read.executeQuery()) {
                 assertThat(row.next()).as("the posting exists for %s", reference).isTrue();
                 return row.getObject("id", UUID.class);
+            }
+        }
+    }
+
+    /** The source's ACTIVE rule set version - the one an opener pins (ADR-0068 section 8). */
+    private static UUID activeRuleSet(UUID source) throws SQLException {
+        try (Connection app = DatabaseRoles.application();
+                PreparedStatement read =
+                        app.prepareStatement(
+                                "SELECT id FROM reconciliation.rule_set"
+                                        + " WHERE source_id = ? AND status = 'ACTIVE'")) {
+            read.setObject(1, source);
+            try (ResultSet row = read.executeQuery()) {
+                assertThat(row.next()).as("the source's ACTIVE rule set").isTrue();
+                UUID active = row.getObject("id", UUID.class);
+                assertThat(row.next()).as("exactly one ACTIVE version").isFalse();
+                return active;
             }
         }
     }

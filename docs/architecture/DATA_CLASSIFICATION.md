@@ -1745,7 +1745,7 @@ every door. Nothing here is a person's PII beyond identifiers.
 | `quote_event` | `actor_id` | `CONFIDENTIAL` | Who moved it - the audit actor class |
 | `quote_event` | `actor_type` | `INTERNAL` | An enumerated population |
 | `quote_event` | `detected_by` | `INTERNAL` | `SWEEP` or `ACCEPTANCE` - a closed vocabulary |
-| `quote_event` | `occurred_at` | `INTERNAL` | The database's instant |
+| `quote_event` | `occurred_at` | `INTERNAL` | The database's instant - the writing statement's, or for `ACCEPTED` and `CANCELLED` the instant their conditional judged against `expires_at` (`X-TSK-016`) |
 | `quote_event` | `correlation_id` | `INTERNAL` | The flow's correlation |
 
 ### `fx` — the trade and the cover — *added by `P9-TSK-009`*

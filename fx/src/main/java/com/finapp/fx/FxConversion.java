@@ -142,8 +142,10 @@ public final class FxConversion {
         if (!availability.isAvailable(unitOfWork, AvailabilitySubject.pair(pair))) {
             throw new ConversionRefusal.Refused(ConversionRefusal.PAIR_SUSPENDED);
         }
-        // 2. Accepted on the database clock - the conditional is the one judgement of validity.
-        if (!quotes.accept(unitOfWork, quoteId)) {
+        // 2. Accepted on the database clock - the conditional is the one judgement of validity,
+        //    and the instant it judged is the one the ACCEPTED event records (X-TSK-016).
+        Optional<Instant> acceptedAt = quotes.accept(unitOfWork, quoteId);
+        if (acceptedAt.isEmpty()) {
             return expiredOnAcceptance(unitOfWork, plan, actor, pair);
         }
 
@@ -169,8 +171,8 @@ public final class FxConversion {
         if (!quotes.execute(unitOfWork, quoteId)) {
             throw new IllegalStateException("the accepted, locked quote did not execute beside its trade");
         }
-        quotes.appendEvent(unitOfWork, quoteId, Optional.of(QuoteStatus.ISSUED), QuoteStatus.ACCEPTED,
-                actor.id(), actor.type().name(), Optional.empty(), correlation.value());
+        quotes.appendEventAt(unitOfWork, quoteId, Optional.of(QuoteStatus.ISSUED), QuoteStatus.ACCEPTED,
+                actor.id(), actor.type().name(), Optional.empty(), correlation.value(), acceptedAt.get());
         quotes.appendEvent(unitOfWork, quoteId, Optional.of(QuoteStatus.ACCEPTED), QuoteStatus.EXECUTED,
                 actor.id(), actor.type().name(), Optional.empty(), correlation.value());
 

@@ -124,6 +124,7 @@ import org.springframework.test.context.DynamicPropertySource;
  * baseline wherever a shared reading could carry another suite's residue.
  */
 @Tag("database")
+@Tag("own-container") // its own JVM and database: ownContainerDatabaseTest (X-TSK-016)
 @SpringBootTest(webEnvironment = SpringBootTest.WebEnvironment.RANDOM_PORT)
 @TestMethodOrder(MethodOrderer.OrderAnnotation.class)
 @DisplayName("JPY and BHD become postable: v2 through four eyes, reconciled end to end (P9-TSK-003)")

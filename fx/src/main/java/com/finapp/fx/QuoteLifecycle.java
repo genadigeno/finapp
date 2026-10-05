@@ -78,11 +78,14 @@ public final class QuoteLifecycle {
         Objects.requireNonNull(now, "now must not be null");
         Objects.requireNonNull(correlation, "correlation must not be null");
         QuoteStore.QuoteRow locked = quotes.lockOwned(unitOfWork, id, owner).orElseThrow(QuoteNotFound::new);
-        if (locked.status() != QuoteStatus.ISSUED || !quotes.cancel(unitOfWork, id)) {
+        if (locked.status() != QuoteStatus.ISSUED) {
             throw new QuoteNotCancellable(locked.status());
         }
-        quotes.appendEvent(unitOfWork, id, Optional.of(QuoteStatus.ISSUED), QuoteStatus.CANCELLED, actor.id(),
-                actor.type().name(), Optional.empty(), correlation.value());
+        // The event records the instant the conditional judged, not a later statement's (X-TSK-016).
+        Instant cancelledAt = quotes.cancel(unitOfWork, id)
+                .orElseThrow(() -> new QuoteNotCancellable(locked.status()));
+        quotes.appendEventAt(unitOfWork, id, Optional.of(QuoteStatus.ISSUED), QuoteStatus.CANCELLED, actor.id(),
+                actor.type().name(), Optional.empty(), correlation.value(), cancelledAt);
         audit.append(unitOfWork, new AuditRecord(
                 AuditId.next(ids), actor, now, FxAuditAction.QUOTE_CANCELLED, QuoteIssuance.AGGREGATE_TYPE,
                 id.value().toString(), Optional.empty(), AuditOutcome.SUCCEEDED, correlation,
