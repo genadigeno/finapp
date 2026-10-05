@@ -550,7 +550,7 @@ class PaymentCaptureDatabaseTest {
                 IDS,
                 CLOCK,
                 com.finapp.payments.RoutingTelemetry.NONE,
-                java.util.Optional.empty())
+                com.finapp.payments.RailOperations.none())
                             .confirm(holder.party(), holder.intent());
             assertThat(confirmed.attempt()).contains(PaymentAttemptStatus.AUTHORIZED);
         } finally {

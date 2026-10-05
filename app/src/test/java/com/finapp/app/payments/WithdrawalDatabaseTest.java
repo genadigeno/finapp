@@ -781,6 +781,91 @@ class WithdrawalDatabaseTest {
         assertThat(send(delete).statusCode()).isEqualTo(405);
     }
 
+    /**
+     * The directory's lookup (`P9-TSK-014`, ADR-0080 section 2): a planted routing rule naming the
+     * corridor rail for a withdrawal passes routing - the corridor is a push model carrying a bank
+     * account, in USD - and is refused by the lookup inside Tx1, before the hold.
+     */
+    @Test
+    @DisplayName("a withdrawal a planted policy routes to the corridor rail is refused inside Tx1 with nothing"
+            + " sent - no row, no hold, no decision, no claim kept, neither adapter called (P9-TSK-014)")
+    void aWithdrawalRoutedToTheCorridorIsRefusedWithNothingSent() throws Exception {
+        Fixture f = fundedFixture("20.00");
+        java.util.concurrent.atomic.AtomicInteger pushCalls = new java.util.concurrent.atomic.AtomicInteger();
+        java.util.concurrent.atomic.AtomicInteger corridorCalls = new java.util.concurrent.atomic.AtomicInteger();
+        RailId corridor = com.finapp.payments.SimulatedCorridorAdapter.RAIL.id();
+        PushRail push = (PushRail) java.lang.reflect.Proxy.newProxyInstance(
+                PushRail.class.getClassLoader(), new Class<?>[] {PushRail.class}, (proxy, method, args) -> {
+                    pushCalls.incrementAndGet();
+                    throw new AssertionError("nothing may be sent: " + method.getName());
+                });
+        com.finapp.payments.CorridorRail corridorRail = (com.finapp.payments.CorridorRail) java.lang.reflect.Proxy.newProxyInstance(
+                com.finapp.payments.CorridorRail.class.getClassLoader(),
+                new Class<?>[] {com.finapp.payments.CorridorRail.class}, (proxy, method, args) -> {
+                    if (method.getName().equals("id")) {
+                        return corridor;
+                    }
+                    corridorCalls.incrementAndGet();
+                    throw new AssertionError("nothing may be sent: " + method.getName());
+                });
+        com.finapp.payments.RoutingPolicyVersion planted = com.finapp.payments.RoutingPolicyVersion.create(
+                ids, 9_999,
+                List.of(new com.finapp.payments.RoutingPolicyVersion.NewRule(
+                        com.finapp.payments.PaymentDirection.PAY_OUT,
+                        com.finapp.payments.InstrumentKind.BANK_ACCOUNT,
+                        java.util.Optional.empty(),
+                        java.util.Optional.empty(),
+                        List.of(corridor))),
+                java.util.Optional.empty(), "op-planted", "a planted misroute", CLOCK);
+        @SuppressWarnings("unchecked")
+        com.finapp.payments.RoutingStore<Connection> plantedRouting =
+                (com.finapp.payments.RoutingStore<Connection>) java.lang.reflect.Proxy.newProxyInstance(
+                        com.finapp.payments.RoutingStore.class.getClassLoader(),
+                        new Class<?>[] {com.finapp.payments.RoutingStore.class}, (proxy, method, args) -> {
+                            if (method.getName().equals("findVersionInForce")) {
+                                return java.util.Optional.of(planted);
+                            }
+                            try {
+                                return method.invoke(routingStoreBean, args);
+                            } catch (java.lang.reflect.InvocationTargetException thrown) {
+                                throw thrown.getCause();
+                            }
+                        });
+        Withdrawals engine = new Withdrawals(
+                withdrawalStore, outcomes, holdService, plantedRouting, railsBean,
+                com.finapp.payments.RailOperations.of(
+                        railsBean,
+                        List.of(com.finapp.payments.SimulatedCorridorAdapter.DECLARATION),
+                        java.util.Map.of(RailId.of("instant"), push),
+                        java.util.Map.of(corridor, corridorRail)),
+                evidenceBean, executorBean, auditWriterBean, ids, CLOCK, transactions);
+
+        long withdrawals = count("SELECT count(*) FROM payments.withdrawal");
+        long holds = count("SELECT count(*) FROM ledger.hold");
+        long decisions = count("SELECT count(*) FROM payments.routing_decision");
+        long claims = count("SELECT count(*) FROM platform.idempotency_record");
+        long entries = count("SELECT count(*) FROM ledger.journal_entry");
+        Actor person = new Actor(UUID.randomUUID().toString(), ActorType.CUSTOMER);
+        try (SecurityContext.Scope actor = SecurityContext.enter(person);
+                CorrelationContext.Scope scope =
+                        CorrelationContext.enter(Correlation.startingWith(CorrelationId.generate(ids)))) {
+            assertThatThrownBy(() -> engine.withdraw(
+                            "corridor-misroute-" + ids.next(),
+                            Money.of(new BigDecimal("3.00"), CurrencyCode.of("USD")),
+                            uow -> resolvedOf(f)))
+                    .isInstanceOf(IllegalStateException.class)
+                    .hasMessageContaining("corridor-sim-a")
+                    .hasMessageContaining("nothing was written or sent");
+        }
+        assertThat(pushCalls).hasValue(0);
+        assertThat(corridorCalls).hasValue(0);
+        assertThat(count("SELECT count(*) FROM payments.withdrawal")).as("no row").isEqualTo(withdrawals);
+        assertThat(count("SELECT count(*) FROM ledger.hold")).as("no hold").isEqualTo(holds);
+        assertThat(count("SELECT count(*) FROM payments.routing_decision")).as("no decision").isEqualTo(decisions);
+        assertThat(count("SELECT count(*) FROM platform.idempotency_record")).as("the claim rolled back").isEqualTo(claims);
+        assertThat(count("SELECT count(*) FROM ledger.journal_entry")).as("nothing posted").isEqualTo(entries);
+    }
+
     // -----------------------------------------------------------------
     // The permit rule and the declared deadline, on seeded rows
     // -----------------------------------------------------------------
@@ -1042,8 +1127,7 @@ class WithdrawalDatabaseTest {
                 holdService,
                 routingStoreBean,
                 railsBean,
-                dead,
-                RailId.of("instant"),
+                com.finapp.payments.RailOperations.ofPush(RailId.of("instant"), dead),
                 evidenceBean,
                 executorBean,
                 auditWriterBean,

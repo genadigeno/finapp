@@ -2192,7 +2192,7 @@ class PayByBankDatabaseTest {
                 ids,
                 CLOCK,
                 com.finapp.payments.RoutingTelemetry.NONE,
-                java.util.Optional.of(dead));
+                com.finapp.payments.RailOperations.ofPush(com.finapp.payments.RailId.of("instant"), dead));
     }
 
     @Autowired private com.finapp.payments.ProviderEvidenceStore<Connection> evidenceBean;

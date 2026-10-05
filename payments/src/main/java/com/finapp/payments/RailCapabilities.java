@@ -83,7 +83,14 @@ public record RailCapabilities(
         /** A new credit transfer back to the payer (`P7-TSK-010`). */
         RETURN_PAYMENT,
         /** A compensating book movement in one transaction (`P7-TSK-011`). */
-        BOOK_REFUND
+        BOOK_REFUND,
+        /**
+         * None executes here (`P9-TSK-014`, ADR-0080 section 1): the rail carries no pay-in, so there is
+         * nothing to refund on it - the corridor's truthful declaration. Only a push rail may declare
+         * it, and routing refuses a {@code PAY_IN} on it with
+         * {@link RoutingRejection#DIRECTION_UNSUPPORTED}.
+         */
+        NONE
     }
 
     /** How the external obligation is discharged. */
@@ -145,6 +152,13 @@ public record RailCapabilities(
                     throw new IllegalArgumentException(
                             "a book refund is a compensating book movement, the book rail's own"
                                     + " (ADR-0059 section 1)");
+                }
+            }
+            case NONE -> {
+                if (interactionModel != InteractionModel.PUSH) {
+                    throw new IllegalArgumentException(
+                            "a rail that refunds nothing carries no pay-in, and only a push rail can"
+                                    + " carry credits alone (ADR-0080 section 1, P9-TSK-014)");
                 }
             }
         }

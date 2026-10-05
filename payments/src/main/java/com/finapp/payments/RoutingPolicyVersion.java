@@ -206,9 +206,18 @@ public final class RoutingPolicyVersion {
         return new RoutingPlan(Optional.empty(), List.of());
     }
 
-    /** ADR-0060 §3's refusals, in its own order — the first one found is the recorded one. */
+    /**
+     * ADR-0060 §3's refusals, in its own order — the first one found is the recorded one — led since
+     * `P9-TSK-014` by the direction a credits-only rail cannot carry.
+     */
     private static Optional<RoutingRejection> firstRefusal(
             RoutingInputs inputs, RailCapabilities capabilities, boolean available) {
+        // First, the direction (P9-TSK-014, ADR-0080 section 1): a rail that refunds nothing carries
+        // no pay-in, whatever else it could carry - a corridor is credits only.
+        if (inputs.direction() == PaymentDirection.PAY_IN
+                && capabilities.refundMode() == RailCapabilities.RefundMode.NONE) {
+            return Optional.of(RoutingRejection.DIRECTION_UNSUPPORTED);
+        }
         if (capabilities.currencies().isPresent()
                 && !capabilities.currencies().get().contains(inputs.currency())) {
             return Optional.of(RoutingRejection.CURRENCY_UNSUPPORTED);

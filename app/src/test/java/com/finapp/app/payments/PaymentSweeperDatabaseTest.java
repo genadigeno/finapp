@@ -855,7 +855,7 @@ class PaymentSweeperDatabaseTest {
                 IDS,
                 CLOCK,
                 com.finapp.payments.RoutingTelemetry.NONE,
-                java.util.Optional.empty())
+                com.finapp.payments.RailOperations.none())
                     .confirm(holder.party(), holder.intent());
             PaymentAttemptId attemptId =
                     runner.inTransaction(

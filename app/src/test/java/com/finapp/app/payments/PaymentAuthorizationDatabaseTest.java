@@ -674,7 +674,7 @@ class PaymentAuthorizationDatabaseTest {
                 IDS,
                 CLOCK,
                 com.finapp.payments.RoutingTelemetry.NONE,
-                java.util.Optional.empty());
+                com.finapp.payments.RailOperations.none());
     }
 
     /** The shared outcome component over the real stores (`P5-TSK-013`'s extraction). */

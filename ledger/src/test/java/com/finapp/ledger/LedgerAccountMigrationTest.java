@@ -33,7 +33,7 @@ class LedgerAccountMigrationTest {
      * migration fails here, which is the entire point.
      */
     private static final String LATEST_CHART_RULES =
-            "db/migration/ledger/V023__fx_realised_results_join_the_chart.sql";
+            "db/migration/ledger/V024__corridor_sim_a_joins_the_chart.sql";
 
     /** Where the counterparty registry was created (`P9-TSK-010`) - no later migration restates it. */
     private static final String COUNTERPARTY_REGISTRY =

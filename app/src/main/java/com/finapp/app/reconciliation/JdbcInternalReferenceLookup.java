@@ -66,10 +66,60 @@ public final class JdbcInternalReferenceLookup implements InternalReferenceLooku
      */
     @NonNull private final com.finapp.fx.TradeStore covers;
 
+    /**
+     * The position a subject's key-scope source settles (`P9-TSK-014`, ADR-0082; PHASE_9_PLAN.md
+     * section 12.9.2) - its source FAMILY: every operation key is resolved within it, so a provider
+     * reference colliding across two providers is never typed as the other family's operation.
+     * Appended last (the Lombok rule).
+     */
+    @NonNull private final PositionOfSource positionOfSource;
+
     /** A source's rail, resolved by the composition over its compiled registers. */
     @FunctionalInterface
     public interface RailOfSource {
         Optional<RailId> railOf(Connection unitOfWork, UUID sourceId);
+    }
+
+    /** A source's settled position, resolved by the composition over its compiled register. */
+    @FunctionalInterface
+    public interface PositionOfSource {
+        Optional<com.finapp.ledger.AccountPurpose> positionOf(Connection unitOfWork, UUID sourceId);
+    }
+
+    /**
+     * Which family a subject's operation keys resolve in (`P9-TSK-014`): an unscoped subject - a
+     * pre-`P8-TSK-017` caller - keeps the unscoped reading, every scoped one its source's family. A
+     * counterparty-owned position (an FX provider's, a corridor's) is neither the instant scheme's nor
+     * the merchant payout's: its END_TO_END_REF and PAYOUT_PROVIDER_REF name none of their operations -
+     * the corridor's outbound credit joins as its own family with `P9-TSK-019`.
+     */
+    enum Family {
+        UNSCOPED,
+        INSTANT,
+        MERCHANT_PAYOUT,
+        OTHER;
+
+        static Family of(Optional<com.finapp.ledger.AccountPurpose> scoped, boolean hasScope) {
+            if (!hasScope) {
+                return UNSCOPED;
+            }
+            return scoped.map(position -> switch (position) {
+                        case INSTANT_CLEARING -> INSTANT;
+                        case PAYOUT_CLEARING -> MERCHANT_PAYOUT;
+                        default -> OTHER;
+                    })
+                    .orElse(OTHER);
+        }
+
+        /** Whether an end-to-end reference here may name a pay-in attempt or a withdrawal. */
+        boolean namesInstantOperations() {
+            return this == UNSCOPED || this == INSTANT;
+        }
+
+        /** Whether a payout provider reference here may name a merchant payout. */
+        boolean namesMerchantPayouts() {
+            return this == UNSCOPED || this == MERCHANT_PAYOUT;
+        }
     }
 
     @Override
@@ -97,11 +147,20 @@ public final class JdbcInternalReferenceLookup implements InternalReferenceLooku
                             .map(this::ofDispute)
                             .orElseGet(InternalReference::unknown);
             case SCHEME_REF -> bySchemeReference(unitOfWork, subject, value);
-            case END_TO_END_REF -> byEndToEndReference(unitOfWork, value);
+            // Within the item's own source family (P9-TSK-014): an attempt or a withdrawal only for
+            // an instant source, a merchant payout only for the merchant payout source; a corridor
+            // source's references name an outbound credit, which exists from P9-TSK-019 - until then
+            // nothing.
+            case END_TO_END_REF ->
+                    familyOf(unitOfWork, subject).namesInstantOperations()
+                            ? byEndToEndReference(unitOfWork, value)
+                            : InternalReference.unknown();
             case PAYOUT_PROVIDER_REF ->
-                    payouts.findByProviderReference(unitOfWork, value)
-                            .map(this::ofPayout)
-                            .orElseGet(InternalReference::unknown);
+                    familyOf(unitOfWork, subject).namesMerchantPayouts()
+                            ? payouts.findByProviderReference(unitOfWork, value)
+                                    .map(this::ofPayout)
+                                    .orElseGet(InternalReference::unknown)
+                            : InternalReference.unknown();
             // The platform's cover reference (`P9-TSK-011`, PHASE_9_PLAN.md 12.9.2): a cover in
             // flight is MISSING_INTERNAL's case, a reference we never minted UNKNOWN_EXTERNAL's.
             // The item's key is its leg's currency-qualified form (P9-TSK-012): our T is the reference.
@@ -114,6 +173,12 @@ public final class JdbcInternalReferenceLookup implements InternalReferenceLooku
             // an alias recorded for the trace, never an operation key.
             case ACQUIRER_REF, REMITTANCE_REF, FX_TRADE_REF -> InternalReference.unknown();
         };
+    }
+
+    private Family familyOf(Connection unitOfWork, LookupSubject subject) {
+        return Family.of(
+                subject.scopeSourceId().flatMap(source -> positionOfSource.positionOf(unitOfWork, source)),
+                subject.scopeSourceId().isPresent());
     }
 
     private InternalReference byAttemptId(Connection unitOfWork, String value) {

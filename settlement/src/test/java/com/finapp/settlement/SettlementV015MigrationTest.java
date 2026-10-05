@@ -27,10 +27,12 @@ class SettlementV015MigrationTest {
         String sql = normalized(migration());
         assertThat(sql)
                 .contains(normalized("ADD CONSTRAINT source_kind CHECK (kind IN (" + SourceKind.sqlValueList() + "))"))
+                // The format lists as V015 wrote them - applied history: V016 (P9-TSK-014) appended
+                // SIM_CORRIDOR_CSV, and SettlementV016MigrationTest holds the current list.
                 .contains(normalized("ADD CONSTRAINT file_format CHECK (format_id IN ("
-                        + SettlementFormatId.sqlValueList() + "))"))
+                        + "'SIM_PSP_CSV', 'SIM_SCHEME_JSON', 'SIM_PAYOUT_CSV', 'SIM_STATEMENT_TAGGED', 'SIM_FX_CSV'))"))
                 .contains(normalized("ADD CONSTRAINT batch_format CHECK (format_id IN ("
-                        + SettlementFormatId.sqlValueList() + "))"))
+                        + "'SIM_PSP_CSV', 'SIM_SCHEME_JSON', 'SIM_PAYOUT_CSV', 'SIM_STATEMENT_TAGGED', 'SIM_FX_CSV'))"))
                 .contains(normalized("rejection_code IS NULL OR rejection_code IN (" + RejectionCode.sqlValueList() + "))"))
                 .contains(normalized("ADD CONSTRAINT batch_total_line_type CHECK (line_type IN ("
                         + SettlementLineType.sqlValueList() + "))"))

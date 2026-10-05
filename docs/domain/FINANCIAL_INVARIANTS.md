@@ -1874,6 +1874,15 @@ packages and configuration.
 static rule's own planted-violation test.
 **Phase:** 7
 
+*(As built by `P9-TSK-014` (2026-10-05): the corridor rail declares only what is true -
+`RefundMode.NONE`, coherent only on a push rail (`RailCapabilitiesTest`), and routing refuses a
+`PAY_IN` judged on such a rail with `RoutingRejection.DIRECTION_UNSUPPORTED` before any other reason
+(`RoutingPolicyVersionTest`). Operations are looked up per routed rail in `RailOperations`, never a
+wired singleton: a withdrawal routed to the corridor rail is refused inside Tx1 with nothing written or
+sent (`WithdrawalDatabaseTest`). `corridor-sim-a`'s money semantics are frozen in
+`RailMoneySemanticsArePinnedTest`, its name confined by `RailVocabularyIsConfinedTest`; the probes are
+recorded in `MUTATION_TESTING.md` §2.)*
+
 ### INV-RAIL-02 — A payment is routed once, deterministically, and never re-routed after an ambiguous dispatch
 **Statement:** A payment's rail is chosen by a pinned routing-policy version over stored
 inputs, before anything is sent; recomputing the pinned version over the stored inputs
@@ -1982,6 +1991,15 @@ counterparty-owned purpose — no account yet; `fx-sim-a` and its five arrive wi
 `resolve(purpose, counterpartyCode, currency)` serves it; `CounterpartyClearingIsNamedByDeclarationsTest`
 confines the purpose to its declarations. Proven by `CounterpartyChartDatabaseTest` and
 `ChartOfAccountsTest`; the probes are recorded in `MUTATION_TESTING.md` §2.)*
+
+*(As built by `P9-TSK-014` (2026-10-05): ledger `V024` admits `CORRIDOR_CLEARING` - a LIABILITY,
+credit-normal, counterparty-owned - with `corridor-sim-a`'s registry row and its USD, JPY and BHD
+accounts, joining the reconciled positions; the corridor rail declares it and its counterparty is its
+rail id, so the rail, the chart and the source `corridor-sim-a.settlement` are composed from one
+declaration and startup is refused without any of them (`EverySettlingPositionHasASourceTest`,
+`CorridorSourceDatabaseTest`). A merchant return and a corridor return are never mistaken for each
+other: the waiting-return reader is scoped by source and the reference lookup resolves within the
+item's source family (`JdbcInternalReferenceLookupTest`, `CorridorSourceDatabaseTest`).)*
 
 ---
 

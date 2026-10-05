@@ -150,6 +150,18 @@ admitting a source's FIRST version):
 **Verify.** The gauge reads 0 within 15 s, and a waiting file is accepted at its next backoff
 deadline.
 
+**The corridor source's v1** *(added by `P9-TSK-014`, 2026-10-05)* - the same procedure, once, after
+a deployment carrying reconciliation `V021` and settlement `V016` and before the first cross-border
+credit can settle (`P9-TSK-019`), for `corridor-sim-a.settlement`. v1 is the plan's: `PAYOUT_EXECUTED`
+`ONE_TO_ONE` to `CROSSBORDER_PAYOUT` keyed `END_TO_END_REF` (our `E`), then `PAYOUT_PROVIDER_REF`,
+grace 48 h; `PAYOUT_RETURNED` operation-anchored to `CROSSBORDER_RETURN` by either reference, grace
+72 h; a `PAYOUT_FEE` rule of cardinality `CHECK` (its original by `ORIGINAL_REF` = the provider's
+reference - the key every `PAYOUT_FEE`'s original is read by) priced 0 + USD 1.20 / JPY 180 /
+BHD 0.450; lag 2 days for both kinds; `SETTLEMENT_DATE_DAYS` 2; no fee tolerance; high-value
+thresholds USD 1,000.00, JPY 150000, BHD 400.000. The canonical body is `CorridorRuleSetV1` in the
+app's tests (held by `CorridorRuleSetV1Test`, proposed and activated by two controllers in
+`CorridorSourceDatabaseTest`).
+
 ## 4. An FX cover that will not conclude - UNKNOWN, refused requotes, off plan, anomalies
 
 *(Added by `P9-TSK-012`, 2026-10-05; ADR-0077; `INV-FX-08`, `INV-LIFE-03`.)*

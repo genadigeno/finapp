@@ -31,7 +31,12 @@ class EverySettlingPositionHasASourceTest {
                     List.of(
                             SimulatedCardPspAdapter.RAIL,
                             SimulatedInstantSchemeAdapter.RAIL,
-                            BookRail.RAIL));
+                            BookRail.RAIL,
+                            com.finapp.payments.SimulatedCorridorAdapter.RAIL));
+
+    /** The rails whose positions are all shared - the planted counterparty cases judge FX counterparties alone. */
+    private static final PaymentRails SHARED_POSITION_RAILS =
+            PaymentRails.of(List.of(SimulatedCardPspAdapter.RAIL, SimulatedInstantSchemeAdapter.RAIL, BookRail.RAIL));
 
     @Test
     @DisplayName("the composed register covers every declared settling rail and the payout")
@@ -42,7 +47,9 @@ class EverySettlingPositionHasASourceTest {
                     .clearingPurpose()
                     .ifPresent(
                             position ->
-                                    assertThat(sources.dischargedBy(position))
+                                    assertThat(position.ownerKind() == com.finapp.ledger.OwnerKind.COUNTERPARTY
+                                                    ? sources.dischargedBy(position, rail.value())
+                                                    : sources.dischargedBy(position))
                                             .as("rail '%s' settles on %s", rail.value(), position)
                                             .isPresent());
         }
@@ -93,6 +100,44 @@ class EverySettlingPositionHasASourceTest {
                 .doesNotThrowAnyException();
     }
 
+    @Test
+    @DisplayName("the corridor rail composes with its position and its source: corridor-sim-a.settlement,"
+            + " SIM_CORRIDOR_CSV under PAYOUT_PROVIDER_REPORT, on its own CORRIDOR_CLEARING in USD, JPY"
+            + " and BHD - and startup is refused without the source (P9-TSK-014)")
+    void theCorridorComposesWithItsSource() {
+        SettlementSources sources = SettlementBeans.composedSettlementSources(DECLARED);
+        com.finapp.settlement.SettlementSourceDescriptor corridor = sources.byCode("corridor-sim-a.settlement").orElseThrow();
+        assertThat(corridor.kind()).isEqualTo(com.finapp.settlement.SourceKind.PAYOUT_PROVIDER_REPORT);
+        assertThat(corridor.format()).isEqualTo(com.finapp.settlement.SettlementFormatId.SIM_CORRIDOR_CSV);
+        assertThat(corridor.settledPosition()).isEqualTo(
+                com.finapp.payments.SimulatedCorridorAdapter.RAIL.capabilities().clearingPurpose());
+        assertThat(corridor.settledCounterparty()).contains("corridor-sim-a");
+        assertThat(corridor.settledCurrencies()).containsExactlyInAnyOrder(
+                com.finapp.sharedkernel.money.CurrencyCode.of("USD"),
+                com.finapp.sharedkernel.money.CurrencyCode.of("JPY"),
+                com.finapp.sharedkernel.money.CurrencyCode.of("BHD"));
+        assertThat(sources.attribute("XBA-20261005")).contains(corridor);
+        assertThat(CounterpartyClearings.declared())
+                .extracting(com.finapp.ledger.CounterpartyClearing::code)
+                .contains("corridor-sim-a", "fx-sim-a");
+        // Startup refused without the source: the counterparty's position has none.
+        assertThatThrownBy(() -> SettlementBeans.composedSettlementSources(
+                        DECLARED, CounterpartyClearings.declared(), SettlementBeans.fxProviderSources()))
+                .isInstanceOf(IllegalStateException.class)
+                .hasMessageContaining("counterparty 'corridor-sim-a'")
+                .hasMessageContaining("INV-SET-05");
+        // ...and without the counterparty's declaration the rail's own position is uncovered.
+        assertThatThrownBy(() -> SettlementBeans.composedSettlementSources(
+                        DECLARED,
+                        CounterpartyClearings.declared().stream()
+                                .filter(clearing -> !clearing.code().equals("corridor-sim-a"))
+                                .toList(),
+                        SettlementBeans.fxProviderSources()))
+                .isInstanceOf(IllegalStateException.class)
+                .hasMessageContaining("rail 'corridor-sim-a'")
+                .hasMessageContaining("INV-SET-05");
+    }
+
     // ---------------------------------------- per counterparty (P9-TSK-010, ADR-0078 section 6)
 
     private static final com.finapp.sharedkernel.money.CurrencyCode EUR =
@@ -124,7 +169,7 @@ class EverySettlingPositionHasASourceTest {
             + " counterparty, a currency disagreement - each refuses composition")
     void everyCounterpartyPositionHasItsSource() {
         SettlementSources composed = SettlementBeans.composedSettlementSources(
-                DECLARED,
+                SHARED_POSITION_RAILS,
                 List.of(clearing("fx-sim-a"), clearing("fx-sim-b")),
                 List.of(source("fx-sim-a.trade-report", "fx-sim-a", java.util.Set.of(EUR)),
                         source("fx-sim-b.trade-report", "fx-sim-b", java.util.Set.of(EUR))));
@@ -134,23 +179,23 @@ class EverySettlingPositionHasASourceTest {
                 .contains(AccountPurpose.FX_PROVIDER_CLEARING);
 
         assertThatThrownBy(() -> SettlementBeans.composedSettlementSources(
-                        DECLARED, List.of(clearing("fx-sim-a")), List.of()))
+                        SHARED_POSITION_RAILS, List.of(clearing("fx-sim-a")), List.of()))
                 .isInstanceOf(IllegalStateException.class)
                 .hasMessageContaining("counterparty 'fx-sim-a'")
                 .hasMessageContaining("INV-SET-05");
         assertThatThrownBy(() -> SettlementBeans.composedSettlementSources(
-                        DECLARED, List.of(), List.of(source("fx-sim-a.trade-report", "fx-sim-a", java.util.Set.of(EUR)))))
+                        SHARED_POSITION_RAILS, List.of(), List.of(source("fx-sim-a.trade-report", "fx-sim-a", java.util.Set.of(EUR)))))
                 .isInstanceOf(IllegalStateException.class)
                 .hasMessageContaining("which declares no position");
         assertThatThrownBy(() -> SettlementBeans.composedSettlementSources(
-                        DECLARED,
+                        SHARED_POSITION_RAILS,
                         List.of(clearing("fx-sim-a")),
                         List.of(source("fx-sim-a.trade-report", "fx-sim-a", java.util.Set.of(EUR)),
                                 source("fx-sim-a.second-report", "fx-sim-a", java.util.Set.of(EUR)))))
                 .isInstanceOf(IllegalArgumentException.class)
                 .hasMessageContaining("INV-SET-05");
         assertThatThrownBy(() -> SettlementBeans.composedSettlementSources(
-                        DECLARED,
+                        SHARED_POSITION_RAILS,
                         List.of(clearing("fx-sim-a")),
                         List.of(source("fx-sim-a.trade-report", "fx-sim-a",
                                 java.util.Set.of(EUR, com.finapp.sharedkernel.money.CurrencyCode.of("USD"))))))
@@ -168,10 +213,12 @@ class EverySettlingPositionHasASourceTest {
                         AccountPurpose.SETTLEMENT_CLEARING,
                         AccountPurpose.INSTANT_CLEARING,
                         AccountPurpose.PAYOUT_CLEARING,
-                        AccountPurpose.FX_PROVIDER_CLEARING);
+                        AccountPurpose.FX_PROVIDER_CLEARING,
+                        com.finapp.payments.SimulatedCorridorAdapter.RAIL.capabilities().clearingPurpose().orElseThrow());
         assertThat(CounterpartyClearings.declared())
-                .as("fx-sim-a, read off its FxProviderDeclaration (P9-TSK-011)")
-                .singleElement()
-                .satisfies(clearing -> assertThat(clearing.code()).isEqualTo("fx-sim-a"));
+                .as("fx-sim-a, read off its FxProviderDeclaration (P9-TSK-011), and corridor-sim-a, read off"
+                        + " its rail declaration (P9-TSK-014)")
+                .extracting(com.finapp.ledger.CounterpartyClearing::code)
+                .containsExactly("corridor-sim-a", "fx-sim-a");
     }
 }

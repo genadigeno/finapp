@@ -79,6 +79,28 @@ class RailCapabilitiesTest {
     }
 
     @Test
+    @DisplayName("RefundMode.NONE - credits only - is a push rail's alone: the corridor declares it, a"
+            + " two-step or book rail declaring it is refused (P9-TSK-014, ADR-0080 section 1)")
+    void refundModeNoneIsAPushRailsAlone() {
+        assertThatCode(SimulatedCorridorAdapter.RAIL::capabilities).doesNotThrowAnyException();
+        assertThatCode(() -> new RailCapabilities(
+                        InteractionModel.PUSH, Finality.FINAL_ON_ACCEPTANCE, Set.of(), RefundMode.NONE,
+                        SettlementModel.DEFERRED_VIA_CLEARING, Optional.of(Duration.ofMinutes(10)),
+                        DisputeModel.NONE, Optional.empty(), Map.of(),
+                        Optional.of(AccountPurpose.SETTLEMENT_CLEARING)))
+                .doesNotThrowAnyException();
+        assertThatThrownBy(() -> card(c -> c.refundMode = RefundMode.NONE))
+                .isInstanceOf(IllegalArgumentException.class)
+                .hasMessageContaining("carries no pay-in");
+        assertThatThrownBy(() -> new RailCapabilities(
+                        InteractionModel.BOOK, Finality.FINAL_ON_POSTING, Set.of(), RefundMode.NONE,
+                        SettlementModel.NONE, Optional.empty(), DisputeModel.NONE, Optional.empty(),
+                        Map.of(), Optional.empty()))
+                .isInstanceOf(IllegalArgumentException.class)
+                .hasMessageContaining("carries no pay-in");
+    }
+
+    @Test
     @DisplayName("settlement, the clearing position and the outcome deadline are refused out"
             + " of their models")
     void settlementAndDeadlineCoherence() {

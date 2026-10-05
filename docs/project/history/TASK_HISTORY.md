@@ -1,6 +1,6 @@
 # Task History
 
-The per-task completion records that accumulated behind `## Current Task` - 207 "Previously" blocks, newest first, from `P9-TSK-013` back to project initiation. *(`X-TSK-016` is cross-cutting and completed after `P9-TSK-010` and before `P9-TSK-011`, so it stands between them.)* *(`X-TSK-005` is cross-cutting and completed after `P7-TSK-014` and before `P7-TSK-015`, so it stands between them; its record came in with its branch's merge.)* *(`X-TSK-004` is cross-cutting and completed after the Phase 6 → 7 transition, so it stands second, between `P7-TSK-001` and the transition's record - the transition's block moved here by `P7-TSK-001`'s gate, exactly as an earlier form of this note said it would.)*
+The per-task completion records that accumulated behind `## Current Task` - 208 "Previously" blocks, newest first, from `P9-TST-002` back to project initiation. *(`X-TSK-016` is cross-cutting and completed after `P9-TSK-010` and before `P9-TSK-011`, so it stands between them.)* *(`X-TSK-005` is cross-cutting and completed after `P7-TSK-014` and before `P7-TSK-015`, so it stands between them; its record came in with its branch's merge.)* *(`X-TSK-004` is cross-cutting and completed after the Phase 6 → 7 transition, so it stands second, between `P7-TSK-001` and the transition's record - the transition's block moved here by `P7-TSK-001`'s gate, exactly as an earlier form of this note said it would.)*
 
 **Archive.** These records were moved verbatim out of
 [`CURRENT_STATE.md`](../CURRENT_STATE.md) on 2026-09-20 so that the canonical description of
@@ -12,6 +12,24 @@ Current state: [`CURRENT_STATE.md`](../CURRENT_STATE.md) ·
 Authoritative backlog: [`BACKLOG.md`](../BACKLOG.md)
 
 ---
+
+### Previously
+
+**`P9-TST-002` — The value-preservation and rounding battery** — `COMPLETE` (2026-10-05). **M9.4 CLOSES AT
+2 OF 2: at volume, conversion creates and destroys no value across 0, 2 and 3 minor units** (PHASE_9_PLAN.md
+§13; `INV-ACC-01`, `INV-FX-01`, `INV-FX-03`…`-07`, `INV-BAL-03`). `FxValuePreservationBatteryDatabaseTest`: ten
+concurrent converters through the real doors over all twenty directional pairs and both fixed sides, amounts from each
+fixed currency's minimum to its maximum (the bounds' edges first, then log-uniform, seeded), the reference refreshed
+throughout; a sample of the covers executed, one in five rejected and requoted at a moved rate (gains and losses both
+realised); then ONE `REPEATABLE READ` snapshot: the trial balance zero in all five currencies, `FxBooksProof` clean in
+every book and currency, `FxPlanVerification` clean over every booked trade (the golden replay), every residual of the
+run within one minor unit with BOTH signs present, and the plan verdict gauge 1. Run in full while built: 10,000 conversions by ten converters, every one booked, every identity holding, in 353 s. The size is
+`FINAPP_FX_BATTERY_CONVERSIONS` (default 10,000), so a probe runs it small. **PROBES** (Two probes, both caught, each by its own identity - the directed rounding left no negative residual in the run (the both-signs census; the replay, using the same function, could not see it), and the loss posted as a gain broke FX_REALISED_GAINS and FX_REALISED_LOSSES in EUR (-7.44 against 0, and 0 against 7.44) in the books proof), every
+restore byte-identical (sha256-verified; `MUTATION_TESTING.md` §4's `P9-TST-002` row). **Multi-instance PASS** -
+ten converters, every attempted conversion booked (counted). No production change. **NEXT**: `P9-TSK-014` `READY`.
+**Verified** by fresh runs - the fleet-wide hermetic tier 2454 across 399 suites and 18 modules; the architecture tier 157 across 27; the app
+hermetic tier with every document guard 716 across 134 within it; ALL 0 FAILURES - the other database tiers skipped on the
+owner's instruction.
 
 ### Previously
 

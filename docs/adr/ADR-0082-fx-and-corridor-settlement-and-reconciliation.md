@@ -265,3 +265,12 @@ retained), `INV-PAY-03` (provider vocabulary confined to format adapters).
 - The rematch clock-skew debt (Phase 15) is inherited by the new sources, recorded,
   unchanged.
 - The Phase 9 review (`P9-DOC-001`) reads this ADR against the code before accepting it.
+- *As built by `P9-TSK-014` (2026-10-05):* the corridor's source is composed - `SIM_CORRIDOR_CSV` v1
+  under `PAYOUT_PROVIDER_REPORT` (settlement `V016`), `corridor-sim-a.settlement` settling
+  `CORRIDOR_CLEARING(corridor-sim-a)` in USD, JPY and BHD (`CURRENCY_NOT_SETTLED` otherwise), remittance
+  `XBA-...`; `CROSSBORDER_PAYOUT`/`CROSSBORDER_RETURN` in reconciliation `V021`; the corridor v1 through
+  the first-version door; `WaitingPayoutReturns` scoped by source and the reference lookup resolving
+  `END_TO_END_REF`/`PAYOUT_PROVIDER_REF` within the item's source family. One deviation, recorded: the
+  corridor's `PAYOUT_FEE` names its credit by `ORIGINAL_REF` = the provider's reference, not `E` -
+  reconciliation reads every `PAYOUT_FEE`'s original by `PAYOUT_PROVIDER_REF`
+  (`ExternalLineType.originalKeyKind`), which is the corridor credit's alias key.

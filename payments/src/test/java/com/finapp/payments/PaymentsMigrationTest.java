@@ -52,6 +52,9 @@ class PaymentsMigrationTest {
     /** V013: routing policy, decision and availability (P7-TSK-003). */
     private static final String ROUTING =
             "db/migration/payments/V013__routing_policy_decision_and_availability.sql";
+    /** V024: the rejection CHECK regenerated with DIRECTION_UNSUPPORTED (P9-TSK-014). */
+    private static final String DIRECTION =
+            "db/migration/payments/V024__the_direction_a_rail_cannot_carry.sql";
 
     /** The intent trigger's CURRENT definition (P7-TSK-002); the attempt's moved on. */
     private static final String MODEL_MACHINES =
@@ -328,7 +331,11 @@ class PaymentsMigrationTest {
                 .contains("CHECK (direction IN (" + directions + "))")
                 .contains("CHECK (instrument_kind IN (" + kinds + "))")
                 .contains("CHECK (verdict IN (" + RoutingStepVerdict.sqlValueList() + "))")
-                .contains("CHECK (rejection IN (" + RoutingRejection.sqlValueList() + "))")
+                // V013's rejection list is applied history: V024 (P9-TSK-014) regenerated it with
+                // DIRECTION_UNSUPPORTED - the current list is held against V024 below.
+                .contains("CHECK (rejection IN ('UNAVAILABLE', 'CURRENCY_UNSUPPORTED', 'AMOUNT_EXCEEDS_CEILING',"
+                        + " 'MODEL_CANNOT_CARRY_INSTRUMENT', 'DESTINATION_UNREACHABLE', 'NOTHING_SENT',"
+                        + " 'UNDECLARED_BY_BUILD'))")
                 // The judged amount, snapshotted as the standard NOT NULL triple.
                 .contains("amount_minor BIGINT NOT NULL, currency CHAR(3) NOT NULL,"
                         + " scale SMALLINT NOT NULL")
@@ -339,6 +346,19 @@ class PaymentsMigrationTest {
         assertThat(migration(ROUTING).split(
                         "CHECK \\(direction IN \\(" + directions + "\\)\\)", -1))
                 .hasSize(3);
+    }
+
+    @Test
+    @DisplayName("V024 regenerates the step's rejection CHECK from the enum - DIRECTION_UNSUPPORTED"
+            + " appended - and touches nothing else (P9-TSK-014)")
+    void theRejectionCheckIsRegenerated() {
+        assertThat(migration(DIRECTION))
+                .contains("DROP CONSTRAINT routing_decision_step_rejection_is_known")
+                .contains("CHECK (rejection IN (" + RoutingRejection.sqlValueList() + "))")
+                .doesNotContain("CREATE TABLE")
+                .doesNotContain("GRANT");
+        assertThat(RoutingRejection.values()[RoutingRejection.values().length - 1])
+                .as("appended last").isEqualTo(RoutingRejection.DIRECTION_UNSUPPORTED);
     }
 
     @Test

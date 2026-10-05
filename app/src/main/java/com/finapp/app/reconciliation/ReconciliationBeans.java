@@ -205,10 +205,41 @@ public class ReconciliationBeans {
                 breakRegister, ruleSets, idGenerator);
     }
 
-    /** The payout returns waiting for their worker (`P8-TSK-019`) - reconciliation's read. */
+    /**
+     * The payout returns waiting for the MERCHANT worker (`P8-TSK-019`) - reconciliation's read, scoped
+     * since `P9-TSK-014` to the sources settling {@code PAYOUT_CLEARING}, so the merchant
+     * {@code PayoutReturnSweep} never sees a corridor return (ADR-0082). The corridor's reader is the
+     * same composition over {@code CORRIDOR_CLEARING} ({@link #waitingReturnsOf}), wired with its
+     * worker (`P9-TSK-023`).
+     */
     @Bean
-    com.finapp.reconciliation.WaitingPayoutReturns waitingPayoutReturns() {
-        return new com.finapp.reconciliation.JdbcWaitingPayoutReturns();
+    com.finapp.reconciliation.WaitingPayoutReturns waitingPayoutReturns(
+            com.finapp.settlement.SettlementFileStore<Connection> settlementFileStore,
+            com.finapp.settlement.SettlementSources settlementSources) {
+        return waitingReturnsOf(
+                com.finapp.merchant.PayoutSettlementDeclaration.CLEARING_PURPOSE,
+                settlementFileStore,
+                settlementSources);
+    }
+
+    /**
+     * The waiting-return reader of one source family (`P9-TSK-014`): the sources whose compiled
+     * descriptor settles {@code position} (any counterparty), matched to their seeded rows by code on
+     * every call - read off the register, never hand-named.
+     */
+    static com.finapp.reconciliation.WaitingPayoutReturns waitingReturnsOf(
+            com.finapp.ledger.AccountPurpose position,
+            com.finapp.settlement.SettlementFileStore<Connection> settlementFileStore,
+            com.finapp.settlement.SettlementSources settlementSources) {
+        java.util.Set<String> codes = settlementSources.declared().stream()
+                .filter(source -> source.settledPosition().equals(java.util.Optional.of(position)))
+                .map(com.finapp.settlement.SettlementSourceDescriptor::code)
+                .collect(java.util.stream.Collectors.toUnmodifiableSet());
+        return new com.finapp.reconciliation.JdbcWaitingPayoutReturns(
+                unitOfWork -> settlementFileStore.sources(unitOfWork).stream()
+                        .filter(row -> codes.contains(row.code()))
+                        .map(row -> row.id())
+                        .collect(java.util.stream.Collectors.toUnmodifiableSet()));
     }
 
     /**
@@ -278,7 +309,15 @@ public class ReconciliationBeans {
                                                                         position)))
                                                 .findFirst()),
                 // The FX covers, for an FX provider's COVER_REF (P9-TSK-011).
-                new com.finapp.fx.JdbcTradeStore());
+                new com.finapp.fx.JdbcTradeStore(),
+                // A source's family (P9-TSK-014): its seeded row's code and the compiled
+                // descriptor's settled position - every operation key resolved within it.
+                (unitOfWork, sourceId) ->
+                        settlementFileStore.sources(unitOfWork).stream()
+                                .filter(row -> row.id().equals(sourceId))
+                                .findFirst()
+                                .flatMap(row -> settlementSources.byCode(row.code()))
+                                .flatMap(com.finapp.settlement.SettlementSourceDescriptor::settledPosition));
     }
 
     /**

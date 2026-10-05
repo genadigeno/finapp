@@ -102,7 +102,7 @@ class PaymentConfirmationTest {
                 IDS,
                 CLOCK,
                 RoutingTelemetry.NONE,
-                java.util.Optional.empty());
+                com.finapp.payments.RailOperations.none());
     }
 
     /**
@@ -363,7 +363,7 @@ class PaymentConfirmationTest {
                         (uow, envelope, payload, mediaType) -> events.add(envelope),
                         IDS, CLOCK,
                         RoutingTelemetry.NONE,
-                java.util.Optional.empty());
+                com.finapp.payments.RailOperations.none());
         assertThatThrownBy(() -> withoutInstrument.confirm(party, intent.id()))
                 .isInstanceOf(UnknownPaymentInstrumentException.class);
         assertThat(intents.rows.get(intent.id().value()).status())

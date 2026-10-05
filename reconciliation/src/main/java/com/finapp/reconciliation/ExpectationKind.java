@@ -38,7 +38,22 @@ public enum ExpectationKind {
     FX_SELL_LEG,
 
     /** A cover's bought leg - INBOUND, the same opening. */
-    FX_BUY_LEG;
+    FX_BUY_LEG,
+
+    /**
+     * A cross-border outbound credit on {@code CORRIDOR_CLEARING(rail)} - OUTBOUND, keyed
+     * {@code END_TO_END_REF} = {@code E} with the provider's reference as its alias (`P9-TSK-014`,
+     * ADR-0082 section 3). Admitted with the corridor's source; its opener is the outbound credit's
+     * completion (`P9-TSK-019`), when payments' port gains the kind.
+     */
+    CROSSBORDER_PAYOUT,
+
+    /**
+     * A cross-border credit coming back - INBOUND and operation-anchored (no key of its own: its
+     * line reaches the anchor, the payout-return precedent). Its opener is the return fact
+     * (`P9-TSK-023`).
+     */
+    CROSSBORDER_RETURN;
 
     /** The `V002` {@code CHECK}'s value list — reconciled by the migration test. */
     public static String sqlValueList() {

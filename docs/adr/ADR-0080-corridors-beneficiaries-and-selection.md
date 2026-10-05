@@ -234,3 +234,12 @@ disable names one and a reason), `INV-PAY-03` (provider vocabulary confined to t
 - The live capability probe stays deferred until a provider's declared coverage proves
   unreliable.
 - The Phase 9 review (`P9-DOC-001`) reads this ADR against the code before accepting it.
+- *As built by `P9-TSK-014` (2026-10-05):* points 1 and 2 are implemented - `RefundMode.NONE` (coherent
+  only on a push rail) and `RoutingRejection.DIRECTION_UNSUPPORTED` judged first among the refusals
+  (payments `V024`); `CorridorDeclaration` beside the unchanged `RailCapabilities`, its counterparty
+  named by its rail id; the `CorridorRail` port and `SimulatedCorridorAdapter` (`corridor-sim-a`, frozen
+  in `RailMoneySemanticsArePinnedTest`); `RailOperations` composed in `app`, verified against the
+  declared rails at startup, through which `Withdrawals` and `PaymentConfirmation` look up their routed
+  rail - a planted corridor rule for a withdrawal is refused inside Tx1 with nothing written or sent.
+  The `CLEARING_POSITIONS` amendment is held by `CounterpartyClearingIsNamedByDeclarationsTest`, which
+  permits the corridor adapter's declaration alone to name `CORRIDOR_CLEARING`.

@@ -94,8 +94,10 @@ class FxProviderSourceDatabaseTest {
                     assertThat(source.code()).isEqualTo(SOURCE);
                     assertThat(source.settledCurrencies()).hasSize(5);
                 });
-        assertThat(CounterpartyClearings.declared()).singleElement()
-                .satisfies(clearing -> assertThat(clearing.code()).isEqualTo("fx-sim-a"));
+        assertThat(CounterpartyClearings.declared())
+                .as("fx-sim-a beside the corridor provider that joined with P9-TSK-014")
+                .extracting(com.finapp.ledger.CounterpartyClearing::code)
+                .contains("fx-sim-a");
         assertThat(PositionProof.provenPurposes(sources)).contains(AccountPurpose.FX_PROVIDER_CLEARING);
     }
 

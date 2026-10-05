@@ -50,6 +50,13 @@ public class SettlementPullBeans {
     /** The FX provider's trade report (`P9-TSK-011`) - its code read off the provider's declaration. */
     static final String FX = com.finapp.app.fx.SimulatedFxProviderAdapter.CODE + ".trade-report";
 
+    /**
+     * The corridor provider's settlement report (`P9-TSK-014`) - its code read off the corridor
+     * rail's declaration, exactly as {@code SettlementBeans.corridorSources()} composes it.
+     */
+    static final String CORRIDOR =
+            com.finapp.app.payments.PaymentBeans.CORRIDOR_DECLARATIONS.get(0).counterparty() + ".settlement";
+
     @Bean
     PullPermitStore<Connection> pullPermitStore() {
         return new JdbcPullPermitStore();
@@ -112,6 +119,19 @@ public class SettlementPullBeans {
             Environment environment) {
         return new HttpSettlementReportCollector(
                 FX, url, timeout, FxReportKey.decode(configuredKey, loopback(environment)));
+    }
+
+    @Bean
+    @ConditionalOnProperty("finapp.corridor.report.url")
+    SettlementReportCollector corridorReportCollector(
+            @Value("${finapp.corridor.report.url}") URI url,
+            @Value("${finapp.settlement.pull.timeout:PT10S}") Duration timeout,
+            @Value("${finapp.corridor.report.key:"
+                            + com.finapp.app.mfa.MfaKey.MARKED_LOCAL_DEFAULT + "}")
+                    String configuredKey,
+            Environment environment) {
+        return new HttpSettlementReportCollector(
+                CORRIDOR, url, timeout, CorridorReportKey.decode(configuredKey, loopback(environment)));
     }
 
     @Bean

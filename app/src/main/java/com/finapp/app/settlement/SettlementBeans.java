@@ -80,7 +80,37 @@ public class SettlementBeans {
      * payment (`EverySettlingPositionHasASourceTest` drives both ways).
      */
     static SettlementSources composedSettlementSources(PaymentRails rails) {
-        return composedSettlementSources(rails, CounterpartyClearings.declared(), fxProviderSources());
+        java.util.List<SettlementSourceDescriptor> counterpartySources = new java.util.ArrayList<>(fxProviderSources());
+        counterpartySources.addAll(corridorSources());
+        return composedSettlementSources(rails, CounterpartyClearings.declared(), counterpartySources);
+    }
+
+    /**
+     * Each declared corridor rail's settlement source (`P9-TSK-014`, PHASE_9_PLAN.md section 12.9.2):
+     * {@code <counterparty>.settlement}, a payout provider's report by kind in the
+     * {@code SIM_CORRIDOR_CSV} v1 format, upload and pull, settling the provider's OWN clearing
+     * position in exactly the currencies its rail carries - every fact read off the rail's
+     * declaration, so the source, the rail and the counterparty chart cannot disagree. The
+     * remittance shape is the format's {@code XBA-...}.
+     */
+    static List<SettlementSourceDescriptor> corridorSources() {
+        return com.finapp.app.payments.PaymentBeans.CORRIDOR_DECLARATIONS.stream()
+                .sorted(java.util.Comparator.comparing(com.finapp.payments.CorridorDeclaration::counterparty))
+                .map(declaration -> {
+                    com.finapp.payments.RailCapabilities capabilities =
+                            com.finapp.app.payments.PaymentBeans.DECLARED_RAILS.capabilitiesOf(declaration.rail());
+                    return new SettlementSourceDescriptor(
+                            declaration.counterparty() + ".settlement",
+                            SourceKind.PAYOUT_PROVIDER_REPORT,
+                            SettlementFormatId.SIM_CORRIDOR_CSV,
+                            1,
+                            Set.of(DeliveryChannel.UPLOAD, DeliveryChannel.PULL),
+                            capabilities.clearingPurpose(),
+                            Optional.of(com.finapp.settlement.format.simcorridor.SimCorridorCsvFormat.REMITTANCE_REFERENCE),
+                            Optional.of(declaration.counterparty()),
+                            capabilities.currencies().orElseThrow());
+                })
+                .toList();
     }
 
     /**
@@ -197,7 +227,13 @@ public class SettlementBeans {
                     .clearingPurpose()
                     .ifPresent(
                             position -> {
-                                if (sources.dischargedBy(position).isEmpty()) {
+                                // A counterparty-owned position is the rail's own counterparty's -
+                                // named by its rail id (CorridorDeclaration, P9-TSK-014, ADR-0078).
+                                boolean uncovered =
+                                        position.ownerKind() == com.finapp.ledger.OwnerKind.COUNTERPARTY
+                                                ? sources.dischargedBy(position, rail.value()).isEmpty()
+                                                : sources.dischargedBy(position).isEmpty();
+                                if (uncovered) {
                                     throw new IllegalStateException(
                                             "rail '" + rail.value() + "' settles externally on "
                                                     + position + " and no settlement source"
@@ -293,6 +329,9 @@ public class SettlementBeans {
                 // P9-TSK-011: the FX provider's trade report, pure, a singleton like the others.
                 SettlementFormatId.SIM_FX_CSV,
                 com.finapp.settlement.format.simfx.SimFxCsvFormat.INSTANCE,
+                // P9-TSK-014: the corridor provider's settlement report, pure, a singleton too.
+                SettlementFormatId.SIM_CORRIDOR_CSV,
+                com.finapp.settlement.format.simcorridor.SimCorridorCsvFormat.INSTANCE,
                 SettlementFormatId.SIM_STATEMENT_TAGGED,
                 new SimStatementTaggedFormat(
                         Map.of(

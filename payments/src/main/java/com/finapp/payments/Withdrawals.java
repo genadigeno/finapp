@@ -76,8 +76,12 @@ public final class Withdrawals {
     private final HoldService holds;
     private final RoutingStore<Connection> routing;
     private final PaymentRails rails;
-    private final PushRail rail;
-    private final RailId railId;
+
+    /**
+     * Which rails speak the push operation (`P9-TSK-014`, ADR-0080 section 2): the routed rail is
+     * looked up, and a rail without a push adapter - a corridor - is refused with nothing sent.
+     */
+    private final RailOperations operations;
     private final ProviderEvidenceStore<Connection> evidence;
     private final IdempotentExecutor executor;
     private final AuditWriter<Connection> audit;
@@ -91,8 +95,7 @@ public final class Withdrawals {
             HoldService holds,
             RoutingStore<Connection> routing,
             PaymentRails rails,
-            PushRail rail,
-            RailId railId,
+            RailOperations operations,
             ProviderEvidenceStore<Connection> evidence,
             IdempotentExecutor executor,
             AuditWriter<Connection> audit,
@@ -104,8 +107,7 @@ public final class Withdrawals {
         this.holds = Objects.requireNonNull(holds, "holds must not be null");
         this.routing = Objects.requireNonNull(routing, "routing must not be null");
         this.rails = Objects.requireNonNull(rails, "rails must not be null");
-        this.rail = Objects.requireNonNull(rail, "rail must not be null");
-        this.railId = Objects.requireNonNull(railId, "railId must not be null");
+        this.operations = Objects.requireNonNull(operations, "operations must not be null");
         this.evidence = Objects.requireNonNull(evidence, "evidence must not be null");
         this.executor = Objects.requireNonNull(executor, "executor must not be null");
         this.audit = Objects.requireNonNull(audit, "audit must not be null");
@@ -290,7 +292,7 @@ public final class Withdrawals {
         Optional<PushAnswer> answer =
                 dispatch.sendIt()
                         ? Optional.of(
-                                rail.send(
+                                pushRailOf(committed.railId()).send(
                                         new PushRail.CreditTransfer(
                                                 committed.reference(),
                                                 committed.destination(),
@@ -367,14 +369,34 @@ public final class Withdrawals {
      */
     public void reverse(WithdrawalId id) {
         Objects.requireNonNull(id, "id must not be null");
-        RailCapabilities declared = rails.capabilitiesOf(railId);
-        if (declared.reversals().isEmpty()) {
-            throw new ReversalNotSupportedException(railId);
+        // Every rail a withdrawal can ride is a push rail of the directory (P9-TSK-014), and none
+        // declares a reversal - so the refusal needs no read of the row.
+        for (RailId rail : operations.pushRailIds()) {
+            if (!rails.capabilitiesOf(rail).reversals().isEmpty()) {
+                throw new IllegalStateException(
+                        "push rail '" + rail.value() + "' declares a reversal capability; a"
+                                + " declaration change is a new descriptor version with its own"
+                                + " reversal flow, not this method growing one (INV-REV-03, ADR-0062 §3)");
+            }
         }
-        throw new IllegalStateException(
-                "the instant rail declares no reversal capability; a declaration change is"
-                        + " a new descriptor version with its own reversal flow, not this"
-                        + " method growing one (INV-REV-03, ADR-0062 §3)");
+        throw new ReversalNotSupportedException(
+                operations.pushRailIds().stream()
+                        .sorted(java.util.Comparator.comparing(RailId::value))
+                        .findFirst()
+                        .orElseThrow(() -> new IllegalStateException(
+                                "the withdrawal engine is composed only beside a push rail")));
+    }
+
+    /**
+     * The push adapter speaking for {@code rail}, or a loud refusal: a routed rail lacking the push
+     * operation - a corridor (`P9-TSK-014`) - is a policy naming the wrong rail for a withdrawal.
+     */
+    private PushRail pushRailOf(RailId rail) {
+        return operations.pushRail(rail)
+                .orElseThrow(() -> new IllegalStateException(
+                        "routing chose '" + rail.value() + "', which speaks no push operation in this"
+                                + " composition: a withdrawal is sent through a push rail, and nothing"
+                                + " was written or sent (ADR-0080 section 2)"));
     }
 
     // -----------------------------------------------------------------
@@ -461,13 +483,11 @@ public final class Withdrawals {
                             + " the push machine this command dispatches: eligibility should"
                             + " have refused it");
         }
-        if (!chosen.equals(railId)) {
-            // One push adapter is wired; a policy naming another is a composition fault,
-            // loud before anything is written (the PaymentConfirmation precedent).
-            throw new IllegalStateException(
-                    "routing chose '" + chosen.value() + "' but the wired push rail is '"
-                            + railId.value() + "': the composition and the policy disagree");
-        }
+        // THE DIRECTORY'S LOOKUP (P9-TSK-014, ADR-0080 section 2): the routed rail must speak
+        // the push operation this command sends through. A corridor rail is a push model too, so
+        // the model check above passes it - and here it is refused, before the hold: the whole
+        // transaction rolls back, nothing is written and nothing is sent.
+        pushRailOf(chosen);
 
         // THE BOUND, judged under the wallet account's lock (INV-BAL-04): ten concurrent
         // withdrawals admit exactly the affordable set.
