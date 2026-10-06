@@ -240,6 +240,12 @@ class NoSingleInstanceAssumptionRulesTest {
                     // counted. Register row: DISTRIBUTED_EXECUTION.md section 3; the ten-way
                     // race is PayoutReturnDatabaseTest's.
                     "com.finapp.app.merchant.PayoutReturnSchedule",
+                    // P9-TSK-023: the same half for the corridor's returns - the item re-read
+                    // FOR SHARE, the credit's row lock, UNIQUE (outbound_credit_id) and the
+                    // posting key arbitrate; N workers, the hinted inquiry and the swept one
+                    // are one counted race. Register row: DISTRIBUTED_EXECUTION.md section 3;
+                    // the race is CrossBorderReturnDatabaseTest's.
+                    "com.finapp.app.payments.OutboundReturnSchedule",
                     // P8-TSK-021: the settlement pull - an EXTERNAL READ, at-least-once, no
                     // connection held across it. The worklist is derived from stored rows on
                     // every instance; settlement.pull_permit's conditional, strictly advancing

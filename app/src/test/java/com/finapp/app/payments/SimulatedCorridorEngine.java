@@ -143,7 +143,7 @@ public final class SimulatedCorridorEngine implements AutoCloseable {
     }
 
     /** The beneficiary's bank sends the whole credit back. */
-    void returnCredit(String reference) {
+    public void returnCredit(String reference) {
         Credit credit = credits.get(reference);
         credit.returnRef = "XR-" + instance + "-" + sequence.incrementAndGet();
         credit.returnedAt = now.get();

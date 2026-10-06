@@ -146,7 +146,8 @@ class ResolutionMachineDatabaseTest {
                                         ? Optional.empty()
                                         : Optional.of("op-live"),
                                 Optional.empty()),
-                        ReturnedPayouts.NONE);
+                        ReturnedPayouts.NONE,
+                ResolvedCorridorReturns.NONE);
         LocalDate today = (LocalDate) one("SELECT current_date");
         parkedOn = today.minusDays(10);
         seedRuleSet(SOURCE, RULE_SET, 90);

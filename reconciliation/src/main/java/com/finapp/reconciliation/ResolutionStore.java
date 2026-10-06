@@ -219,6 +219,9 @@ public interface ResolutionStore {
     /** The item's {@code PAYOUT_PROVIDER_REF} and {@code OUR_REF} keys, lock-free (frozen). */
     PayoutReferences payoutReferencesOf(Connection unitOfWork, UUID externalItemId);
 
+    /** The item's {@code END_TO_END_REF} key, lock-free (frozen) - a corridor return's credit (`P9-TSK-023`). */
+    Optional<String> endToEndReferenceOf(Connection unitOfWork, UUID externalItemId);
+
     /**
      * Whether a person's {@code TRANSFER_TO_ACCOUNT} out of a {@code RETURN_NOT_APPLICABLE}
      * break naming the payout's operation stands {@code PROPOSED} or {@code APPROVED} - on a

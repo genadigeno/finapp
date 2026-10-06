@@ -102,6 +102,12 @@ public final class ResolutionMachine {
      */
     @NonNull private final ReturnedPayouts returnedPayouts;
 
+    /**
+     * A parked cross-border return's credit (`P9-TSK-023`, T-g): judged at the proposal, recorded as the person's
+     * return in the approval's transaction - appended last (the Lombok rule).
+     */
+    @NonNull private final ResolvedCorridorReturns corridorReturns;
+
     // ------------------------------------------------------------------ inputs and outcomes
 
     /** A proposal as the person asked for it: no amount, no account but a transfer's target. */
@@ -491,6 +497,11 @@ public final class ResolutionMachine {
         // it (IDEM-2), and a payout's return is credited once (IDEM-1).
         refuseOperationNotTerminal(unitOfWork, kind, row, holding);
         refuseReturnAlreadyAttributed(unitOfWork, kind, row, holding);
+        Optional<ResolvedCorridorReturns.ParkedReturn> corridorReturn =
+                corridorReturnOf(unitOfWork, kind, row, holding, request.targetAccountId());
+        if (corridorReturn.isPresent()) {
+            refuseCorridorReturn(kind, corridorReturns.judge(unitOfWork, corridorReturn.get()), false);
+        }
         judgeOperands(unitOfWork, kind, request, row, holding, offsetBreak.map(locked::get),
                 ruleSetId);
 
@@ -675,6 +686,47 @@ public final class ResolutionMachine {
      * cash answers the provider's own execution, an {@code OFFSET_SUSPENSE} against that line's
      * park or a write-off, never a party's credit.
      */
+    /** The parked cross-border return a transfer would return, when the break is one (`P9-TSK-023`). */
+    private Optional<ResolvedCorridorReturns.ParkedReturn> corridorReturnOf(
+            Connection unitOfWork,
+            ResolutionKind kind,
+            BreakCaseStore.BreakRow row,
+            ResolutionTemplates.Holding holding,
+            Optional<UUID> target) {
+        if (kind != ResolutionKind.TRANSFER_TO_ACCOUNT || row.cause() != BreakCause.RETURN_NOT_APPLICABLE
+                || target.isEmpty()
+                || !(holding instanceof ResolutionTemplates.Holding.Parked parked)
+                || parked.externalItemId().isEmpty()) {
+            return Optional.empty();
+        }
+        Optional<String> endToEnd = store.endToEndReferenceOf(unitOfWork, parked.externalItemId().get());
+        if (endToEnd.isEmpty()) {
+            return Optional.empty();
+        }
+        return Optional.of(new ResolvedCorridorReturns.ParkedReturn(endToEnd, parked.amount(), target.get()));
+    }
+
+    /** The machine's own refusal for the port's answer; at the approval, a return found meanwhile is stale. */
+    private void refuseCorridorReturn(ResolutionKind kind, ResolvedCorridorReturns.Judgement judgement, boolean approving) {
+        switch (judgement) {
+            case NOT_A_CORRIDOR_RETURN, RETURNABLE, RECORDED -> {
+                // the transfer proceeds
+            }
+            case ALREADY_RETURNED -> {
+                if (approving) {
+                    throw stale(kind, "the credit's return was recorded meanwhile - by its evidence, or another resolution");
+                }
+                throw new ReturnAlreadyAttributed("the cross-border credit's return is already recorded");
+            }
+            case NOT_COMPLETED -> throw new OperationNotTerminal(kind, InternalClassification.IN_FLIGHT);
+            case FAILED -> throw new ResolutionTargetRefused(
+                    "the cross-border credit FAILED: its released hold already left the customer whole, so its return"
+                            + " credits no one - an OFFSET_SUSPENSE against the provider's execution, or a write-off");
+            case NOT_THE_CUSTOMERS_WALLET -> throw new ResolutionTargetRefused(
+                    "a cross-border return is transferred to its own customer's wallet in the returned currency");
+        }
+    }
+
     private void refuseReturnAlreadyAttributed(
             Connection unitOfWork,
             ResolutionKind kind,
@@ -917,6 +969,14 @@ public final class ResolutionMachine {
                                 .orElseThrow(() -> new IllegalStateException(
                                         "a ledger account is never deleted"));
                 refuseTarget(target, CurrencyCode.of(row.currency()));
+                // A parked cross-border return (P9-TSK-023, T-g): the person's return recorded in this transaction -
+                // the fact, the fee refund, the payment RETURNED - or the approval refused, nothing written.
+                Optional<ResolvedCorridorReturns.ParkedReturn> corridorReturn =
+                        corridorReturnOf(unitOfWork, kind, breakRow, holding, row.targetAccountId());
+                if (corridorReturn.isPresent()) {
+                    refuseCorridorReturn(kind, corridorReturns.record(
+                            unitOfWork, corridorReturn.get(), row.id(), actor, correlation), true);
+                }
             }
             case OFFSET_SUSPENSE -> {
                 UUID offsetItemId = row.offsetItemId().orElseThrow();

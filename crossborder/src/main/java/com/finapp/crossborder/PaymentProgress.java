@@ -30,6 +30,7 @@ public final class PaymentProgress {
     public static final String IN_TRANSIT_EVENT = "crossborder.CrossBorderPaymentInTransit";
     public static final String DELIVERED_EVENT = "crossborder.CrossBorderPaymentDelivered";
     public static final String FAILED_EVENT = "crossborder.CrossBorderPaymentFailed";
+    public static final String RETURNED_EVENT = "crossborder.CrossBorderPaymentReturned";
 
     @NonNull private final PaymentStore payments;
     @NonNull private final OfferStore offers;
@@ -65,6 +66,23 @@ public final class PaymentProgress {
         Objects.requireNonNull(reason, "reason must not be null");
         take(unitOfWork, paymentId, PaymentStore.Status.SUBMITTED, PaymentStore.Status.FAILED, Optional.of(reason),
                 "FAILED_" + reason, FAILED_EVENT, EventPayload.of().with("failureReason", reason), at, correlation);
+    }
+
+    /**
+     * {@code IN_TRANSIT | DELIVERED -> RETURNED} (`P9-TSK-023`): the credit came back - applied automatically
+     * ({@code APPLIED}) or by a person's resolution ({@code RESOLVED}), the basis on the event. A return is the
+     * receiving side's act, admitted whether or not delivery was confirmed.
+     */
+    public void returned(Connection unitOfWork, UUID paymentId, String basis, Instant at, CorrelationId correlation) {
+        Objects.requireNonNull(basis, "basis must not be null");
+        PaymentStore.Row payment = payments.lock(unitOfWork, paymentId)
+                .orElseThrow(() -> new IllegalStateException("an outbound credit's subject is always a payment"));
+        if (payment.status() != PaymentStore.Status.IN_TRANSIT && payment.status() != PaymentStore.Status.DELIVERED) {
+            throw new IllegalStateException("payment " + paymentId + " is " + payment.status() + ": only a payment in transit"
+                    + " or delivered returns");
+        }
+        take(unitOfWork, paymentId, payment.status(), PaymentStore.Status.RETURNED, Optional.empty(), "RETURNED_" + basis,
+                RETURNED_EVENT, EventPayload.of().with("basis", basis), at, correlation);
     }
 
     private void take(

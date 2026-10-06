@@ -184,7 +184,8 @@ final class GateFixtures {
                 ReconciliationTelemetry.NONE,
                 (unitOfWork, subject) ->
                         InternalReferenceLookup.InternalReference.unknown(),
-                ReturnedPayouts.NONE);
+                ReturnedPayouts.NONE,
+                ResolvedCorridorReturns.NONE);
     }
 
     static ResolutionMachine machine() {

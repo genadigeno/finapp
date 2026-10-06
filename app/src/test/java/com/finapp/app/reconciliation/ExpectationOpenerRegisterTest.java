@@ -200,6 +200,17 @@ class ExpectationOpenerRegisterTest {
                                 + " into CROSSBORDER_PAYOUT keyed END_TO_END_REF and the provider's reference",
                         proof("CROSSBORDER_PAYOUT", "fx.OutboundCreditResolutionDatabaseTest",
                                 "theCompletionPostsExactlyAndOpensItsExpectation")));
+        rows.put("crossborder-return:",
+                opens("a cross-border return applied from evidence (P9-TSK-023, PHASE_9_PLAN.md section 12.4(i)):"
+                                + " the returned credit debited from the corridor's OWN CORRIDOR_CLEARING, copied into"
+                                + " CROSSBORDER_RETURN, keyless - operation-anchored on the credit's CROSSBORDER_PAYOUT",
+                        proof("CROSSBORDER_RETURN", "fx.CrossBorderReturnDatabaseTest",
+                                "anExactReturnAppliesOnTheInquiryChannel")));
+        rows.put("crossborder-return-fee:",
+                touchesNothing("a resolved cross-border return's fee refund (P9-TSK-023, T-g): FEE_REVENUE to the"
+                                + " customer's source wallet - neither a reconciled position; the park already moved"
+                                + " the principal off CORRIDOR_CLEARING",
+                        proof(NOTHING, "fx.CrossBorderReturnDatabaseTest", "aParkedReturnIsResolvedByAPerson")));
         rows.put("transfer:",
                 touchesNothing("wallet to wallet and its reversal - FINAL_ON_POSTING, nothing"
                                 + " external settles (the storm's scope asserted to hold"

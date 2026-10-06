@@ -122,13 +122,16 @@ class CorridorSourceDatabaseTest {
                 + " ON a.id = l.ledger_account_id JOIN ledger.journal_entry e ON e.id = l.entry_id WHERE a.purpose = ?"
                 + " AND e.idempotency_scope NOT LIKE 'ledger.post:outbound-credit:%'"
                 + " AND e.idempotency_scope NOT LIKE 'ledger.post:recon-%'"
+                // P9-TSK-023: an applied cross-border return debits the position.
+                + " AND e.idempotency_scope NOT LIKE 'ledger.post:crossborder-return:%'"
                 + " AND e.id NOT IN (SELECT journal_entry_id FROM settlement.batch WHERE journal_entry_id IS NOT NULL)",
                 CORRIDOR_POSITION.name()))
-                .as("the position exists; only a completion, a report, a statement or a parking posts to it - found %s",
+                .as("the position exists; only a completion, a return, a report, a statement or a parking posts to it - found %s",
                         one("SELECT coalesce(string_agg(DISTINCT e.idempotency_scope, ', '), '') FROM ledger.journal_line l"
                                 + " JOIN ledger.ledger_account a ON a.id = l.ledger_account_id JOIN ledger.journal_entry e"
                                 + " ON e.id = l.entry_id WHERE a.purpose = ? AND e.idempotency_scope NOT LIKE"
                                 + " 'ledger.post:outbound-credit:%' AND e.idempotency_scope NOT LIKE 'ledger.post:recon-%'"
+                                + " AND e.idempotency_scope NOT LIKE 'ledger.post:crossborder-return:%'"
                                 + " AND e.id NOT IN (SELECT journal_entry_id FROM"
                                 + " settlement.batch WHERE journal_entry_id IS NOT NULL)", CORRIDOR_POSITION.name()))
                 .isZero();

@@ -183,6 +183,16 @@ public enum PaymentsAuditAction implements AuditableAction {
      * the completion, a failure, an {@code UNKNOWN}, a {@code RECEIVED} or a delivery - whichever
      * resolver won (the synchronous answer, a hinted inquiry, the sweep), acting once.
      */
+    /**
+     * A cross-border credit's return was recorded (`P9-TSK-023`): applied by the inquiry or the report's return
+     * worker when exactly the instructed credit came back, or by a person's four-eyes transfer of a parked return.
+     */
+    OUTBOUND_CREDIT_RETURN_APPLIED(
+            "payments.OutboundCreditReturnApplied",
+            "An outbound credit's return was recorded once; the record names the credit, who applied it and the"
+                    + " channel or resolution, never an amount or a reference.",
+            false),
+
     OUTBOUND_CREDIT_OUTCOME_APPLIED(
             "payments.OutboundCreditOutcomeApplied",
             "An outbound credit outcome was applied on the locked row; the record names the credit,"

@@ -80,7 +80,9 @@ public interface SettlementExpectations {
         PUSH_WITHDRAWAL,
         PUSH_RETURN,
         /** A cross-border outbound credit's completion: OUTBOUND on its corridor's clearing (`P9-TSK-020`). */
-        CROSSBORDER_PAYOUT
+        CROSSBORDER_PAYOUT,
+        /** A cross-border credit's applied return: INBOUND on its corridor's clearing, operation-anchored (`P9-TSK-023`). */
+        CROSSBORDER_RETURN
     }
 
     /** The typed references a counterparty will quote (ADR-0067 §5's list, payments' own). */

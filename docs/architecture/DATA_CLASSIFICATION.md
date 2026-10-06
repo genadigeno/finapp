@@ -2077,6 +2077,22 @@ encrypted; the grant is exchanged and forgotten.
 | `routing_decision` | `reachable_rails` | `INTERNAL` | The rails that reach the destination, as judged |
 | `provider_evidence` | `outbound_credit_id` | `INTERNAL` | The evidence's sixth subject; the bytes' own rows carry the classification that matters |
 
+### `payments` - the outbound credit's return - *added by `P9-TSK-023`*
+
+| Table | Column | Level | Note |
+|---|---|---|---|
+| `outbound_credit_return` | `id` | `INTERNAL` | A fact identifier. Generated |
+| `outbound_credit_return` | `outbound_credit_id` | `INTERNAL` | The credit it returns - one return per credit (`UNIQUE`) |
+| `outbound_credit_return` | `amount_minor` | `RESTRICTED-FINANCIAL` | The returned amount - for `APPLIER`, the instructed amount exactly (trigger) |
+| `outbound_credit_return` | `amount_currency` | `CONFIDENTIAL` | Part of the monetary shape |
+| `outbound_credit_return` | `amount_scale` | `INTERNAL` | Part of the monetary shape |
+| `outbound_credit_return` | `return_reference` | `CONFIDENTIAL` | The corridor provider's own reference for the return, when the inquiry carried one |
+| `outbound_credit_return` | `applied_by` | `INTERNAL` | `APPLIER` or `RESOLUTION` - which path recorded the fact |
+| `outbound_credit_return` | `resolution_id` | `INTERNAL` | The four-eyes resolution that returned it (`RESOLUTION` only) |
+| `outbound_credit_return` | `journal_entry_id` | `INTERNAL` | The return's entry (`APPLIER`) or the fee refund's (`RESOLUTION`) |
+| `outbound_credit_return` | `returned_at` | `CONFIDENTIAL` | Dates money coming back to a person |
+| `outbound_credit_return` | `created_at` | `INTERNAL` | System time, stamped by the trigger |
+
 ### Free text, classified at its ceiling
 
 `audit_record.reason`, `audit_record.change_summary`, `idempotency_record.response_body`,

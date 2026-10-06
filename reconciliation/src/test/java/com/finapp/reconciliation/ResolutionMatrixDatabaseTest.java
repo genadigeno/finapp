@@ -205,7 +205,8 @@ class ResolutionMatrixDatabaseTest {
                         ReconciliationTelemetry.NONE,
                         (unitOfWork, subject) ->
                                 InternalReferenceLookup.InternalReference.unknown(),
-                        ReturnedPayouts.NONE);
+                        ReturnedPayouts.NONE,
+                ResolvedCorridorReturns.NONE);
         today = (LocalDate) one("SELECT current_date");
         gainMinAgeDays = ((Number) one("SELECT gain_min_age_days FROM reconciliation.rule_set"
                 + " WHERE id = ?", SEEDED_RULE_SET)).intValue();

@@ -3,6 +3,8 @@ package com.finapp.app.crossborder;
 import com.finapp.app.payments.CorridorCallbackService;
 import com.finapp.app.payments.CorridorWebhookKey;
 import com.finapp.app.payments.OutboundCreditResolutionSchedule;
+import com.finapp.app.payments.OutboundReturnSchedule;
+import com.finapp.app.payments.OutboundReturnWorker;
 import com.finapp.crossborder.OfferStore;
 import com.finapp.crossborder.PaymentProgress;
 import com.finapp.crossborder.PaymentStore;
@@ -13,9 +15,12 @@ import com.finapp.ledger.ChartOfAccounts;
 import com.finapp.ledger.HoldService;
 import com.finapp.ledger.LedgerAccountStore;
 import com.finapp.ledger.PostingService;
+import com.finapp.payments.JdbcOutboundCreditReturnStore;
 import com.finapp.payments.OutboundCreditComposition;
 import com.finapp.payments.OutboundCreditOutcomes;
 import com.finapp.payments.OutboundCreditResolution;
+import com.finapp.payments.OutboundCreditReturnStore;
+import com.finapp.payments.OutboundCreditReturns;
 import com.finapp.payments.OutboundCreditStore;
 import com.finapp.payments.PaymentRails;
 import com.finapp.payments.ProviderEvidenceStore;
@@ -72,8 +77,87 @@ public class CrossBorderOutcomeBeans {
 
     @Bean
     OutboundCreditComposition<Connection> crossBorderCompletion(
-            PaymentProgress crossBorderPaymentProgress, CrossBorderCompletionBooking crossBorderCompletionBooking, Clock clock) {
-        return new CrossBorderCompletion(crossBorderPaymentProgress, crossBorderCompletionBooking, clock);
+            PaymentProgress crossBorderPaymentProgress,
+            CrossBorderCompletionBooking crossBorderCompletionBooking,
+            Clock clock,
+            com.finapp.fx.ConversionParticipants conversionParticipants,
+            LedgerAccountStore<Connection> ledgerAccountStore) {
+        return new CrossBorderCompletion(crossBorderPaymentProgress, crossBorderCompletionBooking, clock,
+                conversionParticipants, new ChartOfAccounts<>(ledgerAccountStore));
+    }
+
+    @Bean
+    OutboundCreditReturnStore outboundCreditReturnStore() {
+        return new JdbcOutboundCreditReturnStore();
+    }
+
+    /** The one return applier (`P9-TSK-023`): the inquiry and the report worker both hand it a locked credit. */
+    @Bean
+    OutboundCreditReturns outboundCreditReturns(
+            OutboundCreditReturnStore outboundCreditReturnStore,
+            PostingService postingService,
+            LedgerAccountStore<Connection> ledgerAccountStore,
+            PaymentRails paymentRails,
+            SettlementExpectations settlementExpectations,
+            OutboundCreditComposition<Connection> crossBorderCompletion,
+            AuditWriter<Connection> auditWriter,
+            IdGenerator idGenerator,
+            Clock clock) {
+        return new OutboundCreditReturns(outboundCreditReturnStore, postingService,
+                new ChartOfAccounts<>(ledgerAccountStore), paymentRails, settlementExpectations, crossBorderCompletion,
+                auditWriter, idGenerator, clock);
+    }
+
+    /** A parked cross-border return's four-eyes resolution, over payments and crossborder (`P9-TSK-023`, T-g). */
+    @Bean
+    com.finapp.reconciliation.ResolvedCorridorReturns resolvedCorridorReturns(
+            OutboundCreditStore outboundCreditStore,
+            OutboundCreditReturnStore outboundCreditReturnStore,
+            PaymentProgress crossBorderPaymentProgress,
+            com.finapp.fx.ConversionParticipants conversionParticipants,
+            LedgerAccountStore<Connection> ledgerAccountStore,
+            PostingService postingService,
+            AuditWriter<Connection> auditWriter,
+            IdGenerator idGenerator,
+            Clock clock,
+            MeterRegistry meterRegistry) {
+        return new CorridorReturnResolutions(outboundCreditStore, outboundCreditReturnStore, crossBorderPaymentProgress,
+                conversionParticipants, new ChartOfAccounts<>(ledgerAccountStore), postingService, auditWriter,
+                idGenerator, clock, meterRegistry);
+    }
+
+    /** The corridor report's return channel (`P9-TSK-023`): the corridor-scoped waiting returns, one per transaction. */
+    @Bean
+    OutboundReturnWorker outboundReturnWorker(
+            TransactionRunner paymentTransactionRunner,
+            com.finapp.reconciliation.WaitingPayoutReturns waitingCorridorReturns,
+            OutboundCreditStore outboundCreditStore,
+            SchemeExecutionClaimStore<Connection> schemeExecutionClaimStore,
+            OutboundCreditReturns outboundCreditReturns,
+            MeterRegistry meterRegistry,
+            @Value("${finapp.payments.outbound.return.sweeper.batch:25}") int batch) {
+        return new OutboundReturnWorker(paymentTransactionRunner, waitingCorridorReturns, outboundCreditStore,
+                schemeExecutionClaimStore, com.finapp.app.payments.PaymentBeans.CORRIDOR_DECLARATIONS.stream()
+                        .map(com.finapp.payments.CorridorDeclaration::rail).toList(),
+                outboundCreditReturns, meterRegistry, batch);
+    }
+
+    /** Leaderless on every instance; off in test contexts, where the suites drive the sweep. */
+    @Bean
+    @ConditionalOnProperty(name = "finapp.payments.outbound.return.sweeper.enabled", havingValue = "true",
+            matchIfMissing = true)
+    OutboundReturnSchedule outboundReturnSchedule(
+            OutboundReturnWorker outboundReturnWorker,
+            @Value("${finapp.payments.outbound.return.sweeper.poll:PT30S}") Duration poll) {
+        return new OutboundReturnSchedule(outboundReturnWorker, poll);
+    }
+
+    @Bean
+    Gauge outboundReturnSweeperEnabled(
+            @Value("${finapp.payments.outbound.return.sweeper.enabled:true}") boolean enabled, MeterRegistry meterRegistry) {
+        return Gauge.builder("finapp.payments.outbound.return.sweeper.enabled", () -> enabled ? 1 : 0)
+                .description("Whether this instance runs the corridor return sweep")
+                .register(meterRegistry);
     }
 
     @Bean
@@ -88,10 +172,11 @@ public class CrossBorderOutcomeBeans {
             PaymentRails paymentRails,
             SchemeExecutionClaimStore<Connection> schemeExecutionClaimStore,
             SettlementExpectations settlementExpectations,
-            OutboundCreditComposition<Connection> crossBorderCompletion) {
+            OutboundCreditComposition<Connection> crossBorderCompletion,
+            OutboundCreditReturns outboundCreditReturns) {
         return new OutboundCreditOutcomes(outboundCreditStore, holdService, postingService,
                 new ChartOfAccounts<>(ledgerAccountStore), auditWriter, idGenerator, clock, paymentRails,
-                schemeExecutionClaimStore, settlementExpectations, crossBorderCompletion);
+                schemeExecutionClaimStore, settlementExpectations, crossBorderCompletion, outboundCreditReturns);
     }
 
     @Bean
@@ -109,11 +194,12 @@ public class CrossBorderOutcomeBeans {
             @Value("${finapp.payments.outbound.sweeper.batch:25}") int batch,
             IdGenerator idGenerator,
             Clock clock,
-            TransactionRunner paymentTransactionRunner) {
+            TransactionRunner paymentTransactionRunner,
+            OutboundCreditReturnStore outboundCreditReturnStore) {
         return new OutboundCreditResolution(outboundCreditStore, outboundCreditOutcomes, railOperations, paymentRails,
                 providerEvidenceStore, new OutboundCreditResolution.Config(dispatchedAge, unknownAge, receivedAge,
                         deliveryAge, margin, batch),
-                idGenerator, clock, paymentTransactionRunner);
+                idGenerator, clock, paymentTransactionRunner, outboundCreditReturnStore);
     }
 
     /** Leaderless on every instance; off in test contexts, where the suites drive the sweep. */

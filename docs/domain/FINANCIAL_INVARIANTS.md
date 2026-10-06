@@ -1192,6 +1192,13 @@ the applier-amount trigger, the `applied_by`/`resolution_id` `CHECK`) + `DOMAIN`
 **Verify:** Return tests in every ordering, before the completion is known included; ten
 redeliveries; partial and other-currency returns parked; the resolution racing an
 inquiry-applied return.
+*(In force since `P9-TSK-023` (2026-10-06): payments `V027`'s `UNIQUE (outbound_credit_id)`, the
+`applied_by`/`resolution_id` `CHECK` and the applier-amount trigger, and the one applier's rule judged on
+the locked credit - exact `Money`, `COMPLETED`, an `ACTIVE` customer - on both channels; a parked return
+reaches the customer only through the four-eyes transfer, which records the return in its approval.
+Verified by `CrossBorderReturnDatabaseTest`: section 12.4(i) line for line, the report channel, the
+return before the completion, ten concurrent appliers, the partial, other-currency and suspended-customer
+returns parked, the resolution, and the resolution losing to an inquiry-applied return.)*
 **Phase:** 9
 
 *`INV-XB-01`…`INV-XB-04` catalogued by the Phase 8 → 9 transition (2026-10-02), on the same
