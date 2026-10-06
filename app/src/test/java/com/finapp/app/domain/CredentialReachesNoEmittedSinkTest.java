@@ -443,6 +443,9 @@ class CredentialReachesNoEmittedSinkTest {
                         // toString), the beneficiary's NAME (stored only by kyc, encrypted), a screened
                         // nickname and the entity type. No platform secret.
                         "CrossBorderBeneficiaryRequest",
+                        // P9-TSK-018: the cross-border quote request - a beneficiary id, a currency, a side
+                        // and an amount as a decimal string. No secret, and never a rate (closed body).
+                        "CrossBorderQuoteRequest",
                         // P9-TSK-008: the customer's quote request - a pair, a fixed side and an
                         // amount as a decimal string. No secret, and closed: no rate can be sent.
                         "QuoteRequestBody",

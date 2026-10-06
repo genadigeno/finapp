@@ -400,7 +400,7 @@ class OwnershipIsScopedTest {
                                     Scope.ADMINISTERED,
                                     "P9-TSK-017. The beneficiary id comes only from a row this transaction"
                                         + " just inserted or locked - by lockOwned (the owner a predicate) or"
-                                        + " lockByScreening (kyc's deciding transaction) - never a request value;"
+                                        + " lockById (kyc's deciding transaction, the beneficiary named by its screening reference) - never a request value;"
                                         + " the history is append-only by grant.")),
                     Map.entry(
                             "com.finapp.crossborder.JdbcBeneficiaryStore.insertSelection",
@@ -410,12 +410,20 @@ class OwnershipIsScopedTest {
                                         + " same transaction (CorridorPolicyStore.active) - platform-wide"
                                         + " configuration with no owner - and the selection id is minted here.")),
                     Map.entry(
+                            "com.finapp.crossborder.JdbcBeneficiaryStore.pointScreening",
+                            new Entry(
+                                    Scope.ADMINISTERED,
+                                    "P9-TSK-018. Called only inside kyc's deciding transaction (T-e), on the"
+                                        + " beneficiary just locked FOR UPDATE by lockById - its id parsed from the"
+                                        + " screening's own request reference, never a request value - to make a"
+                                        + " decided re-screen the current clearance.")),
+                    Map.entry(
                             "com.finapp.crossborder.JdbcBeneficiaryStore.move",
                             new Entry(
                                     Scope.ADMINISTERED,
                                     "P9-TSK-017. The beneficiary id comes only from a row locked FOR UPDATE in"
                                         + " the same transaction - lockOwned, whose statement carries the owner"
-                                        + " predicate (a customer's revocation), or lockByScreening (kyc's T-e) -"
+                                        + " predicate (a customer's revocation), or lockById (kyc's T-e) -"
                                         + " and the move is conditional on the expected status.")),
                     Map.entry(
                             "com.finapp.crossborder.JdbcCorridorPolicyStore.insertProposal",

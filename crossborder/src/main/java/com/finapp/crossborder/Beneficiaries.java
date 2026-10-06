@@ -285,7 +285,7 @@ public final class Beneficiaries {
 
     /** kyc's request reference for {@code id}'s screening. */
     public static String screeningReference(BeneficiaryId id) {
-        return "xb-beneficiary-" + id.value();
+        return REFERENCE_PREFIX + id.value();
     }
 
     // ------------------------------------------------------------------ the customer
@@ -331,22 +331,45 @@ public final class Beneficiaries {
     // ------------------------------------------------------------------ the screening listener
 
     /**
-     * Moves the beneficiary whose current screening is {@code screeningId} - inside kyc's deciding
-     * transaction (T-e). A revoked beneficiary is left {@code REVOKED}; an unavailable answer moves nothing;
-     * a screening that is no beneficiary's current one moves nothing.
+     * Moves the beneficiary a screening was requested for - inside kyc's deciding transaction (T-e). The
+     * beneficiary is named by the screening's request reference ({@link #screeningReference} at registration,
+     * {@link #rescreenReference} at a quote's re-screen); a decided re-screen becomes its current clearance.
+     * A revoked beneficiary is left {@code REVOKED}; an unavailable answer moves nothing; a decision on a
+     * screening that is neither current nor a re-screen moves nothing; a reference that names no beneficiary
+     * moves nothing.
      */
     public void screeningDecided(
-            Connection unitOfWork, UUID screeningId, ScreeningOutcome outcome, Instant now, CorrelationId correlation) {
+            Connection unitOfWork,
+            String requestReference,
+            UUID screeningId,
+            ScreeningOutcome outcome,
+            Instant now,
+            CorrelationId correlation) {
         Objects.requireNonNull(unitOfWork, "unitOfWork must not be null");
+        Objects.requireNonNull(requestReference, "requestReference must not be null");
         Objects.requireNonNull(screeningId, "screeningId must not be null");
         Objects.requireNonNull(outcome, "outcome must not be null");
         Objects.requireNonNull(now, "now must not be null");
         Objects.requireNonNull(correlation, "correlation must not be null");
-        Optional<BeneficiaryStore.BeneficiaryRow> locked = store.lockByScreening(unitOfWork, screeningId);
+        Optional<BeneficiaryId> named = beneficiaryOf(requestReference);
+        if (named.isEmpty()) {
+            return;
+        }
+        Optional<BeneficiaryStore.BeneficiaryRow> locked = store.lockById(unitOfWork, named.get());
         if (locked.isEmpty() || locked.get().status() == BeneficiaryStatus.REVOKED) {
             return;
         }
         BeneficiaryStore.BeneficiaryRow row = locked.get();
+        boolean rescreen = requestReference.contains(RESCREEN_MARK);
+        if (!rescreen && !row.screeningId().equals(screeningId)) {
+            return;
+        }
+        if (outcome == ScreeningOutcome.UNAVAILABLE) {
+            return;
+        }
+        if (!row.screeningId().equals(screeningId)) {
+            store.pointScreening(unitOfWork, row.id(), screeningId);
+        }
         Optional<BeneficiaryStatus> target = target(row.status(), outcome);
         if (target.isEmpty()) {
             return;
@@ -361,6 +384,27 @@ public final class Beneficiaries {
             announce(unitOfWork, ACTIVATED_EVENT, moved, Optional.of(row.status()), now, correlation);
         } else if (target.get() == BeneficiaryStatus.BLOCKED) {
             announce(unitOfWork, BLOCKED_EVENT, moved, Optional.of(row.status()), now, correlation);
+        }
+    }
+
+    private static final String REFERENCE_PREFIX = "xb-beneficiary-";
+    private static final String RESCREEN_MARK = "-r-";
+
+    /** kyc's request reference for a re-screen of {@code id} under the offer request {@code offerRequest}. */
+    public static String rescreenReference(BeneficiaryId id, UUID offerRequest) {
+        return REFERENCE_PREFIX + id.value() + RESCREEN_MARK + offerRequest;
+    }
+
+    /** The beneficiary a request reference names, if it names one. */
+    static Optional<BeneficiaryId> beneficiaryOf(String requestReference) {
+        if (!requestReference.startsWith(REFERENCE_PREFIX) || requestReference.length() < REFERENCE_PREFIX.length() + 36) {
+            return Optional.empty();
+        }
+        try {
+            return Optional.of(BeneficiaryId.of(UUID.fromString(
+                    requestReference.substring(REFERENCE_PREFIX.length(), REFERENCE_PREFIX.length() + 36))));
+        } catch (IllegalArgumentException malformed) {
+            return Optional.empty();
         }
     }
 

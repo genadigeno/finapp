@@ -62,6 +62,19 @@ public class CrossBorderBeneficiaryBeans {
             public void screenNow(UUID screening, CorrelationId correlation) {
                 counterpartyScreenings.retry(CounterpartyScreeningId.of(screening), correlation);
             }
+
+            @Override
+            public UUID rescreenWithin(Connection unitOfWork, UUID previous, String reference) {
+                return counterpartyScreenings.rescreenWithin(unitOfWork, CounterpartyScreeningId.of(previous), reference).id().value();
+            }
+
+            @Override
+            public java.util.Optional<Clearance> clearance(Connection unitOfWork, UUID screening) {
+                return counterpartyScreenings.clearance(unitOfWork, CounterpartyScreeningId.of(screening))
+                        .map(read -> new Clearance(read.clears(), read.decidedAt(),
+                                read.status() == CounterpartyScreeningStatus.REQUESTED
+                                        || read.status() == CounterpartyScreeningStatus.UNAVAILABLE));
+            }
         };
     }
 
@@ -72,8 +85,8 @@ public class CrossBorderBeneficiaryBeans {
     @Bean
     ScreeningOutcomeListener screeningOutcomeListener(ObjectProvider<Beneficiaries> crossBorderBeneficiaries) {
         return (unitOfWork, outcome) -> crossBorderBeneficiaries.getObject().screeningDecided(
-                unitOfWork, outcome.screening().value(), outcomeOf(outcome.status()), outcome.decidedAt(),
-                outcome.correlation());
+                unitOfWork, outcome.requestReference(), outcome.screening().value(), outcomeOf(outcome.status()),
+                outcome.decidedAt(), outcome.correlation());
     }
 
     static BeneficiaryVocabulary.ScreeningOutcome outcomeOf(CounterpartyScreeningStatus status) {

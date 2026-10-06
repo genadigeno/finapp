@@ -81,7 +81,33 @@ public enum CrossborderErrorCode implements ErrorCode {
     PROVIDER_UNAVAILABLE("crossborder.ProviderUnavailable", 503, "The payment provider is unavailable; try again."),
 
     /** No beneficiary of the caller's has this identifier - the uniform 404 (`P9-TSK-017`). */
-    BENEFICIARY_NOT_FOUND("crossborder.BeneficiaryNotFound", 404, "No beneficiary matches the requested identifier.");
+    BENEFICIARY_NOT_FOUND("crossborder.BeneficiaryNotFound", 404, "No beneficiary matches the requested identifier."),
+
+    /**
+     * The beneficiary cannot be paid (`P9-TSK-018`, {@code INV-XB-02}) - one byte-identical answer for every
+     * reason: being screened, in review, blocked, revoked, unknown or another customer's, or refused by a
+     * re-screen. Nothing is priced.
+     */
+    BENEFICIARY_NOT_PAYABLE("crossborder.BeneficiaryNotPayable", 422, "Payments to this beneficiary are not possible."),
+
+    /** The destination amount exceeds the corridor's maximum (`P9-TSK-018`) - nothing is priced or kept. */
+    AMOUNT_EXCEEDS_CORRIDOR_LIMIT(
+            "crossborder.AmountExceedsCorridorLimit", 422, "The amount exceeds the limit for this destination."),
+
+    /**
+     * The corridor policy version pinned at the claim was superseded before the offer was recorded
+     * (`P9-TSK-018`, {@code INV-HIST-04}) - retry with a new idempotency key to be priced under its successor.
+     */
+    POLICY_STALE("crossborder.PolicyStale", 409, "The corridor terms changed; request a new offer."),
+
+    /**
+     * The beneficiary's clearance had lapsed and the re-screen could not reach its provider (`P9-TSK-018`,
+     * ADR-0081 point 5) - nothing priced, nothing held; retry with a new key.
+     */
+    SCREENING_UNAVAILABLE("crossborder.ScreeningUnavailable", 503, "The beneficiary could not be verified just now; try again."),
+
+    /** No offer of the caller's has this quote id - the uniform 404 (`P9-TSK-018`). */
+    OFFER_NOT_FOUND("crossborder.OfferNotFound", 404, "No offer matches the requested identifier.");
 
     private final String code;
     private final int status;

@@ -432,14 +432,15 @@ cross-border payments are holds and corridor acceptances, beneficiary screening 
 returns credited in the currency received; clearings are keyed by counterparty; callbacks are
 hints; reconciliation never converts currency and gains causes, never types. Ten new invariants
 and thirteen restated take the platform to **120**. Thirty backlog items across nine milestones
-(M9.1–M9.9) plus `X-TSK-013`…`-015`. **18 of 30 items complete** (M9.1 to M9.5 closed): the modules and floors
+(M9.1–M9.9) plus `X-TSK-013`…`-015`. **19 of 30 items complete** (M9.1 to M9.5 closed, M9.6 at 1 of 5): the modules and floors
 (`P9-TSK-001`), the conversion arithmetic (`P9-TSK-002`), JPY and BHD postable (`P9-TSK-003`), multi-currency
 wallets (`P9-TSK-004`), reference rates (`P9-TSK-005`), the FX provider port (`P9-TSK-006`), the
 pricing policy (`P9-TSK-007`), the quote (`P9-TSK-008`), wallet conversion (`P9-TSK-009`),
 counterparty-keyed clearing positions (`P9-TSK-010`), the FX provider's source (`P9-TSK-011`), the FX cover
 (`P9-TSK-012`), FX explained to cash (`P9-TSK-013`), the value-preservation battery (`P9-TST-002`), the corridor
 rail (`P9-TSK-014`), the corridor policy (`P9-TSK-015`), counterparty screening (`P9-TSK-016`) and cross-border
-beneficiaries (`P9-TSK-017`); next **`P9-TSK-018` — Cross-border offers** — `READY`
+beneficiaries (`P9-TSK-017`) and cross-border offers (`P9-TSK-018`); next **`P9-TSK-019` — Cross-border
+authorization and dispatch** — `READY`
 ([§Current Task](#current-task) is kept current).
 
 ## Current Milestone
@@ -455,39 +456,35 @@ since M0.1". Moved, not edited.)*
 
 ## Current Task
 
-**`P9-TSK-018` — Cross-border offers** — `READY`:
-marked by `P9-TSK-017`'s completion gate (2026-10-06). **Not started.**
+**`P9-TSK-019` — Cross-border authorization and dispatch** — `READY`:
+marked by `P9-TSK-018`'s completion gate (2026-10-06). **Not started.**
 
 ### Just completed
 
-**`P9-TSK-017` — Cross-border beneficiaries** — `COMPLETE` (2026-10-06). **M9.5 CLOSES AT 4 OF 4: a beneficiary
-abroad, registered by provider reference, screened by kyc before it can be paid, revocable from any state without
-revealing it** (ADR-0080 §§3, 5a, ADR-0081; `INV-XB-02`, `INV-RAIL-02`, `INV-RAIL-03`, `INV-KYC-05`). **crossborder
-`V003`**: `beneficiary` (the corridor provider's opaque reference, a suffix, the payee check and the customer's
-acknowledgement, the attested country, currency and entity type, a screened nickname, the current screening; the
-machine held by an edge trigger, `REVOKED` final, every text column refusing a bank identifier), its append-only
-`beneficiary_status_event`, `beneficiary_registration` keyed by an exchange reference derived from the owner and the
-grant (the grant never stored), and the append-only `corridor_selection` with its steps. **The domain** (crossborder):
-`Beneficiaries` - registration as two transactions around the grant exchange (the claim and the pinned selection,
-then the record with kyc's screening requested in the same unit of work, advisory namespace 9 serialising a
-takeover), the synchronous screening after commit, revocation with one identical answer, the listener's moves in
-kyc's T-e (a no-op on `REVOKED`); the pure `CorridorSelection` (recomputable from the pinned version, the stored inputs
-and the observed availability); the `CounterpartyScreening` port; `CorridorDirectory` gaining `operable` and
-`exchange`; `crossborder.BeneficiaryRegistered`/`Activated`/`Blocked`/`Revoked`; five error codes. **kyc**:
-`CounterpartyScreenings.requestWithin` and the listener's outcome carrying its time and correlation. **app**:
-`RailDirectory` over payments' `RailOperations`, the screening port over kyc, kyc's listener over the beneficiary, the
-doors `POST/GET /v1/me/cross-border/beneficiaries`, `GET .../{id}` and `POST .../{id}/revocation` (step-up when a
-factor is enrolled), the registers and the data classification. **PROBES** (Nine probes, nine caught, each by its own case), every restore
-byte-identical (sha256-verified; `MUTATION_TESTING.md` §2 +9 rows). **Multi-instance PASS** - ten registrations with
-one key, one beneficiary; a revocation raced against a release, a revoked beneficiary never `ACTIVE` (each counted).
-Deviations recorded: one selection reason for an undeclared rail; no declaration version. Nothing posts. **NEXT**:
-`P9-TSK-018` `READY`. **Verified** by fresh runs - the fleet-wide hermetic tier 2533 across 415 suites and 18 modules; the architecture tier
-157 across 27; the task's own database suites while built (CrossBorderBeneficiaryDatabaseTest 11; the crossborder module 23 across 4; CounterpartyScreeningDatabaseTest and CorridorAdministrationEndpointDatabaseTest re-run green, 17); ALL 0 FAILURES - the other database tiers skipped
-on the owner's instruction.
+**`P9-TSK-018` — Cross-border offers** — `COMPLETE` (2026-10-06). **M9.6 OPENS AT 1 OF 5: an offer disclosing the
+rate, the corridor fee, the total debit and the guaranteed destination amount, frozen** (PHASE_9_PLAN.md §12.3;
+`INV-XB-02`, `INV-XB-03`, `INV-FX-02`, `INV-FX-04`, `INV-HIST-04`). **crossborder `V004`**: `offer_request` (one per
+claim key; the owner, the beneficiary, the pinned corridor version, the fixed side and amount, the re-screen) and
+`payment_offer` (fx's `CROSS_BORDER` quote beside the corridor fee computed once, the total debit `CHECK`-held as
+source plus fee, the guaranteed destination and the estimate; one per quote and per request). **The domain**:
+`OfferIssuance` - Tx1 judging payability with the beneficiary `FOR SHARE` (one byte-identical
+`BeneficiaryNotPayable` for every non-payable state), the corridor under its pinned version and its issuing rail,
+the destination limit, and a re-screen requested in the same unit of work when the clearance has lapsed; between
+the transactions the re-screen (kyc's T-e moving the beneficiary on a hit) and the firm quote; Tx2 re-checking the
+corridor version and recording fx's quote and the offer together. The `CrossBorderFx` port (`app`'s
+`FxCrossBorderQuotes` over fx's `QuoteIssuance` and `QuoteLifecycle`), fx's quote request carrying its
+`PricingPurpose`, the screening port's `clearance` and `rescreenWithin`, the listener naming the beneficiary by its
+screening's request reference (a decided re-screen becomes the current clearance); five codes. **app**: the doors
+`POST /v1/me/cross-border/quotes` and `GET .../{id}`, the registers, the client-rate guards extended, the data
+classification. **PROBES** (Six probes, six caught, each by its own case), every restore byte-identical (sha256-verified; `MUTATION_TESTING.md`
+§2 +6 rows). **Multi-instance PASS** - ten requests under one key, one provider call and one offer (counted).
+Nothing is held. **NEXT**: `P9-TSK-019` `READY`. **Verified** by fresh runs - the fleet-wide hermetic tier 2533 across 415 suites and 18 modules;
+the architecture tier 157 across 27; the task's own database suites while built (CrossBorderOfferDatabaseTest 9; the crossborder module 23 across 4; re-run green: fx QuoteIssuanceDatabaseTest and the fx module 60, FxQuoteEndpointDatabaseTest, CrossBorderBeneficiaryDatabaseTest, CounterpartyScreeningDatabaseTest); ALL 0 FAILURES - the other
+database tiers skipped on the owner's instruction.
 
 ### Previously
 
-The per-task completion records — 211 blocks, from `P9-TSK-016` back to project initiation
+The per-task completion records — 212 blocks, from `P9-TSK-017` back to project initiation
 (`X-TSK-016` cross-cutting, standing between `P9-TSK-011` and `P9-TSK-010`; `X-TSK-005` cross-cutting, standing between `P7-TSK-015` and `P7-TSK-014`; `X-TSK-004`
 cross-cutting, standing between `P7-TSK-001` and the Phase 6 → 7 transition) — are archived in
 [`history/TASK_HISTORY.md`](history/TASK_HISTORY.md).
@@ -1032,8 +1029,8 @@ Resolved during initiation:
 
 ## Next Task
 
-**`P9-TSK-018` — Cross-border offers** — `READY`
-(the Current Task), marked by `P9-TSK-017`'s completion gate.
+**`P9-TSK-019` — Cross-border authorization and dispatch** — `READY`
+(the Current Task), marked by `P9-TSK-018`'s completion gate.
 *(This section read "`P8-TSK-009` — `READY`" from `P8-TSK-008`'s gate until
 `P8-TSK-013`'s record found it — the stale-second-copy class, in the section whose
 whole job is to mirror.)*

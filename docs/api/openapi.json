@@ -962,6 +962,41 @@
           }
         }
       },
+      "crossborder.AmountExceedsCorridorLimit": {
+        "content": {
+          "application/problem+json": {
+            "schema": {
+              "allOf": [
+                {
+                  "$ref": "#/components/schemas/ProblemDetail"
+                },
+                {
+                  "properties": {
+                    "code": {
+                      "const": "crossborder.AmountExceedsCorridorLimit"
+                    },
+                    "status": {
+                      "const": 422
+                    },
+                    "type": {
+                      "const": "https://finapp.example/problems/crossborder.AmountExceedsCorridorLimit"
+                    }
+                  }
+                }
+              ]
+            }
+          }
+        },
+        "description": "[422] The amount exceeds the limit for this destination.",
+        "headers": {
+          "X-Client-Correlation-Id": {
+            "$ref": "#/components/headers/X-Client-Correlation-Id"
+          },
+          "X-Correlation-Id": {
+            "$ref": "#/components/headers/X-Correlation-Id"
+          }
+        }
+      },
       "crossborder.BeneficiaryNotFound": {
         "content": {
           "application/problem+json": {
@@ -988,6 +1023,41 @@
           }
         },
         "description": "[404] No beneficiary matches the requested identifier.",
+        "headers": {
+          "X-Client-Correlation-Id": {
+            "$ref": "#/components/headers/X-Client-Correlation-Id"
+          },
+          "X-Correlation-Id": {
+            "$ref": "#/components/headers/X-Correlation-Id"
+          }
+        }
+      },
+      "crossborder.BeneficiaryNotPayable": {
+        "content": {
+          "application/problem+json": {
+            "schema": {
+              "allOf": [
+                {
+                  "$ref": "#/components/schemas/ProblemDetail"
+                },
+                {
+                  "properties": {
+                    "code": {
+                      "const": "crossborder.BeneficiaryNotPayable"
+                    },
+                    "status": {
+                      "const": 422
+                    },
+                    "type": {
+                      "const": "https://finapp.example/problems/crossborder.BeneficiaryNotPayable"
+                    }
+                  }
+                }
+              ]
+            }
+          }
+        },
+        "description": "[422] Payments to this beneficiary are not possible.",
         "headers": {
           "X-Client-Correlation-Id": {
             "$ref": "#/components/headers/X-Client-Correlation-Id"
@@ -1207,6 +1277,76 @@
           }
         }
       },
+      "crossborder.OfferNotFound": {
+        "content": {
+          "application/problem+json": {
+            "schema": {
+              "allOf": [
+                {
+                  "$ref": "#/components/schemas/ProblemDetail"
+                },
+                {
+                  "properties": {
+                    "code": {
+                      "const": "crossborder.OfferNotFound"
+                    },
+                    "status": {
+                      "const": 404
+                    },
+                    "type": {
+                      "const": "https://finapp.example/problems/crossborder.OfferNotFound"
+                    }
+                  }
+                }
+              ]
+            }
+          }
+        },
+        "description": "[404] No offer matches the requested identifier.",
+        "headers": {
+          "X-Client-Correlation-Id": {
+            "$ref": "#/components/headers/X-Client-Correlation-Id"
+          },
+          "X-Correlation-Id": {
+            "$ref": "#/components/headers/X-Correlation-Id"
+          }
+        }
+      },
+      "crossborder.PolicyStale": {
+        "content": {
+          "application/problem+json": {
+            "schema": {
+              "allOf": [
+                {
+                  "$ref": "#/components/schemas/ProblemDetail"
+                },
+                {
+                  "properties": {
+                    "code": {
+                      "const": "crossborder.PolicyStale"
+                    },
+                    "status": {
+                      "const": 409
+                    },
+                    "type": {
+                      "const": "https://finapp.example/problems/crossborder.PolicyStale"
+                    }
+                  }
+                }
+              ]
+            }
+          }
+        },
+        "description": "[409] The corridor terms changed; request a new offer.",
+        "headers": {
+          "X-Client-Correlation-Id": {
+            "$ref": "#/components/headers/X-Client-Correlation-Id"
+          },
+          "X-Correlation-Id": {
+            "$ref": "#/components/headers/X-Correlation-Id"
+          }
+        }
+      },
       "crossborder.ProposalNotPending": {
         "content": {
           "application/problem+json": {
@@ -1408,6 +1548,41 @@
           }
         },
         "description": "[422] The transfer cannot be accepted.",
+        "headers": {
+          "X-Client-Correlation-Id": {
+            "$ref": "#/components/headers/X-Client-Correlation-Id"
+          },
+          "X-Correlation-Id": {
+            "$ref": "#/components/headers/X-Correlation-Id"
+          }
+        }
+      },
+      "crossborder.ScreeningUnavailable": {
+        "content": {
+          "application/problem+json": {
+            "schema": {
+              "allOf": [
+                {
+                  "$ref": "#/components/schemas/ProblemDetail"
+                },
+                {
+                  "properties": {
+                    "code": {
+                      "const": "crossborder.ScreeningUnavailable"
+                    },
+                    "status": {
+                      "const": 503
+                    },
+                    "type": {
+                      "const": "https://finapp.example/problems/crossborder.ScreeningUnavailable"
+                    }
+                  }
+                }
+              ]
+            }
+          }
+        },
+        "description": "[503] The beneficiary could not be verified just now; try again.",
         "headers": {
           "X-Client-Correlation-Id": {
             "$ref": "#/components/headers/X-Client-Correlation-Id"
@@ -7512,6 +7687,81 @@
         },
         "type": "object"
       },
+      "CrossBorderOfferView": {
+        "properties": {
+          "beneficiaryId": {
+            "type": "string"
+          },
+          "customerRate": {
+            "type": "string"
+          },
+          "deliveryEstimateHours": {
+            "format": "int64",
+            "type": "integer"
+          },
+          "destinationAmount": {
+            "type": "string"
+          },
+          "destinationCurrency": {
+            "type": "string"
+          },
+          "disclosedMarginOverMid": {
+            "type": "string"
+          },
+          "expiresAt": {
+            "type": "string"
+          },
+          "fee": {
+            "type": "string"
+          },
+          "fixedSide": {
+            "type": "string"
+          },
+          "id": {
+            "type": "string"
+          },
+          "sourceAmount": {
+            "type": "string"
+          },
+          "sourceCurrency": {
+            "type": "string"
+          },
+          "status": {
+            "type": "string"
+          },
+          "totalDebit": {
+            "type": "string"
+          }
+        },
+        "type": "object"
+      },
+      "CrossBorderQuoteRequest": {
+        "properties": {
+          "amount": {
+            "minLength": 1,
+            "type": "string"
+          },
+          "beneficiaryId": {
+            "minLength": 1,
+            "type": "string"
+          },
+          "fixedSide": {
+            "minLength": 1,
+            "type": "string"
+          },
+          "sourceCurrency": {
+            "minLength": 1,
+            "type": "string"
+          }
+        },
+        "required": [
+          "amount",
+          "beneficiaryId",
+          "fixedSide",
+          "sourceCurrency"
+        ],
+        "type": "object"
+      },
       "CrossBorderRevocationReceipt": {
         "properties": {
           "status": {
@@ -13391,6 +13641,70 @@
               "application/json": {
                 "schema": {
                   "$ref": "#/components/schemas/OfferedCorridors"
+                }
+              }
+            },
+            "description": "OK"
+          }
+        }
+      }
+    },
+    "/v1/me/cross-border/quotes": {
+      "post": {
+        "operationId": "requestCrossBorderQuote",
+        "parameters": [
+          {
+            "in": "header",
+            "name": "Idempotency-Key",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/CrossBorderQuoteRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "201": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/CrossBorderOfferView"
+                }
+              }
+            },
+            "description": "Created"
+          }
+        }
+      }
+    },
+    "/v1/me/cross-border/quotes/{id}": {
+      "get": {
+        "operationId": "readCrossBorderQuote",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "id",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/CrossBorderOfferView"
                 }
               }
             },

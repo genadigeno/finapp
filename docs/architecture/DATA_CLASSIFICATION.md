@@ -1988,6 +1988,39 @@ encrypted; the grant is exchanged and forgotten.
 | `beneficiary_status_event` | `screening_id` | `INTERNAL` | As `beneficiary.screening_id` |
 | `beneficiary_status_event` | `occurred_at` | `CONFIDENTIAL` | Dates a screening outcome or a customer's act |
 
+### `crossborder` - the offer - *added by `P9-TSK-018`*
+
+| Table | Column | Level | Note |
+|---|---|---|---|
+| `offer_request` | `id` | `INTERNAL` | An aggregate identifier. Generated |
+| `offer_request` | `claim_key` | `CONFIDENTIAL` | The principal's idempotency scope and key - names the actor |
+| `offer_request` | `owner_party` | `CONFIDENTIAL` | Whose request |
+| `offer_request` | `beneficiary_id` | `INTERNAL` | As `beneficiary.id` |
+| `offer_request` | `corridor_policy_id` | `INTERNAL` | The pinned corridor version |
+| `offer_request` | `corridor` | `CONFIDENTIAL` | Where a customer pays abroad |
+| `offer_request` | `fixed_side` | `INTERNAL` | An enumeration of two values |
+| `offer_request` | `amount_minor` | `RESTRICTED-FINANCIAL` | An amount a customer asked to send (`INV-AUD-02`) |
+| `offer_request` | `amount_currency` | `CONFIDENTIAL` | Part of the amount's shape |
+| `offer_request` | `rescreen_id` | `INTERNAL` | kyc's re-screen identifier |
+| `offer_request` | `created_at` | `CONFIDENTIAL` | Dates a customer's act |
+| `payment_offer` | `id` | `INTERNAL` | An aggregate identifier. Generated |
+| `payment_offer` | `offer_request_id` | `INTERNAL` | As `offer_request.id` |
+| `payment_offer` | `quote_id` | `INTERNAL` | fx's quote identifier |
+| `payment_offer` | `owner_party` | `CONFIDENTIAL` | Whose offer |
+| `payment_offer` | `beneficiary_id` | `INTERNAL` | As `beneficiary.id` |
+| `payment_offer` | `corridor_policy_id` | `INTERNAL` | The pinned corridor version |
+| `payment_offer` | `corridor` | `CONFIDENTIAL` | Where a customer pays abroad |
+| `payment_offer` | `fee_minor` | `RESTRICTED-FINANCIAL` | The corridor fee the customer is charged |
+| `payment_offer` | `fee_scale` | `INTERNAL` | Part of the amount's shape |
+| `payment_offer` | `source_minor` | `RESTRICTED-FINANCIAL` | What the customer pays for the conversion |
+| `payment_offer` | `total_debit_minor` | `RESTRICTED-FINANCIAL` | What the customer is debited - source plus fee, `CHECK`-held |
+| `payment_offer` | `source_currency` | `CONFIDENTIAL` | Part of the amount's shape |
+| `payment_offer` | `destination_minor` | `RESTRICTED-FINANCIAL` | The guaranteed amount the beneficiary receives |
+| `payment_offer` | `destination_scale` | `INTERNAL` | Part of the amount's shape |
+| `payment_offer` | `destination_currency` | `CONFIDENTIAL` | Part of the amount's shape |
+| `payment_offer` | `delivery_estimate_hours` | `INTERNAL` | Corridor configuration, frozen |
+| `payment_offer` | `created_at` | `CONFIDENTIAL` | Dates a customer's act |
+
 ### Free text, classified at its ceiling
 
 `audit_record.reason`, `audit_record.change_summary`, `idempotency_record.response_body`,

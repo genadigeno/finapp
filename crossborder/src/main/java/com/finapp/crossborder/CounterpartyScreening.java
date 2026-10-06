@@ -26,6 +26,25 @@ public interface CounterpartyScreening {
     /** Asks the provider now for a requested screening - no connection held; kyc decides in its own T-e. */
     void screenNow(UUID screening, CorrelationId correlation);
 
+    /**
+     * Requests a re-screen of {@code previous}'s counterparty in the caller's unit of work (`P9-TSK-018`) -
+     * kyc reuses the stored subject and payee check, so crossborder never needs the name again. Idempotent on
+     * {@code reference}.
+     *
+     * @return the new screening's identifier
+     */
+    UUID rescreenWithin(Connection unitOfWork, UUID previous, String reference);
+
+    /** {@code screening}'s clearance, read in the caller's unit of work (`P9-TSK-018`). */
+    java.util.Optional<Clearance> clearance(Connection unitOfWork, UUID screening);
+
+    /** Whether a screening clears, since when, and whether it is still waiting for the provider. */
+    record Clearance(boolean clears, java.util.Optional<java.time.Instant> decidedAt, boolean unanswered) {
+        public Clearance {
+            Objects.requireNonNull(decidedAt, "decidedAt must not be null");
+        }
+    }
+
     /** A screening request: a stable reference, the counterparty, and the payee check as handed in. */
     record Request(
             String reference,

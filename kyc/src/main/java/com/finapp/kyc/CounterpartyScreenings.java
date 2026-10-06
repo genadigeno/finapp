@@ -239,6 +239,17 @@ public final class CounterpartyScreenings {
     }
 
     /**
+     * Requests a re-screen of {@code previous}'s counterparty in the caller's unit of work (`P9-TSK-018`) - the
+     * stored subject and payee check under {@code requestReference}, held by the caller's permit.
+     */
+    public Screening rescreenWithin(Connection uow, CounterpartyScreeningId previous, String requestReference) {
+        Objects.requireNonNull(uow, "uow must not be null");
+        Objects.requireNonNull(previous, "previous must not be null");
+        CounterpartyScreeningStore.Row row = store.find(uow, previous).orElseThrow(ScreeningNotFound::new);
+        return requestWithin(uow, new Request(requestReference, subjectOf(row), row.payeeVerdict()));
+    }
+
+    /**
      * Screens {@code previous}'s counterparty again under a new reference - the stored subject and payee
      * check, so the caller never needs the name (ADR-0081 point 3's quote-time re-screen).
      */

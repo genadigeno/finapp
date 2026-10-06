@@ -12913,7 +12913,7 @@ break row, as the approval door must.)*
 
 # Phase 9 — FX and Cross-Border Payments
 
-Status: `IN_PROGRESS` — started 2026-10-03 with `P9-TSK-001` (18 of 30 items complete, M9.1 to M9.5 closed); entry gate passed 2026-10-02 by the Phase 8 → 9 transition
+Status: `IN_PROGRESS` — started 2026-10-03 with `P9-TSK-001` (19 of 30 items complete, M9.1 to M9.5 closed, M9.6 at 1 of 5); entry gate passed 2026-10-02 by the Phase 8 → 9 transition
 ([`reviews/PHASE_8_TO_9_TRANSITION.md`](reviews/PHASE_8_TO_9_TRANSITION.md)), elaborated to task
 granularity by the same transition: thirty items (`P9-TSK-001`…`-027`, `P9-TST-001`, `P9-TST-002`,
 `P9-DOC-001`) across nine milestones, with `P9-TSK-001` marked `READY`. The engineering plan is
@@ -13769,7 +13769,8 @@ providers), each owned by Phase 15 and gating nothing here.
 - **Definition of done**: `DOD-SEC`, `DOD-API`, `DOD-EVENT`, `DOD-DOMAIN`. **Risk**: Medium. **Cx**:
   L.
 
-**P9-TSK-018 — Cross-border offers** — `READY` (marked by `P9-TSK-017`'s completion gate, 2026-10-06)
+**P9-TSK-018 — Cross-border offers** — `COMPLETE` (2026-10-06; marked `READY` by `P9-TSK-017`'s completion gate)
+- **As built** (2026-10-06): as `CURRENT_STATE.md` §Just completed records. The request body is `{beneficiaryId, sourceCurrency, fixedSide, amount}` (the source currency names the corridor with the beneficiary's destination); an unknown or another customer's beneficiary answers the same `BeneficiaryNotPayable` as every non-payable state; the corridor's maximum is judged before the provider for a fixed destination and at the record for a fixed source; the re-screen's screening is repointed as the beneficiary's current clearance by the listener, which now names the beneficiary by the screening's request reference. Codes added: `crossborder.BeneficiaryNotPayable`, `AmountExceedsCorridorLimit`, `PolicyStale`, `ScreeningUnavailable`, `OfferNotFound`.
 - **Objective**: an offer disclosing the rate, fee, total and guaranteed destination amount, frozen.
 - **Bounded context**: `crossborder`; `fx` through the port.
 - **Dependencies**: `-008`, `-017`.
@@ -13820,7 +13821,7 @@ providers), each owned by Phase 15 and gating nothing here.
   is computed once.
 - **Definition of done**: `DOD-API`, `DOD-FIN`, `DOD-EVENT`, `DOD-SEC`. **Risk**: Medium. **Cx**: M.
 
-**P9-TSK-019 — Cross-border authorization and dispatch** — `PLANNED`
+**P9-TSK-019 — Cross-border authorization and dispatch** — `READY` (marked by `P9-TSK-018`'s completion gate, 2026-10-06)
 - **Objective**: turn an offer into a held, dispatched, covered payment in one transaction.
 - **Bounded context**: `crossborder`, `payments`, `fx`, `ledger`.
 - **Dependencies**: `-012`, `-018`.
