@@ -44,7 +44,8 @@ class RatesAreNeverClientSuppliedTest {
                 .as("not vacuous: the customer's quote and conversion and the operator's policy are scanned")
                 .contains(FxQuoteController.QuoteRequestBody.class, FxQuoteController.ConversionRequestBody.class,
                         FxAdministrationController.PricingPolicyRequest.class,
-                        com.finapp.app.crossborder.CrossBorderQuoteController.CrossBorderQuoteRequest.class);
+                        com.finapp.app.crossborder.CrossBorderQuoteController.CrossBorderQuoteRequest.class,
+                        com.finapp.app.crossborder.CrossBorderPaymentController.CrossBorderPaymentRequest.class);
         List<String> violations = new ArrayList<>();
         bodies.forEach(body -> violations.addAll(violations(body)));
         assertThat(violations).isEmpty();

@@ -67,6 +67,9 @@ public interface RoutingStore<T> {
     Optional<RoutingDecision> findLatestDecisionForWithdrawal(
             T unitOfWork, WithdrawalId withdrawal);
 
+    /** The latest decision routing a cross-border payment's outbound credit (`P9-TSK-019`). */
+    Optional<RoutingDecision> findLatestDecisionForOutboundCredit(T unitOfWork, OutboundCreditId credit);
+
     /**
      * Appends one step to a decision's trail — the fallback's abandonment on
      * {@code NOTHING_SENT} (`INV-RAIL-02`; the aggregate door is

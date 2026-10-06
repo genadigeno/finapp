@@ -449,8 +449,12 @@ class CrossBorderOfferDatabaseTest {
         /** fx's quotes, with a hook run between the transactions when armed. */
         @Bean
         @Primary
-        CrossBorderFx hookedCrossBorderFx(QuoteIssuance quoteIssuance, QuoteLifecycle quoteLifecycle) {
-            CrossBorderFx real = new FxCrossBorderQuotes(quoteIssuance, quoteLifecycle);
+        CrossBorderFx hookedCrossBorderFx(
+                QuoteIssuance quoteIssuance,
+                QuoteLifecycle quoteLifecycle,
+                com.finapp.fx.CrossBorderAcceptance crossBorderAcceptance,
+                com.finapp.fx.CoverDispatchNudge coverDispatchNudge) {
+            CrossBorderFx real = new FxCrossBorderQuotes(quoteIssuance, quoteLifecycle, crossBorderAcceptance, coverDispatchNudge);
             return new CrossBorderFx() {
                 @Override
                 public Claim begin(Connection unitOfWork, String claimKey, Ask ask, CorrelationId correlation) {
@@ -475,6 +479,17 @@ class CrossBorderOfferDatabaseTest {
                 @Override
                 public java.util.Optional<Quote> read(Connection unitOfWork, UUID id, UUID owner) {
                     return real.read(unitOfWork, id, owner);
+                }
+
+                @Override
+                public Accepted acceptWithin(
+                        Connection unitOfWork, UUID quoteId, UUID owner, UUID payment, Actor actor, CorrelationId correlation) {
+                    return real.acceptWithin(unitOfWork, quoteId, owner, payment, actor, correlation);
+                }
+
+                @Override
+                public void dispatchCover(UUID coverId) {
+                    real.dispatchCover(coverId);
                 }
             };
         }

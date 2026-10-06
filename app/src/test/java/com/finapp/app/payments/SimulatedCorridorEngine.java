@@ -156,7 +156,7 @@ public final class SimulatedCorridorEngine implements AutoCloseable {
     }
 
     /** The next send ACTS, then its response is lost (the connection closes). */
-    void loseNextResponse() {
+    public void loseNextResponse() {
         armed.set("lose");
     }
 
@@ -181,11 +181,11 @@ public final class SimulatedCorridorEngine implements AutoCloseable {
     // ------------------------------------------------------------- what the test reads
 
     /** Real credits created - the "exactly once" count. */
-    int credits() {
+    public int credits() {
         return creditCount.get();
     }
 
-    int creditsOf(String reference) {
+    public int creditsOf(String reference) {
         AtomicInteger count = creditsByReference.get(reference);
         return count == null ? 0 : count.get();
     }

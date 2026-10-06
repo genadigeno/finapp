@@ -395,6 +395,21 @@ class OwnershipIsScopedTest {
                                     Scope.ADMINISTERED,
                                     "P9-TSK-008. The pinned version's FOR SHARE re-read in the quote's Tx2: the id comes only" + " from the quote request the same flight stored - never a request value; the pricing" + " policy is platform-wide configuration with no owner to scope by.")),
                     Map.entry(
+                            "com.finapp.payments.JdbcOutboundCreditStore.move",
+                            new Entry(
+                                    Scope.ADMINISTERED,
+                                    "P9-TSK-019. The outbound credit id comes only from the credit this flight's"
+                                        + " authorization dispatched (the payment it committed, found by the owner's"
+                                        + " dispatch key), locked FOR UPDATE by lock in the same transaction - never a"
+                                        + " request value; the edge is conditional on the status read under the lock.")),
+                    Map.entry(
+                            "com.finapp.payments.JdbcOutboundCreditStore.renewPermit",
+                            new Entry(
+                                    Scope.ADMINISTERED,
+                                    "P9-TSK-019. A takeover's permit renewal: the credit id comes only from the"
+                                        + " payment the same key's flight committed (byDispatchKey, the owner a"
+                                        + " predicate) - never a request value.")),
+                    Map.entry(
                             "com.finapp.crossborder.JdbcBeneficiaryStore.appendEvent",
                             new Entry(
                                     Scope.ADMINISTERED,

@@ -776,6 +776,9 @@ subject takes, no evidence that still finds it, no acknowledgement back on its r
 | `crossborder.PolicyStale` | 409 | The corridor terms changed; request a new offer. |
 | `crossborder.ScreeningUnavailable` | 503 | The beneficiary could not be verified just now; try again. |
 | `crossborder.OfferNotFound` | 404 | No offer matches the requested identifier. |
+| `crossborder.ScreeningRequired` | 409 | The beneficiary must be verified again; request a new offer. |
+| `crossborder.CorridorUnavailable` | 503 | Payments to this destination are paused; try again later. |
+| `crossborder.PaymentNotFound` | 404 | No payment matches the requested identifier. |
 
 The FX controller's doors (`P9-TSK-007`, ADR-0075 §3). `NotFound` is the `FileNotFound`
 departure at the pricing-policy and enable-request doors - every route sits behind
@@ -848,6 +851,8 @@ record for a fixed source. `PolicyStale` (`409`) answers a corridor version supe
 and the record; the client retries with a new key. `ScreeningUnavailable` (`503`) answers a lapsed
 clearance whose re-screen could not reach its provider - nothing priced, nothing held. `OfferNotFound`
 is the uniform `404` of the offer read. Every refusal is recorded on the claim.
+
+The payment door (`P9-TSK-019`, PHASE_9_PLAN.md §12.8) adds three, beside codes it shares. `BeneficiaryNotPayable` is the same byte-identical answer for a beneficiary that went in review, blocked or revoked after its offer; `OfferNotFound` (`404`) answers an unknown quote or another customer's. `ScreeningRequired` (`409`) answers a clearance that lapsed since the offer - the customer requests a new offer, which re-screens. `CorridorUnavailable` (`503`) answers a corridor disabled since the offer. The Phase 13 seams answer `crossborder.RiskRefused` and `crossborder.LimitRefused` (`422`). fx's own refusals answer by their codes - `fx.QuoteAlreadyAccepted` (`409`, a second key on an accepted quote), `fx.QuoteExpired`, `fx.InsufficientFunds` and `fx.WalletNotPostable` (the hold on the source wallet) - and routing's by its own, `payments.NoEligibleRail`. Every refusal rolls the authorization back to its savepoint - nothing accepted, held or sent - and is recorded on the claim, so the key replays it. `PaymentNotFound` is the uniform `404` of the payment read.
 
 ## 3a. Rejection at the boundary
 

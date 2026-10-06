@@ -2560,7 +2560,7 @@ class CheckoutFlowDatabaseTest {
                                     + " ON v.id = d.policy_version_id"
                                     + " WHERE d.intent_id = ? AND d.chosen_rail IS NOT NULL",
                             UUID.fromString(intentOfSession(checkoutId))))
-                    .isEqualTo("book|4");
+                    .isEqualTo("book|5");
             // THE AUDIT, both halves, under the PERSON (the gate's find): the confirmation
             // says a dispatch happened, the outcome record says what it committed - the
             // same PaymentOutcomeApplied every rail writes, never a platform actor claimed

@@ -345,6 +345,44 @@ class RoutingPolicyVersionTest {
                 .contains(corridor);
     }
 
+    @Test
+    @DisplayName("a rule requiring a destination country matches only a payment naming one: ahead of the"
+            + " domestic pay-out it routes the cross-border credit, by per-candidate reachability, and lets a"
+            + " domestic pay-out fall through to its own rule (P9-TSK-019, ADR-0080 section 5b)")
+    void theCrossBorderRuleMatchesOnlyADestinationCountry() {
+        RailId corridor = SimulatedCorridorAdapter.RAIL.id();
+        CurrencyCode jpy = CurrencyCode.of("JPY");
+        PaymentRails rails = PaymentRails.of(List.of(SimulatedCardPspAdapter.RAIL, PUSH_DECLARED, SimulatedCorridorAdapter.RAIL));
+        RoutingPolicyVersion policy = version(
+                5,
+                List.of(
+                        cardRule(),
+                        new RoutingPolicyVersion.NewRule(PaymentDirection.PAY_OUT, InstrumentKind.BANK_ACCOUNT,
+                                Optional.empty(), Optional.empty(), List.of(corridor), true),
+                        new RoutingPolicyVersion.NewRule(PaymentDirection.PAY_OUT, InstrumentKind.BANK_ACCOUNT,
+                                Optional.empty(), Optional.empty(), List.of(PUSH_RAIL))));
+
+        RoutingPlan domestic = policy.decide(payOut(Money.ofMinorUnits(5_00, EUR), Optional.empty()), rails, Map.of());
+        assertThat(domestic.matchedRuleIndex()).as("no country: the cross-border rule never matches").contains(2);
+        assertThat(domestic.chosen()).contains(PUSH_RAIL);
+
+        RoutingInputs abroad = new RoutingInputs(PaymentDirection.PAY_OUT, InstrumentKind.BANK_ACCOUNT,
+                Money.ofMinorUnits(15_000, jpy), Optional.empty(),
+                Optional.of(com.finapp.sharedkernel.money.CountryCode.of("JP")), Optional.of(Set.of(corridor)));
+        RoutingPlan routed = policy.decide(abroad, rails, Map.of());
+        assertThat(routed.matchedRuleIndex()).contains(1);
+        assertThat(routed.chosen()).contains(corridor);
+        assertThat(policy.decide(abroad, rails, Map.of())).as("recomputed").isEqualTo(routed);
+
+        RoutingPlan unreachable = policy.decide(new RoutingInputs(PaymentDirection.PAY_OUT, InstrumentKind.BANK_ACCOUNT,
+                        Money.ofMinorUnits(15_000, jpy), Optional.empty(),
+                        Optional.of(com.finapp.sharedkernel.money.CountryCode.of("JP")), Optional.of(Set.of(PUSH_RAIL))),
+                rails, Map.of());
+        assertThat(unreachable.chosen()).as("the beneficiary's issuing rail is the only reachable one").isEmpty();
+        assertThat(unreachable.steps()).singleElement()
+                .satisfies(step -> assertThat(step.rejection()).contains(RoutingRejection.DESTINATION_UNREACHABLE));
+    }
+
     // ----------------------------------------------------------------- recomputation
 
     @Test

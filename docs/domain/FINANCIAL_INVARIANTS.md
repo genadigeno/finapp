@@ -1142,6 +1142,12 @@ clearance older than the corridor's screening validity re-screened between the t
 indeterminate answer or an unverified payee moving the beneficiary `IN_REVIEW` in kyc's T-e and refusing
 with nothing priced. Verified by `CrossBorderOfferDatabaseTest`.)*
 
+*(The authorization's half in force since `P9-TSK-019` (2026-10-06): payability re-judged in the
+authorization's one transaction with the beneficiary `FOR SHARE` - a move committed while it waits is
+seen and refused - the same byte-identical `BeneficiaryNotPayable` for a beneficiary in review, blocked or
+revoked since its offer, and a clearance lapsed since the offer `409 crossborder.ScreeningRequired`;
+nothing accepted, held or sent. Verified by `CrossBorderPaymentDatabaseTest`.)*
+
 ### INV-XB-03 — What was shown is what is held, posted and instructed
 **Statement:** What the customer was shown — destination amount, fee, total debit — is
 exactly what is held, posted and instructed.
@@ -1151,6 +1157,10 @@ already accepted a price.
 credit, frozen by trigger) + `DOMAIN`.
 **Verify:** The disclosure-to-posting test: offer = hold (`P9-TSK-019`) = completion posting =
 instruction (`P9-TSK-020`).
+*(The hold's half in force since `P9-TSK-019` (2026-10-06): the accepted quote's amounts are asserted
+equal to the frozen offer inside the authorization, the hold is the offer's total debit and the outbound
+credit instructs the offer's guaranteed destination amount, all frozen at birth. Verified by
+`CrossBorderPaymentDatabaseTest`.)*
 **Phase:** 9
 
 ### INV-XB-04 — A return is applied once, automatically only when it is exact

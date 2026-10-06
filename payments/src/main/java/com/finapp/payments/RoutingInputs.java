@@ -27,12 +27,31 @@ public final class RoutingInputs {
     private final InstrumentKind instrumentKind;
     private final Money amount;
     private final Optional<Boolean> destinationReachable;
+    private final Optional<com.finapp.sharedkernel.money.CountryCode> destinationCountry;
+    private final Optional<java.util.Set<RailId>> reachableRails;
 
     public RoutingInputs(
             PaymentDirection direction,
             InstrumentKind instrumentKind,
             Money amount,
             Optional<Boolean> destinationReachable) {
+        this(direction, instrumentKind, amount, destinationReachable, Optional.empty(), Optional.empty());
+    }
+
+    /**
+     * Routing's third subject's inputs (`P9-TSK-019`, ADR-0080 section 5b): a destination country, matched by a
+     * rule that requires one, and per-candidate reachability - only the named rails can reach the destination
+     * (a beneficiary's issuing rail); empty is "any", and every older decision recomputes unchanged.
+     */
+    public RoutingInputs(
+            PaymentDirection direction,
+            InstrumentKind instrumentKind,
+            Money amount,
+            Optional<Boolean> destinationReachable,
+            Optional<com.finapp.sharedkernel.money.CountryCode> destinationCountry,
+            Optional<java.util.Set<RailId>> reachableRails) {
+        this.destinationCountry = Objects.requireNonNull(destinationCountry, "destinationCountry must not be null");
+        this.reachableRails = Objects.requireNonNull(reachableRails, "reachableRails must not be null").map(java.util.Set::copyOf);
         this.direction = Objects.requireNonNull(direction, "direction must not be null");
         this.instrumentKind =
                 Objects.requireNonNull(instrumentKind, "instrumentKind must not be null");
@@ -60,5 +79,14 @@ public final class RoutingInputs {
 
     public Optional<Boolean> destinationReachable() {
         return destinationReachable;
+    }
+
+    public Optional<com.finapp.sharedkernel.money.CountryCode> destinationCountry() {
+        return destinationCountry;
+    }
+
+    /** The rails that can reach the destination, when reachability is per candidate; empty is any. */
+    public Optional<java.util.Set<RailId>> reachableRails() {
+        return reachableRails;
     }
 }

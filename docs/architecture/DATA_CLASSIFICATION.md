@@ -2021,6 +2021,62 @@ encrypted; the grant is exchanged and forgotten.
 | `payment_offer` | `delivery_estimate_hours` | `INTERNAL` | Corridor configuration, frozen |
 | `payment_offer` | `created_at` | `CONFIDENTIAL` | Dates a customer's act |
 
+### `crossborder` - the payment - *added by `P9-TSK-019`*
+
+| Table | Column | Level | Note |
+|---|---|---|---|
+| `payment` | `id` | `INTERNAL` | An aggregate identifier. Generated |
+| `payment` | `owner_party` | `CONFIDENTIAL` | Whose payment |
+| `payment` | `beneficiary_id` | `INTERNAL` | As `beneficiary.id` |
+| `payment` | `offer_id` | `INTERNAL` | As `payment_offer.id` - one payment per offer |
+| `payment` | `quote_id` | `INTERNAL` | fx's quote - one payment per quote, the lock-free arbiter beside fx's own |
+| `payment` | `corridor` | `CONFIDENTIAL` | Where a customer pays abroad |
+| `payment` | `dispatch_key` | `CONFIDENTIAL` | The principal's idempotency scope and key - names the actor |
+| `payment` | `outbound_credit_id` | `INTERNAL` | payments' outbound credit |
+| `payment` | `cover_id` | `INTERNAL` | fx's cover |
+| `payment` | `hold_id` | `INTERNAL` | The ledger hold of the total debit |
+| `payment` | `status` | `CONFIDENTIAL` | The machine's word, shown shaped (`PROCESSING`, `SENT`, ...) |
+| `payment` | `failure_reason` | `CONFIDENTIAL` | An enumerated failure class - a fact about a person's payment, never provider text |
+| `payment` | `created_at` | `CONFIDENTIAL` | Dates a customer's act |
+| `payment_event` | `id` | `INTERNAL` | An event identifier. Generated |
+| `payment_event` | `payment_id` | `INTERNAL` | As `payment.id` |
+| `payment_event` | `from_status` | `CONFIDENTIAL` | As `payment.status` |
+| `payment_event` | `to_status` | `CONFIDENTIAL` | As `payment.status` |
+| `payment_event` | `cause` | `INTERNAL` | A bounded machine word (`AUTHORIZED`, ...) |
+| `payment_event` | `occurred_at` | `CONFIDENTIAL` | Dates a customer's payment |
+
+### `payments` - the outbound credit and routing's third subject - *added by `P9-TSK-019`*
+
+| Table | Column | Level | Note |
+|---|---|---|---|
+| `outbound_credit` | `id` | `INTERNAL` | An aggregate identifier. Generated |
+| `outbound_credit` | `customer_party_id` | `CONFIDENTIAL` | Whose money leaves |
+| `outbound_credit` | `subject_id` | `INTERNAL` | The cross-border payment it instructs - one credit per payment |
+| `outbound_credit` | `dispatch_key` | `CONFIDENTIAL` | The principal's idempotency scope and key, unique per customer |
+| `outbound_credit` | `rail` | `INTERNAL` | The routed corridor rail's stored literal |
+| `outbound_credit` | `destination_reference` | `CONFIDENTIAL` | The corridor provider's opaque beneficiary reference - never an account identifier (`CHECK`-shaped) |
+| `outbound_credit` | `amount_minor` | `RESTRICTED-FINANCIAL` | The instructed destination amount - the guaranteed amount the customer was shown |
+| `outbound_credit` | `amount_currency` | `CONFIDENTIAL` | Part of the monetary shape |
+| `outbound_credit` | `amount_scale` | `INTERNAL` | Part of the monetary shape |
+| `outbound_credit` | `held_minor` | `RESTRICTED-FINANCIAL` | The total debit held on the customer's wallet |
+| `outbound_credit` | `held_currency` | `CONFIDENTIAL` | Part of the monetary shape |
+| `outbound_credit` | `held_scale` | `INTERNAL` | Part of the monetary shape |
+| `outbound_credit` | `hold_id` | `INTERNAL` | The ledger hold |
+| `outbound_credit` | `end_to_end_reference` | `CONFIDENTIAL` | OUR reference, minted once and stored before any send - the provider's dedupe key and Phase 8's match key (`INV-PAY-04`) |
+| `outbound_credit` | `status` | `INTERNAL` | The machine's word |
+| `outbound_credit` | `failure_reason` | `CONFIDENTIAL` | An enumerated failure class - `payment_attempt.failure_reason`'s reasoning |
+| `outbound_credit` | `provider_reference` | `CONFIDENTIAL` | The corridor provider's own reference for the credit |
+| `outbound_credit` | `delivered_at` | `CONFIDENTIAL` | Dates a delivery to a person |
+| `outbound_credit` | `recall_requested_at` | `INTERNAL` | Operational timing |
+| `outbound_credit` | `recall_outcome` | `INTERNAL` | An enumerated outcome |
+| `outbound_credit` | `created_at` | `CONFIDENTIAL` | Dates a person's act |
+| `outbound_credit` | `last_dispatched_at` | `INTERNAL` | The send permit, stamped by the database |
+| `routing_rule` | `requires_destination_country` | `INTERNAL` | A matcher flag |
+| `routing_decision` | `outbound_credit_id` | `INTERNAL` | The decision's third subject - exactly one of intent, withdrawal and outbound credit |
+| `routing_decision` | `destination_country` | `CONFIDENTIAL` | Where a customer pays abroad |
+| `routing_decision` | `reachable_rails` | `INTERNAL` | The rails that reach the destination, as judged |
+| `provider_evidence` | `outbound_credit_id` | `INTERNAL` | The evidence's sixth subject; the bytes' own rows carry the classification that matters |
+
 ### Free text, classified at its ceiling
 
 `audit_record.reason`, `audit_record.change_summary`, `idempotency_record.response_body`,

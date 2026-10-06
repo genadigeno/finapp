@@ -34,6 +34,7 @@ public final class RoutingRule {
     private final Optional<CurrencyCode> currency;
     private final Optional<Money> ceiling;
     private final List<RailId> rails;
+    private final boolean requiresDestinationCountry;
 
     public RoutingRule(
             RoutingRuleId id,
@@ -43,6 +44,24 @@ public final class RoutingRule {
             Optional<CurrencyCode> currency,
             Optional<Money> ceiling,
             List<RailId> rails) {
+        this(id, ruleIndex, direction, instrumentKind, currency, ceiling, rails, false);
+    }
+
+    /**
+     * A rule that, with {@code requiresDestinationCountry}, matches only a payment that names a destination
+     * country (`P9-TSK-019`, ADR-0080 section 5b) - routing policy v5's cross-border rule. Default {@code false}:
+     * every older rule matches exactly as before.
+     */
+    public RoutingRule(
+            RoutingRuleId id,
+            int ruleIndex,
+            PaymentDirection direction,
+            InstrumentKind instrumentKind,
+            Optional<CurrencyCode> currency,
+            Optional<Money> ceiling,
+            List<RailId> rails,
+            boolean requiresDestinationCountry) {
+        this.requiresDestinationCountry = requiresDestinationCountry;
         this.id = Objects.requireNonNull(id, "id must not be null");
         this.direction = Objects.requireNonNull(direction, "direction must not be null");
         this.instrumentKind =
@@ -94,6 +113,9 @@ public final class RoutingRule {
         if (currency.isPresent() && !currency.get().equals(inputs.currency())) {
             return false;
         }
+        if (requiresDestinationCountry && inputs.destinationCountry().isEmpty()) {
+            return false;
+        }
         if (ceiling.isPresent()) {
             Money bound = ceiling.get();
             if (bound.scale() != inputs.amount().scale()) {
@@ -143,5 +165,9 @@ public final class RoutingRule {
     /** The candidate rails, in preference order — judged first to last (ADR-0060 §3). */
     public List<RailId> rails() {
         return rails;
+    }
+
+    public boolean requiresDestinationCountry() {
+        return requiresDestinationCountry;
     }
 }

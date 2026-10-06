@@ -1,0 +1,105 @@
+package com.finapp.crossborder;
+
+import com.finapp.platform.persistence.DatabaseFailure;
+import java.sql.Connection;
+import java.sql.PreparedStatement;
+import java.sql.ResultSet;
+import java.sql.SQLException;
+import java.sql.Timestamp;
+import java.time.Instant;
+import java.util.Objects;
+import java.util.Optional;
+import java.util.UUID;
+
+/** Plain-JDBC storage for cross-border payments (ADR-0033, `P9-TSK-019`); {@code crossborder V005} beneath. */
+public final class JdbcPaymentStore implements PaymentStore {
+
+    private static final String COLUMNS =
+            "id, owner_party, beneficiary_id, offer_id, quote_id, corridor, dispatch_key, outbound_credit_id, cover_id,"
+                    + " hold_id, status, created_at";
+
+    @Override
+    public void insert(Connection unitOfWork, Row payment) {
+        Objects.requireNonNull(unitOfWork, "unitOfWork must not be null");
+        Objects.requireNonNull(payment, "payment must not be null");
+        try (PreparedStatement insert = unitOfWork.prepareStatement(
+                "INSERT INTO crossborder.payment (" + COLUMNS + ") VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)")) {
+            insert.setObject(1, payment.id());
+            insert.setObject(2, payment.owner());
+            insert.setObject(3, payment.beneficiary().value());
+            insert.setObject(4, payment.offer());
+            insert.setObject(5, payment.quote());
+            insert.setString(6, payment.corridor().code());
+            insert.setString(7, payment.dispatchKey());
+            insert.setObject(8, payment.outboundCredit());
+            insert.setObject(9, payment.cover());
+            insert.setObject(10, payment.hold());
+            insert.setString(11, payment.status().name());
+            insert.setTimestamp(12, Timestamp.from(payment.createdAt()));
+            insert.executeUpdate();
+        } catch (SQLException failure) {
+            throw new CrossborderStorageException(DatabaseFailure.describe("recording a cross-border payment", failure), failure);
+        }
+    }
+
+    @Override
+    public void appendEvent(Connection unitOfWork, UUID eventId, UUID payment, Optional<Status> from, Status to, String cause,
+            Instant at) {
+        Objects.requireNonNull(unitOfWork, "unitOfWork must not be null");
+        try (PreparedStatement insert = unitOfWork.prepareStatement(
+                "INSERT INTO crossborder.payment_event (id, payment_id, from_status, to_status, cause, occurred_at)"
+                        + " VALUES (?, ?, ?, ?, ?, ?)")) {
+            insert.setObject(1, eventId);
+            insert.setObject(2, payment);
+            insert.setString(3, from.map(Enum::name).orElse(null));
+            insert.setString(4, to.name());
+            insert.setString(5, cause);
+            insert.setTimestamp(6, Timestamp.from(at));
+            insert.executeUpdate();
+        } catch (SQLException failure) {
+            throw new CrossborderStorageException(DatabaseFailure.describe("recording a move of payment " + payment, failure), failure);
+        }
+    }
+
+    @Override
+    public Optional<Row> byDispatchKey(Connection unitOfWork, UUID owner, String dispatchKey) {
+        return one(unitOfWork, "SELECT " + COLUMNS + " FROM crossborder.payment WHERE owner_party = ? AND dispatch_key = ?",
+                owner, dispatchKey, "reading a payment by its dispatch key");
+    }
+
+    @Override
+    public Optional<Row> findOwned(Connection unitOfWork, UUID id, UUID owner) {
+        Objects.requireNonNull(id, "id must not be null");
+        return one(unitOfWork, "SELECT " + COLUMNS + " FROM crossborder.payment WHERE owner_party = ? AND id = ?",
+                owner, id, "reading payment " + id);
+    }
+
+    private static Optional<Row> one(Connection unitOfWork, String sql, UUID owner, Object key, String doing) {
+        Objects.requireNonNull(unitOfWork, "unitOfWork must not be null");
+        Objects.requireNonNull(owner, "owner must not be null");
+        try (PreparedStatement select = unitOfWork.prepareStatement(sql)) {
+            select.setObject(1, owner);
+            select.setObject(2, key);
+            try (ResultSet row = select.executeQuery()) {
+                if (!row.next()) {
+                    return Optional.empty();
+                }
+                return Optional.of(new Row(
+                        row.getObject("id", UUID.class),
+                        row.getObject("owner_party", UUID.class),
+                        BeneficiaryId.of(row.getObject("beneficiary_id", UUID.class)),
+                        row.getObject("offer_id", UUID.class),
+                        row.getObject("quote_id", UUID.class),
+                        CorridorKey.parse(row.getString("corridor")),
+                        row.getString("dispatch_key"),
+                        row.getObject("outbound_credit_id", UUID.class),
+                        row.getObject("cover_id", UUID.class),
+                        row.getObject("hold_id", UUID.class),
+                        Status.valueOf(row.getString("status")),
+                        row.getTimestamp("created_at").toInstant()));
+            }
+        } catch (SQLException failure) {
+            throw new CrossborderStorageException(DatabaseFailure.describe(doing, failure), failure);
+        }
+    }
+}

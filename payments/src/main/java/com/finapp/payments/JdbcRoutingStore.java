@@ -37,11 +37,11 @@ public final class JdbcRoutingStore implements RoutingStore<Connection> {
             "id, version, effective_from, created_at, created_by, reason";
     private static final String RULE_COLUMNS =
             "id, policy_version_id, rule_index, direction, instrument_kind, currency,"
-                    + " ceiling_amount_minor, ceiling_currency, ceiling_scale";
+                    + " ceiling_amount_minor, ceiling_currency, ceiling_scale, requires_destination_country";
     private static final String DECISION_COLUMNS =
             "id, intent_id, withdrawal_id, policy_version_id, direction, instrument_kind,"
                     + " amount_minor, currency, scale, matched_rule_index, chosen_rail,"
-                    + " created_at";
+                    + " created_at, outbound_credit_id, destination_country, reachable_rails";
     private static final String STEP_COLUMNS =
             "decision_id, step_index, rail, verdict, rejection, rail_available,"
                     + " descriptor_version";
@@ -106,7 +106,7 @@ public final class JdbcRoutingStore implements RoutingStore<Connection> {
         try (PreparedStatement insertRule =
                         unitOfWork.prepareStatement(
                                 "INSERT INTO payments.routing_rule (" + RULE_COLUMNS
-                                        + ") VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)");
+                                        + ") VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)");
                 PreparedStatement insertRail =
                         unitOfWork.prepareStatement(
                                 "INSERT INTO payments.routing_rule_rail (rule_id, position,"
@@ -128,6 +128,7 @@ public final class JdbcRoutingStore implements RoutingStore<Connection> {
                     insertRule.setObject(8, null);
                     insertRule.setObject(9, null);
                 }
+                insertRule.setBoolean(10, rule.requiresDestinationCountry());
                 insertRule.executeUpdate();
                 for (int position = 0; position < rule.rails().size(); position++) {
                     insertRail.setObject(1, rule.id().value());
@@ -211,7 +212,8 @@ public final class JdbcRoutingStore implements RoutingStore<Connection> {
                 PaymentDirection direction,
                 InstrumentKind kind,
                 Optional<CurrencyCode> currency,
-                Optional<Money> ceiling) {}
+                Optional<Money> ceiling,
+                boolean requiresDestinationCountry) {}
         List<RuleRow> rows = new ArrayList<>();
         try (PreparedStatement read =
                 unitOfWork.prepareStatement(
@@ -234,7 +236,8 @@ public final class JdbcRoutingStore implements RoutingStore<Connection> {
                                             ceilingMinor,
                                             CurrencyCode.of(row.getString("ceiling_currency")),
                                             row.getShort("ceiling_scale")))
-                                    : Optional.empty()));
+                                    : Optional.empty(),
+                            row.getBoolean("requires_destination_country")));
                 }
             }
         }
@@ -253,7 +256,7 @@ public final class JdbcRoutingStore implements RoutingStore<Connection> {
                 }
                 rules.add(new RoutingRule(
                         rule.id(), rule.index(), rule.direction(), rule.kind(),
-                        rule.currency(), rule.ceiling(), rails));
+                        rule.currency(), rule.ceiling(), rails, rule.requiresDestinationCountry()));
             }
         }
         return rules;
@@ -317,7 +320,7 @@ public final class JdbcRoutingStore implements RoutingStore<Connection> {
         try (PreparedStatement insert =
                 unitOfWork.prepareStatement(
                         "INSERT INTO payments.routing_decision (" + DECISION_COLUMNS
-                                + ") VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)")) {
+                                + ") VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)")) {
             insert.setObject(1, decision.id().value());
             // Exactly one subject (V016's XOR): the confirmed intent, or the withdrawal.
             insert.setObject(
@@ -333,6 +336,14 @@ public final class JdbcRoutingStore implements RoutingStore<Connection> {
             insert.setObject(10, decision.matchedRuleIndex().orElse(null));
             insert.setString(11, decision.chosenRail().map(RailId::value).orElse(null));
             insert.setTimestamp(12, Timestamp.from(decision.createdAt()));
+            insert.setObject(13, decision.subject().outboundCredit().map(OutboundCreditId::value).orElse(null));
+            insert.setString(14, decision.destinationCountry().map(com.finapp.sharedkernel.money.CountryCode::code).orElse(null));
+            if (decision.reachableRails().isPresent()) {
+                insert.setArray(15, unitOfWork.createArrayOf("text",
+                        decision.reachableRails().get().stream().map(RailId::value).sorted().toArray()));
+            } else {
+                insert.setNull(15, java.sql.Types.ARRAY);
+            }
             insert.executeUpdate();
             for (RoutingStep step : decision.steps()) {
                 appendStep(unitOfWork, decision.id(), step);
@@ -355,7 +366,12 @@ public final class JdbcRoutingStore implements RoutingStore<Connection> {
         return findLatestDecisionBy(unitOfWork, "withdrawal_id", withdrawal.value());
     }
 
-    /** {@code subjectColumn} is one of the two class constants above, never caller text. */
+    @Override
+    public Optional<RoutingDecision> findLatestDecisionForOutboundCredit(Connection unitOfWork, OutboundCreditId credit) {
+        return findLatestDecisionBy(unitOfWork, "outbound_credit_id", credit.value());
+    }
+
+    /** {@code subjectColumn} is one of the three subject columns above, never caller text. */
     private Optional<RoutingDecision> findLatestDecisionBy(
             Connection unitOfWork, String subjectColumn, UUID subjectId) {
         try (PreparedStatement read =
@@ -375,6 +391,9 @@ public final class JdbcRoutingStore implements RoutingStore<Connection> {
                 String chosen = row.getString("chosen_rail");
                 UUID intentId = row.getObject("intent_id", UUID.class);
                 UUID withdrawalId = row.getObject("withdrawal_id", UUID.class);
+                UUID creditId = row.getObject("outbound_credit_id", UUID.class);
+                String country = row.getString("destination_country");
+                java.sql.Array reachable = row.getArray("reachable_rails");
                 return Optional.of(
                         RoutingDecision.rehydrate(
                                 decisionId,
@@ -382,7 +401,8 @@ public final class JdbcRoutingStore implements RoutingStore<Connection> {
                                         Optional.ofNullable(intentId)
                                                 .map(PaymentIntentId::of),
                                         Optional.ofNullable(withdrawalId)
-                                                .map(WithdrawalId::of)),
+                                                .map(WithdrawalId::of),
+                                        Optional.ofNullable(creditId).map(OutboundCreditId::of)),
                                 RoutingPolicyVersionId.of(
                                         row.getObject("policy_version_id", UUID.class)),
                                 PaymentDirection.valueOf(row.getString("direction")),
@@ -394,7 +414,13 @@ public final class JdbcRoutingStore implements RoutingStore<Connection> {
                                 Optional.ofNullable(matched),
                                 Optional.ofNullable(chosen).map(RailId::of),
                                 stepsOf(unitOfWork, decisionId),
-                                row.getTimestamp("created_at").toInstant()));
+                                row.getTimestamp("created_at").toInstant(),
+                                Optional.ofNullable(country).map(com.finapp.sharedkernel.money.CountryCode::of),
+                                reachable == null
+                                        ? Optional.empty()
+                                        : Optional.of(java.util.Arrays.stream((String[]) reachable.getArray())
+                                                .map(RailId::of)
+                                                .collect(java.util.stream.Collectors.toUnmodifiableSet()))));
             }
         } catch (SQLException failure) {
             throw new PaymentsStorageException(

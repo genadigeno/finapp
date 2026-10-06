@@ -57,6 +57,12 @@ class CrossborderReasonScreenDatabaseTest {
                     "corridor_enable_request.decision_reason",
                     "corridor_availability.reason");
 
+    /**
+     * The reason columns that are a closed vocabulary, not person-written: each held to its list by a
+     * {@code CHECK ... IN}, so no text can carry an instrument (V005, P9-TSK-019).
+     */
+    private static final List<String> CODED = List.of("payment.failure_reason");
+
     private static Connection application;
 
     @BeforeAll
@@ -104,7 +110,31 @@ class CrossborderReasonScreenDatabaseTest {
                 reasonColumns.add(row.getString(1));
             }
         }
-        assertThat(reasonColumns).containsExactlyInAnyOrderElementsOf(COLUMNS);
+        List<String> expected = new ArrayList<>(COLUMNS);
+        expected.addAll(CODED);
+        assertThat(reasonColumns).containsExactlyInAnyOrderElementsOf(expected);
+        for (String column : CODED) {
+            String table = column.substring(0, column.indexOf('.'));
+            assertThat(sqlOf(table)).as("%s is held to its list", column)
+                    .contains("(" + column.substring(column.indexOf('.') + 1) + " = ANY (ARRAY[");
+        }
+    }
+
+    /** The definition of the crossborder table {@code table}'s CHECKs, as the catalogue holds them. */
+    private String sqlOf(String table) throws SQLException {
+        StringBuilder checks = new StringBuilder();
+        try (PreparedStatement select = application.prepareStatement(
+                "SELECT pg_get_constraintdef(c.oid) FROM pg_constraint c JOIN pg_class t ON t.oid = c.conrelid"
+                        + " JOIN pg_namespace n ON n.oid = t.relnamespace WHERE n.nspname = 'crossborder'"
+                        + " AND t.relname = ? AND c.contype = 'c'")) {
+            select.setString(1, table);
+            try (ResultSet row = select.executeQuery()) {
+                while (row.next()) {
+                    checks.append(row.getString(1)).append('\n');
+                }
+            }
+        }
+        return checks.toString();
     }
 
     @Test

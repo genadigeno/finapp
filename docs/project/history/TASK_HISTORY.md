@@ -1,6 +1,6 @@
 # Task History
 
-The per-task completion records that accumulated behind `## Current Task` - 212 "Previously" blocks, newest first, from `P9-TSK-017` back to project initiation. *(`X-TSK-016` is cross-cutting and completed after `P9-TSK-010` and before `P9-TSK-011`, so it stands between them.)* *(`X-TSK-005` is cross-cutting and completed after `P7-TSK-014` and before `P7-TSK-015`, so it stands between them; its record came in with its branch's merge.)* *(`X-TSK-004` is cross-cutting and completed after the Phase 6 → 7 transition, so it stands second, between `P7-TSK-001` and the transition's record - the transition's block moved here by `P7-TSK-001`'s gate, exactly as an earlier form of this note said it would.)*
+The per-task completion records that accumulated behind `## Current Task` - 213 "Previously" blocks, newest first, from `P9-TSK-018` back to project initiation. *(`X-TSK-016` is cross-cutting and completed after `P9-TSK-010` and before `P9-TSK-011`, so it stands between them.)* *(`X-TSK-005` is cross-cutting and completed after `P7-TSK-014` and before `P7-TSK-015`, so it stands between them; its record came in with its branch's merge.)* *(`X-TSK-004` is cross-cutting and completed after the Phase 6 → 7 transition, so it stands second, between `P7-TSK-001` and the transition's record - the transition's block moved here by `P7-TSK-001`'s gate, exactly as an earlier form of this note said it would.)*
 
 **Archive.** These records were moved verbatim out of
 [`CURRENT_STATE.md`](../CURRENT_STATE.md) on 2026-09-20 so that the canonical description of
@@ -12,6 +12,29 @@ Current state: [`CURRENT_STATE.md`](../CURRENT_STATE.md) ·
 Authoritative backlog: [`BACKLOG.md`](../BACKLOG.md)
 
 ---
+
+### Previously
+
+**`P9-TSK-018` — Cross-border offers** — `COMPLETE` (2026-10-06). **M9.6 OPENS AT 1 OF 5: an offer disclosing the
+rate, the corridor fee, the total debit and the guaranteed destination amount, frozen** (PHASE_9_PLAN.md §12.3;
+`INV-XB-02`, `INV-XB-03`, `INV-FX-02`, `INV-FX-04`, `INV-HIST-04`). **crossborder `V004`**: `offer_request` (one per
+claim key; the owner, the beneficiary, the pinned corridor version, the fixed side and amount, the re-screen) and
+`payment_offer` (fx's `CROSS_BORDER` quote beside the corridor fee computed once, the total debit `CHECK`-held as
+source plus fee, the guaranteed destination and the estimate; one per quote and per request). **The domain**:
+`OfferIssuance` - Tx1 judging payability with the beneficiary `FOR SHARE` (one byte-identical
+`BeneficiaryNotPayable` for every non-payable state), the corridor under its pinned version and its issuing rail,
+the destination limit, and a re-screen requested in the same unit of work when the clearance has lapsed; between
+the transactions the re-screen (kyc's T-e moving the beneficiary on a hit) and the firm quote; Tx2 re-checking the
+corridor version and recording fx's quote and the offer together. The `CrossBorderFx` port (`app`'s
+`FxCrossBorderQuotes` over fx's `QuoteIssuance` and `QuoteLifecycle`), fx's quote request carrying its
+`PricingPurpose`, the screening port's `clearance` and `rescreenWithin`, the listener naming the beneficiary by its
+screening's request reference (a decided re-screen becomes the current clearance); five codes. **app**: the doors
+`POST /v1/me/cross-border/quotes` and `GET .../{id}`, the registers, the client-rate guards extended, the data
+classification. **PROBES** (Six probes, six caught, each by its own case), every restore byte-identical (sha256-verified; `MUTATION_TESTING.md`
+§2 +6 rows). **Multi-instance PASS** - ten requests under one key, one provider call and one offer (counted).
+Nothing is held. **NEXT**: `P9-TSK-019` `READY`. **Verified** by fresh runs - the fleet-wide hermetic tier 2533 across 415 suites and 18 modules;
+the architecture tier 157 across 27; the task's own database suites while built (CrossBorderOfferDatabaseTest 9; the crossborder module 23 across 4; re-run green: fx QuoteIssuanceDatabaseTest and the fx module 60, FxQuoteEndpointDatabaseTest, CrossBorderBeneficiaryDatabaseTest, CounterpartyScreeningDatabaseTest); ALL 0 FAILURES - the other
+database tiers skipped on the owner's instruction.
 
 ### Previously
 

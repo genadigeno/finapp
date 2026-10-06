@@ -188,7 +188,9 @@ public class RoutingPolicyOperations {
         List<RailId> rails = body.rails().stream()
                 .map(RoutingPolicyOperations::parsedRail)
                 .toList();
-        return new RoutingPolicyVersion.NewRule(direction, kind, currency, ceiling, rails);
+        // P9-TSK-019: an optional matcher - absent is false, so every older body means what it meant.
+        return new RoutingPolicyVersion.NewRule(direction, kind, currency, ceiling, rails,
+                Boolean.TRUE.equals(body.requiresDestinationCountry()));
     }
 
     // Two small parsers rather than one <E extends Enum<E>> helper: the self-referential
