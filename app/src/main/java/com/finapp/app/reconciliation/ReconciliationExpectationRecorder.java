@@ -91,7 +91,7 @@ public class ReconciliationExpectationRecorder
                 opening.clearingAccount(),
                 opening.journalEntryId(),
                 opening.settlementCycle(),
-                Optional.empty(),
+                opening.counterparty(),
                 opening.keys().stream()
                         .map(
                                 key ->

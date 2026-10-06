@@ -390,6 +390,12 @@ public final class JdbcQuoteStore implements QuoteStore {
     }
 
     @Override
+    public boolean abandon(Connection unitOfWork, FxQuoteId id) {
+        return transition(unitOfWork, "UPDATE fx.quote SET status = 'ABANDONED' WHERE id = ? AND status = 'ACCEPTED'",
+                id, "abandoning a quote");
+    }
+
+    @Override
     public Optional<PlanRow> plan(Connection unitOfWork, FxQuoteId id) {
         Objects.requireNonNull(id, "id must not be null");
         try (PreparedStatement select = unitOfWork.prepareStatement(

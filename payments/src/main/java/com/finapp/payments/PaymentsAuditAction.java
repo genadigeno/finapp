@@ -179,6 +179,17 @@ public enum PaymentsAuditAction implements AuditableAction {
             false),
 
     /**
+     * The platform applied a cross-border outbound credit's outcome on its locked row (`P9-TSK-020`):
+     * the completion, a failure, an {@code UNKNOWN}, a {@code RECEIVED} or a delivery - whichever
+     * resolver won (the synchronous answer, a hinted inquiry, the sweep), acting once.
+     */
+    OUTBOUND_CREDIT_OUTCOME_APPLIED(
+            "payments.OutboundCreditOutcomeApplied",
+            "An outbound credit outcome was applied on the locked row; the record names the credit,"
+                    + " the status, the failure class and the resolver, never an amount or a reference.",
+            false),
+
+    /**
      * The platform parked a money-carrying confirmation that named no initiation it made
      * (`P7-TSK-009`, ADR-0062 §5, {@code INV-REC-05}): value moved on the rail with no
      * commercial home, so it rests in {@code SUSPENSE_UNMATCHED} — aged, alerted, never

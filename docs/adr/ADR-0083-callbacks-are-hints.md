@@ -171,3 +171,10 @@ edges), `INV-HIST-02` (callback evidence retained verbatim, adopted or not), `IN
 - A real provider offering no inquiry endpoint would make the hint model unworkable for it:
   that discovery is `X-TSK-015`'s trigger and would need its own ADR.
 - The Phase 9 review (`P9-DOC-001`) reads this ADR against the code before accepting it.
+
+- *As built by `P9-TSK-020` (2026-10-06):* decisions 1 and 2 for the corridor - `CorridorCallbackService` behind
+  `POST /v1/providers/payments/corridor/webhooks` authenticates with `FINAPP_CORRIDOR_WEBHOOK_KEY` (HMAC over the
+  timestamp and the bytes, freshness on the server clock), retains the bytes under the outbound credit our
+  reference names, dedupes on the provider's event id through the inbox, and after the commit runs the
+  authenticated `inquire(E)` through `OutboundCreditResolution`; the answer is `202`. The forged-but-signed test is
+  `OutboundCreditResolutionDatabaseTest#callbacksAreHints`.

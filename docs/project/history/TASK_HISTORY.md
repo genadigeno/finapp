@@ -1,6 +1,6 @@
 # Task History
 
-The per-task completion records that accumulated behind `## Current Task` - 213 "Previously" blocks, newest first, from `P9-TSK-018` back to project initiation. *(`X-TSK-016` is cross-cutting and completed after `P9-TSK-010` and before `P9-TSK-011`, so it stands between them.)* *(`X-TSK-005` is cross-cutting and completed after `P7-TSK-014` and before `P7-TSK-015`, so it stands between them; its record came in with its branch's merge.)* *(`X-TSK-004` is cross-cutting and completed after the Phase 6 → 7 transition, so it stands second, between `P7-TSK-001` and the transition's record - the transition's block moved here by `P7-TSK-001`'s gate, exactly as an earlier form of this note said it would.)*
+The per-task completion records that accumulated behind `## Current Task` - 214 "Previously" blocks, newest first, from `P9-TSK-019` back to project initiation. *(`X-TSK-016` is cross-cutting and completed after `P9-TSK-010` and before `P9-TSK-011`, so it stands between them.)* *(`X-TSK-005` is cross-cutting and completed after `P7-TSK-014` and before `P7-TSK-015`, so it stands between them; its record came in with its branch's merge.)* *(`X-TSK-004` is cross-cutting and completed after the Phase 6 → 7 transition, so it stands second, between `P7-TSK-001` and the transition's record - the transition's block moved here by `P7-TSK-001`'s gate, exactly as an earlier form of this note said it would.)*
 
 **Archive.** These records were moved verbatim out of
 [`CURRENT_STATE.md`](../CURRENT_STATE.md) on 2026-09-20 so that the canonical description of
@@ -12,6 +12,41 @@ Current state: [`CURRENT_STATE.md`](../CURRENT_STATE.md) ·
 Authoritative backlog: [`BACKLOG.md`](../BACKLOG.md)
 
 ---
+
+### Previously
+
+**`P9-TSK-019` — Cross-border authorization and dispatch** — `COMPLETE` (2026-10-06). **M9.6 AT 2 OF 5: an offer
+authorized in one commit - the total debit held, fx's quote accepted, the cover born and the outbound credit
+dispatched - then the cover and the credit sent with no connection held** (PHASE_9_PLAN.md §12.8; ADR-0080 §2,
+§5b; `INV-XB-02`, `INV-XB-03`, `INV-PAY-04`, `INV-RAIL-02`, `INV-HIST-04`). **crossborder `V005`**: `payment` (one per
+quote, per offer, per outbound credit and per dispatch key; its machine held by an edge trigger) and `payment_event`.
+**payments `V025`**: `outbound_credit` (born `DISPATCHED` with our end-to-end reference minted and stored before any
+send, the first permit stamped by the database, the instructed and held amounts, the hold, the rail, the
+destination and the subject frozen; its machine held by trigger), routing's third subject (intent XOR withdrawal
+XOR outbound credit) with the destination country and the per-candidate reachable rails it judged, a rule matcher
+requiring a destination country, the sixth evidence subject, and the seeded routing **version 5** - the standing
+routes carried forward, the corridor credit onto `corridor-sim-a` ahead of the domestic bank pay-out (the
+suites pinning version 4 now read 5). **The domain**: `PaymentAuthorization` - a takeover converging on the payment
+by its dispatch key, the offer the owner's, the beneficiary `FOR SHARE` (`ACTIVE`, clear, the clearance within the
+corridor's validity - else `ScreeningRequired`), the corridor available, the Phase 13 seams, fx's acceptance (the
+quote locked and moved `ACCEPTED` on the database clock, the cover born) with the accepted amounts asserted equal to
+the offer, the route, the hold of the total debit and the dispatch, the payment, its event, the audit record and
+`crossborder.CrossBorderPaymentInitiated`. The `CrossBorderExecution` port (`app`'s `PaymentsCrossBorderExecution`
+over routing, rails, `OutboundCreditStore`, evidence and `HoldService`), fx's `CrossBorderAcceptance`,
+`CrossBorderFx.acceptWithin` and `dispatchCover` (fx's post-commit nudge), three codes, one audited action.
+**app**: the doors `POST /v1/me/cross-border/payments` (`202`, a savepoint rolling back every refusal so only the
+claim's outcome commits) and `GET .../{id}`, the operator's routing rule body gaining `requiresDestinationCountry`,
+the registers, the data classification. **Found and fixed while built**: a refusal after fx's acceptance (an
+unfunded wallet, an ineligible rail) would have committed the accepted quote and its cover beside the claim's
+outcome - the savepoint closes it, proven by `anUnfundedWalletWritesNothing`; the crossborder reason-screen guard
+now names the coded `payment.failure_reason` as a closed vocabulary. **Deviation**: an `ACCEPTED`, `REJECTED` or
+`NOTHING_SENT` send answer is retained as evidence only - concluding it is `P9-TSK-020`'s. **PROBES** (NINE PROBES, NINE CAUGHT),
+every restore byte-identical (sha256-verified; `MUTATION_TESTING.md` §2 +9 rows). **Multi-instance PASS** - ten
+requests under one key: one payment, one hold, one credit, one send (counted); a second key on the same quote
+`409 fx.QuoteAlreadyAccepted`; the authorization serialised against a beneficiary moving (counted). **NEXT**:
+`P9-TSK-020` `READY`. **Verified** by fresh runs - the fleet-wide hermetic tier 2534 across 415 suites and 18 modules; the architecture tier
+157 across 27; the task's own database suites while built (CrossBorderPaymentDatabaseTest 12, CrossBorderOfferDatabaseTest 9, the crossborder module 23 across 4, RoutingPolicyVersionTest 8); ALL 0 FAILURES - the other database tiers skipped on
+the owner's instruction.
 
 ### Previously
 

@@ -194,6 +194,12 @@ class ExpectationOpenerRegisterTest {
                                 + " fx's FxSettlementExpectations port, keyed COVER_REF",
                         proof("FX_SELL_LEG", "fx.FxCoverDatabaseTest", "theCoverExecutesAtThePlan"),
                         proof("FX_BUY_LEG", "fx.FxCoverDatabaseTest", "theCoverExecutesAtThePlan")));
+        rows.put("outbound-credit:",
+                opens("a cross-border outbound credit's completion (P9-TSK-020, PHASE_9_PLAN.md section 12.4(g)):"
+                                + " the instructed amount credited to the corridor's OWN CORRIDOR_CLEARING, copied"
+                                + " into CROSSBORDER_PAYOUT keyed END_TO_END_REF and the provider's reference",
+                        proof("CROSSBORDER_PAYOUT", "fx.OutboundCreditResolutionDatabaseTest",
+                                "theCompletionPostsExactlyAndOpensItsExpectation")));
         rows.put("transfer:",
                 touchesNothing("wallet to wallet and its reversal - FINAL_ON_POSTING, nothing"
                                 + " external settles (the storm's scope asserted to hold"

@@ -164,6 +164,14 @@ class NoSingleInstanceAssumptionRulesTest {
                     // DISTRIBUTED_EXECUTION.md section 3; the race is
                     // WithdrawalDatabaseTest's.
                     "com.finapp.app.payments.WithdrawalResolutionSchedule",
+                    // P9-TSK-020: the same half for the cross-border outbound credit. The
+                    // corridor inquiry is read-only and idempotent by OUR reference; every
+                    // write is the one applier's conditional edge on the locked credit, with
+                    // the claim's primary key and the posting key beneath it - N schedules,
+                    // the synchronous answer and a callback's hinted inquiry are one counted
+                    // race. Register row: DISTRIBUTED_EXECUTION.md section 3; the race is
+                    // OutboundCreditResolutionDatabaseTest's.
+                    "com.finapp.app.payments.OutboundCreditResolutionSchedule",
                     // P7-TSK-009: the same half on the inbound machine. The re-initiate is
                     // idempotent at the scheme by OUR reference (the dedupe premise), the
                     // inquiry is read-only, and every write is a conditional - the handle

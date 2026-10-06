@@ -85,8 +85,11 @@ public final class FxPlanVerification {
     Optional<String> replay(Connection unitOfWork, FxProofStore.ReplayRow row) {
         CurrencyCode source = CurrencyCode.of(row.sourceCurrency());
         CurrencyCode destination = CurrencyCode.of(row.destinationCurrency());
+        // Priced under the purpose the quote was issued for - a cross-border quote's terms are its own (P9-TSK-018).
+        PricingPurpose purpose = quotes.plan(unitOfWork, row.quoteId()).map(QuoteStore.PlanRow::purpose)
+                .orElse(PricingPurpose.CONVERSION);
         Optional<PolicyPair> pinned = policies.version(unitOfWork, row.version())
-                .flatMap(version -> QuoteIssuance.termsFor(version, source, destination));
+                .flatMap(version -> QuoteIssuance.termsFor(version, purpose, source, destination));
         if (pinned.isEmpty()) {
             return Optional.of("its pinned policy version no longer prices the pair");
         }
@@ -146,8 +149,15 @@ public final class FxPlanVerification {
         List<JournalLine> lines = posted.get().entry().lines();
         ConversionLines.Accounts books = ConversionLines.accounts(chart, unitOfWork, plan,
                 LedgerAccountId.of(row.journalEntryId()), LedgerAccountId.of(row.journalEntryId()));
-        Set<LedgerAccountId> bookAccounts = Set.of(books.sourcePosition(), books.destinationPosition(),
-                books.spreadRevenue(), books.roundingResidual());
+        // A cross-border completion (P9-TSK-020) also charges the corridor fee into FEE_REVENUE and credits the
+        // corridor's clearing in place of a destination wallet: the fee line is read off the entry, the rest replayed.
+        boolean crossBorder = plan.purpose() == PricingPurpose.CROSS_BORDER;
+        Optional<LedgerAccountId> feeRevenue = crossBorder
+                ? Optional.of(chart.resolve(unitOfWork, com.finapp.ledger.AccountPurpose.FEE_REVENUE, plan.source()).id())
+                : Optional.empty();
+        Set<LedgerAccountId> bookAccounts = new java.util.HashSet<>(Set.of(books.sourcePosition(),
+                books.destinationPosition(), books.spreadRevenue(), books.roundingResidual()));
+        feeRevenue.ifPresent(bookAccounts::add);
         Optional<LedgerAccountId> sourceWallet = lines.stream()
                 .filter(line -> !bookAccounts.contains(line.account()) && line.direction() == Direction.DEBIT
                         && line.amount().currency().equals(plan.source()))
@@ -159,8 +169,18 @@ public final class FxPlanVerification {
         if (sourceWallet.isEmpty() || destinationWallet.isEmpty()) {
             return Optional.of("the entry's wallets");
         }
-        List<JournalLine> expected = ConversionLines.compose(plan, ConversionLines.accounts(
-                chart, unitOfWork, plan, sourceWallet.get(), destinationWallet.get()));
+        ConversionLines.Accounts accounts = ConversionLines.accounts(
+                chart, unitOfWork, plan, sourceWallet.get(), destinationWallet.get());
+        List<JournalLine> expected;
+        if (crossBorder) {
+            Money fee = lines.stream()
+                    .filter(line -> line.account().equals(feeRevenue.get()) && line.direction() == Direction.CREDIT)
+                    .map(JournalLine::amount).findFirst()
+                    .orElse(Money.ofPersisted(0, plan.source(), plan.sourceScale()));
+            expected = ConversionLines.composeCrossBorder(plan, accounts, feeRevenue.get(), fee);
+        } else {
+            expected = ConversionLines.compose(plan, accounts);
+        }
         return expected.equals(lines) ? Optional.empty() : Optional.of("the entry's lines");
     }
 

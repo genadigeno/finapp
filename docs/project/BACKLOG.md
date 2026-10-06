@@ -12913,7 +12913,7 @@ break row, as the approval door must.)*
 
 # Phase 9 — FX and Cross-Border Payments
 
-Status: `IN_PROGRESS` — started 2026-10-03 with `P9-TSK-001` (20 of 30 items complete, M9.1 to M9.5 closed, M9.6 at 2 of 5); entry gate passed 2026-10-02 by the Phase 8 → 9 transition
+Status: `IN_PROGRESS` — started 2026-10-03 with `P9-TSK-001` (21 of 30 items complete, M9.1 to M9.5 closed, M9.6 at 3 of 5); entry gate passed 2026-10-02 by the Phase 8 → 9 transition
 ([`reviews/PHASE_8_TO_9_TRANSITION.md`](reviews/PHASE_8_TO_9_TRANSITION.md)), elaborated to task
 granularity by the same transition: thirty items (`P9-TSK-001`…`-027`, `P9-TST-001`, `P9-TST-002`,
 `P9-DOC-001`) across nine milestones, with `P9-TSK-001` marked `READY`. The engineering plan is
@@ -13883,7 +13883,8 @@ providers), each owned by Phase 15 and gating nothing here.
   routing decision recomputes.
 - **Definition of done**: `DOD-FIN`, `DOD-API`, `DOD-EVENT`, `DOD-SEC`. **Risk**: High. **Cx**: L.
 
-**P9-TSK-020 — Outbound resolution and completion** — `READY` (marked by `P9-TSK-019`'s completion gate, 2026-10-06)
+**P9-TSK-020 — Outbound resolution and completion** — `COMPLETE` (2026-10-06; marked `READY` by `P9-TSK-019`'s completion gate)
+- **As built** (2026-10-06): as `CURRENT_STATE.md` §Just completed records. The applier is `OutboundCreditOutcomes`; the composition `CrossBorderCompletion` (`completionLines`, `completed`, `delivered`, `failed`); the completion entry's FX lines come from `ConversionLines.composeCrossBorder`; the expectation's opening carries the corridor's counterparty; the webhook door answers `202`; the sweep's bounds are `finapp.payments.outbound.sweeper.*` (dispatched PT2M, unknown PT1M, received PT2M, delivery PT10M, margin PT5M). Deviations as recorded there.
 - **Objective**: resolve every provider answer into exactly one outcome, with exactly one entry at
   acceptance.
 - **Bounded context**: `payments`, `crossborder`, `fx`, `ledger`, `reconciliation` (inserts).
@@ -13930,7 +13931,7 @@ providers), each owned by Phase 15 and gating nothing here.
 - **Definition of done**: `DOD-FIN`, `DOD-SEC`, `DOD-API` (the corridor webhook route), `DOD-EVENT`.
   **Risk**: High. **Cx**: L.
 
-**P9-TSK-021 — Unwinding covers** — `PLANNED`
+**P9-TSK-021 — Unwinding covers** — `READY` (marked by `P9-TSK-020`'s completion gate, 2026-10-06)
 - **Objective**: when a covered quote is abandoned or its trade reversed, unwind the cover exactly
   once.
 - **Bounded context**: `fx`, `ledger`.

@@ -1110,6 +1110,10 @@ history; a double posting pays the beneficiary once and charges the customer twi
 posting key) + `DOMAIN`.
 **Verify:** Response-lost, retry, callback, ten-applier and failure tests.
 **Phase:** 9
+*(In force since `P9-TSK-020` (2026-10-06): the completion posts the debit, the conversion, the fee and the clearing
+credit in one entry under `outbound-credit:<id>`, behind the locked row's acting edge, the claim's primary key and the
+posting key; a failure releases the hold and posts nothing. Verified by `OutboundCreditResolutionDatabaseTest` - ten
+appliers and a racing sweep, a lost response, ten callbacks, a rejection and `NEVER_RECEIVED`.)*
 
 ### INV-XB-02 — Funds move only toward a screened, payable beneficiary
 **Statement:** Funds are instructed, and offers priced, only for a beneficiary that is
@@ -1161,6 +1165,10 @@ instruction (`P9-TSK-020`).
 equal to the frozen offer inside the authorization, the hold is the offer's total debit and the outbound
 credit instructs the offer's guaranteed destination amount, all frozen at birth. Verified by
 `CrossBorderPaymentDatabaseTest`.)*
+*(The posting's half in force since `P9-TSK-020` (2026-10-06): the completion entry's lines are checked against
+the offer by crossborder and against the held and instructed amounts by payments before posting - the wallet
+debited exactly the total debit, the corridor's clearing credited exactly the instructed amount. Verified by
+`OutboundCreditResolutionDatabaseTest#theCompletionPostsExactlyAndOpensItsExpectation`, line for line.)*
 **Phase:** 9
 
 ### INV-XB-04 — A return is applied once, automatically only when it is exact

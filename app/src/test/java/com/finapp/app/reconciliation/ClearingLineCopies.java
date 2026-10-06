@@ -45,10 +45,11 @@ public final class ClearingLineCopies {
      * provider's counterparty clearing a cover's legs copy - `P9-TSK-012`).
      */
     public static final List<String> RECONCILED_CLEARINGS =
-            List.of("SETTLEMENT_CLEARING", "INSTANT_CLEARING", "PAYOUT_CLEARING", "FX_PROVIDER_CLEARING");
+            List.of("SETTLEMENT_CLEARING", "INSTANT_CLEARING", "PAYOUT_CLEARING", "FX_PROVIDER_CLEARING",
+                    "CORRIDOR_CLEARING");
 
     private static final String CLEARINGS_SQL = "('SETTLEMENT_CLEARING', 'INSTANT_CLEARING',"
-            + " 'PAYOUT_CLEARING', 'FX_PROVIDER_CLEARING')";
+            + " 'PAYOUT_CLEARING', 'FX_PROVIDER_CLEARING', 'CORRIDOR_CLEARING')";
 
     private ClearingLineCopies() {}
 

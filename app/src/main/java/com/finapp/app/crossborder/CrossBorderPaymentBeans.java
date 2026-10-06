@@ -72,9 +72,10 @@ public class CrossBorderPaymentBeans {
             OutboundCreditStore outboundCreditStore,
             ProviderEvidenceStore<Connection> providerEvidenceStore,
             IdGenerator idGenerator,
-            Clock clock) {
+            Clock clock,
+            com.finapp.payments.OutboundCreditOutcomes outboundCreditOutcomes) {
         return new PaymentsCrossBorderExecution(routingStore, paymentRails, railOperations, holdService, outboundCreditStore,
-                providerEvidenceStore, idGenerator, clock);
+                providerEvidenceStore, idGenerator, clock, outboundCreditOutcomes);
     }
 
     @Bean

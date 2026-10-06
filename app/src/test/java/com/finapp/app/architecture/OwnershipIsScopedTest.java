@@ -395,6 +395,32 @@ class OwnershipIsScopedTest {
                                     Scope.ADMINISTERED,
                                     "P9-TSK-008. The pinned version's FOR SHARE re-read in the quote's Tx2: the id comes only" + " from the quote request the same flight stored - never a request value; the pricing" + " policy is platform-wide configuration with no owner to scope by.")),
                     Map.entry(
+                            "com.finapp.payments.JdbcOutboundCreditStore.complete",
+                            new Entry(
+                                    Scope.ADMINISTERED,
+                                    "P9-TSK-020. The one applier's completion edge: the credit id comes only from the"
+                                        + " row it locked FOR UPDATE in the same transaction - found by our own"
+                                        + " end-to-end reference or the sweep's candidate read, never a request value -"
+                                        + " and the edge is conditional on the status read under that lock.")),
+                    Map.entry(
+                            "com.finapp.payments.JdbcOutboundCreditStore.fail",
+                            new Entry(
+                                    Scope.ADMINISTERED,
+                                    "P9-TSK-020. The one applier's failure edge, on the row it locked - the"
+                                        + " JdbcOutboundCreditStore.complete reasoning.")),
+                    Map.entry(
+                            "com.finapp.payments.JdbcOutboundCreditStore.recordProviderReference",
+                            new Entry(
+                                    Scope.ADMINISTERED,
+                                    "P9-TSK-020. The provider's reference stored once on the row the applier locked -"
+                                        + " the JdbcOutboundCreditStore.complete reasoning; set-once by its conditional.")),
+                    Map.entry(
+                            "com.finapp.payments.JdbcOutboundCreditStore.markDelivered",
+                            new Entry(
+                                    Scope.ADMINISTERED,
+                                    "P9-TSK-020. A completed credit's delivery stored once on the row the applier"
+                                        + " locked - the JdbcOutboundCreditStore.complete reasoning.")),
+                    Map.entry(
                             "com.finapp.payments.JdbcOutboundCreditStore.move",
                             new Entry(
                                     Scope.ADMINISTERED,

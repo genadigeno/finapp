@@ -432,15 +432,16 @@ cross-border payments are holds and corridor acceptances, beneficiary screening 
 returns credited in the currency received; clearings are keyed by counterparty; callbacks are
 hints; reconciliation never converts currency and gains causes, never types. Ten new invariants
 and thirteen restated take the platform to **120**. Thirty backlog items across nine milestones
-(M9.1–M9.9) plus `X-TSK-013`…`-015`. **20 of 30 items complete** (M9.1 to M9.5 closed, M9.6 at 2 of 5): the modules and floors
+(M9.1–M9.9) plus `X-TSK-013`…`-015`. **21 of 30 items complete** (M9.1 to M9.5 closed, M9.6 at 3 of 5): the modules and floors
 (`P9-TSK-001`), the conversion arithmetic (`P9-TSK-002`), JPY and BHD postable (`P9-TSK-003`), multi-currency
 wallets (`P9-TSK-004`), reference rates (`P9-TSK-005`), the FX provider port (`P9-TSK-006`), the
 pricing policy (`P9-TSK-007`), the quote (`P9-TSK-008`), wallet conversion (`P9-TSK-009`),
 counterparty-keyed clearing positions (`P9-TSK-010`), the FX provider's source (`P9-TSK-011`), the FX cover
 (`P9-TSK-012`), FX explained to cash (`P9-TSK-013`), the value-preservation battery (`P9-TST-002`), the corridor
 rail (`P9-TSK-014`), the corridor policy (`P9-TSK-015`), counterparty screening (`P9-TSK-016`) and cross-border
-beneficiaries (`P9-TSK-017`), cross-border offers (`P9-TSK-018`) and their authorization and dispatch
-(`P9-TSK-019`); next **`P9-TSK-020` — Outbound resolution and completion** — `READY`
+beneficiaries (`P9-TSK-017`), cross-border offers (`P9-TSK-018`), their authorization and dispatch
+(`P9-TSK-019`) and their resolution and completion (`P9-TSK-020`); next **`P9-TSK-021` — Unwinding covers** —
+`READY`
 ([§Current Task](#current-task) is kept current).
 
 ## Current Milestone
@@ -456,47 +457,43 @@ since M0.1". Moved, not edited.)*
 
 ## Current Task
 
-**`P9-TSK-020` — Outbound resolution and completion** — `READY`:
-marked by `P9-TSK-019`'s completion gate (2026-10-06). **Not started.**
+**`P9-TSK-021` — Unwinding covers** — `READY`:
+marked by `P9-TSK-020`'s completion gate (2026-10-06). **Not started.**
 
 ### Just completed
 
-**`P9-TSK-019` — Cross-border authorization and dispatch** — `COMPLETE` (2026-10-06). **M9.6 AT 2 OF 5: an offer
-authorized in one commit - the total debit held, fx's quote accepted, the cover born and the outbound credit
-dispatched - then the cover and the credit sent with no connection held** (PHASE_9_PLAN.md §12.8; ADR-0080 §2,
-§5b; `INV-XB-02`, `INV-XB-03`, `INV-PAY-04`, `INV-RAIL-02`, `INV-HIST-04`). **crossborder `V005`**: `payment` (one per
-quote, per offer, per outbound credit and per dispatch key; its machine held by an edge trigger) and `payment_event`.
-**payments `V025`**: `outbound_credit` (born `DISPATCHED` with our end-to-end reference minted and stored before any
-send, the first permit stamped by the database, the instructed and held amounts, the hold, the rail, the
-destination and the subject frozen; its machine held by trigger), routing's third subject (intent XOR withdrawal
-XOR outbound credit) with the destination country and the per-candidate reachable rails it judged, a rule matcher
-requiring a destination country, the sixth evidence subject, and the seeded routing **version 5** - the standing
-routes carried forward, the corridor credit onto `corridor-sim-a` ahead of the domestic bank pay-out (the
-suites pinning version 4 now read 5). **The domain**: `PaymentAuthorization` - a takeover converging on the payment
-by its dispatch key, the offer the owner's, the beneficiary `FOR SHARE` (`ACTIVE`, clear, the clearance within the
-corridor's validity - else `ScreeningRequired`), the corridor available, the Phase 13 seams, fx's acceptance (the
-quote locked and moved `ACCEPTED` on the database clock, the cover born) with the accepted amounts asserted equal to
-the offer, the route, the hold of the total debit and the dispatch, the payment, its event, the audit record and
-`crossborder.CrossBorderPaymentInitiated`. The `CrossBorderExecution` port (`app`'s `PaymentsCrossBorderExecution`
-over routing, rails, `OutboundCreditStore`, evidence and `HoldService`), fx's `CrossBorderAcceptance`,
-`CrossBorderFx.acceptWithin` and `dispatchCover` (fx's post-commit nudge), three codes, one audited action.
-**app**: the doors `POST /v1/me/cross-border/payments` (`202`, a savepoint rolling back every refusal so only the
-claim's outcome commits) and `GET .../{id}`, the operator's routing rule body gaining `requiresDestinationCountry`,
-the registers, the data classification. **Found and fixed while built**: a refusal after fx's acceptance (an
-unfunded wallet, an ineligible rail) would have committed the accepted quote and its cover beside the claim's
-outcome - the savepoint closes it, proven by `anUnfundedWalletWritesNothing`; the crossborder reason-screen guard
-now names the coded `payment.failure_reason` as a closed vocabulary. **Deviation**: an `ACCEPTED`, `REJECTED` or
-`NOTHING_SENT` send answer is retained as evidence only - concluding it is `P9-TSK-020`'s. **PROBES** (NINE PROBES, NINE CAUGHT),
-every restore byte-identical (sha256-verified; `MUTATION_TESTING.md` §2 +9 rows). **Multi-instance PASS** - ten
-requests under one key: one payment, one hold, one credit, one send (counted); a second key on the same quote
-`409 fx.QuoteAlreadyAccepted`; the authorization serialised against a beneficiary moving (counted). **NEXT**:
-`P9-TSK-020` `READY`. **Verified** by fresh runs - the fleet-wide hermetic tier 2534 across 415 suites and 18 modules; the architecture tier
-157 across 27; the task's own database suites while built (CrossBorderPaymentDatabaseTest 12, CrossBorderOfferDatabaseTest 9, the crossborder module 23 across 4, RoutingPolicyVersionTest 8); ALL 0 FAILURES - the other database tiers skipped on
-the owner's instruction.
+**`P9-TSK-020` — Outbound resolution and completion** — `COMPLETE` (2026-10-06). **M9.6 AT 3 OF 5: every corridor
+answer resolved into exactly one outcome, with exactly one entry at acceptance** (PHASE_9_PLAN.md §12.4(g), §12.8;
+ADR-0079, ADR-0083; `INV-XB-01`, `INV-XB-03`, `INV-LIFE-03`, `INV-IDEM-04`, `INV-PAY-01`, `INV-SET-02`, `INV-FX-04`).
+**payments `V026`**: the claim's `OUTBOUND_CREDIT` subject. **The domain**: payments' `OutboundCreditOutcomes` - the one
+applier of the synchronous send's answer, a callback's hinted inquiry and the sweep's, on the locked credit, acting
+once: `RECEIVED` (the reference stored once), `UNKNOWN`, the completion as ONE transaction in the plan's order (the
+acting exit, the claim, the hold released, the entry `outbound-credit:<id>` - its lines checked against the offer, the
+hold and the instruction (`INV-XB-03`) - the trade booked, the quote `EXECUTED`, the payment `IN_TRANSIT`, the
+`CROSSBORDER_PAYOUT` expectation keyed by `E` and the provider's reference on the corridor's own clearing), an
+acceptance with a delivery applied completion-then-delivery in that transaction, and the failures `DECLINED`,
+`PROVIDER_UNAVAILABLE` (a first send only) and `NEVER_RECEIVED` (from `DISPATCHED`/`UNKNOWN`, past the declared deadline
+plus margin since the latest permit, re-judged on the locked row) posting nothing, releasing the hold and abandoning
+the quote; `OutboundCreditResolution` (the leaderless sweep and the hinted inquiry) and its schedule; the
+`OutboundCreditComposition` port, `app`'s `CrossBorderCompletion` over crossborder's `PaymentProgress` and fx's
+`CrossBorderCompletionBooking` (`ConversionLines.composeCrossBorder`, the one place the FX books are named); fx's plan
+replay learning the cross-border entry and pricing under the quote's purpose; the corridor callback door `POST
+/v1/providers/payments/corridor/webhooks` (`FINAPP_CORRIDOR_WEBHOOK_KEY`, `202`, a hint triggering the authenticated
+inquiry); the stuck and received gauges; one audited action. **Deviations**: a callback naming no credit of ours is
+recorded by its dedupe only (`provider_evidence` has no unattributed subject); a `Returned` answer applies the
+completion and leaves the return to `P9-TSK-023`, a `RECALLED` one to `-024`; the plan's four scenario suites are one
+suite's methods (`OutboundCreditResolutionDatabaseTest`), the takeover re-send's provider count is `P9-TSK-019`'s
+one-key race, and first-send `NOTHING_SENT` has no counted test; `finapp.crossborder.payment.latency` and
+`.in.transit.age` are not built. **PROBES** (NINE PROBES, NINE CAUGHT), every restore byte-identical (sha256-verified;
+`MUTATION_TESTING.md` §2 +9 rows). **Multi-instance PASS** - ten appliers and a racing sweep make one transition,
+one entry, one fee line, one claim, one trade and one expectation; ten signed callbacks and a racing sweep one effect
+(each counted). **NEXT**: `P9-TSK-021` `READY`. **Verified** by fresh runs - the fleet-wide hermetic tier 2534 across 415 suites and 18 modules;
+the architecture tier 157 across 27; the task's own database suites while built (OutboundCreditResolutionDatabaseTest 8, CrossBorderPaymentDatabaseTest 12, CrossBorderOfferDatabaseTest 9, the crossborder module 23 across 4); ALL 0 FAILURES - the
+other database tiers skipped on the owner's instruction.
 
 ### Previously
 
-The per-task completion records — 213 blocks, from `P9-TSK-018` back to project initiation
+The per-task completion records — 214 blocks, from `P9-TSK-019` back to project initiation
 (`X-TSK-016` cross-cutting, standing between `P9-TSK-011` and `P9-TSK-010`; `X-TSK-005` cross-cutting, standing between `P7-TSK-015` and `P7-TSK-014`; `X-TSK-004`
 cross-cutting, standing between `P7-TSK-001` and the Phase 6 → 7 transition) — are archived in
 [`history/TASK_HISTORY.md`](history/TASK_HISTORY.md).
@@ -1041,8 +1038,8 @@ Resolved during initiation:
 
 ## Next Task
 
-**`P9-TSK-020` — Outbound resolution and completion** — `READY`
-(the Current Task), marked by `P9-TSK-019`'s completion gate.
+**`P9-TSK-021` — Unwinding covers** — `READY`
+(the Current Task), marked by `P9-TSK-020`'s completion gate.
 *(This section read "`P8-TSK-009` — `READY`" from `P8-TSK-008`'s gate until
 `P8-TSK-013`'s record found it — the stale-second-copy class, in the section whose
 whole job is to mirror.)*

@@ -244,6 +244,25 @@ class SystemActorCallSitesAreEnumeratedTest {
                         + " wraps the outcome transaction only; the dispatch before it runs"
                         + " as the person."),
                     Map.entry(
+                            "com.finapp.payments.OutboundCreditResolution.sweep",
+                    "The swept outbound credit inquiry (P9-TSK-020): a scheduled inquiry by our"
+                        + " reference has no person at all - the WithdrawalResolution case on the"
+                        + " corridor - and every outcome it applies is the platform's. The scope"
+                        + " wraps each row's inquire-and-resolve; the candidate read claims nothing."),
+                    Map.entry(
+                            "com.finapp.app.payments.CorridorCallbackService.deliver",
+                    "The corridor provider's callback (P9-TSK-020, ADR-0083): a provider's"
+                        + " unsolicited hint has no session - the FxCallbackService.deliver"
+                        + " reasoning - and what it triggers is the platform's authenticated"
+                        + " inquiry of its own outbound credit, never the callback's claim."),
+                    Map.entry(
+                            "com.finapp.app.crossborder.PaymentsCrossBorderExecution.recordSend",
+                    "The synchronous corridor answer applied (P9-TSK-020): the outcome of a send"
+                        + " is the platform's act whichever resolver wins the harmless race - the"
+                        + " withdrawal's rule, the dispatch the person's and the outcome the"
+                        + " platform's. The scope wraps the applier only; the evidence before it"
+                        + " is retained in the same transaction."),
+                    Map.entry(
                             "com.finapp.payments.WithdrawalResolution.sweep",
                     "The swept withdrawal inquiry (P7-TSK-008, ADR-0062 section 3): a"
                         + " scheduled inquiry by our reference has no person at all - the"

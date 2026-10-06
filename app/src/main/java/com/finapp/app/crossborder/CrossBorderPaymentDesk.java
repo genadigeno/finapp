@@ -159,7 +159,8 @@ public final class CrossBorderPaymentDesk {
                     ("OK|" + authorized.payment().id()).getBytes(StandardCharsets.UTF_8), "text/plain"));
             return null;
         });
-        return view(authorized.payment());
+        // Read back: a provider that accepted at once has already moved the payment SENT in that transaction.
+        return read(current, authorized.payment().id().toString());
     }
 
     public CrossBorderPaymentView read(Session current, String rawId) {

@@ -370,3 +370,11 @@ deliveries harmless), `INV-CON-01`/`-02` (every judgement on locked rows), `INV-
   `POST /v1/me/cross-border/payments` (`202`) and `GET .../{id}`. **Deviation:** an `ACCEPTED`, `REJECTED` or
   `NOTHING_SENT` send answer is retained as evidence only - concluding it (the completion, the failure, the
   hold's release) is `P9-TSK-020`'s outcome appliers'.
+- *As built by `P9-TSK-020` (2026-10-06):* points 2 and 7 - the completion is one transaction in the plan's
+  order (the acting exit, the claim, the hold released, the entry `outbound-credit:<id>`, the trade booked, the
+  quote `EXECUTED`, the payment `IN_TRANSIT`, the `CROSSBORDER_PAYOUT` expectation), its lines section 12.4(g)'s
+  and checked against the offer, the hold and the instruction before posting (`INV-XB-03`); an answer implying
+  acceptance with a delivery is applied completion-then-delivery in that transaction; a failure posts nothing,
+  releases the hold and abandons the quote. **Deviations:** a callback naming no credit of ours is acknowledged
+  and recorded by its dedupe only (`provider_evidence` has no unattributed subject); a `Returned` answer applies
+  the completion and leaves the return to `P9-TSK-023`'s worker; a `RECALLED` answer is left to `P9-TSK-024`.

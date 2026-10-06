@@ -159,7 +159,9 @@ class JdbcInternalReferenceLookupTest {
                                 com.finapp.payments.SchemeExecutionClaim.Subject.RETURN,
                                 com.finapp.reconciliation.InternalSubject.REFUND,
                                 com.finapp.payments.SchemeExecutionClaim.Subject.UNMATCHED,
-                                com.finapp.reconciliation.InternalSubject.PARKING);
+                                com.finapp.reconciliation.InternalSubject.PARKING,
+                                com.finapp.payments.SchemeExecutionClaim.Subject.OUTBOUND_CREDIT,
+                                com.finapp.reconciliation.InternalSubject.OUTBOUND_CREDIT);
         assertThat(expected.keySet())
                 .as("exhaustive: a new claim subject fails here")
                 .containsExactlyInAnyOrder(
