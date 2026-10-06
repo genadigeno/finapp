@@ -12913,7 +12913,7 @@ break row, as the approval door must.)*
 
 # Phase 9 — FX and Cross-Border Payments
 
-Status: `IN_PROGRESS` — started 2026-10-03 with `P9-TSK-001` (22 of 30 items complete, M9.1 to M9.5 closed, M9.6 at 4 of 5); entry gate passed 2026-10-02 by the Phase 8 → 9 transition
+Status: `IN_PROGRESS` — started 2026-10-03 with `P9-TSK-001` (23 of 30 items complete, M9.1 to M9.6 closed); entry gate passed 2026-10-02 by the Phase 8 → 9 transition
 ([`reviews/PHASE_8_TO_9_TRANSITION.md`](reviews/PHASE_8_TO_9_TRANSITION.md)), elaborated to task
 granularity by the same transition: thirty items (`P9-TSK-001`…`-027`, `P9-TST-001`, `P9-TST-002`,
 `P9-DOC-001`) across nine milestones, with `P9-TSK-001` marked `READY`. The engineering plan is
@@ -13964,7 +13964,8 @@ providers), each owned by Phase 15 and gating nothing here.
   the customer's wallet delta is 0.
 - **Definition of done**: `DOD-FIN`, `DOD-EVENT`. **Risk**: Medium. **Cx**: M.
 
-**P9-TSK-022 — Corridor settlement to cash** — `READY` (marked by `P9-TSK-021`'s completion gate, 2026-10-06)
+**P9-TSK-022 — Corridor settlement to cash** — `COMPLETE` (2026-10-06; marked `READY` by `P9-TSK-021`'s completion gate)
+- **As built** (2026-10-06): as `CURRENT_STATE.md` §Just completed records. The suite is `CorridorSettlementToCashDatabaseTest`; the code changes are the lookup's corridor family, the `CROSSBORDER_PAYOUT` severity and the letters-only `E`.
 - **Objective**: discharge `CORRIDOR_CLEARING` from the provider's report and the bank, with its
   fees checked.
 - **Bounded context**: `settlement`, `reconciliation`, `app`.
@@ -13998,7 +13999,7 @@ providers), each owned by Phase 15 and gating nothing here.
 - **Acceptance criteria**: the cash identity is exact; every corridor discrepancy is typed.
 - **Definition of done**: `DOD-FIN`. **Risk**: Medium. **Cx**: M.
 
-**P9-TSK-023 — Cross-border returns** — `PLANNED`
+**P9-TSK-023 — Cross-border returns** — `READY` (marked by `P9-TSK-022`'s completion gate, 2026-10-06)
 - **Objective**: apply a return once: automatically when exactly the instructed credit comes back,
   credited in its currency with the fee refunded; otherwise parked for a person, whose resolution
   returns it and moves the payment to `RETURNED`.

@@ -432,7 +432,7 @@ cross-border payments are holds and corridor acceptances, beneficiary screening 
 returns credited in the currency received; clearings are keyed by counterparty; callbacks are
 hints; reconciliation never converts currency and gains causes, never types. Ten new invariants
 and thirteen restated take the platform to **120**. Thirty backlog items across nine milestones
-(M9.1–M9.9) plus `X-TSK-013`…`-015`. **22 of 30 items complete** (M9.1 to M9.5 closed, M9.6 at 4 of 5): the modules and floors
+(M9.1–M9.9) plus `X-TSK-013`…`-015`. **23 of 30 items complete** (M9.1 to M9.6 closed): the modules and floors
 (`P9-TSK-001`), the conversion arithmetic (`P9-TSK-002`), JPY and BHD postable (`P9-TSK-003`), multi-currency
 wallets (`P9-TSK-004`), reference rates (`P9-TSK-005`), the FX provider port (`P9-TSK-006`), the
 pricing policy (`P9-TSK-007`), the quote (`P9-TSK-008`), wallet conversion (`P9-TSK-009`),
@@ -440,8 +440,8 @@ counterparty-keyed clearing positions (`P9-TSK-010`), the FX provider's source (
 (`P9-TSK-012`), FX explained to cash (`P9-TSK-013`), the value-preservation battery (`P9-TST-002`), the corridor
 rail (`P9-TSK-014`), the corridor policy (`P9-TSK-015`), counterparty screening (`P9-TSK-016`) and cross-border
 beneficiaries (`P9-TSK-017`), cross-border offers (`P9-TSK-018`), their authorization and dispatch
-(`P9-TSK-019`), their resolution and completion (`P9-TSK-020`) and the unwinding of covers (`P9-TSK-021`); next
-**`P9-TSK-022` — Corridor settlement to cash** — `READY`
+(`P9-TSK-019`), their resolution and completion (`P9-TSK-020`), the unwinding of covers (`P9-TSK-021`) and the
+corridor's settlement to cash (`P9-TSK-022`); next **`P9-TSK-023` — Cross-border returns** — `READY`
 ([§Current Task](#current-task) is kept current).
 
 ## Current Milestone
@@ -457,34 +457,33 @@ since M0.1". Moved, not edited.)*
 
 ## Current Task
 
-**`P9-TSK-022` — Corridor settlement to cash** — `READY`:
-marked by `P9-TSK-021`'s completion gate (2026-10-06). **Not started.**
+**`P9-TSK-023` — Cross-border returns** — `READY`:
+marked by `P9-TSK-022`'s completion gate (2026-10-06). **Not started.**
 
 ### Just completed
 
-**`P9-TSK-021` — Unwinding covers** — `COMPLETE` (2026-10-06). **M9.6 AT 4 OF 5: an executed cover whose quote
-is abandoned is unwound exactly once, buying back what it sold from the same provider at a fresh firm quote** (ADR-0077
-§§7-8, PHASE_9_PLAN.md §12.4(h), §12.5; `INV-FX-06`, `INV-FX-08`, `INV-XB-01`'s failure half). **fx `V008`**: the
-unwind born only as an executed cover's mirror for a quote no longer wanting it (the currencies swapped, the fixed side
-opposite, the fixed amount bought back), and its execution's plan legs judged reversed - V007 had refused every
-unwind's execution. **The domain**: `CoverUnwinds`, the wanted-position rule - evaluated by the abandonment writer on
-every call under the quote's row lock (an executed cover unwound, a rejected one voided, an in-flight one left to its
-applier) and by `FxCoverOutcomes` on executing a cover its quote no longer wants, in that transaction -
-`UNIQUE (quote_id, kind)` the arbiter through an unconditional `ON CONFLICT DO NOTHING`; the unwind closes the quote's
-plan reversed (`CoverLines.Plan.reversed`), so `CoverLines` posts §12.4(h) unchanged and the books proof needs no
-change; `FxCoverDispatch` prices an unwind's first attempt (a fresh firm quote, the band, attempt 1 and `T1` stored
-before the send) and requotes an unwind as always wanted, its band terms the quote's own pair under its purpose; one
-audited action `fx.CoverUnwound`. **Deviation**: ADR-0077 decision 2's `T1` at birth - an unwind is born in its writer's
-transaction, which cannot call the provider, so `T1` is minted at its first pricing, still before any send. **PROBES**
-(FIVE PROBES, FIVE CAUGHT), every restore byte-identical (sha256-verified; `MUTATION_TESTING.md` §2 +5 rows). **Multi-instance
-PASS** - ten abandoners make one ABANDONED edge and one unwind (counted); both race orders converge on one. **NEXT**:
-`P9-TSK-022` `READY`. **Verified** by fresh runs - the fleet-wide hermetic tier 2534 across 415 suites and 18 modules; the architecture tier
-157 across 27; the task's own database suites while built (UnwindRetryDatabaseTest 4, the fx module's database suites 60 across 12, the FX cover, proof, resolution and payment suites re-run 37); ALL 0 FAILURES - the other database tiers skipped
-on the owner's instruction.
+**`P9-TSK-022` — Corridor settlement to cash** — `COMPLETE` (2026-10-06). **M9.6 CLOSES AT 5 OF 5: the corridor's
+clearing reaches cash from the provider's report and the bank, its fees checked** (PHASE_9_PLAN.md §12.4(g), §12.9;
+ADR-0082; `INV-SET-02`, `-05`, `-06`, `INV-REC-06`..`-09`, `INV-MON-04`). Over the existing settlement and reconciliation
+machinery: a `PAYOUT_EXECUTED` line allocated to its `CROSSBORDER_PAYOUT` by `E`, the `PAYOUT_FEE` checked against the
+pinned v1 row of its own currency (USD 1.20, JPY 180, BHD 0.450) and posted at hop 1 onto the corridor's own clearing,
+the remittance discharged by the bank at hop 2 - section 12.4(g)'s USD cash identity (4.22 = 5.43 spread - 0.01 residual
+- 1.20 corridor fee) reproduced exactly with the cover settled to cash beside it, `CORRIDOR_CLEARING` proven per
+(counterparty, currency). **Code**: the reference lookup's corridor family (an `E` through the outbound credits, a provider
+reference through the completion's claim); an unsettled `CROSSBORDER_PAYOUT` graded `HIGH`. **Found and fixed**: our `E`
+was 32 hexadecimal digits, roughly one in fifty carrying a 13-digit run the corridor format screens as a card number, so a
+report naming it would have been refused - `E` is now minted letters only. **Deviation**: a provider executing after a
+`FAILED` credit is typed `TERMINAL_STATE_CONTRADICTED` (the withdrawal's precedent), not the plan's `UNKNOWN_EXTERNAL`.
+`P9-TSK-014`'s `CorridorSourceDatabaseTest` made order-independent: its "nothing posts to the position" and "version 1"
+assertions predated the completions that post to it and the suites that activate its rule set first.
+**PROBES** (SIX PROBES, SIX CAUGHT), every restore byte-identical (sha256-verified; `MUTATION_TESTING.md` §2 +6 rows).
+**Multi-instance PASS** on the existing matcher arbiters. **NEXT**: `P9-TSK-023` `READY`. **Verified** by fresh runs - the
+fleet-wide hermetic tier 2537 across 416 suites and 18 modules; the architecture tier 157 across 27; the task's own database suites while built
+(CorridorSettlementToCashDatabaseTest 3, CorridorSourceDatabaseTest 4, the cross-border resolution, payment and unwind suites re-run 24); ALL 0 FAILURES - the other database tiers skipped on the owner's instruction.
 
 ### Previously
 
-The per-task completion records — 215 blocks, from `P9-TSK-020` back to project initiation
+The per-task completion records — 216 blocks, from `P9-TSK-021` back to project initiation
 (`X-TSK-016` cross-cutting, standing between `P9-TSK-011` and `P9-TSK-010`; `X-TSK-005` cross-cutting, standing between `P7-TSK-015` and `P7-TSK-014`; `X-TSK-004`
 cross-cutting, standing between `P7-TSK-001` and the Phase 6 → 7 transition) — are archived in
 [`history/TASK_HISTORY.md`](history/TASK_HISTORY.md).
@@ -1029,8 +1028,8 @@ Resolved during initiation:
 
 ## Next Task
 
-**`P9-TSK-022` — Corridor settlement to cash** — `READY`
-(the Current Task), marked by `P9-TSK-021`'s completion gate.
+**`P9-TSK-023` — Cross-border returns** — `READY`
+(the Current Task), marked by `P9-TSK-022`'s completion gate.
 *(This section read "`P8-TSK-009` — `READY`" from `P8-TSK-008`'s gate until
 `P8-TSK-013`'s record found it — the stale-second-copy class, in the section whose
 whole job is to mirror.)*

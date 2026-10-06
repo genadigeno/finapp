@@ -74,6 +74,12 @@ public final class JdbcInternalReferenceLookup implements InternalReferenceLooku
      */
     @NonNull private final PositionOfSource positionOfSource;
 
+    /**
+     * The cross-border outbound credits, for a corridor source's {@code END_TO_END_REF} - our {@code E}
+     * (`P9-TSK-022`). Appended last (the Lombok rule).
+     */
+    @NonNull private final com.finapp.payments.OutboundCreditStore outboundCredits;
+
     /** A source's rail, resolved by the composition over its compiled registers. */
     @FunctionalInterface
     public interface RailOfSource {
@@ -90,23 +96,37 @@ public final class JdbcInternalReferenceLookup implements InternalReferenceLooku
      * Which family a subject's operation keys resolve in (`P9-TSK-014`): an unscoped subject - a
      * pre-`P8-TSK-017` caller - keeps the unscoped reading, every scoped one its source's family. A
      * counterparty-owned position (an FX provider's, a corridor's) is neither the instant scheme's nor
-     * the merchant payout's: its END_TO_END_REF and PAYOUT_PROVIDER_REF name none of their operations -
-     * the corridor's outbound credit joins as its own family with `P9-TSK-019`.
+     * the merchant payout's: its END_TO_END_REF and PAYOUT_PROVIDER_REF name none of their operations.
+     * A corridor's references name its outbound credits (`P9-TSK-022`): our end-to-end reference, and the
+     * provider's reference through the claim the credit's completion took.
      */
     enum Family {
         UNSCOPED,
         INSTANT,
         MERCHANT_PAYOUT,
+        CORRIDOR,
         OTHER;
 
         static Family of(Optional<com.finapp.ledger.AccountPurpose> scoped, boolean hasScope) {
+            return of(scoped, hasScope, false);
+        }
+
+        /**
+         * The family, where {@code railSettled} says a declared payment rail settles the source's position: a
+         * counterparty-owned position a rail settles is a corridor's (`P9-TSK-022`) - read off the declarations, the
+         * purpose never named here ({@code CounterpartyClearingIsNamedByDeclarationsTest}); an FX provider's position
+         * no payment rail settles.
+         */
+        static Family of(Optional<com.finapp.ledger.AccountPurpose> scoped, boolean hasScope, boolean railSettled) {
             if (!hasScope) {
                 return UNSCOPED;
             }
             return scoped.map(position -> switch (position) {
                         case INSTANT_CLEARING -> INSTANT;
                         case PAYOUT_CLEARING -> MERCHANT_PAYOUT;
-                        default -> OTHER;
+                        default -> position.ownerKind() == com.finapp.ledger.OwnerKind.COUNTERPARTY && railSettled
+                                ? CORRIDOR
+                                : OTHER;
                     })
                     .orElse(OTHER);
         }
@@ -119,6 +139,11 @@ public final class JdbcInternalReferenceLookup implements InternalReferenceLooku
         /** Whether a payout provider reference here may name a merchant payout. */
         boolean namesMerchantPayouts() {
             return this == UNSCOPED || this == MERCHANT_PAYOUT;
+        }
+
+        /** Whether a reference here may name a cross-border outbound credit (`P9-TSK-022`). */
+        boolean namesOutboundCredits() {
+            return this == CORRIDOR;
         }
     }
 
@@ -148,19 +173,21 @@ public final class JdbcInternalReferenceLookup implements InternalReferenceLooku
                             .orElseGet(InternalReference::unknown);
             case SCHEME_REF -> bySchemeReference(unitOfWork, subject, value);
             // Within the item's own source family (P9-TSK-014): an attempt or a withdrawal only for
-            // an instant source, a merchant payout only for the merchant payout source; a corridor
-            // source's references name an outbound credit, which exists from P9-TSK-019 - until then
-            // nothing.
-            case END_TO_END_REF ->
-                    familyOf(unitOfWork, subject).namesInstantOperations()
-                            ? byEndToEndReference(unitOfWork, value)
-                            : InternalReference.unknown();
-            case PAYOUT_PROVIDER_REF ->
-                    familyOf(unitOfWork, subject).namesMerchantPayouts()
-                            ? payouts.findByProviderReference(unitOfWork, value)
-                                    .map(this::ofPayout)
-                                    .orElseGet(InternalReference::unknown)
-                            : InternalReference.unknown();
+            // an instant source, a merchant payout only for the merchant payout source, an outbound
+            // credit only for a corridor source (P9-TSK-022) - by our E, or by the provider's
+            // reference through the completion's claim.
+            case END_TO_END_REF -> switch (familyOf(unitOfWork, subject)) {
+                case CORRIDOR -> byOutboundCreditReference(unitOfWork, value);
+                case UNSCOPED, INSTANT -> byEndToEndReference(unitOfWork, value);
+                case MERCHANT_PAYOUT, OTHER -> InternalReference.unknown();
+            };
+            case PAYOUT_PROVIDER_REF -> switch (familyOf(unitOfWork, subject)) {
+                case CORRIDOR -> bySchemeReference(unitOfWork, subject, value);
+                case UNSCOPED, MERCHANT_PAYOUT -> payouts.findByProviderReference(unitOfWork, value)
+                        .map(this::ofPayout)
+                        .orElseGet(InternalReference::unknown);
+                case INSTANT, OTHER -> InternalReference.unknown();
+            };
             // The platform's cover reference (`P9-TSK-011`, PHASE_9_PLAN.md 12.9.2): a cover in
             // flight is MISSING_INTERNAL's case, a reference we never minted UNKNOWN_EXTERNAL's.
             // The item's key is its leg's currency-qualified form (P9-TSK-012): our T is the reference.
@@ -178,7 +205,8 @@ public final class JdbcInternalReferenceLookup implements InternalReferenceLooku
     private Family familyOf(Connection unitOfWork, LookupSubject subject) {
         return Family.of(
                 subject.scopeSourceId().flatMap(source -> positionOfSource.positionOf(unitOfWork, source)),
-                subject.scopeSourceId().isPresent());
+                subject.scopeSourceId().isPresent(),
+                subject.scopeSourceId().flatMap(source -> railOfSource.railOf(unitOfWork, source)).isPresent());
     }
 
     private InternalReference byAttemptId(Connection unitOfWork, String value) {
@@ -229,6 +257,19 @@ public final class JdbcInternalReferenceLookup implements InternalReferenceLooku
         return withdrawals
                 .findByEndToEndReference(unitOfWork, new EndToEndReference(value))
                 .map(this::ofWithdrawal)
+                .orElseGet(InternalReference::unknown);
+    }
+
+    /** A corridor line's {@code E}: the outbound credit we minted it for, whatever its state. */
+    private InternalReference byOutboundCreditReference(Connection unitOfWork, String value) {
+        EndToEndReference reference;
+        try {
+            reference = new EndToEndReference(value);
+        } catch (IllegalArgumentException notOurs) {
+            return InternalReference.unknown();
+        }
+        return outboundCredits.byReference(unitOfWork, reference)
+                .map(this::ofOutboundCredit)
                 .orElseGet(InternalReference::unknown);
     }
 
@@ -291,6 +332,19 @@ public final class JdbcInternalReferenceLookup implements InternalReferenceLooku
     }
 
     /** A cover: executed is completed, rejected or voided terminal, dispatched or unknown in flight. */
+    /**
+     * An outbound credit's state in reconciliation's words (`P9-TSK-022`): completed is the applied fact, a
+     * failure is terminal - a provider executing after it contradicts it - and every state before an answer
+     * is in flight.
+     */
+    static InternalClassification classifyOutboundCredit(com.finapp.payments.OutboundCreditStore.Status status) {
+        return switch (status) {
+            case COMPLETED -> InternalClassification.COMPLETED;
+            case FAILED -> InternalClassification.TERMINAL;
+            case DISPATCHED, UNKNOWN, RECEIVED -> InternalClassification.IN_FLIGHT;
+        };
+    }
+
     static InternalClassification classifyCover(com.finapp.fx.CoverStatus status) {
         return switch (status) {
             case EXECUTED -> InternalClassification.COMPLETED;
@@ -354,6 +408,14 @@ public final class JdbcInternalReferenceLookup implements InternalReferenceLooku
                 Optional.of(dispute.id().value().toString()),
                 Optional.of(dispute.stage().name()),
                 Optional.of(InternalSubject.DISPUTE));
+    }
+
+    private InternalReference ofOutboundCredit(com.finapp.payments.OutboundCreditStore.Row credit) {
+        return new InternalReference(
+                classifyOutboundCredit(credit.status()),
+                Optional.of(credit.id().value().toString()),
+                Optional.of(credit.status().name()),
+                Optional.of(InternalSubject.OUTBOUND_CREDIT));
     }
 
     private InternalReference ofClaim(SchemeExecutionClaim claim) {

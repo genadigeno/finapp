@@ -1,6 +1,6 @@
 # Task History
 
-The per-task completion records that accumulated behind `## Current Task` - 215 "Previously" blocks, newest first, from `P9-TSK-020` back to project initiation. *(`X-TSK-016` is cross-cutting and completed after `P9-TSK-010` and before `P9-TSK-011`, so it stands between them.)* *(`X-TSK-005` is cross-cutting and completed after `P7-TSK-014` and before `P7-TSK-015`, so it stands between them; its record came in with its branch's merge.)* *(`X-TSK-004` is cross-cutting and completed after the Phase 6 → 7 transition, so it stands second, between `P7-TSK-001` and the transition's record - the transition's block moved here by `P7-TSK-001`'s gate, exactly as an earlier form of this note said it would.)*
+The per-task completion records that accumulated behind `## Current Task` - 216 "Previously" blocks, newest first, from `P9-TSK-021` back to project initiation. *(`X-TSK-016` is cross-cutting and completed after `P9-TSK-010` and before `P9-TSK-011`, so it stands between them.)* *(`X-TSK-005` is cross-cutting and completed after `P7-TSK-014` and before `P7-TSK-015`, so it stands between them; its record came in with its branch's merge.)* *(`X-TSK-004` is cross-cutting and completed after the Phase 6 → 7 transition, so it stands second, between `P7-TSK-001` and the transition's record - the transition's block moved here by `P7-TSK-001`'s gate, exactly as an earlier form of this note said it would.)*
 
 **Archive.** These records were moved verbatim out of
 [`CURRENT_STATE.md`](../CURRENT_STATE.md) on 2026-09-20 so that the canonical description of
@@ -12,6 +12,28 @@ Current state: [`CURRENT_STATE.md`](../CURRENT_STATE.md) ·
 Authoritative backlog: [`BACKLOG.md`](../BACKLOG.md)
 
 ---
+
+### Previously
+
+**`P9-TSK-021` — Unwinding covers** — `COMPLETE` (2026-10-06). **M9.6 AT 4 OF 5: an executed cover whose quote
+is abandoned is unwound exactly once, buying back what it sold from the same provider at a fresh firm quote** (ADR-0077
+§§7-8, PHASE_9_PLAN.md §12.4(h), §12.5; `INV-FX-06`, `INV-FX-08`, `INV-XB-01`'s failure half). **fx `V008`**: the
+unwind born only as an executed cover's mirror for a quote no longer wanting it (the currencies swapped, the fixed side
+opposite, the fixed amount bought back), and its execution's plan legs judged reversed - V007 had refused every
+unwind's execution. **The domain**: `CoverUnwinds`, the wanted-position rule - evaluated by the abandonment writer on
+every call under the quote's row lock (an executed cover unwound, a rejected one voided, an in-flight one left to its
+applier) and by `FxCoverOutcomes` on executing a cover its quote no longer wants, in that transaction -
+`UNIQUE (quote_id, kind)` the arbiter through an unconditional `ON CONFLICT DO NOTHING`; the unwind closes the quote's
+plan reversed (`CoverLines.Plan.reversed`), so `CoverLines` posts §12.4(h) unchanged and the books proof needs no
+change; `FxCoverDispatch` prices an unwind's first attempt (a fresh firm quote, the band, attempt 1 and `T1` stored
+before the send) and requotes an unwind as always wanted, its band terms the quote's own pair under its purpose; one
+audited action `fx.CoverUnwound`. **Deviation**: ADR-0077 decision 2's `T1` at birth - an unwind is born in its writer's
+transaction, which cannot call the provider, so `T1` is minted at its first pricing, still before any send. **PROBES**
+(FIVE PROBES, FIVE CAUGHT), every restore byte-identical (sha256-verified; `MUTATION_TESTING.md` §2 +5 rows). **Multi-instance
+PASS** - ten abandoners make one ABANDONED edge and one unwind (counted); both race orders converge on one. **NEXT**:
+`P9-TSK-022` `READY`. **Verified** by fresh runs - the fleet-wide hermetic tier 2534 across 415 suites and 18 modules; the architecture tier
+157 across 27; the task's own database suites while built (UnwindRetryDatabaseTest 4, the fx module's database suites 60 across 12, the FX cover, proof, resolution and payment suites re-run 37); ALL 0 FAILURES - the other database tiers skipped
+on the owner's instruction.
 
 ### Previously
 

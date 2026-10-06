@@ -317,7 +317,9 @@ public class ReconciliationBeans {
                                 .filter(row -> row.id().equals(sourceId))
                                 .findFirst()
                                 .flatMap(row -> settlementSources.byCode(row.code()))
-                                .flatMap(com.finapp.settlement.SettlementSourceDescriptor::settledPosition));
+                                .flatMap(com.finapp.settlement.SettlementSourceDescriptor::settledPosition),
+                // The outbound credits, for a corridor source's E (P9-TSK-022).
+                new com.finapp.payments.JdbcOutboundCreditStore());
     }
 
     /**
