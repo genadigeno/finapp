@@ -97,7 +97,11 @@ public enum RoleName {
                     // P7-TSK-012: disputes join it too - a chargeback is money forced back
                     // through the rail, and answering it is payment operations (ADR-0061;
                     // the permission's javadoc carries the future dispute-desk split).
-                    PermissionName.DISPUTE_ADMINISTER)),
+                    PermissionName.DISPUTE_ADMINISTER,
+                    // P9-TSK-025: the FX trade reversal joins it - correcting a conversion by its
+                    // exact mirror is the transfer reversal's judgement on a second instrument,
+                    // four eyes held at the domain and the CHECK.
+                    PermissionName.FX_TRADE_REVERSE)),
 
     /**
      * Administers commercial counterparties and nothing else (`P6-TSK-003`): onboards

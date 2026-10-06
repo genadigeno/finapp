@@ -60,7 +60,7 @@ class RoleNameTest {
     }
 
     @Test
-    @DisplayName("LEDGER_OPERATOR grants exactly the seven money-operating permissions")
+    @DisplayName("LEDGER_OPERATOR grants exactly the eight money-operating permissions")
     void ledgerOperatorGrantsExactlySeven() {
         // One role, seven permissions (P3-TSK-007; TRANSFER_REVERSE by P4-TSK-009;
         // PAYMENT_REFUND by P5-TSK-015; MERCHANT_PAYOUT by P6-TSK-012;
@@ -87,7 +87,9 @@ class RoleNameTest {
                         PermissionName.PAYMENT_REFUND,
                         PermissionName.MERCHANT_PAYOUT,
                         PermissionName.PAYMENT_ROUTING_ADMINISTER,
-                        PermissionName.DISPUTE_ADMINISTER);
+                        PermissionName.DISPUTE_ADMINISTER,
+                        // P9-TSK-025: the FX trade reversal, beside the transfer reversal.
+                        PermissionName.FX_TRADE_REVERSE);
     }
 
     @Test

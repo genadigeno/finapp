@@ -389,6 +389,9 @@ previous partial reversals.
 **Why:** Over-reversal creates money.
 **Enforce:** `DOMAIN` + `DB-CONSTRAINT` where representable.
 **Verify:** Concurrent partial-reversal tests.
+*(Applied to FX conversions by `P9-TSK-025` (2026-10-06): an operator's approved trade reversal posts the
+conversion's exact mirror through `ReversalService`, ledger `V009`'s bound refusing a second; ten racing approvers make
+one mirror entry. Verified by `FxTradeReversalRaceDatabaseTest`.)*
 **Phase:** 3, 5 (refunds)
 
 ### INV-REV-03 — Reversal on an irrevocable rail is rejected

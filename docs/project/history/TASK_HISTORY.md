@@ -1,6 +1,6 @@
 # Task History
 
-The per-task completion records that accumulated behind `## Current Task` - 218 "Previously" blocks, newest first, from `P9-TSK-023` back to project initiation. *(`X-TSK-016` is cross-cutting and completed after `P9-TSK-010` and before `P9-TSK-011`, so it stands between them.)* *(`X-TSK-005` is cross-cutting and completed after `P7-TSK-014` and before `P7-TSK-015`, so it stands between them; its record came in with its branch's merge.)* *(`X-TSK-004` is cross-cutting and completed after the Phase 6 → 7 transition, so it stands second, between `P7-TSK-001` and the transition's record - the transition's block moved here by `P7-TSK-001`'s gate, exactly as an earlier form of this note said it would.)*
+The per-task completion records that accumulated behind `## Current Task` - 219 "Previously" blocks, newest first, from `P9-TSK-024` back to project initiation. *(`X-TSK-016` is cross-cutting and completed after `P9-TSK-010` and before `P9-TSK-011`, so it stands between them.)* *(`X-TSK-005` is cross-cutting and completed after `P7-TSK-014` and before `P7-TSK-015`, so it stands between them; its record came in with its branch's merge.)* *(`X-TSK-004` is cross-cutting and completed after the Phase 6 → 7 transition, so it stands second, between `P7-TSK-001` and the transition's record - the transition's block moved here by `P7-TSK-001`'s gate, exactly as an earlier form of this note said it would.)*
 
 **Archive.** These records were moved verbatim out of
 [`CURRENT_STATE.md`](../CURRENT_STATE.md) on 2026-09-20 so that the canonical description of
@@ -12,6 +12,29 @@ Current state: [`CURRENT_STATE.md`](../CURRENT_STATE.md) ·
 Authoritative backlog: [`BACKLOG.md`](../BACKLOG.md)
 
 ---
+
+### Previously
+
+**`P9-TSK-024` — Cancellation by recall** — `COMPLETE` (2026-10-06). **M9.7 AT 2 OF 3: a customer can cancel a
+submitted payment, honoured only on the provider's definitive word** (ADR-0079 point 5, D22; PHASE_9_PLAN.md §14
+scenarios 29-31; `INV-XB-01`, `INV-LIFE-03`, `INV-PAY-04`). `POST /v1/me/cross-border/payments/{id}/cancellation` (keyed
+`crossborder.cancel`, step-up, owner; `202` with `cancellationRequested`, `409 crossborder.NotCancellable` past recall)
+marks the outbound credit for recall and records crossborder `V006`'s born-once `cancellation_request` (`UNIQUE
+(payment_id)`, insert-only by trigger, only while `SUBMITTED`) in one transaction, the credit locked before the payment
+(the outcome applier's order). The outbound credit's resolution asks `CorridorRail.recall(E)` holding no connection and
+applies the answer on the locked row: `RECALLED` concludes `FAILED(RECALLED)` through the one failure path (the hold
+released, nothing posted, the quote `ABANDONED`, the executed cover unwound); `TOO_LATE` records `REFUSED` and the same
+pass completes the credit; no answer is re-asked. A takeover's permit renewal refuses once a recall stands - nothing
+re-sent. The customer sees `CANCELLED` for a recalled payment, `SENT` for a refused recall.
+**Deviations**: the recall has no permit column of its own (paced by the sweep's poll, idempotent at the provider by
+`E`); the first send of a flight whose cancellation committed between its Tx1 and its send still goes out - not a
+re-send, and the recall that follows decides. **Atomicity** by injected faults under the request and under the
+conclusion, each leaving nothing.
+**PROBES** (SIX PROBES, SIX CAUGHT), every restore byte-identical (sha256-verified; `MUTATION_TESTING.md` §2 +6 rows).
+**Multi-instance PASS**: ten movers (the provider accepting, cancellations, inquiries) end in exactly one outcome; ten
+requests are one. **NEXT**: `P9-TSK-025` `READY`.
+**Verified** by fresh runs - the fleet-wide hermetic tier 2538 across 416 suites and 18 modules; the architecture tier 157 across 27; the task's
+own database suites (CrossBorderCancellationDatabaseTest 8; the outbound credit, cross-border payment, return and corridor cash suites re-run 32); ALL 0 FAILURES - the other database tiers skipped on the owner's instruction.
 
 ### Previously
 

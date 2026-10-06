@@ -609,6 +609,10 @@ class OpenApiContractTest {
                         ApiVersion.CURRENT_PREFIX + "/me/cross-border/payments/{id}",
                         // P9-TSK-024: the cancellation by recall - no body, asynchronous 202.
                         ApiVersion.CURRENT_PREFIX + "/me/cross-border/payments/{id}/cancellation",
+                        // P9-TSK-025: the operator's FX trade reversal - propose, then four-eyes decide.
+                        ApiVersion.CURRENT_PREFIX + "/operator/fx/trades/{id}/reversal",
+                        ApiVersion.CURRENT_PREFIX + "/operator/fx/trades/{id}/reversal/{rid}/approval",
+                        ApiVersion.CURRENT_PREFIX + "/operator/fx/trades/{id}/reversal/{rid}/rejection",
                         // P9-TSK-008: the customer's quote doors - request, read, cancel, and the
                         // offered pairs (a session; the owner's own quotes only).
                         ApiVersion.CURRENT_PREFIX + "/me/fx/quotes",

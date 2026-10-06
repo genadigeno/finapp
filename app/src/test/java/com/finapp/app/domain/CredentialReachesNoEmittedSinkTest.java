@@ -348,6 +348,10 @@ class CredentialReachesNoEmittedSinkTest {
                         // request body. The SuspensionRequest shape with the same bounds
                         // cited from the same constants.
                         "TransferReversalRequest",
+                        // P9-TSK-025. The operator's FX trade reversal: carries only the
+                        // operator's REASON on each four-eyes act, bound for the audit record's
+                        // reason column - the TransferReversalRequest shape, never a secret.
+                        "TradeReversalRequest",
                         // P5-TSK-011. Carries the caller's own payment-method identifier, an
                         // amount as an exact decimal string and an ISO currency code - no
                         // secret (a method id is not the token: the PAN-adjacent value stays

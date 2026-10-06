@@ -89,6 +89,13 @@ public enum FxErrorCode implements ErrorCode {
     /** No trade of the caller's has this identifier - one answer for absent and another's. */
     TRADE_NOT_FOUND("fx.TradeNotFound", 404, "No conversion matches the requested identifier."),
 
+    /**
+     * The trade cannot be reversed (`P9-TSK-025`): not a booked wallet conversion (a cross-border trade is never
+     * reversed), its customer or wallets no longer open, or the destination wallet's available balance short of what
+     * the mirror takes back - nothing written.
+     */
+    TRADE_NOT_REVERSIBLE("fx.TradeNotReversible", 409, "This conversion cannot be reversed."),
+
     /** The proposal or the decision is malformed; the detail names the defect. */
     PRICING_POLICY_INVALID(
             "fx.PricingPolicyInvalid", 422, "The FX policy request is not well formed.");

@@ -107,7 +107,29 @@ public enum FxAuditAction implements AuditableAction {
             "fx.CoverVoided",
             "A definitively rejected cover its quote no longer wants was voided; nothing was ever"
                     + " executed under it.",
-            false);
+            false),
+
+    /** An operator proposed reversing a wallet conversion (`P9-TSK-025`) - reasoned; four eyes decide it. */
+    FX_TRADE_REVERSAL_PROPOSED(
+            "fx.FxTradeReversalProposed",
+            "An operator proposed reversing a booked wallet conversion, with a reason; a different person decides.",
+            true),
+
+    /**
+     * A different operator approved a trade reversal (`P9-TSK-025`): the exact mirror entry through the ledger's
+     * reversal, the trade REVERSED and the cover's consequence (an executed cover unwound) in one transaction.
+     */
+    FX_TRADE_REVERSAL_APPROVED(
+            "fx.FxTradeReversalApproved",
+            "A different operator approved a trade reversal: the mirror entry, the trade REVERSED and the cover's"
+                    + " consequence, in one transaction.",
+            true),
+
+    /** A different operator rejected a trade reversal (`P9-TSK-025`) - reasoned; nothing moves. */
+    FX_TRADE_REVERSAL_REJECTED(
+            "fx.FxTradeReversalRejected",
+            "A different operator rejected a trade reversal, with a reason; nothing moved.",
+            true);
 
     private final String code;
     private final String description;

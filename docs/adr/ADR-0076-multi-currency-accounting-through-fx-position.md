@@ -238,12 +238,18 @@ use), ADR-0048 (a hold is not a posting).
 - `P9-TSK-012`: ledger `V023` (`FX_REALISED_GAINS`/`LOSSES`), the cover entry closing the
   plan's legs ± realised result (ADR-0077).
 - `P9-TSK-013`: `FxBooksProof` and `FxPlanVerification`, each flipped by a plant; at rest
-  `FX_POSITION` and `FX_PROVIDER_CLEARING` are 0. *(Built 2026-10-05: the books proof reads each FX book through ledger's `BalanceDerivation` against fx's own rows - trades' and executed covers' plan legs, margins, residuals, realised results - with the reversal and unwind terms zero until `-025`/`-021`; the replay recomputes each plan from the quote's frozen inputs through `ConversionPlan.compute` and compares the trade, the rates and the posted entry line by line; `FxSettledToCashDatabaseTest` proves the zero for a conversion carried to cash.)*
+  `FX_POSITION` and `FX_PROVIDER_CLEARING` are 0. *(Built 2026-10-05: the books proof reads each FX book through ledger's `BalanceDerivation` against fx's own rows - trades' and executed covers' plan legs, margins, residuals, realised results - with the reversal and unwind terms zero until `-025`/`-021` (both since built); the replay recomputes each plan from the quote's frozen inputs through `ConversionPlan.compute` and compares the trade, the rates and the posted entry line by line; `FxSettledToCashDatabaseTest` proves the zero for a conversion carried to cash.)*
 - `P9-TST-002`: ≥ 10,000 conversions over all 20 pairs and both fixed sides — trial balance
   zero in five currencies, the residual, margin and position identities exact, plan
   verification clean, golden replay of every quote.
 - `P9-TSK-025` (owner decision O8: cut second, after M9.8): the operator FX trade reversal
   through `ReversalService`'s exact mirror, the one admitted corrector of these books.
+  *(Built 2026-10-06: fx `V009`'s four-eyes `trade_reversal` - numbered `V009` because `V008` became
+  `P9-TSK-021`'s unwind; the approval posts the conversion's own lines, recomposed from the frozen plan and
+  flipped, under `ledger.reverse:fx-trade:<id>` (ledger `V009`'s bound), the trade `REVERSED`, and the wanted
+  position unwinds an executed cover; the books proof's trades' terms now count `BOOKED` trades only - the
+  "- reversal" term above - and `FxTradeReversalRaceDatabaseTest` proves the books clean after ten racing
+  approvals and the unwind's execution.)*
 - Until `P9-TSK-004` lands, nothing in this ADR is implemented: every statement is the decided
   design, to be corrected by the tasks that build it.
 - The Phase 9 review reads this ADR against the code before accepting it (`P9-DOC-001`).

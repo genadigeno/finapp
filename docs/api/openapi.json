@@ -2572,6 +2572,41 @@
           }
         }
       },
+      "fx.TradeNotReversible": {
+        "content": {
+          "application/problem+json": {
+            "schema": {
+              "allOf": [
+                {
+                  "$ref": "#/components/schemas/ProblemDetail"
+                },
+                {
+                  "properties": {
+                    "code": {
+                      "const": "fx.TradeNotReversible"
+                    },
+                    "status": {
+                      "const": 409
+                    },
+                    "type": {
+                      "const": "https://finapp.example/problems/fx.TradeNotReversible"
+                    }
+                  }
+                }
+              ]
+            }
+          }
+        },
+        "description": "[409] This conversion cannot be reversed.",
+        "headers": {
+          "X-Client-Correlation-Id": {
+            "$ref": "#/components/headers/X-Client-Correlation-Id"
+          },
+          "X-Correlation-Id": {
+            "$ref": "#/components/headers/X-Correlation-Id"
+          }
+        }
+      },
       "fx.WalletNotPostable": {
         "content": {
           "application/problem+json": {
@@ -11124,6 +11159,26 @@
         },
         "type": "object"
       },
+      "ReversalReceipt": {
+        "properties": {
+          "cover": {
+            "type": "string"
+          },
+          "reversalEntryId": {
+            "type": "string"
+          },
+          "reversalId": {
+            "type": "string"
+          },
+          "status": {
+            "type": "string"
+          },
+          "tradeId": {
+            "type": "string"
+          }
+        },
+        "type": "object"
+      },
       "ReviewOwnerView": {
         "properties": {
           "controlRole": {
@@ -12381,6 +12436,19 @@
             "type": "boolean"
           }
         },
+        "type": "object"
+      },
+      "TradeReversalRequest": {
+        "properties": {
+          "reason": {
+            "maxLength": 500,
+            "minLength": 1,
+            "type": "string"
+          }
+        },
+        "required": [
+          "reason"
+        ],
         "type": "object"
       },
       "TransactionsView": {
@@ -15667,6 +15735,141 @@
               "application/json": {
                 "schema": {
                   "$ref": "#/components/schemas/ProvenanceView"
+                }
+              }
+            },
+            "description": "OK"
+          }
+        }
+      }
+    },
+    "/v1/operator/fx/trades/{id}/reversal": {
+      "post": {
+        "operationId": "proposeFxTradeReversal",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "id",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "in": "header",
+            "name": "Idempotency-Key",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/TradeReversalRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "201": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ReversalReceipt"
+                }
+              }
+            },
+            "description": "Created"
+          }
+        }
+      }
+    },
+    "/v1/operator/fx/trades/{id}/reversal/{rid}/approval": {
+      "post": {
+        "operationId": "approveFxTradeReversal",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "id",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "in": "path",
+            "name": "rid",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/TradeReversalRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ReversalReceipt"
+                }
+              }
+            },
+            "description": "OK"
+          }
+        }
+      }
+    },
+    "/v1/operator/fx/trades/{id}/reversal/{rid}/rejection": {
+      "post": {
+        "operationId": "rejectFxTradeReversal",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "id",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "in": "path",
+            "name": "rid",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/TradeReversalRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ReversalReceipt"
                 }
               }
             },

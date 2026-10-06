@@ -184,6 +184,10 @@ class RoutePermissionRegisterTest {
                     entry("POST /v1/operator/fx/pricing-policies", PermissionName.FX_ADMINISTER),
                     entry("POST /v1/operator/fx/pricing-policies/{id}/approval", PermissionName.FX_ADMINISTER),
                     entry("POST /v1/operator/fx/pricing-policies/{id}/rejection", PermissionName.FX_ADMINISTER),
+                    // P9-TSK-025: the operator's FX trade reversal, four-eyes.
+                    entry("POST /v1/operator/fx/trades/{id}/reversal", PermissionName.FX_TRADE_REVERSE),
+                    entry("POST /v1/operator/fx/trades/{id}/reversal/{rid}/approval", PermissionName.FX_TRADE_REVERSE),
+                    entry("POST /v1/operator/fx/trades/{id}/reversal/{rid}/rejection", PermissionName.FX_TRADE_REVERSE),
                     entry("POST /v1/operator/fx/pairs/{pair}/availability", PermissionName.FX_ADMINISTER),
                     entry("POST /v1/operator/fx/providers/{code}/availability", PermissionName.FX_ADMINISTER),
                     entry("POST /v1/operator/fx/enable-requests/{rid}/approval", PermissionName.FX_ADMINISTER),

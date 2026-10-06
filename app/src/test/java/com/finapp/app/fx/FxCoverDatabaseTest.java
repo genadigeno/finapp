@@ -98,6 +98,7 @@ class FxCoverDatabaseTest {
     @Autowired private RuleSets ruleSets;
     @Autowired private DataSource dataSource;
     @Autowired private FxCoverDispatch dispatch;
+    @Autowired private com.finapp.fx.TradeReversals tradeReversals;
     @Autowired private FxCoverOutcomes outcomes;
     @Autowired private CoverStore covers;
     @Autowired private QuoteStore quotes;
@@ -329,12 +330,27 @@ class FxCoverDatabaseTest {
         engine.advance(Duration.ofMinutes(10));
         dispatch.dispatchNow(cover, Actor.SYSTEM);
         assertThat(status(cover)).isEqualTo("REJECTED");
-        try (Connection app = DatabaseRoles.application();
-                PreparedStatement reverse = app.prepareStatement("UPDATE fx.trade SET status = 'REVERSED' WHERE id = ?::uuid")) {
-            reverse.setString(1, trade);
-            reverse.executeUpdate();
-        }
         int quotesBefore = engine.quoteRequests();
+        // The trade REVERSED for real (P9-TSK-025): two persons, the exact mirror posted - a status set without its
+        // mirror would leave the FX books unexplained, which the books proof rightly reports. The approval's own
+        // evaluation of the wanted position voids the rejected cover; the applier then finds nothing left to do.
+        try (com.finapp.platform.correlation.CorrelationContext.Scope flow = com.finapp.platform.correlation.CorrelationContext.enter(
+                        com.finapp.sharedkernel.correlation.Correlation.startingWith(
+                                com.finapp.sharedkernel.correlation.CorrelationId.generate(FxTestClient.IDS)));
+                com.finapp.platform.security.SecurityContext.Scope platform =
+                        com.finapp.platform.security.SecurityContext.enterSystem();
+                Connection app = DatabaseRoles.application()) {
+            app.setAutoCommit(false);
+            com.finapp.sharedkernel.correlation.CorrelationId correlation =
+                    com.finapp.sharedkernel.correlation.CorrelationId.generate(FxTestClient.IDS);
+            UUID reversal = tradeReversals.propose(app, com.finapp.fx.FxTradeId.of(UUID.fromString(trade)),
+                    new Actor(UUID.randomUUID().toString(), com.finapp.platform.security.ActorType.EMPLOYEE),
+                    "the fixture's erroneous conversion", correlation).reversalId();
+            tradeReversals.approve(app, reversal,
+                    new Actor(UUID.randomUUID().toString(), com.finapp.platform.security.ActorType.EMPLOYEE),
+                    "checked", correlation);
+            app.commit();
+        }
 
         dispatch.dispatchNow(cover, Actor.SYSTEM);
 

@@ -390,6 +390,33 @@ class OwnershipIsScopedTest {
                                     "P9-TSK-009. Attaches the posted entry to the trade the same transaction just inserted"
                                         + " on its minted id - never a request value; V006's edge trigger admits it once.")),
                     Map.entry(
+                            "com.finapp.fx.JdbcTradeStore.find",
+                            new Entry(
+                                    Scope.ADMINISTERED,
+                                    "P9-TSK-025. The operator's trade reversal: a trade identifier from an FX_TRADE_REVERSE"
+                                        + " holder's request - an operator acts on any customer's trade by design, and every"
+                                        + " act is four-eyes and audited; the customer's own read stays findOwned.")),
+                    Map.entry(
+                            "com.finapp.fx.JdbcTradeStore.lock",
+                            new Entry(
+                                    Scope.ADMINISTERED,
+                                    "P9-TSK-025. The same trade the reversal found, locked after its quote (the lock order) -"
+                                        + " the JdbcTradeStore.find reasoning.")),
+                    Map.entry(
+                            "com.finapp.fx.JdbcTradeStore.reverse",
+                            new Entry(
+                                    Scope.ADMINISTERED,
+                                    "P9-TSK-025. BOOKED -> REVERSED on the trade the approval locked, in the approval's"
+                                        + " transaction - never a request value beyond the operator's; V006's edge trigger"
+                                        + " admits the one edge.")),
+                    Map.entry(
+                            "com.finapp.fx.JdbcTradeReversalStore.propose",
+                            new Entry(
+                                    Scope.ADMINISTERED,
+                                    "P9-TSK-025. A proposal on the trade the operator named, locked in the same transaction -"
+                                        + " the JdbcTradeStore.find reasoning; V009's birth trigger admits a BOOKED conversion"
+                                        + " only.")),
+                    Map.entry(
                             "com.finapp.fx.JdbcTradeStore.findOwned",
                             new Entry(
                                     Scope.OWNER_SCOPED,
