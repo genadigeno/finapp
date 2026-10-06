@@ -1,6 +1,7 @@
 package com.finapp.payments;
 
 import com.finapp.platform.correlation.CorrelationContext;
+import com.finapp.platform.persistence.DatabaseTime;
 import com.finapp.platform.security.SecurityContext;
 import com.finapp.sharedkernel.correlation.Correlation;
 import com.finapp.sharedkernel.correlation.CorrelationId;
@@ -116,12 +117,14 @@ public final class WithdrawalResolution {
     @SuppressWarnings("try") // The Scopes are used for their close side effects (the idiom).
     public SweepResult sweep() {
         Instant now = Instant.now(clock);
+        // A DISPATCHED row ages from its permit, so on the permit's own clock - the
+        // database's (X-TSK-013); an UNKNOWN row ages from its event, stamped by an instance.
         List<Withdrawal> candidates =
                 transactions.inTransaction(
                         uow ->
                                 withdrawals.findSweepable(
                                         uow,
-                                        now.minus(config.dispatchedAge()),
+                                        DatabaseTime.now(uow).minus(config.dispatchedAge()),
                                         now.minus(config.unknownAge()),
                                         config.batchSize()));
         int resolved = 0;
@@ -152,7 +155,7 @@ public final class WithdrawalResolution {
                                                     uow,
                                                     locked,
                                                     answer,
-                                                    neverReceivedBound(),
+                                                    neverReceivedBound(uow),
                                                     CorrelationContext.current().orElseThrow());
                                     answer.evidence()
                                             .ifPresent(
@@ -183,9 +186,11 @@ public final class WithdrawalResolution {
     /**
      * The instant at or before which a permit makes {@code UNRECOGNISED} conclusive:
      * now − (the rail's declared outcome deadline + the configured margin). Declared data
-     * judged against the permit, never a clock alone (ADR-0062 §3).
+     * judged against the permit, never a clock alone (ADR-0062 §3) - and "now" is the
+     * database's, read in the transaction that locked the row: the permit's own clock
+     * (X-TSK-013), so no instance's skew can age a live permit.
      */
-    private Instant neverReceivedBound() {
+    private Instant neverReceivedBound(Connection unitOfWork) {
         Duration declared =
                 rails.capabilitiesOf(railId)
                         .outcomeDeadline()
@@ -195,6 +200,6 @@ public final class WithdrawalResolution {
                                                 "the withdrawal rail declares no outcome"
                                                         + " deadline: its descriptor cannot"
                                                         + " bound its own ambiguity"));
-        return Instant.now(clock).minus(declared.plus(config.margin()));
+        return DatabaseTime.now(unitOfWork).minus(declared.plus(config.margin()));
     }
 }

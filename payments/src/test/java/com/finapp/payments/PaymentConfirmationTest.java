@@ -763,8 +763,7 @@ class PaymentConfirmationTest {
         public boolean renewInitiationPermit(
                 Connection uow,
                 PaymentAttemptId attempt,
-                java.time.Instant expected,
-                java.time.Instant renewed) {
+                java.time.Instant expected) {
             throw new UnsupportedOperationException("not exercised here");
         }
 

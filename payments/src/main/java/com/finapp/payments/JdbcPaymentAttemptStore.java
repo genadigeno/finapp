@@ -42,7 +42,8 @@ public final class JdbcPaymentAttemptStore implements PaymentAttemptStore<Connec
                 unitOfWork.prepareStatement(
                         "INSERT INTO payments.payment_attempt (" + COLUMNS + ")"
                                 + " VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?,"
-                                + " ?, ?, ?, ?, ?, ?, ?)")) {
+                                + " ?, ?, ?, ?, ?, ?,"
+                                + " GREATEST(CAST(? AS timestamptz), CASE WHEN ? THEN statement_timestamp() END))")) {
             insert.setObject(1, attempt.id().value());
             insert.setObject(2, attempt.intentId().value());
             insert.setString(
@@ -93,11 +94,14 @@ public final class JdbcPaymentAttemptStore implements PaymentAttemptStore<Connec
                     22,
                     attempt.schemeReference().map(ProviderReference::value).orElse(null));
             insert.setString(23, attempt.settlementCycle().orElse(null));
+            // A push attempt's birth permit: never older than the database's clock (X-TSK-013),
+            // never before its created_at (the CHECK); a two-step attempt carries none.
             insert.setTimestamp(
                     24,
                     attempt.lastDispatchedAt() == null
                             ? null
                             : Timestamp.from(attempt.lastDispatchedAt()));
+            insert.setBoolean(25, attempt.lastDispatchedAt() != null);
             insert.executeUpdate();
         } catch (SQLException failure) {
             throw new PaymentsStorageException(
@@ -684,18 +688,19 @@ public final class JdbcPaymentAttemptStore implements PaymentAttemptStore<Connec
 
     @Override
     public boolean renewInitiationPermit(
-            Connection unitOfWork, PaymentAttemptId attempt, Instant expected, Instant renewed) {
+            Connection unitOfWork, PaymentAttemptId attempt, Instant expected) {
         Objects.requireNonNull(expected, "expected must not be null");
-        Objects.requireNonNull(renewed, "renewed must not be null");
+        // The database's instant, strictly forward (X-TSK-013): never this instance's clock.
         try (PreparedStatement update =
                 unitOfWork.prepareStatement(
-                        "UPDATE payments.payment_attempt SET last_dispatched_at = ?"
+                        "UPDATE payments.payment_attempt SET last_dispatched_at ="
+                                + " GREATEST(last_dispatched_at + interval '1 microsecond',"
+                                + " statement_timestamp())"
                                 + " WHERE id = ? AND status = ?"
                                 + " AND last_dispatched_at <= ?")) {
-            update.setTimestamp(1, Timestamp.from(renewed));
-            update.setObject(2, attempt.value());
-            update.setString(3, PaymentAttemptStatus.AWAITING_PAYER.name());
-            update.setTimestamp(4, Timestamp.from(expected));
+            update.setObject(1, attempt.value());
+            update.setString(2, PaymentAttemptStatus.AWAITING_PAYER.name());
+            update.setTimestamp(3, Timestamp.from(expected));
             return update.executeUpdate() == 1;
         } catch (SQLException failure) {
             throw new PaymentsStorageException(

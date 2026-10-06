@@ -443,7 +443,7 @@ public final class PaymentRefund {
         // resolvable states since the lookup matches no row, and then nothing may be sent.
         Optional<Instant> permit =
                 resolvable(found.status())
-                        ? refunds.renewSendPermit(uow, found.id(), Instant.now(clock))
+                        ? refunds.renewSendPermit(uow, found.id())
                         : Optional.empty();
         // A taken-over BOOK refund can never still be resolvable: dispatch and outcome are
         // one transaction, so a committed row is terminal and the permit renewal above

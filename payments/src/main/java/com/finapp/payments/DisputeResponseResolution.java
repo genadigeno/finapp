@@ -1,6 +1,7 @@
 package com.finapp.payments;
 
 import com.finapp.platform.correlation.CorrelationContext;
+import com.finapp.platform.persistence.DatabaseTime;
 import com.finapp.platform.security.SecurityContext;
 import com.finapp.sharedkernel.correlation.Correlation;
 import com.finapp.sharedkernel.correlation.CorrelationId;
@@ -98,7 +99,8 @@ public final class DisputeResponseResolution {
                         uow ->
                                 responses.findSweepable(
                                         uow,
-                                        now.minus(config.dispatchedAge()),
+                                        // The permit's own clock, the database's (X-TSK-013).
+                                        DatabaseTime.now(uow).minus(config.dispatchedAge()),
                                         now.minus(config.unknownAge()),
                                         config.batchSize()));
         int applied = 0;
@@ -138,8 +140,7 @@ public final class DisputeResponseResolution {
             Optional<Resend> resend =
                     transactions.inTransaction(
                             uow ->
-                                    responses.renewSendPermit(
-                                                    uow, candidate.id(), Instant.now(clock))
+                                    responses.renewSendPermit(uow, candidate.id())
                                             .map(
                                                     permit -> {
                                                         Dispute contested =

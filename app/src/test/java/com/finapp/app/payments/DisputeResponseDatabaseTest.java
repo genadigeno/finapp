@@ -145,6 +145,7 @@ class DisputeResponseDatabaseTest {
     @Autowired private DisputeResponseOutcomes outcomes;
     @Autowired private ProviderEvidenceStore<Connection> providerEvidence;
     @Autowired private AuditWriter<Connection> auditWriter;
+    @Autowired private DisputeResponder disputeResponder;
 
     @BeforeAll
     static void startProvider() {
@@ -838,6 +839,9 @@ class DisputeResponseDatabaseTest {
         String ours = oneString(
                 "SELECT provider_idempotency_reference FROM payments.dispute_response WHERE id = ?",
                 response);
+        // Due on the database's clock (X-TSK-013; AgedPermits says why not a sleep).
+        com.finapp.app.database.AgedPermits.age(
+                "payments.dispute_response", "send_permit", response, Duration.ofMinutes(1));
 
         provider.succeedsWith(SimulatedCardPspAdapter.OPERATIONS_PATH + ours, 200,
                 "{\"status\":\"unrecognised\"}");
@@ -850,6 +854,98 @@ class DisputeResponseDatabaseTest {
         assertThat(provider.bodyValues(RESPONSES).get(0))
                 .contains(Base64.getEncoder().encodeToString(receipt));
         assertThat(stage(dispute)).isEqualTo("CHARGED_BACK");
+    }
+
+    @Test
+    @DisplayName("X-TSK-013: a takeover on an instance 5 s BEHIND and a sweep on one 5 s AHEAD, the sweep"
+            + " inside the takeover's flight - the renewed permit is young on the database's clock, so"
+            + " nothing re-sends it: one request, and the response is SUBMITTED")
+    void aSkewedTakeoverAndSweepSendOnce() throws Exception {
+        Merchant merchant = merchant();
+        UUID dispute = chargedBack(merchant.payable(), future());
+        String key = someKey();
+        DisputeResponder dies =
+                new DisputeResponder() {
+                    @Override
+                    public String providerName() {
+                        return SimulatedCardPspAdapter.NAME;
+                    }
+
+                    @Override
+                    public ProviderAnswer respond(DisputeResponseRequest request) {
+                        throw new IllegalStateException("the instance died mid-call");
+                    }
+
+                    @Override
+                    public QueryAnswer query(ProviderIdempotencyReference ourReference) {
+                        throw new IllegalStateException("never asked");
+                    }
+                };
+        assertThatThrownBy(() -> asMerchant(merchant, () -> responsesSendingTo(dies, CLOCK).respond(
+                        new DisputeActor.Counterparty(Set.of(merchant.payable())),
+                        DisputeId.of(dispute), DisputeResponseKind.ACCEPTANCE, key)))
+                .isInstanceOf(IllegalStateException.class);
+        UUID response =
+                UUID.fromString(oneString("SELECT id FROM payments.dispute_response WHERE dispute_id = ?", dispute));
+        String ours = oneString(
+                "SELECT provider_idempotency_reference FROM payments.dispute_response WHERE id = ?", response);
+        try (Connection app = DatabaseRoles.application()) {
+            execute(app,
+                    "UPDATE platform.idempotency_record SET lease_expires_at = now() - interval '1 minute'"
+                            + " WHERE idempotency_key = ? AND state = 'IN_PROGRESS'",
+                    key);
+        }
+        // The PSP has not yet received the takeover's request when the sweep asks.
+        provider.succeedsWith(SimulatedCardPspAdapter.OPERATIONS_PATH + ours, 200,
+                "{\"status\":\"unrecognised\"}");
+        provider.succeedsWithMintedReference(RESPONSES, "psp_dr");
+        DisputeResponseResolution ahead =
+                new DisputeResponseResolution(
+                        responseStore, disputeStore, outcomes, disputeResponder, providerEvidence,
+                        new DisputeResponseResolution.Config(Duration.ofSeconds(4), Duration.ofSeconds(4), 2_000),
+                        IDS, com.finapp.app.database.ServerSkewedClock.of(Duration.ofSeconds(5)), transactions);
+        java.util.concurrent.atomic.AtomicReference<DisputeResponseResolution.SweepResult> inFlight =
+                new java.util.concurrent.atomic.AtomicReference<>();
+        DisputeResponder takeoversWire =
+                new DisputeResponder() {
+                    @Override
+                    public String providerName() {
+                        return disputeResponder.providerName();
+                    }
+
+                    @Override
+                    public ProviderAnswer respond(DisputeResponseRequest request) {
+                        // The takeover's permit is committed and its request is on the wire.
+                        inFlight.set(ahead.sweep());
+                        return disputeResponder.respond(request);
+                    }
+
+                    @Override
+                    public QueryAnswer query(ProviderIdempotencyReference ourReference) {
+                        return disputeResponder.query(ourReference);
+                    }
+                };
+
+        DisputeResponses.ResponseResult takenOver =
+                asMerchant(merchant, () -> responsesSendingTo(takeoversWire, com.finapp.app.database.ServerSkewedClock.of(Duration.ofSeconds(-5)))
+                        .respond(new DisputeActor.Counterparty(Set.of(merchant.payable())),
+                                DisputeId.of(dispute), DisputeResponseKind.ACCEPTANCE, key));
+
+        assertThat(inFlight.get()).isNotNull();
+        assertThat(provider.headerValues(RESPONSES, SimulatedCardPspAdapter.IDEMPOTENCY_KEY_HEADER))
+                .as("one request of our reference, the takeover's: on the instances' clocks the renewed"
+                        + " permit read ten seconds old and the sweep re-sent it inside the flight")
+                .filteredOn(ours::equals)
+                .hasSize(1);
+        assertThat(takenOver.status()).isEqualTo(DisputeResponseStatus.SUBMITTED);
+    }
+
+    /** The command on an instance whose clock is {@code clock} (X-TSK-013), over {@code responder}. */
+    private DisputeResponses responsesSendingTo(DisputeResponder responder, Clock clock) {
+        return new DisputeResponses(
+                transactions, executor, disputeStore, attemptStore, intentStore,
+                ledgerAccountStore, evidenceStore, responseStore, responder, outcomes,
+                providerEvidence, auditWriter, IDS, clock);
     }
 
     @Test

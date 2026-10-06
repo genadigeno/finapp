@@ -20,8 +20,10 @@ import java.util.UUID;
 public interface WithdrawalStore<T> {
 
     /** Stores a freshly dispatched withdrawal, with the client key its takeover converges
-     * on ({@code (customer_id, dispatch_key)} unique — ADR-0057 §5's shape per customer). */
-    void insert(T unitOfWork, Withdrawal dispatched, String dispatchKey);
+     * on ({@code (customer_id, dispatch_key)} unique — ADR-0057 §5's shape per customer).
+     * Returns the send permit AS STORED - never older than the database's clock (`X-TSK-013`),
+     * what the first-send rule later compares the locked row's with. */
+    Instant insert(T unitOfWork, Withdrawal dispatched, String dispatchKey);
 
     /** The customer's withdrawal, unlocked — the read surface's one query (one 404). */
     Optional<Withdrawal> findOwned(T unitOfWork, WithdrawalId id, UUID customerId);
@@ -42,9 +44,11 @@ public interface WithdrawalStore<T> {
 
     /**
      * Commits a fresh send permit, conditional on the withdrawal still awaiting the scheme's
-     * word — {@code false} when a resolver got there first, and then nothing may be sent.
+     * word and on its permit being the one {@code before} carries — empty when a resolver or
+     * another renewal got there first, and then nothing may be sent. The permit is the
+     * database's own instant, strictly forward, returned as stored (`X-TSK-013`).
      */
-    boolean renewSendPermit(T unitOfWork, Withdrawal before, Instant at);
+    Optional<Instant> renewSendPermit(T unitOfWork, Withdrawal before);
 
     /**
      * Moves the withdrawal {@code before → after}, conditional on {@code before}'s status,

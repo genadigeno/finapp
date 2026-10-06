@@ -882,6 +882,76 @@ class PaymentsSchemaDatabaseTest {
         }
     }
 
+    /**
+     * X-TSK-013 at the schema: each of the five Phase 5-7 permits carries the trigger that re-stamps a
+     * forward write with the database's instant, AFTER its machine trigger (BEFORE triggers fire in
+     * name order), so a backward write is still refused and a writer's future instant never lands.
+     */
+    @Test
+    @DisplayName("every Phase 5-7 send permit is the database's: a writer's future instant is overwritten"
+            + " with statement_timestamp(), strictly forward, and a backward write is still refused"
+            + " (X-TSK-013)")
+    void everySendPermitIsTheDatabases() throws Exception {
+        try (Connection app = DatabaseRoles.application();
+                PreparedStatement read =
+                        app.prepareStatement(
+                                "SELECT n.nspname || '.' || c.relname || ':' || t.tgname"
+                                        + " FROM pg_trigger t JOIN pg_class c ON c.oid = t.tgrelid"
+                                        + " JOIN pg_namespace n ON n.oid = c.relnamespace"
+                                        + " WHERE t.tgname LIKE '%send_permit_is_the_databases'"
+                                        + " AND t.tgenabled = 'O' ORDER BY 1");
+                ResultSet rows = read.executeQuery()) {
+            List<String> triggers = new java.util.ArrayList<>();
+            while (rows.next()) {
+                triggers.add(rows.getString(1));
+            }
+            assertThat(triggers)
+                    .containsExactly(
+                            "merchant.merchant_payout:merchant_payout_send_permit_is_the_databases",
+                            "payments.dispute_response:dispute_response_send_permit_is_the_databases",
+                            "payments.payment_attempt:payment_attempt_send_permit_is_the_databases",
+                            "payments.refund:refund_send_permit_is_the_databases",
+                            "payments.withdrawal:withdrawal_send_permit_is_the_databases");
+            assertThat(triggers)
+                    .as("each fires after its table's machine trigger, which keeps refusing a backward write")
+                    .allSatisfy(trigger -> assertThat(trigger.substring(trigger.indexOf(':') + 1))
+                            .isGreaterThan(trigger.substring(trigger.indexOf('.') + 1, trigger.indexOf(':'))
+                                    + "_permits_only_machine_edges"));
+        }
+
+        UUID intent = IDS.next();
+        UUID attempt = IDS.next();
+        UUID refund = IDS.next();
+        try (Connection app = DatabaseRoles.application()) {
+            insertIntent(app, intent, "PROCESSING");
+            insertAttempt(app, attempt, intent, "CAPTURED");
+            insertRefund(app, refund, attempt, 500, "EUR");
+            // An instance ninety seconds AHEAD writes its own instant: the database's lands instead.
+            assertThat(updated(app,
+                            "UPDATE payments.refund SET last_dispatched_at = now() + interval '90 seconds'"
+                                    + " WHERE id = ?", refund))
+                    .isEqualTo(1);
+            try (PreparedStatement stamped =
+                    app.prepareStatement(
+                            // Well short of the writer's +90 s - the raw seed's birth is the host's instant,
+                            // up to a couple of seconds off the database's, and GREATEST keeps it if later.
+                            "SELECT last_dispatched_at < statement_timestamp() + interval '30 seconds',"
+                                    + " last_dispatched_at > created_at"
+                                    + " FROM payments.refund WHERE id = ?")) {
+                stamped.setObject(1, refund);
+                try (ResultSet row = stamped.executeQuery()) {
+                    row.next();
+                    assertThat(row.getBoolean(1)).as("the writer's future instant never landed").isTrue();
+                    assertThat(row.getBoolean(2)).as("and the permit still moved forward").isTrue();
+                }
+            }
+            assertThatThrownBy(() -> updated(app,
+                            "UPDATE payments.refund SET last_dispatched_at = last_dispatched_at - interval"
+                                    + " '30 seconds' WHERE id = ?", refund))
+                    .hasMessageContaining("send permit only moves forward");
+        }
+    }
+
     private static int updated(Connection connection, String sql, UUID id) throws SQLException {
         try (PreparedStatement update = connection.prepareStatement(sql)) {
             update.setObject(1, id);

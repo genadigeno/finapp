@@ -45,7 +45,8 @@ public final class JdbcMerchantPayoutStore implements MerchantPayoutStore<Connec
         try (PreparedStatement insert =
                 unitOfWork.prepareStatement(
                         "INSERT INTO " + TABLE + " (" + COLUMNS + ", dispatch_key)"
-                                + " VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)")) {
+                                + " VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?,"
+                                + " GREATEST(CAST(? AS timestamptz), statement_timestamp()), ?)")) {
             insert.setObject(1, dispatched.id().value());
             insert.setObject(2, dispatched.merchantId().value());
             insert.setLong(3, dispatched.amount().minorUnits());
@@ -63,7 +64,9 @@ public final class JdbcMerchantPayoutStore implements MerchantPayoutStore<Connec
             insert.setString(13, dispatched.requestedByType().name());
             insert.setString(14, dispatched.reason().orElse(null));
             insert.setTimestamp(15, Timestamp.from(dispatched.createdAt()));
-            insert.setTimestamp(16, Timestamp.from(dispatched.lastDispatchedAt()));
+            // The birth permit: never older than the database's clock (X-TSK-013), never before
+            // created_at (V007's CHECK) - read back by the dispatch, never taken from memory.
+            insert.setTimestamp(16, Timestamp.from(dispatched.createdAt()));
             insert.setString(17, dispatchKey);
             insert.executeUpdate();
         } catch (SQLException failure) {
@@ -166,21 +169,23 @@ public final class JdbcMerchantPayoutStore implements MerchantPayoutStore<Connec
     }
 
     @Override
-    public boolean renewSendPermit(Connection unitOfWork, MerchantPayout before, Instant at) {
+    public boolean renewSendPermit(Connection unitOfWork, MerchantPayout before) {
         Objects.requireNonNull(before, "before must not be null");
-        Objects.requireNonNull(at, "at must not be null");
         // The conditional IS the permit: a resolver that already moved the payout out of the
-        // resolvable states leaves this matching no row, and then nothing may be sent.
+        // resolvable states, or a renewal since the permit `before` carries, leaves this matching
+        // no row, and then nothing may be sent. The new permit is the database's instant,
+        // strictly forward (X-TSK-013): no instance's clock is an input.
         try (PreparedStatement update =
                 unitOfWork.prepareStatement(
-                        "UPDATE " + TABLE + " SET last_dispatched_at = ?"
+                        "UPDATE " + TABLE + " SET last_dispatched_at ="
+                                + " GREATEST(last_dispatched_at + interval '1 microsecond',"
+                                + " statement_timestamp())"
                                 + " WHERE id = ? AND merchant_id = ? AND status IN ("
                                 + MerchantPayoutStatus.resolvableSqlValueList() + ")"
                                 + " AND last_dispatched_at <= ?")) {
-            update.setTimestamp(1, Timestamp.from(at));
-            update.setObject(2, before.id().value());
-            update.setObject(3, before.merchantId().value());
-            update.setTimestamp(4, Timestamp.from(at));
+            update.setObject(1, before.id().value());
+            update.setObject(2, before.merchantId().value());
+            update.setTimestamp(3, Timestamp.from(before.lastDispatchedAt()));
             return update.executeUpdate() == 1;
         } catch (SQLException failure) {
             throw new MerchantStorageException(

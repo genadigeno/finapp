@@ -68,6 +68,7 @@ import java.sql.Connection;
 import java.sql.PreparedStatement;
 import java.sql.ResultSet;
 import java.sql.SQLException;
+import java.sql.Statement;
 import java.time.Clock;
 import java.time.Duration;
 import java.time.Instant;
@@ -706,21 +707,25 @@ class MerchantPayoutDatabaseTest {
     void aSweepRacingARenewalJudgesTheRenewedPermit() throws Exception {
         Funded merchant = funded("100.00");
         MerchantPayoutId crashed = crash(merchant, "40.00", key());
+        // The crashed flight an hour old: a candidate for a ten-minute bound.
+        com.finapp.app.database.AgedPermits.age(
+                "merchant.merchant_payout", "last_dispatched_at", crashed.value(), Duration.ofHours(1));
         queryAnswers(merchant, crashed, "unrecognised");
         ExecutorService pool = Executors.newSingleThreadExecutor();
         try (Connection takeover = DatabaseRoles.application()) {
             takeover.setAutoCommit(false);
-            // A takeover's renewal, mid-transaction: the row locked and the permit moved past any
-            // bound, not yet committed - once it commits, the takeover sends.
+            // A takeover's renewal, mid-transaction: the row locked and the permit renewed - to
+            // the database's own instant whatever is written (V009, X-TSK-013) - not yet
+            // committed; once it commits, the takeover sends.
             try (PreparedStatement renewal =
                     takeover.prepareStatement(
-                            "UPDATE merchant.merchant_payout SET last_dispatched_at = now() +"
-                                    + " interval '1 hour' WHERE id = ?")) {
+                            "UPDATE merchant.merchant_payout SET last_dispatched_at = now()"
+                                    + " WHERE id = ?")) {
                 renewal.setObject(1, crashed.value());
                 assertThat(renewal.executeUpdate()).isEqualTo(1);
             }
             Future<MerchantPayoutResolution.SweepResult> sweep =
-                    pool.submit(() -> resolution(Duration.ZERO).sweep());
+                    pool.submit(() -> resolution(Duration.ofMinutes(10)).sweep());
             // The sweep reaches the row and waits behind the renewal - on its locking read, or
             // on its transition if the read did not lock.
             awaitWaiting("merchant.merchant_payout");
@@ -734,6 +739,57 @@ class MerchantPayoutDatabaseTest {
                 .as("judged on the renewed permit: absence proves nothing yet")
                 .isEqualTo(MerchantPayoutStatus.DISPATCHED);
         assertThat(holdStatuses(merchant)).containsExactly("ACTIVE");
+    }
+
+    @Test
+    @DisplayName("X-TSK-013: a takeover on an instance 5 s BEHIND and a sweep on one 5 s AHEAD, the sweep"
+            + " inside the takeover's flight - the renewed permit is young on the database's clock,"
+            + " nothing is concluded, and the payout is sent once and completes")
+    void aSkewedTakeoverAndSweepSendOnce() throws Exception {
+        Funded merchant = funded("100.00");
+        String key = key();
+        MerchantPayoutId crashed = crash(merchant, "40.00", key);
+        com.finapp.app.database.AgedPermits.age(
+                "merchant.merchant_payout", "last_dispatched_at", crashed.value(), Duration.ofHours(1));
+        expireTheLease(merchant, key);
+        // The provider has not yet received the takeover's request when the sweep asks.
+        queryAnswers(merchant, crashed, "unrecognised");
+        provider.succeedsWith(PATH, 200, PAID);
+        SimulatedPayoutProvider wire =
+                new SimulatedPayoutProvider(URI.create(provider.baseUrl()), Duration.ofSeconds(2), new byte[32]);
+        java.util.concurrent.atomic.AtomicReference<MerchantPayoutResolution.SweepResult> inFlight =
+                new java.util.concurrent.atomic.AtomicReference<>();
+        Clock ahead = com.finapp.app.database.ServerSkewedClock.of(Duration.ofSeconds(5));
+        PayoutProvider takeoversWire =
+                new PayoutProvider() {
+                    @Override
+                    public com.finapp.merchant.PayoutAnswer dispatch(PayoutRequest request) {
+                        // The takeover's permit is committed and its request is on the wire: the
+                        // sweep on the instance 5 s ahead, its bound 4 s, runs now.
+                        inFlight.set(resolution(Duration.ofSeconds(4), ahead).sweep());
+                        return wire.dispatch(request);
+                    }
+
+                    @Override
+                    public PayoutQueryAnswer query(com.finapp.merchant.PayoutReference ours) {
+                        return wire.query(ours);
+                    }
+                };
+
+        MerchantPayouts.Initiated takenOver =
+                initiateWith(
+                        payoutsSendingTo(takeoversWire, idempotentExecutor, com.finapp.app.database.ServerSkewedClock.of(Duration.ofSeconds(-5))),
+                        merchant,
+                        "40.00",
+                        key);
+
+        assertThat(inFlight.get().resolved())
+                .as("judged on the database's clock, the takeover's permit is seconds old: absence proves"
+                        + " nothing - on the instances' clocks it read ten seconds old and was concluded")
+                .isZero();
+        assertThat(takenOver.status()).isEqualTo(MerchantPayoutStatus.COMPLETED);
+        assertThat(provider.requestCount(PATH)).as("one instruction, the takeover's").isEqualTo(1);
+        assertThat(entryLines(crashed)).hasSize(2);
     }
 
     @Test
@@ -1468,6 +1524,11 @@ class MerchantPayoutDatabaseTest {
     }
 
     private MerchantPayouts payoutsSendingTo(PayoutProvider wire, IdempotentExecutor executor) {
+        return payoutsSendingTo(wire, executor, CLOCK);
+    }
+
+    /** The command on an instance whose clock is {@code clock} - a skewed one (X-TSK-013). */
+    private MerchantPayouts payoutsSendingTo(PayoutProvider wire, IdempotentExecutor executor, Clock clock) {
         return new MerchantPayouts(
                 new MerchantTransactions(new TransactionTemplate(transactionManager), dataSource),
                 executor,
@@ -1481,7 +1542,7 @@ class MerchantPayoutDatabaseTest {
                 evidence,
                 auditWriter,
                 IDS,
-                CLOCK);
+                clock);
     }
 
     /**
@@ -1492,6 +1553,11 @@ class MerchantPayoutDatabaseTest {
     private static final Duration DUE_NOW = Duration.ofNanos(1_000);
 
     private MerchantPayoutResolution resolution(Duration dispatchedAge) {
+        return resolution(dispatchedAge, CLOCK);
+    }
+
+    /** The sweep on an instance whose clock is {@code clock} - a skewed one (X-TSK-013). */
+    private MerchantPayoutResolution resolution(Duration dispatchedAge, Clock clock) {
         return new MerchantPayoutResolution(
                 new MerchantTransactions(new TransactionTemplate(transactionManager), dataSource),
                 payoutStore,
@@ -1500,7 +1566,7 @@ class MerchantPayoutDatabaseTest {
                 outcomes,
                 evidence,
                 IDS,
-                CLOCK,
+                clock,
                 dispatchedAge.isZero() ? DUE_NOW : dispatchedAge,
                 Duration.ZERO,
                 1000);

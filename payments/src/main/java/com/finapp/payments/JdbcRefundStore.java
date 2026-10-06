@@ -35,13 +35,14 @@ public final class JdbcRefundStore implements RefundStore<Connection> {
     @Override
     public void insert(Connection unitOfWork, Refund refund, String dispatchKey) {
         Objects.requireNonNull(dispatchKey, "dispatchKey must not be null (V008)");
-        // The birth permit is the dispatch itself (V009): the same bound value as created_at, so
-        // the two are stored identically and the CHECK that the permit follows birth holds.
+        // The birth permit is the dispatch itself (V009), never older than the database's clock
+        // (X-TSK-013) and never before created_at, so the CHECK that the permit follows birth holds.
         try (PreparedStatement insert =
                 unitOfWork.prepareStatement(
                         "INSERT INTO payments.refund (" + COLUMNS
                                 + ", dispatch_key, last_dispatched_at)"
-                                + " VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)")) {
+                                + " VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?,"
+                                + " GREATEST(CAST(? AS timestamptz), statement_timestamp()))")) {
             insert.setObject(1, refund.id().value());
             insert.setObject(2, refund.attemptId().value());
             insert.setLong(3, refund.amount().minorUnits());
@@ -89,9 +90,8 @@ public final class JdbcRefundStore implements RefundStore<Connection> {
     }
 
     @Override
-    public Optional<Instant> renewSendPermit(Connection unitOfWork, RefundId refund, Instant at) {
+    public Optional<Instant> renewSendPermit(Connection unitOfWork, RefundId refund) {
         Objects.requireNonNull(refund, "refund must not be null");
-        Objects.requireNonNull(at, "at must not be null");
         // The conditional IS the permit (the payout's renewal, V007): a resolver that already
         // moved the refund out of the resolvable states leaves this matching no row, and then
         // nothing may be sent. EVERY RENEWAL STRICTLY ADVANCES THE PERMIT (the Phase 7 -> 8
@@ -100,18 +100,18 @@ public final class JdbcRefundStore implements RefundStore<Connection> {
         // takeover send while that rule still read "nothing was ever sent" - GREATEST alone did
         // exactly that for an instance whose clock trails the first flight's (the refund paid
         // at the PSP, failed on our books, its bound freed for a second). One microsecond past
-        // the stored permit, or this instance's time if later: forward-only for V009's trigger,
-        // never a refused re-drive, never the same value twice.
+        // the stored permit, or the DATABASE's time if later (X-TSK-013 - an instance's clock was
+        // the input until then): forward-only for V009's trigger, never a refused re-drive, never
+        // the same value twice, and no instance's skew in it.
         try (PreparedStatement update =
                 unitOfWork.prepareStatement(
                         "UPDATE payments.refund"
                                 + " SET last_dispatched_at = GREATEST("
                                 + "   last_dispatched_at + interval '1 microsecond',"
-                                + "   CAST(? AS timestamptz))"
+                                + "   statement_timestamp())"
                                 + " WHERE id = ? AND status IN ('DISPATCHED', 'UNKNOWN')"
                                 + " RETURNING last_dispatched_at")) {
-            update.setTimestamp(1, Timestamp.from(at));
-            update.setObject(2, refund.value());
+            update.setObject(1, refund.value());
             try (ResultSet row = update.executeQuery()) {
                 return row.next()
                         ? Optional.of(row.getTimestamp(1).toInstant())

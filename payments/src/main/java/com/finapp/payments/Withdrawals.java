@@ -420,16 +420,14 @@ public final class Withdrawals {
                         "a taken-over withdrawal claim found different facts under its key");
             }
             if (found.status().isResolvable()) {
-                Instant renewed =
-                        Instant.now(clock)
-                                .truncatedTo(java.time.temporal.ChronoUnit.MICROS);
-                if (withdrawals.renewSendPermit(uow, found, renewed)) {
+                Optional<Instant> renewed = withdrawals.renewSendPermit(uow, found);
+                if (renewed.isPresent()) {
                     // The renewal won: re-send OUR stored reference (INV-PAY-04); the
-                    // scheme deduplicates on it.
+                    // scheme deduplicates on it. The permit as the database stamped it.
                     return new Dispatch(
-                            Optional.of(found.withSendPermit(renewed)),
+                            Optional.of(found.withSendPermit(renewed.get())),
                             false,
-                            renewed,
+                            renewed.get(),
                             true,
                             Optional.empty());
                 }
@@ -512,7 +510,8 @@ public final class Withdrawals {
                         amount,
                         chosen,
                         hold.id());
-        withdrawals.insert(uow, fresh, clientKey);
+        // The permit as stored (X-TSK-013): what the first-send rule later compares with.
+        fresh = fresh.withSendPermit(withdrawals.insert(uow, fresh, clientKey));
         routing.insertDecision(
                 uow,
                 RoutingDecision.create(

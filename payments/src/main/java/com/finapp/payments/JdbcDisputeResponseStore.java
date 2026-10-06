@@ -48,7 +48,8 @@ public final class JdbcDisputeResponseStore implements DisputeResponseStore<Conn
                                 + " provider_idempotency_reference, provider_reference,"
                                 + " evidence_ids, requested_by_id, requested_by_type, reason,"
                                 + " dispatch_scope, dispatch_key, send_permit, created_at)"
-                                + " VALUES (?, ?, ?, ?, NULL, ?, NULL, ?, ?, ?, ?, ?, ?, ?, ?)")) {
+                                + " VALUES (?, ?, ?, ?, NULL, ?, NULL, ?, ?, ?, ?, ?, ?,"
+                                + " GREATEST(CAST(? AS timestamptz), statement_timestamp()), ?)")) {
             insert.setObject(1, response.id().value());
             insert.setObject(2, response.dispute().value());
             insert.setString(3, response.kind().name());
@@ -60,7 +61,8 @@ public final class JdbcDisputeResponseStore implements DisputeResponseStore<Conn
             insert.setString(9, response.reason().orElse(null));
             insert.setString(10, dispatchScope);
             insert.setString(11, dispatchKey);
-            // The birth permit is the birth: the first send is the dispatch's own.
+            // The birth permit is the birth: the first send is the dispatch's own - never older
+            // than the database's clock (X-TSK-013), never before created_at (the CHECK).
             insert.setTimestamp(12, Timestamp.from(response.createdAt()));
             insert.setTimestamp(13, Timestamp.from(response.createdAt()));
             insert.executeUpdate();
@@ -112,24 +114,23 @@ public final class JdbcDisputeResponseStore implements DisputeResponseStore<Conn
 
     @Override
     public Optional<Instant> renewSendPermit(
-            Connection unitOfWork, DisputeResponseId id, Instant at) {
+            Connection unitOfWork, DisputeResponseId id) {
         Objects.requireNonNull(id, "id must not be null");
-        Objects.requireNonNull(at, "at must not be null");
         // The conditional IS the permit (the refund's renewal, V009): a response another resolver
         // moved to a terminal status leaves this matching no row, and then nothing may be sent.
         // Every renewal STRICTLY advances it (the Phase 7 -> 8 transition, the refund's rule and
-        // its reason): one microsecond past the stored permit, or this instance's time if later -
-        // so a takeover's send is never made under the permit the first flight's rule reads.
+        // its reason): one microsecond past the stored permit, or the DATABASE's time if later
+        // (X-TSK-013) - so a takeover's send is never made under the permit the first flight's
+        // rule reads, and no instance's skew is in it.
         try (PreparedStatement update =
                 unitOfWork.prepareStatement(
                         "UPDATE " + TABLE
                                 + " SET send_permit = GREATEST("
                                 + "   send_permit + interval '1 microsecond',"
-                                + "   CAST(? AS timestamptz))"
+                                + "   statement_timestamp())"
                                 + " WHERE id = ? AND status IN ('DISPATCHED', 'UNKNOWN')"
                                 + " RETURNING send_permit")) {
-            update.setTimestamp(1, Timestamp.from(at));
-            update.setObject(2, id.value());
+            update.setObject(1, id.value());
             try (ResultSet row = update.executeQuery()) {
                 return row.next()
                         ? Optional.of(row.getTimestamp(1).toInstant())

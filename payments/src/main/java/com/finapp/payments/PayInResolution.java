@@ -1,6 +1,7 @@
 package com.finapp.payments;
 
 import com.finapp.platform.correlation.CorrelationContext;
+import com.finapp.platform.persistence.DatabaseTime;
 import com.finapp.platform.security.SecurityContext;
 import com.finapp.sharedkernel.correlation.Correlation;
 import com.finapp.sharedkernel.correlation.CorrelationId;
@@ -9,7 +10,6 @@ import java.sql.Connection;
 import java.time.Clock;
 import java.time.Duration;
 import java.time.Instant;
-import java.time.temporal.ChronoUnit;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Objects;
@@ -96,13 +96,14 @@ public final class PayInResolution {
 
     @SuppressWarnings("try") // The Scopes are used for their close side effects (the idiom).
     public SweepResult sweep() {
-        Instant now = Instant.now(clock);
+        // The bound on the DATABASE clock, the permit's own (X-TSK-013): this instance's clock
+        // judged against a database-stamped permit would see it older than it is when ahead.
         List<PaymentAttempt> candidates =
                 transactions.inTransaction(
                         uow ->
                                 attempts.findResolvableInitiations(
                                         uow,
-                                        now.minus(config.initiationAge()),
+                                        DatabaseTime.now(uow).minus(config.initiationAge()),
                                         config.batchSize()));
         int contacted = 0;
         int resolved = 0;
@@ -116,15 +117,11 @@ public final class PayInResolution {
                 // The permit, stamped forward CONDITIONALLY and first: the winner makes
                 // this tick's one wire call for the row, a losing sibling skips - and a
                 // row a resolver concluded meanwhile renews nothing and is skipped too.
-                Instant renewed = Instant.now(clock).truncatedTo(ChronoUnit.MICROS);
                 boolean permitted =
                         transactions.inTransaction(
                                 uow ->
                                         attempts.renewInitiationPermit(
-                                                uow,
-                                                candidate.id(),
-                                                candidate.lastDispatchedAt(),
-                                                renewed));
+                                                uow, candidate.id(), candidate.lastDispatchedAt()));
                 if (!permitted) {
                     continue;
                 }

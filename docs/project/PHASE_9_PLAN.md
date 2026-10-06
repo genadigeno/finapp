@@ -165,7 +165,7 @@ recommendation and records it here; revisiting one amends the ADR and the tasks 
 | `ROADMAP.md`'s stale current position and missing Phase 8 dependency | Corrected by the transition |
 | `sharedkernel/money/package-info.java` says nothing rounds | Corrected in `P9-TSK-002` |
 | The rematch clock-skew debt (Phase 15) | The new sources inherit it. Recorded, unchanged |
-| The Phase 5–7 send permits are instance-stamped (ADR-0057 §4's premise) | `X-TSK-013`, scheduled in M9.9 before `P9-TST-001`: every permit database-stamped; the debt row states the bound that holds until it lands (every rail's outcome-deadline margin exceeds the maximum instance skew) |
+| The Phase 5–7 send permits are instance-stamped (ADR-0057 §4's premise) | **Paid** by `X-TSK-013` (2026-10-07): every permit database-stamped and held by a trigger (payments `V028`, merchant `V009`), every bound over a permit judged on the database's clock; the premise removed from ADR-0057 §4 |
 | Amount-bearing events carry no explicit scale | `X-TSK-014` (owner Phase 15; trigger: the first consumer that reads an amount). Phase 9's own events carry `<x>Scale` from birth (§10) |
 | The Phase 5/7 webhook pipelines adopt the callback's own outcome | `X-TSK-015` (owner Phase 15; trigger: a suspected key compromise, or a provider with no inquiry) |
 

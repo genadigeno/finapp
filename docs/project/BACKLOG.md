@@ -14213,7 +14213,7 @@ providers), each owned by Phase 15 and gating nothing here.
 - **Definition of done**: `DOD-OBS`, `DOD-API` (the reports and the trace route). **Risk**: Low.
   **Cx**: M.
 
-**P9-TST-001 — The FX and cross-border storm** — `PLANNED`
+**P9-TST-001 — The FX and cross-border storm** — `READY` (marked by `X-TSK-013`'s completion gate, 2026-10-07)
 - **Objective**: prove financial correctness under every provider fault, crash, duplication and
   race, at once.
 - **Bounded context**: every Phase 9 context.
@@ -14837,7 +14837,8 @@ applied and verified 2026-09-23; criterion 5 met by the Phase 6 → 7 transition
   later-day replay would conflict rather than converge recorded as its own item with an owner.
   **Risk**: Low. **Cx**: S. **DoD**: `DOD-DOC`
 
-**X-TSK-013 — Database-stamped send permits for the Phase 5–7 outbound flows** — `READY` (marked by `P9-TSK-027`'s completion gate, 2026-10-07: `P9-TST-001`'s dependency, scheduled before it in M9.9)
+**X-TSK-013 — Database-stamped send permits for the Phase 5–7 outbound flows** — `COMPLETE` (2026-10-07; marked `READY` by `P9-TSK-027`'s completion gate)
+- **As built** (2026-10-07): as `CURRENT_STATE.md` §Just completed records. The code is payments `V028`, merchant `V009`, platform `DatabaseTime`, the five stores' births and renewals and the sweeps' bounds; the tests are `SendPermitsAreTheDatabasesTest`, `PaymentsSchemaDatabaseTest#everySendPermitIsTheDatabases` and each flow's `aSkewed...` race (`MerchantPayoutDatabaseTest`, `PaymentRefundDatabaseTest`, `DisputeResponseDatabaseTest`, `PayByBankDatabaseTest`, `WithdrawalDatabaseTest`).
 - **Context**: `JdbcPaymentAttemptStore`, `JdbcWithdrawalStore` and `JdbcMerchantPayoutStore` set
   `last_dispatched_at = ?` from the instance clock; `JdbcRefundStore` and `JdbcDisputeResponseStore`
   renew with `GREATEST(…, CAST(? AS timestamptz))`, also the instance clock. Recorded by the Phase 8

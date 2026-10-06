@@ -283,7 +283,7 @@ public final class DisputeResponses {
         // lookup matches no row, and then nothing may be sent.
         Optional<Instant> permit =
                 found.status().isResolvable()
-                        ? responses.renewSendPermit(uow, found.id(), Instant.now(clock))
+                        ? responses.renewSendPermit(uow, found.id())
                         : Optional.empty();
         if (permit.isEmpty()) {
             return new Dispatch(found, null, List.of(), false, false, null);

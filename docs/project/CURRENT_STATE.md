@@ -443,8 +443,8 @@ beneficiaries (`P9-TSK-017`), cross-border offers (`P9-TSK-018`), their authoriz
 (`P9-TSK-019`), their resolution and completion (`P9-TSK-020`), the unwinding of covers (`P9-TSK-021`), the
 corridor's settlement to cash (`P9-TSK-022`), cross-border returns (`P9-TSK-023`), cancellation by recall
 (`P9-TSK-024`), the operator FX trade reversal (`P9-TSK-025`), the second providers (`P9-TSK-026`) and Phase 9's
-meters, spans, reports and trace (`P9-TSK-027`); next **`X-TSK-013` — Database-stamped send permits for the
-Phase 5–7 outbound flows** — `READY` (`P9-TST-001`'s dependency)
+meters, spans, reports and trace (`P9-TSK-027`), with `X-TSK-013` (the Phase 5–7 send permits database-stamped);
+next **`P9-TST-001` — The FX and cross-border storm** — `READY`
 ([§Current Task](#current-task) is kept current).
 
 ## Current Milestone
@@ -460,44 +460,54 @@ since M0.1". Moved, not edited.)*
 
 ## Current Task
 
-**`X-TSK-013` — Database-stamped send permits for the Phase 5–7 outbound flows** — `READY`:
-marked by `P9-TSK-027`'s completion gate (2026-10-07). **Not started.**
+**`P9-TST-001` — The FX and cross-border storm** — `READY`:
+marked by `X-TSK-013`'s completion gate (2026-10-07). **Not started.**
 
 ### Just completed
 
-**`P9-TSK-027` — Meters, spans, reports, the trace and the dashboard row** — `COMPLETE` (2026-10-07). **M9.9
-opens at 1 of 3: Phase 9 operated by counts, ages, verdicts and audited reports, never by amounts** (PHASE_9_PLAN.md
-§15; ADR-0072, `INV-AUD-01`, `INV-AUD-02`). Every §15 row not shipped earlier: `CrossBorderMetrics`
-(`finapp.crossborder.payment` by corridor and outcome, its accept/deliver latency, `.in.transit.age` per corridor -
-NaN when unreadable, fleet `max()` - `finapp.crossborder.return`, `finapp.crossborder.cancellation`), every series
-registered eagerly over the declared corridors; `finapp.fx.trade` by pair and outcome (executed, reversed); counters
-count after commit (`AfterCommit`); `corridor` joins `MetricNames` (its "id" fragment exempt like `provider`'s).
-Eleven spans (`Phase9Spans`) - the quote, provider quote, conversion, cover dispatch and resolve, authorization,
-outbound dispatch, resolve, recall and return, counterparty screening - by decorators over the adapters and the
-controllers, identifier attributes only. The three audited reports and the trace (`Phase9Reports`, `FX_INVESTIGATE`,
-one REPEATABLE READ snapshot each, the `ReportRead`/`TraceRead` audit in the read's transaction, a bad month `422`
-before any read): `GET /v1/operator/reports/fx/position`, `.../fx/revenue`, `.../cross-border/corridors`,
-`/v1/operator/cross-border/payments/{id}/trace`; OpenAPI contract regenerated. Eleven §15 alerts in
-`infra/prometheus/rules/fx.yml` and the twelve-panel FX and cross-border dashboard row, both resolved against a live
-scrape and now pinned (the alerted set; the row's panel count). **Found and fixed at the gate**: three alerts and
-three panels queried the cover and counterparty-review age gauges without their `_seconds` base unit - series that
-never exist, so `FxCoverUnknownAged`, `FxCoverOpenAged` and `CounterpartyReviewAged` could never have fired; the
-guards' label lists gained `provider`, `corridor`, `pair` and `direction`; three report records shared a simple
-name with existing contract types (`AmountView`, `PositionRow`, `ProviderCostRow`) - the generator had silently
-merged each pair into one schema - renamed (`ReportAmount`, `CurrencyPositionRow`, `CorridorCostRow`); the
-position report registered as a READER of `FX_POSITION` in `FxBooksHaveOnePosterTest`. **Deliberate change**: a cross-border
-return's non-applied outcomes are counted per corridor by the return worker (`CrossBorderReturnDatabaseTest` sums
-across corridors). **PROBES** (SIX PROBES, SIX CAUGHT), every restore byte-identical (sha256-verified;
-`MUTATION_TESTING.md` §2 +6 rows). **Multi-instance PASS** (report-only: gauges fleet-`max()`, counters after
-commit, each report one snapshot). **NEXT**: `X-TSK-013` `READY` (`P9-TST-001`'s dependency, scheduled
-before it in M9.9).
-**Verified** by fresh runs - the fleet-wide hermetic tier 2544 across 418 suites and 18 modules; the architecture tier 157 across 27 (the slice tier 109 across 19); the task's
-own and adjacent database suites (Phase9ReportsDatabaseTest 2, AlertRulesResolveTest 6, DashboardQueriesResolveTest 3; the cross-border return, cancellation, payment, outbound-credit resolution, corridor settlement-to-cash and second-rail suites and the FX trade reversal race re-run 45); ALL 0 FAILURES - the other database tiers skipped on the owner's
-instruction.
+**`X-TSK-013` — Database-stamped send permits for the Phase 5–7 outbound flows** — `COMPLETE` (2026-10-07). **M9.9 at 2 of 4 (with
+`P9-TSK-027`, whose record said "1 of 3": the milestone also carries this item): ADR-0057 §4's skew
+premise removed** (PHASE_9_PLAN.md §2/§7; ADR-0057 §3-4;
+`INV-PAY-04`, `INV-LIFE-03`). Every Phase 5–7 send permit - the pay-in initiation's, the withdrawal's,
+the refund's (card and push return), the dispute response's and the merchant payout's - is the
+database's: born `GREATEST(created_at, statement_timestamp())` (never older than the database's clock,
+never before created_at), renewed `GREATEST(permit + 1 µs, statement_timestamp())` with no clock
+parameter, and held by a trigger per table (payments `V028`, merchant `V009`) that runs after the
+machine trigger - a backward write still refused - and re-stamps any forward write. Every bound over a
+permit is read from the same clock (platform `DatabaseTime.now`): the five sweeps' candidacy and the
+withdrawal's and payout's `NEVER_RECEIVED` bound, the latter in the transaction that locks the row.
+The withdrawal and payout renewals' conditional moved from "not after my clock" to "the permit I read";
+the withdrawal reads back the permit the database stored, at birth and at renewal. The build rule
+`SendPermitsAreTheDatabasesTest` (no permit assignment binds a parameter; every birth is the GREATEST
+form; no renewal port takes a clock; planted violations refused). **Skew races**: one per flow - a
+takeover (the pay-in: a sibling sweep) on an instance 5 s BEHIND and, inside its flight, a sweep on one
+5 s AHEAD with a 4 s bound - provider instruction count 1 for the payout, refund, dispute response and
+pay-in, each of which concluded or re-sent on the instances' clocks; the withdrawal's race holds on
+either clock (its bound is the rail's declared 90 s deadline, which a 10 s skew cannot cross) and is
+recorded so. **Found and fixed**: (1) `WithdrawalDatabaseTest`'s corridor-misroute fixture had been
+broken since `P9-TSK-026` (the register refuses a rail without its corridor declaration; the fixture
+named one of two) - unseen because that suite was outside `-026`'s database run; (2) judging on the
+database's clock exposed suites that swept the instant after a real dispatch: the test database's VM
+clock steps back ~1.6 s every ~27 s, so a row born while the host ran ahead was not yet due - a
+`Thread.sleep` past a tiny bound was a race against the VM, now the deterministic `AgedPermits`
+(created_at and permit moved together, as the owner, triggers off for the one statement); (3) the
+Phase 7 storm's "register emptied and rebuilt" demonstration deleted EVERY unheld expectation in the
+shared container, then judged every position: a cross-border suite's live-opened `CROSSBORDER_PAYOUT`
+expectations (a kind the opening backfill, built for pre-register history per ADR-0067 §8, was never
+meant to re-adopt) vanished, and `CORRIDOR_CLEARING JPY` read unexplained by exactly their 96,840 -
+harmless until Phase 9 suites shared the container, latent while the full tier is skipped; the
+deletion is now scoped to the storm's own entries. **PROBES**
+(SEVEN PROBES, SEVEN CAUGHT), every restore byte-identical (sha256-verified; `MUTATION_TESTING.md` §2 +7 rows).
+**Multi-instance PASS**: one clock judges every permit; stamps strictly forward under the row lock;
+the skew races count it. The debt row "The Phase 5–7 send permits are instance-stamped" is paid.
+**NEXT**: `P9-TST-001` `READY`.
+**Verified** by fresh runs - the fleet-wide hermetic tier 2548 across 419 suites and 18 modules; the architecture tier 161 across 28;
+the five flows' and the adjacent sweep suites (the five flows' suites with their skew races, the payments schema suite, the checkout, ambiguity, sweeper, void, payout endpoint, payout return and outbound credit resolution suites and the Phase 7 storm: 257 across 13, the one failure finding (3) - the Phase 7 storm then re-run green beside the corridor suite, 9 across 2; the payments and merchant migration pins 32 and 8 within the hermetic tier); ALL 0 FAILURES - the other database tiers
+skipped on the owner's instruction.
 
 ### Previously
 
-The per-task completion records — 221 blocks, from `P9-TSK-026` back to project initiation
+The per-task completion records — 222 blocks, from `P9-TSK-027` back to project initiation
 (`X-TSK-016` cross-cutting, standing between `P9-TSK-011` and `P9-TSK-010`; `X-TSK-005` cross-cutting, standing between `P7-TSK-015` and `P7-TSK-014`; `X-TSK-004`
 cross-cutting, standing between `P7-TSK-001` and the Phase 6 → 7 transition) — are archived in
 [`history/TASK_HISTORY.md`](history/TASK_HISTORY.md).
@@ -959,7 +969,7 @@ carries, what triggers paying it down, and the owning phase.
 | **A transfer can pre-empt an in-flight instant execution the platform cannot yet name** - a scheme line carrying only SCHEME_REF (the optional end-to-end reference omitted) resolves through `scheme_execution_claim`, which is written at completion, so the lookup answers UNKNOWN while the execution is in flight and a four-eyes transfer is admitted; the late completion then posts its own credit (the re-gate's NEW-IDEM-1, 2026-10-03) | The in-flight execution holds no stored reference the lookup could resolve; refusing every UNKNOWN scheme-rail transfer would strand every genuinely unknown line | The double credit is NOT silent: the completion opens an expectation that can never reach the RESOLVED item, goes overdue, and surfaces as MISSING_EXTERNAL for a person's claw-back | The completion side learning to detect a person-resolved item (the payments-side design ADR-0071 section 2 names) | Phase 15 |
 | **A rematch residual that faults every tick leaves no durable record** - the rematch leg's containment rolls back and logs WARN, unlike the reprocess leg's ERRORED examination, so a permanently faulting residual re-heads the worklist each tick with only logs to show for it (the re-gate's NEW-ATOM-1, 2026-10-03) | A durable exclusion would strand transient faults, which time's leg must retry; the drain rule (the transition's repair) keeps the leg progressing past it | One chunk slot occupied; an operator reads WARN logs, not a row | Repeated "A rematch candidate was skipped" warnings for one item across ticks | Phase 15 |
 | ~~**The Phase 6 fee engine prices 0- and 3-minor-unit currencies by a 2-minor assumption**~~ - **paid 2026-10-04** by `P9-TSK-003`, and the row's premise corrected: the engine never assumed two decimals (`FeeCalculation` derives every rounding from the currency's own scale, and `FeeCalculationTest` covered 0/2/3 hermetically since Phase 6); what was deferred was the LEDGER-LEVEL fee batch, which could run only the currencies the chart held - now all five (`MerchantCaptureDatabaseTest#theFeeBatchConservesEveryMinorUnit`, 600 assessments). Was: the 0/3-minor fee-batch deferral recorded at Phase 6, now load-bearing: Phase 9 makes JPY and BHD postable (the Phase 8 → 9 transition, ADR-0074 D27) | Deferred at Phase 6 because no such currency was postable; Phase 9 ends that | A JPY fee batch priced before the repair would round at the wrong scale | `P9-TSK-003`, which pays it in the task that makes the currencies postable | Phase 9 (`P9-TSK-003`) |
-| **The Phase 5–7 send permits are instance-stamped** - `last_dispatched_at` and the permit renewals are stamped from the instance clock, correct only while every rail's outcome-deadline margin exceeds the maximum instance skew (the Phase 8 → 9 transition; ADR-0057 §4's premise, `PHASE_9_PLAN.md` §7/§12.5) | The margin holds today by orders of magnitude; restamping five stores is `X-TSK-013`'s one change | A skewed instance could re-send inside another's live flight only if skew approached the deadline margin | `X-TSK-013`, scheduled in M9.9 before the storm | Phase 9 (M9.9) |
+| ~~**The Phase 5–7 send permits are instance-stamped**~~ - **paid in full 2026-10-07** by `X-TSK-013`: born `GREATEST(created_at, statement_timestamp())`, renewed on the database's clock and held by a trigger per table (payments `V028`, merchant `V009`), every bound over a permit read from the same clock; proven by one ±5 s skew race per flow and `SendPermitsAreTheDatabasesTest`. Was: - `last_dispatched_at` and the permit renewals are stamped from the instance clock, correct only while every rail's outcome-deadline margin exceeds the maximum instance skew (the Phase 8 → 9 transition; ADR-0057 §4's premise, `PHASE_9_PLAN.md` §7/§12.5) | The margin holds today by orders of magnitude; restamping five stores is `X-TSK-013`'s one change | A skewed instance could re-send inside another's live flight only if skew approached the deadline margin | `X-TSK-013`, scheduled in M9.9 before the storm | Phase 9 (M9.9) |
 | **Pre-Phase-9 amount events carry no explicit scale** - minor-unit strings with a currency leave the scale implicit, readable only through the currency's definition (the Phase 8 → 9 transition; `PHASE_9_PLAN.md` §12.2) | Phase 9's events carry `<x>Scale` from birth; earlier producers change under `X-TSK-014` | A JPY amount on a pre-Phase-9 event shape would read at the wrong scale after `P9-TSK-003` | `X-TSK-014`'s trigger: the first pre-Phase-9 producer that can carry a 0- or 3-minor currency | Phase 15 (`X-TSK-014`) |
 | **The Phase 5 and Phase 7 providers adopt a callback's own outcome** - ADR-0083 makes a verified callback a hint, adopted only from an authenticated inquiry; the PSP and instant-rail pipelines predate it (the Phase 8 → 9 transition, D25) | Re-plumbing two live pipelines is its own task with its own failure modes | A forged-but-verified callback class is already excluded by HMAC; the hint rule is defence in depth | `X-TSK-015`'s trigger: the first provider whose callback authenticity the platform cannot verify | Phase 15 (`X-TSK-015`) |
 | **Funds owed to a closed customer by a parked corridor return rest in suspense** - a cross-border return whose customer has closed parks under its break with no payable party (the Phase 8 → 9 transition; `PHASE_9_PLAN.md` §12.9's returns) | The Phase 8 resolution kinds already hold the value visibly; paying it out needs the escheatment design | Value waits in `SUSPENSE_UNMATCHED`, aged and owned, until a person resolves it | The client-money/escheatment review | Phase 15 |
@@ -1042,8 +1052,8 @@ Resolved during initiation:
 
 ## Next Task
 
-**`X-TSK-013` — Database-stamped send permits for the Phase 5–7 outbound flows** — `READY`
-(the Current Task), marked by `P9-TSK-027`'s completion gate.
+**`P9-TST-001` — The FX and cross-border storm** — `READY`
+(the Current Task), marked by `X-TSK-013`'s completion gate.
 *(This section read "`P8-TSK-009` — `READY`" from `P8-TSK-008`'s gate until
 `P8-TSK-013`'s record found it — the stale-second-copy class, in the section whose
 whole job is to mirror.)*

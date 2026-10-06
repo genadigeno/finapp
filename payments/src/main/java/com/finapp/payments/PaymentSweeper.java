@@ -1,6 +1,7 @@
 package com.finapp.payments;
 
 import com.finapp.platform.correlation.CorrelationContext;
+import com.finapp.platform.persistence.DatabaseTime;
 import com.finapp.platform.security.SecurityContext;
 import com.finapp.sharedkernel.correlation.Correlation;
 import com.finapp.sharedkernel.correlation.CorrelationId;
@@ -276,7 +277,8 @@ public final class PaymentSweeper {
                         uow ->
                                 refunds.findSweepable(
                                         uow,
-                                        now.minus(dispatchedAge),
+                                        // The permit's own clock, the database's (X-TSK-013).
+                                        DatabaseTime.now(uow).minus(dispatchedAge),
                                         now.minus(unknownAge),
                                         batchSize));
         List<RefundStatus> refundActing = new ArrayList<>();
@@ -336,8 +338,7 @@ public final class PaymentSweeper {
             Optional<ProviderReference> capturedAs =
                     transactions.inTransaction(
                             uow ->
-                                    refunds.renewSendPermit(
-                                                    uow, candidate.id(), Instant.now(clock))
+                                    refunds.renewSendPermit(uow, candidate.id())
                                             .map(
                                                     permit ->
                                                             attempts.findById(

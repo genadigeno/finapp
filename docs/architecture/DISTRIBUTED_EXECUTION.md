@@ -185,8 +185,8 @@ gauge — and join `NoSingleInstanceAssumptionRulesTest.LEASE_PROTECTED_SCHEDULE
 twenty) and `SystemActorCallSitesAreEnumeratedTest` with their tasks. Every window any of them
 judges — quote validity, reference staleness, screening validity, sweep bounds, the
 `NEVER_RECEIVED` deadline — is judged in SQL on the database clock, and every send permit is
-database-stamped (`X-TSK-013` closes the Phase 5–7 instance-clock exception inside this phase,
-M9.9). `crossborder` owns no schedule: its payment moves only inside `payments`' and `kyc`'s
+database-stamped (`X-TSK-013` closed the Phase 5–7 instance-clock exception on 2026-10-07:
+payments `V028`, merchant `V009`, `SendPermitsAreTheDatabasesTest`). `crossborder` owns no schedule: its payment moves only inside `payments`' and `kyc`'s
 applying transactions, which is why it alone has no sweeper gauge.
 
 ### Why the Phase 7 → 8 transition added rows for components that do not exist yet
