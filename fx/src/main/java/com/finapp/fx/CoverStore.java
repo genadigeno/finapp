@@ -124,6 +124,51 @@ public interface CoverStore {
     /** One attempt of a cover. */
     Optional<AttemptRow> attempt(Connection unitOfWork, UUID coverId, int attempt);
 
+    /**
+     * The quote's cover of {@code kind} {@code FOR UPDATE} - the subject rank's last row, after the quote and its
+     * trade (`P9-TSK-021`, the abandonment writer's evaluation of the wanted position).
+     */
+    Optional<CoverRow> lockByQuote(Connection unitOfWork, FxQuoteId quoteId, CoverKind kind);
+
+    /** The quote's cover of {@code kind}, unlocked. */
+    Optional<CoverRow> findByQuote(Connection unitOfWork, FxQuoteId quoteId, CoverKind kind);
+
+    /** An executed cover's mirror, its quote no longer wanting the cover (`P9-TSK-021`, ADR-0077 section 8). */
+    record UnwindDraft(
+            UUID id,
+            FxQuoteId quoteId,
+            String providerCode,
+            CurrencyCode source,
+            CurrencyCode destination,
+            FixedSide fixedSide,
+            Money fixedAmount,
+            UUID causedByEventId,
+            String correlationId) {
+        public UnwindDraft {
+            Objects.requireNonNull(id, "id must not be null");
+            Objects.requireNonNull(quoteId, "quoteId must not be null");
+            Objects.requireNonNull(providerCode, "providerCode must not be null");
+            Objects.requireNonNull(source, "source must not be null");
+            Objects.requireNonNull(destination, "destination must not be null");
+            Objects.requireNonNull(fixedSide, "fixedSide must not be null");
+            Objects.requireNonNull(fixedAmount, "fixedAmount must not be null");
+            Objects.requireNonNull(causedByEventId, "causedByEventId must not be null");
+            Objects.requireNonNull(correlationId, "correlationId must not be null");
+        }
+    }
+
+    /**
+     * Inserts the unwind, born {@code DISPATCHED} at attempt 1 with no attempt row yet - its first dispatch prices it.
+     * {@code UNIQUE (quote_id, kind)} is the arbiter: false when the quote's unwind already exists.
+     */
+    boolean insertUnwind(Connection unitOfWork, UnwindDraft draft);
+
+    /**
+     * An unwind's attempt 1 - our reference and the fresh firm quote it executes - stored before its first send;
+     * false when another instance stored it first ({@code (cover_id, attempt)} the arbiter).
+     */
+    boolean insertFirstAttempt(Connection unitOfWork, UUID coverId, String clientReference, String providerQuoteReference);
+
     /** The attempt that minted {@code clientReference}, whichever cover and attempt it is. */
     Optional<AttemptRow> attemptByReference(Connection unitOfWork, String clientReference);
 

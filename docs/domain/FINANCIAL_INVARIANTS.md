@@ -1046,6 +1046,9 @@ discipline for the platform's own currency risk).
 `closedToFreeAdjustments()` binding trigger) + `DOMAIN`.
 **Verify:** The FX books proof every storm round and at rest; a planted raw line flips it.
 **Phase:** 9
+*(The unwind's half in force since `P9-TSK-021` (2026-10-06): an executed cover whose quote is abandoned is
+unwound exactly once, its entry closing the cover's position legs reversed with one realised line, so
+`FX_POSITION` returns to zero and the books proof holds at rest. Verified by `UnwindRetryDatabaseTest`.)*
 
 *(As built by `P9-TSK-013`: `FxBooksProof` per book and currency, `finapp.fx.proof{purpose}` the failing currencies; a raw line planted on each of the five books flips that book alone (`FxProofDatabaseTest`); `FxBooksHaveOnePosterTest` permits the proof as the books' one reader.)*
 

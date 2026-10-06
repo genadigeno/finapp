@@ -42,6 +42,12 @@ import lombok.extern.slf4j.Slf4j;
  * {@code T(n+1)} stored - before the permit that licenses sending them commits - and sent. A
  * refused requote leaves the cover {@code REJECTED} with its backoff advanced, and alerts. A
  * {@code REJECTED} cover its quote no longer wants is voided (ADR-0077 section 7).
+ *
+ * <p><strong>The unwind's first price</strong> (`P9-TSK-021`): an unwind is born in its writer's transaction, which
+ * cannot call the provider, so it is born without an attempt; its first dispatch obtains a fresh firm quote for its
+ * fixed leg from the SAME provider, judges it by the band, stores attempt 1 and {@code T1} - before the send - and
+ * sends. An implausible or unanswered price leaves it waiting for the next sweep, alerted. An unwind is always
+ * wanted: it is requoted after a rejection, never voided.
  */
 @Slf4j
 @SuppressWarnings("try") // Each Scope is used for its close side effect (the established idiom).
@@ -197,7 +203,16 @@ public final class FxCoverDispatch {
         if (adapter.isEmpty()) {
             return;
         }
-        CoverStore.AttemptRow attempt = currentAttempt(cover);
+        Optional<CoverStore.AttemptRow> current = transactions.inTransaction(unitOfWork ->
+                covers.attempt(unitOfWork, cover.id(), cover.attempts()));
+        if (current.isEmpty() && cover.kind() == CoverKind.UNWIND && cover.attempts() == 1) {
+            current = priceUnwind(cover, adapter.get());
+            if (current.isEmpty()) {
+                return;
+            }
+        }
+        CoverStore.AttemptRow attempt = current
+                .orElseThrow(() -> new IllegalStateException("a cover's current attempt has its row"));
         FxProvider.ExecutionAnswer answer = adapter.get().execute(new FxProvider.ExecutionRequest(
                 attempt.clientReference(), attempt.providerQuoteReference(), cover.source(), cover.destination(),
                 cover.fixedSide(), cover.fixedAmount()));
@@ -218,11 +233,42 @@ public final class FxCoverDispatch {
         }
     }
 
+    /**
+     * The unwind's first price: a fresh firm quote for its fixed leg, judged by the band, then attempt 1 and {@code T1}
+     * stored under the lock order - the attempt's primary key deciding between instances - before any send.
+     */
+    private Optional<CoverStore.AttemptRow> priceUnwind(CoverStore.CoverRow cover, FxProvider adapter) {
+        String quoteRequest = "CR-" + ids.next().toString().replace("-", "");
+        FxProvider.FirmQuoteAnswer answer = adapter.firmQuote(new FxProvider.FirmQuoteRequest(
+                quoteRequest, cover.source(), cover.destination(), cover.fixedSide(), cover.fixedAmount()));
+        Optional<CoverStore.AttemptRow> priced = transactions.inTransaction(unitOfWork -> {
+            retainQuote(unitOfWork, cover, quoteRequest, answer);
+            if (!(answer instanceof FxProvider.FirmQuoteAnswer.Quoted quoted) || !plausible(unitOfWork, cover, quoted)) {
+                return Optional.<CoverStore.AttemptRow>empty();
+            }
+            covers.lockWanted(unitOfWork, cover.quoteId());
+            CoverStore.CoverRow locked = covers.lock(unitOfWork, cover.id()).orElseThrow();
+            if (locked.status() != CoverStatus.DISPATCHED || locked.attempts() != 1) {
+                return Optional.<CoverStore.AttemptRow>empty();
+            }
+            covers.insertFirstAttempt(unitOfWork, locked.id(), "T-" + ids.next().toString().replace("-", ""),
+                    quoted.providerQuoteReference());
+            return covers.attempt(unitOfWork, locked.id(), 1);
+        });
+        if (priced.isEmpty()) {
+            log.error("ALERT: FX unwind {} at provider {} waits: its first price was refused ({})",
+                    cover.id(), cover.providerCode(), answer.getClass().getSimpleName());
+            observer.outcome(cover.providerCode(), cover.kind(), CoverObserver.Outcome.REQUOTE_REFUSED);
+        }
+        return priced;
+    }
+
     private void requote(CoverStore.CoverRow cover, Actor actor) {
         boolean voided = transactions.inTransaction(unitOfWork -> {
             CoverStore.Wanted wanted = covers.lockWanted(unitOfWork, cover.quoteId());
             CoverStore.CoverRow locked = covers.lock(unitOfWork, cover.id()).orElseThrow();
-            if (locked.status() != CoverStatus.REJECTED || locked.attempts() != cover.attempts() || wanted.wanted()) {
+            if (locked.status() != CoverStatus.REJECTED || locked.attempts() != cover.attempts()
+                    || stillWanted(locked, wanted)) {
                 return false;
             }
             if (!covers.transition(unitOfWork, locked.id(), locked.attempts(), CoverStatus.REJECTED, CoverStatus.VOIDED)) {
@@ -268,6 +314,11 @@ public final class FxCoverDispatch {
                 .ifPresent(found -> send(found, actor));
     }
 
+    /** A cover is wanted while its quote wants it; an unwind is wanted until it executes - its quote never wants again. */
+    private static boolean stillWanted(CoverStore.CoverRow cover, CoverStore.Wanted wanted) {
+        return cover.kind() == CoverKind.UNWIND || wanted.wanted();
+    }
+
     /** What a requote leg came to: this caller requoted, another applier did first, or it was refused. */
     private enum Requote { REQUOTED, LOST, REFUSED }
 
@@ -276,7 +327,7 @@ public final class FxCoverDispatch {
             Connection unitOfWork, CoverStore.CoverRow cover, FxProvider.FirmQuoteAnswer.Quoted quoted, Actor actor) {
         CoverStore.Wanted wanted = covers.lockWanted(unitOfWork, cover.quoteId());
         CoverStore.CoverRow locked = covers.lock(unitOfWork, cover.id()).orElseThrow();
-        if (locked.status() != CoverStatus.REJECTED || locked.attempts() != cover.attempts() || !wanted.wanted()) {
+        if (locked.status() != CoverStatus.REJECTED || locked.attempts() != cover.attempts() || !stillWanted(locked, wanted)) {
             return false;
         }
         String reference = "T-" + ids.next().toString().replace("-", "");
@@ -314,8 +365,10 @@ public final class FxCoverDispatch {
             return false;
         }
         QuoteStore.PlanRow plan = quotes.plan(unitOfWork, cover.quoteId()).orElseThrow();
+        // The band and the reference age are the quote's own pair's, under the purpose it was priced for - an unwind's
+        // pair is the reverse, which the policy need not offer (P9-TSK-021); the band judges either orientation.
         Optional<PolicyPair> terms = policies.version(unitOfWork, plan.version())
-                .flatMap(version -> QuoteIssuance.termsFor(version, cover.source(), cover.destination()));
+                .flatMap(version -> QuoteIssuance.termsFor(version, plan.purpose(), plan.source(), plan.destination()));
         if (terms.isEmpty()) {
             return false;
         }

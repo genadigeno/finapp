@@ -43,6 +43,7 @@ public final class CrossBorderCompletionBooking {
     @NonNull private final OutboxWriter<Connection> outbox;
     @NonNull private final IdGenerator ids;
     @NonNull private final Clock clock;
+    @NonNull private final CoverUnwinds unwinds;
 
     /**
      * The completion entry's lines: the quote's frozen plan, its destination credited to {@code clearing}, and the
@@ -106,7 +107,10 @@ public final class CrossBorderCompletionBooking {
 
     /**
      * The quote {@code ACCEPTED -> ABANDONED} - its subject failed before booking - with {@code fx.FxQuoteAbandoned}
-     * naming why. False when the quote was not {@code ACCEPTED} (already abandoned: a converging duplicate).
+     * naming why, then the wanted position evaluated under the quote's lock (`P9-TSK-021`): an executed cover is
+     * unwound, a rejected one voided, an in-flight one left to its applier. The rule is evaluated on every call, the
+     * abandoned quote's losers too - a rule over state, the unwind's unique deciding there is one. False when the
+     * quote was not {@code ACCEPTED} (already abandoned: a converging duplicate).
      */
     public boolean abandon(Connection unitOfWork, FxQuoteId quoteId, String reason, Actor actor, CorrelationId correlation) {
         Objects.requireNonNull(reason, "reason must not be null");
@@ -116,6 +120,7 @@ public final class CrossBorderCompletionBooking {
         quotes.lockOwned(unitOfWork, quoteId, plan.owner())
                 .orElseThrow(() -> new IllegalStateException("an abandoning quote always reads back"));
         if (!quotes.abandon(unitOfWork, quoteId)) {
+            unwinds.evaluate(unitOfWork, quoteId, actor);
             return false;
         }
         quotes.appendEvent(unitOfWork, quoteId, Optional.of(QuoteStatus.ACCEPTED), QuoteStatus.ABANDONED,
@@ -126,6 +131,7 @@ public final class CrossBorderCompletionBooking {
                         QuoteIssuance.PRODUCER, correlation, CausationId.of(correlation.value())),
                 EventPayload.of().with("reason", reason).toBytes(),
                 EventPayload.MEDIA_TYPE);
+        unwinds.evaluate(unitOfWork, quoteId, actor);
         return true;
     }
 

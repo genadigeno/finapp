@@ -46,6 +46,13 @@ public class FxCoverBeans {
         return new FxCoverMetrics(FxProviderBeans.DECLARED.keySet(), coverStore, dataSource::getConnection, clock, meterRegistry);
     }
 
+    /** The wanted-position rule (`P9-TSK-021`): the cover applier's and the abandonment writer's alike. */
+    @Bean
+    com.finapp.fx.CoverUnwinds coverUnwinds(
+            CoverStore coverStore, AuditWriter<Connection> auditWriter, IdGenerator idGenerator, Clock clock) {
+        return new com.finapp.fx.CoverUnwinds(coverStore, auditWriter, idGenerator, clock);
+    }
+
     @Bean
     FxCoverOutcomes fxCoverOutcomes(
             CoverStore coverStore,
@@ -58,10 +65,12 @@ public class FxCoverBeans {
             OutboxWriter<Connection> outboxWriter,
             AuditWriter<Connection> auditWriter,
             IdGenerator idGenerator,
-            Clock clock) {
+            Clock clock,
+            com.finapp.fx.CoverUnwinds coverUnwinds) {
         return new FxCoverOutcomes(
                 coverStore, quoteStore, fxProviders, new ChartOfAccounts<>(ledgerAccountStore), postingService,
-                fxSettlementExpectations, fxProviderEvidenceStore, outboxWriter, auditWriter, idGenerator, clock);
+                fxSettlementExpectations, fxProviderEvidenceStore, outboxWriter, auditWriter, idGenerator, clock,
+                coverUnwinds);
     }
 
     @Bean

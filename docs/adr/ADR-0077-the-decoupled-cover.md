@@ -215,3 +215,12 @@ spans the provider call: permit transaction, wire, outcome transaction).
 - Until `P9-TSK-009` lands, nothing in this ADR is implemented: every statement is the decided
   design, to be corrected by the tasks that build it.
 - The Phase 9 review reads this ADR against the code before accepting it (`P9-DOC-001`).
+- *As built by `P9-TSK-021` (2026-10-06):* decisions 7 and 8 - `CoverUnwinds` evaluates the wanted position for
+  the abandonment writer (every call, under the quote's row lock) and the cover's applier (executing a cover its
+  quote no longer wants); `UNIQUE (quote_id, kind)` is the arbiter through an unconditional `ON CONFLICT DO
+  NOTHING`. The unwind is the executed cover's mirror - fx `V008` holds it for every writer - and closes the
+  quote's plan reversed, so `CoverLines` posts section 12.4(h) unchanged and the FX books proof needs no change.
+  **Deviation from decision 2:** an unwind is born in its writer's transaction, which cannot call the provider, so
+  it is born without an attempt row: its first dispatch obtains the fresh firm quote, judges it by the band and
+  stores attempt 1 and `T1` - before any send - then sends; an implausible price leaves it waiting, alerted. A
+  requote of an unwind is always wanted; the requote's band terms are the quote's own pair under its purpose.

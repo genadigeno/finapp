@@ -51,6 +51,20 @@ public final class CoverLines {
         public static Plan of(QuoteStore.PlanRow plan) {
             return new Plan(plan.positionSource(), plan.positionDestination(), plan.fixedSide());
         }
+
+        /**
+         * An unwind's plan (`P9-TSK-021`, PHASE_9_PLAN.md section 12.4(h)): the quote's plan reversed - its position
+         * destination sold, its position source bought back, the fixed leg the cover's on the opposite side.
+         */
+        public static Plan reversed(QuoteStore.PlanRow plan) {
+            return new Plan(plan.positionDestination(), plan.positionSource(),
+                    plan.fixedSide() == FixedSide.FIXED_SOURCE ? FixedSide.FIXED_DESTINATION : FixedSide.FIXED_SOURCE);
+        }
+
+        /** The plan a cover of {@code kind} closes: the quote's, or - for an unwind - the quote's reversed. */
+        public static Plan of(QuoteStore.PlanRow plan, CoverKind kind) {
+            return kind == CoverKind.UNWIND ? reversed(plan) : of(plan);
+        }
     }
 
     /** What the provider executed, in the plan's two currencies. */

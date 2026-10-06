@@ -12913,7 +12913,7 @@ break row, as the approval door must.)*
 
 # Phase 9 — FX and Cross-Border Payments
 
-Status: `IN_PROGRESS` — started 2026-10-03 with `P9-TSK-001` (21 of 30 items complete, M9.1 to M9.5 closed, M9.6 at 3 of 5); entry gate passed 2026-10-02 by the Phase 8 → 9 transition
+Status: `IN_PROGRESS` — started 2026-10-03 with `P9-TSK-001` (22 of 30 items complete, M9.1 to M9.5 closed, M9.6 at 4 of 5); entry gate passed 2026-10-02 by the Phase 8 → 9 transition
 ([`reviews/PHASE_8_TO_9_TRANSITION.md`](reviews/PHASE_8_TO_9_TRANSITION.md)), elaborated to task
 granularity by the same transition: thirty items (`P9-TSK-001`…`-027`, `P9-TST-001`, `P9-TST-002`,
 `P9-DOC-001`) across nine milestones, with `P9-TSK-001` marked `READY`. The engineering plan is
@@ -13931,7 +13931,8 @@ providers), each owned by Phase 15 and gating nothing here.
 - **Definition of done**: `DOD-FIN`, `DOD-SEC`, `DOD-API` (the corridor webhook route), `DOD-EVENT`.
   **Risk**: High. **Cx**: L.
 
-**P9-TSK-021 — Unwinding covers** — `READY` (marked by `P9-TSK-020`'s completion gate, 2026-10-06)
+**P9-TSK-021 — Unwinding covers** — `COMPLETE` (2026-10-06; marked `READY` by `P9-TSK-020`'s completion gate)
+- **As built** (2026-10-06): as `CURRENT_STATE.md` §Just completed records. Persistence is fx `V008` (two triggers, no table); the rule is `CoverUnwinds`; the unwind's first attempt is priced by its first dispatch.
 - **Objective**: when a covered quote is abandoned or its trade reversed, unwind the cover exactly
   once.
 - **Bounded context**: `fx`, `ledger`.
@@ -13963,7 +13964,7 @@ providers), each owned by Phase 15 and gating nothing here.
   the customer's wallet delta is 0.
 - **Definition of done**: `DOD-FIN`, `DOD-EVENT`. **Risk**: Medium. **Cx**: M.
 
-**P9-TSK-022 — Corridor settlement to cash** — `PLANNED`
+**P9-TSK-022 — Corridor settlement to cash** — `READY` (marked by `P9-TSK-021`'s completion gate, 2026-10-06)
 - **Objective**: discharge `CORRIDOR_CLEARING` from the provider's report and the bank, with its
   fees checked.
 - **Bounded context**: `settlement`, `reconciliation`, `app`.
