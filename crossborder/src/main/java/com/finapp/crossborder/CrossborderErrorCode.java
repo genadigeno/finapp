@@ -54,7 +54,34 @@ public enum CrossborderErrorCode implements ErrorCode {
      * Reserved for the Phase 13 risk seam (`P9-TSK-016`, ADR-0081 point 8): {@link CrossBorderRiskDecision}
      * refused the instruction before the offer was accepted, and nothing was consumed.
      */
-    RISK_REFUSED("crossborder.RiskRefused", 422, "The transfer cannot be accepted.");
+    RISK_REFUSED("crossborder.RiskRefused", 422, "The transfer cannot be accepted."),
+
+    /**
+     * No available corridor delivers the beneficiary's currency in its country, no candidate rail is
+     * eligible, or the provider attests another destination (`P9-TSK-017`) - nothing registered.
+     */
+    CORRIDOR_NOT_OFFERED("crossborder.CorridorNotOffered", 422, "Payments to this destination are not offered."),
+
+    /**
+     * The provider's payee check did not match and the customer did not acknowledge it (`P9-TSK-017`,
+     * ADR-0080 section 3) - nothing registered; the same grant may be presented again with the acknowledgement.
+     */
+    NO_MATCH_UNACKNOWLEDGED(
+            "crossborder.NoMatchUnacknowledged",
+            422,
+            "The account holder's name did not match; acknowledge this to register the beneficiary."),
+
+    /** The provider refused the grant - invalid, expired or already used (`P9-TSK-017`). */
+    GRANT_REFUSED("crossborder.GrantRefused", 422, "The beneficiary authorisation was not accepted."),
+
+    /**
+     * The corridor provider could not be reached or answered unreadably (`P9-TSK-017`) - nothing registered;
+     * retry with a new idempotency key and the same grant.
+     */
+    PROVIDER_UNAVAILABLE("crossborder.ProviderUnavailable", 503, "The payment provider is unavailable; try again."),
+
+    /** No beneficiary of the caller's has this identifier - the uniform 404 (`P9-TSK-017`). */
+    BENEFICIARY_NOT_FOUND("crossborder.BeneficiaryNotFound", 404, "No beneficiary matches the requested identifier.");
 
     private final String code;
     private final int status;

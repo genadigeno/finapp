@@ -58,7 +58,27 @@ public enum CrossborderAuditAction implements AuditableAction {
             "crossborder.CorridorEnableRejected",
             "A corridor enable proposal was rejected, or withdrawn by its proposer; the corridor stays"
                     + " unavailable.",
-            true);
+            true),
+
+    /**
+     * A customer registered a beneficiary abroad (`P9-TSK-017`, ADR-0080 section 3). No reason - the
+     * customer's own act, taken for and against nobody; the summary names the destination, the issuing rail
+     * and the payee check, never a name or an account identifier.
+     */
+    BENEFICIARY_REGISTERED(
+            "crossborder.BeneficiaryRegistered",
+            "A customer registered a beneficiary abroad by the corridor provider's reference, with its issuing"
+                    + " rail and payee check; screening requested.",
+            false),
+
+    /**
+     * A customer revoked a beneficiary (`P9-TSK-017`). No reason - the customer's own act; the summary
+     * names the state it left, which the customer is never shown (tipping-off).
+     */
+    BENEFICIARY_REVOKED(
+            "crossborder.BeneficiaryRevoked",
+            "A customer revoked a beneficiary abroad, from whichever non-terminal state it was in.",
+            false);
 
     private final String code;
     private final String description;

@@ -1,6 +1,6 @@
 # Task History
 
-The per-task completion records that accumulated behind `## Current Task` - 210 "Previously" blocks, newest first, from `P9-TSK-015` back to project initiation. *(`X-TSK-016` is cross-cutting and completed after `P9-TSK-010` and before `P9-TSK-011`, so it stands between them.)* *(`X-TSK-005` is cross-cutting and completed after `P7-TSK-014` and before `P7-TSK-015`, so it stands between them; its record came in with its branch's merge.)* *(`X-TSK-004` is cross-cutting and completed after the Phase 6 → 7 transition, so it stands second, between `P7-TSK-001` and the transition's record - the transition's block moved here by `P7-TSK-001`'s gate, exactly as an earlier form of this note said it would.)*
+The per-task completion records that accumulated behind `## Current Task` - 211 "Previously" blocks, newest first, from `P9-TSK-016` back to project initiation. *(`X-TSK-016` is cross-cutting and completed after `P9-TSK-010` and before `P9-TSK-011`, so it stands between them.)* *(`X-TSK-005` is cross-cutting and completed after `P7-TSK-014` and before `P7-TSK-015`, so it stands between them; its record came in with its branch's merge.)* *(`X-TSK-004` is cross-cutting and completed after the Phase 6 → 7 transition, so it stands second, between `P7-TSK-001` and the transition's record - the transition's block moved here by `P7-TSK-001`'s gate, exactly as an earlier form of this note said it would.)*
 
 **Archive.** These records were moved verbatim out of
 [`CURRENT_STATE.md`](../CURRENT_STATE.md) on 2026-09-20 so that the canonical description of
@@ -12,6 +12,38 @@ Current state: [`CURRENT_STATE.md`](../CURRENT_STATE.md) ·
 Authoritative backlog: [`BACKLOG.md`](../BACKLOG.md)
 
 ---
+
+### Previously
+
+**`P9-TSK-016` — Counterparty screening in kyc, and the Phase 13 seams** — `COMPLETE` (2026-10-06). **M9.5 AT
+3 OF 4: kyc screens a counterparty and decides - a hit, an indeterminate answer or an unverified payee always waits
+for a person, and unavailable means unpayable** (ADR-0081 §§1-2, 4-5, 8; `INV-KYC-01`, `INV-KYC-04`, `INV-KYC-05`,
+`INV-AUD-01`). **kyc `V009`**: `counterparty_screening` (the name AES-256-GCM under kyc's evidence key with the
+screening id's sixteen bytes as associated data - `CounterpartySubjectCipher`; `request_reference UNIQUE`; the payee
+verdict as handed in; every outcome's `decision_basis`, `policy_version` and `decided_at`, with
+`CHECK ((decision_basis = 'REVIEWER') = (decided_by IS NOT NULL))`, a reason code and narrative exactly with a
+person, and no `AUTOMATIC` `CLEAR` without a payee `MATCH`; an edge trigger and column grants freezing the subject),
+the append-only `counterparty_screening_attempt` (the verdict and the provider's bytes sealed under the same binding),
+the reason screen twinned from fx `V004` on the narrative. **The domain** (kyc): `CounterpartyScreeningProvider` on the
+existing `ScreeningAdapter` and credential (`/counterparty-screenings`, the name JSON-escaped, no bank identifier;
+nothing arriving is `UNAVAILABLE`, an unreadable answer `INDETERMINATE`); `CounterpartyScreenings` - screen
+(idempotent on the caller's reference), re-screen from the stored subject, retry, review, clearance - the rule
+`route` (only `CLEAR` beside `MATCH` clears; a provider `CLEAR` with an unverified payee is evidence and goes
+`IN_REVIEW`, `PAYEE_UNVERIFIED`), T-e writing the attempt, the outcome, `kyc.CounterpartyScreeningDecided` (audit with
+a reason, and event) and calling `ScreeningOutcomeListener` (refusing until `-017`) in one transaction; kyc's own
+`TransactionRunner`; `CounterpartyScreeningObserver`. **identity**: `COUNTERPARTY_SCREENING_REVIEW`, held by
+`KYC_REVIEWER`. **crossborder**: the Phase 13 seams `CrossBorderLimitCheck`, `CrossBorderRiskDecision`,
+`CrossBorderVerdict`, `CrossBorderInstruction` and the field-free `PermitAllUntilPhase13`, with `crossborder.LimitRefused`
+and `crossborder.RiskRefused` reserved. **app**: `CounterpartyScreeningBeans`, the review door
+`POST /v1/operator/kyc/counterparty-screenings/{id}/decision` (keyed), the leaderless
+`CounterpartyScreeningRetrySchedule`, the meters `finapp.kyc.counterparty.screening{outcome}`, `.review.pending`,
+`.review.age`, `finapp.kyc.counterparty.sweeper.enabled`; the registers and the data classification. **PROBES**
+(Ten probes, ten caught, each by its own case), every restore byte-identical (sha256-verified; `MUTATION_TESTING.md` §2 +10 rows). **Multi-instance
+PASS** - ten reviewers one decision, ten sweepers one attempt per due screening (each counted). One deviation
+recorded: the seam `REFUSE`-writes-nothing proof lands with its consumer, the authorization (`P9-TSK-019`). Nothing
+posts. **NEXT**: `P9-TSK-017` `READY`. **Verified** by fresh runs - the fleet-wide hermetic tier 2526 across 414 suites and 18 modules; the
+architecture tier 157 across 27; the task's own database suites while built (CounterpartyScreeningDatabaseTest 12, KycReasonScreenDatabaseTest 3); ALL 0 FAILURES - the other
+database tiers skipped on the owner's instruction.
 
 ### Previously
 

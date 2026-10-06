@@ -962,6 +962,76 @@
           }
         }
       },
+      "crossborder.BeneficiaryNotFound": {
+        "content": {
+          "application/problem+json": {
+            "schema": {
+              "allOf": [
+                {
+                  "$ref": "#/components/schemas/ProblemDetail"
+                },
+                {
+                  "properties": {
+                    "code": {
+                      "const": "crossborder.BeneficiaryNotFound"
+                    },
+                    "status": {
+                      "const": 404
+                    },
+                    "type": {
+                      "const": "https://finapp.example/problems/crossborder.BeneficiaryNotFound"
+                    }
+                  }
+                }
+              ]
+            }
+          }
+        },
+        "description": "[404] No beneficiary matches the requested identifier.",
+        "headers": {
+          "X-Client-Correlation-Id": {
+            "$ref": "#/components/headers/X-Client-Correlation-Id"
+          },
+          "X-Correlation-Id": {
+            "$ref": "#/components/headers/X-Correlation-Id"
+          }
+        }
+      },
+      "crossborder.CorridorNotOffered": {
+        "content": {
+          "application/problem+json": {
+            "schema": {
+              "allOf": [
+                {
+                  "$ref": "#/components/schemas/ProblemDetail"
+                },
+                {
+                  "properties": {
+                    "code": {
+                      "const": "crossborder.CorridorNotOffered"
+                    },
+                    "status": {
+                      "const": 422
+                    },
+                    "type": {
+                      "const": "https://finapp.example/problems/crossborder.CorridorNotOffered"
+                    }
+                  }
+                }
+              ]
+            }
+          }
+        },
+        "description": "[422] Payments to this destination are not offered.",
+        "headers": {
+          "X-Client-Correlation-Id": {
+            "$ref": "#/components/headers/X-Client-Correlation-Id"
+          },
+          "X-Correlation-Id": {
+            "$ref": "#/components/headers/X-Correlation-Id"
+          }
+        }
+      },
       "crossborder.CorridorPolicyInvalid": {
         "content": {
           "application/problem+json": {
@@ -997,6 +1067,41 @@
           }
         }
       },
+      "crossborder.GrantRefused": {
+        "content": {
+          "application/problem+json": {
+            "schema": {
+              "allOf": [
+                {
+                  "$ref": "#/components/schemas/ProblemDetail"
+                },
+                {
+                  "properties": {
+                    "code": {
+                      "const": "crossborder.GrantRefused"
+                    },
+                    "status": {
+                      "const": 422
+                    },
+                    "type": {
+                      "const": "https://finapp.example/problems/crossborder.GrantRefused"
+                    }
+                  }
+                }
+              ]
+            }
+          }
+        },
+        "description": "[422] The beneficiary authorisation was not accepted.",
+        "headers": {
+          "X-Client-Correlation-Id": {
+            "$ref": "#/components/headers/X-Client-Correlation-Id"
+          },
+          "X-Correlation-Id": {
+            "$ref": "#/components/headers/X-Correlation-Id"
+          }
+        }
+      },
       "crossborder.LimitRefused": {
         "content": {
           "application/problem+json": {
@@ -1023,6 +1128,41 @@
           }
         },
         "description": "[422] The transfer exceeds a limit that applies to it.",
+        "headers": {
+          "X-Client-Correlation-Id": {
+            "$ref": "#/components/headers/X-Client-Correlation-Id"
+          },
+          "X-Correlation-Id": {
+            "$ref": "#/components/headers/X-Correlation-Id"
+          }
+        }
+      },
+      "crossborder.NoMatchUnacknowledged": {
+        "content": {
+          "application/problem+json": {
+            "schema": {
+              "allOf": [
+                {
+                  "$ref": "#/components/schemas/ProblemDetail"
+                },
+                {
+                  "properties": {
+                    "code": {
+                      "const": "crossborder.NoMatchUnacknowledged"
+                    },
+                    "status": {
+                      "const": 422
+                    },
+                    "type": {
+                      "const": "https://finapp.example/problems/crossborder.NoMatchUnacknowledged"
+                    }
+                  }
+                }
+              ]
+            }
+          }
+        },
+        "description": "[422] The account holder's name did not match; acknowledge this to register the beneficiary.",
         "headers": {
           "X-Client-Correlation-Id": {
             "$ref": "#/components/headers/X-Client-Correlation-Id"
@@ -1128,6 +1268,41 @@
           }
         },
         "description": "[409] A proposal already awaits a decision; decide or reject it first.",
+        "headers": {
+          "X-Client-Correlation-Id": {
+            "$ref": "#/components/headers/X-Client-Correlation-Id"
+          },
+          "X-Correlation-Id": {
+            "$ref": "#/components/headers/X-Correlation-Id"
+          }
+        }
+      },
+      "crossborder.ProviderUnavailable": {
+        "content": {
+          "application/problem+json": {
+            "schema": {
+              "allOf": [
+                {
+                  "$ref": "#/components/schemas/ProblemDetail"
+                },
+                {
+                  "properties": {
+                    "code": {
+                      "const": "crossborder.ProviderUnavailable"
+                    },
+                    "status": {
+                      "const": 503
+                    },
+                    "type": {
+                      "const": "https://finapp.example/problems/crossborder.ProviderUnavailable"
+                    }
+                  }
+                }
+              ]
+            }
+          }
+        },
+        "description": "[503] The payment provider is unavailable; try again.",
         "headers": {
           "X-Client-Correlation-Id": {
             "$ref": "#/components/headers/X-Client-Correlation-Id"
@@ -7254,6 +7429,97 @@
         },
         "type": "object"
       },
+      "CrossBorderBeneficiaryList": {
+        "properties": {
+          "beneficiaries": {
+            "items": {
+              "$ref": "#/components/schemas/CrossBorderBeneficiaryView"
+            },
+            "type": "array"
+          },
+          "truncated": {
+            "type": "boolean"
+          }
+        },
+        "type": "object"
+      },
+      "CrossBorderBeneficiaryRequest": {
+        "properties": {
+          "acknowledgeNoMatch": {
+            "type": "boolean"
+          },
+          "country": {
+            "minLength": 1,
+            "type": "string"
+          },
+          "currency": {
+            "minLength": 1,
+            "type": "string"
+          },
+          "entityType": {
+            "minLength": 1,
+            "type": "string"
+          },
+          "grant": {
+            "maxLength": 128,
+            "minLength": 0,
+            "type": "string"
+          },
+          "name": {
+            "maxLength": 140,
+            "minLength": 0,
+            "type": "string"
+          },
+          "nickname": {
+            "maxLength": 40,
+            "minLength": 0,
+            "type": "string"
+          }
+        },
+        "required": [
+          "country",
+          "currency",
+          "entityType",
+          "grant",
+          "name",
+          "nickname"
+        ],
+        "type": "object"
+      },
+      "CrossBorderBeneficiaryView": {
+        "properties": {
+          "country": {
+            "type": "string"
+          },
+          "currency": {
+            "type": "string"
+          },
+          "entityType": {
+            "type": "string"
+          },
+          "id": {
+            "type": "string"
+          },
+          "nickname": {
+            "type": "string"
+          },
+          "status": {
+            "type": "string"
+          },
+          "suffix": {
+            "type": "string"
+          }
+        },
+        "type": "object"
+      },
+      "CrossBorderRevocationReceipt": {
+        "properties": {
+          "status": {
+            "type": "string"
+          }
+        },
+        "type": "object"
+      },
       "DailySummaryReport": {
         "properties": {
           "date": {
@@ -12998,6 +13264,120 @@
               }
             },
             "description": "Created"
+          }
+        }
+      }
+    },
+    "/v1/me/cross-border/beneficiaries": {
+      "get": {
+        "operationId": "listBeneficiaries",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/CrossBorderBeneficiaryList"
+                }
+              }
+            },
+            "description": "OK"
+          }
+        }
+      },
+      "post": {
+        "operationId": "registerBeneficiary",
+        "parameters": [
+          {
+            "in": "header",
+            "name": "Idempotency-Key",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/CrossBorderBeneficiaryRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "201": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/CrossBorderBeneficiaryView"
+                }
+              }
+            },
+            "description": "Created"
+          }
+        }
+      }
+    },
+    "/v1/me/cross-border/beneficiaries/{id}": {
+      "get": {
+        "operationId": "readBeneficiary",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "id",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/CrossBorderBeneficiaryView"
+                }
+              }
+            },
+            "description": "OK"
+          }
+        }
+      }
+    },
+    "/v1/me/cross-border/beneficiaries/{id}/revocation": {
+      "post": {
+        "operationId": "revokeBeneficiary",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "id",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "in": "header",
+            "name": "Idempotency-Key",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/CrossBorderRevocationReceipt"
+                }
+              }
+            },
+            "description": "OK"
           }
         }
       }

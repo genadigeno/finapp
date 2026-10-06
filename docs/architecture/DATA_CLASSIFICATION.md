@@ -1935,6 +1935,59 @@ screening id as associated data; every other module, log, event and audit body i
 | `counterparty_screening_attempt` | `evidence_length` | `CONFIDENTIAL` | A hit answer is longer than a clear one - `verification_evidence.content_length`'s reasoning |
 | `counterparty_screening_attempt` | `answered_at` | `CONFIDENTIAL` | Dates a screening event |
 
+### `crossborder` - the beneficiary and its corridor selection - *added by `P9-TSK-017`*
+
+No name, no grant and no account identifier is stored here (`INV-RAIL-03`): the name is kyc's,
+encrypted; the grant is exchanged and forgotten.
+
+| Table | Column | Level | Note |
+|---|---|---|---|
+| `corridor_selection` | `id` | `INTERNAL` | An aggregate identifier. Generated |
+| `corridor_selection` | `policy_id` | `INTERNAL` | The pinned corridor policy version - an identifier of a thing |
+| `corridor_selection` | `destination_country` | `CONFIDENTIAL` | Where a customer pays abroad - a fact about their relationships |
+| `corridor_selection` | `destination_currency` | `CONFIDENTIAL` | As the country |
+| `corridor_selection` | `entity_type` | `CONFIDENTIAL` | Whether the payee is a person or a firm |
+| `corridor_selection` | `available_corridors` | `INTERNAL` | Platform configuration observed at the selection |
+| `corridor_selection` | `chosen_rail` | `INTERNAL` | A platform-declared rail id |
+| `corridor_selection` | `selected_at` | `CONFIDENTIAL` | Dates a customer's registration |
+| `corridor_selection_step` | `selection_id` | `INTERNAL` | As `corridor_selection.id` |
+| `corridor_selection_step` | `ordinal` | `INTERNAL` | A position |
+| `corridor_selection_step` | `corridor` | `INTERNAL` | A platform corridor code |
+| `corridor_selection_step` | `rail` | `INTERNAL` | A platform-declared rail id |
+| `corridor_selection_step` | `outcome` | `INTERNAL` | An enumeration of five values |
+| `beneficiary_registration` | `id` | `INTERNAL` | An aggregate identifier. Generated |
+| `beneficiary_registration` | `owner_party` | `CONFIDENTIAL` | Whose registration - links a customer to a payee abroad |
+| `beneficiary_registration` | `exchange_reference` | `CONFIDENTIAL` | Derived one-way from the owner and the single-use grant (SHA-256, truncated) - never the grant; the provider's idempotency key for the exchange |
+| `beneficiary_registration` | `selection_id` | `INTERNAL` | As `corridor_selection.id` |
+| `beneficiary_registration` | `rail` | `INTERNAL` | A platform-declared rail id |
+| `beneficiary_registration` | `destination_country` | `CONFIDENTIAL` | As `corridor_selection.destination_country` |
+| `beneficiary_registration` | `destination_currency` | `CONFIDENTIAL` | As the country |
+| `beneficiary_registration` | `entity_type` | `CONFIDENTIAL` | As `corridor_selection.entity_type` |
+| `beneficiary_registration` | `created_at` | `CONFIDENTIAL` | Dates a customer's act |
+| `beneficiary` | `id` | `INTERNAL` | An aggregate identifier. Generated |
+| `beneficiary` | `owner_party` | `CONFIDENTIAL` | As the registration's |
+| `beneficiary` | `registration_id` | `INTERNAL` | As `beneficiary_registration.id` |
+| `beneficiary` | `rail` | `INTERNAL` | The issuing rail, frozen |
+| `beneficiary` | `destination_reference` | `RESTRICTED-FINANCIAL` | The corridor provider's opaque reference for a payee's account (`INV-RAIL-03`) - not an account identifier, but what instructs money to it; shape-`CHECK`ed and instrument-screened |
+| `beneficiary` | `suffix` | `CONFIDENTIAL` | Four display characters the customer recognises the payee by |
+| `beneficiary` | `payee_check` | `CONFIDENTIAL` | Whether the name matched the account at the provider |
+| `beneficiary` | `acknowledged_no_match` | `CONFIDENTIAL` | The customer's acknowledgement of a payee check that did not match |
+| `beneficiary` | `destination_country` | `CONFIDENTIAL` | Provider-attested (ADR-0080 section 3) |
+| `beneficiary` | `destination_currency` | `CONFIDENTIAL` | Provider-attested |
+| `beneficiary` | `entity_type` | `CONFIDENTIAL` | Provider-attested |
+| `beneficiary` | `nickname` | `CONFIDENTIAL` | The customer's free text naming a payee - screened for card and account shapes at the domain and by `CHECK`; never the payee's name, which is kyc's |
+| `beneficiary` | `status` | `CONFIDENTIAL` | **The tipping-off column**: `IN_REVIEW` and `BLOCKED` are shown to the customer only shaped (`PENDING_VERIFICATION`, `UNAVAILABLE`) |
+| `beneficiary` | `screening_id` | `INTERNAL` | kyc's screening identifier - an identifier of a thing |
+| `beneficiary` | `registered_at` | `CONFIDENTIAL` | Dates a customer's act |
+| `beneficiary` | `revoked_at` | `CONFIDENTIAL` | Dates a customer's act |
+| `beneficiary_status_event` | `id` | `INTERNAL` | An event identifier. Generated |
+| `beneficiary_status_event` | `beneficiary_id` | `INTERNAL` | As `beneficiary.id` |
+| `beneficiary_status_event` | `from_status` | `CONFIDENTIAL` | As `beneficiary.status` - the history of a review |
+| `beneficiary_status_event` | `to_status` | `CONFIDENTIAL` | As `beneficiary.status` |
+| `beneficiary_status_event` | `cause` | `CONFIDENTIAL` | Whether the screening or the customer moved it |
+| `beneficiary_status_event` | `screening_id` | `INTERNAL` | As `beneficiary.screening_id` |
+| `beneficiary_status_event` | `occurred_at` | `CONFIDENTIAL` | Dates a screening outcome or a customer's act |
+
 ### Free text, classified at its ceiling
 
 `audit_record.reason`, `audit_record.change_summary`, `idempotency_record.response_body`,

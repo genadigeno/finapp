@@ -766,6 +766,11 @@ subject takes, no evidence that still finds it, no acknowledgement back on its r
 | `crossborder.CorridorPolicyInvalid` | 422 | The corridor policy request is not well formed. |
 | `crossborder.LimitRefused` | 422 | The transfer exceeds a limit that applies to it. |
 | `crossborder.RiskRefused` | 422 | The transfer cannot be accepted. |
+| `crossborder.CorridorNotOffered` | 422 | Payments to this destination are not offered. |
+| `crossborder.NoMatchUnacknowledged` | 422 | The account holder's name did not match; acknowledge this to register the beneficiary. |
+| `crossborder.GrantRefused` | 422 | The beneficiary authorisation was not accepted. |
+| `crossborder.ProviderUnavailable` | 503 | The payment provider is unavailable; try again. |
+| `crossborder.BeneficiaryNotFound` | 404 | No beneficiary matches the requested identifier. |
 
 The FX controller's doors (`P9-TSK-007`, ADR-0075 §3). `NotFound` is the `FileNotFound`
 departure at the pricing-policy and enable-request doors - every route sits behind
@@ -815,6 +820,18 @@ Phase 13 seams `CrossBorderLimitCheck` and `CrossBorderRiskDecision` are require
 cross-border authorization (`P9-TSK-019`), consulted in-lock before the offer is accepted, and Phase 9
 wires `PermitAllUntilPhase13`. A `REFUSE` will consume nothing; reserving the codes now means Phase 13
 changes no contract.
+
+The beneficiary doors (`P9-TSK-017`, ADR-0080 §3) add five. Every registration refusal is recorded on
+the idempotency claim, so a replay of the key answers the same. `CorridorNotOffered` is one answer for
+every reason the destination cannot be served - no active policy, no available corridor, no eligible
+rail, or a provider attesting another destination. `NoMatchUnacknowledged` registers nothing: the
+customer presents the SAME grant again with `acknowledgeNoMatch`, which the exchange reference
+converges (the provider answers the same exchange). `GrantRefused` is the provider's definitive
+refusal of the grant. `ProviderUnavailable` (`503`) is every answer that could not be read - retried
+with a new key and the same grant. `BeneficiaryNotFound` is the uniform `404` for another customer's
+beneficiary and a malformed id alike. A non-payable beneficiary is never named by a code here: the
+read shows the shaped status, and a revocation answers the same `200 {"status":"REVOKED"}` from every
+state (tipping-off).
 
 ## 3a. Rejection at the boundary
 

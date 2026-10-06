@@ -438,6 +438,11 @@ class CredentialReachesNoEmittedSinkTest {
                         // account shapes at the domain and by kyc V009's CHECK, and the request's
                         // toString carries its length only.
                         "ScreeningDecisionRequest",
+                        // P9-TSK-017: the cross-border beneficiary registration - a destination, the
+                        // corridor provider's single-use GRANT (exchanged and never stored; redacted in
+                        // toString), the beneficiary's NAME (stored only by kyc, encrypted), a screened
+                        // nickname and the entity type. No platform secret.
+                        "CrossBorderBeneficiaryRequest",
                         // P9-TSK-008: the customer's quote request - a pair, a fixed side and an
                         // amount as a decimal string. No secret, and closed: no rate can be sent.
                         "QuoteRequestBody",

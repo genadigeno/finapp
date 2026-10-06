@@ -47,13 +47,13 @@ import javax.crypto.spec.SecretKeySpec;
  *
  * <p>Test scope deliberately: simulators are harnesses, never production beans (ADR-0008).
  */
-final class SimulatedCorridorEngine implements AutoCloseable {
+public final class SimulatedCorridorEngine implements AutoCloseable {
 
     /** One signed callback: the body, its timestamp, and the signature over both. */
     record SignedCallback(String body, long timestamp, String signature) {}
 
     /** What the provider holds behind a grant - the attested attributes and its payee-check word. */
-    record Beneficiary(String country, String currency, String entityType, String payeeCheck) {}
+    public record Beneficiary(String country, String currency, String entityType, String payeeCheck) {}
 
     private static final class Credit {
         final String reference;
@@ -102,11 +102,11 @@ final class SimulatedCorridorEngine implements AutoCloseable {
         server.start();
     }
 
-    static SimulatedCorridorEngine start(byte[] callbackKey) throws IOException {
+    public static SimulatedCorridorEngine start(byte[] callbackKey) throws IOException {
         return new SimulatedCorridorEngine(callbackKey);
     }
 
-    URI baseUrl() {
+    public URI baseUrl() {
         return URI.create("http://127.0.0.1:" + server.getAddress().getPort());
     }
 
@@ -117,7 +117,7 @@ final class SimulatedCorridorEngine implements AutoCloseable {
     }
 
     /** A single-use grant for a beneficiary the provider holds. */
-    String issueGrant(Beneficiary beneficiary) {
+    public String issueGrant(Beneficiary beneficiary) {
         String grant = "grant-" + instance + "-" + sequence.incrementAndGet();
         grants.put(grant, beneficiary);
         return grant;

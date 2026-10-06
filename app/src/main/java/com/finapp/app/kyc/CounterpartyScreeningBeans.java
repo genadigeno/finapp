@@ -36,8 +36,8 @@ import org.springframework.transaction.support.TransactionTemplate;
 /**
  * Wiring for counterparty screening (`P9-TSK-016`, ADR-0081): kyc's own transaction runner, the subject
  * cipher under kyc's evidence key, the store, the provider over the existing screening endpoint and
- * credential, the listener (refusing until the beneficiary listens, `P9-TSK-017`), the meters, the
- * review desk and the leaderless retry schedule.
+ * credential, the meters, the review desk and the leaderless retry schedule. The listener is the
+ * cross-border beneficiary's, composed in {@code CrossBorderBeneficiaryBeans} (`P9-TSK-017`).
  */
 @Configuration(proxyBeanMethods = false)
 public class CounterpartyScreeningBeans {
@@ -96,12 +96,6 @@ public class CounterpartyScreeningBeans {
         }
         ScreeningAdapter adapter = ScreeningAdapter.sanctions(URI.create(providerUrl), timeout);
         return adapter::screen;
-    }
-
-    /** Refuses until the cross-border beneficiary listens (`P9-TSK-017`) - nothing screens before then. */
-    @Bean
-    ScreeningOutcomeListener screeningOutcomeListener() {
-        return ScreeningOutcomeListener.REFUSING;
     }
 
     @Bean
