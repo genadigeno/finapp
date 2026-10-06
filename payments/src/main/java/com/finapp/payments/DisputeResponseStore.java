@@ -40,9 +40,10 @@ public interface DisputeResponseStore<T> {
      * A new send permit, stamped forward CONDITIONALLY on the response still being resolvable —
      * the conditional IS the permit: a response another resolver moved to a terminal status since
      * the caller looked matches no row, and then nothing may be sent. Returns the permit as
-     * stored; empty when no send may follow.
+     * stored; empty when no send may follow. The new permit is the database's own instant,
+     * strictly forward (`X-TSK-013`): no instance's clock is an input.
      */
-    Optional<Instant> renewSendPermit(T unitOfWork, DisputeResponseId id, Instant at);
+    Optional<Instant> renewSendPermit(T unitOfWork, DisputeResponseId id);
 
     /**
      * Moves the response {@code before → after}, conditional on {@code before}'s status, with its

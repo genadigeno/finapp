@@ -593,7 +593,8 @@ class PayByBankDatabaseTest {
                 200,
                 "{\"status\":\"accepted\",\"reference\":\"" + scheme + "\",\"cycle\":\"C5\","
                         + "\"amount\":\"8.00\",\"currency\":\"USD\"}");
-        Thread.sleep(80); // past the tiny candidacy bound
+        ageTheAttempt(waiting);
+        ageTheAttempt(mismatched);
 
         // And at the door: an attributed 'executed' statement carrying NO amount reaches the
         // applier (the door's own shape check marks it unmappable) and moves nothing either -
@@ -642,7 +643,7 @@ class PayByBankDatabaseTest {
                 SimulatedInstantSchemeAdapter.INITIATION_STATUS_PATH + referenceOf(attemptId),
                 200,
                 "{\"status\":\"expired\"}");
-        Thread.sleep(80);
+        ageTheAttempt(attemptId);
 
         wideSweep();
 
@@ -1145,7 +1146,7 @@ class PayByBankDatabaseTest {
         // lesson (P7-TSK-004), met at the sweep this time. The row's own state is the
         // assertion of record.
         schemeInitiates("https://payer-psp.example/authorize/recovered-" + suffix());
-        Thread.sleep(80); // past the tiny candidacy bound
+        ageTheAttempt(attemptId);
         PayInResolution.SweepResult swept = wideSweep();
         assertThat(swept.contacted()).isGreaterThanOrEqualTo(1);
         assertThat(oneString(
@@ -1172,6 +1173,47 @@ class PayByBankDatabaseTest {
     }
 
     @Test
+    @DisplayName("X-TSK-013: a sweep on an instance 5 s BEHIND renews the initiation permit and, inside its"
+            + " call, a sweep on one 5 s AHEAD runs - the permit is young on the database's clock, so the"
+            + " scheme is contacted once for the row, never twice")
+    void aSkewedSweepPairContactsOnce() throws Exception {
+        Fixture f = bankFixture();
+        provider.receivesTheRequestThenLosesTheResponse(SimulatedInstantSchemeAdapter.INITIATIONS_PATH);
+        String paymentId = field(confirmedPayment(f, "6.00").body(), "id");
+        String attemptId = attemptIdOf(paymentId);
+        // The lost initiation a minute old: due for either sweep's bound.
+        ageTheAttempt(attemptId);
+        schemeInitiates("https://payer-psp.example/authorize/skew-" + suffix());
+        java.util.concurrent.atomic.AtomicReference<PayInResolution.SweepResult> inFlight =
+                new java.util.concurrent.atomic.AtomicReference<>();
+        PushRail behindsWire =
+                (PushRail) java.lang.reflect.Proxy.newProxyInstance(
+                        PushRail.class.getClassLoader(), new Class<?>[] {PushRail.class}, (proxy, method, args) -> {
+                            if (method.getName().equals("initiate") && inFlight.get() == null) {
+                                // This sweep's permit is committed and its call is on the wire.
+                                inFlight.set(sweepOn(Duration.ofSeconds(4), com.finapp.app.database.ServerSkewedClock.of(Duration.ofSeconds(5)),
+                                        instantRailBean));
+                            }
+                            try {
+                                return method.invoke(instantRailBean, args);
+                            } catch (java.lang.reflect.InvocationTargetException thrown) {
+                                throw thrown.getCause();
+                            }
+                        });
+
+        sweepOn(Duration.ofMillis(50), com.finapp.app.database.ServerSkewedClock.of(Duration.ofSeconds(-5)), behindsWire);
+
+        assertThat(inFlight.get()).isNotNull();
+        assertThat(provider.headerValues(
+                                SimulatedInstantSchemeAdapter.INITIATIONS_PATH,
+                                SimulatedInstantSchemeAdapter.IDEMPOTENCY_KEY_HEADER))
+                .as("the lost first call and ONE re-initiation: on the instances' clocks the renewed permit"
+                        + " read ten seconds old and the sweep ahead contacted the scheme a third time")
+                .filteredOn(referenceOf(attemptId)::equals)
+                .hasSize(2);
+    }
+
+    @Test
     @DisplayName("a lost callback is resolved by the initiation inquiry on the current row:"
             + " EXECUTED once, one entry, and a second sweep converges quietly")
     void aLostCallbackIsResolvedByInquiry() throws Exception {
@@ -1187,7 +1229,7 @@ class PayByBankDatabaseTest {
                 200,
                 "{\"status\":\"accepted\",\"reference\":\"sch-inq-" + suffix()
                         + "\",\"cycle\":\"C4\",\"amount\":\"8.00\",\"currency\":\"USD\"}");
-        Thread.sleep(80);
+        ageTheAttempt(attemptId);
         double executedBefore =
                 com.finapp.app.telemetry.RailOutcomeCounts.railOutcome(meterRegistry, com.finapp.payments.SimulatedInstantSchemeAdapter.RAIL.id(), "payment", "executed");
         double legacyBefore = com.finapp.app.telemetry.RailOutcomeCounts.attempt(meterRegistry, "executed");
@@ -1381,14 +1423,12 @@ class PayByBankDatabaseTest {
         Instant expected =
                 transactions.inTransaction(
                         uow -> attempts.findById(uow, id).orElseThrow().lastDispatchedAt());
-        Instant renewed = Instant.now(CLOCK).plusSeconds(1)
-                .truncatedTo(java.time.temporal.ChronoUnit.MICROS);
         boolean first =
                 transactions.inTransaction(
-                        uow -> attempts.renewInitiationPermit(uow, id, expected, renewed));
+                        uow -> attempts.renewInitiationPermit(uow, id, expected));
         boolean second =
                 transactions.inTransaction(
-                        uow -> attempts.renewInitiationPermit(uow, id, expected, renewed));
+                        uow -> attempts.renewInitiationPermit(uow, id, expected));
         assertThat(first).isTrue();
         assertThat(second)
                 .as("the loser of the expected-value conditional skips the wire this tick")
@@ -1644,7 +1684,7 @@ class PayByBankDatabaseTest {
                 200,
                 "{\"status\":\"accepted\",\"reference\":\"sch-race-" + suffix()
                         + "\",\"cycle\":\"C4\",\"amount\":\"6.00\",\"currency\":\"USD\"}");
-        Thread.sleep(80); // past the tiny candidacy bound
+        ageTheAttempt(attemptId);
 
         tenAtOnce(this::wideSweep);
 
@@ -2154,16 +2194,27 @@ class PayByBankDatabaseTest {
      * waiting rows other suites left behind (the shared-database citizenship lesson): the
      * same real components as the bean, the same tiny candidacy bound.
      */
+    /** Due for any sweep's bound, on the database's clock (X-TSK-013; AgedPermits says why not a sleep). */
+    private static void ageTheAttempt(String attemptId) throws SQLException {
+        com.finapp.app.database.AgedPermits.age(
+                "payments.payment_attempt", "last_dispatched_at", UUID.fromString(attemptId), Duration.ofMinutes(1));
+    }
+
     private PayInResolution.SweepResult wideSweep() {
+        return sweepOn(Duration.ofMillis(50), CLOCK, instantRailBean);
+    }
+
+    /** A wide sweep on an instance whose clock is {@code clock} (X-TSK-013), over {@code rail}. */
+    private PayInResolution.SweepResult sweepOn(Duration initiationAge, Clock clock, PushRail rail) {
         return new PayInResolution(
                         attempts,
                         intents,
                         outcomes,
-                        instantRailBean,
+                        rail,
                         evidenceBean,
-                        new PayInResolution.Config(Duration.ofMillis(50), 2_000),
+                        new PayInResolution.Config(initiationAge, 2_000),
                         ids,
-                        CLOCK,
+                        clock,
                         transactions)
                 .sweep();
     }

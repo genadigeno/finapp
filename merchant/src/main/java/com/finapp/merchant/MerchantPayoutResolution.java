@@ -1,6 +1,7 @@
 package com.finapp.merchant;
 
 import com.finapp.platform.correlation.CorrelationContext;
+import com.finapp.platform.persistence.DatabaseTime;
 import com.finapp.platform.security.SecurityContext;
 import com.finapp.sharedkernel.correlation.Correlation;
 import com.finapp.sharedkernel.correlation.CorrelationId;
@@ -123,7 +124,8 @@ public final class MerchantPayoutResolution {
                         uow ->
                                 payouts.findSweepable(
                                         uow,
-                                        now.minus(dispatchedAge),
+                                        // The permit's own clock, the database's (X-TSK-013).
+                                        DatabaseTime.now(uow).minus(dispatchedAge),
                                         now.minus(unknownAge),
                                         batchSize));
         List<MerchantPayoutStatus> judged = new ArrayList<>();
@@ -175,9 +177,15 @@ public final class MerchantPayoutResolution {
                         return Optional.<MerchantPayoutStatus>empty();
                     }
                     Instant now = Instant.now(clock);
+                    // The bound on the permit's own clock, read under the lock: the database's
+                    // (X-TSK-013) - an instance running ahead would see a live permit as old.
                     MerchantPayoutOutcomes.Applied applied =
                             outcomes.applyQueryAnswer(
-                                    uow, found.get(), answer, now.minus(dispatchedAge), correlation);
+                                    uow,
+                                    found.get(),
+                                    answer,
+                                    DatabaseTime.now(uow).minus(dispatchedAge),
+                                    correlation);
                     // Retained whatever it moved: a late or contradictory answer beside a
                     // resolved payout is evidence, not a move (INV-HIST-02).
                     answer.evidence()

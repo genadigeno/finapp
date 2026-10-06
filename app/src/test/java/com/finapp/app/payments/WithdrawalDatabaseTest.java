@@ -509,6 +509,93 @@ class WithdrawalDatabaseTest {
     }
 
     /**
+     * X-TSK-013's race for the withdrawal: a takeover on an instance 5 s BEHIND, and inside its flight
+     * a sweep on one 5 s AHEAD. Here the protective bound is the rail's DECLARED outcome deadline
+     * (90 s + margin), which a 10 s skew could never cross - so this race holds on either clock; it is
+     * run because the item re-runs every flow's, and it pins the read-back the permit now needs (the
+     * takeover's re-send carries the permit the database stamped). The stamping itself is held by
+     * SendPermitsAreTheDatabasesTest and payments V028.
+     */
+    @Test
+    @DisplayName("X-TSK-013: a takeover 5 s BEHIND and a sweep 5 s AHEAD inside its flight - nothing"
+            + " concluded, our reference sent once, the withdrawal completes")
+    void aSkewedTakeoverAndSweepSendOnce() throws Exception {
+        Fixture f = fundedFixture("20.00");
+        Seeded seeded = seedDispatched(f, "3.00", Instant.now(CLOCK).minus(Duration.ofHours(1)));
+        String key = "seed-" + seeded.reference();
+        try (Connection other = DatabaseRoles.application()) {
+            other.setAutoCommit(false);
+            new com.finapp.platform.idempotency.JdbcIdempotencyRecordStore()
+                    .claim(
+                            other,
+                            new com.finapp.platform.idempotency.IdempotencyKey(
+                                    "payments.withdrawal:" + f.customerId(), key),
+                            com.finapp.platform.idempotency.RequestFingerprint.sha256(
+                                    ("payments.withdrawal|" + f.customerId() + "|"
+                                                    + f.methodId() + "|300|USD|2")
+                                            .getBytes(java.nio.charset.StandardCharsets.UTF_8)),
+                            CorrelationId.of("crashed-withdrawal"),
+                            Instant.now(CLOCK),
+                            Instant.now(CLOCK).plus(Duration.ofDays(1)),
+                            Duration.ofMinutes(-1));
+            other.commit();
+        }
+        // The scheme has not yet received the takeover's transfer when the sweep asks.
+        provider.succeedsWith(
+                SimulatedInstantSchemeAdapter.TRANSFER_STATUS_PATH + seeded.reference(),
+                200,
+                "{\"status\":\"unrecognised\"}");
+        schemeAccepts("sch-skew", "C1");
+        WithdrawalResolution ahead =
+                new WithdrawalResolution(
+                        withdrawalStore, outcomes, instantRail, railsBean, RailId.of("instant"),
+                        evidenceBean,
+                        new WithdrawalResolution.Config(
+                                Duration.ofSeconds(4), Duration.ofSeconds(4), Duration.ofSeconds(1), 2_000),
+                        ids, com.finapp.app.database.ServerSkewedClock.of(Duration.ofSeconds(5)), transactions);
+        java.util.concurrent.atomic.AtomicReference<WithdrawalResolution.SweepResult> inFlight =
+                new java.util.concurrent.atomic.AtomicReference<>();
+        PushRail takeoversWire =
+                (PushRail) java.lang.reflect.Proxy.newProxyInstance(
+                        PushRail.class.getClassLoader(), new Class<?>[] {PushRail.class}, (proxy, method, args) -> {
+                            if (method.getName().equals("send")) {
+                                // The takeover's permit is committed and its transfer on the wire.
+                                inFlight.set(ahead.sweep());
+                            }
+                            try {
+                                return method.invoke(instantRail, args);
+                            } catch (java.lang.reflect.InvocationTargetException thrown) {
+                                throw thrown.getCause();
+                            }
+                        });
+        Withdrawals behind =
+                new Withdrawals(
+                        withdrawalStore, outcomes, holdService, routingStoreBean, railsBean,
+                        com.finapp.payments.RailOperations.ofPush(RailId.of("instant"), takeoversWire),
+                        evidenceBean, executorBean, auditWriterBean, ids,
+                        com.finapp.app.database.ServerSkewedClock.of(Duration.ofSeconds(-5)), transactions);
+
+        Withdrawals.Initiated retried;
+        Actor person = new Actor(UUID.randomUUID().toString(), ActorType.CUSTOMER);
+        try (SecurityContext.Scope actor = SecurityContext.enter(person);
+                CorrelationContext.Scope scope =
+                        CorrelationContext.enter(Correlation.startingWith(CorrelationId.generate(ids)))) {
+            retried = behind.withdraw(
+                    key, Money.of(new BigDecimal("3.00"), CurrencyCode.of("USD")), uow -> resolvedOf(f));
+        }
+
+        assertThat(inFlight.get()).isNotNull();
+        assertThat(oneString("SELECT status FROM payments.withdrawal WHERE id = ?", seeded.id().value()))
+                .as("the in-flight sweep concluded nothing; the takeover's answer completed it")
+                .isNotEqualTo("FAILED");
+        assertThat(retried.id()).isEqualTo(seeded.id());
+        assertThat(provider.headerValues(SimulatedInstantSchemeAdapter.TRANSFERS_PATH, "Idempotency-Key"))
+                .as("one transfer of our reference, the takeover's")
+                .filteredOn(seeded.reference()::equals)
+                .hasSize(1);
+    }
+
+    /**
      * Section 7's last row for the withdrawal sweep (`P7-DOC-001`; A3's find): ten instances
      * sweeping at once over one resolvable withdrawal - the registered leaderless pattern,
      * counted rather than asserted.
@@ -835,7 +922,8 @@ class WithdrawalDatabaseTest {
                 withdrawalStore, outcomes, holdService, plantedRouting, railsBean,
                 com.finapp.payments.RailOperations.of(
                         railsBean,
-                        List.of(com.finapp.payments.SimulatedCorridorAdapter.DECLARATION),
+                        // Every declared corridor rail (P9-TSK-026 added the second): the register refuses less.
+                        com.finapp.app.payments.PaymentBeans.CORRIDOR_DECLARATIONS,
                         java.util.Map.of(RailId.of("instant"), push),
                         java.util.Map.of(corridor, corridorRail)),
                 evidenceBean, executorBean, auditWriterBean, ids, CLOCK, transactions);
@@ -1137,6 +1225,7 @@ class WithdrawalDatabaseTest {
     }
 
     @Autowired private com.finapp.payments.RoutingStore<Connection> routingStoreBean;
+    @Autowired private PushRail instantRail;
     @Autowired private com.finapp.payments.PaymentRails railsBean;
     @Autowired private com.finapp.payments.ProviderEvidenceStore<Connection> evidenceBean;
     @Autowired private com.finapp.platform.idempotency.IdempotentExecutor executorBean;

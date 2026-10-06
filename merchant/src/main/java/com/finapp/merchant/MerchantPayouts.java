@@ -276,7 +276,7 @@ public final class MerchantPayouts {
                     "a taken-over payout claim found different facts under its key");
         }
         if (found.status().isResolvable()
-                && payouts.renewSendPermit(unitOfWork, found, Instant.now(clock))) {
+                && payouts.renewSendPermit(unitOfWork, found)) {
             PayoutDestination destination =
                     destinations.find(unitOfWork, command.merchant(), found.destinationId())
                             .orElseThrow(

@@ -214,9 +214,10 @@ public interface PaymentAttemptStore<T> {
      * The initiation permit stamped forward, conditionally ({@code last_dispatched_at <=
      * expected}, resolvable only): the sweep's wire-noise arbiter — the loser skips the
      * scheme call this tick. Never a money guard (`P7-TSK-009`; the aggregate door says why).
+     * {@code expected} is the permit the caller READ, never a clock: the new permit is the
+     * database's own instant, strictly forward (`X-TSK-013`).
      */
-    boolean renewInitiationPermit(
-            T unitOfWork, PaymentAttemptId attempt, Instant expected, Instant renewed);
+    boolean renewInitiationPermit(T unitOfWork, PaymentAttemptId attempt, Instant expected);
 
     /**
      * The pay-in sweep's candidates (`P7-TSK-009`, ADR-0062 §5): push rows resting

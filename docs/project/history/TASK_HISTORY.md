@@ -1,6 +1,6 @@
 # Task History
 
-The per-task completion records that accumulated behind `## Current Task` - 221 "Previously" blocks, newest first, from `P9-TSK-026` back to project initiation. *(`X-TSK-016` is cross-cutting and completed after `P9-TSK-010` and before `P9-TSK-011`, so it stands between them.)* *(`X-TSK-005` is cross-cutting and completed after `P7-TSK-014` and before `P7-TSK-015`, so it stands between them; its record came in with its branch's merge.)* *(`X-TSK-004` is cross-cutting and completed after the Phase 6 → 7 transition, so it stands second, between `P7-TSK-001` and the transition's record - the transition's block moved here by `P7-TSK-001`'s gate, exactly as an earlier form of this note said it would.)*
+The per-task completion records that accumulated behind `## Current Task` - 222 "Previously" blocks, newest first, from `P9-TSK-027` back to project initiation. *(`X-TSK-016` is cross-cutting and completed after `P9-TSK-010` and before `P9-TSK-011`, so it stands between them.)* *(`X-TSK-005` is cross-cutting and completed after `P7-TSK-014` and before `P7-TSK-015`, so it stands between them; its record came in with its branch's merge.)* *(`X-TSK-004` is cross-cutting and completed after the Phase 6 → 7 transition, so it stands second, between `P7-TSK-001` and the transition's record - the transition's block moved here by `P7-TSK-001`'s gate, exactly as an earlier form of this note said it would.)*
 
 **Archive.** These records were moved verbatim out of
 [`CURRENT_STATE.md`](../CURRENT_STATE.md) on 2026-09-20 so that the canonical description of
@@ -12,6 +12,38 @@ Current state: [`CURRENT_STATE.md`](../CURRENT_STATE.md) ·
 Authoritative backlog: [`BACKLOG.md`](../BACKLOG.md)
 
 ---
+
+### Previously
+
+**`P9-TSK-027` — Meters, spans, reports, the trace and the dashboard row** — `COMPLETE` (2026-10-07). **M9.9
+opens at 1 of 3: Phase 9 operated by counts, ages, verdicts and audited reports, never by amounts** (PHASE_9_PLAN.md
+§15; ADR-0072, `INV-AUD-01`, `INV-AUD-02`). Every §15 row not shipped earlier: `CrossBorderMetrics`
+(`finapp.crossborder.payment` by corridor and outcome, its accept/deliver latency, `.in.transit.age` per corridor -
+NaN when unreadable, fleet `max()` - `finapp.crossborder.return`, `finapp.crossborder.cancellation`), every series
+registered eagerly over the declared corridors; `finapp.fx.trade` by pair and outcome (executed, reversed); counters
+count after commit (`AfterCommit`); `corridor` joins `MetricNames` (its "id" fragment exempt like `provider`'s).
+Eleven spans (`Phase9Spans`) - the quote, provider quote, conversion, cover dispatch and resolve, authorization,
+outbound dispatch, resolve, recall and return, counterparty screening - by decorators over the adapters and the
+controllers, identifier attributes only. The three audited reports and the trace (`Phase9Reports`, `FX_INVESTIGATE`,
+one REPEATABLE READ snapshot each, the `ReportRead`/`TraceRead` audit in the read's transaction, a bad month `422`
+before any read): `GET /v1/operator/reports/fx/position`, `.../fx/revenue`, `.../cross-border/corridors`,
+`/v1/operator/cross-border/payments/{id}/trace`; OpenAPI contract regenerated. Eleven §15 alerts in
+`infra/prometheus/rules/fx.yml` and the twelve-panel FX and cross-border dashboard row, both resolved against a live
+scrape and now pinned (the alerted set; the row's panel count). **Found and fixed at the gate**: three alerts and
+three panels queried the cover and counterparty-review age gauges without their `_seconds` base unit - series that
+never exist, so `FxCoverUnknownAged`, `FxCoverOpenAged` and `CounterpartyReviewAged` could never have fired; the
+guards' label lists gained `provider`, `corridor`, `pair` and `direction`; three report records shared a simple
+name with existing contract types (`AmountView`, `PositionRow`, `ProviderCostRow`) - the generator had silently
+merged each pair into one schema - renamed (`ReportAmount`, `CurrencyPositionRow`, `CorridorCostRow`); the
+position report registered as a READER of `FX_POSITION` in `FxBooksHaveOnePosterTest`. **Deliberate change**: a cross-border
+return's non-applied outcomes are counted per corridor by the return worker (`CrossBorderReturnDatabaseTest` sums
+across corridors). **PROBES** (SIX PROBES, SIX CAUGHT), every restore byte-identical (sha256-verified;
+`MUTATION_TESTING.md` §2 +6 rows). **Multi-instance PASS** (report-only: gauges fleet-`max()`, counters after
+commit, each report one snapshot). **NEXT**: `X-TSK-013` `READY` (`P9-TST-001`'s dependency, scheduled
+before it in M9.9).
+**Verified** by fresh runs - the fleet-wide hermetic tier 2544 across 418 suites and 18 modules; the architecture tier 157 across 27 (the slice tier 109 across 19); the task's
+own and adjacent database suites (Phase9ReportsDatabaseTest 2, AlertRulesResolveTest 6, DashboardQueriesResolveTest 3; the cross-border return, cancellation, payment, outbound-credit resolution, corridor settlement-to-cash and second-rail suites and the FX trade reversal race re-run 45); ALL 0 FAILURES - the other database tiers skipped on the owner's
+instruction.
 
 ### Previously
 

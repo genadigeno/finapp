@@ -39,13 +39,15 @@ public final class JdbcWithdrawalStore implements WithdrawalStore<Connection> {
                     + " created_at, last_dispatched_at";
 
     @Override
-    public void insert(Connection unitOfWork, Withdrawal dispatched, String dispatchKey) {
+    public Instant insert(Connection unitOfWork, Withdrawal dispatched, String dispatchKey) {
         Objects.requireNonNull(dispatched, "dispatched must not be null");
         Objects.requireNonNull(dispatchKey, "dispatchKey must not be null");
         try (PreparedStatement insert =
                 unitOfWork.prepareStatement(
                         "INSERT INTO " + TABLE + " (" + COLUMNS + ") VALUES"
-                                + " (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)")) {
+                                + " (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?,"
+                                + " GREATEST(CAST(? AS timestamptz), statement_timestamp()))"
+                                + " RETURNING last_dispatched_at")) {
             insert.setObject(1, dispatched.id().value());
             insert.setObject(2, dispatched.partyId());
             insert.setObject(3, dispatched.customerId());
@@ -65,8 +67,12 @@ public final class JdbcWithdrawalStore implements WithdrawalStore<Connection> {
             insert.setString(16, dispatchKey);
             insert.setObject(17, dispatched.holdId().value());
             insert.setTimestamp(18, Timestamp.from(dispatched.createdAt()));
-            insert.setTimestamp(19, Timestamp.from(dispatched.lastDispatchedAt()));
-            insert.executeUpdate();
+            // The birth permit: never older than the database's clock, never before created_at.
+            insert.setTimestamp(19, Timestamp.from(dispatched.createdAt()));
+            try (ResultSet stored = insert.executeQuery()) {
+                stored.next();
+                return stored.getTimestamp(1).toInstant();
+            }
         } catch (SQLException failure) {
             throw new PaymentsStorageException(
                     DatabaseFailure.describe("inserting a withdrawal", failure));
@@ -137,22 +143,28 @@ public final class JdbcWithdrawalStore implements WithdrawalStore<Connection> {
     }
 
     @Override
-    public boolean renewSendPermit(Connection unitOfWork, Withdrawal before, Instant at) {
+    public Optional<Instant> renewSendPermit(Connection unitOfWork, Withdrawal before) {
         Objects.requireNonNull(before, "before must not be null");
-        Objects.requireNonNull(at, "at must not be null");
         // The conditional IS the permit: a resolver that already moved the withdrawal out
-        // of the resolvable states leaves this matching no row, and then nothing may be
-        // sent (ADR-0057 §4's either/or).
+        // of the resolvable states, or a renewal since the permit `before` carries, leaves
+        // this matching no row, and then nothing may be sent (ADR-0057 §4's either/or). The
+        // new permit is the database's instant, strictly forward (X-TSK-013).
         try (PreparedStatement update =
                 unitOfWork.prepareStatement(
-                        "UPDATE " + TABLE + " SET last_dispatched_at = ?"
+                        "UPDATE " + TABLE + " SET last_dispatched_at ="
+                                + " GREATEST(last_dispatched_at + interval '1 microsecond',"
+                                + " statement_timestamp())"
                                 + " WHERE id = ? AND status IN ("
                                 + WithdrawalStatus.resolvableSqlValueList() + ")"
-                                + " AND last_dispatched_at <= ?")) {
-            update.setTimestamp(1, Timestamp.from(at));
-            update.setObject(2, before.id().value());
-            update.setTimestamp(3, Timestamp.from(at));
-            return update.executeUpdate() == 1;
+                                + " AND last_dispatched_at <= ?"
+                                + " RETURNING last_dispatched_at")) {
+            update.setObject(1, before.id().value());
+            update.setTimestamp(2, Timestamp.from(before.lastDispatchedAt()));
+            try (ResultSet renewed = update.executeQuery()) {
+                return renewed.next()
+                        ? Optional.of(renewed.getTimestamp(1).toInstant())
+                        : Optional.empty();
+            }
         } catch (SQLException failure) {
             throw new PaymentsStorageException(
                     DatabaseFailure.describe("renewing a withdrawal's send permit", failure));

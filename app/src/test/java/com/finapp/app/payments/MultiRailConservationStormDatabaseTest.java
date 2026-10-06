@@ -541,12 +541,21 @@ class MultiRailConservationStormDatabaseTest {
                             + " expectation_id IS NOT NULL UNION SELECT chosen_expectation_id"
                             + " FROM reconciliation.resolution WHERE chosen_expectation_id IS"
                             + " NOT NULL)";
+                    // Only the STORM's own expectations (X-TSK-013's run found this): the
+                    // shared container carries other suites' Phase 9 expectations, which are
+                    // always opened live and which the opening backfill - built for history
+                    // older than the register (ADR-0067 section 8) - was never meant to
+                    // re-adopt; emptying them made their positions read unexplained here.
+                    String mine = " AND expectation_id IN (SELECT id FROM"
+                            + " reconciliation.expectation WHERE journal_entry_id IN ("
+                            + STORM_ENTRIES + "))";
                     execute(root, "DELETE FROM reconciliation.expectation_key WHERE"
-                            + " expectation_id" + unheld);
+                            + " expectation_id" + unheld + mine, stormAccounts, stormAccounts);
                     execute(root, "DELETE FROM reconciliation.expectation_event WHERE"
-                            + " expectation_id" + unheld);
+                            + " expectation_id" + unheld + mine, stormAccounts, stormAccounts);
                     execute(root, "DELETE FROM reconciliation.expectation WHERE id"
-                            + unheld);
+                            + unheld + " AND journal_entry_id IN (" + STORM_ENTRIES + ")",
+                            stormAccounts, stormAccounts);
                 } finally {
                     execute(root, "ALTER TABLE reconciliation.expectation ENABLE TRIGGER"
                             + " expectation_is_never_deleted");

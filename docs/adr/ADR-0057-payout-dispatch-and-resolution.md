@@ -181,3 +181,14 @@ owning tasks' rows stand: `INV-LED-01` (`PostingService`, and `V004`'s deferred 
   FX cover) and ADR-0079 (the Outbound Credit: §4's states plus `RECEIVED`), both
   `Proposed`, each born under a **database-stamped** send permit; `X-TSK-013`, scheduled
   inside Phase 9, aligns this ADR's and the refund's permits to the same rule.
+- *`X-TSK-013` (2026-10-07)*: **§4's skew premise is removed.** Every Phase 5–7 permit - the
+  payout's, the withdrawal's, the refund's, the dispute response's and the pay-in initiation's -
+  is stamped by the database: born `GREATEST(created_at, statement_timestamp())`, renewed
+  `GREATEST(permit + 1 µs, statement_timestamp())`, and held by a trigger per table (payments
+  `V028`, merchant `V009`) that re-stamps any forward write after the machine trigger refused a
+  backward one. The sweeps' candidacy bounds and the `NEVER_RECEIVED` bound are read from the
+  same clock (`DatabaseTime.now`, in the transaction that locks the row). The dispatched bound
+  must still exceed a committed permit's flight to the provider; it no longer has to exceed any
+  instance's skew. The withdrawal and payout renewals' conditional moved from "not after my
+  clock" to "the permit I read". Proven by one ±5 s skew race per flow and the build rule
+  `SendPermitsAreTheDatabasesTest`.

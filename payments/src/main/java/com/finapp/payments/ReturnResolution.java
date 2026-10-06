@@ -1,6 +1,7 @@
 package com.finapp.payments;
 
 import com.finapp.platform.correlation.CorrelationContext;
+import com.finapp.platform.persistence.DatabaseTime;
 import com.finapp.platform.security.SecurityContext;
 import com.finapp.sharedkernel.correlation.Correlation;
 import com.finapp.sharedkernel.correlation.CorrelationId;
@@ -101,7 +102,8 @@ public final class ReturnResolution {
                         uow ->
                                 refunds.findSweepableReturns(
                                         uow,
-                                        now.minus(config.dispatchedAge()),
+                                        // The permit's own clock, the database's (X-TSK-013).
+                                        DatabaseTime.now(uow).minus(config.dispatchedAge()),
                                         now.minus(config.unknownAge()),
                                         config.batchSize()));
         int applied = 0;
@@ -145,8 +147,7 @@ public final class ReturnResolution {
             Optional<ProviderReference> original =
                     transactions.inTransaction(
                             uow ->
-                                    refunds.renewSendPermit(
-                                                    uow, candidate.id(), Instant.now(clock))
+                                    refunds.renewSendPermit(uow, candidate.id())
                                             .map(
                                                     permit ->
                                                             attempts.findById(

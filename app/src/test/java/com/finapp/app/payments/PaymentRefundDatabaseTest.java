@@ -1216,7 +1216,9 @@ class PaymentRefundDatabaseTest {
                     @Override
                     public com.finapp.payments.ProviderAnswer refund(RefundRequest request) {
                         // A takeover on an instance whose clock runs 90 s BEHIND this flight's
-                        // renews the permit through the real store while this flight stalls.
+                        // renews the permit through the real store while this flight stalls -
+                        // since X-TSK-013 no instance's clock is an input to the renewal at all:
+                        // the database stamps it, strictly forward, whoever renews.
                         try (Connection other = DatabaseRoles.application()) {
                             other.setAutoCommit(false);
                             com.finapp.payments.JdbcRefundStore store =
@@ -1236,9 +1238,7 @@ class PaymentRefundDatabaseTest {
                                 }
                             }
                             Instant renewed =
-                                    store.renewSendPermit(
-                                                    other, row.id(), before.minusSeconds(90))
-                                            .orElseThrow();
+                                    store.renewSendPermit(other, row.id()).orElseThrow();
                             other.commit();
                             permits.set(new Instant[] {before, renewed});
                         } catch (SQLException failure) {
@@ -1592,6 +1592,75 @@ class PaymentRefundDatabaseTest {
     }
 
     @Test
+    @DisplayName("X-TSK-013: a takeover on an instance 5 s BEHIND and a sweep on one 5 s AHEAD, the sweep"
+            + " inside the takeover's flight - the renewed permit is young on the database's clock, so"
+            + " nothing re-drives it: one instruction, and the refund completes")
+    void aSkewedTakeoverAndSweepSendOnce() throws Exception {
+        Captured captured = capturedPayment();
+        Money amount = Money.ofMinorUnits(5_00, EUR);
+        String key = "skew-" + UUID.randomUUID();
+        CrashedFlight crashed = crashedFlight(captured, amount, "skewed", key);
+        // The provider has not yet received the takeover's request when the sweep asks.
+        psp.succeedsWith(
+                SimulatedCardPspAdapter.OPERATIONS_PATH + crashed.storedReference(),
+                200,
+                "{\"status\":\"unrecognised\"}");
+        providerRefunds("psp_rfd-skew");
+        SimulatedCardPspAdapter wire = adapter();
+        java.util.concurrent.atomic.AtomicReference<com.finapp.payments.PaymentSweeper.SweepResult> inFlight =
+                new java.util.concurrent.atomic.AtomicReference<>();
+        Clock ahead = com.finapp.app.database.ServerSkewedClock.of(Duration.ofSeconds(5));
+        com.finapp.payments.PaymentProvider takeoversWire =
+                new com.finapp.payments.PaymentProvider() {
+                    @Override
+                    public String providerName() {
+                        return wire.providerName();
+                    }
+
+                    @Override
+                    public com.finapp.payments.ProviderAnswer authorize(AuthorizationRequest request) {
+                        return wire.authorize(request);
+                    }
+
+                    @Override
+                    public com.finapp.payments.ProviderAnswer capture(CaptureRequest request) {
+                        return wire.capture(request);
+                    }
+
+                    @Override
+                    public com.finapp.payments.ProviderAnswer refund(RefundRequest request) {
+                        // The takeover's permit is committed and its request is on the wire: the
+                        // sweep on the instance 5 s ahead, its bound 4 s, runs now.
+                        inFlight.set(sweeper(Duration.ofSeconds(4), ahead).sweep());
+                        return wire.refund(request);
+                    }
+
+                    @Override
+                    public com.finapp.payments.ProviderAnswer voidAuthorization(VoidRequest request) {
+                        return wire.voidAuthorization(request);
+                    }
+
+                    @Override
+                    public com.finapp.payments.QueryAnswer query(
+                            com.finapp.payments.ProviderIdempotencyReference ourReference) {
+                        return wire.query(ourReference);
+                    }
+                };
+
+        PaymentRefund.RefundResult takenOver =
+                refundCommand(takeoversWire, com.finapp.app.database.ServerSkewedClock.of(Duration.ofSeconds(-5)))
+                        .refund(captured.intent(), amount, "skewed", key);
+
+        assertThat(inFlight.get()).isNotNull();
+        assertThat(psp.requestCount(SimulatedCardPspAdapter.REFUNDS_PATH))
+                .as("one instruction, the takeover's: on the instances' clocks the renewed permit read ten"
+                        + " seconds old and the sweep re-drove it inside the flight")
+                .isEqualTo(1);
+        assertThat(takenOver.status()).isEqualTo(RefundStatus.COMPLETED);
+        assertThat(refundEntryCount(captured.attempt())).isEqualTo(1);
+    }
+
+    @Test
     @DisplayName("a refund the provider DECLINED, learned by query, fails with its hold released"
             + " and nothing posted")
     void theSweepFailsARefundTheProviderDeclined() throws Exception {
@@ -1727,6 +1796,11 @@ class PaymentRefundDatabaseTest {
 
     /** The sweep over this suite's provider, with the least bounds it accepts. */
     private com.finapp.payments.PaymentSweeper sweeper() {
+        return sweeper(Duration.ofNanos(1_000), CLOCK);
+    }
+
+    /** The sweep on an instance whose clock is {@code clock}, its dispatched bound {@code dueAfter}. */
+    private com.finapp.payments.PaymentSweeper sweeper(Duration dueAfter, Clock clock) {
         Duration dueNow = Duration.ofNanos(1_000);
         return new com.finapp.payments.PaymentSweeper(
                 runner,
@@ -1741,8 +1815,8 @@ class PaymentRefundDatabaseTest {
                         voids(), new JdbcAuditWriter(), IDS, CLOCK),
                 voids(),
                 IDS,
-                CLOCK,
-                dueNow,
+                clock,
+                dueAfter,
                 dueNow,
                 50);
     }
@@ -1979,8 +2053,18 @@ class PaymentRefundDatabaseTest {
         return refundCommand(provider, outcomes());
     }
 
+    /** The command on an instance whose clock is {@code clock} - a skewed one (X-TSK-013). */
+    private PaymentRefund refundCommand(com.finapp.payments.PaymentProvider provider, Clock clock) {
+        return refundCommand(provider, outcomes(), clock);
+    }
+
     private PaymentRefund refundCommand(
             com.finapp.payments.PaymentProvider provider, PaymentOutcomes outcomes) {
+        return refundCommand(provider, outcomes, CLOCK);
+    }
+
+    private PaymentRefund refundCommand(
+            com.finapp.payments.PaymentProvider provider, PaymentOutcomes outcomes, Clock clock) {
         return new PaymentRefund(
                 runner,
                 executor(),
@@ -1993,7 +2077,7 @@ class PaymentRefundDatabaseTest {
                 outcomes,
                 new JdbcAuditWriter(),
                 IDS,
-                CLOCK,
+                clock,
                 com.finapp.payments.PaymentRails.of(java.util.List.of(SimulatedCardPspAdapter.RAIL)),
                 // A card-only suite: the push rail is absent, as on a card-only deployment.
                 java.util.Optional.empty());

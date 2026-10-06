@@ -48,10 +48,12 @@ public interface MerchantPayoutStore<T> {
     Optional<MerchantPayout> lockByReference(T unitOfWork, String reference);
 
     /**
-     * Commits a fresh send permit, conditional on the payout still awaiting the rail's word —
-     * {@code false} when a resolver got there first, and then nothing may be sent.
+     * Commits a fresh send permit, conditional on the payout still awaiting the rail's word and
+     * on its permit being the one {@code before} carries — {@code false} when a resolver or
+     * another renewal got there first, and then nothing may be sent. The permit is the
+     * database's own instant, strictly forward (`X-TSK-013`).
      */
-    boolean renewSendPermit(T unitOfWork, MerchantPayout before, Instant at);
+    boolean renewSendPermit(T unitOfWork, MerchantPayout before);
 
     /**
      * Moves the payout {@code before → after}, conditional on {@code before}'s status, with its

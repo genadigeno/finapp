@@ -54,9 +54,10 @@ public interface RefundStore<T> {
      *
      * @return the permit as stored — which an outcome later compares with the locked row's, so
      *     it is the database's value and never this instance's clock at a finer precision — or
-     *     empty when the refund is no longer resolvable
+     *     empty when the refund is no longer resolvable. The new permit is the database's own
+     *     instant, strictly forward (`X-TSK-013`): no instance's clock is an input
      */
-    Optional<Instant> renewSendPermit(T unitOfWork, RefundId refund, Instant at);
+    Optional<Instant> renewSendPermit(T unitOfWork, RefundId refund);
 
     /**
      * The refunds the resolution sweep asks about (the Phase 6 → 7 transition): {@code
