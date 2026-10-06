@@ -570,3 +570,9 @@ Financial impact:
 - *The Phase 8 → 9 transition* (ADR-0082, `Proposed`): reaffirmed for FX and the corridor —
   position, spread, residual and P&L amounts are audited operator reports, never series;
   Phase 9's meters stay counts, ages and verdicts.
+- *As built by `P9-TSK-027` (2026-10-07):* Phase 9's amounts live in three audited reports and the trace
+  (`/v1/operator/reports/fx/position`, `/fx/revenue?month=`, `/cross-border/corridors?month=`,
+  `/v1/operator/cross-border/payments/{id}/trace`; `FX_INVESTIGATE`; one `REPEATABLE READ` snapshot; 100 rows with
+  `truncated`; audited in the read's transaction), never in a series: the `corridor` tag key bounded by the declared
+  coverage, the in-transit age a database gauge (`CrossBorderMetrics`, exempt and Money-free), every Phase 9 counter
+  counted after commit, every span identifier-only.

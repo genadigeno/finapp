@@ -21,12 +21,14 @@ class SpansTest {
     private static final String AN_IDENTIFIER = "01a0e2bc-8200-7001-8000-000000000001";
 
     @Test
-    @DisplayName("the identifier keys are exactly the six the plan names")
+    @DisplayName("the identifier keys are exactly the twelve the plans name - Phase 8's six and Phase 9's six")
     void theKeysAreExactlyTheSix() {
         assertThat(Spans.IDENTIFIER_KEYS)
                 .containsExactlyInAnyOrder(
                         "run.id", "batch.id", "file.id", "source.id", "break.id",
-                        "resolution.id");
+                        "resolution.id",
+                        // P9-TSK-027: the FX and cross-border legs' identifiers.
+                        "quote.id", "trade.id", "cover.id", "payment.id", "credit.id", "screening.id");
     }
 
     @Test

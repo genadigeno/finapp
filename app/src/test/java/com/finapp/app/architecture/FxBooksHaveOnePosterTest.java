@@ -46,7 +46,10 @@ class FxBooksHaveOnePosterTest {
                             + " FX_REALISED_LOSSES in that leg's currency",
                     "FxBooksProof.java",
                     "READER: the FX books proof (P9-TSK-013, INV-FX-06) - reads each book's balance"
-                            + " through ledger's BalanceDerivation against fx's own rows; posts nothing");
+                            + " through ledger's BalanceDerivation against fx's own rows; posts nothing",
+                    "Phase9Reports.java",
+                    "READER: the FX position report (P9-TSK-027) - sums FX_POSITION's lines by currency in one"
+                            + " audited snapshot; posts nothing");
 
     /** The FX books: the position, the spread revenue, the rounding residual and the realised results. */
     private static final List<String> BOOKS =

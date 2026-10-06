@@ -432,7 +432,7 @@ cross-border payments are holds and corridor acceptances, beneficiary screening 
 returns credited in the currency received; clearings are keyed by counterparty; callbacks are
 hints; reconciliation never converts currency and gains causes, never types. Ten new invariants
 and thirteen restated take the platform to **120**. Thirty backlog items across nine milestones
-(M9.1–M9.9) plus `X-TSK-013`…`-015`. **27 of 30 items complete** (M9.1 to M9.8 closed): the modules and floors
+(M9.1–M9.9) plus `X-TSK-013`…`-015`. **28 of 30 items complete** (M9.1 to M9.8 closed): the modules and floors
 (`P9-TSK-001`), the conversion arithmetic (`P9-TSK-002`), JPY and BHD postable (`P9-TSK-003`), multi-currency
 wallets (`P9-TSK-004`), reference rates (`P9-TSK-005`), the FX provider port (`P9-TSK-006`), the
 pricing policy (`P9-TSK-007`), the quote (`P9-TSK-008`), wallet conversion (`P9-TSK-009`),
@@ -442,8 +442,9 @@ rail (`P9-TSK-014`), the corridor policy (`P9-TSK-015`), counterparty screening 
 beneficiaries (`P9-TSK-017`), cross-border offers (`P9-TSK-018`), their authorization and dispatch
 (`P9-TSK-019`), their resolution and completion (`P9-TSK-020`), the unwinding of covers (`P9-TSK-021`), the
 corridor's settlement to cash (`P9-TSK-022`), cross-border returns (`P9-TSK-023`), cancellation by recall
-(`P9-TSK-024`), the operator FX trade reversal (`P9-TSK-025`) and the second providers (`P9-TSK-026`); next
-**`P9-TSK-027` — Meters, spans, reports, the trace and the dashboard row** — `READY`
+(`P9-TSK-024`), the operator FX trade reversal (`P9-TSK-025`), the second providers (`P9-TSK-026`) and Phase 9's
+meters, spans, reports and trace (`P9-TSK-027`); next **`X-TSK-013` — Database-stamped send permits for the
+Phase 5–7 outbound flows** — `READY` (`P9-TST-001`'s dependency)
 ([§Current Task](#current-task) is kept current).
 
 ## Current Milestone
@@ -459,34 +460,44 @@ since M0.1". Moved, not edited.)*
 
 ## Current Task
 
-**`P9-TSK-027` — Meters, spans, reports, the trace and the dashboard row** — `READY`:
-marked by `P9-TSK-026`'s completion gate (2026-10-06). **Not started.**
+**`X-TSK-013` — Database-stamped send permits for the Phase 5–7 outbound flows** — `READY`:
+marked by `P9-TSK-027`'s completion gate (2026-10-07). **Not started.**
 
 ### Just completed
 
-**`P9-TSK-026` — A second FX provider and a second corridor rail** — `COMPLETE` (2026-10-06). **M9.8 CLOSES AT 1
-OF 1: multiple providers made real - failover, selection and settlement per counterparty** (PHASE_9_PLAN.md §14
-scenario 4; ADR-0080, ADR-0082; `INV-RAIL-04`, `INV-SET-05`, `INV-RAIL-02`). `fx-sim-b` (EUR<->USD, settling EUR and
-USD) and `corridor-sim-b` (US/USD) as declarations over the existing simulated adapters, each with its own confined
-key and transport row; ledger `V025` (their registry rows and clearing accounts), settlement `V017` (their sources);
-`RailOperations` composed from every configured corridor adapter. No domain change: a pricing policy listing `a`
-then `b` fails a quote over to `b` (each candidate a stored step) and its cover executes and settles on `b`; a corridor
-policy listing `a` then `b` selects `b` wherever `a` is not operable, and the beneficiary is routed, paid and settled on
-`b`. **Found and fixed (two single-instance assumptions)**: (1) bank lines are attributed to a source by remittance
-shape and both formats named one shape (`FXA-`, `XBA-`) - a second counterparty would have left EVERY such line
-unattributed, `a`'s hop 2 lost with `b`'s; each counterparty now remits in its own shape (`FXB-`, `XBB-`) and the
-register refuses a shared one; (2) reconciliation mapped a source to the first rail of its purpose - `b`'s source would
-have looked provider references up among `a`'s claims; a source now resolves to its own counterparty's rail.
-**Deviations**: `b` has no callback doors (the sweeps are the guarantee) and no report pull collectors (upload-only).
-**PROBES** (FIVE PROBES, FIVE CAUGHT), every restore byte-identical (sha256-verified; `MUTATION_TESTING.md` §2 +5 rows).
-**Multi-instance PASS**: ten racing quotes each fail over on their own, steps stored; a line on one counterparty's
-report naming the other's operation is never allocated. **NEXT**: `P9-TSK-027` `READY`.
-**Verified** by fresh runs - the fleet-wide hermetic tier 2540 across 417 suites and 18 modules; the architecture tier 157 across 27; the task's
-own database suites (SecondFxProviderDatabaseTest 3, SecondCorridorRailDatabaseTest 1; the corridor settlement, source, payment, return and beneficiary suites and the FX cover, proof and settled-to-cash suites re-run 53); ALL 0 FAILURES - the other database tiers skipped on the owner's instruction.
+**`P9-TSK-027` — Meters, spans, reports, the trace and the dashboard row** — `COMPLETE` (2026-10-07). **M9.9
+opens at 1 of 3: Phase 9 operated by counts, ages, verdicts and audited reports, never by amounts** (PHASE_9_PLAN.md
+§15; ADR-0072, `INV-AUD-01`, `INV-AUD-02`). Every §15 row not shipped earlier: `CrossBorderMetrics`
+(`finapp.crossborder.payment` by corridor and outcome, its accept/deliver latency, `.in.transit.age` per corridor -
+NaN when unreadable, fleet `max()` - `finapp.crossborder.return`, `finapp.crossborder.cancellation`), every series
+registered eagerly over the declared corridors; `finapp.fx.trade` by pair and outcome (executed, reversed); counters
+count after commit (`AfterCommit`); `corridor` joins `MetricNames` (its "id" fragment exempt like `provider`'s).
+Eleven spans (`Phase9Spans`) - the quote, provider quote, conversion, cover dispatch and resolve, authorization,
+outbound dispatch, resolve, recall and return, counterparty screening - by decorators over the adapters and the
+controllers, identifier attributes only. The three audited reports and the trace (`Phase9Reports`, `FX_INVESTIGATE`,
+one REPEATABLE READ snapshot each, the `ReportRead`/`TraceRead` audit in the read's transaction, a bad month `422`
+before any read): `GET /v1/operator/reports/fx/position`, `.../fx/revenue`, `.../cross-border/corridors`,
+`/v1/operator/cross-border/payments/{id}/trace`; OpenAPI contract regenerated. Eleven §15 alerts in
+`infra/prometheus/rules/fx.yml` and the twelve-panel FX and cross-border dashboard row, both resolved against a live
+scrape and now pinned (the alerted set; the row's panel count). **Found and fixed at the gate**: three alerts and
+three panels queried the cover and counterparty-review age gauges without their `_seconds` base unit - series that
+never exist, so `FxCoverUnknownAged`, `FxCoverOpenAged` and `CounterpartyReviewAged` could never have fired; the
+guards' label lists gained `provider`, `corridor`, `pair` and `direction`; three report records shared a simple
+name with existing contract types (`AmountView`, `PositionRow`, `ProviderCostRow`) - the generator had silently
+merged each pair into one schema - renamed (`ReportAmount`, `CurrencyPositionRow`, `CorridorCostRow`); the
+position report registered as a READER of `FX_POSITION` in `FxBooksHaveOnePosterTest`. **Deliberate change**: a cross-border
+return's non-applied outcomes are counted per corridor by the return worker (`CrossBorderReturnDatabaseTest` sums
+across corridors). **PROBES** (SIX PROBES, SIX CAUGHT), every restore byte-identical (sha256-verified;
+`MUTATION_TESTING.md` §2 +6 rows). **Multi-instance PASS** (report-only: gauges fleet-`max()`, counters after
+commit, each report one snapshot). **NEXT**: `X-TSK-013` `READY` (`P9-TST-001`'s dependency, scheduled
+before it in M9.9).
+**Verified** by fresh runs - the fleet-wide hermetic tier 2544 across 418 suites and 18 modules; the architecture tier 157 across 27 (the slice tier 109 across 19); the task's
+own and adjacent database suites (Phase9ReportsDatabaseTest 2, AlertRulesResolveTest 6, DashboardQueriesResolveTest 3; the cross-border return, cancellation, payment, outbound-credit resolution, corridor settlement-to-cash and second-rail suites and the FX trade reversal race re-run 45); ALL 0 FAILURES - the other database tiers skipped on the owner's
+instruction.
 
 ### Previously
 
-The per-task completion records — 220 blocks, from `P9-TSK-025` back to project initiation
+The per-task completion records — 221 blocks, from `P9-TSK-026` back to project initiation
 (`X-TSK-016` cross-cutting, standing between `P9-TSK-011` and `P9-TSK-010`; `X-TSK-005` cross-cutting, standing between `P7-TSK-015` and `P7-TSK-014`; `X-TSK-004`
 cross-cutting, standing between `P7-TSK-001` and the Phase 6 → 7 transition) — are archived in
 [`history/TASK_HISTORY.md`](history/TASK_HISTORY.md).
@@ -1031,8 +1042,8 @@ Resolved during initiation:
 
 ## Next Task
 
-**`P9-TSK-027` — Meters, spans, reports, the trace and the dashboard row** — `READY`
-(the Current Task), marked by `P9-TSK-026`'s completion gate.
+**`X-TSK-013` — Database-stamped send permits for the Phase 5–7 outbound flows** — `READY`
+(the Current Task), marked by `P9-TSK-027`'s completion gate.
 *(This section read "`P8-TSK-009` — `READY`" from `P8-TSK-008`'s gate until
 `P8-TSK-013`'s record found it — the stale-second-copy class, in the section whose
 whole job is to mirror.)*

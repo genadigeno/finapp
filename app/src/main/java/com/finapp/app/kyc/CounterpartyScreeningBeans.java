@@ -89,13 +89,18 @@ public class CounterpartyScreeningBeans {
     @Bean
     CounterpartyScreeningProvider counterpartyScreeningProvider(
             @Value("${finapp.kyc.provider.url:}") String providerUrl,
-            @Value("${finapp.kyc.provider.timeout:PT2S}") Duration timeout) {
+            @Value("${finapp.kyc.provider.timeout:PT2S}") Duration timeout,
+            com.finapp.platform.telemetry.Spans domainSpans) {
+        CounterpartyScreeningProvider provider;
         if (providerUrl.isBlank()) {
-            return (screening, subject) -> CounterpartyScreeningProvider.Answer.withoutEvidence(
+            provider = (screening, subject) -> CounterpartyScreeningProvider.Answer.withoutEvidence(
                     CounterpartyScreeningVocabulary.Verdict.UNAVAILABLE);
+        } else {
+            provider = ScreeningAdapter.sanctions(URI.create(providerUrl), timeout)::screen;
         }
-        ScreeningAdapter adapter = ScreeningAdapter.sanctions(URI.create(providerUrl), timeout);
-        return adapter::screen;
+        // The screening leg inside its span (P9-TSK-027): the screening's identifier, never the subject's name.
+        return (screening, subject) -> domainSpans.within(com.finapp.app.telemetry.Phase9Spans.COUNTERPARTY_SCREEN,
+                java.util.Map.of("screening.id", screening.value().toString()), () -> provider.screen(screening, subject));
     }
 
     @Bean

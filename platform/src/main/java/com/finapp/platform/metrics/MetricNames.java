@@ -161,7 +161,15 @@ public final class MetricNames {
                     // negative, zero - from the sign of a residual the plan computed, never a
                     // caller-supplied value. A name-split would make "is rounding biased" three
                     // queries instead of one.
-                    "direction");
+                    "direction",
+                    // Which cross-border corridor (P9-TSK-027, PHASE_9_PLAN.md section 15). Bounded by the
+                    // CODE: CrossBorderMetrics registers its series eagerly for every declared corridor rail's
+                    // coverage (destination country, destination currency) crossed with the supported source
+                    // currencies - a compiled set, each value three ISO codes ("EUR-USD-US"), a category every
+                    // customer of the corridor shares, structurally never a person or a resource, and a value
+                    // the code writes from a stored payment's corridor, never from a request. A name-split
+                    // would make "which corridor is failing" one query per corridor.
+                    "corridor");
 
     /**
      * Allowed keys the fragment rule below would otherwise refuse <strong>on a spelling
@@ -179,7 +187,9 @@ public final class MetricNames {
      * in {@link #ALLOWED_TAG_KEYS}, so it has already been argued for in writing above, and
      * the guard asserts that containment rather than trusting it.
      */
-    public static final Set<String> FRAGMENT_EXEMPT_TAG_KEYS = Set.of("provider");
+    // "corridor" (P9-TSK-027) contains the letters "id" by the same spelling accident: its value is three ISO codes
+    // from the compiled corridor set (ALLOWED_TAG_KEYS' argument), never an identifier.
+    public static final Set<String> FRAGMENT_EXEMPT_TAG_KEYS = Set.of("provider", "corridor");
 
     /** Substrings that must never appear in a tag KEY, because of what they imply about values. */
     public static final Set<String> FORBIDDEN_TAG_KEY_FRAGMENTS =

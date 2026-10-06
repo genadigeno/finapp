@@ -1487,6 +1487,15 @@ customer → quote → offer → payment → outbound credit (`E`, provider ref)
 `CROSSBORDER_PAYOUT` expectation → settlement line → batch → bank line → allocation, and quote →
 trade → cover → attempt (`Tn`, provider trade ref) → cover entry → leg expectations → FX lines.
 
+*As built (`P9-TSK-027`): the `corridor` tag key joined `MetricNames`, bounded by each declared corridor rail's
+coverage crossed with the supported source currencies (a compiled superset of any policy - the series are eager);
+`finapp.crossborder.payment`, `.payment.latency` (stages `accept` and `deliver`, both from the authorization),
+`.payment.in.transit.age`, `.return` and `.cancellation` are `CrossBorderMetrics`', counted after commit by the
+composition; `finapp.fx.trade` carries `outcome` (`executed`, `reversed`), retiring `P9-TSK-025`'s interim
+`finapp.fx.trade.reversed`; the return's `applied` is now counted on every channel, retiring `P9-TSK-023`'s
+deviation; the reports and the trace are `Phase9Reports`; the spans are `Phase9Spans`, recorded by adapter
+decorators, the desks' controllers and the return worker; `PlannedMetersExistTest` carries this table's pin.*
+
 **Alerts** (in `infra/prometheus/rules`, resolved against a live scrape): reference stale
 beyond 120 s; implausible refusals > 0 in 5 min; cover unknown age > 5 min, or cover open age >
 5 min; `finapp.fx.proof` > 0, or `finapp.fx.plan.verdict == 0`; outbound unknown age > 15 min,

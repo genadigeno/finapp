@@ -45,6 +45,9 @@ public final class OutboundReturnWorker {
     private final OutboundCreditReturns returns;
     private final MeterRegistry meters;
     private final int batchSize;
+    private final com.finapp.app.telemetry.CrossBorderMetrics crossBorderMetrics;
+    private final com.finapp.crossborder.PaymentStore payments;
+    private final com.finapp.platform.telemetry.Spans spans;
 
     public OutboundReturnWorker(
             TransactionRunner transactions,
@@ -54,7 +57,10 @@ public final class OutboundReturnWorker {
             List<RailId> corridorRails,
             OutboundCreditReturns returns,
             MeterRegistry meters,
-            int batchSize) {
+            int batchSize,
+            com.finapp.app.telemetry.CrossBorderMetrics crossBorderMetrics,
+            com.finapp.crossborder.PaymentStore payments,
+            com.finapp.platform.telemetry.Spans spans) {
         this.transactions = Objects.requireNonNull(transactions, "transactions must not be null");
         this.waiting = Objects.requireNonNull(waiting, "waiting must not be null");
         this.credits = Objects.requireNonNull(credits, "credits must not be null");
@@ -66,6 +72,9 @@ public final class OutboundReturnWorker {
             throw new IllegalArgumentException("batchSize must be at least 1");
         }
         this.batchSize = batchSize;
+        this.crossBorderMetrics = Objects.requireNonNull(crossBorderMetrics, "crossBorderMetrics must not be null");
+        this.payments = Objects.requireNonNull(payments, "payments must not be null");
+        this.spans = Objects.requireNonNull(spans, "spans must not be null");
     }
 
     /** One tick: every page of waiting corridor returns, keyset-walked so a deferring return never starves the rest. */
@@ -98,7 +107,6 @@ public final class OutboundReturnWorker {
                     case NOT_APPLICABLE, CONTRADICTED -> notApplicable++;
                     case ALREADY_RETURNED -> skipped++;
                 }
-                outcome.ifPresent(this::count);
             }
             if (page.size() < batchSize) {
                 break;
@@ -114,7 +122,8 @@ public final class OutboundReturnWorker {
         try (CorrelationContext.Scope flow = CorrelationContext.enter(
                         Correlation.startingWith(seen.correlation()).causing(CausationId.of(seen.itemId().toString())));
                 SecurityContext.Scope platform = SecurityContext.enterSystem()) {
-            return transactions.inTransaction(uow -> {
+            return spans.within(com.finapp.app.telemetry.Phase9Spans.OUTBOUND_RETURN_APPLY, java.util.Map.of(),
+                    () -> transactions.inTransaction(uow -> {
                 Optional<WaitingPayoutReturns.WaitingReturn> item = waiting.lockWaiting(uow, seen.itemId());
                 if (item.isEmpty()) {
                     return Optional.<OutboundCreditReturns.Outcome>empty();
@@ -125,10 +134,14 @@ public final class OutboundReturnWorker {
                 }
                 OutboundCreditStore.Row locked = credits.lock(uow, credit.get().id())
                         .orElseThrow(() -> new IllegalStateException("a found outbound credit vanished"));
-                return Optional.of(returns.apply(uow, locked, new OutboundCreditReturns.Evidence(item.get().amount(),
-                                Optional.empty(), item.get().settlementDate().atStartOfDay().toInstant(ZoneOffset.UTC)),
-                        "report", CorrelationContext.current().orElseThrow()));
-            });
+                OutboundCreditReturns.Outcome outcome = returns.apply(uow, locked, new OutboundCreditReturns.Evidence(
+                                item.get().amount(), Optional.empty(),
+                                item.get().settlementDate().atStartOfDay().toInstant(ZoneOffset.UTC)),
+                        "report", CorrelationContext.current().orElseThrow());
+                payments.findOwned(uow, locked.subject(), locked.customerParty())
+                        .ifPresent(payment -> count(payment.corridor().code(), outcome));
+                return Optional.of(outcome);
+            }));
         }
     }
 
@@ -154,13 +167,17 @@ public final class OutboundReturnWorker {
         return Optional.empty();
     }
 
-    private void count(OutboundCreditReturns.Outcome outcome) {
+    private void count(String corridor, OutboundCreditReturns.Outcome outcome) {
         String tag = switch (outcome) {
             case APPLIED -> "applied";
             case DEFERRED -> "deferred";
             case NOT_APPLICABLE, CONTRADICTED -> "not_applicable";
             case ALREADY_RETURNED -> "already_returned";
         };
-        meters.counter("finapp.crossborder.return", "outcome", tag).increment();
+        // Counted after commit, per corridor (P9-TSK-027). An applied return is counted by the composition's own
+        // returned edge, so only the worker's other judgements are counted here.
+        if (outcome != OutboundCreditReturns.Outcome.APPLIED) {
+            crossBorderMetrics.returned(corridor, tag);
+        }
     }
 }

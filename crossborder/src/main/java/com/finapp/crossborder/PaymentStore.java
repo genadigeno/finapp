@@ -110,6 +110,12 @@ public interface PaymentStore {
      */
     Optional<Row> lock(Connection unitOfWork, UUID id);
 
+    /**
+     * The oldest instant a payment still {@code IN_TRANSIT} entered that state, per corridor (`P9-TSK-027`) - the
+     * in-transit age gauge's one read; a corridor with nothing in transit is absent.
+     */
+    java.util.Map<String, Instant> oldestInTransit(Connection unitOfWork);
+
     /** Moves {@code id} from {@code from} to {@code to}, with the failure class exactly when {@code to} is FAILED. */
     boolean move(Connection unitOfWork, UUID id, Status from, Status to, Optional<String> failureReason);
 }

@@ -353,6 +353,53 @@ class PlannedMetersExistTest {
                 .isNotEmpty();
     }
 
+    /**
+     * `P9-TSK-027`'s acceptance, armed ahead of the flip: every meter Phase 9's plan §15 names is registered in this
+     * context - nothing configured, no reachable database, no provider - exactly the "freshly started instance" the
+     * criterion names. Read from §15 alone and counted EXACTLY: twenty-six rows; each row's second series, and the six
+     * schedules' gauges the sweeper row names, are checked by name.
+     */
+    @Test
+    @DisplayName("Phase 9's planned meters are already published, ahead of the phase flip")
+    void phase9PlannedMetersAreAlreadyPublished() {
+        Set<String> planned = new TreeSet<>();
+        int rows = 0;
+        boolean inObservability = false;
+        for (String line : read(repositoryFile("docs/project/PHASE_9_PLAN.md"))) {
+            if (line.startsWith("## ")) {
+                inObservability = line.startsWith("## 15.");
+                continue;
+            }
+            if (!inObservability) {
+                continue;
+            }
+            Matcher row = PLANNED_METER.matcher(line);
+            if (row.find()) {
+                rows++;
+                planned.add(row.group(1));
+            }
+        }
+        assertThat(rows).as("the Phase 9 plan's section 15 table has exactly 26 meter rows").isEqualTo(26);
+        assertThat(planned).as("one series per row").hasSize(26);
+        // The rows naming a second series, and the six schedules' gauges.
+        planned.addAll(java.util.List.of(
+                "finapp.fx.cover.unknown.age",
+                "finapp.payments.outbound.unknown.age",
+                "finapp.kyc.counterparty.review.age",
+                "finapp.fx.quote.expiry.sweeper.enabled",
+                "finapp.fx.cover.sweeper.enabled",
+                "finapp.kyc.counterparty.sweeper.enabled",
+                "finapp.payments.outbound.sweeper.enabled",
+                "finapp.payments.outbound.return.sweeper.enabled"));
+        assertThat(registeredMeters()).containsAll(planned);
+        // The latency's two stages and the corridor tag, on a fresh instance.
+        assertThat(registry.find("finapp.crossborder.payment.latency").tag("stage", "accept").timers()).isNotEmpty();
+        assertThat(registry.find("finapp.crossborder.payment.latency").tag("stage", "deliver").timers()).isNotEmpty();
+        assertThat(registry.find("finapp.crossborder.payment").tag("corridor", "EUR-USD-US").tag("outcome", "returned")
+                .counters()).isNotEmpty();
+        assertThat(registry.find("finapp.fx.trade").tag("outcome", "reversed").counters()).isNotEmpty();
+    }
+
     @Test
     @DisplayName("the guard is not vacuous: it reads a real plan and a real registry")
     void theGuardHasTeeth() {

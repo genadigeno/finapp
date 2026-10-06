@@ -110,10 +110,11 @@ public class CrossBorderPaymentBeans {
             MeterRegistry meterRegistry,
             Clock clock,
             com.finapp.crossborder.PaymentCancellation crossBorderPaymentCancellation,
-            com.finapp.crossborder.CancellationStore crossBorderCancellationStore) {
+            com.finapp.crossborder.CancellationStore crossBorderCancellationStore,
+            com.finapp.app.telemetry.CrossBorderMetrics crossBorderMetrics) {
         return new CrossBorderPaymentDesk(crossBorderPaymentAuthorization, crossBorderFx, crossBorderExecution, identityStore,
                 mfaEnrolmentStore, idempotentExecutor, crossborderTransactionRunner, meterRegistry, clock,
-                crossBorderPaymentCancellation, crossBorderCancellationStore);
+                crossBorderPaymentCancellation, crossBorderCancellationStore, crossBorderMetrics);
     }
 
     @Bean

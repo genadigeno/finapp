@@ -36,6 +36,7 @@ public final class CrossBorderCompletion implements OutboundCreditComposition<Co
     @NonNull private final com.finapp.fx.ConversionParticipants participants;
     @NonNull private final com.finapp.ledger.ChartOfAccounts<Connection> chart;
     @NonNull private final io.micrometer.core.instrument.MeterRegistry meters;
+    @NonNull private final com.finapp.app.telemetry.CrossBorderMetrics crossBorderMetrics;
 
     @Override
     public List<JournalLine> completionLines(Connection unitOfWork, Completion completion) {
@@ -57,12 +58,18 @@ public final class CrossBorderCompletion implements OutboundCreditComposition<Co
                 "outbound-credit-" + completion.credit().value(), SecurityContext.require(),
                 correlation());
         progress.inTransit(unitOfWork, completion.subject(), trade.value().toString(), completion.at(), correlation());
+        String corridor = locked.payment().corridor().code();
+        crossBorderMetrics.payment(corridor, "in_transit");
+        crossBorderMetrics.latency(corridor, "accept", java.time.Duration.between(locked.payment().createdAt(), completion.at()));
     }
 
     @Override
     public void delivered(Connection unitOfWork, UUID subject, Instant deliveredAt) {
-        progress.lock(unitOfWork, subject);
+        PaymentProgress.Locked delivering = progress.lock(unitOfWork, subject);
         progress.delivered(unitOfWork, subject, Instant.now(clock), correlation());
+        String corridor = delivering.payment().corridor().code();
+        crossBorderMetrics.payment(corridor, "delivered");
+        crossBorderMetrics.latency(corridor, "deliver", java.time.Duration.between(delivering.payment().createdAt(), deliveredAt));
     }
 
     @Override
@@ -72,6 +79,9 @@ public final class CrossBorderCompletion implements OutboundCreditComposition<Co
         booking.abandon(unitOfWork, FxQuoteId.of(locked.payment().quote()), "PAYMENT_FAILED_" + reason.name(),
                 SecurityContext.require(), correlation());
         progress.failed(unitOfWork, subject, reason.name(), Instant.now(clock), correlation());
+        // A recall the provider honoured is the customer's cancellation; every other failure is a failure.
+        crossBorderMetrics.payment(locked.payment().corridor().code(),
+                reason == OutboundCreditStore.FailureReason.RECALLED ? "cancelled" : "failed");
     }
 
     @Override
@@ -111,14 +121,16 @@ public final class CrossBorderCompletion implements OutboundCreditComposition<Co
     public void recallAnswered(Connection unitOfWork, UUID subject, com.finapp.payments.OutboundCreditStore.RecallOutcome outcome) {
         // Telemetry, never the count of record (the credit's recall_outcome is): the cancellation rate, the free-option
         // watch of PHASE_9_PLAN.md section 13.
-        meters.counter("finapp.crossborder.cancellation", "outcome",
-                outcome == com.finapp.payments.OutboundCreditStore.RecallOutcome.RECALLED ? "recalled" : "too_late")
-                .increment();
+        crossBorderMetrics.cancellation(
+                outcome == com.finapp.payments.OutboundCreditStore.RecallOutcome.RECALLED ? "recalled" : "too_late");
     }
 
     @Override
     public void returned(Connection unitOfWork, UUID subject, String basis, Instant at) {
         progress.returned(unitOfWork, subject, basis, at, correlation());
+        String corridor = progress.lock(unitOfWork, subject).payment().corridor().code();
+        crossBorderMetrics.payment(corridor, "returned");
+        crossBorderMetrics.returned(corridor, "applied");
     }
 
     private static CorrelationId correlation() {

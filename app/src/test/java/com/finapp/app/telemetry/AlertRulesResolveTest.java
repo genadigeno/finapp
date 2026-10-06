@@ -89,7 +89,7 @@ class AlertRulesResolveTest {
                     // Set operators and modifiers.
                     "or", "and", "unless", "by", "without", "on", "ignoring", "bool", "offset",
                     // Label names the rules group or select by.
-                    "source", "outcome", "purpose", "currency", "severity", "type", "pair");
+                    "source", "outcome", "purpose", "currency", "severity", "type", "pair", "provider", "corridor");
 
     /** Every series PHASE_8_PLAN section 15 says is alerted, in its published form. */
     private static final Set<String> ALERTED_SERIES =
@@ -162,6 +162,12 @@ class AlertRulesResolveTest {
                         .flatMap(AlertRulesResolveTest::seriesIn)
                         .collect(Collectors.toCollection(TreeSet::new));
         assertThat(queried).contains("finapp_fx_rate_age");
+        // Section 15's alerts, every one (P9-TSK-027).
+        assertThat(queried).contains("finapp_fx_quote_total", "finapp_fx_cover_unknown_age_seconds",
+                "finapp_fx_cover_open_age_seconds", "finapp_fx_proof", "finapp_fx_plan_verdict", "finapp_payments_outbound_unknown_age",
+                "finapp_payments_outbound_received_age", "finapp_crossborder_payment_in_transit_age",
+                "finapp_kyc_counterparty_review_age_seconds", "finapp_reconciliation_rule_set_missing",
+                "finapp_crossborder_cancellation_total");
         assertThat(publishedSeriesNames()).containsAll(queried);
         assertThat(fx)
                 .allSatisfy(

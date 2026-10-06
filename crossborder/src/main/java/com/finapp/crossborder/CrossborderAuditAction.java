@@ -102,6 +102,20 @@ public enum CrossborderAuditAction implements AuditableAction {
             "crossborder.CrossBorderCancellationRequested",
             "A customer requested a cross-border payment's cancellation: the outbound credit marked for recall, the"
                     + " request recorded once; honoured only on the provider's definitive word.",
+            false),
+
+    /** An investigator read a month's corridor report (`P9-TSK-027`, FX_INVESTIGATE) - every serving recorded. */
+    CORRIDOR_REPORT_READ(
+            "crossborder.CorridorReportRead",
+            "An investigator read a month's corridor report - volume, fees charged, provider costs and returns"
+                    + " (FX_INVESTIGATE); every serving is recorded.",
+            false),
+
+    /** An investigator read a cross-border payment's trace (`P9-TSK-027`, FX_INVESTIGATE) - every serving recorded. */
+    PAYMENT_TRACE_READ(
+            "crossborder.PaymentTraceRead",
+            "An investigator read a cross-border payment's identifier chain - quote, payment, outbound credit, entries,"
+                    + " expectations, settlement lines and covers (FX_INVESTIGATE); every serving is recorded.",
             false);
 
     private final String code;

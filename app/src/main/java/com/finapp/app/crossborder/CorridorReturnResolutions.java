@@ -60,6 +60,7 @@ public final class CorridorReturnResolutions implements ResolvedCorridorReturns 
     @NonNull private final IdGenerator ids;
     @NonNull private final Clock clock;
     @NonNull private final io.micrometer.core.instrument.MeterRegistry meters;
+    @NonNull private final com.finapp.app.telemetry.CrossBorderMetrics crossBorderMetrics;
 
     private record Judged(Judgement judgement, Optional<OutboundCreditStore.Row> credit, Optional<UUID> customer) {}
 
@@ -105,7 +106,8 @@ public final class CorridorReturnResolutions implements ResolvedCorridorReturns 
                 PaymentsAuditAction.OUTBOUND_CREDIT_RETURN_APPLIED, OutboundCreditOutcomes.TARGET_TYPE,
                 credit.id().value().toString(), Optional.empty(), AuditOutcome.SUCCEEDED, correlation,
                 Optional.of("credit=" + credit.id() + ", applied_by=RESOLUTION, resolution=" + resolutionId)));
-        meters.counter("finapp.crossborder.return", "outcome", "resolved").increment();
+        crossBorderMetrics.returned(payment.payment().corridor().code(), "resolved");
+        crossBorderMetrics.payment(payment.payment().corridor().code(), "returned");
         return Judgement.RECORDED;
     }
 

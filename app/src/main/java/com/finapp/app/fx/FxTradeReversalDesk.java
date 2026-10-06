@@ -14,7 +14,6 @@ import com.finapp.platform.idempotency.StoredResponse;
 import com.finapp.platform.security.Actor;
 import com.finapp.platform.security.SecurityContext;
 import com.finapp.sharedkernel.correlation.CorrelationId;
-import io.micrometer.core.instrument.MeterRegistry;
 import java.nio.charset.StandardCharsets;
 import java.util.UUID;
 import java.util.function.Supplier;
@@ -29,12 +28,11 @@ import lombok.RequiredArgsConstructor;
 public final class FxTradeReversalDesk {
 
     static final String SCOPE = "fx.trade-reversal:";
-    public static final String REVERSED_METER = "finapp.fx.trade.reversed";
 
     @NonNull private final TradeReversals reversals;
     @NonNull private final IdempotentExecutor executor;
     @NonNull private final TransactionRunner transactions;
-    @NonNull private final MeterRegistry meters;
+    @NonNull private final FxQuoteMetrics metrics;
 
     /** A reversal as the operator sees it. */
     public record ReversalReceipt(String reversalId, String tradeId, String status, String reversalEntryId, String cover) {}
@@ -64,8 +62,8 @@ public final class FxTradeReversalDesk {
         CorrelationId correlation = correlation();
         TradeReversals.Decided approved = guarded(() -> transactions.inTransaction(unitOfWork ->
                 reversals.approve(unitOfWork, reversalId, actor, reason, correlation)));
-        // Telemetry, never the count of record: the trade's REVERSED status is.
-        meters.counter(REVERSED_METER).increment();
+        // Telemetry, never the count of record: the trade's REVERSED status is. After its transaction committed.
+        metrics.reversed(approved.pair());
         return receipt(approved);
     }
 

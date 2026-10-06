@@ -82,6 +82,8 @@ class DashboardQueriesResolveTest {
                     "operation",
                     // The consent counters' tag key (P2-TSK-020) - a label, not a series.
                     "purpose",
+                    // P9-TSK-027: the FX row groups by pair, provider and the residual direction - labels.
+                    "direction", "pair", "provider",
                     // P7-TSK-015: the rail and dispute row groups by rail, judged type and
                     // dispute stage - labels, not series.
                     "rail", "type", "stage",
@@ -135,6 +137,24 @@ class DashboardQueriesResolveTest {
                         incident is the worst way to be wrong. Published series: %s""",
                         published)
                 .allSatisfy(series -> assertThat(published).contains(series));
+    }
+
+    @Test
+    @DisplayName("the FX and cross-border row has exactly the twelve panels section 15 names (P9-TSK-027)")
+    void theFxAndCrossBorderRowHasTwelvePanels() throws Exception {
+        JsonNode panels = JsonMapper.builder().build().readTree(RepositoryPaths.read(DASHBOARD)).path("panels");
+        int count = -1;
+        for (JsonNode panel : panels) {
+            boolean row = "row".equals(panel.path("type").asString());
+            if (row && panel.path("title").asString().startsWith("FX and cross-border")) {
+                count = 0;
+            } else if (row && count >= 0) {
+                break;
+            } else if (count >= 0) {
+                count++;
+            }
+        }
+        assertThat(count).as("the FX and cross-border row's panels").isEqualTo(12);
     }
 
     @Test

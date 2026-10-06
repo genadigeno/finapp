@@ -53,6 +53,18 @@ import org.springframework.core.env.Environment;
 @Configuration(proxyBeanMethods = false)
 public class CrossBorderOutcomeBeans {
 
+    /**
+     * The cross-border payment's meters (`P9-TSK-027`, PHASE_9_PLAN.md section 15): eager per corridor the build can
+     * carry; the in-transit age read from the shared database on its own connection. Unconditional - the store is.
+     */
+    @Bean
+    com.finapp.app.telemetry.CrossBorderMetrics crossBorderMetrics(
+            javax.sql.DataSource dataSource, Clock clock, MeterRegistry meterRegistry) {
+        com.finapp.crossborder.PaymentStore payments = new com.finapp.crossborder.JdbcPaymentStore();
+        return new com.finapp.app.telemetry.CrossBorderMetrics(com.finapp.app.payments.PaymentBeans.CORRIDOR_DECLARATIONS,
+                payments::oldestInTransit, dataSource::getConnection, clock, meterRegistry);
+    }
+
     @Bean
     CrossBorderCompletionBooking crossBorderCompletionBooking(
             QuoteStore quoteStore,
@@ -82,9 +94,10 @@ public class CrossBorderOutcomeBeans {
             Clock clock,
             com.finapp.fx.ConversionParticipants conversionParticipants,
             LedgerAccountStore<Connection> ledgerAccountStore,
-            MeterRegistry meterRegistry) {
+            MeterRegistry meterRegistry,
+            com.finapp.app.telemetry.CrossBorderMetrics crossBorderMetrics) {
         return new CrossBorderCompletion(crossBorderPaymentProgress, crossBorderCompletionBooking, clock,
-                conversionParticipants, new ChartOfAccounts<>(ledgerAccountStore), meterRegistry);
+                conversionParticipants, new ChartOfAccounts<>(ledgerAccountStore), meterRegistry, crossBorderMetrics);
     }
 
     @Bean
@@ -121,10 +134,11 @@ public class CrossBorderOutcomeBeans {
             AuditWriter<Connection> auditWriter,
             IdGenerator idGenerator,
             Clock clock,
-            MeterRegistry meterRegistry) {
+            MeterRegistry meterRegistry,
+            com.finapp.app.telemetry.CrossBorderMetrics crossBorderMetrics) {
         return new CorridorReturnResolutions(outboundCreditStore, outboundCreditReturnStore, crossBorderPaymentProgress,
                 conversionParticipants, new ChartOfAccounts<>(ledgerAccountStore), postingService, auditWriter,
-                idGenerator, clock, meterRegistry);
+                idGenerator, clock, meterRegistry, crossBorderMetrics);
     }
 
     /** The corridor report's return channel (`P9-TSK-023`): the corridor-scoped waiting returns, one per transaction. */
@@ -136,11 +150,14 @@ public class CrossBorderOutcomeBeans {
             SchemeExecutionClaimStore<Connection> schemeExecutionClaimStore,
             OutboundCreditReturns outboundCreditReturns,
             MeterRegistry meterRegistry,
-            @Value("${finapp.payments.outbound.return.sweeper.batch:25}") int batch) {
+            @Value("${finapp.payments.outbound.return.sweeper.batch:25}") int batch,
+            com.finapp.app.telemetry.CrossBorderMetrics crossBorderMetrics,
+            PaymentStore crossBorderPaymentStore,
+            com.finapp.platform.telemetry.Spans domainSpans) {
         return new OutboundReturnWorker(paymentTransactionRunner, waitingCorridorReturns, outboundCreditStore,
                 schemeExecutionClaimStore, com.finapp.app.payments.PaymentBeans.CORRIDOR_DECLARATIONS.stream()
                         .map(com.finapp.payments.CorridorDeclaration::rail).toList(),
-                outboundCreditReturns, meterRegistry, batch);
+                outboundCreditReturns, meterRegistry, batch, crossBorderMetrics, crossBorderPaymentStore, domainSpans);
     }
 
     /** Leaderless on every instance; off in test contexts, where the suites drive the sweep. */

@@ -55,7 +55,7 @@ public final class CrossBorderPaymentDesk {
     private final MfaEnrolmentStore<Connection> enrolments;
     private final IdempotentExecutor executor;
     private final TransactionRunner transactions;
-    private final Counter submitted;
+    private final com.finapp.app.telemetry.CrossBorderMetrics crossBorderMetrics;
     private final Clock clock;
     private final com.finapp.crossborder.PaymentCancellation cancellation;
     private final com.finapp.crossborder.CancellationStore cancellations;
@@ -71,7 +71,8 @@ public final class CrossBorderPaymentDesk {
             MeterRegistry meters,
             Clock clock,
             com.finapp.crossborder.PaymentCancellation cancellation,
-            com.finapp.crossborder.CancellationStore cancellations) {
+            com.finapp.crossborder.CancellationStore cancellations,
+            com.finapp.app.telemetry.CrossBorderMetrics crossBorderMetrics) {
         this.authorization = Objects.requireNonNull(authorization, "authorization must not be null");
         this.fx = Objects.requireNonNull(fx, "fx must not be null");
         this.execution = Objects.requireNonNull(execution, "execution must not be null");
@@ -79,9 +80,8 @@ public final class CrossBorderPaymentDesk {
         this.enrolments = Objects.requireNonNull(enrolments, "enrolments must not be null");
         this.executor = Objects.requireNonNull(executor, "executor must not be null");
         this.transactions = Objects.requireNonNull(transactions, "transactions must not be null");
-        this.submitted = Counter.builder(PAYMENT_METER).tag("outcome", "submitted")
-                .description("Cross-border payments authorized - held and dispatched. A count, never an amount")
-                .register(Objects.requireNonNull(meters, "meters must not be null"));
+        Objects.requireNonNull(meters, "meters must not be null");
+        this.crossBorderMetrics = Objects.requireNonNull(crossBorderMetrics, "crossBorderMetrics must not be null");
         this.clock = Objects.requireNonNull(clock, "clock must not be null");
         this.cancellation = Objects.requireNonNull(cancellation, "cancellation must not be null");
         this.cancellations = Objects.requireNonNull(cancellations, "cancellations must not be null");
@@ -149,7 +149,7 @@ public final class CrossBorderPaymentDesk {
         }
         PaymentAuthorization.Authorized authorized = begun.authorized();
         if (!authorized.takenOver()) {
-            submitted.increment();
+            crossBorderMetrics.payment(authorized.payment().corridor().code(), "submitted");
         }
 
         // The wire, holding no connection: the cover first - handed to fx's nudge, which sends it as the

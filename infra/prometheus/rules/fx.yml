@@ -35,3 +35,115 @@ groups:
         annotations:
           summary: "No reference rate has ever been read for {{ $labels.pair }}"
           description: "The {{ $labels.pair }} age gauge is unreadable or no snapshot exists. Confirm finapp.fx.reference.url is configured and the database is reachable."
+
+      # ---- P9-TSK-027: the rest of PHASE_9_PLAN.md section 15's alerts ----
+
+      - alert: FxQuoteImplausibleRefusals
+        # A provider quoting outside the reference band - every such quote refused, never priced (INV-FX-02).
+        expr: sum by (pair) (increase(finapp_fx_quote_total{outcome="refused_implausible"}[5m])) > 0
+        for: 1m
+        labels:
+          severity: ticket
+        annotations:
+          summary: "Implausible provider quotes refused for {{ $labels.pair }}"
+          description: "At least one {{ $labels.pair }} firm quote fell outside the reference band in five minutes. Check the provider's rates against the reference source."
+
+      - alert: FxCoverUnknownAged
+        # INV-LIFE-03 for covers: an execution the platform has no answer for, older than five minutes.
+        expr: max by (provider) (finapp_fx_cover_unknown_age_seconds) > 300
+        for: 2m
+        labels:
+          severity: page
+        annotations:
+          summary: "An FX cover on {{ $labels.provider }} has had no answer for over five minutes"
+          description: "The oldest UNKNOWN cover on {{ $labels.provider }} has waited {{ $value | humanizeDuration }}. The cover sweep inquires by our reference; check the provider's availability."
+
+      - alert: FxCoverOpenAged
+        # The oldest uncovered position leg - FX_POSITION carrying open risk longer than five minutes.
+        expr: max by (provider) (finapp_fx_cover_open_age_seconds) > 300
+        for: 2m
+        labels:
+          severity: page
+        annotations:
+          summary: "An FX position leg on {{ $labels.provider }} has been uncovered for over five minutes"
+          description: "The oldest open cover on {{ $labels.provider }} is {{ $value | humanizeDuration }} old. The platform carries that position until it executes."
+
+      - alert: FxBooksUnexplained
+        # The FX books proof: any currency failing must read 0 - never a repair, always a person.
+        expr: max by (purpose) (finapp_fx_proof) > 0
+        for: 5m
+        labels:
+          severity: page
+        annotations:
+          summary: "The FX books proof fails for {{ $labels.purpose }}"
+          description: "{{ $value }} currencies of {{ $labels.purpose }} do not equal what fx's rows say they must. Read the FX position report and the books proof's lines."
+
+      - alert: FxPlanDiverged
+        # The plan replay: a booked trade whose entry no longer recomputes from its frozen inputs.
+        expr: max(finapp_fx_plan_verdict) == 0
+        for: 5m
+        labels:
+          severity: page
+        annotations:
+          summary: "A booked FX plan no longer replays"
+          description: "The plan verdict reads diverged: a trade's posted entry differs from its recomputed plan. Read the trade's provenance."
+
+      - alert: OutboundCreditUnknownAged
+        # INV-LIFE-03 for outbound credits: a customer's money behind a hold with no answer for fifteen minutes.
+        expr: max(finapp_payments_outbound_unknown_age) > 900
+        for: 5m
+        labels:
+          severity: page
+        annotations:
+          summary: "A cross-border outbound credit has had no answer for over fifteen minutes"
+          description: "The oldest unanswered outbound credit has waited {{ $value | humanizeDuration }}. The resolution sweep inquires by our reference; check the corridor provider."
+
+      - alert: OutboundCreditUndecided
+        # The provider holds a credit RECEIVED past its declared decision deadline (four hours for corridor-sim-a/-b).
+        expr: max(finapp_payments_outbound_received_age) > 14400
+        for: 10m
+        labels:
+          severity: ticket
+        annotations:
+          summary: "A corridor provider has held a credit undecided past its decision deadline"
+          description: "The oldest RECEIVED outbound credit has waited {{ $value | humanizeDuration }} for the provider's decision. Raise it with the provider."
+
+      - alert: CrossBorderPaymentUndelivered
+        # The oldest payment in transit, past the corridor's delivery estimate (one day).
+        expr: max by (corridor) (finapp_crossborder_payment_in_transit_age) > 86400
+        for: 30m
+        labels:
+          severity: ticket
+        annotations:
+          summary: "A payment on {{ $labels.corridor }} is undelivered past its delivery estimate"
+          description: "The oldest in-transit payment on {{ $labels.corridor }} has waited {{ $value | humanizeDuration }} since the provider accepted it. Read its trace."
+
+      - alert: CounterpartyReviewAged
+        # A counterparty screening hit waiting for a reviewer longer than a day - a beneficiary held unpayable.
+        expr: max(finapp_kyc_counterparty_review_age_seconds) > 86400
+        for: 30m
+        labels:
+          severity: ticket
+        annotations:
+          summary: "A counterparty screening review has waited over a day"
+          description: "The oldest open counterparty review has waited {{ $value | humanizeDuration }}. A beneficiary stays unpayable until a reviewer decides."
+
+      - alert: ReconciliationRuleSetMissing
+        # A declared settlement source with no ACTIVE rule set: its reports cannot be matched.
+        expr: max by (source) (finapp_reconciliation_rule_set_missing) > 0
+        for: 15m
+        labels:
+          severity: ticket
+        annotations:
+          summary: "The settlement source {{ $labels.source }} has no active rule set"
+          description: "Reports from {{ $labels.source }} cannot be matched until two controllers activate its rule set v1."
+
+      - alert: CrossBorderCancellationSpike
+        # The free-option watch: cancellations above a fifth of the payments submitted in an hour.
+        expr: sum(increase(finapp_crossborder_cancellation_total[1h])) / clamp_min(sum(increase(finapp_crossborder_payment_total{outcome="submitted"}[1h])), 1) > 0.2
+        for: 15m
+        labels:
+          severity: ticket
+        annotations:
+          summary: "Cross-border cancellations exceed a fifth of submitted payments"
+          description: "The cancellation rate over the last hour is {{ $value | humanizePercentage }} - customers may be using recalls as a free option against the rate."
