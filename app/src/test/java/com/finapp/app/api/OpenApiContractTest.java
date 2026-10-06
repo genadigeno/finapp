@@ -613,6 +613,11 @@ class OpenApiContractTest {
                         ApiVersion.CURRENT_PREFIX + "/operator/fx/trades/{id}/reversal",
                         ApiVersion.CURRENT_PREFIX + "/operator/fx/trades/{id}/reversal/{rid}/approval",
                         ApiVersion.CURRENT_PREFIX + "/operator/fx/trades/{id}/reversal/{rid}/rejection",
+                        // P9-TSK-027: Phase 9's reports and the payment trace.
+                        ApiVersion.CURRENT_PREFIX + "/operator/reports/fx/position",
+                        ApiVersion.CURRENT_PREFIX + "/operator/reports/fx/revenue",
+                        ApiVersion.CURRENT_PREFIX + "/operator/reports/cross-border/corridors",
+                        ApiVersion.CURRENT_PREFIX + "/operator/cross-border/payments/{id}/trace",
                         // P9-TSK-008: the customer's quote doors - request, read, cancel, and the
                         // offered pairs (a session; the owner's own quotes only).
                         ApiVersion.CURRENT_PREFIX + "/me/fx/quotes",

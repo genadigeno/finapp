@@ -111,7 +111,16 @@ public class FxConversionBeans {
             com.finapp.fx.TradeReversals tradeReversals,
             IdempotentExecutor idempotentExecutor,
             TransactionRunner fxTransactionRunner,
-            io.micrometer.core.instrument.MeterRegistry meterRegistry) {
-        return new FxTradeReversalDesk(tradeReversals, idempotentExecutor, fxTransactionRunner, meterRegistry);
+            FxQuoteMetrics fxQuoteMetrics) {
+        return new FxTradeReversalDesk(tradeReversals, idempotentExecutor, fxTransactionRunner, fxQuoteMetrics);
+    }
+
+    /** Phase 9's reports and the payment trace (`P9-TSK-027`): one snapshot each, audited. */
+    @Bean
+    Phase9Reports phase9Reports(
+            TransactionRunner fxTransactionRunner, AuditWriter<Connection> auditWriter, IdGenerator idGenerator, Clock clock) {
+        return new Phase9Reports(fxTransactionRunner, auditWriter, idGenerator, clock,
+                com.finapp.app.payments.PaymentBeans.CORRIDOR_DECLARATIONS.stream()
+                        .map(declaration -> declaration.counterparty() + ".settlement").toList());
     }
 }

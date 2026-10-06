@@ -7410,6 +7410,17 @@
         ],
         "type": "object"
       },
+      "CorridorCostRow": {
+        "properties": {
+          "costs": {
+            "$ref": "#/components/schemas/ReportAmount"
+          },
+          "source": {
+            "type": "string"
+          }
+        },
+        "type": "object"
+      },
       "CorridorDecisionRequest": {
         "properties": {
           "reason": {
@@ -7514,6 +7525,29 @@
         },
         "type": "object"
       },
+      "CorridorReport": {
+        "properties": {
+          "corridors": {
+            "items": {
+              "$ref": "#/components/schemas/CorridorRow"
+            },
+            "type": "array"
+          },
+          "month": {
+            "type": "string"
+          },
+          "providerCosts": {
+            "items": {
+              "$ref": "#/components/schemas/CorridorCostRow"
+            },
+            "type": "array"
+          },
+          "truncated": {
+            "type": "boolean"
+          }
+        },
+        "type": "object"
+      },
       "CorridorRequest": {
         "properties": {
           "country": {
@@ -7583,6 +7617,44 @@
         ],
         "type": "object"
       },
+      "CorridorRow": {
+        "properties": {
+          "corridor": {
+            "type": "string"
+          },
+          "delivered": {
+            "format": "int64",
+            "type": "integer"
+          },
+          "failed": {
+            "format": "int64",
+            "type": "integer"
+          },
+          "feesCharged": {
+            "$ref": "#/components/schemas/ReportAmount"
+          },
+          "inTransit": {
+            "format": "int64",
+            "type": "integer"
+          },
+          "payments": {
+            "format": "int64",
+            "type": "integer"
+          },
+          "returned": {
+            "format": "int64",
+            "type": "integer"
+          },
+          "returns": {
+            "format": "int64",
+            "type": "integer"
+          },
+          "volume": {
+            "$ref": "#/components/schemas/ReportAmount"
+          }
+        },
+        "type": "object"
+      },
       "CorridorView": {
         "properties": {
           "corridor": {
@@ -7627,6 +7699,38 @@
             "type": "integer"
           },
           "source": {
+            "type": "string"
+          }
+        },
+        "type": "object"
+      },
+      "CoverLink": {
+        "properties": {
+          "attemptReferences": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array"
+          },
+          "coverId": {
+            "type": "string"
+          },
+          "entryId": {
+            "type": "string"
+          },
+          "kind": {
+            "type": "string"
+          },
+          "legs": {
+            "items": {
+              "$ref": "#/components/schemas/ExpectationLink"
+            },
+            "type": "array"
+          },
+          "providerTradeReference": {
+            "type": "string"
+          },
+          "status": {
             "type": "string"
           }
         },
@@ -7976,6 +8080,17 @@
         "properties": {
           "status": {
             "type": "string"
+          }
+        },
+        "type": "object"
+      },
+      "CurrencyPositionRow": {
+        "properties": {
+          "currency": {
+            "type": "string"
+          },
+          "position": {
+            "$ref": "#/components/schemas/ReportAmount"
           }
         },
         "type": "object"
@@ -8455,6 +8570,20 @@
         },
         "type": "object"
       },
+      "ExpectationLink": {
+        "properties": {
+          "expectationId": {
+            "type": "string"
+          },
+          "kind": {
+            "type": "string"
+          },
+          "status": {
+            "type": "string"
+          }
+        },
+        "type": "object"
+      },
       "ExpectationList": {
         "properties": {
           "expectations": {
@@ -8772,6 +8901,29 @@
         ],
         "type": "object"
       },
+      "FxPositionReport": {
+        "properties": {
+          "asOf": {
+            "type": "string"
+          },
+          "openLegs": {
+            "items": {
+              "$ref": "#/components/schemas/OpenLegRow"
+            },
+            "type": "array"
+          },
+          "positions": {
+            "items": {
+              "$ref": "#/components/schemas/CurrencyPositionRow"
+            },
+            "type": "array"
+          },
+          "truncated": {
+            "type": "boolean"
+          }
+        },
+        "type": "object"
+      },
       "FxQuoteView": {
         "properties": {
           "customerRate": {
@@ -8806,6 +8958,33 @@
           },
           "status": {
             "type": "string"
+          }
+        },
+        "type": "object"
+      },
+      "FxRevenueReport": {
+        "properties": {
+          "month": {
+            "type": "string"
+          },
+          "offPlanCovers": {
+            "format": "int64",
+            "type": "integer"
+          },
+          "pairs": {
+            "items": {
+              "$ref": "#/components/schemas/PairRow"
+            },
+            "type": "array"
+          },
+          "realised": {
+            "items": {
+              "$ref": "#/components/schemas/RealisedRow"
+            },
+            "type": "array"
+          },
+          "truncated": {
+            "type": "boolean"
           }
         },
         "type": "object"
@@ -8884,6 +9063,23 @@
             "type": "string"
           },
           "secret": {
+            "type": "string"
+          }
+        },
+        "type": "object"
+      },
+      "ItemLink": {
+        "properties": {
+          "batchId": {
+            "type": "string"
+          },
+          "itemId": {
+            "type": "string"
+          },
+          "lineType": {
+            "type": "string"
+          },
+          "status": {
             "type": "string"
           }
         },
@@ -9429,6 +9625,39 @@
         ],
         "type": "object"
       },
+      "OpenLegRow": {
+        "properties": {
+          "ageSeconds": {
+            "format": "int64",
+            "type": "integer"
+          },
+          "coverId": {
+            "type": "string"
+          },
+          "destinationCurrency": {
+            "type": "string"
+          },
+          "fixedAmount": {
+            "$ref": "#/components/schemas/ReportAmount"
+          },
+          "fixedSide": {
+            "type": "string"
+          },
+          "kind": {
+            "type": "string"
+          },
+          "provider": {
+            "type": "string"
+          },
+          "sourceCurrency": {
+            "type": "string"
+          },
+          "status": {
+            "type": "string"
+          }
+        },
+        "type": "object"
+      },
       "OpeningPositionRequest": {
         "properties": {
           "reason": {
@@ -9789,6 +10018,37 @@
         ],
         "type": "object"
       },
+      "PairRow": {
+        "properties": {
+          "margin": {
+            "$ref": "#/components/schemas/ReportAmount"
+          },
+          "markupMargin": {
+            "$ref": "#/components/schemas/ReportAmount"
+          },
+          "pair": {
+            "type": "string"
+          },
+          "purpose": {
+            "type": "string"
+          },
+          "residual": {
+            "$ref": "#/components/schemas/ReportAmount"
+          },
+          "reversed": {
+            "format": "int64",
+            "type": "integer"
+          },
+          "spreadMargin": {
+            "$ref": "#/components/schemas/ReportAmount"
+          },
+          "trades": {
+            "format": "int64",
+            "type": "integer"
+          }
+        },
+        "type": "object"
+      },
       "PairView": {
         "properties": {
           "amountRounding": {
@@ -9959,6 +10219,68 @@
             "type": "string"
           },
           "payeeCheck": {
+            "type": "string"
+          }
+        },
+        "type": "object"
+      },
+      "PaymentTrace": {
+        "properties": {
+          "completionEntryId": {
+            "type": "string"
+          },
+          "corridor": {
+            "type": "string"
+          },
+          "covers": {
+            "items": {
+              "$ref": "#/components/schemas/CoverLink"
+            },
+            "type": "array"
+          },
+          "creditStatus": {
+            "type": "string"
+          },
+          "customerParty": {
+            "type": "string"
+          },
+          "endToEndReference": {
+            "type": "string"
+          },
+          "offerId": {
+            "type": "string"
+          },
+          "outboundCreditId": {
+            "type": "string"
+          },
+          "paymentId": {
+            "type": "string"
+          },
+          "payout": {
+            "items": {
+              "$ref": "#/components/schemas/ExpectationLink"
+            },
+            "type": "array"
+          },
+          "providerReference": {
+            "type": "string"
+          },
+          "quoteId": {
+            "type": "string"
+          },
+          "settlementItems": {
+            "items": {
+              "$ref": "#/components/schemas/ItemLink"
+            },
+            "type": "array"
+          },
+          "status": {
+            "type": "string"
+          },
+          "tradeEntryId": {
+            "type": "string"
+          },
+          "tradeId": {
             "type": "string"
           }
         },
@@ -10631,6 +10953,20 @@
         },
         "type": "object"
       },
+      "RealisedRow": {
+        "properties": {
+          "currency": {
+            "type": "string"
+          },
+          "gains": {
+            "$ref": "#/components/schemas/ReportAmount"
+          },
+          "losses": {
+            "$ref": "#/components/schemas/ReportAmount"
+          }
+        },
+        "type": "object"
+      },
       "RecoveryCompletionRequest": {
         "properties": {
           "password": {
@@ -10810,6 +11146,17 @@
         "required": [
           "reason"
         ],
+        "type": "object"
+      },
+      "ReportAmount": {
+        "properties": {
+          "amount": {
+            "type": "string"
+          },
+          "currency": {
+            "type": "string"
+          }
+        },
         "type": "object"
       },
       "ReprocessingReceipt": {
@@ -15128,6 +15475,33 @@
         }
       }
     },
+    "/v1/operator/cross-border/payments/{id}/trace": {
+      "get": {
+        "operationId": "readCrossBorderPaymentTrace",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "id",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PaymentTrace"
+                }
+              }
+            },
+            "description": "OK"
+          }
+        }
+      }
+    },
     "/v1/operator/disputes/{disputeId}": {
       "get": {
         "operationId": "viewDisputeAsOperator",
@@ -17607,6 +17981,77 @@
               "application/json": {
                 "schema": {
                   "$ref": "#/components/schemas/ChargebackRatioReport"
+                }
+              }
+            },
+            "description": "OK"
+          }
+        }
+      }
+    },
+    "/v1/operator/reports/cross-border/corridors": {
+      "get": {
+        "operationId": "readCorridorReport",
+        "parameters": [
+          {
+            "in": "query",
+            "name": "month",
+            "required": false,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/CorridorReport"
+                }
+              }
+            },
+            "description": "OK"
+          }
+        }
+      }
+    },
+    "/v1/operator/reports/fx/position": {
+      "get": {
+        "operationId": "readFxPositionReport",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/FxPositionReport"
+                }
+              }
+            },
+            "description": "OK"
+          }
+        }
+      }
+    },
+    "/v1/operator/reports/fx/revenue": {
+      "get": {
+        "operationId": "readFxRevenueReport",
+        "parameters": [
+          {
+            "in": "query",
+            "name": "month",
+            "required": false,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/FxRevenueReport"
                 }
               }
             },

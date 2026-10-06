@@ -122,6 +122,24 @@ public final class JdbcPaymentStore implements PaymentStore {
         }
     }
 
+    @Override
+    public java.util.Map<String, Instant> oldestInTransit(Connection unitOfWork) {
+        Objects.requireNonNull(unitOfWork, "unitOfWork must not be null");
+        try (PreparedStatement select = unitOfWork.prepareStatement(
+                "SELECT p.corridor, min(e.occurred_at) FROM crossborder.payment p JOIN crossborder.payment_event e"
+                        + " ON e.payment_id = p.id AND e.to_status = 'IN_TRANSIT' WHERE p.status = 'IN_TRANSIT'"
+                        + " GROUP BY p.corridor");
+                ResultSet rows = select.executeQuery()) {
+            java.util.Map<String, Instant> oldest = new java.util.HashMap<>();
+            while (rows.next()) {
+                oldest.put(rows.getString(1), rows.getTimestamp(2).toInstant());
+            }
+            return oldest;
+        } catch (SQLException failure) {
+            throw new CrossborderStorageException("could not read the payments in transit", failure);
+        }
+    }
+
     private static Row read(ResultSet row) throws SQLException {
         return new Row(
                         row.getObject("id", UUID.class),

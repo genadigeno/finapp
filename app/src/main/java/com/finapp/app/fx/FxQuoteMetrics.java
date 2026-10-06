@@ -61,7 +61,8 @@ public final class FxQuoteMetrics {
         for (String pair : pairs()) {
             QUOTE_OUTCOMES.forEach(outcome -> quote(pair, outcome));
             CLOSED_OUTCOMES.forEach(outcome -> closed(pair, outcome));
-            trade(pair);
+            trade(pair, "executed");
+            trade(pair, "reversed");
             RESIDUAL_DIRECTIONS.forEach(direction -> residual(pair, direction));
             Gauge.builder(OPEN, this, self -> self.liveOf(pair).doubleValue())
                     .tag("pair", pair)
@@ -93,14 +94,21 @@ public final class FxQuoteMetrics {
      * residual random-walks around zero, so a drift of one direction is a defect signal.
      */
     public void traded(String pair, long residualMinor) {
-        trade(pair).increment();
+        trade(pair, "executed").increment();
         residual(pair, residualMinor > 0 ? "positive" : residualMinor < 0 ? "negative" : "zero").increment();
     }
 
-    private Counter trade(String pair) {
+    /** A conversion reversed by an approved operator reversal (`P9-TSK-025`), after its transaction committed. */
+    public void reversed(String pair) {
+        trade(pair, "reversed").increment();
+    }
+
+    private Counter trade(String pair, String outcome) {
         return Counter.builder(TRADE)
                 .tag("pair", pair)
-                .description("Booked FX conversions per pair. A count, never an amount")
+                .tag("outcome", outcome)
+                .description("FX conversions per pair: executed (booked), or reversed by an approved operator"
+                        + " reversal. A count, never an amount")
                 .register(registry);
     }
 

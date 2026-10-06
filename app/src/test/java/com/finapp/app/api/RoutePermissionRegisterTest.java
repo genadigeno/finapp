@@ -188,6 +188,11 @@ class RoutePermissionRegisterTest {
                     entry("POST /v1/operator/fx/trades/{id}/reversal", PermissionName.FX_TRADE_REVERSE),
                     entry("POST /v1/operator/fx/trades/{id}/reversal/{rid}/approval", PermissionName.FX_TRADE_REVERSE),
                     entry("POST /v1/operator/fx/trades/{id}/reversal/{rid}/rejection", PermissionName.FX_TRADE_REVERSE),
+                    // P9-TSK-027: Phase 9's reports and the payment trace - an investigator's reads.
+                    entry("GET /v1/operator/reports/fx/position", PermissionName.FX_INVESTIGATE),
+                    entry("GET /v1/operator/reports/fx/revenue", PermissionName.FX_INVESTIGATE),
+                    entry("GET /v1/operator/reports/cross-border/corridors", PermissionName.FX_INVESTIGATE),
+                    entry("GET /v1/operator/cross-border/payments/{id}/trace", PermissionName.FX_INVESTIGATE),
                     entry("POST /v1/operator/fx/pairs/{pair}/availability", PermissionName.FX_ADMINISTER),
                     entry("POST /v1/operator/fx/providers/{code}/availability", PermissionName.FX_ADMINISTER),
                     entry("POST /v1/operator/fx/enable-requests/{rid}/approval", PermissionName.FX_ADMINISTER),

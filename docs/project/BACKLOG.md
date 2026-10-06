@@ -12913,7 +12913,7 @@ break row, as the approval door must.)*
 
 # Phase 9 — FX and Cross-Border Payments
 
-Status: `IN_PROGRESS` — started 2026-10-03 with `P9-TSK-001` (27 of 30 items complete, M9.1 to M9.8 closed); entry gate passed 2026-10-02 by the Phase 8 → 9 transition
+Status: `IN_PROGRESS` — started 2026-10-03 with `P9-TSK-001` (28 of 30 items complete, M9.1 to M9.8 closed); entry gate passed 2026-10-02 by the Phase 8 → 9 transition
 ([`reviews/PHASE_8_TO_9_TRANSITION.md`](reviews/PHASE_8_TO_9_TRANSITION.md)), elaborated to task
 granularity by the same transition: thirty items (`P9-TSK-001`…`-027`, `P9-TST-001`, `P9-TST-002`,
 `P9-DOC-001`) across nine milestones, with `P9-TSK-001` marked `READY`. The engineering plan is
@@ -14181,7 +14181,8 @@ providers), each owned by Phase 15 and gating nothing here.
   paid on `b` and settles on `b`'s position.
 - **Definition of done**: `DOD-FIN`, `DOD-SEC`. **Risk**: Medium. **Cx**: L.
 
-**P9-TSK-027 — Meters, spans, reports, the trace and the dashboard row** — `READY` (marked by `P9-TSK-026`'s completion gate, 2026-10-06)
+**P9-TSK-027 — Meters, spans, reports, the trace and the dashboard row** — `COMPLETE` (2026-10-07; marked `READY` by `P9-TSK-026`'s completion gate)
+- **As built** (2026-10-07): as `CURRENT_STATE.md` §Just completed records. The suites are `Phase9ReportsDatabaseTest`, `Phase9SpansTest`, `PlannedMetersExistTest#phase9PlannedMetersAreAlreadyPublished`, `AlertRulesResolveTest#theFxRulesResolve` and `DashboardQueriesResolveTest#theFxAndCrossBorderRowHasTwelvePanels`; the code is `CrossBorderMetrics`, `AfterCommit`, `Phase9Spans` and the spanned decorators, `Phase9Reports` and `Phase9ReportController`, the alerts in `infra/prometheus/rules/fx.yml` and the dashboard row.
 - **Objective**: operate Phase 9 by counts, ages, verdicts and audited reports, and never by
   amounts.
 - **Bounded context**: `fx`, `crossborder`, `payments`, `kyc`, `app`.
@@ -14836,7 +14837,7 @@ applied and verified 2026-09-23; criterion 5 met by the Phase 6 → 7 transition
   later-day replay would conflict rather than converge recorded as its own item with an owner.
   **Risk**: Low. **Cx**: S. **DoD**: `DOD-DOC`
 
-**X-TSK-013 — Database-stamped send permits for the Phase 5–7 outbound flows** — `PLANNED`
+**X-TSK-013 — Database-stamped send permits for the Phase 5–7 outbound flows** — `READY` (marked by `P9-TSK-027`'s completion gate, 2026-10-07: `P9-TST-001`'s dependency, scheduled before it in M9.9)
 - **Context**: `JdbcPaymentAttemptStore`, `JdbcWithdrawalStore` and `JdbcMerchantPayoutStore` set
   `last_dispatched_at = ?` from the instance clock; `JdbcRefundStore` and `JdbcDisputeResponseStore`
   renew with `GREATEST(…, CAST(? AS timestamptz))`, also the instance clock. Recorded by the Phase 8

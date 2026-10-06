@@ -36,6 +36,7 @@ public class FxQuoteController {
 
     @NonNull private final FxQuoteDesk desk;
     @NonNull private final FxConversionDesk conversions;
+    @NonNull private final com.finapp.platform.telemetry.Spans domainSpans;
 
     @PostMapping(path = "/quotes", consumes = MediaType.APPLICATION_JSON_VALUE)
     @RequiresIdempotencyKey
@@ -44,7 +45,8 @@ public class FxQuoteController {
             @Valid @RequestBody QuoteRequestBody body,
             @RequestHeader(IdempotencyKeyHeader.NAME) String idempotencyKey,
             HttpServletRequest request) {
-        return desk.request(current(request), idempotencyKey, body);
+        return domainSpans.within(com.finapp.app.telemetry.Phase9Spans.QUOTE_ISSUE, java.util.Map.of(),
+                () -> desk.request(current(request), idempotencyKey, body));
     }
 
     @GetMapping("/quotes/{id}")
@@ -74,7 +76,8 @@ public class FxQuoteController {
             @Valid @RequestBody ConversionRequestBody body,
             @RequestHeader(IdempotencyKeyHeader.NAME) String idempotencyKey,
             HttpServletRequest request) {
-        return conversions.convert(current(request), idempotencyKey, body);
+        return domainSpans.within(com.finapp.app.telemetry.Phase9Spans.CONVERT, java.util.Map.of(),
+                () -> conversions.convert(current(request), idempotencyKey, body));
     }
 
     @GetMapping("/conversions/{tradeId}")

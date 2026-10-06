@@ -507,6 +507,11 @@ read "modules from Phase 1 onward do not exist yet" until the Phase 6 review, `P
   register's refusal of a shared one; reconciliation's source-to-rail mapping per counterparty
   (`ReconciliationBeans.railOfSource`). No domain change: quote-time failover and corridor selection were on the
   main line.
+- **As built by `P9-TSK-027`:** Phase 9 operated by counts, ages, verdicts and audited reports - `app`'s
+  `CrossBorderMetrics` (per corridor, eager, after commit; the in-transit age a database gauge), `Phase9Spans` with
+  the `SpannedFxProvider`/`SpannedCorridorRail` decorators, `Phase9Reports` and `Phase9ReportController` (the three
+  reports and the trace, `FX_INVESTIGATE`, audited), the alerts in `infra/prometheus/rules/fx.yml` and the FX and
+  cross-border dashboard row.
 - **Ports:** declares `CrossBorderFx` (implemented in `app` over `fx`: `beginQuote`, the firm quote, the read for the offer route, `lockForAcceptance`, `acceptWithin`, the completion's plan lines and trade booking, `abandonWithin`), `CrossBorderExecution` and `CorridorDirectory` (`app` over `payments`), `CounterpartyScreening` (`app` over `kyc`'s `CounterpartyScreenings`), `CrossBorderParticipants` (`app` over `accounts` and the party projection, D28) and the two Phase 13 seams (its own `PermitAllUntilPhase13`); through `app`'s compositions it implements `kyc`'s `ScreeningOutcomeListener` and its share of `payments`' `OutboundCreditComposition` and `reconciliation`'s `ResolvedCorridorReturns`.
 - **Depends on `ledger`, `platform` and `sharedkernel` only** (`CrossborderModuleIsolationTest`, with planted probes): no edge to `fx`, `payments`, `kyc` or `accounts`.
 - **Invariants:** `INV-XB-01`…`-04`, `INV-RAIL-02`, `INV-RAIL-03`, `INV-REV-03`, `INV-HIST-04`, `INV-IDEM-01`.

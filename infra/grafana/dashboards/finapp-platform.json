@@ -1449,6 +1449,274 @@
         "legend": { "displayMode": "list", "placement": "bottom", "showLegend": true },
         "tooltip": { "mode": "multi", "sort": "none" }
       }
+    },
+    {
+      "type": "row",
+      "title": "FX and cross-border — quotes, covers, proofs, payments, returns",
+      "gridPos": { "h": 1, "w": 24, "x": 0, "y": 170 },
+      "collapsed": false,
+      "panels": []
+    },
+    {
+      "type": "timeseries",
+      "title": "FX quotes by outcome",
+      "description": "finapp.fx.quote (P9-TSK-008): quote requests per pair by outcome - issued, or refused for rate trouble or the cap. Per instance: sum(). A count, never a rate.",
+      "datasource": { "type": "prometheus", "uid": "finapp-prometheus" },
+      "gridPos": { "h": 7, "w": 8, "x": 0, "y": 171 },
+      "targets": [
+        { "refId": "A", "expr": "sum by (outcome) (rate(finapp_fx_quote_total[5m]))", "legendFormat": "{{outcome}}" }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "custom": { "drawStyle": "line", "lineWidth": 2, "fillOpacity": 8, "showPoints": "never" },
+          "unit": "none"
+        },
+        "overrides": []
+      },
+      "options": {
+        "legend": { "displayMode": "list", "placement": "bottom", "showLegend": true },
+        "tooltip": { "mode": "multi", "sort": "none" }
+      }
+    },
+    {
+      "type": "timeseries",
+      "title": "Quotes closed and live",
+      "description": "finapp.fx.quote.closed by outcome (accepted, expired, cancelled, abandoned) and finapp.fx.quote.open, the live quotes. Fleet-wide gauge: max().",
+      "datasource": { "type": "prometheus", "uid": "finapp-prometheus" },
+      "gridPos": { "h": 7, "w": 8, "x": 8, "y": 171 },
+      "targets": [
+        { "refId": "A", "expr": "sum by (outcome) (rate(finapp_fx_quote_closed_total[5m]))", "legendFormat": "closed {{outcome}}" },
+        { "refId": "B", "expr": "sum(max by (pair) (finapp_fx_quote_open))", "legendFormat": "open" }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "custom": { "drawStyle": "line", "lineWidth": 2, "fillOpacity": 8, "showPoints": "never" },
+          "unit": "none"
+        },
+        "overrides": []
+      },
+      "options": {
+        "legend": { "displayMode": "list", "placement": "bottom", "showLegend": true },
+        "tooltip": { "mode": "multi", "sort": "none" }
+      }
+    },
+    {
+      "type": "timeseries",
+      "title": "Reference age and fetches",
+      "description": "finapp.fx.rate.age (seconds since the latest reference snapshot, worst pair) and finapp.fx.rate.fetch by outcome. Stale past the policy's maximum age fails quoting closed.",
+      "datasource": { "type": "prometheus", "uid": "finapp-prometheus" },
+      "gridPos": { "h": 7, "w": 8, "x": 16, "y": 171 },
+      "targets": [
+        { "refId": "A", "expr": "max(finapp_fx_rate_age)", "legendFormat": "oldest reference (s)" },
+        { "refId": "B", "expr": "sum by (outcome) (rate(finapp_fx_rate_fetch_total[5m]))", "legendFormat": "fetch {{outcome}}" }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "custom": { "drawStyle": "line", "lineWidth": 2, "fillOpacity": 8, "showPoints": "never" },
+          "unit": "none"
+        },
+        "overrides": []
+      },
+      "options": {
+        "legend": { "displayMode": "list", "placement": "bottom", "showLegend": true },
+        "tooltip": { "mode": "multi", "sort": "none" }
+      }
+    },
+    {
+      "type": "timeseries",
+      "title": "Provider quote latency",
+      "description": "finapp.fx.provider.quote.latency by provider and outcome: the firm quote's wall time - failover health.",
+      "datasource": { "type": "prometheus", "uid": "finapp-prometheus" },
+      "gridPos": { "h": 7, "w": 8, "x": 0, "y": 178 },
+      "targets": [
+        { "refId": "A", "expr": "max by (provider, outcome) (rate(finapp_fx_provider_quote_latency_seconds_sum[5m]) / clamp_min(rate(finapp_fx_provider_quote_latency_seconds_count[5m]), 1e-9))", "legendFormat": "{{provider}} {{outcome}}" }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "custom": { "drawStyle": "line", "lineWidth": 2, "fillOpacity": 8, "showPoints": "never" },
+          "unit": "s"
+        },
+        "overrides": []
+      },
+      "options": {
+        "legend": { "displayMode": "list", "placement": "bottom", "showLegend": true },
+        "tooltip": { "mode": "multi", "sort": "none" }
+      }
+    },
+    {
+      "type": "timeseries",
+      "title": "Conversions executed and reversed",
+      "description": "finapp.fx.trade by outcome (executed, reversed) and finapp.fx.residual by direction - the residual's frequency; its amount is the revenue report's.",
+      "datasource": { "type": "prometheus", "uid": "finapp-prometheus" },
+      "gridPos": { "h": 7, "w": 8, "x": 8, "y": 178 },
+      "targets": [
+        { "refId": "A", "expr": "sum by (outcome) (rate(finapp_fx_trade_total[5m]))", "legendFormat": "trade {{outcome}}" },
+        { "refId": "B", "expr": "sum by (direction) (rate(finapp_fx_residual_total[5m]))", "legendFormat": "residual {{direction}}" }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "custom": { "drawStyle": "line", "lineWidth": 2, "fillOpacity": 8, "showPoints": "never" },
+          "unit": "none"
+        },
+        "overrides": []
+      },
+      "options": {
+        "legend": { "displayMode": "list", "placement": "bottom", "showLegend": true },
+        "tooltip": { "mode": "multi", "sort": "none" }
+      }
+    },
+    {
+      "type": "timeseries",
+      "title": "Cover outcomes",
+      "description": "finapp.fx.cover by provider, type and outcome: executed, off plan, rejected, unknown, requoted, voided.",
+      "datasource": { "type": "prometheus", "uid": "finapp-prometheus" },
+      "gridPos": { "h": 7, "w": 8, "x": 16, "y": 178 },
+      "targets": [
+        { "refId": "A", "expr": "sum by (provider, outcome) (rate(finapp_fx_cover_total[5m]))", "legendFormat": "{{provider}} {{outcome}}" }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "custom": { "drawStyle": "line", "lineWidth": 2, "fillOpacity": 8, "showPoints": "never" },
+          "unit": "none"
+        },
+        "overrides": []
+      },
+      "options": {
+        "legend": { "displayMode": "list", "placement": "bottom", "showLegend": true },
+        "tooltip": { "mode": "multi", "sort": "none" }
+      }
+    },
+    {
+      "type": "timeseries",
+      "title": "Covers unanswered and open",
+      "description": "finapp.fx.cover.unknown.age and finapp.fx.cover.open.age by provider: the oldest unanswered execution and the oldest uncovered leg. Fleet-wide: max(). Alerts past five minutes.",
+      "datasource": { "type": "prometheus", "uid": "finapp-prometheus" },
+      "gridPos": { "h": 7, "w": 8, "x": 0, "y": 185 },
+      "targets": [
+        { "refId": "A", "expr": "max by (provider) (finapp_fx_cover_unknown_age_seconds)", "legendFormat": "unknown {{provider}}" },
+        { "refId": "B", "expr": "max by (provider) (finapp_fx_cover_open_age_seconds)", "legendFormat": "open {{provider}}" }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "custom": { "drawStyle": "line", "lineWidth": 2, "fillOpacity": 8, "showPoints": "never" },
+          "unit": "s"
+        },
+        "overrides": []
+      },
+      "options": {
+        "legend": { "displayMode": "list", "placement": "bottom", "showLegend": true },
+        "tooltip": { "mode": "multi", "sort": "none" }
+      }
+    },
+    {
+      "type": "timeseries",
+      "title": "FX proofs that must read 0",
+      "description": "finapp.fx.proof by purpose (currencies failing the FX books proof) and finapp.fx.plan.verdict (1 clean, 0 diverged). Verdicts, never amounts.",
+      "datasource": { "type": "prometheus", "uid": "finapp-prometheus" },
+      "gridPos": { "h": 7, "w": 8, "x": 8, "y": 185 },
+      "targets": [
+        { "refId": "A", "expr": "max by (purpose) (finapp_fx_proof)", "legendFormat": "proof {{purpose}}" },
+        { "refId": "B", "expr": "max(finapp_fx_plan_verdict)", "legendFormat": "plan verdict" }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "custom": { "drawStyle": "line", "lineWidth": 2, "fillOpacity": 8, "showPoints": "never" },
+          "unit": "none"
+        },
+        "overrides": []
+      },
+      "options": {
+        "legend": { "displayMode": "list", "placement": "bottom", "showLegend": true },
+        "tooltip": { "mode": "multi", "sort": "none" }
+      }
+    },
+    {
+      "type": "timeseries",
+      "title": "Outbound credits unanswered and undecided",
+      "description": "finapp.payments.outbound.unknown.age and finapp.payments.outbound.received.age: the oldest credit with no answer, and the oldest the provider holds undecided. Fleet-wide: max().",
+      "datasource": { "type": "prometheus", "uid": "finapp-prometheus" },
+      "gridPos": { "h": 7, "w": 8, "x": 16, "y": 185 },
+      "targets": [
+        { "refId": "A", "expr": "max(finapp_payments_outbound_unknown_age)", "legendFormat": "unknown" },
+        { "refId": "B", "expr": "max(finapp_payments_outbound_received_age)", "legendFormat": "received" }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "custom": { "drawStyle": "line", "lineWidth": 2, "fillOpacity": 8, "showPoints": "never" },
+          "unit": "s"
+        },
+        "overrides": []
+      },
+      "options": {
+        "legend": { "displayMode": "list", "placement": "bottom", "showLegend": true },
+        "tooltip": { "mode": "multi", "sort": "none" }
+      }
+    },
+    {
+      "type": "timeseries",
+      "title": "Cross-border payments by corridor",
+      "description": "finapp.crossborder.payment by outcome - submitted, in transit, delivered, failed, cancelled, returned - and finapp.crossborder.payment.in.transit.age, the oldest undelivered payment. Counts and ages, never amounts.",
+      "datasource": { "type": "prometheus", "uid": "finapp-prometheus" },
+      "gridPos": { "h": 7, "w": 8, "x": 0, "y": 192 },
+      "targets": [
+        { "refId": "A", "expr": "sum by (outcome) (rate(finapp_crossborder_payment_total[5m]))", "legendFormat": "{{outcome}}" },
+        { "refId": "B", "expr": "max(finapp_crossborder_payment_in_transit_age)", "legendFormat": "oldest in transit (s)" }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "custom": { "drawStyle": "line", "lineWidth": 2, "fillOpacity": 8, "showPoints": "never" },
+          "unit": "none"
+        },
+        "overrides": []
+      },
+      "options": {
+        "legend": { "displayMode": "list", "placement": "bottom", "showLegend": true },
+        "tooltip": { "mode": "multi", "sort": "none" }
+      }
+    },
+    {
+      "type": "timeseries",
+      "title": "Returns and cancellations",
+      "description": "finapp.crossborder.return by outcome (applied, deferred, not applicable, resolved) and finapp.crossborder.cancellation by outcome (recalled, too late) - the free-option watch.",
+      "datasource": { "type": "prometheus", "uid": "finapp-prometheus" },
+      "gridPos": { "h": 7, "w": 8, "x": 8, "y": 192 },
+      "targets": [
+        { "refId": "A", "expr": "sum by (outcome) (rate(finapp_crossborder_return_total[5m]))", "legendFormat": "return {{outcome}}" },
+        { "refId": "B", "expr": "sum by (outcome) (rate(finapp_crossborder_cancellation_total[5m]))", "legendFormat": "cancellation {{outcome}}" }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "custom": { "drawStyle": "line", "lineWidth": 2, "fillOpacity": 8, "showPoints": "never" },
+          "unit": "none"
+        },
+        "overrides": []
+      },
+      "options": {
+        "legend": { "displayMode": "list", "placement": "bottom", "showLegend": true },
+        "tooltip": { "mode": "multi", "sort": "none" }
+      }
+    },
+    {
+      "type": "timeseries",
+      "title": "Counterparty screening and review",
+      "description": "finapp.kyc.counterparty.screening by outcome, and the review backlog's age - a beneficiary held unpayable until a reviewer decides.",
+      "datasource": { "type": "prometheus", "uid": "finapp-prometheus" },
+      "gridPos": { "h": 7, "w": 8, "x": 16, "y": 192 },
+      "targets": [
+        { "refId": "A", "expr": "sum by (outcome) (rate(finapp_kyc_counterparty_screening_total[5m]))", "legendFormat": "{{outcome}}" },
+        { "refId": "B", "expr": "max(finapp_kyc_counterparty_review_age_seconds)", "legendFormat": "oldest review (s)" }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "custom": { "drawStyle": "line", "lineWidth": 2, "fillOpacity": 8, "showPoints": "never" },
+          "unit": "none"
+        },
+        "overrides": []
+      },
+      "options": {
+        "legend": { "displayMode": "list", "placement": "bottom", "showLegend": true },
+        "tooltip": { "mode": "multi", "sort": "none" }
+      }
     }
   ]
 }

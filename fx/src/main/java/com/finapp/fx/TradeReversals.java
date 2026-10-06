@@ -70,7 +70,7 @@ public final class TradeReversals {
 
     /** A reversal as decided or proposed. */
     public record Decided(UUID reversalId, FxTradeId tradeId, String status, Optional<UUID> reversalEntryId,
-            CoverUnwinds.Effect cover) {}
+            CoverUnwinds.Effect cover, String pair) {}
 
     /** No trade (or reversal) has this identifier. Nothing written. */
     public static final class NotFound extends RuntimeException {
@@ -133,7 +133,7 @@ public final class TradeReversals {
         reversals.appendEvent(unitOfWork, ids.next(), id, Optional.empty(), "PROPOSED", actor.id(), reason);
         audit(unitOfWork, actor, FxAuditAction.FX_TRADE_REVERSAL_PROPOSED, id, reason, correlation,
                 "trade=" + tradeId.value());
-        return new Decided(id, tradeId, "PROPOSED", Optional.empty(), CoverUnwinds.Effect.NONE);
+        return new Decided(id, tradeId, "PROPOSED", Optional.empty(), CoverUnwinds.Effect.NONE, pairOf(trade));
     }
 
     /**
@@ -207,7 +207,7 @@ public final class TradeReversals {
                 EventPayload.MEDIA_TYPE);
         audit(unitOfWork, actor, FxAuditAction.FX_TRADE_REVERSAL_APPROVED, reversalId, reason, correlation,
                 "trade=" + trade.id().value() + ", cover=" + effect);
-        return new Decided(reversalId, trade.id(), "APPROVED", Optional.of(posted.entryId().value()), effect);
+        return new Decided(reversalId, trade.id(), "APPROVED", Optional.of(posted.entryId().value()), effect, pairOf(trade));
     }
 
     /** Rejects reversal {@code reversalId} - a different person's reasoned act; nothing moves. */
@@ -227,7 +227,13 @@ public final class TradeReversals {
         reversals.appendEvent(unitOfWork, ids.next(), reversalId, Optional.of("PROPOSED"), "REJECTED", actor.id(), reason);
         audit(unitOfWork, actor, FxAuditAction.FX_TRADE_REVERSAL_REJECTED, reversalId, reason, correlation,
                 "trade=" + reversal.tradeId().value());
-        return new Decided(reversalId, reversal.tradeId(), "REJECTED", Optional.empty(), CoverUnwinds.Effect.NONE);
+        return new Decided(reversalId, reversal.tradeId(), "REJECTED", Optional.empty(), CoverUnwinds.Effect.NONE,
+                trades.find(unitOfWork, reversal.tradeId()).map(TradeReversals::pairOf).orElse(""));
+    }
+
+    /** The trade's pair as the meters spell it ({@code "EUR-USD"}). */
+    private static String pairOf(TradeStore.TradeRow trade) {
+        return trade.customerSource().currency().code() + "-" + trade.customerDestination().currency().code();
     }
 
     private static void requireReversible(TradeStore.TradeRow trade) {

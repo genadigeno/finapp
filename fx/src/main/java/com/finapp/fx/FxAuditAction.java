@@ -109,6 +109,20 @@ public enum FxAuditAction implements AuditableAction {
                     + " executed under it.",
             false),
 
+    /** An investigator read the FX position report (`P9-TSK-027`, FX_INVESTIGATE) - every serving recorded. */
+    FX_POSITION_REPORT_READ(
+            "fx.FxPositionReportRead",
+            "An investigator read the FX position by currency and the open cover legs (FX_INVESTIGATE); every serving"
+                    + " is recorded.",
+            false),
+
+    /** An investigator read a month's FX revenue report (`P9-TSK-027`, FX_INVESTIGATE) - every serving recorded. */
+    FX_REVENUE_REPORT_READ(
+            "fx.FxRevenueReportRead",
+            "An investigator read a month's FX revenue - margins, the spread/markup split, residuals, realised results"
+                    + " and off-plan covers (FX_INVESTIGATE); every serving is recorded.",
+            false),
+
     /** An operator proposed reversing a wallet conversion (`P9-TSK-025`) - reasoned; four eyes decide it. */
     FX_TRADE_REVERSAL_PROPOSED(
             "fx.FxTradeReversalProposed",

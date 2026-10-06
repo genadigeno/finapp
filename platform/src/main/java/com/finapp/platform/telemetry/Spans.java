@@ -23,7 +23,9 @@ public interface Spans {
 
     /** The identifier keys a span may carry. */
     Set<String> IDENTIFIER_KEYS =
-            Set.of("run.id", "batch.id", "file.id", "source.id", "break.id", "resolution.id");
+            Set.of("run.id", "batch.id", "file.id", "source.id", "break.id", "resolution.id",
+                    // P9-TSK-027 (PHASE_9_PLAN.md section 15): the FX and cross-border legs' identifiers.
+                    "quote.id", "trade.id", "cover.id", "payment.id", "credit.id", "screening.id");
 
     /** A UUID's canonical shape - the one value shape an identifier key admits. */
     Pattern IDENTIFIER =

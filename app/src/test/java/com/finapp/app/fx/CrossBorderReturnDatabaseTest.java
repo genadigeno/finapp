@@ -198,7 +198,8 @@ class CrossBorderReturnDatabaseTest {
                 .isEqualTo("OPEN INBOUND 107960");
         ClearingLineCopies.assertOpensItsClearingLinesCopy(ExpectationKind.CROSSBORDER_RETURN, paid.credit().toString(),
                 OutboundCreditReturns.POSTING_KEY_PREFIX + paid.credit(), ExpectationDirection.INBOUND);
-        assertThat(counted("applied") - applied).as("the inquiry channel is not the report worker's tally").isZero();
+        // Counted on every channel since P9-TSK-027 (the composition counts the applied return, after commit).
+        assertThat(counted("applied") - applied).as("the inquiry channel's return is counted applied, once").isEqualTo(1);
 
         // Duplicates: a second inquiry (still following the delivery) acts on nothing and writes no second return.
         assertThat(resolve(paid.reference())).hasValueSatisfying(again -> assertThat(again.acting()).isFalse());
@@ -604,8 +605,9 @@ class CrossBorderReturnDatabaseTest {
     }
 
     private double counted(String outcome) {
-        Counter counter = meters.find("finapp.crossborder.return").tag("outcome", outcome).counter();
-        return counter == null ? 0 : counter.count();
+        // Summed across corridors (the corridor tag since P9-TSK-027).
+        return meters.find("finapp.crossborder.return").tag("outcome", outcome).counters().stream()
+                .mapToDouble(Counter::count).sum();
     }
 
     private static String returnEntry(Paid paid) throws Exception {

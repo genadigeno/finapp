@@ -34,6 +34,7 @@ import org.springframework.web.bind.annotation.RestController;
 public class CrossBorderPaymentController {
 
     @NonNull private final CrossBorderPaymentDesk desk;
+    @NonNull private final com.finapp.platform.telemetry.Spans domainSpans;
 
     @PostMapping(consumes = MediaType.APPLICATION_JSON_VALUE)
     @RequiresIdempotencyKey
@@ -42,7 +43,8 @@ public class CrossBorderPaymentController {
             @Valid @RequestBody CrossBorderPaymentRequest body,
             @RequestHeader(IdempotencyKeyHeader.NAME) String idempotencyKey,
             HttpServletRequest request) {
-        return desk.authorize(current(request), idempotencyKey, body);
+        return domainSpans.within(com.finapp.app.telemetry.Phase9Spans.AUTHORIZE, java.util.Map.of(),
+                () -> desk.authorize(current(request), idempotencyKey, body));
     }
 
     /**

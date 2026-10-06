@@ -59,15 +59,16 @@ public class FxProviderBeans {
             @Value("${finapp.fx.provider.key:" + MfaKey.MARKED_LOCAL_DEFAULT + "}")
                     String configuredKey,
             FxProviderMetrics fxProviderMetrics,
-            Environment environment) {
-        return fxProviderMetrics.timed(
+            Environment environment,
+            com.finapp.platform.telemetry.Spans domainSpans) {
+        return new com.finapp.app.telemetry.SpannedFxProvider(fxProviderMetrics.timed(
                 new SimulatedFxProviderAdapter(
                         url,
                         timeout,
                         FxProviderKey.decode(
                                 configuredKey,
                                 DatabaseEndpoint.isEntirelyLoopback(
-                                        DatabaseEndpoint.url(environment)))));
+                                        DatabaseEndpoint.url(environment))))), domainSpans);
     }
 
     /**
@@ -83,8 +84,9 @@ public class FxProviderBeans {
             @Value("${finapp.fx.provider.b.key:" + MfaKey.MARKED_LOCAL_DEFAULT + "}")
                     String configuredKey,
             FxProviderMetrics fxProviderMetrics,
-            Environment environment) {
-        return fxProviderMetrics.timed(
+            Environment environment,
+            com.finapp.platform.telemetry.Spans domainSpans) {
+        return new com.finapp.app.telemetry.SpannedFxProvider(fxProviderMetrics.timed(
                 new SimulatedFxProviderAdapter(
                         SimulatedFxProviderAdapter.CODE_B,
                         url,
@@ -92,7 +94,7 @@ public class FxProviderBeans {
                         FxProviderBKey.decode(
                                 configuredKey,
                                 DatabaseEndpoint.isEntirelyLoopback(
-                                        DatabaseEndpoint.url(environment)))));
+                                        DatabaseEndpoint.url(environment))))), domainSpans);
     }
 
     /** The configured providers, each with the declaration this build holds for it. */

@@ -143,6 +143,10 @@ class NoFloatingPointMoneyRulesTest {
     private static final Set<String> EXEMPT_CLASSES =
             Set.of(
                     "com.finapp.app.telemetry.OutboxMetrics",
+                    // P9-TSK-027. Counts and the oldest in-transit AGE per corridor - seconds between two
+                    // instants the database recorded, never an amount - published through the ToDoubleFunction
+                    // Micrometer's Gauge imposes.
+                    "com.finapp.app.telemetry.CrossBorderMetrics",
                     "com.finapp.app.telemetry.OutboxMetrics$Cached",
                     // P1-TSK-029. A count of LIVE SESSIONS, published through the same
                     // ToDoubleFunction Micrometer's Gauge imposes. The count itself is a `long` all

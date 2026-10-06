@@ -253,10 +253,11 @@ public class PaymentBeans {
             @Value("${finapp.corridor.provider.timeout:PT2S}") java.time.Duration timeout,
             @Value("${finapp.corridor.provider.key:" + com.finapp.app.mfa.MfaKey.MARKED_LOCAL_DEFAULT + "}")
                     String configuredKey,
-            Environment environment) {
+            Environment environment,
+            com.finapp.platform.telemetry.Spans domainSpans) {
         boolean loopback = DatabaseEndpoint.isEntirelyLoopback(DatabaseEndpoint.url(environment));
-        return new com.finapp.payments.SimulatedCorridorAdapter(
-                url, timeout, CorridorProviderKey.decode(configuredKey, loopback));
+        return new com.finapp.app.telemetry.SpannedCorridorRail(new com.finapp.payments.SimulatedCorridorAdapter(
+                url, timeout, CorridorProviderKey.decode(configuredKey, loopback)), domainSpans);
     }
 
     /**
@@ -271,10 +272,12 @@ public class PaymentBeans {
             @Value("${finapp.corridor.provider.b.timeout:PT2S}") java.time.Duration timeout,
             @Value("${finapp.corridor.provider.b.key:" + com.finapp.app.mfa.MfaKey.MARKED_LOCAL_DEFAULT + "}")
                     String configuredKey,
-            Environment environment) {
+            Environment environment,
+            com.finapp.platform.telemetry.Spans domainSpans) {
         boolean loopback = DatabaseEndpoint.isEntirelyLoopback(DatabaseEndpoint.url(environment));
-        return new com.finapp.payments.SimulatedCorridorAdapter(com.finapp.payments.SimulatedCorridorAdapter.RAIL_B,
-                url, timeout, CorridorProviderBKey.decode(configuredKey, loopback));
+        return new com.finapp.app.telemetry.SpannedCorridorRail(new com.finapp.payments.SimulatedCorridorAdapter(
+                com.finapp.payments.SimulatedCorridorAdapter.RAIL_B, url, timeout,
+                CorridorProviderBKey.decode(configuredKey, loopback)), domainSpans);
     }
 
     /**

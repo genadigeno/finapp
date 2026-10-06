@@ -1,6 +1,6 @@
 # Task History
 
-The per-task completion records that accumulated behind `## Current Task` - 220 "Previously" blocks, newest first, from `P9-TSK-025` back to project initiation. *(`X-TSK-016` is cross-cutting and completed after `P9-TSK-010` and before `P9-TSK-011`, so it stands between them.)* *(`X-TSK-005` is cross-cutting and completed after `P7-TSK-014` and before `P7-TSK-015`, so it stands between them; its record came in with its branch's merge.)* *(`X-TSK-004` is cross-cutting and completed after the Phase 6 → 7 transition, so it stands second, between `P7-TSK-001` and the transition's record - the transition's block moved here by `P7-TSK-001`'s gate, exactly as an earlier form of this note said it would.)*
+The per-task completion records that accumulated behind `## Current Task` - 221 "Previously" blocks, newest first, from `P9-TSK-026` back to project initiation. *(`X-TSK-016` is cross-cutting and completed after `P9-TSK-010` and before `P9-TSK-011`, so it stands between them.)* *(`X-TSK-005` is cross-cutting and completed after `P7-TSK-014` and before `P7-TSK-015`, so it stands between them; its record came in with its branch's merge.)* *(`X-TSK-004` is cross-cutting and completed after the Phase 6 → 7 transition, so it stands second, between `P7-TSK-001` and the transition's record - the transition's block moved here by `P7-TSK-001`'s gate, exactly as an earlier form of this note said it would.)*
 
 **Archive.** These records were moved verbatim out of
 [`CURRENT_STATE.md`](../CURRENT_STATE.md) on 2026-09-20 so that the canonical description of
@@ -12,6 +12,28 @@ Current state: [`CURRENT_STATE.md`](../CURRENT_STATE.md) ·
 Authoritative backlog: [`BACKLOG.md`](../BACKLOG.md)
 
 ---
+
+### Previously
+
+**`P9-TSK-026` — A second FX provider and a second corridor rail** — `COMPLETE` (2026-10-06). **M9.8 CLOSES AT 1
+OF 1: multiple providers made real - failover, selection and settlement per counterparty** (PHASE_9_PLAN.md §14
+scenario 4; ADR-0080, ADR-0082; `INV-RAIL-04`, `INV-SET-05`, `INV-RAIL-02`). `fx-sim-b` (EUR<->USD, settling EUR and
+USD) and `corridor-sim-b` (US/USD) as declarations over the existing simulated adapters, each with its own confined
+key and transport row; ledger `V025` (their registry rows and clearing accounts), settlement `V017` (their sources);
+`RailOperations` composed from every configured corridor adapter. No domain change: a pricing policy listing `a`
+then `b` fails a quote over to `b` (each candidate a stored step) and its cover executes and settles on `b`; a corridor
+policy listing `a` then `b` selects `b` wherever `a` is not operable, and the beneficiary is routed, paid and settled on
+`b`. **Found and fixed (two single-instance assumptions)**: (1) bank lines are attributed to a source by remittance
+shape and both formats named one shape (`FXA-`, `XBA-`) - a second counterparty would have left EVERY such line
+unattributed, `a`'s hop 2 lost with `b`'s; each counterparty now remits in its own shape (`FXB-`, `XBB-`) and the
+register refuses a shared one; (2) reconciliation mapped a source to the first rail of its purpose - `b`'s source would
+have looked provider references up among `a`'s claims; a source now resolves to its own counterparty's rail.
+**Deviations**: `b` has no callback doors (the sweeps are the guarantee) and no report pull collectors (upload-only).
+**PROBES** (FIVE PROBES, FIVE CAUGHT), every restore byte-identical (sha256-verified; `MUTATION_TESTING.md` §2 +5 rows).
+**Multi-instance PASS**: ten racing quotes each fail over on their own, steps stored; a line on one counterparty's
+report naming the other's operation is never allocated. **NEXT**: `P9-TSK-027` `READY`.
+**Verified** by fresh runs - the fleet-wide hermetic tier 2540 across 417 suites and 18 modules; the architecture tier 157 across 27; the task's
+own database suites (SecondFxProviderDatabaseTest 3, SecondCorridorRailDatabaseTest 1; the corridor settlement, source, payment, return and beneficiary suites and the FX cover, proof and settled-to-cash suites re-run 53); ALL 0 FAILURES - the other database tiers skipped on the owner's instruction.
 
 ### Previously
 
