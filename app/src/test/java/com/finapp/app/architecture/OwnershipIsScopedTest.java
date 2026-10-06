@@ -395,6 +395,29 @@ class OwnershipIsScopedTest {
                                     Scope.ADMINISTERED,
                                     "P9-TSK-008. The pinned version's FOR SHARE re-read in the quote's Tx2: the id comes only" + " from the quote request the same flight stored - never a request value; the pricing" + " policy is platform-wide configuration with no owner to scope by.")),
                     Map.entry(
+                            "com.finapp.crossborder.JdbcBeneficiaryStore.appendEvent",
+                            new Entry(
+                                    Scope.ADMINISTERED,
+                                    "P9-TSK-017. The beneficiary id comes only from a row this transaction"
+                                        + " just inserted or locked - by lockOwned (the owner a predicate) or"
+                                        + " lockByScreening (kyc's deciding transaction) - never a request value;"
+                                        + " the history is append-only by grant.")),
+                    Map.entry(
+                            "com.finapp.crossborder.JdbcBeneficiaryStore.insertSelection",
+                            new Entry(
+                                    Scope.ADMINISTERED,
+                                    "P9-TSK-017. The policy id comes only from the active version read in the"
+                                        + " same transaction (CorridorPolicyStore.active) - platform-wide"
+                                        + " configuration with no owner - and the selection id is minted here.")),
+                    Map.entry(
+                            "com.finapp.crossborder.JdbcBeneficiaryStore.move",
+                            new Entry(
+                                    Scope.ADMINISTERED,
+                                    "P9-TSK-017. The beneficiary id comes only from a row locked FOR UPDATE in"
+                                        + " the same transaction - lockOwned, whose statement carries the owner"
+                                        + " predicate (a customer's revocation), or lockByScreening (kyc's T-e) -"
+                                        + " and the move is conditional on the expected status.")),
+                    Map.entry(
                             "com.finapp.crossborder.JdbcCorridorPolicyStore.insertProposal",
                             new Entry(
                                     Scope.ADMINISTERED,

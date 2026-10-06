@@ -67,7 +67,7 @@ public class CrossborderBeans {
                                 .map(coverage -> new CorridorDirectory.Coverage(coverage.country(), coverage.currency()))
                                 .collect(Collectors.toUnmodifiableSet())))
                 .collect(Collectors.toUnmodifiableSet());
-        return () -> declared;
+        return new RailDirectory(declared, railOperations);
     }
 
     @Bean

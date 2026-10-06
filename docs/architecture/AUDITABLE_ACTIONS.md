@@ -564,6 +564,8 @@ repudiation's with `P8-TSK-023`.
 | `crossborder.CorridorEnableProposed` | **Yes** | Enabling a corridor was proposed; nothing is enabled until a different person approves. |
 | `crossborder.CorridorEnabled` | **Yes** | A different person approved a corridor enable proposal (`INV-AUD-04`) and the enabling fact was appended in the same transaction; the event `crossborder.CorridorAvailabilityChanged` follows. |
 | `crossborder.CorridorEnableRejected` | **Yes** | A corridor enable proposal was rejected - or withdrawn by its proposer; the corridor stays unavailable. |
+| `crossborder.BeneficiaryRegistered` | No | A customer registered a beneficiary abroad (`P9-TSK-017`, ADR-0080 §3) by the corridor provider's reference: the summary names the destination, the issuing rail and the payee check - never a name, a grant or an account identifier. No reason: the customer's own act. The beneficiary is screened by kyc before it can be paid. |
+| `crossborder.BeneficiaryRevoked` | No | A customer revoked a beneficiary (`P9-TSK-017`) from whichever non-terminal state it was in - named in the summary, never shown to the customer (tipping-off). No reason: the customer's own act. |
 
 ### What is emitted, and what is declared not to be
 

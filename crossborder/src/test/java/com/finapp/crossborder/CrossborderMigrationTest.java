@@ -104,14 +104,16 @@ class CrossborderMigrationTest {
 
     @Test
     @DisplayName("the schema holds Flyway's history - which the application cannot read - and, since"
-            + " V002 (P9-TSK-015), exactly the corridor policy's and availability's tables")
+            + " V002 (P9-TSK-015), exactly the corridor policy's, availability's and (since V003, P9-TSK-017) the beneficiary's tables")
     void floorsOnlyAndTheHistoryIsConfined() throws SQLException {
         // Flyway keeps this schema's history HERE, which is the record of what was applied. An
         // application role that could read or write it could make the schema's provenance disagree
-        // with the schema. V002 adds the corridor tables, each with its own grants.
+        // with the schema. V002 adds the corridor tables and V003 (P9-TSK-017) the beneficiary's and
+        // the corridor selection's, each with its own grants.
         assertThat(tablesIn(SCHEMA)).containsExactlyInAnyOrder(
                 "flyway_schema_history", "corridor_policy_version", "corridor_policy_event", "corridor",
-                "corridor_enable_request", "corridor_availability");
+                "corridor_enable_request", "corridor_availability", "corridor_selection", "corridor_selection_step",
+                "beneficiary_registration", "beneficiary", "beneficiary_status_event");
 
         assertThatExceptionOfType(SQLException.class)
                 .isThrownBy(() -> asApplication(

@@ -1,6 +1,8 @@
 package com.finapp.kyc;
 
+import com.finapp.sharedkernel.correlation.CorrelationId;
 import java.sql.Connection;
+import java.time.Instant;
 import java.util.Objects;
 
 /**
@@ -16,12 +18,19 @@ public interface ScreeningOutcomeListener {
     /** The decision just written for {@code screening}, on the decision's unit of work. */
     void decided(Connection unitOfWork, Outcome outcome);
 
-    /** What was decided - identifiers and the outcome, never the name. */
-    record Outcome(CounterpartyScreeningId screening, String requestReference, CounterpartyScreeningStatus status) {
+    /** What was decided - identifiers, the outcome, when, and under which correlation; never the name. */
+    record Outcome(
+            CounterpartyScreeningId screening,
+            String requestReference,
+            CounterpartyScreeningStatus status,
+            Instant decidedAt,
+            CorrelationId correlation) {
         public Outcome {
             Objects.requireNonNull(screening, "screening must not be null");
             Objects.requireNonNull(requestReference, "requestReference must not be null");
             Objects.requireNonNull(status, "status must not be null");
+            Objects.requireNonNull(decidedAt, "decidedAt must not be null");
+            Objects.requireNonNull(correlation, "correlation must not be null");
         }
     }
 

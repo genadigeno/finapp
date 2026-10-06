@@ -1129,6 +1129,12 @@ unverified payee with a clear name; byte-identical refusals across screening, re
 and revocation (`P9-TSK-017`, `-018`, `-019`).
 **Phase:** 9
 
+*(Partly in force since `P9-TSK-017` (2026-10-06): the beneficiary is `ACTIVE` only on a cleared or
+person-released screening, moved in kyc's deciding transaction (T-e); a `NO_MATCH` payee with a clear
+name goes `IN_REVIEW`, never `ACTIVE` without a person; a revoked beneficiary is never moved; the read
+and the revocation answer byte-identically across screening, review and block. The doors that move
+money - the quote and the authorization - judge payability from `-018` and `-019`.)*
+
 ### INV-XB-03 — What was shown is what is held, posted and instructed
 **Statement:** What the customer was shown — destination amount, fee, total debit — is
 exactly what is held, posted and instructed.
@@ -1979,6 +1985,15 @@ rule — the corridor provider's opaque `destination_reference`, a four-characte
 suffix and the payee-check verdict, with the provider-attested destination country, currency
 and entity type admitted as attributes. The beneficiary's name is held only by `kyc`,
 encrypted with AAD bound to its screening, and never by `crossborder` or `payments`.)*
+
+*(In force since `P9-TSK-017` (2026-10-06). `crossborder V003`'s `beneficiary` holds the provider's
+reference (shape `CHECK` plus the instrument-shape twin), a suffix, the payee check with its
+acknowledgement and the attested attributes; the nickname is screened at the domain and by `CHECK`;
+the grant is exchanged and never stored (the registration keeps only a SHA-256-derived exchange
+reference). The guard is extended by `CrossBorderBeneficiaryDatabaseTest#theSchemaHoldsTheLine` -
+every text column of `crossborder.beneficiary`, swept from `information_schema`, refuses an IBAN by
+`CHECK` - and the registration's needle, `#theNameAndGrantReachNoSink`: the name and the grant in no
+table the application reads, no event and no response.)*
 
 ### INV-RAIL-04 — Every external rail's value in flight has its own clearing position
 **Statement:** A completion on an external rail posts to that rail's own clearing account —

@@ -12913,7 +12913,7 @@ break row, as the approval door must.)*
 
 # Phase 9 — FX and Cross-Border Payments
 
-Status: `IN_PROGRESS` — started 2026-10-03 with `P9-TSK-001` (17 of 30 items complete, M9.1 to M9.4 closed, M9.5 at 3 of 4); entry gate passed 2026-10-02 by the Phase 8 → 9 transition
+Status: `IN_PROGRESS` — started 2026-10-03 with `P9-TSK-001` (18 of 30 items complete, M9.1 to M9.5 closed); entry gate passed 2026-10-02 by the Phase 8 → 9 transition
 ([`reviews/PHASE_8_TO_9_TRANSITION.md`](reviews/PHASE_8_TO_9_TRANSITION.md)), elaborated to task
 granularity by the same transition: thirty items (`P9-TSK-001`…`-027`, `P9-TST-001`, `P9-TST-002`,
 `P9-DOC-001`) across nine milestones, with `P9-TSK-001` marked `READY`. The engineering plan is
@@ -13720,7 +13720,8 @@ providers), each owned by Phase 15 and gating nothing here.
 - **Definition of done**: `DOD-SEC`, `DOD-API`, `DOD-EVENT`, `DOD-DOMAIN`. **Risk**: Medium. **Cx**:
   M.
 
-**P9-TSK-017 — Cross-border beneficiaries** — `READY` (marked by `P9-TSK-016`'s completion gate, 2026-10-06)
+**P9-TSK-017 — Cross-border beneficiaries** — `COMPLETE` (2026-10-06; marked `READY` by `P9-TSK-016`'s completion gate)
+- **As built** (2026-10-06): as `CURRENT_STATE.md` §Just completed records. The registration keys on an exchange reference derived from the owner and the grant (`XBB` + 32 hex), so an unacknowledged `NO_MATCH` resubmitted with the acknowledgement - or a retried `503` - converges and the provider answers the same exchange; kyc's screening is requested inside the recording transaction (`requestWithin`), asked after commit. Codes added: `crossborder.CorridorNotOffered`, `NoMatchUnacknowledged`, `GrantRefused`, `ProviderUnavailable`, `BeneficiaryNotFound`. The corridor provider's exchange answer is not retained as evidence - its attested facts are, on the beneficiary row; retention joins the provider evidence store with `P9-TSK-019`. **Deviations:** the selection records `UNDECLARED_BY_BUILD` for an undeclared rail (ADR-0080's `NOT_DECLARED` is the same fact here) and `UNAVAILABLE` for a declared, covering rail with no operable adapter; declarations carry no version.
 - **Objective**: register a beneficiary abroad by provider reference, select its corridor provider,
   and screen it before it can be paid.
 - **Bounded context**: `crossborder`; `payments` and `kyc` through ports.
@@ -13768,7 +13769,7 @@ providers), each owned by Phase 15 and gating nothing here.
 - **Definition of done**: `DOD-SEC`, `DOD-API`, `DOD-EVENT`, `DOD-DOMAIN`. **Risk**: Medium. **Cx**:
   L.
 
-**P9-TSK-018 — Cross-border offers** — `PLANNED`
+**P9-TSK-018 — Cross-border offers** — `READY` (marked by `P9-TSK-017`'s completion gate, 2026-10-06)
 - **Objective**: an offer disclosing the rate, fee, total and guaranteed destination amount, frozen.
 - **Bounded context**: `crossborder`; `fx` through the port.
 - **Dependencies**: `-008`, `-017`.

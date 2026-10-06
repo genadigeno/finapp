@@ -249,3 +249,16 @@ disable names one and a reason), `INV-PAY-03` (provider vocabulary confined to t
   second person approves) keyed by the corridor's stable code across versions, and the `required_data` rule as a
   set of named data the platform must hold (`BENEFICIARY_NAME` and `ENTITY_TYPE` today), refused with every
   undeclared or non-covering rail at proposal and again at approval.
+- *As built by `P9-TSK-017` (2026-10-06):* points 3 and 5(a) are implemented - crossborder `V003`'s
+  `beneficiary` (provider reference, suffix, payee check and its acknowledgement, attested attributes,
+  a screened nickname; the machine held by an edge trigger, `REVOKED` final), its append-only
+  `beneficiary_status_event`, `beneficiary_registration` keyed by an exchange reference derived from the
+  owner and the grant (the same grant converges; the provider dedupes the exchange on it), and the
+  append-only `corridor_selection` with its steps, recomputable from the pinned version, the stored inputs
+  and the corridors observed available. The registration is two transactions around the exchange, kyc's
+  screening requested inside the second; the listener moves the beneficiary in kyc's T-e and is a no-op on
+  `REVOKED`; revocation answers the same `200 {"status":"REVOKED"}` from every state. **Deviations:** the
+  selection's `NOT_DECLARED` and `UNDECLARED_BY_BUILD` are one fact at this subject (the build declares no
+  corridor rail by that name), so only `UNDECLARED_BY_BUILD` is recorded, and `UNAVAILABLE` means a declared,
+  covering rail with no operable adapter in this deployment (a disabled corridor yields no candidates at
+  all); declarations carry no version, so none is recorded.

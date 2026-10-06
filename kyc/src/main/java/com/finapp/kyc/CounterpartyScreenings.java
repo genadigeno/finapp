@@ -212,6 +212,33 @@ public final class CounterpartyScreenings {
     }
 
     /**
+     * Requests a screening in the caller's unit of work (`P9-TSK-017`) - the request commits with the
+     * caller's transaction, holding the caller's permit ({@link #IN_FLIGHT_PERMIT}); the caller then asks
+     * through {@link #retry}, and a crash in between leaves the screening due for the sweeper. A reference
+     * already screened converges on its screening (the same counterparty) or is refused.
+     */
+    public Screening requestWithin(Connection uow, Request request) {
+        Objects.requireNonNull(uow, "uow must not be null");
+        Objects.requireNonNull(request, "request must not be null");
+        Instant now = now();
+        CounterpartyScreeningId id = CounterpartyScreeningId.next(ids);
+        CounterpartySubject subject = request.subject();
+        if (store.insertRequested(uow, new CounterpartyScreeningStore.NewScreening(
+                id, request.requestReference(), cipher.encrypt(id, subject.name()), subject.country(),
+                subject.entityType(), request.payeeVerdict(), now, now.plus(IN_FLIGHT_PERMIT)))) {
+            return new Screening(id, request.requestReference(), CounterpartyScreeningStatus.REQUESTED,
+                    Optional.empty(), Optional.empty(), false);
+        }
+        CounterpartyScreeningStore.Row existing = store.byRequest(uow, request.requestReference())
+                .orElseThrow(() -> new KycStorageException(
+                        "a counterparty screening request was refused as a duplicate but none is visible; retry"));
+        if (!subjectOf(existing).equals(subject) || existing.payeeVerdict() != request.payeeVerdict()) {
+            throw new RequestConflict();
+        }
+        return view(existing, true);
+    }
+
+    /**
      * Screens {@code previous}'s counterparty again under a new reference - the stored subject and payee
      * check, so the caller never needs the name (ADR-0081 point 3's quote-time re-screen).
      */
@@ -287,7 +314,7 @@ public final class CounterpartyScreenings {
         }
         record(uow, platform, at, id, reason, summary(id, routed.status(), DecisionBasis.AUTOMATIC, policy, attempt), correlation);
         announce(uow, id, row.requestReference(), routed.status(), DecisionBasis.AUTOMATIC, at, correlation);
-        listener.decided(uow, new ScreeningOutcomeListener.Outcome(id, row.requestReference(), routed.status()));
+        listener.decided(uow, new ScreeningOutcomeListener.Outcome(id, row.requestReference(), routed.status(), at, correlation));
         return new Screening(id, row.requestReference(), routed.status(), routed.reviewReason(), Optional.of(at), false);
     }
 
@@ -347,7 +374,7 @@ public final class CounterpartyScreenings {
         record(uow, actor, at, id, bounded(code.name() + ": " + narrative),
                 summary(id, target, DecisionBasis.REVIEWER, policy, row.attempts()) + ", code=" + code.name(), correlation);
         announce(uow, id, row.requestReference(), target, DecisionBasis.REVIEWER, at, correlation);
-        listener.decided(uow, new ScreeningOutcomeListener.Outcome(id, row.requestReference(), target));
+        listener.decided(uow, new ScreeningOutcomeListener.Outcome(id, row.requestReference(), target, at, correlation));
         return new Screening(id, row.requestReference(), target, row.reviewReason(), Optional.of(at), false);
     }
 
