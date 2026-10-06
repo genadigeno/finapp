@@ -34,6 +34,9 @@ public final class CorridorRuleSetV1 {
     /** {@code corridor-sim-a.settlement}'s seeded source row (settlement `V016`). */
     public static final UUID SOURCE = UUID.fromString("01a0e2bc-8200-7005-8000-000000000006");
 
+    /** {@code corridor-sim-b.settlement}'s seeded source row (settlement `V017`, `P9-TSK-026`). */
+    public static final UUID SOURCE_B = UUID.fromString("01a0e2bc-8200-7005-8000-000000000008");
+
     private CorridorRuleSetV1() {}
 
     /** The version-1 proposal for the corridor's source, with the proposer's reason. */
@@ -42,8 +45,20 @@ public final class CorridorRuleSetV1 {
         thresholds.put(CurrencyCode.of("USD"), 100_000L);
         thresholds.put(CurrencyCode.of("JPY"), 150_000L);
         thresholds.put(CurrencyCode.of("BHD"), 400_000L);
+        return proposal(SOURCE, thresholds, List.of(fee("USD", 120), fee("JPY", 180), fee("BHD", 450)), reason);
+    }
+
+    /** The same version 1 for {@code corridor-sim-b}'s source - USD, its only currency, at USD 1.20 (`P9-TSK-026`). */
+    public static RuleSetProposal proposalB(String reason) {
+        Map<CurrencyCode, Long> thresholds = new LinkedHashMap<>();
+        thresholds.put(CurrencyCode.of("USD"), 100_000L);
+        return proposal(SOURCE_B, thresholds, List.of(fee("USD", 120)), reason);
+    }
+
+    private static RuleSetProposal proposal(UUID source, Map<CurrencyCode, Long> thresholds,
+            List<RuleSetProposal.FeeTerms> fees, String reason) {
         return new RuleSetProposal(
-                SOURCE,
+                source,
                 2,
                 90,
                 Map.of(ExpectationKind.CROSSBORDER_PAYOUT, 2, ExpectationKind.CROSSBORDER_RETURN, 2),
@@ -60,7 +75,7 @@ public final class CorridorRuleSetV1 {
                                 Optional.empty(), Cardinality.CHECK, false, 48)),
                 List.of(new RuleSetProposal.Tolerance("SETTLEMENT_DATE_DAYS", Optional.empty(), Optional.empty(),
                         Optional.of(2))),
-                List.of(fee("USD", 120), fee("JPY", 180), fee("BHD", 450)),
+                fees,
                 thresholds,
                 reason);
     }

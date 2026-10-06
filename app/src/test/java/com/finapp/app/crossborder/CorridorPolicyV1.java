@@ -26,13 +26,28 @@ public final class CorridorPolicyV1 {
 
     /** The proposal body with the proposer's reason. */
     public static String json(String reason) {
-        return "{\"corridors\":[" + CORRIDORS.stream().map(CorridorPolicyV1::corridor).collect(Collectors.joining(","))
-                + "],\"reason\":\"" + reason + "\"}";
+        return "{\"corridors\":[" + CORRIDORS.stream().map(row -> corridor(row, "[\"corridor-sim-a\"]"))
+                .collect(Collectors.joining(",")) + "],\"reason\":\"" + reason + "\"}";
+    }
+
+    /**
+     * v1's successor for M9.8 (`P9-TSK-026`): EUR -> USD/US on {@code corridor-sim-a} then {@code corridor-sim-b} - the
+     * overlapping coverage selection walks in that order - every other corridor unchanged.
+     */
+    public static String jsonWithSecondRail(String reason) {
+        return "{\"corridors\":[" + CORRIDORS.stream()
+                .map(row -> corridor(row, row.source().equals("EUR") && row.destination().equals("USD")
+                        ? "[\"corridor-sim-a\",\"corridor-sim-b\"]" : "[\"corridor-sim-a\"]"))
+                .collect(Collectors.joining(",")) + "],\"reason\":\"" + reason + "\"}";
     }
 
     static String corridor(Row row) {
+        return corridor(row, "[\"corridor-sim-a\"]");
+    }
+
+    static String corridor(Row row, String rails) {
         return "{\"source\":\"" + row.source() + "\",\"destination\":\"" + row.destination() + "\",\"country\":\""
-                + row.country() + "\",\"rails\":[\"corridor-sim-a\"],\"feeFixed\":\"" + row.fee()
+                + row.country() + "\",\"rails\":" + rails + ",\"feeFixed\":\"" + row.fee()
                 + "\",\"feeMargin\":\"0\",\"feeRounding\":\"HALF_EVEN\",\"maximum\":\"" + row.maximum()
                 + "\",\"screeningValidityHours\":168,\"deliveryEstimateHours\":24,"
                 + "\"requiredData\":[\"BENEFICIARY_NAME\",\"ENTITY_TYPE\"]}";

@@ -106,7 +106,8 @@ public class SettlementBeans {
                             1,
                             Set.of(DeliveryChannel.UPLOAD, DeliveryChannel.PULL),
                             capabilities.clearingPurpose(),
-                            Optional.of(com.finapp.settlement.format.simcorridor.SimCorridorCsvFormat.REMITTANCE_REFERENCE),
+                            Optional.of(com.finapp.settlement.format.simcorridor.SimCorridorCsvFormat.remittanceReference(
+                                    remittanceLetterOf(declaration.counterparty()))),
                             Optional.of(declaration.counterparty()),
                             capabilities.currencies().orElseThrow());
                 })
@@ -130,10 +131,25 @@ public class SettlementBeans {
                         1,
                         Set.of(DeliveryChannel.UPLOAD, DeliveryChannel.PULL),
                         Optional.of(declaration.clearingPurpose()),
-                        Optional.of(com.finapp.settlement.format.simfx.SimFxCsvFormat.REMITTANCE_REFERENCE),
+                        Optional.of(com.finapp.settlement.format.simfx.SimFxCsvFormat.remittanceReference(
+                                remittanceLetterOf(declaration.code()))),
                         Optional.of(declaration.code()),
                         declaration.settledCurrencies()))
                 .toList();
+    }
+
+    /**
+     * Each simulated counterparty's remittance letter (`P9-TSK-026`, M9.8): {@code a} remits {@code XBA-}/{@code FXA-},
+     * {@code b} {@code XBB-}/{@code FXB-} - its own shape, so the bank's hop-2 line is attributed to exactly one
+     * counterparty. Read off the counterparty's own code (its final {@code -<letter>}); a code without one has no
+     * simulated remittance shape and refuses composition.
+     */
+    static char remittanceLetterOf(String counterparty) {
+        int dash = counterparty.lastIndexOf('-');
+        if (dash < 0 || dash != counterparty.length() - 2 || !Character.isLowerCase(counterparty.charAt(dash + 1))) {
+            throw new IllegalStateException("counterparty '" + counterparty + "' names no remittance letter");
+        }
+        return Character.toUpperCase(counterparty.charAt(dash + 1));
     }
 
     /**

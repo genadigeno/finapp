@@ -1,6 +1,6 @@
 # Task History
 
-The per-task completion records that accumulated behind `## Current Task` - 219 "Previously" blocks, newest first, from `P9-TSK-024` back to project initiation. *(`X-TSK-016` is cross-cutting and completed after `P9-TSK-010` and before `P9-TSK-011`, so it stands between them.)* *(`X-TSK-005` is cross-cutting and completed after `P7-TSK-014` and before `P7-TSK-015`, so it stands between them; its record came in with its branch's merge.)* *(`X-TSK-004` is cross-cutting and completed after the Phase 6 → 7 transition, so it stands second, between `P7-TSK-001` and the transition's record - the transition's block moved here by `P7-TSK-001`'s gate, exactly as an earlier form of this note said it would.)*
+The per-task completion records that accumulated behind `## Current Task` - 220 "Previously" blocks, newest first, from `P9-TSK-025` back to project initiation. *(`X-TSK-016` is cross-cutting and completed after `P9-TSK-010` and before `P9-TSK-011`, so it stands between them.)* *(`X-TSK-005` is cross-cutting and completed after `P7-TSK-014` and before `P7-TSK-015`, so it stands between them; its record came in with its branch's merge.)* *(`X-TSK-004` is cross-cutting and completed after the Phase 6 → 7 transition, so it stands second, between `P7-TSK-001` and the transition's record - the transition's block moved here by `P7-TSK-001`'s gate, exactly as an earlier form of this note said it would.)*
 
 **Archive.** These records were moved verbatim out of
 [`CURRENT_STATE.md`](../CURRENT_STATE.md) on 2026-09-20 so that the canonical description of
@@ -12,6 +12,32 @@ Current state: [`CURRENT_STATE.md`](../CURRENT_STATE.md) ·
 Authoritative backlog: [`BACKLOG.md`](../BACKLOG.md)
 
 ---
+
+### Previously
+
+**`P9-TSK-025` — Operator FX trade reversal** — `COMPLETE` (2026-10-06). **M9.7 CLOSES AT 3 OF 3: an operator
+corrects an erroneous wallet conversion by compensation alone, four-eyes** (the lifecycle document §3.3; PHASE_9_PLAN.md
+§14 scenario 8, the reversal half; `INV-REV-01`, `INV-REV-02`, `INV-AUD-04`). fx `V009` (not the plan's `V008`, which
+became `P9-TSK-021`'s unwind): `trade_reversal` `PROPOSED -> APPROVED | REJECTED` - the edge trigger (born on a `BOOKED`
+conversion only, never a cross-border trade), the four-eyes `CHECK`, one live proposal and one approval per trade, a
+reason on every act - and the append-only `trade_reversal_event`. fx's `TradeReversals`: the approval locks quote ->
+trade -> reversal -> wallets, judges the destination wallet's available balance under its lock (`409
+fx.TradeNotReversible`), posts the conversion's own lines recomposed from the frozen plan and flipped through ledger's
+`ReversalService` (`ledger.reverse:fx-trade:<id>`, `V009`'s bound), moves the trade `REVERSED` and evaluates the
+wanted-position rule under the held quote lock - an executed cover unwound. `identity`'s `FX_TRADE_REVERSE`, held by
+`LEDGER_OPERATOR`; `POST /v1/operator/fx/trades/{id}/reversal` and `.../reversal/{rid}/approval|rejection`; the OpenAPI
+contract regenerated. **Found and fixed**: the books proof still counted a reversed trade's terms - its trades' terms
+now count `BOOKED` trades only, the plan's "- reversal" term - which then exposed `P9-TSK-021`'s `FxCoverDatabaseTest`
+faking a reversal by a raw status update with no mirror, leaving the shared books unexplained: the fixture now
+reverses the trade for real, four-eyes. **Deviations**: fx `V009` for `V008`; the reversal's
+counter is `finapp.fx.trade.reversed` (an `outcome` tag on `finapp.fx.trade`, tagged by pair alone, would conflict);
+the cross-border refusal's raw-SQL proof runs whenever the shared database holds a cross-border trade.
+**Atomicity** by a fault injected beneath the trade's `REVERSED` edge, the approval rolled back whole.
+**PROBES** (SIX PROBES, SIX CAUGHT), every restore byte-identical (sha256-verified; `MUTATION_TESTING.md` §2 +6 rows).
+**Multi-instance PASS**: ten approvers make one mirror entry and one unwind (counted), the unwind's execution one
+realised line, the books proving at rest. **NEXT**: `P9-TSK-026` `READY`.
+**Verified** by fresh runs - the fleet-wide hermetic tier 2538 across 416 suites and 18 modules; the architecture tier 157 across 27; the task's
+own database suites (FxTradeReversalRaceDatabaseTest 4; the FX proof, cover, unwind, conversion and value-preservation suites re-run 21); ALL 0 FAILURES - the other database tiers skipped on the owner's instruction.
 
 ### Previously
 

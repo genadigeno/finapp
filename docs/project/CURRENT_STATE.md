@@ -432,7 +432,7 @@ cross-border payments are holds and corridor acceptances, beneficiary screening 
 returns credited in the currency received; clearings are keyed by counterparty; callbacks are
 hints; reconciliation never converts currency and gains causes, never types. Ten new invariants
 and thirteen restated take the platform to **120**. Thirty backlog items across nine milestones
-(M9.1–M9.9) plus `X-TSK-013`…`-015`. **26 of 30 items complete** (M9.1 to M9.7 closed): the modules and floors
+(M9.1–M9.9) plus `X-TSK-013`…`-015`. **27 of 30 items complete** (M9.1 to M9.8 closed): the modules and floors
 (`P9-TSK-001`), the conversion arithmetic (`P9-TSK-002`), JPY and BHD postable (`P9-TSK-003`), multi-currency
 wallets (`P9-TSK-004`), reference rates (`P9-TSK-005`), the FX provider port (`P9-TSK-006`), the
 pricing policy (`P9-TSK-007`), the quote (`P9-TSK-008`), wallet conversion (`P9-TSK-009`),
@@ -442,8 +442,8 @@ rail (`P9-TSK-014`), the corridor policy (`P9-TSK-015`), counterparty screening 
 beneficiaries (`P9-TSK-017`), cross-border offers (`P9-TSK-018`), their authorization and dispatch
 (`P9-TSK-019`), their resolution and completion (`P9-TSK-020`), the unwinding of covers (`P9-TSK-021`), the
 corridor's settlement to cash (`P9-TSK-022`), cross-border returns (`P9-TSK-023`), cancellation by recall
-(`P9-TSK-024`) and the operator FX trade reversal (`P9-TSK-025`); next **`P9-TSK-026` — A second FX provider and a
-second corridor rail** — `READY`
+(`P9-TSK-024`), the operator FX trade reversal (`P9-TSK-025`) and the second providers (`P9-TSK-026`); next
+**`P9-TSK-027` — Meters, spans, reports, the trace and the dashboard row** — `READY`
 ([§Current Task](#current-task) is kept current).
 
 ## Current Milestone
@@ -459,38 +459,34 @@ since M0.1". Moved, not edited.)*
 
 ## Current Task
 
-**`P9-TSK-026` — A second FX provider and a second corridor rail** — `READY`:
-marked by `P9-TSK-025`'s completion gate (2026-10-06). **Not started.**
+**`P9-TSK-027` — Meters, spans, reports, the trace and the dashboard row** — `READY`:
+marked by `P9-TSK-026`'s completion gate (2026-10-06). **Not started.**
 
 ### Just completed
 
-**`P9-TSK-025` — Operator FX trade reversal** — `COMPLETE` (2026-10-06). **M9.7 CLOSES AT 3 OF 3: an operator
-corrects an erroneous wallet conversion by compensation alone, four-eyes** (the lifecycle document §3.3; PHASE_9_PLAN.md
-§14 scenario 8, the reversal half; `INV-REV-01`, `INV-REV-02`, `INV-AUD-04`). fx `V009` (not the plan's `V008`, which
-became `P9-TSK-021`'s unwind): `trade_reversal` `PROPOSED -> APPROVED | REJECTED` - the edge trigger (born on a `BOOKED`
-conversion only, never a cross-border trade), the four-eyes `CHECK`, one live proposal and one approval per trade, a
-reason on every act - and the append-only `trade_reversal_event`. fx's `TradeReversals`: the approval locks quote ->
-trade -> reversal -> wallets, judges the destination wallet's available balance under its lock (`409
-fx.TradeNotReversible`), posts the conversion's own lines recomposed from the frozen plan and flipped through ledger's
-`ReversalService` (`ledger.reverse:fx-trade:<id>`, `V009`'s bound), moves the trade `REVERSED` and evaluates the
-wanted-position rule under the held quote lock - an executed cover unwound. `identity`'s `FX_TRADE_REVERSE`, held by
-`LEDGER_OPERATOR`; `POST /v1/operator/fx/trades/{id}/reversal` and `.../reversal/{rid}/approval|rejection`; the OpenAPI
-contract regenerated. **Found and fixed**: the books proof still counted a reversed trade's terms - its trades' terms
-now count `BOOKED` trades only, the plan's "- reversal" term - which then exposed `P9-TSK-021`'s `FxCoverDatabaseTest`
-faking a reversal by a raw status update with no mirror, leaving the shared books unexplained: the fixture now
-reverses the trade for real, four-eyes. **Deviations**: fx `V009` for `V008`; the reversal's
-counter is `finapp.fx.trade.reversed` (an `outcome` tag on `finapp.fx.trade`, tagged by pair alone, would conflict);
-the cross-border refusal's raw-SQL proof runs whenever the shared database holds a cross-border trade.
-**Atomicity** by a fault injected beneath the trade's `REVERSED` edge, the approval rolled back whole.
-**PROBES** (SIX PROBES, SIX CAUGHT), every restore byte-identical (sha256-verified; `MUTATION_TESTING.md` §2 +6 rows).
-**Multi-instance PASS**: ten approvers make one mirror entry and one unwind (counted), the unwind's execution one
-realised line, the books proving at rest. **NEXT**: `P9-TSK-026` `READY`.
-**Verified** by fresh runs - the fleet-wide hermetic tier 2538 across 416 suites and 18 modules; the architecture tier 157 across 27; the task's
-own database suites (FxTradeReversalRaceDatabaseTest 4; the FX proof, cover, unwind, conversion and value-preservation suites re-run 21); ALL 0 FAILURES - the other database tiers skipped on the owner's instruction.
+**`P9-TSK-026` — A second FX provider and a second corridor rail** — `COMPLETE` (2026-10-06). **M9.8 CLOSES AT 1
+OF 1: multiple providers made real - failover, selection and settlement per counterparty** (PHASE_9_PLAN.md §14
+scenario 4; ADR-0080, ADR-0082; `INV-RAIL-04`, `INV-SET-05`, `INV-RAIL-02`). `fx-sim-b` (EUR<->USD, settling EUR and
+USD) and `corridor-sim-b` (US/USD) as declarations over the existing simulated adapters, each with its own confined
+key and transport row; ledger `V025` (their registry rows and clearing accounts), settlement `V017` (their sources);
+`RailOperations` composed from every configured corridor adapter. No domain change: a pricing policy listing `a`
+then `b` fails a quote over to `b` (each candidate a stored step) and its cover executes and settles on `b`; a corridor
+policy listing `a` then `b` selects `b` wherever `a` is not operable, and the beneficiary is routed, paid and settled on
+`b`. **Found and fixed (two single-instance assumptions)**: (1) bank lines are attributed to a source by remittance
+shape and both formats named one shape (`FXA-`, `XBA-`) - a second counterparty would have left EVERY such line
+unattributed, `a`'s hop 2 lost with `b`'s; each counterparty now remits in its own shape (`FXB-`, `XBB-`) and the
+register refuses a shared one; (2) reconciliation mapped a source to the first rail of its purpose - `b`'s source would
+have looked provider references up among `a`'s claims; a source now resolves to its own counterparty's rail.
+**Deviations**: `b` has no callback doors (the sweeps are the guarantee) and no report pull collectors (upload-only).
+**PROBES** (FIVE PROBES, FIVE CAUGHT), every restore byte-identical (sha256-verified; `MUTATION_TESTING.md` §2 +5 rows).
+**Multi-instance PASS**: ten racing quotes each fail over on their own, steps stored; a line on one counterparty's
+report naming the other's operation is never allocated. **NEXT**: `P9-TSK-027` `READY`.
+**Verified** by fresh runs - the fleet-wide hermetic tier 2540 across 417 suites and 18 modules; the architecture tier 157 across 27; the task's
+own database suites (SecondFxProviderDatabaseTest 3, SecondCorridorRailDatabaseTest 1; the corridor settlement, source, payment, return and beneficiary suites and the FX cover, proof and settled-to-cash suites re-run 53); ALL 0 FAILURES - the other database tiers skipped on the owner's instruction.
 
 ### Previously
 
-The per-task completion records — 219 blocks, from `P9-TSK-024` back to project initiation
+The per-task completion records — 220 blocks, from `P9-TSK-025` back to project initiation
 (`X-TSK-016` cross-cutting, standing between `P9-TSK-011` and `P9-TSK-010`; `X-TSK-005` cross-cutting, standing between `P7-TSK-015` and `P7-TSK-014`; `X-TSK-004`
 cross-cutting, standing between `P7-TSK-001` and the Phase 6 → 7 transition) — are archived in
 [`history/TASK_HISTORY.md`](history/TASK_HISTORY.md).
@@ -1035,8 +1031,8 @@ Resolved during initiation:
 
 ## Next Task
 
-**`P9-TSK-026` — A second FX provider and a second corridor rail** — `READY`
-(the Current Task), marked by `P9-TSK-025`'s completion gate.
+**`P9-TSK-027` — Meters, spans, reports, the trace and the dashboard row** — `READY`
+(the Current Task), marked by `P9-TSK-026`'s completion gate.
 *(This section read "`P8-TSK-009` — `READY`" from `P8-TSK-008`'s gate until
 `P8-TSK-013`'s record found it — the stale-second-copy class, in the section whose
 whole job is to mirror.)*

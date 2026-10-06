@@ -42,7 +42,9 @@ public class FxProviderBeans {
      * position, counterparty and settled currencies off it.
      */
     public static final Map<String, FxProviderDeclaration> DECLARED =
-            Map.of(SimulatedFxProviderAdapter.CODE, SimulatedFxProviderAdapter.DECLARATION);
+            Map.of(SimulatedFxProviderAdapter.CODE, SimulatedFxProviderAdapter.DECLARATION,
+                    // P9-TSK-026 (M9.8): the second provider - its own counterparty, position, source and key.
+                    SimulatedFxProviderAdapter.CODE_B, SimulatedFxProviderAdapter.DECLARATION_B);
 
     @Bean
     FxProviderMetrics fxProviderMetrics(MeterRegistry meterRegistry) {
@@ -63,6 +65,31 @@ public class FxProviderBeans {
                         url,
                         timeout,
                         FxProviderKey.decode(
+                                configuredKey,
+                                DatabaseEndpoint.isEntirelyLoopback(
+                                        DatabaseEndpoint.url(environment)))));
+    }
+
+    /**
+     * The second FX provider {@code fx-sim-b} (`P9-TSK-026`, M9.8) - wired only when {@code finapp.fx.provider.b.url}
+     * is set ({@code ProviderTransportGuard} having admitted it), under its own confined credential, timed under its
+     * own {@code provider} tag. A pricing policy lists it after {@code fx-sim-a} to make it the failover.
+     */
+    @Bean
+    @ConditionalOnProperty("finapp.fx.provider.b.url")
+    FxProvider fxSimB(
+            @Value("${finapp.fx.provider.b.url}") URI url,
+            @Value("${finapp.fx.provider.b.timeout:PT2S}") Duration timeout,
+            @Value("${finapp.fx.provider.b.key:" + MfaKey.MARKED_LOCAL_DEFAULT + "}")
+                    String configuredKey,
+            FxProviderMetrics fxProviderMetrics,
+            Environment environment) {
+        return fxProviderMetrics.timed(
+                new SimulatedFxProviderAdapter(
+                        SimulatedFxProviderAdapter.CODE_B,
+                        url,
+                        timeout,
+                        FxProviderBKey.decode(
                                 configuredKey,
                                 DatabaseEndpoint.isEntirelyLoopback(
                                         DatabaseEndpoint.url(environment)))));

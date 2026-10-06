@@ -47,7 +47,10 @@ public class ProviderTransportGuard {
                     // P9-TSK-006: the FX provider fx-sim-a (ADR-0075, ADR-0077).
                     "finapp.fx.provider.url",
                     // P9-TSK-014: the corridor provider corridor-sim-a (ADR-0080).
-                    "finapp.corridor.provider.url");
+                    "finapp.corridor.provider.url",
+                    // P9-TSK-026 (M9.8): the second providers, each its own transport row.
+                    "finapp.fx.provider.b.url",
+                    "finapp.corridor.provider.b.url");
 
     /**
      * Every settlement pull source URL (`P8-TSK-021`): {@code https} or {@code sftp} off
