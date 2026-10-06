@@ -33,6 +33,8 @@ public final class CrossBorderCompletion implements OutboundCreditComposition<Co
     @NonNull private final PaymentProgress progress;
     @NonNull private final CrossBorderCompletionBooking booking;
     @NonNull private final Clock clock;
+    @NonNull private final com.finapp.fx.ConversionParticipants participants;
+    @NonNull private final com.finapp.ledger.ChartOfAccounts<Connection> chart;
 
     @Override
     public List<JournalLine> completionLines(Connection unitOfWork, Completion completion) {
@@ -69,6 +71,44 @@ public final class CrossBorderCompletion implements OutboundCreditComposition<Co
         booking.abandon(unitOfWork, FxQuoteId.of(locked.payment().quote()), "PAYMENT_FAILED_" + reason.name(),
                 SecurityContext.require(), correlation());
         progress.failed(unitOfWork, subject, reason.name(), Instant.now(clock), correlation());
+    }
+
+    @Override
+    public java.util.Optional<List<JournalLine>> returnLines(Connection unitOfWork, ReturnApplication application) {
+        // The applicability rule's customer half (P9-TSK-023, INV-XB-04): an ACTIVE customer only - a closed one's
+        // value stays parked for a person. Nothing is written before the answer is known.
+        java.util.Optional<UUID> customer = participants.activeCustomer(unitOfWork, application.customerParty());
+        if (customer.isEmpty()) {
+            return java.util.Optional.empty();
+        }
+        PaymentProgress.Locked locked = progress.lock(unitOfWork, application.subject());
+        com.finapp.sharedkernel.money.Money fee = locked.offer().fee();
+        java.util.Optional<com.finapp.ledger.LedgerAccountId> sourceWallet =
+                participants.wallet(unitOfWork, customer.get(), fee.currency());
+        if (sourceWallet.isEmpty()) {
+            return java.util.Optional.empty();
+        }
+        // The returned currency's wallet, opened if absent - in this transaction (section 12.4(i)).
+        java.util.Optional<com.finapp.ledger.LedgerAccountId> destinationWallet =
+                participants.openIfAbsent(unitOfWork, customer.get(), application.returned().currency());
+        if (destinationWallet.isEmpty()) {
+            return java.util.Optional.empty();
+        }
+        List<JournalLine> lines = new java.util.ArrayList<>(List.of(
+                new JournalLine(application.clearing(), com.finapp.ledger.Direction.DEBIT, application.returned()),
+                new JournalLine(destinationWallet.get(), com.finapp.ledger.Direction.CREDIT, application.returned())));
+        if (fee.isPositive()) {
+            com.finapp.ledger.LedgerAccountId feeRevenue =
+                    chart.resolve(unitOfWork, com.finapp.ledger.AccountPurpose.FEE_REVENUE, fee.currency()).id();
+            lines.add(new JournalLine(feeRevenue, com.finapp.ledger.Direction.DEBIT, fee));
+            lines.add(new JournalLine(sourceWallet.get(), com.finapp.ledger.Direction.CREDIT, fee));
+        }
+        return java.util.Optional.of(List.copyOf(lines));
+    }
+
+    @Override
+    public void returned(Connection unitOfWork, UUID subject, String basis, Instant at) {
+        progress.returned(unitOfWork, subject, basis, at, correlation());
     }
 
     private static CorrelationId correlation() {

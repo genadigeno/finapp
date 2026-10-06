@@ -223,6 +223,25 @@ public class ReconciliationBeans {
     }
 
     /**
+     * The payout returns waiting for the CORRIDOR worker (`P9-TSK-023`): the sources settling the
+     * declared corridor rails' position, read off the rail declarations - never hand-named.
+     */
+    @Bean
+    com.finapp.reconciliation.WaitingPayoutReturns waitingCorridorReturns(
+            com.finapp.settlement.SettlementFileStore<Connection> settlementFileStore,
+            com.finapp.settlement.SettlementSources settlementSources) {
+        com.finapp.ledger.AccountPurpose position = com.finapp.app.payments.PaymentBeans.CORRIDOR_DECLARATIONS.stream()
+                .map(declaration -> com.finapp.app.payments.PaymentBeans.DECLARED_RAILS
+                        .capabilitiesOf(declaration.rail()).clearingPurpose().orElseThrow())
+                .distinct()
+                .reduce((one, other) -> {
+                    throw new IllegalStateException("the corridor rails settle more than one position");
+                })
+                .orElseThrow(() -> new IllegalStateException("no corridor rail is declared"));
+        return waitingReturnsOf(position, settlementFileStore, settlementSources);
+    }
+
+    /**
      * The waiting-return reader of one source family (`P9-TSK-014`): the sources whose compiled
      * descriptor settles {@code position} (any counterparty), matched to their seeded rows by code on
      * every call - read off the register, never hand-named.
@@ -557,7 +576,8 @@ public class ReconciliationBeans {
             Clock clock,
             com.finapp.app.telemetry.ReconciliationOutcomeMeters reconciliationOutcomeMeters,
             com.finapp.reconciliation.InternalReferenceLookup internalReferenceLookup,
-            com.finapp.reconciliation.ReturnedPayouts returnedPayouts) {
+            com.finapp.reconciliation.ReturnedPayouts returnedPayouts,
+            com.finapp.reconciliation.ResolvedCorridorReturns resolvedCorridorReturns) {
         return new com.finapp.reconciliation.ResolutionMachine(
                 new com.finapp.reconciliation.JdbcResolutionStore(),
                 new com.finapp.reconciliation.JdbcBreakCaseStore(),
@@ -572,7 +592,8 @@ public class ReconciliationBeans {
                 clock,
                 reconciliationOutcomeMeters,
                 internalReferenceLookup,
-                returnedPayouts);
+                returnedPayouts,
+                resolvedCorridorReturns);
     }
 
     /**

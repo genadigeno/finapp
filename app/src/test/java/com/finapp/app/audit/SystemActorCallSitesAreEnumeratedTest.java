@@ -250,6 +250,12 @@ class SystemActorCallSitesAreEnumeratedTest {
                         + " corridor - and every outcome it applies is the platform's. The scope"
                         + " wraps each row's inquire-and-resolve; the candidate read claims nothing."),
                     Map.entry(
+                            "com.finapp.app.payments.OutboundReturnWorker.applyContained",
+                    "The corridor report's return line applied (P9-TSK-023): a settlement report's"
+                        + " line has no person - the PayoutReturnSweep.applyContained reasoning on the"
+                        + " corridor - and the return it applies is the platform's act whichever channel"
+                        + " wins. The scope wraps one item's transaction; the page read claims nothing."),
+                    Map.entry(
                             "com.finapp.app.payments.CorridorCallbackService.deliver",
                     "The corridor provider's callback (P9-TSK-020, ADR-0083): a provider's"
                         + " unsolicited hint has no session - the FxCallbackService.deliver"

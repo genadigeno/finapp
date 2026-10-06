@@ -1,6 +1,6 @@
 # Task History
 
-The per-task completion records that accumulated behind `## Current Task` - 216 "Previously" blocks, newest first, from `P9-TSK-021` back to project initiation. *(`X-TSK-016` is cross-cutting and completed after `P9-TSK-010` and before `P9-TSK-011`, so it stands between them.)* *(`X-TSK-005` is cross-cutting and completed after `P7-TSK-014` and before `P7-TSK-015`, so it stands between them; its record came in with its branch's merge.)* *(`X-TSK-004` is cross-cutting and completed after the Phase 6 → 7 transition, so it stands second, between `P7-TSK-001` and the transition's record - the transition's block moved here by `P7-TSK-001`'s gate, exactly as an earlier form of this note said it would.)*
+The per-task completion records that accumulated behind `## Current Task` - 217 "Previously" blocks, newest first, from `P9-TSK-022` back to project initiation. *(`X-TSK-016` is cross-cutting and completed after `P9-TSK-010` and before `P9-TSK-011`, so it stands between them.)* *(`X-TSK-005` is cross-cutting and completed after `P7-TSK-014` and before `P7-TSK-015`, so it stands between them; its record came in with its branch's merge.)* *(`X-TSK-004` is cross-cutting and completed after the Phase 6 → 7 transition, so it stands second, between `P7-TSK-001` and the transition's record - the transition's block moved here by `P7-TSK-001`'s gate, exactly as an earlier form of this note said it would.)*
 
 **Archive.** These records were moved verbatim out of
 [`CURRENT_STATE.md`](../CURRENT_STATE.md) on 2026-09-20 so that the canonical description of
@@ -12,6 +12,27 @@ Current state: [`CURRENT_STATE.md`](../CURRENT_STATE.md) ·
 Authoritative backlog: [`BACKLOG.md`](../BACKLOG.md)
 
 ---
+
+### Previously
+
+**`P9-TSK-022` — Corridor settlement to cash** — `COMPLETE` (2026-10-06). **M9.6 CLOSES AT 5 OF 5: the corridor's
+clearing reaches cash from the provider's report and the bank, its fees checked** (PHASE_9_PLAN.md §12.4(g), §12.9;
+ADR-0082; `INV-SET-02`, `-05`, `-06`, `INV-REC-06`..`-09`, `INV-MON-04`). Over the existing settlement and reconciliation
+machinery: a `PAYOUT_EXECUTED` line allocated to its `CROSSBORDER_PAYOUT` by `E`, the `PAYOUT_FEE` checked against the
+pinned v1 row of its own currency (USD 1.20, JPY 180, BHD 0.450) and posted at hop 1 onto the corridor's own clearing,
+the remittance discharged by the bank at hop 2 - section 12.4(g)'s USD cash identity (4.22 = 5.43 spread - 0.01 residual
+- 1.20 corridor fee) reproduced exactly with the cover settled to cash beside it, `CORRIDOR_CLEARING` proven per
+(counterparty, currency). **Code**: the reference lookup's corridor family (an `E` through the outbound credits, a provider
+reference through the completion's claim); an unsettled `CROSSBORDER_PAYOUT` graded `HIGH`. **Found and fixed**: our `E`
+was 32 hexadecimal digits, roughly one in fifty carrying a 13-digit run the corridor format screens as a card number, so a
+report naming it would have been refused - `E` is now minted letters only. **Deviation**: a provider executing after a
+`FAILED` credit is typed `TERMINAL_STATE_CONTRADICTED` (the withdrawal's precedent), not the plan's `UNKNOWN_EXTERNAL`.
+`P9-TSK-014`'s `CorridorSourceDatabaseTest` made order-independent: its "nothing posts to the position" and "version 1"
+assertions predated the completions that post to it and the suites that activate its rule set first.
+**PROBES** (SIX PROBES, SIX CAUGHT), every restore byte-identical (sha256-verified; `MUTATION_TESTING.md` §2 +6 rows).
+**Multi-instance PASS** on the existing matcher arbiters. **NEXT**: `P9-TSK-023` `READY`. **Verified** by fresh runs - the
+fleet-wide hermetic tier 2537 across 416 suites and 18 modules; the architecture tier 157 across 27; the task's own database suites while built
+(CorridorSettlementToCashDatabaseTest 3, CorridorSourceDatabaseTest 4, the cross-border resolution, payment and unwind suites re-run 24); ALL 0 FAILURES - the other database tiers skipped on the owner's instruction.
 
 ### Previously
 

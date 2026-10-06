@@ -546,6 +546,20 @@ public final class JdbcResolutionStore implements ResolutionStore {
     }
 
     @Override
+    public Optional<String> endToEndReferenceOf(Connection unitOfWork, UUID externalItemId) {
+        try (PreparedStatement read = unitOfWork.prepareStatement(
+                "SELECT k.key_value FROM reconciliation.external_item_key k WHERE k.item_id = ?"
+                        + " AND k.key_kind = 'END_TO_END_REF'")) {
+            read.setObject(1, externalItemId);
+            try (ResultSet row = read.executeQuery()) {
+                return row.next() ? Optional.of(row.getString(1)) : Optional.empty();
+            }
+        } catch (SQLException failure) {
+            throw new ReconciliationStorageException("could not read the item's end-to-end reference", failure);
+        }
+    }
+
+    @Override
     public boolean payoutTransferStands(
             Connection unitOfWork, String payoutOperationRef, Optional<UUID> exceptBreakId) {
         return transferStands(unitOfWork, payoutOperationRef, exceptBreakId);

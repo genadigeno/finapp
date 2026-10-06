@@ -33,7 +33,9 @@ public final class JdbcWaitingPayoutReturns implements WaitingPayoutReturns {
                     + " WHERE k.item_id = i.id AND k.key_kind = 'PAYOUT_PROVIDER_REF')"
                     + " AS provider_ref,"
                     + " (SELECT k.key_value FROM reconciliation.external_item_key k"
-                    + " WHERE k.item_id = i.id AND k.key_kind = 'OUR_REF') AS our_ref"
+                    + " WHERE k.item_id = i.id AND k.key_kind = 'OUR_REF') AS our_ref,"
+                    + " (SELECT k.key_value FROM reconciliation.external_item_key k"
+                    + " WHERE k.item_id = i.id AND k.key_kind = 'END_TO_END_REF') AS end_to_end_ref"
                     + " FROM reconciliation.external_item i"
                     + " JOIN reconciliation.reconciliation_batch r ON r.id = i.run_id"
                     + " WHERE i.status = 'UNMATCHED' AND i.line_type = 'PAYOUT_RETURNED'"
@@ -114,6 +116,7 @@ public final class JdbcWaitingPayoutReturns implements WaitingPayoutReturns {
                 row.getDate("settlement_date").toLocalDate(),
                 Optional.ofNullable(row.getString("provider_ref")),
                 Optional.ofNullable(row.getString("our_ref")),
-                CorrelationId.of(row.getString("correlation_id")));
+                CorrelationId.of(row.getString("correlation_id")),
+                Optional.ofNullable(row.getString("end_to_end_ref")));
     }
 }

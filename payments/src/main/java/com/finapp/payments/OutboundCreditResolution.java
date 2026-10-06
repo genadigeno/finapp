@@ -67,6 +67,7 @@ public final class OutboundCreditResolution {
     private final IdGenerator ids;
     private final Clock clock;
     private final TransactionRunner transactions;
+    private final OutboundCreditReturnStore returnStore;
 
     public OutboundCreditResolution(
             OutboundCreditStore credits,
@@ -77,7 +78,8 @@ public final class OutboundCreditResolution {
             Config config,
             IdGenerator ids,
             Clock clock,
-            TransactionRunner transactions) {
+            TransactionRunner transactions,
+            OutboundCreditReturnStore returnStore) {
         this.credits = Objects.requireNonNull(credits, "credits must not be null");
         this.outcomes = Objects.requireNonNull(outcomes, "outcomes must not be null");
         this.operations = Objects.requireNonNull(operations, "operations must not be null");
@@ -87,6 +89,7 @@ public final class OutboundCreditResolution {
         this.ids = Objects.requireNonNull(ids, "ids must not be null");
         this.clock = Objects.requireNonNull(clock, "clock must not be null");
         this.transactions = Objects.requireNonNull(transactions, "transactions must not be null");
+        this.returnStore = Objects.requireNonNull(returnStore, "returnStore must not be null");
     }
 
     /** One tick: every due credit inquired and judged, each contained so one failure never starves the rest. */
@@ -122,7 +125,7 @@ public final class OutboundCreditResolution {
     public Optional<OutboundCreditOutcomes.Applied> resolve(EndToEndReference reference) {
         Objects.requireNonNull(reference, "reference must not be null");
         Optional<OutboundCreditStore.Row> found = transactions.inTransaction(uow -> credits.byReference(uow, reference));
-        if (found.isEmpty() || !learnable(found.get())) {
+        if (found.isEmpty() || !learnable(found.get()) && !returnable(found.get())) {
             return Optional.empty();
         }
         return inquireAndApply(found.get());
@@ -147,6 +150,15 @@ public final class OutboundCreditResolution {
                     EvidenceKind.QUERY_RESULT, bytes, Instant.now(clock)));
             return applied;
         }));
+    }
+
+    /**
+     * A completed credit can still be returned (`P9-TSK-023`): a hinted inquiry asks after it until its return is
+     * recorded - the sweep's report channel reads returns from the corridor's report instead.
+     */
+    private boolean returnable(OutboundCreditStore.Row row) {
+        return row.status() == OutboundCreditStore.Status.COMPLETED
+                && transactions.inTransaction(uow -> returnStore.findByCredit(uow, row.id())).isEmpty();
     }
 
     private static boolean learnable(OutboundCreditStore.Row row) {

@@ -69,4 +69,30 @@ public interface OutboundCreditComposition<T> {
 
     /** The credit will never execute: the subject fails - nothing posted, the hold already released. */
     void failed(T unitOfWork, UUID subject, OutboundCreditStore.FailureReason reason);
+
+    /**
+     * One applicable return's facts (`P9-TSK-023`): the credit, its subject, the customer it was paid for, the
+     * corridor's clearing it is debited from, and the amount that came back - exactly the instructed credit.
+     */
+    record ReturnApplication(
+            OutboundCreditId credit, UUID subject, UUID customerParty, LedgerAccountId clearing, Money returned) {
+        public ReturnApplication {
+            Objects.requireNonNull(credit, "credit must not be null");
+            Objects.requireNonNull(subject, "subject must not be null");
+            Objects.requireNonNull(customerParty, "customerParty must not be null");
+            Objects.requireNonNull(clearing, "clearing must not be null");
+            Objects.requireNonNull(returned, "returned must not be null");
+        }
+    }
+
+    /**
+     * The return entry's lines (PHASE_9_PLAN.md section 12.4(i)): the clearing debited and the customer's wallet in
+     * the returned currency credited - the wallet opened if absent, in the caller's transaction - and the fee
+     * refunded from {@code FEE_REVENUE} to the wallet in the source currency. Empty when the return is not
+     * applicable to its customer - not {@code ACTIVE}, or the source wallet gone: nothing is written then.
+     */
+    java.util.Optional<List<JournalLine>> returnLines(T unitOfWork, ReturnApplication application);
+
+    /** After the return posted (or a person's resolution recorded it): the subject's {@code RETURNED} edge. */
+    void returned(T unitOfWork, UUID subject, String basis, Instant at);
 }

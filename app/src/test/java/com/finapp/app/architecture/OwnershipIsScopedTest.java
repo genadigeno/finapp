@@ -428,6 +428,14 @@ class OwnershipIsScopedTest {
                                     "P9-TSK-020. A completed credit's delivery stored once on the row the applier"
                                         + " locked - the JdbcOutboundCreditStore.complete reasoning.")),
                     Map.entry(
+                            "com.finapp.payments.JdbcOutboundCreditReturnStore.findByCredit",
+                            new Entry(
+                                    Scope.ADMINISTERED,
+                                    "P9-TSK-023. The return fact read by the credit it returns: the credit id comes only"
+                                        + " from the row an applier or the resolution port locked FOR UPDATE (found by our"
+                                        + " end-to-end reference, the provider's reference through its claim, or a sweep's"
+                                        + " candidate) - never a request value.")),
+                    Map.entry(
                             "com.finapp.payments.JdbcOutboundCreditStore.move",
                             new Entry(
                                     Scope.ADMINISTERED,

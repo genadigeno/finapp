@@ -45,6 +45,8 @@ public interface WaitingPayoutReturns {
      * @param providerReference the line's {@code PAYOUT_PROVIDER_REF}, when it carries one
      * @param ourReference the line's {@code OUR_REF}, when it carries one
      * @param correlation the item's own correlation — the flow the return continues
+     * @param endToEndReference the line's {@code END_TO_END_REF}, when it carries one - a corridor
+     *     return's name for its outbound credit (`P9-TSK-023`)
      */
     record WaitingReturn(
             UUID itemId,
@@ -55,7 +57,23 @@ public interface WaitingPayoutReturns {
             LocalDate settlementDate,
             Optional<String> providerReference,
             Optional<String> ourReference,
-            CorrelationId correlation) {
+            CorrelationId correlation,
+            Optional<String> endToEndReference) {
+
+        /** A return carrying no end-to-end reference (every merchant payout return). */
+        public WaitingReturn(
+                UUID itemId,
+                UUID runId,
+                UUID batchId,
+                UUID sourceId,
+                Money amount,
+                LocalDate settlementDate,
+                Optional<String> providerReference,
+                Optional<String> ourReference,
+                CorrelationId correlation) {
+            this(itemId, runId, batchId, sourceId, amount, settlementDate, providerReference, ourReference,
+                    correlation, Optional.empty());
+        }
 
         public WaitingReturn {
             Objects.requireNonNull(itemId, "itemId must not be null");
@@ -67,6 +85,7 @@ public interface WaitingPayoutReturns {
             Objects.requireNonNull(providerReference, "providerReference must not be null");
             Objects.requireNonNull(ourReference, "ourReference must not be null");
             Objects.requireNonNull(correlation, "correlation must not be null");
+            Objects.requireNonNull(endToEndReference, "endToEndReference must not be null");
         }
     }
 

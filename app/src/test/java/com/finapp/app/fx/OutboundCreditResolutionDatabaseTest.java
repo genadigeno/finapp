@@ -269,8 +269,10 @@ class OutboundCreditResolutionDatabaseTest {
         assertThat(scalar("SELECT provider_reference FROM payments.outbound_credit WHERE id = ?", paid.credit())).startsWith("XP-");
         assertThat(count("SELECT count(*) FROM platform.outbox_event WHERE event_type = 'crossborder.CrossBorderPaymentDelivered'"
                 + " AND aggregate_id = ?", paid.payment())).isEqualTo(1);
-        // A later inquiry learns nothing new: no second delivery, no second entry.
-        assertThat(resolve(paid.reference())).isEmpty();
+        // A later inquiry learns nothing new: no second delivery, no second entry. Since P9-TSK-023 a completed credit
+        // can still be returned, so a hint is still asked of the provider - and acts on nothing.
+        assertThat(resolve(paid.reference())).hasValueSatisfying(again -> assertThat(again.acting()).isFalse());
+        assertThat(count("SELECT count(*) FROM ledger.journal_entry WHERE idempotency_scope = ?", entryScope(paid))).isEqualTo(1);
     }
 
     // ------------------------------------------------------------------ failures

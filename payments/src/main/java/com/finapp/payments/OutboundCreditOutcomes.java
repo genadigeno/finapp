@@ -63,6 +63,7 @@ public final class OutboundCreditOutcomes {
     @NonNull private final SchemeExecutionClaimStore<Connection> claims;
     @NonNull private final SettlementExpectations expectations;
     @NonNull private final OutboundCreditComposition<Connection> composition;
+    @NonNull private final OutboundCreditReturns returns;
 
     /** What an answer did: the credit's status after it, and whether this call acted. */
     public record Applied(OutboundCreditStore.Status status, boolean acting) {}
@@ -132,15 +133,21 @@ public final class OutboundCreditOutcomes {
             case ACCEPTED -> {
                 ProviderReference theirs = found.providerReference().orElseThrow();
                 if (locked.status().resolvable()) {
-                    // An answer implying acceptance applies the completion, then the delivery, in this one transaction.
+                    // An answer implying acceptance applies the completion, then the delivery, then an applicable
+                    // return, in this one transaction (the lifecycle document 3.6).
                     Applied completed = complete(unitOfWork, locked, theirs, found.deliveredAt(), correlation, "inquiry");
-                    found.returned().ifPresent(returned -> log.info(
-                            "Outbound credit {} was accepted and returned before we knew; the completion stands and the"
-                                    + " return is applied by its own worker", locked.id()));
+                    found.returned().ifPresent(returned -> applyReturn(unitOfWork, locked.id(), returned, correlation));
                     yield completed;
                 }
-                if (locked.status() == OutboundCreditStore.Status.COMPLETED && found.deliveredAt().isPresent()) {
-                    yield deliver(unitOfWork, locked, found.deliveredAt().get(), correlation, "inquiry");
+                if (locked.status() == OutboundCreditStore.Status.COMPLETED) {
+                    Applied delivered = found.deliveredAt().isPresent()
+                            ? deliver(unitOfWork, locked, found.deliveredAt().get(), correlation, "inquiry")
+                            : new Applied(locked.status(), false);
+                    if (found.returned().isPresent()) {
+                        boolean applied = applyReturn(unitOfWork, locked.id(), found.returned().get(), correlation);
+                        yield new Applied(locked.status(), delivered.acting() || applied);
+                    }
+                    yield delivered;
                 }
                 yield locked.status() == OutboundCreditStore.Status.FAILED
                         ? contradicted(locked, "an acceptance")
@@ -229,6 +236,23 @@ public final class OutboundCreditOutcomes {
             deliver(unitOfWork, locked, deliveredAt.get(), correlation, resolver);
         }
         return new Applied(OutboundCreditStore.Status.COMPLETED, true);
+    }
+
+    /**
+     * The inquiry channel's return (`P9-TSK-023`): applied on the credit re-read under its lock - the completion this
+     * transaction may just have taken included. Whether this call applied it.
+     */
+    private boolean applyReturn(
+            Connection unitOfWork, OutboundCreditId id, CorridorRail.ReturnFact fact, Correlation correlation) {
+        OutboundCreditStore.Row current = credits.lock(unitOfWork, id)
+                .orElseThrow(() -> new PaymentsStorageException("a locked outbound credit vanished"));
+        OutboundCreditReturns.Outcome outcome = returns.apply(unitOfWork, current, new OutboundCreditReturns.Evidence(
+                fact.amount(), Optional.of(fact.returnReference().value()), fact.returnedAt()), "inquiry", correlation);
+        if (outcome == OutboundCreditReturns.Outcome.NOT_APPLICABLE) {
+            log.info("Outbound credit {} was returned in a way that does not apply automatically; the report's line parks"
+                    + " it for a person at grace", id);
+        }
+        return outcome == OutboundCreditReturns.Outcome.APPLIED;
     }
 
     private Applied deliver(
