@@ -78,7 +78,9 @@ public interface SettlementExpectations {
         PUSH_PAY_IN,
         UNMATCHED_CONFIRMATION,
         PUSH_WITHDRAWAL,
-        PUSH_RETURN
+        PUSH_RETURN,
+        /** A cross-border outbound credit's completion: OUTBOUND on its corridor's clearing (`P9-TSK-020`). */
+        CROSSBORDER_PAYOUT
     }
 
     /** The typed references a counterparty will quote (ADR-0067 §5's list, payments' own). */
@@ -92,7 +94,9 @@ public interface SettlementExpectations {
         DISPUTE_REV_REF,
         DISPUTE_FEE_REF,
         SCHEME_REF,
-        END_TO_END_REF
+        END_TO_END_REF,
+        /** A corridor provider's own reference for a payout (`P9-TSK-020`). */
+        PAYOUT_PROVIDER_REF
     }
 
     /** One typed reference. */
@@ -116,6 +120,8 @@ public interface SettlementExpectations {
      * @param clearingAccount the account that declaration resolved and the posting hit
      * @param settlementCycle the cycle the completion announced, when it announced one — a
      *     matching attribute, never a key
+     * @param counterparty the counterparty owning the clearing position, when the position is
+     *     counterparty-scoped (a corridor's: its rail, `P9-TSK-020`) - the source that discharges it
      */
     record Opening(
             Kind kind,
@@ -126,7 +132,23 @@ public interface SettlementExpectations {
             JournalEntryId journalEntryId,
             Optional<String> settlementCycle,
             List<Key> keys,
-            Correlation correlation) {
+            Correlation correlation,
+            Optional<String> counterparty) {
+
+        /** An opening on a platform-scoped position (every opening before `P9-TSK-020`). */
+        public Opening(
+                Kind kind,
+                String operationRef,
+                String postingKey,
+                AccountPurpose position,
+                LedgerAccountId clearingAccount,
+                JournalEntryId journalEntryId,
+                Optional<String> settlementCycle,
+                List<Key> keys,
+                Correlation correlation) {
+            this(kind, operationRef, postingKey, position, clearingAccount, journalEntryId, settlementCycle, keys,
+                    correlation, Optional.empty());
+        }
 
         public Opening {
             Objects.requireNonNull(kind, "kind must not be null");
@@ -137,6 +159,7 @@ public interface SettlementExpectations {
             Objects.requireNonNull(journalEntryId, "journalEntryId must not be null");
             Objects.requireNonNull(settlementCycle, "settlementCycle must not be null");
             Objects.requireNonNull(correlation, "correlation must not be null");
+            Objects.requireNonNull(counterparty, "counterparty must not be null");
             keys = List.copyOf(keys);
         }
     }

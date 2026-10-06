@@ -10,6 +10,7 @@ import com.finapp.payments.EndToEndReference;
 import com.finapp.payments.EvidenceKind;
 import com.finapp.payments.InstrumentKind;
 import com.finapp.payments.OutboundCreditId;
+import com.finapp.payments.OutboundCreditOutcomes;
 import com.finapp.payments.OutboundCreditStore;
 import com.finapp.payments.PaymentDirection;
 import com.finapp.payments.PaymentRails;
@@ -23,6 +24,8 @@ import com.finapp.payments.RoutingPlan;
 import com.finapp.payments.RoutingPolicyVersion;
 import com.finapp.payments.RoutingStore;
 import com.finapp.payments.RoutingSubject;
+import com.finapp.platform.correlation.CorrelationContext;
+import com.finapp.platform.security.SecurityContext;
 import com.finapp.sharedkernel.id.IdGenerator;
 import java.sql.Connection;
 import java.time.Clock;
@@ -38,7 +41,7 @@ import java.util.UUID;
  * beneficiary's issuing rail; the hold on the source wallet under its lock ({@code HoldService}); the outbound
  * credit born {@code DISPATCHED} with our end-to-end reference minted once; the routing decision on it; the
  * send through the corridor rail the {@code RailOperations} directory names - and the answer recorded, its bytes
- * retained under the outbound credit. The outcome appliers are `P9-TSK-020`'s.
+ * retained under the outbound credit and judged by {@link OutboundCreditOutcomes} as the platform (`P9-TSK-020`).
  */
 public final class PaymentsCrossBorderExecution implements CrossBorderExecution {
 
@@ -50,6 +53,7 @@ public final class PaymentsCrossBorderExecution implements CrossBorderExecution 
     private final ProviderEvidenceStore<Connection> evidence;
     private final IdGenerator ids;
     private final Clock clock;
+    private final OutboundCreditOutcomes outcomes;
 
     public PaymentsCrossBorderExecution(
             RoutingStore<Connection> routing,
@@ -59,7 +63,8 @@ public final class PaymentsCrossBorderExecution implements CrossBorderExecution 
             OutboundCreditStore credits,
             ProviderEvidenceStore<Connection> evidence,
             IdGenerator ids,
-            Clock clock) {
+            Clock clock,
+            OutboundCreditOutcomes outcomes) {
         this.routing = Objects.requireNonNull(routing, "routing must not be null");
         this.rails = Objects.requireNonNull(rails, "rails must not be null");
         this.operations = Objects.requireNonNull(operations, "operations must not be null");
@@ -68,6 +73,7 @@ public final class PaymentsCrossBorderExecution implements CrossBorderExecution 
         this.evidence = Objects.requireNonNull(evidence, "evidence must not be null");
         this.ids = Objects.requireNonNull(ids, "ids must not be null");
         this.clock = Objects.requireNonNull(clock, "clock must not be null");
+        this.outcomes = Objects.requireNonNull(outcomes, "outcomes must not be null");
     }
 
     private record Route(RoutingPolicyVersion version, RoutingInputs inputs, RoutingPlan plan, RailId chosen)
@@ -78,7 +84,28 @@ public final class PaymentsCrossBorderExecution implements CrossBorderExecution 
         }
     }
 
-    private record Sent(String kind, Optional<byte[]> bytes, Optional<String> providerReference) implements SendOutcome {}
+    private record Sent(CorridorRail.SendAnswer answer) implements SendOutcome {
+        @Override
+        public String kind() {
+            return switch (answer) {
+                case CorridorRail.SendAnswer.Received received -> "RECEIVED";
+                case CorridorRail.SendAnswer.Accepted accepted -> "ACCEPTED";
+                case CorridorRail.SendAnswer.Rejected rejected -> "REJECTED";
+                case CorridorRail.SendAnswer.NothingSent nothing -> "NOTHING_SENT";
+                case CorridorRail.SendAnswer.Indeterminate unknown -> "INDETERMINATE";
+            };
+        }
+
+        Optional<byte[]> bytes() {
+            return switch (answer) {
+                case CorridorRail.SendAnswer.Received received -> Optional.of(received.evidence().body());
+                case CorridorRail.SendAnswer.Accepted accepted -> Optional.of(accepted.evidence().body());
+                case CorridorRail.SendAnswer.Rejected rejected -> Optional.of(rejected.evidence().body());
+                case CorridorRail.SendAnswer.NothingSent nothing -> Optional.empty();
+                case CorridorRail.SendAnswer.Indeterminate unknown -> unknown.evidence().map(CorridorRail.Evidence::body);
+            };
+        }
+    }
 
     @Override
     public Routed route(Connection unitOfWork, RouteAsk ask) {
@@ -141,18 +168,11 @@ public final class PaymentsCrossBorderExecution implements CrossBorderExecution 
         CorridorRail.SendAnswer answer = rail.send(new CorridorRail.CreditInstruction(
                 new EndToEndReference(dispatched.endToEndReference()), new ProviderReference(dispatched.destinationReference()),
                 dispatched.instructed()));
-        return switch (answer) {
-            case CorridorRail.SendAnswer.Received received -> new Sent("RECEIVED", Optional.of(received.evidence().body()), Optional.empty());
-            case CorridorRail.SendAnswer.Accepted accepted -> new Sent("ACCEPTED", Optional.of(accepted.evidence().body()),
-                    Optional.of(accepted.providerReference().value()));
-            case CorridorRail.SendAnswer.Rejected rejected -> new Sent("REJECTED", Optional.of(rejected.evidence().body()), Optional.empty());
-            case CorridorRail.SendAnswer.NothingSent nothing -> new Sent("NOTHING_SENT", Optional.empty(), Optional.empty());
-            case CorridorRail.SendAnswer.Indeterminate unknown -> new Sent("INDETERMINATE",
-                    unknown.evidence().map(CorridorRail.Evidence::body), Optional.empty());
-        };
+        return new Sent(answer);
     }
 
     @Override
+    @SuppressWarnings("try") // The Scope is used for its close side effect (the established idiom).
     public void recordSend(Connection unitOfWork, Dispatched dispatched, SendOutcome outcome) {
         Sent sent = (Sent) outcome;
         OutboundCreditId id = OutboundCreditId.of(dispatched.outboundCredit());
@@ -160,22 +180,13 @@ public final class PaymentsCrossBorderExecution implements CrossBorderExecution 
                 .orElseThrow(() -> new IllegalStateException("a dispatched credit always reads back"));
         sent.bytes().ifPresent(bytes -> evidence.appendForOutboundCredit(unitOfWork, id, EvidenceKind.RESPONSE, bytes,
                 Instant.now(clock)));
-        switch (sent.kind()) {
-            case "INDETERMINATE" -> {
-                if (locked.status() == OutboundCreditStore.Status.DISPATCHED) {
-                    credits.move(unitOfWork, id, OutboundCreditStore.Status.DISPATCHED, OutboundCreditStore.Status.UNKNOWN);
-                }
-            }
-            case "RECEIVED" -> {
-                if (locked.status() == OutboundCreditStore.Status.DISPATCHED
-                        || locked.status() == OutboundCreditStore.Status.UNKNOWN) {
-                    credits.move(unitOfWork, id, locked.status(), OutboundCreditStore.Status.RECEIVED);
-                }
-            }
-            default -> {
-                // ACCEPTED, REJECTED and NOTHING_SENT conclude through the outcome appliers (P9-TSK-020), which
-                // own the completion, the failure, the hold's release and the quote's close; the bytes are kept.
-            }
+        // The platform applies every outcome, whichever resolver wins the harmless race - the synchronous answer here,
+        // a hinted inquiry or the sweep - so the customer's request thread never decides the actor (the withdrawal's
+        // rule: the dispatch is the person's, the outcome the platform's).
+        try (SecurityContext.Scope platform = SecurityContext.enterSystem()) {
+            outcomes.applySendAnswer(unitOfWork, locked, sent.answer(),
+                    CorrelationContext.current().orElseThrow(() -> new IllegalStateException(
+                            "a send's answer is recorded inside a correlation scope")));
         }
     }
 }

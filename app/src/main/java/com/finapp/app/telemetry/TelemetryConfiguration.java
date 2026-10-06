@@ -218,6 +218,61 @@ class TelemetryConfiguration {
     }
 
     /**
+     * The stuck-outbound-credit gauges (`P9-TSK-020`, {@code INV-LIFE-03}): over the resolution sweep's own
+     * dispatched bound, read through the one placeholder the sweep reads. Unconditional - the store is.
+     */
+    @Bean
+    StuckOperationMetrics outboundCreditMetrics(
+            DataSource dataSource,
+            Clock clock,
+            MeterRegistry registry,
+            @org.springframework.beans.factory.annotation.Value(
+                            com.finapp.app.payments.OutboundCreditResolutionSchedule.DISPATCHED_AGE)
+                    java.time.Duration dispatchedAge) {
+        com.finapp.payments.OutboundCreditStore credits = new com.finapp.payments.JdbcOutboundCreditStore();
+        return new StuckOperationMetrics(
+                "stuck-outbound-credit",
+                new StuckOperationMetrics.Series(
+                        "finapp.payments.outbound.unknown.active",
+                        "Cross-border outbound credits the platform has no answer for past the point one was due:"
+                                + " every UNKNOWN credit, and every DISPATCHED one whose send permit is older than the"
+                                + " resolution sweep's own bound. Each is a customer's money behind a standing hold. A"
+                                + " count, never an amount. NaN when unreadable, never zero. Fleet-wide: aggregate with"
+                                + " max(), never sum()",
+                        "finapp.payments.outbound.unknown.age",
+                        "Seconds the OLDEST unanswered outbound credit has waited since its latest send permit. The"
+                                + " stuck-outbound-credit alert's series. NaN when unreadable, never zero. Fleet-wide:"
+                                + " aggregate with max(), never sum()"),
+                connection -> credits.unknownReading(connection, dispatchedAge),
+                dataSource::getConnection,
+                clock,
+                registry);
+    }
+
+    /**
+     * The received-outbound-credit gauges (`P9-TSK-020`): credits the corridor provider acknowledged but has not
+     * committed to - its own screening pending - and the oldest one's wait. Unconditional - the store is.
+     */
+    @Bean
+    StuckOperationMetrics receivedOutboundCreditMetrics(DataSource dataSource, Clock clock, MeterRegistry registry) {
+        com.finapp.payments.OutboundCreditStore credits = new com.finapp.payments.JdbcOutboundCreditStore();
+        return new StuckOperationMetrics(
+                "received-outbound-credit",
+                new StuckOperationMetrics.Series(
+                        "finapp.payments.outbound.received.active",
+                        "Cross-border outbound credits the corridor provider holds RECEIVED - acknowledged, not yet"
+                                + " committed. A count, never an amount. NaN when unreadable, never zero. Fleet-wide:"
+                                + " aggregate with max(), never sum()",
+                        "finapp.payments.outbound.received.age",
+                        "Seconds the OLDEST RECEIVED outbound credit has waited since its latest send permit. NaN when"
+                                + " unreadable, never zero. Fleet-wide: aggregate with max(), never sum()"),
+                credits::receivedReading,
+                dataSource::getConnection,
+                clock,
+                registry);
+    }
+
+    /**
      * The stuck-dispute-answer gauges (`P7-TSK-015`): {@code INV-LIFE-03}'s own "unknown-state age
      * metric" for the response machine `P7-TSK-014` added, over the response sweep's dispatched
      * bound through its one placeholder.

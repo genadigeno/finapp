@@ -35,7 +35,9 @@ public record SchemeExecutionClaim(
         /** A return payment (a refund row) completed by it — value that went OUT. */
         RETURN,
         /** A suspense parking: value that arrived with no commercial home ({@code INV-REC-05}). */
-        UNMATCHED
+        UNMATCHED,
+        /** A cross-border outbound credit completed by it - value that went OUT (`P9-TSK-020`, payments V026). */
+        OUTBOUND_CREDIT
     }
 
     public SchemeExecutionClaim {

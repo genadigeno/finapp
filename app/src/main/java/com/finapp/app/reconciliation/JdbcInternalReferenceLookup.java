@@ -372,6 +372,7 @@ public final class JdbcInternalReferenceLookup implements InternalReferenceLooku
             case WITHDRAWAL -> InternalSubject.WITHDRAWAL;
             case RETURN -> InternalSubject.REFUND;
             case UNMATCHED -> InternalSubject.PARKING;
+            case OUTBOUND_CREDIT -> InternalSubject.OUTBOUND_CREDIT;
         };
     }
 }

@@ -20,5 +20,7 @@ public enum InternalSubject {
     PARKING,
 
     /** An FX cover, named by one of its attempts' {@code COVER_REF} (`P9-TSK-011`). */
-    COVER
+    COVER,
+    /** A cross-border outbound credit, named by its corridor provider's reference (`P9-TSK-020`). */
+    OUTBOUND_CREDIT
 }

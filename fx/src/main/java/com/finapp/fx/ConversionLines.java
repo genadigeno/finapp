@@ -91,6 +91,27 @@ public final class ConversionLines {
         return List.copyOf(lines);
     }
 
+    /**
+     * A cross-border completion's lines (`P9-TSK-020`, PHASE_9_PLAN.md section 12.4(g)): the plan's own, its
+     * destination credited to the corridor's clearing (passed as {@code accounts.destinationWallet()}), and the
+     * corridor fee - the source wallet debited the plan's source plus the fee, {@code FEE_REVENUE} credited the
+     * fee - inside the one entry. A zero fee posts no fee line.
+     */
+    public static List<JournalLine> composeCrossBorder(
+            QuoteStore.PlanRow plan, Accounts accounts, LedgerAccountId feeRevenue, Money fee) {
+        Objects.requireNonNull(feeRevenue, "feeRevenue must not be null");
+        Objects.requireNonNull(fee, "fee must not be null");
+        if (!fee.currency().equals(plan.source())) {
+            throw new IllegalArgumentException("the corridor fee is charged in the source currency");
+        }
+        List<JournalLine> lines = new ArrayList<>(compose(plan, accounts));
+        if (fee.isPositive()) {
+            lines.set(0, new JournalLine(accounts.sourceWallet(), Direction.DEBIT, plan.customerSource().plus(fee)));
+            lines.add(1, new JournalLine(feeRevenue, Direction.CREDIT, fee));
+        }
+        return List.copyOf(lines);
+    }
+
     private static void computedLeg(QuoteStore.PlanRow plan, Accounts accounts, List<JournalLine> lines) {
         if (plan.marginMinor() > 0) {
             lines.add(new JournalLine(accounts.spreadRevenue(), Direction.CREDIT,

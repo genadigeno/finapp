@@ -68,4 +68,13 @@ public interface PaymentStore {
 
     /** {@code owner}'s payment {@code id}, if it is theirs. */
     Optional<Row> findOwned(Connection unitOfWork, UUID id, UUID owner);
+
+    /**
+     * The payment under {@code FOR UPDATE} - for its outbound credit's outcome applier only, the id the credit's
+     * frozen subject (`P9-TSK-020`), never a request value.
+     */
+    Optional<Row> lock(Connection unitOfWork, UUID id);
+
+    /** Moves {@code id} from {@code from} to {@code to}, with the failure class exactly when {@code to} is FAILED. */
+    boolean move(Connection unitOfWork, UUID id, Status from, Status to, Optional<String> failureReason);
 }

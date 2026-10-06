@@ -74,6 +74,37 @@ public final class JdbcPaymentStore implements PaymentStore {
                 owner, id, "reading payment " + id);
     }
 
+    @Override
+    public Optional<Row> lock(Connection unitOfWork, UUID id) {
+        Objects.requireNonNull(unitOfWork, "unitOfWork must not be null");
+        Objects.requireNonNull(id, "id must not be null");
+        try (PreparedStatement select = unitOfWork.prepareStatement(
+                "SELECT " + COLUMNS + " FROM crossborder.payment WHERE id = ? FOR UPDATE")) {
+            select.setObject(1, id);
+            try (ResultSet row = select.executeQuery()) {
+                return row.next() ? Optional.of(read(row)) : Optional.empty();
+            }
+        } catch (SQLException failure) {
+            throw new CrossborderStorageException(DatabaseFailure.describe("locking payment " + id, failure), failure);
+        }
+    }
+
+    @Override
+    public boolean move(Connection unitOfWork, UUID id, Status from, Status to, Optional<String> failureReason) {
+        Objects.requireNonNull(unitOfWork, "unitOfWork must not be null");
+        Objects.requireNonNull(failureReason, "failureReason must not be null");
+        try (PreparedStatement update = unitOfWork.prepareStatement(
+                "UPDATE crossborder.payment SET status = ?, failure_reason = ? WHERE id = ? AND status = ?")) {
+            update.setString(1, to.name());
+            update.setString(2, failureReason.orElse(null));
+            update.setObject(3, id);
+            update.setString(4, from.name());
+            return update.executeUpdate() == 1;
+        } catch (SQLException failure) {
+            throw new CrossborderStorageException(DatabaseFailure.describe("moving payment " + id, failure), failure);
+        }
+    }
+
     private static Optional<Row> one(Connection unitOfWork, String sql, UUID owner, Object key, String doing) {
         Objects.requireNonNull(unitOfWork, "unitOfWork must not be null");
         Objects.requireNonNull(owner, "owner must not be null");
@@ -81,10 +112,15 @@ public final class JdbcPaymentStore implements PaymentStore {
             select.setObject(1, owner);
             select.setObject(2, key);
             try (ResultSet row = select.executeQuery()) {
-                if (!row.next()) {
-                    return Optional.empty();
-                }
-                return Optional.of(new Row(
+                return row.next() ? Optional.of(read(row)) : Optional.empty();
+            }
+        } catch (SQLException failure) {
+            throw new CrossborderStorageException(DatabaseFailure.describe(doing, failure), failure);
+        }
+    }
+
+    private static Row read(ResultSet row) throws SQLException {
+        return new Row(
                         row.getObject("id", UUID.class),
                         row.getObject("owner_party", UUID.class),
                         BeneficiaryId.of(row.getObject("beneficiary_id", UUID.class)),
@@ -96,10 +132,6 @@ public final class JdbcPaymentStore implements PaymentStore {
                         row.getObject("cover_id", UUID.class),
                         row.getObject("hold_id", UUID.class),
                         Status.valueOf(row.getString("status")),
-                        row.getTimestamp("created_at").toInstant()));
-            }
-        } catch (SQLException failure) {
-            throw new CrossborderStorageException(DatabaseFailure.describe(doing, failure), failure);
-        }
+                        row.getTimestamp("created_at").toInstant());
     }
 }

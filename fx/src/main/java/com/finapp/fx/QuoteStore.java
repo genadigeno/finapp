@@ -251,6 +251,9 @@ public interface QuoteStore {
     /** {@code ACCEPTED -> EXECUTED}, admitted by the edge trigger only beside the quote's trade. */
     boolean execute(Connection unitOfWork, FxQuoteId id);
 
+    /** {@code ACCEPTED -> ABANDONED}: the subject failed before booking (`P9-TSK-020`); false when not accepted. */
+    boolean abandon(Connection unitOfWork, FxQuoteId id);
+
     /** The quote's whole plan - the caller holds its row lock. */
     Optional<PlanRow> plan(Connection unitOfWork, FxQuoteId id);
 

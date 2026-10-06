@@ -50,7 +50,7 @@ import javax.crypto.spec.SecretKeySpec;
 public final class SimulatedCorridorEngine implements AutoCloseable {
 
     /** One signed callback: the body, its timestamp, and the signature over both. */
-    record SignedCallback(String body, long timestamp, String signature) {}
+    public record SignedCallback(String body, long timestamp, String signature) {}
 
     /** What the provider holds behind a grant - the attested attributes and its payee-check word. */
     public record Beneficiary(String country, String currency, String entityType, String payeeCheck) {}
@@ -124,19 +124,19 @@ public final class SimulatedCorridorEngine implements AutoCloseable {
     }
 
     /** Sends answer accepted at once instead of received. */
-    void acceptOnReceipt(boolean value) {
+    public void acceptOnReceipt(boolean value) {
         acceptOnReceipt = value;
     }
 
     /** The received credit {@code reference} is accepted (the provider commits). */
-    void accept(String reference) {
+    public void accept(String reference) {
         Credit credit = credits.get(reference);
         if (credit.status.equals("received")) {
             accepted(credit);
         }
     }
 
-    void deliver(String reference) {
+    public void deliver(String reference) {
         Credit credit = credits.get(reference);
         credit.deliveredAt = now.get();
         callback(credit);
@@ -151,7 +151,7 @@ public final class SimulatedCorridorEngine implements AutoCloseable {
     }
 
     /** The next novel send is rejected with {@code reason}. */
-    void rejectNextSend(String reason) {
+    public void rejectNextSend(String reason) {
         armed.set("reject:" + reason);
     }
 
@@ -169,7 +169,7 @@ public final class SimulatedCorridorEngine implements AutoCloseable {
         armed.set("malformed");
     }
 
-    void serverErrorNext() {
+    public void serverErrorNext() {
         armed.set("500");
     }
 
@@ -190,7 +190,7 @@ public final class SimulatedCorridorEngine implements AutoCloseable {
         return count == null ? 0 : count.get();
     }
 
-    List<SignedCallback> callbacks() {
+    public List<SignedCallback> callbacks() {
         return List.copyOf(callbacks);
     }
 
