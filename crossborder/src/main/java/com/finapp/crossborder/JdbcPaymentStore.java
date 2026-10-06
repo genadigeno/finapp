@@ -18,6 +18,9 @@ public final class JdbcPaymentStore implements PaymentStore {
             "id, owner_party, beneficiary_id, offer_id, quote_id, corridor, dispatch_key, outbound_credit_id, cover_id,"
                     + " hold_id, status, created_at";
 
+    /** What every read selects: the inserted columns, and the failure class an edge may have set. */
+    private static final String READ_COLUMNS = COLUMNS + ", failure_reason";
+
     @Override
     public void insert(Connection unitOfWork, Row payment) {
         Objects.requireNonNull(unitOfWork, "unitOfWork must not be null");
@@ -63,14 +66,14 @@ public final class JdbcPaymentStore implements PaymentStore {
 
     @Override
     public Optional<Row> byDispatchKey(Connection unitOfWork, UUID owner, String dispatchKey) {
-        return one(unitOfWork, "SELECT " + COLUMNS + " FROM crossborder.payment WHERE owner_party = ? AND dispatch_key = ?",
+        return one(unitOfWork, "SELECT " + READ_COLUMNS + " FROM crossborder.payment WHERE owner_party = ? AND dispatch_key = ?",
                 owner, dispatchKey, "reading a payment by its dispatch key");
     }
 
     @Override
     public Optional<Row> findOwned(Connection unitOfWork, UUID id, UUID owner) {
         Objects.requireNonNull(id, "id must not be null");
-        return one(unitOfWork, "SELECT " + COLUMNS + " FROM crossborder.payment WHERE owner_party = ? AND id = ?",
+        return one(unitOfWork, "SELECT " + READ_COLUMNS + " FROM crossborder.payment WHERE owner_party = ? AND id = ?",
                 owner, id, "reading payment " + id);
     }
 
@@ -79,7 +82,7 @@ public final class JdbcPaymentStore implements PaymentStore {
         Objects.requireNonNull(unitOfWork, "unitOfWork must not be null");
         Objects.requireNonNull(id, "id must not be null");
         try (PreparedStatement select = unitOfWork.prepareStatement(
-                "SELECT " + COLUMNS + " FROM crossborder.payment WHERE id = ? FOR UPDATE")) {
+                "SELECT " + READ_COLUMNS + " FROM crossborder.payment WHERE id = ? FOR UPDATE")) {
             select.setObject(1, id);
             try (ResultSet row = select.executeQuery()) {
                 return row.next() ? Optional.of(read(row)) : Optional.empty();
@@ -132,6 +135,7 @@ public final class JdbcPaymentStore implements PaymentStore {
                         row.getObject("cover_id", UUID.class),
                         row.getObject("hold_id", UUID.class),
                         Status.valueOf(row.getString("status")),
-                        row.getTimestamp("created_at").toInstant());
+                        row.getTimestamp("created_at").toInstant(),
+                        Optional.ofNullable(row.getString("failure_reason")));
     }
 }

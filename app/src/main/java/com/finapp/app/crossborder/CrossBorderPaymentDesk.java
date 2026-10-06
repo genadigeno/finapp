@@ -45,6 +45,7 @@ import java.util.concurrent.atomic.AtomicReference;
 public final class CrossBorderPaymentDesk {
 
     static final String SCOPE = "crossborder.payment:";
+    static final String CANCEL_SCOPE = "crossborder.cancel:";
     public static final String PAYMENT_METER = "finapp.crossborder.payment";
 
     private final PaymentAuthorization authorization;
@@ -56,6 +57,8 @@ public final class CrossBorderPaymentDesk {
     private final TransactionRunner transactions;
     private final Counter submitted;
     private final Clock clock;
+    private final com.finapp.crossborder.PaymentCancellation cancellation;
+    private final com.finapp.crossborder.CancellationStore cancellations;
 
     public CrossBorderPaymentDesk(
             PaymentAuthorization authorization,
@@ -66,7 +69,9 @@ public final class CrossBorderPaymentDesk {
             IdempotentExecutor executor,
             TransactionRunner transactions,
             MeterRegistry meters,
-            Clock clock) {
+            Clock clock,
+            com.finapp.crossborder.PaymentCancellation cancellation,
+            com.finapp.crossborder.CancellationStore cancellations) {
         this.authorization = Objects.requireNonNull(authorization, "authorization must not be null");
         this.fx = Objects.requireNonNull(fx, "fx must not be null");
         this.execution = Objects.requireNonNull(execution, "execution must not be null");
@@ -78,10 +83,14 @@ public final class CrossBorderPaymentDesk {
                 .description("Cross-border payments authorized - held and dispatched. A count, never an amount")
                 .register(Objects.requireNonNull(meters, "meters must not be null"));
         this.clock = Objects.requireNonNull(clock, "clock must not be null");
+        this.cancellation = Objects.requireNonNull(cancellation, "cancellation must not be null");
+        this.cancellations = Objects.requireNonNull(cancellations, "cancellations must not be null");
     }
 
     /** A payment as its owner sees it - the status shaped. */
-    public record CrossBorderPaymentView(String paymentId, String status, String quoteId, String beneficiaryId, String corridor) {}
+    public record CrossBorderPaymentView(
+            String paymentId, String status, String quoteId, String beneficiaryId, String corridor,
+            boolean cancellationRequested) {}
 
     private record Refusal(String vocabulary, String code) {}
 
@@ -147,10 +156,16 @@ public final class CrossBorderPaymentDesk {
         // platform off this thread; the cover sweep is the guarantee whatever the corridor does.
         fx.dispatchCover(authorized.payment().cover());
         if (authorized.takenOver()) {
-            transactions.inTransaction(unitOfWork -> {
-                execution.renewPermit(unitOfWork, authorized.dispatched());
-                return null;
-            });
+            boolean renewed = transactions.inTransaction(unitOfWork -> execution.renewPermit(unitOfWork, authorized.dispatched()));
+            if (!renewed) {
+                // A cancellation requested a recall: an instruction with a recall requested is never re-sent (D22).
+                transactions.inTransaction(unitOfWork -> {
+                    executor.complete(unitOfWork, key, true, StoredResponse.of(
+                            ("OK|" + authorized.payment().id()).getBytes(StandardCharsets.UTF_8), "text/plain"));
+                    return null;
+                });
+                return read(current, authorized.payment().id().toString());
+            }
         }
         CrossBorderExecution.SendOutcome sent = execution.send(authorized.dispatched());
         transactions.inTransaction(unitOfWork -> {
@@ -163,6 +178,61 @@ public final class CrossBorderPaymentDesk {
         return read(current, authorized.payment().id().toString());
     }
 
+    /**
+     * The cancellation door (`P9-TSK-024`, PHASE_9_PLAN.md section 9): a recall request, asynchronous - {@code 202}
+     * with the payment as it stands and {@code cancellationRequested}; the outcome ({@code CANCELLED}, or
+     * {@code SENT} when the provider refused as too late) arrives on {@code GET}. Keyed under its own scope, step-up
+     * when a factor is enrolled, the caller's own payments only; a payment past recall is {@code 409
+     * crossborder.NotCancellable}, nothing written.
+     */
+    public CrossBorderPaymentView cancel(Session current, String idempotencyKey, String rawId) {
+        Objects.requireNonNull(current, "current must not be null");
+        Actor actor = SecurityContext.require();
+        CorrelationId correlation = correlation();
+        UUID paymentId;
+        try {
+            paymentId = UUID.fromString(rawId);
+        } catch (IllegalArgumentException malformed) {
+            throw notFound();
+        }
+        IdempotencyKey key = new IdempotencyKey(CANCEL_SCOPE + actor.type().name() + ":" + actor.id(), idempotencyKey);
+        record Begun(IdempotentExecutor.BeginOutcome outcome, Refusal refusal) {}
+        Begun begun = transactions.inTransaction(unitOfWork -> {
+            UUID party = partyOf(unitOfWork, current);
+            requireConditionalAssurance(unitOfWork, current);
+            RequestFingerprint fingerprint = RequestFingerprint.sha256(
+                    ("crossborder.cancel|" + party + "|" + paymentId).getBytes(StandardCharsets.UTF_8));
+            AtomicReference<Refusal> refused = new AtomicReference<>();
+            IdempotentExecutor.BeginOutcome outcome = executor.begin(unitOfWork, key, fingerprint, claimed -> {
+                Savepoint before = savepoint(claimed);
+                try {
+                    cancellation.request(claimed, paymentId, party, actor, now(), correlation);
+                } catch (com.finapp.crossborder.PaymentCancellation.NotCancellable pastRecall) {
+                    refused.set(new Refusal("XB", CrossborderErrorCode.NOT_CANCELLABLE.name()));
+                } catch (com.finapp.crossborder.PaymentCancellation.NotFound absent) {
+                    refused.set(new Refusal("XB", CrossborderErrorCode.PAYMENT_NOT_FOUND.name()));
+                }
+                if (refused.get() != null) {
+                    rollbackTo(claimed, before);
+                }
+                return new byte[] {1};
+            });
+            if (outcome.replay().isEmpty()) {
+                executor.complete(unitOfWork, key, refused.get() == null, refused.get() != null
+                        ? failure(refused.get())
+                        : StoredResponse.of(("OK|" + paymentId).getBytes(StandardCharsets.UTF_8), "text/plain"));
+            }
+            return new Begun(outcome, refused.get());
+        });
+        if (begun.outcome().replay().isPresent()) {
+            return replayed(current, begun.outcome().replay().get());
+        }
+        if (begun.refusal() != null) {
+            throw refused(begun.refusal());
+        }
+        return read(current, paymentId.toString());
+    }
+
     public CrossBorderPaymentView read(Session current, String rawId) {
         UUID id;
         try {
@@ -170,8 +240,8 @@ public final class CrossBorderPaymentDesk {
         } catch (IllegalArgumentException malformed) {
             throw notFound();
         }
-        return transactions.inTransaction(unitOfWork -> authorization.read(unitOfWork, id, partyOf(unitOfWork, current)))
-                .map(CrossBorderPaymentDesk::view)
+        return transactions.inTransaction(unitOfWork -> authorization.read(unitOfWork, id, partyOf(unitOfWork, current))
+                        .map(payment -> view(payment, cancellations.requestedAt(unitOfWork, payment.id()).isPresent())))
                 .orElseThrow(CrossBorderPaymentDesk::notFound);
     }
 
@@ -227,9 +297,10 @@ public final class CrossBorderPaymentDesk {
                 "no such payment.");
     }
 
-    static CrossBorderPaymentView view(PaymentStore.Row payment) {
-        return new CrossBorderPaymentView(payment.id().toString(), payment.status().shaped(), payment.quote().toString(),
-                payment.beneficiary().value().toString(), payment.corridor().code());
+    static CrossBorderPaymentView view(PaymentStore.Row payment, boolean cancellationRequested) {
+        return new CrossBorderPaymentView(payment.id().toString(), payment.shaped(cancellationRequested),
+                payment.quote().toString(), payment.beneficiary().value().toString(), payment.corridor().code(),
+                cancellationRequested);
     }
 
     /** {@code Session -> Identity -> Party}: the {@code ProfileService} chain. */

@@ -35,6 +35,7 @@ public final class CrossBorderCompletion implements OutboundCreditComposition<Co
     @NonNull private final Clock clock;
     @NonNull private final com.finapp.fx.ConversionParticipants participants;
     @NonNull private final com.finapp.ledger.ChartOfAccounts<Connection> chart;
+    @NonNull private final io.micrometer.core.instrument.MeterRegistry meters;
 
     @Override
     public List<JournalLine> completionLines(Connection unitOfWork, Completion completion) {
@@ -104,6 +105,15 @@ public final class CrossBorderCompletion implements OutboundCreditComposition<Co
             lines.add(new JournalLine(sourceWallet.get(), com.finapp.ledger.Direction.CREDIT, fee));
         }
         return java.util.Optional.of(List.copyOf(lines));
+    }
+
+    @Override
+    public void recallAnswered(Connection unitOfWork, UUID subject, com.finapp.payments.OutboundCreditStore.RecallOutcome outcome) {
+        // Telemetry, never the count of record (the credit's recall_outcome is): the cancellation rate, the free-option
+        // watch of PHASE_9_PLAN.md section 13.
+        meters.counter("finapp.crossborder.cancellation", "outcome",
+                outcome == com.finapp.payments.OutboundCreditStore.RecallOutcome.RECALLED ? "recalled" : "too_late")
+                .increment();
     }
 
     @Override

@@ -42,7 +42,27 @@ public interface PaymentStore {
             UUID cover,
             UUID hold,
             Status status,
-            Instant createdAt) {
+            Instant createdAt,
+            Optional<String> failureReason) {
+
+        /** A payment as authorized - no failure yet. */
+        public Row(
+                UUID id,
+                UUID owner,
+                BeneficiaryId beneficiary,
+                UUID offer,
+                UUID quote,
+                CorridorKey corridor,
+                String dispatchKey,
+                UUID outboundCredit,
+                UUID cover,
+                UUID hold,
+                Status status,
+                Instant createdAt) {
+            this(id, owner, beneficiary, offer, quote, corridor, dispatchKey, outboundCredit, cover, hold, status, createdAt,
+                    Optional.empty());
+        }
+
         public Row {
             Objects.requireNonNull(id, "id must not be null");
             Objects.requireNonNull(owner, "owner must not be null");
@@ -56,6 +76,21 @@ public interface PaymentStore {
             Objects.requireNonNull(hold, "hold must not be null");
             Objects.requireNonNull(status, "status must not be null");
             Objects.requireNonNull(createdAt, "createdAt must not be null");
+            Objects.requireNonNull(failureReason, "failureReason must not be null");
+        }
+
+        /**
+         * What the customer is shown (`P9-TSK-024`, PHASE_9_PLAN.md section 5): {@code CANCELLED} for a payment
+         * recalled at their request - {@code FAILED(RECALLED)}, or {@code FAILED(NEVER_RECEIVED)} after a
+         * cancellation request; otherwise the status's own shape. A recall refused as too late is never shown
+         * cancelled: the payment completes, {@code SENT}.
+         */
+        public String shaped(boolean cancellationRequested) {
+            if (status == Status.FAILED && (failureReason.equals(Optional.of("RECALLED"))
+                    || cancellationRequested && failureReason.equals(Optional.of("NEVER_RECEIVED")))) {
+                return "CANCELLED";
+            }
+            return status.shaped();
         }
     }
 

@@ -1,6 +1,6 @@
 # Task History
 
-The per-task completion records that accumulated behind `## Current Task` - 217 "Previously" blocks, newest first, from `P9-TSK-022` back to project initiation. *(`X-TSK-016` is cross-cutting and completed after `P9-TSK-010` and before `P9-TSK-011`, so it stands between them.)* *(`X-TSK-005` is cross-cutting and completed after `P7-TSK-014` and before `P7-TSK-015`, so it stands between them; its record came in with its branch's merge.)* *(`X-TSK-004` is cross-cutting and completed after the Phase 6 → 7 transition, so it stands second, between `P7-TSK-001` and the transition's record - the transition's block moved here by `P7-TSK-001`'s gate, exactly as an earlier form of this note said it would.)*
+The per-task completion records that accumulated behind `## Current Task` - 218 "Previously" blocks, newest first, from `P9-TSK-023` back to project initiation. *(`X-TSK-016` is cross-cutting and completed after `P9-TSK-010` and before `P9-TSK-011`, so it stands between them.)* *(`X-TSK-005` is cross-cutting and completed after `P7-TSK-014` and before `P7-TSK-015`, so it stands between them; its record came in with its branch's merge.)* *(`X-TSK-004` is cross-cutting and completed after the Phase 6 → 7 transition, so it stands second, between `P7-TSK-001` and the transition's record - the transition's block moved here by `P7-TSK-001`'s gate, exactly as an earlier form of this note said it would.)*
 
 **Archive.** These records were moved verbatim out of
 [`CURRENT_STATE.md`](../CURRENT_STATE.md) on 2026-09-20 so that the canonical description of
@@ -12,6 +12,34 @@ Current state: [`CURRENT_STATE.md`](../CURRENT_STATE.md) ·
 Authoritative backlog: [`BACKLOG.md`](../BACKLOG.md)
 
 ---
+
+### Previously
+
+**`P9-TSK-023` — Cross-border returns** — `COMPLETE` (2026-10-06). **M9.7 AT 1 OF 3: a return is applied once,
+automatically only when it is exact** (PHASE_9_PLAN.md §12.4(i), §12.9.3; ADR-0079 point 6; `INV-XB-04`, `INV-REC-09`,
+`INV-IDEM-04`, `INV-AUD-04`). payments `V027`: `outbound_credit_return` born once per credit (`applied_by` `APPLIER` |
+`RESOLUTION`, `resolution_id` by `CHECK`, an every-writer trigger holding an `APPLIER` return to the instructed `Money`
+on a `COMPLETED` credit). **Two channels, one applier**: payments' `OutboundCreditReturns`, judged on the locked credit -
+an inquiry's `Returned` answer (after the completion it implies, in one transaction) and `app`'s `OutboundReturnWorker`
+(with `OutboundReturnSchedule`) reading the corridor-scoped `PAYOUT_RETURNED` items, re-read `FOR SHARE`, deferring while
+the credit is in flight. Applied: the entry `crossborder-return:<id>` (§12.4(i) line for line - the USD wallet opened in
+the transaction, the 2.50 EUR fee refunded), the payment `RETURNED` (basis `APPLIED`), `CROSSBORDER_RETURN` opened
+INBOUND, operation-anchored, later `SETTLED` by the report's line. Anything else posts nothing and parks at grace
+`REVERSAL_MISMATCH(RETURN_NOT_APPLICABLE)`; the way out is the four-eyes `TRANSFER_TO_ACCOUNT`, reconciliation's
+`ResolutionMachine` consulting the new `ResolvedCorridorReturns` port (implemented in `app` as
+`CorridorReturnResolutions`) at the proposal and recording the return inside the approval - the fact `RESOLUTION`, the
+fee refund `crossborder-return-fee:<id>`, the payment `RETURNED` (basis `RESOLVED`) - and losing `409 ResolutionStale`,
+nothing moved, to an inquiry that applied it first. **Deviations**: no `CROSSBORDER_RETURN` claim subject (the report
+line carries no return reference; the unique and the posting key arbitrate); the port reads an existing fact under the
+credit's lock instead of conflicting on insert; the port requires the target to be the credit's own customer's wallet in
+the returned currency (a security check the plan did not name) and never opens one; the inquiry channel's applications
+are not counted by `finapp.crossborder.return` (the outcome applier audits and events them).
+**PROBES** (SEVEN PROBES, SEVEN CAUGHT), every restore byte-identical (sha256-verified; `MUTATION_TESTING.md` §2 +7 rows).
+**Atomicity**: a fault injected beneath the payment's `RETURNED` edge leaves nothing in the worker's transaction (T-f)
+and in the approval's (T-g) - no entry, no fact, no fee refund, no transfer - and each completes once the fault lifts.
+**Multi-instance PASS**: ten appliers across both channels make one return (counted). **NEXT**: `P9-TSK-024` `READY`.
+**Verified** by fresh runs - the fleet-wide hermetic tier 2537 across 416 suites and 18 modules; the architecture tier 157 across 27; the task's
+own database suites (CrossBorderReturnDatabaseTest 9; the outbound credit, corridor source, corridor cash, cross-border payment and merchant payout return suites re-run 45; reconciliation's resolution machine and matrix 39); ALL 0 FAILURES - the other database tiers skipped on the owner's instruction.
 
 ### Previously
 

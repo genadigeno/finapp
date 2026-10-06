@@ -779,6 +779,7 @@ subject takes, no evidence that still finds it, no acknowledgement back on its r
 | `crossborder.ScreeningRequired` | 409 | The beneficiary must be verified again; request a new offer. |
 | `crossborder.CorridorUnavailable` | 503 | Payments to this destination are paused; try again later. |
 | `crossborder.PaymentNotFound` | 404 | No payment matches the requested identifier. |
+| `crossborder.NotCancellable` | 409 | This payment can no longer be cancelled. |
 
 The FX controller's doors (`P9-TSK-007`, ADR-0075 §3). `NotFound` is the `FileNotFound`
 departure at the pricing-policy and enable-request doors - every route sits behind

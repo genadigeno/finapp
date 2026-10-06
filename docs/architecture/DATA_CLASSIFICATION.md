@@ -2044,6 +2044,11 @@ encrypted; the grant is exchanged and forgotten.
 | `payment_event` | `to_status` | `CONFIDENTIAL` | As `payment.status` |
 | `payment_event` | `cause` | `INTERNAL` | A bounded machine word (`AUTHORIZED`, ...) |
 | `payment_event` | `occurred_at` | `CONFIDENTIAL` | Dates a customer's payment |
+| `cancellation_request` | `id` | `INTERNAL` | A fact identifier. Generated (`P9-TSK-024`) |
+| `cancellation_request` | `payment_id` | `INTERNAL` | The payment whose recall was requested - one request per payment (`UNIQUE`) |
+| `cancellation_request` | `requested_by` | `CONFIDENTIAL` | The requesting actor's identifier - the customer |
+| `cancellation_request` | `correlation_id` | `INTERNAL` | The request's flow |
+| `cancellation_request` | `requested_at` | `CONFIDENTIAL` | Dates a customer's act, stamped by the database |
 
 ### `payments` - the outbound credit and routing's third subject - *added by `P9-TSK-019`*
 

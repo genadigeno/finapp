@@ -156,9 +156,65 @@ public final class OutboundCreditOutcomes {
             case REJECTED -> locked.status().resolvable()
                     ? fail(unitOfWork, locked, OutboundCreditStore.FailureReason.DECLINED, correlation, "inquiry")
                     : contradicted(locked, "a rejection");
-            // A confirmed recall is the cancellation's (P9-TSK-024): never concluded here.
-            case RECALLED -> new Applied(locked.status(), false);
+            // The provider holds the credit recalled - our recall's answer, lost on the way (P9-TSK-024): concluded
+            // only beside a standing request, as the recall's own answer would have been.
+            case RECALLED -> {
+                if (locked.recallRequestedAt().isEmpty()) {
+                    yield contradicted(locked, "a recall nobody requested");
+                }
+                yield locked.status().resolvable()
+                        ? recalled(unitOfWork, locked, correlation, "inquiry")
+                        : new Applied(locked.status(), false);
+            }
         };
+    }
+
+    /**
+     * Applies the provider's answer to a recall (`P9-TSK-024`, ADR-0079 point 5) to the credit the caller holds
+     * {@code FOR UPDATE}: only {@code Recalled} concludes - {@code FAILED(RECALLED)} through the one failure path,
+     * the hold released, the quote abandoned, a cover unwound; {@code TooLate} records the refusal and concludes
+     * nothing, the credit completing as it would have; {@code Unrecognised} is the never-received rule, with no
+     * re-send; no answer is not an answer, and the next pass asks again.
+     */
+    public Applied applyRecallAnswer(
+            Connection unitOfWork,
+            OutboundCreditStore.Row locked,
+            CorridorRail.RecallAnswer answer,
+            Instant neverReceivedBound,
+            Correlation correlation) {
+        Objects.requireNonNull(unitOfWork, "unitOfWork must not be null");
+        Objects.requireNonNull(locked, "locked must not be null");
+        Objects.requireNonNull(answer, "answer must not be null");
+        Objects.requireNonNull(neverReceivedBound, "neverReceivedBound must not be null");
+        Objects.requireNonNull(correlation, "correlation must not be null");
+        if (!locked.recallPending()) {
+            // Answered meanwhile, or concluded by another resolver: the locked row decides, nothing more.
+            return new Applied(locked.status(), false);
+        }
+        return switch (answer) {
+            case CorridorRail.RecallAnswer.Recalled recalled -> recalled(unitOfWork, locked, correlation, "recall");
+            case CorridorRail.RecallAnswer.TooLate tooLate -> {
+                requireLanded(credits.recordRecallOutcome(unitOfWork, locked.id(), OutboundCreditStore.RecallOutcome.REFUSED));
+                composition.recallAnswered(unitOfWork, locked.subject(), OutboundCreditStore.RecallOutcome.REFUSED);
+                yield new Applied(locked.status(), true);
+            }
+            case CorridorRail.RecallAnswer.Unrecognised unrecognised -> {
+                boolean concludable = (locked.status() == OutboundCreditStore.Status.DISPATCHED
+                                || locked.status() == OutboundCreditStore.Status.UNKNOWN)
+                        && locked.permitAtOrBefore(neverReceivedBound);
+                yield concludable
+                        ? fail(unitOfWork, locked, OutboundCreditStore.FailureReason.NEVER_RECEIVED, correlation, "recall")
+                        : new Applied(locked.status(), false);
+            }
+            case CorridorRail.RecallAnswer.NothingSent nothing -> new Applied(locked.status(), false);
+            case CorridorRail.RecallAnswer.Indeterminate unknown -> new Applied(locked.status(), false);
+        };
+    }
+
+    private Applied recalled(Connection unitOfWork, OutboundCreditStore.Row locked, Correlation correlation, String resolver) {
+        requireLanded(credits.recordRecallOutcome(unitOfWork, locked.id(), OutboundCreditStore.RecallOutcome.RECALLED));
+        composition.recallAnswered(unitOfWork, locked.subject(), OutboundCreditStore.RecallOutcome.RECALLED);
+        return fail(unitOfWork, locked, OutboundCreditStore.FailureReason.RECALLED, correlation, resolver);
     }
 
     private Applied receive(

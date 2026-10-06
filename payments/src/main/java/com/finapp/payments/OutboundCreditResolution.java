@@ -125,7 +125,7 @@ public final class OutboundCreditResolution {
     public Optional<OutboundCreditOutcomes.Applied> resolve(EndToEndReference reference) {
         Objects.requireNonNull(reference, "reference must not be null");
         Optional<OutboundCreditStore.Row> found = transactions.inTransaction(uow -> credits.byReference(uow, reference));
-        if (found.isEmpty() || !learnable(found.get()) && !returnable(found.get())) {
+        if (found.isEmpty() || !learnable(found.get()) && !returnable(found.get()) && !found.get().recallPending()) {
             return Optional.empty();
         }
         return inquireAndApply(found.get());
@@ -137,6 +137,25 @@ public final class OutboundCreditResolution {
             log.warn("outbound credit {} names rail {} but no corridor adapter operates it here", candidate.id(),
                     candidate.rail().value());
             return Optional.empty();
+        }
+        if (candidate.recallPending()) {
+            // A cancellation's recall first (P9-TSK-024), holding no connection, idempotent at the provider by OUR
+            // reference: a concluded or unanswered recall ends this pass; a refusal falls through to the inquiry, so
+            // the credit completes as it would have.
+            CorridorRail.RecallAnswer recall = rail.get().recall(candidate.reference());
+            Instant recallBound = neverReceivedBound(candidate.rail());
+            OutboundCreditOutcomes.Applied answered = transactions.inTransaction(uow -> {
+                OutboundCreditStore.Row locked = credits.lock(uow, candidate.id())
+                        .orElseThrow(() -> new PaymentsStorageException("a recalled outbound credit vanished"));
+                OutboundCreditOutcomes.Applied applied = outcomes.applyRecallAnswer(uow, locked, recall, recallBound,
+                        CorrelationContext.current().orElseThrow());
+                recallEvidenceOf(recall).ifPresent(bytes -> evidence.appendForOutboundCredit(uow, locked.id(),
+                        EvidenceKind.QUERY_RESULT, bytes, Instant.now(clock)));
+                return applied;
+            });
+            if (!(recall instanceof CorridorRail.RecallAnswer.TooLate) || !answered.status().resolvable()) {
+                return Optional.of(answered);
+            }
         }
         // The inquiry, holding no connection (ADR-0046): the provider is asked for OUR reference.
         CorridorRail.InquiryAnswer answer = rail.get().inquire(candidate.reference());
@@ -164,6 +183,16 @@ public final class OutboundCreditResolution {
     private static boolean learnable(OutboundCreditStore.Row row) {
         return row.status().resolvable()
                 || (row.status() == OutboundCreditStore.Status.COMPLETED && row.deliveredAt().isEmpty());
+    }
+
+    private static Optional<byte[]> recallEvidenceOf(CorridorRail.RecallAnswer answer) {
+        return switch (answer) {
+            case CorridorRail.RecallAnswer.Recalled recalled -> Optional.of(recalled.evidence().body());
+            case CorridorRail.RecallAnswer.TooLate tooLate -> Optional.of(tooLate.evidence().body());
+            case CorridorRail.RecallAnswer.Unrecognised unrecognised -> Optional.of(unrecognised.evidence().body());
+            case CorridorRail.RecallAnswer.NothingSent nothing -> Optional.empty();
+            case CorridorRail.RecallAnswer.Indeterminate unknown -> unknown.evidence().map(CorridorRail.Evidence::body);
+        };
     }
 
     private static Optional<byte[]> evidenceOf(CorridorRail.InquiryAnswer answer) {

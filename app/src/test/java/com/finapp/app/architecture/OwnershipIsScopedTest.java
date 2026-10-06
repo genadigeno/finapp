@@ -436,6 +436,19 @@ class OwnershipIsScopedTest {
                                         + " end-to-end reference, the provider's reference through its claim, or a sweep's"
                                         + " candidate) - never a request value.")),
                     Map.entry(
+                            "com.finapp.payments.JdbcOutboundCreditStore.requestRecall",
+                            new Entry(
+                                    Scope.ADMINISTERED,
+                                    "P9-TSK-024. The recall mark: the credit id comes only from the payment the customer's"
+                                        + " cancellation found by findOwned (the owner a predicate), its credit locked FOR"
+                                        + " UPDATE in the same transaction - never a request value; set once by its conditional.")),
+                    Map.entry(
+                            "com.finapp.payments.JdbcOutboundCreditStore.recordRecallOutcome",
+                            new Entry(
+                                    Scope.ADMINISTERED,
+                                    "P9-TSK-024. The provider's recall answer stored once on the row the applier locked -"
+                                        + " the JdbcOutboundCreditStore.complete reasoning.")),
+                    Map.entry(
                             "com.finapp.payments.JdbcOutboundCreditStore.move",
                             new Entry(
                                     Scope.ADMINISTERED,

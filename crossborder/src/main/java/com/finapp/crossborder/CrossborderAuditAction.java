@@ -90,6 +90,18 @@ public enum CrossborderAuditAction implements AuditableAction {
             "crossborder.CrossBorderPaymentAuthorized",
             "A customer authorized a cross-border payment: the quote accepted, the total debit held, the outbound"
                     + " credit dispatched and the cover born.",
+            false),
+
+    /**
+     * A customer requested a cross-border payment's cancellation (`P9-TSK-024`, ADR-0079 point 5): the outbound
+     * credit marked for recall, the born-once request recorded. No reason - the customer's own act; the summary
+     * names the payment and what marking the credit found, never an amount, a name or a reference. The outcome is
+     * the provider's: the payment's own failure or completion records it.
+     */
+    CROSSBORDER_CANCELLATION_REQUESTED(
+            "crossborder.CrossBorderCancellationRequested",
+            "A customer requested a cross-border payment's cancellation: the outbound credit marked for recall, the"
+                    + " request recorded once; honoured only on the provider's definitive word.",
             false);
 
     private final String code;
