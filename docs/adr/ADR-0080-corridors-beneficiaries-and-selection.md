@@ -270,3 +270,11 @@ disable names one and a reason), `INV-PAY-03` (provider vocabulary confined to t
   born `DISPATCHED` with our end-to-end reference minted and stored before any send, its machine held by
   trigger, sent through the corridor rail `RailOperations` names and its answer retained as the sixth
   evidence subject.
+- *As built by `P9-TSK-026` (2026-10-06):* M9.8's second corridor rail, `corridor-sim-b` (US/USD, overlapping
+  `corridor-sim-a` on EUR -> USD/US), declared beside the first - the simulated adapter parameterised by its rail,
+  its own confined credential (`finapp.corridor.provider.b.key`) and transport row, and `RailOperations` composed
+  from every configured corridor adapter keyed by its rail. Selection needed no change: a corridor policy listing
+  `a` then `b` selects `b` wherever `a` is not operable, each candidate a stored step, and the beneficiary pinned
+  to `b` is routed, paid and settled on `b` (`SecondCorridorRailDatabaseTest`). The negative consequence above is
+  now real and tested. **Deviation:** `corridor-sim-b` has no callback door - callbacks are hints and the
+  resolution sweep is the guarantee - nor a report pull collector; its source is upload-only in this build.

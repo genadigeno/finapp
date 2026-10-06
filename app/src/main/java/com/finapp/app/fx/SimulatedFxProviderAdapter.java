@@ -87,6 +87,22 @@ public final class SimulatedFxProviderAdapter implements FxProvider {
             new FxProviderDeclaration(
                     CODE, 1, everyOrderedPair(), Set.copyOf(SupportedCurrencies.ALL), Duration.ofMinutes(2));
 
+    /**
+     * The second simulated FX provider (`P9-TSK-026`, M9.8): the same wire, its own counterparty - {@code fx-sim-b}
+     * quotes EUR and USD both ways and settles those two, on its OWN clearing position, never netted with
+     * {@code fx-sim-a}'s.
+     */
+    public static final String CODE_B = "fx-sim-b";
+
+    /** What this build declares about {@code fx-sim-b}. Declaration version 1. */
+    public static final FxProviderDeclaration DECLARATION_B =
+            new FxProviderDeclaration(
+                    CODE_B, 1,
+                    Set.of(new FxProviderDeclaration.QuotedPair(CurrencyCode.of("EUR"), CurrencyCode.of("USD")),
+                            new FxProviderDeclaration.QuotedPair(CurrencyCode.of("USD"), CurrencyCode.of("EUR"))),
+                    Set.of(CurrencyCode.of("EUR"), CurrencyCode.of("USD")),
+                    Duration.ofMinutes(2));
+
     private static final Pattern STATUS = field("status");
     private static final Pattern REASON = field("reason");
     private static final Pattern QUOTE_REF = field("quoteRef");
@@ -101,12 +117,23 @@ public final class SimulatedFxProviderAdapter implements FxProvider {
     private static final Pattern BOUGHT = field("bought");
     private static final Pattern BOUGHT_CURRENCY = field("boughtCurrency");
 
+    private final String code;
     private final URI baseUrl;
     private final Duration timeout;
     private final byte[] key;
     private final HttpClient http;
 
+    /** {@code fx-sim-a}. */
     public SimulatedFxProviderAdapter(URI baseUrl, Duration timeout, byte[] key) {
+        this(CODE, baseUrl, timeout, key);
+    }
+
+    /** The simulated provider {@code code} - one of this build's declared simulated providers (`P9-TSK-026`). */
+    public SimulatedFxProviderAdapter(String code, URI baseUrl, Duration timeout, byte[] key) {
+        this.code = Objects.requireNonNull(code, "code must not be null");
+        if (!code.equals(CODE) && !code.equals(CODE_B)) {
+            throw new IllegalArgumentException("not a simulated FX provider this build declares: " + code);
+        }
         this.baseUrl = Objects.requireNonNull(baseUrl, "baseUrl must not be null");
         this.timeout = Objects.requireNonNull(timeout, "timeout must not be null");
         Objects.requireNonNull(key, "key must not be null");
@@ -119,7 +146,7 @@ public final class SimulatedFxProviderAdapter implements FxProvider {
 
     @Override
     public String code() {
-        return CODE;
+        return code;
     }
 
     @Override
@@ -184,7 +211,7 @@ public final class SimulatedFxProviderAdapter implements FxProvider {
     /** Never the key. */
     @Override
     public String toString() {
-        return "SimulatedFxProviderAdapter[" + CODE + "]";
+        return "SimulatedFxProviderAdapter[" + code + "]";
     }
 
     // -----------------------------------------------------------------

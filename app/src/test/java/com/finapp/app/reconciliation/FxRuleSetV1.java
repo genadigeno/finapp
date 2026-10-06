@@ -33,20 +33,31 @@ public final class FxRuleSetV1 {
     /** {@code fx-sim-a.trade-report}'s seeded source row (settlement `V015`). */
     public static final UUID SOURCE = UUID.fromString("01a0e2bc-8200-7005-8000-000000000005");
 
+    /** {@code fx-sim-b.trade-report}'s seeded source row (settlement `V017`, `P9-TSK-026`). */
+    public static final UUID SOURCE_B = UUID.fromString("01a0e2bc-8200-7005-8000-000000000007");
+
     private static final List<String> CURRENCIES = List.of("EUR", "GBP", "USD", "JPY", "BHD");
+
+    private static final Map<String, Long> THRESHOLDS =
+            Map.of("EUR", 100_000L, "GBP", 100_000L, "USD", 100_000L, "JPY", 150_000L, "BHD", 400_000L);
 
     private FxRuleSetV1() {}
 
     /** The version-1 proposal for the FX provider's source, with the proposer's reason. */
     public static RuleSetProposal proposal(String reason) {
+        return proposal(SOURCE, CURRENCIES, reason);
+    }
+
+    /** The same version 1 for {@code fx-sim-b}'s source, over the two currencies it settles (`P9-TSK-026`). */
+    public static RuleSetProposal proposalB(String reason) {
+        return proposal(SOURCE_B, List.of("EUR", "USD"), reason);
+    }
+
+    private static RuleSetProposal proposal(UUID source, List<String> currencies, String reason) {
         Map<CurrencyCode, Long> thresholds = new LinkedHashMap<>();
-        thresholds.put(CurrencyCode.of("EUR"), 100_000L);
-        thresholds.put(CurrencyCode.of("GBP"), 100_000L);
-        thresholds.put(CurrencyCode.of("USD"), 100_000L);
-        thresholds.put(CurrencyCode.of("JPY"), 150_000L);
-        thresholds.put(CurrencyCode.of("BHD"), 400_000L);
+        currencies.forEach(code -> thresholds.put(CurrencyCode.of(code), THRESHOLDS.get(code)));
         return new RuleSetProposal(
-                SOURCE,
+                source,
                 2,
                 90,
                 Map.of(ExpectationKind.FX_SELL_LEG, 2, ExpectationKind.FX_BUY_LEG, 2),
@@ -59,7 +70,7 @@ public final class FxRuleSetV1 {
                                 Optional.empty(), Cardinality.CHECK, false, 24)),
                 List.of(new RuleSetProposal.Tolerance("SETTLEMENT_DATE_DAYS", Optional.empty(), Optional.empty(),
                         Optional.of(2))),
-                CURRENCIES.stream()
+                currencies.stream()
                         .map(CurrencyCode::of)
                         .map(currency -> new RuleSetProposal.FeeTerms(
                                 ExternalLineType.FX_FEE, currency, BigDecimal.ZERO.setScale(6), 0,

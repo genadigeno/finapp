@@ -62,6 +62,8 @@ final class FxTestPolicy {
                                     && wanted.pricing().source().equals(stored.pricing().source())
                                     && wanted.pricing().destination().equals(stored.pricing().destination())
                                     && wanted.window().equals(stored.window())
+                                    // The providers too (P9-TSK-026): a successor adding a failover is a new shape.
+                                    && wanted.providers().equals(stored.providers())
                                     && wanted.coverMargin().equals(stored.coverMargin())));
         }
     }

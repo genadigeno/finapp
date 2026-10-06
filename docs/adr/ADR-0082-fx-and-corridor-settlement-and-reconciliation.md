@@ -285,3 +285,18 @@ retained), `INV-PAY-03` (provider vocabulary confined to format adapters).
   format screens as a card number - a report naming it would have been refused; `E` is now minted letters only.
   **Deviation:** a provider executing after a `FAILED` credit is typed `TERMINAL_STATE_CONTRADICTED` (the withdrawal's
   precedent), not the plan's `UNKNOWN_EXTERNAL` - parked and loud either way, and more precise.
+- *As built by `P9-TSK-026` (2026-10-06):* the `-b` pair - `fx-sim-b.trade-report` and
+  `corridor-sim-b.settlement` (settlement `V017`), each settling its own counterparty's position (ledger `V025`),
+  never netted. **Found and fixed (two single-instance assumptions):** (1) a bank statement's line is attributed
+  to a source by its remittance shape, and both formats named one shape (`FXA-`, `XBA-`) - a second counterparty
+  under the same format would have left EVERY such line unattributed, `a`'s hop 2 lost with `b`'s; each
+  counterparty now remits in its own shape (`FXB-`, `XBB-`), the formats admitting the family in a trailer, and
+  `SettlementSources` refuses two sources declaring one shape. (2) reconciliation mapped a source to "the first
+  declared rail of its purpose" - `corridor-sim-b`'s source would have resolved to `corridor-sim-a`'s rail and
+  looked a provider reference up among the wrong rail's claims; a source naming its counterparty now resolves to
+  that counterparty's own rail, and two rails resolving refuse. A line on one counterparty's report naming the
+  other's operation is never allocated (`SecondFxProviderDatabaseTest`, `SecondCorridorRailDatabaseTest`).
+  **Recorded debt:** the format admits the shape *family* in a trailer, so a report naming another counterparty's
+  shape is accepted and surfaces at hop 2 as an unmatched remittance and its break - loud, never silent; refusing it
+  at parse against the receiving source's own shape needs a rejection code (a settlement migration), left to a later
+  task.

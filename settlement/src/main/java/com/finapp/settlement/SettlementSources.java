@@ -41,6 +41,16 @@ public final class SettlementSources {
                                                                 source.code(),
                                                                 Pattern.compile(pattern))));
         this.remittancePatterns = Map.copyOf(compiled);
+        // One shape per source (P9-TSK-026): two sources declaring one remittance shape would leave every bank line
+        // carrying it unattributed - both counterparties' hop 2 silently lost - so the register refuses it.
+        Map<String, String> owners = new java.util.HashMap<>();
+        byCode.values().forEach(source -> source.remittanceReferencePattern().ifPresent(pattern -> {
+            String other = owners.putIfAbsent(pattern, source.code());
+            if (other != null) {
+                throw new IllegalStateException("sources " + other + " and " + source.code()
+                        + " declare one remittance shape: a bank line could not be attributed to either (INV-SET-05)");
+            }
+        }));
     }
 
     /**

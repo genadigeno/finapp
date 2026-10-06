@@ -230,11 +230,15 @@ public class PaymentBeans {
                             // The corridor rail (P9-TSK-014, ADR-0080 section 1): declared
                             // unconditionally too - its position, accounts and source compose at
                             // every startup, configured adapter or not; no routing rule names it yet.
-                            com.finapp.payments.SimulatedCorridorAdapter.RAIL));
+                            com.finapp.payments.SimulatedCorridorAdapter.RAIL,
+                            // The second corridor rail (P9-TSK-026, M9.8): declared unconditionally as
+                            // well - its own counterparty, position, accounts and source.
+                            com.finapp.payments.SimulatedCorridorAdapter.RAIL_B));
 
     /** Every declared corridor rail's corridor facts (`P9-TSK-014`, ADR-0080 section 1). */
     public static final java.util.List<com.finapp.payments.CorridorDeclaration> CORRIDOR_DECLARATIONS =
-            java.util.List.of(com.finapp.payments.SimulatedCorridorAdapter.DECLARATION);
+            java.util.List.of(com.finapp.payments.SimulatedCorridorAdapter.DECLARATION,
+                    com.finapp.payments.SimulatedCorridorAdapter.DECLARATION_B);
 
     /**
      * The corridor provider {@code corridor-sim-a} (`P9-TSK-014`, ADR-0080) - wired when configured,
@@ -256,6 +260,24 @@ public class PaymentBeans {
     }
 
     /**
+     * The second corridor provider {@code corridor-sim-b} (`P9-TSK-026`, M9.8) - wired when configured, under its own
+     * confined credential: selection reaches it where a corridor policy lists it and {@code corridor-sim-a} is not
+     * operable, and a beneficiary registered on it is paid on it.
+     */
+    @Bean
+    @ConditionalOnProperty("finapp.corridor.provider.b.url")
+    com.finapp.payments.CorridorRail corridorRailB(
+            @Value("${finapp.corridor.provider.b.url}") java.net.URI url,
+            @Value("${finapp.corridor.provider.b.timeout:PT2S}") java.time.Duration timeout,
+            @Value("${finapp.corridor.provider.b.key:" + com.finapp.app.mfa.MfaKey.MARKED_LOCAL_DEFAULT + "}")
+                    String configuredKey,
+            Environment environment) {
+        boolean loopback = DatabaseEndpoint.isEntirelyLoopback(DatabaseEndpoint.url(environment));
+        return new com.finapp.payments.SimulatedCorridorAdapter(com.finapp.payments.SimulatedCorridorAdapter.RAIL_B,
+                url, timeout, CorridorProviderBKey.decode(configuredKey, loopback));
+    }
+
+    /**
      * Which rails speak which operation (`P9-TSK-014`, ADR-0080 section 2, paying ADR-0059 section 1):
      * the instant rail's push adapter and the corridor rail's adapter where configured, beside every
      * declared corridor rail's declaration - verified against the declared rails at every startup.
@@ -269,7 +291,12 @@ public class PaymentBeans {
         instantRail.ifAvailable(
                 rail -> push.put(com.finapp.payments.SimulatedInstantSchemeAdapter.RAIL.id(), rail));
         java.util.Map<com.finapp.payments.RailId, com.finapp.payments.CorridorRail> corridor = new java.util.HashMap<>();
-        corridorRail.ifAvailable(rail -> corridor.put(rail.id(), rail));
+        // Every configured corridor adapter, each keyed by its own rail (P9-TSK-026): never one assumed.
+        corridorRail.orderedStream().forEach(rail -> {
+            if (corridor.putIfAbsent(rail.id(), rail) != null) {
+                throw new IllegalStateException("two corridor adapters for one rail: " + rail.id().value());
+            }
+        });
         return com.finapp.payments.RailOperations.of(paymentRails, CORRIDOR_DECLARATIONS, push, corridor);
     }
 

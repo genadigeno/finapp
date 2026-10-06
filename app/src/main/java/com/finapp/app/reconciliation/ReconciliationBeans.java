@@ -317,16 +317,7 @@ public class ReconciliationBeans {
                                 .filter(row -> row.id().equals(sourceId))
                                 .findFirst()
                                 .flatMap(row -> settlementSources.byCode(row.code()))
-                                .flatMap(com.finapp.settlement.SettlementSourceDescriptor
-                                        ::settledPosition)
-                                .flatMap(position ->
-                                        paymentRails.declaredIds().stream()
-                                                .filter(rail ->
-                                                        paymentRails.capabilitiesOf(rail)
-                                                                .clearingPurpose()
-                                                                .equals(java.util.Optional.of(
-                                                                        position)))
-                                                .findFirst()),
+                                .flatMap(descriptor -> railOfSource(descriptor, paymentRails)),
                 // The FX covers, for an FX provider's COVER_REF (P9-TSK-011).
                 new com.finapp.fx.JdbcTradeStore(),
                 // A source's family (P9-TSK-014): its seeded row's code and the compiled
@@ -339,6 +330,27 @@ public class ReconciliationBeans {
                                 .flatMap(com.finapp.settlement.SettlementSourceDescriptor::settledPosition),
                 // The outbound credits, for a corridor source's E (P9-TSK-022).
                 new com.finapp.payments.JdbcOutboundCreditStore());
+    }
+
+    /**
+     * A source's rail (`P8-TSK-017`; per counterparty since `P9-TSK-026`): the declared rail settling the source's
+     * position - and, when the source names its counterparty, the rail that IS that counterparty (a corridor's
+     * counterparty is its rail), so two rails settling one purpose never resolve to each other's source
+     * ({@code INV-SET-05}). A source with no counterparty (the instant scheme's) keeps its purpose's one rail.
+     */
+    static java.util.Optional<com.finapp.payments.RailId> railOfSource(
+            com.finapp.settlement.SettlementSourceDescriptor descriptor, com.finapp.payments.PaymentRails paymentRails) {
+        if (descriptor.settledPosition().isEmpty()) {
+            return java.util.Optional.empty();
+        }
+        java.util.List<com.finapp.payments.RailId> settling = paymentRails.declaredIds().stream()
+                .filter(rail -> paymentRails.capabilitiesOf(rail).clearingPurpose().equals(descriptor.settledPosition()))
+                .filter(rail -> descriptor.settledCounterparty().map(counterparty -> counterparty.equals(rail.value())).orElse(true))
+                .toList();
+        if (settling.size() > 1) {
+            throw new IllegalStateException("source " + descriptor.code() + " resolves to more than one rail: " + settling);
+        }
+        return settling.stream().findFirst();
     }
 
     /**

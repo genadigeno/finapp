@@ -175,6 +175,15 @@ USD 10,000.00 / JPY 1,500,000 / BHD 4,000.000; screening valid 168 hours (7 days
 24 hours; the beneficiary's name and entity type required. The canonical body is `CorridorPolicyV1` in
 the app's tests (proposed and activated by two controllers in `CorridorAdministrationEndpointDatabaseTest`).
 
+**The second corridor rail (`P9-TSK-026`).** To make `corridor-sim-b` a candidate, configure
+`finapp.corridor.provider.b.url` and its key (`FINAPP_CORRIDOR_PROVIDER_B_KEY`), propose a corridor policy
+successor listing it after `corridor-sim-a` for the corridors it covers (EUR -> USD/US), and a routing
+version naming it after `corridor-sim-a` on the cross-border credit's rule; activate
+`corridor-sim-b.settlement`'s rule set v1. `fx-sim-b` likewise: `finapp.fx.provider.b.url`,
+`FINAPP_FX_PROVIDER_B_KEY`, a pricing policy successor listing it after `fx-sim-a`, and
+`fx-sim-b.trade-report`'s rule set v1. Each remits in its own shape (`XBB-`, `FXB-`); its position is
+its own and never nets with its sibling's.
+
 **Steps** - two different people holding `FX_CONTROLLER` (which grants `CROSSBORDER_ADMINISTER`):
 
 1. **Propose** (person A): `POST /v1/operator/cross-border/corridor-policies` with an `Idempotency-Key`,

@@ -572,6 +572,11 @@ the settlement storm, each clearing position discharged only by its own source's
 compiled patterns, empty for zero or two (`SettlementSourcesTest`, the two-pattern case), written
 on `settlement.line.attributed_source_id` at parse and copied to the item; the probe taking the
 first of two matches is recorded in `MUTATION_TESTING.md` §2.
+*(Per counterparty under two counterparties of one kind since `P9-TSK-026` (2026-10-06): each of `fx-sim-a`/`-b`
+and `corridor-sim-a`/`-b` has its own source and its own remittance shape - two sources sharing a shape refuse
+composition - and a settlement source resolves to its own counterparty's rail; a line on one counterparty's report
+naming the other's operation is never allocated. Verified by `SecondFxProviderDatabaseTest`,
+`SecondCorridorRailDatabaseTest`, `EverySettlingPositionHasASourceTest` and `RailOfSourceTest`.)*
 **Phase:** 8
 
 *(Amended at the Phase 8 → 9 transition (2026-10-02), ADR-0078 (`Proposed`), in force when

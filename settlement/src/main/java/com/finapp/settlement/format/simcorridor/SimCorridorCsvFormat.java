@@ -83,6 +83,25 @@ public final class SimCorridorCsvFormat implements SettlementFormat {
      */
     public static final String REMITTANCE_REFERENCE = "XBA-[0-9]{4,12}";
 
+    /**
+     * The shape of one counterparty's remittance references under this format (`P9-TSK-026`, M9.8): {@code XB<letter>-...},
+     * the letter the counterparty's own ({@code A} is {@link #REMITTANCE_REFERENCE}). Each source declares its own, so
+     * a bank statement's line is attributed to exactly one counterparty's report - two counterparties sharing one shape
+     * would leave every such line unattributed ({@code SettlementSources} refuses it at composition).
+     */
+    public static String remittanceReference(char counterpartyLetter) {
+        if (counterpartyLetter < 'A' || counterpartyLetter > 'Z') {
+            throw new IllegalArgumentException("a counterparty's remittance letter is A-Z: " + counterpartyLetter);
+        }
+        return "XB" + counterpartyLetter + "-[0-9]{4,12}";
+    }
+
+    /**
+     * What a report's trailer may carry: any counterparty's shape under this format - the format is the counterparties'
+     * shared wire; which counterparty's reference it is, is the source's own pattern's to say at hop 2.
+     */
+    private static final String REMITTANCE_FAMILY = "XB[A-Z]-[0-9]{4,12}";
+
     /** Defect rows are bounded like their table (`V003`): the first hundred tell the story. */
     private static final int MAX_DEFECTS = 100;
 
@@ -142,7 +161,7 @@ public final class SimCorridorCsvFormat implements SettlementFormat {
     private static final Pattern END_TO_END_REFERENCE =
             Pattern.compile(NO_INSTRUMENT_SHAPE + "[A-Za-z0-9-]{1," + MAX_END_TO_END_LENGTH + "}");
 
-    private static final Pattern REMITTANCE_REFERENCE_SHAPE = Pattern.compile(REMITTANCE_REFERENCE);
+    private static final Pattern REMITTANCE_REFERENCE_SHAPE = Pattern.compile(REMITTANCE_FAMILY);
 
     /** A format name: letters and underscores — no digit, so no digit run hides in it. */
     private static final Pattern FORMAT_NAME = Pattern.compile("[A-Z_]{1,64}");

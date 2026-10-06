@@ -12,6 +12,7 @@ import com.finapp.payments.PaymentRails;
 import com.finapp.payments.RailCapabilities;
 import com.finapp.payments.SimulatedCardPspAdapter;
 import com.finapp.payments.SimulatedInstantSchemeAdapter;
+import com.finapp.settlement.SettlementSourceDescriptor;
 import com.finapp.settlement.SettlementSources;
 import java.util.List;
 import java.util.Optional;
@@ -130,11 +131,12 @@ class EverySettlingPositionHasASourceTest {
         assertThatThrownBy(() -> SettlementBeans.composedSettlementSources(
                         DECLARED,
                         CounterpartyClearings.declared().stream()
-                                .filter(clearing -> !clearing.code().equals("corridor-sim-a"))
+                                // Every corridor's declaration withdrawn (both rails since P9-TSK-026).
+                                .filter(clearing -> !clearing.code().startsWith("corridor-sim-"))
                                 .toList(),
                         SettlementBeans.fxProviderSources()))
                 .isInstanceOf(IllegalStateException.class)
-                .hasMessageContaining("rail 'corridor-sim-a'")
+                .hasMessageContaining("rail 'corridor-sim-")
                 .hasMessageContaining("INV-SET-05");
     }
 
@@ -217,8 +219,32 @@ class EverySettlingPositionHasASourceTest {
                         com.finapp.payments.SimulatedCorridorAdapter.RAIL.capabilities().clearingPurpose().orElseThrow());
         assertThat(CounterpartyClearings.declared())
                 .as("fx-sim-a, read off its FxProviderDeclaration (P9-TSK-011), and corridor-sim-a, read off"
-                        + " its rail declaration (P9-TSK-014)")
+                        + " its rail declaration (P9-TSK-014); their second siblings since P9-TSK-026")
                 .extracting(com.finapp.ledger.CounterpartyClearing::code)
-                .containsExactly("corridor-sim-a", "fx-sim-a");
+                .containsExactly("corridor-sim-a", "corridor-sim-b", "fx-sim-a", "fx-sim-b");
+    }
+
+    @Test
+    @DisplayName("the second providers (P9-TSK-026): each counterparty its own source and its own remittance shape -"
+            + " a bank line is attributed to exactly one; two sources sharing a shape refuse composition")
+    void eachCounterpartyRemitsInItsOwnShape() {
+        SettlementSources sources = SettlementBeans.composedSettlementSources(DECLARED);
+        assertThat(sources.attribute("XBA-20261005")).map(SettlementSourceDescriptor::code).contains("corridor-sim-a.settlement");
+        assertThat(sources.attribute("XBB-20261005")).map(SettlementSourceDescriptor::code).contains("corridor-sim-b.settlement");
+        assertThat(sources.attribute("FXA-20261005")).map(SettlementSourceDescriptor::code).contains("fx-sim-a.trade-report");
+        assertThat(sources.attribute("FXB-20261005")).map(SettlementSourceDescriptor::code).contains("fx-sim-b.trade-report");
+        assertThat(sources.byCode("corridor-sim-b.settlement").orElseThrow().settledCounterparty()).contains("corridor-sim-b");
+        assertThat(sources.byCode("fx-sim-b.trade-report").orElseThrow().settledCounterparty()).contains("fx-sim-b");
+
+        List<SettlementSourceDescriptor> sharing = SettlementBeans.corridorSources().stream()
+                .map(source -> new SettlementSourceDescriptor(source.code(), source.kind(), source.format(),
+                        source.formatVersion(), source.channels(), source.settledPosition(),
+                        Optional.of(com.finapp.settlement.format.simcorridor.SimCorridorCsvFormat.REMITTANCE_REFERENCE),
+                        source.settledCounterparty(), source.settledCurrencies()))
+                .collect(java.util.stream.Collectors.toCollection(java.util.ArrayList::new));
+        sharing.addAll(SettlementBeans.fxProviderSources());
+        assertThatThrownBy(() -> SettlementBeans.composedSettlementSources(DECLARED, CounterpartyClearings.declared(), sharing))
+                .isInstanceOf(IllegalStateException.class)
+                .hasMessageContaining("declare one remittance shape");
     }
 }

@@ -114,6 +114,37 @@ public final class SimulatedCorridorAdapter implements CorridorRail {
                     Duration.ofDays(1),
                     CorridorDeclaration.ChargeBearer.OUR);
 
+    /**
+     * The second simulated corridor rail (`P9-TSK-026`, M9.8): the same wire, its own counterparty -
+     * {@code corridor-sim-b} delivers USD in the US, overlapping {@code corridor-sim-a} on that corridor, and settles
+     * on its OWN clearing position. Version 1.
+     */
+    public static final PaymentRail RAIL_B =
+            new PaymentRail(
+                    RailId.of("corridor-sim-b"),
+                    1,
+                    new RailCapabilities(
+                            InteractionModel.PUSH,
+                            RailCapabilities.Finality.FINAL_ON_ACCEPTANCE,
+                            Set.of(),
+                            RailCapabilities.RefundMode.NONE,
+                            RailCapabilities.SettlementModel.DEFERRED_VIA_CLEARING,
+                            Optional.of(OUTCOME_DEADLINE),
+                            RailCapabilities.DisputeModel.NONE,
+                            Optional.of(Set.of(CurrencyCode.of("USD"))),
+                            Map.of(CurrencyCode.of("USD"), Money.of(new BigDecimal("10000.00"), CurrencyCode.of("USD"))),
+                            Optional.of(AccountPurpose.CORRIDOR_CLEARING)));
+
+    /** The corridor facts of {@link #RAIL_B}: US/USD only. */
+    public static final CorridorDeclaration DECLARATION_B =
+            new CorridorDeclaration(
+                    RAIL_B.id(),
+                    Set.of(new CorridorDeclaration.Coverage(CountryCode.of("US"), CurrencyCode.of("USD"))),
+                    Duration.ofDays(30),
+                    Duration.ofHours(4),
+                    Duration.ofDays(1),
+                    CorridorDeclaration.ChargeBearer.OUR);
+
     private static final Pattern STATUS = field("status");
     private static final Pattern REASON = field("reason");
     private static final Pattern DESTINATION_REF = field("destinationRef");
@@ -129,12 +160,23 @@ public final class SimulatedCorridorAdapter implements CorridorRail {
     private static final Pattern RETURN_AMOUNT = field("returnAmount");
     private static final Pattern RETURNED_AT = field("returnedAt");
 
+    private final PaymentRail rail;
     private final URI baseUrl;
     private final Duration timeout;
     private final byte[] key;
     private final HttpClient http;
 
+    /** {@code corridor-sim-a}. */
     public SimulatedCorridorAdapter(URI baseUrl, Duration timeout, byte[] key) {
+        this(RAIL, baseUrl, timeout, key);
+    }
+
+    /** The simulated corridor {@code rail} - one of this build's declared simulated rails (`P9-TSK-026`). */
+    public SimulatedCorridorAdapter(PaymentRail rail, URI baseUrl, Duration timeout, byte[] key) {
+        this.rail = Objects.requireNonNull(rail, "rail must not be null");
+        if (!rail.equals(RAIL) && !rail.equals(RAIL_B)) {
+            throw new IllegalArgumentException("not a simulated corridor rail this build declares: " + rail.id().value());
+        }
         this.baseUrl = Objects.requireNonNull(baseUrl, "baseUrl must not be null");
         this.timeout = Objects.requireNonNull(timeout, "timeout must not be null");
         Objects.requireNonNull(key, "key must not be null");
@@ -147,7 +189,7 @@ public final class SimulatedCorridorAdapter implements CorridorRail {
 
     @Override
     public RailId id() {
-        return RAIL.id();
+        return rail.id();
     }
 
     @Override
@@ -258,7 +300,7 @@ public final class SimulatedCorridorAdapter implements CorridorRail {
     /** Never the key. */
     @Override
     public String toString() {
-        return "SimulatedCorridorAdapter[" + RAIL.id().value() + "]";
+        return "SimulatedCorridorAdapter[" + rail.id().value() + "]";
     }
 
     // -----------------------------------------------------------------
