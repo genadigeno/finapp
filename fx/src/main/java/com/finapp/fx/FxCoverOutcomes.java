@@ -48,6 +48,10 @@ import lombok.extern.slf4j.Slf4j;
  * the entry, moves the cover {@code EXECUTED}, opens both leg expectations on the provider's own
  * clearing ({@link FxSettlementExpectations}), and writes its event and audit record - one commit.
  * No customer line is touched by any outcome ({@code INV-FX-09}).
+ *
+ * <p><strong>The wanted position</strong> (`P9-TSK-021`, ADR-0077 section 7): an {@code UNWIND} closes its quote's
+ * plan reversed; a {@code COVER} executed for a quote that no longer wants it - abandoned while the cover was in
+ * flight - creates its unwind in this same transaction, under the locks this applier already holds.
  */
 @Slf4j
 public final class FxCoverOutcomes {
@@ -92,6 +96,7 @@ public final class FxCoverOutcomes {
     private final AuditWriter<Connection> audit;
     private final IdGenerator ids;
     private final Clock clock;
+    private final CoverUnwinds unwinds;
 
     public FxCoverOutcomes(
             CoverStore covers,
@@ -104,7 +109,8 @@ public final class FxCoverOutcomes {
             OutboxWriter<Connection> outbox,
             AuditWriter<Connection> audit,
             IdGenerator ids,
-            Clock clock) {
+            Clock clock,
+            CoverUnwinds unwinds) {
         this.covers = Objects.requireNonNull(covers, "covers must not be null");
         this.quotes = Objects.requireNonNull(quotes, "quotes must not be null");
         this.providers = Objects.requireNonNull(providers, "providers must not be null");
@@ -116,6 +122,7 @@ public final class FxCoverOutcomes {
         this.audit = Objects.requireNonNull(audit, "audit must not be null");
         this.ids = Objects.requireNonNull(ids, "ids must not be null");
         this.clock = Objects.requireNonNull(clock, "clock must not be null");
+        this.unwinds = Objects.requireNonNull(unwinds, "unwinds must not be null");
     }
 
     /**
@@ -132,7 +139,7 @@ public final class FxCoverOutcomes {
         CoverStore.CoverRow seen = covers.find(unitOfWork, coverId)
                 .orElseThrow(() -> new IllegalArgumentException("no such cover"));
         // The lock order: the quote, its trade, then the cover - re-judged on the locked row.
-        covers.lockWanted(unitOfWork, seen.quoteId());
+        CoverStore.Wanted wanted = covers.lockWanted(unitOfWork, seen.quoteId());
         CoverStore.CoverRow locked = covers.lock(unitOfWork, coverId)
                 .orElseThrow(() -> new IllegalStateException("a read cover vanished"));
         CoverStore.AttemptRow answered = covers.attempt(unitOfWork, coverId, attempt)
@@ -147,7 +154,7 @@ public final class FxCoverOutcomes {
                     : still(locked);
         }
         return switch (answer) {
-            case FxProvider.ExecutionAnswer.Executed executed -> executed(unitOfWork, locked, answered, executed, actor);
+            case FxProvider.ExecutionAnswer.Executed executed -> executed(unitOfWork, locked, answered, executed, wanted, actor);
             case FxProvider.ExecutionAnswer.Rejected rejected -> rejected(unitOfWork, locked, rejected);
             case FxProvider.ExecutionAnswer.Indeterminate indeterminate ->
                     channel == Channel.ANSWER && locked.status() == CoverStatus.DISPATCHED
@@ -162,7 +169,7 @@ public final class FxCoverOutcomes {
 
     private Applied executed(
             Connection unitOfWork, CoverStore.CoverRow locked, CoverStore.AttemptRow attempt,
-            FxProvider.ExecutionAnswer.Executed executed, Actor actor) {
+            FxProvider.ExecutionAnswer.Executed executed, CoverStore.Wanted wanted, Actor actor) {
         if (locked.status() == CoverStatus.EXECUTED) {
             return still(locked); // a duplicate of the applied answer: converged.
         }
@@ -171,7 +178,7 @@ public final class FxCoverOutcomes {
         }
         QuoteStore.PlanRow planRow = quotes.plan(unitOfWork, locked.quoteId())
                 .orElseThrow(() -> new IllegalStateException("a cover's quote has its plan"));
-        CoverLines.Plan plan = CoverLines.Plan.of(planRow);
+        CoverLines.Plan plan = CoverLines.Plan.of(planRow, locked.kind());
         CoverLines.Execution execution = new CoverLines.Execution(executed.sold(), executed.bought());
         if (!CoverLines.coherent(plan, execution)) {
             // Not an answer about this cover's currencies: unusable, so not knowledge.
@@ -245,6 +252,10 @@ public final class FxCoverOutcomes {
         if (realised.offPlan()) {
             log.error("ALERT: cover {} executed off its plan's fixed leg at provider {} - booked, realised result posted",
                     locked.id(), locked.providerCode());
+        }
+        // 5. The wanted position: a cover executed for a quote abandoned meanwhile is unwound now, under these locks.
+        if (locked.kind() == CoverKind.COVER && !wanted.wanted()) {
+            unwinds.unwind(unitOfWork, reread(unitOfWork, locked), actor);
         }
         List<CoverObserver.Outcome> outcomes = new ArrayList<>(List.of(CoverObserver.Outcome.EXECUTED));
         if (realised.offPlan()) {

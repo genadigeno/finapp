@@ -1,6 +1,6 @@
 # Task History
 
-The per-task completion records that accumulated behind `## Current Task` - 214 "Previously" blocks, newest first, from `P9-TSK-019` back to project initiation. *(`X-TSK-016` is cross-cutting and completed after `P9-TSK-010` and before `P9-TSK-011`, so it stands between them.)* *(`X-TSK-005` is cross-cutting and completed after `P7-TSK-014` and before `P7-TSK-015`, so it stands between them; its record came in with its branch's merge.)* *(`X-TSK-004` is cross-cutting and completed after the Phase 6 → 7 transition, so it stands second, between `P7-TSK-001` and the transition's record - the transition's block moved here by `P7-TSK-001`'s gate, exactly as an earlier form of this note said it would.)*
+The per-task completion records that accumulated behind `## Current Task` - 215 "Previously" blocks, newest first, from `P9-TSK-020` back to project initiation. *(`X-TSK-016` is cross-cutting and completed after `P9-TSK-010` and before `P9-TSK-011`, so it stands between them.)* *(`X-TSK-005` is cross-cutting and completed after `P7-TSK-014` and before `P7-TSK-015`, so it stands between them; its record came in with its branch's merge.)* *(`X-TSK-004` is cross-cutting and completed after the Phase 6 → 7 transition, so it stands second, between `P7-TSK-001` and the transition's record - the transition's block moved here by `P7-TSK-001`'s gate, exactly as an earlier form of this note said it would.)*
 
 **Archive.** These records were moved verbatim out of
 [`CURRENT_STATE.md`](../CURRENT_STATE.md) on 2026-09-20 so that the canonical description of
@@ -12,6 +12,37 @@ Current state: [`CURRENT_STATE.md`](../CURRENT_STATE.md) ·
 Authoritative backlog: [`BACKLOG.md`](../BACKLOG.md)
 
 ---
+
+### Previously
+
+**`P9-TSK-020` — Outbound resolution and completion** — `COMPLETE` (2026-10-06). **M9.6 AT 3 OF 5: every corridor
+answer resolved into exactly one outcome, with exactly one entry at acceptance** (PHASE_9_PLAN.md §12.4(g), §12.8;
+ADR-0079, ADR-0083; `INV-XB-01`, `INV-XB-03`, `INV-LIFE-03`, `INV-IDEM-04`, `INV-PAY-01`, `INV-SET-02`, `INV-FX-04`).
+**payments `V026`**: the claim's `OUTBOUND_CREDIT` subject. **The domain**: payments' `OutboundCreditOutcomes` - the one
+applier of the synchronous send's answer, a callback's hinted inquiry and the sweep's, on the locked credit, acting
+once: `RECEIVED` (the reference stored once), `UNKNOWN`, the completion as ONE transaction in the plan's order (the
+acting exit, the claim, the hold released, the entry `outbound-credit:<id>` - its lines checked against the offer, the
+hold and the instruction (`INV-XB-03`) - the trade booked, the quote `EXECUTED`, the payment `IN_TRANSIT`, the
+`CROSSBORDER_PAYOUT` expectation keyed by `E` and the provider's reference on the corridor's own clearing), an
+acceptance with a delivery applied completion-then-delivery in that transaction, and the failures `DECLINED`,
+`PROVIDER_UNAVAILABLE` (a first send only) and `NEVER_RECEIVED` (from `DISPATCHED`/`UNKNOWN`, past the declared deadline
+plus margin since the latest permit, re-judged on the locked row) posting nothing, releasing the hold and abandoning
+the quote; `OutboundCreditResolution` (the leaderless sweep and the hinted inquiry) and its schedule; the
+`OutboundCreditComposition` port, `app`'s `CrossBorderCompletion` over crossborder's `PaymentProgress` and fx's
+`CrossBorderCompletionBooking` (`ConversionLines.composeCrossBorder`, the one place the FX books are named); fx's plan
+replay learning the cross-border entry and pricing under the quote's purpose; the corridor callback door `POST
+/v1/providers/payments/corridor/webhooks` (`FINAPP_CORRIDOR_WEBHOOK_KEY`, `202`, a hint triggering the authenticated
+inquiry); the stuck and received gauges; one audited action. **Deviations**: a callback naming no credit of ours is
+recorded by its dedupe only (`provider_evidence` has no unattributed subject); a `Returned` answer applies the
+completion and leaves the return to `P9-TSK-023`, a `RECALLED` one to `-024`; the plan's four scenario suites are one
+suite's methods (`OutboundCreditResolutionDatabaseTest`), the takeover re-send's provider count is `P9-TSK-019`'s
+one-key race, and first-send `NOTHING_SENT` has no counted test; `finapp.crossborder.payment.latency` and
+`.in.transit.age` are not built. **PROBES** (NINE PROBES, NINE CAUGHT), every restore byte-identical (sha256-verified;
+`MUTATION_TESTING.md` §2 +9 rows). **Multi-instance PASS** - ten appliers and a racing sweep make one transition,
+one entry, one fee line, one claim, one trade and one expectation; ten signed callbacks and a racing sweep one effect
+(each counted). **NEXT**: `P9-TSK-021` `READY`. **Verified** by fresh runs - the fleet-wide hermetic tier 2534 across 415 suites and 18 modules;
+the architecture tier 157 across 27; the task's own database suites while built (OutboundCreditResolutionDatabaseTest 8, CrossBorderPaymentDatabaseTest 12, CrossBorderOfferDatabaseTest 9, the crossborder module 23 across 4); ALL 0 FAILURES - the
+other database tiers skipped on the owner's instruction.
 
 ### Previously
 

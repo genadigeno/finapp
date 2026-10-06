@@ -511,7 +511,8 @@ class FxCoverDatabaseTest {
 
     private FxCoverOutcomes outcomes(FxSettlementExpectations legs, AuditWriter<Connection> auditWriter) {
         return new FxCoverOutcomes(covers, quotes, providers, new ChartOfAccounts<>(ledgerAccountStore), postings, legs,
-                evidence, outbox, auditWriter, ids, Clock.systemUTC());
+                evidence, outbox, auditWriter, ids, Clock.systemUTC(),
+                new com.finapp.fx.CoverUnwinds(covers, auditWriter, ids, Clock.systemUTC()));
     }
 
     private static FxProvider.ExecutionAnswer.Executed executedAtThePlan() {

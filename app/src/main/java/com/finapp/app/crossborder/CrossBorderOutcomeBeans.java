@@ -55,9 +55,10 @@ public class CrossBorderOutcomeBeans {
             LedgerAccountStore<Connection> ledgerAccountStore,
             OutboxWriter<Connection> outboxWriter,
             IdGenerator idGenerator,
-            Clock clock) {
+            Clock clock,
+            com.finapp.fx.CoverUnwinds coverUnwinds) {
         return new CrossBorderCompletionBooking(quoteStore, tradeStore, new ChartOfAccounts<>(ledgerAccountStore),
-                outboxWriter, idGenerator, clock);
+                outboxWriter, idGenerator, clock, coverUnwinds);
     }
 
     @Bean

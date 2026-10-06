@@ -123,6 +123,73 @@ public final class JdbcCoverStore implements CoverStore {
     }
 
     @Override
+    public Optional<CoverRow> lockByQuote(Connection unitOfWork, FxQuoteId quoteId, CoverKind kind) {
+        return byQuote(unitOfWork, quoteId, kind, " FOR UPDATE", "locking a quote's cover");
+    }
+
+    @Override
+    public Optional<CoverRow> findByQuote(Connection unitOfWork, FxQuoteId quoteId, CoverKind kind) {
+        return byQuote(unitOfWork, quoteId, kind, "", "reading a quote's cover");
+    }
+
+    private Optional<CoverRow> byQuote(Connection unitOfWork, FxQuoteId quoteId, CoverKind kind, String lock, String operation) {
+        Objects.requireNonNull(quoteId, "quoteId must not be null");
+        Objects.requireNonNull(kind, "kind must not be null");
+        try (PreparedStatement select = unitOfWork.prepareStatement(
+                "SELECT " + COLUMNS + " FROM fx.cover c WHERE c.quote_id = ? AND c.kind = ?" + lock)) {
+            select.setObject(1, quoteId.value());
+            select.setString(2, kind.name());
+            return readAll(select).stream().findFirst();
+        } catch (SQLException failure) {
+            throw failure(operation, failure);
+        }
+    }
+
+    @Override
+    public boolean insertUnwind(Connection unitOfWork, UnwindDraft draft) {
+        Objects.requireNonNull(draft, "draft must not be null");
+        try (PreparedStatement insert = unitOfWork.prepareStatement(
+                "INSERT INTO fx.cover (id, quote_id, kind, status, provider_code, source_currency, destination_currency,"
+                        + " fixed_side, fixed_amount_minor, fixed_scale, attempts, last_dispatched_at, caused_by_event_id,"
+                        + " correlation_id)"
+                        + " VALUES (?, ?, 'UNWIND', 'DISPATCHED', ?, ?, ?, ?, ?, ?, 1, statement_timestamp(), ?, ?)"
+                        // No conflict target: UNIQUE (quote_id, kind) alone decides there is one unwind.
+                        + " ON CONFLICT DO NOTHING")) {
+            int i = 1;
+            insert.setObject(i++, draft.id());
+            insert.setObject(i++, draft.quoteId().value());
+            insert.setString(i++, draft.providerCode());
+            insert.setString(i++, draft.source().code());
+            insert.setString(i++, draft.destination().code());
+            insert.setString(i++, draft.fixedSide().name());
+            insert.setLong(i++, draft.fixedAmount().minorUnits());
+            insert.setInt(i++, draft.fixedAmount().scale());
+            insert.setObject(i++, draft.causedByEventId());
+            insert.setString(i, draft.correlationId());
+            return insert.executeUpdate() == 1;
+        } catch (SQLException failure) {
+            throw failure("creating a quote's unwind", failure);
+        }
+    }
+
+    @Override
+    public boolean insertFirstAttempt(Connection unitOfWork, UUID coverId, String clientReference, String providerQuoteReference) {
+        Objects.requireNonNull(coverId, "coverId must not be null");
+        Objects.requireNonNull(clientReference, "clientReference must not be null");
+        Objects.requireNonNull(providerQuoteReference, "providerQuoteReference must not be null");
+        try (PreparedStatement insert = unitOfWork.prepareStatement(
+                "INSERT INTO fx.cover_attempt (cover_id, attempt, client_reference, provider_quote_ref)"
+                        + " VALUES (?, 1, ?, ?) ON CONFLICT (cover_id, attempt) DO NOTHING")) {
+            insert.setObject(1, coverId);
+            insert.setString(2, clientReference);
+            insert.setString(3, providerQuoteReference);
+            return insert.executeUpdate() == 1;
+        } catch (SQLException failure) {
+            throw failure("pricing an unwind's first attempt", failure);
+        }
+    }
+
+    @Override
     public Optional<AttemptRow> attemptByReference(Connection unitOfWork, String clientReference) {
         Objects.requireNonNull(clientReference, "clientReference must not be null");
         try (PreparedStatement select = unitOfWork.prepareStatement(

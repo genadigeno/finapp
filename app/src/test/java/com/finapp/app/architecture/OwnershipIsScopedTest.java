@@ -325,6 +325,13 @@ class OwnershipIsScopedTest {
                                     Scope.OWNER_SCOPED,
                                     "P9-TSK-008. POST /v1/me/fx/quotes/{id}/cancellation - findOwned's statement plus FOR" + " UPDATE, the cancellation's serialization point against the sweep. Same ownership" + " predicate: a stranger's cancel finds nothing to lock.")),
                     Map.entry(
+                            "com.finapp.fx.JdbcCoverStore.byQuote",
+                            new Entry(
+                                    Scope.ADMINISTERED,
+                                    "P9-TSK-021. A quote's cover of one kind, read or locked by the wanted-position rule"
+                                        + " (CoverUnwinds) inside the abandonment writer's transaction, the quote already"
+                                        + " locked by lockOwned under its owner - never a request value, never a surface.")),
+                    Map.entry(
                             "com.finapp.fx.JdbcCoverStore.lockWanted",
                             new Entry(
                                     Scope.AUTHORITATIVE_ID,

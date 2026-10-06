@@ -96,6 +96,13 @@ public enum FxAuditAction implements AuditableAction {
                     + " is recorded.",
             false),
 
+    COVER_UNWOUND(
+            "fx.CoverUnwound",
+            "An executed cover its quote no longer wants was unwound: its mirror created - the same provider, the"
+                    + " currencies swapped, the fixed amount bought back - by whichever writer found the position"
+                    + " unwanted under the lock order (P9-TSK-021); acting only.",
+            false),
+
     COVER_VOIDED(
             "fx.CoverVoided",
             "A definitively rejected cover its quote no longer wants was voided; nothing was ever"
