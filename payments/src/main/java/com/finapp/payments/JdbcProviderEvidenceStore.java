@@ -47,6 +47,7 @@ public final class JdbcProviderEvidenceStore implements ProviderEvidenceStore<Co
                 null,
                 null,
                 null,
+                null,
                 kind,
                 payload,
                 recordedAt);
@@ -60,8 +61,15 @@ public final class JdbcProviderEvidenceStore implements ProviderEvidenceStore<Co
             byte[] payload,
             Instant recordedAt) {
         Objects.requireNonNull(withdrawal, "withdrawal must not be null");
-        appendRow(unitOfWork, null, null, withdrawal.value(), null, null, kind, payload,
+        appendRow(unitOfWork, null, null, withdrawal.value(), null, null, null, kind, payload,
                 recordedAt);
+    }
+
+    @Override
+    public void appendForOutboundCredit(
+            Connection unitOfWork, OutboundCreditId credit, EvidenceKind kind, byte[] payload, Instant recordedAt) {
+        Objects.requireNonNull(credit, "credit must not be null");
+        appendRow(unitOfWork, null, null, null, null, null, credit.value(), kind, payload, recordedAt);
     }
 
     @Override
@@ -72,7 +80,7 @@ public final class JdbcProviderEvidenceStore implements ProviderEvidenceStore<Co
             byte[] payload,
             Instant recordedAt) {
         Objects.requireNonNull(response, "response must not be null");
-        appendRow(unitOfWork, null, null, null, response.value(), null, kind, payload,
+        appendRow(unitOfWork, null, null, null, response.value(), null, null, kind, payload,
                 recordedAt);
     }
 
@@ -84,7 +92,7 @@ public final class JdbcProviderEvidenceStore implements ProviderEvidenceStore<Co
             byte[] payload,
             Instant recordedAt) {
         Objects.requireNonNull(unmatchedConfirmation, "unmatchedConfirmation must not be null");
-        appendRow(unitOfWork, null, null, null, null, unmatchedConfirmation, kind, payload,
+        appendRow(unitOfWork, null, null, null, null, unmatchedConfirmation, null, kind, payload,
                 recordedAt);
     }
 
@@ -95,6 +103,7 @@ public final class JdbcProviderEvidenceStore implements ProviderEvidenceStore<Co
             java.util.UUID withdrawalId,
             java.util.UUID disputeResponseId,
             java.util.UUID unmatchedConfirmationId,
+            java.util.UUID outboundCreditId,
             EvidenceKind kind,
             byte[] payload,
             Instant recordedAt) {
@@ -105,23 +114,24 @@ public final class JdbcProviderEvidenceStore implements ProviderEvidenceStore<Co
                 unitOfWork.prepareStatement(
                         "INSERT INTO payments.provider_evidence"
                                 + " (id, attempt_id, refund_id, withdrawal_id,"
-                                + " dispute_response_id, unmatched_confirmation_id, kind,"
+                                + " dispute_response_id, unmatched_confirmation_id, outbound_credit_id, kind,"
                                 + " content_ciphertext, content_nonce, key_version,"
                                 + " checksum_sha256, content_length, recorded_at)"
-                                + " VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)")) {
+                                + " VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)")) {
             insert.setObject(1, ids.next());
             insert.setObject(2, attemptId);
             insert.setObject(3, refundId);
             insert.setObject(4, withdrawalId);
             insert.setObject(5, disputeResponseId);
             insert.setObject(6, unmatchedConfirmationId);
-            insert.setString(7, kind.name());
-            insert.setBytes(8, encrypted.ciphertext());
-            insert.setBytes(9, encrypted.nonce());
-            insert.setInt(10, encrypted.keyVersion());
-            insert.setBytes(11, sha256(payload));
-            insert.setInt(12, payload.length);
-            insert.setTimestamp(13, Timestamp.from(recordedAt));
+            insert.setObject(7, outboundCreditId);
+            insert.setString(8, kind.name());
+            insert.setBytes(9, encrypted.ciphertext());
+            insert.setBytes(10, encrypted.nonce());
+            insert.setInt(11, encrypted.keyVersion());
+            insert.setBytes(12, sha256(payload));
+            insert.setInt(13, payload.length);
+            insert.setTimestamp(14, Timestamp.from(recordedAt));
             insert.executeUpdate();
         } catch (SQLException failure) {
             throw new PaymentsStorageException(

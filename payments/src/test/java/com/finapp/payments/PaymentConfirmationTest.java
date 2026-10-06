@@ -592,6 +592,14 @@ class PaymentConfirmationTest {
         }
 
         @Override
+        public Optional<RoutingDecision> findLatestDecisionForOutboundCredit(
+                Connection unitOfWork, OutboundCreditId credit) {
+            return decisions.values().stream()
+                    .filter(d -> d.subject().outboundCredit().map(credit::equals).orElse(false))
+                    .reduce((first, second) -> second);
+        }
+
+        @Override
         public Optional<RoutingDecision> findLatestDecisionForWithdrawal(
                 Connection unitOfWork, WithdrawalId withdrawal) {
             return decisions.values().stream()
@@ -933,6 +941,12 @@ class PaymentConfirmationTest {
         public void appendForUnmatched(
                 Connection uow, java.util.UUID unmatchedConfirmation, EvidenceKind kind,
                 byte[] payload, Instant recordedAt) {
+            payloads.add(payload.clone());
+        }
+
+        @Override
+        public void appendForOutboundCredit(
+                Connection uow, OutboundCreditId credit, EvidenceKind kind, byte[] payload, Instant recordedAt) {
             payloads.add(payload.clone());
         }
 

@@ -704,6 +704,12 @@ class PaymentCaptureTest {
         }
 
         @Override
+        public void appendForOutboundCredit(
+                Connection uow, OutboundCreditId credit, EvidenceKind kind, byte[] payload, Instant recordedAt) {
+            payloads.add(payload.clone());
+        }
+
+        @Override
         public List<byte[]> payloadsFor(Connection uow, PaymentAttemptId attempt) {
             return List.copyOf(payloads);
         }

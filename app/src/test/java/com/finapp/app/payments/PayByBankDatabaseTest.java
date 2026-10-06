@@ -195,7 +195,7 @@ class PayByBankDatabaseTest {
                                 + " ON v.id = d.policy_version_id WHERE d.intent_id = ?"
                                 + " AND d.chosen_rail IS NOT NULL",
                         UUID.fromString(paymentId)))
-                .isEqualTo("instant|4");
+                .isEqualTo("instant|5");
 
         // One executed fact; the outcome applied as the platform; and the handle reaches
         // NO event and NO audit record (INV-AUD-02: a capability URL is a credential).

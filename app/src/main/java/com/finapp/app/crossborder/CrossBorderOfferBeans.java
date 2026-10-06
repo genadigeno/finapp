@@ -33,8 +33,26 @@ public class CrossBorderOfferBeans {
     }
 
     @Bean
-    CrossBorderFx crossBorderFx(QuoteIssuance quoteIssuance, QuoteLifecycle quoteLifecycle) {
-        return new FxCrossBorderQuotes(quoteIssuance, quoteLifecycle);
+    CrossBorderFx crossBorderFx(
+            QuoteIssuance quoteIssuance,
+            QuoteLifecycle quoteLifecycle,
+            com.finapp.fx.CrossBorderAcceptance crossBorderAcceptance,
+            com.finapp.fx.CoverDispatchNudge coverDispatchNudge) {
+        return new FxCrossBorderQuotes(quoteIssuance, quoteLifecycle, crossBorderAcceptance, coverDispatchNudge);
+    }
+
+    /** fx's acceptance of a cross-border quote inside the payment's authorization (`P9-TSK-019`). */
+    @Bean
+    com.finapp.fx.CrossBorderAcceptance crossBorderAcceptance(
+            com.finapp.fx.QuoteStore quoteStore,
+            com.finapp.fx.TradeStore tradeStore,
+            com.finapp.fx.FxAvailability fxAvailability,
+            com.finapp.fx.ConversionParticipants conversionParticipants,
+            com.finapp.platform.outbox.OutboxWriter<Connection> outboxWriter,
+            IdGenerator idGenerator,
+            Clock clock) {
+        return new com.finapp.fx.CrossBorderAcceptance(quoteStore, tradeStore, fxAvailability, conversionParticipants,
+                outboxWriter, idGenerator, clock);
     }
 
     @Bean

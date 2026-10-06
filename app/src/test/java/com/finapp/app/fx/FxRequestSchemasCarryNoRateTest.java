@@ -36,7 +36,8 @@ class FxRequestSchemasCarryNoRateTest {
                 Files.readString(repository().resolve("docs/api/openapi.json"), StandardCharsets.UTF_8));
         List<String> scanned = new ArrayList<>();
         List<String> violations = violations(contract, scanned);
-        assertThat(scanned).as("not vacuous").contains("QuoteRequestBody", "PricingPolicyRequest", "PairRequest", "CrossBorderQuoteRequest");
+        assertThat(scanned).as("not vacuous").contains("QuoteRequestBody", "PricingPolicyRequest", "PairRequest", "CrossBorderQuoteRequest",
+                "CrossBorderPaymentRequest");
         assertThat(violations).isEmpty();
     }
 

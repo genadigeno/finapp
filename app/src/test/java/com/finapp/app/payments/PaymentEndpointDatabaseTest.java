@@ -372,11 +372,11 @@ class PaymentEndpointDatabaseTest {
                                 + " JOIN payments.routing_policy_version v"
                                 + " ON v.id = d.policy_version_id WHERE d.id = ?",
                         UUID.fromString(decisionId)))
-                .as("the pin resolves to the seeded version in force (INV-HIST-04) - version 4"
-                        + " since P7-TSK-011 carried the standing routes forward beside the"
-                        + " wallet pay-in (V019's whole-version seed; the newest-effective"
+                .as("the pin resolves to the seeded version in force (INV-HIST-04) - version 5"
+                        + " since P9-TSK-019 carried the standing routes forward beside the"
+                        + " cross-border credit (V025's whole-version seed; the newest-effective"
                         + " resolution is the design, and rule 0 is byte-for-byte V013's)")
-                .isEqualTo("4");
+                .isEqualTo("5");
         assertThat(oneString(
                         "SELECT verdict || '|' || rail_available || '|' || descriptor_version"
                                 + " FROM payments.routing_decision_step WHERE decision_id = ?",

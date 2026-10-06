@@ -446,6 +446,9 @@ class CredentialReachesNoEmittedSinkTest {
                         // P9-TSK-018: the cross-border quote request - a beneficiary id, a currency, a side
                         // and an amount as a decimal string. No secret, and never a rate (closed body).
                         "CrossBorderQuoteRequest",
+                        // P9-TSK-019: the cross-border payment request - a quote id. No secret; closed:
+                        // never an amount or a rate.
+                        "CrossBorderPaymentRequest",
                         // P9-TSK-008: the customer's quote request - a pair, a fixed side and an
                         // amount as a decimal string. No secret, and closed: no rate can be sent.
                         "QuoteRequestBody",

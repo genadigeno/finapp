@@ -38,6 +38,12 @@ public interface ProviderEvidenceStore<T> {
      * own door so the two-subject callers above ripple nowhere. `V016` widens the
      * at-most-one-subject rule to the trio.
      */
+    /**
+     * Retains an outbound credit's provider bytes verbatim (`P9-TSK-019`) - the sixth subject, its own door;
+     * `V025` widens the at-most-one-subject rule to six.
+     */
+    void appendForOutboundCredit(T unitOfWork, OutboundCreditId credit, EvidenceKind kind, byte[] payload, Instant recordedAt);
+
     void appendForWithdrawal(
             T unitOfWork,
             WithdrawalId withdrawal,

@@ -15,27 +15,40 @@ import java.util.Optional;
  * accumulating beneath it.
  */
 public record RoutingSubject(
-        Optional<PaymentIntentId> intent, Optional<WithdrawalId> withdrawal) {
+        Optional<PaymentIntentId> intent, Optional<WithdrawalId> withdrawal, Optional<OutboundCreditId> outboundCredit) {
 
     public RoutingSubject {
         Objects.requireNonNull(intent, "intent must not be null");
         Objects.requireNonNull(withdrawal, "withdrawal must not be null");
-        if (intent.isPresent() == withdrawal.isPresent()) {
+        Objects.requireNonNull(outboundCredit, "outboundCredit must not be null");
+        int present = (intent.isPresent() ? 1 : 0) + (withdrawal.isPresent() ? 1 : 0) + (outboundCredit.isPresent() ? 1 : 0);
+        if (present != 1) {
             throw new IllegalArgumentException(
-                    "a routing decision has exactly one subject: an intent or a withdrawal"
-                            + " (ADR-0060 §2)");
+                    "a routing decision has exactly one subject: an intent, a withdrawal or an outbound credit"
+                            + " (ADR-0060 §2, ADR-0080 section 5b)");
         }
+    }
+
+    /** An intent's or a withdrawal's subject - the two before `P9-TSK-019`. */
+    public RoutingSubject(Optional<PaymentIntentId> intent, Optional<WithdrawalId> withdrawal) {
+        this(intent, withdrawal, Optional.empty());
     }
 
     public static RoutingSubject ofIntent(PaymentIntentId intent) {
         return new RoutingSubject(
                 Optional.of(Objects.requireNonNull(intent, "intent must not be null")),
-                Optional.empty());
+                Optional.empty(), Optional.empty());
     }
 
     public static RoutingSubject ofWithdrawal(WithdrawalId withdrawal) {
         return new RoutingSubject(
                 Optional.empty(),
-                Optional.of(Objects.requireNonNull(withdrawal, "withdrawal must not be null")));
+                Optional.of(Objects.requireNonNull(withdrawal, "withdrawal must not be null")), Optional.empty());
+    }
+
+    /** Routing's third subject: a cross-border payment's outbound credit (`P9-TSK-019`). */
+    public static RoutingSubject ofOutboundCredit(OutboundCreditId credit) {
+        return new RoutingSubject(Optional.empty(), Optional.empty(),
+                Optional.of(Objects.requireNonNull(credit, "credit must not be null")));
     }
 }

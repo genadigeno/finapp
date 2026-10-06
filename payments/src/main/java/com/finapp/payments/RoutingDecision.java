@@ -47,6 +47,8 @@ public final class RoutingDecision {
     private final Optional<RailId> chosenRail;
     private final List<RoutingStep> steps;
     private final Instant createdAt;
+    private Optional<com.finapp.sharedkernel.money.CountryCode> destinationCountry = Optional.empty();
+    private Optional<java.util.Set<RailId>> reachableRails = Optional.empty();
 
     private RoutingDecision(
             RoutingDecisionId id,
@@ -141,7 +143,7 @@ public final class RoutingDecision {
         for (int index = 0; index < plan.steps().size(); index++) {
             steps.add(RoutingStep.from(index, plan.steps().get(index)));
         }
-        return new RoutingDecision(
+        RoutingDecision decision = new RoutingDecision(
                 RoutingDecisionId.next(ids),
                 subject,
                 policyVersionId,
@@ -152,6 +154,9 @@ public final class RoutingDecision {
                 plan.chosen(),
                 steps,
                 Instant.now(clock));
+        decision.destinationCountry = inputs.destinationCountry();
+        decision.reachableRails = inputs.reachableRails();
+        return decision;
     }
 
     /** A decision read back from storage, through the same constructor. */
@@ -175,6 +180,38 @@ public final class RoutingDecision {
      * The fallback's one lawful append (`INV-RAIL-02`): the chosen rail's dispatch met a
      * refused connection — {@code NOTHING_SENT}, knowledge that nothing left the platform.
      */
+    /**
+     * A decision with its third subject's inputs (`P9-TSK-019`): the destination country and the rails that
+     * reach it, stored so the decision recomputes.
+     */
+    public static RoutingDecision rehydrate(
+            RoutingDecisionId id,
+            RoutingSubject subject,
+            RoutingPolicyVersionId policyVersionId,
+            PaymentDirection direction,
+            InstrumentKind instrumentKind,
+            Money amount,
+            Optional<Integer> matchedRuleIndex,
+            Optional<RailId> chosenRail,
+            List<RoutingStep> steps,
+            Instant createdAt,
+            Optional<com.finapp.sharedkernel.money.CountryCode> destinationCountry,
+            Optional<java.util.Set<RailId>> reachableRails) {
+        RoutingDecision decision = rehydrate(id, subject, policyVersionId, direction, instrumentKind, amount,
+                matchedRuleIndex, chosenRail, steps, createdAt);
+        decision.destinationCountry = Objects.requireNonNull(destinationCountry, "destinationCountry must not be null");
+        decision.reachableRails = Objects.requireNonNull(reachableRails, "reachableRails must not be null");
+        return decision;
+    }
+
+    public Optional<com.finapp.sharedkernel.money.CountryCode> destinationCountry() {
+        return destinationCountry;
+    }
+
+    public Optional<java.util.Set<RailId>> reachableRails() {
+        return reachableRails;
+    }
+
     public RoutingDecision abandonedOnNothingSent() {
         RailId dispatched = chosenRail.orElseThrow(
                 () -> new IllegalStateException(
@@ -207,9 +244,12 @@ public final class RoutingDecision {
                         .reduce((first, second) -> second)
                         .orElseThrow()
                         .descriptorVersion()));
-        return new RoutingDecision(
+        RoutingDecision abandoned = new RoutingDecision(
                 id, subject, policyVersionId, direction, instrumentKind, amount,
                 matchedRuleIndex, chosenRail, extended, createdAt);
+        abandoned.destinationCountry = destinationCountry;
+        abandoned.reachableRails = reachableRails;
+        return abandoned;
     }
 
     public RoutingDecisionId id() {

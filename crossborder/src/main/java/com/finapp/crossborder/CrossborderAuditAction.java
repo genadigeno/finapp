@@ -78,6 +78,18 @@ public enum CrossborderAuditAction implements AuditableAction {
     BENEFICIARY_REVOKED(
             "crossborder.BeneficiaryRevoked",
             "A customer revoked a beneficiary abroad, from whichever non-terminal state it was in.",
+            false),
+
+    /**
+     * A customer authorized a cross-border payment (`P9-TSK-019`, PHASE_9_PLAN.md section 12.8): the quote
+     * accepted, the total debit held, the outbound credit dispatched and the cover born, in one transaction.
+     * No reason - the customer's own act; the summary names the payment, the quote, the corridor and the rail,
+     * never an amount, a name or a destination.
+     */
+    CROSSBORDER_PAYMENT_AUTHORIZED(
+            "crossborder.CrossBorderPaymentAuthorized",
+            "A customer authorized a cross-border payment: the quote accepted, the total debit held, the outbound"
+                    + " credit dispatched and the cover born.",
             false);
 
     private final String code;

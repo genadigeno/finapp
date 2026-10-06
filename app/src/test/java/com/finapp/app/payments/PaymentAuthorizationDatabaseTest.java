@@ -603,10 +603,10 @@ class PaymentAuthorizationDatabaseTest {
                     assertThat(row.next()).isTrue();
                     assertThat(row.getInt(1))
                             .as("the future version exists (%s) and routed nothing", scheduled)
-                            // Version 4 since P7-TSK-011: V019's whole-version seed carries
-                            // the standing routes (3 since P7-TSK-009); the property under
-                            // test is unchanged - the future version routed NOTHING.
-                            .isEqualTo(4);
+                            // Version 5 since P9-TSK-019: V025's whole-version seed carries
+                            // the standing routes (4 since P7-TSK-011, 3 since P7-TSK-009); the
+                            // property under test is unchanged - the future version routed NOTHING.
+                            .isEqualTo(5);
                 }
             }
         }

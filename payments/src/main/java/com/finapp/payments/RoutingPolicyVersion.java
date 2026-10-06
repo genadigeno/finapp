@@ -40,7 +40,19 @@ public final class RoutingPolicyVersion {
             InstrumentKind instrumentKind,
             Optional<CurrencyCode> currency,
             Optional<Money> ceiling,
-            List<RailId> rails) {}
+            List<RailId> rails,
+            boolean requiresDestinationCountry) {
+
+        /** A rule matching regardless of a destination country - every rule before `P9-TSK-019`. */
+        public NewRule(
+                PaymentDirection direction,
+                InstrumentKind instrumentKind,
+                Optional<CurrencyCode> currency,
+                Optional<Money> ceiling,
+                List<RailId> rails) {
+            this(direction, instrumentKind, currency, ceiling, rails, false);
+        }
+    }
 
     private final RoutingPolicyVersionId id;
     private final int version;
@@ -128,7 +140,8 @@ public final class RoutingPolicyVersion {
                             rule.instrumentKind(),
                             rule.currency(),
                             rule.ceiling(),
-                            rule.rails()));
+                            rule.rails(),
+                            rule.requiresDestinationCountry()));
         }
         return new RoutingPolicyVersion(
                 RoutingPolicyVersionId.next(ids),
@@ -185,7 +198,7 @@ public final class RoutingPolicyVersion {
                 }
                 Optional<Integer> descriptor = Optional.of(declared.get().declarationVersion());
                 Optional<RoutingRejection> refusal =
-                        firstRefusal(inputs, declared.get().capabilities(), available);
+                        firstRefusal(inputs, candidate, declared.get().capabilities(), available);
                 if (refusal.isPresent()) {
                     steps.add(new RoutingPlan.PlannedStep(
                             candidate, RoutingStepVerdict.REJECTED, refusal, available,
@@ -211,7 +224,7 @@ public final class RoutingPolicyVersion {
      * `P9-TSK-014` by the direction a credits-only rail cannot carry.
      */
     private static Optional<RoutingRejection> firstRefusal(
-            RoutingInputs inputs, RailCapabilities capabilities, boolean available) {
+            RoutingInputs inputs, RailId candidate, RailCapabilities capabilities, boolean available) {
         // First, the direction (P9-TSK-014, ADR-0080 section 1): a rail that refunds nothing carries
         // no pay-in, whatever else it could carry - a corridor is credits only.
         if (inputs.direction() == PaymentDirection.PAY_IN
@@ -240,6 +253,10 @@ public final class RoutingPolicyVersion {
             return Optional.of(RoutingRejection.MODEL_CANNOT_CARRY_INSTRUMENT);
         }
         if (inputs.destinationReachable().map(reachable -> !reachable).orElse(false)) {
+            return Optional.of(RoutingRejection.DESTINATION_UNREACHABLE);
+        }
+        // Per-candidate reachability (P9-TSK-019): only the named rails reach this destination.
+        if (inputs.reachableRails().map(reachable -> !reachable.contains(candidate)).orElse(false)) {
             return Optional.of(RoutingRejection.DESTINATION_UNREACHABLE);
         }
         if (!available) {

@@ -262,3 +262,11 @@ disable names one and a reason), `INV-PAY-03` (provider vocabulary confined to t
   corridor rail by that name), so only `UNDECLARED_BY_BUILD` is recorded, and `UNAVAILABLE` means a declared,
   covering rail with no operable adapter in this deployment (a disabled corridor yields no candidates at
   all); declarations carry no version, so none is recorded.
+- *As built by `P9-TSK-019` (2026-10-06):* points 2 and 5(b) are implemented - routing's third subject
+  (`routing_decision.outbound_credit_id`, exactly one of three subjects), the destination country and the
+  per-candidate reachable rails stored with the decision and recomputed from it, a rule matcher requiring a
+  destination country (default false, so every older version recomputes unchanged) and the seeded routing
+  version 5 naming `corridor-sim-a` ahead of the domestic bank pay-out; payments `V025`'s `outbound_credit`,
+  born `DISPATCHED` with our end-to-end reference minted and stored before any send, its machine held by
+  trigger, sent through the corridor rail `RailOperations` names and its answer retained as the sixth
+  evidence subject.

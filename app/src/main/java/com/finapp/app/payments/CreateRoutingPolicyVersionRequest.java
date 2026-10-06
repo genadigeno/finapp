@@ -39,5 +39,12 @@ public record CreateRoutingPolicyVersionRequest(
             @NotBlank @Size(max = 30) String instrumentKind,
             @Size(min = 3, max = 3) String currency,
             @Positive Long ceilingAmountMinor,
-            @NotEmpty @Size(max = 10) List<@NotBlank @Size(max = 32) String> rails) {}
+            @NotEmpty @Size(max = 10) List<@NotBlank @Size(max = 32) String> rails,
+            Boolean requiresDestinationCountry) {
+
+        /** A rule matching regardless of a destination country - the body before `P9-TSK-019`. */
+        public RuleBody(String direction, String instrumentKind, String currency, Long ceilingAmountMinor, List<String> rails) {
+            this(direction, instrumentKind, currency, ceilingAmountMinor, rails, null);
+        }
+    }
 }

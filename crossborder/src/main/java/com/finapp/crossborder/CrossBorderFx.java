@@ -42,6 +42,33 @@ public interface CrossBorderFx {
     /** {@code owner}'s quote {@code id}, if it is theirs. */
     Optional<Quote> read(Connection unitOfWork, UUID id, UUID owner);
 
+    /**
+     * The payment's acceptance (`P9-TSK-019`, PHASE_9_PLAN.md section 12.8): the quote locked and judged -
+     * the owner's, {@code CROSS_BORDER}, {@code ISSUED}, unexpired on the database clock - moved
+     * {@code ACCEPTED}, and its cover born {@code DISPATCHED}, in the caller's unit of work, under the caller's
+     * claim. No trade and no posting: the hold is the customer's whole effect until completion.
+     *
+     * @throws FxRefused for each refusal
+     */
+    Accepted acceptWithin(Connection unitOfWork, UUID quoteId, UUID owner, UUID payment, Actor actor, CorrelationId correlation);
+
+    /**
+     * Asks for the accepted quote's cover to be sent now, off the request thread and as the platform - a
+     * hint, never the guarantee: the cover row, born with its reference and permit, is, and the cover sweep
+     * sends whatever a hint drops.
+     */
+    void dispatchCover(UUID coverId);
+
+    /** An accepted quote: its cover, the plan's amounts and the wallet the customer pays from. */
+    record Accepted(UUID coverId, Money customerPays, Money customerReceives, com.finapp.ledger.LedgerAccountId sourceWallet) {
+        public Accepted {
+            Objects.requireNonNull(coverId, "coverId must not be null");
+            Objects.requireNonNull(customerPays, "customerPays must not be null");
+            Objects.requireNonNull(customerReceives, "customerReceives must not be null");
+            Objects.requireNonNull(sourceWallet, "sourceWallet must not be null");
+        }
+    }
+
     /** What is asked: who, the pair, which side is fixed, and the fixed amount. */
     record Ask(UUID owner, CurrencyCode source, CurrencyCode destination, boolean fixedSource, Money amount) {
         public Ask {

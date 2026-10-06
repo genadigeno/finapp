@@ -358,3 +358,15 @@ deliveries harmless), `INV-CON-01`/`-02` (every judgement on locked rows), `INV-
   the guaranteed destination and the estimate), recorded in one transaction with fx's quote through the
   `CrossBorderFx` port; the corridor maximum enforced on the destination; a lapsed clearance re-screened
   between the transactions; `POST /v1/me/cross-border/quotes` and `GET .../{id}`. Nothing is held.
+- *As built by `P9-TSK-019` (2026-10-06):* the authorization and dispatch - crossborder `V005`'s `payment` (one
+  per quote, per offer, per outbound credit and per dispatch key; its machine held by an edge trigger) and
+  `payment_event`; in ONE transaction the beneficiary re-judged `FOR SHARE` (`ACTIVE`, clear, the clearance
+  within the corridor's validity - else `ScreeningRequired`), the corridor available, the Phase 13 seams
+  (`PermitAllUntilPhase13`), fx's quote accepted with its cover born and the accepted amounts asserted equal
+  to the offer (`INV-XB-03`), routing's third subject, the hold of the total debit, the outbound credit born
+  `DISPATCHED` with our end-to-end reference, the audit record and `crossborder.CrossBorderPaymentInitiated`;
+  then the cover dispatched and the credit sent with no connection held, the answer recorded in a second
+  transaction. A refusal rolls back to a savepoint, so nothing is accepted, held or sent.
+  `POST /v1/me/cross-border/payments` (`202`) and `GET .../{id}`. **Deviation:** an `ACCEPTED`, `REJECTED` or
+  `NOTHING_SENT` send answer is retained as evidence only - concluding it (the completion, the failure, the
+  hold's release) is `P9-TSK-020`'s outcome appliers'.

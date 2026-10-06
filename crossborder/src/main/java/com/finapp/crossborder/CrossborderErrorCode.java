@@ -107,7 +107,19 @@ public enum CrossborderErrorCode implements ErrorCode {
     SCREENING_UNAVAILABLE("crossborder.ScreeningUnavailable", 503, "The beneficiary could not be verified just now; try again."),
 
     /** No offer of the caller's has this quote id - the uniform 404 (`P9-TSK-018`). */
-    OFFER_NOT_FOUND("crossborder.OfferNotFound", 404, "No offer matches the requested identifier.");
+    OFFER_NOT_FOUND("crossborder.OfferNotFound", 404, "No offer matches the requested identifier."),
+
+    /**
+     * The beneficiary's clearance lapsed between the offer and the authorization (`P9-TSK-019`, ADR-0081 point
+     * 3) - nothing held; request a new offer, which re-screens.
+     */
+    SCREENING_REQUIRED("crossborder.ScreeningRequired", 409, "The beneficiary must be verified again; request a new offer."),
+
+    /** The corridor is disabled (`P9-TSK-019`) - nothing held or sent; try again later. */
+    CORRIDOR_UNAVAILABLE("crossborder.CorridorUnavailable", 503, "Payments to this destination are paused; try again later."),
+
+    /** No payment of the caller's has this identifier - the uniform 404 (`P9-TSK-019`). */
+    PAYMENT_NOT_FOUND("crossborder.PaymentNotFound", 404, "No payment matches the requested identifier.");
 
     private final String code;
     private final int status;

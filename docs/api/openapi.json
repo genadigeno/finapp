@@ -1137,6 +1137,41 @@
           }
         }
       },
+      "crossborder.CorridorUnavailable": {
+        "content": {
+          "application/problem+json": {
+            "schema": {
+              "allOf": [
+                {
+                  "$ref": "#/components/schemas/ProblemDetail"
+                },
+                {
+                  "properties": {
+                    "code": {
+                      "const": "crossborder.CorridorUnavailable"
+                    },
+                    "status": {
+                      "const": 503
+                    },
+                    "type": {
+                      "const": "https://finapp.example/problems/crossborder.CorridorUnavailable"
+                    }
+                  }
+                }
+              ]
+            }
+          }
+        },
+        "description": "[503] Payments to this destination are paused; try again later.",
+        "headers": {
+          "X-Client-Correlation-Id": {
+            "$ref": "#/components/headers/X-Client-Correlation-Id"
+          },
+          "X-Correlation-Id": {
+            "$ref": "#/components/headers/X-Correlation-Id"
+          }
+        }
+      },
       "crossborder.GrantRefused": {
         "content": {
           "application/problem+json": {
@@ -1303,6 +1338,41 @@
           }
         },
         "description": "[404] No offer matches the requested identifier.",
+        "headers": {
+          "X-Client-Correlation-Id": {
+            "$ref": "#/components/headers/X-Client-Correlation-Id"
+          },
+          "X-Correlation-Id": {
+            "$ref": "#/components/headers/X-Correlation-Id"
+          }
+        }
+      },
+      "crossborder.PaymentNotFound": {
+        "content": {
+          "application/problem+json": {
+            "schema": {
+              "allOf": [
+                {
+                  "$ref": "#/components/schemas/ProblemDetail"
+                },
+                {
+                  "properties": {
+                    "code": {
+                      "const": "crossborder.PaymentNotFound"
+                    },
+                    "status": {
+                      "const": 404
+                    },
+                    "type": {
+                      "const": "https://finapp.example/problems/crossborder.PaymentNotFound"
+                    }
+                  }
+                }
+              ]
+            }
+          }
+        },
+        "description": "[404] No payment matches the requested identifier.",
         "headers": {
           "X-Client-Correlation-Id": {
             "$ref": "#/components/headers/X-Client-Correlation-Id"
@@ -1548,6 +1618,41 @@
           }
         },
         "description": "[422] The transfer cannot be accepted.",
+        "headers": {
+          "X-Client-Correlation-Id": {
+            "$ref": "#/components/headers/X-Client-Correlation-Id"
+          },
+          "X-Correlation-Id": {
+            "$ref": "#/components/headers/X-Correlation-Id"
+          }
+        }
+      },
+      "crossborder.ScreeningRequired": {
+        "content": {
+          "application/problem+json": {
+            "schema": {
+              "allOf": [
+                {
+                  "$ref": "#/components/schemas/ProblemDetail"
+                },
+                {
+                  "properties": {
+                    "code": {
+                      "const": "crossborder.ScreeningRequired"
+                    },
+                    "status": {
+                      "const": 409
+                    },
+                    "type": {
+                      "const": "https://finapp.example/problems/crossborder.ScreeningRequired"
+                    }
+                  }
+                }
+              ]
+            }
+          }
+        },
+        "description": "[409] The beneficiary must be verified again; request a new offer.",
         "headers": {
           "X-Client-Correlation-Id": {
             "$ref": "#/components/headers/X-Client-Correlation-Id"
@@ -7735,6 +7840,38 @@
         },
         "type": "object"
       },
+      "CrossBorderPaymentRequest": {
+        "properties": {
+          "quoteId": {
+            "minLength": 1,
+            "type": "string"
+          }
+        },
+        "required": [
+          "quoteId"
+        ],
+        "type": "object"
+      },
+      "CrossBorderPaymentView": {
+        "properties": {
+          "beneficiaryId": {
+            "type": "string"
+          },
+          "corridor": {
+            "type": "string"
+          },
+          "paymentId": {
+            "type": "string"
+          },
+          "quoteId": {
+            "type": "string"
+          },
+          "status": {
+            "type": "string"
+          }
+        },
+        "type": "object"
+      },
       "CrossBorderQuoteRequest": {
         "properties": {
           "amount": {
@@ -11034,6 +11171,9 @@
             "maxItems": 10,
             "minItems": 0,
             "type": "array"
+          },
+          "requiresDestinationCountry": {
+            "type": "boolean"
           }
         },
         "required": [
@@ -13641,6 +13781,70 @@
               "application/json": {
                 "schema": {
                   "$ref": "#/components/schemas/OfferedCorridors"
+                }
+              }
+            },
+            "description": "OK"
+          }
+        }
+      }
+    },
+    "/v1/me/cross-border/payments": {
+      "post": {
+        "operationId": "authorizeCrossBorderPayment",
+        "parameters": [
+          {
+            "in": "header",
+            "name": "Idempotency-Key",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/CrossBorderPaymentRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "202": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/CrossBorderPaymentView"
+                }
+              }
+            },
+            "description": "Accepted"
+          }
+        }
+      }
+    },
+    "/v1/me/cross-border/payments/{id}": {
+      "get": {
+        "operationId": "readCrossBorderPayment",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "id",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/CrossBorderPaymentView"
                 }
               }
             },

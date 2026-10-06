@@ -200,7 +200,7 @@ class WithdrawalDatabaseTest {
                         + " FROM payments.routing_decision d"
                         + " JOIN payments.routing_policy_version v ON v.id = d.policy_version_id"
                         + " WHERE d.withdrawal_id = ?", UUID.fromString(id)))
-                .isEqualTo("instant|4");
+                .isEqualTo("instant|5");
 
         // One initiated fact, one completed fact; the dispatch audited as the PERSON, the
         // outcome as the platform.

@@ -25,10 +25,36 @@ public final class FxCrossBorderQuotes implements CrossBorderFx {
 
     private final QuoteIssuance issuance;
     private final QuoteLifecycle lifecycle;
+    private final com.finapp.fx.CrossBorderAcceptance acceptance;
+    private final com.finapp.fx.CoverDispatchNudge covers;
 
-    public FxCrossBorderQuotes(QuoteIssuance issuance, QuoteLifecycle lifecycle) {
+    public FxCrossBorderQuotes(
+            QuoteIssuance issuance,
+            QuoteLifecycle lifecycle,
+            com.finapp.fx.CrossBorderAcceptance acceptance,
+            com.finapp.fx.CoverDispatchNudge covers) {
         this.issuance = Objects.requireNonNull(issuance, "issuance must not be null");
         this.lifecycle = Objects.requireNonNull(lifecycle, "lifecycle must not be null");
+        this.acceptance = Objects.requireNonNull(acceptance, "acceptance must not be null");
+        this.covers = Objects.requireNonNull(covers, "covers must not be null");
+    }
+
+    @Override
+    public Accepted acceptWithin(
+            Connection unitOfWork, UUID quoteId, UUID owner, UUID payment, Actor actor, CorrelationId correlation) {
+        try {
+            com.finapp.fx.CrossBorderAcceptance.Accepted accepted =
+                    acceptance.acceptWithin(unitOfWork, FxQuoteId.of(quoteId), owner, payment, actor, correlation);
+            return new Accepted(accepted.coverId(), accepted.customerPays(), accepted.customerReceives(), accepted.sourceWallet());
+        } catch (com.finapp.fx.ConversionRefusal.Refused refused) {
+            throw new FxRefused(refused.refusal().code().name());
+        }
+    }
+
+    @Override
+    public void dispatchCover(UUID coverId) {
+        // fx's post-commit nudge: the platform's own trade, sent as the platform (FxCoverNudge.send).
+        covers.nudge(coverId);
     }
 
     private record FxClaim(QuoteIssuance.Claimed claimed) implements Claim {}
