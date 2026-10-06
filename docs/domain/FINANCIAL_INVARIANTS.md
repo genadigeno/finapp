@@ -1120,6 +1120,10 @@ posting key) + `DOMAIN`.
 credit in one entry under `outbound-credit:<id>`, behind the locked row's acting edge, the claim's primary key and the
 posting key; a failure releases the hold and posts nothing. Verified by `OutboundCreditResolutionDatabaseTest` - ten
 appliers and a racing sweep, a lost response, ten callbacks, a rejection and `NEVER_RECEIVED`.)*
+*(The cancellation's half in force since `P9-TSK-024` (2026-10-06): a cancelled payment debits nothing - only the
+provider's definitive `RECALLED` concludes it, through the same failure path (the hold released, nothing posted), and a
+recall refused as too late leaves the one completion to post as ever; a recall racing the acceptance ends in exactly
+one of the two. Verified by `CrossBorderCancellationDatabaseTest`, scenarios 29 to 31.)*
 
 ### INV-XB-02 — Funds move only toward a screened, payable beneficiary
 **Statement:** Funds are instructed, and offers priced, only for a beneficiary that is

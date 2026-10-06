@@ -1277,6 +1277,41 @@
           }
         }
       },
+      "crossborder.NotCancellable": {
+        "content": {
+          "application/problem+json": {
+            "schema": {
+              "allOf": [
+                {
+                  "$ref": "#/components/schemas/ProblemDetail"
+                },
+                {
+                  "properties": {
+                    "code": {
+                      "const": "crossborder.NotCancellable"
+                    },
+                    "status": {
+                      "const": 409
+                    },
+                    "type": {
+                      "const": "https://finapp.example/problems/crossborder.NotCancellable"
+                    }
+                  }
+                }
+              ]
+            }
+          }
+        },
+        "description": "[409] This payment can no longer be cancelled.",
+        "headers": {
+          "X-Client-Correlation-Id": {
+            "$ref": "#/components/headers/X-Client-Correlation-Id"
+          },
+          "X-Correlation-Id": {
+            "$ref": "#/components/headers/X-Correlation-Id"
+          }
+        }
+      },
       "crossborder.NotFound": {
         "content": {
           "application/problem+json": {
@@ -7857,6 +7892,9 @@
           "beneficiaryId": {
             "type": "string"
           },
+          "cancellationRequested": {
+            "type": "boolean"
+          },
           "corridor": {
             "type": "string"
           },
@@ -13849,6 +13887,41 @@
               }
             },
             "description": "OK"
+          }
+        }
+      }
+    },
+    "/v1/me/cross-border/payments/{id}/cancellation": {
+      "post": {
+        "operationId": "cancelCrossBorderPayment",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "id",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "in": "header",
+            "name": "Idempotency-Key",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "202": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/CrossBorderPaymentView"
+                }
+              }
+            },
+            "description": "Accepted"
           }
         }
       }

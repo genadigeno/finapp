@@ -607,6 +607,8 @@ class OpenApiContractTest {
                         // P9-TSK-019: the customer's cross-border payments (a session; 202 on authorize).
                         ApiVersion.CURRENT_PREFIX + "/me/cross-border/payments",
                         ApiVersion.CURRENT_PREFIX + "/me/cross-border/payments/{id}",
+                        // P9-TSK-024: the cancellation by recall - no body, asynchronous 202.
+                        ApiVersion.CURRENT_PREFIX + "/me/cross-border/payments/{id}/cancellation",
                         // P9-TSK-008: the customer's quote doors - request, read, cancel, and the
                         // offered pairs (a session; the owner's own quotes only).
                         ApiVersion.CURRENT_PREFIX + "/me/fx/quotes",

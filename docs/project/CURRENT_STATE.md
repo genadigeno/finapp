@@ -432,7 +432,7 @@ cross-border payments are holds and corridor acceptances, beneficiary screening 
 returns credited in the currency received; clearings are keyed by counterparty; callbacks are
 hints; reconciliation never converts currency and gains causes, never types. Ten new invariants
 and thirteen restated take the platform to **120**. Thirty backlog items across nine milestones
-(M9.1–M9.9) plus `X-TSK-013`…`-015`. **24 of 30 items complete** (M9.1 to M9.6 closed, M9.7 at 1 of 3): the modules and floors
+(M9.1–M9.9) plus `X-TSK-013`…`-015`. **25 of 30 items complete** (M9.1 to M9.6 closed, M9.7 at 2 of 3): the modules and floors
 (`P9-TSK-001`), the conversion arithmetic (`P9-TSK-002`), JPY and BHD postable (`P9-TSK-003`), multi-currency
 wallets (`P9-TSK-004`), reference rates (`P9-TSK-005`), the FX provider port (`P9-TSK-006`), the
 pricing policy (`P9-TSK-007`), the quote (`P9-TSK-008`), wallet conversion (`P9-TSK-009`),
@@ -441,8 +441,8 @@ counterparty-keyed clearing positions (`P9-TSK-010`), the FX provider's source (
 rail (`P9-TSK-014`), the corridor policy (`P9-TSK-015`), counterparty screening (`P9-TSK-016`) and cross-border
 beneficiaries (`P9-TSK-017`), cross-border offers (`P9-TSK-018`), their authorization and dispatch
 (`P9-TSK-019`), their resolution and completion (`P9-TSK-020`), the unwinding of covers (`P9-TSK-021`), the
-corridor's settlement to cash (`P9-TSK-022`) and cross-border returns (`P9-TSK-023`); next **`P9-TSK-024` —
-Cancellation by recall** — `READY`
+corridor's settlement to cash (`P9-TSK-022`), cross-border returns (`P9-TSK-023`) and cancellation by recall
+(`P9-TSK-024`); next **`P9-TSK-025` — Operator FX trade reversal** — `READY`
 ([§Current Task](#current-task) is kept current).
 
 ## Current Milestone
@@ -458,40 +458,35 @@ since M0.1". Moved, not edited.)*
 
 ## Current Task
 
-**`P9-TSK-024` — Cancellation by recall** — `READY`:
-marked by `P9-TSK-023`'s completion gate (2026-10-06). **Not started.**
+**`P9-TSK-025` — Operator FX trade reversal** — `READY`:
+marked by `P9-TSK-024`'s completion gate (2026-10-06). **Not started.**
 
 ### Just completed
 
-**`P9-TSK-023` — Cross-border returns** — `COMPLETE` (2026-10-06). **M9.7 AT 1 OF 3: a return is applied once,
-automatically only when it is exact** (PHASE_9_PLAN.md §12.4(i), §12.9.3; ADR-0079 point 6; `INV-XB-04`, `INV-REC-09`,
-`INV-IDEM-04`, `INV-AUD-04`). payments `V027`: `outbound_credit_return` born once per credit (`applied_by` `APPLIER` |
-`RESOLUTION`, `resolution_id` by `CHECK`, an every-writer trigger holding an `APPLIER` return to the instructed `Money`
-on a `COMPLETED` credit). **Two channels, one applier**: payments' `OutboundCreditReturns`, judged on the locked credit -
-an inquiry's `Returned` answer (after the completion it implies, in one transaction) and `app`'s `OutboundReturnWorker`
-(with `OutboundReturnSchedule`) reading the corridor-scoped `PAYOUT_RETURNED` items, re-read `FOR SHARE`, deferring while
-the credit is in flight. Applied: the entry `crossborder-return:<id>` (§12.4(i) line for line - the USD wallet opened in
-the transaction, the 2.50 EUR fee refunded), the payment `RETURNED` (basis `APPLIED`), `CROSSBORDER_RETURN` opened
-INBOUND, operation-anchored, later `SETTLED` by the report's line. Anything else posts nothing and parks at grace
-`REVERSAL_MISMATCH(RETURN_NOT_APPLICABLE)`; the way out is the four-eyes `TRANSFER_TO_ACCOUNT`, reconciliation's
-`ResolutionMachine` consulting the new `ResolvedCorridorReturns` port (implemented in `app` as
-`CorridorReturnResolutions`) at the proposal and recording the return inside the approval - the fact `RESOLUTION`, the
-fee refund `crossborder-return-fee:<id>`, the payment `RETURNED` (basis `RESOLVED`) - and losing `409 ResolutionStale`,
-nothing moved, to an inquiry that applied it first. **Deviations**: no `CROSSBORDER_RETURN` claim subject (the report
-line carries no return reference; the unique and the posting key arbitrate); the port reads an existing fact under the
-credit's lock instead of conflicting on insert; the port requires the target to be the credit's own customer's wallet in
-the returned currency (a security check the plan did not name) and never opens one; the inquiry channel's applications
-are not counted by `finapp.crossborder.return` (the outcome applier audits and events them).
-**PROBES** (SEVEN PROBES, SEVEN CAUGHT), every restore byte-identical (sha256-verified; `MUTATION_TESTING.md` §2 +7 rows).
-**Atomicity**: a fault injected beneath the payment's `RETURNED` edge leaves nothing in the worker's transaction (T-f)
-and in the approval's (T-g) - no entry, no fact, no fee refund, no transfer - and each completes once the fault lifts.
-**Multi-instance PASS**: ten appliers across both channels make one return (counted). **NEXT**: `P9-TSK-024` `READY`.
-**Verified** by fresh runs - the fleet-wide hermetic tier 2537 across 416 suites and 18 modules; the architecture tier 157 across 27; the task's
-own database suites (CrossBorderReturnDatabaseTest 9; the outbound credit, corridor source, corridor cash, cross-border payment and merchant payout return suites re-run 45; reconciliation's resolution machine and matrix 39); ALL 0 FAILURES - the other database tiers skipped on the owner's instruction.
+**`P9-TSK-024` — Cancellation by recall** — `COMPLETE` (2026-10-06). **M9.7 AT 2 OF 3: a customer can cancel a
+submitted payment, honoured only on the provider's definitive word** (ADR-0079 point 5, D22; PHASE_9_PLAN.md §14
+scenarios 29-31; `INV-XB-01`, `INV-LIFE-03`, `INV-PAY-04`). `POST /v1/me/cross-border/payments/{id}/cancellation` (keyed
+`crossborder.cancel`, step-up, owner; `202` with `cancellationRequested`, `409 crossborder.NotCancellable` past recall)
+marks the outbound credit for recall and records crossborder `V006`'s born-once `cancellation_request` (`UNIQUE
+(payment_id)`, insert-only by trigger, only while `SUBMITTED`) in one transaction, the credit locked before the payment
+(the outcome applier's order). The outbound credit's resolution asks `CorridorRail.recall(E)` holding no connection and
+applies the answer on the locked row: `RECALLED` concludes `FAILED(RECALLED)` through the one failure path (the hold
+released, nothing posted, the quote `ABANDONED`, the executed cover unwound); `TOO_LATE` records `REFUSED` and the same
+pass completes the credit; no answer is re-asked. A takeover's permit renewal refuses once a recall stands - nothing
+re-sent. The customer sees `CANCELLED` for a recalled payment, `SENT` for a refused recall.
+**Deviations**: the recall has no permit column of its own (paced by the sweep's poll, idempotent at the provider by
+`E`); the first send of a flight whose cancellation committed between its Tx1 and its send still goes out - not a
+re-send, and the recall that follows decides. **Atomicity** by injected faults under the request and under the
+conclusion, each leaving nothing.
+**PROBES** (SIX PROBES, SIX CAUGHT), every restore byte-identical (sha256-verified; `MUTATION_TESTING.md` §2 +6 rows).
+**Multi-instance PASS**: ten movers (the provider accepting, cancellations, inquiries) end in exactly one outcome; ten
+requests are one. **NEXT**: `P9-TSK-025` `READY`.
+**Verified** by fresh runs - the fleet-wide hermetic tier 2538 across 416 suites and 18 modules; the architecture tier 157 across 27; the task's
+own database suites (CrossBorderCancellationDatabaseTest 8; the outbound credit, cross-border payment, return and corridor cash suites re-run 32); ALL 0 FAILURES - the other database tiers skipped on the owner's instruction.
 
 ### Previously
 
-The per-task completion records — 217 blocks, from `P9-TSK-022` back to project initiation
+The per-task completion records — 218 blocks, from `P9-TSK-023` back to project initiation
 (`X-TSK-016` cross-cutting, standing between `P9-TSK-011` and `P9-TSK-010`; `X-TSK-005` cross-cutting, standing between `P7-TSK-015` and `P7-TSK-014`; `X-TSK-004`
 cross-cutting, standing between `P7-TSK-001` and the Phase 6 → 7 transition) — are archived in
 [`history/TASK_HISTORY.md`](history/TASK_HISTORY.md).
@@ -1036,8 +1031,8 @@ Resolved during initiation:
 
 ## Next Task
 
-**`P9-TSK-024` — Cancellation by recall** — `READY`
-(the Current Task), marked by `P9-TSK-023`'s completion gate.
+**`P9-TSK-025` — Operator FX trade reversal** — `READY`
+(the Current Task), marked by `P9-TSK-024`'s completion gate.
 *(This section read "`P8-TSK-009` — `READY`" from `P8-TSK-008`'s gate until
 `P8-TSK-013`'s record found it — the stale-second-copy class, in the section whose
 whole job is to mirror.)*

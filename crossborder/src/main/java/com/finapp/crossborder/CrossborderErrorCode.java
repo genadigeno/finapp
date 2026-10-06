@@ -119,7 +119,13 @@ public enum CrossborderErrorCode implements ErrorCode {
     CORRIDOR_UNAVAILABLE("crossborder.CorridorUnavailable", 503, "Payments to this destination are paused; try again later."),
 
     /** No payment of the caller's has this identifier - the uniform 404 (`P9-TSK-019`). */
-    PAYMENT_NOT_FOUND("crossborder.PaymentNotFound", 404, "No payment matches the requested identifier.");
+    PAYMENT_NOT_FOUND("crossborder.PaymentNotFound", 404, "No payment matches the requested identifier."),
+
+    /**
+     * The payment is past recall (`P9-TSK-024`, ADR-0079 point 5): the provider accepted it, or it already ended -
+     * nothing written; a payment the provider accepted can only come back as a return.
+     */
+    NOT_CANCELLABLE("crossborder.NotCancellable", 409, "This payment can no longer be cancelled.");
 
     private final String code;
     private final int status;

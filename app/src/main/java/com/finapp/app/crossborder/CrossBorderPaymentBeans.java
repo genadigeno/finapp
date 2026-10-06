@@ -108,8 +108,29 @@ public class CrossBorderPaymentBeans {
             IdempotentExecutor idempotentExecutor,
             TransactionRunner crossborderTransactionRunner,
             MeterRegistry meterRegistry,
-            Clock clock) {
+            Clock clock,
+            com.finapp.crossborder.PaymentCancellation crossBorderPaymentCancellation,
+            com.finapp.crossborder.CancellationStore crossBorderCancellationStore) {
         return new CrossBorderPaymentDesk(crossBorderPaymentAuthorization, crossBorderFx, crossBorderExecution, identityStore,
-                mfaEnrolmentStore, idempotentExecutor, crossborderTransactionRunner, meterRegistry, clock);
+                mfaEnrolmentStore, idempotentExecutor, crossborderTransactionRunner, meterRegistry, clock,
+                crossBorderPaymentCancellation, crossBorderCancellationStore);
+    }
+
+    @Bean
+    com.finapp.crossborder.CancellationStore crossBorderCancellationStore() {
+        return new com.finapp.crossborder.JdbcCancellationStore();
+    }
+
+    /** The customer's recall request (`P9-TSK-024`): the credit marked, the born-once request, in one transaction. */
+    @Bean
+    com.finapp.crossborder.PaymentCancellation crossBorderPaymentCancellation(
+            PaymentStore crossBorderPaymentStore,
+            com.finapp.crossborder.CancellationStore crossBorderCancellationStore,
+            CrossBorderExecution crossBorderExecution,
+            OutboxWriter<Connection> outboxWriter,
+            AuditWriter<Connection> auditWriter,
+            IdGenerator idGenerator) {
+        return new com.finapp.crossborder.PaymentCancellation(crossBorderPaymentStore, crossBorderCancellationStore,
+                crossBorderExecution, outboxWriter, auditWriter, idGenerator);
     }
 }

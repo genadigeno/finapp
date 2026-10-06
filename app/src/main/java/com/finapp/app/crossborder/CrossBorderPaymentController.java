@@ -45,6 +45,20 @@ public class CrossBorderPaymentController {
         return desk.authorize(current(request), idempotencyKey, body);
     }
 
+    /**
+     * Requests the payment's cancellation by recall (`P9-TSK-024`). It takes no body: the path names the payment, and
+     * a request with no inputs has nothing a client could smuggle into it - no rate, no amount.
+     */
+    @PostMapping("/{id}/cancellation")
+    @RequiresIdempotencyKey
+    @ResponseStatus(HttpStatus.ACCEPTED)
+    public CrossBorderPaymentDesk.CrossBorderPaymentView cancelCrossBorderPayment(
+            @PathVariable("id") String id,
+            @RequestHeader(IdempotencyKeyHeader.NAME) String idempotencyKey,
+            HttpServletRequest request) {
+        return desk.cancel(current(request), idempotencyKey, id);
+    }
+
     @GetMapping("/{id}")
     public CrossBorderPaymentDesk.CrossBorderPaymentView readCrossBorderPayment(
             @PathVariable("id") String id, HttpServletRequest request) {

@@ -170,8 +170,22 @@ public final class PaymentsCrossBorderExecution implements CrossBorderExecution 
     }
 
     @Override
-    public void renewPermit(Connection unitOfWork, Dispatched dispatched) {
-        credits.renewPermit(unitOfWork, OutboundCreditId.of(dispatched.outboundCredit()));
+    public boolean renewPermit(Connection unitOfWork, Dispatched dispatched) {
+        return credits.renewPermit(unitOfWork, OutboundCreditId.of(dispatched.outboundCredit()));
+    }
+
+    @Override
+    public RecallRequest requestRecall(Connection unitOfWork, UUID outboundCredit) {
+        // The credit FOR UPDATE: the outcome applier's lock, taken before crossborder locks the payment.
+        com.finapp.payments.OutboundCreditStore.Row locked = credits.lock(unitOfWork, OutboundCreditId.of(outboundCredit))
+                .orElseThrow(() -> new IllegalStateException("a payment's outbound credit always exists"));
+        if (!locked.status().resolvable()) {
+            return RecallRequest.NOT_RECALLABLE;
+        }
+        if (locked.recallRequestedAt().isPresent()) {
+            return RecallRequest.ALREADY_REQUESTED;
+        }
+        return credits.requestRecall(unitOfWork, locked.id()) ? RecallRequest.REQUESTED : RecallRequest.NOT_RECALLABLE;
     }
 
     @Override

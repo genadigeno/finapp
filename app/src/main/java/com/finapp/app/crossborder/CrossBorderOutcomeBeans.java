@@ -81,9 +81,10 @@ public class CrossBorderOutcomeBeans {
             CrossBorderCompletionBooking crossBorderCompletionBooking,
             Clock clock,
             com.finapp.fx.ConversionParticipants conversionParticipants,
-            LedgerAccountStore<Connection> ledgerAccountStore) {
+            LedgerAccountStore<Connection> ledgerAccountStore,
+            MeterRegistry meterRegistry) {
         return new CrossBorderCompletion(crossBorderPaymentProgress, crossBorderCompletionBooking, clock,
-                conversionParticipants, new ChartOfAccounts<>(ledgerAccountStore));
+                conversionParticipants, new ChartOfAccounts<>(ledgerAccountStore), meterRegistry);
     }
 
     @Bean

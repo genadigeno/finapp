@@ -52,6 +52,18 @@ class RatesAreNeverClientSuppliedTest {
     }
 
     @Test
+    @DisplayName("the cancellation door (P9-TSK-024) reads no request body at all - nothing a client could smuggle a rate into")
+    void theCancellationTakesNoBody() throws NoSuchMethodException {
+        java.lang.reflect.Method cancel = com.finapp.app.crossborder.CrossBorderPaymentController.class.getMethod(
+                "cancelCrossBorderPayment", String.class, String.class, jakarta.servlet.http.HttpServletRequest.class);
+        assertThat(java.util.Arrays.stream(cancel.getParameters())
+                        .filter(parameter -> parameter.isAnnotationPresent(
+                                org.springframework.web.bind.annotation.RequestBody.class)))
+                .as("a request body on the cancellation door")
+                .isEmpty();
+    }
+
+    @Test
     @DisplayName("the rule bites: a rate field, an open body, a decimal amount and a rate nested in a list"
             + " are each refused")
     void thePlantedViolationsAreRefused() {

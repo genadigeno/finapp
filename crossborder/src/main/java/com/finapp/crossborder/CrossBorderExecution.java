@@ -37,8 +37,27 @@ public interface CrossBorderExecution {
     /** The payment's committed dispatch, if Tx1 committed it - a takeover's convergence. */
     Optional<Dispatched> dispatched(Connection unitOfWork, UUID payment);
 
-    /** Renews the dispatch's permit before a takeover re-sends the same reference. */
-    void renewPermit(Connection unitOfWork, Dispatched dispatched);
+    /**
+     * Renews the dispatch's permit before a takeover re-sends the same reference; false, nothing renewed, once a
+     * cancellation requested a recall - and then nothing is re-sent (`P9-TSK-024`, D22).
+     */
+    boolean renewPermit(Connection unitOfWork, Dispatched dispatched);
+
+    /**
+     * Locks the payment's outbound credit and marks it for recall once (`P9-TSK-024`) - in the caller's unit of
+     * work, the credit's lock taken before the payment's (the outcome applier's order).
+     */
+    RecallRequest requestRecall(Connection unitOfWork, UUID outboundCredit);
+
+    /** What marking the credit for recall found. */
+    enum RecallRequest {
+        /** Marked now: the provider will be asked. */
+        REQUESTED,
+        /** Already marked by an earlier request. */
+        ALREADY_REQUESTED,
+        /** Concluded - completed or failed - and so past recall. */
+        NOT_RECALLABLE
+    }
 
     /** The send to the corridor rail - the same reference every time, no connection held. */
     SendOutcome send(Dispatched dispatched);

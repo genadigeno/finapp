@@ -95,4 +95,10 @@ public interface OutboundCreditComposition<T> {
 
     /** After the return posted (or a person's resolution recorded it): the subject's {@code RETURNED} edge. */
     void returned(T unitOfWork, UUID subject, String basis, Instant at);
+
+    /**
+     * The provider answered a cancellation's recall (`P9-TSK-024`) - telemetry for the composition's own tally,
+     * never a record; the conclusion itself goes through {@link #failed} or the completion as ever.
+     */
+    default void recallAnswered(T unitOfWork, UUID subject, OutboundCreditStore.RecallOutcome outcome) {}
 }
