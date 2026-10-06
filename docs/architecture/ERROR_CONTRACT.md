@@ -751,6 +751,7 @@ subject takes, no evidence that still finds it, no acknowledgement back on its r
 | `fx.WalletNotPostable` | 422 | A wallet this conversion needs is not open. |
 | `fx.InsufficientFunds` | 422 | The wallet's available balance is not enough. |
 | `fx.TradeNotFound` | 404 | No conversion matches the requested identifier. |
+| `fx.TradeNotReversible` | 409 | This conversion cannot be reversed. |
 
 ### `crossborder` — `CrossborderErrorCode`
 

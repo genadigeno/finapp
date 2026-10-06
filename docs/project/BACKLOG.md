@@ -12913,7 +12913,7 @@ break row, as the approval door must.)*
 
 # Phase 9 — FX and Cross-Border Payments
 
-Status: `IN_PROGRESS` — started 2026-10-03 with `P9-TSK-001` (25 of 30 items complete, M9.1 to M9.6 closed, M9.7 at 2 of 3); entry gate passed 2026-10-02 by the Phase 8 → 9 transition
+Status: `IN_PROGRESS` — started 2026-10-03 with `P9-TSK-001` (26 of 30 items complete, M9.1 to M9.7 closed); entry gate passed 2026-10-02 by the Phase 8 → 9 transition
 ([`reviews/PHASE_8_TO_9_TRANSITION.md`](reviews/PHASE_8_TO_9_TRANSITION.md)), elaborated to task
 granularity by the same transition: thirty items (`P9-TSK-001`…`-027`, `P9-TST-001`, `P9-TST-002`,
 `P9-DOC-001`) across nine milestones, with `P9-TSK-001` marked `READY`. The engineering plan is
@@ -14112,7 +14112,8 @@ providers), each owned by Phase 15 and gating nothing here.
   cancelled.
 - **Definition of done**: `DOD-FIN`, `DOD-API`, `DOD-EVENT`. **Risk**: Medium. **Cx**: M.
 
-**P9-TSK-025 — Operator FX trade reversal** — `READY` (marked by `P9-TSK-024`'s completion gate, 2026-10-06)
+**P9-TSK-025 — Operator FX trade reversal** — `COMPLETE` (2026-10-06; marked `READY` by `P9-TSK-024`'s completion gate)
+- **As built** (2026-10-06): as `CURRENT_STATE.md` §Just completed records. The suite is `FxTradeReversalRaceDatabaseTest`; the code is fx `V009` and `TradeReversals`, the trade store's operator read, lock and reverse edge, `FX_TRADE_REVERSE`, the reversal door, the books proof's reversal term.
 - **Objective**: an operator corrects an erroneous wallet conversion by compensation alone,
   four-eyes.
 - **Bounded context**: `fx`, `identity`, `ledger`.
@@ -14145,7 +14146,7 @@ providers), each owned by Phase 15 and gating nothing here.
 - **Acceptance criteria**: one reversal under ten approvers; the books proof is 0 afterwards.
 - **Definition of done**: `DOD-FIN`, `DOD-SEC`, `DOD-API`, `DOD-EVENT`. **Risk**: Medium. **Cx**: M.
 
-**P9-TSK-026 — A second FX provider and a second corridor rail** — `PLANNED`
+**P9-TSK-026 — A second FX provider and a second corridor rail** — `READY` (marked by `P9-TSK-025`'s completion gate, 2026-10-06)
 - **Objective**: make multiple providers real: failover, selection and settlement per counterparty.
   First in the cut order (O8).
 - **Bounded context**: `fx`, `payments`, `ledger`, `settlement`, `reconciliation`, `crossborder`,

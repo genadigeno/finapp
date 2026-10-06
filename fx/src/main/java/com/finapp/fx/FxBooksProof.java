@@ -27,9 +27,9 @@ import java.util.Objects;
  * </pre>
  *
  * Report-only and never repairing: the caller runs it in ONE {@code REPEATABLE READ} snapshot so
- * the two sides are one instant. The reversal term arrives with the trade reversal
- * (`P9-TSK-025`), the unwind term with the unwind (`P9-TSK-021`); until then both are zero by
- * construction. It reads the FX books, never posts to them ({@code FxBooksHaveOnePosterTest}
+ * the two sides are one instant. The reversal term (`P9-TSK-025`): a {@code REVERSED} trade
+ * leaves the trades' terms, its exact mirror having cancelled its lines in the ledger; the unwind
+ * term (`P9-TSK-021`) is the unwind's own execution among the covers'. It reads the FX books, never posts to them ({@code FxBooksHaveOnePosterTest}
  * permits it as their one reader).
  */
 public final class FxBooksProof {

@@ -113,6 +113,69 @@ public final class JdbcTradeStore implements TradeStore {
     }
 
     @Override
+    public Optional<TradeRow> find(Connection unitOfWork, FxTradeId id) {
+        Objects.requireNonNull(id, "id must not be null");
+        try (PreparedStatement select = unitOfWork.prepareStatement(
+                "SELECT " + TRADE_COLUMNS + " FROM fx.trade WHERE id = ?")) {
+            select.setObject(1, id.value());
+            try (ResultSet row = select.executeQuery()) {
+                return row.next() ? Optional.of(trade(row)) : Optional.empty();
+            }
+        } catch (SQLException failure) {
+            throw failure("reading a trade", failure);
+        }
+    }
+
+    @Override
+    public Optional<TradeRow> lock(Connection unitOfWork, FxTradeId id) {
+        Objects.requireNonNull(id, "id must not be null");
+        try (PreparedStatement select = unitOfWork.prepareStatement(
+                "SELECT " + TRADE_COLUMNS + " FROM fx.trade WHERE id = ? FOR UPDATE")) {
+            select.setObject(1, id.value());
+            try (ResultSet row = select.executeQuery()) {
+                return row.next() ? Optional.of(trade(row)) : Optional.empty();
+            }
+        } catch (SQLException failure) {
+            throw failure("locking a trade", failure);
+        }
+    }
+
+    @Override
+    public boolean reverse(Connection unitOfWork, FxTradeId id) {
+        Objects.requireNonNull(id, "id must not be null");
+        try (PreparedStatement update = unitOfWork.prepareStatement(
+                "UPDATE fx.trade SET status = 'REVERSED' WHERE id = ? AND status = 'BOOKED'")) {
+            update.setObject(1, id.value());
+            return update.executeUpdate() == 1;
+        } catch (SQLException failure) {
+            throw failure("reversing a trade", failure);
+        }
+    }
+
+    private static final String TRADE_COLUMNS =
+            "id, quote_id, owner_party_id, purpose, fixed_side, status, source_currency, destination_currency,"
+                    + " source_scale, destination_scale, customer_source_minor, customer_destination_minor,"
+                    + " executed_rate, booked_at, booked_on, journal_entry_id";
+
+    private static TradeRow trade(ResultSet row) throws SQLException {
+        CurrencyCode source = CurrencyCode.of(row.getString("source_currency"));
+        CurrencyCode destination = CurrencyCode.of(row.getString("destination_currency"));
+        return new TradeRow(
+                FxTradeId.of(row.getObject("id", UUID.class)),
+                FxQuoteId.of(row.getObject("quote_id", UUID.class)),
+                row.getObject("owner_party_id", UUID.class),
+                PricingPurpose.valueOf(row.getString("purpose")),
+                FixedSide.valueOf(row.getString("fixed_side")),
+                TradeStatus.valueOf(row.getString("status")),
+                Money.ofPersisted(row.getLong("customer_source_minor"), source, row.getInt("source_scale")),
+                Money.ofPersisted(row.getLong("customer_destination_minor"), destination, row.getInt("destination_scale")),
+                row.getBigDecimal("executed_rate").stripTrailingZeros(),
+                row.getTimestamp("booked_at").toInstant(),
+                row.getDate("booked_on").toLocalDate(),
+                row.getObject("journal_entry_id", UUID.class));
+    }
+
+    @Override
     public Optional<CoverByReference> coverByClientReference(Connection unitOfWork, String clientReference) {
         Objects.requireNonNull(unitOfWork, "unitOfWork must not be null");
         Objects.requireNonNull(clientReference, "clientReference must not be null");

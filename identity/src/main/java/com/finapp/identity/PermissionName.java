@@ -347,6 +347,16 @@ public enum PermissionName {
     FX_ADMINISTER,
 
     /**
+     * Propose, approve or reject an operator's FX trade reversal (`P9-TSK-025`, the lifecycle document section 3.3):
+     * an erroneous wallet conversion corrected by compensation alone - the exact mirror entry, the trade
+     * {@code REVERSED}, the cover's unwind - by two persons ({@code INV-AUD-04}), each act reasoned. Beside
+     * {@link #TRANSFER_REVERSE}, joining {@code LEDGER_OPERATOR}: correcting the money is the money-operating
+     * population's judgement, and whoever sets prices ({@link #FX_ADMINISTER}) cannot reverse trades. The routes are
+     * {@code POST /v1/operator/fx/trades/'{id}'/reversal} and {@code .../reversal/'{rid}'/approval|rejection}.
+     */
+    FX_TRADE_REVERSE,
+
+    /**
      * Reads an FX trade's provenance (`P9-TSK-013`, PHASE_9_PLAN.md section 11): the whole rate
      * chain - the reference, the provider's firm quote and rate, the internal and customer rates,
      * the margins, the pinned policy, the entry, the cover and its execution - over

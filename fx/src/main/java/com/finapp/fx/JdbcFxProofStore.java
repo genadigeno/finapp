@@ -11,24 +11,28 @@ import java.util.List;
 import java.util.Map;
 import java.util.UUID;
 
-/** {@link FxProofStore} over {@code fx V005}-{@code V007} (`P9-TSK-013`): reads only. */
+/**
+ * {@link FxProofStore} over {@code fx V005}-{@code V009} (`P9-TSK-013`): reads only. Since `P9-TSK-025` the trades'
+ * terms count only {@code BOOKED} trades - a {@code REVERSED} one's exact mirror cancels its lines in the ledger, which
+ * is the plan's "- reversal" term.
+ */
 public final class JdbcFxProofStore implements FxProofStore {
 
     @Override
     public Expected expected(Connection unitOfWork) {
         Map<String, Long> position = sums(unitOfWork,
                 "SELECT currency, SUM(amount) FROM ("
-                        + " SELECT source_currency AS currency, -position_source_minor AS amount FROM fx.trade"
-                        + " UNION ALL SELECT destination_currency, position_destination_minor FROM fx.trade"
+                        + " SELECT source_currency AS currency, -position_source_minor AS amount FROM fx.trade WHERE status = 'BOOKED'"
+                        + " UNION ALL SELECT destination_currency, position_destination_minor FROM fx.trade WHERE status = 'BOOKED'"
                         + " UNION ALL SELECT sold_currency, plan_sold_minor FROM fx.cover_execution"
                         + " UNION ALL SELECT bought_currency, -plan_bought_minor FROM fx.cover_execution"
                         + ") legs GROUP BY currency");
         Map<String, Long> margin = sums(unitOfWork,
                 "SELECT CASE fixed_side WHEN 'FIXED_SOURCE' THEN destination_currency ELSE source_currency END,"
-                        + " SUM(margin_minor) FROM fx.trade GROUP BY 1");
+                        + " SUM(margin_minor) FROM fx.trade WHERE status = 'BOOKED' GROUP BY 1");
         Map<String, Long> residual = sums(unitOfWork,
                 "SELECT CASE fixed_side WHEN 'FIXED_SOURCE' THEN destination_currency ELSE source_currency END,"
-                        + " -SUM(residual_minor) FROM fx.trade GROUP BY 1");
+                        + " -SUM(residual_minor) FROM fx.trade WHERE status = 'BOOKED' GROUP BY 1");
         Map<String, Long> gains = sums(unitOfWork,
                 "SELECT currency, SUM(amount) FROM ("
                         + " SELECT sold_currency AS currency, GREATEST(realised_sold_minor, 0) AS amount FROM fx.cover_execution"

@@ -85,4 +85,33 @@ public class FxConversionBeans {
         return new FxConversionDesk(
                 fxConversion, identityStore, idempotentExecutor, fxTransactionRunner, fxQuoteMetrics, coverDispatchNudge);
     }
+
+    /** The operator's FX trade reversal (`P9-TSK-025`): the four-eyes machine and the mirror's execution. */
+    @Bean
+    com.finapp.fx.TradeReversals tradeReversals(
+            TradeStore tradeStore,
+            QuoteStore quoteStore,
+            ConversionParticipants conversionParticipants,
+            LedgerAccountStore<Connection> ledgerAccountStore,
+            com.finapp.ledger.ReversalService reversalService,
+            com.finapp.fx.CoverUnwinds coverUnwinds,
+            AuditWriter<Connection> auditWriter,
+            OutboxWriter<Connection> outboxWriter,
+            IdGenerator idGenerator,
+            Clock clock) {
+        return new com.finapp.fx.TradeReversals(new com.finapp.fx.JdbcTradeReversalStore(), tradeStore, quoteStore,
+                conversionParticipants, ledgerAccountStore,
+                new AvailableBalance<>(new JdbcBalanceDerivation(), new JdbcHoldStore()),
+                new ChartOfAccounts<>(ledgerAccountStore), reversalService, coverUnwinds, auditWriter, outboxWriter,
+                idGenerator, clock);
+    }
+
+    @Bean
+    FxTradeReversalDesk fxTradeReversalDesk(
+            com.finapp.fx.TradeReversals tradeReversals,
+            IdempotentExecutor idempotentExecutor,
+            TransactionRunner fxTransactionRunner,
+            io.micrometer.core.instrument.MeterRegistry meterRegistry) {
+        return new FxTradeReversalDesk(tradeReversals, idempotentExecutor, fxTransactionRunner, meterRegistry);
+    }
 }

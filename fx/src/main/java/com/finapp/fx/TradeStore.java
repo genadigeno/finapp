@@ -58,6 +58,15 @@ public interface TradeStore {
     /** The trade, only if {@code owner} owns it. */
     Optional<TradeRow> findOwned(Connection unitOfWork, FxTradeId id, UUID owner);
 
+    /** The trade by its identifier alone - an operator's read (`P9-TSK-025`), no lock. */
+    Optional<TradeRow> find(Connection unitOfWork, FxTradeId id);
+
+    /** The trade {@code FOR UPDATE} - the lock order's second rank, after its quote's (`P9-TSK-025`). */
+    Optional<TradeRow> lock(Connection unitOfWork, FxTradeId id);
+
+    /** {@code BOOKED -> REVERSED} (`P9-TSK-025`); false when the trade was not booked. */
+    boolean reverse(Connection unitOfWork, FxTradeId id);
+
     /** A cover named by one of its attempts' references - its identity and where it stands. */
     record CoverByReference(UUID coverId, CoverStatus status) {}
 

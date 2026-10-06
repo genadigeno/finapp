@@ -1783,6 +1783,24 @@ door.
 | `trade` | `booked_on` | `INTERNAL` | The booking's UTC date - the entry's posting and value date |
 | `trade` | `journal_entry_id` | `INTERNAL` | The entry `fx-trade:<id>` - an identifier of a thing |
 | `trade` | `correlation_id` | `INTERNAL` | The flow's correlation |
+| `trade_reversal` | `id` | `INTERNAL` | A proposal identifier (`P9-TSK-025`) |
+| `trade_reversal` | `trade_id` | `INTERNAL` | The conversion it would reverse |
+| `trade_reversal` | `status` | `INTERNAL` | The machine's word |
+| `trade_reversal` | `proposed_by` | `CONFIDENTIAL` | The proposing operator's identifier |
+| `trade_reversal` | `proposed_reason` | `CONFIDENTIAL` | An operator's free-text reason - classified at its ceiling; a reason names no customer data by the desk's rule |
+| `trade_reversal` | `proposed_at` | `INTERNAL` | Stamped by the database |
+| `trade_reversal` | `decided_by` | `CONFIDENTIAL` | The deciding operator's identifier - never the proposer (`CHECK`) |
+| `trade_reversal` | `decided_reason` | `CONFIDENTIAL` | As `proposed_reason` |
+| `trade_reversal` | `decided_at` | `INTERNAL` | Stamped by the database |
+| `trade_reversal` | `reversal_entry_id` | `INTERNAL` | The mirror entry - exactly when `APPROVED` |
+| `trade_reversal` | `correlation_id` | `INTERNAL` | The proposal's flow |
+| `trade_reversal_event` | `id` | `INTERNAL` | An edge identifier |
+| `trade_reversal_event` | `reversal_id` | `INTERNAL` | As `trade_reversal.id` |
+| `trade_reversal_event` | `from_status` | `INTERNAL` | As `trade_reversal.status` |
+| `trade_reversal_event` | `to_status` | `INTERNAL` | As `trade_reversal.status` |
+| `trade_reversal_event` | `actor` | `CONFIDENTIAL` | The acting operator's identifier |
+| `trade_reversal_event` | `reason` | `CONFIDENTIAL` | As `proposed_reason` |
+| `trade_reversal_event` | `occurred_at` | `INTERNAL` | Stamped by the database |
 | `cover` | `id` | `INTERNAL` | A cover identifier |
 | `cover` | `quote_id` | `INTERNAL` | The quote whose position it covers |
 | `cover` | `kind` | `INTERNAL` | A closed vocabulary - COVER or UNWIND |

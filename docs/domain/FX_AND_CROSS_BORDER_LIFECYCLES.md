@@ -183,6 +183,13 @@ PROPOSED ──a different approver──> APPROVED   (the reversal executes in 
   reversal (ledger `V009`'s bound under namespace 2 arbitrates).
 - If the phase shrinks, this machine is the second cut (owner decision O8), recorded with
   Phase 15 as owner; scenario 8 is then met by the unwind path alone.
+- *As built by `P9-TSK-025` (2026-10-06):* fx `V009` (not `V008`, which became the unwind): the
+  machine held by the edge trigger, the four-eyes `CHECK`, the partial unique while `PROPOSED` and one
+  `APPROVED` per trade, with an append-only `trade_reversal_event`; the approval locks quote -> trade ->
+  reversal -> wallets, judges the destination wallet's available balance under its lock, posts the
+  exact mirror, moves the trade `REVERSED` and evaluates the wanted-position rule under the held quote
+  lock. Routes `POST /v1/operator/fx/trades/{id}/reversal` and `.../reversal/{rid}/approval|rejection`,
+  `FX_TRADE_REVERSE` held by `LEDGER_OPERATOR`.
 
 ### 3.4 FX cover (`fx.cover`)
 
