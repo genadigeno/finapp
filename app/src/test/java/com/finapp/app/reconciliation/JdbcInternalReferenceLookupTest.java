@@ -178,18 +178,27 @@ class JdbcInternalReferenceLookupTest {
             + " reference a merchant payout only for the payout source - a counterparty's source (a"
             + " corridor's, an FX provider's) names neither; an unscoped subject keeps the unscoped reading")
     void operationKeysResolveWithinTheirFamily() {
+        com.finapp.ledger.AccountPurpose corridor =
+                com.finapp.payments.SimulatedCorridorAdapter.RAIL.capabilities().clearingPurpose().orElseThrow();
         for (com.finapp.ledger.AccountPurpose position : com.finapp.ledger.AccountPurpose.values()) {
-            JdbcInternalReferenceLookup.Family family =
-                    JdbcInternalReferenceLookup.Family.of(Optional.of(position), true);
+            // A declared rail settles the instant scheme's, the payout's and the corridor's positions (P9-TSK-022).
+            JdbcInternalReferenceLookup.Family family = JdbcInternalReferenceLookup.Family.of(Optional.of(position), true,
+                    position == corridor || position == com.finapp.ledger.AccountPurpose.INSTANT_CLEARING
+                            || position == com.finapp.ledger.AccountPurpose.PAYOUT_CLEARING);
             assertThat(family.namesInstantOperations())
                     .as("%s names instant operations", position)
                     .isEqualTo(position == com.finapp.ledger.AccountPurpose.INSTANT_CLEARING);
             assertThat(family.namesMerchantPayouts())
                     .as("%s names merchant payouts", position)
                     .isEqualTo(position == com.finapp.ledger.AccountPurpose.PAYOUT_CLEARING);
+            assertThat(family.namesOutboundCredits())
+                    .as("%s names outbound credits", position)
+                    .isEqualTo(position == corridor);
             if (position.ownerKind() == com.finapp.ledger.OwnerKind.COUNTERPARTY) {
                 assertThat(family).as("a counterparty's source is its own family").isEqualTo(
-                        JdbcInternalReferenceLookup.Family.OTHER);
+                        position == corridor
+                                ? JdbcInternalReferenceLookup.Family.CORRIDOR
+                                : JdbcInternalReferenceLookup.Family.OTHER);
             }
         }
         JdbcInternalReferenceLookup.Family positionless = JdbcInternalReferenceLookup.Family.of(Optional.empty(), true);
@@ -219,9 +228,11 @@ class JdbcInternalReferenceLookupTest {
                 recording(com.finapp.payments.WithdrawalStore.class, "withdrawals", asked),
                 recording(com.finapp.merchant.MerchantPayoutStore.class, "payouts", asked),
                 recording(com.finapp.payments.SchemeExecutionClaimStore.class, "claims", asked),
-                (uow, source) -> Optional.empty(),
+                (uow, source) -> source.equals(corridorSource)
+                        ? Optional.of(com.finapp.payments.SimulatedCorridorAdapter.RAIL.id()) : Optional.empty(),
                 recording(com.finapp.fx.TradeStore.class, "covers", asked),
-                (uow, source) -> Optional.ofNullable(positions.get(source)));
+                (uow, source) -> Optional.ofNullable(positions.get(source)),
+                recording(com.finapp.payments.OutboundCreditStore.class, "outboundCredits", asked));
         java.util.Map<com.finapp.reconciliation.KeyKind, String> references = java.util.Map.of(
                 com.finapp.reconciliation.KeyKind.PAYOUT_PROVIDER_REF, "xp_same",
                 com.finapp.reconciliation.KeyKind.END_TO_END_REF, "XB-same-1");
@@ -229,7 +240,9 @@ class JdbcInternalReferenceLookupTest {
         assertThat(lookup.classify(null, new InternalReferenceLookup.LookupSubject(
                         Optional.empty(), references, Optional.of(corridorSource))).classification())
                 .isEqualTo(InternalClassification.UNKNOWN);
-        assertThat(asked).as("the corridor's references reach no other family's store").isEmpty();
+        assertThat(asked).as("the corridor's references reach its outbound credits and their claims alone (P9-TSK-022)")
+                .containsExactlyInAnyOrder("outboundCredits.byReference", "claims.findByExecution");
+        asked.clear();
 
         lookup.classify(null, new InternalReferenceLookup.LookupSubject(
                 Optional.empty(), references, Optional.of(merchantSource)));
@@ -244,6 +257,43 @@ class JdbcInternalReferenceLookupTest {
     }
 
     /** A store that answers nothing and records what it was asked. */
+    @Test
+    @DisplayName("an outbound credit's state in reconciliation's words (P9-TSK-022): COMPLETED the applied fact, FAILED"
+            + " terminal - a provider executing after it contradicts it - every state before an answer in flight")
+    void everyOutboundCreditStateMaps() {
+        for (com.finapp.payments.OutboundCreditStore.Status status : com.finapp.payments.OutboundCreditStore.Status.values()) {
+            assertThat(JdbcInternalReferenceLookup.classifyOutboundCredit(status)).as("%s", status).isEqualTo(switch (status) {
+                case COMPLETED -> InternalClassification.COMPLETED;
+                case FAILED -> InternalClassification.TERMINAL;
+                case DISPATCHED, UNKNOWN, RECEIVED -> InternalClassification.IN_FLIGHT;
+            });
+        }
+    }
+
+    @Test
+    @DisplayName("a corridor source's PAYOUT_PROVIDER_REF reaches the outbound credit's claim on the source's rail"
+            + " (P9-TSK-022) - never a merchant payout")
+    void aCorridorProviderReferenceReachesTheClaims() {
+        java.util.List<String> asked = new java.util.concurrent.CopyOnWriteArrayList<>();
+        java.util.UUID corridorSource = java.util.UUID.randomUUID();
+        JdbcInternalReferenceLookup lookup = new JdbcInternalReferenceLookup(
+                recording(com.finapp.payments.PaymentAttemptStore.class, "attempts", asked),
+                recording(com.finapp.payments.RefundStore.class, "refunds", asked),
+                recording(com.finapp.payments.DisputeStore.class, "disputes", asked),
+                recording(com.finapp.payments.WithdrawalStore.class, "withdrawals", asked),
+                recording(com.finapp.merchant.MerchantPayoutStore.class, "payouts", asked),
+                recording(com.finapp.payments.SchemeExecutionClaimStore.class, "claims", asked),
+                (uow, source) -> Optional.of(com.finapp.payments.SimulatedCorridorAdapter.RAIL.id()),
+                recording(com.finapp.fx.TradeStore.class, "covers", asked),
+                (uow, source) -> Optional.of(com.finapp.ledger.AccountPurpose.CORRIDOR_CLEARING),
+                recording(com.finapp.payments.OutboundCreditStore.class, "outboundCredits", asked));
+        assertThat(lookup.classify(null, new InternalReferenceLookup.LookupSubject(Optional.empty(),
+                        java.util.Map.of(com.finapp.reconciliation.KeyKind.PAYOUT_PROVIDER_REF, "XP-a-1"),
+                        Optional.of(corridorSource))).classification())
+                .isEqualTo(InternalClassification.UNKNOWN);
+        assertThat(asked).containsExactly("claims.findByExecution");
+    }
+
     @SuppressWarnings("unchecked")
     private static <T> T recording(Class<?> port, String name, java.util.List<String> asked) {
         return (T) java.lang.reflect.Proxy.newProxyInstance(

@@ -274,3 +274,14 @@ retained), `INV-PAY-03` (provider vocabulary confined to format adapters).
   corridor's `PAYOUT_FEE` names its credit by `ORIGINAL_REF` = the provider's reference, not `E` -
   reconciliation reads every `PAYOUT_FEE`'s original by `PAYOUT_PROVIDER_REF`
   (`ExternalLineType.originalKeyKind`), which is the corridor credit's alias key.
+- *As built by `P9-TSK-022` (2026-10-06):* the corridor reaches cash end to end - a `PAYOUT_EXECUTED` line allocated
+  to its `CROSSBORDER_PAYOUT` by `E` (then the provider's alias), the `PAYOUT_FEE` checked against the pinned v1 row
+  of its own currency and posted at hop 1 (`PROCESSING_COSTS` against the corridor's own clearing), the remittance
+  discharged by the bank at hop 2, `CORRIDOR_CLEARING` proven per (counterparty, currency) - section 12.4(g)'s USD
+  cash identity (4.22) reproduced exactly. The reference lookup gains the corridor family: a corridor line's `E` names
+  its outbound credit (`COMPLETED` the applied fact, `FAILED` terminal, every earlier state in flight), its provider
+  reference the completion's claim. An unsettled `CROSSBORDER_PAYOUT` is `HIGH` as the plan's section 12.9.3 has it.
+  **Found and fixed:** our `E` was 32 hexadecimal digits, roughly one in fifty carrying a 13-digit run the corridor
+  format screens as a card number - a report naming it would have been refused; `E` is now minted letters only.
+  **Deviation:** a provider executing after a `FAILED` credit is typed `TERMINAL_STATE_CONTRADICTED` (the withdrawal's
+  precedent), not the plan's `UNKNOWN_EXTERNAL` - parked and loud either way, and more precise.

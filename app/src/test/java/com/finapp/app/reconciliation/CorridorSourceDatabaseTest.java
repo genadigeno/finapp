@@ -116,9 +116,22 @@ class CorridorSourceDatabaseTest {
             }
         }
         assertThat(PositionProof.provenPurposes(sources)).contains(CORRIDOR_POSITION);
+        // Since P9-TSK-020 the outbound credit's completion posts to it, and since P9-TSK-022 the corridor's reports and
+        // the bank's statements discharge it and reconciliation parks a line's value from it: nothing else ever does.
         assertThat(count("SELECT count(*) FROM ledger.journal_line l JOIN ledger.ledger_account a"
-                + " ON a.id = l.ledger_account_id WHERE a.purpose = ?", CORRIDOR_POSITION.name()))
-                .as("the position exists; nothing posts to it").isZero();
+                + " ON a.id = l.ledger_account_id JOIN ledger.journal_entry e ON e.id = l.entry_id WHERE a.purpose = ?"
+                + " AND e.idempotency_scope NOT LIKE 'ledger.post:outbound-credit:%'"
+                + " AND e.idempotency_scope NOT LIKE 'ledger.post:recon-%'"
+                + " AND e.id NOT IN (SELECT journal_entry_id FROM settlement.batch WHERE journal_entry_id IS NOT NULL)",
+                CORRIDOR_POSITION.name()))
+                .as("the position exists; only a completion, a report, a statement or a parking posts to it - found %s",
+                        one("SELECT coalesce(string_agg(DISTINCT e.idempotency_scope, ', '), '') FROM ledger.journal_line l"
+                                + " JOIN ledger.ledger_account a ON a.id = l.ledger_account_id JOIN ledger.journal_entry e"
+                                + " ON e.id = l.entry_id WHERE a.purpose = ? AND e.idempotency_scope NOT LIKE"
+                                + " 'ledger.post:outbound-credit:%' AND e.idempotency_scope NOT LIKE 'ledger.post:recon-%'"
+                                + " AND e.id NOT IN (SELECT journal_entry_id FROM"
+                                + " settlement.batch WHERE journal_entry_id IS NOT NULL)", CORRIDOR_POSITION.name()))
+                .isZero();
     }
 
     @Test
@@ -139,13 +152,20 @@ class CorridorSourceDatabaseTest {
     void theFirstVersionAdmitsTheReport() throws Exception {
         Actor proposer = new Actor("op-corridor-controller-a", ActorType.EMPLOYEE);
         Actor approver = new Actor("op-corridor-controller-b", ActorType.EMPLOYEE);
-        UUID ruleSetId = inTransaction(uow -> administration.propose(uow,
-                CorridorRuleSetV1.proposal("The corridor source's first version"),
-                proposer, Instant.now(), CorrelationId.generate(IDS)).ruleSetId());
-        inTransaction(uow -> administration.approve(uow, ruleSetId, approver, "Reviewed against O7",
-                Instant.now(), CorrelationId.generate(IDS)));
-        assertThat(one("SELECT version || ':' || status FROM reconciliation.rule_set WHERE id = ?", ruleSetId))
-                .isEqualTo("1:ACTIVE");
+        // The first version through the first-version door - unless a suite sharing the container (P9-TSK-020's and
+        // later, whose completions need it) already activated it the same way.
+        if (count("SELECT count(*) FROM reconciliation.rule_set WHERE source_id = ? AND status = 'ACTIVE'",
+                CorridorRuleSetV1.SOURCE) == 0) {
+            UUID ruleSetId = inTransaction(uow -> administration.propose(uow,
+                    CorridorRuleSetV1.proposal("The corridor source's first version"),
+                    proposer, Instant.now(), CorrelationId.generate(IDS)).ruleSetId());
+            inTransaction(uow -> administration.approve(uow, ruleSetId, approver, "Reviewed against O7",
+                    Instant.now(), CorrelationId.generate(IDS)));
+            assertThat(one("SELECT version || ':' || status FROM reconciliation.rule_set WHERE id = ?", ruleSetId))
+                    .isEqualTo("1:ACTIVE");
+        }
+        assertThat(one("SELECT min(version) || ':' || count(*) FROM reconciliation.rule_set WHERE source_id = ?"
+                + " AND status = 'ACTIVE'", CorridorRuleSetV1.SOURCE)).isEqualTo("1:1");
 
         UUID batch = accepted(SOURCE, corridorReport("USD", "CREDITED", "-250.00", "xp_" + marker(), e()));
         assertThat(one("SELECT posting_omitted FROM settlement.batch WHERE id = ?", batch))

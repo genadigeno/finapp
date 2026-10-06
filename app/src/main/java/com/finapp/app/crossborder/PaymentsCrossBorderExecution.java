@@ -140,7 +140,7 @@ public final class PaymentsCrossBorderExecution implements CrossBorderExecution 
             throw new ExecutionRefused("FX", "WALLET_NOT_POSTABLE");
         }
         OutboundCreditId id = OutboundCreditId.next(ids);
-        EndToEndReference reference = new EndToEndReference(ids.next().toString().replace("-", ""));
+        EndToEndReference reference = new EndToEndReference(lettersOnly(ids.next()));
         credits.insert(unitOfWork, new OutboundCreditStore.Draft(id, ask.owner(), ask.payment(), ask.dispatchKey(),
                 route.chosen(), new ProviderReference(ask.destinationReference()), ask.instructed(), ask.hold(),
                 hold.id().value(), reference));
@@ -148,6 +148,19 @@ public final class PaymentsCrossBorderExecution implements CrossBorderExecution 
                 route.version().id(), route.inputs(), route.plan()));
         return new Dispatched(id.value(), reference.value(), hold.id().value(), route.chosen().value(), "DISPATCHED",
                 ask.destinationReference(), ask.instructed());
+    }
+
+    /**
+     * Our end-to-end reference for a fresh credit (`P9-TSK-022`): the identifier's 32 hexadecimal digits rendered in
+     * letters alone ({@code 0-9} as {@code g-p}) - unique as the identifier is, and never carrying a run of digits a
+     * provider's report screen would read as a card number (the corridor format refuses a 13-digit run).
+     */
+    static String lettersOnly(java.util.UUID id) {
+        StringBuilder letters = new StringBuilder(32);
+        for (char hex : id.toString().replace("-", "").toCharArray()) {
+            letters.append(Character.isDigit(hex) ? (char) ('g' + (hex - '0')) : hex);
+        }
+        return letters.toString();
     }
 
     @Override

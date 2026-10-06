@@ -624,6 +624,9 @@ settlement source row lock every acceptance holds - a fresh break even where the
 statement had filled an earlier gap - and the genuine statement's acceptance closes it `EVIDENCED`
 (`BatchRepudiationDatabaseTest` case 18).)*
 **Phase:** 8
+*(The corridor's half in force since `P9-TSK-022` (2026-10-06): `CORRIDOR_CLEARING` reaches cash only on the
+bank's statement discharging the corridor report's remittance; section 12.4(g)'s USD cash identity holds exactly.
+Verified by `CorridorSettlementToCashDatabaseTest`.)*
 
 *(The first statement opening at zero is owner decision O4, settled at the Phase 7 → 8 transition
 on the design's recommendation and open to revision: a non-zero first opening raises

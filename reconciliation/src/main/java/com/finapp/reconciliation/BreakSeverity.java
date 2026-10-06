@@ -65,7 +65,10 @@ public final class BreakSeverity {
                                                             // An unsettled FX leg is principal at
                                                             // risk (PHASE_9_PLAN.md 12.9.3).
                                                             || kind == ExpectationKind.FX_SELL_LEG
-                                                            || kind == ExpectationKind.FX_BUY_LEG)
+                                                            || kind == ExpectationKind.FX_BUY_LEG
+                                                            // An unsettled corridor payout too
+                                                            // (P9-TSK-022, the same section).
+                                                            || kind == ExpectationKind.CROSSBORDER_PAYOUT)
                                     .isPresent()
                             ? Severity.HIGH
                             : Severity.MEDIUM;
