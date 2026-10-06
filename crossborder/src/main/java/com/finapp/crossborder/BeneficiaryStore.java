@@ -132,8 +132,14 @@ public interface BeneficiaryStore {
     /** {@code owner}'s beneficiaries, newest first, at most {@code limit}. */
     List<BeneficiaryRow> listOwned(Connection unitOfWork, UUID owner, int limit);
 
-    /** The beneficiary whose current screening is {@code screening}, under {@code FOR UPDATE}. */
-    Optional<BeneficiaryRow> lockByScreening(Connection unitOfWork, UUID screening);
+    /** The beneficiary {@code id} under {@code FOR UPDATE} - the screening listener's lock (`P9-TSK-018`). */
+    Optional<BeneficiaryRow> lockById(Connection unitOfWork, BeneficiaryId id);
+
+    /** {@code owner}'s beneficiary {@code id} under {@code FOR SHARE} - the quote's payability read (`P9-TSK-018`). */
+    Optional<BeneficiaryRow> lockOwnedForShare(Connection unitOfWork, BeneficiaryId id, UUID owner);
+
+    /** Points the beneficiary at {@code screening}, its current clearance (`P9-TSK-018`, a re-screen decided). */
+    void pointScreening(Connection unitOfWork, BeneficiaryId id, UUID screening);
 
     /** Moves {@code id} from {@code from} to {@code to}; false when it was not there. */
     boolean move(Connection unitOfWork, BeneficiaryId id, BeneficiaryStatus from, BeneficiaryStatus to, Optional<Instant> revokedAt);

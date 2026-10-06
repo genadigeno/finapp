@@ -771,6 +771,11 @@ subject takes, no evidence that still finds it, no acknowledgement back on its r
 | `crossborder.GrantRefused` | 422 | The beneficiary authorisation was not accepted. |
 | `crossborder.ProviderUnavailable` | 503 | The payment provider is unavailable; try again. |
 | `crossborder.BeneficiaryNotFound` | 404 | No beneficiary matches the requested identifier. |
+| `crossborder.BeneficiaryNotPayable` | 422 | Payments to this beneficiary are not possible. |
+| `crossborder.AmountExceedsCorridorLimit` | 422 | The amount exceeds the limit for this destination. |
+| `crossborder.PolicyStale` | 409 | The corridor terms changed; request a new offer. |
+| `crossborder.ScreeningUnavailable` | 503 | The beneficiary could not be verified just now; try again. |
+| `crossborder.OfferNotFound` | 404 | No offer matches the requested identifier. |
 
 The FX controller's doors (`P9-TSK-007`, ADR-0075 §3). `NotFound` is the `FileNotFound`
 departure at the pricing-policy and enable-request doors - every route sits behind
@@ -832,6 +837,17 @@ with a new key and the same grant. `BeneficiaryNotFound` is the uniform `404` fo
 beneficiary and a malformed id alike. A non-payable beneficiary is never named by a code here: the
 read shows the shaped status, and a revocation answers the same `200 {"status":"REVOKED"}` from every
 state (tipping-off).
+
+The quote door (`P9-TSK-018`, PHASE_9_PLAN.md §12.3) adds five, beside fx's own quote codes (every
+fx refusal - `fx.TooManyOpenQuotes`, `fx.RateUnavailable`, `fx.PolicyStale`, ... - answers by its own
+code, the cap shared with conversions). `BeneficiaryNotPayable` is **one byte-identical answer** for a
+beneficiary being screened, in review, blocked, revoked, unknown or another customer's, and for a
+re-screen's hit: nothing is priced and no provider is asked (`INV-XB-02`). `AmountExceedsCorridorLimit`
+refuses a destination past the corridor's maximum - before the provider for a fixed destination, at the
+record for a fixed source. `PolicyStale` (`409`) answers a corridor version superseded between the claim
+and the record; the client retries with a new key. `ScreeningUnavailable` (`503`) answers a lapsed
+clearance whose re-screen could not reach its provider - nothing priced, nothing held. `OfferNotFound`
+is the uniform `404` of the offer read. Every refusal is recorded on the claim.
 
 ## 3a. Rejection at the boundary
 

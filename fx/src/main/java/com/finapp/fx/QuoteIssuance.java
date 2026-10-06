@@ -80,13 +80,21 @@ public final class QuoteIssuance {
     }
 
     /** What the customer asked: the pair, the fixed side and its exact amount. */
-    public record QuoteRequest(UUID ownerParty, CurrencyCode source, CurrencyCode destination, FixedSide fixedSide, Money amount) {
+    public record QuoteRequest(
+            UUID ownerParty, CurrencyCode source, CurrencyCode destination, FixedSide fixedSide, Money amount,
+            PricingPurpose purpose) {
         public QuoteRequest {
             Objects.requireNonNull(ownerParty, "ownerParty must not be null");
             Objects.requireNonNull(source, "source must not be null");
             Objects.requireNonNull(destination, "destination must not be null");
             Objects.requireNonNull(fixedSide, "fixedSide must not be null");
             Objects.requireNonNull(amount, "amount must not be null");
+            Objects.requireNonNull(purpose, "purpose must not be null");
+        }
+
+        /** A wallet conversion's request - the purpose every caller before `P9-TSK-018` meant. */
+        public QuoteRequest(UUID ownerParty, CurrencyCode source, CurrencyCode destination, FixedSide fixedSide, Money amount) {
+            this(ownerParty, source, destination, fixedSide, amount, PricingPurpose.CONVERSION);
         }
     }
 
@@ -143,7 +151,7 @@ public final class QuoteIssuance {
                                 ? policies.version(unitOfWork, existing.get().version())
                                 : policies.active(unitOfWork))
                         .orElseThrow(() -> new QuoteRefusal.Refused(QuoteRefusal.PAIR_NOT_OFFERED));
-        PolicyPair terms = termsFor(version, asked.source(), asked.destination())
+        PolicyPair terms = termsFor(version, asked.purpose(), asked.source(), asked.destination())
                 .orElseThrow(() -> new QuoteRefusal.Refused(QuoteRefusal.PAIR_NOT_OFFERED));
         if (!admits(terms.pricing(), asked.fixedSide(), asked.amount())) {
             throw new QuoteRefusal.Refused(QuoteRefusal.AMOUNT_OUT_OF_RANGE);
@@ -160,7 +168,7 @@ public final class QuoteIssuance {
         QuoteStore.RequestRow request = existing.orElseGet(() -> {
             UUID id = ids.next();
             return quotes.insertRequestIfAbsent(unitOfWork, new QuoteStore.RequestDraft(
-                    id, reference(id), claimKey, asked.ownerParty(), PricingPurpose.CONVERSION,
+                    id, reference(id), claimKey, asked.ownerParty(), asked.purpose(),
                     asked.source(), asked.destination(), asked.fixedSide(), asked.amount(),
                     version.row().id(), correlation.value()));
         });
@@ -366,8 +374,14 @@ public final class QuoteIssuance {
 
     /** The pair's terms for a conversion in the version, if it offers the pair. */
     static Optional<PolicyPair> termsFor(PricingPolicyStore.VersionView version, CurrencyCode source, CurrencyCode destination) {
+        return termsFor(version, PricingPurpose.CONVERSION, source, destination);
+    }
+
+    /** The pair's terms for {@code purpose} in the version, if it offers the pair for it (`P9-TSK-018`). */
+    static Optional<PolicyPair> termsFor(
+            PricingPolicyStore.VersionView version, PricingPurpose purpose, CurrencyCode source, CurrencyCode destination) {
         return version.pairs().stream()
-                .filter(pair -> pair.purpose() == PricingPurpose.CONVERSION
+                .filter(pair -> pair.purpose() == purpose
                         && pair.pricing().source().equals(source)
                         && pair.pricing().destination().equals(destination))
                 .findFirst();

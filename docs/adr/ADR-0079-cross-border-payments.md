@@ -352,3 +352,9 @@ deliveries harmless), `INV-CON-01`/`-02` (every judgement on locked rows), `INV-
 - `SHA`/`BEN` charge bearers wait for a corridor whose provider cannot guarantee the delivered
   amount (O9).
 - The Phase 9 review (`P9-DOC-001`) reads this ADR against the code before accepting it.
+- *As built by `P9-TSK-018` (2026-10-06):* the cross-border offer - crossborder `V004`'s `offer_request` (the
+  claim, the pinned corridor version, the re-screen) and `payment_offer` (fx's `CROSS_BORDER` quote beside the
+  corridor fee computed once on the customer's source amount, the total debit `CHECK`-held as source plus fee,
+  the guaranteed destination and the estimate), recorded in one transaction with fx's quote through the
+  `CrossBorderFx` port; the corridor maximum enforced on the destination; a lapsed clearance re-screened
+  between the transactions; `POST /v1/me/cross-border/quotes` and `GET .../{id}`. Nothing is held.

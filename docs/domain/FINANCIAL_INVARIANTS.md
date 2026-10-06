@@ -1135,6 +1135,13 @@ name goes `IN_REVIEW`, never `ACTIVE` without a person; a revoked beneficiary is
 and the revocation answer byte-identically across screening, review and block. The doors that move
 money - the quote and the authorization - judge payability from `-018` and `-019`.)*
 
+*(The quote's half in force since `P9-TSK-018` (2026-10-06): payability judged in the quote's Tx1 with
+the beneficiary `FOR SHARE` - the owner's, `ACTIVE`, clear, on an available corridor its issuing rail
+serves - and one byte-identical `422 crossborder.BeneficiaryNotPayable` for every other state; a
+clearance older than the corridor's screening validity re-screened between the transactions, a hit, an
+indeterminate answer or an unverified payee moving the beneficiary `IN_REVIEW` in kyc's T-e and refusing
+with nothing priced. Verified by `CrossBorderOfferDatabaseTest`.)*
+
 ### INV-XB-03 — What was shown is what is held, posted and instructed
 **Statement:** What the customer was shown — destination amount, fee, total debit — is
 exactly what is held, posted and instructed.

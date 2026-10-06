@@ -298,11 +298,37 @@ public final class JdbcBeneficiaryStore implements BeneficiaryStore {
     }
 
     @Override
-    public Optional<BeneficiaryRow> lockByScreening(Connection unitOfWork, UUID screening) {
+    public Optional<BeneficiaryRow> lockById(Connection unitOfWork, BeneficiaryId id) {
+        Objects.requireNonNull(id, "id must not be null");
+        return one(unitOfWork, "SELECT " + BENEFICIARY_COLUMNS + " FROM crossborder.beneficiary WHERE id = ? FOR UPDATE",
+                statement -> statement.setObject(1, id.value()), JdbcBeneficiaryStore::beneficiary, "locking beneficiary " + id);
+    }
+
+    @Override
+    public Optional<BeneficiaryRow> lockOwnedForShare(Connection unitOfWork, BeneficiaryId id, UUID owner) {
+        Objects.requireNonNull(id, "id must not be null");
+        Objects.requireNonNull(owner, "owner must not be null");
+        return one(unitOfWork, "SELECT " + BENEFICIARY_COLUMNS + " FROM crossborder.beneficiary WHERE id = ? AND owner_party = ?"
+                        + " FOR SHARE",
+                statement -> {
+                    statement.setObject(1, id.value());
+                    statement.setObject(2, owner);
+                }, JdbcBeneficiaryStore::beneficiary, "reading beneficiary " + id + " for share");
+    }
+
+    @Override
+    public void pointScreening(Connection unitOfWork, BeneficiaryId id, UUID screening) {
+        Objects.requireNonNull(unitOfWork, "unitOfWork must not be null");
+        Objects.requireNonNull(id, "id must not be null");
         Objects.requireNonNull(screening, "screening must not be null");
-        return one(unitOfWork, "SELECT " + BENEFICIARY_COLUMNS + " FROM crossborder.beneficiary WHERE screening_id = ? FOR UPDATE",
-                statement -> statement.setObject(1, screening), JdbcBeneficiaryStore::beneficiary,
-                "locking the beneficiary of screening " + screening);
+        try (PreparedStatement update = unitOfWork.prepareStatement(
+                "UPDATE crossborder.beneficiary SET screening_id = ? WHERE id = ? AND status <> 'REVOKED'")) {
+            update.setObject(1, screening);
+            update.setObject(2, id.value());
+            update.executeUpdate();
+        } catch (SQLException failure) {
+            throw new CrossborderStorageException(DatabaseFailure.describe("repointing beneficiary " + id, failure), failure);
+        }
     }
 
     @Override

@@ -1,6 +1,6 @@
 # Task History
 
-The per-task completion records that accumulated behind `## Current Task` - 211 "Previously" blocks, newest first, from `P9-TSK-016` back to project initiation. *(`X-TSK-016` is cross-cutting and completed after `P9-TSK-010` and before `P9-TSK-011`, so it stands between them.)* *(`X-TSK-005` is cross-cutting and completed after `P7-TSK-014` and before `P7-TSK-015`, so it stands between them; its record came in with its branch's merge.)* *(`X-TSK-004` is cross-cutting and completed after the Phase 6 → 7 transition, so it stands second, between `P7-TSK-001` and the transition's record - the transition's block moved here by `P7-TSK-001`'s gate, exactly as an earlier form of this note said it would.)*
+The per-task completion records that accumulated behind `## Current Task` - 212 "Previously" blocks, newest first, from `P9-TSK-017` back to project initiation. *(`X-TSK-016` is cross-cutting and completed after `P9-TSK-010` and before `P9-TSK-011`, so it stands between them.)* *(`X-TSK-005` is cross-cutting and completed after `P7-TSK-014` and before `P7-TSK-015`, so it stands between them; its record came in with its branch's merge.)* *(`X-TSK-004` is cross-cutting and completed after the Phase 6 → 7 transition, so it stands second, between `P7-TSK-001` and the transition's record - the transition's block moved here by `P7-TSK-001`'s gate, exactly as an earlier form of this note said it would.)*
 
 **Archive.** These records were moved verbatim out of
 [`CURRENT_STATE.md`](../CURRENT_STATE.md) on 2026-09-20 so that the canonical description of
@@ -12,6 +12,33 @@ Current state: [`CURRENT_STATE.md`](../CURRENT_STATE.md) ·
 Authoritative backlog: [`BACKLOG.md`](../BACKLOG.md)
 
 ---
+
+### Previously
+
+**`P9-TSK-017` — Cross-border beneficiaries** — `COMPLETE` (2026-10-06). **M9.5 CLOSES AT 4 OF 4: a beneficiary
+abroad, registered by provider reference, screened by kyc before it can be paid, revocable from any state without
+revealing it** (ADR-0080 §§3, 5a, ADR-0081; `INV-XB-02`, `INV-RAIL-02`, `INV-RAIL-03`, `INV-KYC-05`). **crossborder
+`V003`**: `beneficiary` (the corridor provider's opaque reference, a suffix, the payee check and the customer's
+acknowledgement, the attested country, currency and entity type, a screened nickname, the current screening; the
+machine held by an edge trigger, `REVOKED` final, every text column refusing a bank identifier), its append-only
+`beneficiary_status_event`, `beneficiary_registration` keyed by an exchange reference derived from the owner and the
+grant (the grant never stored), and the append-only `corridor_selection` with its steps. **The domain** (crossborder):
+`Beneficiaries` - registration as two transactions around the grant exchange (the claim and the pinned selection,
+then the record with kyc's screening requested in the same unit of work, advisory namespace 9 serialising a
+takeover), the synchronous screening after commit, revocation with one identical answer, the listener's moves in
+kyc's T-e (a no-op on `REVOKED`); the pure `CorridorSelection` (recomputable from the pinned version, the stored inputs
+and the observed availability); the `CounterpartyScreening` port; `CorridorDirectory` gaining `operable` and
+`exchange`; `crossborder.BeneficiaryRegistered`/`Activated`/`Blocked`/`Revoked`; five error codes. **kyc**:
+`CounterpartyScreenings.requestWithin` and the listener's outcome carrying its time and correlation. **app**:
+`RailDirectory` over payments' `RailOperations`, the screening port over kyc, kyc's listener over the beneficiary, the
+doors `POST/GET /v1/me/cross-border/beneficiaries`, `GET .../{id}` and `POST .../{id}/revocation` (step-up when a
+factor is enrolled), the registers and the data classification. **PROBES** (Nine probes, nine caught, each by its own case), every restore
+byte-identical (sha256-verified; `MUTATION_TESTING.md` §2 +9 rows). **Multi-instance PASS** - ten registrations with
+one key, one beneficiary; a revocation raced against a release, a revoked beneficiary never `ACTIVE` (each counted).
+Deviations recorded: one selection reason for an undeclared rail; no declaration version. Nothing posts. **NEXT**:
+`P9-TSK-018` `READY`. **Verified** by fresh runs - the fleet-wide hermetic tier 2533 across 415 suites and 18 modules; the architecture tier
+157 across 27; the task's own database suites while built (CrossBorderBeneficiaryDatabaseTest 11; the crossborder module 23 across 4; CounterpartyScreeningDatabaseTest and CorridorAdministrationEndpointDatabaseTest re-run green, 17); ALL 0 FAILURES - the other database tiers skipped
+on the owner's instruction.
 
 ### Previously
 

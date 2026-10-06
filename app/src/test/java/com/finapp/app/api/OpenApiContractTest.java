@@ -601,6 +601,9 @@ class OpenApiContractTest {
                         ApiVersion.CURRENT_PREFIX + "/me/cross-border/beneficiaries",
                         ApiVersion.CURRENT_PREFIX + "/me/cross-border/beneficiaries/{id}",
                         ApiVersion.CURRENT_PREFIX + "/me/cross-border/beneficiaries/{id}/revocation",
+                        // P9-TSK-018: the customer's cross-border offers (a session).
+                        ApiVersion.CURRENT_PREFIX + "/me/cross-border/quotes",
+                        ApiVersion.CURRENT_PREFIX + "/me/cross-border/quotes/{id}",
                         // P9-TSK-008: the customer's quote doors - request, read, cancel, and the
                         // offered pairs (a session; the owner's own quotes only).
                         ApiVersion.CURRENT_PREFIX + "/me/fx/quotes",
