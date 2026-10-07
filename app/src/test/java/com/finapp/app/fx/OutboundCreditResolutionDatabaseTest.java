@@ -6,6 +6,7 @@ import static com.finapp.app.fx.FxTestClient.fund;
 import static com.finapp.app.fx.FxTestClient.money;
 import static com.finapp.app.fx.FxTestClient.scalar;
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
 import com.finapp.app.crossborder.CorridorPolicyV1;
 import com.finapp.app.payments.SimulatedCorridorEngine;
@@ -347,6 +348,83 @@ class OutboundCreditResolutionDatabaseTest {
     }
 
     @Test
+    @DisplayName("the Phase 9 -> 10 transition: a takeover under the same key after the credit was concluded never re-sends -"
+            + " the request died after Tx1 with the provider holding nothing, the sweep concluded NEVER_RECEIVED and released"
+            + " the hold; the retry renews no permit and the provider still counts no instruction (and no writer can renew)")
+    void aConcludedCreditIsNeverResent() throws Exception {
+        FxTestClient.Customer customer = client().verifiedCustomer();
+        UUID product = client().openWallet(customer, "EUR");
+        fund(postings, product, money("1000.00", "EUR"));
+        String quote = offer(customer, beneficiary(customer, "Clear Person"));
+        String key = FxTestClient.key();
+        String body = "{\"quoteId\":\"" + quote + "\"}";
+        // The send never reaches the provider (a 500 before it records anything) and the transaction recording its
+        // answer is refused: the request dies after Tx1, the claim IN_PROGRESS, the credit DISPATCHED.
+        CORRIDOR.serverErrorNext();
+        HttpResponse<String> died;
+        try (AutoCloseable fault = refuse("payments.outbound_credit", "UPDATE",
+                "NEW.subject_id IN (SELECT id FROM crossborder.payment WHERE quote_id = '" + quote + "'::uuid)"
+                        + " AND NEW.status IS DISTINCT FROM OLD.status")) {
+            died = client().post(PAYMENTS, body, customer.token(), key);
+        }
+        assertThat(died.statusCode()).as(died.body()).isGreaterThanOrEqualTo(500);
+        UUID payment = UUID.fromString(scalar("SELECT id::text FROM crossborder.payment WHERE quote_id = ?::uuid", quote));
+        UUID credit = UUID.fromString(scalar("SELECT id::text FROM payments.outbound_credit WHERE subject_id = ?", payment));
+        String reference = scalar("SELECT end_to_end_reference FROM payments.outbound_credit WHERE id = ?", credit);
+        assertThat(scalar("SELECT status FROM payments.outbound_credit WHERE id = ?", credit)).isEqualTo("DISPATCHED");
+        assertThat(CORRIDOR.creditsOf(reference)).as("the provider never saw E").isZero();
+
+        // Past the declared deadline and margin, the sweep's inquiry finds nothing: NEVER_RECEIVED, the hold released.
+        agePermit(credit, Duration.ofMinutes(16));
+        resolve(reference);
+        assertThat(scalar("SELECT status || ' ' || failure_reason FROM payments.outbound_credit WHERE id = ?", credit))
+                .isEqualTo("FAILED NEVER_RECEIVED");
+        assertThat(scalar("SELECT h.status FROM ledger.hold h JOIN payments.outbound_credit c ON c.hold_id = h.id"
+                + " WHERE c.id = ?", credit)).isEqualTo("RELEASED");
+        String permit = scalar("SELECT last_dispatched_at::text FROM payments.outbound_credit WHERE id = ?", credit);
+
+        // The client retries under the same key once the claim's lease has lapsed: a takeover.
+        try (Connection app = DatabaseRoles.application();
+                PreparedStatement update = app.prepareStatement("UPDATE platform.idempotency_record SET lease_expires_at ="
+                        + " now() - interval '1 minute' WHERE idempotency_key = ? AND state = 'IN_PROGRESS'")) {
+            update.setString(1, key);
+            assertThat(update.executeUpdate()).as("the dead request's claim is still in progress").isEqualTo(1);
+        }
+        HttpResponse<String> retried = client().post(PAYMENTS, body, customer.token(), key);
+        assertThat(retried.statusCode()).as(retried.body()).isLessThan(300);
+        assertThat(CORRIDOR.creditsOf(reference)).as("a concluded instruction is never re-sent").isZero();
+        assertThat(scalar("SELECT last_dispatched_at::text FROM payments.outbound_credit WHERE id = ?", credit))
+                .as("no permit renewed").isEqualTo(permit);
+        assertThat(scalar("SELECT status FROM crossborder.payment WHERE id = ?", payment)).isEqualTo("FAILED");
+
+        // And no writer can renew it: the owner's raw renewal is refused (payments V029).
+        try (Connection owner = DatabaseRoles.migrator(); PreparedStatement renew = owner.prepareStatement(
+                "UPDATE payments.outbound_credit SET last_dispatched_at = now() WHERE id = ?")) {
+            renew.setObject(1, credit);
+            assertThatThrownBy(renew::executeUpdate).isInstanceOf(java.sql.SQLException.class)
+                    .hasMessageContaining("never re-sent");
+        }
+    }
+
+    /** A fault injected beneath {@code table}'s {@code operation} where {@code condition} holds; closing lifts it. */
+    private static AutoCloseable refuse(String table, String operation, String condition) throws Exception {
+        String name = "resolution_fault_" + UUID.randomUUID().toString().replace("-", "").substring(0, 12);
+        String schema = table.substring(0, table.indexOf('.'));
+        try (Connection owner = DatabaseRoles.migrator(); java.sql.Statement ddl = owner.createStatement()) {
+            ddl.execute("CREATE FUNCTION " + schema + "." + name + "() RETURNS trigger LANGUAGE plpgsql AS $$ BEGIN"
+                    + " IF " + condition + " THEN RAISE EXCEPTION 'injected fault'; END IF; RETURN NEW; END $$");
+            ddl.execute("CREATE TRIGGER " + name + " BEFORE " + operation + " ON " + table + " FOR EACH ROW EXECUTE FUNCTION "
+                    + schema + "." + name + "()");
+        }
+        return () -> {
+            try (Connection owner = DatabaseRoles.migrator(); java.sql.Statement ddl = owner.createStatement()) {
+                ddl.execute("DROP TRIGGER " + name + " ON " + table);
+                ddl.execute("DROP FUNCTION " + schema + "." + name + "()");
+            }
+        };
+    }
+
+    @Test
     @DisplayName("NEVER_RECEIVED: an UNKNOWN credit the provider does not know fails only past the declared deadline and"
             + " margin since its latest permit - before it, it waits")
     void anUnrecognisedCreditPastItsDeadlineNeverArrived() throws Exception {
@@ -548,11 +626,11 @@ class OutboundCreditResolutionDatabaseTest {
         try (Connection owner = DatabaseRoles.migrator()) {
             owner.setAutoCommit(false);
             try (PreparedStatement off = owner.prepareStatement(
-                            "ALTER TABLE payments.outbound_credit DISABLE TRIGGER outbound_credit_machine_is_legal");
+                            "ALTER TABLE payments.outbound_credit DISABLE TRIGGER USER");
                     PreparedStatement age = owner.prepareStatement("UPDATE payments.outbound_credit SET last_dispatched_at ="
                             + " last_dispatched_at - ? * interval '1 second' WHERE id = ?");
                     PreparedStatement on = owner.prepareStatement(
-                            "ALTER TABLE payments.outbound_credit ENABLE TRIGGER outbound_credit_machine_is_legal")) {
+                            "ALTER TABLE payments.outbound_credit ENABLE TRIGGER USER")) {
                 off.execute();
                 age.setLong(1, by.toSeconds());
                 age.setObject(2, credit);
