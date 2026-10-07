@@ -1352,6 +1352,12 @@ and the needle walked end to end, absent everywhere but kyc's ciphertext. Three 
 fresh runs. It depends on every `P9-TSK` (`-026` unless cut) and on `X-TSK-013`, so the
 skewed-clock race meets no instance-stamped permit.
 
+*As built (`P9-TST-001`, 2026-10-07)*: `FxCrossBorderStormDatabaseTest`, in its own container - the suite's context
+and a second `FinappApplication` in the JVM at +5 s and -5 s against the server, five movers each; the books
+proven in one snapshot every round (~320 per run); the catalogue seeded fault by fault; every leg settled to cash
+from the database's truth; the censuses exact against both providers. It found one production defect - the
+outbound credit sweep starved by undelivered credits - fixed in `JdbcOutboundCreditStore.findDue`.
+
 ## 14. Failure scenarios
 
 Each has a test or a documented, accepted rationale (the gate's testing criterion):

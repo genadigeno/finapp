@@ -102,6 +102,14 @@ class OutboundCreditResolutionDatabaseTest {
     @Autowired private Authorization authorization;
     @Autowired private PostingService postings;
     @Autowired private OutboundCreditResolution resolution;
+    @Autowired private com.finapp.payments.OutboundCreditStore outboundCreditStore;
+    @Autowired private OutboundCreditOutcomes outboundCreditOutcomes;
+    @Autowired private com.finapp.payments.RailOperations railOperations;
+    @Autowired private com.finapp.payments.PaymentRails paymentRails;
+    @Autowired private com.finapp.payments.ProviderEvidenceStore<Connection> providerEvidenceStore;
+    @Autowired private com.finapp.sharedkernel.id.IdGenerator idGenerator;
+    @Autowired private com.finapp.payments.TransactionRunner paymentTransactionRunner;
+    @Autowired private com.finapp.payments.OutboundCreditReturnStore outboundCreditReturnStore;
     @Autowired private FxPlanVerification planVerification;
     @Autowired private RuleSetAdministration ruleSets;
 
@@ -150,6 +158,32 @@ class OutboundCreditResolutionDatabaseTest {
     }
 
     // ------------------------------------------------------------------ the completion
+
+    @Test
+    @DisplayName("P9-TST-001's find: undelivered credits never starve one awaiting its outcome - every credit holding"
+            + " money is swept before any delivery poll, so a page the delivery polls would fill still completes it")
+    void undeliveredCreditsNeverStarveOneAwaitingItsOutcome() throws Exception {
+        CORRIDOR.acceptOnReceipt(true);
+        Paid undelivered = paid("Undelivered Person", FxTestClient.key());
+        CORRIDOR.acceptOnReceipt(false);
+        assertThat(scalar("SELECT status FROM payments.outbound_credit WHERE id = ?", undelivered.credit())).isEqualTo("COMPLETED");
+        Paid waiting = paid("Waiting Person", FxTestClient.key());
+        assertThat(scalar("SELECT status FROM payments.outbound_credit WHERE id = ?", waiting.credit())).isEqualTo("RECEIVED");
+        CORRIDOR.accept(waiting.reference());
+        // A page exactly as wide as the credits awaiting their outcome: by the permit alone, the older undelivered
+        // credit took a place on it and the newest waiting one - this one - was never asked about.
+        long awaiting = count("SELECT count(*) FROM payments.outbound_credit WHERE status = 'RECEIVED' OR (status IN"
+                + " ('DISPATCHED', 'UNKNOWN') AND recall_requested_at IS NOT NULL AND recall_outcome IS NULL)");
+        Duration day = Duration.ofDays(1);
+        Duration due = Duration.ofMillis(1);
+        OutboundCreditResolution page = new OutboundCreditResolution(outboundCreditStore, outboundCreditOutcomes,
+                railOperations, paymentRails, providerEvidenceStore,
+                new OutboundCreditResolution.Config(day, day, due, due, Duration.ofMinutes(5), (int) awaiting),
+                idGenerator, Clock.systemUTC(), paymentTransactionRunner, outboundCreditReturnStore);
+        page.sweep();
+        assertThat(scalar("SELECT status FROM payments.outbound_credit WHERE id = ?", waiting.credit()))
+                .as("the waiting credit completed: no delivery poll took its place").isEqualTo("COMPLETED");
+    }
 
     @Test
     @DisplayName("ACCEPTED completes in one transaction: the entry exact (12.4(g)) and equal to the offer, the hold and"
