@@ -1527,8 +1527,10 @@ product's, never converted, and rounded once at declared points under named roun
 **Why:** `INV-MON-01` and `INV-MON-03` pointed at credit: an affordability verdict that flips on
 a floating-point error or an implicit rounding is neither reproducible nor defensible.
 **Enforce:** `STATIC` (`NoFloatingPointMoneyRulesTest` over `credit`) + `DOMAIN` (`Money`; the
-annuity at scale 10 `HALF_EVEN`, rounded once to minor units `HALF_UP`; a source in another
-currency refused at normalisation, `credit.CurrencyNotSupported`).
+annuity at scale 10 `HALF_EVEN`, rounded once to minor units `HALF_UP`; money a source reports in
+another currency normalised `ABSENT` with the recorded `CURRENCY_NOT_SUPPORTED` marker - an
+attribute value, never an error code and never converted, ADR-0088 §3 - and an assessment's
+inputs in any other currency refused; *wording corrected by `P10-TSK-009`'s gate*).
 **Verify:** Property tests, monotone in income, amount and rate; worked cases exact; the build
 rule with a planted violation.
 **Phase:** 10
