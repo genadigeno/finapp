@@ -2222,6 +2222,17 @@ deleted by any role.
 | `reason_code` | `customer_text` | `INTERNAL` | Fixed platform wording, shown to the applicant for an adverse code - never a score, threshold or bureau datum |
 | `reason_code` | `adverse` | `INTERNAL` | Whether the code explains a judgement against the applicant |
 
+### `credit` - the credit profile - *added by `P10-TSK-004`*
+
+One row per party and no figure (`INV-CRD-04`): the lock every deciding transaction for the party takes
+first (`INV-CRD-09`). Never updated, deleted or truncated by any role.
+
+| Table | Column | Level | Note |
+|---|---|---|---|
+| `credit_profile` | `id` | `INTERNAL` | A lock target's identifier. Generated |
+| `credit_profile` | `party_id` | `CONFIDENTIAL` | Which party the platform holds a credit profile for - that a person sought credit at all |
+| `credit_profile` | `created_at` | `INTERNAL` | System time, stamped by the trigger |
+
 ### Free text, classified at its ceiling
 
 `audit_record.reason`, `audit_record.change_summary`, `idempotency_record.response_body`,
