@@ -235,10 +235,109 @@ class FxTradeReversalRaceDatabaseTest {
             try (CorrelationContext.Scope flow = CorrelationContext.enter(Correlation.startingWith(CorrelationId.generate(FxTestClient.IDS)));
                     Connection app = DatabaseRoles.application()) {
                 app.setAutoCommit(false);
-                reversals.approve(app, UUID.fromString(second), new Actor(UUID.randomUUID().toString(), ActorType.EMPLOYEE),
+                reversals.approve(app, com.finapp.fx.FxTradeId.of(UUID.fromString(booked.trade())), UUID.fromString(second),
+                        new Actor(UUID.randomUUID().toString(), ActorType.EMPLOYEE),
                         "again", CorrelationId.generate(FxTestClient.IDS));
             }
         }).isInstanceOf(TradeReversals.ProposalNotPending.class);
+    }
+
+    // ------------------------------------------------------------------ the Phase 9 to 10 transition
+
+    @Test
+    @DisplayName("a decision names its trade: approving or rejecting on trade A's route with trade B's reversal is 404"
+            + " and writes nothing - B's reversal still PROPOSED, both trades BOOKED, no mirror, no decision audited")
+    void aDecisionOnAnotherTradesRouteIsRefused() throws Exception {
+        Booked a = booked("100.00");
+        Booked b = booked("100.00");
+        String reversalOfB = field(propose(b.trade(), sessionWith(RoleName.LEDGER_OPERATOR), FxTestClient.key()).body(),
+                "reversalId");
+        String decider = sessionWith(RoleName.LEDGER_OPERATOR);
+
+        for (String act : List.of("approval", "rejection")) {
+            HttpResponse<String> crossed = decide(a.trade(), reversalOfB, act, decider);
+            assertThat(crossed.statusCode()).as("%s: %s", act, crossed.body()).isEqualTo(404);
+            assertThat(crossed.body()).contains("fx.NotFound");
+        }
+
+        assertThat(scalar("SELECT status FROM fx.trade_reversal WHERE id = ?::uuid", reversalOfB)).isEqualTo("PROPOSED");
+        assertThat(scalar("SELECT status FROM fx.trade WHERE id = ?::uuid", a.trade())).isEqualTo("BOOKED");
+        assertThat(scalar("SELECT status FROM fx.trade WHERE id = ?::uuid", b.trade())).isEqualTo("BOOKED");
+        assertThat(count("SELECT count(*) FROM ledger.journal_entry WHERE idempotency_scope IN (?, ?)",
+                "ledger.reverse:fx-trade:" + a.trade(), "ledger.reverse:fx-trade:" + b.trade())).isZero();
+        assertThat(count("SELECT count(*) FROM platform.audit_record WHERE operation IN"
+                + " ('fx.FxTradeReversalApproved', 'fx.FxTradeReversalRejected') AND target_id = ?", reversalOfB)).isZero();
+        assertThat(count("SELECT count(*) FROM fx.trade_reversal_event WHERE reversal_id = ?::uuid", reversalOfB))
+                .isEqualTo(1);
+        HttpResponse<String> own = decide(b.trade(), reversalOfB, "rejection", decider);
+        assertThat(own.statusCode()).as("its own route still decides it: %s", own.body()).isEqualTo(200);
+    }
+
+    @Test
+    @DisplayName("a reversal's reasons hold no instrument shape, each rank alone: the domain refuses a PAN and an IBAN in a"
+            + " proposal and a decision (422, nothing written) with the database's CHECKs dropped beneath it; the"
+            + " database refuses both by name in every reason column with the domain bypassed")
+    void reversalReasonsHoldNoInstrumentShape() throws Exception {
+        List<String> needles = List.of("refund card 4111111111111111 instead", "pay GB82WEST12345698765432 instead");
+        Booked booked = booked("100.00");
+        String proposer = sessionWith(RoleName.LEDGER_OPERATOR);
+
+        // The door, then the domain: refused before anything is written.
+        for (String needle : needles) {
+            HttpResponse<String> refused = client().post(TRADES + booked.trade() + "/reversal",
+                    "{\"reason\":\"" + needle + "\"}", proposer, FxTestClient.key());
+            assertThat(refused.statusCode()).as(refused.body()).isEqualTo(422);
+            assertThat(refused.body()).contains("fx.PricingPolicyInvalid").doesNotContain("4111").doesNotContain("GB82");
+        }
+        assertThat(count("SELECT count(*) FROM fx.trade_reversal WHERE trade_id = ?::uuid", booked.trade())).isZero();
+        String reversal = field(propose(booked.trade(), proposer, FxTestClient.key()).body(), "reversalId");
+        for (String needle : needles) {
+            HttpResponse<String> refused = client().post(TRADES + booked.trade() + "/reversal/" + reversal + "/rejection",
+                    "{\"reason\":\"" + needle + "\"}", sessionWith(RoleName.LEDGER_OPERATOR), null);
+            assertThat(refused.statusCode()).as(refused.body()).isEqualTo(422);
+        }
+        assertThat(scalar("SELECT status FROM fx.trade_reversal WHERE id = ?::uuid", reversal)).isEqualTo("PROPOSED");
+
+        // The domain ALONE: the database's three CHECKs dropped in a transaction rolled back - the domain still refuses.
+        try (CorrelationContext.Scope flow = CorrelationContext.enter(Correlation.startingWith(CorrelationId.generate(FxTestClient.IDS)));
+                Connection owner = DatabaseRoles.migrator()) {
+            owner.setAutoCommit(false);
+            try (java.sql.Statement ddl = owner.createStatement()) {
+                ddl.execute("ALTER TABLE fx.trade_reversal DROP CONSTRAINT trade_reversal_proposed_reason_no_instrument_shape,"
+                        + " DROP CONSTRAINT trade_reversal_decided_reason_no_instrument_shape");
+                ddl.execute("ALTER TABLE fx.trade_reversal_event DROP CONSTRAINT trade_reversal_event_reason_no_instrument_shape");
+                com.finapp.fx.FxTradeId trade = com.finapp.fx.FxTradeId.of(UUID.fromString(booked.trade()));
+                for (String needle : needles) {
+                    Actor actor = new Actor(UUID.randomUUID().toString(), ActorType.EMPLOYEE);
+                    assertThatThrownBy(() -> reversals.reject(owner, trade, UUID.fromString(reversal), actor, needle,
+                            CorrelationId.generate(FxTestClient.IDS)))
+                            .isInstanceOf(TradeReversals.ReasonInvalid.class)
+                            .hasMessageNotContaining("4111").hasMessageNotContaining("GB82");
+                }
+                try (java.sql.ResultSet row = ddl.executeQuery(
+                        "SELECT status FROM fx.trade_reversal WHERE id = '" + reversal + "'")) {
+                    assertThat(row.next()).isTrue();
+                    assertThat(row.getString(1)).as("nothing decided beneath the dropped CHECKs").isEqualTo("PROPOSED");
+                }
+            } finally {
+                owner.rollback();
+            }
+        }
+
+        // The database ALONE: the domain bypassed, every reason column refuses both shapes by name.
+        for (String needle : needles) {
+            assertRefusedNamed("trade_reversal_proposed_reason_no_instrument_shape",
+                    "INSERT INTO fx.trade_reversal (id, trade_id, status, proposed_by, proposed_reason, proposed_at,"
+                            + " correlation_id) VALUES (gen_random_uuid(), ?::uuid, 'PROPOSED', 'x', ?, now(), 'c')",
+                    booked.trade(), needle);
+            assertRefusedNamed("trade_reversal_decided_reason_no_instrument_shape",
+                    "UPDATE fx.trade_reversal SET status = 'REJECTED', decided_by = 'someone-else', decided_reason = ?"
+                            + " WHERE id = ?::uuid", needle, reversal);
+            assertRefusedNamed("trade_reversal_event_reason_no_instrument_shape",
+                    "INSERT INTO fx.trade_reversal_event (id, reversal_id, from_status, to_status, actor, reason)"
+                            + " VALUES (gen_random_uuid(), ?::uuid, 'PROPOSED', 'REJECTED', 'x', ?)", reversal, needle);
+        }
+        assertThat(scalar("SELECT status FROM fx.trade_reversal WHERE id = ?::uuid", reversal)).isEqualTo("PROPOSED");
     }
 
     // ------------------------------------------------------------------ refusals
@@ -384,6 +483,21 @@ class FxTradeReversalRaceDatabaseTest {
                 statement.executeUpdate();
             }
         }).as(sql).isInstanceOf(SQLException.class);
+    }
+
+    /** A raw statement the named CHECK must refuse (23514), run as the application role with the domain bypassed. */
+    private static void assertRefusedNamed(String constraint, String sql, Object... parameters) {
+        assertThatThrownBy(() -> {
+            try (Connection app = DatabaseRoles.application(); PreparedStatement statement = app.prepareStatement(sql)) {
+                for (int i = 0; i < parameters.length; i++) {
+                    statement.setObject(i + 1, parameters[i]);
+                }
+                statement.executeUpdate();
+            }
+        }).as(sql).isInstanceOfSatisfying(SQLException.class, refusal -> {
+            assertThat(refusal.getSQLState()).isEqualTo("23514");
+            assertThat(refusal.getMessage()).contains(constraint);
+        });
     }
 
     private String sessionWith(RoleName role) throws Exception {

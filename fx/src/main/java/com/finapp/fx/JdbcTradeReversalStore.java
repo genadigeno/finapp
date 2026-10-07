@@ -30,7 +30,7 @@ public final class JdbcTradeReversalStore implements TradeReversalStore {
             insert.setString(5, correlationId);
             return insert.executeUpdate() == 1;
         } catch (SQLException failure) {
-            throw new FxStorageException(DatabaseFailure.describe("proposing a trade reversal", failure), failure);
+            throw new FxStorageException(DatabaseFailure.describe("proposing a trade reversal", failure));
         }
     }
 
@@ -63,7 +63,7 @@ public final class JdbcTradeReversalStore implements TradeReversalStore {
             update.setObject(5, id);
             return update.executeUpdate() == 1;
         } catch (SQLException failure) {
-            throw new FxStorageException(DatabaseFailure.describe("deciding a trade reversal", failure), failure);
+            throw new FxStorageException(DatabaseFailure.describe("deciding a trade reversal", failure));
         }
     }
 
@@ -81,7 +81,7 @@ public final class JdbcTradeReversalStore implements TradeReversalStore {
             insert.setString(6, reason);
             insert.executeUpdate();
         } catch (SQLException failure) {
-            throw new FxStorageException(DatabaseFailure.describe("recording a trade reversal's edge", failure), failure);
+            throw new FxStorageException(DatabaseFailure.describe("recording a trade reversal's edge", failure));
         }
     }
 
@@ -102,7 +102,7 @@ public final class JdbcTradeReversalStore implements TradeReversalStore {
                         Optional.ofNullable(row.getObject("reversal_entry_id", UUID.class))));
             }
         } catch (SQLException failure) {
-            throw new FxStorageException(DatabaseFailure.describe(doing, failure), failure);
+            throw new FxStorageException(DatabaseFailure.describe(doing, failure));
         }
     }
 }

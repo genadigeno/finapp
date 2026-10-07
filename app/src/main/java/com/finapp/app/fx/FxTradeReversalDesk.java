@@ -56,23 +56,30 @@ public final class FxTradeReversalDesk {
         return new ReversalReceipt(stored[0], stored[1], "PROPOSED", null, null);
     }
 
-    public ReversalReceipt approve(String rawReversalId, String reason) {
+    /**
+     * Approves reversal {@code rawReversalId} OF trade {@code rawTradeId} - the route names both, and a reversal of
+     * another trade is 404 with nothing written (the Phase 9 to 10 transition).
+     */
+    public ReversalReceipt approve(String rawTradeId, String rawReversalId, String reason) {
+        FxTradeId tradeId = FxTradeId.of(id(rawTradeId, FxErrorCode.NOT_FOUND));
         UUID reversalId = id(rawReversalId, FxErrorCode.NOT_FOUND);
         Actor actor = SecurityContext.require();
         CorrelationId correlation = correlation();
         TradeReversals.Decided approved = guarded(() -> transactions.inTransaction(unitOfWork ->
-                reversals.approve(unitOfWork, reversalId, actor, reason, correlation)));
+                reversals.approve(unitOfWork, tradeId, reversalId, actor, reason, correlation)));
         // Telemetry, never the count of record: the trade's REVERSED status is. After its transaction committed.
         metrics.reversed(approved.pair());
         return receipt(approved);
     }
 
-    public ReversalReceipt reject(String rawReversalId, String reason) {
+    /** Rejects reversal {@code rawReversalId} OF trade {@code rawTradeId}; another trade's reversal is 404. */
+    public ReversalReceipt reject(String rawTradeId, String rawReversalId, String reason) {
+        FxTradeId tradeId = FxTradeId.of(id(rawTradeId, FxErrorCode.NOT_FOUND));
         UUID reversalId = id(rawReversalId, FxErrorCode.NOT_FOUND);
         Actor actor = SecurityContext.require();
         CorrelationId correlation = correlation();
         return receipt(guarded(() -> transactions.inTransaction(unitOfWork ->
-                reversals.reject(unitOfWork, reversalId, actor, reason, correlation))));
+                reversals.reject(unitOfWork, tradeId, reversalId, actor, reason, correlation))));
     }
 
     private static ReversalReceipt receipt(TradeReversals.Decided decided) {
@@ -95,6 +102,9 @@ public final class FxTradeReversalDesk {
             throw refused(FxErrorCode.PROPOSAL_PENDING, pending);
         } catch (TradeReversals.NotReversible notReversible) {
             throw refused(FxErrorCode.TRADE_NOT_REVERSIBLE, notReversible);
+        } catch (TradeReversals.ReasonInvalid invalid) {
+            // "The proposal or the decision is malformed" - the reason screen's refusal, as every FX act's (422).
+            throw refused(FxErrorCode.PRICING_POLICY_INVALID, invalid);
         }
     }
 

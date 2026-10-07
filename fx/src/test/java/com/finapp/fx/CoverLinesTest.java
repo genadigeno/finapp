@@ -143,6 +143,63 @@ class CoverLinesTest {
         return id;
     }
 
+    @Test
+    @DisplayName("the firm quote an attempt executed under (the Phase 9 to 10 transition): a COVER's attempt 1 its plan's"
+            + " computed leg, any attempt storing a stated counter that counter, an unjudgeable legacy attempt nothing -"
+            + " and the executed computed leg deviating from it is flagged, the fixed leg's deviation not")
+    void theComputedLegIsJudgedAgainstItsQuote() {
+        CoverLines.Plan bySource = new CoverLines.Plan(money("1000.00", EUR), money("1085.02", USD), FixedSide.FIXED_SOURCE);
+        assertThat(bySource.computed()).isEqualTo(money("1085.02", USD));
+        assertThat(CoverLines.quotedComputed(bySource, CoverKind.COVER, 1, java.util.Optional.empty()))
+                .contains(money("1085.02", USD));
+        assertThat(CoverLines.quotedComputed(bySource, CoverKind.COVER, 2, java.util.Optional.of(108_410L)))
+                .contains(money("1084.10", USD));
+        assertThat(CoverLines.quotedComputed(bySource, CoverKind.UNWIND, 1, java.util.Optional.of(108_000L)))
+                .contains(money("1080.00", USD));
+        assertThat(CoverLines.quotedComputed(bySource, CoverKind.COVER, 2, java.util.Optional.empty())).isEmpty();
+        assertThat(CoverLines.quotedComputed(bySource, CoverKind.UNWIND, 1, java.util.Optional.empty())).isEmpty();
+
+        java.util.Optional<Money> firm = java.util.Optional.of(money("1085.02", USD));
+        // The finding's scenario: the firm counter 1,085.02, executed 1,075.00 - a 10.02 loss, never silent.
+        CoverLines.Execution under = new CoverLines.Execution(money("1000.00", EUR), money("1075.00", USD));
+        assertThat(CoverLines.computedDeviates(bySource, under, firm)).isTrue();
+        assertThat(CoverLines.realised(bySource, under)).isEqualTo(new CoverLines.Realised(0, -1002, false));
+        assertThat(CoverLines.computedDeviates(bySource,
+                new CoverLines.Execution(money("1000.00", EUR), money("1085.02", USD)), firm)).isFalse();
+        assertThat(CoverLines.computedDeviates(bySource,
+                new CoverLines.Execution(money("999.00", EUR), money("1085.02", USD)), firm))
+                .as("the fixed leg's deviation is offPlan's, not this flag's").isFalse();
+        assertThat(CoverLines.computedDeviates(bySource, under, java.util.Optional.empty()))
+                .as("nothing to judge against").isFalse();
+
+        CoverLines.Plan byDestination = new CoverLines.Plan(money("921.63", EUR), money("1000.00", USD), FixedSide.FIXED_DESTINATION);
+        assertThat(byDestination.computed()).isEqualTo(money("921.63", EUR));
+        assertThat(CoverLines.computedDeviates(byDestination,
+                new CoverLines.Execution(money("925.00", EUR), money("1000.00", USD)),
+                java.util.Optional.of(money("921.63", EUR)))).isTrue();
+    }
+
+    @Test
+    @DisplayName("the executed rate explains the executed amounts within one minor unit of the computed leg, for the pair"
+            + " sold -> bought - a deviated amount, a reversed pair or a far rate is incoherent")
+    void theExecutedRateExplainsTheAmounts() {
+        com.finapp.sharedkernel.money.ExchangeRate rate =
+                com.finapp.sharedkernel.money.ExchangeRate.of(EUR, USD, new BigDecimal("1.0850240000"));
+        CoverLines.Plan bySource = new CoverLines.Plan(money("1000.00", EUR), money("1085.02", USD), FixedSide.FIXED_SOURCE);
+        assertThat(CoverLines.rateCoherent(bySource,
+                new CoverLines.Execution(money("1000.00", EUR), money("1085.02", USD)), rate)).isTrue();
+        assertThat(CoverLines.rateCoherent(bySource,
+                new CoverLines.Execution(money("1000.00", EUR), money("1075.00", USD)), rate)).isFalse();
+        assertThat(CoverLines.rateCoherent(bySource,
+                new CoverLines.Execution(money("1000.00", EUR), money("1085.02", USD)),
+                com.finapp.sharedkernel.money.ExchangeRate.of(USD, EUR, new BigDecimal("0.9216")))).isFalse();
+        CoverLines.Plan byDestination = new CoverLines.Plan(money("921.63", EUR), money("1000.00", USD), FixedSide.FIXED_DESTINATION);
+        assertThat(CoverLines.rateCoherent(byDestination,
+                new CoverLines.Execution(money("921.63", EUR), money("1000.00", USD)), rate)).isTrue();
+        assertThat(CoverLines.rateCoherent(byDestination,
+                new CoverLines.Execution(money("930.00", EUR), money("1000.00", USD)), rate)).isFalse();
+    }
+
     private static Money money(String amount, CurrencyCode currency) {
         return Money.of(new BigDecimal(amount), currency);
     }

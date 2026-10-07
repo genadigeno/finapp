@@ -60,6 +60,20 @@ class FxReasonScreenDatabaseTest {
                     "pair_availability.reason",
                     "provider_availability.reason");
 
+    /**
+     * The trade reversal's reason columns (`P9-TSK-025`) - screened by fx {@code V011} (the Phase 9 to 10 transition: V009
+     * held them to a length only, and this register, asserting "the database lists no other", was red unseen with the
+     * database tier skipped). Their probes, on a booked trade, are {@code FxTradeReversalRaceDatabaseTest}'s.
+     */
+    private static final String TRADE_REVERSAL_MIGRATION =
+            "db/migration/fx/V011__trade_reversal_reasons_hold_no_instrument_shape.sql";
+
+    private static final List<String> TRADE_REVERSAL_COLUMNS =
+            List.of(
+                    "trade_reversal.proposed_reason",
+                    "trade_reversal.decided_reason",
+                    "trade_reversal_event.reason");
+
     private static Connection application;
 
     @BeforeAll
@@ -87,17 +101,13 @@ class FxReasonScreenDatabaseTest {
     @DisplayName("the twin masks exactly the Java screen's platform identifiers and scans its runs and"
             + " tokens; every reason column gains its CHECK, and the database lists no other")
     void theMigrationIsTheTwin() throws SQLException {
-        String sql = migration();
+        String sql = migration(MIGRATION);
         assertThat(sql)
                 .contains("'" + InstrumentShapes.PLATFORM_IDENTIFIER_REGEX + "'")
                 .contains("'" + InstrumentShapes.DIGIT_RUN_REGEX + "'")
                 .contains("'" + InstrumentShapes.ALPHANUMERIC_RUN_REGEX + "'");
-        for (String column : COLUMNS) {
-            String table = column.substring(0, column.indexOf('.'));
-            String name = column.replace('.', '_') + "_no_instrument_shape";
-            assertThat(sql).contains("ALTER TABLE fx." + table + "\n    ADD CONSTRAINT " + name + " CHECK (\n"
-                    + "        NOT fx.holds_instrument_shape(" + column.substring(column.indexOf('.') + 1) + "));");
-        }
+        assertGainsItsCheck(sql, COLUMNS);
+        assertGainsItsCheck(migration(TRADE_REVERSAL_MIGRATION), TRADE_REVERSAL_COLUMNS);
         List<String> reasonColumns = new ArrayList<>();
         try (PreparedStatement select = application.prepareStatement(
                         "SELECT table_name || '.' || column_name FROM information_schema.columns WHERE"
@@ -107,7 +117,18 @@ class FxReasonScreenDatabaseTest {
                 reasonColumns.add(row.getString(1));
             }
         }
-        assertThat(reasonColumns).containsExactlyInAnyOrderElementsOf(COLUMNS);
+        List<String> screened = new ArrayList<>(COLUMNS);
+        screened.addAll(TRADE_REVERSAL_COLUMNS);
+        assertThat(reasonColumns).containsExactlyInAnyOrderElementsOf(screened);
+    }
+
+    private static void assertGainsItsCheck(String sql, List<String> columns) {
+        for (String column : columns) {
+            String table = column.substring(0, column.indexOf('.'));
+            String name = column.replace('.', '_') + "_no_instrument_shape";
+            assertThat(sql).contains("ALTER TABLE fx." + table + "\n    ADD CONSTRAINT " + name + " CHECK (\n"
+                    + "        NOT fx.holds_instrument_shape(" + column.substring(column.indexOf('.') + 1) + "));");
+        }
     }
 
     @Test
@@ -241,8 +262,8 @@ class FxReasonScreenDatabaseTest {
         }
     }
 
-    private static String migration() {
-        try (InputStream in = FxReasonScreenDatabaseTest.class.getClassLoader().getResourceAsStream(MIGRATION)) {
+    private static String migration(String path) {
+        try (InputStream in = FxReasonScreenDatabaseTest.class.getClassLoader().getResourceAsStream(path)) {
             assertThat(in).as("the migration is on the classpath").isNotNull();
             return new String(in.readAllBytes(), StandardCharsets.UTF_8).replace("\r\n", "\n");
         } catch (IOException e) {

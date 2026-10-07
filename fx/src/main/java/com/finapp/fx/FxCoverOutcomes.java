@@ -18,6 +18,7 @@ import com.finapp.sharedkernel.correlation.CorrelationId;
 import com.finapp.sharedkernel.event.EventEnvelope;
 import com.finapp.sharedkernel.event.EventId;
 import com.finapp.sharedkernel.id.IdGenerator;
+import com.finapp.sharedkernel.money.Money;
 import java.sql.Connection;
 import java.time.Clock;
 import java.time.Duration;
@@ -191,11 +192,19 @@ public final class FxCoverOutcomes {
                 .map(composed -> composed.declaration().clearingPurpose())
                 .orElseThrow(() -> new IllegalStateException("a cover's provider is a composed declaration"));
 
+        // The firm quote it executed under (the Phase 9 to 10 transition): the computed leg and the executed rate
+        // judged against it - booked as the provider executed (its confirmation is what reconciles), never silently.
+        Optional<Money> quotedComputed = CoverLines.quotedComputed(
+                plan, locked.kind(), attempt.attempt(), attempt.statedCounterMinor());
+        boolean computedDeviates = CoverLines.computedDeviates(plan, execution, quotedComputed);
+        boolean rateCoherent = CoverLines.rateCoherent(plan, execution, executed.executedRate());
+
         // 1. The fact - the arbiter.
         CoverStore.Recorded recorded = covers.insertExecution(unitOfWork, new CoverStore.ExecutionDraft(
                 locked.id(), locked.attempts(), attempt.clientReference(), locked.providerCode(),
                 executed.providerTradeReference(), locked.fixedSide(), executed.sold(), executed.bought(),
-                executed.executedRate(), executed.valueDate(), plan, locked.correlationId()));
+                executed.executedRate(), executed.valueDate(), plan, locked.correlationId(), quotedComputed,
+                rateCoherent));
         CoverLines.Realised realised = CoverLines.realised(plan, execution);
 
         // 2. The entry: the plan's legs closed onto the provider's own clearing, the difference realised.
@@ -241,6 +250,8 @@ public final class FxCoverOutcomes {
                         .with("deliveredResult", direction(realised.soldMinor()))
                         .with("receivedResult", direction(realised.boughtMinor()))
                         .with("executedOffPlan", Boolean.toString(realised.offPlan()))
+                        .with("computedDeviation", Boolean.toString(computedDeviates))
+                        .with("executedRateCoherent", Boolean.toString(rateCoherent))
                         .with("postingReference", "fx-cover-" + locked.id())
                         .toBytes(),
                 EventPayload.MEDIA_TYPE);
@@ -248,10 +259,22 @@ public final class FxCoverOutcomes {
                 AuditId.next(ids), actor, now, FxAuditAction.COVER_EXECUTED, AGGREGATE_TYPE, locked.id().toString(),
                 Optional.empty(), AuditOutcome.SUCCEEDED, correlation,
                 Optional.of("quote=" + locked.quoteId().value() + ", attempt=" + locked.attempts()
-                        + ", provider=" + locked.providerCode() + ", offPlan=" + realised.offPlan())));
+                        + ", provider=" + locked.providerCode() + ", offPlan=" + realised.offPlan()
+                        + ", computedDeviation=" + computedDeviates + ", rateCoherent=" + rateCoherent)));
         if (realised.offPlan()) {
             log.error("ALERT: cover {} executed off its plan's fixed leg at provider {} - booked, realised result posted",
                     locked.id(), locked.providerCode());
+        }
+        // Identifiers only - never an amount, a rate or a provider reference (ADR-0072).
+        if (computedDeviates) {
+            log.error("ALERT: cover {} attempt {} at provider {} executed its computed leg off the firm quote it was"
+                            + " executed under - booked as executed, realised result posted",
+                    locked.id(), locked.attempts(), locked.providerCode());
+        }
+        if (!rateCoherent) {
+            log.error("ALERT: cover {} attempt {} at provider {} reported an executed rate that does not explain its"
+                            + " executed amounts - booked from the amounts", locked.id(), locked.attempts(),
+                    locked.providerCode());
         }
         // 5. The wanted position: a cover executed for a quote abandoned meanwhile is unwound now, under these locks.
         if (locked.kind() == CoverKind.COVER && !wanted.wanted()) {
@@ -260,6 +283,12 @@ public final class FxCoverOutcomes {
         List<CoverObserver.Outcome> outcomes = new ArrayList<>(List.of(CoverObserver.Outcome.EXECUTED));
         if (realised.offPlan()) {
             outcomes.add(CoverObserver.Outcome.OFF_PLAN);
+        }
+        if (computedDeviates) {
+            outcomes.add(CoverObserver.Outcome.COMPUTED_DEVIATION);
+        }
+        if (!rateCoherent) {
+            outcomes.add(CoverObserver.Outcome.RATE_INCOHERENT);
         }
         return new Applied(reread(unitOfWork, locked), CoverStatus.EXECUTED, true, outcomes,
                 Optional.of(Duration.between(locked.createdAt(), recorded.recordedAt())));

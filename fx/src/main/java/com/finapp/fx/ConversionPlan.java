@@ -301,9 +301,10 @@ public final class ConversionPlan {
     /**
      * Strictly within one minor unit of the computed leg - source-fixed
      * {@code |Dp − S·rp| < 10^−m(D)}; destination-fixed {@code |Sp·rp − D| < rp × 10^−m(S)}, by
-     * cross-multiplication, so no division is taken. A non-positive stated counter is incoherent.
+     * cross-multiplication, so no division is taken. A non-positive stated counter is incoherent. Package-private:
+     * a cover's executed rate is judged against its executed amounts by the same rule ({@link CoverLines#rateCoherent}).
      */
-    private static boolean coherent(
+    static boolean coherent(
             boolean sourceFixed, Money fixedAmount, Money statedCounter, ExchangeRate rp) {
         if (!statedCounter.isPositive()) {
             return false;

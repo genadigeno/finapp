@@ -180,17 +180,18 @@ public final class JdbcTradeStore implements TradeStore {
         Objects.requireNonNull(unitOfWork, "unitOfWork must not be null");
         Objects.requireNonNull(clientReference, "clientReference must not be null");
         try (PreparedStatement select = unitOfWork.prepareStatement(
-                "SELECT c.id, c.status FROM fx.cover_attempt a JOIN fx.cover c ON c.id = a.cover_id"
-                        + " WHERE a.client_reference = ?")) {
+                "SELECT c.id, c.status, a.attempt < c.attempts AS superseded FROM fx.cover_attempt a"
+                        + " JOIN fx.cover c ON c.id = a.cover_id WHERE a.client_reference = ?")) {
             select.setString(1, clientReference);
             try (ResultSet row = select.executeQuery()) {
                 return row.next()
                         ? Optional.of(new CoverByReference(
-                                row.getObject("id", UUID.class), CoverStatus.valueOf(row.getString("status"))))
+                                row.getObject("id", UUID.class), CoverStatus.valueOf(row.getString("status")),
+                                row.getBoolean("superseded")))
                         : Optional.empty();
             }
         } catch (SQLException failure) {
-            throw new IllegalStateException(DatabaseFailure.describe("reading a cover by its reference", failure), failure);
+            throw new FxStorageException(DatabaseFailure.describe("reading a cover by its reference", failure));
         }
     }
 
@@ -228,6 +229,6 @@ public final class JdbcTradeStore implements TradeStore {
     }
 
     private static FxStorageException failure(String operation, SQLException failure) {
-        return new FxStorageException(DatabaseFailure.describe(operation, failure), failure);
+        return new FxStorageException(DatabaseFailure.describe(operation, failure));
     }
 }

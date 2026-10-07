@@ -252,7 +252,7 @@ public final class FxCoverDispatch {
                 return Optional.<CoverStore.AttemptRow>empty();
             }
             covers.insertFirstAttempt(unitOfWork, locked.id(), "T-" + ids.next().toString().replace("-", ""),
-                    quoted.providerQuoteReference());
+                    quoted.providerQuoteReference(), quoted.quote().statedCounter());
             return covers.attempt(unitOfWork, locked.id(), 1);
         });
         if (priced.isEmpty()) {
@@ -331,7 +331,9 @@ public final class FxCoverDispatch {
             return false;
         }
         String reference = "T-" + ids.next().toString().replace("-", "");
-        if (!covers.requote(unitOfWork, locked.id(), locked.attempts(), reference, quoted.providerQuoteReference())) {
+        // The fresh quote's stated counter stored with its reference: what the execution will be judged against.
+        if (!covers.requote(unitOfWork, locked.id(), locked.attempts(), reference, quoted.providerQuoteReference(),
+                quoted.quote().statedCounter())) {
             return false;
         }
         Instant now = Instant.now(clock);
@@ -361,7 +363,9 @@ public final class FxCoverDispatch {
         com.finapp.sharedkernel.money.CurrencyCode computed =
                 cover.fixedSide() == FixedSide.FIXED_SOURCE ? cover.destination() : cover.source();
         if (!quote.rate().source().equals(cover.source()) || !quote.rate().destination().equals(cover.destination())
-                || !quote.statedCounter().currency().equals(computed)) {
+                || !quote.statedCounter().currency().equals(computed)
+                // Stored in the computed leg's minor units (fx V010): at that currency's own scale, positive.
+                || quote.statedCounter().scale() != computed.minorUnits() || !quote.statedCounter().isPositive()) {
             return false;
         }
         QuoteStore.PlanRow plan = quotes.plan(unitOfWork, cover.quoteId()).orElseThrow();

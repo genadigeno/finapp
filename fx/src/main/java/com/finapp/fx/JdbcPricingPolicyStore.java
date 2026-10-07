@@ -44,7 +44,7 @@ public final class JdbcPricingPolicyStore implements PricingPolicyStore {
             row.next();
             return row.getInt(1);
         } catch (SQLException failure) {
-            throw new FxStorageException(DatabaseFailure.describe("reading the latest policy version", failure), failure);
+            throw new FxStorageException(DatabaseFailure.describe("reading the latest policy version", failure));
         }
     }
 
@@ -111,7 +111,7 @@ public final class JdbcPricingPolicyStore implements PricingPolicyStore {
                             && UNIQUE_VIOLATION.equals(failure.getNextException().getSQLState()))) {
                 throw new PricingPolicyAdministration.ProposalPending(failure);
             }
-            throw new FxStorageException(DatabaseFailure.describe("proposing a pricing policy", failure), failure);
+            throw new FxStorageException(DatabaseFailure.describe("proposing a pricing policy", failure));
         }
     }
 
@@ -149,7 +149,7 @@ public final class JdbcPricingPolicyStore implements PricingPolicyStore {
             update.setString(6, from.name());
             return update.executeUpdate() == 1;
         } catch (SQLException failure) {
-            throw new FxStorageException(DatabaseFailure.describe("deciding a pricing policy", failure), failure);
+            throw new FxStorageException(DatabaseFailure.describe("deciding a pricing policy", failure));
         }
     }
 
@@ -163,7 +163,7 @@ public final class JdbcPricingPolicyStore implements PricingPolicyStore {
             update.setObject(2, id.value());
             return update.executeUpdate() == 1;
         } catch (SQLException failure) {
-            throw new FxStorageException(DatabaseFailure.describe("retiring a pricing policy", failure), failure);
+            throw new FxStorageException(DatabaseFailure.describe("retiring a pricing policy", failure));
         }
     }
 
@@ -189,7 +189,7 @@ public final class JdbcPricingPolicyStore implements PricingPolicyStore {
             insert.setTimestamp(7, Timestamp.from(at));
             insert.executeUpdate();
         } catch (SQLException failure) {
-            throw new FxStorageException(DatabaseFailure.describe("recording a pricing policy event", failure), failure);
+            throw new FxStorageException(DatabaseFailure.describe("recording a pricing policy event", failure));
         }
     }
 
@@ -215,7 +215,7 @@ public final class JdbcPricingPolicyStore implements PricingPolicyStore {
             }
             return withPairs;
         } catch (SQLException failure) {
-            throw new FxStorageException(DatabaseFailure.describe("listing pricing policies", failure), failure);
+            throw new FxStorageException(DatabaseFailure.describe("listing pricing policies", failure));
         }
     }
 
@@ -244,7 +244,7 @@ public final class JdbcPricingPolicyStore implements PricingPolicyStore {
                 return row.next();
             }
         } catch (SQLException failure) {
-            throw new FxStorageException(DatabaseFailure.describe("holding a pricing policy", failure), failure);
+            throw new FxStorageException(DatabaseFailure.describe("holding a pricing policy", failure));
         }
     }
 
@@ -265,7 +265,7 @@ public final class JdbcPricingPolicyStore implements PricingPolicyStore {
             }
             return Optional.of(new VersionView(version, proposedAt, pairsOf(unitOfWork, version.id())));
         } catch (SQLException failure) {
-            throw new FxStorageException(DatabaseFailure.describe("reading a pricing policy", failure), failure);
+            throw new FxStorageException(DatabaseFailure.describe("reading a pricing policy", failure));
         }
     }
 
@@ -320,7 +320,7 @@ public final class JdbcPricingPolicyStore implements PricingPolicyStore {
                 return row.next() ? Optional.of(rehydrate(row)) : Optional.empty();
             }
         } catch (SQLException failure) {
-            throw new FxStorageException(DatabaseFailure.describe("locking a pricing policy", failure), failure);
+            throw new FxStorageException(DatabaseFailure.describe("locking a pricing policy", failure));
         }
     }
 

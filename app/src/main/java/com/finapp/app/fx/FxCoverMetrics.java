@@ -104,8 +104,9 @@ public final class FxCoverMetrics implements CoverObserver {
                 .tag("provider", provider)
                 .tag("type", kind.name().toLowerCase(Locale.ROOT))
                 .tag("outcome", outcome.name().toLowerCase(Locale.ROOT))
-                .description("FX cover outcomes: executed, off_plan (alerting), rejected, unknown, requoted,"
-                        + " requote_refused (alerting), voided, anomaly (alerting). A count, never an amount")
+                .description("FX cover outcomes: executed, off_plan (alerting), computed_deviation (alerting),"
+                        + " rate_incoherent (alerting), rejected, unknown, requoted, requote_refused (alerting), voided,"
+                        + " anomaly (alerting). A count, never an amount")
                 .register(registry);
     }
 

@@ -84,6 +84,8 @@ final class SimulatedFxEngine implements AutoCloseable {
     private final AtomicReference<String> armed = new AtomicReference<>("");
     private volatile Duration validFor = Duration.ofSeconds(60);
     private volatile long deviationMinor;
+    /** A deviation armed for the next NOVEL execution only - never consumed by a firm quote on the way (a requote). */
+    private final java.util.concurrent.atomic.AtomicLong executionDeviationMinor = new java.util.concurrent.atomic.AtomicLong();
 
     private SimulatedFxEngine(byte[] callbackKey) throws IOException {
         this.callbackKey = callbackKey.clone();
@@ -129,6 +131,14 @@ final class SimulatedFxEngine implements AutoCloseable {
     void deviateNextExecution(long minorUnits) {
         deviationMinor = minorUnits;
         armed.set("deviate");
+    }
+
+    /**
+     * The next NOVEL execution buys {@code minorUnits} fewer than its quote stated - armed past any firm quote asked
+     * for first, so a requote's execution can deviate from the fresh quote it executes (the Phase 9 to 10 transition).
+     */
+    void deviateNextNovelExecution(long minorUnits) {
+        executionDeviationMinor.set(minorUnits);
     }
 
     /** The next answer, on any path, carries {@code status} - a word the adapter does not know. */
@@ -271,6 +281,10 @@ final class SimulatedFxEngine implements AutoCloseable {
             BigDecimal bought = quote.bought();
             if (fault.equals("deviate")) {
                 bought = bought.subtract(BigDecimal.valueOf(deviationMinor, minorUnits(quote.destination())));
+            }
+            long novelDeviation = executionDeviationMinor.getAndSet(0);
+            if (novelDeviation != 0) {
+                bought = bought.subtract(BigDecimal.valueOf(novelDeviation, minorUnits(quote.destination())));
             }
             // Unique across simulator instances, as a real provider's trade references are: the
             // suites share one database and fx.cover_execution holds (provider, trade ref) once.
