@@ -169,6 +169,8 @@ class CanonicalSnapshotTest {
                 new AttributeProvenance.Port("party-facts", 1)));
         all.add(new CreditAttribute(CreditAttributeCode.PARTY_RESIDENCY_COUNTRY, new AttributeValue.Absent(),
                 new AttributeProvenance.Port("party-facts", 1)));
+        all.add(new CreditAttribute(CreditAttributeCode.PLATFORM_OUTSTANDING_CREDIT,
+                new AttributeValue.MoneyValue(Money.ofMinorUnits(0, EUR)), new AttributeProvenance.Port("platform-exposure", 1)));
         all.add(new CreditAttribute(CreditAttributeCode.PLATFORM_RESERVED_EXPOSURE,
                 new AttributeValue.MoneyValue(Money.ofMinorUnits(0, EUR)), new AttributeProvenance.Port("reserved-exposure", 1)));
         all.add(new CreditAttribute(CreditAttributeCode.RISK_SIGNAL, new AttributeValue.CodeValue("NOT_ASSESSED"),

@@ -456,7 +456,7 @@ Every input the engine may read is a **credit attribute** with a code from the c
 `BUREAU_MONTHLY_OBLIGATIONS`, `BUREAU_TOTAL_BALANCE`, `FINDATA_MONTHLY_INCOME`,
 `FINDATA_MONTHLY_COMMITTED_EXPENDITURE`, `DECLARED_MONTHLY_INCOME`,
 `DECLARED_MONTHLY_EXPENDITURE`, `PARTY_AGE_YEARS`, `PARTY_RESIDENCY_COUNTRY`,
-`PLATFORM_RESERVED_EXPOSURE`, `RISK_SIGNAL`, plus the recorded markers `SOURCE_UNAVAILABLE` and
+`PLATFORM_OUTSTANDING_CREDIT` (*added by `P10-TSK-010`*: §12.4's platform term), `PLATFORM_RESERVED_EXPOSURE`, `RISK_SIGNAL`, plus the recorded markers `SOURCE_UNAVAILABLE` and
 `CURRENCY_NOT_SUPPORTED`), a typed value (integer, decimal-with-currency, boolean, code) and a
 provenance (`credit_record` id and source, or `DECLARED`, or the port and its version).
 **The snapshot** is the canonical JSON of the attributes sorted by code, every value in a fixed

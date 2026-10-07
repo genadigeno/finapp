@@ -42,8 +42,8 @@ import lombok.RequiredArgsConstructor;
  * </ul>
  *
  * <p>The rest comes from the request and the ports: the declared figures, the party facts ({@code ABSENT} while the
- * platform holds none - unresolved question #13), the risk seam's signal as given ({@code INV-CRD-04}) and the reserved
- * exposure. A money figure in another currency is {@code ABSENT} with {@code CURRENCY_NOT_SUPPORTED}, never converted.
+ * platform holds none - unresolved question #13), the risk seam's signal as given ({@code INV-CRD-04}), the reserved
+ * exposure and the platform's outstanding credit (`P10-TSK-010`), each with its port's version. A money figure in another currency is {@code ABSENT} with {@code CURRENCY_NOT_SUPPORTED}, never converted.
  * Every code is held exactly once - a missing one is a defect here, never a default downstream.
  *
  * <p>Born once per {@code (request, sequence)}: {@code INSERT ... ON CONFLICT DO NOTHING}, then read - ten freezers,
@@ -60,6 +60,7 @@ public final class SnapshotFreezer {
     @NonNull private final CreditPartyStanding<Connection> partyStanding;
     @NonNull private final CreditRiskSignal<Connection> riskSignal;
     @NonNull private final ReservedExposure<Connection> reservedExposure;
+    @NonNull private final PlatformCreditExposure<Connection> platformExposure;
     @NonNull private final IdGenerator ids;
 
     /** What to freeze: the request, its pinned versions and the maximum age of each source kind the policy reads. */
@@ -258,6 +259,11 @@ public final class SnapshotFreezer {
         attributes.add(new CreditAttribute(CreditAttributeCode.PLATFORM_RESERVED_EXPOSURE,
                 new AttributeValue.MoneyValue(reserved), new AttributeProvenance.Port("reserved-exposure",
                         reservedExposure.version())));
+
+        Money outstanding = platformExposure.outstandingFor(uow, input.party(), input.product().currency());
+        attributes.add(new CreditAttribute(CreditAttributeCode.PLATFORM_OUTSTANDING_CREDIT,
+                new AttributeValue.MoneyValue(outstanding), new AttributeProvenance.Port("platform-exposure",
+                        platformExposure.version())));
 
         Set<CreditAttributeCode> held = EnumSet.noneOf(CreditAttributeCode.class);
         attributes.forEach(attribute -> held.add(attribute.code()));

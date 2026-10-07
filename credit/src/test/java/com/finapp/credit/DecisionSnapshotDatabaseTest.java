@@ -74,6 +74,25 @@ class DecisionSnapshotDatabaseTest {
         assertThat(count("SELECT count(*) FROM credit.decision_snapshot WHERE decision_request_id = ?", decision)).isZero();
     }
 
+    /** Distinct from every other port's version, so the provenance is seen to be the port's own. */
+    private static final int PLATFORM_EXPOSURE_VERSION = 2;
+
+    @Test
+    @DisplayName("the platform's outstanding credit is recorded - zero in Phase 10 - with its port's version (P10-TSK-010)")
+    void platformOutstandingIsRecordedZeroWithItsVersion() throws Exception {
+        UUID decision = IDS.next();
+        UUID party = IDS.next();
+        SnapshotFreezer.Freeze freeze = inOneTransaction(uow -> {
+            seedBureau(uow, decision, party, databaseNow(uow).minusSeconds(60), cleanBureau());
+            return freezer(signal("NOT_ASSESSED", 1)).freeze(uow, input(decision, party, 1), correlation());
+        });
+        CreditAttribute outstanding = ((SnapshotFreezer.Freeze.Frozen) freeze).snapshot().content()
+                .attribute(CreditAttributeCode.PLATFORM_OUTSTANDING_CREDIT);
+        assertThat(outstanding.value()).isEqualTo(new AttributeValue.MoneyValue(Money.zero(CurrencyCode.of("EUR"))));
+        assertThat(outstanding.provenance())
+                .isEqualTo(new AttributeProvenance.Port("platform-exposure", PLATFORM_EXPOSURE_VERSION));
+    }
+
     @Test
     @DisplayName("a record at exactly the maximum age is fresh")
     void aRecordAtExactlyMaxAgeIsFresh() throws Exception {
@@ -335,7 +354,18 @@ class DecisionSnapshotDatabaseTest {
                 return Money.zero(currency);
             }
         };
-        return new SnapshotFreezer(snapshots, collection, noFacts, risk, nothingReserved, IDS);
+        PlatformCreditExposure<Connection> noLoans = new PlatformCreditExposure<>() {
+            @Override
+            public int version() {
+                return PLATFORM_EXPOSURE_VERSION;
+            }
+
+            @Override
+            public Money outstandingFor(Connection unitOfWork, UUID partyId, CurrencyCode currency) {
+                return Money.zero(currency);
+            }
+        };
+        return new SnapshotFreezer(snapshots, collection, noFacts, risk, nothingReserved, noLoans, IDS);
     }
 
     private static CreditRiskSignal<Connection> signal(String code, int version) {

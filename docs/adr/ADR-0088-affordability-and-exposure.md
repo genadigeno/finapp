@@ -108,7 +108,10 @@ traps:
    party in Phase 10 (there are no loans), deterministically; the snapshot records the answer and
    the port's version as the term's provenance. When Phase 11's loans exist, the composition
    changes and the port's version with it; decisions pinned to the Phase 10 version replay
-   identically (`INV-CRD-01`).
+   identically (`INV-CRD-01`). *As built by `P10-TSK-010` (2026-10-08): the term is the snapshot
+   attribute `PLATFORM_OUTSTANDING_CREDIT`, added to the closed vocabulary because no code named
+   it, frozen by `SnapshotFreezer` with the port's version; Phase 10's composition is `app`'s
+   `NoLoansUntilPhase11`, version 1.*
 
 ## Alternatives Considered
 
