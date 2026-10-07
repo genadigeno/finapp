@@ -468,7 +468,7 @@ financial-data adapters under recorded consent, its evidence encrypted; affordab
 exact, decisions for one party serialised on its profile; referrals decided by people under
 four-eyes; every decision replayed. Credit moves no money; Phase 11 begins where a decision is
 consumed. Eight new invariants take the platform to **128**. Twenty-four backlog items across eight
-milestones (M10.1–M10.8). **3 of 24 items complete** (M10.1 closed): the module boundary, schema floor and closed vocabularies (`P10-TSK-001`), the credit consent purposes (`P10-TSK-002`) and the credit permissions and roles (`P10-TSK-003`); `P10-TSK-004` `READY`.
+milestones (M10.1–M10.8). **4 of 24 items complete** (M10.1 closed): the module boundary, schema floor and closed vocabularies (`P10-TSK-001`), the credit consent purposes (`P10-TSK-002`), the credit permissions and roles (`P10-TSK-003`) and the credit profile (`P10-TSK-004`); `P10-TSK-005` `READY`.
 
 ## Current Milestone
 
@@ -483,15 +483,15 @@ since M0.1". Moved, not edited.)*
 
 ## Current Task
 
-**`P10-TSK-004` — The credit profile** — `READY`: marked by `P10-TSK-003`'s completion gate (2026-10-07). **Not started.**
+**`P10-TSK-005` — The credit bureau port and the simulated bureau** — `READY`: marked by `P10-TSK-004`'s completion gate (2026-10-07). **Not started.**
 
 ### Just completed
 
-**`P10-TSK-003` — Credit permissions and roles** — `COMPLETE` (2026-10-07). **M10.1 closes at 3 of 3.** The policy's author and the queue's decider are separate populations before any door needs them (ADR-0084, ADR-0089): `PermissionName` gains `CREDIT_POLICY_ADMINISTER`, `CREDIT_INVESTIGATE` and `CREDIT_UNDERWRITE`, each javadoc naming the routes and audit actions its tasks land (the header records the one deliberate exception - Phase 10's permissions arrive ahead of their routes, the register and `AUDITABLE_ACTIONS.md` rows with each route); `RoleName` gains `CREDIT_POLICY_OFFICER` (the first two) and `UNDERWRITER` (the third); **identity `V020`** widens the role `CHECK` to nine (the `V019` ceremony; `RoleAssignmentMigrationTest` reconciles the newest definition unchanged). `RoleNameTest` pins both exact sets - `UNDERWRITER` holds neither credit-policy permission, the officer not `CREDIT_UNDERWRITE` - with pairwise disjointness and no orphaned permission holding as before; `IdentityAdministrationDatabaseTest` grants both roles through the real endpoint, audited, and refuses each at both administrative endpoints. Four-eyes stays a per-act rule, not a role property (`-011`, `-012`, `-018`). The role-assignment request's enum gains the two values - the contract regenerated, the classifier's blanket `BREAKING` accepted on review as a request-side widening (the `P10-TSK-002` precedent). **Gate findings**: no CRITICAL, no IMPORTANT, no MINOR beyond the recorded early arrival. **PROBES**: TWO, BOTH CAUGHT, every restore byte-identical (sha256-verified) - `CREDIT_UNDERWRITE` granted to the officer (`RoleNameTest`'s exact set and disjointness) and `UNDERWRITER` dropped from `V020` (`RoleAssignmentMigrationTest`); `MUTATION_TESTING.md` §2 +2 rows. **Multi-instance PASS** - assignments are rows read per request, no cache, no contended state. **Financial**: N/A. **NEXT**: `P10-TSK-004` `READY`. **Verified** by fresh runs - the fleet-wide hermetic tier 2593 across 429 suites and 19 modules (895 across 162 executed in this run - identity and app - the rest up to date against unchanged inputs) and the architecture tier 212 across 50 (172 executed), the contract slice 8, the identity and role database suites 34 across 3, ALL 0 FAILURES - the other database tiers skipped on the owner's instruction.
+**`P10-TSK-004` — The credit profile** — `COMPLETE` (2026-10-07). **M10.2 at 1 of 4.** One row per party that every deciding transaction for the party will lock first, holding no figure (`INV-CRD-09`, `INV-CRD-04`): **credit `V003`** `credit_profile` (`id`, `party_id UNIQUE`, `created_at` stamped by the database), immutable for every role by an every-writer trigger and a `TRUNCATE` statement trigger. **One correction to the backlog entry, made deliberately**: it said `INSERT` only, but PostgreSQL refuses `SELECT … FOR UPDATE` without `UPDATE` privilege on at least one column (merchant `V004`'s recorded constraint) - so the grants are `SELECT, INSERT` and `UPDATE (party_id)` alone, the latter only to make the lock takeable, the trigger refusing every actual update. `CreditProfileId`, the `CreditProfile` record, the `CreditProfiles<T>` port and `JdbcCreditProfiles`: `ensure` is one `INSERT … ON CONFLICT (party_id) DO NOTHING RETURNING`, then a read; `lockForDecision` is lock-order element (1). `CreditStorageException` carries no cause and joins `StorageFailuresCarryNoRowTest`. Not yet a bean (the P1-TSK-007 licence; `P10-TSK-014` wires it). `DISTRIBUTED_EXECUTION.md` §3 gains the profile's row and element (1) as built; the three columns classified. **Gate findings**: no CRITICAL, no IMPORTANT; MINOR, recorded - the grant correction above. **PROBES**: FOUR, ALL CAUGHT, every restore byte-identical (sha256-verified) - select-then-insert (`#tenEnsurersLeaveOneProfile`), the trigger letting `UPDATE` through (both refusal tests), `FOR UPDATE` dropped (`#aSecondLockerWaits`) and a numeric column added (`#theProfileHasNoFigureColumn`); `MUTATION_TESTING.md` §2 +3 rows. **Multi-instance PASS** - ten connections ensuring one party leave one row and one id; a second locker is observed blocked until the first commits. **Financial**: N/A - the lock target of a judgement still to come. **NEXT**: `P10-TSK-005` `READY`. **Verified** by fresh runs - the fleet-wide hermetic tier 2593 across 429 suites and 19 modules (783 across 150 executed in this run, the rest up to date against unchanged inputs) and the architecture tier 212 across 50 (173 executed), the credit database tier 18 across 2 and `ColumnClassificationTest`, ALL 0 FAILURES - the other database tiers skipped on the owner's instruction.
 
 ### Previously
 
-The per-task completion records — 228 blocks, from `P10-TSK-002` back to project initiation
+The per-task completion records — 229 blocks, from `P10-TSK-003` back to project initiation
 (`X-TSK-016` cross-cutting, standing between `P9-TSK-011` and `P9-TSK-010`; `X-TSK-005` cross-cutting, standing between `P7-TSK-015` and `P7-TSK-014`; `X-TSK-004`
 cross-cutting, standing between `P7-TSK-001` and the Phase 6 → 7 transition) — are archived in
 [`history/TASK_HISTORY.md`](history/TASK_HISTORY.md).
@@ -1040,8 +1040,8 @@ Resolved during initiation:
 
 ## Next Task
 
-**`P10-TSK-004` — The credit profile** — `READY`
-(the Current Task), marked by `P10-TSK-003`'s completion gate - Phase 10 `IN_PROGRESS`.
+**`P10-TSK-005` — The credit bureau port and the simulated bureau** — `READY`
+(the Current Task), marked by `P10-TSK-004`'s completion gate - Phase 10 `IN_PROGRESS`.
 *(This section read "`P8-TSK-009` — `READY`" from `P8-TSK-008`'s gate until
 `P8-TSK-013`'s record found it — the stale-second-copy class, in the section whose
 whole job is to mirror.)*

@@ -979,6 +979,9 @@ so the guard was silently not checking that the tests they name exist.
 | `INV-CNS-04` | `ConsentMigrationTest#everyPurposeHasASeededText` | Recorded | A `P10-TSK-002` probe: `V003`'s version-1 text row for `FINANCIAL_DATA_ACCESS` deleted | Caught. Restored byte-identical (sha256-verified) |
 | `INV-AUD-03` | `RoleNameTest#creditPolicyOfficerGrantsExactlyTwo`, `RoleNameTest#theGrantsArePairwiseDisjoint` | Recorded | A `P10-TSK-003` probe: `CREDIT_UNDERWRITE` granted to `CREDIT_POLICY_OFFICER` - the policy's author made the queue's decider | Caught by both (the exact set and the pairwise disjointness). Restored byte-identical (sha256-verified) |
 | `INV-AUD-03` | `RoleAssignmentMigrationTest` (the latest definition) | Recorded | A `P10-TSK-003` probe: `UNDERWRITER` dropped from `V020`'s role `CHECK` | Caught. Restored byte-identical (sha256-verified) |
+| `INV-CRD-09` | `CreditProfileDatabaseTest#tenEnsurersLeaveOneProfile`, `CreditProfileDatabaseTest#aSecondLockerWaits` | Recorded | Two `P10-TSK-004` probes: `ensure` as select-then-insert instead of `ON CONFLICT DO NOTHING`; `lockForDecision` without `FOR UPDATE` | Each caught - a racing ensurer surfaced the unique violation; the second "locker" was never blocked. Restored byte-identical (sha256-verified) |
+| `INV-CRD-09` | `CreditProfileDatabaseTest#theApplicationCannotChangeAProfile`, `CreditProfileDatabaseTest#theOwnerCannotChangeAProfile` | Recorded | A `P10-TSK-004` probe: the profile's trigger letting `UPDATE` through - the lock target made mutable | Caught by both. Restored byte-identical (sha256-verified) |
+| `INV-CRD-04` | `CreditProfileDatabaseTest#theProfileHasNoFigureColumn` | Recorded | A `P10-TSK-004` probe: an `exposure_minor bigint` column added to `credit_profile` | Caught. Restored byte-identical (sha256-verified) |
 
 ## 3. What the register does not claim
 

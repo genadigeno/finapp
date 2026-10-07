@@ -109,11 +109,11 @@ class CreditMigrationTest {
     }
 
     @Test
-    @DisplayName("the schema holds Flyway's history - which the application cannot read - and the reason-code"
-            + " catalogue, nothing else")
+    @DisplayName("the schema holds Flyway's history - which the application cannot read - the reason-code"
+            + " catalogue and (since V003, P10-TSK-004) the credit profile, nothing else")
     void theTablesAndTheConfinedHistory() throws SQLException {
         assertThat(column("SELECT tablename FROM pg_tables WHERE schemaname = '" + SCHEMA + "'"))
-                .containsExactlyInAnyOrder("flyway_schema_history", "reason_code");
+                .containsExactlyInAnyOrder("flyway_schema_history", "reason_code", "credit_profile");
         assertRefusedByPrivilege("SELECT * FROM credit.flyway_schema_history");
     }
 

@@ -2,6 +2,7 @@ package com.finapp.app.architecture;
 
 import static org.assertj.core.api.Assertions.assertThat;
 
+import com.finapp.credit.CreditStorageException;
 import com.finapp.crossborder.CrossborderStorageException;
 import com.finapp.kyc.KycStorageException;
 import java.io.IOException;
@@ -48,10 +49,13 @@ class StorageFailuresCarryNoRowTest {
 
     /** Each guarded exception and the module whose sources must never hand it a cause. */
     private static final Map<Class<? extends RuntimeException>, String> GUARDED =
-            Map.of(CrossborderStorageException.class, "crossborder", KycStorageException.class, "kyc");
+            Map.of(CrossborderStorageException.class, "crossborder", KycStorageException.class, "kyc",
+                    // P10-TSK-004: credit's, born without one - the schema holds party references now and
+                    // credit evidence later.
+                    CreditStorageException.class, "credit");
 
     @Test
-    @DisplayName("neither exception has a constructor taking a cause")
+    @DisplayName("no guarded exception has a constructor taking a cause")
     void noConstructorTakesACause() {
         for (Class<? extends RuntimeException> type : GUARDED.keySet()) {
             assertThat(causeConstructorsOf(type))
