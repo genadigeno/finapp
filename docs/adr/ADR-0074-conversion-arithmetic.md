@@ -1,6 +1,6 @@
 # ADR-0074 — Conversion arithmetic: exact rates, one margin line, a proven residual
 
-Status: Proposed (2026-10-02, the Phase 8 → 9 transition)
+Status: Accepted (2026-10-07, `P9-DOC-001` — read against the code and corrected first)
 Date: 2026-10-02
 Phase: 9
 Context: FX · Shared Kernel · Platform · Ledger
@@ -95,18 +95,23 @@ created or destroyed on every conversion, silently, at volume. The forces:
      **|r| ≤ 1**;
    - under **any named policy** each term is below 1, so |r| < 3, hence **|r| ≤ 2**.
 
-   `fx.quote` and `fx.trade` therefore carry `CHECK (residual_amount_minor BETWEEN -2 AND 2)` —
+   `fx.quote` and `fx.trade` therefore carry `CHECK (residual_minor BETWEEN -2 AND 2)`
+   (`quote_residual_bounded`, fx `V005`; `trade_residual_bounded`, fx `V006`) —
    a universal bound no named policy can exceed, so no plan is unstorable — and the domain
    additionally asserts the active policy family's own bound (1 under half/half). The residual
    posts to `ROUNDING_RESIDUAL` in its own currency — CR when the platform kept the fraction, DR
    when it bears it, no line at zero — and is **never** folded into the margin, the customer
    amount or the position (`INV-BAL-03`, `INV-FX-07`). A residual beyond the policy's proven
    bound is `PLAN_INVARIANT_VIOLATED`, CRITICAL, and the quote is not issued.
+   *(Corrected 2026-10-07, `P9-DOC-001`: the column read `residual_amount_minor`.)*
 6. **Rounding and rate scale are per pair, with no default** (`PHASE_9_PLAN.md` §12.2, O7). Each `fx.pricing_pair`
    names `rate_rounding`, `amount_rounding` and `margin_rounding` from `RoundingPolicy`
    (`INV-MON-03`: no default exists), stored as `policyName()` under text `CHECK` lists
-   generated from the enum (the merchant `V004` pattern), and copied onto every quote and trade
-   (`INV-HIST-04`). The per-pair `rate_scale` is at most `ExchangeRate.MAX_SCALE`; v1 chooses 10
+   generated from the enum (the merchant `V004` pattern), and copied onto every quote
+   (`INV-HIST-04`). *As built (`P9-TSK-009`, read at `P9-DOC-001`):* the trade does not repeat
+   the rounding names — it copies the quote's amounts and rates, each held equal to the quote's
+   by its birth trigger, and reaches the names through `trade_quote_fk`; replay reads them from
+   the quote. The per-pair `rate_scale` is at most `ExchangeRate.MAX_SCALE`; v1 chooses 10
    for the four JPY-source pairs and 6 for the other sixteen, `TOWARDS_ZERO` for the rate (a
    displayed rate never exceeds the priced one) and `HALF_EVEN` for amounts and margin —
    unbiased, so the residual random-walks around zero and drift is a defect signal.
@@ -135,14 +140,20 @@ created or destroyed on every conversion, silently, at volume. The forces:
    active pricing policy's pairs make it *quotable* (ADR-0075), the active corridor policy's
    corridors make it *sendable* (ADR-0080).
 10. **`Margin` and `CountryCode`.** `Margin` is `fx`'s: a fraction in `[0, 0.1)`, scale ≤ 6,
-    `NUMERIC(7,6)`, whose attribution weight `value × 10⁶` is an exact `long`. `CountryCode` is
+    whose attribution weight `value × 10⁶` is an exact `long`. *As built (read at `P9-DOC-001`):*
+    `pricing_pair.spread`/`markup` and the quote's copies are `NUMERIC(8,6)` (fx `V004`, `V005`;
+    the band likewise), bounded by `CHECK (spread >= 0 AND markup >= 0)` and
+    `spread + markup < 1`; the domain's `[0, 0.1)` is the narrower bound. Only the disclosed
+    margin (point 7) is `NUMERIC(7,6)`. *(This read "`NUMERIC(7,6)`" for `Margin`; `Margin`'s own
+    javadoc still says so.)* `CountryCode` is
     a kernel representation primitive beside `CurrencyCode`: ISO 3166-1 alpha-2, validated
     against `Locale.getISOCountries()`, carrying no rule — the same kernel-type argument as
     point 1.
 11. **The function is pure and total over its typed refusals.** `ConversionPlan.compute(fixedSide,
     fixedAmount, ProviderQuote, PricingPair)` returns a `Plan` or a typed refusal
-    (`PROVIDER_QUOTE_INCOHERENT`, `MARGIN_NEGATIVE`, `MARGIN_UNATTRIBUTABLE`,
-    `fx.AmountOutOfRange`, `PLAN_INVARIANT_VIOLATED`). Every input is stored on the quote, so
+    (`ConversionPlan.Refusal`: `PROVIDER_QUOTE_INCOHERENT`, `MARGIN_NEGATIVE`,
+    `MARGIN_UNATTRIBUTABLE`, `AMOUNT_OUT_OF_RANGE` — answered `422 fx.AmountOutOfRange` at the
+    door — and `PLAN_INVARIANT_VIOLATED`). Every input is stored on the quote, so
     replay reproduces the plan and both derived figures exactly (`INV-FX-05`) — the basis of
     `FxPlanVerification` (ADR-0076) and the golden replays.
 
@@ -215,10 +226,12 @@ Negative:
   is unusable for the pair until fixed — deliberately: accepting it would move the error into
   the books.
 
-Operational impact: refusal causes are counted on `finapp.fx.quote{outcome}`
-(`refused_incoherent`, `refused_implausible`) and never shown to customers.
-`finapp.fx.residual{currency, direction}` counts residual frequency; the amounts are the revenue
-report's (ADR-0072, D32). A planted JDK minor-unit drift fails the build and refuses startup.
+Operational impact: refusal causes are counted on `finapp.fx.quote{pair, outcome}`
+(`refused_incoherent`, `refused_implausible` among them) and never shown to customers — each
+answers the customer `503 fx.RateUnavailable` once no candidate provider remains (ADR-0075).
+`finapp.fx.residual{pair, direction}` (`positive`, `negative`, `zero`) counts residual frequency
+per booked conversion; the amounts are the revenue report's (ADR-0072, D32). *(Corrected
+2026-10-07, `P9-DOC-001`: the tags read `{outcome}` and `{currency, direction}`.)* A planted JDK minor-unit drift fails the build and refuses startup.
 Security impact: no `double` on any path (`NoFloatingPointMoneyRulesTest` covers the new
 modules); no request body anywhere carries a rate (`RatesAreNeverClientSuppliedTest`,
 ADR-0075); over-precision is refused, never rounded, so an adapter cannot be steered into
@@ -248,10 +261,13 @@ currencies at 0/2/3 minor units), `INV-BAL-03` (the residual's destination), `IN
 - `P9-TSK-007`: the pricing policy stores the per-pair scales, roundings, bounds and
   `CHECK (spread + markup > 0)` this ADR requires (ADR-0075).
 - `P9-TSK-008` and `P9-TSK-009`: the quote and trade rows carry the plan, the residual `CHECK`,
-  the derived figures and the copied rounding names (ADR-0075, ADR-0076).
+  the derived figures and, on the quote, the copied rounding names (ADR-0075, ADR-0076).
 - `P9-TST-002`: the value-preservation and rounding battery — ≥ 10,000 conversions over all 20
   pairs and both fixed sides, every |r| ≤ 1 with both signs present, golden replay of every
   quote.
-- Until `P9-TSK-002` lands, nothing in this ADR is implemented: every statement is the decided
-  design, to be corrected by the tasks that build it.
-- The Phase 9 review reads this ADR against the code before accepting it (`P9-DOC-001`).
+- Built by `P9-TSK-002`, `-003`, `-007`, `-008`, `-009` and `P9-TST-002` (complete 2026-10-05).
+  *(This read "Until `P9-TSK-002` lands, nothing in this ADR is implemented" until `P9-DOC-001`.)*
+- **Acceptance.** The Phase 9 review (`P9-DOC-001`) read this ADR against the code before
+  accepting it on 2026-10-07, following the `P8-DOC-001` precedent. It corrected point 5's
+  residual column, point 6's copy of the rounding names (the quote's, not the trade's), point
+  10's column type for spread and markup, point 11's refusal names and the meters' tags.

@@ -13,14 +13,17 @@ it. The stub's list — its four pairs, its fourteen engine capabilities and its
 retained as the core: §15 maps every item to where it now lives. As built: Phase 8's tasks
 (`P8-TSK-001`…`-024`, `P8-TST-001`, `P8-TST-002`) built the model, and the Phase 8 exit review
 (`P8-DOC-001`, 2026-10-01) corrected this document to the code; a statement that is not yet true
-names itself recorded debt, with its owning phase.*
+names itself recorded debt, with its owning phase. Phase 9 (`P9-TSK-010`…`-027`) extended the
+model to the FX providers and the corridors without a new break type; §16 states it as built, read
+against the code by the Phase 9 exit review (`P9-DOC-001`, 2026-10-07).*
 
 Related: [the ADR index](../adr/README.md) — ADR-0064 (settlement holds the evidence,
 reconciliation the expectations and the comparison) · ADR-0065 (two evidence hops; cash only on
 the bank's statement) · ADR-0066 (raw files screened, authenticated, encrypted) · ADR-0067 (every
 settling completion opens its expectation) · ADR-0068 (matching, rule versioning, tolerances) ·
 ADR-0069 (breaks) · ADR-0070 (suspense) · ADR-0071 (resolution authority and four-eyes) ·
-ADR-0072 (amounts never enter metrics) · ADR-0073 (payout returns) ·
+ADR-0072 (amounts never enter metrics) · ADR-0073 (payout returns) · ADR-0078 (counterparty-keyed
+positions) · ADR-0082 (the corridor provider's report) ·
 [`SETTLEMENT_AND_RECONCILIATION_LIFECYCLES.md`](SETTLEMENT_AND_RECONCILIATION_LIFECYCLES.md)
 (every machine named here) · [`LEDGER_MODEL.md`](LEDGER_MODEL.md) (the postings compared) ·
 [`PHASE_8_PLAN.md`](../project/PHASE_8_PLAN.md).
@@ -96,7 +99,8 @@ fact, answered per operation by `/settlement-status` (`PENDING`, `REPORTED`, `CA
 
 ## 3. The reconciliation sources
 
-A compiled register of four, composed in `app` from each counterparty's own declaration:
+A compiled register of four in Phase 8 - eight since Phase 9, the FX providers' and the corridors'
+four in §16 - composed in `app` from each counterparty's own declaration:
 
 | Code | Kind | Format | Discharges (read at composition) | Channels | Unit |
 |---|---|---|---|---|---|
@@ -816,8 +820,9 @@ Beneath all four, the trial balance stays zero per currency (`INV-ACC-01`).
 
 ## 13. What is out of scope
 
-- **FX reconciliation**, and any conversion of mismatched currencies — Phase 9. A currency mismatch
-  is a break, never a conversion (`INV-MON-04`).
+- **Any conversion of mismatched currencies.** FX reconciliation was built by Phase 9 (§16) as
+  single-currency legs: reconciliation never converts, and a currency mismatch is a break, never a
+  conversion (`INV-MON-04`).
 - **GL mapping, period close, statements and regulatory reports** (`INV-ACC-03`, `INV-ACC-05`) —
   Phase 14, and with it the equity counter-account a non-zero opening cash balance would need.
 - **Fraud and AML scoring of breaks, reserves, collection of parked chargeback shares, fee
@@ -838,7 +843,7 @@ Beneath all four, the trial balance stays zero per currency (`INV-ACC-01`).
   multi-part or superseding files; business-day calendars; fuzzy, ML or subset-sum matching;
   automatic reversal of a write-off on late evidence; re-allocating committed matches outside
   repudiation; PUSH delivery of files.
-- **Never:** real provider connectivity or real formats — the four formats are simulated.
+- **Never:** real provider connectivity or real formats — the six formats are simulated.
 - **Object storage** for raw files — ADR-0036's trigger, re-assessed with named volume triggers by
   ADR-0066.
 - **Amounts in metrics** — unmatched value, suspense balance and provider costs are audited
@@ -887,3 +892,136 @@ The 27-line stub's pairs and capabilities, retained as the core of this document
 | controlled resolution | Eight template-bound kinds, four-eyes, reason codes, stale approval (§10) |
 | audit history | Every machine's append-only history, decision snapshots (§6.6), and a catalogued audit action for every privileged and platform act |
 | Never erase evidence of a reconciliation break. | `INV-REC-01`, `INV-REC-02`: no `DELETE`, one open break per subject, recurrences as new breaks (§8) |
+
+## 16. FX and cross-border — *as built by Phase 9*
+
+Phase 9 reconciles two new kinds of counterparty - the FX provider and the corridor provider - on
+the same two hops (§2), each on its **own counterparty-keyed position** (ADR-0078, `INV-RAIL-04`):
+`FX_PROVIDER_CLEARING` and `CORRIDOR_CLEARING` are keyed (counterparty, purpose, currency), so two
+providers never net, and each position is discharged only by its own counterparty's source
+(`INV-SET-05`; `SettlementSources.of` refuses two sources on one (purpose, counterparty)).
+`PHASE_9_PLAN.md` §12.9 is the design; this section is what holds.
+
+### 16.1 The sources
+
+| Code | Kind | Format | Discharges | Settled currencies | Built by |
+|---|---|---|---|---|---|
+| `fx-sim-a.trade-report` | `FX_PROVIDER_REPORT` | `SIM_FX_CSV` v1 | `FX_PROVIDER_CLEARING(fx-sim-a)` | EUR, GBP, USD, JPY, BHD | settlement `V015` (`P9-TSK-011`) |
+| `corridor-sim-a.settlement` | `PAYOUT_PROVIDER_REPORT` | `SIM_CORRIDOR_CSV` v1 | `CORRIDOR_CLEARING(corridor-sim-a)` | USD, JPY, BHD | settlement `V016` (`P9-TSK-014`) |
+| `fx-sim-b.trade-report` | `FX_PROVIDER_REPORT` | `SIM_FX_CSV` v1 | `FX_PROVIDER_CLEARING(fx-sim-b)` | EUR, USD | settlement `V017` (`P9-TSK-026`) |
+| `corridor-sim-b.settlement` | `PAYOUT_PROVIDER_REPORT` | `SIM_CORRIDOR_CSV` v1 | `CORRIDOR_CLEARING(corridor-sim-b)` | USD | settlement `V017` (`P9-TSK-026`) |
+
+Every one takes UPLOAD and PULL, one currency per batch. Its position, counterparty and settled
+currencies are compiled facts on its descriptor, read off the provider's declaration in `app`
+(`SettlementBeans`) - never columns (ADR-0064). Each counterparty remits under its own shape
+(`FXA-`/`FXB-`, `XBA-`/`XBB-`), so the bank's hop-2 line is attributed to exactly one counterparty.
+The FX format adds the line types `FX_SOLD`, `FX_BOUGHT`, `FX_FEE` and the references `COVER_REF`
+(the key) and `FX_TRADE_REF` (an alias); the corridor reuses the payout vocabulary
+(`PAYOUT_EXECUTED`, `PAYOUT_RETURNED`, `PAYOUT_FEE`; `END_TO_END_REF`, `PAYOUT_PROVIDER_REF`).
+
+**`CURRENCY_NOT_SETTLED`** (settlement `V015`). A parsed batch in a currency its source's
+counterparty does not settle has no position to land on: it is rejected at the parse leg and
+retained, never accepted, never posted and never readmitted. A line in a currency the source does
+settle but its candidate expectation does not stays `CURRENCY_MISMATCH` (§8).
+
+**No rule set is seeded** (D26). Each new source's version 1 goes through `RuleSetAdministration`'s
+first-version door, four-eyes; until it is active, a batch from that source is refused with the typed
+`RuleSetMissing` - the file waits `PARSED` with the accept leg's backoff and
+`finapp.reconciliation.rule.set.missing{source}` reads 1 and alerts. The four Phase 8 sources carry
+JPY and BHD through v2 successors; earlier decisions replay under their pinned v1.
+
+### 16.2 The expectations
+
+Opened in the completing transaction, as every other (ADR-0067; reconciliation `V020`, `V021`):
+
+| Kind | Opened by | Direction | Position | Keyed |
+|---|---|---|---|---|
+| `FX_SELL_LEG` | `fx-cover:<coverId>` (`P9-TSK-012`, `FxSettlementExpectations`) | OUTBOUND | `FX_PROVIDER_CLEARING(provider)`, the sold currency | `COVER_REF` = `Tn:<currency>` |
+| `FX_BUY_LEG` | `fx-cover:<coverId>` | INBOUND | `FX_PROVIDER_CLEARING(provider)`, the bought currency | `COVER_REF` = `Tn:<currency>` |
+| `CROSSBORDER_PAYOUT` | `outbound-credit:<creditId>` (`P9-TSK-020`) | OUTBOUND | `CORRIDOR_CLEARING(rail)` | `END_TO_END_REF` = E; alias `PAYOUT_PROVIDER_REF` |
+| `CROSSBORDER_RETURN` | `crossborder-return:<creditId>` (`P9-TSK-023`) | INBOUND | `CORRIDOR_CLEARING(rail)` | none: operation-anchored, `UNIQUE (kind, operation_ref)` (the `PAYOUT_RETURN` precedent) |
+
+A cover's two legs share `Tn` and are keyed currency-qualified at both sides, so they hold two keys;
+a cover leg's `expected_by` is the cover entry's value date (the provider's confirmed date). An
+unwind's legs are a cover's. `FX_FEE` and `PAYOUT_FEE` allocate nothing: each is a priced `CHECK`
+line naming its original (`COVER_REF`; for the corridor the provider's reference, read through the
+credit's alias), checked by `FeeCheck` against the source's pinned schedule - beyond it a
+`FEE_MISMATCH`. `JdbcInternalReferenceLookup` resolves every reference within the item's own source
+family (`RailOfSource`): a `COVER_REF` naming an attempt still in flight is `MISSING_INTERNAL`, one
+never minted `UNKNOWN_EXTERNAL`; `END_TO_END_REF` and `PAYOUT_PROVIDER_REF` name an outbound credit
+only for a corridor source.
+
+### 16.3 The typed breaks - new causes, no new type
+
+Reconciliation never converts, so an FX discrepancy is a single-currency leg's discrepancy, and
+there is no fifteenth break type (ADR-0069 amended; reconciliation `V020`):
+
+- **A leg settled for another amount** - `AMOUNT_MISMATCH`, cause **`FX_LEG_DIFFERS`**, selected by
+  the expectation's kind in `Matching`'s difference cause (`FX_SELL_LEG`, `FX_BUY_LEG`; every other
+  kind keeps `AMOUNT_DIFFERS`, the `REMITTANCE_DIFFERS` precedent). A rate difference IS a leg's
+  amount difference. A spread difference is not a reconciliation break: no external evidence states
+  our spread, and `fx.FxPlanVerification` proves it.
+- **A leg settled on another date** - `TIMING_DIFFERENCE`, cause **`VALUE_DATE_DIFFERS`** (value 0,
+  a timing detector's cause, one-person `ACKNOWLEDGE`): an FX leg kind names it; otherwise
+  `CYCLE_MISMATCH`, else `LATE_MATCH`, as before. An open `MISSING_EXTERNAL` on the leg already states
+  the timing, and nothing more is raised.
+- **One leg settled, the other never** - `MISSING_EXTERNAL`, base severity HIGH for `FX_SELL_LEG`,
+  `FX_BUY_LEG` and `CROSSBORDER_PAYOUT`. `ReconciliationSweep` escalates an open `MISSING_EXTERNAL` on
+  an FX leg whose paired leg (the same source and cover, the other kind) is allocated straight to
+  CRITICAL, under the source's namespace-4 advisory, with one `SEVERITY_ESCALATED` event detailed
+  `PAIRED_LEG_ALLOCATED` however many sweepers race (`P9-TSK-013`).
+- **A late provider execution after we concluded `FAILED`** - `UNKNOWN_EXTERNAL`, parked; beside it
+  the return of a `FAILED` credit is `TERMINAL_STATE_CONTRADICTED`, a person offsetting the two.
+- **A return that cannot apply** - `REVERSAL_MISMATCH`, cause `RETURN_NOT_APPLICABLE` (§16.4).
+
+### 16.4 Corridor returns: two channels, one fact
+
+A corridor return reaches the platform on the inquiry channel (the resolution sweep, or a callback's
+hinted inquiry) and on the report's `PAYOUT_RETURNED` line, read by **`OutboundReturnWorker`**
+(driven by `OutboundReturnSchedule`, `P9-TSK-023`): every instance pages the corridor sources' waiting
+items lock-free, then - one item per transaction - re-reads the item `FOR SHARE`, finds the outbound
+credit by our end-to-end reference (or the provider's reference through the completion's claim),
+locks the credit and hands the return to payments' `OutboundCreditReturns`. Its reader is scoped to
+the corridor sources, and the merchant `PayoutReturnSweep`'s to the merchant's, so neither sees the
+other's returns. Both channels converge behind `outbound_credit_return_once`
+(`UNIQUE (outbound_credit_id)`, payments `V027`) and the credit's row lock - no scheme-execution
+claim is taken for a return - and the posting key `crossborder-return:<creditId>`.
+
+The one applicability rule, judged on the locked rows (`INV-XB-04`): a `COMPLETED` credit, the
+instructed currency, exactly the instructed amount and an `ACTIVE` customer - **applied**: the entry
+(the clearing to the customer's wallet in the returned currency, opened if absent, the fee refunded
+in the source currency), the return fact, the payment `RETURNED` and the `CROSSBORDER_RETURN`
+expectation in one transaction. A credit still `DISPATCHED`, `UNKNOWN` or `RECEIVED` - **deferred**,
+nothing written; the inquiry that completes it applies the return after the completion. Anything
+else - a partial return, another currency, a closed customer - writes nothing, and the grace leg
+parks the line `REVERSAL_MISMATCH(RETURN_NOT_APPLICABLE)`, HIGH (DR `CORRIDOR_CLEARING` / CR
+`SUSPENSE_UNMATCHED`, owned by its break). A partial return is never credited automatically: the
+provider's line and our posting would agree, and no break could surface the customer's shortfall.
+
+**The four-eyes way out.** A parked corridor return is resolved by a four-eyes `TRANSFER_TO_ACCOUNT`
+(§10). When the item's operation is an outbound credit, `ResolutionMachine` consults the
+`ResolvedCorridorReturns` port (implemented by `app`'s `CorridorReturnResolutions`): at the proposal
+it judges and writes nothing; at the approval - in the approval's transaction, after the
+resolution's own rows - it records the person's return: the return fact with
+`applied_by = RESOLUTION`, the fee refund `crossborder-return-fee:<creditId>` (DR `FEE_REVENUE` /
+CR the customer's source wallet), the payment `RETURNED` with basis `RESOLVED`, and
+`payments.OutboundCreditReturnApplied` as the approver's act. The principal is the resolution's own
+transfer, to the credit's customer's wallet in the parked currency; the resolution never opens an
+account, and opens no expectation (the park already moved the value off `CORRIDOR_CLEARING`). The two
+entries share hot projection rows (`FEE_REVENUE`, the suspense), so the recorder locks the union of
+both entries' projection rows in order before the first posting (`PostingService.lockBalancesInOrder`,
+`P9-DOC-001`). The port refuses while the credit is not `COMPLETED`, or when the return fact already
+exists - the whole approval rolls back `409 reconciliation.ResolutionStale` and the rematch closes the
+break `EVIDENCED`; if the approval wins, the automated applier finds the fact and writes nothing.
+A closed customer's value stays parked with its HIGH break - recorded debt for Phase 15.
+
+### 16.5 The proofs
+
+The four proofs (§12) cover `FX_PROVIDER_CLEARING` and `CORRIDOR_CLEARING` per (counterparty,
+currency), over five currencies; the position proof's list is derived from the composed register.
+Beside them, `fx`'s two verifiers, report-only in one `REPEATABLE READ` snapshot: the **FX books
+proof** (`FxBooksProof`, `INV-FX-06`) explains `FX_POSITION`, `FX_SPREAD_REVENUE`,
+`ROUNDING_RESIDUAL` and the realised results per currency from the trades, covers, unwinds and
+reversals, `finapp.fx.proof{purpose}` counting failing currencies; **`FxPlanVerification`**
+recomputes every trade's plan from its stored columns and compares it with the posted entry, line by
+line. `FX_POSITION` and the P&L books open no expectations and are not reconciled positions.

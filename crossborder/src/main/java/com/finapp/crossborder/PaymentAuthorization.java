@@ -6,6 +6,7 @@ import com.finapp.platform.audit.AuditRecord;
 import com.finapp.platform.audit.AuditWriter;
 import com.finapp.platform.outbox.EventPayload;
 import com.finapp.platform.outbox.OutboxWriter;
+import com.finapp.platform.persistence.DatabaseTime;
 import com.finapp.platform.security.Actor;
 import com.finapp.sharedkernel.correlation.CausationId;
 import com.finapp.sharedkernel.correlation.CorrelationId;
@@ -107,7 +108,10 @@ public final class PaymentAuthorization {
         CorridorTerms terms = policies.version(unitOfWork, offer.corridorPolicy())
                 .flatMap(version -> version.corridors().stream().filter(t -> t.key().equals(offer.corridor())).findFirst())
                 .orElseThrow(() -> new IllegalStateException("an offer's pinned corridor is always readable"));
-        boolean lapsed = clearance.decidedAt().map(at -> !at.plus(terms.screeningValidity()).isAfter(now)).orElse(true);
+        // Lapse is judged on the DATABASE clock (P9-DOC-001): an instance's skew may never lapse a clearance early or late.
+        Instant judgedAt = DatabaseTime.now(unitOfWork);
+        boolean lapsed = clearance.decidedAt().map(at -> !at.plus(terms.screeningValidity()).isAfter(judgedAt))
+                .orElse(true);
         if (lapsed) {
             throw new PaymentRefused(CrossborderErrorCode.SCREENING_REQUIRED);
         }

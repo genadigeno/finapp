@@ -1,6 +1,6 @@
 # ADR-0078 — Counterparty-keyed clearing positions: the split trigger fires, on accounts with no history
 
-Status: Proposed (2026-10-02, the Phase 8 → 9 transition)
+Status: Accepted (2026-10-07, `P9-DOC-001` — read against the code and corrected first)
 Date: 2026-10-02
 Phase: 9
 Context: Ledger · Settlement · Reconciliation · App
@@ -64,7 +64,8 @@ The chart of accounts is keyed `(owner_ref, purpose, currency)` for owned accoun
    holds and the hot-row lock order (account-id order, seeded ids first) is undisturbed.
    **Nothing is minted at runtime.** Ledger `V022` admits `fx-sim-a` (five currencies,
    `P9-TSK-011`), `V024` admits `corridor-sim-a` (three, `P9-TSK-014`), `V025` admits the
-   `-b` pair (`P9-TSK-026`) — a second provider is a declaration, a seed migration and an
+   `-b` pair (`P9-TSK-026`: `fx-sim-b` in EUR and USD, `corridor-sim-b` in USD, as their
+   declarations settle) — a second provider is a declaration, a seed migration and an
    adapter.
    - A `CounterpartyChartGuard` refuses startup when a declared counterparty, or a
      counterparty × declared currency, lacks its registry row or account (the
@@ -218,4 +219,9 @@ admitting migration, before any line).
   purpose `FX_PROVIDER_CLEARING` (type ASSET pinned), with no registry row and no account, so every
   rule is proven against a real counterparty-owned purpose; `V022` admits `fx-sim-a` and its five
   accounts as section 4 says. Section 7 (`CURRENCY_NOT_SETTLED`) landed with `P9-TSK-011` (2026-10-05): refused at the parse leg, retained, never readmitted; and `fx-sim-a` was admitted - ledger `V022`, its source `fx-sim-a.trade-report` read off `FxProviderDeclaration`.
-- The Phase 9 review reads this ADR against the code before accepting it (`P9-DOC-001`).
+- **Acceptance.** The Phase 9 review (`P9-DOC-001`) read this ADR against the code before
+  accepting it on 2026-10-07, following the `P8-DOC-001` precedent: the registry, the four
+  restated constraints (`ledger_account_*`, ledger `V021`), the seeds `V022`, `V024` and
+  `V025` with their stamps, the resolver's refusing branch, the keyed source register
+  (settlement `V015`–`V017`) and `CURRENCY_NOT_SETTLED` (settlement `V015`) are as written. It
+  added point 4's currencies for the `-b` pair; the `V021` deviation above stands.

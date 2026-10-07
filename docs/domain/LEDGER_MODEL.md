@@ -8,7 +8,9 @@ reconciliation in this platform is derived from it, and nothing else is financia
 and updated by `P3-DOC-001` (2026-09-17) against what was built. Two spots had gone stale on the
 adjustment — `P3-TSK-021` replaced the one-person write with two authenticated acts after they
 were written — and were corrected as review findings rather than silent edits
-([`reviews/PHASE_3_REVIEW.md`](../project/reviews/PHASE_3_REVIEW.md) area 7).*
+([`reviews/PHASE_3_REVIEW.md`](../project/reviews/PHASE_3_REVIEW.md) area 7). Phase 9's
+additions - two more currencies, the FX books, counterparty-keyed clearings and the FX and
+cross-border entries - are §9, written as built by `P9-DOC-001` (2026-10-07).*
 
 ---
 
@@ -134,7 +136,9 @@ economic event → domain operation → financial transaction → journal entry
 
 Phase 3 builds the middle: entry, lines, balances. The economic event is whatever later phase
 causes the posting; settlement and reconciliation are Phases 5 and 8. **Suspense accounts exist
-from Phase 3** so Phase 8 can park unmatched value without corrupting customer balances.
+from Phase 3** so Phase 8 can park unmatched value without corrupting customer balances. A conversion or a cross-border payment walks the
+same chain with one more link: the quote's frozen plan is the domain operation, and each currency
+of the entry balances on its own (§9).
 
 ## 8. The trial balance
 
@@ -142,3 +146,74 @@ Total debits equal total credits **for every currency, at all times** (`INV-ACC-
 system-level expression of `INV-LED-01` and the primary continuous correctness signal. A job
 asserts it with alerting, and it **never self-corrects**: a ledger that repairs itself has
 destroyed the evidence of what went wrong.
+
+## 9. FX and cross-border — *as built by Phase 9*
+
+Phase 9 (ADR-0074, ADR-0076…0078, ADR-0082; `PHASE_9_PLAN.md` §12.6) added no rule above: every
+entry still balances **per currency** under ledger `V004`'s unchanged trigger, and **nothing is
+converted inside a line** - a conversion is two single-currency legs meeting on `FX_POSITION`.
+
+**Currencies.** JPY (0 minor units) and BHD (3) are postable since ledger `V019` (`P9-TSK-003`):
+the thirteen operational purposes seeded for both together, after their minor units were pinned
+(`SupportedCurrencies.PINNED_MINOR_UNITS` and its startup guard, `P9-TSK-002`). Every line carries
+its currency's own scale.
+
+**The FX books** - posted only by `fx`'s `ConversionLines` and `CoverLines`
+(`FxBooksHaveOnePosterTest`):
+
+| Purpose | Type / normal | Arrived | Meaning |
+|---|---|---|---|
+| `FX_POSITION` | ASSET / DEBIT | seeded `V003`; JPY/BHD `V019` | Per currency, what open conversion legs will receive from (debit) or deliver to (credit) a cover; **zero at rest** |
+| `ROUNDING_RESIDUAL` | EXPENSE / DEBIT | `V003`; `V019` | A conversion's rounding, either sign, in the computed leg's currency (`INV-BAL-03`); `ConversionLines` is its first production poster |
+| `FX_SPREAD_REVENUE` | REVENUE / CREDIT | `V020` (`P9-TSK-009`) | The spread and markup, recognised explicitly in the computed leg's currency, never inside the rate (`INV-FX-03`) |
+| `FX_REALISED_GAINS` / `FX_REALISED_LOSSES` | REVENUE / CREDIT; EXPENSE / DEBIT | `V023` (`P9-TSK-012`) | A cover or unwind executed off its plan, in that leg's currency; never netted with each other |
+
+All five are **closed to free adjustments** (`AccountPurpose.closedToFreeAdjustments()`, the
+`V015` binding trigger restated by `V020`, `V022`, `V023` and `V024`) and none is a reconciled
+position: they open no expectations, so completeness would otherwise report every conversion line
+unattributed.
+
+**Counterparty-keyed clearings** (ADR-0078, `INV-RAIL-04`). Ledger `V021` (`P9-TSK-010`) added the
+append-only `ledger.counterparty` registry, the `COUNTERPARTY` owner kind and a `BEFORE INSERT`
+trigger holding `owner_ref` to a registry row. A counterparty clearing account is keyed
+(counterparty, purpose, currency) - there is no shared account for two providers to net in - and
+is seeded by the migration that admits its counterparty, never minted at runtime
+(`CounterpartyChartGuard` refuses startup without them):
+
+| Purpose | Type / normal | Counterparties and currencies |
+|---|---|---|
+| `FX_PROVIDER_CLEARING` | ASSET / DEBIT - what the provider owes the platform | `fx-sim-a`, all five currencies (`V022`, `P9-TSK-011`); `fx-sim-b`, EUR and USD (`V025`, `P9-TSK-026`) |
+| `CORRIDOR_CLEARING` | LIABILITY / CREDIT - what the platform owes the corridor provider | `corridor-sim-a`, USD, JPY and BHD (`V024`, `P9-TSK-014`); `corridor-sim-b`, USD (`V025`) |
+
+Both are reconciled positions: each is discharged only by its own counterparty's declared source
+(settlement `V015`-`V017`). `ChartOfAccounts.resolve(uow, purpose, counterpartyCode, currency)`
+serves them; the clearing purpose is read off the provider's or rail's declaration
+(`CounterpartyClearingIsNamedByDeclarationsTest`).
+
+**The entries** - each through `PostingService` under its posting key:
+
+| Posting key | Event | Lines |
+|---|---|---|
+| `fx-trade:<tradeId>` | A wallet conversion (`P9-TSK-009`) | S: DR wallet(S) / CR `FX_POSITION`(S); D: DR `FX_POSITION`(D) / CR wallet(D); in the computed leg CR `FX_SPREAD_REVENUE` and `ROUNDING_RESIDUAL` CR when positive, DR when negative (no line at zero). Posting date `trade.booked_on`, the database's |
+| `fx-cover:<coverId>` | A cover executed (`P9-TSK-012`) | The plan's `FX_POSITION` legs closed exactly onto `FX_PROVIDER_CLEARING`(provider) at the executed amounts, the difference to `FX_REALISED_GAINS`/`LOSSES` per leg. Posting date `cover_execution.recorded_on`, the database's; value date the provider's |
+| `fx-cover:<unwindId>` | An unwind executed (`P9-TSK-021`, cover kind `UNWIND`, fx `V008`) | The same composer over the quote's plan reversed: the position bought back from the same provider, `FX_POSITION` zero again, the platform's result one realised line |
+| `fx-trade:<tradeId>` in the `ledger.reverse` scope | An approved trade reversal (`P9-TSK-025`, fx `V009`) | The exact mirror of the trade's entry through the ledger's `ReversalService`, referencing it (ledger `V009`'s bound); in the same transaction the trade `REVERSED` and its cover unwound if executed, voided if rejected |
+| `outbound-credit:<creditId>` | The corridor provider accepted a cross-border credit (`P9-TSK-020`) | S: DR wallet(S) the total debit / CR `FEE_REVENUE`(S) the fee / CR `FX_POSITION`(S); D: DR `FX_POSITION`(D) / CR `CORRIDOR_CLEARING`(provider, D) the instructed amount, with `FX_SPREAD_REVENUE` and `ROUNDING_RESIDUAL` - the hold released and the trade booked onto this entry in the same transaction; there is no separate `fx-trade:` entry |
+| `crossborder-return:<creditId>` | A return applied from evidence (`P9-TSK-023`) | D: DR `CORRIDOR_CLEARING`(provider) / CR wallet(D), opened if absent; S: DR `FEE_REVENUE` / CR wallet(S) - the fee refund. The spread stands; nothing is re-converted |
+| `crossborder-return-fee:<creditId>` | A parked return resolved four-eyes (`P9-TSK-023`) | DR `FEE_REVENUE`(S) / CR wallet(S) only; the principal is the resolution's own `TRANSFER_TO_ACCOUNT` (DR `SUSPENSE_UNMATCHED` / CR wallet(D)). Both entries post in the approval's transaction, the union of their projection rows locked first by `lockBalancesInOrder` (`CorridorReturnResolutions`, `P9-DOC-001`) |
+
+**Dates.** The conversion and cover entries are dated from stored, database-stamped rows. The
+`outbound-credit:`, `crossborder-return:`, `crossborder-return-fee:` and trade-reversal entries
+take posting and value date as the UTC date of the writing instance's `Clock` - the §2 substitution,
+found by the exit review (`P9-DOC-001`). Ruled there as the Phase 5–7 practice `X-TSK-011` records, not a
+new class: each entry posts inside one conditional transition that admits a single application - the
+credit's edge, the return fact under the credit's lock, the resolution's and the reversal's approvals -
+so no later-day replay can re-post it and meet a conflicting fingerprint (ADR-0065 §6's argument for the
+repudiation's reversal). The four sites are named in `X-TSK-011`'s scope; new posters still take both
+dates from stored rows.
+
+**Hot rows.** Every conversion updates the `FX_POSITION`, `FX_SPREAD_REVENUE` and
+`ROUNDING_RESIDUAL` projection rows of its two currencies - a per-currency serialisation point,
+correct by the projection's row lock; a transaction posting more than one entry locks the union of
+their projection rows in order first (`PostingService.lockBalancesInOrder`, ADR-0076 §9). No
+revaluation (ADR-0076): the position is closed by covers, never marked to market.

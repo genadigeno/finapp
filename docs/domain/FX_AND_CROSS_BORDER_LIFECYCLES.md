@@ -3,8 +3,8 @@
 Written by the Phase 8 → 9 transition (2026-10-02), the
 `SETTLEMENT_AND_RECONCILIATION_LIFECYCLES.md` precedent: the document that names a phase's model
 is written before the phase's first task, from the decisions in ADR-0074…0083, and corrected by
-the tasks that implement it. Until the task a machine names lands, nothing below is implemented;
-every statement is the decided design, corrected by the tasks that build it. The engineering plan
+the tasks that implement it. *Every machine is built; the exit review (`P9-DOC-001`, 2026-10-07) read each against
+its trigger and made every statement true.* The engineering plan
 is [`PHASE_9_PLAN.md`](../project/PHASE_9_PLAN.md).
 
 Related: ADR-0074 (conversion arithmetic) · ADR-0075 (the rate chain and the quote) · ADR-0076
@@ -95,7 +95,8 @@ transition trigger, both from the aggregate's `permittedTransitions()`; and an a
 recording actor id, actor type, occurred at and reason (`INV-LIFE-01/-02`, the ADR-0044 doctrine:
 **states are earned by producers**). §3.12 lists the tables. Every window — quote validity,
 reference staleness, screening validity, sweep bounds, the `NEVER_RECEIVED` deadline — is judged
-**in SQL on the database clock**, never on an instance clock. `finapp_app` holds no `DELETE` on
+**on the database clock** (in SQL, or against `DatabaseTime.now` read in the deciding transaction), never on an
+instance clock (screening validity and the outbound credit's deadline since `P9-DOC-001`). `finapp_app` holds no `DELETE` on
 any table of the `fx` or `crossborder` schemas.
 
 ### 3.1 FX quote (`fx.quote`)
@@ -116,9 +117,9 @@ any table of the `fx` or `crossborder` schemas.
 | (birth) → `ISSUED` | Quote creation (the customer, or `crossborder` through `CrossBorderFx`), keyed and two-transaction: the claim pins the `ACTIVE` pricing version on `fx.quote_request` **before** the provider call, the insert prices under that version or refuses `409 fx.PolicyStale` | Owner `ACTIVE`; pair enabled and unsuspended in the pinned version; provider coherent and plausible against a fresh reference; fewer than the cap of live quotes (pre-checked before any provider call, arbitrated by the `BEFORE INSERT` trigger under advisory namespace 5); at least 5 s of validity. Publishes `fx.FxQuoteIssued` |
 | `ISSUED → ACCEPTED` | The conversion door, or cross-border authorization Tx1 | `expires_at > now`; owner and purpose match; pair unsuspended; the subject stored. Publishes `fx.FxQuoteAccepted` |
 | `ISSUED → EXPIRED` | `FxQuoteExpirySchedule` (every instance, no lease, conditional update in pages), **or** an acceptance that finds `expires_at ≤ now` | `expires_at ≤ now`. One `fx.FxQuoteExpired` per row (`detectedBy` `SWEEP` \| `ACCEPTANCE`), written by whichever writer's conditional matched — the row lock serialises them |
-| `ISSUED → CANCELLED` | The owner (keyed) | Still `ISSUED`. Publishes `fx.FxQuoteCancelled` |
+| `ISSUED → CANCELLED` | The owner (keyed) | Still `ISSUED` and unexpired (`OLD.expires_at > now`; a lapsed, unswept quote answers `QuoteNotCancellable`). Publishes `fx.FxQuoteCancelled` |
 | `ACCEPTED → EXECUTED` | The trade's booking: the same transaction for a conversion; the outbound credit's completion for cross-border | The trade row inserted (`UNIQUE (fx.trade.quote_id)`) |
-| `ACCEPTED → ABANDONED` | The outbound credit's `FAILED` applier, through `CrossBorderFx.abandonWithin` | The subject failed before booking. Publishes `fx.FxQuoteAbandoned` |
+| `ACCEPTED → ABANDONED` | The outbound credit's `FAILED` applier, through payments' `OutboundCreditComposition` → `app`'s `CrossBorderCompletion` → fx's `CrossBorderCompletionBooking.abandon` | The subject failed before booking. Publishes `fx.FxQuoteAbandoned` |
 
 - **Invalid:** any edge out of `EXECUTED`, `ABANDONED`, `EXPIRED` or `CANCELLED`; `ISSUED →
   EXECUTED` (acceptance is never skipped); `EXECUTED` without a trade (the edge trigger refuses
@@ -155,7 +156,7 @@ BOOKED ──an approved operator reversal (conversions only)──> REVERSED
 | Edge | Driver | Condition |
 |---|---|---|
 | (birth) → `BOOKED` | A conversion's acceptance transaction, or the outbound credit's completion | `UNIQUE (quote_id)`; `executed_rate = customer_rate` by `CHECK`; the amounts copied from the plan, frozen; the entry `fx-trade:<tradeId>` (conversion) or `outbound-credit:<id>` (cross-border) in the same transaction |
-| `BOOKED → REVERSED` | The approval of an FX trade reversal (§3.3), conversions only | The exact mirror posts through `ReversalService` (`reversal:fx-trade:<tradeId>`, ledger `V009`'s one-reversal bound); the cover consequence is evaluated under the lock order quote → trade → cover (§3.4) |
+| `BOOKED → REVERSED` | The approval of an FX trade reversal (§3.3), conversions only | The exact mirror posts through `ReversalService` (`fx-trade:<tradeId>` in the `ledger.reverse` scope, ledger `V009`'s one-reversal bound); the cover consequence is evaluated under the lock order quote → trade → cover (§3.4) |
 
 - **Invalid:** any edge out of `REVERSED`; reversing a cross-border trade (the credit was
   accepted; `INV-REV-03` — a return is the receiving side's act, §4).
@@ -213,7 +214,7 @@ Phase 9 must not implement (ADR-0077).
 
 | State | Meaning |
 |---|---|
-| `DISPATCHED` | Born with attempt 1's client reference `T₁` minted and stored before any send (`UNIQUE NOT NULL`, `INV-PAY-04`, `INV-FX-08`) and the first database-stamped send permit |
+| `DISPATCHED` | A `COVER` is born with attempt 1's client reference `T₁` minted and stored before any send (`UNIQUE NOT NULL`, `INV-PAY-04`, `INV-FX-08`) and the first database-stamped send permit; an `UNWIND` is born with no attempt row - its first dispatch stores `T₁` and a fresh firm quote, still before any send (fx `V008`) |
 | `UNKNOWN` | A send's answer was lost; resolved only by inquiry (`INV-LIFE-03`) |
 | `EXECUTED` | The provider confirmed. The execution fact (`fx.cover_execution`, §3.11) and the cover entry `fx-cover:<coverId>` exist |
 | `REJECTED` | A **definitive** refusal of the current attempt (`QUOTE_EXPIRED`, `PRICE_CHANGED`, `LIMIT`). Non-terminal |
@@ -226,7 +227,7 @@ Phase 9 must not implement (ADR-0077).
   `provider_quote_ref`.
 - **The send permit is stamped by the database**: `last_dispatched_at = statement_timestamp()`
   committed before every send, by a conditional, strictly forward renewal held by a trigger
-  (`X-TSK-013` aligns the Phase 6/7 permits to the same rule).
+  (`X-TSK-013` aligned the Phase 5–7 permits to the same rule, 2026-10-07).
 - **No conclusion without knowledge, and the cover is never concluded "never received"** (D13).
   On `UNRECOGNISED` or `INDETERMINATE`, `FxCoverSchedule` renews the permit and re-sends the same
   `Tn`; the provider's contract-tested obligation is *dedupe on our reference before judging the
@@ -353,7 +354,7 @@ PENDING_SCREENING ──CLEAR with a payee MATCH──> ACTIVE
 | `PENDING_SCREENING → IN_REVIEW` | The listener | The screening went `IN_REVIEW`: a hit, an indeterminate result, or an unverified payee (`NO_MATCH`/`UNAVAILABLE` payee check, reason `PAYEE_UNVERIFIED`) |
 | `IN_REVIEW → ACTIVE` | The listener, on a person's `RELEASED` | `INV-KYC-04`: a reviewer with `COUNTERPARTY_SCREENING_REVIEW`, a reason, audited |
 | `IN_REVIEW → BLOCKED` | The listener, on a person's `BLOCKED` | The same door |
-| `ACTIVE → IN_REVIEW` | The listener, on a re-screen hit or an unverified payee at re-screen | Re-screening runs at quote time when `clear_until ≤ statement_timestamp()` (the corridor's screening validity) |
+| `ACTIVE → IN_REVIEW` | The listener, on a re-screen hit or an unverified payee at re-screen | Re-screening runs at quote time when the clearance's `decided_at` plus the pinned corridor's screening validity has passed on the database's clock (there is no `clear_until` column) |
 | any non-terminal → `REVOKED` | The customer | **An identical `200` body (`REVOKED`) from every state**, so revocation reveals no review status |
 
 - **Invalid:** `PENDING_SCREENING → PENDING_SCREENING` (`UNAVAILABLE` keeps the row and records
@@ -385,11 +386,11 @@ IN_REVIEW ──a person, with a reason──> RELEASED | BLOCKED
 | `REQUESTED → CLEAR` | The screening decision transaction, from the provider's verdict **as evidence** (`INV-KYC-01`) | `decision_basis = AUTOMATIC` only with a payee `MATCH` (`CHECK` on the stored payee verdict); the kyc `policy_version` and `decided_at` recorded on every outcome, `CLEAR` included; `clear_until` renewed |
 | `REQUESTED → IN_REVIEW` | The decision transaction | A `HIT` or `INDETERMINATE` verdict, or an unverified payee (`PAYEE_UNVERIFIED`) — never auto-cleared, never auto-rejected (`INV-KYC-04`) |
 | `REQUESTED → UNAVAILABLE` | The decision transaction | The provider did not answer. The beneficiary stays unpayable; nothing is held, nothing is priced (fail safe) |
-| `UNAVAILABLE → CLEAR \| IN_REVIEW` | `CounterpartyScreeningRetrySchedule` | Row conditionals; `UNIQUE (screening_id, attempt)` |
+| `REQUESTED \| UNAVAILABLE → CLEAR \| IN_REVIEW` | `CounterpartyScreeningRetrySchedule` (due `REQUESTED` rows past their two-minute permit, and `UNAVAILABLE` ones) | Row conditionals; `UNIQUE (screening_id, attempt)` |
 | `IN_REVIEW → RELEASED \| BLOCKED` | A person with `COUNTERPARTY_SCREENING_REVIEW` (`KYC_REVIEWER`) | `decision_basis = REVIEWER` ⇔ a deciding person (`CHECK ((decision_basis = 'REVIEWER') = (decided_by IS NOT NULL))`), a reason code and narrative required, audited |
 
 - **Terminal:** `CLEAR`, `RELEASED`, `BLOCKED` (for that screening — no edge leaves any of them;
-  a re-screen, a lapsed `clear_until` included, is a new screening row).
+  a re-screen, a lapsed clearance included, is a new screening row).
 - The screening is kyc's recorded decision; the beneficiary's state (§3.7) is crossborder's
   projection, moved by the listener in the same transaction. Four-eyes clearance is recorded as a
   Phase 13 policy option; rescreening the whole book, list-change sweeps and ongoing monitoring
@@ -433,8 +434,9 @@ PROPOSED ──a different approver──> APPROVED   (the enabling fact is appe
   `UNIQUE (subject) WHERE status='PROPOSED'`; a reason on each act; `INV-AUD-04`.
 - A corridor whose policy needs data the platform does not hold (the `required_data` flag) cannot
   be approved.
-- Availability is read `FOR SHARE` inside the deciding transaction (lock-order step 4), never
-  from memory: a suspension beats every outstanding quote, which simply expires.
+- Availability is the newest append-only fact, read unlocked under READ COMMITTED inside the deciding transaction,
+  never from memory; only its writers serialise (advisory namespaces 7 and 8), so a disable committing beside an
+  acceptance does not block it: a suspension beats every later decision, and outstanding quotes simply expire.
 
 ### 3.11 The born-once facts
 
@@ -451,17 +453,17 @@ contended one is a ★ born-once arbiter with a lock-bypass probe in its task.
 | Cover execution | `fx.cover_execution` | The acting applier's outcome transaction | ★ `cover_id` PK, `UNIQUE (provider_code, provider_trade_ref)`, `journal_entry_id UNIQUE` — the arbiter that holds with the conditional removed |
 | Unwind | `fx.cover` (kind `UNWIND`) | The abandonment or reversal writer, or the cover applier — whichever finds the position unwanted | ★ `UNIQUE (quote_id, kind)` under the lock order quote → trade → cover |
 | Payment | `crossborder.payment` | Authorization Tx1 | ★ `UNIQUE (quote_id)`; the claim per principal |
-| Outbound credit return | `payments.outbound_credit_return` | The applier (`applied_by = 'APPLIER'`) or a resolution's approval (`'RESOLUTION'`, with its `resolution_id` — `CHECK ((applied_by = 'RESOLUTION') = (resolution_id IS NOT NULL))`) | ★ `UNIQUE (outbound_credit_id)`; the claim `(rail, return_reference)`; for `APPLIER`, the returned `Money` equal to the instructed `Money` by an every-writer trigger reading the frozen credit (`INV-XB-04`) |
+| Outbound credit return | `payments.outbound_credit_return` | The applier (`applied_by = 'APPLIER'`) or a resolution's approval (`'RESOLUTION'`, with its `resolution_id` — `CHECK ((applied_by = 'RESOLUTION') = (resolution_id IS NOT NULL))`) | ★ `UNIQUE (outbound_credit_id)` (the sole arbiter as built: no return-reference claim, `V027`); for `APPLIER`, the returned `Money` equal to the instructed `Money` by an every-writer trigger reading the frozen credit (`INV-XB-04`) |
 | Cancellation request | `crossborder.cancellation_request` (`P9-TSK-024`) | The customer | `UNIQUE (payment_id)`, append-only (the every-writer trigger refuses `UPDATE` and `DELETE`). Its outcome lives on the outbound credit (`recall_outcome`) and the payment: a recall is honoured only on the provider's definitive `RECALLED`, never assumed, and an instruction with a recall requested is never re-sent (D22) |
-| The outbound credit's side facts | `payments.outbound_credit` columns | `provider_reference` from the first answer that carries it; `delivered_at`; `recall_requested_at`, `recall_last_sent_at`, `recall_outcome` | Each set once by a conditional |
+| The outbound credit's side facts | `payments.outbound_credit` columns | `provider_reference` from the first answer that carries it; `delivered_at`; `recall_requested_at`, `recall_outcome` (`RECALLED \| REFUSED`; the recall is paced by the sweep's poll, no recall permit) | Each set once by a conditional |
 
 ### 3.12 The three layers, per machine
 
 | Machine | Table (migration, task) | History | Database rank beyond the edge trigger |
 |---|---|---|---|
 | FX quote | `fx.quote` (`V005`, `P9-TSK-008`) | `quote_event` | The per-currency plan-identity `CHECK`; the freeze trigger; the live-quote cap `BEFORE INSERT` trigger under namespace 5; `expires_at` bounds `CHECK`; `EXECUTED` refused without a trade |
-| FX trade | `fx.trade` (`V006`, `P9-TSK-009`; `REVERSED` admitted by `V008`, `P9-TSK-025`) | The row and its entry; `quote_event` carries the quote's side | ★ `UNIQUE (quote_id)`; the rate-equality `CHECK`; amounts frozen |
-| FX trade reversal | `fx.trade_reversal` (`V008`, `P9-TSK-025`) | The row's decision columns, once | Partial `UNIQUE (trade_id) WHERE status='PROPOSED'`; the four-eyes `CHECK`; ledger `V009`'s one-reversal bound |
+| FX trade | `fx.trade` (`V006`, `P9-TSK-009`; `REVERSED` already in `V006`'s machine, reached by `P9-TSK-025`) | The row and its entry; `quote_event` carries the quote's side | ★ `UNIQUE (quote_id)`; the rate-equality `CHECK`; amounts frozen |
+| FX trade reversal | `fx.trade_reversal` (`V009`, `P9-TSK-025`) | The row's decision columns, once, and the append-only `fx.trade_reversal_event` | Partial `UNIQUE (trade_id) WHERE status='PROPOSED'`; the four-eyes `CHECK`; ledger `V009`'s one-reversal bound |
 | FX cover | `fx.cover`, `fx.cover_attempt` (`V006`, `P9-TSK-009`; execution by `V007`, `P9-TSK-012`) | `cover_attempt` rows; the permit columns | `UNIQUE (quote_id, kind)`; `UNIQUE (cover_id, attempt)`; `UNIQUE client_reference`; the forward-only permit trigger; ★ `fx.cover_execution` (`V007`) |
 | Cross-border payment | `crossborder.payment` (`V005`, `P9-TSK-019`) | `payment_event` | ★ `UNIQUE (quote_id)`; `payment_edge_is_legal`; the offer's disclosed amounts copied and frozen (`INV-XB-03`) |
 | Outbound credit | `payments.outbound_credit` (`V025`, `P9-TSK-019`; the claim subject by `V026`, `P9-TSK-020`; the return by `V027`, `P9-TSK-023`) | The payment's event (one fact, one event); the evidence rows | `dispatch_key` unique per customer; the frozen-columns trigger; the forward-only permit; ★ `scheme_execution_claim (rail, provider_reference)`; ★ `outbound_credit_return` and its applier-amount trigger |
@@ -487,7 +489,7 @@ A corridor return reaches the platform on two channels: the corridor provider's 
 its settlement report's `PAYOUT_RETURNED` line, which `OutboundReturnWorker` (in `app`, the
 `PayoutReturnSweep` precedent) reads from reconciliation's waiting items. Both converge on
 `OutboundCreditComposition.returned`, behind ★ `UNIQUE (outbound_credit_return.outbound_credit_id)`,
-the claim `(rail, return_reference)` and the posting key `crossborder-return:<id>` (`INV-XB-04`).
+and the posting key `crossborder-return:<id>` (`INV-XB-04`) - no return-reference claim was built (`V027`).
 
 **Which items the worker sees.** Reconciliation's `WaitingPayoutReturns` is scoped by source: the
 corridor worker is handed the sources whose settled position is `CORRIDOR_CLEARING` (any

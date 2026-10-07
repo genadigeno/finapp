@@ -159,6 +159,15 @@ class Phase9ReportsDatabaseTest {
 
         assertThat(client().get(REPORTS + "/fx/position", customer.token()).statusCode()).isIn(401, 403);
         assertThat(client().get(REPORTS + "/fx/position", sessionWith(RoleName.FX_CONTROLLER)).statusCode()).isEqualTo(403);
+        // Every Phase 9 report and the trace refuse an operator without FX_INVESTIGATE, and anyone without a session
+        // (the P9-DOC-001 exit review found only the position report proven negatively).
+        String controller = sessionWith(RoleName.FX_CONTROLLER);
+        for (String route : java.util.List.of(REPORTS + "/fx/position", REPORTS + "/fx/revenue",
+                REPORTS + "/cross-border/corridors", "/v1/operator/cross-border/payments/" + UUID.randomUUID() + "/trace")) {
+            assertThat(client().get(route, controller).statusCode()).as("%s without FX_INVESTIGATE", route).isEqualTo(403);
+            assertThat(client().get(route, null).statusCode()).as("%s without a session", route).isEqualTo(401);
+        }
+        assertThat(audits() - audited).as("a refused reader reads and audits nothing").isEqualTo(3);
         assertThat(paid).isNotNull();
     }
 

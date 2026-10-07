@@ -1,6 +1,7 @@
 package com.finapp.payments;
 
 import com.finapp.platform.correlation.CorrelationContext;
+import com.finapp.platform.persistence.DatabaseTime;
 import com.finapp.platform.security.SecurityContext;
 import com.finapp.sharedkernel.correlation.Correlation;
 import com.finapp.sharedkernel.correlation.CorrelationId;
@@ -143,11 +144,11 @@ public final class OutboundCreditResolution {
             // reference: a concluded or unanswered recall ends this pass; a refusal falls through to the inquiry, so
             // the credit completes as it would have.
             CorridorRail.RecallAnswer recall = rail.get().recall(candidate.reference());
-            Instant recallBound = neverReceivedBound(candidate.rail());
             OutboundCreditOutcomes.Applied answered = transactions.inTransaction(uow -> {
                 OutboundCreditStore.Row locked = credits.lock(uow, candidate.id())
                         .orElseThrow(() -> new PaymentsStorageException("a recalled outbound credit vanished"));
-                OutboundCreditOutcomes.Applied applied = outcomes.applyRecallAnswer(uow, locked, recall, recallBound,
+                OutboundCreditOutcomes.Applied applied = outcomes.applyRecallAnswer(uow, locked, recall,
+                        neverReceivedBound(uow, candidate.rail()),
                         CorrelationContext.current().orElseThrow());
                 recallEvidenceOf(recall).ifPresent(bytes -> evidence.appendForOutboundCredit(uow, locked.id(),
                         EvidenceKind.QUERY_RESULT, bytes, Instant.now(clock)));
@@ -159,11 +160,11 @@ public final class OutboundCreditResolution {
         }
         // The inquiry, holding no connection (ADR-0046): the provider is asked for OUR reference.
         CorridorRail.InquiryAnswer answer = rail.get().inquire(candidate.reference());
-        Instant bound = neverReceivedBound(candidate.rail());
         return Optional.of(transactions.inTransaction(uow -> {
             OutboundCreditStore.Row locked = credits.lock(uow, candidate.id())
                     .orElseThrow(() -> new PaymentsStorageException("a resolving outbound credit vanished"));
-            OutboundCreditOutcomes.Applied applied = outcomes.applyInquiryAnswer(uow, locked, answer, bound,
+            OutboundCreditOutcomes.Applied applied = outcomes.applyInquiryAnswer(uow, locked, answer,
+                    neverReceivedBound(uow, candidate.rail()),
                     CorrelationContext.current().orElseThrow());
             evidenceOf(answer).ifPresent(bytes -> evidence.appendForOutboundCredit(uow, locked.id(),
                     EvidenceKind.QUERY_RESULT, bytes, Instant.now(clock)));
@@ -206,12 +207,14 @@ public final class OutboundCreditResolution {
 
     /**
      * The instant at or before which a permit makes {@code UNRECOGNISED} conclusive: now - (the rail's declared
-     * outcome deadline + the configured margin). Declared data judged against the permit, never a clock alone.
+     * outcome deadline + the configured margin). Declared data judged against the permit, never a clock alone - and
+     * "now" is the DATABASE's, read in the transaction that locked the row (P9-DOC-001; X-TSK-013's rule): the permit
+     * is the database's stamp, so no instance's skew may age it.
      */
-    private Instant neverReceivedBound(RailId rail) {
+    private Instant neverReceivedBound(java.sql.Connection unitOfWork, RailId rail) {
         Duration declared = rails.capabilitiesOf(rail).outcomeDeadline()
                 .orElseThrow(() -> new IllegalStateException("the corridor rail declares no outcome deadline: its"
                         + " descriptor cannot bound its own ambiguity"));
-        return Instant.now(clock).minus(declared.plus(config.margin()));
+        return DatabaseTime.now(unitOfWork).minus(declared.plus(config.margin()));
     }
 }

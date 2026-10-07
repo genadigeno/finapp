@@ -73,8 +73,9 @@ dependencies {
     // decides who is paid must not compile against the module that prices and books, nor the
     // reverse - neither refusal has a Gradle cycle behind it; the two isolation tests are the only
     // controls. And deliberately NO edge to `payments`, `kyc` or `accounts`: execution, screening
-    // and the customer's wallet are reached through CrossBorderExecution, CounterpartyScreening
-    // and CrossBorderParticipants, ports `app` implements.
+    // and fx are reached through CrossBorderExecution, CounterpartyScreening and CrossBorderFx,
+    // ports `app` implements; the customer's wallet is held and debited inside the execution
+    // port (as built, P9-DOC-001 - no CrossBorderParticipants port was needed).
     implementation(project(":ledger"))
     implementation(project(":platform"))
 

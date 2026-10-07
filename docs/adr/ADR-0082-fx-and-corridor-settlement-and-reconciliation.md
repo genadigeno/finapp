@@ -1,6 +1,6 @@
 # ADR-0082 — FX and corridor settlement and reconciliation: legs are single-currency expectations, new causes but no new break types, and reconciliation still never converts
 
-Status: Proposed (2026-10-02, the Phase 8 → 9 transition)
+Status: Accepted (2026-10-07, `P9-DOC-001` — read against the code and corrected first)
 Date: 2026-10-02
 Phase: 9
 Context: Settlement · Reconciliation · FX · Payments · Ledger
@@ -86,7 +86,8 @@ evidence hops. Phase 9 adds two counterparties whose economics are new:
    missing row would turn every genuine fee into a `FEE_MISMATCH`. Therefore: the FX source's
    v1 carries `FX_FEE` 0 + 0 in **all five** currencies (the simulated FX provider earns its
    spread and bills nothing, so any reported FX fee is a `FEE_MISMATCH` — O7); the corridor's
-   v1 carries `PAYOUT_FEE` 0 + USD 120 / JPY 180 / BHD 450 in its three settled currencies;
+   v1 carries `PAYOUT_FEE` 0 + USD 120 / JPY 180 / BHD 450 minor units (USD 1.20, JPY 180,
+   BHD 0.450) in its three settled currencies;
    and the four existing sources get **v2 successors** carrying O6's JPY/BHD thresholds, fee
    schedules and tolerances through the existing four-eyes successor door — earlier decisions
    replay `IDENTICAL` under their pinned v1. Reconciliation's migration makes `FX_FEE` join
@@ -99,13 +100,16 @@ evidence hops. Phase 9 adds two counterparties whose economics are new:
    proposal is admitted when the source has no `ACTIVE` version, activation retires nothing,
    and `V012`'s insert trigger and four-eyes `CHECK` stand unchanged. A batch from a source
    with no active rule set gets a typed **`RuleSetMissing`** refusal: the file waits `PARSED`
-   with backoff, and `finapp.reconciliation.rule_set.missing{source}` reads 1 and alerts,
+   with backoff, and `finapp.reconciliation.rule_set.missing{source}` (the meter
+   `finapp.reconciliation.rule.set.missing`, exported under that Prometheus name) reads 1 and alerts,
    instead of retrying without end. The FX v1: legs `ONE_TO_ONE` keyed `COVER_REF`, grace
    24 h, lag 2 d, `SETTLEMENT_DATE_DAYS` 2, the `FX_FEE` rule of cardinality `CHECK`
    (original by `ORIGINAL_REF` = `Tn`), no fee tolerance, thresholds in five currencies. The
-   corridor v1: payout `ONE_TO_ONE` (keys `END_TO_END_REF`, then `PAYOUT_PROVIDER_REF`),
-   returns operation-anchored with grace 72 h, the `PAYOUT_FEE` rule, no fee tolerance, lag
-   2 d, thresholds in three currencies.
+   corridor v1: payout `ONE_TO_ONE` (keys `END_TO_END_REF`, then `PAYOUT_PROVIDER_REF`), grace
+   48 h; returns operation-anchored with grace 72 h; the `PAYOUT_FEE` rule, no fee tolerance, lag
+   2 d, `SETTLEMENT_DATE_DAYS` 2, thresholds in three currencies. (Held as the exact proposals
+   by `FxRuleSetV1` and `CorridorRuleSetV1`; the M9.8 `-b` sources' v1s are the same rules over
+   their own currencies.)
 
 7. **Two new causes, no new break types, and reconciliation never converts** (D29, amending
    ADR-0069 by its own §2 criterion — resolution and severity, not provenance, split types):
@@ -132,7 +136,9 @@ evidence hops. Phase 9 adds two counterparties whose economics are new:
      (`CURRENCY_NOT_SETTLED`, point 2).
    - **A return that cannot apply** is `REVERSAL_MISMATCH(RETURN_NOT_APPLICABLE)`, and a
      `FAILED` credit's return `TERMINAL_STATE_CONTRADICTED` at once (ADR-0073's precedent,
-     ADR-0079); a late execution after we concluded `FAILED` parks as `UNKNOWN_EXTERNAL`.
+     ADR-0079); a late execution after we concluded `FAILED` parks as
+     `REVERSAL_MISMATCH(TERMINAL_STATE_CONTRADICTED)` too *(as built, `P9-TSK-022`'s recorded
+     deviation — the withdrawal's precedent — where this read `UNKNOWN_EXTERNAL`)*.
 
 8. **Principal risk is loud: leg severities, and a paired-leg escalation.** Base severity is
    **HIGH** for `MISSING_EXTERNAL` on `FX_SELL_LEG`, `FX_BUY_LEG` and `CROSSBORDER_PAYOUT`
@@ -223,8 +229,9 @@ Positive:
 - A forged or misrouted provider reference cannot cross source families.
 
 Negative:
-- Operators must activate six rule-set versions (the two v1s plus the four v2 successors)
-  before Phase 9 traffic reconciles: a runbook entry, with the
+- Operators must activate eight rule-set versions (the four v1s — `fx-sim-a`, `corridor-sim-a`
+  and M9.8's `fx-sim-b` and `corridor-sim-b` — plus the four v2 successors) before Phase 9
+  traffic reconciles: a runbook entry, with the
   `rule_set.missing` alert as the backstop.
 - The corridor's reuse of `PAYOUT_PROVIDER_REPORT` means dashboards distinguish the two by
   source, not kind.
@@ -264,7 +271,15 @@ retained), `INV-PAY-03` (provider vocabulary confined to format adapters).
   amendments, each with dated provenance.
 - The rematch clock-skew debt (Phase 15) is inherited by the new sources, recorded,
   unchanged.
-- The Phase 9 review (`P9-DOC-001`) reads this ADR against the code before accepting it.
+- **As built** (2026-10-07, read against the code by `P9-DOC-001`): every point of this ADR is
+  implemented by the tasks below, all `COMPLETE`, and every statement above is true of the code.
+  The review's corrections: point 5's fee figures stated in minor units, point 6's corridor payout
+  grace (48 h) and the meter's dotted name, point 7's late execution after `FAILED`
+  (`TERMINAL_STATE_CONTRADICTED`), and the count of rule-set versions to activate (eight, with
+  M9.8's `-b` pair). No return claim exists: a corridor return is held once by
+  `outbound_credit_return_once` and the credit's row lock (ADR-0079 point 6).
+- The Phase 9 review (`P9-DOC-001`) read this ADR against the code, corrected it where it had
+  drifted, and accepted it on 2026-10-07.
 - *As built by `P9-TSK-014` (2026-10-05):* the corridor's source is composed - `SIM_CORRIDOR_CSV` v1
   under `PAYOUT_PROVIDER_REPORT` (settlement `V016`), `corridor-sim-a.settlement` settling
   `CORRIDOR_CLEARING(corridor-sim-a)` in USD, JPY and BHD (`CURRENCY_NOT_SETTLED` otherwise), remittance

@@ -1,6 +1,6 @@
 # ADR-0079 — A cross-border payment holds the customer's funds until the corridor provider accepts, posts once, and comes back only as exactly what was sent — or through a person
 
-Status: Proposed (2026-10-02, the Phase 8 → 9 transition)
+Status: Accepted (2026-10-07, `P9-DOC-001` — read against the code and corrected first)
 Date: 2026-10-02
 Phase: 9
 Context: Cross-Border · Payments · FX · Ledger · Reconciliation
@@ -49,10 +49,14 @@ The registered name is **Cross-Border Payment** (D31): in this codebase *Transfe
    build-depend on exactly `{ledger, platform, sharedkernel}`. There is **no build edge**
    between `fx`, `crossborder`, `payments`, `kyc` and `accounts`; every seam is a port the
    caller declares and `app` implements as a required constructor parameter (ADR-0064 §3's
-   discipline): `CrossBorderFx` (quote, acceptance, completion lines, abandonment),
-   `CrossBorderExecution` (routing and dispatch), `CorridorDirectory`, `CounterpartyScreening`
-   (ADR-0081), `CrossBorderParticipants`, and `payments`' `OutboundCreditComposition`
-   implemented over `crossborder` and `fx` (the `CaptureComposition` shape). The named
+   discipline): `CrossBorderFx` (the quote and its acceptance: `begin`, `firmQuote`, `issue`,
+   `read`, `acceptWithin`, `dispatchCover`), `CrossBorderExecution` (routing and dispatch),
+   `CorridorDirectory`, `CounterpartyScreening` (ADR-0081), `CrossBorderParticipants`, and
+   `payments`' `OutboundCreditComposition` implemented over `crossborder` and `fx` (the
+   `CaptureComposition` shape) — the completion's lines and the abandonment go through it, to
+   `app`'s `CrossBorderCompletion` and fx's `CrossBorderCompletionBooking` (`book`, `abandon`).
+   *(As built (`P9-DOC-001`): no `CrossBorderParticipants` port was built — a return opens its
+   wallet through fx's `ConversionParticipants` inside `app`'s `CrossBorderCompletion`.)* The named
    cross-module transactions — authorization (T-b), outbound outcome (T-c), screening decision
    (T-e), return (T-f), resolved parked return (T-g) — are each justified in `PHASE_9_PLAN.md`
    §3's table, and no reconciliation worker ever waits on an `fx`, `crossborder`, `payments` or
@@ -76,7 +80,11 @@ The registered name is **Cross-Border Payment** (D31): in this codebase *Transfe
    expectation opens in the same transaction (ADR-0067, ADR-0082). **A payment that fails
    debits the customer nothing**: the hold is released, the quote `ABANDONED`, the cover
    unwound if it executed (ADR-0077), and no reversal entry ever appears on the customer's
-   statement.
+   statement. *(As built (`P9-DOC-001`), Tx1's order is `PaymentAuthorization`'s: the offer
+   owned; the beneficiary `FOR SHARE` (`ACTIVE`, clear, the clearance not lapsed on the database
+   clock); the corridor available; risk, then limit; fx's `acceptWithin` (the quote locked, judged
+   and accepted, the cover born with `T₁`); routing; the hold and the credit born `DISPATCHED`;
+   the payment `SUBMITTED`, audited and announced — one commit, every refusal rolling it back.)*
 
 3. **The Outbound Credit is a new `payments` aggregate carrying the provider's ambiguity**
    (D16): ADR-0057's four states plus `RECEIVED` — the provider acknowledged the instruction
@@ -89,8 +97,15 @@ The registered name is **Cross-Border Payment** (D31): in this codebase *Transfe
    per customer; `last_dispatched_at` database-stamped and strictly forward; `NOTHING_SENT`
    fails only a first send; `NEVER_RECEIVED` requires `DISPATCHED` or `UNKNOWN`, re-judged on
    the locked row past the rail's declared `outcomeDeadline` plus margin since the **latest**
-   permit — and `RECEIVED` can never become `NEVER_RECEIVED`; an instruction with a recall
-   requested is **never re-sent**. `E`, rail, destination reference, instructed and held
+   permit, that bound read from the database clock in the transaction that locked the row
+   (`OutboundCreditResolution.neverReceivedBound`, `DatabaseTime.now` — the recall's
+   `UNRECOGNISED` judged by the same bound; `P9-DOC-001` found it on the resolver's clock, held
+   by `OutboundCreditResolutionDatabaseTest#aSkewedResolverConcludesNothingEarly`) — and
+   `RECEIVED` can never become `NEVER_RECEIVED`; an instruction with a recall requested is
+   **never re-sent**. The sweep takes every credit awaiting its outcome first, oldest permit
+   first, and only then the `COMPLETED` credits still awaiting delivery, least recently
+   inquired first (`JdbcOutboundCreditStore.findDue`; `P9-TST-001`'s starvation find, held by
+   `#undeliveredCreditsNeverStarveOneAwaitingItsOutcome`). `E`, rail, destination reference, instructed and held
    `Money`, hold id and subject are frozen by trigger. The credit publishes no event of its
    own: its business consequence is the payment's event, written in the same transaction.
 
@@ -128,9 +143,11 @@ The registered name is **Cross-Border Payment** (D31): in this codebase *Transfe
    the corridor sources** (ADR-0082): the corridor worker is handed only sources settling
    `CORRIDOR_CLEARING`, the merchant sweep only those settling `PAYOUT_CLEARING`, so identical
    provider references across the two source families can never credit the wrong party. Both
-   channels sit behind `UNIQUE (outbound_credit_return.outbound_credit_id)`, the claim
-   `(rail, return_reference)` and the posting key `crossborder-return:<outboundCreditId>`. The
-   rule, judged on the locked rows:
+   channels sit behind `UNIQUE (outbound_credit_return.outbound_credit_id)`
+   (`outbound_credit_return_once`, judged under the credit's row lock) and the posting key
+   `crossborder-return:<outboundCreditId>` *(as built, no `CROSSBORDER_RETURN` claim on
+   `(rail, return_reference)` exists: the report line carries no return reference — `P9-TSK-023`'s
+   recorded deviation)*. The rule, judged on the locked rows:
    - **`COMPLETED`, the instructed currency `D`, exactly the instructed amount, customer
      `ACTIVE`** → applied: the wallet in `D` is credited (opened if absent, in the same
      transaction, D28), **never re-converted at the original rate**; the transfer fee is
@@ -146,8 +163,9 @@ The registered name is **Cross-Border Payment** (D31): in this codebase *Transfe
      and the customer would silently bear an intermediary's deduction under a promise of
      `OUR`. A person sees every such case.
    - **A `FAILED` credit's return** is a contradiction, parked at once as
-     `REVERSAL_MISMATCH(TERMINAL_STATE_CONTRADICTED)` beside the late execution's
-     `UNKNOWN_EXTERNAL`; a person offsets the two.
+     `REVERSAL_MISMATCH(TERMINAL_STATE_CONTRADICTED)` beside the late execution's own
+     `TERMINAL_STATE_CONTRADICTED` (the withdrawal's precedent, `P9-TSK-022`'s recorded deviation
+     from `UNKNOWN_EXTERNAL`); a person offsets the two.
 
    **The way out of a parked corridor return is a person's four-eyes resolution that also
    records the return** (T-g). The usual decision is a `TRANSFER_TO_ACCOUNT` (ADR-0071) of the
@@ -158,7 +176,8 @@ The registered name is **Cross-Border Payment** (D31): in this codebase *Transfe
    transaction, after its own rows: it inserts the born-once return fact with
    `applied_by = RESOLUTION` and the resolution id, posts the fee refund
    `crossborder-return-fee:<outboundCreditId>`, and moves the payment to `RETURNED`. If an
-   inquiry applied the return first, the port's insert conflicts, the whole approval rolls
+   inquiry applied the return first, the port finds the fact under the credit's lock (as
+   built, rather than by an insert conflict), the whole approval rolls
    back (`409 reconciliation.ResolutionStale`) and the rematch leg closes the break
    `EVIDENCED`; if the approval wins, the automated application finds the fact and writes
    nothing. Nothing is ever credited twice. The port refuses while the credit is not
@@ -347,11 +366,19 @@ deliveries harmless), `INV-CON-01`/`-02` (every judgement on locked rows), `INV-
   answer and the recall race.
 - The transition annotates ADR-0057 (discipline reused), ADR-0062 §7 (trigger fired, declined,
   re-recorded), ADR-0073 (precedent extended) and DECISIONS' recall and convergence rows.
-- Recorded debt: funds owed to a closed customer by a parked corridor return (Phase 15); the
-  Phase 5–7 permits' instance stamps (`X-TSK-013`) against this ADR's database-stamped ones.
+- Recorded debt: funds owed to a closed customer by a parked corridor return (Phase 15). The
+  Phase 5–7 permits' instance stamps (`X-TSK-013`) are **paid** (2026-10-07): every send permit
+  is the database's (payments `V028`, merchant `V009`), held by `SendPermitsAreTheDatabasesTest`.
 - `SHA`/`BEN` charge bearers wait for a corridor whose provider cannot guarantee the delivered
   amount (O9).
-- The Phase 9 review (`P9-DOC-001`) reads this ADR against the code before accepting it.
+- **As built** (2026-10-07, read against the code by `P9-DOC-001`): every point of this ADR is
+  implemented by the tasks below, all `COMPLETE`, and every statement above is true of the code.
+  The review's corrections: point 1's ports (`CrossBorderFx`'s scope; no `CrossBorderParticipants`),
+  point 2's Tx1 order, point 3's `NEVER_RECEIVED` bound on the database clock (fixed in code by the
+  review) and the sweep's candidate order (`P9-TST-001`), point 6's arbiter (no return claim) and
+  the late execution's cause, and `X-TSK-013` paid.
+- The Phase 9 review (`P9-DOC-001`) read this ADR against the code, corrected it where it had
+  drifted, and accepted it on 2026-10-07.
 - *As built by `P9-TSK-018` (2026-10-06):* the cross-border offer - crossborder `V004`'s `offer_request` (the
   claim, the pinned corridor version, the re-screen) and `payment_offer` (fx's `CROSS_BORDER` quote beside the
   corridor fee computed once on the customer's source amount, the total debit `CHECK`-held as source plus fee,

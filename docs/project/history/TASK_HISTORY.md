@@ -1,6 +1,6 @@
 # Task History
 
-The per-task completion records that accumulated behind `## Current Task` - 223 "Previously" blocks, newest first, from `X-TSK-013` back to project initiation. *(`X-TSK-016` is cross-cutting and completed after `P9-TSK-010` and before `P9-TSK-011`, so it stands between them.)* *(`X-TSK-005` is cross-cutting and completed after `P7-TSK-014` and before `P7-TSK-015`, so it stands between them; its record came in with its branch's merge.)* *(`X-TSK-004` is cross-cutting and completed after the Phase 6 → 7 transition, so it stands second, between `P7-TSK-001` and the transition's record - the transition's block moved here by `P7-TSK-001`'s gate, exactly as an earlier form of this note said it would.)*
+The per-task completion records that accumulated behind `## Current Task` - 224 "Previously" blocks, newest first, from `P9-TST-001` back to project initiation. *(`X-TSK-016` is cross-cutting and completed after `P9-TSK-010` and before `P9-TSK-011`, so it stands between them.)* *(`X-TSK-005` is cross-cutting and completed after `P7-TSK-014` and before `P7-TSK-015`, so it stands between them; its record came in with its branch's merge.)* *(`X-TSK-004` is cross-cutting and completed after the Phase 6 → 7 transition, so it stands second, between `P7-TSK-001` and the transition's record - the transition's block moved here by `P7-TSK-001`'s gate, exactly as an earlier form of this note said it would.)*
 
 **Archive.** These records were moved verbatim out of
 [`CURRENT_STATE.md`](../CURRENT_STATE.md) on 2026-09-20 so that the canonical description of
@@ -12,6 +12,54 @@ Current state: [`CURRENT_STATE.md`](../CURRENT_STATE.md) ·
 Authoritative backlog: [`BACKLOG.md`](../BACKLOG.md)
 
 ---
+
+### Previously
+
+**`P9-TST-001` — The FX and cross-border storm** — `COMPLETE` (2026-10-07). **M9.9 at 3 of 4: the
+ten-instance answer's capstone** (PHASE_9_PLAN.md §13's last paragraph and §14; every `Phase: 9` invariant).
+`FxCrossBorderStormDatabaseTest`, in its own container: **two application instances whose clocks disagree by ten
+seconds** - the suite's own context five seconds AHEAD of the database server and a second `FinappApplication`
+started in the JVM five seconds BEHIND (both server-anchored), one FX engine and one corridor engine shared - with
+five movers per instance (conversions across EUR, USD, GBP and JPY; cross-border payments to US/USD and JP/JPY,
+each over its own instance's door), a resolver per instance and a network actor (accepting, rejecting after
+receipt, returning and recalling in-flight credits; random faults armed in both engines; duplicate and forged
+callbacks at both doors). **Every round in ONE REPEATABLE READ snapshot**: the per-currency trial balance, the FX
+books proof, the position proof (every position explained, every proven line attributed, no suspense unowned),
+every clearing line's copy and the holds check. Then **the same object from both instances at one instant** - one
+quote converted, one cover dispatched, one cross-border quote paid, one recall requested and one return applied,
+each from A and B: one effect each, the losers answered `409`, the providers counting one. Then **the catalogue**,
+each fault seeded deterministically and
+followed by the snapshot: an FX response lost, callbacks duplicated and forged, a lock expired and requoted, an
+off-plan execution, a crash mid-cover; a declined send, RECEIVED then rejected (the corridor engine's new
+`rejectReceived`), never received, a recall that wins and one too late; returns before and after delivery and
+before the completion is known; a partial return parked and resolved four-eyes; a crash after Tx1 taken over
+(one instruction); a crash mid-completion. Then **drain and settle**: every leg settled to cash from the
+database's own truth (every cover execution's legs in FX trade reports, every completed credit and applied
+return in corridor reports with the schedule's fee, every remittance by a bank statement), one FX leg off by a
+minor unit - exactly one `AMOUNT_MISMATCH(FX_LEG_DIFFERS)`, no other break - and a EUR corridor file rejected
+`CURRENCY_NOT_SETTLED`; every cash verdict explained. **At rest**: the FX provider's executions per T = our
+execution facts; trades = conversions + completed payments; every E instructed at most once, held unless
+FAILED, never held when concluded never received, the sum the provider's count; no hold active; `FX_POSITION`
+zero in every currency; every executed cover a trade's or unwound exactly once, every unwind executed; no
+completion entry for a payment that did not complete; every balance projection replaying from its lines (F2); plan
+verification clean; every reconciliation run replayed IDENTICAL; the gauges at
+zero; the needle walked registration -> screening -> quote -> payment -> recall -> return and absent from every
+table and log. Each run: 274-323 rounds, ~2,070-2,390 conversions, ~1,650-1,960 payments; the hot rows'
+conversion door p99 713-760 ms. **Found and fixed (production)**: the outbound credit sweep took its candidates by the permit
+alone, and a COMPLETED credit stays due until its delivery is known - more undelivered credits than one page
+re-read that page on every sweep and starved every newer RECEIVED, UNKNOWN and DISPATCHED credit (no
+completion, no never-received, holds standing - in production at a page of 25 against a one-day delivery);
+every credit awaiting its outcome now comes first and delivery polls rotate, least recently inquired first
+(`JdbcOutboundCreditStore.findDue`; `OutboundCreditResolutionDatabaseTest#undeliveredCreditsNeverStarveOneAwaitingItsOutcome`).
+**Deviations recorded**: the second instance is a second application context in the JVM, not a process; under
+load a fault lands on whatever request comes next (both engines arm one global slot), so the catalogue is what
+guarantees each; the crash after Tx1 is Tx2 refused with the send landed (the nothing-sent case is never
+received); the p99 is the conversion door's latency over the hot rows; platform acts are counted by the
+per-flow suites, not re-counted here. **PROBES** (THREE STORM PROBES, THREE CAUGHT - a failing credit's hold left standing caught by the holds check in round 6, a conversion's margin on the rounding residual's book by the FX books proof in round 2, the FX callback door's signature check bypassed by the forged-callback refusal (204 where 401 was due) - run on the suite before its last two additions (the two-instance races and the at-rest census), which add readings and remove none; and the sweep's fair order reverted, caught by its regression test), every restore byte-identical (sha256-verified;
+`MUTATION_TESTING.md` §4 +1 row, §2 +1 row). **Multi-instance PASS** on its counts. **NEXT**: `P9-DOC-001` `READY`.
+**Verified** by fresh runs - the storm three consecutive fresh runs green on the final code, each in its own container (274, 323 and 317 rounds; ~9 minutes each); the fleet-wide hermetic tier 2548 across 419 suites and 18 modules; the architecture
+tier 161 across 28; the adjacent database suites (the outbound credit resolution, cross-border cancellation, return and payment, unwind, Phase 9 reports, corridor settlement-to-cash, second-rail, FX cover and FX callback suites: 62 across 10); ALL 0 FAILURES - the other database tiers skipped on
+the owner's instruction.
 
 ### Previously
 

@@ -77,6 +77,9 @@ class PricingPolicyDatabaseTest {
                     administration().approve(app, next.id(), first, "reviewed too", Instant.now(), correlation());
             app.commit();
             assertThat(successor.retired()).contains(proposed.id());
+            assertThat(audits(app, "fx.PricingPolicyProposed", proposed.id().value().toString())).as("proposed, audited once").isEqualTo("1");
+            assertThat(audits(app, "fx.PricingPolicyActivated", proposed.id().value().toString()))
+                    .as("activated, audited once - the retry wrote nothing").isEqualTo("1");
             assertThat(status(app, proposed.id())).isEqualTo("RETIRED");
             assertThat(scalar(app, "SELECT count(*) FROM fx.pricing_policy_version WHERE status = 'ACTIVE'"))
                     .isEqualTo("1");
@@ -151,6 +154,7 @@ class PricingPolicyDatabaseTest {
                     administration().propose(app, proposal("to reject"), controller(), Instant.now(), correlation());
             administration().reject(app, proposed.id(), controller(), "no", Instant.now(), correlation());
             app.commit();
+            assertThat(audits(app, "fx.PricingPolicyRejected", proposed.id().value().toString())).as("rejected, audited once").isEqualTo("1");
             assertThatThrownBy(() -> execute(app, "UPDATE fx.pricing_policy_version SET status = 'ACTIVE'"
                             + " WHERE id = '" + proposed.id().value() + "'"))
                     .matches(e -> RAISED.equals(((SQLException) e).getSQLState()));
@@ -342,5 +346,10 @@ class PricingPolicyDatabaseTest {
         } finally {
             pool.shutdownNow();
         }
+    }
+    /** The audit records of {@code operation} on {@code target} (the P9-DOC-001 exit review: every act positively asserted). */
+    private static String audits(Connection app, String operation, String target) throws SQLException {
+        return scalar(app, "SELECT count(*) FROM platform.audit_record WHERE operation = '" + operation
+                + "' AND target_id = '" + target + "'");
     }
 }

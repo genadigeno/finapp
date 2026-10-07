@@ -703,7 +703,11 @@ public final class ResolutionMachine {
         if (endToEnd.isEmpty()) {
             return Optional.empty();
         }
-        return Optional.of(new ResolvedCorridorReturns.ParkedReturn(endToEnd, parked.amount(), target.get()));
+        Set<UUID> transferAccounts = lines(unitOfWork, kind, holding, target).stream()
+                .map(line -> line.account().value())
+                .collect(java.util.stream.Collectors.toUnmodifiableSet());
+        return Optional.of(new ResolvedCorridorReturns.ParkedReturn(endToEnd, parked.amount(), target.get(),
+                transferAccounts));
     }
 
     /** The machine's own refusal for the port's answer; at the approval, a return found meanwhile is stale. */

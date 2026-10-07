@@ -36,6 +36,17 @@ clearing positions are the Ledger's (context 7), keyed per counterparty through
 `ledger.counterparty`, reconciled by Settlement and Reconciliation (13, 14) over their own
 report sources (ADR-0078, ADR-0082).
 
+*As built by Phase 9 (`P9-TSK-001`…`-027`, `X-TSK-013`, `P9-TST-001`; read at the exit review,
+`P9-DOC-001`, 2026-10-07):* `fx` (schema `fx`, migrations `V001`…`V009`) and `crossborder` (schema
+`crossborder`, `V001`…`V006`) each depend on `ledger` and `platform` only. Their joins are ports
+composed in `app`: a cross-border payment prices through crossborder's `CrossBorderFx` port (implemented
+in `app` over fx) and executes as payments' outbound credit (payments `V025`…`V027`), whose completion, failure and return call back through
+payments' `OutboundCreditComposition`, implemented by `app`'s `CrossBorderCompletion` over crossborder's
+payment and fx's `CrossBorderCompletionBooking`. Counterparty screening is kyc's
+`counterparty_screening` (kyc `V009`, `P9-TSK-016`). A parked cross-border return is resolved by
+Reconciliation's four-eyes `TRANSFER_TO_ACCOUNT` through its `ResolvedCorridorReturns` port, implemented
+in `app` (`CorridorReturnResolutions`) - Reconciliation still names no payments or crossborder type.
+
 1. Party & Customer
 2. Identity, Authentication & Authorization
 3. KYC/KYB

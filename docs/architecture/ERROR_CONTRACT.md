@@ -399,7 +399,7 @@ than a `409`, because the request is coherent and the remedy is the caller's.
 `merchant.FeeCurrencyMismatch` covers **both** boundaries — a version whose fixed part is in
 the wrong currency, and an assignment to a merchant that settles in another — because both say
 the same thing to the same reader: this schedule does not price that money. Cross-currency fees
-are Phase 9's. There is no fee-schedule not-found code: unknown and malformed identifiers are
+were deferred to Phase 9, which placed them out of scope (`PHASE_9_PLAN.md` §17) - the code stays. There is no fee-schedule not-found code: unknown and malformed identifiers are
 one `api.NotFound`, the merchant surface's standing rule.
 
 **The payout destination's five codes (`P6-TSK-011`, ADR-0056).**
@@ -429,7 +429,8 @@ one `api.NotFound`, the merchant surface's standing rule.
   vocabulary for the same fact. A suspended merchant's key already fails authentication, so over
   the merchant route this is the race's refusal; over the operator route it is the answer.
 - `merchant.PayoutCurrencyMismatch` (`422`): a merchant has one payable, in its settlement
-  currency; multi-currency payouts are Phase 9's.
+  currency; multi-currency payouts were deferred to Phase 9, which placed them out of scope (`PHASE_9_PLAN.md`
+  §17) - the code stays.
 - `merchant.PayoutProviderUnavailable` (`503`) is a deployment with no payout provider
   configured — nothing claimed, nothing held. A provider that is configured but unreachable is
   NOT this code: that is an honest `201` whose payout is `FAILED` (`PROVIDER_UNAVAILABLE`) when
@@ -825,6 +826,18 @@ quote lapsed on the database clock performs the sweeper's own conditional expiry
 `QuoteNotFound` answers another owner's quote and a malformed id alike; `TradeNotFound` is the uniform
 `404` of the conversion read.
 
+The corridor administrator's doors (`P9-TSK-015`, ADR-0080 §4) mirror the FX controller's, every
+route behind `CROSSBORDER_ADMINISTER` (held by `FX_CONTROLLER`). `NotFound` answers an unknown or
+malformed corridor policy or enable request alike; `SelfApprovalRefused` (four-eyes, held also by
+`crossborder V002`'s `corridor_policy_four_eyes` and `corridor_enable_request_four_eyes`),
+`ProposalNotPending`, `ProposalPending` (one live version, one live enable proposal per corridor - partial
+uniques) and `AlreadyAvailable` are the machines' own states. `RailNotDeclared` (422) refuses a candidate
+rail this build does not declare as covering the corridor's (country, currency), and
+`RequiredDataUnsatisfiable` (422) data the platform cannot hold - both judged at the proposal AND the
+approval, since the build is not a database fact. `CorridorPolicyInvalid` (422) is anything else not well
+formed, an availability command and a reason holding an instrument shape included, never echoed. A
+disable of what is already stopped answers `UNCHANGED` and writes nothing.
+
 `LimitRefused` and `RiskRefused` (`P9-TSK-016`, ADR-0081 point 8) are **reserved, not produced**: the
 Phase 13 seams `CrossBorderLimitCheck` and `CrossBorderRiskDecision` are required parameters of the
 cross-border authorization (`P9-TSK-019`), consulted in-lock before the offer is accepted, and Phase 9
@@ -854,7 +867,23 @@ and the record; the client retries with a new key. `ScreeningUnavailable` (`503`
 clearance whose re-screen could not reach its provider - nothing priced, nothing held. `OfferNotFound`
 is the uniform `404` of the offer read. Every refusal is recorded on the claim.
 
-The payment door (`P9-TSK-019`, PHASE_9_PLAN.md §12.8) adds three, beside codes it shares. `BeneficiaryNotPayable` is the same byte-identical answer for a beneficiary that went in review, blocked or revoked after its offer; `OfferNotFound` (`404`) answers an unknown quote or another customer's. `ScreeningRequired` (`409`) answers a clearance that lapsed since the offer - the customer requests a new offer, which re-screens. `CorridorUnavailable` (`503`) answers a corridor disabled since the offer. The Phase 13 seams answer `crossborder.RiskRefused` and `crossborder.LimitRefused` (`422`). fx's own refusals answer by their codes - `fx.QuoteAlreadyAccepted` (`409`, a second key on an accepted quote), `fx.QuoteExpired`, `fx.InsufficientFunds` and `fx.WalletNotPostable` (the hold on the source wallet) - and routing's by its own, `payments.NoEligibleRail`. Every refusal rolls the authorization back to its savepoint - nothing accepted, held or sent - and is recorded on the claim, so the key replays it. `PaymentNotFound` is the uniform `404` of the payment read.
+The payment door (`P9-TSK-019`, PHASE_9_PLAN.md §12.8) adds three, beside codes it shares. `BeneficiaryNotPayable` is the same byte-identical answer for a beneficiary that went in review, blocked or revoked after its offer; `OfferNotFound` (`404`) answers an unknown quote or another customer's. `ScreeningRequired` (`409`) answers a clearance that lapsed since the offer - judged on the database clock (`P9-DOC-001`), so no instance's skew lapses it early or late - the customer requests a new offer, which re-screens. `CorridorUnavailable` (`503`) answers a corridor disabled since the offer. The Phase 13 seams answer `crossborder.RiskRefused` and `crossborder.LimitRefused` (`422`). fx's own refusals answer by their codes - `fx.QuoteAlreadyAccepted` (`409`, a second key on an accepted quote), `fx.QuoteExpired`, `fx.InsufficientFunds` and `fx.WalletNotPostable` (the hold on the source wallet) - and routing's by its own, `payments.NoEligibleRail`. Every refusal rolls the authorization back to its savepoint - nothing accepted, held or sent - and is recorded on the claim, so the key replays it. `PaymentNotFound` is the uniform `404` of the payment read.
+
+The cancellation door (`P9-TSK-024`, ADR-0079 point 5) adds one. `NotCancellable` (`409`) answers a
+payment past recall - the corridor provider already accepted it, or it already ended; nothing is written,
+and a payment the provider accepted can only come back as a return. A request that is accepted is a
+request, never a conclusion: only the provider's definitive `RECALLED` cancels. `PaymentNotFound` answers
+another customer's payment and a malformed id alike. Both refusals roll back to the claim's savepoint and
+are recorded on it, so the key replays them.
+
+The trade reversal doors (`P9-TSK-025`, the lifecycle document §3.3) add one, every route behind
+`FX_TRADE_REVERSE`. `TradeNotReversible` (`409`) refuses a trade that is not a `BOOKED` wallet conversion
+(a cross-border trade is never reversed - its customer effect is the corridor's, `INV-REV-03`) and, at the
+approval, a conversion whose customer is no longer active, whose wallet is gone, or whose destination
+wallet's available balance is short of what the mirror takes back - nothing written. `TradeNotFound`
+answers a malformed trade id at the proposal; `NotFound` an unknown trade or reversal;
+`SelfApprovalRefused`, `ProposalNotPending` and `ProposalPending` (one live proposal per trade) are the
+proposal machine's own states.
 
 ## 3a. Rejection at the boundary
 

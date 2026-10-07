@@ -212,6 +212,11 @@ class FxTradeReversalRaceDatabaseTest {
         HttpResponse<String> rejected = decide(booked.trade(), reversal, "rejection", other);
         assertThat(rejected.statusCode()).as(rejected.body()).isEqualTo(200);
         assertThat(field(rejected.body(), "status")).isEqualTo("REJECTED");
+        // The proposal and the rejection, each audited once; the refused acts wrote nothing (P9-DOC-001).
+        assertThat(count("SELECT count(*) FROM platform.audit_record WHERE operation = 'fx.FxTradeReversalProposed'"
+                + " AND target_id = ?", reversal)).isEqualTo(1);
+        assertThat(count("SELECT count(*) FROM platform.audit_record WHERE operation = 'fx.FxTradeReversalRejected'"
+                + " AND target_id = ?", reversal)).isEqualTo(1);
         assertThat(decide(booked.trade(), reversal, "approval", sessionWith(RoleName.LEDGER_OPERATOR)).body())
                 .contains("fx.ProposalNotPending");
         assertRefused("UPDATE fx.trade_reversal SET status = 'PROPOSED', decided_by = NULL, decided_reason = NULL,"
@@ -275,6 +280,15 @@ class FxTradeReversalRaceDatabaseTest {
         HttpResponse<String> controller = propose(guarded.trade(), sessionWith(RoleName.FX_CONTROLLER), FxTestClient.key());
         assertThat(controller.statusCode()).as(controller.body()).isEqualTo(403);
         assertThat(count("SELECT count(*) FROM fx.trade_reversal WHERE trade_id = ?::uuid", guarded.trade())).isZero();
+        // The decisions refuse as the proposal does (the P9-DOC-001 exit review found them unproven negatively).
+        String fxController = sessionWith(RoleName.FX_CONTROLLER);
+        for (String decision : java.util.List.of("/approval", "/rejection")) {
+            String route = TRADES + guarded.trade() + "/reversal/" + UUID.randomUUID() + decision;
+            assertThat(client().post(route, "{\"reason\":\"not mine\"}", fxController, null).statusCode())
+                    .as("%s without FX_TRADE_REVERSE", route).isEqualTo(403);
+            assertThat(client().post(route, "{\"reason\":\"not mine\"}", null, null).statusCode())
+                    .as("%s without a session", route).isEqualTo(401);
+        }
     }
 
     @Test
