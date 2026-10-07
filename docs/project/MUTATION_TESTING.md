@@ -989,6 +989,8 @@ so the guard was silently not checking that the tests they name exist.
 | `INV-CRD-07` | `BureauCollectionDatabaseTest#anAnswerDeliveredTwiceLeavesOneRecord` | Recorded | A `P10-TSK-006` probe: `UNIQUE (data_request_id)` dropped from `credit_record` - the second arbiter behind the row lock | Caught - a writer bypassing the protocol stored a second record. Restored byte-identical (sha256-verified) |
 | `INV-CRD-03` | `FinancialDataCollectionDatabaseTest#aBureauConsentDoesNotAdmitAFinancialDataPull` | Recorded | A `P10-TSK-007` probe: `FINANCIAL_DATA` gated on `CREDIT_BUREAU_ACCESS` in the consent adapter | Caught - with the three races, whose financial-data grant no longer opened anything. Restored byte-identical (sha256-verified) |
 | `INV-CRD-10` | `FinancialDataNormalisationGoldenTest#everyPayloadNormalisesToItsGoldenAnswer` | Recorded | A `P10-TSK-007` probe: a malformed financial-data field parsed as absent | Caught (the `malformed-*` field files). Restored byte-identical (sha256-verified) |
+| `INV-CRD-08` | `DecisionSnapshotDatabaseTest#aSkewedInstanceNeitherAcceptsStaleNorRefusesFresh`, `DecisionSnapshotDatabaseTest#aRecordAtExactlyMaxAgeIsFresh` | Recorded | A `P10-TSK-008` probe: freshness judged on the instance's clock, five seconds ahead | Caught by both - and by `NoAmbientTimeRulesTest`. Restored byte-identical (sha256-verified) |
+| `INV-CRD-07` | `CanonicalSnapshotTest#insertionOrderNeverMatters` | Recorded | A `P10-TSK-008` probe: the snapshot's attributes held in a hash map's order instead of sorted by code | Caught - with the environment and round-trip cases. Restored byte-identical (sha256-verified) |
 
 ## 3. What the register does not claim
 

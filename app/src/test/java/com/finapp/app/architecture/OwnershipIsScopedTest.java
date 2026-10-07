@@ -595,6 +595,20 @@ class OwnershipIsScopedTest {
                                         + " transaction locked FOR UPDATE from REQUESTED; UNIQUE (data_request_id) refuses"
                                         + " a second record whatever the caller.")),
                     Map.entry(
+                            "com.finapp.credit.JdbcDecisionSnapshotStore.recordOf",
+                            new Entry(
+                                    Scope.ADMINISTERED,
+                                    "P10-TSK-008. The data request id comes only from a row this transaction locked"
+                                        + " FOR UPDATE (lockDataRequestsOf, by the decision request the caller holds"
+                                        + " locked), never a customer's value; the freeze has no customer door - the"
+                                        + " deciding transaction (P10-TSK-015) is its only caller.")),
+                    Map.entry(
+                            "com.finapp.credit.JdbcDecisionSnapshotStore.insertSnapshot",
+                            new Entry(
+                                    Scope.ADMINISTERED,
+                                    "P10-TSK-008. The snapshot id is minted by the freezer; UNIQUE (decision_request_id,"
+                                        + " sequence) arbitrates every writer, and the table refuses any change once born.")),
+                    Map.entry(
                             "com.finapp.kyc.JdbcCounterpartyScreeningStore.decideAutomatically",
                             new Entry(
                                     Scope.ADMINISTERED,
