@@ -60,6 +60,9 @@ public enum CreditAttributeCode {
     /** The party's country of residence (ISO 3166-1 alpha-2). */
     PARTY_RESIDENCY_COUNTRY(AttributeValueType.CODE, false),
 
+    /** The platform's own outstanding credit to the party - zero until Phase 11's loans exist (`P10-TSK-010`). */
+    PLATFORM_OUTSTANDING_CREDIT(AttributeValueType.MONEY, false),
+
     /** The approved, unconsumed, unlapsed amount of this party's earlier decisions. */
     PLATFORM_RESERVED_EXPOSURE(AttributeValueType.MONEY, false),
 

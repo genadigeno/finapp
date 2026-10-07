@@ -124,7 +124,8 @@ meets the outside world, and every hazard of the outside world applies:
    `BUREAU_INSOLVENCY_FLAG`, `BUREAU_MONTHLY_OBLIGATIONS`, `BUREAU_TOTAL_BALANCE`,
    `FINDATA_MONTHLY_INCOME`, `FINDATA_MONTHLY_COMMITTED_EXPENDITURE`, `DECLARED_MONTHLY_INCOME`,
    `DECLARED_MONTHLY_EXPENDITURE`, `PARTY_AGE_YEARS`, `PARTY_RESIDENCY_COUNTRY`,
-   `PLATFORM_RESERVED_EXPOSURE`, `RISK_SIGNAL`), a typed value (integer, decimal-with-currency,
+   `PLATFORM_OUTSTANDING_CREDIT` - *added by `P10-TSK-010`, ADR-0088 §6* - `PLATFORM_RESERVED_EXPOSURE`,
+   `RISK_SIGNAL`), a typed value (integer, decimal-with-currency,
    boolean, code) and a provenance (the `credit_record` id and source, `DECLARED`, or the port
    and its version). Provider vocabulary stops at the adapter. A new attribute is a reviewed
    code change to the vocabulary.

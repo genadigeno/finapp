@@ -59,6 +59,7 @@ class CreditVocabularyTest {
                 Map.entry(CreditAttributeCode.DECLARED_MONTHLY_EXPENDITURE, AttributeValueType.MONEY),
                 Map.entry(CreditAttributeCode.PARTY_AGE_YEARS, AttributeValueType.INTEGER),
                 Map.entry(CreditAttributeCode.PARTY_RESIDENCY_COUNTRY, AttributeValueType.CODE),
+                Map.entry(CreditAttributeCode.PLATFORM_OUTSTANDING_CREDIT, AttributeValueType.MONEY),
                 Map.entry(CreditAttributeCode.PLATFORM_RESERVED_EXPOSURE, AttributeValueType.MONEY),
                 Map.entry(CreditAttributeCode.RISK_SIGNAL, AttributeValueType.CODE),
                 Map.entry(CreditAttributeCode.SOURCE_UNAVAILABLE, AttributeValueType.CODE),
