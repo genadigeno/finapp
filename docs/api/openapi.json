@@ -7551,6 +7551,7 @@
       "CorridorRequest": {
         "properties": {
           "country": {
+            "maxLength": 2,
             "minLength": 1,
             "type": "string"
           },
@@ -7559,38 +7560,48 @@
             "type": "integer"
           },
           "destination": {
+            "maxLength": 3,
             "minLength": 1,
             "type": "string"
           },
           "feeFixed": {
+            "maxLength": 32,
             "minLength": 1,
             "type": "string"
           },
           "feeMargin": {
+            "maxLength": 32,
             "minLength": 1,
             "type": "string"
           },
           "feeRounding": {
+            "maxLength": 32,
             "minLength": 1,
             "type": "string"
           },
           "maximum": {
+            "maxLength": 32,
             "minLength": 1,
             "type": "string"
           },
           "rails": {
             "items": {
+              "maxLength": 32,
               "minLength": 1,
               "type": "string"
             },
+            "maxItems": 16,
             "minItems": 1,
             "type": "array"
           },
           "requiredData": {
             "items": {
+              "maxLength": 32,
               "minLength": 1,
               "type": "string"
             },
+            "maxItems": 16,
+            "minItems": 0,
             "type": "array"
           },
           "screeningValidityHours": {
@@ -7598,6 +7609,7 @@
             "type": "integer"
           },
           "source": {
+            "maxLength": 3,
             "minLength": 1,
             "type": "string"
           }
@@ -7903,14 +7915,17 @@
             "type": "boolean"
           },
           "country": {
+            "maxLength": 2,
             "minLength": 1,
             "type": "string"
           },
           "currency": {
+            "maxLength": 3,
             "minLength": 1,
             "type": "string"
           },
           "entityType": {
+            "maxLength": 16,
             "minLength": 1,
             "type": "string"
           },
@@ -8017,6 +8032,7 @@
       "CrossBorderPaymentRequest": {
         "properties": {
           "quoteId": {
+            "maxLength": 64,
             "minLength": 1,
             "type": "string"
           }
@@ -8052,18 +8068,22 @@
       "CrossBorderQuoteRequest": {
         "properties": {
           "amount": {
+            "maxLength": 32,
             "minLength": 1,
             "type": "string"
           },
           "beneficiaryId": {
+            "maxLength": 64,
             "minLength": 1,
             "type": "string"
           },
           "fixedSide": {
+            "maxLength": 32,
             "minLength": 1,
             "type": "string"
           },
           "sourceCurrency": {
+            "maxLength": 3,
             "minLength": 1,
             "type": "string"
           }
@@ -9924,6 +9944,7 @@
             "type": "string"
           },
           "band": {
+            "maxLength": 32,
             "minLength": 1,
             "type": "string"
           },
@@ -9936,10 +9957,12 @@
             "type": "string"
           },
           "destinationMaximum": {
+            "maxLength": 32,
             "minLength": 1,
             "type": "string"
           },
           "destinationMinimum": {
+            "maxLength": 32,
             "minLength": 1,
             "type": "string"
           },
@@ -9948,6 +9971,7 @@
             "type": "string"
           },
           "markup": {
+            "maxLength": 32,
             "minLength": 1,
             "type": "string"
           },
@@ -9980,14 +10004,17 @@
             "type": "string"
           },
           "sourceMaximum": {
+            "maxLength": 32,
             "minLength": 1,
             "type": "string"
           },
           "sourceMinimum": {
+            "maxLength": 32,
             "minLength": 1,
             "type": "string"
           },
           "spread": {
+            "maxLength": 32,
             "minLength": 1,
             "type": "string"
           },

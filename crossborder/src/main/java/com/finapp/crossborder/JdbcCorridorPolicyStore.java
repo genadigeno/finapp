@@ -46,7 +46,7 @@ public final class JdbcCorridorPolicyStore implements CorridorPolicyStore {
             row.next();
             return row.getInt(1);
         } catch (SQLException failure) {
-            throw new CrossborderStorageException(DatabaseFailure.describe("reading the latest corridor policy version", failure), failure);
+            throw new CrossborderStorageException(DatabaseFailure.describe("reading the latest corridor policy version", failure));
         }
     }
 
@@ -100,7 +100,7 @@ public final class JdbcCorridorPolicyStore implements CorridorPolicyStore {
                             && UNIQUE_VIOLATION.equals(failure.getNextException().getSQLState()))) {
                 throw new CorridorPolicyAdministration.ProposalPending(failure);
             }
-            throw new CrossborderStorageException(DatabaseFailure.describe("proposing a corridor policy", failure), failure);
+            throw new CrossborderStorageException(DatabaseFailure.describe("proposing a corridor policy", failure));
         }
     }
 
@@ -138,7 +138,7 @@ public final class JdbcCorridorPolicyStore implements CorridorPolicyStore {
             update.setString(6, from.name());
             return update.executeUpdate() == 1;
         } catch (SQLException failure) {
-            throw new CrossborderStorageException(DatabaseFailure.describe("deciding a corridor policy", failure), failure);
+            throw new CrossborderStorageException(DatabaseFailure.describe("deciding a corridor policy", failure));
         }
     }
 
@@ -152,7 +152,7 @@ public final class JdbcCorridorPolicyStore implements CorridorPolicyStore {
             update.setObject(2, id.value());
             return update.executeUpdate() == 1;
         } catch (SQLException failure) {
-            throw new CrossborderStorageException(DatabaseFailure.describe("retiring a corridor policy", failure), failure);
+            throw new CrossborderStorageException(DatabaseFailure.describe("retiring a corridor policy", failure));
         }
     }
 
@@ -178,7 +178,7 @@ public final class JdbcCorridorPolicyStore implements CorridorPolicyStore {
             insert.setTimestamp(7, Timestamp.from(at));
             insert.executeUpdate();
         } catch (SQLException failure) {
-            throw new CrossborderStorageException(DatabaseFailure.describe("recording a corridor policy event", failure), failure);
+            throw new CrossborderStorageException(DatabaseFailure.describe("recording a corridor policy event", failure));
         }
     }
 
@@ -203,7 +203,7 @@ public final class JdbcCorridorPolicyStore implements CorridorPolicyStore {
             }
             return withCorridors;
         } catch (SQLException failure) {
-            throw new CrossborderStorageException(DatabaseFailure.describe("listing corridor policies", failure), failure);
+            throw new CrossborderStorageException(DatabaseFailure.describe("listing corridor policies", failure));
         }
     }
 
@@ -237,7 +237,7 @@ public final class JdbcCorridorPolicyStore implements CorridorPolicyStore {
             }
             return Optional.of(new VersionView(version, proposedAt, corridorsOf(unitOfWork, version.id())));
         } catch (SQLException failure) {
-            throw new CrossborderStorageException(DatabaseFailure.describe("reading a corridor policy", failure), failure);
+            throw new CrossborderStorageException(DatabaseFailure.describe("reading a corridor policy", failure));
         }
     }
 
@@ -283,7 +283,7 @@ public final class JdbcCorridorPolicyStore implements CorridorPolicyStore {
                 return row.next() ? Optional.of(rehydrate(row)) : Optional.empty();
             }
         } catch (SQLException failure) {
-            throw new CrossborderStorageException(DatabaseFailure.describe("locking a corridor policy", failure), failure);
+            throw new CrossborderStorageException(DatabaseFailure.describe("locking a corridor policy", failure));
         }
     }
 

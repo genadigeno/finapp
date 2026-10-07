@@ -1,5 +1,6 @@
 package com.finapp.app.crossborder;
 
+import com.finapp.app.api.DecimalText;
 import com.finapp.crossborder.CorridorAvailability;
 import com.finapp.crossborder.CorridorDirectory;
 import com.finapp.crossborder.CorridorKey;
@@ -26,7 +27,6 @@ import com.finapp.sharedkernel.money.CurrencyCode;
 import com.finapp.sharedkernel.money.MonetaryException;
 import com.finapp.sharedkernel.money.Money;
 import com.finapp.sharedkernel.money.RoundingPolicy;
-import java.math.BigDecimal;
 import java.nio.charset.StandardCharsets;
 import java.time.Clock;
 import java.time.Duration;
@@ -241,10 +241,10 @@ public final class CorridorAdministrationDesk {
                         return new CorridorTerms(
                                 new CorridorKey(source, destination, CountryCode.of(corridor.country())),
                                 corridor.rails(),
-                                Money.of(new BigDecimal(corridor.feeFixed()), source),
-                                new BigDecimal(corridor.feeMargin()),
+                                Money.of(DecimalText.parse(corridor.feeFixed()), source),
+                                DecimalText.parse(corridor.feeMargin()),
                                 RoundingPolicy.valueOf(corridor.feeRounding()),
-                                Money.of(new BigDecimal(corridor.maximum()), destination),
+                                Money.of(DecimalText.parse(corridor.maximum()), destination),
                                 Duration.ofHours(corridor.screeningValidityHours()),
                                 Duration.ofHours(corridor.deliveryEstimateHours()),
                                 corridor.requiredData().stream().map(RequiredData::valueOf)

@@ -69,6 +69,12 @@ public final class Beneficiaries {
 
     private static final Pattern GRANT = Pattern.compile("[A-Za-z0-9_.:-]{1,128}");
 
+    /** {@code beneficiary_destination_reference_is_opaque}, verbatim. */
+    private static final Pattern OPAQUE_REFERENCE = Pattern.compile("[A-Za-z0-9_.:-]{1,128}");
+
+    /** {@code beneficiary_suffix_is_four}, verbatim. */
+    private static final Pattern SUFFIX = Pattern.compile("[A-Za-z0-9]{4}");
+
     @NonNull private final BeneficiaryStore store;
     @NonNull private final CorridorPolicyStore policies;
     @NonNull private final CorridorAvailabilityStore availability;
@@ -208,16 +214,34 @@ public final class Beneficiaries {
         if (!store.insertRegistration(unitOfWork, registration)) {
             return converged(unitOfWork, store.registrationByReference(unitOfWork, reference)
                     .orElseThrow(() -> new CrossborderStorageException(
-                            "a registration was refused as a duplicate but none is visible; retry", null)));
+                            "a registration was refused as a duplicate but none is visible; retry")));
         }
         return new Begun(registration, Optional.empty());
     }
 
-    /** The exchange - no connection held. */
+    /**
+     * The exchange - no connection held. A provider answer whose opaque reference or suffix is not storable - outside
+     * the column's charset, or taking a card-number or bank-identifier shape - is the provider's fault and answers
+     * {@link CorridorDirectory.Exchange.Unavailable}: nothing is recorded, and the value never reaches a CHECK whose
+     * refusal would carry it (INV-RAIL-03, INV-AUD-02; the Phase 9 to 10 transition gate).
+     */
     public CorridorDirectory.Exchange exchange(Begun begun, String grant) {
         Objects.requireNonNull(begun, "begun must not be null");
         Objects.requireNonNull(grant, "grant must not be null");
-        return directory.exchange(begun.registration().rail(), begun.registration().exchangeReference(), grant);
+        CorridorDirectory.Exchange answer =
+                directory.exchange(begun.registration().rail(), begun.registration().exchangeReference(), grant);
+        if (answer instanceof CorridorDirectory.Exchange.Exchanged exchanged && !storable(exchanged)) {
+            return new CorridorDirectory.Exchange.Unavailable();
+        }
+        return answer;
+    }
+
+    /** {@code crossborder V003}'s ranks over the provider's attested values, refused before any write. */
+    static boolean storable(CorridorDirectory.Exchange.Exchanged exchanged) {
+        return OPAQUE_REFERENCE.matcher(exchanged.destinationReference()).matches()
+                && !InstrumentShapes.holdsAny(exchanged.destinationReference())
+                && SUFFIX.matcher(exchanged.suffix()).matches()
+                && !InstrumentShapes.holdsAny(exchanged.suffix());
     }
 
     /**
@@ -259,7 +283,8 @@ public final class Beneficiaries {
         }
         BeneficiaryId id = BeneficiaryId.next(ids);
         UUID screeningId = screening.requestWithin(unitOfWork, new CounterpartyScreening.Request(
-                screeningReference(id), request.name(), exchanged.country(), exchanged.entityType(), exchanged.payeeCheck()));
+                screeningReference(id), request.name(), exchanged.country(), exchanged.entityType(), exchanged.payeeCheck(),
+                actor.id()));
         BeneficiaryStore.BeneficiaryRow beneficiary = new BeneficiaryStore.BeneficiaryRow(
                 id, registration.owner(), registration.id(), registration.rail(), exchanged.destinationReference(),
                 exchanged.suffix(), exchanged.payeeCheck(), exchanged.payeeCheck() != PayeeCheck.MATCH, exchanged.country(),

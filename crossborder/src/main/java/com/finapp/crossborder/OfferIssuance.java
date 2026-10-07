@@ -136,7 +136,7 @@ public final class OfferIssuance {
             return offers.insertRequest(unitOfWork, fresh)
                     ? fresh
                     : offers.requestByClaim(unitOfWork, claimKey).orElseThrow(() -> new CrossborderStorageException(
-                            "an offer request was refused as a duplicate but none is visible; retry", null));
+                            "an offer request was refused as a duplicate but none is visible; retry"));
         });
         CrossBorderFx.Claim fxClaim = fx.begin(unitOfWork, claimKey,
                 new CrossBorderFx.Ask(ask.owner(), corridor.source(), corridor.destination(), ask.fixedSource(), amount),

@@ -224,6 +224,28 @@ class FxQuoteEndpointDatabaseTest {
     }
 
     @Test
+    @DisplayName("Phase 9 to 10 transition: an exponent amount - 1E+400000000 or 1E-400000000 - is 422 api.ValidationFailed"
+            + " within 200 ms, never a rescale to ten to the four hundred millionth; nothing is asked or stored")
+    void anExponentAmountIsRefusedAtOnce() throws Exception {
+        String customer = verifiedCustomer();
+        int before = engine.quoteRequests();
+        // The path warmed by an ordinary refusal, so the bound times the parse, not the first request's class loading.
+        assertThat(post("/v1/me/fx/quotes", quoteBody("EUR", "USD", "FIXED_SOURCE", "not-a-number"), customer, someKey())
+                .statusCode()).isEqualTo(422);
+        for (String amount : List.of("1E+400000000", "1E-400000000")) {
+            String key = someKey();
+            HttpResponse<String> refused = org.junit.jupiter.api.Assertions.assertTimeoutPreemptively(Duration.ofMillis(200),
+                    () -> post("/v1/me/fx/quotes", quoteBody("EUR", "USD", "FIXED_SOURCE", amount), customer, key),
+                    amount + " must be refused before any rescale");
+            assertThat(refused.statusCode()).as(amount + ": " + refused.body()).isEqualTo(422);
+            assertThat(refused.body()).contains("api.ValidationFailed").doesNotContain(amount);
+        }
+        assertThat(engine.quoteRequests()).isEqualTo(before);
+        assertThat(count("SELECT count(*) FROM fx.quote_request WHERE owner_party_id = "
+                + "(SELECT party_id FROM identity.identity WHERE login_identifier = ?)", loginOf(customer))).isZero();
+    }
+
+    @Test
     @DisplayName("the pairs door lists the active policy's twenty pairs with their bounds")
     void thePairs() throws Exception {
         HttpResponse<String> pairs = get("/v1/me/fx/pairs", verifiedCustomer());

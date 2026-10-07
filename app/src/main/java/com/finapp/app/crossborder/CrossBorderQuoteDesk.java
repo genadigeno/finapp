@@ -1,5 +1,6 @@
 package com.finapp.app.crossborder;
 
+import com.finapp.app.api.DecimalText;
 import com.finapp.app.fx.FxQuoteMetrics;
 import com.finapp.crossborder.BeneficiaryId;
 import com.finapp.crossborder.CrossBorderFx;
@@ -22,9 +23,10 @@ import com.finapp.sharedkernel.correlation.CorrelationId;
 import com.finapp.sharedkernel.money.CurrencyCode;
 import com.finapp.sharedkernel.money.MonetaryException;
 import com.finapp.sharedkernel.money.Money;
-import java.math.BigDecimal;
 import java.nio.charset.StandardCharsets;
 import java.sql.Connection;
+import java.sql.SQLException;
+import java.sql.Savepoint;
 import java.time.Clock;
 import java.time.Instant;
 import java.util.Objects;
@@ -91,6 +93,11 @@ public final class CrossBorderQuoteDesk {
         CorrelationId correlation = correlation();
         IdempotencyKey key = new IdempotencyKey(SCOPE + actor.type().name() + ":" + actor.id(), idempotencyKey);
         String claimKey = key.scope() + "|" + key.key();
+        // The amount's shape before any connection is taken (the Phase 9 to 10 transition gate): an exponent such as
+        // 1E+400000000 parses instantly and then costs minutes and gigabytes in the rescale - never inside Tx1.
+        if (!DecimalText.plain(body.amount())) {
+            throw malformed();
+        }
 
         record Begun(IdempotentExecutor.BeginOutcome outcome, OfferIssuance.Claimed claimed, Refusal refusal) {}
         Begun begun = transactions.inTransaction(unitOfWork -> {
@@ -103,12 +110,20 @@ public final class CrossBorderQuoteDesk {
             AtomicReference<OfferIssuance.Claimed> claimed = new AtomicReference<>();
             AtomicReference<Refusal> refused = new AtomicReference<>();
             IdempotentExecutor.BeginOutcome outcome = executor.begin(unitOfWork, key, fingerprint, claimedUnit -> {
+                // A refusal can follow writes - the request row and kyc's re-screen are written before fx's claim
+                // refuses (AMOUNT_OUT_OF_RANGE, TOO_MANY_OPEN_QUOTES) - so the claim runs under a savepoint and a
+                // refusal rolls back to it: only the claim's refusal outcome commits (the Phase 9 to 10 transition
+                // gate; CrossBorderPaymentDesk's pattern).
+                Savepoint before = savepoint(claimedUnit);
                 try {
                     claimed.set(offers.claim(claimedUnit, claimKey, ask, now(), correlation));
                 } catch (OfferIssuance.OfferRefused refusal) {
                     refused.set(new Refusal("XB", refusal.code().name()));
                 } catch (CrossBorderFx.FxRefused refusal) {
                     refused.set(new Refusal("FX", refusal.code()));
+                }
+                if (refused.get() != null) {
+                    rollbackTo(claimedUnit, before);
                 }
                 return new byte[] {1};
             });
@@ -151,20 +166,23 @@ public final class CrossBorderQuoteDesk {
 
         record Recorded(OfferIssuance.Offered offered, Refusal refusal) {}
         Recorded recorded = transactions.inTransaction(unitOfWork -> {
+            // fx's quote is issued before the corridor's maximum is judged on what it buys: a refusal rolls the issued
+            // quote back with everything else, and only the claim's refusal outcome commits.
+            Savepoint before = savepoint(unitOfWork);
+            Refusal failed;
             try {
                 OfferIssuance.Offered offered = offers.complete(unitOfWork, claimed, sourcing, actor, now(), correlation);
                 executor.complete(unitOfWork, key, true,
                         StoredResponse.of(("OK|" + offered.quote().id()).getBytes(StandardCharsets.UTF_8), "text/plain"));
                 return new Recorded(offered, null);
             } catch (OfferIssuance.OfferRefused refusal) {
-                Refusal failed = new Refusal("XB", refusal.code().name());
-                executor.complete(unitOfWork, key, false, failure(failed));
-                return new Recorded(null, failed);
+                failed = new Refusal("XB", refusal.code().name());
             } catch (CrossBorderFx.FxRefused refusal) {
-                Refusal failed = new Refusal("FX", refusal.code());
-                executor.complete(unitOfWork, key, false, failure(failed));
-                return new Recorded(null, failed);
+                failed = new Refusal("FX", refusal.code());
             }
+            rollbackTo(unitOfWork, before);
+            executor.complete(unitOfWork, key, false, failure(failed));
+            return new Recorded(null, failed);
         });
         if (recorded.refusal() != null) {
             throw refused(recorded.refusal());
@@ -199,8 +217,31 @@ public final class CrossBorderQuoteDesk {
             return new OfferIssuance.Ask(party, beneficiary, source, fixedSource,
                     amountOf(unitOfWork, body, source, fixedSource, party, beneficiary));
         } catch (IllegalArgumentException | MonetaryException | ArithmeticException malformed) {
-            throw new ApiException(PlatformErrorCode.VALIDATION_FAILED, "The cross-border quote request was not valid",
-                    malformed.getMessage());
+            // A fixed detail: a JDK or value-type message echoes the input and names internal classes.
+            throw malformed();
+        }
+    }
+
+    private static ApiException malformed() {
+        return new ApiException(PlatformErrorCode.VALIDATION_FAILED, "The cross-border quote request was not valid",
+                "beneficiaryId is a beneficiary's identifier, sourceCurrency ISO 4217, fixedSide FIXED_SOURCE or"
+                        + " FIXED_DESTINATION, and amount a plain decimal exact at the fixed side's minor units.");
+    }
+
+    private static Savepoint savepoint(Connection unitOfWork) {
+        try {
+            return unitOfWork.setSavepoint();
+        } catch (SQLException failure) {
+            throw new IllegalStateException("the quote's savepoint could not be set (SQLState " + failure.getSQLState() + ")");
+        }
+    }
+
+    private static void rollbackTo(Connection unitOfWork, Savepoint savepoint) {
+        try {
+            unitOfWork.rollback(savepoint);
+        } catch (SQLException failure) {
+            throw new IllegalStateException(
+                    "a refused quote could not be rolled back to its savepoint (SQLState " + failure.getSQLState() + ")");
         }
     }
 
@@ -217,7 +258,7 @@ public final class CrossBorderQuoteDesk {
                 : offers.destinationOf(unitOfWork, beneficiary, party)
                         // Not the caller's, or unknown: the same answer as every non-payable beneficiary.
                         .orElseThrow(() -> refused(new Refusal("XB", CrossborderErrorCode.BENEFICIARY_NOT_PAYABLE.name())));
-        return Money.of(new BigDecimal(body.amount()), currency);
+        return Money.of(DecimalText.parse(body.amount()), currency);
     }
 
     private static StoredResponse failure(Refusal refusal) {

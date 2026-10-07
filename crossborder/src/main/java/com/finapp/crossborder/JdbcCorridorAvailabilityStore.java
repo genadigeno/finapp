@@ -32,7 +32,7 @@ public final class JdbcCorridorAvailabilityStore implements CorridorAvailability
             lock.setString(2, corridor.code());
             lock.execute();
         } catch (SQLException failure) {
-            throw new CrossborderStorageException(DatabaseFailure.describe("locking a corridor's availability", failure), failure);
+            throw new CrossborderStorageException(DatabaseFailure.describe("locking a corridor's availability", failure));
         }
     }
 
@@ -46,7 +46,7 @@ public final class JdbcCorridorAvailabilityStore implements CorridorAvailability
                 return !row.next() || row.getBoolean(1);
             }
         } catch (SQLException failure) {
-            throw new CrossborderStorageException(DatabaseFailure.describe("reading corridor availability", failure), failure);
+            throw new CrossborderStorageException(DatabaseFailure.describe("reading corridor availability", failure));
         }
     }
 
@@ -72,7 +72,7 @@ public final class JdbcCorridorAvailabilityStore implements CorridorAvailability
             insert.setObject(7, enableRequestId.orElse(null));
             insert.executeUpdate();
         } catch (SQLException failure) {
-            throw new CrossborderStorageException(DatabaseFailure.describe("recording corridor availability", failure), failure);
+            throw new CrossborderStorageException(DatabaseFailure.describe("recording corridor availability", failure));
         }
     }
 
@@ -92,7 +92,7 @@ public final class JdbcCorridorAvailabilityStore implements CorridorAvailability
             if (UNIQUE_VIOLATION.equals(failure.getSQLState())) {
                 throw new CorridorAvailability.EnablePending(failure);
             }
-            throw new CrossborderStorageException(DatabaseFailure.describe("proposing a corridor enabling", failure), failure);
+            throw new CrossborderStorageException(DatabaseFailure.describe("proposing a corridor enabling", failure));
         }
     }
 
@@ -116,7 +116,7 @@ public final class JdbcCorridorAvailabilityStore implements CorridorAvailability
                         Optional.ofNullable(row.getString("decided_by"))));
             }
         } catch (SQLException failure) {
-            throw new CrossborderStorageException(DatabaseFailure.describe("locking a corridor enable request", failure), failure);
+            throw new CrossborderStorageException(DatabaseFailure.describe("locking a corridor enable request", failure));
         }
     }
 
@@ -134,7 +134,7 @@ public final class JdbcCorridorAvailabilityStore implements CorridorAvailability
             update.setObject(5, id);
             return update.executeUpdate() == 1;
         } catch (SQLException failure) {
-            throw new CrossborderStorageException(DatabaseFailure.describe("deciding a corridor enable request", failure), failure);
+            throw new CrossborderStorageException(DatabaseFailure.describe("deciding a corridor enable request", failure));
         }
     }
 }

@@ -333,6 +333,75 @@ class CrossBorderOfferDatabaseTest {
                 .isZero();
     }
 
+    // ------------------------------------------------------------------ the Phase 9 to 10 transition
+
+    @Test
+    @DisplayName("Phase 9 to 10 transition: a refused quote commits only its refusal - five fx refusals on a lapsed"
+            + " clearance write no re-screen and no offer request, and each key replays its refusal")
+    void aRefusedQuoteCommitsOnlyItsRefusal() throws Exception {
+        FxTestClient.Customer customer = client().verifiedCustomer();
+        String beneficiary = beneficiary(customer, "Clear Refused Person");
+        lapse(screeningOf(beneficiary));
+        String rescreens = "SELECT count(*) FROM kyc.counterparty_screening WHERE request_reference LIKE ?";
+        String pattern = "xb-beneficiary-" + beneficiary + "-r-%";
+        int asked = fxEngine.quoteRequests();
+        List<String> keys = new ArrayList<>();
+        for (int i = 0; i < 5; i++) {
+            String key = FxTestClient.key();
+            keys.add(key);
+            // Below the EUR leg's 1.00 minimum: claimed by crossborder (the request row and kyc's re-screen written),
+            // then refused by fx's claim in the same unit of work.
+            HttpResponse<String> refused = quote(customer, beneficiary, "FIXED_SOURCE", "0.50", key);
+            assertThat(refused.statusCode()).as(refused.body()).isEqualTo(422);
+            assertThat(refused.body()).contains("fx.AmountOutOfRange");
+        }
+        assertThat(FxTestClient.count(rescreens, pattern)).as("no re-screen committed").isZero();
+        assertThat(FxTestClient.count("SELECT count(*) FROM crossborder.offer_request WHERE beneficiary_id = ?",
+                        UUID.fromString(beneficiary)))
+                .as("no offer request committed").isZero();
+        assertThat(fxEngine.quoteRequests()).as("nothing priced").isEqualTo(asked);
+        HttpResponse<String> replayed = quote(customer, beneficiary, "FIXED_SOURCE", "0.50", keys.get(0));
+        assertThat(replayed.statusCode()).as("the refusal outcome committed: " + replayed.body()).isEqualTo(422);
+        assertThat(replayed.body()).contains("fx.AmountOutOfRange");
+        assertThat(FxTestClient.count(rescreens, pattern)).isZero();
+        // The same beneficiary then quotes normally: the clearance is re-screened once and priced.
+        HttpResponse<String> priced = quote(customer, beneficiary, "FIXED_SOURCE", "100.00", FxTestClient.key());
+        assertThat(priced.statusCode()).as(priced.body()).isEqualTo(201);
+        assertThat(FxTestClient.count(rescreens, pattern)).as("the one re-screen of the priced quote").isEqualTo(1);
+    }
+
+    @Test
+    @DisplayName("Phase 9 to 10 transition: an exponent amount - 1E+400000000 or 1E-400000000 - is 422 api.ValidationFailed"
+            + " within 200 ms, before any transaction; the detail echoes no input and names no internal class")
+    void anExponentAmountIsRefusedAtOnce() throws Exception {
+        FxTestClient.Customer customer = client().verifiedCustomer();
+        String beneficiary = beneficiary(customer, "Clear Person");
+        int asked = fxEngine.quoteRequests();
+        // The path warmed by an ordinary refusal, so the bound times the parse, not the first request's class loading.
+        assertThat(quote(customer, beneficiary, "FIXED_SOURCE", "not-a-number", FxTestClient.key()).statusCode())
+                .isEqualTo(422);
+        for (String amount : List.of("1E+400000000", "1E-400000000")) {
+            String key = FxTestClient.key();
+            HttpResponse<String> refused = org.junit.jupiter.api.Assertions.assertTimeoutPreemptively(
+                    java.time.Duration.ofMillis(200),
+                    () -> quote(customer, beneficiary, "FIXED_SOURCE", amount, key),
+                    amount + " must be refused before any rescale");
+            assertThat(refused.statusCode()).as(amount + ": " + refused.body()).isEqualTo(422);
+            assertThat(refused.body()).contains("api.ValidationFailed").doesNotContain(amount).doesNotContain("com.finapp");
+        }
+        HttpResponse<String> badSide = quote(customer, beneficiary, "PLANTED_SIDE", "100.00", FxTestClient.key());
+        assertThat(badSide.statusCode()).as(badSide.body()).isEqualTo(422);
+        assertThat(badSide.body()).doesNotContain("com.finapp").doesNotContain("PLANTED_SIDE");
+        HttpResponse<String> badBeneficiary = quote(customer, "not-a-uuid-PLANTED", "FIXED_SOURCE", "100.00", FxTestClient.key());
+        assertThat(badBeneficiary.statusCode()).as(badBeneficiary.body()).isEqualTo(422);
+        assertThat(badBeneficiary.body()).doesNotContain("com.finapp").doesNotContain("PLANTED");
+        HttpResponse<String> unbounded = quote(customer, beneficiary, "FIXED_SOURCE", "1".repeat(64), FxTestClient.key());
+        assertThat(unbounded.statusCode()).as("an unbounded amount is refused at the boundary").isEqualTo(422);
+        assertThat(fxEngine.quoteRequests()).isEqualTo(asked);
+        assertThat(FxTestClient.count("SELECT count(*) FROM crossborder.offer_request WHERE owner_party = ?", customer.party()))
+                .isZero();
+    }
+
     // ------------------------------------------------------------------ plumbing
 
     private HttpResponse<String> quote(FxTestClient.Customer customer, String beneficiary, String side, String amount, String key)

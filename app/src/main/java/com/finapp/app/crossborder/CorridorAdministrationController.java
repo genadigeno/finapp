@@ -114,17 +114,17 @@ public class CorridorAdministrationController {
     /** One corridor: every term the version freezes. */
     @ClosedBody
     public record CorridorRequest(
-            @NotBlank String source,
-            @NotBlank String destination,
-            @NotBlank String country,
-            @NotEmpty List<@NotBlank String> rails,
-            @NotBlank String feeFixed,
-            @NotBlank String feeMargin,
-            @NotBlank String feeRounding,
-            @NotBlank String maximum,
+            @NotBlank @Size(min = 1, max = 3) String source,
+            @NotBlank @Size(min = 1, max = 3) String destination,
+            @NotBlank @Size(min = 1, max = 2) String country,
+            @NotEmpty @Size(min = 1, max = 16) List<@NotBlank @Size(min = 1, max = 32) String> rails,
+            @NotBlank @Size(min = 1, max = 32) String feeFixed,
+            @NotBlank @Size(min = 1, max = 32) String feeMargin,
+            @NotBlank @Size(min = 1, max = 32) String feeRounding,
+            @NotBlank @Size(min = 1, max = 32) String maximum,
             @NotNull Long screeningValidityHours,
             @NotNull Long deliveryEstimateHours,
-            @NotNull List<@NotBlank String> requiredData) {}
+            @NotNull @Size(max = 16) List<@NotBlank @Size(min = 1, max = 32) String> requiredData) {}
 
     /** A decision's reason. */
     @ClosedBody

@@ -9,6 +9,7 @@ import com.finapp.platform.api.RequiresIdempotencyKey;
 import jakarta.servlet.http.HttpServletRequest;
 import jakarta.validation.Valid;
 import jakarta.validation.constraints.NotBlank;
+import jakarta.validation.constraints.Size;
 import lombok.NonNull;
 import lombok.RequiredArgsConstructor;
 import org.springframework.http.HttpStatus;
@@ -79,5 +80,5 @@ public class CrossBorderPaymentController {
 
     /** The offer to authorize, by its quote's id. A closed body: never a rate, never an amount. */
     @ClosedBody
-    public record CrossBorderPaymentRequest(@NotBlank String quoteId) {}
+    public record CrossBorderPaymentRequest(@NotBlank @Size(min = 1, max = 64) String quoteId) {}
 }

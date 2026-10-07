@@ -85,12 +85,12 @@ public class CrossBorderBeneficiaryController {
      */
     @ClosedBody
     public record CrossBorderBeneficiaryRequest(
-            @NotBlank String country,
-            @NotBlank String currency,
+            @NotBlank @Size(min = 1, max = 2) String country,
+            @NotBlank @Size(min = 1, max = 3) String currency,
             @NotBlank @Size(max = 128) String grant,
             @NotBlank @Size(max = 140) String name,
             @NotBlank @Size(max = 40) String nickname,
-            @NotBlank String entityType,
+            @NotBlank @Size(min = 1, max = 16) String entityType,
             Boolean acknowledgeNoMatch) {
 
         @Override

@@ -74,7 +74,7 @@ public final class JdbcBeneficiaryStore implements BeneficiaryStore {
             lock.setString(2, registrationId.toString());
             lock.execute();
         } catch (SQLException failure) {
-            throw new CrossborderStorageException(DatabaseFailure.describe("locking beneficiary registration " + registrationId, failure), failure);
+            throw new CrossborderStorageException(DatabaseFailure.describe("locking beneficiary registration " + registrationId, failure));
         }
         return one(unitOfWork, "SELECT " + REGISTRATION_COLUMNS + " FROM crossborder.beneficiary_registration WHERE id = ?",
                 statement -> statement.setObject(1, registrationId), JdbcBeneficiaryStore::registration,
@@ -119,7 +119,7 @@ public final class JdbcBeneficiaryStore implements BeneficiaryStore {
                 step.executeBatch();
             }
         } catch (SQLException failure) {
-            throw new CrossborderStorageException(DatabaseFailure.describe("recording a corridor selection", failure), failure);
+            throw new CrossborderStorageException(DatabaseFailure.describe("recording a corridor selection", failure));
         }
     }
 
@@ -161,7 +161,7 @@ public final class JdbcBeneficiaryStore implements BeneficiaryStore {
             }
             return Optional.of(new SelectionRow(selectionId, policy, inputs, available, steps));
         } catch (SQLException failure) {
-            throw new CrossborderStorageException(DatabaseFailure.describe("reading corridor selection " + selectionId, failure), failure);
+            throw new CrossborderStorageException(DatabaseFailure.describe("reading corridor selection " + selectionId, failure));
         }
     }
 
@@ -183,7 +183,7 @@ public final class JdbcBeneficiaryStore implements BeneficiaryStore {
             insert.setTimestamp(9, Timestamp.from(registration.createdAt()));
             return insert.executeUpdate() == 1;
         } catch (SQLException failure) {
-            throw new CrossborderStorageException(DatabaseFailure.describe("recording a beneficiary registration", failure), failure);
+            throw new CrossborderStorageException(DatabaseFailure.describe("recording a beneficiary registration", failure));
         }
     }
 
@@ -222,7 +222,7 @@ public final class JdbcBeneficiaryStore implements BeneficiaryStore {
             insert.setTimestamp(16, beneficiary.revokedAt().map(Timestamp::from).orElse(null));
             insert.executeUpdate();
         } catch (SQLException failure) {
-            throw new CrossborderStorageException(DatabaseFailure.describe("recording beneficiary " + beneficiary.id(), failure), failure);
+            throw new CrossborderStorageException(DatabaseFailure.describe("recording beneficiary " + beneficiary.id(), failure));
         }
     }
 
@@ -249,7 +249,7 @@ public final class JdbcBeneficiaryStore implements BeneficiaryStore {
             insert.setTimestamp(7, Timestamp.from(at));
             insert.executeUpdate();
         } catch (SQLException failure) {
-            throw new CrossborderStorageException(DatabaseFailure.describe("recording a move of beneficiary " + beneficiary, failure), failure);
+            throw new CrossborderStorageException(DatabaseFailure.describe("recording a move of beneficiary " + beneficiary, failure));
         }
     }
 
@@ -293,7 +293,7 @@ public final class JdbcBeneficiaryStore implements BeneficiaryStore {
             }
             return rows;
         } catch (SQLException failure) {
-            throw new CrossborderStorageException(DatabaseFailure.describe("listing beneficiaries", failure), failure);
+            throw new CrossborderStorageException(DatabaseFailure.describe("listing beneficiaries", failure));
         }
     }
 
@@ -327,7 +327,7 @@ public final class JdbcBeneficiaryStore implements BeneficiaryStore {
             update.setObject(2, id.value());
             update.executeUpdate();
         } catch (SQLException failure) {
-            throw new CrossborderStorageException(DatabaseFailure.describe("repointing beneficiary " + id, failure), failure);
+            throw new CrossborderStorageException(DatabaseFailure.describe("repointing beneficiary " + id, failure));
         }
     }
 
@@ -347,7 +347,7 @@ public final class JdbcBeneficiaryStore implements BeneficiaryStore {
             update.setString(4, from.name());
             return update.executeUpdate() == 1;
         } catch (SQLException failure) {
-            throw new CrossborderStorageException(DatabaseFailure.describe("moving beneficiary " + id, failure), failure);
+            throw new CrossborderStorageException(DatabaseFailure.describe("moving beneficiary " + id, failure));
         }
     }
 
@@ -361,7 +361,7 @@ public final class JdbcBeneficiaryStore implements BeneficiaryStore {
                 return row.next() ? Optional.of(reader.read(row)) : Optional.empty();
             }
         } catch (SQLException failure) {
-            throw new CrossborderStorageException(DatabaseFailure.describe(doing, failure), failure);
+            throw new CrossborderStorageException(DatabaseFailure.describe(doing, failure));
         }
     }
 

@@ -53,7 +53,8 @@ public class CrossBorderBeneficiaryBeans {
                                 request.reference(),
                                 new CounterpartySubject(request.name(), request.country(),
                                         CounterpartyScreeningVocabulary.EntityType.valueOf(request.entityType().name())),
-                                CounterpartyScreeningVocabulary.PayeeVerdict.valueOf(request.payeeCheck().name())))
+                                CounterpartyScreeningVocabulary.PayeeVerdict.valueOf(request.payeeCheck().name()),
+                                request.requestedBy()))
                         .id()
                         .value();
             }

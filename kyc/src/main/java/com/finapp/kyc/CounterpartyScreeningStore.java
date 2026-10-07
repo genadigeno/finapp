@@ -37,7 +37,8 @@ public interface CounterpartyScreeningStore {
             Optional<ReasonCode> reasonCode,
             int attempts,
             Optional<Instant> nextAttemptAt,
-            Instant requestedAt) {
+            Instant requestedAt,
+            Optional<String> requestedBy) {
         public Row {
             Objects.requireNonNull(id, "id must not be null");
             Objects.requireNonNull(requestReference, "requestReference must not be null");
@@ -54,10 +55,16 @@ public interface CounterpartyScreeningStore {
             Objects.requireNonNull(reasonCode, "reasonCode must not be null");
             Objects.requireNonNull(nextAttemptAt, "nextAttemptAt must not be null");
             Objects.requireNonNull(requestedAt, "requestedAt must not be null");
+            Objects.requireNonNull(requestedBy, "requestedBy must not be null");
         }
     }
 
-    /** A new screening, born {@code REQUESTED} and due at {@code dueAt}. */
+    /**
+     * A new screening, born {@code REQUESTED} and due at {@code dueAt}; {@code requestedBy} the actor who asked - empty
+     * only for a re-screen of a screening requested before {@code kyc V010}. No request instant: the store stamps
+     * {@code requested_at} with the database's clock, so the decision's database instant is never before it (the
+     * Phase 9 to 10 transition gate).
+     */
     record NewScreening(
             CounterpartyScreeningId id,
             String requestReference,
@@ -65,7 +72,7 @@ public interface CounterpartyScreeningStore {
             CountryCode country,
             EntityType entityType,
             PayeeVerdict payeeVerdict,
-            Instant requestedAt,
+            Optional<String> requestedBy,
             Instant dueAt) {
         public NewScreening {
             Objects.requireNonNull(id, "id must not be null");
@@ -74,43 +81,43 @@ public interface CounterpartyScreeningStore {
             Objects.requireNonNull(country, "country must not be null");
             Objects.requireNonNull(entityType, "entityType must not be null");
             Objects.requireNonNull(payeeVerdict, "payeeVerdict must not be null");
-            Objects.requireNonNull(requestedAt, "requestedAt must not be null");
+            Objects.requireNonNull(requestedBy, "requestedBy must not be null");
             Objects.requireNonNull(dueAt, "dueAt must not be null");
         }
     }
 
-    /** An automatic outcome: the provider's verdict as kyc decided it. */
+    /**
+     * An automatic outcome: the provider's verdict as kyc decided it. No decision instant: the store stamps
+     * {@code decided_at} with the database's clock, the one every clearance lapse is judged on (the Phase 9 to 10
+     * transition gate).
+     */
     record AutomaticOutcome(
             CounterpartyScreeningStatus status,
             Optional<ReviewReason> reviewReason,
             int attempts,
             String policyVersion,
-            Instant decidedAt,
             Optional<Instant> nextAttemptAt) {
         public AutomaticOutcome {
             Objects.requireNonNull(status, "status must not be null");
             Objects.requireNonNull(reviewReason, "reviewReason must not be null");
             Objects.requireNonNull(policyVersion, "policyVersion must not be null");
-            Objects.requireNonNull(decidedAt, "decidedAt must not be null");
             Objects.requireNonNull(nextAttemptAt, "nextAttemptAt must not be null");
         }
     }
 
-    /** A person's outcome on a screening in review. */
+    /** A person's outcome on a screening in review; {@code decided_at} is the database's, as for the machine's. */
     record ReviewerOutcome(
             CounterpartyScreeningStatus status,
             String decidedBy,
             ReasonCode reasonCode,
             String narrative,
-            String policyVersion,
-            Instant decidedAt) {
+            String policyVersion) {
         public ReviewerOutcome {
             Objects.requireNonNull(status, "status must not be null");
             Objects.requireNonNull(decidedBy, "decidedBy must not be null");
             Objects.requireNonNull(reasonCode, "reasonCode must not be null");
             Objects.requireNonNull(narrative, "narrative must not be null");
             Objects.requireNonNull(policyVersion, "policyVersion must not be null");
-            Objects.requireNonNull(decidedAt, "decidedAt must not be null");
         }
 
         @Override
