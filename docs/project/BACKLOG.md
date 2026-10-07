@@ -14282,7 +14282,7 @@ providers), each owned by Phase 15 and gating nothing here.
 
 # Phase 10 — Credit Decisioning
 
-Status: `READY` — entry gate passed 2026-10-07 by the Phase 9 → 10 transition
+Status: `IN_PROGRESS` — started 2026-10-07 with `P10-TSK-001` (1 of 24 items complete); entry gate passed 2026-10-07 by the Phase 9 → 10 transition
 ([`reviews/PHASE_9_TO_10_TRANSITION.md`](reviews/PHASE_9_TO_10_TRANSITION.md)), elaborated to task
 granularity by the same transition: twenty-four items (`P10-TSK-001`…`-021`, `P10-TST-001`,
 `P10-TST-002`, `P10-DOC-001`) across eight milestones, with `P10-TSK-001` marked `READY`. The
@@ -14382,7 +14382,8 @@ order), and a retry is gated like the first ask (`UNAVAILABLE → CONSENT_WITHDR
 assignment locks the request, then the case** (and so do release and the refusal), so an
 assignment and an expiry serialise (`-018`).
 
-**P10-TSK-001 — The credit module boundary and floors** — `READY` (marked by the Phase 9 → 10 transition, 2026-10-07)
+**P10-TSK-001 — The credit module boundary and floors** — `COMPLETE` (2026-10-07; marked `READY` by the Phase 9 → 10 transition)
+- **As built** (2026-10-07): as `CURRENT_STATE.md` §Just completed records (archived to `history/TASK_HISTORY.md` when superseded). The code is `credit/` (build file, `V001`, `V002`, `CreditProduct`, `CreditAttributeCode` with `AttributeValueType`, `ReasonCode` with `ReasonCategory`, `DecisionOutcome`, `package-info`); the suites are `CreditModuleIsolationTest`, `CreditMigrationTest`, `ReasonCodeCatalogueTest`, `CreditProductTest` and `CreditVocabularyTest`, with the fifteen sibling isolation tests extended. The catalogue holds fourteen codes; the four-eyes thresholds (EUR 10,000.00 and 2,500.00) were chosen here, the plan having left them open. The root `lombok.config` governs the module unchanged, so no per-module opt-in was needed. No `DISTRIBUTED_EXECUTION.md` or `AUDITABLE_ACTIONS.md` row is this task's; `DATA_CLASSIFICATION.md` gained `reason_code`'s four columns.
 - **Objective**: make `credit` a build-graph fact with a privilege floor and its closed
   vocabularies, before any behaviour (the `P5-/P6-/P8-/P9-TSK-001` precedent).
 - **Bounded context**: Credit Decisioning (scaffolding); `app` (guards).
@@ -14444,7 +14445,7 @@ assignment and an expiry serialise (`-018`).
   demonstrated and every planted probe is caught; the catalogue agrees with its enum both ways.
 - **Definition of done**: `DOD-BUILD`, `DOD-ARCH`, `DOD-SEC`. **Risk**: Low. **Cx**: S.
 
-**P10-TSK-002 — Credit consent purposes** — `PLANNED`
+**P10-TSK-002 — Credit consent purposes** — `READY` (marked by `P10-TSK-001`'s completion gate, 2026-10-07)
 - **Objective**: give bureau access and financial-data access each its own recorded lawful basis,
   and give `credit` an authoritative gate over them.
 - **Bounded context**: `consent`; Credit Decisioning (the port); `app` (the adapter).

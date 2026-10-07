@@ -86,6 +86,11 @@ dependencies {
     implementation(project(":fx"))
     implementation(project(":crossborder"))
 
+    // The Phase 10 credit module (P10-TSK-001), on the classpath for the same reason: a module
+    // not on app's classpath is a module ProductionModules sweeps no rule over - the floating-point
+    // guard covers credit from its first class (INV-CRD-12).
+    implementation(project(":credit"))
+
     implementation(libs.spring.boot.starter)
     implementation(libs.spring.boot.starter.web)
     implementation(libs.spring.boot.starter.validation)

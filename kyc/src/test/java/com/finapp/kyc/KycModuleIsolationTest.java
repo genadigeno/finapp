@@ -49,6 +49,7 @@ class KycModuleIsolationTest {
                         "reconciliation",
                         "fx",
                         "crossborder",
+                        "credit",
                         "app")) {
             assertThat(classpathEntries())
                     .as("kyc must not depend on %s", forbidden)

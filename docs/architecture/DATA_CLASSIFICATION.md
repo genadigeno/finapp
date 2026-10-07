@@ -2208,6 +2208,20 @@ encrypted; the grant is exchanged and forgotten.
 | `outbound_credit_return` | `returned_at` | `CONFIDENTIAL` | Dates money coming back to a person |
 | `outbound_credit_return` | `created_at` | `INTERNAL` | System time, stamped by the trigger |
 
+### `credit` - the reason-code catalogue - *added by `P10-TSK-001`*
+
+The closed, migration-seeded catalogue a decision's reasons cite (`INV-CRD-02`). Platform reference
+data, identical for every party: no row names a person, a figure or a bureau datum, and the customer
+texts are written to be shown to the applicant. `SELECT` only to the application; never updated or
+deleted by any role.
+
+| Table | Column | Level | Note |
+|---|---|---|---|
+| `reason_code` | `code` | `INTERNAL` | The closed code (`CRD-...`), mirrored by the `ReasonCode` enum both ways |
+| `reason_code` | `category` | `INTERNAL` | The code's family - a closed list (`CHECK`) |
+| `reason_code` | `customer_text` | `INTERNAL` | Fixed platform wording, shown to the applicant for an adverse code - never a score, threshold or bureau datum |
+| `reason_code` | `adverse` | `INTERNAL` | Whether the code explains a judgement against the applicant |
+
 ### Free text, classified at its ceiling
 
 `audit_record.reason`, `audit_record.change_summary`, `idempotency_record.response_body`,

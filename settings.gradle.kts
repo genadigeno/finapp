@@ -138,4 +138,12 @@ include("reconciliation")
 include("fx")
 include("crossborder")
 
+// The Phase 10 credit decisioning module (P10-TSK-001). `credit` DECIDES whether credit may be
+// offered and moves no money, so - alone among the business modules since Phase 1 - it has no
+// ledger edge: credit -> platform -> sharedkernel only (ADR-0084). Nothing depends on it in Phase
+// 10 (the loan that consumes a decision is Phase 11's); consent, party standing and the bureau
+// are reached through ports `app` composes. No cycle backs any of its refusals -
+// CreditModuleIsolationTest and the sibling tests are the only controls.
+include("credit")
+
 include("app")
