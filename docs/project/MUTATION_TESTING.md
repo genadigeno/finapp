@@ -991,6 +991,8 @@ so the guard was silently not checking that the tests they name exist.
 | `INV-CRD-10` | `FinancialDataNormalisationGoldenTest#everyPayloadNormalisesToItsGoldenAnswer` | Recorded | A `P10-TSK-007` probe: a malformed financial-data field parsed as absent | Caught (the `malformed-*` field files). Restored byte-identical (sha256-verified) |
 | `INV-CRD-08` | `DecisionSnapshotDatabaseTest#aSkewedInstanceNeitherAcceptsStaleNorRefusesFresh`, `DecisionSnapshotDatabaseTest#aRecordAtExactlyMaxAgeIsFresh` | Recorded | A `P10-TSK-008` probe: freshness judged on the instance's clock, five seconds ahead | Caught by both - and by `NoAmbientTimeRulesTest`. Restored byte-identical (sha256-verified) |
 | `INV-CRD-07` | `CanonicalSnapshotTest#insertionOrderNeverMatters` | Recorded | A `P10-TSK-008` probe: the snapshot's attributes held in a hash map's order instead of sorted by code | Caught - with the environment and round-trip cases. Restored byte-identical (sha256-verified) |
+| `INV-CRD-12` | `AffordabilityTest#theAnnuityToTheMinorUnit`, `AffordabilityTest#theRoundingPointIsTheEndHalfUp`, `AffordabilityPropertiesTest#exactAcrossGeneratedInputs` | Recorded | A `P10-TSK-009` probe: the annuity's monthly rate and growth factor rounded to cents half up at each step instead of once at the end | Caught - 8 of 13 red (the worked cases, the rounding point and every property). Restored byte-identical (sha256-verified) |
+| `INV-CRD-12` | `AffordabilityPropertiesTest#verifiedDataIsOnlyEverPrudent`, `AffordabilityTest#verifiedDataIsReadPrudently` | Recorded | A `P10-TSK-009` probe: the higher of the verified and declared incomes taken instead of the lower | Caught by both. Restored byte-identical (sha256-verified) |
 
 ## 3. What the register does not claim
 

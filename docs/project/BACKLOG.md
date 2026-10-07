@@ -14282,7 +14282,7 @@ providers), each owned by Phase 15 and gating nothing here.
 
 # Phase 10 — Credit Decisioning
 
-Status: `IN_PROGRESS` — started 2026-10-07 with `P10-TSK-001` (8 of 24 items complete, M10.1 and M10.2 closed); entry gate passed 2026-10-07 by the Phase 9 → 10 transition
+Status: `IN_PROGRESS` — started 2026-10-07 with `P10-TSK-001` (9 of 24 items complete, M10.1 and M10.2 closed); entry gate passed 2026-10-07 by the Phase 9 → 10 transition
 ([`reviews/PHASE_9_TO_10_TRANSITION.md`](reviews/PHASE_9_TO_10_TRANSITION.md)), elaborated to task
 granularity by the same transition: twenty-four items (`P10-TSK-001`…`-021`, `P10-TST-001`,
 `P10-TST-002`, `P10-DOC-001`) across eight milestones, with `P10-TSK-001` marked `READY`. The
@@ -14865,7 +14865,8 @@ assignment and an expiry serialise (`-018`).
   contains a stale record; ten freezers, one snapshot.
 - **Definition of done**: `DOD-DOMAIN`, `DOD-SEC`. **Risk**: High. **Cx**: M.
 
-**P10-TSK-009 — Affordability** — `READY` (marked by `P10-TSK-008`'s completion gate, 2026-10-08)
+**P10-TSK-009 — Affordability** — `COMPLETE` (2026-10-08; marked `READY` by the previous task's completion gate)
+- **As built** (2026-10-08): as `CURRENT_STATE.md` §Just completed records (archived to `history/TASK_HISTORY.md` when superseded). `credit`'s `AffordabilityAssessment` with its `Parameters` and `Assessment` (`Assessed` | `Unassessable`); the suites are `AffordabilityTest` and `AffordabilityPropertiesTest`.
 - **Objective**: the affordability figure, exact decimal in the product's one currency, rounded once
   at a declared point.
 - **Bounded context**: Credit Decisioning.
@@ -14911,7 +14912,7 @@ assignment and an expiry serialise (`-018`).
   floating point.
 - **Definition of done**: `DOD-DOMAIN`. **Risk**: Medium. **Cx**: S.
 
-**P10-TSK-010 — Exposure** — `PLANNED`
+**P10-TSK-010 — Exposure** — `READY` (marked by `P10-TSK-009`'s completion gate, 2026-10-08)
 - **Objective**: the exposure arithmetic, and the reserved-exposure contract the deciding
   transaction will re-read under the party's lock.
 - **Bounded context**: Credit Decisioning; `app` (the platform-exposure composition).
