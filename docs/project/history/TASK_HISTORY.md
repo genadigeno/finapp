@@ -1,6 +1,6 @@
 # Task History
 
-The per-task completion records that accumulated behind `## Current Task` - 226 "Previously" blocks, newest first, from the Phase 9 → 10 transition back to project initiation. *(`X-TSK-016` is cross-cutting and completed after `P9-TSK-010` and before `P9-TSK-011`, so it stands between them.)* *(`X-TSK-005` is cross-cutting and completed after `P7-TSK-014` and before `P7-TSK-015`, so it stands between them; its record came in with its branch's merge.)* *(`X-TSK-004` is cross-cutting and completed after the Phase 6 → 7 transition, so it stands second, between `P7-TSK-001` and the transition's record - the transition's block moved here by `P7-TSK-001`'s gate, exactly as an earlier form of this note said it would.)*
+The per-task completion records that accumulated behind `## Current Task` - 227 "Previously" blocks, newest first, from `P10-TSK-001` back to project initiation. *(`X-TSK-016` is cross-cutting and completed after `P9-TSK-010` and before `P9-TSK-011`, so it stands between them.)* *(`X-TSK-005` is cross-cutting and completed after `P7-TSK-014` and before `P7-TSK-015`, so it stands between them; its record came in with its branch's merge.)* *(`X-TSK-004` is cross-cutting and completed after the Phase 6 → 7 transition, so it stands second, between `P7-TSK-001` and the transition's record - the transition's block moved here by `P7-TSK-001`'s gate, exactly as an earlier form of this note said it would.)*
 
 **Archive.** These records were moved verbatim out of
 [`CURRENT_STATE.md`](../CURRENT_STATE.md) on 2026-09-20 so that the canonical description of
@@ -12,6 +12,32 @@ Current state: [`CURRENT_STATE.md`](../CURRENT_STATE.md) ·
 Authoritative backlog: [`BACKLOG.md`](../BACKLOG.md)
 
 ---
+
+### Previously
+
+**`P10-TSK-001` — The credit module boundary and floors** — `COMPLETE` (2026-10-07). **Phase 10 `IN_PROGRESS`;
+M10.1 at 1 of 3.** The `credit` module is a build-graph fact: `settings.gradle.kts` includes it, its build file
+applies per-schema Flyway (`db/migration/credit`), and its one edge is `platform` (with `sharedkernel` through it) -
+the first business module since Phase 1 with **no ledger edge**, because credit moves no money (ADR-0084).
+`CreditModuleIsolationTest` refuses every business module - `ledger`, `consent`, `kyc`, `party` and `identity` named -
+and `app`, requires `platform` and `sharedkernel`, and probes its matcher in-suite; every one of the fifteen sibling
+isolation tests refuses `credit` from its side (nothing depends on it in Phase 10); `app` depends on it, so
+`ProductionModules` and `NoFloatingPointMoneyRulesTest`'s module guard cover it from its first class (`INV-CRD-12`).
+**credit `V001`**: the migrator-owned floor - `REVOKE ALL FROM PUBLIC`, `USAGE` alone to `finapp_app`, no default
+privileges. **credit `V002`**: `reason_code` (code, category, customer text, adverse flag; shape, category and
+text `CHECK`s), seeded with the fourteen codes the v1 policies need - `CRD-SOURCE-UNAVAILABLE` and
+`CRD-AUTO-APPROVAL-CEILING` among them, the ceiling the one non-adverse code (it limits automation and judges no
+applicant) - `SELECT` only to the application, and `UPDATE`, `DELETE` and `TRUNCATE` refused for every role, the
+owner included, by a row and a statement trigger (`INV-CRD-02`'s catalogue element). **The closed vocabularies**:
+`CreditProduct` (`PERSONAL_LOAN` EUR 500.00-25,000.00 over 6-60 months, four-eyes above 10,000.00; `CREDIT_LINE`
+EUR 250.00-5,000.00, revolving with no term, four-eyes above 2,500.00; each a 7-day request validity, a 30-day
+decision validity and 25 months' evidence retention, checked as the class loads - the four-eyes thresholds, which
+the plan left open, chosen here as the product's declaration), `CreditAttributeCode` (§12.2's fifteen plus the
+`SOURCE_UNAVAILABLE` and `CURRENCY_NOT_SUPPORTED` markers, each with its `AttributeValueType` - integer, money,
+boolean, code; no floating point), `ReasonCode` with `ReasonCategory` (mirroring the table field for field) and
+`DecisionOutcome` (`APPROVED`, `DECLINED` - never `REFER`, `INV-CRD-04`); `package-info` states the responsibility
+and the Phase 11 boundary; the root `lombok.config` governs the module unchanged (no generated `toString` names a
+field unless included). **Gate findings**: no CRITICAL, no IMPORTANT; MINOR, recorded - the four-eyes thresholds the plan left open chosen here as the products' declaration; whether a reduced approval's customer read names the non-adverse auto-approval ceiling is `P10-TSK-017`'s question (§Unresolved Architectural Questions #12); the backlog's "a ledger import planted" probe realised as the edge and the import together, since an import alone does not compile without the edge. **PROBES**: EIGHT, ALL CAUGHT, every restore byte-identical (sha256-verified) - a credit -> ledger edge with an import and a credit -> consent edge (`CreditModuleIsolationTest`), a kyc -> credit edge (`KycModuleIsolationTest`), a `ReasonCode` member with no row (`ReasonCodeCatalogueTest`), the immutability trigger made to `RETURN NULL` (`CreditMigrationTest#theOwnerIsRefusedByTheTrigger`), a `double` field in `CreditProduct` (`NoFloatingPointMoneyRulesTest`), `REFER` added to `DecisionOutcome` (`CreditVocabularyTest`) and a `reason_code` column left unclassified (`ColumnClassificationTest`); `MUTATION_TESTING.md` §2 +3 rows (`INV-CRD-02`, `-04`, `-12`). **Multi-instance PASS** - no state: the catalogue is read-only to the application and the migrations run once under Flyway's lock however many instances start. **Financial**: N/A - credit moves no money. **NEXT**: `P10-TSK-002` `READY`. **Verified** by fresh runs - the fleet-wide hermetic tier 2584 across 428 suites and 19 modules and the architecture tier 211 across 50, the credit database tier with `ColumnClassificationTest` 15 across 2, and the document-reading guards after the records, ALL 0 FAILURES - the other database tiers skipped on the owner's instruction.
 
 ### Previously
 

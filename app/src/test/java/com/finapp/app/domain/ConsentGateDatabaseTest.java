@@ -4,12 +4,15 @@ import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatCode;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
+import com.finapp.app.credit.ConsentBackedCreditConsentGate;
 import com.finapp.consent.ConsentGate;
 import com.finapp.consent.ConsentNotGrantedException;
 import com.finapp.consent.ConsentPurpose;
 import com.finapp.consent.ConsentRecord;
 import com.finapp.consent.ConsentStore;
 import com.finapp.consent.JdbcConsentStore;
+import com.finapp.credit.CreditConsentGate;
+import com.finapp.credit.CreditSourceKind;
 import com.finapp.platform.testing.database.DatabaseRoles;
 import com.finapp.platform.testing.database.SimulatedInstance;
 import com.finapp.sharedkernel.id.IdGenerator;
@@ -174,6 +177,59 @@ class ConsentGateDatabaseTest {
             assertThat(gateOnB.permits(instanceB.connection(), party, ConsentPurpose.KYC_PROCESSING))
                     .as("and so does the instance that recorded it")
                     .isFalse();
+        }
+    }
+
+    /**
+     * The credit gate over the two Phase 10 purposes, read authoritatively on every instance
+     * ({@code P10-TSK-002}, {@code INV-CRD-03}, {@code INV-CNS-03}).
+     *
+     * <p>The convention above, through {@code credit}'s port: each instance its own
+     * {@link ConsentBackedCreditConsentGate} over its own consent gate. For each source kind, a
+     * grant on A answers on B; a bureau grant alone never answers for financial data (the basis
+     * is per kind, and there is no combined purpose); and a withdrawal held open on B is not yet a
+     * fact for A, then refuses A's very next question the moment it commits.
+     */
+    @Test
+    @DisplayName("the credit purposes are read authoritatively - per source kind, on every instance alike")
+    void creditPurposesAreReadAuthoritatively() throws SQLException {
+        for (CreditSourceKind kind : CreditSourceKind.values()) {
+            UUID party = IDS.next();
+            ConsentPurpose purpose = kind == CreditSourceKind.BUREAU
+                    ? ConsentPurpose.CREDIT_BUREAU_ACCESS
+                    : ConsentPurpose.FINANCIAL_DATA_ACCESS;
+            CreditSourceKind other = kind == CreditSourceKind.BUREAU
+                    ? CreditSourceKind.FINANCIAL_DATA
+                    : CreditSourceKind.BUREAU;
+            try (SimulatedInstance instanceA = SimulatedInstance.inAgreementWithTheServer();
+                    SimulatedInstance instanceB = SimulatedInstance.inAgreementWithTheServer()) {
+                CreditConsentGate<Connection> gateOnA =
+                        new ConsentBackedCreditConsentGate(new ConsentGate<>(new JdbcConsentStore()));
+                CreditConsentGate<Connection> gateOnB =
+                        new ConsentBackedCreditConsentGate(new ConsentGate<>(new JdbcConsentStore()));
+
+                assertThat(gateOnB.permits(instanceB.connection(), party, kind))
+                        .as("%s: no history is no basis", kind).isFalse();
+
+                store.append(instanceA.connection(), ConsentRecord.grant(IDS, CLOCK, party, purpose, 1));
+                instanceA.commit();
+
+                assertThat(gateOnB.permits(instanceB.connection(), party, kind))
+                        .as("%s: a grant committed on A is a basis on B's next question", kind).isTrue();
+                assertThat(gateOnB.permits(instanceB.connection(), party, other))
+                        .as("%s's grant alone never admits %s", kind, other).isFalse();
+
+                store.append(instanceB.connection(), ConsentRecord.withdrawal(IDS, CLOCK, party, purpose, 1));
+                assertThat(gateOnA.permits(instanceA.connection(), party, kind))
+                        .as("%s: an UNCOMMITTED withdrawal is not yet a fact on A", kind).isTrue();
+
+                instanceB.commit();
+
+                assertThat(gateOnA.permits(instanceA.connection(), party, kind))
+                        .as("%s: A's very next question refuses once the withdrawal commits", kind).isFalse();
+                assertThat(gateOnB.permits(instanceB.connection(), party, kind))
+                        .as("%s: and so does the instance that recorded it", kind).isFalse();
+            }
         }
     }
 

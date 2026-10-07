@@ -7310,7 +7310,9 @@
           "purpose": {
             "enum": [
               "KYC_PROCESSING",
-              "SCREENING"
+              "SCREENING",
+              "CREDIT_BUREAU_ACCESS",
+              "FINANCIAL_DATA_ACCESS"
             ],
             "type": "string"
           },
@@ -14098,7 +14100,9 @@
             "schema": {
               "enum": [
                 "KYC_PROCESSING",
-                "SCREENING"
+                "SCREENING",
+                "CREDIT_BUREAU_ACCESS",
+                "FINANCIAL_DATA_ACCESS"
               ],
               "type": "string"
             }
