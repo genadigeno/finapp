@@ -272,6 +272,7 @@ tasks.named<Test>("databaseTest") {
 // TestTaxonomyTest holds this list equal to the tagged set.
 extra["ownContainerSuites"] =
     listOf(
+        "com.finapp.app.fx.FxCrossBorderStormDatabaseTest",
         "com.finapp.app.merchant.PayoutReturnDatabaseTest",
         "com.finapp.app.reconciliation.BatchRepudiationDatabaseTest",
         "com.finapp.app.reconciliation.JpyAndBhdPostableDatabaseTest",

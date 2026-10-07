@@ -432,7 +432,7 @@ cross-border payments are holds and corridor acceptances, beneficiary screening 
 returns credited in the currency received; clearings are keyed by counterparty; callbacks are
 hints; reconciliation never converts currency and gains causes, never types. Ten new invariants
 and thirteen restated take the platform to **120**. Thirty backlog items across nine milestones
-(M9.1–M9.9) plus `X-TSK-013`…`-015`. **28 of 30 items complete** (M9.1 to M9.8 closed): the modules and floors
+(M9.1–M9.9) plus `X-TSK-013`…`-015`. **29 of 30 items complete** (M9.1 to M9.8 closed): the modules and floors
 (`P9-TSK-001`), the conversion arithmetic (`P9-TSK-002`), JPY and BHD postable (`P9-TSK-003`), multi-currency
 wallets (`P9-TSK-004`), reference rates (`P9-TSK-005`), the FX provider port (`P9-TSK-006`), the
 pricing policy (`P9-TSK-007`), the quote (`P9-TSK-008`), wallet conversion (`P9-TSK-009`),
@@ -443,8 +443,8 @@ beneficiaries (`P9-TSK-017`), cross-border offers (`P9-TSK-018`), their authoriz
 (`P9-TSK-019`), their resolution and completion (`P9-TSK-020`), the unwinding of covers (`P9-TSK-021`), the
 corridor's settlement to cash (`P9-TSK-022`), cross-border returns (`P9-TSK-023`), cancellation by recall
 (`P9-TSK-024`), the operator FX trade reversal (`P9-TSK-025`), the second providers (`P9-TSK-026`) and Phase 9's
-meters, spans, reports and trace (`P9-TSK-027`), with `X-TSK-013` (the Phase 5–7 send permits database-stamped);
-next **`P9-TST-001` — The FX and cross-border storm** — `READY`
+meters, spans, reports and trace (`P9-TSK-027`), with `X-TSK-013` (the Phase 5–7 send permits database-stamped),
+and the FX and cross-border storm (`P9-TST-001`); next **`P9-DOC-001` — The Phase 9 exit review** — `READY`
 ([§Current Task](#current-task) is kept current).
 
 ## Current Milestone
@@ -460,54 +460,60 @@ since M0.1". Moved, not edited.)*
 
 ## Current Task
 
-**`P9-TST-001` — The FX and cross-border storm** — `READY`:
-marked by `X-TSK-013`'s completion gate (2026-10-07). **Not started.**
+**`P9-DOC-001` — The Phase 9 exit review** — `READY`:
+marked by `P9-TST-001`'s completion gate (2026-10-07). **Not started.**
 
 ### Just completed
 
-**`X-TSK-013` — Database-stamped send permits for the Phase 5–7 outbound flows** — `COMPLETE` (2026-10-07). **M9.9 at 2 of 4 (with
-`P9-TSK-027`, whose record said "1 of 3": the milestone also carries this item): ADR-0057 §4's skew
-premise removed** (PHASE_9_PLAN.md §2/§7; ADR-0057 §3-4;
-`INV-PAY-04`, `INV-LIFE-03`). Every Phase 5–7 send permit - the pay-in initiation's, the withdrawal's,
-the refund's (card and push return), the dispute response's and the merchant payout's - is the
-database's: born `GREATEST(created_at, statement_timestamp())` (never older than the database's clock,
-never before created_at), renewed `GREATEST(permit + 1 µs, statement_timestamp())` with no clock
-parameter, and held by a trigger per table (payments `V028`, merchant `V009`) that runs after the
-machine trigger - a backward write still refused - and re-stamps any forward write. Every bound over a
-permit is read from the same clock (platform `DatabaseTime.now`): the five sweeps' candidacy and the
-withdrawal's and payout's `NEVER_RECEIVED` bound, the latter in the transaction that locks the row.
-The withdrawal and payout renewals' conditional moved from "not after my clock" to "the permit I read";
-the withdrawal reads back the permit the database stored, at birth and at renewal. The build rule
-`SendPermitsAreTheDatabasesTest` (no permit assignment binds a parameter; every birth is the GREATEST
-form; no renewal port takes a clock; planted violations refused). **Skew races**: one per flow - a
-takeover (the pay-in: a sibling sweep) on an instance 5 s BEHIND and, inside its flight, a sweep on one
-5 s AHEAD with a 4 s bound - provider instruction count 1 for the payout, refund, dispute response and
-pay-in, each of which concluded or re-sent on the instances' clocks; the withdrawal's race holds on
-either clock (its bound is the rail's declared 90 s deadline, which a 10 s skew cannot cross) and is
-recorded so. **Found and fixed**: (1) `WithdrawalDatabaseTest`'s corridor-misroute fixture had been
-broken since `P9-TSK-026` (the register refuses a rail without its corridor declaration; the fixture
-named one of two) - unseen because that suite was outside `-026`'s database run; (2) judging on the
-database's clock exposed suites that swept the instant after a real dispatch: the test database's VM
-clock steps back ~1.6 s every ~27 s, so a row born while the host ran ahead was not yet due - a
-`Thread.sleep` past a tiny bound was a race against the VM, now the deterministic `AgedPermits`
-(created_at and permit moved together, as the owner, triggers off for the one statement); (3) the
-Phase 7 storm's "register emptied and rebuilt" demonstration deleted EVERY unheld expectation in the
-shared container, then judged every position: a cross-border suite's live-opened `CROSSBORDER_PAYOUT`
-expectations (a kind the opening backfill, built for pre-register history per ADR-0067 §8, was never
-meant to re-adopt) vanished, and `CORRIDOR_CLEARING JPY` read unexplained by exactly their 96,840 -
-harmless until Phase 9 suites shared the container, latent while the full tier is skipped; the
-deletion is now scoped to the storm's own entries. **PROBES**
-(SEVEN PROBES, SEVEN CAUGHT), every restore byte-identical (sha256-verified; `MUTATION_TESTING.md` §2 +7 rows).
-**Multi-instance PASS**: one clock judges every permit; stamps strictly forward under the row lock;
-the skew races count it. The debt row "The Phase 5–7 send permits are instance-stamped" is paid.
-**NEXT**: `P9-TST-001` `READY`.
-**Verified** by fresh runs - the fleet-wide hermetic tier 2548 across 419 suites and 18 modules; the architecture tier 161 across 28;
-the five flows' and the adjacent sweep suites (the five flows' suites with their skew races, the payments schema suite, the checkout, ambiguity, sweeper, void, payout endpoint, payout return and outbound credit resolution suites and the Phase 7 storm: 257 across 13, the one failure finding (3) - the Phase 7 storm then re-run green beside the corridor suite, 9 across 2; the payments and merchant migration pins 32 and 8 within the hermetic tier); ALL 0 FAILURES - the other database tiers
-skipped on the owner's instruction.
+**`P9-TST-001` — The FX and cross-border storm** — `COMPLETE` (2026-10-07). **M9.9 at 3 of 4: the
+ten-instance answer's capstone** (PHASE_9_PLAN.md §13's last paragraph and §14; every `Phase: 9` invariant).
+`FxCrossBorderStormDatabaseTest`, in its own container: **two application instances whose clocks disagree by ten
+seconds** - the suite's own context five seconds AHEAD of the database server and a second `FinappApplication`
+started in the JVM five seconds BEHIND (both server-anchored), one FX engine and one corridor engine shared - with
+five movers per instance (conversions across EUR, USD, GBP and JPY; cross-border payments to US/USD and JP/JPY,
+each over its own instance's door), a resolver per instance and a network actor (accepting, rejecting after
+receipt, returning and recalling in-flight credits; random faults armed in both engines; duplicate and forged
+callbacks at both doors). **Every round in ONE REPEATABLE READ snapshot**: the per-currency trial balance, the FX
+books proof, the position proof (every position explained, every proven line attributed, no suspense unowned),
+every clearing line's copy and the holds check. Then **the same object from both instances at one instant** - one
+quote converted, one cover dispatched, one cross-border quote paid, one recall requested and one return applied,
+each from A and B: one effect each, the losers answered `409`, the providers counting one. Then **the catalogue**,
+each fault seeded deterministically and
+followed by the snapshot: an FX response lost, callbacks duplicated and forged, a lock expired and requoted, an
+off-plan execution, a crash mid-cover; a declined send, RECEIVED then rejected (the corridor engine's new
+`rejectReceived`), never received, a recall that wins and one too late; returns before and after delivery and
+before the completion is known; a partial return parked and resolved four-eyes; a crash after Tx1 taken over
+(one instruction); a crash mid-completion. Then **drain and settle**: every leg settled to cash from the
+database's own truth (every cover execution's legs in FX trade reports, every completed credit and applied
+return in corridor reports with the schedule's fee, every remittance by a bank statement), one FX leg off by a
+minor unit - exactly one `AMOUNT_MISMATCH(FX_LEG_DIFFERS)`, no other break - and a EUR corridor file rejected
+`CURRENCY_NOT_SETTLED`; every cash verdict explained. **At rest**: the FX provider's executions per T = our
+execution facts; trades = conversions + completed payments; every E instructed at most once, held unless
+FAILED, never held when concluded never received, the sum the provider's count; no hold active; `FX_POSITION`
+zero in every currency; every executed cover a trade's or unwound exactly once, every unwind executed; no
+completion entry for a payment that did not complete; every balance projection replaying from its lines (F2); plan
+verification clean; every reconciliation run replayed IDENTICAL; the gauges at
+zero; the needle walked registration -> screening -> quote -> payment -> recall -> return and absent from every
+table and log. Each run: 274-323 rounds, ~2,070-2,390 conversions, ~1,650-1,960 payments; the hot rows'
+conversion door p99 713-760 ms. **Found and fixed (production)**: the outbound credit sweep took its candidates by the permit
+alone, and a COMPLETED credit stays due until its delivery is known - more undelivered credits than one page
+re-read that page on every sweep and starved every newer RECEIVED, UNKNOWN and DISPATCHED credit (no
+completion, no never-received, holds standing - in production at a page of 25 against a one-day delivery);
+every credit awaiting its outcome now comes first and delivery polls rotate, least recently inquired first
+(`JdbcOutboundCreditStore.findDue`; `OutboundCreditResolutionDatabaseTest#undeliveredCreditsNeverStarveOneAwaitingItsOutcome`).
+**Deviations recorded**: the second instance is a second application context in the JVM, not a process; under
+load a fault lands on whatever request comes next (both engines arm one global slot), so the catalogue is what
+guarantees each; the crash after Tx1 is Tx2 refused with the send landed (the nothing-sent case is never
+received); the p99 is the conversion door's latency over the hot rows; platform acts are counted by the
+per-flow suites, not re-counted here. **PROBES** (THREE STORM PROBES, THREE CAUGHT - a failing credit's hold left standing caught by the holds check in round 6, a conversion's margin on the rounding residual's book by the FX books proof in round 2, the FX callback door's signature check bypassed by the forged-callback refusal (204 where 401 was due) - run on the suite before its last two additions (the two-instance races and the at-rest census), which add readings and remove none; and the sweep's fair order reverted, caught by its regression test), every restore byte-identical (sha256-verified;
+`MUTATION_TESTING.md` §4 +1 row, §2 +1 row). **Multi-instance PASS** on its counts. **NEXT**: `P9-DOC-001` `READY`.
+**Verified** by fresh runs - the storm three consecutive fresh runs green on the final code, each in its own container (274, 323 and 317 rounds; ~9 minutes each); the fleet-wide hermetic tier 2548 across 419 suites and 18 modules; the architecture
+tier 161 across 28; the adjacent database suites (the outbound credit resolution, cross-border cancellation, return and payment, unwind, Phase 9 reports, corridor settlement-to-cash, second-rail, FX cover and FX callback suites: 62 across 10); ALL 0 FAILURES - the other database tiers skipped on
+the owner's instruction.
 
 ### Previously
 
-The per-task completion records — 222 blocks, from `P9-TSK-027` back to project initiation
+The per-task completion records — 223 blocks, from `X-TSK-013` back to project initiation
 (`X-TSK-016` cross-cutting, standing between `P9-TSK-011` and `P9-TSK-010`; `X-TSK-005` cross-cutting, standing between `P7-TSK-015` and `P7-TSK-014`; `X-TSK-004`
 cross-cutting, standing between `P7-TSK-001` and the Phase 6 → 7 transition) — are archived in
 [`history/TASK_HISTORY.md`](history/TASK_HISTORY.md).
@@ -1052,8 +1058,8 @@ Resolved during initiation:
 
 ## Next Task
 
-**`P9-TST-001` — The FX and cross-border storm** — `READY`
-(the Current Task), marked by `X-TSK-013`'s completion gate.
+**`P9-DOC-001` — The Phase 9 exit review** — `READY`
+(the Current Task), marked by `P9-TST-001`'s completion gate.
 *(This section read "`P8-TSK-009` — `READY`" from `P8-TSK-008`'s gate until
 `P8-TSK-013`'s record found it — the stale-second-copy class, in the section whose
 whole job is to mirror.)*

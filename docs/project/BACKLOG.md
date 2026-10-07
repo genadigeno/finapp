@@ -12913,7 +12913,7 @@ break row, as the approval door must.)*
 
 # Phase 9 — FX and Cross-Border Payments
 
-Status: `IN_PROGRESS` — started 2026-10-03 with `P9-TSK-001` (28 of 30 items complete, M9.1 to M9.8 closed); entry gate passed 2026-10-02 by the Phase 8 → 9 transition
+Status: `IN_PROGRESS` — started 2026-10-03 with `P9-TSK-001` (29 of 30 items complete, M9.1 to M9.8 closed); entry gate passed 2026-10-02 by the Phase 8 → 9 transition
 ([`reviews/PHASE_8_TO_9_TRANSITION.md`](reviews/PHASE_8_TO_9_TRANSITION.md)), elaborated to task
 granularity by the same transition: thirty items (`P9-TSK-001`…`-027`, `P9-TST-001`, `P9-TST-002`,
 `P9-DOC-001`) across nine milestones, with `P9-TSK-001` marked `READY`. The engineering plan is
@@ -14213,7 +14213,8 @@ providers), each owned by Phase 15 and gating nothing here.
 - **Definition of done**: `DOD-OBS`, `DOD-API` (the reports and the trace route). **Risk**: Low.
   **Cx**: M.
 
-**P9-TST-001 — The FX and cross-border storm** — `READY` (marked by `X-TSK-013`'s completion gate, 2026-10-07)
+**P9-TST-001 — The FX and cross-border storm** — `COMPLETE` (2026-10-07; marked `READY` by `X-TSK-013`'s completion gate)
+- **As built** (2026-10-07): as `CURRENT_STATE.md` §Just completed records. The suite is `FxCrossBorderStormDatabaseTest` (own container); the production fix is `JdbcOutboundCreditStore.findDue`'s fair order, held by `OutboundCreditResolutionDatabaseTest#undeliveredCreditsNeverStarveOneAwaitingItsOutcome`.
 - **Objective**: prove financial correctness under every provider fault, crash, duplication and
   race, at once.
 - **Bounded context**: every Phase 9 context.
@@ -14250,7 +14251,7 @@ providers), each owned by Phase 15 and gating nothing here.
 - **Acceptance criteria**: every count exact; every proof 0 every round.
 - **Definition of done**: `DOD-TEST`, `DOD-FIN`. **Risk**: High. **Cx**: L.
 
-**P9-DOC-001 — The Phase 9 exit review** — `PLANNED`
+**P9-DOC-001 — The Phase 9 exit review** — `READY` (marked by `P9-TST-001`'s completion gate, 2026-10-07)
 - **Objective**: close Phase 9 against its gate, with the documents made true.
 - **Bounded context**: all.
 - **Dependencies**: `P9-TST-001`, `P9-TST-002`.

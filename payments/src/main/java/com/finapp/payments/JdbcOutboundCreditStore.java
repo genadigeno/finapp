@@ -184,7 +184,12 @@ public final class JdbcOutboundCreditStore implements OutboundCreditStore {
             Duration deliveryAge, int limit) {
         Objects.requireNonNull(unitOfWork, "unitOfWork must not be null");
         try (PreparedStatement select = unitOfWork.prepareStatement(
-                "SELECT " + COLUMNS + " FROM payments.outbound_credit WHERE"
+                // THE ORDER IS FAIRNESS (P9-TST-001's storm found its absence): a credit awaiting its outcome holds the
+                // customer's money, so every one comes before any delivery poll - oldest permit first; a COMPLETED
+                // credit stays due until its delivery is known, so delivery polls rotate, least recently inquired first
+                // (its latest inquiry evidence). Ordered by the permit alone, more undelivered credits than one page
+                // re-read that same page on every sweep and starved every newer RECEIVED, UNKNOWN and DISPATCHED one.
+                "SELECT " + COLUMNS + " FROM payments.outbound_credit c WHERE"
                         + " (status = 'DISPATCHED' AND last_dispatched_at <= statement_timestamp() - ? * interval '1 millisecond')"
                         + " OR (status = 'UNKNOWN' AND last_dispatched_at <= statement_timestamp() - ? * interval '1 millisecond')"
                         + " OR (status = 'RECEIVED' AND last_dispatched_at <= statement_timestamp() - ? * interval '1 millisecond')"
@@ -192,7 +197,10 @@ public final class JdbcOutboundCreditStore implements OutboundCreditStore {
                         + "     AND recall_outcome IS NULL)"
                         + " OR (status = 'COMPLETED' AND delivered_at IS NULL"
                         + "     AND created_at <= statement_timestamp() - ? * interval '1 millisecond')"
-                        + " ORDER BY last_dispatched_at, id LIMIT ?")) {
+                        + " ORDER BY (status = 'COMPLETED'),"
+                        + " CASE WHEN status = 'COMPLETED' THEN (SELECT max(e.recorded_at) FROM payments.provider_evidence e"
+                        + "     WHERE e.outbound_credit_id = c.id) END NULLS FIRST,"
+                        + " last_dispatched_at, id LIMIT ?")) {
             select.setLong(1, dispatchedAge.toMillis());
             select.setLong(2, unknownAge.toMillis());
             select.setLong(3, receivedAge.toMillis());

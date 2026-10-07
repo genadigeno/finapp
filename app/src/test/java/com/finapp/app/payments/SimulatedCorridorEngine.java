@@ -150,6 +150,19 @@ public final class SimulatedCorridorEngine implements AutoCloseable {
         callback(credit);
     }
 
+    /**
+     * The received credit {@code reference} is rejected - hours later, by the provider's own decision (PHASE_9_PLAN.md
+     * section 14 scenario 23, `P9-TST-001`): only from {@code received}, its callback emitted like any other move.
+     */
+    public void rejectReceived(String reference, String reason) {
+        Credit credit = credits.get(reference);
+        if (credit != null && credit.status.equals("received")) {
+            credit.status = "rejected";
+            credit.reason = reason;
+            callback(credit);
+        }
+    }
+
     /** The next novel send is rejected with {@code reason}. */
     public void rejectNextSend(String reason) {
         armed.set("reject:" + reason);

@@ -169,11 +169,13 @@ public interface OutboundCreditStore {
     boolean recordRecallOutcome(Connection unitOfWork, OutboundCreditId id, RecallOutcome outcome);
 
     /**
-     * The credits due an inquiry, oldest permit first, read without a lock: {@code DISPATCHED} past
+     * The credits due an inquiry, read without a lock: {@code DISPATCHED} past
      * {@code dispatchedAge}, {@code UNKNOWN} past {@code unknownAge}, {@code RECEIVED} past {@code receivedAge} -
      * each since its latest permit, on the database clock - and {@code COMPLETED} credits whose delivery is not yet
      * known, past {@code deliveryAge} since their birth - and, at once, every credit whose recall is requested and
-     * not yet answered (`P9-TSK-024`), paced by the sweep's own poll.
+     * not yet answered (`P9-TSK-024`), paced by the sweep's own poll. Every credit awaiting its outcome comes first,
+     * oldest permit first; the delivery polls follow, least recently inquired first - a page of undelivered credits
+     * never starves the rest (`P9-TST-001`).
      */
     List<Row> findDue(Connection unitOfWork, Duration dispatchedAge, Duration unknownAge, Duration receivedAge,
             Duration deliveryAge, int limit);

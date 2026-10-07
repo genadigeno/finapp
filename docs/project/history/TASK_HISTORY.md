@@ -1,6 +1,6 @@
 # Task History
 
-The per-task completion records that accumulated behind `## Current Task` - 222 "Previously" blocks, newest first, from `P9-TSK-027` back to project initiation. *(`X-TSK-016` is cross-cutting and completed after `P9-TSK-010` and before `P9-TSK-011`, so it stands between them.)* *(`X-TSK-005` is cross-cutting and completed after `P7-TSK-014` and before `P7-TSK-015`, so it stands between them; its record came in with its branch's merge.)* *(`X-TSK-004` is cross-cutting and completed after the Phase 6 → 7 transition, so it stands second, between `P7-TSK-001` and the transition's record - the transition's block moved here by `P7-TSK-001`'s gate, exactly as an earlier form of this note said it would.)*
+The per-task completion records that accumulated behind `## Current Task` - 223 "Previously" blocks, newest first, from `X-TSK-013` back to project initiation. *(`X-TSK-016` is cross-cutting and completed after `P9-TSK-010` and before `P9-TSK-011`, so it stands between them.)* *(`X-TSK-005` is cross-cutting and completed after `P7-TSK-014` and before `P7-TSK-015`, so it stands between them; its record came in with its branch's merge.)* *(`X-TSK-004` is cross-cutting and completed after the Phase 6 → 7 transition, so it stands second, between `P7-TSK-001` and the transition's record - the transition's block moved here by `P7-TSK-001`'s gate, exactly as an earlier form of this note said it would.)*
 
 **Archive.** These records were moved verbatim out of
 [`CURRENT_STATE.md`](../CURRENT_STATE.md) on 2026-09-20 so that the canonical description of
@@ -12,6 +12,48 @@ Current state: [`CURRENT_STATE.md`](../CURRENT_STATE.md) ·
 Authoritative backlog: [`BACKLOG.md`](../BACKLOG.md)
 
 ---
+
+### Previously
+
+**`X-TSK-013` — Database-stamped send permits for the Phase 5–7 outbound flows** — `COMPLETE` (2026-10-07). **M9.9 at 2 of 4 (with
+`P9-TSK-027`, whose record said "1 of 3": the milestone also carries this item): ADR-0057 §4's skew
+premise removed** (PHASE_9_PLAN.md §2/§7; ADR-0057 §3-4;
+`INV-PAY-04`, `INV-LIFE-03`). Every Phase 5–7 send permit - the pay-in initiation's, the withdrawal's,
+the refund's (card and push return), the dispute response's and the merchant payout's - is the
+database's: born `GREATEST(created_at, statement_timestamp())` (never older than the database's clock,
+never before created_at), renewed `GREATEST(permit + 1 µs, statement_timestamp())` with no clock
+parameter, and held by a trigger per table (payments `V028`, merchant `V009`) that runs after the
+machine trigger - a backward write still refused - and re-stamps any forward write. Every bound over a
+permit is read from the same clock (platform `DatabaseTime.now`): the five sweeps' candidacy and the
+withdrawal's and payout's `NEVER_RECEIVED` bound, the latter in the transaction that locks the row.
+The withdrawal and payout renewals' conditional moved from "not after my clock" to "the permit I read";
+the withdrawal reads back the permit the database stored, at birth and at renewal. The build rule
+`SendPermitsAreTheDatabasesTest` (no permit assignment binds a parameter; every birth is the GREATEST
+form; no renewal port takes a clock; planted violations refused). **Skew races**: one per flow - a
+takeover (the pay-in: a sibling sweep) on an instance 5 s BEHIND and, inside its flight, a sweep on one
+5 s AHEAD with a 4 s bound - provider instruction count 1 for the payout, refund, dispute response and
+pay-in, each of which concluded or re-sent on the instances' clocks; the withdrawal's race holds on
+either clock (its bound is the rail's declared 90 s deadline, which a 10 s skew cannot cross) and is
+recorded so. **Found and fixed**: (1) `WithdrawalDatabaseTest`'s corridor-misroute fixture had been
+broken since `P9-TSK-026` (the register refuses a rail without its corridor declaration; the fixture
+named one of two) - unseen because that suite was outside `-026`'s database run; (2) judging on the
+database's clock exposed suites that swept the instant after a real dispatch: the test database's VM
+clock steps back ~1.6 s every ~27 s, so a row born while the host ran ahead was not yet due - a
+`Thread.sleep` past a tiny bound was a race against the VM, now the deterministic `AgedPermits`
+(created_at and permit moved together, as the owner, triggers off for the one statement); (3) the
+Phase 7 storm's "register emptied and rebuilt" demonstration deleted EVERY unheld expectation in the
+shared container, then judged every position: a cross-border suite's live-opened `CROSSBORDER_PAYOUT`
+expectations (a kind the opening backfill, built for pre-register history per ADR-0067 §8, was never
+meant to re-adopt) vanished, and `CORRIDOR_CLEARING JPY` read unexplained by exactly their 96,840 -
+harmless until Phase 9 suites shared the container, latent while the full tier is skipped; the
+deletion is now scoped to the storm's own entries. **PROBES**
+(SEVEN PROBES, SEVEN CAUGHT), every restore byte-identical (sha256-verified; `MUTATION_TESTING.md` §2 +7 rows).
+**Multi-instance PASS**: one clock judges every permit; stamps strictly forward under the row lock;
+the skew races count it. The debt row "The Phase 5–7 send permits are instance-stamped" is paid.
+**NEXT**: `P9-TST-001` `READY`.
+**Verified** by fresh runs - the fleet-wide hermetic tier 2548 across 419 suites and 18 modules; the architecture tier 161 across 28;
+the five flows' and the adjacent sweep suites (the five flows' suites with their skew races, the payments schema suite, the checkout, ambiguity, sweeper, void, payout endpoint, payout return and outbound credit resolution suites and the Phase 7 storm: 257 across 13, the one failure finding (3) - the Phase 7 storm then re-run green beside the corridor suite, 9 across 2; the payments and merchant migration pins 32 and 8 within the hermetic tier); ALL 0 FAILURES - the other database tiers
+skipped on the owner's instruction.
 
 ### Previously
 
