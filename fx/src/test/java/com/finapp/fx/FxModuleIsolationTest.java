@@ -60,6 +60,7 @@ class FxModuleIsolationTest {
                         "settlement",
                         "reconciliation",
                         "crossborder",
+                        "credit",
                         "app")) {
             assertThat(classpathEntries())
                     .as("fx must not depend on %s", forbidden)

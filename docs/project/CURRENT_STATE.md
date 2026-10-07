@@ -457,7 +457,7 @@ asserted eighteen audited acts and four refusals, made every Phase 9 document tr
 the Phase 9 → 10 transition (2026-10-07), which confirmed the phase after repair and initialised Phase 10.
 
 **Phase 10 — Credit Decisioning**
-Status: 🟡 **`READY`** (2026-10-07) — entry gate: all twelve criteria hold, by the Phase 9 → 10
+Status: 🔵 **`IN_PROGRESS`** (2026-10-07, `P10-TSK-001`) — entry gate: all twelve criteria hold, by the Phase 9 → 10
 transition ([`reviews/PHASE_9_TO_10_TRANSITION.md`](reviews/PHASE_9_TO_10_TRANSITION.md) §9).
 Planned in [`PHASE_10_PLAN.md`](PHASE_10_PLAN.md); decided in ADR-0084…0089 (`Proposed`); the
 machines in [`CREDIT_DECISIONING_LIFECYCLES.md`](../domain/CREDIT_DECISIONING_LIFECYCLES.md): a
@@ -468,7 +468,7 @@ financial-data adapters under recorded consent, its evidence encrypted; affordab
 exact, decisions for one party serialised on its profile; referrals decided by people under
 four-eyes; every decision replayed. Credit moves no money; Phase 11 begins where a decision is
 consumed. Eight new invariants take the platform to **128**. Twenty-four backlog items across eight
-milestones (M10.1–M10.8); `P10-TSK-001` `READY`. **No Phase 10 code exists.**
+milestones (M10.1–M10.8). **1 of 24 items complete**: the module boundary, schema floor and closed vocabularies (`P10-TSK-001`); `P10-TSK-002` `READY`.
 
 ## Current Milestone
 
@@ -483,39 +483,37 @@ since M0.1". Moved, not edited.)*
 
 ## Current Task
 
-**`P10-TSK-001` — The credit module boundary and floors** — `READY`: marked by the Phase 9 → 10
-transition (2026-10-07), which confirmed Phase 9 `COMPLETE` after repair and initialised Phase 10.
-**Not started.**
+**`P10-TSK-002` — Credit consent purposes** — `READY`: marked by `P10-TSK-001`'s completion gate (2026-10-07). **Not started.**
 
 ### Just completed
 
-**The Phase 9 → 10 transition** — `COMPLETE` (2026-10-07). **Phase 9 `COMPLETE`, confirmed after repair;
-Phase 10 `READY`** ([`reviews/PHASE_9_TO_10_TRANSITION.md`](reviews/PHASE_9_TO_10_TRANSITION.md)). Seven adversarial
-read-only audits (FX and cross-border financial correctness, multi-instance, settlement and reconciliation, security,
-architecture and events, test adequacy) found **two CRITICAL** defects the exit review had passed over - a takeover
-re-sending a concluded outbound credit to a provider that had never seen it (the beneficiary paid, the hold released;
-payments `V029`) and a parked return approved as an ordinary transfer and then applied again from the inquiry (a double
-credit) - and **twenty-three IMPORTANT**: the outbound sweep's starvation (payments `V030`, a claiming statement rotated
-by `last_inquired_at`), a delivery after a return rolling every inquiry back, a "too late" recall left concludable
-`NEVER_RECEIVED`, two deadlocks (the completion against the cover applier; the exit review's own pre-lock against the
-wallet deciders - now key share before rows), a first rule-set version lacking lags, the cover's computed leg booked
-unchecked (fx `V010`), a superseded attempt mis-typed, a reversal decided on another trade's route and its reasons
-unscreened (fx `V011`), storage failures logging the refused row (two build rules), an exponent amount exhausting every
-money door (`DecimalText`, `RequestDecimalsAreBoundedTest`), a refused quote committing a kyc re-screen, a screening
-reviewable by its requester (kyc `V010`), an event without currencies, and eight test gaps. Every one repaired and
-tested; the MINOR correctness, concurrency and security ones repaired too (routing and screening stamps on the database
-clock, the outbound destination's shape `CHECK`s - payments `V031` - the corridor door's rail check, error details,
-the approval echo closed); the rest recorded as Phase 15 debt. Three guards found red unseen with the database tier
-skipped (`FxReasonScreenDatabaseTest`, `FxMigrationTest`, `CrossborderMigrationTest`), corrected. **PROBES**: THIRTY-ONE, ALL CAUGHT (two first-form tests SURVIVED, recorded as no verdict, re-aimed and caught), every restore byte-identical (sha256-verified); `MUTATION_TESTING.md` §2 +26 rows.
-**Phase 10 initialised** (not built): `PHASE_10_PLAN.md`, ADR-0084…0089 (`Proposed`),
-`CREDIT_DECISIONING_LIFECYCLES.md`, `INV-CRD-05`…`12` (128 invariants), the gate's Phase 10 extension (19 criteria),
-twenty-four backlog items across M10.1–M10.8, the glossary and domain model (fourteen terms; the risk score settled as
-`risk`'s), the module, context, distributed-execution, delivery-plan, capability and roadmap documents. **Multi-instance
-PASS** after repair. **NEXT**: `P10-TSK-001` `READY`. **Verified** by fresh runs - the fleet-wide hermetic tier 2563 across 423 suites and 18 modules, the architecture tier 169 across 31, the slice tier 109 across 19, the database tier over every suite the repairs reach 598 across 72 and 19 in their own containers (the storm and the payout return suite); the three hermetic failures (this transition's own guards) and the one database failure (a Phase 7 routing test red since P9-TSK-019) fixed and re-run green (38 across 12; 20 across 2); ALL 0 FAILURES on the final code - the fleet-wide database and kafka tiers skipped on the owner's instruction.
+**`P10-TSK-001` — The credit module boundary and floors** — `COMPLETE` (2026-10-07). **Phase 10 `IN_PROGRESS`;
+M10.1 at 1 of 3.** The `credit` module is a build-graph fact: `settings.gradle.kts` includes it, its build file
+applies per-schema Flyway (`db/migration/credit`), and its one edge is `platform` (with `sharedkernel` through it) -
+the first business module since Phase 1 with **no ledger edge**, because credit moves no money (ADR-0084).
+`CreditModuleIsolationTest` refuses every business module - `ledger`, `consent`, `kyc`, `party` and `identity` named -
+and `app`, requires `platform` and `sharedkernel`, and probes its matcher in-suite; every one of the fifteen sibling
+isolation tests refuses `credit` from its side (nothing depends on it in Phase 10); `app` depends on it, so
+`ProductionModules` and `NoFloatingPointMoneyRulesTest`'s module guard cover it from its first class (`INV-CRD-12`).
+**credit `V001`**: the migrator-owned floor - `REVOKE ALL FROM PUBLIC`, `USAGE` alone to `finapp_app`, no default
+privileges. **credit `V002`**: `reason_code` (code, category, customer text, adverse flag; shape, category and
+text `CHECK`s), seeded with the fourteen codes the v1 policies need - `CRD-SOURCE-UNAVAILABLE` and
+`CRD-AUTO-APPROVAL-CEILING` among them, the ceiling the one non-adverse code (it limits automation and judges no
+applicant) - `SELECT` only to the application, and `UPDATE`, `DELETE` and `TRUNCATE` refused for every role, the
+owner included, by a row and a statement trigger (`INV-CRD-02`'s catalogue element). **The closed vocabularies**:
+`CreditProduct` (`PERSONAL_LOAN` EUR 500.00-25,000.00 over 6-60 months, four-eyes above 10,000.00; `CREDIT_LINE`
+EUR 250.00-5,000.00, revolving with no term, four-eyes above 2,500.00; each a 7-day request validity, a 30-day
+decision validity and 25 months' evidence retention, checked as the class loads - the four-eyes thresholds, which
+the plan left open, chosen here as the product's declaration), `CreditAttributeCode` (§12.2's fifteen plus the
+`SOURCE_UNAVAILABLE` and `CURRENCY_NOT_SUPPORTED` markers, each with its `AttributeValueType` - integer, money,
+boolean, code; no floating point), `ReasonCode` with `ReasonCategory` (mirroring the table field for field) and
+`DecisionOutcome` (`APPROVED`, `DECLINED` - never `REFER`, `INV-CRD-04`); `package-info` states the responsibility
+and the Phase 11 boundary; the root `lombok.config` governs the module unchanged (no generated `toString` names a
+field unless included). **Gate findings**: no CRITICAL, no IMPORTANT; MINOR, recorded - the four-eyes thresholds the plan left open chosen here as the products' declaration; whether a reduced approval's customer read names the non-adverse auto-approval ceiling is `P10-TSK-017`'s question (§Unresolved Architectural Questions #12); the backlog's "a ledger import planted" probe realised as the edge and the import together, since an import alone does not compile without the edge. **PROBES**: EIGHT, ALL CAUGHT, every restore byte-identical (sha256-verified) - a credit -> ledger edge with an import and a credit -> consent edge (`CreditModuleIsolationTest`), a kyc -> credit edge (`KycModuleIsolationTest`), a `ReasonCode` member with no row (`ReasonCodeCatalogueTest`), the immutability trigger made to `RETURN NULL` (`CreditMigrationTest#theOwnerIsRefusedByTheTrigger`), a `double` field in `CreditProduct` (`NoFloatingPointMoneyRulesTest`), `REFER` added to `DecisionOutcome` (`CreditVocabularyTest`) and a `reason_code` column left unclassified (`ColumnClassificationTest`); `MUTATION_TESTING.md` §2 +3 rows (`INV-CRD-02`, `-04`, `-12`). **Multi-instance PASS** - no state: the catalogue is read-only to the application and the migrations run once under Flyway's lock however many instances start. **Financial**: N/A - credit moves no money. **NEXT**: `P10-TSK-002` `READY`. **Verified** by fresh runs - the fleet-wide hermetic tier 2584 across 428 suites and 19 modules and the architecture tier 211 across 50, the credit database tier with `ColumnClassificationTest` 15 across 2, and the document-reading guards after the records, ALL 0 FAILURES - the other database tiers skipped on the owner's instruction.
 
 ### Previously
 
-The per-task completion records — 225 blocks, from `P9-DOC-001` back to project initiation
+The per-task completion records — 226 blocks, from the Phase 9 → 10 transition back to project initiation
 (`X-TSK-016` cross-cutting, standing between `P9-TSK-011` and `P9-TSK-010`; `X-TSK-005` cross-cutting, standing between `P7-TSK-015` and `P7-TSK-014`; `X-TSK-004`
 cross-cutting, standing between `P7-TSK-001` and the Phase 6 → 7 transition) — are archived in
 [`history/TASK_HISTORY.md`](history/TASK_HISTORY.md).
@@ -1005,6 +1003,7 @@ it begins.
 | # | Question | Must resolve by | Risk if unresolved |
 |---|----------|-----------------|--------------------|
 | 11 | Fail-safe policy for risk evaluation: block or allow on unavailability | Phase 13 | High — a wrong default is either an outage or an open door |
+| 12 | Does a reduced approval's customer read name the reason it was reduced - the non-adverse `CRD-AUTO-APPROVAL-CEILING` included (a counteroffer notice)? Raised by `P10-TSK-001`, which seeded the ceiling as non-adverse | `P10-TSK-017` | Medium — an approval below the request with no reason given to the applicant |
 
 Resolved since:
 - ~~8. Fee model: who pays, when recognised, gross vs net settlement~~ →
@@ -1063,8 +1062,8 @@ Resolved during initiation:
 
 ## Next Task
 
-**`P10-TSK-001` — The credit module boundary and floors** — `READY`
-(the Current Task), marked by the Phase 9 → 10 transition - Phase 10 `READY`.
+**`P10-TSK-002` — Credit consent purposes** — `READY`
+(the Current Task), marked by `P10-TSK-001`'s completion gate - Phase 10 `IN_PROGRESS`.
 *(This section read "`P8-TSK-009` — `READY`" from `P8-TSK-008`'s gate until
 `P8-TSK-013`'s record found it — the stale-second-copy class, in the section whose
 whole job is to mirror.)*

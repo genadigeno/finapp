@@ -1,6 +1,6 @@
 # Task History
 
-The per-task completion records that accumulated behind `## Current Task` - 225 "Previously" blocks, newest first, from `P9-DOC-001` back to project initiation. *(`X-TSK-016` is cross-cutting and completed after `P9-TSK-010` and before `P9-TSK-011`, so it stands between them.)* *(`X-TSK-005` is cross-cutting and completed after `P7-TSK-014` and before `P7-TSK-015`, so it stands between them; its record came in with its branch's merge.)* *(`X-TSK-004` is cross-cutting and completed after the Phase 6 → 7 transition, so it stands second, between `P7-TSK-001` and the transition's record - the transition's block moved here by `P7-TSK-001`'s gate, exactly as an earlier form of this note said it would.)*
+The per-task completion records that accumulated behind `## Current Task` - 226 "Previously" blocks, newest first, from the Phase 9 → 10 transition back to project initiation. *(`X-TSK-016` is cross-cutting and completed after `P9-TSK-010` and before `P9-TSK-011`, so it stands between them.)* *(`X-TSK-005` is cross-cutting and completed after `P7-TSK-014` and before `P7-TSK-015`, so it stands between them; its record came in with its branch's merge.)* *(`X-TSK-004` is cross-cutting and completed after the Phase 6 → 7 transition, so it stands second, between `P7-TSK-001` and the transition's record - the transition's block moved here by `P7-TSK-001`'s gate, exactly as an earlier form of this note said it would.)*
 
 **Archive.** These records were moved verbatim out of
 [`CURRENT_STATE.md`](../CURRENT_STATE.md) on 2026-09-20 so that the canonical description of
@@ -12,6 +12,32 @@ Current state: [`CURRENT_STATE.md`](../CURRENT_STATE.md) ·
 Authoritative backlog: [`BACKLOG.md`](../BACKLOG.md)
 
 ---
+
+### Previously
+
+**The Phase 9 → 10 transition** — `COMPLETE` (2026-10-07). **Phase 9 `COMPLETE`, confirmed after repair;
+Phase 10 `READY`** ([`reviews/PHASE_9_TO_10_TRANSITION.md`](reviews/PHASE_9_TO_10_TRANSITION.md)). Seven adversarial
+read-only audits (FX and cross-border financial correctness, multi-instance, settlement and reconciliation, security,
+architecture and events, test adequacy) found **two CRITICAL** defects the exit review had passed over - a takeover
+re-sending a concluded outbound credit to a provider that had never seen it (the beneficiary paid, the hold released;
+payments `V029`) and a parked return approved as an ordinary transfer and then applied again from the inquiry (a double
+credit) - and **twenty-three IMPORTANT**: the outbound sweep's starvation (payments `V030`, a claiming statement rotated
+by `last_inquired_at`), a delivery after a return rolling every inquiry back, a "too late" recall left concludable
+`NEVER_RECEIVED`, two deadlocks (the completion against the cover applier; the exit review's own pre-lock against the
+wallet deciders - now key share before rows), a first rule-set version lacking lags, the cover's computed leg booked
+unchecked (fx `V010`), a superseded attempt mis-typed, a reversal decided on another trade's route and its reasons
+unscreened (fx `V011`), storage failures logging the refused row (two build rules), an exponent amount exhausting every
+money door (`DecimalText`, `RequestDecimalsAreBoundedTest`), a refused quote committing a kyc re-screen, a screening
+reviewable by its requester (kyc `V010`), an event without currencies, and eight test gaps. Every one repaired and
+tested; the MINOR correctness, concurrency and security ones repaired too (routing and screening stamps on the database
+clock, the outbound destination's shape `CHECK`s - payments `V031` - the corridor door's rail check, error details,
+the approval echo closed); the rest recorded as Phase 15 debt. Three guards found red unseen with the database tier
+skipped (`FxReasonScreenDatabaseTest`, `FxMigrationTest`, `CrossborderMigrationTest`), corrected. **PROBES**: THIRTY-ONE, ALL CAUGHT (two first-form tests SURVIVED, recorded as no verdict, re-aimed and caught), every restore byte-identical (sha256-verified); `MUTATION_TESTING.md` §2 +26 rows.
+**Phase 10 initialised** (not built): `PHASE_10_PLAN.md`, ADR-0084…0089 (`Proposed`),
+`CREDIT_DECISIONING_LIFECYCLES.md`, `INV-CRD-05`…`12` (128 invariants), the gate's Phase 10 extension (19 criteria),
+twenty-four backlog items across M10.1–M10.8, the glossary and domain model (fourteen terms; the risk score settled as
+`risk`'s), the module, context, distributed-execution, delivery-plan, capability and roadmap documents. **Multi-instance
+PASS** after repair. **NEXT**: `P10-TSK-001` `READY`. **Verified** by fresh runs - the fleet-wide hermetic tier 2563 across 423 suites and 18 modules, the architecture tier 169 across 31, the slice tier 109 across 19, the database tier over every suite the repairs reach 598 across 72 and 19 in their own containers (the storm and the payout return suite); the three hermetic failures (this transition's own guards) and the one database failure (a Phase 7 routing test red since P9-TSK-019) fixed and re-run green (38 across 12; 20 across 2); ALL 0 FAILURES on the final code - the fleet-wide database and kafka tiers skipped on the owner's instruction.
 
 ### Previously
 

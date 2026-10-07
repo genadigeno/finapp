@@ -59,6 +59,7 @@ class ReconciliationModuleIsolationTest {
                         "settlement",
                         "fx",
                         "crossborder",
+                        "credit",
                         "app")) {
             assertThat(classpathEntries())
                     .as("reconciliation must not depend on %s", forbidden)

@@ -54,6 +54,7 @@ class CheckoutModuleIsolationTest {
                         "reconciliation",
                         "fx",
                         "crossborder",
+                        "credit",
                         "app")) {
             assertThat(classpathEntries())
                     .as("checkout must not depend on %s", forbidden)
