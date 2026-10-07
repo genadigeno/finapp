@@ -1357,6 +1357,16 @@ regulator or a declined applicant.
 **Verify:** Replay tests.
 **Phase:** 10
 
+*(Phase 10 subject named by the Phase 9 → 10 transition, 2026-10-07: the recorded inputs are the
+decision's sealed `decision_snapshot` (`INV-CRD-07`); the pinned versions are the credit policy
+version, the scorecard model version and the evaluator's `engine_version`, an old engine kept in
+the code for replay. Measurable as: `CreditReplayProof` replays every decision per reading in one
+`REPEATABLE READ` snapshot, comparing outcome, approved amount and ordered reason codes and
+re-verifying the snapshot's hash, with `finapp.credit.replay{verdict}` alerting on any
+`DIVERGED`; every decision of `P10-TST-002`'s ≥ 10,000 generated applicants and of the storm
+replays `IDENTICAL`; a perturbed snapshot or rule row flips the verdict. Built by `P10-TSK-013`
+and `-019`, proven by `P10-TST-001` and `-002`; ADR-0086, ADR-0087.)*
+
 ### INV-CRD-02 — Decisions are immutable and carry reason codes
 **Statement:** A recorded decision is never modified, and every adverse decision carries
 reason codes sufficient for an adverse-action explanation.
@@ -1364,6 +1374,17 @@ reason codes sufficient for an adverse-action explanation.
 **Enforce:** `DB-PRIVILEGE` + `DB-CONSTRAINT`.
 **Verify:** Immutability tests; reason-code coverage tests.
 **Phase:** 10
+
+*(Phase 10 subject named by the Phase 9 → 10 transition, 2026-10-07: the recorded decision is
+the born-once `credit_decision` row with its ordered `credit_decision_reason` rows, a person's
+decision on a referral included — there is no `CreditDecisionUpdated`, and a change of mind is a
+new request. Measurable as: `UPDATE` and `DELETE` on the decision tables refused for every role,
+by privilege and by an every-writer trigger, each proven alone by a raw-SQL writer; an adverse
+outcome with no reason row unstorable and unrepresentable in the domain; every code of the
+closed `reason_code` catalogue carrying a category, an adverse flag and a customer text, every
+code exercised by `P10-TST-002`; the customer's read returning the adverse reasons' customer
+texts in order and no internal figure. Built by `P10-TSK-001`, `-013`, `-016` and `-017`;
+ADR-0087.)*
 
 ### INV-CRD-03 — Bureau access requires recorded consent
 **Statement:** No external credit data is retrieved without a recorded, current lawful basis.
@@ -1373,6 +1394,16 @@ authorization.
 **Verify:** Consent-absent rejection tests.
 **Phase:** 10
 
+*(Phase 10 subject named by the Phase 9 → 10 transition, 2026-10-07: the lawful basis is a
+current grant of `CREDIT_BUREAU_ACCESS` or `FINANCIAL_DATA_ACCESS` (consent `V003`), read
+authoritatively in the transaction that opens a data request and again in the one that records
+its answer. Measurable as: a submission without the purpose refused `403 credit.ConsentRequired`
+with every provider's pull count unchanged; a withdrawal between the ask and the record ending
+`CONSENT_WITHDRAWN` with the payload discarded unread and its decision request `ABANDONED`
+(reason `CONSENT_WITHDRAWN`), nothing decided; every pull audited as
+`credit.BureauDataRequested` or `credit.FinancialDataRequested`. Built by `P10-TSK-002`, `-006`
+and `-014`; ADR-0085.)*
+
 ### INV-CRD-04 — Score is not decision
 **Statement:** A credit score, risk score, decision and outcome are separately modelled and
 separately recorded.
@@ -1380,6 +1411,136 @@ separately recorded.
 **Enforce:** `DOMAIN`.
 **Verify:** Domain review; model inspection.
 **Phase:** 10
+
+*(Phase 10 subject named by the Phase 9 → 10 transition, 2026-10-07: the credit score is the
+scorecard's points on the `credit_assessment`; the risk score is `risk`'s (Phase 13, ADR-0084),
+and credit records only the `RISK_SIGNAL` attribute its `CreditRiskSignal` seam answered —
+`NOT_ASSESSED` throughout Phase 10, with the seam's version; the evaluation is the
+`policy_evaluation`; the decision and its outcome are the `credit_decision`. Measurable as: each
+in its own born-once table, none written by updating another; a person's decision differing
+from its evaluation, with both kept; no score, signal or threshold in a customer response. Built
+by `P10-TSK-001`, `-011`, `-013`, `-016` and `-018`; ADR-0084.)*
+
+### INV-CRD-05 — A policy or model version is immutable, and its active period is answerable
+**Statement:** A credit policy version and a scorecard model version are immutable once
+proposed: their rules and bands are born with the version, in its proposing transaction, and no
+writer changes them — a correction is a rejection and a new proposal. At every instant at most
+one version is `ACTIVE` per product (per model family), and which version was active at any past
+instant is answerable from the rows alone.
+**Why:** A decision is defended by the versions it pinned (`INV-HIST-04`). A version changed
+after a decision pinned it, or two versions active at once, makes "which policy decided this?"
+unanswerable — the first question of an adverse-action review and of a regulator.
+**Enforce:** `DB-CONSTRAINT` (the freeze trigger on the version; an every-writer trigger refusing
+a rule or band row inserted outside its version's proposing transaction, and any `UPDATE` or
+`DELETE` of one, from insert; one `PROPOSED` and one `ACTIVE` partial uniques; retirement only
+beside its successor by a deferred constraint trigger, the predecessor's `effective_to` equal to
+the successor's `effective_from`; the approver ≠ proposer `CHECK`, no seed exemption) + `DOMAIN`.
+**Verify:** A rule or band changed, deleted or added later by a raw-SQL writer refused, a
+`PROPOSED` version's included; ten racing approvers leave one `ACTIVE`; the active-at-instant
+query over a generated history; an activation mid-decision leaving the pinned version deciding.
+**Phase:** 10
+
+### INV-CRD-06 — A decision request is decided once, on one basis
+**Statement:** A decision request has at most one decision; each of its snapshots has at most
+one assessment and one evaluation, and the decision names the snapshot it was made from.
+**Why:** Two decisions for one request are two answers to one applicant, and an assessment or
+evaluation that is not the one of its snapshot leaves a decision's basis ambiguous. A request may
+hold a successor snapshot — frozen by the deciding transaction only when it finds the reserved
+exposure changed — so the decision must say which snapshot decided. Retries, duplicate events
+and ten sweepers are expected (`CLAUDE.md`), so "once" must be a constraint, not a hope.
+**Enforce:** `DB-CONSTRAINT` (★ `UNIQUE (decision_request_id)` on the decision, its snapshot
+reference `NOT NULL` and of the same request; `UNIQUE (decision_request_id, sequence)` on the
+snapshot; `UNIQUE (snapshot_id)` on the assessment; `UNIQUE (assessment_id)` on the evaluation)
++ `DOMAIN` (the conditional transitions).
+**Verify:** Ten progress sweepers per request, and a crash after each step re-driven by another
+instance, each counted one; a successor snapshot only where the reserved exposure changed, and
+the decision naming it; a lock-bypass probe per arbiter.
+**Phase:** 10
+
+### INV-CRD-07 — A decision's snapshot is complete and sealed
+**Statement:** Every attribute any rule, the scorecard or the affordability and exposure
+arithmetic read for a decision is in its snapshot with its provenance — a credit record and its
+source, `DECLARED`, or a port and its version. An attribute the snapshot lacks is an evaluation
+error, never a default, and the SHA-256 over the snapshot's canonical form is stored at the
+freeze and re-verified at every replay.
+**Why:** A decision reproducible only from data that may since have changed is not
+reproducible (`INV-CRD-01`), and a default standing in for a missing input is an undisclosed
+input the applicant was decided on.
+**Enforce:** `DOMAIN` (the evaluator reads only the snapshot; a missing attribute raises) +
+`DB-CONSTRAINT` (the snapshot insert-only, its hash `NOT NULL`).
+**Verify:** Replay re-verifying the hash, a tampered snapshot `DIVERGED`; a rule reading an
+attribute the snapshot lacks failing evaluation; canonical-form golden files.
+**Phase:** 10
+
+### INV-CRD-08 — Stale data never decides
+**Statement:** Every credit record a snapshot uses was retrieved within the pinned policy's
+declared maximum age for its source kind, judged on the database clock at the freeze. A record
+past it is re-collected, never used.
+**Why:** A decision on an out-of-date bureau file decides a different applicant from the one
+who applied; and an instance clock judging the age lets skew admit stale data or refuse fresh.
+**Enforce:** `DOMAIN` (judged against `DatabaseTime.now` in the freezing transaction).
+**Verify:** A record one second past the maximum age re-collected; an instance skewed ±5 s
+neither accepting stale data nor refusing fresh.
+**Phase:** 10
+
+### INV-CRD-09 — Decisions for one party are serialised on its exposure
+**Statement:** Every deciding transaction for a party holds that party's `credit_profile` row
+lock and re-reads the party's reserved exposure under it, so concurrent approvals — across
+products, and beside a person's approval — never together exceed the policy's exposure limit.
+**Why:** Exposure judged outside a lock is a limit two requests each pass alone and break
+together — `INV-CON-03`'s lesson pointed at credit.
+**Enforce:** `DOMAIN` (lock-then-look: the profile row `FOR UPDATE` first in every deciding
+transaction, the reserved exposure summed under it).
+**Verify:** Two products for one party at the limit raced ten ways, the second seeing the first's
+reservation; the storm's exposure census, no party's reserved exposure above its limit at rest.
+**Phase:** 10
+
+### INV-CRD-10 — Missing data never approves
+**Statement:** A provider's unavailability, a partial or malformed answer, or an unknown status
+never becomes an approval: the source's attributes are `ABSENT`, `SOURCE_UNAVAILABLE` is
+recorded, and the policy's declared fallback — refer or decline — decides, recorded as such.
+**Why:** The fail-safe direction: an outage that approves extends credit on no evidence.
+**Enforce:** `DOMAIN` (every approving path requires the source's attributes present; a policy
+lacking the fallback rule for a source kind it reads refused at proposal,
+`credit.PolicyIncomplete`).
+**Verify:** Every fault of the provider contract suite ending in refer or decline with
+`CRD-SOURCE-UNAVAILABLE`; an incomplete policy refused; no storm approval on an absent source.
+**Phase:** 10
+
+### INV-CRD-11 — A person's credit decision is bounded
+**Statement:** A person's decision on a referral is never the second approval of their own first
+decision, never approves a request whose evaluation included a hard decline, and always carries
+at least one reason code.
+**Why:** One person approving their own exception, or overriding a hard decline, is the
+internal-fraud and regulatory exposure four-eyes exists for (`INV-AUD-04`); a human decision
+without a reason is no explanation.
+**Enforce:** `DOMAIN` + `DB-CONSTRAINT` (the four-eyes `CHECK`; the case's insert trigger
+refusing a hard-declined basis; the reason-count deferred constraint trigger).
+**Verify:** Self-approval refused at the domain and at the `CHECK`, each alone;
+`422 credit.HardDeclineNotOverridable`; `422 credit.ReasonRequired`; each by a raw-SQL writer too.
+**Phase:** 10
+
+### INV-CRD-12 — Credit arithmetic is exact
+**Statement:** Credit money arithmetic — income, expenditure, obligations, repayment,
+disposable income and exposure — is exact decimal in one explicit currency per assessment, the
+product's, never converted, and rounded once at declared points under named rounding modes.
+**Why:** `INV-MON-01` and `INV-MON-03` pointed at credit: an affordability verdict that flips on
+a floating-point error or an implicit rounding is neither reproducible nor defensible.
+**Enforce:** `STATIC` (`NoFloatingPointMoneyRulesTest` over `credit`) + `DOMAIN` (`Money`; the
+annuity at scale 10 `HALF_EVEN`, rounded once to minor units `HALF_UP`; a source in another
+currency refused at normalisation, `credit.CurrencyNotSupported`).
+**Verify:** Property tests, monotone in income, amount and rate; worked cases exact; the build
+rule with a planted violation.
+**Phase:** 10
+
+*`INV-CRD-05`…`INV-CRD-12` catalogued by the Phase 9 → 10 transition (2026-10-07), the
+`INV-FX` and `INV-XB` precedent: Phase 10's gate properties given stable IDs before any credit
+code exists, so the register can demand their demonstrations by identifier rather than by
+prose. Decisions in ADR-0084…0089; the machines in `CREDIT_DECISIONING_LIFECYCLES.md`.
+`INV-CRD-01`…`-04`, catalogued at initiation and subjectless until now, are Phase 10's too, each
+given its Phase 10 subject at the same transition. Until Phase 10's first task lands, nothing
+these entries name is implemented; every statement is the decided design, corrected by the
+tasks that build it.*
 
 ---
 
@@ -2191,7 +2352,7 @@ documents after resolution refused with nothing written or sent.*
 | `INV-XB` | 01–04 | Cross-border payments |
 | `INV-ACC` | 01–05 | Accounting and reporting |
 | `INV-AUD` | 01–04 | Security and audit |
-| `INV-CRD` | 01–04 | Credit decisioning |
+| `INV-CRD` | 01–12 | Credit decisioning |
 | `INV-IDN` | 01–08 | Identity, credentials and sessions |
 | `INV-KYC` | 01–06 | Verification and case management |
 | `INV-CNS` | 01–04 | Consent |
@@ -2200,7 +2361,8 @@ documents after resolution refused with nothing written or sent.*
 | `INV-RAIL` | 01–04 | Payment rails and routing |
 | `INV-DSP` | 01–03 | Disputes and chargebacks |
 
-**120 invariants.** Every one must be enforced and verified before the phase that owns it can
+**128 invariants.** Every one must be enforced and verified before the phase that owns it can
 pass its exit gate. *(The count moved from 110 to 120 at the Phase 8 → 9 transition,
 2026-10-02: `INV-FX-04`…`INV-FX-09` and `INV-XB-01`…`INV-XB-04` catalogued, and thirteen
-entries restated, each with its dated provenance.)*
+entries restated, each with its dated provenance.)* *(The count moved from 120 to 128 at the
+Phase 9 → 10 transition, 2026-10-07: `INV-CRD-05`…`12` catalogued.)*

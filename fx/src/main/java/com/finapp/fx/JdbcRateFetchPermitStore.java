@@ -45,8 +45,7 @@ public final class JdbcRateFetchPermitStore implements RateFetchPermitStore<Conn
                 return row.next();
             }
         } catch (SQLException failure) {
-            throw new FxStorageException(
-                    DatabaseFailure.describe("taking a rate fetch permit", failure), failure);
+            throw new FxStorageException(DatabaseFailure.describe("taking a rate fetch permit", failure));
         }
     }
 }

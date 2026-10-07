@@ -37,7 +37,7 @@ public final class JdbcFxProvenanceStore implements FxProvenanceStore {
                 return row.next() ? Optional.of(provenanceOf(row)) : Optional.empty();
             }
         } catch (SQLException failure) {
-            throw new FxStorageException(DatabaseFailure.describe("reading a trade's provenance", failure), failure);
+            throw new FxStorageException(DatabaseFailure.describe("reading a trade's provenance", failure));
         }
     }
 

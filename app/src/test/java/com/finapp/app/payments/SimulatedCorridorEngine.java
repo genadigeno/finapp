@@ -87,11 +87,13 @@ public final class SimulatedCorridorEngine implements AutoCloseable {
     private final Map<String, Credit> credits = new ConcurrentHashMap<>();
     private final AtomicInteger creditCount = new AtomicInteger();
     private final Map<String, AtomicInteger> creditsByReference = new ConcurrentHashMap<>();
+    private final Map<String, AtomicInteger> inquiriesByReference = new ConcurrentHashMap<>();
     private final AtomicInteger sequence = new AtomicInteger();
     private final List<SignedCallback> callbacks = new CopyOnWriteArrayList<>();
     private final List<String> idempotencyKeys = new CopyOnWriteArrayList<>();
     private final List<String> authorizations = new CopyOnWriteArrayList<>();
     private final AtomicReference<String> armed = new AtomicReference<>("");
+    private final AtomicReference<String> scriptedDestination = new AtomicReference<>();
     private volatile boolean acceptOnReceipt;
 
     private SimulatedCorridorEngine(byte[] callbackKey) throws IOException {
@@ -121,6 +123,14 @@ public final class SimulatedCorridorEngine implements AutoCloseable {
         String grant = "grant-" + instance + "-" + sequence.incrementAndGet();
         grants.put(grant, beneficiary);
         return grant;
+    }
+
+    /**
+     * The next first exchange answers {@code destinationRef} as the provider's opaque reference - a provider that
+     * faults by attesting a value crossborder must never store (the Phase 9 to 10 transition gate).
+     */
+    public void answerNextExchangeWith(String destinationRef) {
+        scriptedDestination.set(destinationRef);
     }
 
     /** Sends answer accepted at once instead of received. */
@@ -203,6 +213,12 @@ public final class SimulatedCorridorEngine implements AutoCloseable {
         return count == null ? 0 : count.get();
     }
 
+    /** Inquiries received for {@code reference} - a callback's hint is seen by the inquiry it triggers. */
+    public int inquiriesOf(String reference) {
+        AtomicInteger count = inquiriesByReference.get(reference);
+        return count == null ? 0 : count.get();
+    }
+
     public List<SignedCallback> callbacks() {
         return List.copyOf(callbacks);
     }
@@ -248,7 +264,8 @@ public final class SimulatedCorridorEngine implements AutoCloseable {
                     ? "{\"status\":\"refused\",\"reason\":\"grant_used\"}"
                     : "{\"status\":\"refused\",\"reason\":\"grant_invalid\"}";
         } else {
-            String destination = "XD-" + instance + "-" + sequence.incrementAndGet();
+            String scripted = scriptedDestination.getAndSet(null);
+            String destination = scripted != null ? scripted : "XD-" + instance + "-" + sequence.incrementAndGet();
             destinations.put(destination, beneficiary);
             answer = "{\"status\":\"exchanged\",\"destinationRef\":\"" + destination + "\",\"suffix\":\""
                     + String.format("%04d", sequence.get() % 10_000) + "\",\"payeeCheck\":\""
@@ -267,6 +284,7 @@ public final class SimulatedCorridorEngine implements AutoCloseable {
         String rest = path.substring(SimulatedCorridorAdapter.CREDITS_PATH.length());
         String fault = armed.getAndSet("");
         if ("GET".equals(exchange.getRequestMethod())) {
+            inquiriesByReference.computeIfAbsent(rest.substring(1), any -> new AtomicInteger()).incrementAndGet();
             if (answeredByFault(exchange, fault)) {
                 return;
             }

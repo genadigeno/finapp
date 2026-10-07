@@ -302,7 +302,8 @@ public final class Phase9Reports {
             String[] outbound = one(uow, "SELECT end_to_end_reference, provider_reference, status FROM payments.outbound_credit"
                     + " WHERE id = ?", credit, 3).orElse(new String[3]);
             String completion = one(uow, "SELECT id::text FROM ledger.journal_entry WHERE idempotency_scope = ?",
-                    "ledger.post:outbound-credit:" + credit, 1).map(row -> row[0]).orElse(null);
+                    com.finapp.ledger.PostingService.IDEMPOTENCY_SCOPE + ":"
+                            + com.finapp.payments.OutboundCreditOutcomes.POSTING_KEY_PREFIX + credit, 1).map(row -> row[0]).orElse(null);
             List<ExpectationLink> payout = expectations(uow, credit.toString(), "('CROSSBORDER_PAYOUT', 'CROSSBORDER_RETURN')");
             List<ItemLink> items = new ArrayList<>();
             if (outbound[0] != null) {
@@ -348,7 +349,8 @@ public final class Phase9Reports {
                     }
                 }
                 String entry = one(uow, "SELECT id::text FROM ledger.journal_entry WHERE idempotency_scope = ?",
-                        "ledger.post:fx-cover:" + cover.coverId(), 1).map(row -> row[0]).orElse(null);
+                        com.finapp.ledger.PostingService.IDEMPOTENCY_SCOPE + ":"
+                                + com.finapp.fx.FxCoverOutcomes.POSTING_PREFIX + cover.coverId(), 1).map(row -> row[0]).orElse(null);
                 complete.add(new CoverLink(cover.coverId(), cover.kind(), cover.status(), List.copyOf(attempts),
                         cover.providerTradeReference(), entry,
                         expectations(uow, cover.coverId(), "('FX_SELL_LEG', 'FX_BUY_LEG')")));

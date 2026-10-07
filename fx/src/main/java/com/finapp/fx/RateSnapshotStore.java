@@ -56,8 +56,9 @@ public interface RateSnapshotStore<T> {
 
         @java.io.Serial private static final long serialVersionUID = 1L;
 
-        public ObservationRefusedException(String message, Throwable cause) {
-            super(message, cause);
+        /** The refusal in words only - never the driver's exception, which carries the refused row. */
+        public ObservationRefusedException(String message) {
+            super(message);
         }
     }
 }

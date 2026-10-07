@@ -63,13 +63,26 @@ exit review. Earlier phases' capabilities were never annotated here — `CURRENT
 `history/` are their record.)*
 
 ## Credit
-- Credit profile
-- Credit bureau integration
-- Decisioning
-- Underwriting
-- Loan servicing
-- BNPL
-- Delinquency / collections
+- Credit profile *(Phase 10, planned — the Phase 9 → 10 transition, 2026-10-07)*
+- Credit bureau integration *(Phase 10, planned — the Phase 9 → 10 transition, 2026-10-07)* —
+  bureau and financial-data collection behind provider-neutral adapters, under recorded consent,
+  evidence encrypted with a declared retention
+- Affordability assessment *(Phase 10, planned — the Phase 9 → 10 transition, 2026-10-07)*
+- Exposure *(Phase 10, planned — the Phase 9 → 10 transition, 2026-10-07)* — the party's
+  aggregate, the reserved exposure of current approvals serialised per party
+- Decisioning *(Phase 10, planned — the Phase 9 → 10 transition, 2026-10-07)* — a versioned
+  scorecard and a versioned policy engine, immutable decisions with ordered reason codes, the
+  customer's adverse-action explanation, and replay of every past decision
+- Underwriting (manual review) *(Phase 10, planned — the Phase 9 → 10 transition, 2026-10-07)* —
+  referrals decided by people under four-eyes
+- Loan servicing *(Phase 11)*
+- BNPL *(Phase 12)*
+- Delinquency / collections *(later phases — delinquency with Phase 11's lending; collections operations not yet scheduled)*
+
+*(The Credit section's Phase 10 capabilities were marked "planned" by the Phase 9 → 10
+transition, 2026-10-07 (`PHASE_10_PLAN.md`; ADR-0084…0089, `Proposed`), and will be marked delivered
+by the Phase 10 exit review, `P10-DOC-001`. The risk score is the Risk section's, Phase 13: credit
+consumes a risk signal through a seam and computes none.)*
 
 ## Risk
 - Fraud

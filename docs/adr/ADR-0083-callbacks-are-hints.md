@@ -193,3 +193,7 @@ callback; the corridor's unattributed one excepted, point 1's note), `INV-AUD-01
   reference names, dedupes on the provider's event id through the inbox, and after the commit runs the
   authenticated `inquire(E)` through `OutboundCreditResolution`; the answer is `202`. The forged-but-signed test is
   `OutboundCreditResolutionDatabaseTest#callbacksAreHints`.
+
+## Amended by the Phase 9 → 10 transition (2026-10-07)
+
+The corridor door names only its own rail's credits: a callback naming another rail's credit attaches no evidence and triggers no inquiry. Keeping evidence for an authenticated callback that names no credit at all needs a subject-less append payments does not have — recorded as debt. See [`reviews/PHASE_9_TO_10_TRANSITION.md`](../project/reviews/PHASE_9_TO_10_TRANSITION.md) and `PHASE_9_PLAN.md` §21.

@@ -25,6 +25,10 @@ import com.finapp.ledger.PostingService;
 import com.finapp.payments.EndToEndReference;
 import com.finapp.payments.OutboundCreditOutcomes;
 import com.finapp.payments.OutboundCreditResolution;
+import com.finapp.payments.CorridorRail;
+import com.finapp.payments.OutboundCreditStore;
+import com.finapp.payments.OutboundCreditId;
+import java.time.Duration;
 import com.finapp.platform.correlation.CorrelationContext;
 import com.finapp.platform.security.Actor;
 import com.finapp.platform.security.ActorType;
@@ -105,6 +109,8 @@ class CrossBorderCancellationDatabaseTest {
     @Autowired private OutboundCreditResolution resolution;
     @Autowired private FxCoverDispatch dispatch;
     @Autowired private CrossBorderExecution execution;
+    @Autowired private OutboundCreditOutcomes outcomes;
+    @Autowired private OutboundCreditStore creditStore;
     @Autowired private MeterRegistry meters;
     @Autowired private com.finapp.payments.OutboundCreditStore outboundCreditStore;
 
@@ -384,6 +390,57 @@ class CrossBorderCancellationDatabaseTest {
         resolve(paid);
         assertThat(credit(paid, "status || ':' || recall_outcome")).isEqualTo("FAILED:RECALLED");
         assertThat(CORRIDOR.creditsOf(paid.reference())).isEqualTo(1);
+    }
+
+    @Test
+    @DisplayName("the Phase 9 -> 10 transition: \"too late\" is the provider saying it holds the credit - an UNKNOWN credit"
+            + " becomes RECEIVED, so a later inconsistent \"unrecognised\" concludes nothing: the hold stands and the payment"
+            + " is never shown cancelled")
+    void aRecallTooLateMakesTheCreditReceived() throws Exception {
+        FxTestClient.Customer customer = client().verifiedCustomer();
+        UUID product = client().openWallet(customer, "EUR");
+        fund(postings, product, money("1100.00", "EUR"));
+        String beneficiary = beneficiary(customer, "Clear Person");
+        HttpResponse<String> offered = client().post(QUOTES, "{\"beneficiaryId\":\"" + beneficiary + "\",\"sourceCurrency\":"
+                + "\"EUR\",\"fixedSide\":\"FIXED_SOURCE\",\"amount\":\"1000.00\"}", customer.token(), FxTestClient.key());
+        assertThat(offered.statusCode()).as(offered.body()).isEqualTo(201);
+        CORRIDOR.loseNextResponse();
+        HttpResponse<String> sent = client().post(PAYMENTS, "{\"quoteId\":\"" + field(offered.body(), "id") + "\"}",
+                customer.token(), FxTestClient.key());
+        assertThat(sent.statusCode()).as(sent.body()).isEqualTo(202);
+        UUID payment = UUID.fromString(field(sent.body(), "paymentId"));
+        Paid paid = new Paid(customer, product, UUID.fromString(field(offered.body(), "id")), payment,
+                UUID.fromString(scalar("SELECT id::text FROM payments.outbound_credit WHERE subject_id = ?", payment)),
+                scalar("SELECT end_to_end_reference FROM payments.outbound_credit WHERE subject_id = ?", payment));
+        assertThat(credit(paid, "status")).as("the send's answer was lost").isEqualTo("UNKNOWN");
+        assertThat(cancel(paid, FxTestClient.key()).statusCode()).isEqualTo(202);
+
+        CorridorRail.Evidence evidence = new CorridorRail.Evidence("{\"probe\":true}".getBytes(StandardCharsets.UTF_8));
+        Instant everything = Instant.now().plus(Duration.ofDays(1));
+        try (CorrelationContext.Scope flow = CorrelationContext.enter(Correlation.startingWith(CorrelationId.generate(FxTestClient.IDS)));
+                SecurityContext.Scope actor = SecurityContext.enterSystem();
+                Connection app = application()) {
+            app.setAutoCommit(false);
+            OutboundCreditStore.Row locked = creditStore.lock(app, OutboundCreditId.of(paid.credit())).orElseThrow();
+            outcomes.applyRecallAnswer(app, locked, new CorridorRail.RecallAnswer.TooLate(evidence), everything,
+                    CorrelationContext.current().orElseThrow());
+            app.commit();
+        }
+        assertThat(credit(paid, "status || ':' || recall_outcome")).isEqualTo("RECEIVED:REFUSED");
+
+        try (CorrelationContext.Scope flow = CorrelationContext.enter(Correlation.startingWith(CorrelationId.generate(FxTestClient.IDS)));
+                SecurityContext.Scope actor = SecurityContext.enterSystem();
+                Connection app = application()) {
+            app.setAutoCommit(false);
+            OutboundCreditStore.Row locked = creditStore.lock(app, OutboundCreditId.of(paid.credit())).orElseThrow();
+            outcomes.applyInquiryAnswer(app, locked, new CorridorRail.InquiryAnswer.Unrecognised(evidence), everything,
+                    CorrelationContext.current().orElseThrow());
+            app.commit();
+        }
+        assertThat(credit(paid, "status")).as("a credit the provider said it holds is never NEVER_RECEIVED")
+                .isEqualTo("RECEIVED");
+        assertThat(holdStatus(paid)).isEqualTo("ACTIVE");
+        assertThat(field(read(paid).body(), "status")).isNotEqualTo("CANCELLED");
     }
 
     @Test

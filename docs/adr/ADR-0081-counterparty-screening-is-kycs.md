@@ -57,7 +57,7 @@ changed:
 
 3. **The hold sits on the beneficiary, before pricing** (O4). Screening runs synchronously at
    registration, and again at cross-border quote time when the clearance is older than the
-   corridor's `screening_validity` (7 days, O7) — the lapse (the clearance's `decided_at` plus
+   corridor's `screening_validity_hours` (168 hours — 7 days, O7) — the lapse (the clearance's `decided_at` plus
    the pinned corridor's validity) judged on the database clock (`DatabaseTime.now`, since
    `P9-DOC-001`, which found it on the instance's) in the quote's first transaction, which
    records the re-screen; kyc asks its provider between the transactions, holding no
@@ -230,3 +230,7 @@ row conditionals; T-e).
   `CrossBorderVerdict` and `PermitAllUntilPhase13` over a `CrossBorderInstruction`, with
   `crossborder.LimitRefused` and `crossborder.RiskRefused` reserved; the proof that a `REFUSE` writes
   nothing needs the seams' consumer and lands with the authorization (`P9-TSK-019`).
+
+## Amended by the Phase 9 → 10 transition (2026-10-07)
+
+A screening is never reviewed by its own requester (`requested_by`, kyc `V010`, refused at the domain and by `CHECK`, each alone); `decided_at` and `requested_at` are stamped by the database. A refused cross-border quote commits only its refusal — no re-screen is left behind (the quote desk's savepoints). See [`reviews/PHASE_9_TO_10_TRANSITION.md`](../project/reviews/PHASE_9_TO_10_TRANSITION.md) and `PHASE_9_PLAN.md` §21.

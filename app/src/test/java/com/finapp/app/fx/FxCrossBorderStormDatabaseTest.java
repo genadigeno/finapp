@@ -1434,11 +1434,11 @@ class FxCrossBorderStormDatabaseTest {
             try (Statement ddl = owner.createStatement();
                     PreparedStatement age = owner.prepareStatement("UPDATE payments.outbound_credit SET last_dispatched_at ="
                             + " last_dispatched_at - ? * interval '1 second' WHERE id = ?")) {
-                ddl.execute("ALTER TABLE payments.outbound_credit DISABLE TRIGGER outbound_credit_machine_is_legal");
+                ddl.execute("ALTER TABLE payments.outbound_credit DISABLE TRIGGER USER");
                 age.setLong(1, by.toSeconds());
                 age.setObject(2, credit);
                 assertThat(age.executeUpdate()).isEqualTo(1);
-                ddl.execute("ALTER TABLE payments.outbound_credit ENABLE TRIGGER outbound_credit_machine_is_legal");
+                ddl.execute("ALTER TABLE payments.outbound_credit ENABLE TRIGGER USER");
             }
             owner.commit();
         }

@@ -93,7 +93,7 @@ public final class JdbcFxProofStore implements FxProofStore {
             }
             return List.copyOf(rows);
         } catch (SQLException failure) {
-            throw new FxStorageException(DatabaseFailure.describe("reading the trades to replay", failure), failure);
+            throw new FxStorageException(DatabaseFailure.describe("reading the trades to replay", failure));
         }
     }
 
@@ -105,7 +105,7 @@ public final class JdbcFxProofStore implements FxProofStore {
             }
             return sums;
         } catch (SQLException failure) {
-            throw new FxStorageException(DatabaseFailure.describe("reading the FX books' expectations", failure), failure);
+            throw new FxStorageException(DatabaseFailure.describe("reading the FX books' expectations", failure));
         }
     }
 }

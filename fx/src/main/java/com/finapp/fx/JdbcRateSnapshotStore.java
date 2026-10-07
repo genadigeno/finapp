@@ -64,12 +64,10 @@ public final class JdbcRateSnapshotStore implements RateSnapshotStore<Connection
         } catch (SQLException failure) {
             if (CHECK_VIOLATION.equals(failure.getSQLState())
                     || NUMERIC_OUT_OF_RANGE.equals(failure.getSQLState())) {
-                throw new ObservationRefusedException(
-                        "the database refused a " + observation.pair() + " observation", failure);
+                throw new ObservationRefusedException(DatabaseFailure.describe(
+                        "the database refused a " + observation.pair() + " observation", failure));
             }
-            throw new FxStorageException(
-                    DatabaseFailure.describe("recording a reference observation", failure),
-                    failure);
+            throw new FxStorageException(DatabaseFailure.describe("recording a reference observation", failure));
         }
     }
 
@@ -114,8 +112,7 @@ public final class JdbcRateSnapshotStore implements RateSnapshotStore<Connection
                         : Optional.empty();
             }
         } catch (SQLException failure) {
-            throw new FxStorageException(
-                    DatabaseFailure.describe("reading a reference's age", failure), failure);
+            throw new FxStorageException(DatabaseFailure.describe("reading a reference's age", failure));
         }
     }
 
@@ -149,8 +146,7 @@ public final class JdbcRateSnapshotStore implements RateSnapshotStore<Connection
                                 row.getTimestamp("received_at").toInstant()));
             }
         } catch (SQLException failure) {
-            throw new FxStorageException(
-                    DatabaseFailure.describe("reading a reference snapshot", failure), failure);
+            throw new FxStorageException(DatabaseFailure.describe("reading a reference snapshot", failure));
         }
     }
 

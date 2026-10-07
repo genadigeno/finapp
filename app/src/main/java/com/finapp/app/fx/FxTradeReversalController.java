@@ -49,7 +49,7 @@ public class FxTradeReversalController {
     @RequiresPermission(PermissionName.FX_TRADE_REVERSE)
     public FxTradeReversalDesk.ReversalReceipt approveFxTradeReversal(
             @PathVariable("id") String id, @PathVariable("rid") String rid, @Valid @RequestBody TradeReversalRequest body) {
-        return desk.approve(rid, body.reason());
+        return desk.approve(id, rid, body.reason());
     }
 
     /** Rejects a pending reversal - a different person's act; nothing moves. */
@@ -57,7 +57,7 @@ public class FxTradeReversalController {
     @RequiresPermission(PermissionName.FX_TRADE_REVERSE)
     public FxTradeReversalDesk.ReversalReceipt rejectFxTradeReversal(
             @PathVariable("id") String id, @PathVariable("rid") String rid, @Valid @RequestBody TradeReversalRequest body) {
-        return desk.reject(rid, body.reason());
+        return desk.reject(id, rid, body.reason());
     }
 
     /** Every act's reason. Closed: never a rate, never an amount. */

@@ -396,7 +396,7 @@ public final class TransferService {
         }
         BigDecimal decimal;
         try {
-            decimal = new BigDecimal(raw);
+            decimal = com.finapp.app.api.DecimalText.parse(raw); // bounded first: the Phase 9 -> 10 transition
         } catch (NumberFormatException malformed) {
             throw new ApiException(
                     PlatformErrorCode.VALIDATION_FAILED,

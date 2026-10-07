@@ -197,7 +197,7 @@ public final class LedgerAdjustments {
             }
             BigDecimal decimal;
             try {
-                decimal = new BigDecimal(line.amount());
+                decimal = com.finapp.app.api.DecimalText.parse(line.amount());
             } catch (NumberFormatException malformed) {
                 throw refused(i, "amount", "is not a decimal number");
             }

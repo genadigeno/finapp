@@ -67,8 +67,13 @@ public interface TradeStore {
     /** {@code BOOKED -> REVERSED} (`P9-TSK-025`); false when the trade was not booked. */
     boolean reverse(Connection unitOfWork, FxTradeId id);
 
-    /** A cover named by one of its attempts' references - its identity and where it stands. */
-    record CoverByReference(UUID coverId, CoverStatus status) {}
+    /**
+     * A cover named by one of its attempts' references - its identity, where it stands, and whether the attempt the
+     * reference names was SUPERSEDED (the Phase 9 to 10 transition): a requote mints attempt n+1 only after attempt n
+     * was definitively rejected, and a cover executes only at its current attempt, so a superseded attempt is terminal
+     * whatever its cover went on to do - a provider line naming it contradicts a rejection, never confirms the cover.
+     */
+    record CoverByReference(UUID coverId, CoverStatus status, boolean superseded) {}
 
     /**
      * The cover one of whose attempts carries {@code clientReference} (`P9-TSK-011`): what

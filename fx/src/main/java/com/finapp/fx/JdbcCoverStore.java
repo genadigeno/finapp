@@ -112,7 +112,7 @@ public final class JdbcCoverStore implements CoverStore {
     public Optional<AttemptRow> attempt(Connection unitOfWork, UUID coverId, int attempt) {
         Objects.requireNonNull(coverId, "coverId must not be null");
         try (PreparedStatement select = unitOfWork.prepareStatement(
-                "SELECT cover_id, attempt, client_reference, provider_quote_ref FROM fx.cover_attempt"
+                "SELECT cover_id, attempt, client_reference, provider_quote_ref, stated_counter_minor FROM fx.cover_attempt"
                         + " WHERE cover_id = ? AND attempt = ?")) {
             select.setObject(1, coverId);
             select.setInt(2, attempt);
@@ -173,16 +173,19 @@ public final class JdbcCoverStore implements CoverStore {
     }
 
     @Override
-    public boolean insertFirstAttempt(Connection unitOfWork, UUID coverId, String clientReference, String providerQuoteReference) {
+    public boolean insertFirstAttempt(
+            Connection unitOfWork, UUID coverId, String clientReference, String providerQuoteReference, Money statedCounter) {
         Objects.requireNonNull(coverId, "coverId must not be null");
         Objects.requireNonNull(clientReference, "clientReference must not be null");
         Objects.requireNonNull(providerQuoteReference, "providerQuoteReference must not be null");
+        Objects.requireNonNull(statedCounter, "statedCounter must not be null");
         try (PreparedStatement insert = unitOfWork.prepareStatement(
-                "INSERT INTO fx.cover_attempt (cover_id, attempt, client_reference, provider_quote_ref)"
-                        + " VALUES (?, 1, ?, ?) ON CONFLICT (cover_id, attempt) DO NOTHING")) {
+                "INSERT INTO fx.cover_attempt (cover_id, attempt, client_reference, provider_quote_ref, stated_counter_minor)"
+                        + " VALUES (?, 1, ?, ?, ?) ON CONFLICT (cover_id, attempt) DO NOTHING")) {
             insert.setObject(1, coverId);
             insert.setString(2, clientReference);
             insert.setString(3, providerQuoteReference);
+            insert.setLong(4, statedCounter.minorUnits());
             return insert.executeUpdate() == 1;
         } catch (SQLException failure) {
             throw failure("pricing an unwind's first attempt", failure);
@@ -193,7 +196,7 @@ public final class JdbcCoverStore implements CoverStore {
     public Optional<AttemptRow> attemptByReference(Connection unitOfWork, String clientReference) {
         Objects.requireNonNull(clientReference, "clientReference must not be null");
         try (PreparedStatement select = unitOfWork.prepareStatement(
-                "SELECT cover_id, attempt, client_reference, provider_quote_ref FROM fx.cover_attempt"
+                "SELECT cover_id, attempt, client_reference, provider_quote_ref, stated_counter_minor FROM fx.cover_attempt"
                         + " WHERE client_reference = ?")) {
             select.setString(1, clientReference);
             return attemptOf(select);
@@ -221,13 +224,15 @@ public final class JdbcCoverStore implements CoverStore {
 
     @Override
     public boolean requote(
-            Connection unitOfWork, UUID coverId, int fromAttempt, String clientReference, String providerQuoteReference) {
+            Connection unitOfWork, UUID coverId, int fromAttempt, String clientReference, String providerQuoteReference,
+            Money statedCounter) {
         Objects.requireNonNull(coverId, "coverId must not be null");
         Objects.requireNonNull(clientReference, "clientReference must not be null");
         Objects.requireNonNull(providerQuoteReference, "providerQuoteReference must not be null");
+        Objects.requireNonNull(statedCounter, "statedCounter must not be null");
         try (PreparedStatement attempt = unitOfWork.prepareStatement(
-                        "INSERT INTO fx.cover_attempt (cover_id, attempt, client_reference, provider_quote_ref)"
-                                + " VALUES (?, ?, ?, ?) ON CONFLICT (cover_id, attempt) DO NOTHING");
+                        "INSERT INTO fx.cover_attempt (cover_id, attempt, client_reference, provider_quote_ref,"
+                                + " stated_counter_minor) VALUES (?, ?, ?, ?, ?) ON CONFLICT (cover_id, attempt) DO NOTHING");
                 PreparedStatement update = unitOfWork.prepareStatement(
                         "UPDATE fx.cover SET status = 'DISPATCHED', attempts = attempts + 1, requote_failures = 0,"
                                 + " last_dispatched_at = statement_timestamp()"
@@ -236,6 +241,7 @@ public final class JdbcCoverStore implements CoverStore {
             attempt.setInt(2, fromAttempt + 1);
             attempt.setString(3, clientReference);
             attempt.setString(4, providerQuoteReference);
+            attempt.setLong(5, statedCounter.minorUnits());
             if (attempt.executeUpdate() != 1) {
                 return false;
             }
@@ -267,13 +273,16 @@ public final class JdbcCoverStore implements CoverStore {
     @Override
     public Recorded insertExecution(Connection unitOfWork, ExecutionDraft draft) {
         Objects.requireNonNull(draft, "draft must not be null");
-        CoverLines.Realised realised = CoverLines.realised(draft.plan(), new CoverLines.Execution(draft.sold(), draft.bought()));
+        CoverLines.Execution execution = new CoverLines.Execution(draft.sold(), draft.bought());
+        CoverLines.Realised realised = CoverLines.realised(draft.plan(), execution);
+        boolean deviates = CoverLines.computedDeviates(draft.plan(), execution, draft.quotedComputed());
         try (PreparedStatement insert = unitOfWork.prepareStatement(
                 "INSERT INTO fx.cover_execution (cover_id, attempt, client_reference, provider_code,"
                         + " provider_trade_ref, fixed_side, sold_currency, sold_minor, sold_scale, bought_currency,"
                         + " bought_minor, bought_scale, executed_rate, value_date, plan_sold_minor, plan_bought_minor,"
-                        + " realised_sold_minor, realised_bought_minor, executed_off_plan, recorded_on, correlation_id)"
-                        + " VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, CURRENT_DATE, ?)"
+                        + " realised_sold_minor, realised_bought_minor, executed_off_plan, recorded_on, correlation_id,"
+                        + " quoted_computed_minor, computed_deviation, executed_rate_coherent)"
+                        + " VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, CURRENT_DATE, ?, ?, ?, ?)"
                         + " RETURNING recorded_at, recorded_on")) {
             int i = 1;
             insert.setObject(i++, draft.coverId());
@@ -295,7 +304,14 @@ public final class JdbcCoverStore implements CoverStore {
             insert.setLong(i++, realised.soldMinor());
             insert.setLong(i++, realised.boughtMinor());
             insert.setBoolean(i++, realised.offPlan());
-            insert.setString(i, draft.correlationId());
+            insert.setString(i++, draft.correlationId());
+            if (draft.quotedComputed().isPresent()) {
+                insert.setLong(i++, draft.quotedComputed().get().minorUnits());
+            } else {
+                insert.setNull(i++, java.sql.Types.BIGINT);
+            }
+            insert.setBoolean(i++, deviates);
+            insert.setBoolean(i, draft.executedRateCoherent());
             try (ResultSet row = insert.executeQuery()) {
                 row.next();
                 return new Recorded(
@@ -399,7 +415,8 @@ public final class JdbcCoverStore implements CoverStore {
         try (ResultSet row = select.executeQuery()) {
             return row.next()
                     ? Optional.of(new AttemptRow(row.getObject("cover_id", UUID.class), row.getInt("attempt"),
-                            row.getString("client_reference"), row.getString("provider_quote_ref")))
+                            row.getString("client_reference"), row.getString("provider_quote_ref"),
+                            Optional.ofNullable(row.getObject("stated_counter_minor", Long.class))))
                     : Optional.empty();
         }
     }
@@ -412,6 +429,6 @@ public final class JdbcCoverStore implements CoverStore {
     }
 
     private static FxStorageException failure(String operation, SQLException failure) {
-        return new FxStorageException(DatabaseFailure.describe(operation, failure), failure);
+        return new FxStorageException(DatabaseFailure.describe(operation, failure));
     }
 }

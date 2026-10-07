@@ -45,19 +45,25 @@ public interface CounterpartyScreening {
         }
     }
 
-    /** A screening request: a stable reference, the counterparty, and the payee check as handed in. */
+    /**
+     * A screening request: a stable reference, the counterparty, the payee check as handed in, and the actor who
+     * registered the beneficiary - the one person who may never review its screening (the Phase 9 to 10 transition
+     * gate: four eyes are two persons, INV-AUD-04).
+     */
     record Request(
             String reference,
             String name,
             CountryCode country,
             BeneficiaryVocabulary.EntityType entityType,
-            BeneficiaryVocabulary.PayeeCheck payeeCheck) {
+            BeneficiaryVocabulary.PayeeCheck payeeCheck,
+            String requestedBy) {
         public Request {
             Objects.requireNonNull(reference, "reference must not be null");
             Objects.requireNonNull(name, "name must not be null");
             Objects.requireNonNull(country, "country must not be null");
             Objects.requireNonNull(entityType, "entityType must not be null");
             Objects.requireNonNull(payeeCheck, "payeeCheck must not be null");
+            Objects.requireNonNull(requestedBy, "requestedBy must not be null");
         }
 
         @Override

@@ -194,7 +194,7 @@ class ReferenceRateFetchTest {
                 Connection unitOfWork, String source, RateObservation observation, UUID id) {
             recorded.add(observation);
             if (refuseThird && recorded.size() == 3) {
-                throw new ObservationRefusedException("refused", null);
+                throw new ObservationRefusedException("refused");
             }
             return answers.isEmpty() ? Recorded.STORED : answers.remove(0);
         }

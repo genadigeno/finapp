@@ -51,6 +51,8 @@ public final class RuleSetAdministration {
     @NonNull private final RuleSetStore store;
     @NonNull private final AuditWriter<Connection> audit;
     @NonNull private final IdGenerator ids;
+    /** The kinds each source settles: a first version must date every one (the Phase 9 -> 10 transition). */
+    @NonNull private final SettledExpectationKinds settledKinds;
 
     // ------------------------------------------------------------------ outcomes
 
@@ -193,7 +195,18 @@ public final class RuleSetAdministration {
         if (active.isPresent()) {
             refuseUncovered(proposal.lagDays().keySet(), store.lagKinds(unitOfWork, active.get().id()));
         }
-        // No ACTIVE version: the source's first version, with no predecessor to cover.
+        // No ACTIVE version: the source's first version, with no predecessor to cover - but every kind the source's
+        // evidence settles must be dated, or each opener of a missing kind rolls back the money movement that opened it
+        // (the Phase 9 -> 10 transition).
+        if (active.isEmpty()) {
+            Set<ExpectationKind> missing = EnumSet.noneOf(ExpectationKind.class);
+            missing.addAll(settledKinds.of(unitOfWork, proposal.sourceId()));
+            missing.removeAll(proposal.lagDays().keySet());
+            if (!missing.isEmpty()) {
+                throw new RuleSetInvalid("the source's first version holds no lag for " + missing
+                        + ", which its evidence settles: every kind an opener dates against it keeps a lag");
+            }
+        }
 
         int version = store.maxVersion(unitOfWork, proposal.sourceId()) + 1;
         UUID ruleSetId = ids.next();

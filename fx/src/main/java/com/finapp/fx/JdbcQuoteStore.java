@@ -569,6 +569,6 @@ public final class JdbcQuoteStore implements QuoteStore {
     }
 
     private static FxStorageException failure(String operation, SQLException failure) {
-        return new FxStorageException(DatabaseFailure.describe(operation, failure), failure);
+        return new FxStorageException(DatabaseFailure.describe(operation, failure));
     }
 }

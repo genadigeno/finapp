@@ -509,9 +509,49 @@ public class ReconciliationBeans {
     @Bean
     com.finapp.reconciliation.RuleSetAdministration ruleSetAdministration(
             com.finapp.platform.audit.AuditWriter<Connection> auditWriter,
-            IdGenerator idGenerator) {
+            IdGenerator idGenerator,
+            com.finapp.settlement.SettlementFileStore<Connection> settlementFileStore,
+            com.finapp.settlement.SettlementSources settlementSources) {
         return new com.finapp.reconciliation.RuleSetAdministration(
-                new com.finapp.reconciliation.JdbcRuleSetStore(), auditWriter, idGenerator);
+                new com.finapp.reconciliation.JdbcRuleSetStore(), auditWriter, idGenerator,
+                settledExpectationKinds(settlementFileStore, settlementSources));
+    }
+
+    /**
+     * The kinds each source settles, read off its declared position (the Phase 9 -> 10 transition): the counterparty
+     * positions whose sources enter through the first-version door - an FX provider's cover legs, a corridor's
+     * credits and their returns - each opener's kind; the Phase 5-8 positions, whose sources are migration-seeded
+     * with their versions, declare none here.
+     */
+    static com.finapp.reconciliation.SettledExpectationKinds settledExpectationKinds(
+            com.finapp.settlement.SettlementFileStore<Connection> files,
+            com.finapp.settlement.SettlementSources sources) {
+        return (unitOfWork, sourceId) -> files.sources(unitOfWork).stream()
+                .filter(source -> source.id().equals(sourceId))
+                .findFirst()
+                .flatMap(source -> sources.byCode(source.code()))
+                .map(ReconciliationBeans::kindsSettledBy)
+                .orElse(java.util.Set.of());
+    }
+
+    /**
+     * The counterparty-keyed sources' kinds, read off the source's kind - never by naming the counterparty purposes,
+     * which only their declarations may name (`CounterpartyClearingIsNamedByDeclarationsTest`): a source that settles
+     * a declared counterparty's position is an FX provider's (its cover legs) or a corridor's (its credits and their
+     * returns, reported as a payout provider's).
+     */
+    public static java.util.Set<com.finapp.reconciliation.ExpectationKind> kindsSettledBy(
+            com.finapp.settlement.SettlementSourceDescriptor source) {
+        if (source.settledCounterparty().isEmpty()) {
+            return java.util.Set.of();
+        }
+        return switch (source.kind()) {
+            case FX_PROVIDER_REPORT -> java.util.EnumSet.of(com.finapp.reconciliation.ExpectationKind.FX_SELL_LEG,
+                    com.finapp.reconciliation.ExpectationKind.FX_BUY_LEG);
+            case PAYOUT_PROVIDER_REPORT -> java.util.EnumSet.of(com.finapp.reconciliation.ExpectationKind.CROSSBORDER_PAYOUT,
+                    com.finapp.reconciliation.ExpectationKind.CROSSBORDER_RETURN);
+            default -> java.util.Set.of();
+        };
     }
 
     /** A controller's acts on runs (`P8-TSK-022`): reprocessing and requeue. */

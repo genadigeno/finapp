@@ -1822,6 +1822,7 @@ door.
 | `cover_attempt` | `client_reference` | `INTERNAL` | Our reference `T`, minted and stored before any send - an identifier of a thing |
 | `cover_attempt` | `provider_quote_ref` | `CONFIDENTIAL` | The provider's quote it executes (`PHASE_9_PLAN.md` §8: provider references `CONFIDENTIAL`) |
 | `cover_attempt` | `created_at` | `INTERNAL` | The database's instant |
+| `cover_attempt` | `stated_counter_minor` | `RESTRICTED-FINANCIAL` | The firm quote's stated counter amount a requote or unwind executes against (fx `V010`, the Phase 9 → 10 transition) |
 | `cover` | `caused_by_event_id` | `INTERNAL` | The `fx.FxQuoteAccepted` event the cover's events are caused by (`P9-TSK-012`) |
 | `cover` | `requote_failures` | `INTERNAL` | A count of a rejected cover's refused requotes - the sweeper's backoff (`P9-TSK-012`) |
 | `cover_execution` | `cover_id` | `INTERNAL` | Its cover - one execution per cover, the primary key (`P9-TSK-012`) |
@@ -1843,6 +1844,9 @@ door.
 | `cover_execution` | `realised_sold_minor` | `RESTRICTED-FINANCIAL` | The leg's realised result, executed against plan by `CHECK` - the amount the entry posts as realised gain or loss |
 | `cover_execution` | `realised_bought_minor` | `RESTRICTED-FINANCIAL` | The leg's realised result, executed against plan by `CHECK` - the amount the entry posts as realised gain or loss |
 | `cover_execution` | `executed_off_plan` | `INTERNAL` | Whether the provider deviated on the fixed leg - a flag, derived by `CHECK` |
+| `cover_execution` | `quoted_computed_minor` | `RESTRICTED-FINANCIAL` | The computed leg the execution was quoted at - the plan's on attempt 1, the stated counter after (fx `V010`) |
+| `cover_execution` | `computed_deviation` | `INTERNAL` | Whether the provider executed the computed leg away from its own firm quote - a verdict, tied by `CHECK` (fx `V010`) |
+| `cover_execution` | `executed_rate_coherent` | `INTERNAL` | Whether the executed rate explains the sold and bought amounts - a verdict (fx `V010`) |
 | `cover_execution` | `journal_entry_id` | `INTERNAL` | The entry `fx-cover:<coverId>` (`UNIQUE`) - an identifier of a thing |
 | `cover_execution` | `recorded_at` | `INTERNAL` | The database's instant |
 | `cover_execution` | `recorded_on` | `INTERNAL` | The database's date - the entry's posting date |
@@ -1965,6 +1969,7 @@ screening id as associated data; every other module, log, event and audit body i
 | `counterparty_screening` | `policy_version` | `INTERNAL` | A platform policy label |
 | `counterparty_screening` | `decided_at` | `CONFIDENTIAL` | Dates the outcome - `verification_check.status_changed_at`'s reasoning |
 | `counterparty_screening` | `decided_by` | `CONFIDENTIAL` | The reviewer's actor id - who judged a sanctions match |
+| `counterparty_screening` | `requested_by` | `CONFIDENTIAL` | The requester's actor id - who registered the beneficiary; a reviewer never decides their own (kyc `V010`, the Phase 9 → 10 transition) |
 | `counterparty_screening` | `decision_reason_code` | `CONFIDENTIAL` | `TRUE_MATCH` is the sharpest disclosure the table holds |
 | `counterparty_screening` | `decision_narrative` | `CONFIDENTIAL` | A reviewer's free prose about a counterparty - screened for instrument shapes at the domain and by `CHECK`; classified with the reasons it sits beside |
 | `counterparty_screening` | `attempts` | `INTERNAL` | A counter |
@@ -2180,6 +2185,7 @@ encrypted; the grant is exchanged and forgotten.
 | `outbound_credit` | `recall_outcome` | `INTERNAL` | An enumerated outcome |
 | `outbound_credit` | `created_at` | `CONFIDENTIAL` | Dates a person's act |
 | `outbound_credit` | `last_dispatched_at` | `INTERNAL` | The send permit, stamped by the database |
+| `outbound_credit` | `last_inquired_at` | `INTERNAL` | The sweep's inquiry stamp, set by the database when the sweep claims the credit (payments `V030`, the Phase 9 → 10 transition) |
 | `routing_rule` | `requires_destination_country` | `INTERNAL` | A matcher flag |
 | `routing_decision` | `outbound_credit_id` | `INTERNAL` | The decision's third subject - exactly one of intent, withdrawal and outbound credit |
 | `routing_decision` | `destination_country` | `CONFIDENTIAL` | Where a customer pays abroad |

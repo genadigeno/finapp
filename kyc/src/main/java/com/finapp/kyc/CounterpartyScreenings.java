@@ -85,14 +85,22 @@ public final class CounterpartyScreenings {
 
     // ------------------------------------------------------------------ requests and outcomes
 
-    /** A screening request - the caller's reference, the counterparty and its payee check. */
-    public record Request(String requestReference, CounterpartySubject subject, PayeeVerdict payeeVerdict) {
+    /**
+     * A screening request - the caller's reference, the counterparty, its payee check, and the actor who asked for it:
+     * the one person who may never decide its review (the Phase 9 to 10 transition gate; INV-AUD-04, {@code kyc V010}).
+     */
+    public record Request(
+            String requestReference, CounterpartySubject subject, PayeeVerdict payeeVerdict, String requestedBy) {
         public Request {
             Objects.requireNonNull(requestReference, "requestReference must not be null");
             Objects.requireNonNull(subject, "subject must not be null");
             Objects.requireNonNull(payeeVerdict, "payeeVerdict must not be null");
+            Objects.requireNonNull(requestedBy, "requestedBy must not be null");
             if (requestReference.isBlank() || requestReference.length() > 200) {
                 throw new IllegalArgumentException("a request reference is 1..200 characters");
+            }
+            if (requestedBy.isBlank() || requestedBy.length() > 200) {
+                throw new IllegalArgumentException("a requester is 1..200 characters");
             }
         }
     }
@@ -190,6 +198,10 @@ public final class CounterpartyScreenings {
      */
     public Screening screen(Request request, CorrelationId correlation) {
         Objects.requireNonNull(request, "request must not be null");
+        return screen(request, Optional.of(request.requestedBy()), correlation);
+    }
+
+    private Screening screen(Request request, Optional<String> requester, CorrelationId correlation) {
         Objects.requireNonNull(correlation, "correlation must not be null");
         Instant now = now();
         CounterpartyScreeningId id = CounterpartyScreeningId.next(ids);
@@ -197,7 +209,7 @@ public final class CounterpartyScreenings {
         CounterpartySubjectCipher.Encrypted sealed = cipher.encrypt(id, subject.name());
         boolean inserted = transactions.inTransaction(uow -> store.insertRequested(uow, new CounterpartyScreeningStore.NewScreening(
                 id, request.requestReference(), sealed, subject.country(), subject.entityType(), request.payeeVerdict(),
-                now, now.plus(IN_FLIGHT_PERMIT))));
+                requester, now.plus(IN_FLIGHT_PERMIT))));
         if (!inserted) {
             CounterpartyScreeningStore.Row existing = transactions
                     .inTransaction(uow -> store.byRequest(uow, request.requestReference()))
@@ -218,14 +230,18 @@ public final class CounterpartyScreenings {
      * already screened converges on its screening (the same counterparty) or is refused.
      */
     public Screening requestWithin(Connection uow, Request request) {
-        Objects.requireNonNull(uow, "uow must not be null");
         Objects.requireNonNull(request, "request must not be null");
+        return requestWithin(uow, request, Optional.of(request.requestedBy()));
+    }
+
+    private Screening requestWithin(Connection uow, Request request, Optional<String> requester) {
+        Objects.requireNonNull(uow, "uow must not be null");
         Instant now = now();
         CounterpartyScreeningId id = CounterpartyScreeningId.next(ids);
         CounterpartySubject subject = request.subject();
         if (store.insertRequested(uow, new CounterpartyScreeningStore.NewScreening(
                 id, request.requestReference(), cipher.encrypt(id, subject.name()), subject.country(),
-                subject.entityType(), request.payeeVerdict(), now, now.plus(IN_FLIGHT_PERMIT)))) {
+                subject.entityType(), request.payeeVerdict(), requester, now.plus(IN_FLIGHT_PERMIT)))) {
             return new Screening(id, request.requestReference(), CounterpartyScreeningStatus.REQUESTED,
                     Optional.empty(), Optional.empty(), false);
         }
@@ -240,13 +256,14 @@ public final class CounterpartyScreenings {
 
     /**
      * Requests a re-screen of {@code previous}'s counterparty in the caller's unit of work (`P9-TSK-018`) - the
-     * stored subject and payee check under {@code requestReference}, held by the caller's permit.
+     * stored subject, payee check and requester under {@code requestReference}, held by the caller's permit. The
+     * requester is inherited: whoever registered the counterparty never reviews any of its screenings.
      */
     public Screening rescreenWithin(Connection uow, CounterpartyScreeningId previous, String requestReference) {
         Objects.requireNonNull(uow, "uow must not be null");
         Objects.requireNonNull(previous, "previous must not be null");
         CounterpartyScreeningStore.Row row = store.find(uow, previous).orElseThrow(ScreeningNotFound::new);
-        return requestWithin(uow, new Request(requestReference, subjectOf(row), row.payeeVerdict()));
+        return requestWithin(uow, inherited(row, requestReference), row.requestedBy());
     }
 
     /**
@@ -257,7 +274,14 @@ public final class CounterpartyScreenings {
         Objects.requireNonNull(previous, "previous must not be null");
         CounterpartyScreeningStore.Row row =
                 transactions.inTransaction(uow -> store.find(uow, previous)).orElseThrow(ScreeningNotFound::new);
-        return screen(new Request(requestReference, subjectOf(row), row.payeeVerdict()), correlation);
+        return screen(inherited(row, requestReference), row.requestedBy(), correlation);
+    }
+
+    /** The re-screen's request: the stored subject and payee check; the requester travels beside it, as stored. */
+    private Request inherited(CounterpartyScreeningStore.Row row, String requestReference) {
+        // A screening requested before kyc V010 names no requester: the placeholder is never stored (the Optional
+        // beside it is), and it only satisfies the record's shape.
+        return new Request(requestReference, subjectOf(row), row.payeeVerdict(), row.requestedBy().orElse("unrecorded"));
     }
 
     /** Claims at most {@code limit} due screenings for this sweeper - concurrent sweepers claim disjoint sets. */
@@ -312,7 +336,7 @@ public final class CounterpartyScreenings {
                 : Optional.empty();
         String policy = KycPolicyVersion.CURRENT.value();
         if (!store.decideAutomatically(uow, id, row.status(), new CounterpartyScreeningStore.AutomaticOutcome(
-                routed.status(), routed.reviewReason(), attempt, policy, at, next))) {
+                routed.status(), routed.reviewReason(), attempt, policy, next))) {
             throw new IllegalStateException(
                     "the locked counterparty screening was decided by another writer: the FOR UPDATE protocol was bypassed");
         }
@@ -366,6 +390,11 @@ public final class CounterpartyScreenings {
         if (row.status() != CounterpartyScreeningStatus.IN_REVIEW) {
             throw new ScreeningNotInReview(row.status());
         }
+        if (row.requestedBy().filter(actor.id()::equals).isPresent()) {
+            // Four eyes are two persons (INV-AUD-04; the Phase 9 to 10 transition gate): the person who registered
+            // the counterparty never releases or blocks its screening. kyc V010's CHECK is the rank beneath.
+            throw new ScreeningReviewInvalid("a screening is reviewed by someone other than the person who requested it");
+        }
         if (!code.justifies(decision)) {
             throw new ScreeningReviewInvalid("reason code " + code.name() + " cannot justify " + decision.name());
         }
@@ -378,7 +407,7 @@ public final class CounterpartyScreenings {
         Instant at = now();
         String policy = KycPolicyVersion.CURRENT.value();
         if (!store.decideByReviewer(uow, id, new CounterpartyScreeningStore.ReviewerOutcome(
-                target, actor.id(), code, narrative, policy, at))) {
+                target, actor.id(), code, narrative, policy))) {
             throw new IllegalStateException(
                     "the locked counterparty screening was decided by another writer: the FOR UPDATE protocol was bypassed");
         }

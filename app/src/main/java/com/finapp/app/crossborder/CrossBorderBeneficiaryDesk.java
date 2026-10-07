@@ -215,10 +215,15 @@ public final class CrossBorderBeneficiaryDesk {
                     body.nickname(),
                     BeneficiaryVocabulary.EntityType.valueOf(body.entityType()),
                     Boolean.TRUE.equals(body.acknowledgeNoMatch()));
-        } catch (IllegalArgumentException | com.finapp.sharedkernel.money.MonetaryException
-                | Beneficiaries.RegistrationInvalid malformed) {
+        } catch (Beneficiaries.RegistrationInvalid malformed) {
+            // The domain's own defect text: fixed sentences naming the rule, never the value.
             throw new ApiException(PlatformErrorCode.VALIDATION_FAILED, "The beneficiary registration was not valid",
                     malformed.getMessage());
+        } catch (IllegalArgumentException | com.finapp.sharedkernel.money.MonetaryException malformed) {
+            // A JDK or value-type message echoes the input and names internal classes (Enum.valueOf's
+            // "No enum constant com.finapp..."): a fixed detail instead (the Phase 9 to 10 transition gate).
+            throw new ApiException(PlatformErrorCode.VALIDATION_FAILED, "The beneficiary registration was not valid",
+                    "country is ISO 3166 alpha-2, currency ISO 4217, entityType INDIVIDUAL or BUSINESS.");
         }
     }
 

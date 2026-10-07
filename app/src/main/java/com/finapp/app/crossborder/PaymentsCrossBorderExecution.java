@@ -109,7 +109,10 @@ public final class PaymentsCrossBorderExecution implements CrossBorderExecution 
 
     @Override
     public Routed route(Connection unitOfWork, RouteAsk ask) {
-        RoutingPolicyVersion version = routing.findVersionInForce(unitOfWork, Instant.now(clock))
+        // The version in force on the DATABASE's clock (the Phase 9 -> 10 transition): two instances either side of an
+        // effective_from must route a dispatch under the same version.
+        RoutingPolicyVersion version = routing.findVersionInForce(unitOfWork,
+                com.finapp.platform.persistence.DatabaseTime.now(unitOfWork))
                 .orElseThrow(() -> new ExecutionRefused("PAYMENTS", "NO_ELIGIBLE_RAIL"));
         RailId issuing;
         try {

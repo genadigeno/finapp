@@ -108,6 +108,15 @@ public final class TradeReversals {
         }
     }
 
+    /** The act's reason is blank, too long or holds an instrument shape. Nothing written. */
+    public static final class ReasonInvalid extends RuntimeException {
+        @java.io.Serial private static final long serialVersionUID = 1L;
+
+        public ReasonInvalid(String detail) {
+            super(detail);
+        }
+    }
+
     /** The trade already carries a live proposal. Nothing written. */
     public static final class ProposalPending extends RuntimeException {
         @java.io.Serial private static final long serialVersionUID = 1L;
@@ -137,12 +146,16 @@ public final class TradeReversals {
     }
 
     /**
-     * Approves reversal {@code reversalId} - a different person's reasoned act - and executes it in the caller's unit
-     * of work: the mirror entry, the trade {@code REVERSED}, the cover's consequence.
+     * Approves reversal {@code reversalId} of trade {@code tradeId} - a different person's reasoned act - and executes
+     * it in the caller's unit of work: the mirror entry, the trade {@code REVERSED}, the cover's consequence. A reversal
+     * of ANOTHER trade is {@link NotFound}, nothing written (the Phase 9 to 10 transition: the four-eyes decision names
+     * both the trade and the reversal, and both must agree - approving trade A's route must never execute trade B's).
      */
-    public Decided approve(Connection unitOfWork, UUID reversalId, Actor actor, String reason, CorrelationId correlation) {
+    public Decided approve(
+            Connection unitOfWork, FxTradeId tradeId, UUID reversalId, Actor actor, String reason, CorrelationId correlation) {
         requireReason(reason);
         TradeReversalStore.Row seen = reversals.find(unitOfWork, reversalId)
+                .filter(found -> found.tradeId().equals(tradeId))
                 .orElseThrow(() -> new NotFound("no such trade reversal"));
         TradeStore.TradeRow unlocked = trades.find(unitOfWork, seen.tradeId())
                 .orElseThrow(() -> new IllegalStateException("a reversal's trade always exists"));
@@ -210,10 +223,15 @@ public final class TradeReversals {
         return new Decided(reversalId, trade.id(), "APPROVED", Optional.of(posted.entryId().value()), effect, pairOf(trade));
     }
 
-    /** Rejects reversal {@code reversalId} - a different person's reasoned act; nothing moves. */
-    public Decided reject(Connection unitOfWork, UUID reversalId, Actor actor, String reason, CorrelationId correlation) {
+    /**
+     * Rejects reversal {@code reversalId} of trade {@code tradeId} - a different person's reasoned act; nothing moves.
+     * A reversal of another trade is {@link NotFound}, nothing written.
+     */
+    public Decided reject(
+            Connection unitOfWork, FxTradeId tradeId, UUID reversalId, Actor actor, String reason, CorrelationId correlation) {
         requireReason(reason);
         TradeReversalStore.Row reversal = reversals.lock(unitOfWork, reversalId)
+                .filter(found -> found.tradeId().equals(tradeId))
                 .orElseThrow(() -> new NotFound("no such trade reversal"));
         if (!reversal.status().equals("PROPOSED")) {
             throw new ProposalNotPending(reversal.status());
@@ -246,10 +264,16 @@ public final class TradeReversals {
         }
     }
 
+    /**
+     * Every act is reasoned, and its reason screened like every other reasoned FX act's (the Phase 9 to 10 transition;
+     * {@code INV-AUD-02}): 1..1000 characters, never blank, never a card-number or bank-account shape - fx {@code V011}'s
+     * {@code trade_reversal_*_no_instrument_shape} CHECKs hold the same rule beneath this one.
+     */
     private static void requireReason(String reason) {
-        if (reason == null || reason.isBlank()) {
-            throw new IllegalArgumentException("every act on a trade reversal carries a reason");
+        if (reason == null) {
+            throw new ReasonInvalid("every act on a trade reversal carries a reason");
         }
+        FxReasons.refuse(reason, ReasonInvalid::new);
     }
 
     private void lockWalletsInOrder(Connection unitOfWork, LedgerAccountId source, LedgerAccountId destination) {

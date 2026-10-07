@@ -9,6 +9,7 @@ import com.finapp.platform.api.RequiresIdempotencyKey;
 import jakarta.servlet.http.HttpServletRequest;
 import jakarta.validation.Valid;
 import jakarta.validation.constraints.NotBlank;
+import jakarta.validation.constraints.Size;
 import lombok.NonNull;
 import lombok.RequiredArgsConstructor;
 import org.springframework.http.HttpStatus;
@@ -63,8 +64,8 @@ public class CrossBorderQuoteController {
     /** The beneficiary, the source currency, which side is fixed, and the fixed amount as a decimal string. */
     @ClosedBody
     public record CrossBorderQuoteRequest(
-            @NotBlank String beneficiaryId,
-            @NotBlank String sourceCurrency,
-            @NotBlank String fixedSide,
-            @NotBlank String amount) {}
+            @NotBlank @Size(min = 1, max = 64) String beneficiaryId,
+            @NotBlank @Size(min = 1, max = 3) String sourceCurrency,
+            @NotBlank @Size(min = 1, max = 32) String fixedSide,
+            @NotBlank @Size(min = 1, max = 32) String amount) {}
 }

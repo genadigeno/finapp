@@ -233,3 +233,7 @@ spans the provider call: permit transaction, wire, outcome transaction).
   it is born without an attempt row: its first dispatch obtains the fresh firm quote, judges it by the band and
   stores attempt 1 and `T1` - before any send - then sends; an implausible price leaves it waiting, alerted. A
   requote of an unwind is always wanted; the requote's band terms are the quote's own pair under its purpose.
+
+## Amended by the Phase 9 → 10 transition (2026-10-07)
+
+§6 gains the computed leg's judgement (fx `V010`): a requote's stated counter is stored with its attempt before any send; every execution records the computed leg it was quoted at (the plan's on attempt 1), `computed_deviation` (the provider executing away from its own firm quote — a separate breach from §6's off-plan fixed leg) and `executed_rate_coherent`, each counted and alerting (`finapp.fx.cover{outcome=computed_deviation|rate_incoherent}`); money is still booked exactly as executed. A cover is born only from its quote's plan, for every writer; a superseded attempt executed late types `TERMINAL` at once (`JdbcInternalReferenceLookup`). See [`reviews/PHASE_9_TO_10_TRANSITION.md`](../project/reviews/PHASE_9_TO_10_TRANSITION.md) and `PHASE_9_PLAN.md` §21.

@@ -1,0 +1,244 @@
+# ADR-0086 — Credit policy and model as versioned data: rules as rows over a closed vocabulary, a deterministic evaluator with its own engine version, four-eyes activation, and the active version answerable at any instant
+
+Status: Proposed
+Date: 2026-10-07
+Phase: 10
+Context: Credit · Identity · Platform
+Supersedes: nothing. Resolves, with ADR-0087, `docs/adr/README.md`'s anticipated Phase 10
+decision "Credit policy versioning and decision reproducibility". Takes the versioned four-eyes
+policy shape of ADR-0075 §7 (pricing policy) and ADR-0080 §4 (corridor policy): versions
+`PROPOSED → ACTIVE → RETIRED`, one `ACTIVE` per scope by partial unique, activation retiring the
+predecessor in the same transaction, four-eyes at the domain and the `CHECK`, no version seeded
+active by migration (D26). Rests on `PHASE_10_PLAN.md` §4, §5, §7, §8, §12.5, §12.6, §18 and
+`INV-CRD-01`, `-05`, `-10`, `INV-HIST-04`, `INV-AUD-04`.
+
+## Context
+
+`CREDIT_MODEL.md` forbids encoding credit policy "as opaque application conditionals with no
+versioning or audit trail". The reason is reproducibility: a decision must be re-derivable years
+later from its inputs and the exact policy and model that judged them (`INV-CRD-01`). Four
+pressures shape how:
+
+1. **Policy changes more often than code, and must be reviewable as policy.** A threshold change
+   is a credit-risk decision, made by credit officers, not a deployment.
+2. **But arbitrary expressiveness is opacity again.** A policy language that can express
+   anything (a script, an expression language) is code by another name: unreviewable, and its
+   semantics drift with its interpreter.
+3. **The interpreter itself is part of the decision.** If the evaluator's severity order, cap
+   arithmetic or reason ordering change, every past decision's replay silently changes with it.
+4. **Activation races decisions across N instances.** A decision in flight while a new version
+   activates must keep the version it started with (`INV-HIST-04`), and ten approvers of one
+   proposal must make one activation.
+
+## Decision
+
+1. **A policy version is rows over a closed vocabulary.** A `credit_policy_version` per product
+   carries the policy's parameters — assessment rate, minimum disposable income, minimum payment
+   ratio, maximum exposure, maximum data age per source kind, the fallback for an unavailable
+   source (`REFER` or `DECLINE`, never approve), the auto-approval ceiling — and its rules as
+   `credit_policy_rule` rows: `(ordinal, rule_code, attribute or derived figure, operator,
+   operand, effect, reason_code)`.
+   - **Operators** are closed: `LT, LE, GT, GE, EQ, NE, IN, NOT_IN, IS_ABSENT, IS_PRESENT`.
+   - **Derived figures** are closed: `SCORE`, `DISPOSABLE_INCOME`, `AFFORDABLE`, `EXPOSURE`,
+     `EXPOSURE_HEADROOM` (their arithmetic is ADR-0088's and the scorecard's, point 3).
+   - **Effects** are closed: `HARD_DECLINE`, `DECLINE`, `REFER`, `CAP_AMOUNT` (the operand a
+     ceiling).
+   - Every rule names a `reason_code` from the seeded catalogue (ADR-0084 §7), enforced by
+     foreign key.
+   A rule the vocabulary cannot express is a new operator, figure or effect — a reviewed code
+   change with a new engine version (point 2) — never a free-form expression (plan §18).
+
+2. **The evaluator is pure, deterministic and versioned** (`engine_version` 1).
+   - It reads only the snapshot (ADR-0087 §2) and the pinned versions' rows: no clock, no locale,
+     no hash-map iteration order, no I/O.
+   - Every rule is evaluated in ordinal order. **The outcome is the most severe effect
+     triggered: `HARD_DECLINE > DECLINE > REFER > APPROVE`** (nothing triggered is `APPROVE`).
+   - **The approved amount is `min(requested, every CAP_AMOUNT triggered, the auto-approval
+     ceiling)`**; an approval below the request carries the cap's reason code — the triggered
+     `CAP_AMOUNT` rule's, or, when the auto-approval ceiling (a policy parameter, not a rule)
+     binds, the catalogue's `CRD-AUTO-APPROVAL-CEILING`.
+   - **Reason codes are the triggered rules' codes in ordinal order, deduplicated keeping the
+     first.** An adverse outcome with no reason code is unrepresentable — in the domain and by
+     the `CHECK` on the evaluation and the decision (`INV-CRD-02`).
+   - A rule, the scorecard or the arithmetic reading an attribute the snapshot lacks is an
+     **evaluation error**, never a default (`INV-CRD-07`); `ABSENT` is a value, reasoned about
+     with `IS_ABSENT` / `IS_PRESENT`.
+   - **Changing the evaluator's semantics is a new `engine_version`, and every old one stays in
+     the code, forever, for replay** (`INV-CRD-01`, failure scenario 26). The evaluation records
+     the engine version it ran under; replay dispatches on it.
+   The evaluation is recorded as a `policy_evaluation` row (outcome, engine version, pinned
+   versions) with its triggered rules in order (`policy_evaluation_rule`), born once per
+   assessment (`UNIQUE (assessment_id)`, `INV-CRD-06`).
+
+3. **The scorecard is a points table, versioned the same way.** A `scorecard_model_version` (model
+   family `RETAIL_SCORECARD`) holds a base and, per attribute, ordered bands — `[lower, upper)`
+   or a code set — each with integer points, plus a declared band for `ABSENT`. Score = base + Σ
+   the points of the band each attribute falls in. Integer arithmetic only. The score is one
+   derived figure on the assessment (`SCORE`), never the decision (`INV-CRD-04`). Machine-learned
+   models are out of scope (plan §17); a statistical model is a later model family under the same
+   versioning.
+
+4. **Versions are immutable, four-eyes, and one is `ACTIVE` per scope** (`INV-CRD-05`,
+   `INV-AUD-04`).
+   - The machine: `PROPOSED → ACTIVE → RETIRED`, `PROPOSED → REJECTED`, held by a generated
+     `CHECK`, an every-writer edge trigger and the domain.
+   - **Proposal** carries the full rule set (or points table) as one body, written in the
+     proposing transaction; **rules and bands are born with their version and immutable for
+     every writer from insert** — a trigger refuses any `UPDATE` or `DELETE` of them, and any
+     insert into a version outside its proposing transaction, in every status (failure scenario
+     24); the domain offers no edit — a correction is a rejection and a new proposal.
+   - **Approval** is a second person: approver ≠ proposer at the domain and by `CHECK`, each rank
+     proven alone (`403 credit.SelfApprovalRefused`). Rejection carries a reason. Proposal,
+     activation and rejection are distinct audited acts (`credit.PolicyVersionProposed` /
+     `credit.PolicyVersionActivated` / `credit.PolicyVersionRejected`, and for scorecards
+     `credit.ScorecardVersionProposed` / `credit.ScorecardVersionActivated` /
+     `credit.ScorecardVersionRejected`). A points table whose bands overlap or leave a gap, lack an
+     absent band, or name a code outside the vocabulary is refused at proposal,
+     `422 credit.ScorecardInvalid`.
+   - **Activation** locks the proposal `FOR UPDATE` conditional on `PROPOSED`, then the active
+     row `FOR UPDATE` to retire it, and commits the retirement beside its successor in one
+     transaction. Ten approvers: one activation, nine `409 credit.PolicyStale`.
+   - **One `PROPOSED` and one `ACTIVE` per product** (per model family for scorecards) by partial
+     unique; a second proposal while one is pending is `409 credit.ProposalPending`.
+   - **No version is migration-activated**: scorecard v1 is seeded *as a proposal* by the task
+     that builds it and activated by two persons in the suites and the runbook alike — the rule-set
+     precedent (D26). Policy v1 per product goes through the same door.
+   - Activation emits `CreditPolicyVersionActivated` / `ScorecardModelVersionActivated` (version
+     id, product or family, effective-from, predecessor; never the rules).
+
+5. **Which version was active at any past instant is answerable from the rows** (`INV-CRD-05`).
+   Each version records `effective_from` and, on retirement, `effective_to`, both from the
+   database clock; the intervals of one scope never overlap. `GET /v1/operator/credit/policies
+   ?product=&at=` (under `CREDIT_INVESTIGATE`) answers the version active at an instant. A
+   decision does not rely on this query — it **pins** the versions it used (point 7) — but an
+   auditor asking "what policy was in force on that date" gets an exact answer.
+
+6. **A policy must be complete before it may be proposed** (`INV-CRD-10`). A policy without a
+   fallback rule for every source kind it reads — an `IS_ABSENT` / `SOURCE_UNAVAILABLE` rule
+   with the declared fallback effect (`REFER` or `DECLINE`) and reason `CRD-SOURCE-UNAVAILABLE`
+   — is refused at proposal, `422 credit.PolicyIncomplete`. Every approving path therefore
+   requires the source's attributes `IS_PRESENT`, and an approval can never arise from missing
+   data.
+
+7. **Pinning under concurrency** (`INV-HIST-04`, failure scenarios 16–17). The versions are
+   **pinned on the request at `SUBMITTED → COLLECTING`** — the progress step reads the `ACTIVE`
+   policy and model versions `FOR SHARE` and writes them on the request once (the claim-time
+   precedent: the sources collected, and their maximum age, are the pinned policy's, so an
+   activation between collection and the freeze can never leave the evaluating policy reading a
+   source nobody collected). The freeze, the evaluation and the deciding transaction re-read
+   exactly those rows `FOR SHARE` — even after their retirement — and record them on the snapshot,
+   the evaluation and the decision; activation's `FOR UPDATE` on the active row waits for each
+   share lock. The decision keeps the versions it pinned even if a successor activates before the
+   decision is recorded — never a retired-but-unpinned mix. The pinned versions are the last step of the credit lock order
+   (plan §7: profile → request → case → data requests → versions `FOR SHARE`).
+
+8. **Advisory namespace `10` serialises the administration's writers.** The policy and model
+   writers take `pg_advisory_xact_lock(10, hashtext(product))` / `(10, hashtext(family))`,
+   blocking, so ten concurrent proposers leave exactly one proposal and the partial unique is the
+   backstop rather than the only arbiter. The administration takes only version rows, in its own
+   order (the proposal, then the active row). Registered in `DISTRIBUTED_EXECUTION.md` §3 by
+   `P10-TSK-011`, its first writer (the scorecard administration); `P10-TSK-012` extends it to
+   the policy.
+
+## Alternatives Considered
+
+### Policy as code (Java conditionals behind a version constant)
+Pros:
+- Full expressiveness; type-checked; no interpreter.
+
+Cons:
+- Exactly what `CREDIT_MODEL.md` forbids: a threshold change is a deployment, the version is a
+  label nobody enforces, and four-eyes on policy becomes code review by engineers rather than
+  approval by credit officers.
+- Old versions vanish from the code unless deliberately kept, so replay decays.
+
+Refused.
+
+### An expression language or rules engine (SpEL, Drools, a scripting DSL)
+Pros:
+- Credit officers could express any rule without a deployment.
+
+Cons:
+- Opacity again: an arbitrary expression is unreviewable as policy, and its semantics are the
+  library's, versioned by a dependency bump nobody connects to replay.
+- Determinism (ordering, numeric types, null semantics) is not ours to guarantee.
+
+Refused: a closed vocabulary whose every member is ours, extended only by a new engine version
+(point 1).
+
+### Evaluate in first-match order (the first triggered rule decides)
+Pros:
+- Familiar from firewall rules; cheap.
+
+Cons:
+- The outcome depends on rule *order* rather than *severity*: a misplaced `REFER` above a
+  `HARD_DECLINE` would refer a confirmed insolvency. Reason codes would stop at the first rule,
+  leaving the adverse-action explanation incomplete.
+
+Refused: all rules evaluated, the most severe wins, all reasons kept in ordinal order (point 2).
+
+### Edit a version in place while it is `PROPOSED`
+Pros:
+- Small corrections without a rejection round-trip.
+
+Cons:
+- The approver would approve something other than what was proposed unless every edit
+  re-opened review; the audit trail of a proposal would no longer be its content.
+
+Refused: a proposal is written whole and corrected by rejection and re-proposal (point 4).
+
+### Seed v1 active by migration
+Pros:
+- Decisions possible from first boot.
+
+Cons:
+- The first credit policy would enter history with no named approver — the D26 rule this
+  repository has held since Phase 8.
+
+Refused (point 4).
+
+## Consequences
+
+Positive:
+- Every decision is replayable against the exact rule rows, points table and engine semantics
+  that made it; tampering with a frozen rule is refused by trigger, and if forced, caught by
+  replay (`P10-TSK-019`).
+- Credit officers change policy through an audited four-eyes door with no deployment; engineers
+  change the vocabulary through a reviewed engine version.
+- Ten instances agree: one proposal, one activation, every in-flight decision on its pinned
+  version.
+
+Negative:
+- The vocabulary is deliberately small; a rule it cannot express waits for a new engine version.
+- Every engine version stays in the code forever — a growing, intentionally permanent surface.
+- Activation waits for in-flight evaluations holding the active row `FOR SHARE` — a short,
+  bounded wait.
+
+Operational impact: `finapp.credit.policy.active{product}` (alerting when an offered product has
+no active version), `finapp.credit.decision{…, policy_version}`; the runbook gains the two-person
+activation of policy and scorecard v1.
+Security impact: `CREDIT_POLICY_ADMINISTER` (held by `CREDIT_POLICY_OFFICER`) proposes, approves
+and rejects — never one's own proposal; every act audited with a reason where required.
+Financial impact: none posted. Policy fixes the *risk appetite* — the ceilings and limits that
+bound what Phase 11 may lend.
+
+## Invariants / Constraints
+
+`INV-CRD-01` (deterministic, versioned evaluation; old engines kept), `INV-CRD-02` (no adverse
+outcome without reasons), `INV-CRD-04` (score is not decision), `INV-CRD-05` (immutable versions,
+one active per scope, active-at-instant answerable), `INV-CRD-06` (one evaluation per
+assessment), `INV-CRD-07` (no default for a missing attribute), `INV-CRD-10` (policy
+completeness), `INV-HIST-04` (pinned versions never change under a decision), `INV-AUD-04`
+(four-eyes, no seed), ADR-0075 §7, ADR-0080 §4.
+
+## Follow-up
+
+- `P10-TSK-011`: the scorecard model version, its points table and administration; v1 seeded as a
+  proposal; advisory namespace `10` registered. `-012`: the policy version, rules as rows, the
+  rule-immutability trigger, four-eyes, completeness, namespace `10` extended to products.
+  `-013`: the evaluator, `engine_version` 1, its hermetic decision-rule battery. `-015`: the pin at
+  `SUBMITTED → COLLECTING`.
+- `P10-TST-002`: the reproducibility battery — every reason code exercised, every decision
+  replayed `IDENTICAL`, a perturbed rule flipping the verdict.
+- **Acceptance.** The Phase 10 review (`P10-DOC-001`) reads this ADR against the code before
+  accepting it.

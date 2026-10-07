@@ -37,6 +37,7 @@ import com.finapp.platform.correlation.CorrelationContext;
 import com.finapp.platform.security.Actor;
 import com.finapp.platform.security.ActorType;
 import com.finapp.platform.security.SecurityContext;
+import com.finapp.payments.WebhookSignature;
 import com.finapp.platform.testing.database.DatabaseRoles;
 import com.finapp.sharedkernel.correlation.Correlation;
 import com.finapp.sharedkernel.correlation.CorrelationId;
@@ -111,6 +112,12 @@ class CrossBorderPaymentDatabaseTest {
     @Autowired private CounterpartyScreenings counterpartyScreenings;
     @Autowired private com.finapp.kyc.TransactionRunner kycTransactionRunner;
     @Autowired private com.finapp.crossborder.PaymentAuthorization paymentAuthorization;
+    @Autowired private com.finapp.payments.OutboundCreditStore outboundCreditStore;
+    @Autowired private com.finapp.payments.ProviderEvidenceStore<Connection> providerEvidenceStore;
+    @Autowired private com.finapp.platform.inbox.InboxConsumer<Connection> inboxConsumer;
+    @Autowired private com.finapp.payments.OutboundCreditResolution outboundCreditResolution;
+    @Autowired private com.finapp.payments.TransactionRunner paymentTransactionRunner;
+    @Autowired private tools.jackson.databind.ObjectMapper objectMapper;
 
     private static SimulatedCorridorEngine corridor() {
         try {
@@ -208,6 +215,15 @@ class CrossBorderPaymentDatabaseTest {
         assertThat(count("SELECT count(*) FROM platform.outbox_event WHERE event_type = 'crossborder.CrossBorderPaymentInitiated'"
                         + " AND aggregate_id = ?", payment))
                 .isEqualTo(1);
+        // The payload's shape (the Phase 9 to 10 transition gate): every amount with its currency beside its minor
+        // units and scale - a consumer never infers a currency from the corridor code (INV-MON-02).
+        String initiated = scalar("SELECT convert_from(payload, 'UTF8') FROM platform.outbox_event"
+                + " WHERE event_type = 'crossborder.CrossBorderPaymentInitiated' AND aggregate_id = ?", payment);
+        assertThat(initiated)
+                .contains("\"totalDebitMinor\":\"10250\"", "\"totalDebitCurrency\":\"EUR\"", "\"totalDebitScale\":\"2\"")
+                .contains("\"destinationCurrency\":\"JPY\"", "\"destinationScale\":\"0\"")
+                .containsPattern("\"destinationMinor\":\"[1-9][0-9]*\"")
+                .contains("\"payment\":\"" + payment + "\"", "\"quote\":\"" + quote + "\"");
         assertThat(count("SELECT count(*) FROM platform.audit_record WHERE operation = 'crossborder.CrossBorderPaymentAuthorized'"
                         + " AND target_id = ?", payment.toString()))
                 .isEqualTo(1);
@@ -506,6 +522,103 @@ class CrossBorderPaymentDatabaseTest {
                 + "\"EUR\",\"fixedSide\":\"FIXED_SOURCE\",\"amount\":\"100.00\"}", customer.token(), FxTestClient.key());
         assertThat(offered.statusCode()).as(offered.body()).isEqualTo(201);
         return field(offered.body(), "id");
+    }
+
+    @Test
+    @DisplayName("Phase 9 to 10 transition: payments V031 - an outbound credit's destination refuses, by raw SQL, an IBAN"
+            + " and a letterless value, the withdrawal's INV-RAIL-03 CHECKs")
+    void theOutboundCreditDestinationIsNeverAnAccountIdentifier() throws Exception {
+        FxTestClient.Customer customer = fundedCustomer("1000.00");
+        HttpResponse<String> paid = pay(customer, offer(customer, beneficiary(customer, "Clear Person")), FxTestClient.key());
+        assertThat(paid.statusCode()).as(paid.body()).isEqualTo(202);
+        UUID payment = UUID.fromString(field(paid.body(), "paymentId"));
+        Map<String, String> refusals = Map.of(
+                "DE89370400440532013000", "outbound_credit_destination_is_not_an_account_identifier",
+                "1234567890", "outbound_credit_destination_has_a_letter");
+        try (Connection app = DatabaseRoles.application()) {
+            java.util.List<String> columns = new java.util.ArrayList<>();
+            try (PreparedStatement select = app.prepareStatement("SELECT column_name FROM information_schema.columns"
+                            + " WHERE table_schema = 'payments' AND table_name = 'outbound_credit' ORDER BY ordinal_position");
+                    ResultSet rows = select.executeQuery()) {
+                while (rows.next()) {
+                    columns.add(rows.getString(1));
+                }
+            }
+            assertThat(columns).contains("destination_reference", "status");
+            for (Map.Entry<String, String> refusal : refusals.entrySet()) {
+                // A copy of the real credit at its birth shape with the destination replaced: the CHECKs judge it
+                // before the unique reference does, so the destination's own rank answers.
+                String projection = columns.stream()
+                        .map(name -> switch (name) {
+                            case "id" -> "gen_random_uuid()";
+                            case "status" -> "'DISPATCHED'";
+                            case "destination_reference" -> "'" + refusal.getKey() + "'";
+                            case "failure_reason", "provider_reference", "delivered_at", "recall_requested_at",
+                                    "recall_outcome", "last_inquired_at" -> "NULL";
+                            default -> name;
+                        })
+                        .collect(java.util.stream.Collectors.joining(", "));
+                try (PreparedStatement insert = app.prepareStatement("INSERT INTO payments.outbound_credit ("
+                        + String.join(", ", columns) + ") SELECT " + projection
+                        + " FROM payments.outbound_credit WHERE subject_id = ?")) {
+                    insert.setObject(1, payment);
+                    insert.executeUpdate();
+                    throw new AssertionError(refusal.getKey() + " was admitted as a destination");
+                } catch (java.sql.SQLException refused) {
+                    assertThat(refused.getSQLState()).as(refused.getMessage()).isEqualTo("23514");
+                    assertThat(refused.getMessage()).contains(refusal.getValue());
+                }
+            }
+        }
+    }
+
+    @Test
+    @DisplayName("Phase 9 to 10 transition: a callback door names only its own rail's credits - an authentic callback on"
+            + " another rail's door naming this credit files no evidence under it and triggers nothing")
+    void aCallbackDoorNamesOnlyItsOwnRailsCredits() throws Exception {
+        FxTestClient.Customer customer = fundedCustomer("1000.00");
+        HttpResponse<String> paid = pay(customer, offer(customer, beneficiary(customer, "Clear Person")), FxTestClient.key());
+        assertThat(paid.statusCode()).as(paid.body()).isEqualTo(202);
+        UUID payment = UUID.fromString(field(paid.body(), "paymentId"));
+        String reference = scalar("SELECT end_to_end_reference FROM payments.outbound_credit WHERE subject_id = ?", payment);
+        String evidence = "SELECT count(*) FROM payments.provider_evidence e JOIN payments.outbound_credit c"
+                + " ON c.id = e.outbound_credit_id WHERE c.subject_id = ?";
+        long before = count(evidence, payment);
+        String status = scalar("SELECT status FROM payments.outbound_credit WHERE subject_id = ?", payment);
+        int inquiries = CORRIDOR.inquiriesOf(reference);
+
+        byte[] key = "a-second-rail-door-key-of-32-bytes!!!!!".getBytes(StandardCharsets.UTF_8);
+        WebhookSignature signature = new WebhookSignature(key, Duration.ofMinutes(5), java.time.Clock.systemUTC());
+        com.finapp.app.payments.CorridorCallbackService otherDoor = new com.finapp.app.payments.CorridorCallbackService(
+                signature, "corridor-sim-b", outboundCreditStore, providerEvidenceStore, inboxConsumer,
+                outboundCreditResolution, paymentTransactionRunner, objectMapper, java.time.Clock.systemUTC());
+        byte[] body = ("{\"eventId\":\"xcb-other-" + UUID.randomUUID() + "\",\"endToEndRef\":\"" + reference
+                + "\",\"status\":\"accepted\"}").getBytes(StandardCharsets.UTF_8);
+        String timestamp = Long.toString(Instant.now().getEpochSecond());
+        assertThat(delivered(otherDoor, body, timestamp, signature))
+                .isEqualTo(com.finapp.app.payments.CorridorCallbackService.Delivered.UNMAPPABLE);
+        assertThat(count(evidence, payment)).as("no evidence filed under another rail's credit").isEqualTo(before);
+        assertThat(scalar("SELECT status FROM payments.outbound_credit WHERE subject_id = ?", payment)).isEqualTo(status);
+        assertThat(CORRIDOR.inquiriesOf(reference)).as("no inquiry triggered").isEqualTo(inquiries);
+
+        // The control: the credit's own rail's door, the same shape, files the evidence and hints.
+        com.finapp.app.payments.CorridorCallbackService ownDoor = new com.finapp.app.payments.CorridorCallbackService(
+                signature, "corridor-sim-a", outboundCreditStore, providerEvidenceStore, inboxConsumer,
+                outboundCreditResolution, paymentTransactionRunner, objectMapper, java.time.Clock.systemUTC());
+        byte[] own = ("{\"eventId\":\"xcb-own-" + UUID.randomUUID() + "\",\"endToEndRef\":\"" + reference
+                + "\",\"status\":\"accepted\"}").getBytes(StandardCharsets.UTF_8);
+        assertThat(delivered(ownDoor, own, timestamp, signature))
+                .isEqualTo(com.finapp.app.payments.CorridorCallbackService.Delivered.HINTED);
+        assertThat(count(evidence, payment)).as("the callback retained under its credit").isGreaterThan(before);
+        assertThat(CORRIDOR.inquiriesOf(reference)).as("the hint's inquiry").isGreaterThan(inquiries);
+    }
+
+    /** One signed delivery inside a correlation scope - the door's filter's part, played here. */
+    private static com.finapp.app.payments.CorridorCallbackService.Delivered delivered(
+            com.finapp.app.payments.CorridorCallbackService door, byte[] body, String timestamp, WebhookSignature signature) {
+        try (CorrelationContext.Scope flow = CorrelationContext.enter(Correlation.startingWith(CorrelationId.generate(FxTestClient.IDS)))) {
+            return door.deliver(body, timestamp, signature.sign(timestamp, body));
+        }
     }
 
     /** Lapses a FLIP beneficiary's clearance and asks for an offer: the re-screen hits and moves it IN_REVIEW. */

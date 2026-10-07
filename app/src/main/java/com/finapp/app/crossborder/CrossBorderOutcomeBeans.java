@@ -135,10 +135,13 @@ public class CrossBorderOutcomeBeans {
             IdGenerator idGenerator,
             Clock clock,
             MeterRegistry meterRegistry,
-            com.finapp.app.telemetry.CrossBorderMetrics crossBorderMetrics) {
+            com.finapp.app.telemetry.CrossBorderMetrics crossBorderMetrics,
+            SchemeExecutionClaimStore<Connection> schemeExecutionClaimStore) {
         return new CorridorReturnResolutions(outboundCreditStore, outboundCreditReturnStore, crossBorderPaymentProgress,
                 conversionParticipants, new ChartOfAccounts<>(ledgerAccountStore), postingService, auditWriter,
-                idGenerator, clock, meterRegistry, crossBorderMetrics);
+                idGenerator, clock, meterRegistry, crossBorderMetrics, schemeExecutionClaimStore,
+                com.finapp.app.payments.PaymentBeans.CORRIDOR_DECLARATIONS.stream()
+                        .map(com.finapp.payments.CorridorDeclaration::rail).toList());
     }
 
     /** The corridor report's return channel (`P9-TSK-023`): the corridor-scoped waiting returns, one per transaction. */

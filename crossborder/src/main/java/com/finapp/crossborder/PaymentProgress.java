@@ -57,6 +57,14 @@ public final class PaymentProgress {
 
     /** {@code IN_TRANSIT -> DELIVERED}: the provider confirmed the beneficiary's institution credited them. */
     public void delivered(Connection unitOfWork, UUID paymentId, Instant at, CorrelationId correlation) {
+        PaymentStore.Row payment = payments.lock(unitOfWork, paymentId)
+                .orElseThrow(() -> new IllegalStateException("an outbound credit's subject is always a payment"));
+        if (payment.status() == PaymentStore.Status.RETURNED) {
+            // Delivered, then returned - the provider reported both: the delivery is the credit's history only (its
+            // delivered_at), and the payment stays RETURNED. Refusing it rolled the whole inquiry back on every pass and
+            // kept the credit due for ever (the Phase 9 -> 10 transition).
+            return;
+        }
         take(unitOfWork, paymentId, PaymentStore.Status.IN_TRANSIT, PaymentStore.Status.DELIVERED, Optional.empty(),
                 "DELIVERED", DELIVERED_EVENT, EventPayload.of(), at, correlation);
     }

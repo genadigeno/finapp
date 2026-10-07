@@ -96,6 +96,25 @@ public final class JdbcBalanceProjection implements BalanceProjection<Connection
         List<LedgerAccountId> ordered = new ArrayList<>(new java.util.LinkedHashSet<>(accounts));
         // apply()'s comparator, verbatim: the order is the whole point.
         ordered.sort(Comparator.comparing(LedgerAccountId::value));
+        // THE ACCOUNTS' KEY SHARE FIRST, in the same order (the Phase 9 -> 10 transition): a posting takes FOR KEY SHARE
+        // on its accounts (the journal_line FK) BEFORE it touches their projection rows, and every wallet decision
+        // takes the account FOR UPDATE before its own projection row - so a pre-lock that took the projection rows
+        // first and met the FK share only at its first posting inverted that order: holding a wallet's balance row,
+        // it waited for the decider's FOR UPDATE, while the decider waited for the balance row (40P01). Key share,
+        // then the rows - the order every posting already follows.
+        try (PreparedStatement share =
+                unitOfWork.prepareStatement(
+                        "SELECT 1 FROM ledger.ledger_account WHERE id = ? FOR KEY SHARE")) {
+            for (LedgerAccountId account : ordered) {
+                share.setObject(1, account.value());
+                try (ResultSet row = share.executeQuery()) {
+                    row.next();
+                }
+            }
+        } catch (SQLException failure) {
+            throw new LedgerStorageException(
+                    DatabaseFailure.describe("sharing the accounts' keys in order", failure));
+        }
         try (PreparedStatement lock =
                 unitOfWork.prepareStatement(
                         "SELECT 1 FROM " + BALANCE_TABLE

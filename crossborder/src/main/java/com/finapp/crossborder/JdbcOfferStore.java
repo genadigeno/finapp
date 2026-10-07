@@ -35,7 +35,7 @@ public final class JdbcOfferStore implements OfferStore {
                 return row.next() ? Optional.of(request(row)) : Optional.empty();
             }
         } catch (SQLException failure) {
-            throw new CrossborderStorageException(DatabaseFailure.describe("reading an offer request", failure), failure);
+            throw new CrossborderStorageException(DatabaseFailure.describe("reading an offer request", failure));
         }
     }
 
@@ -59,7 +59,7 @@ public final class JdbcOfferStore implements OfferStore {
             insert.setTimestamp(11, Timestamp.from(request.createdAt()));
             return insert.executeUpdate() == 1;
         } catch (SQLException failure) {
-            throw new CrossborderStorageException(DatabaseFailure.describe("recording an offer request", failure), failure);
+            throw new CrossborderStorageException(DatabaseFailure.describe("recording an offer request", failure));
         }
     }
 
@@ -96,7 +96,7 @@ public final class JdbcOfferStore implements OfferStore {
             insert.setTimestamp(17, Timestamp.from(offer.createdAt()));
             insert.executeUpdate();
         } catch (SQLException failure) {
-            throw new CrossborderStorageException(DatabaseFailure.describe("recording a payment offer", failure), failure);
+            throw new CrossborderStorageException(DatabaseFailure.describe("recording a payment offer", failure));
         }
     }
 
@@ -138,7 +138,7 @@ public final class JdbcOfferStore implements OfferStore {
                         row.getTimestamp("created_at").toInstant()));
             }
         } catch (SQLException failure) {
-            throw new CrossborderStorageException(DatabaseFailure.describe("reading a payment offer", failure), failure);
+            throw new CrossborderStorageException(DatabaseFailure.describe("reading a payment offer", failure));
         }
     }
 

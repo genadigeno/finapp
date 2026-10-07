@@ -73,6 +73,8 @@ class RuleSetAdministrationDatabaseTest {
     private static final String UNIQUE_VIOLATION = "23505";
     private static final String INSUFFICIENT_PRIVILEGE = "42501";
     private static final String RAISED = "P0001";
+    /** A source whose evidence settles an FX provider's cover legs - its first version must date both. */
+    private static final UUID SETTLING_FX = UUID.randomUUID();
 
     private static Connection application;
     private static RuleSetAdministration administration;
@@ -83,7 +85,10 @@ class RuleSetAdministrationDatabaseTest {
         application.setAutoCommit(false);
         DatabaseRoles.assertCannotBypassPrivileges(application);
         administration =
-                new RuleSetAdministration(new JdbcRuleSetStore(), new JdbcAuditWriter(), IDS);
+                new RuleSetAdministration(new JdbcRuleSetStore(), new JdbcAuditWriter(), IDS,
+                        (unitOfWork, sourceId) -> sourceId.equals(SETTLING_FX)
+                                ? java.util.EnumSet.of(ExpectationKind.FX_SELL_LEG, ExpectationKind.FX_BUY_LEG)
+                                : java.util.Set.of());
     }
 
     @AfterAll
@@ -577,6 +582,21 @@ class RuleSetAdministrationDatabaseTest {
     }
 
     // ------------------------------------------- (9) the first version (P9-TSK-011, D26)
+
+    @Test
+    @Order(9)
+    @DisplayName("the Phase 9 -> 10 transition: a first version that dates fewer kinds than its source settles is refused"
+            + " RuleSetInvalid - an opener of the missing kind would roll back every money movement it opens - and nothing"
+            + " is written")
+    void aFirstVersionMustDateEveryKindItsSourceSettles() throws SQLException {
+        assertThatThrownBy(() -> propose(PROPOSER, proposal(SETTLING_FX, "An FX source's first version, undated legs")))
+                .isInstanceOf(RuleSetAdministration.RuleSetInvalid.class)
+                .hasMessageContaining("FX_SELL_LEG").hasMessageContaining("FX_BUY_LEG");
+        application.rollback();
+        assertThat(lines("SELECT version || ':' || status FROM reconciliation.rule_set WHERE source_id = ?", SETTLING_FX))
+                .as("nothing written").isEmpty();
+    }
+
 
     @Test
     @Order(9)

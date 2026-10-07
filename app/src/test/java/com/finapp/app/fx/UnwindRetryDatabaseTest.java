@@ -356,11 +356,11 @@ class UnwindRetryDatabaseTest {
         try (Connection owner = DatabaseRoles.migrator()) {
             owner.setAutoCommit(false);
             try (PreparedStatement off = owner.prepareStatement(
-                            "ALTER TABLE payments.outbound_credit DISABLE TRIGGER outbound_credit_machine_is_legal");
+                            "ALTER TABLE payments.outbound_credit DISABLE TRIGGER USER");
                     PreparedStatement age = owner.prepareStatement("UPDATE payments.outbound_credit SET last_dispatched_at ="
                             + " last_dispatched_at - interval '20 minutes' WHERE id = ?");
                     PreparedStatement on = owner.prepareStatement(
-                            "ALTER TABLE payments.outbound_credit ENABLE TRIGGER outbound_credit_machine_is_legal")) {
+                            "ALTER TABLE payments.outbound_credit ENABLE TRIGGER USER")) {
                 off.execute();
                 age.setObject(1, paid.credit());
                 assertThat(age.executeUpdate()).isEqualTo(1);

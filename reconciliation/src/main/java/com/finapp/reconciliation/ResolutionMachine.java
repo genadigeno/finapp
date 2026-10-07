@@ -700,14 +700,16 @@ public final class ResolutionMachine {
             return Optional.empty();
         }
         Optional<String> endToEnd = store.endToEndReferenceOf(unitOfWork, parked.externalItemId().get());
-        if (endToEnd.isEmpty()) {
+        Optional<String> providerReference =
+                store.payoutReferencesOf(unitOfWork, parked.externalItemId().get()).providerReference();
+        if (endToEnd.isEmpty() && providerReference.isEmpty()) {
             return Optional.empty();
         }
         Set<UUID> transferAccounts = lines(unitOfWork, kind, holding, target).stream()
                 .map(line -> line.account().value())
                 .collect(java.util.stream.Collectors.toUnmodifiableSet());
-        return Optional.of(new ResolvedCorridorReturns.ParkedReturn(endToEnd, parked.amount(), target.get(),
-                transferAccounts));
+        return Optional.of(new ResolvedCorridorReturns.ParkedReturn(endToEnd, providerReference, parked.amount(),
+                target.get(), transferAccounts));
     }
 
     /** The machine's own refusal for the port's answer; at the approval, a return found meanwhile is stale. */

@@ -6,11 +6,13 @@ import com.finapp.ledger.Direction;
 import com.finapp.ledger.JournalLine;
 import com.finapp.ledger.LedgerAccountId;
 import com.finapp.sharedkernel.money.CurrencyCode;
+import com.finapp.sharedkernel.money.ExchangeRate;
 import com.finapp.sharedkernel.money.Money;
 import java.sql.Connection;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Objects;
+import java.util.Optional;
 
 /**
  * A cover's journal lines, composed from the plan's position legs and the provider's execution
@@ -65,6 +67,11 @@ public final class CoverLines {
         public static Plan of(QuoteStore.PlanRow plan, CoverKind kind) {
             return kind == CoverKind.UNWIND ? reversed(plan) : of(plan);
         }
+
+        /** The computed leg - the one the fixed side does not name, whose amount the provider's quote states. */
+        public Money computed() {
+            return fixedSide == FixedSide.FIXED_SOURCE ? bought : sold;
+        }
     }
 
     /** What the provider executed, in the plan's two currencies. */
@@ -86,6 +93,55 @@ public final class CoverLines {
                 && execution.bought().scale() == plan.bought().scale()
                 && execution.sold().isPositive()
                 && execution.bought().isPositive();
+    }
+
+    /**
+     * The computed leg an attempt was quoted at (the Phase 9 to 10 transition; ADR-0077 section 6): the fresh firm
+     * quote's stated counter when the attempt stored one (a requote, every unwind attempt), else - a COVER's attempt
+     * 1 - the plan's own computed position leg, which IS the quote's stated counter (ADR-0074 section 3). Empty only
+     * for an attempt stored before the counter was (fx {@code V010}), which nothing can judge.
+     */
+    public static Optional<Money> quotedComputed(Plan plan, CoverKind kind, int attempt, Optional<Long> statedCounterMinor) {
+        Objects.requireNonNull(plan, "plan must not be null");
+        Objects.requireNonNull(kind, "kind must not be null");
+        Objects.requireNonNull(statedCounterMinor, "statedCounterMinor must not be null");
+        Money computed = plan.computed();
+        if (statedCounterMinor.isPresent()) {
+            return Optional.of(Money.ofPersisted(statedCounterMinor.get(), computed.currency(), computed.scale()));
+        }
+        return kind == CoverKind.COVER && attempt == 1 ? Optional.of(computed) : Optional.empty();
+    }
+
+    /**
+     * Whether the executed computed leg differs from the firm quote it was executed under - the provider executing at
+     * another price than its own (fx {@code V010}'s {@code computed_deviation}, by CHECK). Not {@code offPlan}, the
+     * fixed leg's deviation: booked as executed either way, both counted and alerted.
+     */
+    public static boolean computedDeviates(Plan plan, Execution execution, Optional<Money> quotedComputed) {
+        requireCoherent(plan, execution);
+        Objects.requireNonNull(quotedComputed, "quotedComputed must not be null");
+        Money executedComputed = plan.fixedSide() == FixedSide.FIXED_SOURCE ? execution.bought() : execution.sold();
+        return quotedComputed.filter(quoted -> quoted.minorUnits() != executedComputed.minorUnits()).isPresent();
+    }
+
+    /**
+     * Whether the provider's executed rate explains its executed amounts: quoted for the pair sold -> bought, and the
+     * computed leg within one minor unit of the fixed leg converted at it - the rule a plan's stated counter is held to
+     * ({@code ConversionPlan}). An incoherent rate is the provider's data defect: the amounts are booked (they are what
+     * moved), the rate is flagged.
+     */
+    public static boolean rateCoherent(Plan plan, Execution execution, ExchangeRate executedRate) {
+        requireCoherent(plan, execution);
+        Objects.requireNonNull(executedRate, "executedRate must not be null");
+        if (!executedRate.source().equals(execution.sold().currency())
+                || !executedRate.destination().equals(execution.bought().currency())) {
+            return false;
+        }
+        boolean sourceFixed = plan.fixedSide() == FixedSide.FIXED_SOURCE;
+        return ConversionPlan.coherent(sourceFixed,
+                sourceFixed ? execution.sold() : execution.bought(),
+                sourceFixed ? execution.bought() : execution.sold(),
+                executedRate);
     }
 
     /** The realised result: the sold leg kept {@code plan - executed}, the bought leg gained {@code executed - plan}. */
