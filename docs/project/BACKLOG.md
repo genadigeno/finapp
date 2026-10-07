@@ -14282,7 +14282,7 @@ providers), each owned by Phase 15 and gating nothing here.
 
 # Phase 10 — Credit Decisioning
 
-Status: `IN_PROGRESS` — started 2026-10-07 with `P10-TSK-001` (4 of 24 items complete, M10.1 closed); entry gate passed 2026-10-07 by the Phase 9 → 10 transition
+Status: `IN_PROGRESS` — started 2026-10-07 with `P10-TSK-001` (5 of 24 items complete, M10.1 closed); entry gate passed 2026-10-07 by the Phase 9 → 10 transition
 ([`reviews/PHASE_9_TO_10_TRANSITION.md`](reviews/PHASE_9_TO_10_TRANSITION.md)), elaborated to task
 granularity by the same transition: twenty-four items (`P10-TSK-001`…`-021`, `P10-TST-001`,
 `P10-TST-002`, `P10-DOC-001`) across eight milestones, with `P10-TSK-001` marked `READY`. The
@@ -14579,7 +14579,8 @@ assignment and an expiry serialise (`-018`).
 - **Acceptance criteria**: one profile per party under ten racing ensurers; the lock serialises.
 - **Definition of done**: `DOD-DOMAIN`, `DOD-SEC`. **Risk**: Low. **Cx**: S.
 
-**P10-TSK-005 — The credit bureau port and the simulated bureau** — `READY` (marked by `P10-TSK-004`'s completion gate, 2026-10-07)
+**P10-TSK-005 — The credit bureau port and the simulated bureau** — `COMPLETE` (2026-10-07; marked `READY` by `P10-TSK-004`'s completion gate)
+- **As built** (2026-10-07): as `CURRENT_STATE.md` §Just completed records (archived to `history/TASK_HISTORY.md` when superseded). The code is `credit`'s `CreditBureau`, `BureauRequest`, `BureauAnswer`, `CreditAttribute`, `AttributeValue`, `AttributeProvenance` and `CreditEvidence`, and `app`'s `SimulatedBureauAdapter`, `BureauSubject` and `BureauSubjectResolver`; the suites are `CreditBureauContract` / `SimulatedBureauContractTest` (16 cases, with the test-scope `SimulatedBureauEngine`), `BureauNormalisationGoldenTest` (ten payloads under `app/src/test/resources/credit/golden/bureau-sim-a/`), `CreditAttributeTest` and `CreditProviderVocabularyIsConfinedTest`. A refused connection is `PROVIDER_ERROR` (a pull is information, so the FX port's `NothingSent` distinction buys nothing here); a subject the resolver cannot name is refused before anything is sent, as the caller's defect.
 - **Objective**: a provider-neutral bureau port whose every adapter answers inside a closed contract
   — data, partial data or unavailable, never a fault dressed as data — and a simulated bureau that
   exercises every branch.
@@ -14642,7 +14643,7 @@ assignment and an expiry serialise (`-018`).
   outside the adapter; no answer of a faulty provider ever carries an attribute.
 - **Definition of done**: `DOD-DOMAIN`, `DOD-SEC`. **Risk**: Medium. **Cx**: M.
 
-**P10-TSK-006 — Bureau data collection** — `PLANNED`
+**P10-TSK-006 — Bureau data collection** — `READY` (marked by `P10-TSK-005`'s completion gate, 2026-10-07)
 - **Objective**: retrieve bureau data under recorded consent, once per reference, with the evidence
   encrypted and retained to a stored deadline, and outages, duplicates, lost responses and
   withdrawals all safe.

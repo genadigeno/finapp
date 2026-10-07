@@ -6,6 +6,7 @@ import com.finapp.app.architecture.tierprobe.TierProbes;
 import com.tngtech.archunit.core.domain.JavaClass;
 import com.tngtech.archunit.core.domain.JavaClasses;
 import com.tngtech.archunit.core.domain.JavaMethod;
+import com.tngtech.archunit.core.domain.JavaModifier;
 import com.tngtech.archunit.core.importer.ClassFileImporter;
 import java.io.IOException;
 import java.io.UncheckedIOException;
@@ -668,9 +669,15 @@ class TestTaxonomyTest {
 
         List<SelectedTest> selected = new ArrayList<>();
         for (JavaClass javaClass : topLevel) {
+            if (javaClass.getModifiers().contains(JavaModifier.ABSTRACT)) {
+                // An abstract contract (P10-TSK-005's CreditBureauContract) is never executed itself: its
+                // tests run through each concrete subclass, which is selected - and named - below.
+                continue;
+            }
             List<JavaClass> nested = nestedByOuter.getOrDefault(javaClass.getName(), List.of());
             boolean executable =
                     declaresAnExecutionMarker(javaClass)
+                            || inheritsAnExecutionMarker(javaClass)
                             || nested.stream()
                                     .anyMatch(TestTaxonomyTest::declaresAnExecutionMarker);
             if (executable) {
@@ -678,6 +685,18 @@ class TestTaxonomyTest {
             }
         }
         return selected;
+    }
+
+    /** Whether a superclass declares tests - a concrete subclass of an abstract contract executes them. */
+    private static boolean inheritsAnExecutionMarker(JavaClass javaClass) {
+        java.util.Optional<JavaClass> superclass = javaClass.getRawSuperclass();
+        while (superclass.isPresent() && !superclass.get().getName().equals(Object.class.getName())) {
+            if (declaresAnExecutionMarker(superclass.get())) {
+                return true;
+            }
+            superclass = superclass.get().getRawSuperclass();
+        }
+        return false;
     }
 
     private static JavaClass outermost(JavaClass javaClass) {
