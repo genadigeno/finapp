@@ -256,6 +256,13 @@ class CrossBorderBeneficiaryDatabaseTest {
         assertThat(bodies).as("one identical answer from every state").containsOnly(bodies.get(0));
         assertThat(post(DOOR + "/" + active.value() + "/revocation", "", customer, key()).body())
                 .as("revoking a revoked beneficiary answers the same").isEqualTo(bodies.get(0));
+        // Each registration and each revocation audited once - the repeated revocation writes nothing (P9-DOC-001).
+        for (BeneficiaryId id : List.of(pending, inReview, blocked, active)) {
+            assertThat(count("SELECT count(*) FROM platform.audit_record WHERE operation = 'crossborder.BeneficiaryRegistered'"
+                    + " AND target_id = ?", id.value().toString())).as("registered, audited once").isEqualTo(1);
+            assertThat(count("SELECT count(*) FROM platform.audit_record WHERE operation = 'crossborder.BeneficiaryRevoked'"
+                    + " AND target_id = ?", id.value().toString())).as("revoked, audited once").isEqualTo(1);
+        }
 
         review(inReview, Decision.RELEASE, ReasonCode.FALSE_POSITIVE);
         assertThat(statusOf(inReview)).as("a later release leaves it REVOKED").isEqualTo("REVOKED");

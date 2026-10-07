@@ -104,6 +104,18 @@ class RailMoneySemanticsArePinnedTest {
                             RailCapabilities.SettlementModel.DEFERRED_VIA_CLEARING,
                             RailCapabilities.DisputeModel.NONE,
                             Optional.of(AccountPurpose.CORRIDOR_CLEARING),
+                            Optional.of(Duration.ofMinutes(10))),
+                    // P9-TSK-026 (ADR-0080 section 1): the second corridor rail - the same semantics, its own id
+                    // and its own clearing position (pinned by the P9-DOC-001 exit review, which found it unpinned).
+                    "corridor-sim-b",
+                    new MoneySemantics(
+                            InteractionModel.PUSH,
+                            RailCapabilities.Finality.FINAL_ON_ACCEPTANCE,
+                            Set.of(),
+                            RailCapabilities.RefundMode.NONE,
+                            RailCapabilities.SettlementModel.DEFERRED_VIA_CLEARING,
+                            RailCapabilities.DisputeModel.NONE,
+                            Optional.of(AccountPurpose.CORRIDOR_CLEARING),
                             Optional.of(Duration.ofMinutes(10))));
 
     private static final Set<PaymentRail> DECLARED =
@@ -111,7 +123,8 @@ class RailMoneySemanticsArePinnedTest {
                     SimulatedCardPspAdapter.RAIL,
                     SimulatedInstantSchemeAdapter.RAIL,
                     BookRail.RAIL,
-                    SimulatedCorridorAdapter.RAIL);
+                    SimulatedCorridorAdapter.RAIL,
+                    SimulatedCorridorAdapter.RAIL_B);
 
     private static final com.finapp.sharedkernel.money.CurrencyCode USD =
             com.finapp.sharedkernel.money.CurrencyCode.of("USD");
@@ -128,7 +141,9 @@ class RailMoneySemanticsArePinnedTest {
                             Map.of(
                                     USD, com.finapp.sharedkernel.money.Money.of(new java.math.BigDecimal("10000.00"), USD),
                                     JPY, com.finapp.sharedkernel.money.Money.of(new java.math.BigDecimal("1500000"), JPY),
-                                    BHD, com.finapp.sharedkernel.money.Money.of(new java.math.BigDecimal("4000.000"), BHD)));
+                                    BHD, com.finapp.sharedkernel.money.Money.of(new java.math.BigDecimal("4000.000"), BHD)),
+                            "corridor-sim-b",
+                            Map.of(USD, com.finapp.sharedkernel.money.Money.of(new java.math.BigDecimal("10000.00"), USD)));
 
     @Test
     @DisplayName("every declared rail's money semantics equal the ones frozen under its id - a"
@@ -152,7 +167,8 @@ class RailMoneySemanticsArePinnedTest {
     @DisplayName("the rest of each declaration is pinned to its declaration version - a change"
             + " bumps the version the routing steps record, and this pin, together")
     void everyOtherCapabilityIsPinnedToItsVersion() {
-        Map<String, Integer> versions = Map.of("card", 1, "instant", 1, "book", 1, "corridor-sim-a", 1);
+        Map<String, Integer> versions =
+                Map.of("card", 1, "instant", 1, "book", 1, "corridor-sim-a", 1, "corridor-sim-b", 1);
         for (PaymentRail rail : DECLARED) {
             RailCapabilities declared = rail.capabilities();
             String id = rail.id().value();

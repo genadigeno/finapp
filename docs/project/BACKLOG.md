@@ -9523,7 +9523,7 @@ Disputes (`P7-TSK-012`…`-014`) · M7.7 Observability and demonstration (`P7-TS
 
 # Phase 8 — Settlement and Reconciliation
 
-Status: `IN_PROGRESS` — started 2026-09-28 with `P8-TSK-001` (10 of 27 items complete; M8.1 Evidence intake closed 2026-09-29 at 3 of 3; M8.2 Every settling completion is expected CLOSED 2026-09-29 at 4 of 4; M8.3 Evidence becomes canonical lines at 3 of 6); entry gate passed 2026-09-28 by the Phase 7 → 8 transition
+Status: `COMPLETE` (2026-10-01, `P8-DOC-001` - [`reviews/PHASE_8_REVIEW.md`](reviews/PHASE_8_REVIEW.md); this header read `IN_PROGRESS` at 10 of 27 until the Phase 9 exit review found it) — started 2026-09-28 with `P8-TSK-001`; entry gate passed by the Phase 7 → 8 transition
 ([`reviews/PHASE_7_TO_8_TRANSITION.md`](reviews/PHASE_7_TO_8_TRANSITION.md)), elaborated to task
 granularity by the same transition: twenty-seven items (`P8-TSK-001`…`-024`, `P8-TST-001`,
 `P8-TST-002`, `P8-DOC-001`) across eight milestones, with `P8-TSK-001` marked `READY`. The
@@ -12913,7 +12913,7 @@ break row, as the approval door must.)*
 
 # Phase 9 — FX and Cross-Border Payments
 
-Status: `IN_PROGRESS` — started 2026-10-03 with `P9-TSK-001` (29 of 30 items complete, M9.1 to M9.8 closed); entry gate passed 2026-10-02 by the Phase 8 → 9 transition
+Status: `COMPLETE` (2026-10-07, `P9-DOC-001` - [`reviews/PHASE_9_REVIEW.md`](reviews/PHASE_9_REVIEW.md)) — started 2026-10-03 with `P9-TSK-001` (30 of 30 items complete, M9.1 to M9.9 closed); entry gate passed 2026-10-02 by the Phase 8 → 9 transition
 ([`reviews/PHASE_8_TO_9_TRANSITION.md`](reviews/PHASE_8_TO_9_TRANSITION.md)), elaborated to task
 granularity by the same transition: thirty items (`P9-TSK-001`…`-027`, `P9-TST-001`, `P9-TST-002`,
 `P9-DOC-001`) across nine milestones, with `P9-TSK-001` marked `READY`. The engineering plan is
@@ -14251,7 +14251,7 @@ providers), each owned by Phase 15 and gating nothing here.
 - **Acceptance criteria**: every count exact; every proof 0 every round.
 - **Definition of done**: `DOD-TEST`, `DOD-FIN`. **Risk**: High. **Cx**: L.
 
-**P9-DOC-001 — The Phase 9 exit review** — `READY` (marked by `P9-TST-001`'s completion gate, 2026-10-07)
+**P9-DOC-001 — The Phase 9 exit review** — `COMPLETE` (2026-10-07; [`reviews/PHASE_9_REVIEW.md`](reviews/PHASE_9_REVIEW.md) - Phase 9 `COMPLETE`, M9.9 closed at 4 of 4)
 - **Objective**: close Phase 9 against its gate, with the documents made true.
 - **Bounded context**: all.
 - **Dependencies**: `P9-TST-001`, `P9-TST-002`.
@@ -14836,6 +14836,11 @@ applied and verified 2026-09-23; criterion 5 met by the Phase 6 → 7 transition
   flow that reads its posting date from the clock named with its later-day replay behaviour; the
   rule for new posters (both dates from stored rows) stated; no code change; any flow whose
   later-day replay would conflict rather than converge recorded as its own item with an owner.
+  *(Widened by the Phase 9 exit review, `P9-DOC-001`, 2026-10-07: four Phase 9 posters read the
+  clock too - `OutboundCreditOutcomes` (the completion), `OutboundCreditReturns` (the return from
+  evidence), `CorridorReturnResolutions` (the fee refund at a resolution) and `TradeReversals` - each
+  inside a single-application conditional transition, so none can be replayed on a later day; named
+  here with the Phase 5–7 flows.)*
   **Risk**: Low. **Cx**: S. **DoD**: `DOD-DOC`
 
 **X-TSK-013 — Database-stamped send permits for the Phase 5–7 outbound flows** — `COMPLETE` (2026-10-07; marked `READY` by `P9-TSK-027`'s completion gate)

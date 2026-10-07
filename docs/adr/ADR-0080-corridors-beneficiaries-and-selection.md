@@ -1,6 +1,6 @@
 # ADR-0080 — The corridor rail declares only what is true, a beneficiary lives by provider reference, and the provider is selected twice because two questions are asked
 
-Status: Proposed (2026-10-02, the Phase 8 → 9 transition)
+Status: Accepted (2026-10-07, `P9-DOC-001` — read against the code and corrected first)
 Date: 2026-10-02
 Phase: 9
 Context: Cross-Border · Payments · Payment Methods · Ledger
@@ -52,7 +52,8 @@ The forces:
    so `RailCapabilities` keeps its shape and **existing declarations are unchanged**. A new
    coherence rule holds platform-wide: `NONE` ⇔ `PUSH` and no pay-in, and routing refuses a
    `PAY_IN` input on a `NONE` rail with the new `RoutingRejection.DIRECTION_UNSUPPORTED`.
-   `RailMoneySemanticsArePinnedTest` freezes the tuple; the `CLEARING_POSITIONS` rule is
+   `RailMoneySemanticsArePinnedTest` freezes the tuple — for every corridor rail
+   (`corridor-sim-a`, and `corridor-sim-b` since `P9-DOC-001`); the `CLEARING_POSITIONS` rule is
    amended so a counterparty-owned purpose may be named by several declaring adapters, each
    with its own counterparty code (ADR-0078).
 
@@ -116,7 +117,11 @@ The forces:
      never a migration. Raising routing activation to four-eyes would be a superseding ADR,
      recorded as an owner question, not taken here. The single-person act cannot redirect
      money to a rail the customer was not priced on, because price never varies with the rail
-     (point 6) and only the issuing rail is reachable.
+     (point 6) and only the issuing rail is reachable. *(As built (`P9-DOC-001`): version 5 was
+     **seeded by payments `V025`**, `created_by = 'V025'` — a recorded deviation from "never a
+     migration", taken because `INV-HIST-04`'s NOT NULL refuses a routing decision with no pinned
+     policy, the `V013`/`V016`/`V017`/`V019` precedent. It names `corridor-sim-a` only; routing to
+     `corridor-sim-b` takes a later version through the operator door.)*
 
 6. **Fees are per corridor, never per rail** (ADR-0060 §6 affirmed unamended). The transfer
    fee is the corridor's (fixed `Money` + `Margin` × the customer source amount, a named
@@ -233,7 +238,15 @@ disable names one and a reason), `INV-PAY-03` (provider vocabulary confined to t
   unamended; the owner question on routing activation authority is recorded in DECISIONS.
 - The live capability probe stays deferred until a provider's declared coverage proves
   unreliable.
-- The Phase 9 review (`P9-DOC-001`) reads this ADR against the code before accepting it.
+- **As built** (2026-10-07, read against the code by `P9-DOC-001`): every point of this ADR is
+  implemented by the tasks below, all `COMPLETE`, and every statement above is true of the code.
+  The review's corrections: point 5(b)'s seeded routing version 5 (a deviation, recorded there),
+  `corridor-sim-b` pinned in `RailMoneySemanticsArePinnedTest` beside `corridor-sim-a`, and the
+  screening validity's lapse judged on the database clock (`DatabaseTime.now`) in `OfferIssuance`
+  and `PaymentAuthorization` — both fixed in code by the review, which found them on the
+  instance's clock.
+- The Phase 9 review (`P9-DOC-001`) read this ADR against the code, corrected it where it had
+  drifted, and accepted it on 2026-10-07.
 - *As built by `P9-TSK-014` (2026-10-05):* points 1 and 2 are implemented - `RefundMode.NONE` (coherent
   only on a push rail) and `RoutingRejection.DIRECTION_UNSUPPORTED` judged first among the refusals
   (payments `V024`); `CorridorDeclaration` beside the unchanged `RailCapabilities`, its counterparty
@@ -277,4 +290,4 @@ disable names one and a reason), `INV-PAY-03` (provider vocabulary confined to t
   `a` then `b` selects `b` wherever `a` is not operable, each candidate a stored step, and the beneficiary pinned
   to `b` is routed, paid and settled on `b` (`SecondCorridorRailDatabaseTest`). The negative consequence above is
   now real and tested. **Deviation:** `corridor-sim-b` has no callback door - callbacks are hints and the
-  resolution sweep is the guarantee - nor a report pull collector; its source is upload-only in this build.
+  resolution sweep is the guarantee - nor a report pull collector; its source descriptor declares upload and pull, but only upload is served in this build (no pull collector is composed for it).

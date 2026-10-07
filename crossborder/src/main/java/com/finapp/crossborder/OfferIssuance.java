@@ -1,5 +1,6 @@
 package com.finapp.crossborder;
 
+import com.finapp.platform.persistence.DatabaseTime;
 import com.finapp.platform.security.Actor;
 import com.finapp.sharedkernel.correlation.CorrelationId;
 import com.finapp.sharedkernel.money.CurrencyCode;
@@ -122,7 +123,10 @@ public final class OfferIssuance {
                 .orElseThrow(() -> new OfferRefused(CrossborderErrorCode.BENEFICIARY_NOT_PAYABLE));
         OfferStore.RequestRow request = existing.orElseGet(() -> {
             UUID id = ids.next();
-            boolean lapsed = clearance.decidedAt().map(at -> !at.plus(terms.screeningValidity()).isAfter(now)).orElse(true);
+            // Lapse is judged on the DATABASE clock (P9-DOC-001): every window the platform judges is the database's.
+            Instant judgedAt = DatabaseTime.now(unitOfWork);
+            boolean lapsed = clearance.decidedAt().map(at -> !at.plus(terms.screeningValidity()).isAfter(judgedAt))
+                    .orElse(true);
             Optional<UUID> rescreen = lapsed
                     ? Optional.of(screening.rescreenWithin(unitOfWork, beneficiary.screeningId(),
                             Beneficiaries.rescreenReference(beneficiary.id(), id)))

@@ -19,7 +19,8 @@ Detailed architectural decisions. The human-readable index of *what* was decided
   acceptance to the owner. ADR-0064…0073 were written `Proposed` at the Phase 7 → 8 transition
   and accepted by the Phase 8 review (`P8-DOC-001`, 2026-10-01), which read each against the
   code and corrected every drifted passage - with dated notes where a decision changed -
-  before accepting any. *(The Phase 7 review's acceptance was missing from this line until the Phase 7 → 8
+  before accepting any; ADR-0074…0083 were written `Proposed` at the Phase 8 → 9 transition and
+  accepted by the Phase 9 review (`P9-DOC-001`, 2026-10-07) in the same way. *(The Phase 7 review's acceptance was missing from this line until the Phase 7 → 8
   transition added it with the Phase 8 decisions.)*
 - A decision found in code but absent from this record is architectural debt.
 
@@ -100,16 +101,16 @@ Detailed architectural decisions. The human-readable index of *what* was decided
 | [0071](ADR-0071-break-resolution-authority-and-four-eyes-thresholds.md) | Break resolution authority and four-eyes thresholds | Accepted | 8 | Reconciliation · Ledger · Identity · Settlement |
 | [0072](ADR-0072-amounts-never-enter-metrics.md) | Amounts never enter metrics: unmatched value, suspense balance and provider costs are audited operator reports | Accepted | 8 | Reconciliation · Settlement · Ledger · Payments · Observability |
 | [0073](ADR-0073-payout-return-applied-from-settlement-evidence.md) | A payout return is a merchant fact applied from settlement evidence; the payout's push-rail convergence trigger did not fire | Accepted | 8 | Merchant · Reconciliation · Settlement · Ledger |
-| [0074](ADR-0074-conversion-arithmetic.md) | Conversion arithmetic: exact rates, one margin line, a proven residual | Proposed | 9 | FX · Shared Kernel · Platform · Ledger |
-| [0075](ADR-0075-the-rate-chain-and-the-quote.md) | The rate chain and the quote: an independent reference, a firm provider lock, a database-clock window | Proposed | 9 | FX · Identity · Platform |
-| [0076](ADR-0076-multi-currency-accounting-through-fx-position.md) | Multi-currency accounting through `FX_POSITION`: the quote is a frozen posting plan | Proposed | 9 | FX · Ledger · Accounts · App |
-| [0077](ADR-0077-the-decoupled-cover.md) | The decoupled cover: one back-to-back provider execution per accepted quote, never concluded from silence | Proposed | 9 | FX · Ledger · Settlement · Reconciliation · App |
-| [0078](ADR-0078-counterparty-keyed-clearing-positions.md) | Counterparty-keyed clearing positions: the split trigger fires, on accounts with no history | Proposed | 9 | Ledger · Settlement · Reconciliation · App |
-| [0079](ADR-0079-cross-border-payments.md) | A cross-border payment holds the customer's funds until the corridor provider accepts, posts once, and comes back only as exactly what was sent — or through a person | Proposed | 9 | Cross-Border · Payments · FX · Ledger · Reconciliation |
-| [0080](ADR-0080-corridors-beneficiaries-and-selection.md) | The corridor rail declares only what is true, a beneficiary lives by provider reference, and the provider is selected twice because two questions are asked | Proposed | 9 | Cross-Border · Payments · Payment Methods · Ledger |
-| [0081](ADR-0081-counterparty-screening-is-kycs.md) | Counterparty screening is kyc's: every outcome is a recorded decision, an unverified payee always meets a person, and unavailable means unpayable | Proposed | 9 | KYC · Cross-Border · Identity · Security |
-| [0082](ADR-0082-fx-and-corridor-settlement-and-reconciliation.md) | FX and corridor settlement and reconciliation: legs are single-currency expectations, new causes but no new break types, and reconciliation still never converts | Proposed | 9 | Settlement · Reconciliation · FX · Payments · Ledger |
-| [0083](ADR-0083-callbacks-are-hints.md) | Callbacks are hints: an outbound money flow adopts its outcome only from an authenticated inquiry | Proposed | 9 | Payments · FX · Security |
+| [0074](ADR-0074-conversion-arithmetic.md) | Conversion arithmetic: exact rates, one margin line, a proven residual | Accepted | 9 | FX · Shared Kernel · Platform · Ledger |
+| [0075](ADR-0075-the-rate-chain-and-the-quote.md) | The rate chain and the quote: an independent reference, a firm provider lock, a database-clock window | Accepted | 9 | FX · Identity · Platform |
+| [0076](ADR-0076-multi-currency-accounting-through-fx-position.md) | Multi-currency accounting through `FX_POSITION`: the quote is a frozen posting plan | Accepted | 9 | FX · Ledger · Accounts · App |
+| [0077](ADR-0077-the-decoupled-cover.md) | The decoupled cover: one back-to-back provider execution per accepted quote, never concluded from silence | Accepted | 9 | FX · Ledger · Settlement · Reconciliation · App |
+| [0078](ADR-0078-counterparty-keyed-clearing-positions.md) | Counterparty-keyed clearing positions: the split trigger fires, on accounts with no history | Accepted | 9 | Ledger · Settlement · Reconciliation · App |
+| [0079](ADR-0079-cross-border-payments.md) | A cross-border payment holds the customer's funds until the corridor provider accepts, posts once, and comes back only as exactly what was sent — or through a person | Accepted | 9 | Cross-Border · Payments · FX · Ledger · Reconciliation |
+| [0080](ADR-0080-corridors-beneficiaries-and-selection.md) | The corridor rail declares only what is true, a beneficiary lives by provider reference, and the provider is selected twice because two questions are asked | Accepted | 9 | Cross-Border · Payments · Payment Methods · Ledger |
+| [0081](ADR-0081-counterparty-screening-is-kycs.md) | Counterparty screening is kyc's: every outcome is a recorded decision, an unverified payee always meets a person, and unavailable means unpayable | Accepted | 9 | KYC · Cross-Border · Identity · Security |
+| [0082](ADR-0082-fx-and-corridor-settlement-and-reconciliation.md) | FX and corridor settlement and reconciliation: legs are single-currency expectations, new causes but no new break types, and reconciliation still never converts | Accepted | 9 | Settlement · Reconciliation · FX · Payments · Ledger |
+| [0083](ADR-0083-callbacks-are-hints.md) | Callbacks are hints: an outbound money flow adopts its outcome only from an authenticated inquiry | Accepted | 9 | Payments · FX · Security |
 
 *ADR-0063 is `X-TSK-005`'s. The Phase 7 → 8 transition reserved the number while that branch was
 unmerged, so Phase 8's decisions start at ADR-0064; the row arrived with the file when the branch

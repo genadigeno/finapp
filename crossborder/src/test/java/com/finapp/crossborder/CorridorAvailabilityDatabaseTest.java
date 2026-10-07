@@ -71,6 +71,10 @@ class CorridorAvailabilityDatabaseTest {
             app.commit();
             assertThat(availability().isAvailable(app, subject)).isTrue();
             assertThat(facts(app, subject)).as("disabled once, enabled once").isEqualTo(2);
+            String audited = subject.code();
+            assertThat(audits(app, "crossborder.CorridorDisabled", audited)).as("disabled once, audited once").isEqualTo("1");
+            assertThat(audits(app, "crossborder.CorridorEnableProposed", audited)).as("the enable proposed, audited").isEqualTo("1");
+            assertThat(audits(app, "crossborder.CorridorEnabled", audited)).as("enabled, audited").isEqualTo("1");
             assertThat(scalar(app, "SELECT count(*) FROM platform.outbox_event WHERE event_type ="
                             + " 'crossborder.CorridorAvailabilityChanged' AND convert_from(payload, 'UTF8') LIKE '%"
                             + subject.code() + "%'"))
@@ -132,6 +136,7 @@ class CorridorAvailabilityDatabaseTest {
                             correlation()).replayed())
                     .as("the rejecter's retry converges")
                     .isTrue();
+            assertThat(audits(app, "crossborder.CorridorEnableRejected", subject.code())).as("rejected once, audited once").isEqualTo("1");
             assertThatThrownBy(() -> availability().approveEnable(app, proposed.requestId(), controller(), "late",
                             Instant.now(), correlation()))
                     .as("the domain refuses REJECTED -> APPROVED")
@@ -267,5 +272,10 @@ class CorridorAvailabilityDatabaseTest {
         } finally {
             pool.shutdownNow();
         }
+    }
+    /** The audit records of {@code operation} on {@code target} (the P9-DOC-001 exit review: every act positively asserted). */
+    private static String audits(Connection app, String operation, String target) throws SQLException {
+        return scalar(app, "SELECT count(*) FROM platform.audit_record WHERE operation = '" + operation
+                + "' AND target_id = '" + target + "'");
     }
 }

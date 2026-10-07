@@ -1,6 +1,6 @@
 # ADR-0075 — The rate chain and the quote: an independent reference, a firm provider lock, a database-clock window
 
-Status: Proposed (2026-10-02, the Phase 8 → 9 transition)
+Status: Accepted (2026-10-07, `P9-DOC-001` — read against the code and corrected first)
 Date: 2026-10-02
 Phase: 9
 Context: FX · Identity · Platform
@@ -90,7 +90,8 @@ there:
      `fx.quote_sourcing_step` (`QUOTED` | `DECLINED` | `UNAVAILABLE` | `INCOHERENT` |
      `IMPLAUSIBLE` | `NOTHING_SENT` | `INDETERMINATE` | `CHOSEN`, with the declaration version)
      — the `routing_decision_step` shape, so the selection is recomputable.
-   - **Tx2**: re-read the pinned version — if a successor activated in between,
+   - **Tx2**: re-read the pinned version `FOR SHARE` (a racing activation's retirement waits for
+     it) — if a successor activated in between,
      `complete(FAILED, 409 fx.PolicyStale)` and issue nothing (a new key prices under the
      successor); read the latest snapshot, fresh on the database clock; band and coherence;
      `ConversionPlan.compute` under the **pinned** pair (ADR-0074); `expires_at`, refusing below
@@ -145,11 +146,18 @@ there:
    `provider_availability` let one controller disable instantly; re-enabling goes through
    `availability_enable_request` (`PROPOSED → APPROVED | REJECTED`, four-eyes `CHECK`,
    every-writer trigger, one live proposal per subject) — turning money-moving capability back
-   on is a two-person act.
+   on is a two-person act. *As built (read at `P9-DOC-001`):* availability is **not a lock**.
+   Each subject's newest append-only fact is read unlocked under `READ COMMITTED` inside the
+   deciding transaction (quote issuance, acceptance), never `FOR SHARE`; only its writers
+   serialise, on advisory namespace `7` (the corridor's on `8`, ADR-0080), so a disable
+   committing beside an acceptance neither blocks it nor is blocked
+   (`FxAvailabilityDatabaseTest`; `DISTRIBUTED_EXECUTION.md`'s Phase 9 lock order).
 9. **No client influence on price, and no conversion fee.** No `fx` or `crossborder` request
-   body has a rate field; strict deserialisation answers `422 VALIDATION_FAILED` to any unknown
+   body has a rate field; strict deserialisation (`@ClosedBody`) answers
+   `422 api.ValidationFailed` (`PlatformErrorCode.VALIDATION_FAILED`) to any unknown
    field, `rate` included; `RatesAreNeverClientSuppliedTest` proves it statically over every
-   request record and an OpenAPI guard over every request schema (`INV-FX-02`, amended: a
+   request record and an OpenAPI guard (`FxRequestSchemasCarryNoRateTest`) over every request
+   schema (`INV-FX-02`, amended: a
    client rate is *refused*, not ignored). The quote carries **no fee** (O10): Phase 9's
    conversion is priced by margin alone, and the cross-border transfer fee lives on
    `crossborder.payment_offer` (ADR-0079), never on the FX quote.
@@ -213,11 +221,13 @@ Negative:
   cost, invisible fleet-wide.
 
 Operational impact: `finapp.fx.quote{pair, outcome}` (issued and the five refusal causes),
-`finapp.fx.quote.closed{outcome}`, `finapp.fx.quote.open`, `finapp.fx.rate.age{pair}` (alerting
-past the maximum age), `finapp.fx.provider.quote.latency{provider, outcome}`, and the two
-sweeper-enabled gauges (`finapp.fx.rate.sweeper.enabled`,
+`finapp.fx.quote.closed{pair, outcome}` (`accepted`, `expired`, `cancelled`, `abandoned`),
+`finapp.fx.quote.open{pair}`, `finapp.fx.rate.age{pair}` (alerting past the maximum age),
+`finapp.fx.rate.fetch{outcome}`, `finapp.fx.provider.quote.latency{provider, outcome}`, and the
+two sweeper-enabled gauges (`finapp.fx.rate.sweeper.enabled`,
 `finapp.fx.quote.expiry.sweeper.enabled`). Counts, ages and verdicts only — never an amount or a
-rate (ADR-0072, D32).
+rate (ADR-0072, D32). *(Corrected 2026-10-07, `P9-DOC-001`: the closed and open meters' `pair`
+tag and the fetch counter were missing.)*
 Security impact: the reference adapter and provider adapter run under confined keys
 (`FINAPP_FX_REFERENCE_KEY`, `FINAPP_FX_PROVIDER_KEY`) behind the transport guard; a client
 cannot name a rate anywhere (statically proven); the provider's raw rate never appears in a
@@ -273,6 +283,10 @@ four-eyes, no seed), `INV-HIST-04` (pricing policy as a versioned, pinned subjec
   (ADR-0079).
 - `P9-TST-001` / `P9-TST-002`: the storm's skewed-clock races over quote, cover and payment;
   golden replay of every quote.
-- Until `P9-TSK-005` lands, nothing in this ADR is implemented: every statement is the decided
-  design, to be corrected by the tasks that build it.
-- The Phase 9 review reads this ADR against the code before accepting it (`P9-DOC-001`).
+- Built by `P9-TSK-005`…`-008` and `-018`, raced by `P9-TST-001`, replayed by `P9-TST-002`.
+  *(This read "Until `P9-TSK-005` lands, nothing in this ADR is implemented" until `P9-DOC-001`.)*
+- **Acceptance.** The Phase 9 review (`P9-DOC-001`) read this ADR against the code before
+  accepting it on 2026-10-07, following the `P8-DOC-001` precedent. It confirmed the `503`
+  refusals (stale reference, no usable provider) and the `429` cap, added Tx2's `FOR SHARE` on
+  the pinned version, stated that availability is read unlocked (point 8), and corrected
+  point 9's error code and the meters' tags.

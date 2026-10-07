@@ -411,6 +411,80 @@ class CrossBorderReturnDatabaseTest {
     }
 
     @Test
+    @DisplayName("P9-DOC-001: the approval posts two entries - the fee refund, then the transfer - so it locks the union of"
+            + " their projection rows in order before the first: held at the source wallet, it already holds the USD"
+            + " suspense (seeded, so first), which posting the fee alone never touches")
+    void theApprovalPreLocksBothEntriesInOrder() throws Exception {
+        Paid paid = paid("Clear Person");
+        client().addCurrency(paid.customer(), paid.product(), "USD");
+        UUID usdWallet = walletAccount(paid, "USD").orElseThrow();
+        UUID eurWallet = walletAccount(paid, "EUR").orElseThrow();
+        UUID breakId = parked(paid, "1000.00");
+        HttpResponse<String> proposed = propose(breakId, usdWallet);
+        assertThat(proposed.statusCode()).as(proposed.body()).isEqualTo(201);
+        UUID suspense = UUID.fromString(scalar("SELECT id::text FROM ledger.ledger_account WHERE purpose ="
+                + " 'SUSPENSE_UNMATCHED' AND currency = 'USD'"));
+        assertThat(suspense).as("seeded ids sort first (D18)").isLessThan(eurWallet);
+
+        ExecutorService approver = Executors.newSingleThreadExecutor();
+        try (Connection blocker = DatabaseRoles.migrator()) {
+            blocker.setAutoCommit(false);
+            lockBalance(blocker, eurWallet);
+            Future<HttpResponse<String>> approval = approver.submit(() -> client().post(DESK + "/resolutions/"
+                    + field(proposed.body(), "resolutionId") + "/approval", "{}",
+                    sessionWith(RoleName.RECONCILIATION_OPERATOR), null));
+            awaitBlockedOnTheBalanceRow();
+            try (Connection probe = DatabaseRoles.migrator()) {
+                probe.setAutoCommit(false);
+                assertThat(tryLockBalance(probe, suspense))
+                        .as("waiting at the source wallet, the approval already holds the USD suspense - the union"
+                                + " pre-locked, never the fee entry's pair first and the transfer's after")
+                        .isFalse();
+                probe.rollback();
+            }
+            blocker.rollback();
+            HttpResponse<String> approved = approval.get(1, TimeUnit.MINUTES);
+            assertThat(approved.statusCode()).as(approved.body()).isEqualTo(200);
+        } finally {
+            approver.shutdownNow();
+        }
+        assertThat(walletBalance(usdWallet)).isEqualTo(100_000);
+    }
+
+    private static void lockBalance(Connection unitOfWork, UUID account) throws Exception {
+        try (PreparedStatement lock = unitOfWork.prepareStatement(
+                "SELECT 1 FROM ledger.account_balance WHERE ledger_account_id = ? FOR UPDATE")) {
+            lock.setObject(1, account);
+            try (ResultSet row = lock.executeQuery()) {
+                assertThat(row.next()).as("a balance row for " + account).isTrue();
+            }
+        }
+    }
+
+    /** Whether the balance row could be locked at once - false when another transaction holds it. */
+    private static boolean tryLockBalance(Connection unitOfWork, UUID account) throws Exception {
+        try (PreparedStatement lock = unitOfWork.prepareStatement(
+                "SELECT 1 FROM ledger.account_balance WHERE ledger_account_id = ? FOR UPDATE NOWAIT")) {
+            lock.setObject(1, account);
+            lock.executeQuery().close();
+            return true;
+        } catch (java.sql.SQLException held) {
+            assertThat(held.getSQLState()).as(held.getMessage()).isEqualTo("55P03");
+            return false;
+        }
+    }
+
+    /** Until a backend waits on a row lock over the balance projection (bounded). */
+    private static void awaitBlockedOnTheBalanceRow() throws Exception {
+        long deadline = System.nanoTime() + TimeUnit.SECONDS.toNanos(30);
+        while (count("SELECT count(*) FROM pg_stat_activity WHERE wait_event_type = 'Lock'"
+                + " AND query LIKE '%account_balance%' AND query NOT LIKE '%pg_stat_activity%'") == 0) {
+            assertThat(System.nanoTime()).as("the approval reached the held balance row").isLessThan(deadline);
+            Thread.sleep(50);
+        }
+    }
+
+    @Test
     @DisplayName("the resolution racing an inquiry-applied return: proposed while the customer was suspended and then"
             + " reactivated, the inquiry applies first; the approval is 409 ResolutionStale with nothing moved, and a"
             + " fresh proposal is refused ReturnAlreadyAttributed - one credit")
@@ -504,6 +578,83 @@ class CrossBorderReturnDatabaseTest {
         assertThat(count("SELECT count(*) FROM platform.outbox_event WHERE convert_from(payload, 'UTF8') LIKE ?",
                 "%" + name + "%")).isZero();
         assertThat(count("SELECT count(*) FROM platform.audit_record t WHERE t::text LIKE ?", "%" + name + "%")).isZero();
+    }
+
+    // ------------------------------------------------------------------ the machines and arbiters (P9-DOC-001)
+
+    @Test
+    @DisplayName("P9-DOC-001: the payment and outbound credit machines refuse every illegal edge from every writer, and"
+            + " a second payment, scheme-execution claim or return is refused by its UNIQUE with every trigger off")
+    void theMachinesAndArbitersHoldForEveryWriter() throws Exception {
+        // A payment held SUBMITTED, its credit RECEIVED: no edge but to IN_TRANSIT or FAILED, none backward.
+        CORRIDOR.acceptOnReceipt(false);
+        Paid waiting = paid("Clear Person");
+        CORRIDOR.acceptOnReceipt(true);
+        assertThat(scalar("SELECT status FROM crossborder.payment WHERE id = ?", waiting.payment())).isEqualTo("SUBMITTED");
+        for (String to : List.of("DELIVERED", "RETURNED")) {
+            assertMachineRefuses("UPDATE crossborder.payment SET status = '" + to + "' WHERE id = ?", waiting.payment());
+        }
+        for (String to : List.of("DISPATCHED", "UNKNOWN")) {
+            assertMachineRefuses("UPDATE payments.outbound_credit SET status = '" + to + "' WHERE id = ?", waiting.credit());
+        }
+
+        // A returned payment: RETURNED and its COMPLETED credit are terminal.
+        Paid returned = paid("Clear Person");
+        CORRIDOR.returnCredit(returned.reference());
+        resolve(returned.reference());
+        assertThat(scalar("SELECT status FROM crossborder.payment WHERE id = ?", returned.payment())).isEqualTo("RETURNED");
+        for (String to : List.of("SUBMITTED", "IN_TRANSIT", "DELIVERED")) {
+            assertMachineRefuses("UPDATE crossborder.payment SET status = '" + to + "' WHERE id = ?", returned.payment());
+        }
+        assertMachineRefuses("UPDATE crossborder.payment SET status = 'FAILED', failure_reason = 'DECLINED' WHERE id = ?",
+                returned.payment());
+        for (String to : List.of("DISPATCHED", "UNKNOWN", "RECEIVED")) {
+            assertMachineRefuses("UPDATE payments.outbound_credit SET status = '" + to + "' WHERE id = ?", returned.credit());
+        }
+        assertMachineRefuses("UPDATE payments.outbound_credit SET status = 'FAILED', failure_reason = 'DECLINED' WHERE id = ?",
+                returned.credit());
+        assertMachineRefuses("DELETE FROM crossborder.payment WHERE id = ?", returned.payment());
+
+        // The born-once arbiters, with every user trigger off (the lock-bypass probe): each UNIQUE refuses alone.
+        assertArbiterRefuses("crossborder.payment", "payment_one_per_quote",
+                "INSERT INTO crossborder.payment SELECT (jsonb_populate_record(p, jsonb_build_object('id', gen_random_uuid(),"
+                        + " 'offer_id', gen_random_uuid(), 'outbound_credit_id', gen_random_uuid(), 'dispatch_key', 'probe-'"
+                        + " || gen_random_uuid()))).* FROM crossborder.payment p WHERE p.id = ?", returned.payment());
+        assertArbiterRefuses("payments.scheme_execution_claim", "scheme_execution_claim_one_per_execution",
+                "INSERT INTO payments.scheme_execution_claim SELECT (jsonb_populate_record(c, jsonb_build_object('subject_id',"
+                        + " gen_random_uuid()))).* FROM payments.scheme_execution_claim c WHERE c.subject_kind = 'OUTBOUND_CREDIT'"
+                        + " AND c.subject_id = ?", returned.credit());
+        assertArbiterRefuses("payments.outbound_credit_return", "outbound_credit_return_once",
+                "INSERT INTO payments.outbound_credit_return SELECT (jsonb_populate_record(r, jsonb_build_object('id',"
+                        + " gen_random_uuid(), 'journal_entry_id', gen_random_uuid()))).* FROM payments.outbound_credit_return r"
+                        + " WHERE r.outbound_credit_id = ?", returned.credit());
+    }
+
+    private static void assertMachineRefuses(String sql, UUID id) throws Exception {
+        try (Connection app = DatabaseRoles.application(); PreparedStatement update = app.prepareStatement(sql)) {
+            update.setObject(1, id);
+            org.assertj.core.api.Assertions.assertThatThrownBy(update::executeUpdate)
+                    .as("refused for every writer: %s", sql)
+                    .isInstanceOf(java.sql.SQLException.class);
+        }
+    }
+
+    /** As the table's owner with every user trigger off: only the constraint stands between the row and a second copy. */
+    private static void assertArbiterRefuses(String table, String constraint, String sql, UUID id) throws Exception {
+        try (Connection owner = DatabaseRoles.migrator()) {
+            owner.setAutoCommit(false);
+            try (java.sql.Statement ddl = owner.createStatement(); PreparedStatement insert = owner.prepareStatement(sql)) {
+                ddl.execute("ALTER TABLE " + table + " DISABLE TRIGGER USER");
+                insert.setObject(1, id);
+                org.assertj.core.api.Assertions.assertThatThrownBy(insert::executeUpdate)
+                        .as("%s alone refuses a second row", constraint)
+                        .isInstanceOf(java.sql.SQLException.class)
+                        .satisfies(failure -> assertThat(((java.sql.SQLException) failure).getSQLState()).isEqualTo("23505"))
+                        .hasMessageContaining(constraint);
+            } finally {
+                owner.rollback();
+            }
+        }
     }
 
     // ------------------------------------------------------------------ plumbing

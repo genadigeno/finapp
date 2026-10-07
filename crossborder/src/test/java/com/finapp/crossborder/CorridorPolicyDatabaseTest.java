@@ -82,6 +82,9 @@ class CorridorPolicyDatabaseTest {
                     administration().approve(app, next.id(), first, "reviewed too", Instant.now(), correlation());
             app.commit();
             assertThat(successor.retired()).contains(proposed.id());
+            assertThat(audits(app, "crossborder.CorridorPolicyProposed", proposed.id().value().toString())).as("proposed, audited once").isEqualTo("1");
+            assertThat(audits(app, "crossborder.CorridorPolicyActivated", proposed.id().value().toString()))
+                    .as("activated, audited once - the retry wrote nothing").isEqualTo("1");
             assertThat(status(app, proposed.id())).isEqualTo("RETIRED");
             assertThat(scalar(app, "SELECT count(*) FROM crossborder.corridor_policy_version WHERE status = 'ACTIVE'"))
                     .isEqualTo("1");
@@ -157,6 +160,7 @@ class CorridorPolicyDatabaseTest {
                     administration().propose(app, proposal("to reject"), controller(), Instant.now(), correlation());
             administration().reject(app, proposed.id(), controller(), "no", Instant.now(), correlation());
             app.commit();
+            assertThat(audits(app, "crossborder.CorridorPolicyRejected", proposed.id().value().toString())).as("rejected, audited once").isEqualTo("1");
             assertThatThrownBy(() -> execute(app, "UPDATE crossborder.corridor_policy_version SET status = 'ACTIVE'"
                             + " WHERE id = '" + proposed.id().value() + "'"))
                     .matches(e -> RAISED.equals(((SQLException) e).getSQLState()));
@@ -422,5 +426,10 @@ class CorridorPolicyDatabaseTest {
         } finally {
             pool.shutdownNow();
         }
+    }
+    /** The audit records of {@code operation} on {@code target} (the P9-DOC-001 exit review: every act positively asserted). */
+    private static String audits(Connection app, String operation, String target) throws SQLException {
+        return scalar(app, "SELECT count(*) FROM platform.audit_record WHERE operation = '" + operation
+                + "' AND target_id = '" + target + "'");
     }
 }

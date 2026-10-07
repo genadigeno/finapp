@@ -72,6 +72,10 @@ class FxAvailabilityDatabaseTest {
             app.commit();
             assertThat(availability().isAvailable(app, subject)).isTrue();
             assertThat(facts(app, subject)).as("disabled once, enabled once").isEqualTo(2);
+            String audited = subject.kind() + ":" + subject.subject();
+            assertThat(audits(app, "fx.AvailabilityDisabled", audited)).as("disabled once, audited once").isEqualTo("1");
+            assertThat(audits(app, "fx.AvailabilityEnableProposed", audited)).as("the enable proposed, audited").isEqualTo("1");
+            assertThat(audits(app, "fx.AvailabilityEnabled", audited)).as("enabled, audited").isEqualTo("1");
             assertThat(scalar(app, "SELECT count(*) FROM platform.outbox_event WHERE event_type ="
                             + " 'fx.FxAvailabilityChanged' AND convert_from(payload, 'UTF8') LIKE '%"
                             + subject.subject() + "%'"))
@@ -133,6 +137,7 @@ class FxAvailabilityDatabaseTest {
                             correlation()).replayed())
                     .as("the rejecter's retry converges")
                     .isTrue();
+            assertThat(audits(app, "fx.AvailabilityEnableRejected", subject.kind() + ":" + subject.subject())).as("rejected once, audited once").isEqualTo("1");
             assertThatThrownBy(() -> availability().approveEnable(app, proposed.requestId(), controller(), "late",
                             Instant.now(), correlation()))
                     .as("the domain refuses REJECTED -> APPROVED")
@@ -256,5 +261,10 @@ class FxAvailabilityDatabaseTest {
         } finally {
             pool.shutdownNow();
         }
+    }
+    /** The audit records of {@code operation} on {@code target} (the P9-DOC-001 exit review: every act positively asserted). */
+    private static String audits(Connection app, String operation, String target) throws SQLException {
+        return scalar(app, "SELECT count(*) FROM platform.audit_record WHERE operation = '" + operation
+                + "' AND target_id = '" + target + "'");
     }
 }

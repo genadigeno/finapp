@@ -1,6 +1,6 @@
 # ADR-0081 — Counterparty screening is kyc's: every outcome is a recorded decision, an unverified payee always meets a person, and unavailable means unpayable
 
-Status: Proposed (2026-10-02, the Phase 8 → 9 transition)
+Status: Accepted (2026-10-07, `P9-DOC-001` — read against the code and corrected first)
 Date: 2026-10-02
 Phase: 9
 Context: KYC · Cross-Border · Identity · Security
@@ -57,8 +57,13 @@ changed:
 
 3. **The hold sits on the beneficiary, before pricing** (O4). Screening runs synchronously at
    registration, and again at cross-border quote time when the clearance is older than the
-   corridor's `screening_validity` (7 days, O7) — judged in-lock in the quote's first
-   transaction, so a lapsed clearance refuses before any provider call. Funds are
+   corridor's `screening_validity` (7 days, O7) — the lapse (the clearance's `decided_at` plus
+   the pinned corridor's validity) judged on the database clock (`DatabaseTime.now`, since
+   `P9-DOC-001`, which found it on the instance's) in the quote's first transaction, which
+   records the re-screen; kyc asks its provider between the transactions, holding no
+   connection, and the second refuses anything but a clear answer — before any rate is
+   priced. The authorization judges the same lapse, on the same clock, and refuses it
+   `409 crossborder.ScreeningRequired`. Funds are
    instructed, and offers priced, only for a beneficiary that is `ACTIVE` with a current
    `CLEAR` or person-`RELEASED` screening (`INV-XB-02`); payability is checked `FOR SHARE` at
    both doors.
@@ -77,7 +82,7 @@ changed:
 
 5. **Fail safe: unavailable means unpayable, and nothing is held.** Screening `UNAVAILABLE`
    leaves the beneficiary unpayable (`PENDING_VERIFICATION` to the customer), retried by
-   `CounterpartyScreeningRetrySchedule`; a quote needing a re-screen answers
+   `CounterpartyScreeningRetrySchedule` (every due `REQUESTED` or `UNAVAILABLE` screening); a quote needing a re-screen answers
    `503 crossborder.ScreeningUnavailable`, with nothing priced and nothing held.
 
 6. **Revocation works from every state, and reveals nothing.** The customer can revoke a
@@ -199,7 +204,13 @@ row conditionals; T-e).
 - Phase 13 owns: rescreening the book, list-change sweeps, ongoing monitoring, four-eyes
   clearance as a policy option, KYC tiers, residence, velocity limits and risk scoring —
   each recorded with its trigger.
-- The Phase 9 review (`P9-DOC-001`) reads this ADR against the code before accepting it.
+- **As built** (2026-10-07, read against the code by `P9-DOC-001`): every point of this ADR is
+  implemented (`P9-TSK-016`, `-017`, `-018`, `-019`), all `COMPLETE`, and every statement above is
+  true of the code. The review's corrections: point 3's lapse judged on the database clock (fixed
+  in code by the review) and the re-screen's place between the quote's transactions, and point 5's
+  retry covering a due `REQUESTED` screening too.
+- The Phase 9 review (`P9-DOC-001`) read this ADR against the code, corrected it where it had
+  drifted, and accepted it on 2026-10-07.
 - *As built by `P9-TSK-016` (2026-10-06):* points 1, 2, 4 (kyc's half), 5 (the retry) and 8 are
   implemented. `kyc V009`'s `counterparty_screening` holds the name AES-256-GCM under kyc's evidence key
   with the screening id's sixteen bytes as associated data (`CounterpartySubjectCipher`), the payee

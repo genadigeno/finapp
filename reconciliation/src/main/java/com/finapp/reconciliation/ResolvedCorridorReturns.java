@@ -6,6 +6,7 @@ import com.finapp.sharedkernel.money.Money;
 import java.sql.Connection;
 import java.util.Objects;
 import java.util.Optional;
+import java.util.Set;
 import java.util.UUID;
 
 /**
@@ -36,12 +37,19 @@ public interface ResolvedCorridorReturns {
         NOT_THE_CUSTOMERS_WALLET
     }
 
-    /** The parked return: the line's end-to-end reference, its value, and the transfer's chosen target. */
-    record ParkedReturn(Optional<String> endToEndReference, Money amount, UUID targetAccountId) {
+    /**
+     * The parked return: the line's end-to-end reference, its value, the transfer's chosen target, and the accounts
+     * the transfer's own entry posts - so a recorder that posts a second entry in the approval's transaction (the
+     * fee refund) pre-locks the union of both entries' projection rows in order before its first posting
+     * ({@code PostingService.lockBalancesInOrder}, the multi-entry rule; `P9-DOC-001`).
+     */
+    record ParkedReturn(
+            Optional<String> endToEndReference, Money amount, UUID targetAccountId, Set<UUID> transferAccounts) {
         public ParkedReturn {
             Objects.requireNonNull(endToEndReference, "endToEndReference must not be null");
             Objects.requireNonNull(amount, "amount must not be null");
             Objects.requireNonNull(targetAccountId, "targetAccountId must not be null");
+            transferAccounts = Set.copyOf(transferAccounts);
         }
     }
 

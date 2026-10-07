@@ -1,6 +1,6 @@
 # ADR-0076 — Multi-currency accounting through `FX_POSITION`: the quote is a frozen posting plan
 
-Status: Proposed (2026-10-02, the Phase 8 → 9 transition)
+Status: Accepted (2026-10-07, `P9-DOC-001` — read against the code and corrected first)
 Date: 2026-10-02
 Phase: 9
 Context: FX · Ledger · Accounts · App
@@ -43,11 +43,12 @@ must remain explainable from authoritative records (CLAUDE.md rule 11). The forc
    legs, position legs, margin with its attribution, residual — is computed once at quote time
    (ADR-0074) and frozen on `fx.quote`: a freeze trigger guards everything except the lifecycle
    columns, and a **per-currency plan-identity `CHECK`** holds for every writer
-   (`fixed_side='SOURCE'` ⇒ `customer_source = position_source` ∧
+   (`fixed_side='FIXED_SOURCE'` ⇒ `customer_source = position_source` ∧
    `position_destination = customer_destination + margin + residual`; the destination-fixed
    mirror likewise). With `UNIQUE (fx.trade.quote_id)`, a value-creating plan is unstorable and
    a plan is executable at most once. **Execution posts the plan and never re-prices**
-   (`INV-FX-04`).
+   (`INV-FX-04`). *(Corrected 2026-10-07, `P9-DOC-001`: the value read `'SOURCE'`; the stored
+   values are `FIXED_SOURCE`/`FIXED_DESTINATION`, and the `CHECK` is repeated on `fx.trade`.)*
 2. **The platform is principal; the customer's effect is final on posting** (D1, D12). A wallet
    conversion commits acceptance, trade and posting in one transaction — five distinct records
    (quote edge, trade, entry, cover row, later settlement allocations), never collapsed into
@@ -60,8 +61,9 @@ must remain explainable from authoritative records (CLAUDE.md rule 11). The forc
    currency, DR − CR = the amount of that currency the open legs will *receive* from covers; a
    credit balance is an amount to be *delivered*. The conversion entry (posting key
    `fx-trade:<tradeId>`) credits `FX_POSITION` in the source currency with the plan's source
-   position leg and debits it in the destination currency with the provider's stated counter
-   (ADR-0074 point 3); the cover entry (`fx-cover:<coverId>`, ADR-0077) closes exactly those
+   position leg and debits it in the destination currency with the destination position leg —
+   one of them the fixed amount, the other the provider's stated counter (ADR-0074 point 3);
+   the cover entry (`fx-cover:<coverId>`, ADR-0077) closes exactly those
    legs. **`FX_POSITION` is 0 at rest, per currency** — not revalued, not plugged, explained
    trade by trade.
 4. **The revenue and result purposes are explicit and never netted.** `FX_SPREAD_REVENUE`
@@ -135,6 +137,17 @@ must remain explainable from authoritative records (CLAUDE.md rule 11). The forc
    `PostingService.lockBalancesInOrder`. The storm records the p99 lock wait, and the scale-out
    path — sub-accounts by owner, ADR-0041's mitigation using the counterparty mechanism's
    shape — is recorded for Phase 16, not built.
+   *As built (read at `P9-DOC-001`):* the one Phase 9 transaction posting two entries over
+   shared hot rows is reconciliation's four-eyes approval of a parked cross-border return
+   (T-g): the corridor fee refund (DR `FEE_REVENUE` / CR the customer's wallet) and then the
+   resolution's transfer out of suspense. The exit review found the refund posting without the
+   pre-lock and fixed it: `CorridorReturnResolutions` now locks the union of both entries'
+   projection rows — the transfer's accounts (`ResolvedCorridorReturns.ParkedReturn.transferAccounts`),
+   `FEE_REVENUE` and the source wallet — with `lockBalancesInOrder` before its first posting
+   (`CrossBorderReturnDatabaseTest#theApprovalPreLocksBothEntriesInOrder`). The review found no
+   other Phase 9 transaction posting two entries. The storm measured the hot rows: every conversion over the
+   shared `FX_POSITION` and `FX_SPREAD_REVENUE` rows, the conversion door's p99 713–760 ms
+   (`FxCrossBorderStormDatabaseTest`).
 
 ## Alternatives Considered
 
@@ -201,9 +214,10 @@ Negative:
 
 Operational impact: `finapp.fx.proof{purpose}` (currencies failing the books proof, must be 0),
 `finapp.fx.plan.verdict` (1 clean / 0 diverged, CRITICAL log on divergence),
-`finapp.fx.trade{pair, outcome}`, `finapp.fx.residual{currency, direction}` — counts and
-verdicts only; position, spread, residual and P&L *amounts* are audited operator reports
-(ADR-0072, D32). `finapp.ledger.trial.balance{currency}` is eager for five currencies.
+`finapp.fx.trade{pair, outcome}` (`executed`, `reversed`), `finapp.fx.residual{pair, direction}`
+— counts and verdicts only; position, spread, residual and P&L *amounts* are audited operator
+reports (ADR-0072, D32). `finapp.ledger.trial.balance{currency}` is eager for five currencies.
+*(Corrected 2026-10-07, `P9-DOC-001`: the residual meter's tags read `{currency, direction}`.)*
 Security impact: the five FX purposes are closed to free adjustment at the domain and by an
 every-writer trigger; one static poster rule names who may touch them; the add-currency door is
 an audited customer act under the existing `ACTIVE` gate (`INV-KYC-05` unchanged).
@@ -250,6 +264,11 @@ use), ADR-0048 (a hold is not a posting).
   position unwinds an executed cover; the books proof's trades' terms now count `BOOKED` trades only - the
   "- reversal" term above - and `FxTradeReversalRaceDatabaseTest` proves the books clean after ten racing
   approvals and the unwind's execution.)*
-- Until `P9-TSK-004` lands, nothing in this ADR is implemented: every statement is the decided
-  design, to be corrected by the tasks that build it.
-- The Phase 9 review reads this ADR against the code before accepting it (`P9-DOC-001`).
+- Built by `P9-TSK-004`, `-009`, `-012`, `-013`, `-021`, `-025` and `P9-TST-002`; the hot rows
+  measured by `P9-TST-001`. *(This read "Until `P9-TSK-004` lands, nothing in this ADR is
+  implemented" until `P9-DOC-001`.)*
+- **Acceptance.** The Phase 9 review (`P9-DOC-001`) read this ADR against the code before
+  accepting it on 2026-10-07, following the `P8-DOC-001` precedent. It corrected point 1's
+  fixed-side value and point 3's position legs, fixed the four-eyes cross-border return
+  approval's missing multi-entry pre-lock in code and recorded it under point 9, and corrected
+  the residual meter's tags.

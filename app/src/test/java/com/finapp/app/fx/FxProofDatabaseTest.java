@@ -173,29 +173,58 @@ class FxProofDatabaseTest {
     }
 
     @Test
-    @DisplayName("a perturbed stored customer rate flips the plan verdict, naming what differs (the plant rolled back)")
+    @DisplayName("a perturbed stored customer rate, internal rate or disclosed margin each flips the plan verdict alone,"
+            + " naming what differs (each plant rolled back; the internal two added by P9-DOC-001)")
     void aPerturbedRateFlipsThePlanVerdict() throws Exception {
         FxTestClient client = new FxTestClient(port);
         FxTestClient.Customer customer = client.verifiedCustomer();
         UUID product = client.openWallet(customer, "EUR");
         fund(postings, product, money("1000.00", "EUR"));
         String trade = convertedTrade(client, customer, "EUR", "USD", "FIXED_SOURCE", "250.00");
-        try (Connection migrator = DatabaseRoles.migrator()) {
-            migrator.setAutoCommit(false);
-            try (Statement statement = migrator.createStatement()) {
-                statement.execute("ALTER TABLE fx.quote DISABLE TRIGGER USER");
-                statement.execute("UPDATE fx.quote SET customer_rate = customer_rate - power(10::numeric, -rate_scale)"
-                        + " WHERE id = (SELECT quote_id FROM fx.trade WHERE id = '" + trade + "')");
-                FxPlanVerification.Report report = plans.verify(migrator);
-                assertThat(report.divergences())
-                        .filteredOn(divergence -> divergence.trade().value().toString().equals(trade))
-                        .singleElement()
-                        .satisfies(divergence -> assertThat(divergence.what()).contains("customer rate"));
-            } finally {
-                migrator.rollback();
+        Map<String, String> perturbations = Map.of(
+                "customer rate", "customer_rate = customer_rate - power(10::numeric, -rate_scale)",
+                "internal rate", "internal_rate = internal_rate + 0.0000000001",
+                "disclosed margin", "disclosed_margin = disclosed_margin + 0.000001");
+        for (Map.Entry<String, String> perturbation : perturbations.entrySet()) {
+            try (Connection migrator = DatabaseRoles.migrator()) {
+                migrator.setAutoCommit(false);
+                try (Statement statement = migrator.createStatement()) {
+                    statement.execute("ALTER TABLE fx.quote DISABLE TRIGGER USER");
+                    statement.execute("UPDATE fx.quote SET " + perturbation.getValue()
+                            + " WHERE id = (SELECT quote_id FROM fx.trade WHERE id = '" + trade + "')");
+                    FxPlanVerification.Report report = plans.verify(migrator);
+                    assertThat(report.divergences())
+                            .as("the %s perturbed", perturbation.getKey())
+                            .filteredOn(divergence -> divergence.trade().value().toString().equals(trade))
+                            .singleElement()
+                            .satisfies(divergence -> assertThat(divergence.what()).contains(perturbation.getKey()));
+                } finally {
+                    migrator.rollback();
+                }
             }
         }
         assertThat(inSnapshot().plans().clean()).as("the rollback restored the replay").isTrue();
+    }
+
+    @Test
+    @DisplayName("every provenance column a trade's read returns is NOT NULL for every writer - the rate chain, the"
+            + " provider's quote, the policy and the plan (P9-DOC-001, the gate's provenance criterion)")
+    void everyProvenanceColumnIsNotNull() throws Exception {
+        List<String> provenance = List.of("pricing_policy_version_id", "reference_snapshot_id", "reference_rate",
+                "provider_code", "provider_quote_reference", "provider_rate", "provider_value_date", "customer_rate",
+                "internal_rate", "disclosed_margin", "spread", "markup", "rate_scale", "rate_rounding",
+                "amount_rounding", "margin_rounding", "residual_minor", "margin_minor", "spread_margin_minor",
+                "markup_margin_minor");
+        for (String column : provenance) {
+            assertThat(FxTestClient.scalar("SELECT is_nullable FROM information_schema.columns WHERE table_schema = 'fx'"
+                    + " AND table_name = 'quote' AND column_name = ?", column))
+                    .as("fx.quote.%s", column).isEqualTo("NO");
+        }
+        for (String column : List.of("quote_id", "customer_rate", "executed_rate", "residual_minor", "margin_minor")) {
+            assertThat(FxTestClient.scalar("SELECT is_nullable FROM information_schema.columns WHERE table_schema = 'fx'"
+                    + " AND table_name = 'trade' AND column_name = ?", column))
+                    .as("fx.trade.%s", column).isEqualTo("NO");
+        }
     }
 
     private FxProofMetrics.Result inSnapshot() {

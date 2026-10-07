@@ -1131,17 +1131,22 @@ scheduled inside the phase, and the machines in
 [`FX_AND_CROSS_BORDER_LIFECYCLES.md`](../domain/FX_AND_CROSS_BORDER_LIFECYCLES.md). The eighteen
 sections above are kept as written and made current here where they had fallen behind the
 decisions; where they disagree with this addendum or the plan, the addendum and the plan are
-right. §18 stands, and `PHASE_9_PLAN.md` §17 extends it. Until Phase 9's first task lands,
-nothing in this addendum is implemented.)*
+right. §18 stands, and `PHASE_9_PLAN.md` §17 extends it. Every item of the addendum is built —
+`P9-TSK-001`…`-027`, `X-TSK-013`, `P9-TST-001` and `P9-TST-002` are complete, none cut under O8 —
+and the Phase 9 exit review (`P9-DOC-001`, 2026-10-07) corrected each statement below to the code
+as built; it read "Until Phase 9's first task lands, nothing in this addendum is implemented".)*
 
 - *§3 and §5 — **two new modules, and every seam is a port** (ADR-0074…0080). FX (context 15)
   and Cross-Border Payments (context 16) are two modules, `fx` and `crossborder`, with **no build
-  edge between them and none to `payments`, `kyc` or `accounts`**: each depends on `ledger`,
-  `platform` and `sharedkernel` alone (`FxModuleIsolationTest`, `CrossborderModuleIsolationTest`,
-  each with planted probes), and `app` composes them through ports that are required constructor
-  parameters — `FxProvider`, `RateSource`, `ConversionParticipants` and
+  edge between them and none to `payments`, `kyc` or `accounts`**: each depends on `ledger` and
+  `platform` alone, `sharedkernel` reaching it through `platform` (`FxModuleIsolationTest`,
+  `CrossborderModuleIsolationTest`, each with planted probes), and `app` composes them through ports
+  that are required constructor parameters — `FxProvider`, `RateSource`, `ConversionParticipants` and
   `FxSettlementExpectations` (`fx`); `CrossBorderFx`, `CrossBorderExecution`, `CorridorDirectory`,
-  `CounterpartyScreening`, `CrossBorderParticipants` and the Phase 13 seams (`crossborder`);
+  `CounterpartyScreening` and the Phase 13 seams `CrossBorderLimitCheck` and
+  `CrossBorderRiskDecision` (`crossborder`) — *as built there is no `CrossBorderParticipants`: a
+  return opens its wallet through fx's `ConversionParticipants` inside `app`'s
+  `CrossBorderCompletion`* —;
   `CorridorRail` and `OutboundCreditComposition` (`payments`); `CounterpartyScreeningProvider`
   and `ScreeningOutcomeListener` (`kyc`); the scoped `WaitingPayoutReturns` and
   `ResolvedCorridorReturns` (`reconciliation`). §5's bullets are sharpened by the ADRs: the quote
@@ -1214,37 +1219,47 @@ nothing in this addendum is implemented.)*
   **kyc's transaction-time `CounterpartyScreening`**, on the beneficiary before pricing (O4): an
   unverified payee is always decided by a person, unavailability means unpayable, and the
   reviewer's permission is `COUNTERPARTY_SCREENING_REVIEW` under `KYC_REVIEWER`. Corridor-level
-  policy is versioned and four-eyes under `CROSSBORDER_ADMINISTER`. Five permissions and the
-  `FX_CONTROLLER` role (four permissions if `P9-TSK-025` is cut), separated so whoever sets
+  policy is versioned and four-eyes under `CROSSBORDER_ADMINISTER`. Five permissions —
+  `FX_ADMINISTER`, `CROSSBORDER_ADMINISTER`, `FX_TRADE_REVERSE`, `FX_INVESTIGATE`,
+  `COUNTERPARTY_SCREENING_REVIEW` — and the `FX_CONTROLLER` role (identity `V019`; `P9-TSK-025` was
+  built, so none was dropped), separated so whoever sets
   prices can neither reverse trades nor clear screenings; new confined credentials per concern;
   and **provider callbacks are hints** (ADR-0083): a signed-but-forged callback moves nothing,
   because outcomes are adopted only from an authenticated inquiry.*
 - *§10 — **no value in any metric** (ADR-0072, unchanged). §10's value items become audited
-  operator reports: FX position by currency with its open legs (`/reports/fx/position`),
-  realised vs expected spread, residual accumulation and realised P&L (`/reports/fx/revenue`),
-  and the corridor report. The counts and ages stay metrics: quote-to-trade and expiry rates by
+  operator reports (`P9-TSK-027`): FX position by currency with its open legs
+  (`/v1/operator/reports/fx/position`), realised vs expected spread, residual accumulation and
+  realised P&L (`/v1/operator/reports/fx/revenue`), and the corridor report
+  (`/v1/operator/reports/cross-border/corridors`). The counts and ages stay metrics: quote-to-trade and expiry rates by
   ratio from `finapp.fx.quote.closed`, rate staleness `finapp.fx.rate.age`, residual
   **frequency** (never an amount) `finapp.fx.residual`, the cover series, the proof gauges
   `finapp.fx.proof` and `finapp.fx.plan.verdict`, the outbound and in-transit ages, the review
-  backlog and `finapp.reconciliation.rule_set.missing`. The full series list is
-  `PHASE_9_PLAN.md` §15.*
+  backlog and `finapp.reconciliation.rule.set.missing` (exported as
+  `finapp_reconciliation_rule_set_missing`). The full series list is `PHASE_9_PLAN.md` §15, as built
+  per its §20.*
 - *§13 — **no new break types; reconciliation never converts** (ADR-0082). "Rate difference,
   spread difference, conversion timing difference" resolve into the existing fourteen-type
   taxonomy: FX legs reconcile as **single-currency expectations** (`FX_SELL_LEG`, `FX_BUY_LEG`,
-  keyed by `COVER_REF`), so a rate or spread discrepancy surfaces as `AMOUNT_MISMATCH` on the
-  mis-stated leg's own currency under the new cause `FX_LEG_DIFFERS`, timing as
-  `TIMING_DIFFERENCE` under `VALUE_DATE_DIFFERS`, and a mismatched amount is **never converted
-  to compare**. The trial balance holds per currency (all five), and `FX_POSITION` is explained
+  keyed by `COVER_REF` — as built currency-qualified, `Tn:<currency>`, so a cover's two legs hold
+  two keys), so a rate discrepancy surfaces as `AMOUNT_MISMATCH` on the mis-stated leg's own
+  currency under the new cause `FX_LEG_DIFFERS`, timing as `TIMING_DIFFERENCE` under
+  `VALUE_DATE_DIFFERS`, and a mismatched amount is **never converted to compare**. A spread
+  difference is not a reconciliation break — no external evidence states the platform's spread —
+  and is proven instead by `FxPlanVerification` (`P9-TSK-013`). A batch in a currency its
+  counterparty does not settle is rejected at parse, `CURRENCY_NOT_SETTLED` (settlement `V015`).
+  `RECONCILIATION_MODEL.md` §16 states it as built. The trial balance holds per currency (all five), and `FX_POSITION` is explained
   by open legs — the FX books proof, flipped by a planted raw line.*
-- *§14 — **the ADRs written**: ADR-0074…0083, each Proposed (2026-10-02, the Phase 8 → 9
-  transition). The three §14 asks for are ADR-0075 (the FX quote and rate-lock model),
+- *§14 — **the ADRs written**: ADR-0074…0083, each Proposed at the Phase 8 → 9 transition
+  (2026-10-02) and Accepted by the exit review (`P9-DOC-001`, 2026-10-07), read against the code and
+  corrected first. The three §14 asks for are ADR-0075 (the FX quote and rate-lock model),
   ADR-0076 (multi-currency accounting through `FX_POSITION`; revaluation explicitly deferred to
   Phase 14) and ADR-0074 (conversion arithmetic and rounding policy). Seven more were needed:
   ADR-0077 (the decoupled cover), ADR-0078 (counterparty-keyed clearing positions), ADR-0079
   (cross-border payments and the Outbound Credit), ADR-0080 (corridors, beneficiaries and
   selection), ADR-0081 (counterparty screening is kyc's), ADR-0082 (FX and corridor settlement
   and reconciliation) and ADR-0083 (callbacks are hints). ADR-0050 and ADR-0073 are annotated.
-  `FX_AND_CROSS_BORDER_LIFECYCLES.md` states every machine before the first task.*
+  `FX_AND_CROSS_BORDER_LIFECYCLES.md` stated every machine before the first task, and was
+  corrected to the code by the exit review.*
 - *§2 and §15 — **the milestone map.** The capabilities and the deliverables land across nine
   milestones:*
   - *M9.1 Foundations — `P9-TSK-001`…`-004`: the two modules and schema floors, `ExchangeRate`
@@ -1270,9 +1285,8 @@ nothing in this addendum is implemented.)*
     reports and the trace, database-stamped send permits, the storm, the exit review against
     `PHASE_GATES.md` §Phase 9.*
 
-  *If the phase must shrink (O8), `P9-TSK-026` is cut first, then `P9-TSK-025`, each recorded
-  with Phase 15 as owner; unwinds, returns, cancellation, the proofs and the ten scenarios are
-  never cut.*
+  *If the phase had to shrink (O8), `P9-TSK-026` was to be cut first, then `P9-TSK-025`; as built
+  neither was cut — every milestone above is complete.*
 - *O1–O10 — **the transition's decisions, each the owner's to revisit** (recorded in
   `PHASE_9_PLAN.md` §2): O1, principal — book at acceptance, one back-to-back cover per accepted
   quote; O2, a return applied automatically only when exactly the instructed credit comes back,

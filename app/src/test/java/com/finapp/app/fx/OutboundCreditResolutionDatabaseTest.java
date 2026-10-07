@@ -160,6 +160,32 @@ class OutboundCreditResolutionDatabaseTest {
     // ------------------------------------------------------------------ the completion
 
     @Test
+    @DisplayName("P9-DOC-001: NEVER_RECEIVED is judged on the database's clock - a resolver a minute ahead concludes"
+            + " nothing twenty seconds before the deadline, and the same resolver concludes it once the deadline has passed")
+    void aSkewedResolverConcludesNothingEarly() throws Exception {
+        Paid lost = paid("Lost Person", FxTestClient.key(), CORRIDOR::serverErrorNext);
+        assertThat(CORRIDOR.creditsOf(lost.reference())).as("the provider never received it").isZero();
+        // The rail's ten-minute deadline plus the five-minute margin, less twenty seconds - on the database's clock.
+        agePermit(lost.credit(), Duration.ofMinutes(15).minusSeconds(20));
+        OutboundCreditResolution ahead = new OutboundCreditResolution(outboundCreditStore, outboundCreditOutcomes,
+                railOperations, paymentRails, providerEvidenceStore,
+                new OutboundCreditResolution.Config(Duration.ofMinutes(2), Duration.ofMinutes(1), Duration.ofMillis(1),
+                        Duration.ofMinutes(10), Duration.ofMinutes(5), 25),
+                idGenerator, com.finapp.app.database.ServerSkewedClock.of(Duration.ofMinutes(1)), paymentTransactionRunner,
+                outboundCreditReturnStore);
+        try (CorrelationContext.Scope flow = CorrelationContext.enter(Correlation.startingWith(CorrelationId.generate(FxTestClient.IDS)));
+                SecurityContext.Scope actor = SecurityContext.enterSystem()) {
+            ahead.resolve(new EndToEndReference(lost.reference()));
+            assertThat(scalar("SELECT status FROM payments.outbound_credit WHERE id = ?", lost.credit()))
+                    .as("on the database's clock the permit is younger than the deadline: nothing concluded").isNotEqualTo("FAILED");
+            agePermit(lost.credit(), Duration.ofSeconds(40));
+            ahead.resolve(new EndToEndReference(lost.reference()));
+        }
+        assertThat(scalar("SELECT status || ':' || failure_reason FROM payments.outbound_credit WHERE id = ?", lost.credit()))
+                .isEqualTo("FAILED:NEVER_RECEIVED");
+    }
+
+    @Test
     @DisplayName("P9-TST-001's find: undelivered credits never starve one awaiting its outcome - every credit holding"
             + " money is swept before any delivery poll, so a page the delivery polls would fill still completes it")
     void undeliveredCreditsNeverStarveOneAwaitingItsOutcome() throws Exception {

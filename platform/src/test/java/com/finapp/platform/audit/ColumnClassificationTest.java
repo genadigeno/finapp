@@ -71,7 +71,9 @@ class ColumnClassificationTest {
                     // classify - the row would sit in the register unparsed and the failure would
                     // read "this column has no entry" while the entry was right there. Found by
                     // planting such a column; it fails safe but diagnoses the wrong thing.
-                    "^\\|\\s*`([a-z0-9_]+)`\\s*\\|\\s*`([a-z0-9_]+)`\\s*\\|\\s*`([A-Z-]+)`\\s*\\|",
+                    // The table cell may carry its schema - `crossborder.beneficiary` - and must when
+                    // two schemas share the table's name (tableNamesSharedBySchemasAreQualified).
+                    "^\\|\\s*`((?:[a-z0-9_]+\\.)?[a-z0-9_]+)`\\s*\\|\\s*`([a-z0-9_]+)`\\s*\\|\\s*`([A-Z-]+)`\\s*\\|",
                     // MULTILINE, or `^` anchors to the start of the whole document and matches
                     // nothing at all. Caught immediately by theRegisterIsActuallyRead, which is
                     // exactly what a vacuity guard is for: without it the comparison above would
@@ -183,30 +185,17 @@ class ColumnClassificationTest {
                                         + " AND table_name <> '"
                                         + NOT_OURS
                                         + "'")) {
+            Set<String> shared = sharedTableNames().keySet();
             while (rows.next()) {
-                columns.add(rows.getString(2) + "." + rows.getString(3));
+                String table = rows.getString(2);
+                columns.add((shared.contains(table) ? rows.getString(1) + "." : "") + table + "." + rows.getString(3));
             }
         }
         return columns;
     }
 
-    /**
-     * The register keys rows on {@code table.column} with no schema, so two schemas must not both
-     * define a table of the same name.
-     *
-     * <p>Not a hypothetical: {@code audit_record} is a name any module might reasonably reuse, and a
-     * collision would silently merge two tables' columns into one set — after which the register
-     * could classify a column that exists in a different schema from the one the reader assumes,
-     * and the comparison above would still pass. Failing here says which name collided; the
-     * alternative is a register that is quietly about the wrong table.
-     *
-     * <p>When a collision does arrive, the fix is to key the register on {@code schema.table.column}
-     * rather than to rename a table. This assertion is what forces that decision to be made rather
-     * than discovered.
-     */
-    @Test
-    @DisplayName("no two schemas define a table of the same name, so table.column is unambiguous")
-    void tableNamesAreUniqueAcrossSchemas() throws SQLException {
+    /** Every table name more than one schema defines, with the schemas that define it. */
+    private static Map<String, List<String>> sharedTableNames() throws SQLException {
         Map<String, List<String>> schemasByTable = new TreeMap<>();
         try (Connection migrator = DatabaseRoles.migrator();
                 Statement statement = migrator.createStatement();
@@ -216,34 +205,55 @@ class ColumnClassificationTest {
                                         + " WHERE table_schema NOT IN ('pg_catalog', 'information_schema')"
                                         + " AND table_name <> '"
                                         + NOT_OURS
-                                        + "'")) {
+                                        + "' ORDER BY table_schema")) {
             while (rows.next()) {
                 schemasByTable
                         .computeIfAbsent(rows.getString(2), name -> new ArrayList<>())
                         .add(rows.getString(1));
             }
         }
+        Map<String, List<String>> shared = new TreeMap<>();
+        schemasByTable.forEach((table, schemas) -> {
+            if (schemas.size() > 1) {
+                shared.put(table, schemas);
+            }
+        });
+        return shared;
+    }
 
-        assertThat(schemasByTable)
-                .as("the register must have seen some tables, or this asserts nothing")
-                .isNotEmpty();
-
-        Map<String, List<String>> collisions = new TreeMap<>();
-        schemasByTable.forEach(
-                (table, schemas) -> {
-                    if (schemas.size() > 1) {
-                        collisions.put(table, schemas);
-                    }
-                });
-
-        assertThat(collisions)
+    /**
+     * The register keys rows on {@code table.column}, and on {@code schema.table.column} for a table
+     * name two schemas share.
+     *
+     * <p>Not a hypothetical: {@code audit_record} is a name any module might reasonably reuse, and a
+     * bare row for a shared name would silently merge two tables' columns into one set - after which
+     * the register could classify a column that exists in a different schema from the one the reader
+     * assumes, and the comparison above would still pass. This was written as "no two schemas share a
+     * name", with the instruction to key on {@code schema.table.column} when one did; the Phase 9 exit
+     * review ({@code P9-DOC-001}) found {@code transfers.beneficiary} and {@code crossborder.beneficiary}
+     * (since {@code P9-TSK-017}, unseen while the database tier was skipped) and made that change: a
+     * shared name's columns are compared schema-qualified, and its rows must name their schema.
+     */
+    @Test
+    @DisplayName("a table name two schemas share is registered schema-qualified, never bare")
+    void tableNamesSharedBySchemasAreQualified() throws SQLException {
+        Map<String, List<String>> shared = sharedTableNames();
+        Set<String> bare = new TreeSet<>();
+        for (String row : registered()) {
+            if (shared.containsKey(row.substring(0, row.lastIndexOf('.')))) {
+                bare.add(row);
+            }
+        }
+        assertThat(bare)
                 .as(
-                        "%s keys rows on table.column with no schema. Two schemas defining the same "
-                                + "table name would merge into one set, and the register would be "
-                                + "about a table the reader did not mean. Key the register on "
-                                + "schema.table.column instead of renaming a table.",
-                        DOCUMENT)
+                        "%s classifies a table name several schemas define (%s) without its schema - the row"
+                                + " would be about whichever table the reader assumed. Write the table cell as"
+                                + " `schema.table`.",
+                        DOCUMENT, shared)
                 .isEmpty();
+        assertThat(shared)
+                .as("the known shared name is seen, or the qualification above is untested")
+                .containsKey("beneficiary");
     }
 
     /**

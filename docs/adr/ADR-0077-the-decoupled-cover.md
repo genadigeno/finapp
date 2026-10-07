@@ -1,6 +1,6 @@
 # ADR-0077 — The decoupled cover: one back-to-back provider execution per accepted quote, never concluded from silence
 
-Status: Proposed (2026-10-02, the Phase 8 → 9 transition)
+Status: Accepted (2026-10-07, `P9-DOC-001` — read against the code and corrected first)
 Date: 2026-10-02
 Phase: 9
 Context: FX · Ledger · Settlement · Reconciliation · App
@@ -74,7 +74,10 @@ or unavailable. The forces:
 5. **One provider execution, one money fact.** The acting applier inserts
    `fx.cover_execution (cover_id PK, attempt, provider_code, provider_trade_ref,
    UNIQUE (provider_code, provider_trade_ref), journal_entry_id UNIQUE, executed sold/bought,
-   value date, realised result)`. That row is the arbiter: it holds with the acting conditional
+   value date, realised result)` — *as built* (fx `V007`) also the attempt's `client_reference`
+   (a foreign key to `cover_attempt`), the plan's legs beside the executed ones, the realised
+   result as `realised_sold_minor`/`realised_bought_minor` held to the differences by `CHECK`,
+   and `executed_off_plan`. That row is the arbiter: it holds with the acting conditional
    removed (a counted lock-bypass probe), beside the posting key `fx-cover:<coverId>`. Answer,
    inquiry and hinted inquiry resolve through one applier under the cover row's lock; the
    losers record nothing.
@@ -162,11 +165,13 @@ Negative:
 - One more sweeper, one more webhook door and one more permit discipline to operate; mitigated
   by reusing ADR-0057's shapes verbatim and the Phase 8 observability patterns.
 
-Operational impact: `finapp.fx.cover{provider, kind, outcome}` (`executed`, `rejected`,
-`requoted`, `off_plan`, `voided`), `finapp.fx.cover.unknown.active`/`.unknown.age` (the
+Operational impact: `finapp.fx.cover{provider, type, outcome}` — the kind under the registered
+`type` key; outcomes `executed`, `off_plan`, `rejected`, `unknown`, `requoted`,
+`requote_refused`, `voided`, `anomaly` — `finapp.fx.cover.unknown.active`/`.unknown.age` (the
 `INV-LIFE-03` alert for covers), `finapp.fx.cover.open.age` (oldest uncovered position leg,
-alerting), `finapp.fx.cover.latency` (acceptance → executed),
-`finapp.fx.cover.sweeper.enabled`. Counts, ages and verdicts only (ADR-0072); the realised
+alerting), `finapp.fx.cover.latency{provider, type}` (birth → executed),
+`finapp.fx.cover.sweeper.enabled`. *(Corrected 2026-10-07, `P9-DOC-001`: the tag read `kind`
+and three outcomes were missing.)* Counts, ages and verdicts only (ADR-0072); the realised
 amounts are the revenue report's.
 Security impact: the webhook door authenticates (HMAC, freshness), stores evidence first,
 dedupes through the inbox, and adopts outcomes only from an authenticated inquiry (ADR-0083); a
@@ -212,9 +217,13 @@ spans the provider call: permit transaction, wire, outcome transaction).
 - `X-TSK-013`: the Phase 5–7 outbound send permits database-stamped to this ADR's rule.
 - `P9-TST-001`: the storm's two skewed application contexts and ten movers on one cover; the
   simulator's execution count equal to the execution facts under every fault.
-- Until `P9-TSK-009` lands, nothing in this ADR is implemented: every statement is the decided
-  design, to be corrected by the tasks that build it.
-- The Phase 9 review reads this ADR against the code before accepting it (`P9-DOC-001`).
+- Built by `P9-TSK-009`, `-012`, `-019`, `-020`, `-021`, `-025`, `X-TSK-013` and `P9-TST-001`.
+  *(This read "Until `P9-TSK-009` lands, nothing in this ADR is implemented" until `P9-DOC-001`.)*
+- **Acceptance.** The Phase 9 review (`P9-DOC-001`) read this ADR against the code before
+  accepting it on 2026-10-07, following the `P8-DOC-001` precedent. It completed point 5's
+  execution-fact columns and corrected the meters' tag and outcomes; the unwind's deviation
+  from decision 2 stands as recorded below (fx `V008`, the unwind; fx `V009`, the trade
+  reversal that is its second trigger).
 - *As built by `P9-TSK-021` (2026-10-06):* decisions 7 and 8 - `CoverUnwinds` evaluates the wanted position for
   the abandonment writer (every call, under the quote's row lock) and the cover's applier (executing a cover its
   quote no longer wants); `UNIQUE (quote_id, kind)` is the arbiter through an unconditional `ON CONFLICT DO

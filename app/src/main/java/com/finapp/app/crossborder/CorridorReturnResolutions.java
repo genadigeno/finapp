@@ -88,10 +88,17 @@ public final class CorridorReturnResolutions implements ResolvedCorridorReturns 
             }
             String key = FEE_REFUND_KEY_PREFIX + credit.id().value();
             LocalDate today = LocalDate.now(clock.withZone(ZoneOffset.UTC));
+            LedgerAccountId feeRevenue = chart.resolve(unitOfWork, AccountPurpose.FEE_REVENUE, fee.currency()).id();
+            // Two entries in this transaction - this refund, then the machine's transfer - over shared hot rows
+            // (FEE_REVENUE, the suspense): the union of both entries' projection rows locked in the projection's
+            // order before the first posting, the multi-entry rule (P9-DOC-001; ADR-0076 section 9).
+            java.util.TreeSet<UUID> union = new java.util.TreeSet<>(parked.transferAccounts());
+            union.add(feeRevenue.value());
+            union.add(sourceWallet.get().value());
+            postings.lockBalancesInOrder(unitOfWork, union.stream().map(LedgerAccountId::of).toList());
             PostingResult posted = postings.post(unitOfWork, new PostingCommand(key, today, today,
                     credit.id().value().toString(), List.of(
-                            new JournalLine(chart.resolve(unitOfWork, AccountPurpose.FEE_REVENUE, fee.currency()).id(),
-                                    Direction.DEBIT, fee),
+                            new JournalLine(feeRevenue, Direction.DEBIT, fee),
                             new JournalLine(sourceWallet.get(), Direction.CREDIT, fee))));
             entry = Optional.of(posted.entryId().value());
         }

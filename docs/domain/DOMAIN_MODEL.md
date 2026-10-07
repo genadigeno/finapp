@@ -86,6 +86,8 @@ Rate Lock
 FX Cover
 FX Position
 Realised FX Result
+Posting Plan
+Unwind
 
 Counterparty
 Corridor
@@ -95,6 +97,10 @@ Outbound Credit
 Payment Offer
 Cross-Border Beneficiary
 Counterparty Screening
+Cancellation Request
+Recall
+Cross-Border Return
+Payee Check
 
 Journal Entry
 Journal Line
@@ -137,7 +143,10 @@ FX Result); and the cross-border model (Counterparty, Corridor, Corridor Rail, C
 Payment, Outbound Credit, Payment Offer, Cross-Border Beneficiary, Counterparty Screening) —
 each keeping a distinction Phase 9 could collapse, defined in the glossary with the same
 guard. The machines they name are in
-[`FX_AND_CROSS_BORDER_LIFECYCLES.md`](FX_AND_CROSS_BORDER_LIFECYCLES.md).)*
+[`FX_AND_CROSS_BORDER_LIFECYCLES.md`](FX_AND_CROSS_BORDER_LIFECYCLES.md).)* *(The Phase 9 exit review, `P9-DOC-001`,
+2026-10-07, added six: Posting Plan and Unwind to the FX books, and Cancellation Request, Recall,
+Cross-Border Return and Payee Check to the cross-border model — Phase 9 built each as a distinct
+concept, and neither list named one.)*
 
 ---
 

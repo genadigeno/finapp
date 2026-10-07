@@ -17,14 +17,16 @@ automatically aggregates or tables". Nothing here declares a class, a table or a
 
 **Written before anything was implemented.** At `P0-DOC-011` no production class existed for any
 term below — Phase 0 delivered the financial and platform kernel and *zero* business capability.
-That is no longer so: Phases 1 to 8 built classes for many of them, Phase 6's merchant, checkout,
-fee and payout terms and Phase 8's settlement and reconciliation terms included. Entries still name
+That is no longer so: Phases 1 to 9 built classes for many of them, Phase 6's merchant, checkout,
+fee and payout terms, Phase 8's settlement and reconciliation terms and Phase 9's FX and
+cross-border terms included. Entries still name
 no class, except where a class's name collides with a term (`MerchantSettlement`, §2 and §5). The
 owning module column names where each concept lives, or — for a later phase's term — **will**
 live, per [`MODULE_ARCHITECTURE.md`](../architecture/MODULE_ARCHITECTURE.md) §4, which records the
 phase each module arrives in. *(Corrected at the Phase 6 review, `P6-DOC-001`: this said "Nothing
 here is implemented". "Phases 1 to 6" corrected to 1 to 8 at the Phase 8 exit review,
-`P8-DOC-001`, 2026-10-01.)*
+`P8-DOC-001`, 2026-10-01, and to 1 to 9 at the Phase 9 exit review, `P9-DOC-001`,
+2026-10-07.)*
 
 ---
 
@@ -710,8 +712,15 @@ originals, by the Phase 8 → 9 transition, 2026-10-02 — ADR-0074…0083 (`Pro
 keeping a distinction Phase 9 could collapse. The kernel's money vocabulary joins the
 canonical list here because five currencies at three scales now post.)*
 
+*(Six terms added alphabetically by the Phase 9 exit review, `P9-DOC-001`, 2026-10-07 —
+Cancellation Request, Cross-Border Return, Payee Check, Posting Plan, Recall and Unwind:
+Phase 9 built each as a distinct concept, and neither list named one. FX Quote, FX Trade,
+FX Cover and Outbound Credit corrected to what was built.)*
+
 ### FX Quote
-**Is:** a rate offered to a specific party for a specific amount, valid for a stated window.
+**Is:** a rate offered to a specific party for a specific amount, valid for a stated window —
+server-authoritative, exclusive to its owner, single-use, bounded on the database clock, and
+carrying its frozen Posting Plan (`INV-FX-02`, `INV-FX-04`).
 **Not:** an Exchange Rate. A quote is ours, priced, time-bounded and rejectable when stale
 (`INV-FX-02`).
 **Owned by:** `fx`
@@ -724,9 +733,25 @@ requires it to be posted as revenue explicitly rather than concealed inside the 
 
 ### FX Trade
 **Is:** an executed conversion — two legs, through an FX position, preserving total value
-(`INV-FX-01`).
-**Not:** a Quote. A quote may expire unexercised; a trade has postings.
+(`INV-FX-01`) — booked at most once per quote, posting exactly its Posting Plan, and final
+but for a four-eyes operator reversal of a wallet conversion (`INV-AUD-04`); a cross-border
+trade is never reversed (`INV-REV-03`).
+**Not:** a Quote. A quote may expire unexercised; a trade has postings. Nor the FX Cover: the
+trade is the customer's conversion, booked locally without waiting on a provider
+(`INV-FX-09`).
 **Owned by:** `fx`
+
+### Cancellation Request
+**Is:** a customer's request to cancel an authorized cross-border payment the corridor
+provider has not yet accepted — a born-once, append-only fact (`crossborder.cancellation_request`,
+one per payment), recorded in one transaction with the outbound credit marked for Recall, and
+answered asynchronously.
+**Not:** a cancellation. Requesting cancels nothing: the payment fails `RECALLED` (shown to the
+customer as cancelled) only on the provider's definitive answer, and stays in transit when the
+recall comes too late (`INV-LIFE-03`). Nor an FX Quote's cancellation, which withdraws an
+unaccepted quote with no provider involved, and not the Recall, which is the platform's act
+toward the provider.
+**Owned by:** `crossborder`
 
 ### Corridor
 **Is:** a priced, versioned route — (source currency, destination currency, destination
@@ -783,6 +808,21 @@ is held, posted and instructed (`INV-XB-01`, `INV-XB-03`).
 the payment composes both and adds the price, the beneficiary and the return.
 **Owned by:** `crossborder`
 
+### Cross-Border Return
+**Is:** value coming back from the corridor after the provider accepted an outbound credit —
+one born-once return fact per credit (`payments.outbound_credit_return`), reaching the platform
+by an inquiry answer or the provider's settlement report, and applied automatically only when
+exact: the instructed currency and amount, on a completed credit, for an active customer —
+credited in that currency, never re-converted at the original rate, the transfer fee refunded.
+Any other return parks with its break and reaches the customer only through a four-eyes
+transfer whose approval records the return in the same transaction (`INV-XB-04`,
+`INV-AUD-04`).
+**Not:** a Return Payment, which is our refund sent as a new credit back to a payer; not a
+reversal — the platform never reverses an accepted credit (`INV-REV-03`), and a return is the
+receiving side's act, admitted whenever it arrives; and not a Recall, which stops a credit
+before acceptance at the customer's request.
+**Owned by:** `payments`
+
 ### Currency
 **Is:** an ISO 4217 code with its minor-unit scale, explicit on every monetary value
 (`INV-MON-02`).
@@ -802,7 +842,8 @@ explicitly (`INV-FX-03`), never concealed in the rate.
 ### FX Cover
 **Is:** the platform's back-to-back provider trade hedging an accepted quote — one per
 accepted quote, dispatched under a reference stored before sending, closing exactly the
-plan's position legs with any difference posted as realised result (`INV-FX-08`).
+plan's position legs with any difference posted as realised result (`INV-FX-08`). An
+executed cover whose position is no longer wanted is taken back by its Unwind.
 **Not:** the FX Trade. The trade is the customer's conversion, booked locally and never
 waiting on a provider (`INV-FX-09`); the cover is the platform's own risk management, and
 its failure is the platform's P&L, never the customer's.
@@ -844,11 +885,25 @@ level, and overflow is rejected, never wrapped (`INV-MON-06`).
 **Is:** one instruction on one rail to one destination, carrying the provider's ambiguity —
 dispatched, unknown, received, completed or failed — with its end-to-end reference minted
 and stored before any send (`INV-PAY-04`) and its outcome adopted only from knowledge
-(`INV-LIFE-03`).
+(`INV-LIFE-03`); its Recall and its Cross-Border Return are recorded beside it, each once.
 **Not:** the Cross-Border Payment, which is the customer's product-level instruction and
 never shows the provider's ambiguity; and not a Withdrawal, which moves the customer's own
 money to the customer's own account.
 **Owned by:** `payments`
+
+### Payee Check
+**Is:** the provider directory's verdict on whether the name the customer typed belongs to the
+destination account, taken at registration — of a cross-border beneficiary (`MATCH`,
+`NO_MATCH` or `UNAVAILABLE`, a close match stored as `NO_MATCH`, ADR-0080) and, since
+Phase 7, of a bank account instrument (ADR-0062) — kept as a word, never with the name or
+account it compared (`INV-RAIL-03`), a non-match registered only with the customer's
+acknowledgement.
+**Not:** screening. The payee check ties a name to an account; Counterparty Screening asks
+whether the name is sanctioned. A clear screen of an unverified payee says nothing about the
+real recipient, so a beneficiary whose payee is unverified meets a person exactly as a hit
+does (`INV-XB-02`, `INV-KYC-04`), and the customer's acknowledgement never stands in for
+screening.
+**Owned by:** `crossborder`
 
 ### Payment Offer
 **Is:** the disclosed price of a cross-border payment — destination amount, transfer fee,
@@ -857,6 +912,20 @@ it is what `INV-XB-03` holds the posting and the instruction to.
 **Not:** the FX Quote, which is the conversion's frozen plan: the offer adds the corridor's
 fee and limits. An unaccepted offer is not a payment.
 **Owned by:** `crossborder`
+
+### Posting Plan
+**Is:** every amount a conversion will post — the customer legs, the position legs, the
+margin with its spread and markup attribution, and the rounding residual — computed once at
+quote time by one pure function under the pinned pricing version and frozen on the FX
+quote: balanced per currency by a plan-identity constraint, guarded against change, and
+executable at most once (`INV-FX-04`, ADR-0076). The FX plan replay recomputes every booked
+trade's plan from its stored inputs alone and compares it with the posted entry line by
+line; a divergence is critical (`INV-FX-05`).
+**Not:** a price recomputed at execution — execution posts the plan and never re-prices. Nor
+the Customer Quote, which is the part of the plan the customer is shown and accepts: the
+position legs and the residual are the platform's own. A divergence from the plan is our
+defect, not a reconciliation break — no external evidence states the spread.
+**Owned by:** `fx`
 
 ### Provider Rate
 **Is:** the FX provider's firm quoted rate, with its stated counter-amount and validity — the
@@ -879,6 +948,18 @@ line per execution, gains never netted with losses (`INV-FX-06`, `INV-FX-08`).
 **Not:** revaluation or unrealised P&L, which wait for Phase 14: covered positions are zero
 at rest, so there is nothing to revalue.
 **Owned by:** `fx`
+
+### Recall
+**Is:** the platform's request to the corridor provider to stop an outbound credit it has not
+yet accepted, prompted by a Cancellation Request — sent by the resolution sweep under the
+credit's own end-to-end reference, so idempotent at the provider (`INV-PAY-04`), its outcome
+(`RECALLED` or `REFUSED`) recorded once on the credit; a credit with a recall requested is
+never re-sent.
+**Not:** assumed. Only the provider's definitive `RECALLED` fails the credit — releasing the
+hold, abandoning the quote and unwinding an executed cover, the customer debited nothing
+(`INV-XB-01`, `INV-LIFE-03`); an acceptance that wins the race leaves it completed. Nor a
+Cross-Border Return, which comes after acceptance and is the receiving side's act.
+**Owned by:** `payments`
 
 ### Reference Rate
 **Is:** an independently sourced market rate used for plausibility and disclosure only, fresh
@@ -907,6 +988,18 @@ rescaled.
 explicitly as revenue with its attribution stored (`INV-FX-03`).
 **Not:** the Markup, the commercial component over the internal rate; and not something
 concealed inside the applied rate — hidden margin is unreportable revenue.
+**Owned by:** `fx`
+
+### Unwind
+**Is:** the FX cover of kind `UNWIND` that takes back an executed cover whose position is no
+longer wanted — its cross-border payment failed or was recalled, or its wallet conversion
+was reversed — replicating the cover's fixed leg in the opposite direction at a fresh firm
+quote from the same provider, under the cover's dispatch discipline. Exactly one per quote,
+created by whichever writer first finds the position unwanted, any difference from the plan
+posted as realised result (`INV-FX-08`, `INV-FX-06`).
+**Not:** a reversal of the customer's trade, which a failed payment never booked and a
+reversed conversion has already mirrored in the ledger; the unwind is the platform's own
+provider leg. Nor a voided cover: a cover that never executed is voided, never unwound.
 **Owned by:** `fx`
 
 ---
@@ -1184,9 +1277,11 @@ majority spelling.
    module's `Owns:` line, the glossary must agree — it is the authority on ownership (ADR-0012).
    Added during review, which found `Risk Score` attributed to `risk` while the register says
    `credit`.
-7. **Every `INV-*` the glossary cites exists.** Sixty distinct invariants, cited one
-   hundred and fifteen times (recounted at the Phase 8 → 9 transition, 2026-10-02, after
-   its twenty-two new entries; the Phase 8 exit review, `P8-DOC-001`, had counted forty-two
+7. **Every `INV-*` the glossary cites exists.** Sixty-one distinct invariants, cited one
+   hundred and thirty-four times (recounted at the Phase 9 exit review, `P9-DOC-001`,
+   2026-10-07, after its six new entries and four corrections; the Phase 8 → 9 transition,
+   2026-10-02, had counted sixty and one hundred and fifteen after its twenty-two new
+   entries; the Phase 8 exit review, `P8-DOC-001`, had counted forty-two
    and seventy-two, the Phase 7 → 8 transition thirty-eight and fifty-four, and the Phase 6
    review, `P6-DOC-001`, twenty-five and twenty-nine), none of which any other check would
    notice going stale.

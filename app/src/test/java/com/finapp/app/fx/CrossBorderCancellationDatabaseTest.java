@@ -305,6 +305,20 @@ class CrossBorderCancellationDatabaseTest {
         }
         assertThat(statuses).containsOnly(202);
         assertThat(count("SELECT count(*) FROM crossborder.cancellation_request WHERE payment_id = ?", paid.payment())).isEqualTo(1);
+        // Born once and never changed (P9-DOC-001): the application holds no grant to touch it, and the table's owner
+        // meets the trigger.
+        for (java.util.function.Supplier<Connection> as : java.util.List.<java.util.function.Supplier<Connection>>of(
+                CrossBorderCancellationDatabaseTest::application, CrossBorderCancellationDatabaseTest::owner)) {
+            for (String sql : java.util.List.of(
+                    "UPDATE crossborder.cancellation_request SET requested_by = 'rewritten' WHERE payment_id = ?",
+                    "DELETE FROM crossborder.cancellation_request WHERE payment_id = ?")) {
+                try (Connection connection = as.get(); PreparedStatement statement = connection.prepareStatement(sql)) {
+                    statement.setObject(1, paid.payment());
+                    org.assertj.core.api.Assertions.assertThatThrownBy(statement::executeUpdate).as(sql)
+                            .isInstanceOf(java.sql.SQLException.class);
+                }
+            }
+        }
         assertThat(count("SELECT count(*) FROM platform.outbox_event WHERE event_type = 'crossborder.CrossBorderCancellationRequested'"
                 + " AND aggregate_id = ?", paid.payment())).isEqualTo(1);
         assertThat(count("SELECT count(*) FROM platform.audit_record WHERE operation = 'crossborder.CrossBorderCancellationRequested'"
@@ -441,6 +455,22 @@ class CrossBorderCancellationDatabaseTest {
         UUID credit = UUID.fromString(scalar("SELECT id::text FROM payments.outbound_credit WHERE subject_id = ?", payment));
         return new Paid(customer, product, UUID.fromString(quote), payment, credit,
                 scalar("SELECT end_to_end_reference FROM payments.outbound_credit WHERE id = ?", credit));
+    }
+
+    private static Connection application() {
+        try {
+            return DatabaseRoles.application();
+        } catch (java.sql.SQLException failure) {
+            throw new IllegalStateException(failure);
+        }
+    }
+
+    private static Connection owner() {
+        try {
+            return DatabaseRoles.migrator();
+        } catch (java.sql.SQLException failure) {
+            throw new IllegalStateException(failure);
+        }
     }
 
     private HttpResponse<String> cancel(Paid paid, String key) throws Exception {

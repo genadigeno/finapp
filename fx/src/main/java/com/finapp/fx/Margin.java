@@ -6,8 +6,8 @@ import java.util.Objects;
 /**
  * A pricing fraction - a spread or a markup - as a value (`P9-TSK-002`, ADR-0074 §10).
  *
- * <p>In {@code [0, 0.1)} at scale at most {@link #SCALE}: the {@code NUMERIC(7,6)} a pricing pair
- * stores it in. A value with a seventh decimal is refused, never rounded ({@code INV-MON-03}). Its
+ * <p>In {@code [0, 0.1)} at scale at most {@link #SCALE}: the {@code NUMERIC(8,6)} a pricing pair
+ * stores it in (six decimals either way). A value with a seventh decimal is refused, never rounded ({@code INV-MON-03}). Its
  * {@link #attributionWeight() attribution weight} is {@code value × 10⁶}, an exact {@code long}, so
  * splitting a posted margin between spread and markup through {@code Money.allocateByWeights} is
  * integer arithmetic on stored inputs - reproducible on replay ({@code INV-HIST-04}).
@@ -16,7 +16,7 @@ import java.util.Objects;
  */
 public record Margin(BigDecimal value) {
 
-    /** The most decimal places a margin carries - {@code NUMERIC(7,6)}. */
+    /** The most decimal places a margin carries - the scale of the pricing pair's {@code NUMERIC(8,6)}. */
     public static final int SCALE = 6;
 
     /** The exclusive upper bound: a ten-percent margin is a configuration error, not a price. */

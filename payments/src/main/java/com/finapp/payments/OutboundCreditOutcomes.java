@@ -349,7 +349,7 @@ public final class OutboundCreditOutcomes {
 
     private static Applied contradicted(OutboundCreditStore.Row locked, String what) {
         if (locked.status() == OutboundCreditStore.Status.FAILED) {
-            // A provider contradicting a concluded failure is caught by its settlement line (UNKNOWN_EXTERNAL,
+            // A provider contradicting a concluded failure is caught by its settlement line (TERMINAL_STATE_CONTRADICTED,
             // parked, four-eyes): nothing is reopened here.
             log.warn("Outbound credit {} is FAILED but its provider answered {}; nothing is reopened - the settlement line"
                     + " will be parked for a person", locked.id(), what);

@@ -34,7 +34,25 @@ Gate definitions and the phase status model live in
 | 15 | Production Hardening | Security hardening, SLOs, runbooks, operational readiness |
 | 16 | Scale, Resilience and Disaster Recovery | Load characterisation, degradation modes, backup/restore, DR |
 
-**Current position (2026-10-02).** **Phases 0 through 8 are `COMPLETE`.** Phase 8 closed on its
+**Current position (2026-10-07).** **Phases 0 through 9 are `COMPLETE`.** Phase 9 closed on its
+exit review (`P9-DOC-001`, 2026-10-07 — `PHASE_9_PLAN.md` and
+`FX_AND_CROSS_BORDER_LIFECYCLES.md` read against the code and made true, inline where a
+statement was wrong and in the plan's §20 errata for the rest). Among what the review found and fixed: the beneficiary's
+screening validity and the outbound credit's `NEVER_RECEIVED` deadline judged on an instance's
+clock instead of the database's, and a four-eyes return approval posting two entries without
+the multi-entry pre-lock; ADR-0074…0083 were read against the code and accepted. **The platform converts and pays abroad as principal**: a
+conversion at a server-authoritative, single-use quote that is a frozen posting plan, booked
+locally through `FX_POSITION` and covered with the FX provider exactly once however it answers,
+unwound when no longer wanted; payments abroad through declared corridor rails to a beneficiary
+payee-checked and screened before pricing, debited once at the provider's acceptance or not at
+all, returned exactly or parked for a person, cancelled only by a recall the provider confirms;
+and every position, fee, spread and residual reconciled per currency, never by conversion — all
+thirty items `COMPLETE`, the FX and cross-border storm (`P9-TST-001`) answering the ten-instances
+question across two instances whose clocks disagree. The fleet-wide database tiers were skipped
+on the owner's standing instruction and are the Phase 9 → 10 transition's to run. **Phase 10 —
+Credit Decisioning — is next**, behind that transition.
+
+**Phase 8** closed on its
 exit review (`P8-DOC-001`, 2026-10-01 — 8 areas, 12 universal criteria, F1–F8 re-assessed and 28
 phase-specific criteria met, ADR-0064…0073 read against the code and accepted, with the
 fleet-wide database and kafka tiers' skip recorded as a deviation on the owner's standing
@@ -47,13 +65,14 @@ classified, aged break, suspense owned, resolution four-eyes through the ledger,
 confirmed only by the bank's own statements. **The Phase 8 → 9 transition** (2026-10-02)
 confirmed Phase 8 only after repairing what the review had missed — among them `FeeCheck`
 throwing on a cross-currency fee line instead of raising a typed `CURRENCY_MISMATCH` — and
-entered the inherited debts in the register. **Phase 9 — FX and Cross-Border Payments — is
-`READY`** behind its entry gate: planned in `PHASE_9_PLAN.md` on ADR-0074…0083 — a conversion
+entered the inherited debts in the register. **Phase 9 — FX and Cross-Border Payments**
+opened `READY` behind its entry gate: planned in `PHASE_9_PLAN.md` on ADR-0074…0083 — a conversion
 at a server-authoritative, single-use quote that is a frozen posting plan, covered with the FX
 provider exactly once however it answers; payments abroad through declared corridor rails, the
 beneficiary screened before pricing; and every position, fee, spread and residual reconciled
 per currency, never by conversion. Thirty items across nine milestones, with `X-TSK-013`
-scheduled inside the phase; first task `P9-TSK-001`.
+scheduled inside the phase; first task `P9-TSK-001`; all thirty — the storm among them —
+`COMPLETE` by 2026-10-07 (`P9-DOC-001`).
 
 **Phase 7** closed on its
 exit review (`P7-DOC-001` — 8 areas, 12 universal criteria, F1–F8 re-assessed and met, 21

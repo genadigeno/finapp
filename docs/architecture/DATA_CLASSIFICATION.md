@@ -91,6 +91,8 @@ applies to the error-code catalogue, because a second copy drifts while looking 
 
 ## 4. Column register — *Implemented*
 
+*A table name two schemas share is written schema-qualified in the table cell - `transfers.beneficiary`, `crossborder.beneficiary` - and the guard compares those columns by schema (`P9-DOC-001`; `ColumnClassificationTest#tableNamesSharedBySchemasAreQualified`).*
+
 Every column in every schema this repository owns — twelve at the Phase 6 review: `platform`,
 `party`, `identity`, `kyc`, `consent`, `ledger`, `accounts`, `transfers`, `paymentmethods`,
 `payments`, `merchant` and `checkout` — at its ceiling. The guard derives the schemas from the
@@ -509,13 +511,13 @@ one free-text column is the reason the section exists: a person names people.
 
 | Table | Column | Level | Why |
 |---|---|---|---|
-| `beneficiary` | `id` | `INTERNAL` | An aggregate identifier |
-| `beneficiary` | `party_id` | `CONFIDENTIAL` | The `consent_record.party_id` reasoning: the pairing is the fact — this person saves destinations, and paired with `destination_account_id` it discloses a relationship between two people. What it resolves to stays `RESTRICTED-PII` as ever |
-| `beneficiary` | `display_name` | `RESTRICTED-PII` | **Free text a person writes about a person** — "Mum", a full name, a nickname that identifies. The `party.display_name` reasoning at one remove, and the plan (§8) classifies it in as many words |
-| `beneficiary` | `destination_account_id` | `INTERNAL` | An identifier of a thing (`transfer.destination_account_id`'s reasoning); the relationship fact lives in the pairing and is carried by `party_id`'s level — the `consent_record.purpose` idiom |
-| `beneficiary` | `status` | `INTERNAL` | An enumeration of two values, both the person's own acts — no administrative state, unlike `customer_account.status` |
-| `beneficiary` | `created_at` | `CONFIDENTIAL` | Dates a person's act of saving a destination — `consent_record.recorded_at`'s reasoning |
-| `beneficiary` | `removed_at` | `CONFIDENTIAL` | As `created_at` |
+| `transfers.beneficiary` | `id` | `INTERNAL` | An aggregate identifier |
+| `transfers.beneficiary` | `party_id` | `CONFIDENTIAL` | The `consent_record.party_id` reasoning: the pairing is the fact — this person saves destinations, and paired with `destination_account_id` it discloses a relationship between two people. What it resolves to stays `RESTRICTED-PII` as ever |
+| `transfers.beneficiary` | `display_name` | `RESTRICTED-PII` | **Free text a person writes about a person** — "Mum", a full name, a nickname that identifies. The `party.display_name` reasoning at one remove, and the plan (§8) classifies it in as many words |
+| `transfers.beneficiary` | `destination_account_id` | `INTERNAL` | An identifier of a thing (`transfer.destination_account_id`'s reasoning); the relationship fact lives in the pairing and is carried by `party_id`'s level — the `consent_record.purpose` idiom |
+| `transfers.beneficiary` | `status` | `INTERNAL` | An enumeration of two values, both the person's own acts — no administrative state, unlike `customer_account.status` |
+| `transfers.beneficiary` | `created_at` | `CONFIDENTIAL` | Dates a person's act of saving a destination — `consent_record.recorded_at`'s reasoning |
+| `transfers.beneficiary` | `removed_at` | `CONFIDENTIAL` | As `created_at` |
 
 ### `paymentmethods.payment_method` — *added by `P5-TSK-004`; the bank kind by `P7-TSK-007`*
 
@@ -1820,6 +1822,31 @@ door.
 | `cover_attempt` | `client_reference` | `INTERNAL` | Our reference `T`, minted and stored before any send - an identifier of a thing |
 | `cover_attempt` | `provider_quote_ref` | `CONFIDENTIAL` | The provider's quote it executes (`PHASE_9_PLAN.md` §8: provider references `CONFIDENTIAL`) |
 | `cover_attempt` | `created_at` | `INTERNAL` | The database's instant |
+| `cover` | `caused_by_event_id` | `INTERNAL` | The `fx.FxQuoteAccepted` event the cover's events are caused by (`P9-TSK-012`) |
+| `cover` | `requote_failures` | `INTERNAL` | A count of a rejected cover's refused requotes - the sweeper's backoff (`P9-TSK-012`) |
+| `cover_execution` | `cover_id` | `INTERNAL` | Its cover - one execution per cover, the primary key (`P9-TSK-012`) |
+| `cover_execution` | `attempt` | `INTERNAL` | The executing attempt's ordinal |
+| `cover_execution` | `client_reference` | `INTERNAL` | Our reference `T` of that attempt - an identifier of a thing |
+| `cover_execution` | `provider_code` | `INTERNAL` | A declared provider's compiled code |
+| `cover_execution` | `provider_trade_ref` | `CONFIDENTIAL` | The provider's trade reference (`PHASE_9_PLAN.md` §8: provider references `CONFIDENTIAL`); `UNIQUE` per provider |
+| `cover_execution` | `fixed_side` | `INTERNAL` | A closed vocabulary |
+| `cover_execution` | `sold_currency` | `INTERNAL` | An ISO 4217 code |
+| `cover_execution` | `sold_minor` | `RESTRICTED-FINANCIAL` | A booked execution amount - the cover entry posts it (`journal_line.amount_minor`'s reasoning) |
+| `cover_execution` | `sold_scale` | `INTERNAL` | Part of the monetary shape |
+| `cover_execution` | `bought_currency` | `INTERNAL` | An ISO 4217 code |
+| `cover_execution` | `bought_minor` | `RESTRICTED-FINANCIAL` | A booked execution amount - the cover entry posts it (`journal_line.amount_minor`'s reasoning) |
+| `cover_execution` | `bought_scale` | `INTERNAL` | Part of the monetary shape |
+| `cover_execution` | `executed_rate` | `CONFIDENTIAL` | The provider's executed rate - beside the customer rate it discloses the platform's margin |
+| `cover_execution` | `value_date` | `INTERNAL` | The provider's value date |
+| `cover_execution` | `plan_sold_minor` | `RESTRICTED-FINANCIAL` | The quote's plan leg, copied and checked at birth - the platform's exposure |
+| `cover_execution` | `plan_bought_minor` | `RESTRICTED-FINANCIAL` | The quote's plan leg, copied and checked at birth - the platform's exposure |
+| `cover_execution` | `realised_sold_minor` | `RESTRICTED-FINANCIAL` | The leg's realised result, executed against plan by `CHECK` - the amount the entry posts as realised gain or loss |
+| `cover_execution` | `realised_bought_minor` | `RESTRICTED-FINANCIAL` | The leg's realised result, executed against plan by `CHECK` - the amount the entry posts as realised gain or loss |
+| `cover_execution` | `executed_off_plan` | `INTERNAL` | Whether the provider deviated on the fixed leg - a flag, derived by `CHECK` |
+| `cover_execution` | `journal_entry_id` | `INTERNAL` | The entry `fx-cover:<coverId>` (`UNIQUE`) - an identifier of a thing |
+| `cover_execution` | `recorded_at` | `INTERNAL` | The database's instant |
+| `cover_execution` | `recorded_on` | `INTERNAL` | The database's date - the entry's posting date |
+| `cover_execution` | `correlation_id` | `INTERNAL` | The flow's correlation |
 
 ### `consent.consent_text` and `consent.consent_record` — *added by `P2-TSK-017`*
 
@@ -1953,6 +1980,65 @@ screening id as associated data; every other module, log, event and audit body i
 | `counterparty_screening_attempt` | `evidence_length` | `CONFIDENTIAL` | A hit answer is longer than a clear one - `verification_evidence.content_length`'s reasoning |
 | `counterparty_screening_attempt` | `answered_at` | `CONFIDENTIAL` | Dates a screening event |
 
+### `crossborder` - the corridor policy and corridor availability - *added by `P9-TSK-015`*
+
+**The platform's corridor terms and its stop switch** (ADR-0080 §4). The corridor policy is the
+fx pricing policy's shape: the fee and the per-payment maximum ARE the platform's commercial terms -
+`CONFIDENTIAL`; whether a corridor is stopped is operational posture - `CONFIDENTIAL`; every
+person-written reason and every actor follows the pricing policy's precedent. Availability is an
+append-only fact per change, read unlocked; its writers serialise on advisory namespace 8. Nothing
+here is about a customer. (Registered by `P9-DOC-001`: the rows were missing while the database
+tier that runs `ColumnClassificationTest` was skipped.)
+
+| Table | Column | Level | Why |
+|---|---|---|---|
+| `corridor_policy_version` | `id` | `INTERNAL` | A version identifier - **the value an offer and a payment pin** (`INV-HIST-04`). Generated |
+| `corridor_policy_version` | `version` | `INTERNAL` | An ordinal |
+| `corridor_policy_version` | `status` | `INTERNAL` | An enumeration member |
+| `corridor_policy_version` | `proposed_by` | `CONFIDENTIAL` | Who proposed or decided it (`audit_record.actor`'s reasoning - the `pricing_policy_version.proposed_by` precedent) |
+| `corridor_policy_version` | `proposed_at` | `INTERNAL` | A property of the artefact |
+| `corridor_policy_version` | `proposal_reason` | `CONFIDENTIAL` | Free prose by a person about a corridor policy or availability decision (`audit_record.reason`'s reasoning). Screened for card-number and account-identifier shapes at the domain and by `crossborder V002`'s `<table>_<column>_no_instrument_shape` |
+| `corridor_policy_version` | `decided_by` | `CONFIDENTIAL` | Who activated or rejected it - the four-eyes fact (`corridor_policy_four_eyes`) |
+| `corridor_policy_version` | `decided_at` | `INTERNAL` | When the version was activated or rejected |
+| `corridor_policy_version` | `decision_reason` | `CONFIDENTIAL` | Free prose by a person about a corridor policy or availability decision (`audit_record.reason`'s reasoning). Screened for card-number and account-identifier shapes at the domain and by `crossborder V002`'s `<table>_<column>_no_instrument_shape` |
+| `corridor_policy_version` | `retired_at` | `INTERNAL` | When a successor retired it |
+| `corridor_policy_event` | `id` | `INTERNAL` | An event identifier. Generated |
+| `corridor_policy_event` | `policy_id` | `INTERNAL` | The moved version - an identifier of a thing |
+| `corridor_policy_event` | `from_status` | `INTERNAL` | The edge's origin, NULL at the proposal |
+| `corridor_policy_event` | `to_status` | `INTERNAL` | The edge's destination - a closed vocabulary |
+| `corridor_policy_event` | `actor_id` | `CONFIDENTIAL` | Who proposed or decided it (`audit_record.actor`'s reasoning - the `pricing_policy_version.proposed_by` precedent) |
+| `corridor_policy_event` | `reason` | `CONFIDENTIAL` | Free prose by a person about a corridor policy or availability decision (`audit_record.reason`'s reasoning). Screened for card-number and account-identifier shapes at the domain and by `crossborder V002`'s `<table>_<column>_no_instrument_shape` |
+| `corridor_policy_event` | `occurred_at` | `INTERNAL` | Application-stamped transition instant |
+| `corridor` | `policy_id` | `INTERNAL` | The version it belongs to |
+| `corridor` | `source_currency` | `INTERNAL` | An ISO 4217 code |
+| `corridor` | `destination_currency` | `INTERNAL` | An ISO 4217 code |
+| `corridor` | `destination_country` | `INTERNAL` | An ISO 3166 code - where the platform pays, not where any customer does |
+| `corridor` | `rails` | `INTERNAL` | Platform-declared rail ids, in policy order |
+| `corridor` | `fee_fixed_minor` | `CONFIDENTIAL` | The platform's price - a commercial term (`pricing_pair.markup`'s reasoning); no customer's amount |
+| `corridor` | `fee_margin` | `CONFIDENTIAL` | The platform's price - a commercial term (`pricing_pair.markup`'s reasoning) |
+| `corridor` | `fee_rounding` | `INTERNAL` | A closed vocabulary (`RoundingPolicy`) |
+| `corridor` | `maximum_minor` | `CONFIDENTIAL` | An operational bound the platform chose, not a person's amount (the `routing_rule.ceiling_amount_minor` reasoning) |
+| `corridor` | `screening_validity_hours` | `INTERNAL` | A policy magnitude - hours |
+| `corridor` | `delivery_estimate_hours` | `INTERNAL` | A policy magnitude - hours |
+| `corridor` | `required_data` | `INTERNAL` | A closed vocabulary - which beneficiary data the corridor requires, never the data |
+| `corridor_enable_request` | `id` | `INTERNAL` | A request identifier. Generated |
+| `corridor_enable_request` | `corridor` | `INTERNAL` | The corridor's stable code `S-D-CC` - platform configuration |
+| `corridor_enable_request` | `status` | `INTERNAL` | An enumeration member |
+| `corridor_enable_request` | `proposed_by` | `CONFIDENTIAL` | Who proposed or decided it (`audit_record.actor`'s reasoning - the `pricing_policy_version.proposed_by` precedent) |
+| `corridor_enable_request` | `proposed_at` | `INTERNAL` | A property of the request |
+| `corridor_enable_request` | `proposal_reason` | `CONFIDENTIAL` | Free prose by a person about a corridor policy or availability decision (`audit_record.reason`'s reasoning). Screened for card-number and account-identifier shapes at the domain and by `crossborder V002`'s `<table>_<column>_no_instrument_shape` |
+| `corridor_enable_request` | `decided_by` | `CONFIDENTIAL` | Who approved or rejected it - the four-eyes fact (`corridor_enable_request_four_eyes`) |
+| `corridor_enable_request` | `decided_at` | `INTERNAL` | When it was decided |
+| `corridor_enable_request` | `decision_reason` | `CONFIDENTIAL` | Free prose by a person about a corridor policy or availability decision (`audit_record.reason`'s reasoning). Screened for card-number and account-identifier shapes at the domain and by `crossborder V002`'s `<table>_<column>_no_instrument_shape` |
+| `corridor_availability` | `seq` | `INTERNAL` | The facts' server-assigned order - the newest is the corridor's availability |
+| `corridor_availability` | `id` | `INTERNAL` | A fact identifier. Generated |
+| `corridor_availability` | `corridor` | `INTERNAL` | The corridor's stable code `S-D-CC` |
+| `corridor_availability` | `available` | `CONFIDENTIAL` | Whether a corridor is stopped is operational posture - the `rail_availability.available` reasoning |
+| `corridor_availability` | `actor_id` | `CONFIDENTIAL` | Who proposed or decided it (`audit_record.actor`'s reasoning - the `pricing_policy_version.proposed_by` precedent) |
+| `corridor_availability` | `reason` | `CONFIDENTIAL` | Free prose by a person about a corridor policy or availability decision (`audit_record.reason`'s reasoning). Screened for card-number and account-identifier shapes at the domain and by `crossborder V002`'s `<table>_<column>_no_instrument_shape` |
+| `corridor_availability` | `recorded_at` | `INTERNAL` | Application-stamped instant of the act |
+| `corridor_availability` | `enable_request_id` | `INTERNAL` | The APPROVED request an enabling fact names; NULL on a disable (`corridor_availability_enabling_is_approved`) |
+
 ### `crossborder` - the beneficiary and its corridor selection - *added by `P9-TSK-017`*
 
 No name, no grant and no account identifier is stored here (`INV-RAIL-03`): the name is kyc's,
@@ -1982,22 +2068,22 @@ encrypted; the grant is exchanged and forgotten.
 | `beneficiary_registration` | `destination_currency` | `CONFIDENTIAL` | As the country |
 | `beneficiary_registration` | `entity_type` | `CONFIDENTIAL` | As `corridor_selection.entity_type` |
 | `beneficiary_registration` | `created_at` | `CONFIDENTIAL` | Dates a customer's act |
-| `beneficiary` | `id` | `INTERNAL` | An aggregate identifier. Generated |
-| `beneficiary` | `owner_party` | `CONFIDENTIAL` | As the registration's |
-| `beneficiary` | `registration_id` | `INTERNAL` | As `beneficiary_registration.id` |
-| `beneficiary` | `rail` | `INTERNAL` | The issuing rail, frozen |
-| `beneficiary` | `destination_reference` | `RESTRICTED-FINANCIAL` | The corridor provider's opaque reference for a payee's account (`INV-RAIL-03`) - not an account identifier, but what instructs money to it; shape-`CHECK`ed and instrument-screened |
-| `beneficiary` | `suffix` | `CONFIDENTIAL` | Four display characters the customer recognises the payee by |
-| `beneficiary` | `payee_check` | `CONFIDENTIAL` | Whether the name matched the account at the provider |
-| `beneficiary` | `acknowledged_no_match` | `CONFIDENTIAL` | The customer's acknowledgement of a payee check that did not match |
-| `beneficiary` | `destination_country` | `CONFIDENTIAL` | Provider-attested (ADR-0080 section 3) |
-| `beneficiary` | `destination_currency` | `CONFIDENTIAL` | Provider-attested |
-| `beneficiary` | `entity_type` | `CONFIDENTIAL` | Provider-attested |
-| `beneficiary` | `nickname` | `CONFIDENTIAL` | The customer's free text naming a payee - screened for card and account shapes at the domain and by `CHECK`; never the payee's name, which is kyc's |
-| `beneficiary` | `status` | `CONFIDENTIAL` | **The tipping-off column**: `IN_REVIEW` and `BLOCKED` are shown to the customer only shaped (`PENDING_VERIFICATION`, `UNAVAILABLE`) |
-| `beneficiary` | `screening_id` | `INTERNAL` | kyc's screening identifier - an identifier of a thing |
-| `beneficiary` | `registered_at` | `CONFIDENTIAL` | Dates a customer's act |
-| `beneficiary` | `revoked_at` | `CONFIDENTIAL` | Dates a customer's act |
+| `crossborder.beneficiary` | `id` | `INTERNAL` | An aggregate identifier. Generated |
+| `crossborder.beneficiary` | `owner_party` | `CONFIDENTIAL` | As the registration's |
+| `crossborder.beneficiary` | `registration_id` | `INTERNAL` | As `beneficiary_registration.id` |
+| `crossborder.beneficiary` | `rail` | `INTERNAL` | The issuing rail, frozen |
+| `crossborder.beneficiary` | `destination_reference` | `RESTRICTED-FINANCIAL` | The corridor provider's opaque reference for a payee's account (`INV-RAIL-03`) - not an account identifier, but what instructs money to it; shape-`CHECK`ed and instrument-screened |
+| `crossborder.beneficiary` | `suffix` | `CONFIDENTIAL` | Four display characters the customer recognises the payee by |
+| `crossborder.beneficiary` | `payee_check` | `CONFIDENTIAL` | Whether the name matched the account at the provider |
+| `crossborder.beneficiary` | `acknowledged_no_match` | `CONFIDENTIAL` | The customer's acknowledgement of a payee check that did not match |
+| `crossborder.beneficiary` | `destination_country` | `CONFIDENTIAL` | Provider-attested (ADR-0080 section 3) |
+| `crossborder.beneficiary` | `destination_currency` | `CONFIDENTIAL` | Provider-attested |
+| `crossborder.beneficiary` | `entity_type` | `CONFIDENTIAL` | Provider-attested |
+| `crossborder.beneficiary` | `nickname` | `CONFIDENTIAL` | The customer's free text naming a payee - screened for card and account shapes at the domain and by `CHECK`; never the payee's name, which is kyc's |
+| `crossborder.beneficiary` | `status` | `CONFIDENTIAL` | **The tipping-off column**: `IN_REVIEW` and `BLOCKED` are shown to the customer only shaped (`PENDING_VERIFICATION`, `UNAVAILABLE`) |
+| `crossborder.beneficiary` | `screening_id` | `INTERNAL` | kyc's screening identifier - an identifier of a thing |
+| `crossborder.beneficiary` | `registered_at` | `CONFIDENTIAL` | Dates a customer's act |
+| `crossborder.beneficiary` | `revoked_at` | `CONFIDENTIAL` | Dates a customer's act |
 | `beneficiary_status_event` | `id` | `INTERNAL` | An event identifier. Generated |
 | `beneficiary_status_event` | `beneficiary_id` | `INTERNAL` | As `beneficiary.id` |
 | `beneficiary_status_event` | `from_status` | `CONFIDENTIAL` | As `beneficiary.status` - the history of a review |

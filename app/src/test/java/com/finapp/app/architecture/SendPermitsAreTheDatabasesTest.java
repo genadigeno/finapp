@@ -68,6 +68,16 @@ class SendPermitsAreTheDatabasesTest {
                     "com.finapp.payments.JdbcDisputeResponseStore", "send_permit",
                     "com.finapp.merchant.JdbcMerchantPayoutStore", "last_dispatched_at");
 
+    /**
+     * The Phase 9 stores born under a database-stamped permit (`P9-TSK-012`, `P9-TSK-019`): their permits are stamped by
+     * their own triggers at birth, so only the assignment rule applies - added by the P9-DOC-001 exit review, which found
+     * "no permit anywhere is written from an instance clock" held over the five Phase 5-7 stores alone.
+     */
+    private static final Map<String, String> BORN_BY_THE_DATABASE =
+            Map.of(
+                    "com.finapp.payments.JdbcOutboundCreditStore", "last_dispatched_at",
+                    "com.finapp.fx.JdbcCoverStore", "last_dispatched_at");
+
     private static final List<Class<?>> PORTS =
             List.of(
                     PaymentAttemptStore.class,
@@ -103,6 +113,19 @@ class SendPermitsAreTheDatabasesTest {
             assertThat(violationsIn(statements, store.getValue()))
                     .as(store.getKey() + ": a permit assigned from a bind parameter is a caller's clock"
                             + " stamping it - the defect X-TSK-013 removed")
+                    .isEmpty();
+        }
+    }
+
+    @Test
+    @DisplayName("the Phase 9 stores' permit assignments read statement_timestamp() and bind nothing too")
+    void thePhaseNineStoresAssignOnlyTheDatabasesInstant() {
+        for (Map.Entry<String, String> store : BORN_BY_THE_DATABASE.entrySet()) {
+            String statements = statementsIn(readSourceOf(store.getKey()));
+            assertThat(assignmentsOf(statements, store.getValue()))
+                    .as(store.getKey() + " renews its permit somewhere - the rule read real statements").isNotEmpty();
+            assertThat(violationsIn(statements, store.getValue()))
+                    .as(store.getKey() + ": a permit assigned from a bind parameter is a caller's clock stamping it")
                     .isEmpty();
         }
     }

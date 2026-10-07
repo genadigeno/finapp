@@ -46,6 +46,8 @@ import java.nio.charset.StandardCharsets;
 import java.sql.Connection;
 import java.sql.PreparedStatement;
 import java.sql.ResultSet;
+import java.time.Duration;
+import java.time.Instant;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Map;
@@ -108,6 +110,7 @@ class CrossBorderPaymentDatabaseTest {
     @Autowired private PostingService postings;
     @Autowired private CounterpartyScreenings counterpartyScreenings;
     @Autowired private com.finapp.kyc.TransactionRunner kycTransactionRunner;
+    @Autowired private com.finapp.crossborder.PaymentAuthorization paymentAuthorization;
 
     private static SimulatedCorridorEngine corridor() {
         try {
@@ -560,6 +563,52 @@ class CrossBorderPaymentDatabaseTest {
     }
 
     /** Ages a screening past the corridor's seven-day validity - the owner's act, the freeze suspended for it. */
+    @Test
+    @DisplayName("P9-DOC-001: a clearance's lapse is judged on the database's clock - an instance an hour ahead does not"
+            + " lapse a clearance still good for half an hour (the authorization's own transaction, rolled back)")
+    void aSkewedInstanceDoesNotLapseAClearance() throws Exception {
+        FxTestClient.Customer customer = fundedCustomer("1000.00");
+        String beneficiary = beneficiary(customer, "Clear Person");
+        String quote = offer(customer, beneficiary);
+        // Decided 167.5 hours ago on the database's clock: half an hour of the corridor's 168 left.
+        ageClearance(screeningOf(beneficiary), Duration.ofHours(168).minusMinutes(30));
+        Actor payer = new Actor(customer.party().toString(), ActorType.CUSTOMER);
+        try (CorrelationContext.Scope flow = CorrelationContext.enter(Correlation.startingWith(CorrelationId.generate(FxTestClient.IDS)));
+                SecurityContext.Scope acting = SecurityContext.enter(payer);
+                Connection app = DatabaseRoles.application()) {
+            app.setAutoCommit(false);
+            try {
+                // An instance whose clock runs an hour ahead hands the authorization its "now": the lapse ignores it.
+                com.finapp.crossborder.PaymentAuthorization.Authorized authorized = paymentAuthorization.authorize(app,
+                        "skew-" + UUID.randomUUID(), customer.party(), UUID.fromString(quote),
+                        payer, Instant.now().plus(Duration.ofHours(1)),
+                        CorrelationId.generate(FxTestClient.IDS));
+                assertThat(authorized).as("authorized: the clearance has half an hour left by the database's clock").isNotNull();
+            } finally {
+                app.rollback();
+            }
+        }
+    }
+
+    /** The screening decided {@code ago} before the database's now - its requested and decided instants moved back. */
+    private static void ageClearance(UUID screening, Duration ago) throws Exception {
+        try (Connection owner = DatabaseRoles.migrator()) {
+            owner.setAutoCommit(false);
+            try (java.sql.Statement ddl = owner.createStatement();
+                    PreparedStatement age = owner.prepareStatement("UPDATE kyc.counterparty_screening SET requested_at ="
+                            + " now() - ? * interval '1 second' - interval '1 minute', decided_at = now() - ? * interval"
+                            + " '1 second' WHERE id = ?")) {
+                ddl.execute("ALTER TABLE kyc.counterparty_screening DISABLE TRIGGER counterparty_screening_permits_only_machine_edges");
+                age.setLong(1, ago.toSeconds());
+                age.setLong(2, ago.toSeconds());
+                age.setObject(3, screening);
+                assertThat(age.executeUpdate()).isEqualTo(1);
+                ddl.execute("ALTER TABLE kyc.counterparty_screening ENABLE TRIGGER counterparty_screening_permits_only_machine_edges");
+            }
+            owner.commit();
+        }
+    }
+
     private static void lapse(UUID screening) throws Exception {
         try (Connection owner = DatabaseRoles.migrator()) {
             owner.setAutoCommit(false);

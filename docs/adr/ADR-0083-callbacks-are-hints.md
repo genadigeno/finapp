@@ -1,6 +1,6 @@
 # ADR-0083 — Callbacks are hints: an outbound money flow adopts its outcome only from an authenticated inquiry
 
-Status: Proposed (2026-10-02, the Phase 8 → 9 transition)
+Status: Accepted (2026-10-07, `P9-DOC-001` — read against the code and corrected first)
 Date: 2026-10-02
 Phase: 9
 Context: Payments · FX · Security
@@ -43,7 +43,13 @@ Phase 9 raises the stakes in both directions:
    inquiry** (`inquire(E)` for an outbound credit, `inquire(T)` for a cover) and adopt only
    what the inquiry answers, through the same `OutboundCreditOutcomes` / `FxCoverOutcomes`
    conditional transitions the resolution sweeps use. One applier, one arbitration, whatever
-   the channel.
+   the channel. *(As built (`P9-DOC-001`): "immediate" is literal — `FxCallbackService` and
+   `CorridorCallbackService` run the inquiry inside the webhook request, after the evidence and
+   dedupe commit and holding no connection, **before** the `202`; a failed inquiry is logged and
+   left to the sweep. Evidence of a callback naming nothing of ours differs by provider: the FX
+   door retains it under `callback-unattributed`; the corridor door retains none —
+   `provider_evidence` has no unattributed subject — and records the dedupe only, the
+   settlement line being the record of any money it moved.)*
 
 2. **The callback's content decides nothing; its arrival decides when.** A callback is a
    scheduling event: it collapses the sweep's polling interval to now. Its claimed outcome is
@@ -120,7 +126,9 @@ Cons:
   the webhook door must acknowledge on evidence + dedupe commit (ADR-0047 §5), not on a
   second provider's latency.
 
-The inquiry runs after the ack, on the applier's own transaction discipline.
+The inquiry runs after the evidence-and-dedupe commit, on the applier's own transaction
+discipline — as built, still inside the webhook request, before its acknowledgement (point 1's
+note); the acknowledgement never waits on a held connection.
 
 ## Consequences
 
@@ -157,7 +165,8 @@ conditionals narrows.
 for pushed outcomes too), `INV-PAY-01` (webhook authentication and freshness, unchanged),
 `INV-PAY-03` (provider vocabulary confined; the total mapping's default is indeterminate),
 `INV-IDEM-04` (duplicate callbacks are harmless: inbox dedupe, and the inquiry's conditional
-edges), `INV-HIST-02` (callback evidence retained verbatim, adopted or not), `INV-AUD-01`
+edges), `INV-HIST-02` (callback evidence retained verbatim, adopted or not — for an attributable
+callback; the corridor's unattributed one excepted, point 1's note), `INV-AUD-01`
 (outcomes audited acting-only in the applier's transaction).
 
 ## Follow-up
@@ -170,7 +179,13 @@ edges), `INV-HIST-02` (callback evidence retained verbatim, adopted or not), `IN
   inquiry) aligns the Phase 5 and Phase 7 providers and retires the two-doctrine state.
 - A real provider offering no inquiry endpoint would make the hint model unworkable for it:
   that discovery is `X-TSK-015`'s trigger and would need its own ADR.
-- The Phase 9 review (`P9-DOC-001`) reads this ADR against the code before accepting it.
+- **As built** (2026-10-07, read against the code by `P9-DOC-001`): decisions 1–3 and 5 are
+  implemented for both Phase 9 providers (`P9-TSK-012`, `-020`, `-023`), all `COMPLETE`; decision 4
+  is `X-TSK-015`, `PLANNED`. The review's corrections: the inquiry's place before the
+  acknowledgement, and the corridor door's unattributed callbacks retained by their dedupe only
+  (point 1's note). `corridor-sim-b` has no callback door (`P9-TSK-026`): the sweep alone resolves it.
+- The Phase 9 review (`P9-DOC-001`) read this ADR against the code, corrected it where it had
+  drifted, and accepted it on 2026-10-07.
 
 - *As built by `P9-TSK-020` (2026-10-06):* decisions 1 and 2 for the corridor - `CorridorCallbackService` behind
   `POST /v1/providers/payments/corridor/webhooks` authenticates with `FINAPP_CORRIDOR_WEBHOOK_KEY` (HMAC over the
