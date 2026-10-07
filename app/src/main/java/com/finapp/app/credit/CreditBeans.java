@@ -30,7 +30,7 @@ import org.springframework.transaction.PlatformTransactionManager;
 import org.springframework.transaction.support.TransactionTemplate;
 
 /**
- * Wiring for credit data collection (`P10-TSK-006`): credit's own transaction runner, the consent gate's adapter, the
+ * Wiring for credit data collection (`P10-TSK-006`; the financial-data source since `P10-TSK-007`): credit's own transaction runner, the consent gate's adapter, the
  * evidence cipher under credit's own key, the store, the bureau, the meters, the collection and the leaderless retry
  * schedule.
  *
@@ -95,6 +95,19 @@ public class CreditBeans {
         return new UnconfiguredBureau();
     }
 
+    /**
+     * The financial-data provider (`P10-TSK-007`) - fail-safe when unconfigured; a configured one is refused until the
+     * account connection it reads exists (#14).
+     */
+    @Bean
+    com.finapp.credit.FinancialDataProvider financialDataProvider(@Value("${finapp.credit.findata.url:}") String url) {
+        if (!url.isBlank()) {
+            throw new IllegalStateException("finapp.credit.findata.url is set, but a financial-data pull reads an account"
+                    + " connection the platform does not yet hold (unresolved question #14)");
+        }
+        return new UnconfiguredFinancialData();
+    }
+
     @Bean
     CreditDataMetrics creditDataMetrics(MeterRegistry meterRegistry) {
         return new CreditDataMetrics(meterRegistry);
@@ -104,6 +117,7 @@ public class CreditBeans {
     CreditDataCollection creditDataCollection(
             CreditDataRequestStore creditDataRequestStore,
             CreditBureau creditBureau,
+            com.finapp.credit.FinancialDataProvider financialDataProvider,
             CreditConsentGate<Connection> creditConsentGate,
             CreditEvidenceCipher creditEvidenceCipher,
             CreditDataMetrics creditDataMetrics,
@@ -113,10 +127,15 @@ public class CreditBeans {
             IdGenerator idGenerator,
             Clock clock,
             @Value("${finapp.credit.bureau.retry-cadence:PT1M}") Duration retryCadence,
-            @Value("${finapp.credit.bureau.collection-window:PT30M}") Duration collectionWindow) {
-        return new CreditDataCollection(creditDataRequestStore, creditBureau, creditConsentGate, creditEvidenceCipher,
-                creditDataMetrics, auditWriter, outboxWriter, creditTransactionRunner, idGenerator, clock,
-                new CreditDataCollection.Timing(retryCadence, collectionWindow));
+            @Value("${finapp.credit.bureau.collection-window:PT30M}") Duration collectionWindow,
+            @Value("${finapp.credit.findata.retry-cadence:PT1M}") Duration findataRetryCadence,
+            @Value("${finapp.credit.findata.collection-window:PT30M}") Duration findataCollectionWindow) {
+        return new CreditDataCollection(creditDataRequestStore,
+                CreditDataCollection.Sources.of(
+                        creditBureau, new CreditDataCollection.Timing(retryCadence, collectionWindow),
+                        financialDataProvider, new CreditDataCollection.Timing(findataRetryCadence, findataCollectionWindow)),
+                creditConsentGate, creditEvidenceCipher, creditDataMetrics, auditWriter, outboxWriter,
+                creditTransactionRunner, idGenerator, clock);
     }
 
     /** The retry sweep - every instance, no lease, off in test contexts. */

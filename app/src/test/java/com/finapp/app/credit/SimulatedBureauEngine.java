@@ -40,9 +40,33 @@ import java.util.regex.Pattern;
  * its balance in a foreign currency, a malformed body, an unknown status, a 503, silence past any
  * client's wait, an answer produced but slower than any client waits, and a report produced then its response lost (the connection closes).
  *
+ * <p><strong>Two wires, one engine</strong> (`P10-TSK-007`): {@link #start()} serves {@code bureau-sim-a}'s report wire
+ * and {@link #startFinancialData()} {@code findata-sim-a}'s summary wire - the same dedupe, determinism and faults,
+ * each provider's own path, statuses and fields.
+ *
  * <p>Test scope deliberately: simulators are harnesses, never production beans (ADR-0008).
  */
 final class SimulatedBureauEngine implements AutoCloseable {
+
+    /** One provider's wire: its path, its malformed and unknown-status bodies, and its renderer. */
+    private record Wire(String path, String malformed, String unknownStatus, Renderer renderer) {}
+
+    @FunctionalInterface
+    private interface Renderer {
+        String render(String body, Fault fault);
+    }
+
+    private static final Wire BUREAU = new Wire(
+            SimulatedBureauAdapter.REPORTS_PATH,
+            "{\"status\":\"report_complete\",\"externalScore\":\"7",
+            "{\"status\":\"report_pending_review\",\"retrievedAt\":\"2026-10-07T09:00:00Z\"}",
+            SimulatedBureauEngine::render);
+
+    private static final Wire FINANCIAL_DATA = new Wire(
+            SimulatedFinancialDataAdapter.SUMMARIES_PATH,
+            "{\"status\":\"summary_complete\",\"verifiedMonthlyIncome\":\"3",
+            "{\"status\":\"summary_pending_consent\",\"retrievedAt\":\"2026-10-07T09:00:00Z\"}",
+            SimulatedBureauEngine::renderSummary);
 
     /** What the next novel pull does instead of answering a clean report. */
     enum Fault { NONE, PARTIAL, FOREIGN_CURRENCY, MALFORMED, UNKNOWN_STATUS, UNAVAILABLE, SILENT, SLOW, LOSE_RESPONSE }
@@ -63,15 +87,24 @@ final class SimulatedBureauEngine implements AutoCloseable {
     private volatile Duration slowness = Duration.ofSeconds(3);
     private volatile String note = "";
 
-    private SimulatedBureauEngine() throws IOException {
+    private final Wire wire;
+
+    private SimulatedBureauEngine(Wire wire) throws IOException {
+        this.wire = wire;
         this.server = HttpServer.create(new InetSocketAddress(InetAddress.getLoopbackAddress(), 0), 0);
-        server.createContext(SimulatedBureauAdapter.REPORTS_PATH, this::report);
+        server.createContext(wire.path(), this::report);
         server.setExecutor(handlers);
         server.start();
     }
 
+    /** The bureau's report wire. */
     static SimulatedBureauEngine start() throws IOException {
-        return new SimulatedBureauEngine();
+        return new SimulatedBureauEngine(BUREAU);
+    }
+
+    /** The financial-data provider's summary wire (`P10-TSK-007`). */
+    static SimulatedBureauEngine startFinancialData() throws IOException {
+        return new SimulatedBureauEngine(FINANCIAL_DATA);
     }
 
     URI baseUrl() {
@@ -138,10 +171,9 @@ final class SimulatedBureauEngine implements AutoCloseable {
         }
         Fault fault = armed.getAndSet(Fault.NONE);
         switch (fault) {
-            case MALFORMED -> respond(exchange, 200, "{\"status\":\"report_complete\",\"externalScore\":\"7");
-            case UNKNOWN_STATUS -> respond(exchange, 200,
-                    "{\"status\":\"report_pending_review\",\"retrievedAt\":\"2026-10-07T09:00:00Z\"}");
-            case UNAVAILABLE -> respond(exchange, 503, "{\"error\":\"bureau unavailable\"}");
+            case MALFORMED -> respond(exchange, 200, wire.malformed());
+            case UNKNOWN_STATUS -> respond(exchange, 200, wire.unknownStatus());
+            case UNAVAILABLE -> respond(exchange, 503, "{\"error\":\"provider unavailable\"}");
             case SILENT -> {
                 // Holds the connection past any client's wait and produces nothing.
                 pause(slowness);
@@ -151,7 +183,7 @@ final class SimulatedBureauEngine implements AutoCloseable {
                 String carried = note;
                 String report = reports.computeIfAbsent(reference, key -> {
                     pulls.incrementAndGet();
-                    String rendered = render(body, fault);
+                    String rendered = wire.renderer().render(body, fault);
                     return carried.isEmpty() ? rendered
                             : rendered.substring(0, rendered.length() - 1) + ",\"bureauNote\":\"" + carried + "\"}";
                 });
@@ -199,6 +231,27 @@ final class SimulatedBureauEngine implements AutoCloseable {
                     .append(fault == Fault.FOREIGN_CURRENCY ? "USD" : currency).append('"');
         }
         return report.append('}').toString();
+    }
+
+    /** The subject's financial-data summary, derived from a hash of their identifying facts - deterministic. */
+    private static String renderSummary(String body, Fault fault) {
+        String subject = find(NAME, body) + "|" + find(DATE_OF_BIRTH, body) + "|" + find(COUNTRY, body);
+        byte[] hash = sha256("findata|" + subject);
+        String currency = find(CURRENCY, body);
+        long incomeMinor = 150_000 + Math.floorMod(word(hash, 0), 650_000);
+        long expenditureMinor = 50_000 + Math.floorMod(word(hash, 4), 300_000);
+        StringBuilder summary = new StringBuilder("{\"status\":\"")
+                .append(fault == Fault.PARTIAL ? "summary_partial" : "summary_complete")
+                .append("\",\"summaryRef\":\"FS-").append(Math.floorMod(word(hash, 8), 1_000_000))
+                .append("\",\"retrievedAt\":\"2026-10-07T09:00:00Z\"")
+                .append(",\"verifiedMonthlyIncome\":\"").append(decimal(incomeMinor)).append('"')
+                .append(",\"verifiedMonthlyIncomeCurrency\":\"").append(currency).append('"');
+        if (fault != Fault.PARTIAL) {
+            summary.append(",\"committedMonthlyExpenditure\":\"").append(decimal(expenditureMinor)).append('"')
+                    .append(",\"committedMonthlyExpenditureCurrency\":\"")
+                    .append(fault == Fault.FOREIGN_CURRENCY ? "USD" : currency).append('"');
+        }
+        return summary.append('}').toString();
     }
 
     private static String decimal(long minor) {

@@ -19,6 +19,16 @@ public enum CreditAuditAction implements AuditableAction {
             "credit.BureauDataRequested",
             "The platform opened a credit bureau data request for a decision request, under a current lawful basis"
                     + " (INV-CRD-03); the summary names the request and the source kind, never an attribute.",
+            false),
+
+    /**
+     * The platform opened a financial-data request on the applicant's behalf (`P10-TSK-007`, ADR-0085) - the bureau
+     * act's twin for its own source, under its own purpose ({@code FINANCIAL_DATA_ACCESS}).
+     */
+    FINANCIAL_DATA_REQUESTED(
+            "credit.FinancialDataRequested",
+            "The platform opened a financial-data request for a decision request, under a current lawful basis for"
+                    + " that source alone (INV-CRD-03); the summary names the request and the source kind, never a figure.",
             false);
 
     private final String code;

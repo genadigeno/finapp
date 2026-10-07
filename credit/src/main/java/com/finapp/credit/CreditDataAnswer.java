@@ -9,8 +9,8 @@ import java.util.Set;
 import java.util.stream.Collectors;
 
 /**
- * What a bureau pull answered (`P10-TSK-005`; ADR-0085 section 2, {@code INV-CRD-10},
- * {@code INV-LIFE-03}) - data, partial data, or unavailable, and never a fault dressed as data.
+ * What a credit data pull answered (`P10-TSK-005`, made source-neutral by `P10-TSK-007`; ADR-0085 section 2,
+ * {@code INV-CRD-10}, {@code INV-LIFE-03}) - data, partial data, or unavailable, and never a fault dressed as data.
  *
  * <p>Closed. An adapter maps every wire outcome onto exactly one of these and never throws for a
  * provider fault; whatever it cannot understand - an unknown status, a malformed body, a 5xx, a
@@ -18,14 +18,14 @@ import java.util.stream.Collectors;
  * attributes present and states the absent ones as {@link AttributeValue.Absent}; nothing is
  * defaulted.
  */
-public sealed interface BureauAnswer permits BureauAnswer.Received, BureauAnswer.Partial, BureauAnswer.Unavailable {
+public sealed interface CreditDataAnswer permits CreditDataAnswer.Received, CreditDataAnswer.Partial, CreditDataAnswer.Unavailable {
 
     /**
      * A complete answer: every attribute present.
      *
-     * @param providerCode the bureau's code
+     * @param providerCode the source's code
      * @param normaliserVersion the adapter's normaliser version
-     * @param retrievedAt when the bureau says it produced the report
+     * @param retrievedAt when the source says it produced the data
      * @param attributes the normalised attributes, one per code, none absent
      * @param evidence the bytes received, verbatim
      */
@@ -35,7 +35,7 @@ public sealed interface BureauAnswer permits BureauAnswer.Received, BureauAnswer
             Instant retrievedAt,
             List<CreditAttribute> attributes,
             CreditEvidence evidence)
-            implements BureauAnswer {
+            implements CreditDataAnswer {
         public Received {
             Objects.requireNonNull(providerCode, "providerCode");
             Objects.requireNonNull(retrievedAt, "retrievedAt");
@@ -48,13 +48,13 @@ public sealed interface BureauAnswer permits BureauAnswer.Received, BureauAnswer
     }
 
     /**
-     * A partial answer: the attributes present, and at least one {@code Absent} - a field the bureau
+     * A partial answer: the attributes present, and at least one {@code Absent} - a field the source
      * did not report, or money in a currency the product cannot assess (with the
      * {@code CURRENCY_NOT_SUPPORTED} marker), never converted.
      *
-     * @param providerCode the bureau's code
+     * @param providerCode the source's code
      * @param normaliserVersion the adapter's normaliser version
-     * @param retrievedAt when the bureau says it produced the report
+     * @param retrievedAt when the source says it produced the data
      * @param attributes the normalised attributes, one per code, at least one absent
      * @param evidence the bytes received, verbatim
      */
@@ -64,7 +64,7 @@ public sealed interface BureauAnswer permits BureauAnswer.Received, BureauAnswer
             Instant retrievedAt,
             List<CreditAttribute> attributes,
             CreditEvidence evidence)
-            implements BureauAnswer {
+            implements CreditDataAnswer {
         public Partial {
             Objects.requireNonNull(providerCode, "providerCode");
             Objects.requireNonNull(retrievedAt, "retrievedAt");
@@ -90,7 +90,7 @@ public sealed interface BureauAnswer permits BureauAnswer.Received, BureauAnswer
      * @param cause why
      * @param evidence the bytes received, when any arrived - kept as evidence, never parsed into data
      */
-    record Unavailable(UnavailableCause cause, Optional<CreditEvidence> evidence) implements BureauAnswer {
+    record Unavailable(UnavailableCause cause, Optional<CreditEvidence> evidence) implements CreditDataAnswer {
         public Unavailable {
             Objects.requireNonNull(cause, "cause");
             Objects.requireNonNull(evidence, "evidence");
@@ -99,13 +99,13 @@ public sealed interface BureauAnswer permits BureauAnswer.Received, BureauAnswer
 
     /** Why an answer could not be used. */
     enum UnavailableCause {
-        /** The client's wait expired - a slow bureau and a silent one are the same to the caller. */
+        /** The client's wait expired - a slow source and a silent one are the same to the caller. */
         TIMEOUT,
-        /** A body that could not be read as a report, wholly - its surviving fields are never parsed. */
+        /** A body that could not be read as an answer, wholly - its surviving fields are never parsed. */
         MALFORMED,
         /** A status this adapter does not know - a modelled state, never data ({@code INV-LIFE-03}). */
         UNKNOWN_STATUS,
-        /** The bureau answered an error, or the transport broke mid-exchange. */
+        /** The source answered an error, or the transport broke mid-exchange. */
         PROVIDER_ERROR
     }
 

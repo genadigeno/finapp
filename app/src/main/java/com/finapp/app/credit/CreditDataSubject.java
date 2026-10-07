@@ -14,9 +14,9 @@ import java.util.Objects;
  * @param dateOfBirth their date of birth
  * @param residenceCountry their country of residence
  */
-public record BureauSubject(String fullName, LocalDate dateOfBirth, CountryCode residenceCountry) {
+public record CreditDataSubject(String fullName, LocalDate dateOfBirth, CountryCode residenceCountry) {
 
-    public BureauSubject {
+    public CreditDataSubject {
         Objects.requireNonNull(fullName, "fullName");
         Objects.requireNonNull(dateOfBirth, "dateOfBirth");
         Objects.requireNonNull(residenceCountry, "residenceCountry");
@@ -27,6 +27,6 @@ public record BureauSubject(String fullName, LocalDate dateOfBirth, CountryCode 
 
     @Override
     public String toString() {
-        return "BureauSubject[redacted]";
+        return "CreditDataSubject[redacted]";
     }
 }

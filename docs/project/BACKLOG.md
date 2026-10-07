@@ -14282,7 +14282,7 @@ providers), each owned by Phase 15 and gating nothing here.
 
 # Phase 10 — Credit Decisioning
 
-Status: `IN_PROGRESS` — started 2026-10-07 with `P10-TSK-001` (6 of 24 items complete, M10.1 closed); entry gate passed 2026-10-07 by the Phase 9 → 10 transition
+Status: `IN_PROGRESS` — started 2026-10-07 with `P10-TSK-001` (7 of 24 items complete, M10.1 and M10.2 closed); entry gate passed 2026-10-07 by the Phase 9 → 10 transition
 ([`reviews/PHASE_9_TO_10_TRANSITION.md`](reviews/PHASE_9_TO_10_TRANSITION.md)), elaborated to task
 granularity by the same transition: twenty-four items (`P10-TSK-001`…`-021`, `P10-TST-001`,
 `P10-TST-002`, `P10-DOC-001`) across eight milestones, with `P10-TSK-001` marked `READY`. The
@@ -14748,7 +14748,8 @@ assignment and an expiry serialise (`-018`).
   without a current basis; no plaintext payload readable by the application role.
 - **Definition of done**: `DOD-SEC`, `DOD-EVENT`, `DOD-DOMAIN`. **Risk**: High. **Cx**: L.
 
-**P10-TSK-007 — Financial data: the port, a simulated provider and collection** — `READY` (marked by `P10-TSK-006`'s completion gate, 2026-10-07)
+**P10-TSK-007 — Financial data: the port, a simulated provider and collection** — `COMPLETE` (2026-10-07; marked `READY` by the previous task's completion gate)
+- **As built** (2026-10-07): as `CURRENT_STATE.md` §Just completed records (archived to `history/TASK_HISTORY.md` when superseded). The port is `credit`'s `CreditDataSource` with `FinancialDataProvider` - `-005`'s `BureauAnswer` and `BureauRequest` renamed `CreditDataAnswer` and `CreditDataPull` so both kinds share one answer shape - and `CreditDataCollection.Sources`; `app`'s `SimulatedFinancialDataAdapter` and `UnconfiguredFinancialData`. The suites are `SimulatedFinancialDataContractTest` (over the generic `CreditDataSourceContract`), `FinancialDataNormalisationGoldenTest` and `FinancialDataCollectionDatabaseTest`.
 - **Objective**: verified income and committed expenditure from a provider-neutral financial-data
   source, collected on `-006`'s machinery under its own consent purpose.
 - **Bounded context**: Credit Decisioning; `app`.
@@ -14790,7 +14791,7 @@ assignment and an expiry serialise (`-018`).
   only under its own purpose.
 - **Definition of done**: `DOD-SEC`, `DOD-DOMAIN`. **Risk**: Medium. **Cx**: M.
 
-**P10-TSK-008 — The decision input snapshot** — `PLANNED`
+**P10-TSK-008 — The decision input snapshot** — `READY` (marked by `P10-TSK-007`'s completion gate, 2026-10-07)
 - **Objective**: freeze, once per evaluation, a complete, sealed, canonical snapshot of every input
   the engine may read, every record in it fresh on the database clock.
 - **Bounded context**: Credit Decisioning; `app` (the party-facts and risk-signal adapters).

@@ -27,7 +27,8 @@ import lombok.NonNull;
 import lombok.RequiredArgsConstructor;
 
 /**
- * Bureau data collection (`P10-TSK-006`; ADR-0085, {@code INV-CRD-03}, {@code INV-CRD-10}, {@code INV-LIFE-03},
+ * Credit data collection - the bureau's (`P10-TSK-006`) and the financial-data provider's (`P10-TSK-007`) on one
+ * machinery (ADR-0085, {@code INV-CRD-03}, {@code INV-CRD-10}, {@code INV-LIFE-03},
  * {@code INV-AUD-01}, {@code INV-CRD-07}): a party's credit report retrieved under a recorded, current lawful basis,
  * once per reference, its evidence encrypted and retained, and outages, duplicates, lost responses and withdrawals
  * all safe.
@@ -37,7 +38,7 @@ import lombok.RequiredArgsConstructor;
  * <p><strong>Open</strong> (Tx1, {@link #openWithin}) runs inside the caller's transaction - the decision request's,
  * under its row lock (lock-order element (2)): the gate for the source kind read authoritatively, the data request
  * born {@code REQUESTED} under a fresh reference with its windows stamped by the database, and
- * {@code credit.BureauDataRequested} audited. Nothing is asked until the caller has committed; then {@link #ask}
+ * {@code credit.BureauDataRequested} or {@code credit.FinancialDataRequested} audited - the source kind's own act. Nothing is asked until the caller has committed; then {@link #ask}
  * pulls under the reference with no connection held. A crash in between leaves the request due: the sweep asks.
  *
  * <p><strong>Record</strong> (Tx2) locks the data request and acts only from {@code REQUESTED}. It re-reads the gate:
@@ -66,7 +67,7 @@ public final class CreditDataCollection {
     private static final String REFERENCE_PREFIX = "CDR-";
 
     @NonNull private final CreditDataRequestStore store;
-    @NonNull private final CreditBureau bureau;
+    @NonNull private final Sources sources;
     @NonNull private final CreditConsentGate<Connection> gate;
     @NonNull private final CreditEvidenceCipher cipher;
     @NonNull private final CreditDataObserver observer;
@@ -75,7 +76,6 @@ public final class CreditDataCollection {
     @NonNull private final TransactionRunner transactions;
     @NonNull private final IdGenerator ids;
     @NonNull private final Clock clock;
-    @NonNull private final Timing bureauTiming;
 
     /** A source kind's collection timing - configuration, frozen on each data request at its birth. */
     public record Timing(Duration retryCadence, Duration collectionWindow) {
@@ -85,6 +85,47 @@ public final class CreditDataCollection {
             if (retryCadence.isNegative() || retryCadence.isZero() || collectionWindow.compareTo(retryCadence) <= 0) {
                 throw new IllegalArgumentException("a positive cadence inside a longer collection window");
             }
+        }
+    }
+
+    /** One source kind's configured provider and its collection timing. */
+    public record Configured(CreditDataSource source, Timing timing) {
+        public Configured {
+            Objects.requireNonNull(source, "source");
+            Objects.requireNonNull(timing, "timing");
+        }
+    }
+
+    /**
+     * The configured source per kind (`P10-TSK-007`): each source declares its own kind, and a kind with no source
+     * cannot be opened.
+     */
+    public record Sources(java.util.Map<CreditSourceKind, Configured> byKind) {
+        public Sources {
+            Objects.requireNonNull(byKind, "byKind");
+            byKind = java.util.Map.copyOf(byKind);
+            byKind.forEach((kind, configured) -> {
+                if (configured.source().kind() != kind) {
+                    throw new IllegalArgumentException(configured.source().code() + " is not a " + kind + " source");
+                }
+            });
+        }
+
+        /** The configured source of {@code kind}. */
+        public Configured of(CreditSourceKind kind) {
+            Configured configured = byKind.get(kind);
+            if (configured == null) {
+                throw new UnsupportedOperationException("no " + kind + " source is configured");
+            }
+            return configured;
+        }
+
+        /** Sources for a bureau and a financial-data provider, each with its timing. */
+        public static Sources of(CreditBureau bureau, Timing bureauTiming, FinancialDataProvider financialData,
+                Timing financialDataTiming) {
+            return new Sources(java.util.Map.of(
+                    CreditSourceKind.BUREAU, new Configured(bureau, bureauTiming),
+                    CreditSourceKind.FINANCIAL_DATA, new Configured(financialData, financialDataTiming)));
         }
     }
 
@@ -117,23 +158,22 @@ public final class CreditDataCollection {
     /**
      * Tx1, in the caller's unit of work: the gate, the birth, the audit. The caller commits, then calls {@link #ask}.
      *
-     * @throws UnsupportedOperationException for a source kind this collection does not pull yet
+     * @throws UnsupportedOperationException for a source kind with no configured source
      */
     @SuppressWarnings("try") // The Scope is used for its close side effect (the established idiom).
     public Opened openWithin(Connection uow, Opening opening, CorrelationId correlation) {
         Objects.requireNonNull(uow, "uow");
         Objects.requireNonNull(opening, "opening");
         Objects.requireNonNull(correlation, "correlation");
-        if (opening.kind() != CreditSourceKind.BUREAU) {
-            throw new UnsupportedOperationException("financial data collection is P10-TSK-007's");
-        }
+        Configured configured = sources.of(opening.kind());
         if (!gate.permits(uow, opening.partyId(), opening.kind())) {
             return new Opened.ConsentAbsent();
         }
         CreditDataRequestId id = CreditDataRequestId.next(ids);
         store.insertRequested(uow, new CreditDataRequestStore.NewRequest(
-                id, opening.decisionRequestId(), opening.partyId(), opening.product(), opening.kind(), bureau.code(),
-                REFERENCE_PREFIX + id.value(), bureauTiming.retryCadence(), bureauTiming.collectionWindow()));
+                id, opening.decisionRequestId(), opening.partyId(), opening.product(), opening.kind(),
+                configured.source().code(), REFERENCE_PREFIX + id.value(), configured.timing().retryCadence(),
+                configured.timing().collectionWindow()));
         Actor platform;
         try (SecurityContext.Scope system = SecurityContext.enterSystem()) {
             platform = SecurityContext.require();
@@ -142,14 +182,16 @@ public final class CreditDataCollection {
                 AuditId.next(ids),
                 platform,
                 now(),
-                CreditAuditAction.BUREAU_DATA_REQUESTED,
+                opening.kind() == CreditSourceKind.BUREAU
+                        ? CreditAuditAction.BUREAU_DATA_REQUESTED
+                        : CreditAuditAction.FINANCIAL_DATA_REQUESTED,
                 TARGET_TYPE,
                 id.value().toString(),
                 Optional.empty(),
                 AuditOutcome.SUCCEEDED,
                 correlation,
                 Optional.of("dataRequest=" + id.value() + ", decisionRequest=" + opening.decisionRequestId()
-                        + ", sourceKind=" + opening.kind().name() + ", provider=" + bureau.code())));
+                        + ", sourceKind=" + opening.kind().name() + ", provider=" + configured.source().code())));
         return new Opened.Requested(id);
     }
 
@@ -174,13 +216,13 @@ public final class CreditDataCollection {
             return row.status();
         }
         Instant started = Instant.now(clock);
-        BureauAnswer answer = bureau.pull(new BureauRequest(row.reference(), row.partyId().toString(), row.product()));
+        CreditDataAnswer answer = sources.of(row.kind()).source().pull(new CreditDataPull(row.reference(), row.partyId().toString(), row.product()));
         observer.called(row.kind(), row.providerCode(), Duration.between(started, Instant.now(clock)));
         return transactions.inTransaction(uow -> record(uow, id, answer, correlation));
     }
 
     private CreditDataRequestStatus record(
-            Connection uow, CreditDataRequestId id, BureauAnswer answer, CorrelationId correlation) {
+            Connection uow, CreditDataRequestId id, CreditDataAnswer answer, CorrelationId correlation) {
         CreditDataRequestStore.Row row = store.lock(uow, id)
                 .orElseThrow(() -> new IllegalArgumentException("no credit data request has this identifier"));
         if (row.status() != CreditDataRequestStatus.REQUESTED) {
@@ -203,13 +245,13 @@ public final class CreditDataCollection {
             return CreditDataRequestStatus.CONSENT_WITHDRAWN;
         }
         return switch (answer) {
-            case BureauAnswer.Received received -> collected(uow, row, attempt, received.providerCode(),
+            case CreditDataAnswer.Received received -> collected(uow, row, attempt, received.providerCode(),
                     received.normaliserVersion(), true, received.retrievedAt(), received.attributes(),
                     received.evidence().bytes(), "RECEIVED", correlation);
-            case BureauAnswer.Partial partial -> collected(uow, row, attempt, partial.providerCode(),
+            case CreditDataAnswer.Partial partial -> collected(uow, row, attempt, partial.providerCode(),
                     partial.normaliserVersion(), false, partial.retrievedAt(), partial.attributes(),
                     partial.evidence().bytes(), "PARTIAL", correlation);
-            case BureauAnswer.Unavailable unavailable -> {
+            case CreditDataAnswer.Unavailable unavailable -> {
                 requireMoved(store.markUnavailable(uow, id, attempt));
                 store.insertAttempt(uow, id, attempt, unavailable.cause().name());
                 unavailable.evidence().ifPresent(bytes ->
@@ -311,11 +353,11 @@ public final class CreditDataCollection {
                 (int) row.product().evidenceRetention().toTotalMonths());
     }
 
-    private static Optional<byte[]> evidenceOf(BureauAnswer answer) {
+    private static Optional<byte[]> evidenceOf(CreditDataAnswer answer) {
         return switch (answer) {
-            case BureauAnswer.Received received -> Optional.of(received.evidence().bytes());
-            case BureauAnswer.Partial partial -> Optional.of(partial.evidence().bytes());
-            case BureauAnswer.Unavailable unavailable -> unavailable.evidence().map(CreditEvidence::bytes);
+            case CreditDataAnswer.Received received -> Optional.of(received.evidence().bytes());
+            case CreditDataAnswer.Partial partial -> Optional.of(partial.evidence().bytes());
+            case CreditDataAnswer.Unavailable unavailable -> unavailable.evidence().map(CreditEvidence::bytes);
         };
     }
 

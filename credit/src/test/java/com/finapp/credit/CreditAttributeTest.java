@@ -47,14 +47,14 @@ class CreditAttributeTest {
         CreditEvidence evidence = new CreditEvidence(new byte[] {1, 2, 3});
         Instant at = Instant.parse("2026-10-07T09:00:00Z");
         assertThatIllegalArgumentException().isThrownBy(() ->
-                new BureauAnswer.Received("b", 1, at, List.of(present, absent), evidence));
+                new CreditDataAnswer.Received("b", 1, at, List.of(present, absent), evidence));
         assertThatIllegalArgumentException().isThrownBy(() ->
-                new BureauAnswer.Received("b", 1, at, List.of(), evidence));
+                new CreditDataAnswer.Received("b", 1, at, List.of(), evidence));
         assertThatIllegalArgumentException().isThrownBy(() ->
-                new BureauAnswer.Partial("b", 1, at, List.of(present), evidence));
+                new CreditDataAnswer.Partial("b", 1, at, List.of(present), evidence));
         assertThatIllegalArgumentException().isThrownBy(() ->
-                new BureauAnswer.Received("b", 1, at, List.of(present, present), evidence));
-        assertThat(new BureauAnswer.Partial("b", 1, at, List.of(present, absent), evidence).absentCodes())
+                new CreditDataAnswer.Received("b", 1, at, List.of(present, present), evidence));
+        assertThat(new CreditDataAnswer.Partial("b", 1, at, List.of(present, absent), evidence).absentCodes())
                 .containsExactly(CreditAttributeCode.BUREAU_TOTAL_BALANCE);
     }
 
@@ -66,10 +66,10 @@ class CreditAttributeTest {
         CreditAttribute score = new CreditAttribute(CreditAttributeCode.BUREAU_EXTERNAL_SCORE,
                 new AttributeValue.IntegerValue(712), PROVENANCE);
         CreditEvidence evidence = new CreditEvidence("{\"secret\":\"4200.50\"}".getBytes());
-        BureauAnswer answer = new BureauAnswer.Received(
+        CreditDataAnswer answer = new CreditDataAnswer.Received(
                 "b", 1, Instant.parse("2026-10-07T09:00:00Z"), List.of(balance, score), evidence);
-        String rendered = answer + " " + balance + " " + score + " " + new BureauAnswer.Unavailable(
-                BureauAnswer.UnavailableCause.MALFORMED, Optional.of(evidence));
+        String rendered = answer + " " + balance + " " + score + " " + new CreditDataAnswer.Unavailable(
+                CreditDataAnswer.UnavailableCause.MALFORMED, Optional.of(evidence));
         assertThat(rendered).doesNotContain("4200").doesNotContain("712").doesNotContain("secret")
                 .contains("BUREAU_TOTAL_BALANCE").contains("bytes]");
     }
@@ -88,9 +88,9 @@ class CreditAttributeTest {
     @DisplayName("a bureau request names a platform reference and a subject")
     void aRequestIsWellFormed() {
         assertThatIllegalArgumentException().isThrownBy(() ->
-                new BureauRequest("not a reference!", "S-1", CreditProduct.PERSONAL_LOAN));
+                new CreditDataPull("not a reference!", "S-1", CreditProduct.PERSONAL_LOAN));
         assertThatIllegalArgumentException().isThrownBy(() ->
-                new BureauRequest("R-1", " ", CreditProduct.PERSONAL_LOAN));
+                new CreditDataPull("R-1", " ", CreditProduct.PERSONAL_LOAN));
         assertThat(CreditBureau.ATTRIBUTES).hasSize(7)
                 .allSatisfy(code -> assertThat(code.name()).startsWith("BUREAU_"));
     }
